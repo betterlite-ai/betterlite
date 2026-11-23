@@ -84,14 +84,23 @@ where
 
 // the call B1064's create reads, borrowing the wire for as long as the call runs
 pub(crate) fn create_call(wire: &CreateWire) -> CreateCall<'_> {
+    let CreateWire {
+        optional,
+        kwargs,
+        extra_headers,
+        extra_body,
+        timeout,
+        custom_llm_provider,
+        entry,
+    } = wire;
     CreateCall {
-        optional: &wire.optional,
-        kwargs: &wire.kwargs,
-        extra_headers: wire.extra_headers.as_ref(),
-        extra_body: wire.extra_body.as_ref(),
-        timeout: wire.timeout,
-        custom_llm_provider: wire.custom_llm_provider.as_deref(),
-        entry: wire.entry.unwrap_or(Entry::Sync),
+        optional,
+        kwargs,
+        extra_headers: extra_headers.as_ref(),
+        extra_body: extra_body.as_ref(),
+        timeout: *timeout,
+        custom_llm_provider: custom_llm_provider.as_deref(),
+        entry: entry.unwrap_or(Entry::Sync),
     }
 }
 

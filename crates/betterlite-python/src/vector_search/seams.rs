@@ -86,49 +86,48 @@ impl Configs {
 
 impl VectorStoreConfigs for Configs {
     fn create_config(&self, tag: VectorStoresConfigTag) -> Option<Box<dyn CreateReadConfig + '_>> {
-        match tag {
-            VectorStoresConfigTag::OpenAI => Some(Box::new(OpenAiCreateReadConfig::new(
-                &self.credentials,
-                globals(&self.globals),
-                self.env_api_key.clone(),
-                None,
-            ))),
-            VectorStoresConfigTag::AzureOpenAI
-            | VectorStoresConfigTag::Vertex
-            | VectorStoresConfigTag::VertexSearchAPI
-            | VectorStoresConfigTag::Bedrock
-            | VectorStoresConfigTag::PGVector
-            | VectorStoresConfigTag::AzureAI
-            | VectorStoresConfigTag::Milvus
-            | VectorStoresConfigTag::Gemini
-            | VectorStoresConfigTag::RAGFlow
-            | VectorStoresConfigTag::S3Vectors
-            | VectorStoresConfigTag::Valkey
-            | VectorStoresConfigTag::MongoDB => None,
+        if !served(tag) {
+            return None;
         }
+        Some(Box::new(OpenAiCreateReadConfig::new(
+            &self.credentials,
+            globals(&self.globals),
+            self.env_api_key.clone(),
+            None,
+        )))
     }
 
     fn search_config(&self, tag: VectorStoresConfigTag) -> Option<Arc<dyn SearchConfig>> {
-        match tag {
-            VectorStoresConfigTag::OpenAI => Some(Arc::new(OpenAiSearchConfig::new(
-                self.credentials.clone(),
-                globals(&self.globals),
-                self.env_api_key.clone(),
-                None,
-            ))),
-            VectorStoresConfigTag::AzureOpenAI
-            | VectorStoresConfigTag::Vertex
-            | VectorStoresConfigTag::VertexSearchAPI
-            | VectorStoresConfigTag::Bedrock
-            | VectorStoresConfigTag::PGVector
-            | VectorStoresConfigTag::AzureAI
-            | VectorStoresConfigTag::Milvus
-            | VectorStoresConfigTag::Gemini
-            | VectorStoresConfigTag::RAGFlow
-            | VectorStoresConfigTag::S3Vectors
-            | VectorStoresConfigTag::Valkey
-            | VectorStoresConfigTag::MongoDB => None,
+        if !served(tag) {
+            return None;
         }
+        let credentials = self.credentials.clone();
+        let settings = globals(&self.globals);
+        Some(Arc::new(OpenAiSearchConfig::new(
+            credentials,
+            settings,
+            self.env_api_key.clone(),
+            None,
+        )))
+    }
+}
+
+// B010 serves OpenAI's vector stores only; the other tags are named so a new provider fails to compile here
+fn served(tag: VectorStoresConfigTag) -> bool {
+    match tag {
+        VectorStoresConfigTag::OpenAI => true,
+        VectorStoresConfigTag::AzureOpenAI
+        | VectorStoresConfigTag::Vertex
+        | VectorStoresConfigTag::VertexSearchAPI
+        | VectorStoresConfigTag::Bedrock
+        | VectorStoresConfigTag::PGVector
+        | VectorStoresConfigTag::AzureAI
+        | VectorStoresConfigTag::Milvus
+        | VectorStoresConfigTag::Gemini
+        | VectorStoresConfigTag::RAGFlow
+        | VectorStoresConfigTag::S3Vectors
+        | VectorStoresConfigTag::Valkey
+        | VectorStoresConfigTag::MongoDB => false,
     }
 }
 

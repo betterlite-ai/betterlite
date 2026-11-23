@@ -7,7 +7,7 @@ use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
 use super::convert::{ConvertError, CreateWire, SearchWire, parse};
 use super::error::raise;
-use super::session::SessionCore;
+use super::session::{Pending, SessionCore};
 
 mod tests;
 
@@ -30,52 +30,53 @@ impl NativeVectorSearchSession {
     // the synchronous create: one attempt on the runtime, blocking this thread with the GIL released
     fn create(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
         let wire: CreateWire = parse(request, &blobs)?;
-        let answer = py.detach(|| get_runtime().block_on(self.core.create(&wire)));
-        let body = answer.map_err(|error| raise(py, &error, &self.core.redactor))?;
-        to_text(&body)
+        let pending = Pending::Create(wire);
+        settled(py, &self.core, pending)
     }
 
     // the synchronous search, with the query sent as the text or the list the caller gave
     fn search(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
         let wire: SearchWire = parse(request, &blobs)?;
-        let answer = py.detach(|| get_runtime().block_on(self.core.search(&wire)));
-        let body = answer.map_err(|error| raise(py, &error, &self.core.redactor))?;
-        to_text(&body)
+        let pending = Pending::Search(wire);
+        settled(py, &self.core, pending)
     }
 
     // the awaitable create: the same call on the asyncio loop's runtime, handed back as a coroutine
-    fn acreate<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn acreate(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let wire: CreateWire = parse(request, &blobs)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let body = Box::pin(core.create(&wire))
-                .await
-                .map_err(|error| Python::attach(|py| raise(py, &error, &core.redactor)))?;
-            to_text(&body)
-        })
+        let pending = Pending::Create(wire);
+        let answer = awaitable(py, Arc::clone(&self.core), pending)?;
+        Ok(answer.unbind())
     }
 
     // the awaitable search: the same call on the asyncio loop's runtime, handed back as a coroutine
-    fn asearch<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn asearch(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let wire: SearchWire = parse(request, &blobs)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let body = Box::pin(core.search(&wire))
-                .await
-                .map_err(|error| Python::attach(|py| raise(py, &error, &core.redactor)))?;
-            to_text(&body)
-        })
+        let pending = Pending::Search(wire);
+        let answer = awaitable(py, Arc::clone(&self.core), pending)?;
+        Ok(answer.unbind())
     }
+}
+
+// The synchronous path: one attempt on the runtime, with the GIL released for as long as the call runs
+fn settled(py: Python<'_>, core: &SessionCore, pending: Pending) -> PyResult<String> {
+    let outcome = py.detach(|| get_runtime().block_on(core.run(pending)));
+    let body = outcome.map_err(|error| raise(py, &error, &core.redactor))?;
+    to_text(&body)
+}
+
+// The awaitable path: the same call driven by the asyncio loop's runtime and handed back as a coroutine
+fn awaitable<'py>(
+    py: Python<'py>,
+    core: Arc<SessionCore>,
+    pending: Pending,
+) -> PyResult<Bound<'py, PyAny>> {
+    future_into_py(py, async move {
+        let body = Box::pin(core.run(pending))
+            .await
+            .map_err(|error| Python::attach(|py| raise(py, &error, &core.redactor)))?;
+        to_text(&body)
+    })
 }
 
 // The answer is JSON text, the one shape every native family hands back to Python

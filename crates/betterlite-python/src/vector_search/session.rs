@@ -50,6 +50,12 @@ pub(crate) struct SessionWire {
     pub(crate) organization: Option<String>,
 }
 
+// What one native call runs: the create or the search, parsed and ready for the service behind the session
+pub(crate) enum Pending {
+    Create(CreateWire),
+    Search(SearchWire),
+}
+
 // Everything one Python session owns: the environment snapshot, the configs it resolves and the client its requests use.
 pub(crate) struct SessionCore {
     configs: Configs,
@@ -101,34 +107,31 @@ impl SessionCore {
         })
     }
 
-    // create/asearch: one logging state, one HTTP client and B1064's create over them
-    pub(crate) async fn create(&self, wire: &CreateWire) -> Result<Json, VectorStoreSearchError> {
+    // create and search: one logging state, one HTTP client and B1064's or B1058's service behind them
+    pub(crate) async fn run(&self, pending: Pending) -> Result<Json, VectorStoreSearchError> {
         let sink = SilentSink;
         let env = self.pre_post(&sink);
-        let mut state = logging_state(CREATE_CALL_TYPE, &self.redactor)
-            .map_err(VectorStoreSearchError::from)?;
+        let call_type = match &pending {
+            Pending::Create(_) => CREATE_CALL_TYPE,
+            Pending::Search(_) => SEARCH_CALL_TYPE,
+        };
+        let mut state =
+            logging_state(call_type, &self.redactor).map_err(VectorStoreSearchError::from)?;
         let mut log = LogContext {
             state: &mut state,
             env: &env,
         };
         let deps = self.deps();
-        let call = create_call(wire);
-        create_store(&deps, &call, &mut log).await
-    }
-
-    // search/asearch: the same shape, with B1058's filters and B2484's search behind it
-    pub(crate) async fn search(&self, wire: &SearchWire) -> Result<Json, VectorStoreSearchError> {
-        let sink = SilentSink;
-        let env = self.pre_post(&sink);
-        let mut state = logging_state(SEARCH_CALL_TYPE, &self.redactor)
-            .map_err(VectorStoreSearchError::from)?;
-        let mut log = LogContext {
-            state: &mut state,
-            env: &env,
-        };
-        let deps = self.deps();
-        let call = search_call(wire);
-        search_store(&deps, &call, &mut log).await
+        match pending {
+            Pending::Create(wire) => {
+                let call = create_call(&wire);
+                create_store(&deps, &call, &mut log).await
+            }
+            Pending::Search(wire) => {
+                let call = search_call(&wire);
+                search_store(&deps, &call, &mut log).await
+            }
+        }
     }
 
     fn deps(&self) -> SdkDeps<'_, ProxiedSource> {
