@@ -38,7 +38,8 @@ fn encoded(mapping: &IndexMap<String, Json>) -> String {
     r#"{"id": "auth"}"#
 )]
 fn lookup_prefers_an_object_direct_stamp(#[case] metadata: &str, #[case] expected: &str) {
-    let found = reservation_from_metadata(&mapping(metadata));
+    let recorded = mapping(metadata);
+    let found = reservation_from_metadata(&recorded);
     assert_eq!(found, Some(&mapping(expected)));
 }
 
