@@ -57,7 +57,7 @@ pub(crate) fn cache_decode(request: &str) -> PyResult<String> {
     let max_age = call.max_age()?;
     let decoded =
         decode_cached(cached.as_ref(), max_age, convert::wall_clock()).map_err(CacheError::from)?;
-    Ok(convert::value_text(&decoded)?)
+    Ok(convert::value_text(decoded.as_ref())?)
 }
 
 // The settings-only twin of NativeCache::write_embedding: one input's entry, with Rust's per-item rules.

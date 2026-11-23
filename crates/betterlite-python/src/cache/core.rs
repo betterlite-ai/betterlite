@@ -56,17 +56,17 @@ impl CacheCore {
 
     // ast-grep-ignore: no-one-line-functions
     pub(crate) fn lookup(&self, call: &CacheCall) -> Result<String, CacheError> {
-        convert::value_text(&self.read(call)?)
+        convert::value_text(self.read(call)?.as_ref())
     }
 
     // ast-grep-ignore: no-one-line-functions
     pub(crate) async fn async_lookup(&self, call: &CacheCall) -> Result<String, CacheError> {
-        convert::value_text(&self.async_read(call).await?)
+        convert::value_text(self.async_read(call).await?.as_ref())
     }
 
     // ast-grep-ignore: no-one-line-functions - no backend reports a vector similarity, so the response answers alone
     pub(crate) fn lookup_semantic(&self, call: &CacheCall) -> Result<String, CacheError> {
-        convert::semantic_text(&self.read(call)?, None)
+        convert::semantic_text(self.read(call)?.as_ref(), None)
     }
 
     // ast-grep-ignore: no-one-line-functions
@@ -74,7 +74,7 @@ impl CacheCore {
         &self,
         call: &CacheCall,
     ) -> Result<String, CacheError> {
-        convert::semantic_text(&self.async_read(call).await?, None)
+        convert::semantic_text(self.async_read(call).await?.as_ref(), None)
     }
 
     pub(crate) fn write(&self, call: &CacheCall) -> Result<(), CacheError> {

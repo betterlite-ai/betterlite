@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
+use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
 use betterlite_redact::structured::Payload;
 use pyo3::prelude::*;
 

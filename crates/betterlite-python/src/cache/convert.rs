@@ -162,13 +162,13 @@ pub(crate) fn flush_size(size: Option<usize>) -> Result<Option<i64>, CacheError>
 }
 
 // ast-grep-ignore: no-one-line-functions
-pub(crate) fn value_text(value: &Option<CacheValue>) -> Result<String, CacheError> {
-    serde_json::to_string(value).map_err(|source| CacheError::Encode { source })
+pub(crate) fn value_text(value: Option<&CacheValue>) -> Result<String, CacheError> {
+    serde_json::to_string(&value).map_err(|source| CacheError::Encode { source })
 }
 
 // ast-grep-ignore: no-one-line-functions - a semantic lookup answers the response and its backend's similarity
 pub(crate) fn semantic_text(
-    value: &Option<CacheValue>,
+    value: Option<&CacheValue>,
     similarity: Option<f64>,
 ) -> Result<String, CacheError> {
     serde_json::to_string(&(value, similarity)).map_err(|source| CacheError::Encode { source })

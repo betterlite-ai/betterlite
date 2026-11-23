@@ -1,5 +1,9 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::iter::once;
+
+use betterlite_cache::cache_key::value::KeyValue;
 use betterlite_cache::embedding::embedding_cache::EmbeddingCacheEntry;
 use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::embedding::EmbeddingPayload;
@@ -45,7 +49,7 @@ fn cache_request_kwargs_become_an_envelope_request() {
         request
             .key
             .metadata
-            .and_then(|fields| fields.get("redis_namespace").map(|value| value.render())),
+            .and_then(|fields| fields.get("redis_namespace").map(KeyValue::render)),
         Some("other".to_owned())
     );
 }
@@ -126,9 +130,7 @@ fn cache_result_text_becomes_a_cache_value() {
     assert_eq!(
         result,
         CacheValue::Object(
-            [("content".to_owned(), CacheValue::Text("hi".to_owned()))]
-                .into_iter()
-                .collect()
+            once(("content".to_owned(), CacheValue::Text("hi".to_owned()))).collect(),
         )
     );
 }
@@ -167,13 +169,13 @@ fn cache_result_a_null_cached_value_is_a_miss() {
             .unwrap(),
         Some(CacheValue::Text("text".to_owned()))
     );
-    assert_eq!(value_text(&None).unwrap(), "null");
-    assert_eq!(value_text(&Some(CacheValue::Integer(7_i64))).unwrap(), "7");
+    assert_eq!(value_text(None).unwrap(), "null");
+    assert_eq!(value_text(Some(&CacheValue::Integer(7_i64))).unwrap(), "7");
 }
 
 #[test]
 fn cache_result_semantic_text_carries_the_response_and_the_similarity() {
-    let text = semantic_text(&Some(CacheValue::Text("hi".to_owned())), None).unwrap();
+    let text = semantic_text(Some(&CacheValue::Text("hi".to_owned())), None).unwrap();
     let answer: (Option<CacheValue>, Option<f64>) = serde_json::from_str(&text).unwrap();
     assert_eq!(answer.0, Some(CacheValue::Text("hi".to_owned())));
     assert_eq!(answer.1, None);
@@ -198,14 +200,14 @@ fn cache_result_the_embedding_response_keeps_its_records() {
     assert_eq!(result.data.len(), 1);
     assert_eq!(result.data[0].index, Some(0_i64));
     assert!(matches!(
-        result.data[0].embedding,
-        Some(EmbeddingPayload::Vector(ref numbers)) if numbers.len() == 2
+        result.data[0].embedding.as_ref(),
+        Some(EmbeddingPayload::Vector(numbers)) if numbers.len() == 2
     ));
 }
 
 #[test]
 fn cache_result_the_embedding_envelope_keeps_the_cached_data() {
-    let mut cached_data = std::collections::BTreeMap::new();
+    let mut cached_data = BTreeMap::new();
     cached_data.insert("response".to_owned(), CacheValue::Text("cached".to_owned()));
     let entry = EmbeddingCacheEntry {
         cache_key: "embedding-key".to_owned(),

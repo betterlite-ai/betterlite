@@ -108,23 +108,23 @@ fn cache_key_honours_a_namespace_and_a_preset_key() {
 fn cache_envelope_applies_the_ttl_rules() {
     Python::initialize();
     assert_eq!(answer_ttl("{}", WRITE), None);
-    assert_eq!(answer_ttl(r#"{"ttl": 900}"#, WRITE), Some(900.0));
+    assert_eq!(answer_ttl(r#"{"ttl": 900}"#, WRITE), Some(900.0_f64));
     assert_eq!(
         answer_ttl(r#"{"ttl": 900, "default_in_memory_ttl": 600}"#, WRITE),
-        Some(600.0)
+        Some(600.0_f64)
     );
     assert_eq!(
         answer_ttl(r#"{"ttl": 900, "default_in_redis_ttl": 600}"#, WRITE),
-        Some(900.0)
+        Some(900.0_f64)
     );
     assert_eq!(
         answer_ttl(
             r#"{"type": "redis", "ttl": 900, "default_in_redis_ttl": 600}"#,
             WRITE
         ),
-        Some(600.0)
+        Some(600.0_f64)
     );
-    assert_eq!(answer_ttl(r#"{"ttl": 900}"#, WRITE_WITH_TTL), Some(5.0));
+    assert_eq!(answer_ttl(r#"{"ttl": 900}"#, WRITE_WITH_TTL), Some(5.0_f64));
 }
 
 #[test]
@@ -172,5 +172,5 @@ fn cache_embedding_builds_the_entry_for_one_input() {
         panic!("the cached embedding is a vector");
     };
     assert_eq!(vector.len(), 2);
-    assert_eq!(vector.first().and_then(|number| number.as_f64()), Some(0.3));
+    assert_eq!(vector[0].as_f64(), Some(0.3_f64));
 }
