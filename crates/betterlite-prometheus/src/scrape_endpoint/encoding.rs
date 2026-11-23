@@ -9,7 +9,9 @@ use rust_decimal::prelude::ToPrimitive as _;
 use crate::collector_factory::collector::MetricValue;
 use crate::collector_registry::CollectorRegistry;
 use crate::collector_registry::metric::sample::Sample;
-use crate::collector_registry::metric::{CollectorDescription, CollectorKind, PrometheusMetric};
+use crate::collector_registry::metric::{
+    Bucket, CollectorDescription, CollectorKind, PrometheusMetric,
+};
 
 use super::float::float_to_go_string;
 
@@ -128,25 +130,66 @@ fn samples_of(metric: &PrometheusMetric) -> Vec<FamilySample> {
     samples
 }
 
+// one sample of a family: the suffix tells its exposed name from the registered one
+fn metric_sample(
+    description: &CollectorDescription,
+    suffix: &str,
+    labels: Vec<(String, String)>,
+    value: String,
+    created: bool,
+) -> FamilySample {
+    FamilySample {
+        name: format!("{}{suffix}", description.name),
+        labels,
+        value,
+        created,
+    }
+}
+
+// an observation count, spelled as floatToGoString spells an integer bucket count
+fn count_text(count: u64) -> String {
+    float_to_go_string(Decimal::from(count).to_f64().unwrap_or(f64::NAN))
+}
+
 fn counter_samples(
     description: &CollectorDescription,
     sample: &Sample,
     labels: Vec<(String, String)>,
 ) -> Vec<FamilySample> {
     vec![
-        FamilySample {
-            name: format!("{}_total", description.name),
-            labels: labels.clone(),
-            value: metric_value_text(sample.total),
-            created: false,
-        },
-        FamilySample {
-            name: format!("{}_created", description.name),
+        metric_sample(
+            description,
+            "_total",
+            labels.clone(),
+            metric_value_text(sample.total),
+            false,
+        ),
+        metric_sample(
+            description,
+            "_created",
             labels,
-            value: created_text(sample.created),
-            created: true,
-        },
+            created_text(sample.created),
+            true,
+        ),
     ]
+}
+
+// one bucket line: its upper bound as le and the count of every observation it covers
+fn bucket_sample(
+    description: &CollectorDescription,
+    bound: &Bucket,
+    labels: &[(String, String)],
+    count: u64,
+) -> FamilySample {
+    let mut bucket_labels = labels.to_vec();
+    bucket_labels.push(("le".to_owned(), float_to_go_string(bound.key())));
+    metric_sample(
+        description,
+        "_bucket",
+        bucket_labels,
+        count_text(count),
+        false,
+    )
 }
 
 // Histogram._child_samples: the cumulative buckets, the count of the last one, the sum for a first bound of zero or more, then the creation time
@@ -155,53 +198,39 @@ fn histogram_samples(
     sample: &Sample,
     labels: Vec<(String, String)>,
 ) -> Vec<FamilySample> {
-    let mut samples = bucket_samples(description, sample, &labels);
+    let mut samples = Vec::new();
+    for (index, bound) in description.buckets.iter().enumerate() {
+        let count = sample.buckets.get(index).copied().unwrap_or_default();
+        samples.push(bucket_sample(description, bound, &labels, count));
+    }
     let last_count = sample.buckets.last().copied().unwrap_or(sample.count);
-    samples.push(FamilySample {
-        name: format!("{}_count", description.name),
-        labels: labels.clone(),
-        value: float_to_go_string(Decimal::from(last_count).to_f64().unwrap_or(f64::NAN)),
-        created: false,
-    });
+    samples.push(metric_sample(
+        description,
+        "_count",
+        labels.clone(),
+        count_text(last_count),
+        false,
+    ));
     if description
         .buckets
         .first()
         .is_none_or(|bound| bound.key() >= 0.0)
     {
-        samples.push(FamilySample {
-            name: format!("{}_sum", description.name),
-            labels: labels.clone(),
-            value: metric_value_text(sample.total),
-            created: false,
-        });
+        samples.push(metric_sample(
+            description,
+            "_sum",
+            labels.clone(),
+            metric_value_text(sample.total),
+            false,
+        ));
     }
-    samples.push(FamilySample {
-        name: format!("{}_created", description.name),
+    samples.push(metric_sample(
+        description,
+        "_created",
         labels,
-        value: created_text(sample.created),
-        created: true,
-    });
-    samples
-}
-
-// a bucket counts every observation its upper bound covers, and le is only a label among the metric's own
-fn bucket_samples(
-    description: &CollectorDescription,
-    sample: &Sample,
-    labels: &[(String, String)],
-) -> Vec<FamilySample> {
-    let mut samples = Vec::new();
-    for (index, bound) in description.buckets.iter().enumerate() {
-        let count = sample.buckets.get(index).copied().unwrap_or_default();
-        let mut bucket_labels = labels.to_vec();
-        bucket_labels.push(("le".to_owned(), float_to_go_string(bound.key())));
-        samples.push(FamilySample {
-            name: format!("{}_bucket", description.name),
-            labels: bucket_labels,
-            value: float_to_go_string(Decimal::from(count).to_f64().unwrap_or(f64::NAN)),
-            created: false,
-        });
-    }
+        created_text(sample.created),
+        true,
+    ));
     samples
 }
 
