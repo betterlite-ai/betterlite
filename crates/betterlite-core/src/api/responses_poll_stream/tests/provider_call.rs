@@ -66,6 +66,7 @@ pub(super) fn assert_single_admission(scenario: &Scenario) {
 
 pub(super) fn assert_record_completed(scenario: &Scenario) {
     let writes = scenario.cache.writes();
+    assert_eq!(writes.len(), 4);
     assert_eq!(support::text(&writes[0], "status"), "in_progress");
     assert_eq!(support::text(&writes[1], "status"), "in_progress");
     let record = support::last_write(&scenario.cache);
