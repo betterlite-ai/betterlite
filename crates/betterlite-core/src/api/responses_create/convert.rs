@@ -1,19 +1,7 @@
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
-pub fn reencode<T, U>(value: &T) -> Result<U, serde_json::Error>
-where
-    T: Serialize + ?Sized,
-    U: DeserializeOwned,
-{
-    match serde_json::to_string(value) {
-        Ok(text) => serde_json::from_str(&text),
-        Err(error) => Err(error),
-    }
-}
 macro_rules! convert_json {
     ($name:ident, $source:ident, $target:ident, $source_list:ident, $target_list:ident) => {
         #[must_use]

@@ -1,6 +1,6 @@
 use betterlite_context::non_default_params::Params as OptionalParams;
+use betterlite_core::api::response_id_traversal::response_id::transcode;
 use betterlite_core::api::responses_compact_http::error::ConfigFailure;
-use betterlite_core::api::responses_create::convert::reencode;
 use betterlite_core::api::responses_create::deps::CreateCapabilities;
 use betterlite_core::api::responses_create_http::config::{
     CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, Headers, Signed,
@@ -68,8 +68,8 @@ impl CreateConfig for OpenAiCreateConfig {
         .map_err(ConfigFailure::new)
     }
     fn normalize_request(&self, data: Object) -> Result<Object, ConfigFailure> {
-        let params: ContractParams = reencode(&data).map_err(ConfigFailure::new)?;
-        reencode(&normalize_responses_request(&params)).map_err(ConfigFailure::new)
+        let params: ContractParams = transcode(&data).map_err(ConfigFailure::new)?;
+        transcode(&normalize_responses_request(&params)).map_err(ConfigFailure::new)
     }
     fn sign_request(&self, request: &CreateSignRequest<'_>) -> Result<Signed, ConfigFailure> {
         Ok(Signed {

@@ -1,11 +1,12 @@
 use super::bridge::{Created, StampedResponse};
 use super::call::ResponsesCreateCall;
-use super::convert::{decision_json, json_value, reencode};
+use super::convert::{decision_json, json_value};
 use super::deps::{ConfigRequest, CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps};
 use super::error::CreateError;
 use super::interception::{FileSearchArgs, Interception, dispatch_args};
 use super::native::{NativeCall, bridge, native};
 use super::preparation::{self, Prepared, Resolved};
+use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
 use crate::api::responses_create_http::service::{ClientSource, LogContext};
 use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
@@ -187,12 +188,12 @@ fn mapped_tools(
     prep: &mut Prepared<'_>,
     mapping: Option<&FileIdMapping>,
 ) -> Result<Option<Vec<JsonValue>>, CreateError> {
-    let input: PromptInput = reencode(&prep.input)?;
+    let input: PromptInput = transcode(&prep.input)?;
     let tools: Option<Vec<PromptTool>> = prep
         .call
         .tools
         .as_ref()
-        .map(|tools| tools.iter().map(|tool| reencode(&tool.0)).collect())
+        .map(|tools| tools.iter().map(|tool| transcode(&tool.0)).collect())
         .transpose()?;
     let model_info = prep
         .kwargs
@@ -205,11 +206,11 @@ fn mapped_tools(
         mapping,
         &mut prep.local_vars,
     )?;
-    prep.input = reencode(&outcome.input)?;
+    prep.input = transcode(&outcome.input)?;
     outcome
         .tools
         .as_ref()
-        .map(|entries| entries.iter().map(reencode).collect())
+        .map(|entries| entries.iter().map(transcode).collect())
         .transpose()
         .map_err(CreateError::from)
 }

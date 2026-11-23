@@ -1,6 +1,6 @@
 use super::bridge::{BridgeCall, Created, StampedResponse};
 use super::convert::{
-    decision_json, decision_prompt, object_from_params, object_value, prompt_decision, reencode,
+    decision_json, decision_prompt, object_from_params, object_value, prompt_decision,
 };
 use super::deps::{CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps};
 use super::error::CreateError;
@@ -8,7 +8,7 @@ use super::logging;
 use super::preparation::{Prepared, Resolved};
 use crate::api::response_id_traversal::metadata::AffinityMetadata;
 use crate::api::response_id_traversal::record::Record;
-use crate::api::response_id_traversal::response_id::rewrite_typed_response;
+use crate::api::response_id_traversal::response_id::{rewrite_typed_response, transcode};
 use crate::api::response_id_traversal::restore::restore_encrypted_item_ids;
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
 use crate::api::responses_compact_http::service::{ClientKind, SuppliedClient};
@@ -219,7 +219,7 @@ fn finish<Context>(
                 return Ok(Created::Raw(raw));
             };
             let affinity: AffinityMetadata =
-                metadata.map_or_else(|| Ok(AffinityMetadata::default()), reencode)?;
+                metadata.map_or_else(|| Ok(AffinityMetadata::default()), transcode)?;
             rewrite_typed_response(&mut response, Some(&resolved.provider), &affinity)?;
             let mut hidden = HiddenParams::new();
             hidden.insert(
@@ -257,7 +257,7 @@ fn restored(input: &ResponsesInput) -> ResponsesInput {
     )
 }
 fn create_params(resolved: &Resolved, prep: &Prepared<'_>) -> Result<CreateParams, CreateError> {
-    let mut map: HttpParams = reencode(&prep.kwargs)?;
+    let mut map: HttpParams = transcode(&prep.kwargs)?;
     if let Some(base) = &resolved.api_base {
         map.insert(String::from("api_base"), Json::Text(base.clone()));
     }
@@ -274,7 +274,7 @@ fn litellm_metadata(kwargs: &ParameterMap) -> Result<Option<HttpParams>, CreateE
     match kwargs.get("litellm_metadata") {
         None => Ok(Some(HttpParams::new())),
         Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Object(fields)) => reencode(fields).map(Some).map_err(CreateError::from),
+        Some(JsonValue::Object(fields)) => transcode(fields).map(Some).map_err(CreateError::from),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
         ) => Err(CreateError::Field {

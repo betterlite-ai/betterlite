@@ -2,8 +2,9 @@ use crate::sdk_http::call_kind::CallKind as _;
 use crate::sdk_http::responses_chat_call::call::{Call as ChatCall, Mode, Outcome as ChatOutcome};
 use crate::sdk_http::result::kinds::SdkResult;
 use async_trait::async_trait;
+use betterlite_core::api::response_id_traversal::response_id::transcode;
 use betterlite_core::api::responses_create::bridge::{BridgeCall, ChatBridge, Created};
-use betterlite_core::api::responses_create::convert::{decision_json, reencode};
+use betterlite_core::api::responses_create::convert::decision_json;
 use betterlite_core::api::responses_create::error::BridgeError;
 use betterlite_core::api::responses_provider_selection::ParameterMap;
 use betterlite_models::controls::json_value::JsonValue;
@@ -57,14 +58,14 @@ fn bridge_failure(message: &str) -> BridgeError {
 }
 fn chat_request(call: &BridgeCall<'_>) -> Result<Json, BridgeError> {
     let mut request: Json =
-        reencode(call.request).map_err(|error| bridge_failure(&error.to_string()))?;
+        transcode(call.request).map_err(|error| bridge_failure(&error.to_string()))?;
     let Json::Object(fields) = &mut request else {
         return Err(bridge_failure("the bridge request is not an object"));
     };
     fields.insert(String::from("model"), Json::Text(call.model.to_owned()));
     fields.insert(
         String::from("input"),
-        reencode(call.input).map_err(|error| bridge_failure(&error.to_string()))?,
+        transcode(call.input).map_err(|error| bridge_failure(&error.to_string()))?,
     );
     Ok(request)
 }

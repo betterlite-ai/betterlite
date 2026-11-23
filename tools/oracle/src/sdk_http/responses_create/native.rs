@@ -5,9 +5,9 @@ use super::ports::Bridge;
 use super::{Call, Outcome, RunOutcome};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::Failure;
+use betterlite_core::api::response_id_traversal::response_id::transcode;
 use betterlite_core::api::responses_create::bridge::Created;
 use betterlite_core::api::responses_create::call::ResponsesCreateCall;
-use betterlite_core::api::responses_create::convert::reencode;
 use betterlite_core::api::responses_create::deps::ResponsesCreateDeps;
 use betterlite_core::api::responses_create::error::CreateError;
 use betterlite_core::api::responses_create::execute::create;
@@ -136,7 +136,7 @@ fn failure_outcome(
 }
 fn create_call(run: &Json, api_base: &str) -> Result<ResponsesCreateCall, SdkHttpError> {
     let mut call: ResponsesCreateCall =
-        reencode(run).map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+        transcode(run).map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     call.api_base = Some(api_base.to_owned());
     if let Json::Object(fields) = run {
         call.timeout = match fields.get("timeout_seconds") {
@@ -152,7 +152,7 @@ fn create_call(run: &Json, api_base: &str) -> Result<ResponsesCreateCall, SdkHtt
 fn created_json(created: Created<()>) -> Result<Json, SdkHttpError> {
     match created {
         Created::Responses(stamped) => {
-            reencode(&stamped.response).map_err(|error| SdkHttpError::Invalid(error.to_string()))
+            transcode(&stamped.response).map_err(|error| SdkHttpError::Invalid(error.to_string()))
         }
         Created::Raw(raw) => serde_json::from_str(raw.get())
             .map_err(|error| SdkHttpError::Invalid(error.to_string())),
