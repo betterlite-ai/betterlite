@@ -1,0 +1,39 @@
+task: B8060
+deviations:
+- what: "`openai_tokenizer_encoding` raises `AttributeError`, and a custom tokenizer dict holds a `NativeTokenizer` that wraps a handle from `load_tokenizer`, not a `tokenizers.Tokenizer`; a dict tagged `openai_tokenizer` raises `ValueError(\"Unsupported tokenizer type\")` where LiteLLM selects the model's tiktoken encoding."
+  why: No tiktoken or tokenizers object exists in the wheel, and B195 owns the engines in Rust, so only the hugging face type can be built.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L615-L649
+- what: "`offload_token_count` limits work with an `asyncio.Semaphore` of `TOKEN_COUNTER_MAX_CONCURRENT_COUNTS` kept per event loop, where LiteLLM hands anyio's `CapacityLimiter` from a run variable to `anyio.to_thread.run_sync`."
+  why: anyio is not a dependency of the wheel, and a semaphore around `asyncio.to_thread` bounds the same four concurrent counts per loop.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L343-L361
+- what: "The Python offload semaphore is fixed at 4; `TOKEN_COUNTER_MAX_CONCURRENT_COUNTS` is read only by the Rust counter's runtime, which bounds its own work."
+  why: The semaphore bounds `asyncio.to_thread` calls around the native count while the native counter keeps its own limiter, and LiteLLM reads that variable for its single limiter.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L456-L466
+- what: "`betterlite.disable_hf_tokenizer_download` is not a module attribute; the selector reads the `tokenizer_engines` configuration key of that name, from the config file or the environment, on each call."
+  why: The wheel loads no config document and a Python module assignment cannot reach the Rust selector, so the typed config section B195 owns is the only channel.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2403-L2419
+- what: "`decode(..., skip_special_tokens=False)` raises `NativeTokensError` for a Hugging Face tokenizer instead of returning the text with its special tokens, while the OpenAI encoding ignores the flag like LiteLLM."
+  why: B195's engine decodes with `skip_special_tokens=True` and does not expose the tokenizer, so keeping special tokens cannot be honoured; silently dropping them would be worse than an error.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2494-L2515
+- what: "A tokenizer that cannot be loaded raises `NativeTokensError` with the download or parse error text, not `huggingface_hub`'s `LocalEntryNotFoundError`, `RepositoryNotFoundError` or `tokenizers`' exception classes."
+  why: The hub download runs through hf-hub and the JSON parse through the tokenizers crate, and neither produces the Python exception classes; the three classes all derive from OSError or Exception, which the native error does not.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2518-L2532
+- what: "`get_image_dimensions` and `calculate_img_tokens` read a `data:` URL only; an `http://` or `https://` URL raises `NativeTokensError` instead of downloading up to `MAX_IMAGE_URL_DOWNLOAD_SIZE_MB` bytes and falling back to base64 on failure."
+  why: The image helpers run in Rust with no outbound request of their own, and the pytest comparisons send base64 data only.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L231-L249
+- what: "Message content that holds an image, audio or file block raises `ValueError` from the counter, and `use_default_image_token_count` and `default_token_count` are accepted and reach no counting rule."
+  why: Counting media blocks belongs to B196 and B197; the two arguments change only that path, and every declared input of this task's signature still counts.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L693-L723
+- what: "This task has no helper oracle cases."
+  why: The pytest file compares both packages directly, and the Rust counting cases belong to B196 and B197.
+  link: ""
+kept_bugs:
+- what: "`disable_token_counter` is compared with `is True`, so setting it to a truthy non-boolean (`1`) leaves the counter running."
+  why: A working setup sets the flag to a literal boolean, so the identity check is carried rather than widened to truthiness.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2572-L2574
+- what: "`count_response_tokens` is compared with `is False`, so `None` skips the tools and tool_choice extra exactly as `True` does."
+  why: Callers that pass the default `False` and callers that pass `True` both count as documented, and a setup passing `None` today sees no extra, so the identity check is carried.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L459-L461
+- what: "A model name LiteLLM does not know is normalized to `gpt-3.5-turbo`, so it counts with cl100k_base and the gpt-3.5 message overhead instead of failing or using the model's own encoding."
+  why: "`_fix_model_name` falls back to the gpt-3.5 id for every unknown name, and callers pass deployment aliases that rely on that fallback."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L682-L690
