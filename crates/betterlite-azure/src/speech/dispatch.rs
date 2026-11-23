@@ -5,7 +5,7 @@ use std::time::Duration;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::error::AzureSpeechError;
 
@@ -139,10 +139,7 @@ impl Resolved {
             litellm_params: &self.litellm_params,
             extra_headers: call.extra_headers,
             timeout: call.timeout,
-            api_key: self
-                .api_key
-                .as_ref()
-                .map(secrecy::ExposeSecret::expose_secret),
+            api_key: self.api_key.as_ref().map(ExposeSecret::expose_secret),
             api_base: self.api_base.as_deref(),
             provider: "azure",
             is_async: call.aspeech,
