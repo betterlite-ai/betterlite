@@ -12,7 +12,9 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use chrono::{Duration, Utc};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 
 use super::{
     LifecycleState, UnbuiltJudgeSdk, identity_of_caller, lifecycle_response, start_route,
@@ -22,8 +24,12 @@ use crate::auth::auth_identity::AuthContext;
 use crate::judge_targets::call::JudgeCall;
 use crate::judge_targets::sdk::JudgeSdk as _;
 use crate::routes::tests::state_for;
+use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_lifecycle::body::ShadowBodyError;
 use crate::shadow_eval_lifecycle::error::LifecycleError;
+use crate::shadow_eval_lifecycle::response::job_from_legs;
+use crate::shadow_eval_lifecycle::store::LegRow;
+use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_validation::error::AccessError;
 
 fn principal(user_id: &str, roles: &[Role]) -> Principal {
@@ -174,4 +180,34 @@ async fn the_unbuilt_judge_sdk_refuses_a_call() {
 async fn store_from_state_builds_a_store_from_the_configured_url() {
     let state = state_for(&configured_config());
     assert!(store_from_state(&state).is_some());
+}
+
+#[test]
+fn lifecycle_response_passes_a_started_job_through_with_its_status() {
+    let now = Utc::now();
+    let leg = LegRow {
+        id: "leg-1".to_owned(),
+        group_id: "job-1".to_owned(),
+        target_type: ShadowEvalTargetType::Key,
+        target_id: "key-1".to_owned(),
+        router_name: "shadow-router".to_owned(),
+        router_names: vec!["shadow-router".to_owned()],
+        models: Vec::new(),
+        direction: ShadowEvalDirection::Forward,
+        baseline_model: None,
+        judge_model: "judge-model".to_owned(),
+        shadow_percentage: 10.0_f64,
+        max_turns: 10_000,
+        max_budget: Some(Decimal::new(1000, 2)),
+        created_at: now,
+        ends_at: now + Duration::days(7),
+        stopped_at: None,
+        stopped_by: None,
+    };
+    let started = job_from_legs("job-1", &[leg], None)
+        .unwrap()
+        .response(now)
+        .unwrap();
+    let answered = lifecycle_response(Ok(started), StatusCode::CREATED);
+    assert_eq!(answered.status(), StatusCode::CREATED);
 }
