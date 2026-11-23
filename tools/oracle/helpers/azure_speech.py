@@ -235,7 +235,7 @@ def probe_headers(
     headers: dict[str, JsonValue] | None = None
     raised: dict[str, JsonValue] | None = None
     try:
-        raw_headers: dict[str, JsonValue] = AzureChatCompletion().get_headers(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1473-L1540
+        raw_headers: dict[str, JsonValue] = AzureChatCompletion().get_headers(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1473-L1540
             model=scenario.get("model"), api_key=scenario["api_key"],
             api_base=scenario["api_base"], api_version=scenario["api_version"],
             timeout=600.0, mode="chat" if mode is None else mode,
@@ -276,7 +276,7 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
             return audio_view(AUDIO.validate_python(input_value.get("audio_speech")))
         case "supported_params":
             supported_case = AUDIO.validate_python(input_value.get("supported_params"))
-            supported: list[str] = CONFIG.get_supported_openai_params(supported_case["model"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L136-L143
+            supported: list[str] = CONFIG.get_supported_openai_params(supported_case["model"])  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L136-L143
             speech = audio_view(supported_case)
             return {"supported": JSON.validate_python(supported), "speech": speech}
         case "native_speech_selection":
