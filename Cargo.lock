@@ -4214,6 +4214,7 @@ name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4221,6 +4222,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
@@ -4230,6 +4232,7 @@ dependencies = [
  "betterlite-tokenizer",
  "chrono",
  "http 1.5.0",
+ "mime_guess",
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
@@ -4241,6 +4244,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "url",
  "uuid",
 ]
 

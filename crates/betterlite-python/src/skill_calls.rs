@@ -1,6 +1,18 @@
+mod convert;
+mod error;
+mod hosted;
+mod native;
+mod session;
+mod transport;
+use self::error::NativeSkillError;
+use self::native::NativeSkillSession;
 use pyo3::prelude::*;
-
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The skill_calls family task adds its native functions here.
+// The classes betterlite.skills reaches for: one session per call and the exception every failure carries.
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<NativeSkillSession>()?;
+    module.add(
+        "NativeSkillError",
+        module.py().get_type::<NativeSkillError>(),
+    )?;
     Ok(())
 }
