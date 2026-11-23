@@ -15,10 +15,7 @@ use thiserror::Error;
 use self::resolve::resolve_call;
 use super::error::WsNativeError;
 use super::logging::WsNativeLogging;
-use super::request::{
-    build_litellm_metadata_for_ws, build_responses_websocket_request_defaults,
-    first_ws_frame_with_routed_input,
-};
+use super::request::{build_litellm_metadata_for_ws, routed_first_frame, ws_request_defaults};
 use crate::api::responses_provider_selection::provider_config::{ConfigLookup, ResponsesApiConfig};
 use crate::api::responses_provider_selection::resolution::ModelResolver;
 
@@ -156,10 +153,7 @@ where
     let deployment_kwargs = without_keys(call.kwargs, &RESPONSES_WS_ROUTING_HINT_KEYS);
     let remaining_kwargs = without_keys(call.kwargs, &EXPLICIT_KEYS);
     let first_message = match call.kwargs.get("first_message") {
-        Some(Json::Text(text)) => Some(first_ws_frame_with_routed_input(
-            text,
-            call.kwargs.get("input"),
-        )),
+        Some(Json::Text(text)) => Some(routed_first_frame(text, call.kwargs.get("input"))),
         None
         | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             None
@@ -177,10 +171,7 @@ where
         user_api_key_dict: call.user_api_key_dict,
         litellm_metadata: build_litellm_metadata_for_ws(call.kwargs)?,
         custom_llm_provider: resolved.provider.as_deref(),
-        request_defaults: build_responses_websocket_request_defaults(
-            &deployment_kwargs,
-            deps.auto_summary,
-        )?,
+        request_defaults: ws_request_defaults(&deployment_kwargs, deps.auto_summary)?,
         remaining_kwargs,
     };
     deps.handler

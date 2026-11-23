@@ -14,7 +14,7 @@ use crate::api::responses_provider_selection::provider_config::{
 };
 use crate::api::responses_stream_events::JsonShape;
 use crate::api::responses_ws_native::logging::WsCallUpdate;
-use crate::api::responses_ws_native::request::truthy;
+use crate::api::responses_ws_native::request::is_supplied;
 
 // the resolver, then the base/key chains, the logging update and the provider config, all before the handler
 pub(super) struct ResolvedCall {
@@ -37,7 +37,7 @@ where
         .resolve(call.model, call.api_base, call.api_key)?;
     let model = strip_responses_routing_prefix(&resolved.model);
     let provider = resolved.provider.as_deref();
-    let api_base = first_present([
+    let api_base = first_present(&[
         resolved.api_base.as_deref(),
         call.kwargs
             .get("api_base")
@@ -48,7 +48,7 @@ where
     let litellm_params = litellm_params_for_ws(call.kwargs, residency);
     record_update(deps, call, &model, provider, &litellm_params)?;
     let kwargs_key = kwarg_secret(call.kwargs);
-    let api_key = first_secret([
+    let api_key = first_secret(&[
         resolved.api_key.as_ref(),
         kwargs_key.as_ref(),
         deps.globals.api_key.as_ref(),
@@ -82,18 +82,21 @@ fn record_update<Client, Handler>(
     })
 }
 
-fn first_present<'value>(
-    values: impl IntoIterator<Item = Option<&'value str>>,
-) -> Option<&'value str> {
-    values.into_iter().flatten().find(|text| !text.is_empty())
+fn first_present<'value>(values: &[Option<&'value str>]) -> Option<&'value str> {
+    values
+        .iter()
+        .copied()
+        .flatten()
+        .find(|text| !text.is_empty())
 }
 
 // an empty key is falsey in Python's `or` chain, so it counts as unset here too
 fn first_secret<'secret>(
-    values: impl IntoIterator<Item = Option<&'secret SecretString>>,
+    values: &[Option<&'secret SecretString>],
 ) -> Option<&'secret SecretString> {
     values
-        .into_iter()
+        .iter()
+        .copied()
         .flatten()
         .find(|secret| !secret.expose_secret().is_empty())
 }
@@ -119,8 +122,7 @@ fn resolve_config(
         .and_then(|name| resolve_provider_config(configs, model, name, &JsonValue::Null, api_base))
 }
 
-// get_litellm_params always carries metadata, litellm_metadata and data_residency; the rest is the logging
-// object's own projection, which betterlite's logging state owns instead of this call
+// get_litellm_params carries metadata, litellm_metadata and data_residency; the logging state owns the rest
 fn litellm_params_for_ws(
     kwargs: &IndexMap<String, Json>,
     residency: Option<DataResidency>,
@@ -140,11 +142,11 @@ fn litellm_params_for_ws(
 
 // not metadata and a truthy litellm_metadata copies it; otherwise the caller's metadata is kept as given
 fn resolved_metadata(kwargs: &IndexMap<String, Json>) -> Json {
-    if let Some(value) = kwargs.get("metadata").filter(|value| truthy(value)) {
+    if let Some(value) = kwargs.get("metadata").filter(|value| is_supplied(value)) {
         return value.clone();
     }
     match kwargs.get("litellm_metadata") {
-        Some(litellm @ Json::Object(_)) if truthy(litellm) => litellm.clone(),
+        Some(litellm @ Json::Object(_)) if is_supplied(litellm) => litellm.clone(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
         | Some(Json::Object(_))
         | None => kwargs.get("metadata").cloned().unwrap_or(Json::Null),

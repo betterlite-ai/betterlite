@@ -83,6 +83,7 @@ pub(super) fn rate_limited(message: &str) -> ErrorClass {
     }))
 }
 
+#[derive(Default)]
 pub(super) struct TestClient {
     pub(super) sent: Mutex<Vec<String>>,
     pub(super) incoming: Mutex<VecDeque<Result<String, TestError>>>,
@@ -92,21 +93,14 @@ pub(super) struct TestClient {
 
 impl TestClient {
     pub(super) fn new(frames: Vec<&str>) -> Self {
-        Self::with_results(
+        let mut client = Self::default();
+        client.incoming = Mutex::new(
             frames
                 .into_iter()
                 .map(|frame| Ok(frame.to_owned()))
                 .collect(),
-        )
-    }
-
-    pub(super) fn with_results(results: VecDeque<Result<String, TestError>>) -> Self {
-        Self {
-            sent: Mutex::new(Vec::new()),
-            incoming: Mutex::new(results),
-            fail_sends: false,
-            yield_first: false,
-        }
+        );
+        client
     }
 
     pub(super) fn sent(&self) -> Vec<String> {
@@ -130,31 +124,33 @@ impl ResponsesClientWebSocket for TestClient {
     }
 
     fn receive_text(&self) -> impl Future<Output = Result<String, TestError>> + Send + '_ {
-        let next = lock(&self.incoming)
-            .pop_front()
-            .unwrap_or_else(|| Err(TestError(String::from("the client socket is closed"))));
         async move {
             if self.yield_first {
                 yield_now().await;
             }
-            next
+            lock(&self.incoming)
+                .pop_front()
+                .unwrap_or_else(|| Err(TestError(String::from("the client socket is closed"))))
         }
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum ReceiveMode {
+    #[default]
     Scripted,
     UnsupportedDecode,
     Blocked,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum CloseMode {
+    #[default]
     Graceful,
     Fails,
 }
 
+#[derive(Default)]
 pub(super) struct ScriptedBackend {
     pub(super) sent: Mutex<Vec<String>>,
     pub(super) recv_raw_script: ReceiveScript,
@@ -165,13 +161,7 @@ pub(super) struct ScriptedBackend {
 
 impl ScriptedBackend {
     pub(super) fn new() -> Self {
-        Self {
-            sent: Mutex::new(Vec::new()),
-            recv_raw_script: Mutex::new(VecDeque::new()),
-            recv_script: Mutex::new(VecDeque::new()),
-            receive: ReceiveMode::Scripted,
-            close: CloseMode::Graceful,
-        }
+        Self::default()
     }
 
     pub(super) fn text(&self, frame: &str) -> &Self {
@@ -214,34 +204,23 @@ fn next_message(script: &ReceiveScript) -> Received {
     })
 }
 
+async fn frame(mode: ReceiveMode, script: &ReceiveScript, raw: bool) -> Received {
+    match (mode, raw) {
+        (ReceiveMode::Blocked, _) => pending().await,
+        (ReceiveMode::UnsupportedDecode, true) => Err(BackendError::UnsupportedDecode),
+        (ReceiveMode::UnsupportedDecode | ReceiveMode::Scripted, _) => next_message(script),
+    }
+}
+
 impl NativeWsBackend for ScriptedBackend {
     type Error = TestError;
 
-    fn recv_raw(
-        &self,
-    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<TestError>>> + Send + '_
-    {
-        async move {
-            match self.receive {
-                ReceiveMode::Blocked => pending().await,
-                ReceiveMode::UnsupportedDecode => Err(BackendError::UnsupportedDecode),
-                ReceiveMode::Scripted => next_message(&self.recv_raw_script),
-            }
-        }
+    fn recv_raw(&self) -> impl Future<Output = Received> + Send + '_ {
+        frame(self.receive, &self.recv_raw_script, true)
     }
 
-    fn recv(
-        &self,
-    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<TestError>>> + Send + '_
-    {
-        async move {
-            match self.receive {
-                ReceiveMode::Blocked => pending().await,
-                ReceiveMode::UnsupportedDecode | ReceiveMode::Scripted => {
-                    next_message(&self.recv_script)
-                }
-            }
-        }
+    fn recv(&self) -> impl Future<Output = Received> + Send + '_ {
+        frame(self.receive, &self.recv_script, false)
     }
 
     fn send<'call>(
@@ -331,20 +310,13 @@ pub(super) struct RecordingLogging {
     pub(super) inputs: Mutex<Vec<Vec<Event>>>,
     pub(super) success: Mutex<Vec<Vec<Event>>>,
     pub(super) partial: Mutex<Vec<(Usage, f64)>>,
-    pub(super) costs: Mutex<Vec<(Option<String>, Option<f64>)>>,
+    pub(super) charged: Mutex<Vec<(Option<String>, Option<f64>)>>,
     pub(super) failures: Mutex<Vec<ErrorClass>>,
     pub(super) tracebacks: Mutex<Vec<String>>,
-    pub(super) price: Option<f64>,
+    pub(super) reported: Option<f64>,
 }
 
 impl RecordingLogging {
-    pub(super) fn priced(price: f64) -> Self {
-        Self {
-            price: Some(price),
-            ..Self::default()
-        }
-    }
-
     pub(super) fn effects(&self) -> Vec<String> {
         lock(&self.effects).clone()
     }
@@ -380,8 +352,8 @@ impl WsNativeLogging for RecordingLogging {
 
     fn response_cost(&self, billing: &RealtimeBilling) -> Option<f64> {
         lock(&self.effects).push(String::from("cost"));
-        lock(&self.costs).push((billing.service_tier.clone(), self.price));
-        self.price
+        lock(&self.charged).push((billing.service_tier.clone(), self.reported));
+        self.reported
     }
 
     fn record_partial_usage(&self, usage: &Usage, response_cost: f64) {
@@ -396,6 +368,7 @@ impl WsNativeLogging for RecordingLogging {
     }
 }
 
+#[derive(Default)]
 pub(super) struct FakeResolution {
     pub(super) model: String,
     pub(super) provider: Option<String>,
@@ -405,12 +378,10 @@ pub(super) struct FakeResolution {
 
 impl FakeResolution {
     pub(super) fn openai() -> Self {
-        Self {
-            model: String::from("gpt-4o"),
-            provider: Some(String::from("openai")),
-            api_base: None,
-            api_key: None,
-        }
+        let mut resolution = Self::default();
+        resolution.model = String::from("gpt-4o");
+        resolution.provider = Some(String::from("openai"));
+        resolution
     }
 }
 
@@ -565,6 +536,7 @@ impl NativeWsProviderHandler<TestClient> for RecordingHandler {
     }
 }
 
+#[derive(Default)]
 pub(super) struct Entry {
     pub(super) model: String,
     pub(super) api_base: Option<String>,
@@ -579,17 +551,10 @@ pub(super) struct Entry {
 
 impl Entry {
     pub(super) fn new() -> Self {
-        Self {
-            model: String::from("gpt-4o"),
-            api_base: None,
-            api_key: None,
-            timeout: None,
-            kwargs: Event::new(),
-            resolution: FakeResolution::openai(),
-            globals: LiteLlmGlobals::default(),
-            openai_api_key: None,
-            configs: FakeConfigs::default(),
-        }
+        let mut entry = Self::default();
+        entry.model = String::from("gpt-4o");
+        entry.resolution = FakeResolution::openai();
+        entry
     }
 
     pub(super) async fn request(&self) -> RecordedRequest {

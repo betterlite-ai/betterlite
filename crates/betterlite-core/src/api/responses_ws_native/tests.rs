@@ -21,8 +21,8 @@ use crate::api::responses_ws_native::logging::traceback_text;
 use crate::api::responses_ws_native::relay::ResponsesWsRelay;
 use crate::api::responses_ws_native::relay::backend::BackendError;
 use crate::api::responses_ws_native::request::{
-    build_litellm_metadata_for_ws, build_responses_websocket_request_defaults,
-    deployment_reasoning_default, first_ws_frame_with_routed_input,
+    build_litellm_metadata_for_ws, deployment_reasoning_default, routed_first_frame,
+    ws_request_defaults,
 };
 use support::{
     CloseMode, EchoGuard, Entry, Event, FakeConfigs, FakeResolution, ReceiveMode, RecordingHandler,
@@ -135,36 +135,27 @@ async fn native_ws_response_create() {
 
 fn assert_frame_routing() {
     let routed = Json::Text(String::from("routed"));
+    assert_eq!(routed_first_frame("not-json", Some(&routed)), "not-json");
+    assert_eq!(routed_first_frame("null", Some(&routed)), "null");
     assert_eq!(
-        first_ws_frame_with_routed_input("not-json", Some(&routed)),
-        "not-json"
-    );
-    assert_eq!(
-        first_ws_frame_with_routed_input("null", Some(&routed)),
-        "null"
-    );
-    assert_eq!(
-        first_ws_frame_with_routed_input(
+        routed_first_frame(
             r#"{"type":"response.create","input":"old","other":1}"#,
             Some(&routed)
         ),
         r#"{"type":"response.create","input":"routed","other":1}"#
     );
     assert_eq!(
-        first_ws_frame_with_routed_input(
+        routed_first_frame(
             r#"{"type":"response.create","response":{"input":"old"},"other":1}"#,
             Some(&routed)
         ),
         r#"{"type":"response.create","response":{"input":"routed"},"other":1}"#
     );
     let matching = r#"{"type":"response.create","input":"routed"}"#;
-    assert_eq!(
-        first_ws_frame_with_routed_input(matching, Some(&routed)),
-        matching
-    );
+    assert_eq!(routed_first_frame(matching, Some(&routed)), matching);
     let nested_matching = r#"{"type":"response.create","response":{"input":"routed"}}"#;
     assert_eq!(
-        first_ws_frame_with_routed_input(nested_matching, Some(&routed)),
+        routed_first_frame(nested_matching, Some(&routed)),
         nested_matching
     );
 }
@@ -193,7 +184,7 @@ fn assert_deployment_defaults() {
     let deployment = object(
         r#"{"temperature":0.5,"reasoning_effort":"high","extra_body":{"reasoning":{"effort":"low"},"service_tier":"flex"}}"#,
     );
-    let defaults = build_responses_websocket_request_defaults(&deployment, false).unwrap();
+    let defaults = ws_request_defaults(&deployment, false).unwrap();
     assert_eq!(defaults.fill_missing.get("temperature"), Some(&json("0.5")));
     assert_eq!(
         defaults.fill_missing.get("reasoning"),
@@ -220,7 +211,7 @@ fn assert_malformed_inputs() {
         Err(WsNativeError::AttributeError { kind: "list" })
     ));
     assert!(matches!(
-        build_responses_websocket_request_defaults(&object(r#"{"extra_body":[1]}"#), false),
+        ws_request_defaults(&object(r#"{"extra_body":[1]}"#), false),
         Err(WsNativeError::Validation { .. })
     ));
 }
@@ -696,7 +687,7 @@ async fn failure_is_mapped_and_billed() {
     assert_eq!(partial[0].0.total_tokens, 7);
     assert_eq!(partial[0].1, 0.0);
     assert_eq!(
-        lock(&logging.costs).clone(),
+        lock(&logging.charged).clone(),
         vec![(Some(String::from("flex")), None)]
     );
     let failures = lock(&logging.failures).clone();

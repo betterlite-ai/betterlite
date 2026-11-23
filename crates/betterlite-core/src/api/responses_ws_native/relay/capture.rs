@@ -20,7 +20,7 @@ use crate::api::responses_ws_frame_policy::{
 };
 use crate::api::responses_ws_native::error::WsNativeError;
 use crate::api::responses_ws_native::logging::{WsNativeLogging, traceback_text};
-use crate::api::responses_ws_native::request::{json_object, truthy};
+use crate::api::responses_ws_native::request::{is_supplied, json_object};
 use crate::cost::realtime::RealtimeBilling;
 use crate::cost::realtime::error::RealtimeCostError;
 use crate::cost::realtime::responses_ws::{collect_usage, partition_by_service_tier};
@@ -185,26 +185,22 @@ fn collect_item(item: &Json, collected: &mut Vec<IndexMap<String, Json>>) {
         Some(Json::Text(text)) => collected.push(user_message(Json::Text(text.clone()))),
         Some(Json::List(blocks)) => {
             for block in blocks {
-                collect_block(block, collected);
+                let Json::Object(block_fields) = block else {
+                    continue;
+                };
+                if !matches!(block_fields.get("type"), Some(Json::Text(kind)) if kind == "input_text")
+                {
+                    continue;
+                }
+                let Some(text) = block_fields.get("text") else {
+                    continue;
+                };
+                if is_supplied(text) {
+                    collected.push(user_message(text.clone()));
+                }
             }
         }
         None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {}
-    }
-}
-
-// the text keeps the JSON value it arrived as; a falsey one contributes nothing
-fn collect_block(block: &Json, collected: &mut Vec<IndexMap<String, Json>>) {
-    let Json::Object(fields) = block else {
-        return;
-    };
-    if !matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "input_text") {
-        return;
-    }
-    let Some(text) = fields.get("text") else {
-        return;
-    };
-    if truthy(text) {
-        collected.push(user_message(text.clone()));
     }
 }
 

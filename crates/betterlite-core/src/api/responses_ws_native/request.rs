@@ -10,7 +10,7 @@ use crate::api::responses_parameters::requested::requested_optional_params;
 
 // Python truthiness over JSON: null, false, zero, "" and empty containers are false
 #[must_use]
-pub fn truthy(value: &Json) -> bool {
+pub fn is_supplied(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
@@ -22,7 +22,7 @@ pub fn truthy(value: &Json) -> bool {
 }
 
 #[must_use]
-pub(super) fn python_type_name(value: &Json) -> &'static str {
+pub(super) fn json_type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",
@@ -44,7 +44,7 @@ pub(super) fn json_object(message: &str) -> Result<Option<IndexMap<String, Json>
     match serde_json::from_str::<Json>(message) {
         Ok(Json::Object(fields)) => Ok(Some(fields)),
         Ok(other) => Err(WsNativeError::AttributeError {
-            kind: python_type_name(&other),
+            kind: json_type_name(&other),
         }),
         Err(_) => Ok(None),
     }
@@ -63,8 +63,8 @@ fn mapping_slot<'value>(
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(fields)) => Ok(Some(fields)),
-        Some(other) if truthy(other) => {
-            let kind = python_type_name(other);
+        Some(other) if is_supplied(other) => {
+            let kind = json_type_name(other);
             Err(match error {
                 SlotError::TypeError => WsNativeError::TypeError { kind },
                 SlotError::AttributeError => WsNativeError::AttributeError { kind },
@@ -84,8 +84,8 @@ pub fn build_litellm_metadata_for_ws(
     let caller_metadata = mapping_slot(kwargs.get("metadata"), SlotError::AttributeError)?;
     let guardrails = caller_metadata
         .and_then(|fields| fields.get("guardrails"))
-        .filter(|value| truthy(value))
-        .or_else(|| kwargs.get("guardrails").filter(|value| truthy(value)));
+        .filter(|value| is_supplied(value))
+        .or_else(|| kwargs.get("guardrails").filter(|value| is_supplied(value)));
     if let Some(guardrails) = guardrails {
         metadata.insert(String::from("guardrails"), guardrails.clone());
     }
@@ -128,10 +128,7 @@ fn reasoning_effort_object(effort: &Json, auto_summary: bool) -> Json {
 
 // the routed input replaces a nested response input when one exists, otherwise the flat input
 #[must_use]
-pub fn first_ws_frame_with_routed_input(
-    first_message: &str,
-    routed_input: Option<&Json>,
-) -> String {
+pub fn routed_first_frame(first_message: &str, routed_input: Option<&Json>) -> String {
     let Ok(Json::Object(frame)) = serde_json::from_str::<Json>(first_message) else {
         return first_message.to_owned();
     };
@@ -171,7 +168,7 @@ fn rewrite_flat(frame: &IndexMap<String, Json>, routed: &Json) -> String {
     serde_json::to_string(&Json::Object(updated_frame)).unwrap_or_default()
 }
 
-pub fn build_responses_websocket_request_defaults(
+pub fn ws_request_defaults(
     deployment_kwargs: &IndexMap<String, Json>,
     auto_summary: bool,
 ) -> Result<WsRequestDefaults<Json>, WsNativeError> {
