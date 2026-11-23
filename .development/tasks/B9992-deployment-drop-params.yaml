@@ -77,6 +77,11 @@ description: >-
   deployment's true answers OperationError::Parameters with ParameterError::Unsupported) to anthropic_dispatch_cases.
 scope:
   paths:
+  - "crates/betterlite-server/src/tests.rs"
+  - "crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs"
+  - "crates/betterlite-server/src/routes/embeddings/tests.rs"
+  - "crates/betterlite-provider/src/provider.rs"
+  - "crates/betterlite-provider/src/bedrock_dispatch_contract.rs"
   - "crates/betterlite-provider/src/openai_dispatch/recovery/tests.rs"
   - "crates/betterlite-provider/src/legacy_dispatch/tests.rs"
   - "crates/betterlite-provider/src/hosted_platform_dispatch/perplexity/tests.rs"
