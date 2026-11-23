@@ -1,0 +1,14 @@
+kind: probe
+name: request-scheduler-unhealthy-head-may-run
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      request_scheduler:
+        timeout: "1.0"
+        steps:
+          - {op: add, priority: 255, request_id: behind}
+          - {op: schedule, priority: 0, request_id: only, healthy: 0}
+          - {op: queue}
+compare:
+  ignore: []

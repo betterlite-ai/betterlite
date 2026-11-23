@@ -1,0 +1,9 @@
+kind: helper
+name: startup-checks-budget-warning-without-db
+call:
+  b8373:
+    operation: budget_warning
+    max_budget: 10.0
+    database_configured: false
+env: {}
+compare: {ignore: []}

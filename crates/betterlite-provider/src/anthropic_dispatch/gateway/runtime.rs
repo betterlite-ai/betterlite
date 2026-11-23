@@ -90,7 +90,6 @@ pub struct AnthropicRuntime {
     pub legacy_defaults: OptionValues,
     pub budgets: Budgets,
     pub max_tokens: i64,
-    pub global_drop_params: bool,
     pub request_flags: RequestFlags,
     pub redactor: Redactor,
     pub engine: Engine,
@@ -136,7 +135,6 @@ impl AnthropicRuntime {
             legacy_defaults: legacy_defaults(config),
             budgets: config.sections.anthropic_capability_catalog,
             max_tokens: options.default_chat_max_tokens,
-            global_drop_params: config.sections.drop_params.policy.global_drop_params,
             request_flags: request_flags(config),
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
             engine: engine()?,
@@ -250,13 +248,14 @@ fn fetcher(
         &policy.user_url_allowed_hosts,
         &Verification::Enabled,
     );
+    let max_download_size_mb = config.sections.image_url_download.max_download_size_mb;
     let fetcher = Fetcher::new(
         client.clone(),
         UserUrlFetcher {
             validator,
             validation: policy.user_url_validation,
         },
-        config.sections.image_url_download.max_download_size_mb,
+        max_download_size_mb,
         Arc::new(|| {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

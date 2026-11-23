@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::str;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -13,6 +13,9 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::Response;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_http::error::HttpError;
+use betterlite_openai::stream::SseParser;
+use futures_util::stream::{self, StreamExt as _};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -22,13 +25,17 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tower::ServiceExt as _;
 
+use super::bridge::{ChatChunks, ChunkUsage};
 use super::routes;
 use crate::route_read_through::ModelReadThrough;
+use crate::routes::completions::streaming::pump::FrameSource as _;
 use crate::routes::router;
 use crate::routes::tests::state_for;
 use crate::server::chat_setup::chat_executor;
 use crate::state::ServerState;
 use crate::state::shared::Shared;
+
+mod anthropic;
 
 const ANSWER: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":" hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
 
@@ -870,4 +877,28 @@ async fn unknown_model_redacts_a_key_like_model() {
         .map(|fields| fields.error);
     assert_eq!(repeated, None);
     assert!(!reply.error.message.contains("sk-secretsecretsecretsecret"));
+}
+
+// The Anthropic frame reader reports the end only after its byte stream ends, so the route closes the stream with [DONE].
+#[tokio::test]
+async fn a_bridged_anthropic_stream_ends_after_its_bytes() {
+    let frame: &[u8] = b"data: {\"choices\":[{\"index\":0,\"delta\":{}}]}\n\n";
+    let first: Result<Vec<u8>, HttpError> = Ok(frame.to_vec());
+    let second: Result<Vec<u8>, HttpError> = Ok(frame.to_vec());
+    let mut chunks = ChatChunks {
+        bytes: stream::iter([first, second]).boxed(),
+        parser: SseParser::default(),
+        model: String::from("chat-model"),
+        usage: ChunkUsage::Anthropic,
+    };
+    let mut pending = VecDeque::new();
+    assert!(!chunks.fill(&mut pending).await.expect("the first frame"));
+    assert!(!chunks.fill(&mut pending).await.expect("the second frame"));
+    assert!(
+        chunks
+            .fill(&mut pending)
+            .await
+            .expect("the end of the bytes")
+    );
+    assert_eq!(pending.len(), 2);
 }

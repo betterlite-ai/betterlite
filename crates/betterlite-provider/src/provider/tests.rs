@@ -20,7 +20,6 @@ use super::speech_providers::SpeechProviders;
 use super::subscription::Subscription;
 use crate::anthropic_dispatch::Anthropic;
 use crate::anthropic_dispatch::base::Surface;
-use crate::azure_dispatch::Azure;
 use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
 use crate::embedding_rerank_providers::EmbeddingRerank;
@@ -84,7 +83,6 @@ fn client() -> ProxiedClient {
 }
 
 #[rstest]
-#[case::azure(Provider::Azure(Azure), "azure")]
 #[case::anthropic_text(
     Provider::Anthropic(Anthropic {
         surface: Surface::Legacy
@@ -145,6 +143,16 @@ async fn provider_framework_tests_behavior(#[case] provider: Provider, #[case] n
 fn legacy_slugs_select_a_legacy_provider(#[case] slug: &str, #[case] legacy: Legacy) {
     assert_eq!(Provider::from_slug(slug).unwrap(), Provider::Legacy(legacy));
     assert_eq!(Provider::from_slug(slug).unwrap().name(), "legacy");
+}
+
+// Both Azure slugs build the Azure adapter, which carries the composition the slug resolves.
+#[rstest]
+#[case::azure("azure")]
+#[case::azure_text("azure_text")]
+fn the_azure_slugs_build_the_azure_adapter(#[case] slug: &str) {
+    let provider = Provider::from_slug(slug).expect("the azure slug resolves");
+    assert!(matches!(&provider, Provider::Azure(_)));
+    assert_eq!(provider.name(), "azure");
 }
 
 #[test]

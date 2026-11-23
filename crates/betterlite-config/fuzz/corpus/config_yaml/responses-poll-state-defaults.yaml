@@ -1,0 +1,6 @@
+litellm_settings:
+  responses:
+    background_mode:
+      polling_via_cache: false
+      native_background_mode: []
+      ttl: 3600

@@ -1,0 +1,7 @@
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini
+general_settings:
+  use_spend_logs_partitioning: always
+  maximum_spend_logs_retention_period: 30d

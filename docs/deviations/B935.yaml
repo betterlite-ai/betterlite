@@ -1,0 +1,24 @@
+task: B935
+deviations:
+  - what: Reading, updating or cancelling another caller's polling state, or an ownerless legacy record while auth is enabled, returns 403 with type=permission_error, param=null and code="403"; LiteLLM's handler has no owner check at all.
+    why: The architect's polling-ownership decision applies B929's identified-owner policy, and B938 maps the typed denial to the same 403 envelope Responses ID security uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L40-L82
+  - what: Invalid polling configuration shapes such as ttl="oops" or native_background_mode=7 fail startup with the full configuration path of the key; LiteLLM reads the same values from a plain dictionary and fails only when Redis is used.
+    why: B002's typed configuration boundary rejects values that cannot form the configured operation, and the task states this deviation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6552-L6566
+  - what: A Redis read or write failure surfaces as a typed error; LiteLLM's RedisCache.async_get_cache swallows every exception and returns None, and async_set_cache swallows every exception after logging, so a broken Redis looks like a cache miss and a failed write still logs success.
+    why: A cache outage that silently turns cancels into no-ops and loses state is a lost-data failure; betterlite reports it to the caller instead of returning success.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1676-L1693
+  - what: Damaged cached state behaves differently on both routes; an update whose stored state has no "status" key or a non-list "output" logs None and zero items where LiteLLM raises KeyError or TypeError after the write, and a get of valid JSON that is not an object or holds NaN or Infinity is rejected by the bounded decoder where LiteLLM returns it as-is.
+    why: The write has already happened when LiteLLM's debug line runs, so it turns a successful update into a 500; B1087's decode boundary only admits response objects and standard JSON numbers, so a damaged entry fails loudly instead of leaking a non-object state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L204-L226
+  - what: A deployment whose litellm_params.model is present but null aborts LiteLLM's whole alias scan through the broad except, logging "Could not resolve provider"; betterlite treats null as absent and keeps scanning later indices, so a later matching deployment can enable polling.
+    why: A null value is a wrong type for the declared str field, and docs/compatibility.md reads a value of the wrong type as an error rather than as a Python TypeError caught by a broad except.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L296-L317
+kept_bugs:
+  - what: cancel_polling returns true even when no Redis cache is configured and when the cached state is missing, and delete_polling returns true after async_delete_cache even when no key existed and false only when no cache is configured; neither signals a running provider.
+    why: A working proxy setup polls after background requests and treats the booleans as accepted, and clients call delete for idempotent cleanup; the task requires the pinned booleans.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L228-L249
+  - what: A truthy selector that is neither "all" nor a provider list, such as true or a plain string, passes the background/Redis gate and then selects nothing while still allowing the native_background_mode skip to log; betterlite loads it as Unrecognized and behaves the same.
+    why: The task and the source accept these scalar values without error, and a deployment may already pass true.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L275-L293

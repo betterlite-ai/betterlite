@@ -1,0 +1,8 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+
+router_settings:
+  polling_interval: 0.05
+  default_priority: 300

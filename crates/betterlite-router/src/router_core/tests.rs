@@ -5,13 +5,28 @@ mod boundaries;
 pub(crate) mod support;
 
 use std::future::{Future, Ready, ready};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_models::decisions::Json;
+use betterlite_prompts::arguments::json::Object;
 use rstest::rstest;
 
-use self::support::{Fixture, RequestSetup, run_route, seeded, with_info};
+use self::support::{
+    Fixture, RequestSetup, deployment, picked, run_route, seeded, text, with_info,
+};
+use crate::affinity_claims::identity::AffinityFlag;
 use crate::context::RouteStage;
+use crate::deployment_affinity::DeploymentAffinity;
+use crate::deployment_affinity::tests::support::{
+    Fixture as AffinityFixture, pin as affinity_pin, settings as affinity_settings, user_pin,
+};
 use crate::generalization_integration::model_generalizations::ModelGeneralizations;
+use crate::prompt_affinity::service::PromptAffinity;
+use crate::prompt_affinity::tests::support::{
+    FakePins, MARKED_MESSAGES, cache_key, json_messages, messages, pin as prompt_pin,
+    service as prompt_service,
+};
 use crate::router_core::services::RouteServices;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 
@@ -65,6 +80,97 @@ async fn deployment_id_generalized() {
         result.deployment.model_info.get("max_tokens"),
         Some(Json::Number(number)) if number.as_u64() == Some(100)
     ));
+}
+
+// The B324 stage as the registered check: the router consults it once, and the caller's pin narrows the pool.
+async fn deployment_affinity_narrows_the_pool() {
+    let affinity = AffinityFixture::new(affinity_settings(&[AffinityFlag::Deployment]), &[]);
+    affinity.seed(&user_pin("key"), &affinity_pin("a"), 600);
+    let services = AffinityRegistered {
+        affinity: affinity.service,
+        prompt: None,
+        affinity_calls: AtomicUsize::new(0),
+        prompt_calls: AtomicUsize::new(0),
+    };
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "a", &[]),
+        deployment("gpt-4o", "b", &[]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.request_kwargs = Some(caller_arguments());
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &setup,
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+    assert_eq!(services.affinity_calls.load(Ordering::SeqCst), 1);
+}
+
+// The deployment affinity callback is registered before the prompt caching one, so its pin decides when both match.
+async fn deployment_affinity_narrows_before_prompt_affinity() {
+    let affinity = AffinityFixture::new(affinity_settings(&[AffinityFlag::Deployment]), &[]);
+    affinity.seed(&user_pin("key"), &affinity_pin("a"), 600);
+    let pins = Arc::new(FakePins::default());
+    pins.seed(
+        &cache_key(&json_messages(MARKED_MESSAGES), None).unwrap(),
+        prompt_pin("b"),
+    );
+    let services = AffinityRegistered {
+        affinity: affinity.service,
+        prompt: Some(prompt_service(pins, 2000, false)),
+        affinity_calls: AtomicUsize::new(0),
+        prompt_calls: AtomicUsize::new(0),
+    };
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "a", &[("model", text("claude-min"))]),
+        deployment("gpt-4o", "b", &[("model", text("claude-min"))]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.request_kwargs = Some(caller_arguments());
+    setup.messages = Some(messages(MARKED_MESSAGES));
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &setup,
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+    assert_eq!(services.affinity_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(services.prompt_calls.load(Ordering::SeqCst), 1);
+}
+
+// The router's services with both optional callbacks registered, each counting its consultations.
+struct AffinityRegistered {
+    affinity: DeploymentAffinity,
+    prompt: Option<PromptAffinity>,
+    affinity_calls: AtomicUsize,
+    prompt_calls: AtomicUsize,
+}
+
+impl RouteServices for AffinityRegistered {
+    fn deployment_affinity(&self) -> Option<&DeploymentAffinity> {
+        self.affinity_calls.fetch_add(1, Ordering::SeqCst);
+        Some(&self.affinity)
+    }
+
+    fn prompt_affinity(&self) -> Option<&PromptAffinity> {
+        self.prompt_calls.fetch_add(1, Ordering::SeqCst);
+        self.prompt.as_ref()
+    }
+}
+
+fn caller_arguments() -> Object {
+    serde_json::from_str(r#"{"metadata": {"user_api_key_hash": "key"}}"#).unwrap()
 }
 
 #[rstest]
@@ -125,8 +231,6 @@ where
 #[case::routing_group_members_missing_from_the_pool_leave_none(
     boundaries::routing_group_members_missing_from_the_pool_leave_none()
 )]
-#[case::stage_deployment_affinity(boundaries::stage_skips(RouteStage::DeploymentAffinity))]
-#[case::stage_request_scheduler(boundaries::stage_skips(RouteStage::RequestScheduler))]
 #[case::stage_routing_plugins(boundaries::stage_skips(RouteStage::RoutingPlugins))]
 #[case::stage_responses_stream_fallback(boundaries::stage_skips(
     RouteStage::ResponsesStreamFallback
@@ -136,6 +240,10 @@ where
 #[case::no_deployment_all_in_cooldown(boundaries::no_deployment_all_in_cooldown())]
 #[case::default_min_cooldown(settled(boundaries::default_min_cooldown))]
 #[case::cancelled_callback(boundaries::cancelled_callback())]
+#[case::deployment_affinity_narrows_the_pool(deployment_affinity_narrows_the_pool())]
+#[case::deployment_affinity_narrows_before_prompt_affinity(
+    deployment_affinity_narrows_before_prompt_affinity()
+)]
 #[case::prompt_affinity_narrows_the_pool(boundaries::prompt_affinity_narrows_the_pool())]
 #[case::prompt_affinity_before_pre_call_checks(boundaries::prompt_affinity_before_pre_call_checks())]
 #[case::empty_group(boundaries::empty_group())]

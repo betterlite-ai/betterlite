@@ -1,0 +1,4 @@
+router_settings:
+  optional_pre_call_checks:
+    - deployment_affinity
+  deployment_affinity_ttl_seconds: not-a-number
