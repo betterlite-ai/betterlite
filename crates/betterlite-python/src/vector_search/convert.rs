@@ -72,12 +72,12 @@ pub(crate) enum ConvertError {
 }
 
 // the boundary every native method crosses: a wire of the shape that method takes, and no attached file
-pub(crate) fn parse<'text, T>(text: &'text str, blobs: &[Vec<u8>]) -> Result<T, ConvertError>
+pub(crate) fn parse<'text, T>(text: &'text str, attached: usize) -> Result<T, ConvertError>
 where
     T: Deserialize<'text>,
 {
-    if !blobs.is_empty() {
-        return Err(ConvertError::Files { count: blobs.len() });
+    if attached != 0 {
+        return Err(ConvertError::Files { count: attached });
     }
     serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
 }
@@ -157,7 +157,7 @@ fn payload_of(sdk: &SdkFailure, provider: &str) -> NativeErrorPayload {
     }
 }
 
-fn provider_of(error: &VectorStoreSearchError) -> &str {
+const fn provider_of(error: &VectorStoreSearchError) -> &str {
     match error {
         VectorStoreSearchError::Search { provider, .. }
         | VectorStoreSearchError::Create { provider, .. }

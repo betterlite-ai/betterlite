@@ -2,6 +2,7 @@
 
 use betterlite_core::api::vector_store_search::error::VectorStoreSearchError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use super::super::error::raise;
@@ -70,7 +71,7 @@ fn a_refused_executor_is_a_plain_type_error() {
             &VectorStoreSearchError::InvalidEmbeddingExecutor,
             &redactor,
         );
-        let class = py.get_type::<pyo3::exceptions::PyTypeError>();
+        let class = py.get_type::<PyTypeError>();
         assert!(error.get_type(py).is(&class));
     });
 }

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use pyo3::PyErr;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
 use super::convert::{ConvertError, CreateWire, SearchWire, parse};
@@ -28,30 +29,40 @@ impl NativeVectorSearchSession {
     }
 
     // the synchronous create: one attempt on the runtime, blocking this thread with the GIL released
-    fn create(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let wire: CreateWire = parse(request, &blobs)?;
+    fn create(&self, py: Python<'_>, request: &str, blobs: &Bound<'_, PyList>) -> PyResult<String> {
+        let wire: CreateWire = parse(request, blobs.len())?;
         let pending = Pending::Create(wire);
         settled(py, &self.core, pending)
     }
 
     // the synchronous search, with the query sent as the text or the list the caller gave
-    fn search(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let wire: SearchWire = parse(request, &blobs)?;
+    fn search(&self, py: Python<'_>, request: &str, blobs: &Bound<'_, PyList>) -> PyResult<String> {
+        let wire: SearchWire = parse(request, blobs.len())?;
         let pending = Pending::Search(wire);
         settled(py, &self.core, pending)
     }
 
     // the awaitable create: the same call on the asyncio loop's runtime, handed back as a coroutine
-    fn acreate(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
-        let wire: CreateWire = parse(request, &blobs)?;
+    fn acreate(
+        &self,
+        py: Python<'_>,
+        request: &str,
+        blobs: &Bound<'_, PyList>,
+    ) -> PyResult<Py<PyAny>> {
+        let wire: CreateWire = parse(request, blobs.len())?;
         let pending = Pending::Create(wire);
         let answer = awaitable(py, Arc::clone(&self.core), pending)?;
         Ok(answer.unbind())
     }
 
     // the awaitable search: the same call on the asyncio loop's runtime, handed back as a coroutine
-    fn asearch(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
-        let wire: SearchWire = parse(request, &blobs)?;
+    fn asearch(
+        &self,
+        py: Python<'_>,
+        request: &str,
+        blobs: &Bound<'_, PyList>,
+    ) -> PyResult<Py<PyAny>> {
+        let wire: SearchWire = parse(request, blobs.len())?;
         let pending = Pending::Search(wire);
         let answer = awaitable(py, Arc::clone(&self.core), pending)?;
         Ok(answer.unbind())
@@ -66,15 +77,15 @@ fn settled(py: Python<'_>, core: &SessionCore, pending: Pending) -> PyResult<Str
 }
 
 // The awaitable path: the same call driven by the asyncio loop's runtime and handed back as a coroutine
-fn awaitable<'py>(
-    py: Python<'py>,
+fn awaitable(
+    py: Python<'_>,
     core: Arc<SessionCore>,
     pending: Pending,
-) -> PyResult<Bound<'py, PyAny>> {
+) -> PyResult<Bound<'_, PyAny>> {
     future_into_py(py, async move {
         let body = Box::pin(core.run(pending))
             .await
-            .map_err(|error| Python::attach(|py| raise(py, &error, &core.redactor)))?;
+            .map_err(|error| Python::attach(|attached| raise(attached, &error, &core.redactor)))?;
         to_text(&body)
     })
 }

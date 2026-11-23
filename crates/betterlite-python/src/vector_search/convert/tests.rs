@@ -41,7 +41,7 @@ fn exception(status_code: u16) -> BaseLlmException {
 
 #[test]
 fn request_create_call_keeps_every_field() {
-    let wire: CreateWire = parse(CREATE_TEXT, &[]).expect("the create wire parses");
+    let wire: CreateWire = parse(CREATE_TEXT, 0).expect("the create wire parses");
     let call = create_call(&wire);
     assert_eq!(call.optional.len(), 5);
     assert_eq!(call.optional.get("name"), Some(&json(r#""notes""#)));
@@ -75,7 +75,7 @@ fn request_create_call_keeps_every_field() {
 
 #[test]
 fn request_create_call_defaults_the_absent_fields() {
-    let wire: CreateWire = parse("{}", &[]).expect("an empty create wire parses");
+    let wire: CreateWire = parse("{}", 0).expect("an empty create wire parses");
     let call = create_call(&wire);
     assert_eq!(call.optional.len(), 0);
     assert_eq!(call.kwargs.len(), 0);
@@ -88,13 +88,13 @@ fn request_create_call_defaults_the_absent_fields() {
 
 #[test]
 fn request_create_call_takes_the_async_entry() {
-    let wire: CreateWire = parse(r#"{"entry":"async"}"#, &[]).expect("the async entry parses");
+    let wire: CreateWire = parse(r#"{"entry":"async"}"#, 0).expect("the async entry parses");
     assert_eq!(create_call(&wire).entry, Entry::Asynchronous);
 }
 
 #[test]
 fn request_search_call_keeps_every_field() {
-    let wire: SearchWire = parse(SEARCH_TEXT, &[]).expect("the search wire parses");
+    let wire: SearchWire = parse(SEARCH_TEXT, 0).expect("the search wire parses");
     let call = search_call(&wire);
     assert_eq!(call.vector_store_id, "vs_1");
     assert_eq!(
@@ -121,7 +121,7 @@ fn request_search_call_keeps_every_field() {
 #[test]
 fn request_search_call_takes_a_text_query() {
     let wire: SearchWire =
-        parse(r#"{"vector_store_id":"vs","query":"needle"}"#, &[]).expect("the text query parses");
+        parse(r#"{"vector_store_id":"vs","query":"needle"}"#, 0).expect("the text query parses");
     let call = search_call(&wire);
     assert_eq!(call.query, &SearchQuery::Text(String::from("needle")));
     assert_eq!(call.optional.len(), 0);
@@ -134,26 +134,25 @@ fn request_search_call_takes_a_text_query() {
 
 #[test]
 fn request_wire_rejects_an_unknown_key() {
-    let refused = parse::<SearchWire>(r#"{"vector_store_id":"vs","query":"q","router":null}"#, &[])
+    let refused = parse::<SearchWire>(r#"{"vector_store_id":"vs","query":"q","router":null}"#, 0)
         .expect_err("a key the call does not carry is refused");
     assert!(matches!(refused, ConvertError::Json { .. }));
 }
 
 #[test]
 fn request_wire_rejects_attached_files() {
-    let refused =
-        parse::<CreateWire>("{}", &[vec![1, 2, 3]]).expect_err("a vector store call takes no file");
+    let refused = parse::<CreateWire>("{}", 1).expect_err("a vector store call takes no file");
     assert!(matches!(refused, ConvertError::Files { count: 1 }));
 }
 
 #[test]
 fn request_search_wire_requires_its_two_arguments() {
     assert!(matches!(
-        parse::<SearchWire>("{}", &[]),
+        parse::<SearchWire>("{}", 0),
         Err(ConvertError::Json { .. })
     ));
     assert!(matches!(
-        parse::<SearchWire>(r#"{"vector_store_id":"vs"}"#, &[]),
+        parse::<SearchWire>(r#"{"vector_store_id":"vs"}"#, 0),
         Err(ConvertError::Json { .. })
     ));
 }
@@ -161,7 +160,7 @@ fn request_search_wire_requires_its_two_arguments() {
 #[test]
 fn request_create_text_that_is_not_json_is_an_error() {
     assert!(matches!(
-        parse::<CreateWire>("not json", &[]),
+        parse::<CreateWire>("not json", 0),
         Err(ConvertError::Json { .. })
     ));
 }

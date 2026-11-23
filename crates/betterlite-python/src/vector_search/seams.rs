@@ -71,7 +71,7 @@ pub(crate) struct Configs {
 }
 
 impl Configs {
-    pub(crate) fn new(
+    pub(crate) const fn new(
         credentials: OpenAiCredentialsSettings,
         globals: LiteLlmGlobals,
         env_api_key: Option<SecretString>,
@@ -113,7 +113,7 @@ impl VectorStoreConfigs for Configs {
 }
 
 // B010 serves OpenAI's vector stores only; the other tags are named so a new provider fails to compile here
-fn served(tag: VectorStoresConfigTag) -> bool {
+const fn served(tag: VectorStoresConfigTag) -> bool {
     match tag {
         VectorStoresConfigTag::OpenAI => true,
         VectorStoresConfigTag::AzureOpenAI
@@ -150,10 +150,10 @@ impl EmbeddingExecutorSource for Executors {
         supplied: Option<&'selection dyn QueryEmbeddingExecutor>,
         _request_kwargs: &Params,
     ) -> SelectedExecutor<'selection> {
-        match supplied {
-            Some(executor) => SelectedExecutor::Supplied(executor),
-            None => SelectedExecutor::Built(Box::new(UnavailableExecutor)),
-        }
+        supplied.map_or_else(
+            || SelectedExecutor::Built(Box::new(UnavailableExecutor)),
+            SelectedExecutor::Supplied,
+        )
     }
 }
 
