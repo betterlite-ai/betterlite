@@ -49,7 +49,7 @@ enum CollectionCall<'call> {
 }
 
 impl CollectionCall<'_> {
-    fn call_type(&self) -> &'static str {
+    const fn call_type(&self) -> &'static str {
         match self {
             Self::Create(_call) => CREATE,
             Self::List(_call) => LIST,
@@ -63,7 +63,7 @@ impl CollectionCall<'_> {
         }
     }
 
-    fn timeout(&self) -> Option<f64> {
+    const fn timeout(&self) -> Option<f64> {
         match self {
             Self::Create(call) => call.timeout,
             Self::List(call) => call.timeout,
