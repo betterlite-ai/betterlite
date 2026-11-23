@@ -181,7 +181,7 @@ def test_truncation_params_frozen() -> None:
     assert THEIR_RERANK.HostedVLLMRerankTruncationParams.model_config.get("frozen") is True
     field = "truncate_prompt_tokens"
     with pytest.raises(ValidationError):
-        setattr(model, field, OTHER_TOKENS)
+        model.__setattr__(field, OTHER_TOKENS)
     assert model.truncate_prompt_tokens == TRUNCATE_TOKENS
     dumped = compare_dump(model, reference)
     assert dumped["truncate_prompt_tokens"] == TRUNCATE_TOKENS
