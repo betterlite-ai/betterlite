@@ -90,9 +90,10 @@ impl PollChunkSource for ScriptedChunks {
 impl PollRequestProcessor for ScriptedProcessor {
     async fn process(
         &self,
-        call: PollProcessCall<'_>,
+        mut call: PollProcessCall<'_>,
     ) -> Result<PollProcessed, PollProcessorError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        let scope = call.request.scope.clone();
         let mut receive = Box::pin(call.request.receive());
         let first = poll_fn(|context| Poll::Ready(receive.as_mut().poll(context))).await;
         let captured = CapturedCall {
@@ -100,7 +101,7 @@ impl PollRequestProcessor for ScriptedProcessor {
             model: call.model.clone(),
             skip_pre_call_logic: call.skip_pre_call_logic,
             data: call.data.clone(),
-            scope: call.request.scope.clone(),
+            scope,
             detached_receive_pending: first.is_pending(),
         };
         *self.captured.lock().unwrap_or_else(PoisonError::into_inner) = Some(captured);

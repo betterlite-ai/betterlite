@@ -24,4 +24,5 @@ def frame_result(frame: str) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return {"results": [frame_result(frame) for frame in input_value["frames"]]}
+    results = [frame_result(frame) for frame in input_value["frames"]]
+    return {"results": results}

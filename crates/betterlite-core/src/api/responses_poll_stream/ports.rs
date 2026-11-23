@@ -31,9 +31,10 @@ pub struct DetachedRequest<'request> {
     pub scope: &'request PollScope,
 }
 
-impl DetachedRequest<'_> {
-    // background_streaming.py's _never_receive: waiting forever, so a closed client cancels nothing
-    pub async fn receive(&self) {
+// background_streaming.py's _never_receive: waiting forever, so a closed client cancels nothing
+#[async_trait]
+impl ClientInbound for DetachedRequest<'_> {
+    async fn receive(&mut self) {
         pending::<()>().await;
     }
 }

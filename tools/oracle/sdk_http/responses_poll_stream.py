@@ -48,7 +48,8 @@ class ResponsesPollStreamRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         writes = run_call(self.responses_poll_stream, api_base)
-        return json.dumps({"responses_poll_stream": {"value": {"writes": writes}}})
+        outcome: JsonValue = {"responses_poll_stream": {"value": {"writes": writes}}}
+        return json.dumps(outcome)
 
 
 # the source's only clock is get_event_loop().time(), so the case scripts its readings
@@ -64,11 +65,6 @@ class ScriptedClock:
         position = min(self.read, len(self.readings) - 1)
         self.read += 1
         return self.readings[position]
-
-
-# the module the source imports as asyncio: Event never receives, get_event_loop reads the clock
-def scripted_asyncio(readings: list[float]) -> SimpleNamespace:
-    return SimpleNamespace(Event=asyncio.Event, get_event_loop=ScriptedClock(readings))
 
 
 # RedisCache.__init__ builds a real client, so skip it and answer every cache call from the script
@@ -163,8 +159,12 @@ async def run_worker(call: ResponsesPollStreamCall, api_base: str) -> list[JsonV
 
 def run_call(call: ResponsesPollStreamCall, api_base: str) -> list[JsonValue]:
     readings = [millis / 1000.0 for millis in call.clock_millis]
-    # the source reads the loop's clock; the case restores the real module after the worker finishes
-    object.__setattr__(background_streaming, "asyncio", scripted_asyncio(readings))
+    # the source imports asyncio at module level, so the case swaps in a clock-reading module object
+    object.__setattr__(
+        background_streaming,
+        "asyncio",
+        SimpleNamespace(Event=asyncio.Event, get_event_loop=ScriptedClock(readings)),
+    )
     try:
         return asyncio.run(run_worker(call, api_base))
     finally:

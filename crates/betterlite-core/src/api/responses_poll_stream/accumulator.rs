@@ -63,7 +63,13 @@ impl OutputAccumulator {
 
     // the store counts every member and element of what it decodes and caps its bytes, so the worker measures the same values
     pub fn check_limits(&self, limits: ApiLimits) -> Result<(), AccumulatorLimitError> {
-        let mut values = vec![self.output_value()];
+        let output = Json::List(
+            self.output_items
+                .values()
+                .map(|item| Json::Object(item.clone()))
+                .collect(),
+        );
+        let mut values = vec![output];
         values.extend(
             self.final_patch()
                 .0
@@ -206,12 +212,12 @@ impl OutputAccumulator {
     fn flushed(&mut self, now: u64) -> Json {
         self.dirty = false;
         self.last_update_millis = now;
-        self.output_value()
-    }
-
-    fn output_value(&self) -> Json {
-        let items = self.output_items.values();
-        Json::List(items.map(|item| Json::Object(item.clone())).collect())
+        Json::List(
+            self.output_items
+                .values()
+                .map(|item| Json::Object(item.clone()))
+                .collect(),
+        )
     }
 }
 
