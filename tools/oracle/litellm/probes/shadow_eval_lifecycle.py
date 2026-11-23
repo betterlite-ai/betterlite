@@ -1,4 +1,3 @@
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 import asyncio
 import os
 import sys
