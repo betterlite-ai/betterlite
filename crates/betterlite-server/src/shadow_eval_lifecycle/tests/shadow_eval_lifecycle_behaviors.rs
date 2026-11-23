@@ -72,7 +72,7 @@ async fn writes_one_leg_per_target_with_the_minted_ids() {
 }
 
 #[tokio::test]
-async fn labels_every_target_kind_and_writes_one_leg_per_target() {
+async fn labels_every_target_kind_of_a_started_job() {
     let store = FakeStore::new(now()).with_targets(targets());
     let response = start(
         &store,
