@@ -126,7 +126,7 @@ def registry_value(provider: str) -> JsonValue:
         "display": found.ui_friendly_name(),
         "method": found.get_http_method(),
         "rich": found.supports_rich_search_input(),
-        "endpoint": found.get_complete_url(None, {}, None),
+        "endpoint": found.get_complete_url(None, dict[str, JsonValue](), None),
     }
     return JSON.validate_python(view)
 
