@@ -78,15 +78,15 @@ pub(super) fn families(registry: &CollectorRegistry, metric_names: &[String]) ->
 
 fn family(metric: &PrometheusMetric, names: Option<&HashSet<&str>>) -> Option<Family> {
     let mut samples = samples_of(metric);
-    if let Some(names) = names {
+    if let Some(requested) = names {
         let participates = metric
             .sample_names()
             .iter()
-            .any(|name| names.contains(name.as_str()));
+            .any(|name| requested.contains(name.as_str()));
         if !participates {
             return None;
         }
-        samples.retain(|sample| names.contains(sample.name.as_str()));
+        samples.retain(|sample| requested.contains(sample.name.as_str()));
         if samples.is_empty() {
             return None;
         }
@@ -155,26 +155,12 @@ fn histogram_samples(
     sample: &Sample,
     labels: Vec<(String, String)>,
 ) -> Vec<FamilySample> {
-    let mut samples = Vec::new();
-    for (index, bound) in description.buckets.iter().enumerate() {
-        let count = sample.buckets.get(index).copied().unwrap_or_default();
-        let mut bucket_labels = labels.clone();
-        bucket_labels.push(("le".to_owned(), float_to_go_string(bound.key())));
-        samples.push(FamilySample {
-            name: format!("{}_bucket", description.name),
-            labels: bucket_labels,
-            value: float_to_go_string(Decimal::from(count).to_f64().unwrap_or(f64::NAN)),
-            created: false,
-        });
-    }
+    let mut samples = bucket_samples(description, sample, &labels);
+    let last_count = sample.buckets.last().copied().unwrap_or(sample.count);
     samples.push(FamilySample {
         name: format!("{}_count", description.name),
         labels: labels.clone(),
-        value: float_to_go_string(
-            Decimal::from(sample.buckets.last().copied().unwrap_or(sample.count))
-                .to_f64()
-                .unwrap_or(f64::NAN),
-        ),
+        value: float_to_go_string(Decimal::from(last_count).to_f64().unwrap_or(f64::NAN)),
         created: false,
     });
     if description
@@ -195,6 +181,27 @@ fn histogram_samples(
         value: created_text(sample.created),
         created: true,
     });
+    samples
+}
+
+// a bucket counts every observation its upper bound covers, and le is only a label among the metric's own
+fn bucket_samples(
+    description: &CollectorDescription,
+    sample: &Sample,
+    labels: &[(String, String)],
+) -> Vec<FamilySample> {
+    let mut samples = Vec::new();
+    for (index, bound) in description.buckets.iter().enumerate() {
+        let count = sample.buckets.get(index).copied().unwrap_or_default();
+        let mut bucket_labels = labels.to_vec();
+        bucket_labels.push(("le".to_owned(), float_to_go_string(bound.key())));
+        samples.push(FamilySample {
+            name: format!("{}_bucket", description.name),
+            labels: bucket_labels,
+            value: float_to_go_string(Decimal::from(count).to_f64().unwrap_or(f64::NAN)),
+            created: false,
+        });
+    }
     samples
 }
 

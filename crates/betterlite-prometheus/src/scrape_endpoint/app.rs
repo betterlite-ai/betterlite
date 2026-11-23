@@ -14,6 +14,7 @@ use super::renderer::CoalescedScrapeRenderer;
 use super::{RESPONSE_CHUNK_SIZE_BYTES, parse_scrape_request};
 
 // LiteLLM's make_metrics_asgi_app: every method and path answers a scrape, at whatever prefix the caller mounts it
+#[must_use]
 pub fn make_metrics_app(registry: Arc<CollectorRegistry>) -> Router {
     let renderer = Arc::new(CoalescedScrapeRenderer::new(registry));
     let router = Router::new().fallback(scrape);

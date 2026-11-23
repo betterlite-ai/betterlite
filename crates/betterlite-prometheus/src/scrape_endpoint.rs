@@ -15,7 +15,7 @@ use crate::collector_registry::CollectorRegistry;
 use encoding::openmetrics::render_openmetrics;
 
 // RESPONSE_CHUNK_SIZE_BYTES: the largest frame LiteLLM's StreamingResponse sends
-pub const RESPONSE_CHUNK_SIZE_BYTES: usize = 65_536;
+pub const RESPONSE_CHUNK_SIZE_BYTES: usize = 0x0001_0000;
 
 const TEXT_CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
 const OPENMETRICS_CONTENT_TYPE: &str = "application/openmetrics-text; version=1.0.0; charset=utf-8";

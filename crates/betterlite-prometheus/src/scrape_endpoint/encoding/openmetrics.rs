@@ -5,7 +5,7 @@ use crate::collector_registry::CollectorRegistry;
 use super::{escape_help, families, sample_line};
 
 // openmetrics.generate_latest: the registered family names, every sample inline where collect yields it, then the EOF marker
-pub(super) fn render_openmetrics(registry: &CollectorRegistry, metric_names: &[String]) -> Vec<u8> {
+pub(crate) fn render_openmetrics(registry: &CollectorRegistry, metric_names: &[String]) -> Vec<u8> {
     let mut output = String::new();
     for family in families(registry, metric_names) {
         let help = escape_help(&family.help, true);

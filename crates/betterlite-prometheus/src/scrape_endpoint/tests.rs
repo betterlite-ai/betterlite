@@ -236,13 +236,13 @@ fn text_help_and_label_values_are_escaped() {
 fn text_float_spellings_follow_python_repr_and_go_exponents() {
     assert_eq!(float_to_go_string(1.0), "1.0");
     assert_eq!(float_to_go_string(100.0), "100.0");
-    assert_eq!(float_to_go_string(100000.0), "100000.0");
+    assert_eq!(float_to_go_string(100_000.0), "100000.0");
     assert_eq!(float_to_go_string(0.0001), "0.0001");
     assert_eq!(float_to_go_string(1e-5), "1e-05");
-    assert_eq!(float_to_go_string(1234567.0), "1.234567e+06");
+    assert_eq!(float_to_go_string(1_234_567.0), "1.234567e+06");
     assert_eq!(float_to_go_string(1e15), "1e+015");
     assert_eq!(float_to_go_string(1e16), "1e+16");
-    assert_eq!(float_to_go_string(-1234567.0), "-1234567.0");
+    assert_eq!(float_to_go_string(-1_234_567.0), "-1234567.0");
     assert_eq!(float_to_go_string(f64::INFINITY), "+Inf");
     assert_eq!(float_to_go_string(f64::NEG_INFINITY), "-Inf");
     assert_eq!(float_to_go_string(f64::NAN), "NaN");
@@ -545,7 +545,8 @@ async fn coalesced_equal_scrapes_share_one_render() {
     let first_bytes = first.await.unwrap();
     let second_bytes = second.await.unwrap();
     assert_eq!(first_bytes, second_bytes);
-    assert!(Bytes::ptr_eq(&first_bytes, &second_bytes));
+    // one render means one buffer: a clone of the same Bytes shares its allocation
+    assert_eq!(first_bytes.as_ptr(), second_bytes.as_ptr());
     assert!(
         renderer
             .state

@@ -44,56 +44,16 @@ impl CoalescedScrapeRenderer {
     }
 
     pub async fn render(&self, request: ScrapeRequest) -> Result<Bytes, ScrapeRenderError> {
-        let shared = {
+        let running = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            while let Some(outcome) = state.tasks.try_join_next() {
-                if let Err(error) = outcome {
-                    tracing::warn!(%error, "a scrape render task stopped without sending a body");
-                }
-            }
-            let running = state
-                .inflight
-                .get(&request)
-                .map(|inflight| SharedRender::clone(&inflight.render));
-            match running {
-                Some(shared) => shared,
-                None => {
-                    let id = state.next_id;
-                    state.next_id = state.next_id.wrapping_add(1);
-                    let (sender, receiver) = oneshot::channel();
-                    let scheduled = request.clone();
-                    let registry = Arc::clone(&self.registry);
-                    let state_handle = Arc::clone(&self.state);
-                    let _spawned = state.tasks.spawn_blocking(move || {
-                        let rendered = render_scrape(&registry, &scheduled);
-                        let mut finished =
-                            state_handle.lock().unwrap_or_else(PoisonError::into_inner);
-                        if finished
-                            .inflight
-                            .get(&scheduled)
-                            .is_some_and(|inflight| inflight.id == id)
-                        {
-                            let _removed = finished.inflight.remove(&scheduled);
-                        }
-                        let _sent = sender.send(Ok(Bytes::from(rendered)));
-                    });
-                    let shared = shared_render(receiver);
-                    let _previous = state.inflight.insert(
-                        request,
-                        InFlight {
-                            id,
-                            render: SharedRender::clone(&shared),
-                        },
-                    );
-                    shared
-                }
-            }
+            poll_finished(&mut state.tasks);
+            running_render(&mut state, &self.registry, &self.state, &request)
         };
-        shared.await
+        running.await
     }
 }
 
-// asyncio.shield: the blocking render keeps going when every waiter is dropped, and a task that sent nothing fails every waiter
+// asyncio.shield: the render keeps going when every waiter is dropped, and a task that sent nothing fails every waiter
 pub(crate) fn shared_render(
     receiver: oneshot::Receiver<Result<Bytes, ScrapeRenderError>>,
 ) -> SharedRender {
@@ -105,4 +65,71 @@ pub(crate) fn shared_render(
     }
     .boxed()
     .shared()
+}
+
+fn running_render(
+    state: &mut RenderState,
+    registry: &Arc<CollectorRegistry>,
+    shared_state: &Arc<Mutex<RenderState>>,
+    request: &ScrapeRequest,
+) -> SharedRender {
+    if let Some(inflight) = state.inflight.get(request) {
+        return SharedRender::clone(&inflight.render);
+    }
+    start_render(state, registry, shared_state, request)
+}
+
+fn start_render(
+    state: &mut RenderState,
+    registry: &Arc<CollectorRegistry>,
+    shared_state: &Arc<Mutex<RenderState>>,
+    request: &ScrapeRequest,
+) -> SharedRender {
+    let id = state.next_id;
+    state.next_id = state.next_id.wrapping_add(1);
+    let (sender, receiver) = oneshot::channel();
+    let scheduled = request.clone();
+    let worker_registry = Arc::clone(registry);
+    let worker_state = Arc::clone(shared_state);
+    let _spawned = state.tasks.spawn_blocking(move || {
+        finish_render(&worker_registry, &scheduled, &worker_state, sender, id);
+    });
+    let shared = shared_render(receiver);
+    let _previous = state.inflight.insert(
+        request.clone(),
+        InFlight {
+            id,
+            render: SharedRender::clone(&shared),
+        },
+    );
+    shared
+}
+
+// the entry goes before the waiters hear back, and only while it still names this render
+fn finish_render(
+    registry: &CollectorRegistry,
+    request: &ScrapeRequest,
+    shared_state: &Mutex<RenderState>,
+    sender: oneshot::Sender<Result<Bytes, ScrapeRenderError>>,
+    id: u64,
+) {
+    let rendered = render_scrape(registry, request);
+    let mut state = shared_state.lock().unwrap_or_else(PoisonError::into_inner);
+    if state
+        .inflight
+        .get(request)
+        .is_some_and(|inflight| inflight.id == id)
+    {
+        let _removed = state.inflight.remove(request);
+    }
+    drop(state);
+    let _sent = sender.send(Ok(Bytes::from(rendered)));
+}
+
+fn poll_finished(tasks: &mut JoinSet<()>) {
+    while let Some(outcome) = tasks.try_join_next() {
+        if let Err(error) = outcome {
+            tracing::warn!(%error, "a scrape render task stopped without sending a body");
+        }
+    }
 }
