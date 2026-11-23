@@ -340,7 +340,7 @@ fn header_bytes_decode_as_latin1() {
             validate_end_user_id_in_db: false,
         },
     );
-    assert_eq!(end_user_id.as_deref(), Some("café"));
+    assert_eq!(end_user_id.as_deref(), Some("caf\u{e9}"));
 }
 
 #[test]

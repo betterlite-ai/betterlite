@@ -62,7 +62,7 @@ fn the_standard_customer_id_wins_over_the_body() {
                 ],
             },
             {"body": {"user": "body"}, "headers": null},
-            {"body": {"user": 1.5}, "headers": null},
+            {"body": {"user": 1.5_f64}, "headers": null},
         ],
     }))
     .expect("the lookup answers");
