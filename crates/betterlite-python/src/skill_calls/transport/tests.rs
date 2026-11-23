@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::net::TcpListener;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -148,7 +149,7 @@ fn create_with_files_sends_multipart_parts_in_order() {
     let texts: Vec<&str> = parts
         .iter()
         .take(7)
-        .map(|part| std::str::from_utf8(&part.data).unwrap())
+        .map(|part| from_utf8(&part.data).unwrap())
         .collect();
     assert_eq!(texts, ["T", "D", "true", "3", "", r#"{"k":1}"#, "[1]"]);
     assert_eq!(parts[7].file_name.as_deref(), Some("a.pdf"));
