@@ -1,0 +1,24 @@
+task: B7887
+deviations:
+  - what: The OCR request binding keeps `*args, **kwargs` at the public surface.
+    why: LiteLLM does so and callers pass the document either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/ocr/dispatch.py#L64-L84
+  - what: This task has no helper oracle cases.
+    why: The functions call a native session, so pytest compares both packages against one local server.
+    link: ""
+  - what: ocr(..., aocr=True) raises UnsupportedCallArgument.
+    why: LiteLLM's flag selects its Python fallback, which betterlite does not ship, and ignoring it would silently return a synchronous response where LiteLLM refuses to serve the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/ocr/dispatch.py#L50-L61
+  - what: A client or shared_session keyword raises UnsupportedCallArgument for search and OCR.
+    why: Those Python objects cannot cross into Rust, and LiteLLM's OCR projection silently drops them because no provider consumes the names, so a caller learns here instead of getting a quietly different request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/ocr/dispatch.py#L23-L34
+  - what: An httpx.Timeout becomes one number, the largest of its connect, read, write and pool phases.
+    why: The native call carries a single timeout in seconds, while LiteLLM hands the whole object to httpx and lets each phase use its own value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L296-L309
+  - what: A query that is not text or a list of text is refused by the native search with its bad-request class, not by a Python ValueError.
+    why: The query crosses as JSON and the native search validates it, so the class and message come from the provider-agnostic search path instead of LiteLLM's isinstance check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L236-L240
+  - what: OCR request faults carry betterlite's core wording, and the OCR and search response models are exported from betterlite.ocr and betterlite.search.
+    why: The native OCR route words its own validation errors, and the Python call maps them through the same exception_type port LiteLLM uses, so the class and status match while document and field messages name the field from the core; the models follow betterlite's module layout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/python-bridge/src/routes/ocr/document.rs#L1-L120
+kept_bugs: []
