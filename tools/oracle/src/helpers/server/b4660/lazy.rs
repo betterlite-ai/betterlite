@@ -115,7 +115,7 @@ pub(super) fn lazy_fetch(input: &LazyInput) -> HelperResult {
         input.binding_matches.clone(),
     ));
     let chain = Arc::new(ChainStore {
-        token: input.token.as_ref().map(TokenInput::token),
+        token: input.token.as_ref().map(OAuthToken::from),
         fetches: AtomicUsize::new(0),
         invalidations: Mutex::new(Vec::new()),
     });
@@ -152,7 +152,7 @@ pub(super) fn lazy_fetch(input: &LazyInput) -> HelperResult {
             };
             outputs.push(StepOutput {
                 op: op.to_owned(),
-                token: token.as_ref().map(TokenOutput::of),
+                token: token.map(TokenOutput::from),
             });
         }
         Ok::<_, Box<HelperError>>(outputs)

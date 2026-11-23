@@ -19,13 +19,13 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.per_user_oauth_
     ServerLookup,
 )
 from litellm.types.mcp_server.mcp_server_manager import MCPOAuthIdentityBinding, MCPServer
-from pydantic import JsonValue as Json, TypeAdapter
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 from .models import (
     Input,
     ProofSpec,
     ValidatorSpec,
-    build_server,
     build_token,
     presented_refresh_token,
     required,
@@ -94,7 +94,7 @@ class ScriptedValidator:
         self.answers = [] if answers is None else list(answers)
         self.calls: list[Json] = []
 
-    async def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L86-L95
+    async def __call__(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L86-L95
         self,
         *,
         server: MCPServer,
@@ -123,11 +123,12 @@ class ScriptedValidator:
 
 
 async def run_refresh(input_value: Input) -> Json:
-    server = build_server(input_value.get("server"))
+    server_spec = input_value.get("server")
+    server = None if server_spec is None else TypeAdapter(MCPServer).validate_python(server_spec)
     raw_answer = input_value.get("post_answer")
     answer: dict[str, object] | None = None  # ast-grep-ignore: no-loose-types
     if raw_answer is not None:
-        adapter = TypeAdapter(dict[str, object])  # ast-grep-ignore: no-loose-types
+        adapter = TypeAdapter(dict[str, object])
         answer = adapter.validate_python(raw_answer)
     post = ScriptedPost(answer)
     persist = ScriptedPersist()
@@ -195,7 +196,7 @@ class ScriptedBindingMatch:
         self.answers = [] if answers is None else list(answers)
         self.calls: list[Json] = []
 
-    async def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L241-L252
+    async def __call__(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L241-L252
         self,
         binding: MCPOAuthIdentityBinding,
         user_id: str,
@@ -210,13 +211,14 @@ class ScriptedBindingMatch:
 
 
 async def run_lazy(input_value: Input) -> Json:
-    server = build_server(input_value.get("server"))
+    server_spec = input_value.get("server")
+    server = None if server_spec is None else TypeAdapter(MCPServer).validate_python(server_spec)
     spec = input_value.get("token")
     chain = ChainStore(None if spec is None else build_token(spec))
     builder = ScriptedBuilder(chain, input_value.get("builds"))
     availability = ScriptedAvailability()
     matcher = ScriptedBindingMatch(input_value.get("binding_matches"))
-    per_user_oauth_store.credential_binding_matches = matcher
+    per_user_oauth_store.credential_binding_matches = matcher  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L19
     store = LazyPerUserOAuthTokenStore(
         FixedLookup(server), store_builder=builder, redis_available=availability
     )
@@ -239,9 +241,9 @@ async def run_lazy(input_value: Input) -> Json:
             steps.append({"op": "fetch", "token": None if fetched is None else token_view(fetched)})
     return {
         "steps": steps,
-        "builds": builder.builds,
+        "builds": list[Json](builder.builds),
         "store_fetches": chain.fetches,
-        "store_invalidations": chain.invalidations,
+        "store_invalidations": list[Json](chain.invalidations),
         "binding_checks": matcher.calls,
     }
 

@@ -18,14 +18,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
 
-pub(super) fn helper_error(class: &str, message: impl Into<String>) -> Box<HelperError> {
+pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.into(),
+        message,
     })
 }
 
@@ -52,14 +52,14 @@ pub(super) struct TokenInput {
     pub(super) identity_binding_proof: Option<String>,
 }
 
-impl TokenInput {
-    pub(super) fn token(&self) -> OAuthToken {
-        OAuthToken {
-            access_token: self.access_token.clone(),
+impl From<&TokenInput> for OAuthToken {
+    fn from(input: &TokenInput) -> Self {
+        Self {
+            access_token: input.access_token.clone(),
             expires_at: None,
-            refresh_token: self.refresh_token.clone(),
-            scopes: self.scopes.clone(),
-            identity_binding_proof: self.identity_binding_proof.clone(),
+            refresh_token: input.refresh_token.clone(),
+            scopes: input.scopes.clone(),
+            identity_binding_proof: input.identity_binding_proof.clone(),
         }
     }
 }
@@ -73,14 +73,21 @@ pub(super) struct TokenOutput {
     identity_binding_proof: Option<String>,
 }
 
-impl TokenOutput {
-    pub(super) fn of(token: &OAuthToken) -> Self {
+impl From<OAuthToken> for TokenOutput {
+    fn from(token: OAuthToken) -> Self {
+        let OAuthToken {
+            access_token,
+            expires_at,
+            refresh_token,
+            scopes,
+            identity_binding_proof,
+        } = token;
         Self {
-            access_token: token.access_token.clone(),
-            expires_at_millis: token.expires_at.as_ref().map(DateTime::timestamp_millis),
-            refresh_token: token.refresh_token.clone(),
-            scopes: token.scopes.clone(),
-            identity_binding_proof: token.identity_binding_proof.clone(),
+            access_token,
+            expires_at_millis: expires_at.as_ref().map(DateTime::timestamp_millis),
+            refresh_token,
+            scopes,
+            identity_binding_proof,
         }
     }
 }

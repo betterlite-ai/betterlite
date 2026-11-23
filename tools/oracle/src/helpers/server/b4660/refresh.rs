@@ -1,10 +1,10 @@
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::oauth_token_resolution::ports::TokenResponse;
 use betterlite_oracle_helper_api::helper::HelperResult;
-use betterlite_server::mcp::outbound_credentials::TokenRefresher as _;
 use betterlite_server::mcp::outbound_credentials::authz_code_refresher::AuthorizationCodeRefresher;
 use betterlite_server::mcp::outbound_credentials::per_user_oauth_store::chain::SharedBinding;
+use betterlite_server::mcp::outbound_credentials::{OAuthToken, TokenRefresher as _};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -34,7 +34,7 @@ pub(super) fn refresh(input: &RefreshInput) -> HelperResult {
     let binding = Arc::new(ScriptedBinding::new(input.validators.clone(), Vec::new()));
     let post = Arc::new(ScriptedPost {
         answer: input.post_answer.clone(),
-        ..ScriptedPost::default()
+        calls: Mutex::new(Vec::new()),
     });
     let persist = Arc::new(RecordingPersist::default());
     let refresher = AuthorizationCodeRefresher {
@@ -44,12 +44,12 @@ pub(super) fn refresh(input: &RefreshInput) -> HelperResult {
         binding: SharedBinding(Arc::clone(&binding)),
         clock: FixedClock(input.now),
     };
-    let token = input.token.token();
+    let token = OAuthToken::from(&input.token);
     let outcome = runtime()?
         .block_on(refresher.refresh(&input.user_id, &input.server_id, &token))
         .map_err(|error| helper_error("TokenStoreUnavailable", error.detail))?;
     Ok(json!({
-        "token": outcome.as_ref().map(TokenOutput::of),
+        "token": outcome.map(TokenOutput::from),
         "posts": post.calls.lock().unwrap_or_else(PoisonError::into_inner).clone(),
         "persists": persist.calls.lock().unwrap_or_else(PoisonError::into_inner).clone(),
         "validators": binding

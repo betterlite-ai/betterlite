@@ -8,7 +8,6 @@ from litellm.proxy._experimental.mcp_server.oauth_identity_binding import (
 from litellm.proxy._experimental.mcp_server.outbound_credentials.oauth_token_store import (
     OAuthToken,
 )
-from litellm.types.mcp_server.mcp_server_manager import MCPServer
 from pydantic import JsonValue as Json
 
 T = TypeVar("T")
@@ -69,10 +68,6 @@ def required(value: T | None, name: str) -> T:
     if value is None:
         raise ValueError(f"{name} is required")
     return value
-
-
-def build_server(spec: ServerSpec | None) -> MCPServer | None:
-    return None if spec is None else MCPServer.model_validate(dict(spec))
 
 
 def build_token(spec: TokenSpec) -> OAuthToken:
