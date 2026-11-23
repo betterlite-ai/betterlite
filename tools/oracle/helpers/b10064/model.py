@@ -79,11 +79,10 @@ def render_assertion(assertion: SSOIdentityAssertion) -> JsonValue:
     refresh_token = assertion.refresh_token
     expires_at = assertion.expires_at
     rendered_expires_at: str | None = None
-    if expires_at is not None:
-        if expires_at.tzinfo is None:
-            rendered_expires_at = expires_at.replace(tzinfo=timezone.utc).isoformat()
-        else:
-            rendered_expires_at = expires_at.isoformat()
+    if expires_at is not None and expires_at.tzinfo is None:
+        rendered_expires_at = expires_at.replace(tzinfo=timezone.utc).isoformat()
+    elif expires_at is not None:
+        rendered_expires_at = expires_at.isoformat()
     return {
         "id_token": assertion.id_token.get_secret_value(),
         "refresh_token": None if refresh_token is None else refresh_token.get_secret_value(),
