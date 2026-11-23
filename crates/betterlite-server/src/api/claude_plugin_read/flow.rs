@@ -21,29 +21,27 @@ use super::{ClaudePluginReadState, decode_claude_plugin_read};
 use crate::auth::auth_identity::AuthContext;
 use crate::model_query::read_query;
 
-pub(super) async fn list(
+pub(super) async fn read(
     State(state): State<Arc<ClaudePluginReadState>>,
     caller: Option<Extension<AuthContext>>,
+    plugin_path: Option<Path<PluginPath>>,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
-    let (_, [enabled_only]) = match read_query(raw_query.as_deref(), ["enabled_only"]) {
-        Ok(flags) => flags,
-        Err(error) => return error.into_response(),
+    let Some(Path(path)) = plugin_path else {
+        let (_, [enabled_only]) = match read_query(raw_query.as_deref(), ["enabled_only"]) {
+            Ok(flags) => flags,
+            Err(error) => return error.into_response(),
+        };
+        let query = PluginListQuery { enabled_only };
+        return match list_plugins(state.as_ref(), caller, query).await {
+            Ok(result) => Json(result).into_response(),
+            Err(error) => error.into_response(),
+        };
     };
-    let query = PluginListQuery { enabled_only };
-    match list_plugins(state.as_ref(), caller, query).await {
+    match get_plugin(state.as_ref(), caller, &path.plugin_name).await {
         Ok(result) => Json(result).into_response(),
         Err(error) => error.into_response(),
     }
-}
-
-pub(super) async fn get(
-    State(state): State<Arc<ClaudePluginReadState>>,
-    caller: Option<Extension<AuthContext>>,
-    Path(path): Path<PluginPath>,
-) -> Result<Json<ClaudePluginReadResult>, ClaudePluginReadError> {
-    let result = get_plugin(state.as_ref(), caller, &path.plugin_name).await?;
-    Ok(Json(result))
 }
 
 async fn list_plugins(
