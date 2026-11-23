@@ -42,7 +42,7 @@ async fn create_logging_metadata_precedence() {
 
 #[tokio::test]
 async fn mock_response_literals() {
-    mock_response_literals::literal_and_default().await;
+    mock_response_literals::literal_and_default();
     mock_response_literals::shortcut_and_skips().await;
-    mock_response_literals::predicate().await;
+    mock_response_literals::predicate();
 }

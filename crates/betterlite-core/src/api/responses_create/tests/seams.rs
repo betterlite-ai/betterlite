@@ -13,6 +13,7 @@ use betterlite_openai::response_input::{ResponsesInput, ResponsesTool};
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use std::collections::BTreeMap;
+use std::ops::Sub as _;
 
 pub(crate) fn call(model: &str) -> ResponsesCreateCall {
     ResponsesCreateCall {
@@ -136,7 +137,7 @@ pub(crate) fn number_is(fields: &Object, name: &str, expected: f64) {
         panic!("the field must hold a number");
     };
     let parsed = found.as_f64().expect("the number is finite");
-    assert!((parsed - expected).abs() < 1e-9_f64, "{name}: {parsed}");
+    assert!(parsed.sub(expected).abs() < 1e-9_f64, "{name}: {parsed}");
 }
 
 pub(crate) fn value_number(map: &ParameterMap, name: &str) -> f64 {

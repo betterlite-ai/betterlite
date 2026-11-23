@@ -67,10 +67,7 @@ pub fn begin<'call>(
     let text = response_text(call)?;
     let (model, provider, use_chat) = resolved_names(call, resolver, flags.use_chat.0)?;
     let mut local_vars: ParameterMap = named_locals(call, text.as_ref()).into_iter().collect();
-    let manager: Option<&dyn PromptManager> = match prompts {
-        Some(source) => Some(source),
-        None => None,
-    };
+    let manager: Option<&dyn PromptManager> = prompts.map_or(None, |source| Some(source));
     let outcome = apply_prompt_management(
         PromptRequest {
             input: input_value(&call.input),

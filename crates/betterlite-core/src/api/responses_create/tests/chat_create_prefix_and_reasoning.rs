@@ -1,12 +1,13 @@
+use std::ops::Sub as _;
 use std::time::Duration;
 
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::response_input::ResponsesInput;
 
 use super::support::{
-    Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, body_json,
-    call, field, json, kwargs, number_is, object, prompt_json, run_create, text, tools,
-    value_number, values,
+    BridgeRecord, Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig,
+    Seams, body_json, call, field, json, kwargs, number_is, object, prompt_json, run_create, text,
+    tools, value_number, values,
 };
 
 pub(crate) async fn bridge_selection() {
@@ -27,6 +28,14 @@ pub(crate) async fn bridge_selection() {
     run_create(&seams.deps(), &prefixed, &mut harness)
         .await
         .expect("the chat prefix bridges");
+    assert_bridged(&rig, &bridge);
+
+    flagged_bridges(&nothing, &gateway, &mut harness).await;
+    absent_config_bridges(&nothing, &gateway, &mut harness).await;
+    passing_with_and_without_tools(&nothing, &mut harness).await;
+}
+
+fn assert_bridged(rig: &Rig, bridge: &RecordingBridge) {
     assert!(rig.wire.requests().is_empty());
     assert_eq!(
         rig.events.recorded(),
@@ -37,8 +46,18 @@ pub(crate) async fn bridge_selection() {
     let record = &calls[0];
     assert_eq!(record.model, "gpt-4o");
     assert_eq!(record.custom_llm_provider.as_deref(), Some("openai"));
+    assert_bridge_flags(record);
+}
+
+fn assert_bridge_flags(record: &BridgeRecord) {
     assert!(!record.is_async);
     assert_eq!(record.stream, None);
+    assert_eq!(record.input, ResponsesInput::Text(String::from("hello")));
+    assert!(record.extra_headers.is_none());
+    assert_bridge_kwargs(record);
+}
+
+fn assert_bridge_kwargs(record: &BridgeRecord) {
     assert_eq!(
         record.kwargs.get("custom_option"),
         Some(&JsonValue::Text(String::from("x")))
@@ -46,16 +65,10 @@ pub(crate) async fn bridge_selection() {
     assert!(record.kwargs.contains_key("drop_params"));
     assert!(!record.kwargs.contains_key("client_metadata"));
     assert!(!record.kwargs.contains_key("use_chat_completions_api"));
-    assert_eq!(record.input, ResponsesInput::Text(String::from("hello")));
-    assert!(record.extra_headers.is_none());
     assert_eq!(
         record.kwargs.get("extra_body"),
         values(r#"[{"x":1}]"#).first()
     );
-
-    flagged_bridges(&nothing, &gateway, &mut harness).await;
-    absent_config_bridges(&nothing, &gateway, &mut harness).await;
-    passing_with_and_without_tools(&nothing, &mut harness).await;
 }
 
 async fn passing_with_and_without_tools(nothing: &Nothing, harness: &mut Harness) {
@@ -180,8 +193,8 @@ pub(crate) async fn timeouts() {
         .await
         .expect("a zero native timeout falls back");
     let requests = rig.wire.requests();
-    assert_eq!(requests[0].timeout, Duration::from_secs(6000));
-    assert_eq!(requests[1].timeout, Duration::from_secs(6000));
+    assert_eq!(requests[0].timeout, Duration::from_mins(100));
+    assert_eq!(requests[1].timeout, Duration::from_mins(100));
 
     injected_and_bridged(&nothing, &gateway, &mut harness).await;
 }
@@ -215,7 +228,7 @@ async fn injected_and_bridged(nothing: &Nothing, gateway: &NoInterception, harne
         .await
         .expect("the bridge uses the shared default timeout");
     let timeout = value_number(&bridged_injected.calls()[0].kwargs, "timeout");
-    assert!((timeout - 17.0_f64).abs() < 1e-9_f64);
+    assert!(timeout.sub(17.0_f64).abs() < 1e-9_f64);
 }
 
 pub(crate) async fn allowed_and_dropped() {

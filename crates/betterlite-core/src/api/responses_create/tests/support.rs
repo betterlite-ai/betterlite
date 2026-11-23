@@ -298,9 +298,9 @@ impl TestConfig {
             api_key: Some(SecretString::from("sk-provider")),
             supported,
             native_file_search,
-            inputs: configs.inputs.clone(),
-            dropped: configs.dropped.clone(),
-            fake_calls: configs.fake_calls.clone(),
+            inputs: Arc::clone(&configs.inputs),
+            dropped: Arc::clone(&configs.dropped),
+            fake_calls: Arc::clone(&configs.fake_calls),
         }
     }
 }
@@ -437,14 +437,19 @@ impl CreateCapabilities for TestConfig {
         self.native_file_search
     }
 
-    fn should_fake_stream(&self, model: &str, stream: Option<bool>, provider: &str) -> bool {
+    fn should_fake_stream(
+        &self,
+        model: &str,
+        stream: Option<bool>,
+        custom_llm_provider: &str,
+    ) -> bool {
         self.fake_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(FakeCall {
                 model: model.to_owned(),
                 stream,
-                provider: provider.to_owned(),
+                provider: custom_llm_provider.to_owned(),
             });
         model == "fake-stream" && stream == Some(true)
     }
@@ -794,7 +799,7 @@ impl CreateInterception<()> for Gateway {
 fn handled(text: &str) -> Result<Created<()>, serde_json::Error> {
     Ok(Created::Responses(Box::new(StampedResponse {
         response: mock_responses_api_response(Some(text))?,
-        hidden: Default::default(),
+        hidden: IndexMap::default(),
     })))
 }
 

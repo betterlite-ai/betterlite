@@ -9,7 +9,7 @@ use crate::api::responses_create::execute::{
     DEFAULT_MOCK_TEXT, has_file_search_tool, mock_responses_api_response,
 };
 
-pub(crate) async fn literal_and_default() {
+pub(crate) fn literal_and_default() {
     let literal = mock_responses_api_response(Some("hi")).expect("the mock response parses");
     let value: PromptJson = reencode(&literal).expect("the mock response serializes");
     let body = object(&value);
@@ -147,7 +147,7 @@ async fn fallthroughs(seams: &Seams<'_>, rig: &Rig, harness: &mut Harness) {
     assert_eq!(rig.wire.requests().len(), 2);
 }
 
-pub(crate) async fn predicate() {
+pub(crate) fn predicate() {
     assert!(!has_file_search_tool(None));
     let none_present = values("[]");
     assert!(!has_file_search_tool(Some(&none_present)));

@@ -43,6 +43,10 @@ pub(crate) async fn affinity_headers() {
     run_create(&seams.deps(), &from_metadata, &mut harness)
         .await
         .expect("the metadata session answers");
+    assert_affinity_headers(&rig);
+}
+
+fn assert_affinity_headers(rig: &Rig) {
     let requests = rig.wire.requests();
     assert_eq!(
         header_values(&requests[0], "x-session"),
