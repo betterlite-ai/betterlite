@@ -4,7 +4,7 @@ use crate::access_group_read::protocols::records::{AccessGroupChanges, FieldWrit
 
 use super::update_statement;
 
-fn untouched() -> AccessGroupChanges {
+const fn untouched() -> AccessGroupChanges {
     AccessGroupChanges {
         access_group_name: None,
         description: FieldWrite::Unchanged,
