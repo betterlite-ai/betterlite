@@ -1,4 +1,3 @@
-from collections.abc import Awaitable, Callable
 from typing import Final, Literal, TypeAlias, TypedDict
 from urllib.parse import urlencode
 
@@ -10,15 +9,14 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.logging_callback_manager import LoggingCallbackManager
 from litellm.proxy import proxy_server
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
-from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.spend_tracking.spend_management_endpoints import router
 from litellm.proxy.utils import PrismaClient
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-AuthCheck: TypeAlias = Callable[..., Awaitable[UserAPIKeyAuth]]
-AuthAnswer: TypeAlias = Callable[[], UserAPIKeyAuth]
+from spend_visibility import AuthAnswer, AuthCheck, Overrides
+
 Bind: TypeAlias = str | int | None
 COLD_LOGGER: Final = "s3_v2"
 
@@ -115,11 +113,11 @@ class Client(PrismaClient):
 # the logger litellm.cold_storage_custom_logger names, recording each object key it is asked for
 class ColdLogger(CustomLogger):
     def __init__(self, answer: ColdAnswer) -> None:
-        super().__init__()
         self.answer = answer
         self.keys: list[str] = []
 
     @override
+    # ast-grep-ignore: no-long-names
     async def get_proxy_server_request_from_cold_storage_with_object_key(
         self, object_key: str
     ) -> dict[str, JsonValue] | None:
@@ -156,7 +154,7 @@ class App(FastAPI):
     def __init__(self) -> None:
         super().__init__()
         self.caller = UserAPIKeyAuth(user_id="root", user_role=LitellmUserRoles.PROXY_ADMIN)
-        self.dependency_overrides = {user_api_key_auth: self.admin}
+        self.dependency_overrides = Overrides(self.admin)
         self.include_router(router)
 
     def admin(self) -> UserAPIKeyAuth:
@@ -210,7 +208,8 @@ def metadata(step: MetadataStep) -> JsonValue:
         for index, value in enumerate(step["values"])
     ]
     proxy_server.prisma_client = Client(Db(rows))
-    response = TestClient(App()).get("/spend/logs/session/ui", params={"session_id": "session-1"})
+    query = urlencode({"session_id": "session-1"})
+    response = TestClient(App()).get(f"/spend/logs/session/ui?{query}")
     response.raise_for_status()
     page = PAGE.validate_json(response.content)
     hydrated: list[JsonValue] = [row["metadata"] for row in page["data"]]
