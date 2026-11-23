@@ -26,7 +26,7 @@ impl From<Box<PassthroughRelay>> for NativePassthroughStream {
 #[pymethods]
 impl NativePassthroughStream {
     // the blocking form the synchronous route returns, waiting on the lock with the GIL released
-    fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Py<PyBytes>>> {
+    pub(crate) fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Py<PyBytes>>> {
         let relay = Arc::clone(&self.relay);
         let next = py.detach(move || {
             get_runtime().block_on(async move {
@@ -63,7 +63,7 @@ impl NativePassthroughStream {
         })
     }
 
-    fn close(&self, py: Python<'_>) {
+    pub(crate) fn close(&self, py: Python<'_>) {
         let relay = Arc::clone(&self.relay);
         py.detach(move || {
             get_runtime().block_on(async move { relay.lock().await.aclose().await });
