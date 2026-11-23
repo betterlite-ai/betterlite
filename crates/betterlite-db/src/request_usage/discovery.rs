@@ -42,7 +42,6 @@ pub async fn enqueue_tool_registry_upsert(
     }
 }
 
-// The key alias and user agent every item carries, and the fields the caller supplies.
 struct DiscoveryFields<'fields> {
     key_hash: Option<&'fields str>,
     team_id: Option<&'fields str>,
@@ -250,7 +249,6 @@ fn function_tool_name(tool_def: &Json) -> Result<Option<String>, DiscoveryError>
     Ok(present_text(function.get("name"), "tools.function.name")?.map(ToOwned::to_owned))
 }
 
-// (passthrough_logging_payload.get("request_body") if isinstance(..., dict) else None) or {}.
 fn passthrough_body(kwargs: &DiscoveryKwargs) -> Result<Option<&JsonObject>, DiscoveryError> {
     let Some(passthrough) = kwargs
         .passthrough_logging_payload
