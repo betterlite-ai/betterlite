@@ -1,0 +1,15 @@
+kind: helper
+name: read-undecryptable-row
+call:
+  b10064:
+    database: true
+    rows:
+      - {user_id: alice, assertion_b64: 'dy5RBp2_GQ7AYHuVQzkqdPy_a-obckgfFIGu_RUq5tVW_KyFZyBL3EE5UypBZhQm70R9nTcpgr4dKKz0mvjy56VL64e40vWBcw=='}
+      - {user_id: bravo, assertion_b64: 'not-a-ciphertext'}
+    failure: null
+    steps:
+      - {step: fetch_uncached, user_id: alice}
+      - {step: fetch, user_id: bravo}
+      - {step: fetch, user_id: alice}
+env: {}
+compare: {ignore: []}

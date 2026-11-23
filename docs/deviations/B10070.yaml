@@ -1,0 +1,19 @@
+task: B10070
+deviations:
+  - what: >-
+      The resolver reads the user through the UiSessionTeams port instead of importing proxy_server's
+      prisma_client and user_api_key_cache and passing proxy_logging_obj, so the database presence
+      check and the user read are plain trait calls.
+    why: >-
+      betterlite has no module-level state; the port's UserLookup implementation runs the same
+      get_user_object read with user_id_upsert false and check_db_only set to the auth's
+      requires_fresh_policy, so the returned list is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L53-L73
+  - what: >-
+      The user read is not tagged with the auth's parent OTel span, so the lookup spans LiteLLM
+      records under the caller's trace have no betterlite counterpart.
+    why: >-
+      The port carries the user id and the fresh flag, and UserLookupRequest has no span field, so
+      no span reaches the read; the team ids the resolver returns are identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L65-L73
+kept_bugs: []
