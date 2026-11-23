@@ -39,7 +39,8 @@ fn an_empty_master_key_is_not_dev_mode() {
 fn jwt_auth_is_not_dev_mode() {
     let flags = AuthModeFlags {
         enable_jwt_auth: AuthModeSwitch(true),
-        ..AuthModeFlags::default()
+        enable_oauth2_auth: AuthModeSwitch(false),
+        enable_oauth2_proxy_auth: AuthModeSwitch(false),
     };
     assert!(!is_no_auth_dev_mode(None, &flags));
 }
@@ -47,8 +48,9 @@ fn jwt_auth_is_not_dev_mode() {
 #[test]
 fn oauth2_auth_is_not_dev_mode() {
     let flags = AuthModeFlags {
+        enable_jwt_auth: AuthModeSwitch(false),
         enable_oauth2_auth: AuthModeSwitch(true),
-        ..AuthModeFlags::default()
+        enable_oauth2_proxy_auth: AuthModeSwitch(false),
     };
     assert!(!is_no_auth_dev_mode(None, &flags));
 }
@@ -56,8 +58,9 @@ fn oauth2_auth_is_not_dev_mode() {
 #[test]
 fn oauth2_proxy_auth_is_not_dev_mode() {
     let flags = AuthModeFlags {
+        enable_jwt_auth: AuthModeSwitch(false),
+        enable_oauth2_auth: AuthModeSwitch(false),
         enable_oauth2_proxy_auth: AuthModeSwitch(true),
-        ..AuthModeFlags::default()
     };
     assert!(!is_no_auth_dev_mode(None, &flags));
 }
