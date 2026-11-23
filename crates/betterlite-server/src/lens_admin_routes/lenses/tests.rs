@@ -214,6 +214,23 @@ async fn activity_available_without_tracing_is_false() {
 }
 
 #[tokio::test]
+async fn activity_available_reads_the_storage() {
+    let mut harness = Harness::new();
+    harness.storage = Some(
+        FakeStorage::default().returning_availability(r#"[{"traces":true,"requests":false}]"#),
+    );
+    let reply = call(
+        harness.app(),
+        request("GET", "/lens/activity/available", Some(&admin()), None),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let available: ActivityAvailability = reply.json();
+    assert!(available.traces);
+    assert!(!available.requests);
+}
+
+#[tokio::test]
 async fn agents_without_tracing_is_empty() {
     let harness = Harness::new().without_storage();
     let reply = call(

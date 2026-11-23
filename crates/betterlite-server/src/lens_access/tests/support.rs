@@ -274,6 +274,14 @@ impl FakeStorage {
         *self.agents_json.lock().expect("the agents json lock") = text.to_owned();
         self
     }
+
+    pub(crate) fn returning_availability(self, text: &str) -> Self {
+        *self
+            .availability_json
+            .lock()
+            .expect("the availability json lock") = text.to_owned();
+        self
+    }
 }
 
 impl Storage for FakeStorage {
