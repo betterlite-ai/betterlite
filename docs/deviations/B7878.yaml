@@ -1,0 +1,73 @@
+task: B7878
+deviations:
+  - what: >-
+      client, an OpenAI or Azure SDK client object, raises UnsupportedCallArgumentError instead of driving the call.
+    why: >-
+      The OpenAI SDK is no dependency of the wheel and the call runs in Rust; the task's own deviations list this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L73-L81
+  - what: >-
+      An api_version that is neither None nor a string raises UnsupportedCallArgumentError before the call.
+    why: >-
+      LiteLLM hands the value to the SDK unread; betterlite sends it to Rust, where only a string has a meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L230-L247
+  - what: >-
+      A pydantic message object passed to create_thread is dumped with model_dump(exclude_none=True, mode="json"),
+      so a None field is absent from the wire; LiteLLM hands the object itself to the OpenAI SDK.
+    why: >-
+      Only JSON crosses into Rust and no OpenAI SDK is there to serialize the object; the task's pitfalls say a
+      pydantic object must be dumped before it goes into JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L632-L642
+  - what: >-
+      A provider failure raises betterlite.exceptions.AuthenticationError and its siblings (the names LiteLLM's
+      exception_type produces) where LiteLLM's sync functions let the raw openai SDK exception through.
+    why: >-
+      The request runs in Rust, so every failure comes back as an error envelope that raise_native_error maps to
+      betterlite's class with the same name, status_code, message and body fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L121-L131
+  - what: >-
+      A provider failure of get_assistants or delete_assistant, and of their async twins, carries model "" because
+      betterlite has one path for both; the exception LiteLLM's sync path raises is the SDK's, which has no model
+      attribute at all.
+    why: >-
+      The error envelope always carries a model, and LiteLLM's async twins map the same failure with model "".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L64-L70
+  - what: >-
+      Results are betterlite pydantic models: Assistant keeps response_format and tool_resources as JSON where the
+      openai SDK's Assistant parses them into nested models, and AssistantPage carries data and has_more only where
+      SyncCursorPage also has object, first_id and last_id.
+    why: >-
+      The openai package is no betterlite dependency (the deviation B167 records); betterlite.types carries the
+      Thread model, and _records.py declares the three assistant models it returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L80
+  - what: >-
+      acreate_assistants without a model fails in the native layer with an error naming the missing field, where
+      LiteLLM's async twin pops an absent model as None and the OpenAI SDK raises its own TypeError.
+    why: >-
+      The model is a required field of the native create request, so serde rejects it before any provider call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L193-L200
+kept_bugs:
+  - what: >-
+      create_thread accepts tool_resources and never sends it, on either provider.
+    why: >-
+      LiteLLM's create_thread forwards only messages and metadata to the OpenAI SDK, so a caller who passes
+      tool_resources gets a thread without them; no working setup can rely on the field arriving.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L632-L642
+  - what: >-
+      get_assistants accepts order, limit, before and after and never forwards them; the request always carries
+      limit=20 and order=desc.
+    why: >-
+      LiteLLM's dispatch calls the provider method without those kwargs, so the llms layer's defaults always apply
+      and a caller's limit is ignored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L121-L131
+  - what: >-
+      get_assistants raises a bare Exception for an aget_assistants value that is neither bool nor None, while
+      create_assistants and delete_assistant raise ValueError for their flags.
+    why: >-
+      LiteLLM checks the three flags in three different ways; betterlite keeps each function's own error class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L81-L83
+  - what: >-
+      The async twins overwrite the caller's flag with True, so aget_assistants, acreate_assistants, adelete_assistant,
+      acreate_thread and aget_thread accept any value for it and never raise the sync functions' Exception or ValueError.
+    why: >-
+      LiteLLM's twins write the flag into kwargs before delegating to the sync function; betterlite keeps that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L45
