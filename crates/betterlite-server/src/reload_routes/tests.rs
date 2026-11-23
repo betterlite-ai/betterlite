@@ -33,8 +33,8 @@ async fn oneshot_rejects_an_anonymous_caller() {
     let (status, text) = send(&harness, None, Method::POST, COST_MAP_RELOAD).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(parsed(&text)["error"]["code"], "401");
-    let (status, _text) = send(&harness, None, Method::GET, BETA_STATUS).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (beta_code, _text) = send(&harness, None, Method::GET, BETA_STATUS).await;
+    assert_eq!(beta_code, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -555,10 +555,11 @@ async fn oneshot_schedules_then_cancels_the_beta_reload() {
             r#"{"interval_hours": 12, "force_reload": false}"#
         )]
     );
-    let (status, text) = send(&harness, Some(master()), Method::DELETE, BETA_SCHEDULE).await;
-    assert_eq!(status, StatusCode::OK);
+    let (cancel_status, cancel_text) =
+        send(&harness, Some(master()), Method::DELETE, BETA_SCHEDULE).await;
+    assert_eq!(cancel_status, StatusCode::OK);
     assert_eq!(
-        parsed(&text),
+        parsed(&cancel_text),
         parsed(
             r#"{"message": "Anthropic beta headers reload schedule cancelled", "status": "success", "timestamp": "2026-11-23T12:00:00"}"#
         )
@@ -740,6 +741,7 @@ async fn oneshot_answers_405_when_a_route_takes_another_method() {
     let harness = Harness::new();
     let (status, _text) = send(&harness, Some(master()), Method::GET, COST_MAP_RELOAD).await;
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
-    let (status, _text) = send(&harness, Some(master()), Method::POST, COST_MAP_SOURCE).await;
-    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
+    let (source_status, _text) =
+        send(&harness, Some(master()), Method::POST, COST_MAP_SOURCE).await;
+    assert_eq!(source_status, StatusCode::METHOD_NOT_ALLOWED);
 }
