@@ -1,0 +1,85 @@
+import contextlib
+import json
+from collections.abc import Sequence
+from typing import Final, TypedDict
+
+from pydantic import JsonValue
+
+from betterlite import _native
+from betterlite._tokens.wire import JSON
+
+HUGGING_FACE: Final = "huggingface_tokenizer"
+
+
+class NativeTokenizer:
+    # a tokenizer loaded in rust; the handle stays valid until this object is collected
+    __slots__ = ("tokenizer_id",)
+
+    def __init__(self, tokenizer_id: int) -> None:
+        self.tokenizer_id = tokenizer_id
+
+    def __del__(self) -> None:
+        # the interpreter may already have torn the native module down when this runs at shutdown
+        with contextlib.suppress(AttributeError, NameError):
+            _native.free_tokenizer(self.tokenizer_id)
+
+
+class CustomTokenizer(TypedDict):
+    type: str
+    tokenizer: NativeTokenizer
+
+
+# LiteLLM's _get_count_function raises this text for a tokenizer dict it does not know
+def tokenizer_handle(custom_tokenizer: CustomTokenizer) -> int:
+    if custom_tokenizer["type"] != HUGGING_FACE:
+        raise ValueError("Unsupported tokenizer type")
+    return custom_tokenizer["tokenizer"].tokenizer_id
+
+
+def encode(
+    model: str = "",
+    text: str = "",
+    custom_tokenizer: CustomTokenizer | None = None,
+) -> list[int]:
+    request: dict[str, JsonValue] = {"model": model, "text": text}
+    if custom_tokenizer is not None:
+        request["custom_tokenizer"] = tokenizer_handle(custom_tokenizer)
+    return _native.encode_text(json.dumps(request))
+
+
+def decode(
+    model: str = "",
+    tokens: Sequence[int] = (),
+    custom_tokenizer: CustomTokenizer | None = None,
+    skip_special_tokens: bool = True,
+) -> str:
+    request: dict[str, JsonValue] = {
+        "model": model,
+        "tokens": JSON.validate_python(list(tokens)),
+        "skip_special_tokens": skip_special_tokens,
+    }
+    if custom_tokenizer is not None:
+        request["custom_tokenizer"] = tokenizer_handle(custom_tokenizer)
+    return _native.decode_tokens(json.dumps(request))
+
+
+def create_pretrained_tokenizer(
+    identifier: str,
+    revision: str = "main",
+    auth_token: str | None = None,
+) -> CustomTokenizer:
+    request: dict[str, JsonValue] = {
+        "kind": "pretrained",
+        "identifier": identifier,
+        "revision": revision,
+    }
+    if auth_token is not None:
+        request["auth_token"] = auth_token
+    handle = _native.load_tokenizer(json.dumps(request))
+    return {"type": HUGGING_FACE, "tokenizer": NativeTokenizer(handle)}
+
+
+def create_tokenizer(json: str) -> CustomTokenizer:
+    request: dict[str, JsonValue] = {"kind": "json", "json": json}
+    handle = _native.load_tokenizer(json.dumps(request))
+    return {"type": HUGGING_FACE, "tokenizer": NativeTokenizer(handle)}
