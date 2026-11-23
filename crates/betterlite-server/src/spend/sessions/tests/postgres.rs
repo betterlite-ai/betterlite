@@ -127,6 +127,8 @@ async fn a_representative_is_the_latest_agent_outcome() {
         .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].request_id, "agent-late");
+    assert_eq!(rows[0].metadata, Some(json("\"{}\"")));
+    assert_eq!(rows[0].request_tags, Some(json("\"[]\"")));
 }
 
 const TIE_ROWS: &str = r#"

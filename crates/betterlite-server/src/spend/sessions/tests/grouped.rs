@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
 
+use super::super::grouped::sql::{GroupedPage, page_query};
 use super::super::grouped::{
     GroupedSessionRequest, SessionLogsPage, ui_session_grouped_spend_logs,
 };
@@ -358,4 +359,42 @@ async fn a_store_failure_propagates() {
         ui_session_grouped_spend_logs(store.as_ref(), None, &request(&[], Vec::new(), 1, 2, None))
             .await;
     assert!(matches!(outcome, Err(SessionsStoreError::Database(_))));
+}
+
+// a page answering exactly its limit is the end of the list: only an extra group proves the list continues
+#[tokio::test]
+async fn a_full_page_without_an_extra_group_ends_the_list() {
+    let fake = fake(
+        vec![
+            group("s2", "k", "2026-01-02 00:00:00"),
+            group("s1", "k", "2026-01-01 00:00:00"),
+        ],
+        9,
+        vec![
+            representative("r2", "s2", "k", "{}"),
+            representative("r1", "s1", "k", "{}"),
+        ],
+    );
+    let (page, events) = page_of(fake, &request(&[], Vec::new(), 1, 2, None)).await;
+    assert!(!page.has_more);
+    assert_eq!(page.next_session_cursor, None);
+    assert_eq!(page.page.total, 2);
+    assert!(!page.page.total_is_capped);
+    assert_eq!(kinds(&events), ["groups", "representatives"]);
+}
+
+// the offset clause only joins a window that still has a limit to offset
+#[test]
+fn a_zero_window_binds_no_offset() {
+    let page = GroupedPage {
+        conditions: &[],
+        params: Vec::new(),
+        cursor: None,
+        descending: true,
+        page_limit: 0,
+        offset: 3,
+    };
+    let query = page_query(&page);
+    assert!(!query.sql.contains("OFFSET"), "{}", query.sql);
+    assert_eq!(query.params, [SessionParam::Integer(1)]);
 }

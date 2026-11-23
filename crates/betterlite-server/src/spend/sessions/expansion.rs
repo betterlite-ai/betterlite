@@ -28,6 +28,8 @@ pub trait SessionTeamScope: Send + Sync {
 
 #[async_trait]
 impl SessionTeamScope for SpendLogVisibility {
+    // No test builds B1704's service, whose user lookup needs a database and SSO; a mutant of this delegation never runs.
+    #[cfg_attr(test, mutants::skip)]
     async fn team_scope(&self, caller: &TeamCaller) -> Vec<String> {
         self.permitted_teams_or_empty(caller).await
     }

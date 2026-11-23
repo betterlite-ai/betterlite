@@ -159,3 +159,19 @@ fn an_invalid_page_falls_back_to_the_default() {
         }
     );
 }
+
+#[test]
+fn refuses_a_negative_page() {
+    let issue = only_issue("session_id=s&page=-2");
+    assert_eq!(issue.kind, "greater_than_equal");
+    assert_eq!(issue.loc, ["query", "page"]);
+}
+
+// both declared bounds include their own value
+#[test]
+fn accepts_a_page_at_the_minimum_and_a_size_at_the_maximum() {
+    assert_eq!(
+        decode_session_query(Some("session_id=s&page=1&page_size=100")).unwrap(),
+        expansion("s", 1, 100)
+    );
+}

@@ -142,7 +142,8 @@ async fn total_records(
     visible: &[SessionGroupRow],
 ) -> Result<(i64, bool), SessionsStoreError> {
     let starts_inside = window.offset == 0 || window.fetched > 0;
-    let ends_the_list = cursor.is_none() && window.limit > 0 && !window.has_more && starts_inside;
+    let ends_the_list =
+        cursor.is_none() && window.limit.is_positive() && !window.has_more && starts_inside;
     if ends_the_list {
         return Ok((window.offset.saturating_add(window.fetched), false));
     }
