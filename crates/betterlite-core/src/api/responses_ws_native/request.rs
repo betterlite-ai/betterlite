@@ -53,10 +53,10 @@ enum SlotError {
     AttributeError,
 }
 
-fn mapping_slot(
-    value: Option<&Json>,
+fn mapping_slot<'json>(
+    value: Option<&'json Json>,
     error: &SlotError,
-) -> Result<Option<&IndexMap<String, Json>>, WsNativeError> {
+) -> Result<Option<&'json IndexMap<String, Json>>, WsNativeError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(fields)) => Ok(Some(fields)),

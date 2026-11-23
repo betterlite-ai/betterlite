@@ -86,7 +86,7 @@ where
         let object = match ws_event_error(&failed) {
             Some(Json::Object(fields)) => StreamErrorObject::Mapping(fields),
             Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None => StreamErrorObject::Attributes(StreamErrorAttributes::<'_>::default()),
+            | None => StreamErrorObject::Attributes(StreamErrorAttributes::default()),
         };
         Some(map_stream_error_to_exception(
             object,

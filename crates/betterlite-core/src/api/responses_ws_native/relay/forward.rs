@@ -28,9 +28,9 @@ pub(super) struct BackendEnd {
 }
 
 impl BackendEnd {
-    fn failed<Error>(error: Error) -> Self
+    fn failed<Source>(error: Source) -> Self
     where
-        Error: Display,
+        Source: Display,
     {
         Self {
             error: error.to_string(),

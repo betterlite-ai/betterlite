@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::future::Future;
 
 use betterlite_openai::api::responses_shapes::websocket::ResponsesWebSocketMessage;
