@@ -1,5 +1,5 @@
 import uuid
-from collections.abc import Coroutine, Mapping
+from collections.abc import Awaitable, Mapping
 from typing import Final, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
@@ -80,7 +80,7 @@ def embedding(
     litellm_call_id: str | None = None,
     logger_fn: CallValue = None,
     **kwargs: CallValue,
-) -> EmbeddingResponse | Coroutine[object, object, EmbeddingResponse]:
+) -> EmbeddingResponse | Awaitable[EmbeddingResponse]:
     named: dict[str, CallValue] = {
         "model": model, "input": input, "dimensions": dimensions,
         "encoding_format": encoding_format, "timeout": timeout, "api_base": api_base,
@@ -104,7 +104,7 @@ async def aembedding(*args: CallValue, **kwargs: CallValue) -> EmbeddingResponse
 
 def embedding_from_values(
     values: Mapping[str, CallValue],
-) -> EmbeddingResponse | Coroutine[object, object, EmbeddingResponse]:
+) -> EmbeddingResponse | Awaitable[EmbeddingResponse]:
     model = TEXT.validate_python(values.get("model"))
     if model is None:
         raise exceptions.BadRequestError(

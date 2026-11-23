@@ -3,7 +3,7 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Coroutine
+from collections.abc import Awaitable
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol
@@ -150,23 +150,27 @@ def hidden_of(response: EmbeddingResponse) -> dict[str, JsonValue]:
 
 
 def response_of(
-    outcome: EmbeddingResponse | Coroutine[object, object, EmbeddingResponse],
+    outcome: EmbeddingResponse | Awaitable[EmbeddingResponse],
 ) -> EmbeddingResponse:
     match outcome:
         case EmbeddingResponse():
             return outcome
-        case Coroutine():
+        case Awaitable():
             raise AssertionError("a plain call answered a coroutine")
 
 
-async def settled(
-    outcome: EmbeddingResponse | Coroutine[object, object, EmbeddingResponse],
-) -> EmbeddingResponse:
+async def flagged_embedding(base: str) -> EmbeddingResponse:
+    outcome = embedding(
+        model=GOOD_MODEL, input="hi", api_base=base, api_key=GOOD_KEY, aembedding=True
+    )
     match outcome:
         case EmbeddingResponse():
-            return outcome
-        case Coroutine():
-            return await outcome
+            raise AssertionError("aembedding=True answered a response, not a coroutine")
+        case Awaitable():
+            pending = outcome
+            # the check narrows outcome to an untyped coroutine, so the await goes through pending
+            assert inspect.iscoroutine(outcome)
+            return await pending
 
 
 def header_of(call: RecordedCall, name: str) -> str | None:
@@ -201,73 +205,35 @@ def test_signature_matches_litellm() -> None:
     assert inspect.iscoroutinefunction(aembedding)
 
 
-def test_call_string_input() -> None:
+@pytest.mark.parametrize(
+    ("model", "given", "sent"),
+    [
+        (GOOD_MODEL, "hi", "hi"),
+        (GOOD_MODEL, STRINGS_INPUT, STRINGS_INPUT),
+        (GOOD_MODEL, TOKENS_INPUT, TOKENS_INPUT),
+        (GOOD_MODEL, TOKEN_LISTS_INPUT, TOKEN_LISTS_INPUT),
+        (GOOD_MODEL, None, []),
+        (f"{PROVIDER}/{GOOD_MODEL}", "hi", "hi"),
+    ],
+    ids=["string", "strings", "tokens", "token_lists", "default", "provider_prefix"],
+)
+def test_call_input(model: str, given: JsonValue, sent: JsonValue) -> None:
     with closing(EndpointServer()) as server:
-        response = response_of(
-            embedding(
-                model=GOOD_MODEL,
-                input="hi",
-                api_base=server.url + API_BASE_PATH,
-                api_key=GOOD_KEY,
-            )
-        )
+        base = server.url + API_BASE_PATH
+        # None stands for leaving input out, so embedding's own [] default is what travels
+        if given is None:
+            outcome = embedding(model=model, api_base=base, api_key=GOOD_KEY)
+        else:
+            outcome = embedding(model=model, input=given, api_base=base, api_key=GOOD_KEY)
         call = server.calls[-1]
-    assert dumped_of(response)["model"] == GOOD_MODEL
-    assert records_of(response)[0]["embedding"] == FIXTURE_VECTOR
-    assert body_of(call)["input"] == "hi"
-    assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
-
-
-def test_call_list_input() -> None:
-    with closing(EndpointServer()) as server:
-        outcome = embedding(
-            model=GOOD_MODEL,
-            input=STRINGS_INPUT,
-            api_base=server.url + API_BASE_PATH,
-            api_key=GOOD_KEY,
-        )
-        call = server.calls[-1]
-    assert body_of(call)["input"] == STRINGS_INPUT
-    assert response_of(outcome).model_dump()["object"] == "list"
-
-
-def test_call_token_input() -> None:
-    with closing(EndpointServer()) as server:
-        outcome = embedding(
-            model=GOOD_MODEL,
-            input=TOKENS_INPUT,
-            api_base=server.url + API_BASE_PATH,
-            api_key=GOOD_KEY,
-        )
-        call = server.calls[-1]
-    assert body_of(call)["input"] == TOKENS_INPUT
-    assert usage_of(response_of(outcome))["prompt_tokens"] == PROMPT_TOKENS
-
-
-def test_call_token_list_input() -> None:
-    with closing(EndpointServer()) as server:
-        outcome = embedding(
-            model=GOOD_MODEL,
-            input=TOKEN_LISTS_INPUT,
-            api_base=server.url + API_BASE_PATH,
-            api_key=GOOD_KEY,
-        )
-        call = server.calls[-1]
-    assert body_of(call)["input"] == TOKEN_LISTS_INPUT
+    response = response_of(outcome)
+    assert body_of(call)["input"] == sent
     assert body_of(call)["model"] == GOOD_MODEL
-    assert response_of(outcome).model_dump()["object"] == "list"
-
-
-def test_call_default_input() -> None:
-    with closing(EndpointServer()) as server:
-        outcome = embedding(
-            model=GOOD_MODEL,
-            api_base=server.url + API_BASE_PATH,
-            api_key=GOOD_KEY,
-        )
-        call = server.calls[-1]
-    assert body_of(call)["input"] == []
-    assert response_of(outcome).model_dump()["model"] == GOOD_MODEL
+    assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
+    assert dumped_of(response)["model"] == GOOD_MODEL
+    assert dumped_of(response)["object"] == "list"
+    assert records_of(response)[0]["embedding"] == FIXTURE_VECTOR
+    assert usage_of(response)["prompt_tokens"] == PROMPT_TOKENS
 
 
 def test_call_body_fields() -> None:
@@ -362,19 +328,6 @@ def test_call_mock_base64() -> None:
     assert records_of(response)[0]["embedding"] == BASE64_TEXT
 
 
-def test_call_provider_model() -> None:
-    with closing(EndpointServer()) as server:
-        outcome = embedding(
-            model=f"{PROVIDER}/{GOOD_MODEL}",
-            input="hi",
-            api_base=server.url + API_BASE_PATH,
-            api_key=GOOD_KEY,
-        )
-        body = body_of(server.calls[-1])
-    assert body["model"] == GOOD_MODEL
-    assert response_of(outcome).model_dump()["model"] == GOOD_MODEL
-
-
 def test_error_unauthorized() -> None:
     with closing(EndpointServer()) as server, pytest.raises(AuthenticationError) as caught:
         embedding(
@@ -409,8 +362,9 @@ def test_error_dimensions() -> None:
 
 
 def test_error_dimensions_dropped() -> None:
-    with closing(EndpointServer()) as server:
-        outcome = embedding(
+    server = EndpointServer()
+    try:
+        _ = embedding(
             model=ADA_MODEL,
             input="hi",
             dimensions=DIMENSIONS,
@@ -418,9 +372,11 @@ def test_error_dimensions_dropped() -> None:
             api_base=server.url + API_BASE_PATH,
             api_key=GOOD_KEY,
         )
-        body = body_of(server.calls[-1])
-    assert "dimensions" not in body
-    assert response_of(outcome).model_dump()["model"] == GOOD_MODEL
+    finally:
+        server.close()
+    [call] = server.calls
+    assert call["path"] == EMBEDDINGS_PATH
+    assert "dimensions" not in body_of(call)
 
 
 def test_error_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -464,20 +420,12 @@ def test_async_aembedding() -> None:
             )
         )
     assert dumped_of(response)["model"] == GOOD_MODEL
-    assert records_of(response)[0]["embedding"] == MOCK_VECTOR
+    assert records_of(response)[0]["embedding"] == FIXTURE_VECTOR
 
 
 def test_async_flag_coroutine() -> None:
     with closing(EndpointServer()) as server:
-        flagged = embedding(
-            model=GOOD_MODEL,
-            input="hi",
-            api_base=server.url + API_BASE_PATH,
-            api_key=GOOD_KEY,
-            aembedding=True,
-        )
-        assert inspect.isawaitable(flagged)
-        response = asyncio.run(settled(flagged))
+        response = asyncio.run(flagged_embedding(server.url + API_BASE_PATH))
     assert dumped_of(response)["model"] == GOOD_MODEL
 
 
