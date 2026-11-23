@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 
-use super::{build, shared_settings};
+use crate::routing::routing_value_store::shared_settings;
+
+use super::build;
 
 const REDIS: &str = "router_settings:\n  redis_host: 127.0.0.1\n  redis_port: 6399\n";
 
@@ -48,13 +50,19 @@ fn a_config_with_a_redis_url_builds_the_shared_counters() {
 
 #[test]
 fn a_config_without_redis_names_no_shared_settings() {
-    assert!(shared_settings(&config("model_list: []\n")).is_none());
+    assert!(
+        shared_settings(
+            &config("model_list: []\n"),
+            "the shared settings are unreadable"
+        )
+        .is_none()
+    );
 }
 
 #[test]
 fn the_breaker_settings_come_from_the_redis_failure_policy_section() {
     let config = config_with_env(REDIS, &[("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "9")]);
-    let settings = shared_settings(&config).unwrap();
+    let settings = shared_settings(&config, "the shared settings are unreadable").unwrap();
     assert_eq!(settings.breaker.failure_threshold, 9);
     assert_eq!(settings.redis.host.as_deref(), Some("127.0.0.1"));
     assert_eq!(settings.redis.port, Some(6399));

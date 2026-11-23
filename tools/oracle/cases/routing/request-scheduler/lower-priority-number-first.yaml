@@ -1,0 +1,15 @@
+kind: probe
+name: request-scheduler-lower-priority-number-first
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      request_scheduler:
+        timeout: "1.0"
+        steps:
+          - {op: add, priority: 255, request_id: low}
+          - {op: add, priority: 0, request_id: high}
+          - {op: add, priority: 128, request_id: medium}
+          - {op: queue}
+compare:
+  ignore: []

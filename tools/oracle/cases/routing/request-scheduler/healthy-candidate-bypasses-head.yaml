@@ -1,0 +1,22 @@
+kind: probe
+name: request-scheduler-healthy-candidate-bypasses-head
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      request_scheduler:
+        timeout: "1.0"
+        steps:
+          - {op: add, priority: 0, request_id: head}
+          - {op: add, priority: 255, request_id: late}
+          - {op: schedule, priority: 255, request_id: scheduled, healthy: 1}
+compare:
+  expected_difference:
+    - pointer: /output/request_scheduler/steps/2/depth
+      reference: 3
+      rust: 2
+      why: the healthy-deployment poll admits the request without popping it and the pin never removes the completed entry, while betterlite removes it as a declared cleanup deviation
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4459-L4471
+  ignore:
+    - pointer: /output/request_scheduler/steps/2/queue
+      why: the pin files the scheduled request under the uuid it generates inside schedule_acompletion, so the list holds a value no case can spell out; the depth above carries the state change
