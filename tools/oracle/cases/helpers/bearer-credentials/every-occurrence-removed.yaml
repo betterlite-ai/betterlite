@@ -1,0 +1,15 @@
+kind: helper
+name: bearer-credentials-every-occurrence-removed
+call:
+  b10086:
+    operation: bearer
+    value: "Bearer aBearer b"
+calls:
+  - b10086: {operation: bearer, value: "Bearer Bearer sk-123"}
+  - b10086: {operation: bearer, value: "Basic Basic dXNlcjpwYXNz"}
+  - b10086: {operation: bearer, value: "bearer bearer sk-123"}
+  - b10086: {operation: bearer, value: "bearer Bearer sk-123"}
+  - b10086: {operation: bearer, value: "Bearer Basic dXNlcjpwYXNz"}
+env: {}
+compare:
+  ignore: []
