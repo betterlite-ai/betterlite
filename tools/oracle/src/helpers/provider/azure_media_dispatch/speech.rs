@@ -32,7 +32,7 @@ impl Arm {
         match self {
             Self::OpenAi => AzureMediaOperation::OpenAiSpeech(Box::new(OpenAiSpeechOperation {
                 model: input.model.clone(),
-                input: input.input.clone(),
+                input: input.text.clone(),
                 voice: voice_name(input),
                 optional_params: input.options.clone(),
                 aspeech: false,
@@ -47,7 +47,7 @@ impl Arm {
             })),
             Self::Native => AzureMediaOperation::NativeSsml(Box::new(NativeSsmlOperation {
                 model: input.model.clone(),
-                input: input.input.clone(),
+                input: input.text.clone(),
                 voice: input.voice.clone(),
                 optional_params: input.options.clone(),
                 litellm_params: IndexMap::new(),
