@@ -61,11 +61,11 @@ impl ScriptedLookup {
     }
 }
 
+// the organization row the scripted lookup and the stored row both answer
+const ORG_ROW: &str = r#"{"organization_id": "o1", "organization_alias": "acme", "budget_id": "b1", "created_by": "a", "updated_by": "a"}"#;
+
 fn org() -> OrganizationTable {
-    serde_json::from_str(
-        r#"{"organization_id": "o1", "organization_alias": "acme", "budget_id": "b1", "created_by": "a", "updated_by": "a"}"#,
-    )
-    .expect("the row fixture parses")
+    serde_json::from_str(ORG_ROW).expect("the row fixture parses")
 }
 
 #[async_trait]
@@ -325,9 +325,7 @@ struct OneStore;
 #[async_trait]
 impl OrgStore for OneStore {
     async fn find_org(&self, _org_id: &str, _include_budget: bool) -> StoreAnswer<Option<String>> {
-        Ok(Some(
-            serde_json::to_string(&org()).expect("the row serializes"),
-        ))
+        Ok(Some(ORG_ROW.to_owned()))
     }
 
     async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {
