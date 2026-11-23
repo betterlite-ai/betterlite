@@ -9,7 +9,7 @@ use betterlite_prompts::file_ids::tools::ResponsesTool as PromptTool;
 use indexmap::IndexMap;
 
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
-use crate::api::responses_compact_http::service::{ClientSource, LogContext};
+use crate::api::responses_create_http::service::{ClientSource, LogContext};
 use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
 use crate::api::responses_parameters::requested::requested_optional_params;
 use crate::api::responses_provider_selection::ParameterMap;
