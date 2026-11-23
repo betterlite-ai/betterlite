@@ -102,6 +102,8 @@ impl BlockingCounter for InlineCounter {
         job()
     }
 
+    // only a fetched tiktoken vocabulary converts, and every encoding the wheel tests count with is bundled
+    #[cfg_attr(test, mutants::skip)]
     async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
         job()
     }
