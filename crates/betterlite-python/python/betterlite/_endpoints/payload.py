@@ -28,7 +28,7 @@ class Readable(Protocol):
 
 
 @runtime_checkable
-class Seekable(Protocol):
+class Seekable(Readable, Protocol):
     def tell(self) -> int: ...
     def seek(self, position: int) -> int: ...
 
@@ -132,11 +132,11 @@ def tuple_file(key: str, items: tuple[CallValue, ...], blobs: list[bytes]) -> Js
 
 
 def tuple_name(key: str, value: CallValue) -> str:
+    if value is None:
+        return DEFAULT_NAME
     match value:
         case str() as given:
             return given or DEFAULT_NAME
-        case None:
-            return DEFAULT_NAME
         case object():
             raise TypeError(f"{key} is not a file: the tuple name is not text")
 
@@ -144,11 +144,12 @@ def tuple_name(key: str, value: CallValue) -> str:
 def tuple_content_type(key: str, extra: tuple[CallValue, ...]) -> str | None:
     if not extra:
         return None
-    match extra[0]:
-        case str() as kind:
-            return kind
-        case None:
-            return None
+    kind = extra[0]
+    if kind is None:
+        return None
+    match kind:
+        case str() as text:
+            return text
         case object():
             raise TypeError(f"{key} is not a file: the tuple content type is not text")
 
@@ -168,19 +169,21 @@ def content_bytes(key: str, value: CallValue) -> bytes:
 
 
 def path_name(path: PathValue) -> str:
-    file_path = Path(os.fsdecode(path.__fspath__()))
-    return file_path.name or DEFAULT_NAME
+    decoded = os.fsdecode(path.__fspath__())
+    return last_part(decoded)
 
 
 def stream_name(stream: Readable) -> str:
     match stream:
         case Named() as named:
-            name = Path(named.name).name
-            if name:
-                return name
+            return last_part(named.name)
         case object():
-            pass
-    return DEFAULT_NAME
+            return DEFAULT_NAME
+
+
+def last_part(name: str) -> str:
+    part = Path(name).name
+    return part or DEFAULT_NAME
 
 
 def read_stream(stream: Readable) -> bytes:

@@ -1,11 +1,10 @@
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from types import TracebackType
-from typing import ClassVar, Final, Self
+from typing import ClassVar, Final
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict, override
+from typing_extensions import TypedDict
 
 HOST = "127.0.0.1"
 OK = 200
@@ -78,15 +77,6 @@ class RecordedCall(TypedDict):
     body: bytes
 
 
-# Headers arrive in the case the client sent, so a test reads one without guessing it.
-def header_of(call: RecordedCall, name: str) -> str | None:
-    lowered = name.lower()
-    for header, value in call["headers"].items():
-        if header.lower() == lowered:
-            return value
-    return None
-
-
 class EndpointServer(ThreadingHTTPServer):
     daemon_threads = True
     calls: list[RecordedCall]
@@ -106,19 +96,11 @@ class EndpointServer(ThreadingHTTPServer):
 
     def record(self, path: str, headers: dict[str, str], body: bytes) -> None:
         self.calls.append({"path": path, "headers": headers, "body": body})
-        self.counts[path] = self.counts.get(path, 0) + 1
+        current = self.counts.get(path)
+        self.counts[path] = 1 if current is None else current + 1
 
-    @override
-    def __enter__(self) -> Self:
-        return self
-
-    @override
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_value: BaseException | None,
-        _traceback: TracebackType | None,
-    ) -> None:
+    # contextlib.closing calls close, so the serving thread stops with the test
+    def close(self) -> None:
         self.shutdown()
         self.server_close()
         self.thread.join()

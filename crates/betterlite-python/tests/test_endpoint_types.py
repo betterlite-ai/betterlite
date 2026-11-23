@@ -8,6 +8,7 @@ from typing_extensions import get_type_hints
 from betterlite.types import embedding as betterlite_embedding
 from betterlite.types import rerank as betterlite_rerank
 from betterlite.types.images import main as betterlite_images
+from betterlite.types.utils.base import ResponseObject
 
 DEFAULT_TIMEOUT: Final = 600
 TRUNCATE_TOKENS: Final = 4
@@ -17,7 +18,6 @@ FILLED_TIMEOUT: Final = 5
 EXTRA_DIMENSIONS: Final = 8
 RESULT_INDEX: Final = 0
 RELEVANCE: Final = 0.9
-MISSING: Final = "fallback"
 
 
 class TypedDictClass(Protocol):
@@ -72,10 +72,21 @@ TYPED_DICTS: dict[str, tuple[TypedDictClass, TypedDictClass]] = {
     ),
 }
 
+RESULTS: Final[list[dict[str, JsonValue]]] = [
+    {"index": RESULT_INDEX, "relevance_score": RELEVANCE}
+]
+
 
 def required_fields(model: type[BaseModel]) -> list[bool]:
     fields = model.model_fields
     return [field.is_required() for field in fields.values()]
+
+
+def compare_dump(ours: ResponseObject, theirs: BaseModel) -> dict[str, JsonValue]:
+    dumped: dict[str, JsonValue] = ours.model_dump()
+    reference: dict[str, JsonValue] = theirs.model_dump()
+    assert dumped == reference
+    return dumped
 
 
 def test_embedding_request_fields() -> None:
@@ -88,29 +99,30 @@ def test_embedding_request_fields() -> None:
 
 
 def test_embedding_request_dump() -> None:
-    ours: dict[str, JsonValue] = betterlite_embedding.EmbeddingRequest(model="m").model_dump()
-    theirs: dict[str, JsonValue] = THEIR_EMBEDDING.EmbeddingRequest(model="m").model_dump()
-    assert ours == theirs
-    assert ours["input"] == []
-    assert ours["timeout"] == DEFAULT_TIMEOUT
-    filled: dict[str, JsonValue] = betterlite_embedding.EmbeddingRequest(
-        model="m", input=FILLED_INPUT, timeout=FILLED_TIMEOUT
-    ).model_dump()
-    other: dict[str, JsonValue] = THEIR_EMBEDDING.EmbeddingRequest(
-        model="m", input=FILLED_INPUT, timeout=FILLED_TIMEOUT
-    ).model_dump()
-    assert filled == other
+    dumped = compare_dump(
+        betterlite_embedding.EmbeddingRequest(model="m"),
+        THEIR_EMBEDDING.EmbeddingRequest(model="m"),
+    )
+    assert dumped["input"] == []
+    assert dumped["timeout"] == DEFAULT_TIMEOUT
+
+
+def test_embedding_request_filled() -> None:
+    dumped = compare_dump(
+        betterlite_embedding.EmbeddingRequest(
+            model="m", input=FILLED_INPUT, timeout=FILLED_TIMEOUT
+        ),
+        THEIR_EMBEDDING.EmbeddingRequest(model="m", input=FILLED_INPUT, timeout=FILLED_TIMEOUT),
+    )
+    assert dumped["timeout"] == FILLED_TIMEOUT
 
 
 def test_embedding_request_extra() -> None:
-    ours: dict[str, JsonValue] = betterlite_embedding.EmbeddingRequest(
-        model="m", dimensions=EXTRA_DIMENSIONS
-    ).model_dump()
-    theirs: dict[str, JsonValue] = THEIR_EMBEDDING.EmbeddingRequest(
-        model="m", dimensions=EXTRA_DIMENSIONS
-    ).model_dump()
-    assert ours == theirs
-    assert ours["dimensions"] == EXTRA_DIMENSIONS
+    dumped = compare_dump(
+        betterlite_embedding.EmbeddingRequest(model="m", dimensions=EXTRA_DIMENSIONS),
+        THEIR_EMBEDDING.EmbeddingRequest(model="m", dimensions=EXTRA_DIMENSIONS),
+    )
+    assert dumped["dimensions"] == EXTRA_DIMENSIONS
 
 
 def test_rerank_request_fields() -> None:
@@ -124,26 +136,20 @@ def test_rerank_request_fields() -> None:
 
 def test_rerank_request_dump() -> None:
     documents: list[str | dict[str, JsonValue]] = ["a", {"text": "b"}]
-    ours: dict[str, JsonValue] = betterlite_rerank.RerankRequest(
-        model="m", query="q", documents=documents
-    ).model_dump()
-    theirs: dict[str, JsonValue] = THEIR_RERANK.RerankRequest(
-        model="m", query="q", documents=documents
-    ).model_dump()
-    assert ours == theirs
-    assert ours["top_n"] is None
-    assert ours["return_documents"] is None
+    dumped = compare_dump(
+        betterlite_rerank.RerankRequest(model="m", query="q", documents=documents),
+        THEIR_RERANK.RerankRequest(model="m", query="q", documents=documents),
+    )
+    assert dumped["top_n"] is None
+    assert dumped["return_documents"] is None
 
 
 def test_rerank_request_extra() -> None:
-    ours: dict[str, JsonValue] = betterlite_rerank.RerankRequest(
-        model="m", query="q", documents=[], bogus=1
-    ).model_dump()
-    theirs: dict[str, JsonValue] = THEIR_RERANK.RerankRequest(
-        model="m", query="q", documents=[], bogus=1
-    ).model_dump()
-    assert ours == theirs
-    assert "bogus" not in ours
+    dumped = compare_dump(
+        betterlite_rerank.RerankRequest(model="m", query="q", documents=[], bogus=1),
+        THEIR_RERANK.RerankRequest(model="m", query="q", documents=[], bogus=1),
+    )
+    assert "bogus" not in dumped
 
 
 def test_truncation_params_fields() -> None:
@@ -164,9 +170,8 @@ def test_truncation_params_frozen() -> None:
     with pytest.raises(ValidationError):
         model.truncate_prompt_tokens = OTHER_TOKENS
     assert model.truncate_prompt_tokens == TRUNCATE_TOKENS
-    ours: dict[str, JsonValue] = model.model_dump()
-    theirs: dict[str, JsonValue] = reference.model_dump()
-    assert ours == theirs
+    dumped = compare_dump(model, reference)
+    assert dumped["truncate_prompt_tokens"] == TRUNCATE_TOKENS
 
 
 def test_rerank_response_fields() -> None:
@@ -176,18 +181,12 @@ def test_rerank_response_fields() -> None:
 
 
 def test_rerank_response_dump() -> None:
-    results: list[betterlite_rerank.RerankResponseResult] = [
-        {"index": RESULT_INDEX, "relevance_score": RELEVANCE}
-    ]
-    ours: dict[str, JsonValue] = betterlite_rerank.RerankResponse(
-        id="r", results=results, bogus=1
-    ).model_dump()
-    theirs: dict[str, JsonValue] = THEIR_RERANK.RerankResponse(
-        id="r", results=results, bogus=1
-    ).model_dump()
-    assert ours == theirs
-    assert ours["meta"] is None
-    assert "bogus" not in ours
+    dumped = compare_dump(
+        betterlite_rerank.RerankResponse(id="r", results=RESULTS, bogus=1),
+        THEIR_RERANK.RerankResponse(id="r", results=RESULTS, bogus=1),
+    )
+    assert dumped["meta"] is None
+    assert "bogus" not in dumped
 
 
 def test_rerank_response_access() -> None:
@@ -196,16 +195,19 @@ def test_rerank_response_access() -> None:
     )
     assert response["id"] == "r"
     assert response.get("id") == "r"
-    assert response.get("missing", MISSING) == MISSING
+    assert response.get("missing") is None
     assert "id" in response
     assert "missing" not in response
 
 
-def test_rerank_response_missing_key() -> None:
+def test_rerank_missing_key() -> None:
     response = betterlite_rerank.RerankResponse(id="r")
     with pytest.raises(AttributeError):
         _ = response["missing"]
-    assert response["_hidden_params"] == {}
+    with pytest.raises(AttributeError):
+        _ = response["_hidden_params"]
+    assert response.get("_hidden_params") is None
+    assert "_hidden_params" not in response
 
 
 def test_rerank_hidden_params() -> None:

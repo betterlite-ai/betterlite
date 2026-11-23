@@ -12,7 +12,10 @@ deviations:
   - what: "`logger_fn` is accepted and never called, and a warning is logged once per call."
     why: The endpoint call runs in Rust and has no point to call back into Python at each step.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1400-L1408
-  - what: "`RerankResponse` takes its item access from the shared `ResponseObject`: a missing key raises `AttributeError` where LiteLLM's `self.__dict__[key]` raises `KeyError`, and the `_hidden_params` private attribute is reachable through item access where LiteLLM's `__dict__` lookup misses it."
+  - what: The proxy auth failure warning carries the failed call's traceback, where LiteLLM logs the message alone.
+    why: Ruff's blind-except rule allows the broad `except Exception` only when the exception is logged with `exc_info` enabled, and this task's budget allows no noqa.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6369-L6374
+  - what: "`RerankResponse` takes its item access from the shared `ResponseObject`: a key it does not hold, `_hidden_params` included, raises `AttributeError` where LiteLLM's `self.__dict__[key]` raises `KeyError`; `get` returns None and `in` is False for the same keys in both."
     why: Every ported model under betterlite.types uses ResponseObject, the base B5657 and B5658 ported, and B5657 records the same base behavior; the declared fields, defaults and dumps match LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L88-L95
 kept_bugs: []

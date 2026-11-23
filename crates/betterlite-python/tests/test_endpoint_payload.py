@@ -3,6 +3,7 @@ import io
 import json
 import logging
 from collections.abc import Mapping
+from contextlib import closing
 from pathlib import Path
 from typing import Final
 
@@ -19,16 +20,15 @@ from endpoint_server import (
     SPEECH_TYPE,
     UNAUTHORIZED,
     EndpointServer,
-    header_of,
 )
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
 import betterlite
 from betterlite import exceptions
+from betterlite._completion import arguments
 from betterlite._completion.errors import UnknownNativeError, UnsupportedCallArgument
 from betterlite._endpoints import (
-    CallValue,
     acall_native,
     call_native,
     model_from_arguments,
@@ -38,7 +38,6 @@ from betterlite._endpoints import (
 )
 from betterlite._native import NativeError
 
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 LOGGER_FN_WARNING: Final = "logger_fn is not called: the endpoint call runs in Rust"
 PROXY_MESSAGE: Final = "Failed to get proxy auth headers: boom"
@@ -47,9 +46,6 @@ PROXY_VALUE: Final = "yes"
 AUTHORIZATION: Final[dict[str, str]] = {"Authorization": f"Bearer {GOOD_KEY}"}
 REFUSED_NAMES: Final[list[str]] = ["client", "shared_session"]
 READ_BYTES: Final = 4
-API_BASE: Final = "https://proxy.test"
-COHERE_KEY: Final = "sk-cohere"
-OTHER_API_BASE: Final = "https://other.test"
 CONNECT_SECONDS: Final = 0.5
 READ_SECONDS: Final = 1.5
 WRITE_SECONDS: Final = 2.5
@@ -105,51 +101,41 @@ class FamilyError(NativeError): ...
 
 
 class ProxyAuth:
-    # ast-grep-ignore: no-one-line-functions
+    def __init__(self, headers: Mapping[str, str] | None) -> None:
+        self.headers = headers
+
     def get_auth_headers(self) -> Mapping[str, str]:
-        return {PROXY_HEADER: PROXY_VALUE}
+        if self.headers is None:
+            raise ValueError("boom")
+        return dict(self.headers)
 
 
-class BrokenProxyAuth:
-    # ast-grep-ignore: no-one-line-functions
-    def get_auth_headers(self) -> Mapping[str, str]:
-        raise ValueError("boom")
+class FailingCall:
+    def __init__(self, failure: NativeError) -> None:
+        self.failure = failure
+
+    def __call__(self, _text: str, _blobs: list[bytes]) -> str:
+        raise self.failure
+
+
+class AnsweringCall:
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+
+    def __call__(self, _text: str, _blobs: list[bytes]) -> str:
+        return self.answer
 
 
 FAMILY_ERROR: Final = FamilyError(AUTH_ERROR)
-
-
-def encoded(values: Mapping[str, CallValue]) -> dict[str, JsonValue]:
-    return JSON_OBJECT.validate_json(to_call_payload(values).text)
-
-
-def markers(values: Mapping[str, CallValue]) -> dict[str, dict[str, FileMarker]]:
-    return MARKERS.validate_json(to_call_payload(values).text)
-
-
-def response_json(response: httpx.Response) -> dict[str, JsonValue]:
-    return JSON_OBJECT.validate_json(response.content)
-
-
-def failing_embedding(_text: str, _blobs: list[bytes]) -> str:
-    raise FAMILY_ERROR
+FAILING: Final = FailingCall(FAMILY_ERROR)
+FAILING_UNKNOWN: Final = FailingCall(FamilyError(UNKNOWN_ERROR))
+FAILING_BARE: Final = FailingCall(NativeError(UNKNOWN_ERROR))
+ANSWERING: Final = AnsweringCall(json.dumps(LIST_ANSWER))
 
 
 async def failing_async_embedding(_text: str, _blobs: list[bytes]) -> str:
     await asyncio.sleep(0)
     raise FAMILY_ERROR
-
-
-def failing_unknown(_text: str, _blobs: list[bytes]) -> str:
-    raise FamilyError(UNKNOWN_ERROR)
-
-
-def failing_bare(_text: str, _blobs: list[bytes]) -> str:
-    raise NativeError(UNKNOWN_ERROR)
-
-
-def answering(_text: str, _blobs: list[bytes]) -> str:
-    return json.dumps(LIST_ANSWER)
 
 
 async def answering_async(_text: str, _blobs: list[bytes]) -> str:
@@ -165,13 +151,14 @@ def test_encode_plain_values() -> None:
 
 
 def test_encode_bool_stays_bool() -> None:
-    assert encoded({"stream": True})["stream"] is True
+    body = JSON_OBJECT.validate_json(to_call_payload({"stream": True}).text)
+    assert body["stream"] is True
 
 
 def test_encode_bytes_file() -> None:
     result = to_call_payload({"image": b"png-bytes"})
+    marker = MARKERS.validate_json(result.text)["image"]["$file"]
     assert result.blobs == [b"png-bytes"]
-    marker = markers({"image": b"png-bytes"})["image"]["$file"]
     assert marker == {"name": "file", "blob": 0, "content_type": None}
 
 
@@ -184,17 +171,19 @@ def test_encode_path_file(tmp_path: Path) -> None:
     path = tmp_path / "voice.wav"
     path.write_bytes(b"wav-bytes")
     result = to_call_payload({"file": path})
+    marker = MARKERS.validate_json(result.text)["file"]["$file"]
     assert result.blobs == [b"wav-bytes"]
-    assert markers({"file": path})["file"]["$file"]["name"] == "voice.wav"
+    assert marker["name"] == "voice.wav"
 
 
 def test_encode_reader_rewinds() -> None:
     stream = io.BytesIO(b"buffer-bytes")
     stream.read(READ_BYTES)
     result = to_call_payload({"file": stream})
+    marker = MARKERS.validate_json(result.text)["file"]["$file"]
     assert result.blobs == [b"buffer-bytes"]
     assert stream.tell() == READ_BYTES
-    assert markers({"file": stream})["file"]["$file"]["name"] == "file"
+    assert marker["name"] == "file"
 
 
 def test_encode_handle_keeps_name(tmp_path: Path) -> None:
@@ -202,7 +191,7 @@ def test_encode_handle_keeps_name(tmp_path: Path) -> None:
     path.write_bytes(b"wav-bytes")
     with path.open("rb") as handle:
         result = to_call_payload({"file": handle})
-        marker = markers({"file": handle})["file"]["$file"]
+        marker = MARKERS.validate_json(result.text)["file"]["$file"]
     assert result.blobs == [b"wav-bytes"]
     assert marker["name"] == "voice.wav"
 
@@ -210,13 +199,14 @@ def test_encode_handle_keeps_name(tmp_path: Path) -> None:
 def test_encode_tuple_names_file() -> None:
     taken = ("voices/take.wav", b"take-bytes", "audio/wav")
     result = to_call_payload({"file": taken})
+    marker = MARKERS.validate_json(result.text)["file"]["$file"]
     assert result.blobs == [b"take-bytes"]
-    marker = markers({"file": taken})["file"]["$file"]
     assert marker == {"name": "voices/take.wav", "blob": 0, "content_type": "audio/wav"}
 
 
 def test_encode_tuple_default_name() -> None:
-    marker = markers({"file": ("", b"take")})["file"]["$file"]
+    result = to_call_payload({"file": ("", b"take")})
+    marker = MARKERS.validate_json(result.text)["file"]["$file"]
     assert marker == {"name": "file", "blob": 0, "content_type": None}
 
 
@@ -225,8 +215,9 @@ def test_encode_tuple_path_content(tmp_path: Path) -> None:
     path.write_bytes(b"take-bytes")
     taken = ("take.wav", path)
     result = to_call_payload({"file": taken})
+    marker = MARKERS.validate_json(result.text)["file"]["$file"]
     assert result.blobs == [b"take-bytes"]
-    assert markers({"file": taken})["file"]["$file"]["name"] == "take.wav"
+    assert marker["name"] == "take.wav"
 
 
 def test_encode_nested_file_order() -> None:
@@ -241,11 +232,13 @@ def test_encode_nested_file_order() -> None:
 
 
 def test_encode_timeout_largest() -> None:
-    assert encoded({"timeout": TIMEOUT})["timeout"] == WRITE_SECONDS
+    body = JSON_OBJECT.validate_json(to_call_payload({"timeout": TIMEOUT}).text)
+    assert body["timeout"] == WRITE_SECONDS
 
 
 def test_encode_plain_timeout() -> None:
-    assert encoded({"timeout": PLAIN_TIMEOUT})["timeout"] == PLAIN_TIMEOUT
+    body = JSON_OBJECT.validate_json(to_call_payload({"timeout": PLAIN_TIMEOUT}).text)
+    assert body["timeout"] == PLAIN_TIMEOUT
 
 
 @pytest.mark.parametrize("name", REFUSED_NAMES)
@@ -255,8 +248,9 @@ def test_refuse_client_and_session(name: str) -> None:
     assert caught.value.argument == name
 
 
-def test_refuse_client_none_dropped() -> None:
-    assert json.loads(to_call_payload({"client": None, "model": "m"}).text) == {"model": "m"}
+def test_refuse_client_none() -> None:
+    body = JSON_OBJECT.validate_json(to_call_payload({"client": None, "model": "m"}).text)
+    assert body == {"model": "m"}
 
 
 def test_refuse_logger_fn_once(caplog: pytest.LogCaptureFixture) -> None:
@@ -264,14 +258,14 @@ def test_refuse_logger_fn_once(caplog: pytest.LogCaptureFixture) -> None:
         result = to_call_payload({"logger_fn": print, "model": "m"})
     assert LOGGER_FN_WARNING in caplog.messages
     assert len(caplog.messages) == 1
-    assert json.loads(result.text) == {"model": "m"}
+    assert JSON_OBJECT.validate_json(result.text) == {"model": "m"}
 
 
 def test_refuse_logger_fn_none(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING, logger="LiteLLM"):
         result = to_call_payload({"logger_fn": None})
     assert caplog.messages == []
-    assert json.loads(result.text) == {}
+    assert JSON_OBJECT.validate_json(result.text) == {}
 
 
 def test_refuse_unknown_object_key() -> None:
@@ -280,7 +274,7 @@ def test_refuse_unknown_object_key() -> None:
 
 
 def test_runner_returns_json() -> None:
-    answer = call_native(answering, to_call_payload({"model": EMBEDDING_MODEL}))
+    answer = call_native(ANSWERING, to_call_payload({"model": EMBEDDING_MODEL}))
     assert answer == LIST_ANSWER
 
 
@@ -291,7 +285,7 @@ def test_runner_async_returns_json() -> None:
 
 def test_runner_maps_native_error() -> None:
     with pytest.raises(exceptions.AuthenticationError) as caught:
-        call_native(failing_embedding, to_call_payload({"model": EMBEDDING_MODEL}))
+        call_native(FAILING, to_call_payload({"model": EMBEDDING_MODEL}))
     assert caught.type is exceptions.AuthenticationError
     assert "bad key" in caught.value.message
     assert caught.value.status_code == UNAUTHORIZED
@@ -307,20 +301,22 @@ def test_runner_async_native_error() -> None:
 
 def test_runner_unknown_error_type() -> None:
     with pytest.raises(UnknownNativeError):
-        call_native(failing_unknown, to_call_payload({"model": EMBEDDING_MODEL}))
+        call_native(FAILING_UNKNOWN, to_call_payload({"model": EMBEDDING_MODEL}))
 
 
 def test_runner_error_class_filter() -> None:
     with pytest.raises(NativeError):
-        call_native(failing_bare, to_call_payload({"model": EMBEDDING_MODEL}), FamilyError)
+        call_native(FAILING_BARE, to_call_payload({"model": EMBEDDING_MODEL}), FamilyError)
 
 
 def test_runner_model_positional() -> None:
-    assert model_from_arguments(("gpt-4o", 1), {}) == MODEL
+    model = model_from_arguments(("gpt-4o", 1), {})
+    assert model == MODEL
 
 
 def test_runner_model_from_keyword() -> None:
-    assert model_from_arguments((), {"model": MODEL}) == MODEL
+    model = model_from_arguments((), {"model": MODEL})
+    assert model == MODEL
 
 
 def test_runner_model_missing_key() -> None:
@@ -328,13 +324,14 @@ def test_runner_model_missing_key() -> None:
         model_from_arguments((), {})
 
 
-def test_settings_read_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(betterlite, "api_base", API_BASE)
-    assert read_settings(["api_base"]) == {"api_base": API_BASE}
-    monkeypatch.setattr(betterlite, "api_base", OTHER_API_BASE)
-    assert read_settings(["api_base"]) == {"api_base": OTHER_API_BASE}
-    monkeypatch.setattr(betterlite, "drop_params", True)
-    assert read_settings(["drop_params"]) == {"drop_params": True}
+def test_settings_read_per_call() -> None:
+    original = betterlite.drop_params
+    try:
+        for wanted in (False, True):
+            betterlite.drop_params = wanted
+            assert read_settings(["drop_params"]) == {"drop_params": wanted}
+    finally:
+        betterlite.drop_params = original
 
 
 def test_settings_missing_name() -> None:
@@ -342,37 +339,40 @@ def test_settings_missing_name() -> None:
         read_settings(["api_base", "no_such_setting"])
 
 
-def test_settings_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(betterlite, "cohere_key", COHERE_KEY)
-    assert read_settings(["cohere_key"]) == {"cohere_key": COHERE_KEY}
+def test_settings_provider_keys() -> None:
+    settings = read_settings(["cohere_key", "openai_key", "azure_key"])
+    assert list(settings) == ["cohere_key", "openai_key", "azure_key"]
 
 
-def test_settings_proxy_headers(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+def test_settings_proxy_headers(caplog: pytest.LogCaptureFixture) -> None:
     assert proxy_headers() == {}
-    monkeypatch.setattr(betterlite, "proxy_auth", ProxyAuth())
-    assert proxy_headers() == {PROXY_HEADER: PROXY_VALUE}
-    monkeypatch.setattr(betterlite, "proxy_auth", BrokenProxyAuth())
-    with caplog.at_level(logging.WARNING, logger="LiteLLM"):
-        assert proxy_headers() == {}
-    assert PROXY_MESSAGE in caplog.messages
+    arguments.proxy_auth = ProxyAuth({PROXY_HEADER: PROXY_VALUE})
+    try:
+        assert proxy_headers() == {PROXY_HEADER: PROXY_VALUE}
+        arguments.proxy_auth = ProxyAuth(None)
+        with caplog.at_level(logging.WARNING, logger="LiteLLM"):
+            assert proxy_headers() == {}
+        assert PROXY_MESSAGE in caplog.messages
+        record = caplog.records[0]
+        assert record.exc_info is not None
+    finally:
+        arguments.proxy_auth = None
 
 
 def test_server_answers_routes() -> None:
-    with EndpointServer() as server:
+    with closing(EndpointServer()) as server:
         for path, expected in RESPONSES.items():
             response = httpx.post(
                 f"{server.url}{path}", json={"model": MODEL}, headers=AUTHORIZATION
             )
             assert response.status_code == OK
             assert response.headers.get("content-type") == JSON_TYPE
-            assert response_json(response) == expected
+            body = JSON_OBJECT.validate_json(response.content)
+            assert body == expected
 
 
 def test_server_speech_bytes() -> None:
-    with EndpointServer() as server:
+    with closing(EndpointServer()) as server:
         response = httpx.post(
             f"{server.url}{SPEECH_PATH}", json={"model": "tts-1"}, headers=AUTHORIZATION
         )
@@ -382,7 +382,7 @@ def test_server_speech_bytes() -> None:
 
 
 def test_server_rejects_bad_key() -> None:
-    with EndpointServer() as server:
+    with closing(EndpointServer()) as server:
         response = httpx.post(
             f"{server.url}/v1/embeddings",
             json={"model": MODEL},
@@ -397,7 +397,7 @@ def test_server_rejects_bad_key() -> None:
 
 
 def test_server_records_and_counts() -> None:
-    with EndpointServer() as server:
+    with closing(EndpointServer()) as server:
         for _ in range(2):
             httpx.post(f"{server.url}/v1/embeddings", json={"model": MODEL}, headers=AUTHORIZATION)
         httpx.post(f"{server.url}/v1/rerank", json={"model": MODEL}, headers=AUTHORIZATION)
@@ -405,4 +405,5 @@ def test_server_records_and_counts() -> None:
         paths = [record["path"] for record in server.calls]
         assert paths == ["/v1/embeddings", "/v1/embeddings", "/v1/rerank"]
         assert JSON_OBJECT.validate_json(server.calls[0]["body"]) == {"model": MODEL}
-        assert header_of(server.calls[0], "authorization") == f"Bearer {GOOD_KEY}"
+        headers = {name.lower(): value for name, value in server.calls[0]["headers"].items()}
+        assert headers["authorization"] == f"Bearer {GOOD_KEY}"
