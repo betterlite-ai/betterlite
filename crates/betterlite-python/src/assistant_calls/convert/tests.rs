@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::ExposeSecret as _;
 
-use super::{request_create, request_read_delete, request_settings, request_thread};
+use super::{request_create, request_read_delete, request_settings, request_thread, write};
 use crate::assistant_calls::error::{family, payload};
 
 const READ_DELETE: &str = r#"{"operation":"list","provider":"openai","assistant_id":null,
@@ -69,6 +69,12 @@ fn request_thread_keeps_messages_metadata_and_kwargs() {
     assert_eq!(request.metadata.unwrap().len(), 1);
     assert_eq!(request.tool_resources, None);
     assert_eq!(request.kwargs.len(), 2);
+}
+
+#[test]
+fn write_encodes_the_value_as_json() {
+    let text = write(&Json::Bool(true)).unwrap();
+    assert_eq!(text, "true");
 }
 
 #[test]
