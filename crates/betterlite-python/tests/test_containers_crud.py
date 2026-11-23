@@ -99,7 +99,9 @@ class ReferenceContainer(Protocol):
 
 
 class ReferenceAsyncContainer(Protocol):
-    def __call__(self, **kwargs: JsonValue) -> Coroutine[JsonValue, JsonValue, ContainerObject]: ...
+    def __call__(
+        self, **kwargs: JsonValue
+    ) -> Coroutine[JsonValue, JsonValue, ContainerObject]: ...
 
 
 class ReferenceList(Protocol):
@@ -122,18 +124,36 @@ class ReferenceAsyncDelete(Protocol):
     ) -> Coroutine[JsonValue, JsonValue, DeleteContainerResult]: ...
 
 
-class ReferenceModule(Protocol):
-    create_container: ReferenceContainer
-    acreate_container: ReferenceAsyncContainer
-    list_containers: ReferenceList
-    alist_containers: ReferenceAsyncList
-    retrieve_container: ReferenceContainer
-    aretrieve_container: ReferenceAsyncContainer
-    delete_container: ReferenceDelete
-    adelete_container: ReferenceAsyncDelete
+class ContainerCallers(Protocol):
+    def __getattr__(self, name: str) -> ReferenceContainer: ...
 
 
-REFERENCE: ReferenceModule = importlib.import_module("litellm")
+class AsyncContainerCallers(Protocol):
+    def __getattr__(self, name: str) -> ReferenceAsyncContainer: ...
+
+
+class ListCallers(Protocol):
+    def __getattr__(self, name: str) -> ReferenceList: ...
+
+
+class AsyncListCallers(Protocol):
+    def __getattr__(self, name: str) -> ReferenceAsyncList: ...
+
+
+class DeleteCallers(Protocol):
+    def __getattr__(self, name: str) -> ReferenceDelete: ...
+
+
+class AsyncDeleteCallers(Protocol):
+    def __getattr__(self, name: str) -> ReferenceAsyncDelete: ...
+
+
+CONTAINER_REF: ContainerCallers = importlib.import_module("litellm")
+ASYNC_CONTAINER_REF: AsyncContainerCallers = importlib.import_module("litellm")
+LIST_REF: ListCallers = importlib.import_module("litellm")
+ASYNC_LIST_REF: AsyncListCallers = importlib.import_module("litellm")
+DELETE_REF: DeleteCallers = importlib.import_module("litellm")
+ASYNC_DELETE_REF: AsyncDeleteCallers = importlib.import_module("litellm")
 
 
 class RecordedCall(TypedDict):
@@ -252,28 +272,28 @@ def cost_of(container: ContainerObject) -> float:
 
 def test_signature_matches_litellm() -> None:
     assert rows_of(inspect.signature(create_container)) == rows_of(
-        inspect.signature(REFERENCE.create_container)
+        inspect.signature(CONTAINER_REF.create_container)
     )
     assert rows_of(inspect.signature(acreate_container)) == rows_of(
-        inspect.signature(REFERENCE.acreate_container)
+        inspect.signature(ASYNC_CONTAINER_REF.acreate_container)
     )
     assert rows_of(inspect.signature(list_containers)) == rows_of(
-        inspect.signature(REFERENCE.list_containers)
+        inspect.signature(LIST_REF.list_containers)
     )
     assert rows_of(inspect.signature(alist_containers)) == rows_of(
-        inspect.signature(REFERENCE.alist_containers)
+        inspect.signature(ASYNC_LIST_REF.alist_containers)
     )
     assert rows_of(inspect.signature(retrieve_container)) == rows_of(
-        inspect.signature(REFERENCE.retrieve_container)
+        inspect.signature(CONTAINER_REF.retrieve_container)
     )
     assert rows_of(inspect.signature(aretrieve_container)) == rows_of(
-        inspect.signature(REFERENCE.aretrieve_container)
+        inspect.signature(ASYNC_CONTAINER_REF.aretrieve_container)
     )
     assert rows_of(inspect.signature(delete_container)) == rows_of(
-        inspect.signature(REFERENCE.delete_container)
+        inspect.signature(DELETE_REF.delete_container)
     )
     assert rows_of(inspect.signature(adelete_container)) == rows_of(
-        inspect.signature(REFERENCE.adelete_container)
+        inspect.signature(ASYNC_DELETE_REF.adelete_container)
     )
     assert not inspect.iscoroutinefunction(create_container)
     assert not inspect.iscoroutinefunction(list_containers)
@@ -285,13 +305,13 @@ def test_signature_matches_litellm() -> None:
     with pytest.raises(TypeError):
         inspect.signature(create_container).bind()
     with pytest.raises(TypeError):
-        inspect.signature(REFERENCE.create_container).bind()
+        inspect.signature(CONTAINER_REF.create_container).bind()
 
 
 def test_calls_create() -> None:
     with closing(ContainerServer()) as server:
         base = f"{server.url}{API_BASE_PATH}"
-        reference = REFERENCE.create_container(
+        reference = CONTAINER_REF.create_container(
             name=CONTAINER_NAME,
             expires_after=EXPIRES_AFTER,
             file_ids=FILE_IDS,
@@ -306,7 +326,7 @@ def test_calls_create() -> None:
             api_key=GOOD_KEY,
         )
         async_reference = asyncio.run(
-            REFERENCE.acreate_container(
+            ASYNC_CONTAINER_REF.acreate_container(
                 name=CONTAINER_NAME,
                 expires_after=EXPIRES_AFTER,
                 file_ids=FILE_IDS,
@@ -343,14 +363,14 @@ def test_calls_create() -> None:
 def test_calls_list() -> None:
     with closing(ContainerServer()) as server:
         base = f"{server.url}{API_BASE_PATH}"
-        reference = REFERENCE.list_containers(
+        reference = LIST_REF.list_containers(
             after=AFTER, limit=LIMIT, order=ORDER, api_base=base, api_key=GOOD_KEY
         )
         ours = list_containers(
             after=AFTER, limit=LIMIT, order=ORDER, api_base=base, api_key=GOOD_KEY
         )
         async_reference = asyncio.run(
-            REFERENCE.alist_containers(
+            ASYNC_LIST_REF.alist_containers(
                 after=AFTER, limit=LIMIT, order=ORDER, api_base=base, api_key=GOOD_KEY
             )
         )
@@ -371,7 +391,7 @@ def test_calls_list() -> None:
 def test_calls_list_defaults() -> None:
     with closing(ContainerServer()) as server:
         base = f"{server.url}{API_BASE_PATH}"
-        reference = REFERENCE.list_containers(api_base=base, api_key=GOOD_KEY)
+        reference = LIST_REF.list_containers(api_base=base, api_key=GOOD_KEY)
         ours = list_containers(api_base=base, api_key=GOOD_KEY)
         [reference_call, call] = server.calls
     assert dumped_of(ours) == dumped_of(reference)
@@ -383,12 +403,12 @@ def test_calls_list_defaults() -> None:
 def test_calls_retrieve() -> None:
     with closing(ContainerServer()) as server:
         base = f"{server.url}{API_BASE_PATH}"
-        reference = REFERENCE.retrieve_container(
+        reference = CONTAINER_REF.retrieve_container(
             container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY
         )
         ours = retrieve_container(container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY)
         async_reference = asyncio.run(
-            REFERENCE.aretrieve_container(
+            ASYNC_CONTAINER_REF.aretrieve_container(
                 container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY
             )
         )
@@ -408,14 +428,14 @@ def test_calls_delete() -> None:
         base = f"{server.url}{API_BASE_PATH}"
         answers = [
             delete_container(container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY),
-            REFERENCE.delete_container(
+            DELETE_REF.delete_container(
                 container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY
             ),
             asyncio.run(
                 adelete_container(container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY)
             ),
             asyncio.run(
-                REFERENCE.adelete_container(
+                ASYNC_DELETE_REF.adelete_container(
                     container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY
                 )
             ),
@@ -430,24 +450,24 @@ def test_calls_delete() -> None:
 def test_calls_extra_params() -> None:
     with closing(ContainerServer()) as server:
         base = f"{server.url}{API_BASE_PATH}"
-        sent_headers = {PROBE_HEADER: PROBE_VALUE}
-        sent_query = {PAGE_PARAM: PAGE_VALUE}
+        sent_headers: dict[str, JsonValue] = {PROBE_HEADER: PROBE_VALUE}
+        sent_query: dict[str, JsonValue] = {PAGE_PARAM: PAGE_VALUE}
         created = create_container(
             name=CONTAINER_NAME, api_base=base, api_key=GOOD_KEY, extra_headers=sent_headers
         )
-        reference_created = REFERENCE.create_container(
+        reference_created = CONTAINER_REF.create_container(
             name=CONTAINER_NAME, api_base=base, api_key=GOOD_KEY, extra_headers=sent_headers
         )
         listed = list_containers(
             api_base=base, api_key=GOOD_KEY, extra_headers=sent_headers, extra_query=sent_query
         )
-        reference_listed = REFERENCE.list_containers(
+        reference_listed = LIST_REF.list_containers(
             api_base=base, api_key=GOOD_KEY, extra_headers=sent_headers, extra_query=sent_query
         )
         got = retrieve_container(
             container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY, extra_query=sent_query
         )
-        reference_got = REFERENCE.retrieve_container(
+        reference_got = CONTAINER_REF.retrieve_container(
             container_id=CONTAINER_ID, api_base=base, api_key=GOOD_KEY, extra_query=sent_query
         )
         recorded = list(server.calls)
@@ -477,7 +497,9 @@ def test_error_retrieve_missing() -> None:
         with pytest.raises(NotFoundError) as caught:
             retrieve_container(container_id=MISSING_ID, api_base=base, api_key=GOOD_KEY)
         with pytest.raises(Exception, match=NOT_FOUND_TEXT) as reference_caught:
-            REFERENCE.retrieve_container(container_id=MISSING_ID, api_base=base, api_key=GOOD_KEY)
+            CONTAINER_REF.retrieve_container(
+                container_id=MISSING_ID, api_base=base, api_key=GOOD_KEY
+            )
     error = caught.value
     assert error.status_code == NOT_FOUND
     assert error.__class__.__name__ == reference_caught.value.__class__.__name__
@@ -496,7 +518,7 @@ def test_error_delete_async() -> None:
             )
         with pytest.raises(Exception, match=NOT_FOUND_TEXT):
             asyncio.run(
-                REFERENCE.adelete_container(
+                ASYNC_DELETE_REF.adelete_container(
                     container_id=MISSING_ID, api_base=base, api_key=GOOD_KEY
                 )
             )
