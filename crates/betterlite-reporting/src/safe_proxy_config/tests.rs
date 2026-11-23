@@ -53,15 +53,36 @@ fn snapshot() -> ProxyConfigSnapshot {
 }
 
 #[test]
-fn credential_key_every_part_makes_a_key_credential_like() {
+fn credential_key_parts_match_the_pinned_set() {
     assert_eq!(CREDENTIAL_KEY_PARTS.len(), 19);
-    for part in CREDENTIAL_KEY_PARTS {
-        assert!(is_credential_key(part), "{part}");
-        assert!(
-            is_credential_key(&format!("prefix_{part}_suffix")),
-            "{part}"
-        );
-    }
+}
+
+#[rstest]
+#[case::key("key")]
+#[case::keys("keys")]
+#[case::secret("secret")]
+#[case::secrets("secrets")]
+#[case::token("token")]
+#[case::password("password")]
+#[case::passwd("passwd")]
+#[case::credential("credential")]
+#[case::credentials("credentials")]
+#[case::url("url")]
+#[case::uri("uri")]
+#[case::dsn("dsn")]
+#[case::host("host")]
+#[case::hosts("hosts")]
+#[case::base("base")]
+#[case::endpoint("endpoint")]
+#[case::cert("cert")]
+#[case::pem("pem")]
+#[case::salt("salt")]
+fn credential_key_every_part_makes_a_key_credential_like(#[case] part: &str) {
+    assert!(is_credential_key(part), "{part}");
+    assert!(
+        is_credential_key(&format!("prefix_{part}_suffix")),
+        "{part}"
+    );
 }
 
 #[rstest]
@@ -86,20 +107,21 @@ fn credential_key_management_system_is_the_one_exception(
     assert_eq!(is_credential_key(key), credential, "{key}");
 }
 
-#[test]
-fn render_bool_under_any_key() {
-    for key in ["api_base", "redis_host", "store_model_in_db"] {
-        assert_eq!(
-            render_value(key, &ConfigValue::Bool(true)).as_deref(),
-            Some("true"),
-            "{key}"
-        );
-        assert_eq!(
-            render_value(key, &ConfigValue::Bool(false)).as_deref(),
-            Some("false"),
-            "{key}"
-        );
-    }
+#[rstest]
+#[case::credential_like_base("api_base")]
+#[case::credential_like_host("redis_host")]
+#[case::plain_setting("store_model_in_db")]
+fn render_bool_under_any_key(#[case] key: &str) {
+    assert_eq!(
+        render_value(key, &ConfigValue::Bool(true)).as_deref(),
+        Some("true"),
+        "{key}"
+    );
+    assert_eq!(
+        render_value(key, &ConfigValue::Bool(false)).as_deref(),
+        Some("false"),
+        "{key}"
+    );
 }
 
 #[rstest]
@@ -121,12 +143,14 @@ fn render_string_needs_a_known_value(#[case] text: &str, #[case] renders: bool) 
     );
 }
 
-#[test]
-fn render_string_is_dropped_under_a_credential_like_key() {
+#[rstest]
+#[case::api_key("api_key")]
+#[case::database_url("database_url")]
+#[case::redis_host("redis_host")]
+#[case::master_key("master_key")]
+fn render_string_is_dropped_under_a_credential_like_key(#[case] key: &str) {
     let value = ConfigValue::Text(String::from("openai"));
-    for key in ["api_key", "database_url", "redis_host", "master_key"] {
-        assert_eq!(render_value(key, &value), None, "{key}");
-    }
+    assert_eq!(render_value(key, &value), None, "{key}");
 }
 
 #[test]
@@ -332,31 +356,23 @@ fn section_lines_are_sorted_by_key() {
 fn table_general_settings_matches_the_pinned_fields() {
     let general = words(GENERAL_SETTINGS_KEYS);
     assert_eq!(general.len(), 107);
-    for name in [
-        "store_model_in_db",
-        "master_key",
-        "key_management_system",
-        "database_url",
-    ] {
-        assert!(general.contains(&name), "{name}");
-    }
     assert!(!general.contains(&"not_a_litellm_key"), "unknown key");
     assert!(!general.contains(&"cache_params"), "not a general setting");
+}
+
+#[rstest]
+#[case::store_model_in_db("store_model_in_db")]
+#[case::master_key("master_key")]
+#[case::key_management_system("key_management_system")]
+#[case::database_url("database_url")]
+fn table_general_settings_has_each_pinned_field(#[case] name: &str) {
+    assert!(words(GENERAL_SETTINGS_KEYS).contains(&name), "{name}");
 }
 
 #[test]
 fn table_litellm_settings_matches_the_pinned_module_names() {
     let settings = words(LITELLM_SETTINGS_KEYS);
     assert_eq!(settings.len(), 607);
-    for name in [
-        "*",
-        "CustomLLM",
-        "_async_success_callback",
-        "success_callback",
-        "num_retries",
-    ] {
-        assert!(settings.contains(&name), "{name}");
-    }
     assert!(
         !settings.contains(&"priority_reservation_settings"),
         "bound inside if TYPE_CHECKING"
@@ -368,35 +384,38 @@ fn table_litellm_settings_matches_the_pinned_module_names() {
     );
 }
 
+#[rstest]
+#[case::wildcard("*")]
+#[case::custom_llm("CustomLLM")]
+#[case::async_success_callback("_async_success_callback")]
+#[case::success_callback("success_callback")]
+#[case::num_retries("num_retries")]
+fn table_litellm_settings_has_each_pinned_module_name(#[case] name: &str) {
+    assert!(words(LITELLM_SETTINGS_KEYS).contains(&name), "{name}");
+}
+
 #[test]
 fn table_cache_params_matches_the_init_parameters() {
     let params = words(CACHE_PARAMS_KEYS);
     assert_eq!(params.len(), 47);
-    for name in [
-        "type",
-        "host",
-        "password",
-        "kwargs",
-        "redis_semantic_cache_index_name",
-    ] {
-        assert!(params.contains(&name), "{name}");
-    }
     assert!(!params.contains(&"self"), "self is not a setting");
     assert!(!params.contains(&"redis_host"), "a router setting");
+}
+
+#[rstest]
+#[case::cache_type("type")]
+#[case::host("host")]
+#[case::password("password")]
+#[case::kwargs("kwargs")]
+#[case::semantic_index("redis_semantic_cache_index_name")]
+fn table_cache_params_has_each_init_parameter(#[case] name: &str) {
+    assert!(words(CACHE_PARAMS_KEYS).contains(&name), "{name}");
 }
 
 #[test]
 fn table_router_settings_matches_the_init_parameters() {
     let settings = words(ROUTER_SETTINGS_KEYS);
     assert_eq!(settings.len(), 58);
-    for name in [
-        "routing_strategy",
-        "redis_host",
-        "model_list",
-        "set_verbose",
-    ] {
-        assert!(settings.contains(&name), "{name}");
-    }
     assert!(!settings.contains(&"self"), "self is not a setting");
     assert!(
         !settings.contains(&"kwargs"),
@@ -408,20 +427,19 @@ fn table_router_settings_matches_the_init_parameters() {
     );
 }
 
+#[rstest]
+#[case::routing_strategy("routing_strategy")]
+#[case::redis_host("redis_host")]
+#[case::model_list("model_list")]
+#[case::set_verbose("set_verbose")]
+fn table_router_settings_has_each_init_parameter(#[case] name: &str) {
+    assert!(words(ROUTER_SETTINGS_KEYS).contains(&name), "{name}");
+}
+
 #[test]
 fn table_guardrails_include_mixin_fields() {
     let fields = words(GUARDRAIL_KEYS);
     assert_eq!(fields.len(), 160);
-    for name in [
-        "api_base",
-        "api_key",
-        "mode",
-        "guardrail",
-        "presidio_analyzer_api_base",
-        "on_flagged_action",
-    ] {
-        assert!(fields.contains(&name), "{name}");
-    }
     assert!(
         !fields.contains(&"litellm_params"),
         "litellm_params wraps these fields"
@@ -429,24 +447,36 @@ fn table_guardrails_include_mixin_fields() {
     assert!(!fields.contains(&"self"), "self is not a field");
 }
 
+#[rstest]
+#[case::api_base("api_base")]
+#[case::api_key("api_key")]
+#[case::mode("mode")]
+#[case::guardrail("guardrail")]
+#[case::presidio_analyzer_api_base("presidio_analyzer_api_base")]
+#[case::on_flagged_action("on_flagged_action")]
+fn table_guardrails_field_is_listed(#[case] name: &str) {
+    assert!(words(GUARDRAIL_KEYS).contains(&name), "{name}");
+}
+
 #[test]
 fn table_known_values_join_every_source() {
     let values = words(KNOWN_VALUES);
     assert_eq!(values.len(), 307);
-    for value in [
-        "simple-shuffle",
-        "openai",
-        "pagerduty",
-        "smtp_email",
-        "datadog",
-        "redis",
-        "local",
-        "aporia",
-        "pre_call",
-    ] {
-        assert!(values.contains(&value), "{value}");
-    }
     assert!(!values.contains(&"not_a_known_value"), "unknown value");
+}
+
+#[rstest]
+#[case::routing_strategy("simple-shuffle")]
+#[case::provider("openai")]
+#[case::callback("pagerduty")]
+#[case::email_callback("smtp_email")]
+#[case::logger("datadog")]
+#[case::cache_type("redis")]
+#[case::secret_manager("local")]
+#[case::guardrail("aporia")]
+#[case::event_hook("pre_call")]
+fn table_known_values_include_each_source_value(#[case] value: &str) {
+    assert!(words(KNOWN_VALUES).contains(&value), "{value}");
 }
 
 #[test]
@@ -461,9 +491,10 @@ fn table_known_values_are_unique_and_sorted() {
 #[test]
 fn table_known_values_include_every_known_provider() {
     let values = words(KNOWN_VALUES);
-    for provider in KNOWN_PROVIDERS.split_ascii_whitespace() {
-        assert!(values.contains(&provider), "{provider}");
-    }
+    let missing = KNOWN_PROVIDERS
+        .split_ascii_whitespace()
+        .find(|provider| !values.contains(provider));
+    assert!(missing.is_none(), "{missing:?}");
 }
 
 #[test]

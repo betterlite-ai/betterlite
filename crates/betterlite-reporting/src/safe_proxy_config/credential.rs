@@ -1,4 +1,3 @@
-// LiteLLM keeps this enum name readable although its parts name a credential
 pub(crate) const CREDENTIAL_KEY_EXCEPTIONS: [&str; 1] = ["key_management_system"];
 
 pub(crate) const CREDENTIAL_KEY_PARTS: [&str; 19] = [
