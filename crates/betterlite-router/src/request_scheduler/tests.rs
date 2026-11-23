@@ -157,19 +157,19 @@ pub(super) async fn churn_and_queue_window(service: &RequestScheduler, name: &st
     queue_all(service, &added).await;
 }
 
-// the pending record's entry count and how many models hold an entry the marker names
-pub(super) fn pending_counts(service: &RequestScheduler, marker: &str) -> (usize, usize) {
+// the pending record's entry count and how many models hold an entry the prefix names
+pub(super) fn pending_counts(service: &RequestScheduler, prefix: &str) -> (usize, usize) {
     let pending = service
         .pending
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     let recorded: usize = pending.values().map(BTreeMap::len).sum();
-    let marked = pending
+    let hit_models = pending
         .values()
-        .filter(|changes| changes.keys().any(|member| member.contains(marker)))
+        .filter(|changes| changes.keys().any(|member| member.contains(prefix)))
         .count();
     drop(pending);
-    (recorded, marked)
+    (recorded, hit_models)
 }
 
 // the queue a recovered read answers: no warning, and only the window whose local copy survived

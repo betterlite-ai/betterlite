@@ -419,12 +419,12 @@ async fn the_pending_changes_stay_bounded_while_the_shared_tier_is_down() {
         .map(|index| format!("outage-{index}"))
         .collect();
     queue_and_remove(&service, request_ids).await;
-    let (recorded, marked) = pending_counts(&service, "outage-");
+    let (recorded, hit_models) = pending_counts(&service, "outage-");
     assert_eq!(
         recorded, 0,
         "more than 1024 add-and-remove pairs leave no record in the pending map"
     );
-    assert_eq!(marked, 0, "no churned request keeps an entry either");
+    assert_eq!(hit_models, 0, "no churned request keeps an entry either");
 }
 
 // the local queue's ttl outlives its members: once the copy expires mid-outage, the next window's churn drops their record, so the record holds one window and a recovery never brings the expired requests back
