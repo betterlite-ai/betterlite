@@ -59,5 +59,7 @@ pub fn native_compaction_parent(model: &str) -> Option<String> {
 
 #[must_use]
 pub fn is_native_compaction_call() -> bool {
-    NATIVE_COMPACTION_PARENT.try_with(|_| ()).is_ok()
+    NATIVE_COMPACTION_PARENT
+        .try_with(|_| true)
+        .unwrap_or_default()
 }
