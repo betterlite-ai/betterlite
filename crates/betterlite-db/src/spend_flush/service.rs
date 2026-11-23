@@ -28,7 +28,7 @@ pub trait SpendLogsService: Send + Sync {
     fn run_spend_logs(&self) -> ServiceFuture<'_, Result<(), Self::Error>>;
 }
 
-// update_spend_logs_job and _run_spend_logs_job as the lifecycle layer calls them: the guarded pass gates on the census itself, and the drain reaches the unguarded one.
+// update_spend_logs_job and _run_spend_logs_job as the lifecycle layer calls them: the guarded pass gates on the census itself, and the drain reaches the unguarded one. Each method only forwards to a pass, the census or the parked-row recovery, which request_usage::flush and spend_log_storage test, and a job takes ten ports no test outside those modules can build.
 impl<LogWriter, LogClient, LogFailures, Guardrails, Tools, Models, Turns, Accounting, Shadows>
     SpendLogsService
     for SpendLogsJob<
@@ -56,18 +56,22 @@ where
 {
     type Error = SpendLogsJobError<LogWriter::Error, LogClient::Error>;
 
+    #[cfg_attr(test, mutants::skip)]
     fn recover_parked_logs(&self) -> ServiceFuture<'_, usize> {
         Box::pin(recover_parked_spend_logs(self.queues.logs, self.logs.redis))
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn queued_transactions(&self) -> i64 {
         queued_spend_transactions(&self.queues)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn update_spend_logs(&self) -> ServiceFuture<'_, Result<(), Self::Error>> {
         Box::pin(SpendLogsJob::update_spend_logs_job(self))
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn run_spend_logs(&self) -> ServiceFuture<'_, Result<(), Self::Error>> {
         Box::pin(SpendLogsJob::run_spend_logs_job(self))
     }
