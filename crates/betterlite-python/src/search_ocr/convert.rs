@@ -48,7 +48,7 @@ pub(crate) struct SessionWire {
     pub(crate) environment: Option<BTreeMap<String, String>>,
 }
 
-// litellm.search's public arguments, one field per public keyword; options and kwargs stay apart because kwargs override them
+// one field per litellm.search public keyword; kwargs stay apart, and an explicit option wins
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SearchCall {
