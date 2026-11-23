@@ -21,7 +21,7 @@ fn send_behavior_posts_transformed_body_with_bearer_headers() {
     let serving = serve(reply("200 OK", &[], SYSTEMONE_ANSWER), Duration::default())
         .expect("the mock server starts");
     let api_base = format!("http://{}", serving.address);
-    let environment = Environment::new();
+    let environment = Environment::default();
     let key = SecretString::from("test-key".to_owned());
     let logging = Mutex::new(logging_state());
     let decisions = typesafe_call(&api_base, &key, &logging, &environment);

@@ -733,6 +733,7 @@ pub(super) fn openai_call<'logging>(
 }
 
 // The resolution inputs a real prepare_call reads, so a test only names the call it builds
+#[derive(Default)]
 pub(super) struct Environment {
     catalog: ModelCatalog,
     known: BTreeSet<String>,
@@ -741,15 +742,6 @@ pub(super) struct Environment {
 }
 
 impl Environment {
-    pub(super) fn new() -> Self {
-        Self {
-            catalog: ModelCatalog::default(),
-            known: BTreeSet::new(),
-            custom: BTreeSet::new(),
-            variables: BTreeMap::new(),
-        }
-    }
-
     fn context(&self) -> ResolutionContext<'_> {
         ResolutionContext {
             catalog: &self.catalog,
