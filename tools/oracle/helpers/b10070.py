@@ -68,7 +68,7 @@ class CaseDatabase:
 
 
 class ProxyModule(ModuleType):
-    def __init__(self, database: bool) -> None:
+    def __init__(self, *, database: bool) -> None:
         super().__init__(PROXY_MODULE)
         self.prisma_client = CaseDatabase() if database else None
         self.proxy_logging_obj = None
@@ -99,8 +99,8 @@ class ChecksModule(ModuleType):
         return LiteLLM_UserTable(user_id=user_id, teams=answer["teams"])
 
 
-def install(database: bool, answer: LookupAnswer) -> ChecksModule:
-    sys.modules[PROXY_MODULE] = ProxyModule(database)
+def install(*, database: bool, answer: LookupAnswer) -> ChecksModule:
+    sys.modules[PROXY_MODULE] = ProxyModule(database=database)
     checks = ChecksModule(answer)
     sys.modules[CHECKS_MODULE] = checks
     return checks
@@ -120,7 +120,7 @@ def session(call: SessionCall) -> JsonValue:
 
 def team_ids(call: TeamIdsCall) -> JsonValue:
     auth = auth_of(call["auth"])
-    checks = install(call["database"], call["lookup"])
+    checks = install(database=call["database"], answer=call["lookup"])
     teams: list[str] = asyncio.run(resolve_ui_session_team_ids(auth))
     answer = TeamIdsAnswer(teams=teams, lookup_ran=checks.ran, fresh=checks.check_db_only)
     return JSON.validate_python(answer)
