@@ -11,6 +11,7 @@ use betterlite_openai::decisions::openai::response::ResponseConversionError;
 use betterlite_openai::decisions::transformation::provider_config::{
     DecisionsProviderConfig, ParseResponseError,
 };
+use betterlite_openai::error::ProviderError;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
@@ -135,7 +136,9 @@ pub(crate) fn transform_error(
     error: ParseResponseError,
 ) -> DecisionsSendError {
     match error {
-        ParseResponseError::Invalid(provider) => provider_error(call, redactor, *provider),
+        ParseResponseError::Invalid(provider) => {
+            provider_error(call, redactor, base_exception(*provider, false))
+        }
         ParseResponseError::Malformed(source) => {
             let text = source.to_string();
             let raw = raw_exception(call, text, None, false, None, "ValidationError");
@@ -178,13 +181,7 @@ pub(crate) fn mapped_failure<T: DecisionsProviderConfig>(
     provider_error(
         call,
         redactor,
-        BaseLlmException {
-            status_code: provider.status_code,
-            message: provider.message,
-            headers: error_headers(provider.headers),
-            status_code_is_synthesized: provider.status_code_is_synthesized
-                || converted.status_code_is_synthesized,
-        },
+        base_exception(provider, converted.status_code_is_synthesized),
     )
 }
 
@@ -207,6 +204,16 @@ fn error_headers(headers: Option<Vec<(String, String)>>) -> JsonHeaders {
             .map(|(name, value)| (name, Json::Text(value)))
             .collect()
     })
+}
+
+// The provider's own error class as the BaseLLMException exception_type reads, plus a status the transport step made up
+fn base_exception(provider: ProviderError, or_synthesized: bool) -> BaseLlmException {
+    BaseLlmException {
+        status_code: provider.status_code,
+        message: provider.message,
+        headers: error_headers(provider.headers),
+        status_code_is_synthesized: provider.status_code_is_synthesized || or_synthesized,
+    }
 }
 
 // litellm.Timeout keeps the handler's message and its own 408, and exception_type returns it unchanged

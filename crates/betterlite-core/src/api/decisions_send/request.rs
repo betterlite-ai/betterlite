@@ -14,7 +14,8 @@ use serde_json::Error as JsonError;
 use url::Url;
 
 use super::clients::DecisionsRequest;
-use super::error::{DecisionsSendError, plain};
+use super::error::DecisionsSendError;
+use super::send::plain;
 use crate::api::vector_store_http_write::error::WriteError;
 
 pub(crate) struct Prepared {

@@ -1,7 +1,7 @@
+use std::error::Error;
 use std::time::Instant;
 
 use betterlite_error::dispatch::{DispatchInput, dispatch};
-use betterlite_http::interactions::base::ClientError;
 use betterlite_http::interactions::base::Params;
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::proxy::UpstreamResponse;
@@ -77,7 +77,7 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
         let client = self
             .clients
             .select_sync(&Params::new())
-            .map_err(|error| plain(call, self.env.redactor, error))?;
+            .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?;
         let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
         let started = Instant::now();
         let reply = client.send_blocking(wire).map_err(|error| {
@@ -98,11 +98,11 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
 pub(super) fn plain(
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
-    error: ClientError,
+    error: Box<dyn Error + Send + Sync>,
 ) -> DecisionsSendError {
     let raw = raw_exception(call, error.to_string(), None, false, None, "");
     let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
-    mapped(class, Box::new(error))
+    mapped(class, error)
 }
 
 // raise_for_status, then transform_decisions_response, then _format_response

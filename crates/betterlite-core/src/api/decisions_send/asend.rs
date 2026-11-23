@@ -35,7 +35,7 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
         let client = self
             .clients
             .select_async(&params)
-            .map_err(|error| plain(call, self.env.redactor, error))?;
+            .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?;
         let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
         let started = Instant::now();
         let reply = client.send(wire).await.map_err(|error| {
