@@ -122,12 +122,12 @@ class SkillHubRoute(Protocol):
 AGENT_HUB: Final[AgentHubRoute] = get_agents
 MCP_HUB: Final[McpHubRoute] = get_mcp_servers
 SKILL_HUB: Final[SkillHubRoute] = public_skill_hub
-JSON: Final = TypeAdapter(JsonValue)
-AGENT_CARDS: Final = TypeAdapter(list[AgentCard])
-AGENT_RESPONSE: Final = TypeAdapter(AgentResponse)
-MCP_SERVER: Final = TypeAdapter(MCPServer)
-MCP_PUBLIC_SERVER: Final = TypeAdapter(McpPublicServerJson)
-PLUGIN_LIST: Final = TypeAdapter(PluginListJson)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+AGENT_CARDS: Final[TypeAdapter[list[AgentCard]]] = TypeAdapter(list[AgentCard])
+AGENT_RESPONSE: Final[TypeAdapter[AgentResponse]] = TypeAdapter(AgentResponse)
+MCP_SERVER: Final[TypeAdapter[MCPServer]] = TypeAdapter(MCPServer)
+MCP_PUBLIC_SERVER: Final[TypeAdapter[McpPublicServerJson]] = TypeAdapter(McpPublicServerJson)
+PLUGIN_LIST: Final[TypeAdapter[PluginListJson]] = TypeAdapter(PluginListJson)
 
 
 class PluginRow:
