@@ -1,6 +1,5 @@
 import asyncio
 import json
-from collections.abc import Awaitable
 from typing import TypedDict
 
 import pytest
@@ -9,13 +8,14 @@ from pydantic import JsonValue, TypeAdapter
 
 from betterlite import _native
 
-TOKEN = "tok-secret"
+BEARER = "tok-1"
 DEFAULT_TIMEOUT = 5.0
 SHORT_TIMEOUT = 0.2
 PAGES = 2
 FINGERPRINT_LENGTH = 64
 INTERNAL_ERROR = -32603
 DENIED_CODE = -32602
+UPDATED_AUTH = "next-value"
 
 
 class Tool(TypedDict, total=False):
@@ -53,50 +53,34 @@ class ToolResult(TypedDict):
     isError: bool
 
 
-def settings_for(
-    server: Server,
-    *,
-    timeout: float = DEFAULT_TIMEOUT,
-    extra: dict[str, JsonValue] | None = None,
-) -> str:
+def settings_for(server: Server, *, timeout: float = DEFAULT_TIMEOUT) -> str:
     settings: dict[str, JsonValue] = {
         "server_url": server.url,
         "auth_type": "bearer_token",
-        "auth_value": TOKEN,
+        "auth_value": BEARER,
         "timeout": timeout,
     }
-    if extra is not None:
-        settings.update(extra)
     return json.dumps(settings)
 
 
-def client_for(
-    server: Server,
-    *,
-    timeout: float = DEFAULT_TIMEOUT,
-    extra: dict[str, JsonValue] | None = None,
-) -> _native.NativeMcpClient:
-    return _native.NativeMcpClient(settings_for(server, timeout=timeout, extra=extra))
-
-
-async def awaited_text(awaitable: Awaitable[str]) -> str:
-    return await awaitable
-
-
-def run_text(awaitable: Awaitable[str]) -> str:
-    return asyncio.run(awaited_text(awaitable))
+def client_for(server: Server, *, timeout: float = DEFAULT_TIMEOUT) -> _native.NativeMcpClient:
+    settings = settings_for(server, timeout=timeout)
+    return _native.NativeMcpClient(settings)
 
 
 def pages_of(text: str) -> Page:
-    return TypeAdapter(Page).validate_json(text)
+    adapter = TypeAdapter(Page)
+    return adapter.validate_json(text)
 
 
 def tool_result_of(text: str) -> ToolResult:
-    return TypeAdapter(ToolResult).validate_json(text)
+    adapter = TypeAdapter(ToolResult)
+    return adapter.validate_json(text)
 
 
-def error_of(raised: pytest.ExceptionInfo[_native.NativeMcpError]) -> dict[str, JsonValue]:
-    return TypeAdapter(dict[str, JsonValue]).validate_json(str(raised.value))
+def error_of(text: str) -> dict[str, JsonValue]:
+    adapter = TypeAdapter(dict[str, JsonValue])
+    return adapter.validate_json(text)
 
 
 async def call_then_instructions(
@@ -106,92 +90,163 @@ async def call_then_instructions(
     return text, client.instructions()
 
 
-async def prompts_flow(client: _native.NativeMcpClient) -> tuple[str, str, str, str, str]:
+async def pages_flow(server: Server) -> tuple[list[Tool], list[str], str | None]:
+    client = client_for(server)
+    text = await client.list_tools()
+    tools = TypeAdapter(list[Tool]).validate_json(text)
+    return tools, server.record.methods, server.record.headers.get("authorization")
+
+
+async def prompt_flow(server: Server) -> tuple[str, str]:
+    client = client_for(server)
     prompts = await client.list_prompts()
-    prompt = await client.get_prompt(json.dumps({"name": "greet"}))
+    request: dict[str, JsonValue] = {"name": "greet"}
+    prompt = await client.get_prompt(json.dumps(request))
+    return prompts, prompt
+
+
+async def resource_flow(server: Server) -> tuple[str, str, str]:
+    client = client_for(server)
     resources = await client.list_resources()
     templates = await client.list_resource_templates()
     read = await client.read_resource("file:///notes.txt")
-    return prompts, prompt, resources, templates, read
+    return resources, templates, read
 
 
-async def fingerprint_flow(client: _native.NativeMcpClient) -> tuple[str, str]:
+async def fingerprint_flow(server: Server) -> tuple[str, str, str | None]:
+    client = client_for(server)
     first = await client.discovery_auth_fingerprint()
-    await client.update_auth_value(json.dumps("next-secret"))
+    await client.update_auth_value(json.dumps(UPDATED_AUTH))
     second = await client.discovery_auth_fingerprint()
-    return first, second
+    await client.list_tools()
+    header = server.record.headers.get("authorization")
+    return first, second, header
 
 
-async def swallowed_flow(client: _native.NativeMcpClient) -> tuple[str, str]:
+async def swallowed_flow(server: Server) -> tuple[str, str]:
+    client = client_for(server)
     tools = await client.list_tools()
-    result = await client.call_tool(json.dumps({"name": "search"}))
+    request: dict[str, JsonValue] = {"name": "search"}
+    result = await client.call_tool(json.dumps(request))
     return tools, result
 
 
-def test_client_calls_lists_tools_across_pages() -> None:
+async def list_failure(client: _native.NativeMcpClient) -> str:
+    try:
+        await client.list_tools(raise_on_error=True)
+    except _native.NativeMcpError as raised:
+        return str(raised)
+    raise AssertionError("the server failure became a result")
+
+
+async def call_failure(client: _native.NativeMcpClient, request: str) -> str:
+    try:
+        await client.call_tool(request)
+    except _native.NativeMcpError as raised:
+        return str(raised)
+    raise AssertionError("the server failure became a result")
+
+
+async def session_flow(server: Server) -> tuple[Page, Page, ToolResult, ToolResult, str]:
+    client = client_for(server)
+    session = await client.open_session()
+    first = pages_of(await session.list_tools_page())
+    second = pages_of(await session.list_tools_page("page2"))
+    call_arguments: dict[str, JsonValue] = {}
+    call_request: dict[str, JsonValue] = {"name": "search", "arguments": call_arguments}
+    called = tool_result_of(await session.call_tool(json.dumps(call_request)))
+    function_arguments: dict[str, JsonValue] = {"key": "value"}
+    function: dict[str, JsonValue] = {
+        "name": "fetch",
+        "arguments": json.dumps(function_arguments),
+    }
+    openai_request: dict[str, JsonValue] = {"function": function}
+    openai = tool_result_of(await session.call_openai_tool(json.dumps(openai_request)))
+    await session.aclose()
+    closed: str | None = None
+    try:
+        await session.list_tools_page()
+    except _native.NativeMcpError as raised:
+        closed = str(raised)
+    if closed is None:
+        raise AssertionError("a closed session answered a call")
+    return first, second, called, openai, closed
+
+
+async def load_both(server: Server) -> tuple[str, str]:
+    client = client_for(server)
+    session = await client.open_session()
+    mcp = await session.load_tools("mcp")
+    openai = await session.load_tools("openai")
+    await session.aclose()
+    return mcp, openai
+
+
+async def open_a_session(server: Server) -> _native.NativeMcpSession:
+    client = client_for(server)
+    session = await client.open_session()
+    return session
+
+
+def test_client_calls_pages() -> None:
     with Server() as server:
-        client = client_for(server)
-        tools = TypeAdapter(list[Tool]).validate_json(run_text(client.list_tools()))
-        listed = server.record.methods
-        authorization = server.record.headers.get("authorization")
+        tools, listed, authorization = asyncio.run(pages_flow(server))
     assert [tool["name"] for tool in tools] == ["search", "fetch"]
     assert listed.count("tools/list") == PAGES
-    assert authorization == f"Bearer {TOKEN}"
+    assert authorization == f"Bearer {BEARER}"
 
 
-def test_client_calls_tool_and_instructions() -> None:
+def test_client_calls_tool() -> None:
     with Server() as server:
         client = client_for(server)
         assert client.instructions() is None
-        request = json.dumps({"name": "search", "arguments": {"q": "x"}})
-        text, instructions = asyncio.run(call_then_instructions(client, request))
-    assert tool_result_of(text)["content"][0]["text"] == "called search"
+        arguments: dict[str, JsonValue] = {"q": "x"}
+        request: dict[str, JsonValue] = {"name": "search", "arguments": arguments}
+        text, instructions = asyncio.run(call_then_instructions(client, json.dumps(request)))
+    result = tool_result_of(text)
+    assert result["content"][0]["text"] == "called search"
     assert instructions == "follow the map"
 
 
-def test_client_calls_prompts_and_resources() -> None:
+def test_client_calls_prompts() -> None:
     with Server() as server:
-        client = client_for(server)
-        prompts, prompt, resources, templates, read = asyncio.run(prompts_flow(client))
-    assert TypeAdapter(list[Prompt]).validate_json(prompts)[0]["name"] == "greet"
+        prompts, prompt = asyncio.run(prompt_flow(server))
+        resources, templates, read = asyncio.run(resource_flow(server))
+    found_prompts = TypeAdapter(list[Prompt]).validate_json(prompts)
+    found_resources = TypeAdapter(list[Resource]).validate_json(resources)
+    found_templates = TypeAdapter(list[ResourceTemplate]).validate_json(templates)
+    assert found_prompts[0]["name"] == "greet"
     assert "hi there" in prompt
-    assert TypeAdapter(list[Resource]).validate_json(resources)[0]["uri"] == "file:///notes.txt"
-    assert (
-        TypeAdapter(list[ResourceTemplate]).validate_json(templates)[0]["uriTemplate"]
-        == "file:///{name}"
-    )
+    assert found_resources[0]["uri"] == "file:///notes.txt"
+    assert found_templates[0]["uriTemplate"] == "file:///{name}"
     assert "body" in read
 
 
-def test_client_calls_fingerprint_follows_the_credential() -> None:
+def test_client_calls_fingerprint() -> None:
     with Server() as server:
-        client = client_for(server)
-        first, second = asyncio.run(fingerprint_flow(client))
-        run_text(client.list_tools())
-        authorization = server.record.headers.get("authorization")
+        first, second, authorization = asyncio.run(fingerprint_flow(server))
     assert len(first) == FINGERPRINT_LENGTH
     assert first != second
-    assert authorization == "Bearer next-secret"
+    assert authorization == f"Bearer {UPDATED_AUTH}"
 
 
-def test_client_calls_swallowed_error_lists_nothing() -> None:
+def test_client_calls_swallowed() -> None:
     with Server(mode=REFUSE) as server:
-        client = client_for(server)
-        tools, result = asyncio.run(swallowed_flow(client))
+        tools, result = asyncio.run(swallowed_flow(server))
     assert TypeAdapter(list[Tool]).validate_json(tools) == []
     assert tool_result_of(result)["isError"] is True
 
 
-def test_transforms_tool_shapes() -> None:
-    tool = {
+def test_transforms_shapes() -> None:
+    properties: dict[str, JsonValue] = {}
+    schema: dict[str, JsonValue] = {"type": "object", "properties": properties}
+    tool: dict[str, JsonValue] = {
         "name": "search",
         "description": "finds things",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": schema,
     }
     openai = TypeAdapter(Tool).validate_json(_native.tool_to_openai(json.dumps(tool)))
-    responses = TypeAdapter(Tool).validate_json(
-        _native.tool_to_responses(json.dumps(tool))
-    )
+    responses = TypeAdapter(Tool).validate_json(_native.tool_to_responses(json.dumps(tool)))
     anthropic = TypeAdapter(dict[str, JsonValue]).validate_json(
         _native.tool_to_anthropic(json.dumps(tool))
     )
@@ -201,9 +256,11 @@ def test_transforms_tool_shapes() -> None:
     assert anthropic["name"] == "search"
 
 
-def test_transforms_normalized_schema() -> None:
+def test_transforms_schema() -> None:
+    properties: dict[str, JsonValue] = {}
+    schema: dict[str, JsonValue] = {"properties": properties}
     normalized = TypeAdapter(dict[str, JsonValue]).validate_json(
-        _native.normalize_input_schema(json.dumps({"properties": {}}))
+        _native.normalize_input_schema(json.dumps(schema))
     )
     empty = TypeAdapter(dict[str, JsonValue]).validate_json(
         _native.normalize_input_schema(None)
@@ -213,13 +270,13 @@ def test_transforms_normalized_schema() -> None:
     assert empty["properties"] == {}
 
 
-def test_transforms_tool_call_request() -> None:
-    call = {
-        "function": {
-            "name": "fetch",
-            "arguments": json.dumps({"key": "value"}),
-        }
+def test_transforms_call_request() -> None:
+    arguments: dict[str, JsonValue] = {"key": "value"}
+    function: dict[str, JsonValue] = {
+        "name": "fetch",
+        "arguments": json.dumps(arguments),
     }
+    call: dict[str, JsonValue] = {"function": function}
     request = TypeAdapter(dict[str, JsonValue]).validate_json(
         _native.tool_call_to_mcp(json.dumps(call))
     )
@@ -227,32 +284,9 @@ def test_transforms_tool_call_request() -> None:
     assert request["arguments"] == {"key": "value"}
 
 
-async def session_flow(server: Server) -> tuple[Page, Page, ToolResult, ToolResult, str]:
-    client = client_for(server)
-    session = await client.open_session()
-    first = pages_of(await session.list_tools_page())
-    second = pages_of(await session.list_tools_page("page2"))
-    called = tool_result_of(
-        await session.call_tool(json.dumps({"name": "search", "arguments": {}}))
-    )
-    openai_call = {
-        "function": {"name": "fetch", "arguments": json.dumps({"key": "value"})},
-    }
-    openai = tool_result_of(await session.call_openai_tool(json.dumps(openai_call)))
-    await session.aclose()
-    closed_error: str | None = None
-    try:
-        await session.list_tools_page()
-    except _native.NativeMcpError as raised:
-        closed_error = str(raised)
-    if closed_error is None:
-        raise AssertionError("a closed session answered a call")
-    return first, second, called, openai, closed_error
-
-
-def test_session_lists_calls_and_closes() -> None:
+def test_session_lists_and_closes() -> None:
     with Server() as server:
-        first, second, called, openai, closed_error = asyncio.run(session_flow(server))
+        first, second, called, openai, closed = asyncio.run(session_flow(server))
         methods = server.record.methods
     assert [tool["name"] for tool in first["tools"]] == ["search"]
     assert first["nextCursor"] == "page2"
@@ -260,77 +294,61 @@ def test_session_lists_calls_and_closes() -> None:
     assert called["content"][0]["text"] == "called search"
     assert openai["content"][0]["text"] == "called fetch"
     assert methods.count("tools/call") == PAGES
-    payload = TypeAdapter(dict[str, JsonValue]).validate_json(closed_error)
+    payload = TypeAdapter(dict[str, JsonValue]).validate_json(closed)
     assert payload["type"] == "RuntimeError"
 
 
-def test_session_load_tools_in_both_formats() -> None:
-    async def load() -> tuple[str, str]:
-        client = client_for(server)
-        session = await client.open_session()
-        mcp = await session.load_tools("mcp")
-        openai = await session.load_tools("openai")
-        await session.aclose()
-        return mcp, openai
-
+def test_session_load_formats() -> None:
     with Server() as server:
-        mcp, openai = asyncio.run(load())
+        mcp, openai = asyncio.run(load_both(server))
     mcp_tools = TypeAdapter(list[Tool]).validate_json(mcp)
     openai_tools = TypeAdapter(list[Tool]).validate_json(openai)
     assert [tool["name"] for tool in mcp_tools] == ["search", "fetch"]
     assert openai_tools[0]["type"] == "function"
 
 
-def test_session_dropped_handle_closes_quietly() -> None:
-    async def open_and_drop() -> None:
-        client = client_for(server)
-        session = await client.open_session()
-        del session
-
+def test_session_drop_closes() -> None:
     with Server() as server:
-        asyncio.run(open_and_drop())
+        asyncio.run(open_a_session(server))
         methods = server.record.methods
     assert methods[0] == "initialize"
 
 
-def test_errors_unauthorized_reaches_python() -> None:
+def test_errors_unauthorized() -> None:
     with Server(mode=UNAUTHORIZED_MODE) as server:
         client = client_for(server)
-        with pytest.raises(_native.NativeMcpError) as raised:
-            run_text(client.list_tools())
-    payload = error_of(raised)
+        text = asyncio.run(list_failure(client))
+    payload = error_of(text)
     assert payload["type"] == "McpError"
     assert payload["code"] == INTERNAL_ERROR
 
 
-def test_errors_json_rpc_error_keeps_its_code() -> None:
+def test_errors_keeps_code() -> None:
     with Server(mode=REFUSE) as server:
         client = client_for(server)
-        request = json.dumps({"name": "search", "raise_on_error": True})
-        with pytest.raises(_native.NativeMcpError) as raised:
-            run_text(client.call_tool(request))
-    payload = error_of(raised)
+        request: dict[str, JsonValue] = {"name": "search", "raise_on_error": True}
+        text = asyncio.run(call_failure(client, json.dumps(request)))
+    payload = error_of(text)
     assert payload["type"] == "McpError"
     assert payload["code"] == DENIED_CODE
 
 
-def test_errors_slow_server_times_out() -> None:
+def test_errors_timeout() -> None:
     with Server(mode=SLOW) as server:
         client = client_for(server, timeout=SHORT_TIMEOUT)
-        with pytest.raises(_native.NativeMcpError) as raised:
-            run_text(client.list_tools())
-    assert error_of(raised)["type"] == "TimeoutError"
+        text = asyncio.run(list_failure(client))
+    assert error_of(text)["type"] == "TimeoutError"
 
 
-def test_errors_bad_settings_are_value_errors() -> None:
+def test_errors_bad_settings() -> None:
+    settings: dict[str, JsonValue] = {"auth_type": "oauth_delegate"}
     with pytest.raises(_native.NativeMcpError) as raised:
-        _native.NativeMcpClient(json.dumps({"auth_type": "oauth_delegate"}))
-    assert error_of(raised)["type"] == "ValueError"
+        _native.NativeMcpClient(json.dumps(settings))
+    assert error_of(str(raised.value))["type"] == "ValueError"
 
 
-def test_errors_bad_request_text_is_a_value_error() -> None:
+def test_errors_bad_request() -> None:
     with Server(mode=NORMAL) as server:
         client = client_for(server)
-        with pytest.raises(_native.NativeMcpError) as raised:
-            run_text(client.call_tool("{"))
-    assert error_of(raised)["type"] == "ValueError"
+        text = asyncio.run(call_failure(client, "{"))
+    assert error_of(text)["type"] == "ValueError"

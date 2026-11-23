@@ -14,7 +14,6 @@ ACCEPTED = 202
 UNAUTHORIZED = 401
 SLOW_DELAY = 1.0
 DENIED_CODE = -32602
-DEFAULT_PROTOCOL = "2025-06-18"
 INSTRUCTIONS = "  follow the map  "
 NORMAL = "normal"
 REFUSE = "refuse"
@@ -76,7 +75,7 @@ class _Handler(BaseHTTPRequestHandler):
         length = 0 if declared is None else int(declared)
         raw = self.rfile.read(length)
         message = TypeAdapter(Message).validate_json(raw)
-        method = message.get("method", "")
+        method = message["method"]
         with server.record.lock:
             server.record.headers = {
                 name.lower(): value for name, value in self.headers.items()
@@ -119,7 +118,9 @@ class _Handler(BaseHTTPRequestHandler):
         self._reply(OK, json.dumps(payload).encode())
 
     def _answer(self, message: Message, method: str) -> dict[str, JsonValue]:
-        params = message.get("params", {})
+        params: dict[str, JsonValue] = {}
+        if "params" in message:
+            params = message["params"]
         result = self._result(method, params)
         return {"jsonrpc": "2.0", "id": message.get("id"), "result": result}
 
@@ -132,9 +133,7 @@ class _Handler(BaseHTTPRequestHandler):
             case "tools/call":
                 return self._call(params)
             case "prompts/list":
-                return {
-                    "prompts": [{"name": "greet", "description": "say hi"}],
-                }
+                return {"prompts": [{"name": "greet", "description": "say hi"}]}
             case "prompts/get":
                 return {
                     "description": "greet",
@@ -145,27 +144,22 @@ class _Handler(BaseHTTPRequestHandler):
                         }
                     ],
                 }
-            case "resources/list":
-                return {
-                    "resources": [{"uri": "file:///notes.txt", "name": "notes"}],
-                }
-            case "resources/templates/list":
-                return {
-                    "resourceTemplates": [
-                        {"uriTemplate": "file:///{name}", "name": "note"}
-                    ],
-                }
-            case "resources/read":
-                return {
-                    "contents": [
-                        {"uri": params.get("uri", "file:///notes.txt"), "text": "body"}
-                    ],
-                }
             case _:
-                return {}
+                return self._resources(method, params)
+
+    def _resources(self, method: str, params: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if method == "resources/read":
+            return {"contents": [{"uri": params["uri"], "text": "body"}]}
+        if method == "resources/list":
+            return {"resources": [{"uri": "file:///notes.txt", "name": "notes"}]}
+        if method == "resources/templates/list":
+            return {
+                "resourceTemplates": [{"uriTemplate": "file:///{name}", "name": "note"}],
+            }
+        return {}
 
     def _initialize(self, params: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        requested = params.get("protocolVersion", DEFAULT_PROTOCOL)
+        requested = params["protocolVersion"]
         return {
             "protocolVersion": requested,
             "capabilities": {"prompts": {}, "resources": {}},
@@ -188,7 +182,7 @@ class _Handler(BaseHTTPRequestHandler):
         }
 
     def _call(self, params: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        name = params.get("name", "")
+        name = params["name"]
         return {
             "content": [{"type": "text", "text": f"called {name}"}],
             "isError": False,
