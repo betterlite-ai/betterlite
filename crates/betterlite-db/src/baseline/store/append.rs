@@ -9,7 +9,7 @@ use super::sql::{
 };
 use super::{ACCOUNTING_LIMITS, AppendResult, BaselineAccountingStore, TRANSACTION_TIMEOUT, begin};
 use crate::autorouter_turn_sql::write::write_autorouter_turn;
-use crate::baseline::publication::change::{Change, change};
+use crate::baseline::publication::change::change;
 use crate::baseline::publication::decode::decode_baseline_publication;
 use crate::baseline::publication::project::StoredRecord;
 use crate::baseline::publication::publish::publish;
@@ -87,8 +87,23 @@ where
         Insertion::Duplicate(found) => Some(found),
         Insertion::Foreign => return Ok(AppendResult::Conflict),
     };
+    // A retired comparison reports the request as unknown, against the canonical row when one already exists.
     if comparison.retired {
-        let correction = retired_correction(record, existing.as_ref())?;
+        let canonical = existing.as_ref().map(|found| &found.row);
+        let owner = canonical
+            .map(|row| decode_baseline_record(row.data.as_bytes()))
+            .transpose()?;
+        let previous = canonical
+            .and_then(|row| row.publication.as_deref())
+            .map(|text| decode_baseline_publication(text.as_bytes()))
+            .transpose()?;
+        let started_at = canonical.map_or(record.observation.started_at, |row| row.started_at);
+        let retired = unknown_publication(scope, started_at, "comparison_retired");
+        let correction = change(
+            owner.as_ref().unwrap_or(record),
+            previous.as_ref(),
+            &retired,
+        );
         publish(transaction, &[correction], generate_id).await?;
         return Ok(AppendResult::Retired);
     }
@@ -139,26 +154,4 @@ async fn insert_observation(
         row: stored_record(&row)?,
         conflicted,
     }))
-}
-
-// A retired comparison reports the request as unknown, against the canonical row when one already exists.
-fn retired_correction(
-    record: &BaselineAccountingRecord,
-    existing: Option<&Existing>,
-) -> Result<Change, StoreError> {
-    let canonical = existing.map(|found| &found.row);
-    let owner = canonical
-        .map(|row| decode_baseline_record(row.data.as_bytes()))
-        .transpose()?;
-    let previous = canonical
-        .and_then(|row| row.publication.as_deref())
-        .map(|text| decode_baseline_publication(text.as_bytes()))
-        .transpose()?;
-    let started_at = canonical.map_or(record.observation.started_at, |row| row.started_at);
-    let retired = unknown_publication(&record.scope, started_at, "comparison_retired");
-    Ok(change(
-        owner.as_ref().unwrap_or(record),
-        previous.as_ref(),
-        &retired,
-    ))
 }
