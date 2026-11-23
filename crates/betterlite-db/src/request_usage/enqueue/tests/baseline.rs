@@ -160,11 +160,14 @@ async fn a_capture_without_the_logs_spend_or_request_id_is_rejected() {
         turn: None,
         metadata: &metadata,
     };
-    let error = case
+    let missing_request_id = case
         .enqueue_baseline(&daily, &without_id)
         .await
         .unwrap_err();
-    assert!(matches!(error, BaselineCaptureError::MissingRequestId));
+    assert!(matches!(
+        missing_request_id,
+        BaselineCaptureError::MissingRequestId
+    ));
 }
 
 #[rstest]

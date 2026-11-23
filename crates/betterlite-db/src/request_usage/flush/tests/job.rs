@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use tokio::time::timeout;
+
 use crate::request_usage::flush::{SpendLogsJobError, queued_spend_transactions};
 use crate::shadow_tables::rows::FunnelStage;
 use crate::spend_log_storage::rows::QueuePosition;
@@ -75,7 +77,7 @@ async fn a_pass_waits_for_the_write_lock() {
         .enqueue(&[guardrail_row("r1")], QueuePosition::Tail);
     let held = harness.write_lock.lock().await;
     assert!(
-        tokio::time::timeout(
+        timeout(
             Duration::from_millis(20),
             harness.job().update_spend_logs_job()
         )
@@ -177,7 +179,7 @@ async fn a_dropped_write_returns_the_popped_rows_to_the_queue_head() {
     let job = harness.job();
     let mut write = Box::pin(job.write_popped_logs());
     assert!(
-        tokio::time::timeout(Duration::from_millis(20), write.as_mut())
+        timeout(Duration::from_millis(20), write.as_mut())
             .await
             .is_err()
     );

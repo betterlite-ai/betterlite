@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_models::model_registration::JsonObject;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
@@ -8,6 +9,7 @@ use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingC
 use chrono::DateTime;
 use jiff::tz::TimeZoneDatabase;
 use tokio::sync::Notify;
+use tokio::time::timeout;
 
 use crate::autorouter_turn_sql::transaction::AutoRouterTurnTransaction;
 use crate::baseline::flush::queue::BaselineQueue;
@@ -233,7 +235,7 @@ impl TurnCase {
     }
 
     pub(super) async fn flushed(&self) -> bool {
-        tokio::time::timeout(std::time::Duration::from_millis(50), self.signal.notified())
+        timeout(Duration::from_millis(50), self.signal.notified())
             .await
             .is_ok()
     }

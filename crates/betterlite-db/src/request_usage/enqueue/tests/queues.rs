@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use tokio::time::timeout;
+
 use crate::request_usage::queues::{UsageQueue, UsageQueueError};
 
 #[test]
@@ -17,21 +19,21 @@ fn a_queue_needs_room_for_at_least_one_record() {
 #[tokio::test]
 async fn a_full_queue_holds_the_record_until_a_drain_frees_room() {
     let queue = UsageQueue::new(1).unwrap();
-    tokio::time::timeout(Duration::from_secs(1), queue.push(1_u8))
+    timeout(Duration::from_secs(1), queue.push(1_u8))
         .await
         .expect("room for the first record")
         .unwrap();
     let waiting = queue.push(2_u8);
     tokio::pin!(waiting);
     assert!(
-        tokio::time::timeout(Duration::from_millis(20), waiting.as_mut())
+        timeout(Duration::from_millis(20), waiting.as_mut())
             .await
             .is_err()
     );
     assert_eq!(queue.len(), 1);
     assert_eq!(queue.drain(1), vec![1_u8]);
     assert!(
-        tokio::time::timeout(Duration::from_secs(5), waiting.as_mut())
+        timeout(Duration::from_secs(5), waiting.as_mut())
             .await
             .is_ok()
     );
@@ -42,19 +44,19 @@ async fn a_full_queue_holds_the_record_until_a_drain_frees_room() {
 #[tokio::test]
 async fn closing_wakes_a_producer_waiting_for_room() {
     let queue = UsageQueue::new(1).unwrap();
-    tokio::time::timeout(Duration::from_secs(1), queue.push(1_u8))
+    timeout(Duration::from_secs(1), queue.push(1_u8))
         .await
         .expect("room for the first record")
         .unwrap();
     let waiting = queue.push(2_u8);
     tokio::pin!(waiting);
     assert!(
-        tokio::time::timeout(Duration::from_millis(20), waiting.as_mut())
+        timeout(Duration::from_millis(20), waiting.as_mut())
             .await
             .is_err()
     );
     assert_eq!(queue.close(), 1);
-    let outcome = tokio::time::timeout(Duration::from_secs(5), waiting.as_mut()).await;
+    let outcome = timeout(Duration::from_secs(5), waiting.as_mut()).await;
     assert!(matches!(outcome, Ok(Err(UsageQueueError::Closed))));
     assert_eq!(queue.drain(1), vec![1_u8]);
     assert_eq!(queue.close(), 0);

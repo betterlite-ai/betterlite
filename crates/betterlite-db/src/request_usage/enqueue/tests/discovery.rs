@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use rstest::rstest;
+use tokio::time::timeout;
 
 use crate::request_usage::discovery::enqueue_tool_registry_upsert;
 use crate::tool_discovery::{ToolDiscoveryItem, ToolDiscoveryQueue};
@@ -210,7 +211,7 @@ async fn a_full_discovery_queue_holds_the_next_tool_for_the_next_flush() {
     let waiting = enqueue_tool_registry_upsert(&queue, Some(second.as_bytes()), None, None, &[]);
     tokio::pin!(waiting);
     assert!(
-        tokio::time::timeout(Duration::from_millis(20), waiting.as_mut())
+        timeout(Duration::from_millis(20), waiting.as_mut())
             .await
             .is_err()
     );
