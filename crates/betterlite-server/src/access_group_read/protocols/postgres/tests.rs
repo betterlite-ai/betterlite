@@ -203,6 +203,15 @@ async fn an_update_can_clear_the_description() {
     assert_eq!(updated.updated_by.as_deref(), Some("editor"));
     assert_eq!(updated.created_at, created.created_at);
     assert!(updated.updated_at > seeded_at());
+    let restored = AccessGroupChanges {
+        description: FieldWrite::Set("Math tools".to_owned()),
+        ..changes.clone()
+    };
+    let rewritten = tables
+        .update(&created.access_group_id, &restored)
+        .await
+        .expect("the description writes");
+    assert_eq!(rewritten.description.as_deref(), Some("Math tools"));
     let missing = tables
         .update("absent", &changes)
         .await
@@ -254,6 +263,26 @@ async fn an_update_writes_only_the_columns_the_caller_set() {
             .expect("the name query runs"),
         None
     );
+    let lists = AccessGroupChanges {
+        access_group_name: None,
+        description: FieldWrite::Unchanged,
+        access_model_names: None,
+        access_mcp_server_ids: Some(groups(&["server-b"])),
+        access_agent_ids: Some(groups(&["agent-b"])),
+        assigned_team_ids: None,
+        assigned_key_ids: Some(Vec::new()),
+        updated_by: None,
+    };
+    let rewritten = tables
+        .update(&created.access_group_id, &lists)
+        .await
+        .expect("the list columns write");
+    assert_eq!(rewritten.access_mcp_server_ids, Some(groups(&["server-b"])));
+    assert_eq!(rewritten.access_agent_ids, Some(groups(&["agent-b"])));
+    assert_eq!(rewritten.assigned_key_ids, Some(Vec::new()));
+    assert_eq!(rewritten.access_model_names, Some(groups(&["model-b"])));
+    assert_eq!(rewritten.assigned_team_ids, Some(Vec::new()));
+    assert_eq!(rewritten.access_group_name, "renamed");
     database.close().await;
 }
 
@@ -355,6 +384,14 @@ async fn stored_nulls_read_as_none_on_every_record() {
         .expect("the team query runs")
         .expect("the team row");
     assert_eq!(team.access_group_ids, None);
+    assert_eq!(
+        tables
+            .litellm_teamtable()
+            .find("absent")
+            .await
+            .expect("the team query runs"),
+        None
+    );
     let key = tables
         .litellm_verificationtoken()
         .find("k-null")
