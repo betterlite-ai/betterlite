@@ -7,6 +7,7 @@ use betterlite_db::oauth_token_resolution::{EnforceRequest, OauthBindingPort};
 use http::StatusCode;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
 
 use super::{BindingDenied, RefreshOwnership, RejectionCode};
 
@@ -45,38 +46,51 @@ impl OauthBindingPort for FakeBindingPort {
     }
 }
 
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct DetailView {
+    error: String,
+    error_description: String,
+    server_id: String,
+    credential_owner: String,
+    credential_stored: bool,
+}
+
 #[rstest]
 #[case::principal_mismatch(RejectionCode::PrincipalMismatch, "oauth_principal_mismatch")]
 #[case::binding_failed(RejectionCode::BindingFailed, "oauth_identity_binding_failed")]
 fn rejection_code_literals(#[case] code: RejectionCode, #[case] literal: &str) {
     assert_eq!(code.as_str(), literal);
     assert_eq!(
-        serde_json::to_value(code).unwrap(),
-        serde_json::json!(literal)
+        serde_json::to_string(&code).unwrap(),
+        format!("\"{literal}\"")
     );
 }
 
 #[rstest]
-#[case::principal_mismatch(RejectionCode::PrincipalMismatch)]
-#[case::binding_failed(RejectionCode::BindingFailed)]
-fn denial_status_and_detail(#[case] code: RejectionCode) {
-    let description = "The browser account \"Zoë\" does not match the selected credential owner.";
-    let server_id = "srv-\"bü\"";
+#[case::principal_mismatch(RejectionCode::PrincipalMismatch, "oauth_principal_mismatch")]
+#[case::binding_failed(RejectionCode::BindingFailed, "oauth_identity_binding_failed")]
+fn denial_status_and_detail(#[case] code: RejectionCode, #[case] literal: &str) {
+    let description =
+        "The browser account \"Zo\u{eb}\" does not match the selected credential owner.";
+    let server_id = "srv-\"b\u{fc}\"";
     let denial = BindingDenied {
         code,
         description: description.to_owned(),
         server_id: server_id.to_owned(),
     };
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
+    let viewed: DetailView =
+        serde_json::from_value(serde_json::to_value(denial.detail()).unwrap()).unwrap();
     assert_eq!(
-        serde_json::to_value(denial.detail()).unwrap(),
-        serde_json::json!({
-            "error": code.as_str(),
-            "error_description": description,
-            "server_id": server_id,
-            "credential_owner": "caller",
-            "credential_stored": false,
-        })
+        viewed,
+        DetailView {
+            error: literal.to_owned(),
+            error_description: description.to_owned(),
+            server_id: server_id.to_owned(),
+            credential_owner: "caller".to_owned(),
+            credential_stored: false,
+        }
     );
 }
 
