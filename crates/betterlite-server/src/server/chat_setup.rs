@@ -135,6 +135,14 @@ fn chat_deployments(
         let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
         let mut chat =
             ChatDeployment::resolve_with(deployment, defaults, custom_llm_provider, resolution)?;
+        chat.drop_policy = config
+            .sections
+            .drop_params
+            .policy
+            .deployments
+            .get(index)
+            .cloned()
+            .unwrap_or_default();
         prefix_provider(&mut chat, custom_llm_provider);
         let provider = Provider::from_deployment(&chat);
         if let Ok(Provider::Legacy(legacy)) = &provider {
