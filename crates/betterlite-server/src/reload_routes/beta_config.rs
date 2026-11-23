@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
 use betterlite_db::budget_permission_rows::JsonData;
 
+use super::ports::{ReloadConfigStore, ReloadStoreError};
+
 pub const BETA_RELOAD_CONFIG_PARAM_NAME: &str = "anthropic_beta_headers_reload_config";
 
 const INTERVAL_HOURS_FIELD: &str = "interval_hours";
@@ -38,6 +40,18 @@ pub(super) fn interval_hours(value: JsonData) -> Option<i64> {
         )
         | None => None,
     }
+}
+
+// the manual reload keeps the stored interval, replaces it with null when there was no row, and forces the other pods
+pub(super) async fn write_force_reload_row(
+    store: &dyn ReloadConfigStore,
+) -> Result<(), ReloadStoreError> {
+    let existing = store.read_beta_config().await?;
+    let interval = existing.and_then(interval_hours);
+    store
+        .write_beta_config(reload_config_value(interval, true))
+        .await?;
+    store.invalidate_beta_config().await
 }
 
 pub(super) fn provider_count(matrix: &BetaMatrix) -> usize {

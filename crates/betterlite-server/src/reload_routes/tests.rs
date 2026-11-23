@@ -20,10 +20,11 @@ use crate::periodic_reloads::state::PeriodicReloads;
 use self::support::{
     BETA_RELOAD, BETA_SCHEDULE, BETA_SCHEDULE_2_HOURS, BETA_STATUS, COST_MAP_RELOAD,
     COST_MAP_SCHEDULE, COST_MAP_SCHEDULE_2_HOURS, COST_MAP_SOURCE, COST_MAP_STATUS, FORBIDDEN_ROLE,
-    FakeCatalog, FakeStore, Harness, READS, STORE_FAILURE, WRITES, at, at_year, context,
-    env_forced_provenance, json_data, key_caller, key_with, local_provenance, master, moment,
-    one_hour_before_datetime_max, parsed, platform_admin, platform_viewer, provenance_loaded_at,
-    reloaded_provenance, send, snapshot, with_micros,
+    FakeCatalog, FakeStore, Harness, READS, STORE_FAILURE, WRITES, admitted_on_every_route, at,
+    at_year, context, denied_on_every_route, env_forced_provenance, json_data, key_caller,
+    key_with, local_provenance, master, moment, one_hour_before_datetime_max, parsed,
+    platform_admin, platform_viewer, provenance_loaded_at, reloaded_provenance, send, snapshot,
+    with_micros,
 };
 
 #[tokio::test]
@@ -39,14 +40,13 @@ async fn oneshot_rejects_an_anonymous_caller() {
 #[tokio::test]
 async fn oneshot_rejects_a_non_admin_on_every_write_route() {
     let harness = Harness::new();
-    for (method, uri) in WRITES {
-        let (status, text) = send(&harness, Some(key_with("internal_user")), method, uri).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
-        assert_eq!(
-            parsed(&text)["detail"],
-            format!("{FORBIDDEN_ROLE} internal_user")
-        );
-    }
+    denied_on_every_route(
+        &harness,
+        &key_with("internal_user"),
+        &WRITES,
+        "internal_user",
+    )
+    .await;
     assert!(harness.store().snapshot().written_intervals.is_empty());
 }
 
@@ -77,24 +77,19 @@ async fn oneshot_renders_the_current_role_in_the_write_denial(
 #[tokio::test]
 async fn oneshot_admits_an_admin_to_every_write_route(#[case] who: AuthContext) {
     let harness = Harness::new();
-    for (method, uri) in WRITES {
-        let (status, text) = send(&harness, Some(who.clone()), method, uri).await;
-        assert_eq!(status, StatusCode::OK, "{uri} {text}");
-    }
+    admitted_on_every_route(&harness, &who, &WRITES).await;
 }
 
 #[tokio::test]
 async fn oneshot_rejects_a_caller_without_admin_view_on_every_read_route() {
     let harness = Harness::new();
-    for uri in READS {
-        let (status, text) =
-            send(&harness, Some(key_with("internal_user")), Method::GET, uri).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
-        assert_eq!(
-            parsed(&text)["detail"],
-            format!("{FORBIDDEN_ROLE} internal_user")
-        );
-    }
+    denied_on_every_route(
+        &harness,
+        &key_with("internal_user"),
+        &READS,
+        "internal_user",
+    )
+    .await;
 }
 
 #[rstest]
@@ -106,10 +101,7 @@ async fn oneshot_rejects_a_caller_without_admin_view_on_every_read_route() {
 #[tokio::test]
 async fn oneshot_admits_every_admin_view_caller_to_the_read_routes(#[case] who: AuthContext) {
     let harness = Harness::new();
-    for uri in READS {
-        let (status, text) = send(&harness, Some(who.clone()), Method::GET, uri).await;
-        assert_eq!(status, StatusCode::OK, "{uri} {text}");
-    }
+    admitted_on_every_route(&harness, &who, &READS).await;
 }
 
 #[rstest]
@@ -149,17 +141,17 @@ async fn oneshot_rejects_a_non_admin_before_the_database_check() {
     assert_eq!(harness.catalog.reloads(), 0);
 }
 
+#[rstest]
+#[case::cost_map(COST_MAP_SCHEDULE)]
+#[case::beta(BETA_SCHEDULE)]
 #[tokio::test]
-async fn oneshot_answers_422_when_hours_is_missing() {
-    let harness = Harness::new();
+async fn oneshot_answers_422_when_hours_is_missing(#[case] uri: &str) {
     let expected = parsed(
         r#"{"detail": [{"type": "missing", "loc": ["query", "hours"], "msg": "Field required"}]}"#,
     );
-    for uri in [COST_MAP_SCHEDULE, BETA_SCHEDULE] {
-        let (status, text) = send(&harness, Some(master()), Method::POST, uri).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(parsed(&text), expected);
-    }
+    let (status, text) = send(&Harness::new(), Some(master()), Method::POST, uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(parsed(&text), expected);
 }
 
 #[rstest]
@@ -180,21 +172,22 @@ async fn oneshot_answers_422_when_hours_is_not_an_integer(#[case] value: &str) {
 }
 
 #[rstest]
-#[case::zero("0")]
-#[case::minus_one("-1")]
-#[case::minimum("-9223372036854775808")]
+#[case::cost_map_zero(COST_MAP_SCHEDULE, "0")]
+#[case::cost_map_minus_one(COST_MAP_SCHEDULE, "-1")]
+#[case::cost_map_minimum(COST_MAP_SCHEDULE, "-9223372036854775808")]
+#[case::beta_zero(BETA_SCHEDULE, "0")]
+#[case::beta_minus_one(BETA_SCHEDULE, "-1")]
+#[case::beta_minimum(BETA_SCHEDULE, "-9223372036854775808")]
 #[tokio::test]
-async fn oneshot_rejects_a_non_positive_interval(#[case] value: &str) {
+async fn oneshot_rejects_a_non_positive_interval(#[case] schedule: &str, #[case] value: &str) {
     let harness = Harness::new();
-    for uri in [COST_MAP_SCHEDULE, BETA_SCHEDULE] {
-        let uri = format!("{uri}?hours={value}");
-        let (status, text) = send(&harness, Some(master()), Method::POST, &uri).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}");
-        assert_eq!(
-            parsed(&text),
-            parsed(r#"{"detail": "Hours must be greater than 0"}"#)
-        );
-    }
+    let uri = format!("{schedule}?hours={value}");
+    let (status, text) = send(&harness, Some(master()), Method::POST, &uri).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{uri}");
+    assert_eq!(
+        parsed(&text),
+        parsed(r#"{"detail": "Hours must be greater than 0"}"#)
+    );
     assert!(harness.store().snapshot().written_intervals.is_empty());
     assert!(harness.store().snapshot().beta_writes.is_empty());
 }

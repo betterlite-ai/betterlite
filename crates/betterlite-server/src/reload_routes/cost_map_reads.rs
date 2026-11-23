@@ -48,7 +48,10 @@ pub(super) async fn cost_map_reload_status(
         schedule = store
             .read_schedule()
             .await
-            .map_err(|source| ReloadError::wrapped(STATUS_FAILED, WrappedCause::Store(source)))?;
+            .map_err(|source| ReloadError::Wrapped {
+                prefix: STATUS_FAILED,
+                cause: WrappedCause::Store(source),
+            })?;
     }
     let status = reload_schedule_status(schedule.as_ref());
     let body = StatusBody {

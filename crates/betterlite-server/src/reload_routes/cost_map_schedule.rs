@@ -41,18 +41,22 @@ pub(super) async fn schedule_model_cost_map_reload(
         return Err(ReloadError::HoursNotPositive);
     }
     let Some(store) = state.config.as_deref() else {
-        return Err(ReloadError::wrapped(
-            SCHEDULE_FAILED,
-            WrappedCause::MissingDatabase,
-        ));
+        return Err(ReloadError::Wrapped {
+            prefix: SCHEDULE_FAILED,
+            cause: WrappedCause::MissingDatabase,
+        });
     };
-    let interval_hours = u32::try_from(hours).map_err(|_source| {
-        ReloadError::wrapped(SCHEDULE_FAILED, WrappedCause::Interval { hours })
+    let interval_hours = u32::try_from(hours).map_err(|_source| ReloadError::Wrapped {
+        prefix: SCHEDULE_FAILED,
+        cause: WrappedCause::Interval { hours },
     })?;
     store
         .write_interval(interval_hours)
         .await
-        .map_err(|source| ReloadError::wrapped(SCHEDULE_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: SCHEDULE_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     let now = (state.clock)();
     let body = ScheduleBody {
         message: format!("Model cost map reload scheduled for every {interval_hours} hours"),
@@ -70,15 +74,18 @@ pub(super) async fn cancel_model_cost_map_reload(
     let principal = caller_principal(caller)?;
     require_proxy_admin(&principal)?;
     let Some(store) = state.config.as_deref() else {
-        return Err(ReloadError::wrapped(
-            CANCEL_FAILED,
-            WrappedCause::MissingDatabase,
-        ));
+        return Err(ReloadError::Wrapped {
+            prefix: CANCEL_FAILED,
+            cause: WrappedCause::MissingDatabase,
+        });
     };
     store
         .clear_interval()
         .await
-        .map_err(|source| ReloadError::wrapped(CANCEL_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: CANCEL_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     let now = (state.clock)();
     let body = CancelBody {
         message: "Model cost map reload schedule cancelled",

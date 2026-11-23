@@ -40,7 +40,10 @@ pub(super) async fn anthropic_beta_headers_status(
     let config = store
         .read_beta_config()
         .await
-        .map_err(|source| ReloadError::wrapped(STATUS_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: STATUS_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     let Some(interval) = config.and_then(interval_hours) else {
         return Ok(Json(NOT_SCHEDULED).into_response());
     };

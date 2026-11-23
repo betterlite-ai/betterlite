@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::tracing_routes::router::unauthenticated;
 
-use super::hours::{HoursFailure, ValidationBody};
+use super::hours::{HoursFailure, ValidationBody, ValidationIssue};
 use super::ports::ReloadStoreError;
 
 pub(super) const ADMIN_ROLE_REQUIRED: &str = "Access denied. Admin role required. Current role:";
@@ -46,53 +46,63 @@ pub(super) enum WrappedCause {
     Store(#[from] ReloadStoreError),
 }
 
-impl ReloadError {
-    pub(super) fn wrapped(prefix: &'static str, cause: WrappedCause) -> Self {
-        Self::Wrapped { prefix, cause }
-    }
-}
-
 #[derive(Serialize)]
 struct DetailBody {
     detail: String,
+}
+
+// the status and the {"detail": text} body every non-validation HTTPException serializes to
+struct DetailResponse(StatusCode, String);
+
+impl IntoResponse for DetailResponse {
+    fn into_response(self) -> Response {
+        (self.0, Json(DetailBody { detail: self.1 })).into_response()
+    }
+}
+
+// FastAPI's 422 body, {"detail": [{"type", "loc", "msg"}]}
+struct ValidationResponse(ValidationIssue);
+
+impl IntoResponse for ValidationResponse {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(ValidationBody { detail: [self.0] }),
+        )
+            .into_response()
+    }
 }
 
 impl IntoResponse for ReloadError {
     fn into_response(self) -> Response {
         match self {
             Self::Unauthenticated => unauthenticated(),
-            Self::Forbidden { role } => detail(
+            Self::Forbidden { role } => DetailResponse(
                 StatusCode::FORBIDDEN,
                 format!("{ADMIN_ROLE_REQUIRED} {role}"),
-            ),
-            Self::HoursQuery(failure) => validation(&failure),
+            )
+            .into_response(),
+            Self::HoursQuery(failure) => ValidationResponse(failure.issue()).into_response(),
             Self::HoursNotPositive => {
-                detail(StatusCode::BAD_REQUEST, HOURS_NOT_POSITIVE.to_owned())
+                DetailResponse(StatusCode::BAD_REQUEST, HOURS_NOT_POSITIVE.to_owned())
+                    .into_response()
             }
-            Self::MissingDatabase => detail(
+            Self::MissingDatabase => DetailResponse(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 DATABASE_NOT_AVAILABLE.to_owned(),
-            ),
-            Self::CostMapUnavailable { reason } => detail(
+            )
+            .into_response(),
+            Self::CostMapUnavailable { reason } => DetailResponse(
                 StatusCode::BAD_GATEWAY,
                 format!(
                     "Failed to reload model cost map: {reason}. Current pricing data was kept."
                 ),
-            ),
+            )
+            .into_response(),
             wrapped @ Self::Wrapped { .. } => {
-                detail(StatusCode::INTERNAL_SERVER_ERROR, wrapped.to_string())
+                DetailResponse(StatusCode::INTERNAL_SERVER_ERROR, wrapped.to_string())
+                    .into_response()
             }
         }
     }
-}
-
-fn detail(status: StatusCode, text: String) -> Response {
-    (status, Json(DetailBody { detail: text })).into_response()
-}
-
-fn validation(failure: &HoursFailure) -> Response {
-    let body = ValidationBody {
-        detail: [failure.issue()],
-    };
-    (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
 }

@@ -31,7 +31,7 @@ struct CancelBody {
     timestamp: String,
 }
 
-pub(super) async fn schedule_anthropic_beta_headers_reload(
+pub(super) async fn schedule_beta_headers_reload(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
     uri: Uri,
@@ -43,19 +43,25 @@ pub(super) async fn schedule_anthropic_beta_headers_reload(
         return Err(ReloadError::HoursNotPositive);
     }
     let Some(store) = state.config.as_deref() else {
-        return Err(ReloadError::wrapped(
-            SCHEDULE_FAILED,
-            WrappedCause::MissingDatabase,
-        ));
+        return Err(ReloadError::Wrapped {
+            prefix: SCHEDULE_FAILED,
+            cause: WrappedCause::MissingDatabase,
+        });
     };
     store
         .write_beta_config(reload_config_value(Some(hours), false))
         .await
-        .map_err(|source| ReloadError::wrapped(SCHEDULE_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: SCHEDULE_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     store
         .invalidate_beta_config()
         .await
-        .map_err(|source| ReloadError::wrapped(SCHEDULE_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: SCHEDULE_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     let now = (state.clock)();
     let body = ScheduleBody {
         message: format!("Anthropic beta headers reload scheduled for every {hours} hours"),
@@ -66,26 +72,32 @@ pub(super) async fn schedule_anthropic_beta_headers_reload(
     Ok(Json(body).into_response())
 }
 
-pub(super) async fn cancel_anthropic_beta_headers_reload(
+pub(super) async fn cancel_beta_headers_reload(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Response, ReloadError> {
     let principal = caller_principal(caller)?;
     require_proxy_admin(&principal)?;
     let Some(store) = state.config.as_deref() else {
-        return Err(ReloadError::wrapped(
-            CANCEL_FAILED,
-            WrappedCause::MissingDatabase,
-        ));
+        return Err(ReloadError::Wrapped {
+            prefix: CANCEL_FAILED,
+            cause: WrappedCause::MissingDatabase,
+        });
     };
     store
         .delete_beta_config()
         .await
-        .map_err(|source| ReloadError::wrapped(CANCEL_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: CANCEL_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     store
         .invalidate_beta_config()
         .await
-        .map_err(|source| ReloadError::wrapped(CANCEL_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: CANCEL_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     let now = (state.clock)();
     let body = CancelBody {
         message: "Anthropic beta headers reload schedule cancelled",

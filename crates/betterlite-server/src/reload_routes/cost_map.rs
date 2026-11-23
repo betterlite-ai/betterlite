@@ -42,10 +42,14 @@ pub(super) async fn reload_model_cost_map(
     // LiteLLM reads the clock after the fetch, so the timestamp is the moment the map is adopted
     let now = (state.clock)();
     let models_count = state.reloads.swap_in_model_cost_map(&snapshot, now);
-    let revision = store
-        .record_manual_reload(now)
-        .await
-        .map_err(|source| ReloadError::wrapped(RELOAD_FAILED, WrappedCause::Store(source)))?;
+    let revision =
+        store
+            .record_manual_reload(now)
+            .await
+            .map_err(|source| ReloadError::Wrapped {
+                prefix: RELOAD_FAILED,
+                cause: WrappedCause::Store(source),
+            })?;
     state.reloads.set_cost_map_applied_revision(revision);
     tracing::info!(
         "Model cost map reloaded successfully in current pod. Models count: {models_count}"

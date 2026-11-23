@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::auth::auth_identity::AuthContext;
 use crate::reload_routes::ReloadRoutesState;
 
-use super::beta_config::{interval_hours, provider_count, reload_config_value};
+use super::beta_config::{provider_count, write_force_reload_row};
 use super::caller::{caller_principal, require_proxy_admin};
 use super::error::{ReloadError, WrappedCause};
 use super::wire::naive_utc_isoformat;
@@ -28,27 +28,20 @@ pub(super) async fn reload_anthropic_beta_headers(
     let principal = caller_principal(caller)?;
     require_proxy_admin(&principal)?;
     let Some(store) = state.config.as_deref() else {
-        return Err(ReloadError::wrapped(
-            RELOAD_FAILED,
-            WrappedCause::MissingDatabase,
-        ));
+        return Err(ReloadError::Wrapped {
+            prefix: RELOAD_FAILED,
+            cause: WrappedCause::MissingDatabase,
+        });
     };
     let matrix = state.beta_headers.reload().await;
     let now = (state.clock)();
     state.reloads.set_last_beta_headers_reload(now);
-    let existing = store
-        .read_beta_config()
+    write_force_reload_row(store)
         .await
-        .map_err(|source| ReloadError::wrapped(RELOAD_FAILED, WrappedCause::Store(source)))?;
-    let interval = existing.and_then(interval_hours);
-    store
-        .write_beta_config(reload_config_value(interval, true))
-        .await
-        .map_err(|source| ReloadError::wrapped(RELOAD_FAILED, WrappedCause::Store(source)))?;
-    store
-        .invalidate_beta_config()
-        .await
-        .map_err(|source| ReloadError::wrapped(RELOAD_FAILED, WrappedCause::Store(source)))?;
+        .map_err(|source| ReloadError::Wrapped {
+            prefix: RELOAD_FAILED,
+            cause: WrappedCause::Store(source),
+        })?;
     let providers_count = provider_count(&matrix);
     tracing::info!(
         "Anthropic beta headers config reloaded successfully in current pod. Providers: {providers_count}"

@@ -59,8 +59,8 @@ pub fn routes(state: ReloadRoutesState) -> Router {
         )
         .route(
             "/schedule/anthropic_beta_headers_reload",
-            post(beta_schedule::schedule_anthropic_beta_headers_reload)
-                .delete(beta_schedule::cancel_anthropic_beta_headers_reload),
+            post(beta_schedule::schedule_beta_headers_reload)
+                .delete(beta_schedule::cancel_beta_headers_reload),
         )
         .route(
             "/schedule/anthropic_beta_headers_reload/status",

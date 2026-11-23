@@ -50,7 +50,11 @@ pub(crate) const WRITES: [(Method, &str); 6] = [
     (Method::POST, BETA_SCHEDULE_2_HOURS),
     (Method::DELETE, BETA_SCHEDULE),
 ];
-pub(crate) const READS: [&str; 3] = [COST_MAP_STATUS, COST_MAP_SOURCE, BETA_STATUS];
+pub(crate) const READS: [(Method, &str); 3] = [
+    (Method::GET, COST_MAP_STATUS),
+    (Method::GET, COST_MAP_SOURCE),
+    (Method::GET, BETA_STATUS),
+];
 pub(crate) const FORBIDDEN_ROLE: &str = "Access denied. Admin role required. Current role:";
 pub(crate) const STORE_FAILURE: &str = "the published reload revision -1 does not fit a u32";
 
@@ -185,41 +189,50 @@ fn store_failure() -> ReloadStoreError {
     ReloadStoreError::Schedule(ReloadScheduleError::Revision { value: -1 })
 }
 
+fn empty_state() -> StoreState {
+    StoreState {
+        schedule: None,
+        beta: None,
+        revision: 0,
+        written_intervals: Vec::new(),
+        cleared: 0,
+        recorded: Vec::new(),
+        beta_writes: Vec::new(),
+        beta_deletes: 0,
+        beta_invalidations: 0,
+        fail: false,
+    }
+}
+
 impl FakeStore {
-    pub(crate) fn failing() -> Self {
+    fn from_state(state: StoreState) -> Self {
         Self {
-            state: Arc::new(Mutex::new(StoreState {
-                fail: true,
-                ..StoreState::default()
-            })),
+            state: Arc::new(Mutex::new(state)),
         }
+    }
+
+    pub(crate) fn failing() -> Self {
+        let mut state = empty_state();
+        state.fail = true;
+        Self::from_state(state)
     }
 
     pub(crate) fn with_schedule(schedule: ReloadSchedule) -> Self {
-        Self {
-            state: Arc::new(Mutex::new(StoreState {
-                schedule: Some(schedule),
-                ..StoreState::default()
-            })),
-        }
+        let mut state = empty_state();
+        state.schedule = Some(schedule);
+        Self::from_state(state)
     }
 
     pub(crate) fn with_beta(value: JsonData) -> Self {
-        Self {
-            state: Arc::new(Mutex::new(StoreState {
-                beta: Some(value),
-                ..StoreState::default()
-            })),
-        }
+        let mut state = empty_state();
+        state.beta = Some(value);
+        Self::from_state(state)
     }
 
     pub(crate) fn with_revision(revision: u32) -> Self {
-        Self {
-            state: Arc::new(Mutex::new(StoreState {
-                revision,
-                ..StoreState::default()
-            })),
-        }
+        let mut state = empty_state();
+        state.revision = revision;
+        Self::from_state(state)
     }
 
     pub(crate) fn snapshot(&self) -> StoreState {
@@ -463,6 +476,30 @@ pub(crate) async fn send(
     let status = response.status();
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     (status, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+pub(crate) async fn denied_on_every_route(
+    harness: &Harness,
+    who: &AuthContext,
+    routes: &[(Method, &str)],
+    role: &str,
+) {
+    for (method, uri) in routes {
+        let (status, text) = send(harness, Some(who.clone()), method.clone(), uri).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+        assert_eq!(parsed(&text)["detail"], format!("{FORBIDDEN_ROLE} {role}"));
+    }
+}
+
+pub(crate) async fn admitted_on_every_route(
+    harness: &Harness,
+    who: &AuthContext,
+    routes: &[(Method, &str)],
+) {
+    for (method, uri) in routes {
+        let (status, text) = send(harness, Some(who.clone()), method.clone(), uri).await;
+        assert_eq!(status, StatusCode::OK, "{uri} {text}");
+    }
 }
 
 pub(crate) fn context(subject: &str, roles: &[Role], source_key: SourceKey) -> AuthContext {
