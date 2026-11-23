@@ -20,6 +20,7 @@ betterlite-guardrails = { path = "../betterlite-guardrails" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-sdk = { path = "../betterlite-sdk" }
@@ -38,6 +39,7 @@ tokio = { workspace = true, features = ["sync", "time"] }
 uuid.workspace = true
 
 [dev-dependencies]
+mutants = "0.0.4"
 rstest = "=0.27.0"
 temp-env = "0.3.6"
 tempfile = "3.27.0"
