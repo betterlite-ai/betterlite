@@ -265,7 +265,7 @@ impl NativeBatchSession {
     }
 
     // the awaitable create: the synchronous transport runs on a blocking task, not on the event loop
-    fn acreate<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> PyResult<Py<PyAny>> {
+    fn acreate(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<Py<PyAny>> {
         let input: BatchProviderCreateInput = parse(payload)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, answer_text::<CreateCall>(core, input, CallMode::Async))
@@ -273,7 +273,7 @@ impl NativeBatchSession {
     }
 
     // the awaitable retrieve: the dispatch is awaited on the event loop's runtime
-    fn aretrieve<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> PyResult<Py<PyAny>> {
+    fn aretrieve(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<Py<PyAny>> {
         let input: BatchProviderReadInput = parse(payload)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, answer_text::<ReadCall>(core, input, CallMode::Async)).map(Bound::unbind)
