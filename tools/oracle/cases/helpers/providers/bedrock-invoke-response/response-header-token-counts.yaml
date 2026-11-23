@@ -1,0 +1,97 @@
+kind: helper
+name: response-header-token-counts
+call:
+  bedrock_invoke_response:
+    reply:
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}], "usage": {"inputTokens": 99, "outputTokens": 99, "totalTokens": 198}}'
+        status: 200
+        headers: [[X-Amzn-Bedrock-Input-Token-Count, "12"], [X-Amzn-Bedrock-Output-Token-Count, "5"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, " 1_1 "], [x-amzn-bedrock-output-token-count, "+4"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "0"], [x-amzn-bedrock-output-token-count, "0"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.5
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "3"], [x-amzn-bedrock-output-token-count, "7"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1699999999.75
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}]}'
+        status: 200
+        headers: []
+        messages: [{role: user, content: hi}]
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, ""], [x-amzn-bedrock-output-token-count, ""]]
+        messages: [{role: user, content: hi}]
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+env: {}
+compare: {ignore: []}

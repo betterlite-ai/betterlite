@@ -13,12 +13,19 @@ cargo-fuzz = true
 
 [dependencies]
 async-trait = "0.1.92"
+betterlite-anthropic = { path = "../../betterlite-anthropic" }
 betterlite-bedrock = { path = ".." }
+betterlite-logging = { path = "../../betterlite-logging" }
+betterlite-models = { path = "../../betterlite-models" }
 betterlite-openai = { path = "../../betterlite-openai" }
 betterlite-prompts = { path = "../../betterlite-prompts" }
+betterlite-redact = { path = "../../betterlite-redact" }
 betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 bytes = "1.12.1"
+chrono.workspace = true
+indexmap = { version = "2.14.2", features = ["serde"] }
 libfuzzer-sys = "0.4.9"
+serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 tokio = { version = "=1.53.3", default-features = false, features = ["rt"] }
 
 [[bin]]
@@ -164,6 +171,13 @@ bench = false
 [[bin]]
 name = "bedrock_other_stability_edits"
 path = "fuzz_targets/bedrock_other_stability_edits.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_invoke_response"
+path = "fuzz_targets/bedrock_invoke_response.rs"
 test = false
 doc = false
 bench = false

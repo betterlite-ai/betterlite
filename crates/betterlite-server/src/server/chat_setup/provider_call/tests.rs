@@ -150,7 +150,7 @@ fn a_rejected_fields_error_stays_with_the_provider_framework() {
 #[rstest]
 #[case::openai_keeps_usage_and_environment_organization("openai/up", PLAIN, 200, Some((3, true)))]
 #[case::aiohttp_zeroes_usage_and_environment_organization("aiohttp_openai/up", PLAIN, 200, Some((0, false)))]
-#[case::unavailable_adapter_fails_before_http("azure/up", PLAIN, 501, None)]
+#[case::unavailable_adapter_fails_before_http("deepseek/up", PLAIN, 501, None)]
 #[case::a_valid_chunk_size_reaches_the_provider("openai/up", r#"{"model":"g","messages":[],"stream_chunk_size":4}"#, 200, Some((3, true)))]
 #[case::a_zero_chunk_size_fails_before_http(
     "openai/up",
