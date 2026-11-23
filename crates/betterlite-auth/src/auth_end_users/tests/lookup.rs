@@ -545,3 +545,34 @@ async fn cached_row_default_failure_propagates() {
     assert!(matches!(error, EndUserObjectError::Defaults(_)));
     assert!(rows.queries().is_empty());
 }
+
+#[tokio::test]
+async fn missing_key_budget_leaves_the_row_unchanged() {
+    let row = end_user_row("alice", "0", Some("dangling"), None);
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
+    let cache = ScriptedCache::new();
+    let registry = guard_off();
+    let store = PostgresStore { pool: None };
+    let objects = EndUserObjects {
+        rows: Some(&rows),
+        budgets: Some(&budgets),
+        cache: &cache,
+        registry: &registry,
+        store: &store,
+        max_end_user_budget_id: None,
+    };
+    let found = objects
+        .get_end_user_object(&request(Some("alice"), Some("missing"), None))
+        .await
+        .expect("the row resolves")
+        .expect("the row exists");
+    assert_eq!(found.budget_id.as_deref(), Some("dangling"));
+    assert!(found.litellm_budget_table.is_none());
+    assert_eq!(budgets.queries(), vec!["missing".to_owned()]);
+    let stored = cache
+        .stored_end_user("end_user_id:alice")
+        .expect("the fetched row is cached");
+    assert_eq!(stored.budget_id.as_deref(), Some("dangling"));
+    assert!(stored.litellm_budget_table.is_none());
+}

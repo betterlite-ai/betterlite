@@ -45,6 +45,14 @@ fn metadata_string_only() {
         None
     );
     assert_eq!(
+        key_end_user_budget_id(Some(&payload(r#"{"end_user_budget_id": null}"#))),
+        None
+    );
+    assert_eq!(
+        key_end_user_budget_id(Some(&payload(r#"{"end_user_budget_id": {"id": "b1"}}"#))),
+        None
+    );
+    assert_eq!(
         key_end_user_budget_id(Some(&payload(r#"{"end_user_budget_id": ""}"#))),
         None
     );
@@ -300,6 +308,18 @@ async fn member_cache_write_error_propagates() {
         .await
         .expect_err("the member cache write escapes");
     assert!(matches!(error, MemberBudgetError::Cache(_)));
+}
+
+#[tokio::test]
+async fn member_cache_read_error_propagates() {
+    let rows = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
+    let cache = ScriptedCache::failing(Some(Surface::Budget), None);
+    let error = lookup(Some(&rows), &cache, None)
+        .team_member_default_budget("member")
+        .await
+        .expect_err("the member cache read sits outside the query catch");
+    assert!(matches!(error, MemberBudgetError::Cache(_)));
+    assert!(rows.queries().is_empty());
 }
 
 #[tokio::test]
