@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::{Future, pending};
+use std::future::pending;
 use std::ops::Range;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -67,54 +67,47 @@ fn fake(unavailable: &[&str], claimed: usize, projected: ProjectResult) -> FakeA
 }
 
 impl BaselineAccounting for FakeAccounting {
-    fn append(
-        &self,
-        record: &BaselineAccountingRecord,
-    ) -> impl Future<Output = AppendResult> + Send {
-        async move {
-            let request_id = record.observation.request_id.clone();
-            self.calls
-                .lock()
-                .unwrap()
-                .push(format!("append:{request_id}"));
-            let running = self
-                .in_flight
-                .fetch_add(1, Ordering::SeqCst)
-                .saturating_add(1);
-            self.peak.fetch_max(running, Ordering::SeqCst);
-            if self.hang == Hang::Appends {
-                pending::<()>().await;
-            }
-            yield_now().await;
-            self.in_flight.fetch_sub(1, Ordering::SeqCst);
-            if self.unavailable.contains(&request_id) {
-                AppendResult::Unavailable
-            } else {
-                AppendResult::Recorded
-            }
+    async fn append(&self, record: &BaselineAccountingRecord) -> AppendResult {
+        let request_id = record.observation.request_id.clone();
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("append:{request_id}"));
+        let running = self
+            .in_flight
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        self.peak.fetch_max(running, Ordering::SeqCst);
+        if self.hang == Hang::Appends {
+            pending::<()>().await;
+        }
+        yield_now().await;
+        self.in_flight.fetch_sub(1, Ordering::SeqCst);
+        if self.unavailable.contains(&request_id) {
+            AppendResult::Unavailable
+        } else {
+            AppendResult::Recorded
         }
     }
 
-    fn project(&self, scope: &str) -> impl Future<Output = ProjectResult> + Send {
-        async move {
-            self.calls.lock().unwrap().push(format!("project:{scope}"));
-            if self.hang == Hang::Projections {
-                pending::<()>().await;
-            }
-            self.projected
+    async fn project(&self, scope: &str) -> ProjectResult {
+        self.calls.lock().unwrap().push(format!("project:{scope}"));
+        if self.hang == Hang::Projections {
+            pending::<()>().await;
         }
+        self.projected
     }
 
-    fn claim_dirty(&self) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        async move {
-            self.calls.lock().unwrap().push("claim".to_owned());
-            if self.claim_fails {
-                return Err(StoreError::Revision);
-            }
-            Ok((0..self.claimed)
-                .map(|index| format!("scope-{index}"))
-                .collect())
+    async fn claim_dirty(&self) -> Result<Vec<String>, StoreError> {
+        self.calls.lock().unwrap().push("claim".to_owned());
+        // A real claim is a database round trip, so the fake yields like append does
+        yield_now().await;
+        if self.claim_fails {
+            return Err(StoreError::Revision);
         }
+        Ok((0..self.claimed)
+            .map(|index| format!("scope-{index}"))
+            .collect())
     }
 }
 
@@ -208,6 +201,7 @@ async fn a_cancelled_flush_requeues_the_whole_batch_after_the_pending_records() 
     let mut expected = vec!["req-32".to_owned()];
     expected.extend(ids(0..32));
     assert_eq!(queued(&queue), expected);
+    drop(queue);
 }
 
 #[tokio::test]
@@ -234,6 +228,7 @@ async fn a_requeued_record_keeps_its_slot_so_a_full_queue_neither_deadlocks_nor_
     let admitted = timeout(Duration::from_secs(1), queue.push(record("req-2", 2.0_f64))).await;
     admitted.unwrap().unwrap();
     assert_eq!(queued(&queue), ["req-1", "req-2"]);
+    drop(queue);
 }
 
 #[rstest]

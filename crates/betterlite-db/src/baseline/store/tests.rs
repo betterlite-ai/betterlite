@@ -8,7 +8,8 @@ use deadpool_postgres::Client;
 use rstest::rstest;
 
 use self::support::{
-    OTHER_SCOPE, SCOPE, comparison, harness, observation, reason, record, seed_logs, session, store,
+    Equivalence, OTHER_SCOPE, SCOPE, comparison, harness, observation, reason, record, seed_logs,
+    session, store,
 };
 use super::error::StoreError;
 use super::retire::retire_before;
@@ -62,7 +63,8 @@ async fn append_records_the_observation_its_turn_and_a_dirty_comparison() {
     );
     let state = comparison(&client, SCOPE).await;
     assert_eq!((state.revision, state.published), (1, 0));
-    assert!(state.unattempted && !state.retired && state.initial_equivalent);
+    assert!(state.unattempted && !state.retired);
+    assert_eq!(state.initial_equivalent, Equivalence::Equivalent);
     let stored = observation(&client, "req-1").await.unwrap();
     assert_eq!((stored.revision, stored.conflicted), (1, false));
     assert!(stored.publication.is_none());
@@ -102,8 +104,14 @@ async fn a_new_comparison_is_not_equivalent_once_its_key_session_exists() {
         AppendResult::Recorded
     );
     assert_eq!(accounting.append(&other).await, AppendResult::Recorded);
-    assert!(comparison(&client, SCOPE).await.initial_equivalent);
-    assert!(!comparison(&client, OTHER_SCOPE).await.initial_equivalent);
+    assert_eq!(
+        comparison(&client, SCOPE).await.initial_equivalent,
+        Equivalence::Equivalent
+    );
+    assert_eq!(
+        comparison(&client, OTHER_SCOPE).await.initial_equivalent,
+        Equivalence::Different
+    );
     drop(client);
     harness.close().await;
 }
@@ -170,7 +178,7 @@ async fn a_retired_comparison_publishes_comparison_retired_and_reverses_the_cano
     let harness = harness().await;
     let client = harness.pool.get().await.unwrap();
     let accounting = store(&harness.writer);
-    seed_logs(&client, &["req-1", "req-2"]).await;
+    seed_logs(&client, &["req-1"]).await;
     assert_eq!(
         accounting.append(&record("req-1", 2.0_f64)).await,
         AppendResult::Recorded
@@ -188,6 +196,22 @@ async fn a_retired_comparison_publishes_comparison_retired_and_reverses_the_cano
     assert_eq!(canonical.reason, "comparison_retired");
     assert_eq!(canonical.comparison_started_at.to_bits(), 2.0_f64.to_bits());
     assert_eq!(session(&client).await, (1, "0".to_owned(), 0));
+    assert_eq!(comparison(&client, SCOPE).await.revision, 1);
+    drop(client);
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn a_new_observation_of_a_retired_comparison_is_published_as_comparison_retired() {
+    let harness = harness().await;
+    let client = harness.pool.get().await.unwrap();
+    let accounting = store(&harness.writer);
+    seed_logs(&client, &["req-1", "req-2"]).await;
+    assert_eq!(
+        accounting.append(&record("req-1", 2.0_f64)).await,
+        AppendResult::Recorded
+    );
+    client.batch_execute(RETIRE_SCOPE).await.unwrap();
     assert_eq!(
         accounting.append(&record("req-2", 3.0_f64)).await,
         AppendResult::Retired
@@ -206,7 +230,6 @@ async fn a_retired_comparison_publishes_comparison_retired_and_reverses_the_cano
     );
     assert_eq!(log.get::<_, Option<String>>(1).as_deref(), Some("value"));
     assert_eq!(session(&client).await.0, 2);
-    assert_eq!(comparison(&client, SCOPE).await.revision, 1);
     drop(client);
     harness.close().await;
 }
@@ -528,7 +551,7 @@ async fn retirement_skips_a_comparison_another_transaction_holds() {
 }
 
 #[rstest]
-#[case::batch_beyond_integer(2_147_483_648, 1000, false)]
+#[case::batch_beyond_integer(0x8000_0000, 1000, false)]
 #[case::zero_timeout_still_bounds_the_lock_wait(10, 0, true)]
 #[tokio::test]
 async fn retirement_reports_its_failures(

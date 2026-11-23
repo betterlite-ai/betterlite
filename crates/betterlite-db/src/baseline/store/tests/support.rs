@@ -70,12 +70,28 @@ pub(crate) struct Harness {
     pub(crate) writer: PostgresStore,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Equivalence {
+    Equivalent,
+    Different,
+}
+
+impl From<bool> for Equivalence {
+    fn from(equivalent: bool) -> Self {
+        if equivalent {
+            Self::Equivalent
+        } else {
+            Self::Different
+        }
+    }
+}
+
 pub(crate) struct ComparisonRow {
     pub(crate) revision: i64,
     pub(crate) published: i64,
     pub(crate) unattempted: bool,
     pub(crate) retired: bool,
-    pub(crate) initial_equivalent: bool,
+    pub(crate) initial_equivalent: Equivalence,
     pub(crate) history: Option<String>,
 }
 
@@ -139,7 +155,7 @@ pub(crate) async fn comparison(client: &Client, scope: &str) -> ComparisonRow {
         published: row.get(1),
         unattempted: row.get(2),
         retired: row.get(3),
-        initial_equivalent: row.get(4),
+        initial_equivalent: Equivalence::from(row.get(4)),
         history: row.get(5),
     }
 }
