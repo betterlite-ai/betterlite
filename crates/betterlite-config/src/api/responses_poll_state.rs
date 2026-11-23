@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
-use crate::resolve::resolve_string;
+use crate::resolve::{resolve_number, resolve_string};
 
 mod tests;
 
@@ -126,37 +126,21 @@ fn resolve_list(items: &[Json], path: &str, lookup: &dyn EnvironmentLookup) -> P
     Ok(values)
 }
 
-// the source hands any integer to the cache; only a value that cannot be an integer fails here
+// the source hands any integer to the cache; a fractional ttl is an invalid scalar, which
+// resolve_number would report as an invalid integer, so only that arm stays local
 fn ttl(raw: Option<RawNumber>, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
-    let Some(value) = raw else {
-        return Ok(DEFAULT_POLLING_TTL);
-    };
-    match value {
-        RawNumber::Integer(seconds) => Ok(seconds),
-        RawNumber::Text(text) => resolve_ttl_text(&text, lookup),
-        RawNumber::Float(_) => Err(invalid_scalar(TTL_PATH, &Json::Null)),
-        RawNumber::Boolean(flag) => Err(invalid_scalar(TTL_PATH, &Json::Bool(flag))),
+    if matches!(raw, Some(RawNumber::Float(_))) {
+        return Err(invalid_scalar(TTL_PATH, &Json::Null));
     }
+    Ok(resolve_number(raw, TTL_PATH, lookup, parse_ttl)?.unwrap_or(DEFAULT_POLLING_TTL))
 }
 
-fn resolve_ttl_text(text: &str, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
-    let Some(name) = text.strip_prefix("os.environ/") else {
-        return text
-            .parse::<i64>()
-            .map_err(|source| ConfigError::InvalidInteger {
-                path: TTL_PATH.to_owned(),
-                source,
-            });
-    };
-    match lookup.lookup(name) {
-        None => Err(ConfigError::MissingEnvironment {
-            variable: name.to_owned(),
-            path: TTL_PATH.to_owned(),
-        }),
-        Some(raw_value) => {
-            Ok(betterlite_env::number::<i64>(name, &raw_value)?.unwrap_or(DEFAULT_POLLING_TTL))
-        }
-    }
+fn parse_ttl(text: &str, path: &str) -> Result<i64, ConfigError> {
+    text.parse::<i64>()
+        .map_err(|source| ConfigError::InvalidInteger {
+            path: path.to_owned(),
+            source,
+        })
 }
 
 fn invalid_scalar(path: &str, value: &Json) -> ConfigError {
