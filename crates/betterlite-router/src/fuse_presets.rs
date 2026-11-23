@@ -139,6 +139,7 @@ pub fn get_fuse_presets() -> Result<Arc<FusePresetCatalog>, FusePresetsError> {
     }
     let catalog = Arc::new(serde_json::from_str::<FusePresetCatalog>(BUNDLED_CATALOG)?);
     *stored = Some(Arc::clone(&catalog));
+    drop(stored);
     Ok(catalog)
 }
 
@@ -147,7 +148,7 @@ pub fn resolve_fuse_profile(
     preset_id: Option<&str>,
     kind: PresetKind,
 ) -> Result<Option<ProfileText>, FusePresetsError> {
-    let Some(preset_id) = preset_id else {
+    let Some(requested_id) = preset_id else {
         return Ok(text.cloned());
     };
     let catalog = get_fuse_presets()?;
@@ -156,12 +157,12 @@ pub fn resolve_fuse_profile(
         PresetKind::Model => catalog
             .models
             .iter()
-            .find(|entry| entry.id == preset_id)
+            .find(|entry| entry.id == requested_id)
             .map(|entry| entry.text.clone()),
         PresetKind::Harness => catalog
             .harnesses
             .iter()
-            .find(|entry| entry.id == preset_id)
+            .find(|entry| entry.id == requested_id)
             .map(|entry| entry.text.clone()),
     };
     let Some(preset_text) = found else {

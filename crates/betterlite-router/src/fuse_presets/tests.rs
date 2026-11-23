@@ -187,7 +187,7 @@ fn resolve_fuse_profile_returns_text_or_preset_text(
 ) {
     let profile = text.map(|value| ProfileText::try_from(value.to_owned()).unwrap());
     let resolved = resolve_fuse_profile(profile.as_ref(), preset_id, kind).unwrap();
-    let resolved_text: Option<&str> = resolved.as_ref().map(|value| value.as_ref());
+    let resolved_text: Option<&str> = resolved.as_ref().map(AsRef::as_ref);
     assert_eq!(resolved_text, expected);
 }
 
@@ -234,7 +234,7 @@ fn profile_text_rejects_4001_characters() {
 
 #[test]
 fn profile_text_counts_characters_not_bytes() {
-    let raw = format!("\t{}\n", "é".repeat(MAX_PROFILE_TEXT_CHARACTERS));
+    let raw = format!("\t{}\n", "\u{e9}".repeat(MAX_PROFILE_TEXT_CHARACTERS));
     let text = ProfileText::try_from(raw).unwrap();
     let stripped: &str = text.as_ref();
     assert_eq!(stripped.chars().count(), 4000);
