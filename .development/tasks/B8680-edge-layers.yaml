@@ -131,7 +131,11 @@ description: >-
   cors-credentials-env-false (LITELLM_CORS_ALLOW_CREDENTIALS "false" with a listed origin) and
   method-not-allowed-detail (GET /v1/embeddings with the master key: 405, the JSON detail and the allow header). Moved
   here from B3886, which could not pass them before this mount: the 14 cases in tools/oracle/cases/prometheus-scrape/
-  listed under oracle_cases; write each from B3886's text.
+  listed under oracle_cases; write each from B3886's text. Two more in the same folder show B10097's metrics, both with
+  prometheus in litellm_settings.callbacks and the master key on every request, comparing status and body:
+  in-flight-gauge (GET /metrics?name[]=litellm_in_flight_requests answers the gauge at 1.0, since the scrape is itself in
+  flight) and admission-gauges (general_settings.max_in_flight_requests_per_worker 4; GET /v1/models, then GET
+  /metrics?name[]=litellm_admission_admitted_requests and GET /metrics?name[]=litellm_admission_queued_requests, both 0.0).
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -187,6 +191,8 @@ dod:
     proof: [ui-tests]
   - text: The seven edge layer cases and the fourteen /metrics cases moved from B3886 match LiteLLM through the booted proxy.
     proof: [layer-cases, oracle]
+  - text: The in-flight-gauge and admission-gauges cases show B10097's metrics as LiteLLM's scrape does.
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -221,6 +227,8 @@ oracle_cases:
   - tools/oracle/cases/prometheus-scrape/unknown-metric-name.yaml
   - tools/oracle/cases/prometheus-scrape/concurrent-identical-requests.yaml
   - tools/oracle/cases/prometheus-scrape/large-response-chunking.yaml
+  - tools/oracle/cases/prometheus-scrape/in-flight-gauge.yaml
+  - tools/oracle/cases/prometheus-scrape/admission-gauges.yaml
 deviations:
   - what: The server span starts inside the root path, admission control, size limit, gzip, security header and Redis batch layers, so a 413 from the size limit or a request refused by admission control has no SERVER span.
     why: Those layers are applied in server.rs outside router(), and app::wrap is the outermost hook an area part has. LiteLLM's FastAPIInstrumentor wraps the whole middleware stack.

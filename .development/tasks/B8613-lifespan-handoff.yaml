@@ -92,7 +92,7 @@ description: >-
   stops startup with its error. Without the variable it is `CollectorRegistry::default()`. Started carries it: B8655
   registers its collectors into it, and B8680 hands it and its multiprocess_dir() to B3886's metrics_router.
   14. Shutdown state. One B4448 `ShutdownState`, with the drain timeout from the health_readiness section and B022's
-  in-flight source made here too. B8374's start_shutdown and wait_for_drain use this one. Started carries both, so the
+  in-flight source made here too, as B10097's `InFlightRequests::new` over the step 13 registry. B8374's start_shutdown and wait_for_drain use this one. Started carries both, so the
   server's in-flight layer and wait_for_drain count the same requests (B8610 hands them to ServerState).
   15. Spend producer slot. One empty `Arc<std::sync::OnceLock<P>>`, where P is what B069's spend::startup::start
   returns. Started carries it; B8662 fills it from app::spend::start once the server starts.
