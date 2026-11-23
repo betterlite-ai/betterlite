@@ -1,13 +1,34 @@
 use std::sync::Arc;
 
 use betterlite_core::api::assistant_read_delete::AssistantStep;
+use betterlite_core::api::assistant_read_delete::request::AssistantReadDeleteInput;
+use betterlite_core::api::assistant_records::AssistantCreateInput;
+use betterlite_core::api::assistant_records::error::AssistantCreateFailure;
+use betterlite_openai::assistants::records::AssistantObject;
 use betterlite_openai::threads::records::ThreadRecord;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
+use serde::Serialize;
 
-use super::convert;
+use super::convert::{self, ThreadRequest};
+use super::error::family::ThreadOutcome;
 use super::error::{CallError, family};
-use super::session::{Session, ThreadKind, ThreadOutcome};
+use super::session::{Session, ThreadKind};
+
+// The attachment bytes Python passes with every call; the assistant endpoints never read them.
+type Blobs = Vec<Vec<u8>>;
+
+// What a coroutine-returning method hands back to Python.
+type Reply<'py> = PyResult<Bound<'py, PyAny>>;
+
+// The JSON text a function returns, or the exception Python raises in its place.
+type Encoded = PyResult<String>;
+
+// Which assistant object a read or delete call answers with, so one reply builds either.
+enum Answer {
+    Page,
+    Deleted,
+}
 
 // litellm/assistants/main.py: one session per call, the ten functions as methods over it.
 #[pyclass(module = "betterlite._native")]
@@ -25,194 +46,139 @@ impl NativeAssistantSession {
         })
     }
 
-    fn get_assistants(
-        &self,
-        py: Python<'_>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<String> {
-        let input = convert::request_read_delete(payload_text)?;
-        let provider = input.provider.clone();
-        let answer = py.detach(|| get_runtime().block_on(self.session.read_delete(&input)));
-        let step = answer.map_err(|error| {
-            family::read_delete(error, &provider, &self.session.redactor).into_exception()
-        })?;
-        page_text(step)
+    fn get_assistants(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let input = convert::read("assistant read or delete request", text)?;
+        let step = read_delete_step(py, &self.session, &input)?;
+        reply_text(step, Answer::Page)
     }
 
-    fn aget_assistants<'py>(
-        &self,
-        py: Python<'py>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let input = convert::request_read_delete(payload_text)?;
+    fn aget_assistants<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> Reply<'py> {
+        let input = convert::read("assistant read or delete request", text)?;
         let session = Arc::clone(&self.session);
-        future_into_py(py, async move {
-            let provider = input.provider.clone();
-            let answer = session.read_delete(&input).await;
-            let step = answer.map_err(|error| {
-                family::read_delete(error, &provider, &session.redactor).into_exception()
-            })?;
-            page_text(step).map_err(CallError::into_exception)
-        })
+        future_into_py(py, read_delete_work(session, input, Answer::Page))
     }
 
-    fn delete_assistant(
-        &self,
-        py: Python<'_>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<String> {
-        let input = convert::request_read_delete(payload_text)?;
-        let provider = input.provider.clone();
-        let answer = py.detach(|| get_runtime().block_on(self.session.read_delete(&input)));
-        let step = answer.map_err(|error| {
-            family::read_delete(error, &provider, &self.session.redactor).into_exception()
-        })?;
-        deleted_text(step)
+    fn delete_assistant(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let input = convert::read("assistant read or delete request", text)?;
+        let step = read_delete_step(py, &self.session, &input)?;
+        reply_text(step, Answer::Deleted)
     }
 
-    fn adelete_assistant<'py>(
-        &self,
-        py: Python<'py>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let input = convert::request_read_delete(payload_text)?;
+    fn adelete_assistant<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> Reply<'py> {
+        let input = convert::read("assistant read or delete request", text)?;
         let session = Arc::clone(&self.session);
-        future_into_py(py, async move {
-            let provider = input.provider.clone();
-            let answer = session.read_delete(&input).await;
-            let step = answer.map_err(|error| {
-                family::read_delete(error, &provider, &session.redactor).into_exception()
-            })?;
-            deleted_text(step).map_err(CallError::into_exception)
-        })
+        future_into_py(py, read_delete_work(session, input, Answer::Deleted))
     }
 
-    fn create_assistants(
-        &self,
-        py: Python<'_>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<String> {
-        let input = convert::request_create(payload_text)?;
-        let model = input.model.clone();
-        let provider = input.provider.clone();
+    fn create_assistants(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let input = convert::read("assistant create request", text)?;
         let answer = py.detach(|| get_runtime().block_on(self.session.create(&input, false)));
-        let assistant = answer
-            .map_err(|failure| family::create(&failure, &model, &provider).into_exception())?;
-        convert::write(&assistant).map_err(CallError::into_exception)
+        create_text(answer, &input)
     }
 
-    fn acreate_assistants<'py>(
-        &self,
-        py: Python<'py>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let input = convert::request_create(payload_text)?;
+    fn acreate_assistants<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> Reply<'py> {
+        let input = convert::read("assistant create request", text)?;
         let session = Arc::clone(&self.session);
         future_into_py(py, async move {
-            let model = input.model.clone();
-            let provider = input.provider.clone();
             let answer = session.create(&input, true).await;
-            let assistant = answer
-                .map_err(|failure| family::create(&failure, &model, &provider).into_exception())?;
-            convert::write(&assistant).map_err(CallError::into_exception)
+            create_text(answer, &input)
         })
     }
 
-    fn create_thread(
-        &self,
-        py: Python<'_>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<String> {
-        let request = convert::request_thread(payload_text)?;
-        let provider = request.custom_llm_provider.clone();
+    fn create_thread(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let request = convert::read("thread request", text)?;
         let answer = py.detach(|| {
             get_runtime().block_on(self.session.thread(ThreadKind::Create, &request, false))
         });
-        thread_text(answer, &provider)
+        thread_text(answer, &request.custom_llm_provider)
     }
 
-    fn acreate_thread<'py>(
-        &self,
-        py: Python<'py>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let request = convert::request_thread(payload_text)?;
+    fn acreate_thread<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> Reply<'py> {
+        let request = convert::read("thread request", text)?;
         let session = Arc::clone(&self.session);
-        future_into_py(py, async move {
-            let provider = request.custom_llm_provider.clone();
-            let answer = session.thread(ThreadKind::Create, &request, true).await;
-            thread_text(answer, &provider).map_err(CallError::into_exception)
-        })
+        future_into_py(py, thread_work(session, ThreadKind::Create, request))
     }
 
-    fn get_thread(
-        &self,
-        py: Python<'_>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<String> {
-        let request = convert::request_thread(payload_text)?;
-        let provider = request.custom_llm_provider.clone();
+    fn get_thread(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let request = convert::read("thread request", text)?;
         let answer = py.detach(|| {
             get_runtime().block_on(self.session.thread(ThreadKind::Get, &request, false))
         });
-        thread_text(answer, &provider)
+        thread_text(answer, &request.custom_llm_provider)
     }
 
-    fn aget_thread<'py>(
-        &self,
-        py: Python<'py>,
-        payload_text: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let request = convert::request_thread(payload_text)?;
+    fn aget_thread<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> Reply<'py> {
+        let request = convert::read("thread request", text)?;
         let session = Arc::clone(&self.session);
-        future_into_py(py, async move {
-            let provider = request.custom_llm_provider.clone();
-            let answer = session.thread(ThreadKind::Get, &request, true).await;
-            thread_text(answer, &provider).map_err(CallError::into_exception)
-        })
+        future_into_py(py, thread_work(session, ThreadKind::Get, request))
     }
 }
 
-fn page_text(step: AssistantStep) -> PyResult<String> {
-    match step {
-        AssistantStep::Page(page) => convert::write(&page).map_err(CallError::into_exception),
-        AssistantStep::Deleted(_) | AssistantStep::Coroutine => {
-            Err(CallError::Reply.into_exception())
+// get_assistants and delete_assistant block this thread on the runtime with the GIL released.
+fn read_delete_step(
+    py: Python<'_>,
+    session: &Session,
+    input: &AssistantReadDeleteInput,
+) -> PyResult<AssistantStep> {
+    let provider = input.provider.clone();
+    let answer = py.detach(|| get_runtime().block_on(session.read_delete(input)));
+    answer
+        .map_err(|error| family::read_delete(error, &provider, &session.redactor).into_exception())
+}
+
+// Their async twins await the same call on the asyncio loop's runtime.
+async fn read_delete_work(
+    session: Arc<Session>,
+    input: AssistantReadDeleteInput,
+    wanted: Answer,
+) -> Encoded {
+    let answer = session.read_delete(&input).await;
+    let provider = input.provider;
+    let step = answer.map_err(|error| {
+        family::read_delete(error, &provider, &session.redactor).into_exception()
+    })?;
+    reply_text(step, wanted)
+}
+
+// The step must be the object the function returns; a reply of the other kind never leaves Rust.
+fn reply_text(step: AssistantStep, wanted: Answer) -> Encoded {
+    match (step, wanted) {
+        (AssistantStep::Page(page), Answer::Page) => encode(&page),
+        (AssistantStep::Deleted(deleted), Answer::Deleted) => encode(&deleted),
+        (AssistantStep::Page(_), Answer::Deleted)
+        | (AssistantStep::Deleted(_), Answer::Page)
+        | (AssistantStep::Coroutine, Answer::Page | Answer::Deleted) => {
+            Err(PyErr::from(CallError::Reply))
         }
     }
 }
 
-fn deleted_text(step: AssistantStep) -> PyResult<String> {
-    match step {
-        AssistantStep::Deleted(deleted) => {
-            convert::write(&deleted).map_err(CallError::into_exception)
-        }
-        AssistantStep::Page(_) | AssistantStep::Coroutine => Err(CallError::Reply.into_exception()),
-    }
+fn create_text(
+    answer: Result<AssistantObject, Box<AssistantCreateFailure>>,
+    input: &AssistantCreateInput,
+) -> Encoded {
+    let assistant = answer.map_err(|failure| {
+        family::create(&failure, &input.model, &input.provider).into_exception()
+    })?;
+    encode(&assistant)
 }
 
-fn thread_text(
-    answer: Result<Option<ThreadRecord>, ThreadOutcome>,
-    provider: &str,
-) -> PyResult<String> {
+async fn thread_work(session: Arc<Session>, kind: ThreadKind, request: ThreadRequest) -> Encoded {
+    let answer = session.thread(kind, &request, true).await;
+    let provider = request.custom_llm_provider;
+    thread_text(answer, &provider)
+}
+
+fn thread_text(answer: Result<Option<ThreadRecord>, ThreadOutcome>, provider: &str) -> Encoded {
     match answer {
-        Ok(Some(record)) => convert::write(&record).map_err(CallError::into_exception),
+        Ok(Some(record)) => encode(&record),
         Ok(None) => Ok(String::from("null")),
-        Err(ThreadOutcome::Sync(error)) => {
-            Err(family::thread_sync(&error, provider).into_exception())
-        }
-        Err(ThreadOutcome::Async(failure)) => {
-            Err(family::thread_async(&failure, provider).into_exception())
-        }
+        Err(outcome) => Err(family::thread(&outcome, provider).into_exception()),
     }
+}
+
+fn encode<T: Serialize>(value: &T) -> Encoded {
+    serde_json::to_string(value)
+        .map_err(|source| CallError::Encode { source })
+        .map_err(PyErr::from)
 }

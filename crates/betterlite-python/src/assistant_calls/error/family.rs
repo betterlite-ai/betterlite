@@ -111,37 +111,76 @@ pub(crate) fn read_delete(
     }
 }
 
-// create_thread and get_thread raise the SDK exception itself, mapped to its class, status and body.
-pub(crate) fn thread_sync(error: &ThreadError, provider: &str) -> NativeErrorPayload {
-    let failure = error.sdk_failure();
-    let message = error.to_string();
-    let unsupported = failure.class == "BadRequestError" && message.starts_with(UNSUPPORTED_PREFIX);
-    NativeErrorPayload {
-        status_code: Some(failure.status),
-        llm_provider: Some(provider.to_owned()),
-        model: unsupported.then_some(String::from(UNSUPPORTED_MODEL)),
-        body: wire_body(&[
-            ("type", &text_field(failure.kind)),
-            ("param", &text_field(failure.param)),
-            ("code", &text_field(failure.code)),
-        ]),
-        ..payload(failure.class, message)
-    }
+// A sync facade raises the SDK error itself, while its async twin raises the class exception_type mapped.
+pub(crate) enum ThreadOutcome {
+    Sync(ThreadError),
+    Async(ThreadFailure),
 }
 
-// acreate_thread and aget_thread run exception_type over the same failure, so its class is already mapped.
-pub(crate) fn thread_async(failure: &ThreadFailure, provider: &str) -> NativeErrorPayload {
-    let metadata = failure.class.metadata();
-    let unsupported = failure.error.to_string().starts_with(UNSUPPORTED_PREFIX);
-    NativeErrorPayload {
-        status_code: class_status(&failure.class),
-        llm_provider: Some(provider.to_owned()),
-        model: unsupported.then_some(String::from(UNSUPPORTED_MODEL)),
-        body: wire_body(&[
-            ("type", &metadata.error_type),
-            ("param", &metadata.param),
-            ("code", &text_field(metadata.openai_code)),
-        ]),
-        ..payload(class_name(&failure.class), failure.error.to_string())
-    }
+// What both thread maps know before they build their payload.
+struct ThreadFields<'a> {
+    class: &'a str,
+    status: Option<u16>,
+    fields: [WireField; 3],
+    message: String,
+    unsupported: bool,
+}
+
+fn thread_body(fields: &[WireField; 3]) -> Option<Json> {
+    wire_body(&[
+        ("type", &fields[0]),
+        ("param", &fields[1]),
+        ("code", &fields[2]),
+    ])
+}
+
+fn thread_error(fields: ThreadFields<'_>, provider: &str) -> NativeErrorPayload {
+    let mut answer = payload(fields.class, fields.message);
+    answer.status_code = fields.status;
+    answer.llm_provider = Some(provider.to_owned());
+    answer.model = fields
+        .unsupported
+        .then_some(String::from(UNSUPPORTED_MODEL));
+    answer.body = thread_body(&fields.fields);
+    answer
+}
+
+// create_thread and get_thread raise the SDK exception itself, their async twins the class exception_type mapped.
+pub(crate) fn thread(outcome: &ThreadOutcome, provider: &str) -> NativeErrorPayload {
+    let fields = match outcome {
+        ThreadOutcome::Sync(error) => {
+            let failure = error.sdk_failure();
+            let message = error.to_string();
+            let unsupported =
+                failure.class == "BadRequestError" && message.starts_with(UNSUPPORTED_PREFIX);
+            ThreadFields {
+                class: failure.class,
+                status: Some(failure.status),
+                fields: [
+                    text_field(failure.kind),
+                    text_field(failure.param),
+                    text_field(failure.code),
+                ],
+                message,
+                unsupported,
+            }
+        }
+        ThreadOutcome::Async(failure) => {
+            let metadata = failure.class.metadata();
+            let message = failure.error.to_string();
+            let unsupported = message.starts_with(UNSUPPORTED_PREFIX);
+            ThreadFields {
+                class: class_name(&failure.class),
+                status: class_status(&failure.class),
+                fields: [
+                    metadata.error_type,
+                    metadata.param,
+                    text_field(metadata.openai_code),
+                ],
+                message,
+                unsupported,
+            }
+        }
+    };
+    thread_error(fields, provider)
 }

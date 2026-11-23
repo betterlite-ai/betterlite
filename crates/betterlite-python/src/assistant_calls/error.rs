@@ -66,14 +66,8 @@ impl NativeErrorPayload {
     }
 }
 
-impl CallError {
-    pub(crate) fn into_exception(self) -> PyErr {
-        payload("Exception", self.to_string()).into_exception()
-    }
-}
-
 impl From<CallError> for PyErr {
     fn from(error: CallError) -> Self {
-        error.into_exception()
+        payload("Exception", error.to_string()).into_exception()
     }
 }

@@ -4,7 +4,7 @@ use betterlite_core::api::assistant_read_delete::request::AssistantReadDeleteInp
 use betterlite_core::api::assistant_records::AssistantCreateInput;
 use betterlite_models::decisions::Json;
 use betterlite_openai::threads::records::ThreadMessageData;
-use serde::Serialize;
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use super::error::CallError;
@@ -12,7 +12,7 @@ use super::error::CallError;
 mod tests;
 
 // litellm.api_key and the other module globals _records.py reads before every call.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct ModuleSettings {
     pub(crate) api_key: Option<String>,
@@ -48,27 +48,4 @@ where
         Ok(value) => Ok(value),
         Err(source) => Err(CallError::Json { field, source }),
     }
-}
-
-pub(crate) fn request_settings(text: &str) -> Result<ModuleSettings, CallError> {
-    read("assistant session settings", text)
-}
-
-pub(crate) fn request_read_delete(text: &str) -> Result<AssistantReadDeleteInput, CallError> {
-    read("assistant read or delete request", text)
-}
-
-pub(crate) fn request_create(text: &str) -> Result<AssistantCreateInput, CallError> {
-    read("assistant create request", text)
-}
-
-pub(crate) fn request_thread(text: &str) -> Result<ThreadRequest, CallError> {
-    read("thread request", text)
-}
-
-pub(crate) fn write<T>(value: &T) -> Result<String, CallError>
-where
-    T: Serialize,
-{
-    serde_json::to_string(value).map_err(|source| CallError::Encode { source })
 }

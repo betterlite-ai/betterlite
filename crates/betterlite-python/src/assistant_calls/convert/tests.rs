@@ -1,11 +1,16 @@
+#![cfg(test)]
+
 use betterlite_core::api::assistant_read_delete::error::AssistantReadDeleteError;
-use betterlite_core::api::assistant_read_delete::request::AssistantOperation;
+use betterlite_core::api::assistant_read_delete::request::{
+    AssistantOperation, AssistantReadDeleteInput,
+};
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::AssistantSdkError;
+use betterlite_core::api::assistant_records::AssistantCreateInput;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::ExposeSecret as _;
 
-use super::{request_create, request_read_delete, request_settings, request_thread, write};
+use super::{ModuleSettings, ThreadRequest, read};
 use crate::assistant_calls::error::{family, payload};
 
 const READ_DELETE: &str = r#"{"operation":"list","provider":"openai","assistant_id":null,
@@ -16,7 +21,7 @@ const READ_DELETE: &str = r#"{"operation":"list","provider":"openai","assistant_
 fn request_settings_keeps_every_module_global() {
     let text = r#"{"api_key":"sk-a","api_base":"http://base","api_version":"v1",
         "organization":"org","openai_key":"sk-b","azure_key":"az"}"#;
-    let settings = request_settings(text).unwrap();
+    let settings: ModuleSettings = read("assistant session settings", text).unwrap();
     assert_eq!(settings.api_key.as_deref(), Some("sk-a"));
     assert_eq!(settings.api_base.as_deref(), Some("http://base"));
     assert_eq!(settings.api_version.as_deref(), Some("v1"));
@@ -27,7 +32,8 @@ fn request_settings_keeps_every_module_global() {
 
 #[test]
 fn request_read_delete_keeps_the_flag_params_and_pagination() {
-    let input = request_read_delete(READ_DELETE).unwrap();
+    let input: AssistantReadDeleteInput =
+        read("assistant read or delete request", READ_DELETE).unwrap();
     assert_eq!(input.operation, AssistantOperation::List);
     assert_eq!(input.aget_assistants, Some(Json::Bool(true)));
     assert_eq!(input.async_delete_assistants, None);
@@ -42,7 +48,8 @@ fn request_read_delete_keeps_the_flag_params_and_pagination() {
 #[test]
 fn request_read_delete_refuses_a_key_the_facade_does_not_read() {
     let text = r#"{"operation":"delete","provider":"openai","bucket":1}"#;
-    let error = request_read_delete(text).unwrap_err();
+    let error =
+        read::<AssistantReadDeleteInput>("assistant read or delete request", text).unwrap_err();
     assert!(error.to_string().contains("unknown field"));
 }
 
@@ -50,7 +57,7 @@ fn request_read_delete_refuses_a_key_the_facade_does_not_read() {
 fn request_create_keeps_a_zero_temperature_and_the_tools() {
     let text = r#"{"provider":"openai","model":"gpt-4o-mini","temperature":0,"top_p":0,
         "tools":[{"type":"code_interpreter"}],"metadata":{"team":"a"}}"#;
-    let input = request_create(text).unwrap();
+    let input: AssistantCreateInput = read("assistant create request", text).unwrap();
     assert_eq!(input.temperature.unwrap().as_f64(), Some(0.0_f64));
     assert_eq!(input.top_p.unwrap().as_f64(), Some(0.0_f64));
     assert_eq!(input.tools.unwrap().len(), 1);
@@ -62,19 +69,13 @@ fn request_thread_keeps_messages_metadata_and_kwargs() {
     let text = r#"{"custom_llm_provider":"openai","thread_id":null,
         "messages":[{"role":"user","content":"hi"}],"metadata":{"a":"b"},
         "tool_resources":null,"kwargs":{"request_timeout":5,"extra_body":null}}"#;
-    let request = request_thread(text).unwrap();
+    let request: ThreadRequest = read("thread request", text).unwrap();
     assert_eq!(request.custom_llm_provider, "openai");
     assert_eq!(request.thread_id, None);
     assert_eq!(request.messages.unwrap().len(), 1);
     assert_eq!(request.metadata.unwrap().len(), 1);
     assert_eq!(request.tool_resources, None);
     assert_eq!(request.kwargs.len(), 2);
-}
-
-#[test]
-fn write_encodes_the_value_as_json() {
-    let text = write(&Json::Bool(true)).unwrap();
-    assert_eq!(text, "true");
 }
 
 #[test]

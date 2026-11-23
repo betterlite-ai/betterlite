@@ -18,7 +18,6 @@ use betterlite_core::api::assistant_read_delete::{AssistantReadDelete, Assistant
 use betterlite_core::api::assistant_records::AssistantCreateInput;
 use betterlite_core::api::assistant_records::error::AssistantCreateFailure;
 use betterlite_core::api::assistant_records::service::AssistantRecords;
-use betterlite_core::api::assistant_threads::error::{ThreadError, ThreadFailure};
 use betterlite_core::api::assistant_threads::{
     AssistantThreads, CreateThreadCall, GetThreadCall, ThreadFacade as _,
 };
@@ -27,7 +26,6 @@ use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
-use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -40,6 +38,7 @@ use secrecy::SecretString;
 
 use super::convert::{self, ModuleSettings, ThreadRequest};
 use super::error::CallError;
+use super::error::family::ThreadOutcome;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {
@@ -72,12 +71,6 @@ pub(crate) enum ThreadKind {
     Get,
 }
 
-// A sync facade raises the SDK error itself, while its async twin raises the class exception_type mapped.
-pub(crate) enum ThreadOutcome {
-    Sync(ThreadError),
-    Async(ThreadFailure),
-}
-
 // Everything one Python session owns: the environment snapshot, the HTTP client and the values get_llm_provider reads.
 pub(crate) struct Session {
     environment: BTreeMap<String, String>,
@@ -96,7 +89,7 @@ pub(crate) struct Session {
 
 impl Session {
     pub(crate) fn build(text: &str) -> Result<Self, CallError> {
-        let module = convert::request_settings(text)?;
+        let module = convert::read("assistant session settings", text)?;
         let environment = process_environment();
         let mut settings = resource_sdk_settings::Raw::default()
             .convert(&environment)
@@ -113,7 +106,8 @@ impl Session {
             lemonade_key: None,
         };
         let client = outbound_client(&environment)?;
-        let redactor = redactor()?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+            .map_err(|source| SessionError::Redactor { source })?;
         let catalog = BundledCatalog::default().get();
         let resources = ResourceSdkSettings::from(&settings);
         Ok(Self {
@@ -179,7 +173,52 @@ impl Session {
         request: &ThreadRequest,
         asynchronous: bool,
     ) -> Result<Option<ThreadRecord>, ThreadOutcome> {
-        let facade = AssistantThreads {
+        let facade = self.thread_facade();
+        let mut kwargs = request.kwargs.clone();
+        let outcome = match kind {
+            ThreadKind::Create => {
+                let call = CreateThreadCall {
+                    custom_llm_provider: request.custom_llm_provider.clone(),
+                    messages: request.messages.clone(),
+                    metadata: request.metadata.clone(),
+                    tool_resources: request.tool_resources.clone(),
+                    client: None,
+                    kwargs: &mut kwargs,
+                };
+                if asynchronous {
+                    facade
+                        .acreate_thread(call)
+                        .await
+                        .map_err(ThreadOutcome::Async)?
+                } else {
+                    facade
+                        .create_thread(call)
+                        .await
+                        .map_err(ThreadOutcome::Sync)?
+                }
+            }
+            ThreadKind::Get => {
+                let call = GetThreadCall {
+                    custom_llm_provider: request.custom_llm_provider.clone(),
+                    thread_id: request.thread_id.clone().unwrap_or_default(),
+                    client: None,
+                    kwargs: &mut kwargs,
+                };
+                if asynchronous {
+                    facade
+                        .aget_thread(call)
+                        .await
+                        .map_err(ThreadOutcome::Async)?
+                } else {
+                    facade.get_thread(call).await.map_err(ThreadOutcome::Sync)?
+                }
+            }
+        };
+        Ok(outcome)
+    }
+
+    fn thread_facade(&self) -> AssistantThreads<'_, ProxiedClient> {
+        AssistantThreads {
             transport: Arc::new(self.client.clone()),
             resources: &self.resources,
             azure: &self.azure,
@@ -188,36 +227,7 @@ impl Session {
             redactor: &self.redactor,
             refresh_enabled: false,
             session: SessionKind::Dedicated,
-        };
-        let mut kwargs = request.kwargs.clone();
-        let outcome = match (kind, asynchronous) {
-            (ThreadKind::Create, true) => {
-                let call = create_call(request, &mut kwargs);
-                facade
-                    .acreate_thread(call)
-                    .await
-                    .map_err(ThreadOutcome::Async)?
-            }
-            (ThreadKind::Create, false) => {
-                let call = create_call(request, &mut kwargs);
-                facade
-                    .create_thread(call)
-                    .await
-                    .map_err(ThreadOutcome::Sync)?
-            }
-            (ThreadKind::Get, true) => {
-                let call = get_call(request, &mut kwargs);
-                facade
-                    .aget_thread(call)
-                    .await
-                    .map_err(ThreadOutcome::Async)?
-            }
-            (ThreadKind::Get, false) => {
-                let call = get_call(request, &mut kwargs);
-                facade.get_thread(call).await.map_err(ThreadOutcome::Sync)?
-            }
-        };
-        Ok(outcome)
+        }
     }
 
     fn resolution(&self) -> ResolutionContext<'_> {
@@ -243,39 +253,9 @@ fn apply_module_settings(settings: &mut resource_sdk_settings::Settings, module:
     settings.azure_key = module.azure_key.clone().map(SecretString::from);
 }
 
-fn redactor() -> Result<Redactor, SessionError> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|source| SessionError::Redactor { source })
-}
-
 // the outbound client honours the proxy variables of the environment the session was built from
 fn outbound_client(environment: &BTreeMap<String, String>) -> Result<ProxiedClient, SessionError> {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
         .map_err(|source| SessionError::Proxy { source })?;
     ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| SessionError::Client { source })
-}
-
-fn create_call<'call>(
-    request: &ThreadRequest,
-    kwargs: &'call mut BTreeMap<String, Json>,
-) -> CreateThreadCall<'call, ProxiedClient> {
-    CreateThreadCall {
-        custom_llm_provider: request.custom_llm_provider.clone(),
-        messages: request.messages.clone(),
-        metadata: request.metadata.clone(),
-        tool_resources: request.tool_resources.clone(),
-        client: None,
-        kwargs,
-    }
-}
-
-fn get_call<'call>(
-    request: &ThreadRequest,
-    kwargs: &'call mut BTreeMap<String, Json>,
-) -> GetThreadCall<'call, ProxiedClient> {
-    GetThreadCall {
-        custom_llm_provider: request.custom_llm_provider.clone(),
-        thread_id: request.thread_id.clone().unwrap_or_default(),
-        client: None,
-        kwargs,
-    }
 }
