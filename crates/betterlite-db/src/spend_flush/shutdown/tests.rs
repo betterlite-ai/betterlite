@@ -244,7 +244,7 @@ impl DrainCase {
 }
 
 fn redis_buffer(lists: &Arc<RecordingLists>) -> RedisUpdateBuffer {
-    let port: Arc<dyn SpendBufferLists> = Arc::clone(lists);
+    let port: Arc<dyn SpendBufferLists> = Arc::<RecordingLists>::clone(lists);
     RedisUpdateBuffer {
         lists: Some(port),
         enabled: true,
@@ -262,7 +262,7 @@ fn memory_only_buffer() -> RedisUpdateBuffer {
     }
 }
 
-fn monitor_settings(base_interval: Duration) -> SpendMonitorSettings {
+const fn monitor_settings(base_interval: Duration) -> SpendMonitorSettings {
     SpendMonitorSettings {
         queue_size_threshold: 100,
         base_interval,
