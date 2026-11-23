@@ -134,7 +134,8 @@ pitfalls:
 - "`DualCache()` with no arguments creates a default `InMemoryCache` and a default `RedisCache`, and the Redis one connects only on first use."
 - "A `redis_startup_nodes` list and `REDIS_CLUSTER_NODES` both select cluster mode."
 - "A Redis test that skips when `redis-server` is missing checks nothing in CI. Keep every Redis case on the fake server, and have the fake fail the test on a command it does not know."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001, FBT002, A002, B006, ARG002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 27
 review_level: standard

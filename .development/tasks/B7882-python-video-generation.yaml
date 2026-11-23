@@ -65,7 +65,8 @@ pitfalls:
 - "`video_content` is the one sync function that is not an overload pair, and its async twin sits after it in the file."
 - "`seconds` is a string in the OpenAI API, so an int must be sent as given and not formatted."
 - "A video id can carry a provider prefix. Python never strips it."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, ASYNC109). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 15
