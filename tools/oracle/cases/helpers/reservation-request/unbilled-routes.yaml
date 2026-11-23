@@ -1,0 +1,16 @@
+kind: helper
+name: reservation-request-unbilled-routes-are-skipped
+call:
+  b8480:
+    routes:
+      - /models
+      - /v1/models
+      - /utils/token_counter
+      - /responses/input_tokens
+      - /v1/responses/input_tokens
+      - /openai/v1/responses/input_tokens
+      - /v1/responses/input_tokens_x
+      - /v1/messages
+      - /v1beta/models/gemini-pro:generateContent
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,85 @@
+kind: helper
+name: health-check-entry-mode-lookup
+call:
+  b6750:
+    steps:
+      # no mode: the catalog names one for the original model string, before resolution
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: null
+        prompt: null
+        inputs: null
+        catalog: {gpt-4o: embedding}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # the original string is not listed, so the catalog mode comes from the resolved model
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: null
+        prompt: null
+        inputs: null
+        catalog: {gpt-4o-2024-08-06: completion}
+        resolution: {model: gpt-4o-2024-08-06, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # an empty mode is not None, so both catalog lookups are skipped and it becomes chat
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: ""
+        prompt: null
+        inputs: null
+        catalog: {gpt-4o: embedding}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # a listed model without a mode leaves the mode unset for both lookups, so it becomes chat too
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: null
+        prompt: null
+        inputs: null
+        catalog: {gpt-4o: null}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # an explicit mode beats the catalog entry
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {gpt-4o: embedding}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # the params keep the original model: the provider call names it, and so does the recorded resolution
+      - params:
+          model: alias-model
+          messages: [{role: user, content: hi}]
+        mode: null
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+env: {}
+compare: {ignore: []}
