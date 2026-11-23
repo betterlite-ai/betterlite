@@ -116,11 +116,9 @@ def embedding_inputs(kwargs: Mapping[str, JsonValue]) -> tuple[int, list[JsonVal
 
 def embedding_records(result: InitValue) -> list[JsonValue]:
     match dumped(result):
-        case dict() as fields:
-            match fields.get("data"):
-                case list() as records:
-                    return [*records]
-                case None | str() | int() | float() | dict():
-                    return []
-        case None | str() | int() | float() | Sequence():
+        case {"data": list() as records}:
+            return [*records]
+        case {"data": None | str() | int() | float() | dict()}:
+            return []
+        case None | str() | int() | float() | Sequence() | dict():
             return []
