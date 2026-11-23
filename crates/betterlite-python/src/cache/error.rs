@@ -108,14 +108,13 @@ impl CacheError {
 
     // A backend that cannot do the operation answers Python's NotImplementedError, as LiteLLM's BaseCache stub does.
     pub(crate) const fn is_not_implemented(&self) -> bool {
-        matches!(
-            self,
-            Self::Write {
-                source: WriteError::Backend {
-                    source: BackendError::Unsupported(_),
-                },
-            }
-        )
+        let Self::Write {
+            source: WriteError::Backend { source },
+        } = self
+        else {
+            return false;
+        };
+        matches!(source, BackendError::Unsupported(_))
     }
 }
 
