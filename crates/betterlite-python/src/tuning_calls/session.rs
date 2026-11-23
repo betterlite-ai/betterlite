@@ -3,18 +3,22 @@ use std::sync::Arc;
 
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::resource_sdk_settings::{Raw, Settings};
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::fine_tuning_cancel_call::FineTuningCancel;
 use betterlite_core::api::fine_tuning_create::service::FineTuningCreate;
+use betterlite_core::api::fine_tuning_read::FineTuningReadOutcome;
 use betterlite_core::api::fine_tuning_read::service::FineTuningRead;
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_openai::fine_tuning::job::FineTuneJob;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
+use serde::de::DeserializeOwned;
 
-use super::convert::failures::{cancel_failure, create_failure, read_failure, wire_failure};
-use super::convert::{CancelCall, CreateCall, ReadCall, parse, request_error};
+use super::convert::failures::{TuningFailure, wire_failure};
+use super::convert::{CancelCall, CreateCall, NativeCall, ReadCall, SettingsWire};
 use super::error::{Raised, WireError};
 use super::http::{CreateDispatch, WireDispatch};
 
@@ -37,60 +41,96 @@ impl TuningCore {
         })
     }
 
-    pub(crate) async fn create(&self, mut call: CreateCall) -> Result<String, Raised> {
+    // The module settings a call carries, read against the environment snapshot this session took.
+    fn settings_of(&self, wire: SettingsWire) -> Result<Settings, Raised> {
+        Raw { settings: wire.raw }
+            .convert(&self.environment)
+            .map_err(|source| wire_failure(WireError::Config { source }))
+    }
+
+    async fn create(&self, call: CreateCall) -> Result<String, Raised> {
         let dispatch = CreateDispatch {
             inner: self.dispatch.clone(),
             integrations: call.call.integrations.clone(),
         };
+        let mut request = call.call;
         // the core record refuses the loose list[str], so it stays out of the call it builds
-        call.call.integrations = None;
-        let settings = call
-            .settings
-            .configured(&self.environment)
-            .map_err(|source| wire_failure(WireError::Config { source }))?;
-        let job = FineTuningCreate {
+        request.integrations = None;
+        let settings = self.settings_of(call.settings)?;
+        let service = FineTuningCreate {
             dispatch,
             settings: ResourceSdkSettings::from(&settings),
-        }
-        .create(&call.call)
-        .await
-        .map_err(create_failure)?;
-        job_text(&job)
+        };
+        let job = service
+            .create(&request)
+            .await
+            .map_err(TuningFailure::Create)?;
+        serde_json::to_string(&job).map_err(|source| wire_failure(WireError::Encode { source }))
     }
 
-    pub(crate) async fn read(&self, call: ReadCall) -> Result<String, Raised> {
-        let settings = call
-            .settings
-            .configured(&self.environment)
-            .map_err(|source| wire_failure(WireError::Config { source }))?;
-        let outcome = FineTuningRead {
-            dispatch: self.dispatch.clone(),
-            settings,
+    // Every native call crosses here: one dispatch, then the operation the call names.
+    pub(crate) async fn execute(&self, call: NativeCall) -> Result<String, Raised> {
+        match call {
+            NativeCall::Create(create) => self.create(create).await,
+            NativeCall::Read(read) => {
+                let service = FineTuningRead {
+                    dispatch: self.dispatch.clone(),
+                    settings: self.settings_of(read.settings)?,
+                };
+                let outcome = service
+                    .run(&read.input)
+                    .await
+                    .map_err(TuningFailure::Read)?;
+                read_text(outcome)
+            }
+            NativeCall::Cancel(cancel) => {
+                let settings = self.settings_of(cancel.settings)?;
+                let service = FineTuningCancel {
+                    dispatch: self.dispatch.clone(),
+                    settings,
+                };
+                let job = service
+                    .run(&cancel.call)
+                    .await
+                    .map_err(TuningFailure::Cancel)?;
+                serde_json::to_string(&job)
+                    .map_err(|source| wire_failure(WireError::Encode { source }))
+            }
         }
-        .run(&call.input)
-        .await
-        .map_err(read_failure)?;
-        serde_json::to_string(&outcome).map_err(|source| wire_failure(WireError::Encode { source }))
-    }
-
-    pub(crate) async fn cancel(&self, call: CancelCall) -> Result<String, Raised> {
-        let settings = call
-            .settings
-            .configured(&self.environment)
-            .map_err(|source| wire_failure(WireError::Config { source }))?;
-        let job = FineTuningCancel {
-            dispatch: self.dispatch.clone(),
-            settings,
-        }
-        .run(&call.call)
-        .await
-        .map_err(cancel_failure)?;
-        job_text(&job)
     }
 }
 
-fn job_text(job: &FineTuneJob) -> Result<String, Raised> {
-    serde_json::to_string(job).map_err(|source| wire_failure(WireError::Encode { source }))
+// The page or the job a read call resolved, written as the record Python validates.
+fn read_text(outcome: FineTuningReadOutcome) -> Result<String, Raised> {
+    match outcome {
+        FineTuningReadOutcome::Page(page) => serde_json::to_string(&page),
+        FineTuningReadOutcome::Job(job) => serde_json::to_string(&job),
+    }
+    .map_err(|source| wire_failure(WireError::Encode { source }))
+}
+
+// The request text of one call, decoded into the call type its method owns.
+fn decode<T: DeserializeOwned>(text: &str) -> PyResult<T> {
+    match serde_json::from_str(text) {
+        Ok(call) => Ok(call),
+        Err(source) => Err(PyValueError::new_err(source.to_string())),
+    }
+}
+
+// The synchronous answer: one attempt on the runtime, this thread waiting with the GIL released.
+fn sync_answer(py: Python<'_>, core: &Arc<TuningCore>, call: NativeCall) -> PyResult<String> {
+    py.detach(|| get_runtime().block_on(core.execute(call)))
+        .map_err(Raised::to_pyerr)
+}
+
+// The awaitable answer: the same call on the asyncio loop's runtime, handed back as a coroutine.
+fn async_answer(py: Python<'_>, core: &Arc<TuningCore>, call: NativeCall) -> PyResult<Py<PyAny>> {
+    let owned = Arc::clone(core);
+    let future = future_into_py(py, async move {
+        let text = owned.execute(call).await.map_err(Raised::to_pyerr)?;
+        Ok::<String, PyErr>(text)
+    })?;
+    Ok(future.unbind())
 }
 
 // fine_tuning.main's module-level entry points, one session owning the client every call goes through.
@@ -109,90 +149,43 @@ impl NativeTuningSession {
         })
     }
 
-    // the synchronous call: one attempt on the runtime, blocking this thread with the GIL released
-    fn create(&self, py: Python<'_>, request: &str, _blobs: &Bound<'_, PyAny>) -> PyResult<String> {
-        let call: CreateCall = parse(request).map_err(request_error)?;
-        py.detach(|| get_runtime().block_on(self.core.create(call)))
-            .map_err(Raised::to_pyerr)
+    fn create(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
+        let call: CreateCall = decode(raw)?;
+        sync_answer(py, &self.core, NativeCall::Create(call))
     }
 
-    // the awaitable call: the same request on the asyncio loop's runtime, handed back as a coroutine
-    fn acreate<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        _blobs: &Bound<'_, PyAny>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let call: CreateCall = parse(request).map_err(request_error)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let text = core.create(call).await.map_err(Raised::to_pyerr)?;
-            Ok::<String, PyErr>(text)
-        })
+    fn acreate(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        let call: CreateCall = decode(raw)?;
+        async_answer(py, &self.core, NativeCall::Create(call))
     }
 
-    fn retrieve(
-        &self,
-        py: Python<'_>,
-        request: &str,
-        _blobs: &Bound<'_, PyAny>,
-    ) -> PyResult<String> {
-        let call: ReadCall = parse(request).map_err(request_error)?;
-        py.detach(|| get_runtime().block_on(self.core.read(call)))
-            .map_err(Raised::to_pyerr)
+    fn retrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
+        let call: ReadCall = decode(raw)?;
+        sync_answer(py, &self.core, NativeCall::Read(call))
     }
 
-    fn aretrieve<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        _blobs: &Bound<'_, PyAny>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let call: ReadCall = parse(request).map_err(request_error)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let text = core.read(call).await.map_err(Raised::to_pyerr)?;
-            Ok::<String, PyErr>(text)
-        })
+    fn aretrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        let call: ReadCall = decode(raw)?;
+        async_answer(py, &self.core, NativeCall::Read(call))
     }
 
-    fn list(&self, py: Python<'_>, request: &str, _blobs: &Bound<'_, PyAny>) -> PyResult<String> {
-        let call: ReadCall = parse(request).map_err(request_error)?;
-        py.detach(|| get_runtime().block_on(self.core.read(call)))
-            .map_err(Raised::to_pyerr)
+    fn list(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
+        let call: ReadCall = decode(raw)?;
+        sync_answer(py, &self.core, NativeCall::Read(call))
     }
 
-    fn alist<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        _blobs: &Bound<'_, PyAny>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let call: ReadCall = parse(request).map_err(request_error)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let text = core.read(call).await.map_err(Raised::to_pyerr)?;
-            Ok::<String, PyErr>(text)
-        })
+    fn alist(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        let call: ReadCall = decode(raw)?;
+        async_answer(py, &self.core, NativeCall::Read(call))
     }
 
-    fn cancel(&self, py: Python<'_>, request: &str, _blobs: &Bound<'_, PyAny>) -> PyResult<String> {
-        let call: CancelCall = parse(request).map_err(request_error)?;
-        py.detach(|| get_runtime().block_on(self.core.cancel(call)))
-            .map_err(Raised::to_pyerr)
+    fn cancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
+        let call: CancelCall = decode(raw)?;
+        sync_answer(py, &self.core, NativeCall::Cancel(call))
     }
 
-    fn acancel<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        _blobs: &Bound<'_, PyAny>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let call: CancelCall = parse(request).map_err(request_error)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let text = core.cancel(call).await.map_err(Raised::to_pyerr)?;
-            Ok::<String, PyErr>(text)
-        })
+    fn acancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        let call: CancelCall = decode(raw)?;
+        async_answer(py, &self.core, NativeCall::Cancel(call))
     }
 }

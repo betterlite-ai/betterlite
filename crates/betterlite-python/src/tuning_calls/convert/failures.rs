@@ -88,18 +88,6 @@ fn failure(kind: &str, message: String) -> Failure {
     }
 }
 
-fn exception_failure(message: String) -> Failure {
-    failure("Exception", message)
-}
-
-fn connection_failure(message: String) -> Failure {
-    failure("APIConnectionError", message)
-}
-
-fn validation_failure(message: String) -> Failure {
-    failure("APIResponseValidationError", message)
-}
-
 pub(crate) fn provider_failure(
     status: u16,
     body: Json,
@@ -119,85 +107,116 @@ pub(crate) fn provider_failure(
 
 // LiteLLM answers an unsupported provider with a BadRequestError that carries no provider response body
 fn unsupported_failure(provider: &str, message: String) -> Failure {
-    Failure {
-        kind: "BadRequestError".to_owned(),
-        message,
-        status_code: Some(400),
-        llm_provider: Some(provider.to_owned()),
-        model: Some("n/a".to_owned()),
-        body: Some(Json::Text(UNSUPPORTED_BODY.to_owned())),
-        headers: BTreeMap::new(),
-    }
+    let mut unsupported = failure("BadRequestError", message);
+    unsupported.status_code = Some(400);
+    unsupported.llm_provider = Some(provider.to_owned());
+    unsupported.model = Some("n/a".to_owned());
+    unsupported.body = Some(Json::Text(UNSUPPORTED_BODY.to_owned()));
+    unsupported
 }
 
 pub(crate) fn wire_failure(source: WireError) -> Raised {
-    let message = source.to_string();
     match source {
         WireError::Provider {
             status,
             body,
             headers,
         } => Raised::Failure(Box::new(provider_failure(status, body, headers))),
-        WireError::Transport { .. } => Raised::Failure(Box::new(connection_failure(message))),
-        WireError::Decode { .. } => Raised::Failure(Box::new(validation_failure(message))),
-        WireError::MissingOpenAiKey => Raised::Failure(Box::new(exception_failure(String::from(
-            OPENAI_KEY_MESSAGE,
-        )))),
         WireError::MissingAzureBase => {
             Raised::Python(PyValueError::new_err(String::from(AZURE_BASE_MESSAGE)))
         }
-        WireError::MissingAzureKey => {
-            Raised::Failure(Box::new(exception_failure(String::from(AZURE_KEY_MESSAGE))))
-        }
-        WireError::Vertex => {
-            Raised::Failure(Box::new(exception_failure(String::from(VERTEX_MESSAGE))))
-        }
-        WireError::Json { .. }
-        | WireError::Body { .. }
+        rest => Raised::Failure(Box::new(plain_failure(rest))),
+    }
+}
+
+// The exception class and text of a failure that has no provider response to keep.
+fn plain_failure(source: WireError) -> Failure {
+    let text = match &source {
+        WireError::MissingOpenAiKey => String::from(OPENAI_KEY_MESSAGE),
+        WireError::MissingAzureKey => String::from(AZURE_KEY_MESSAGE),
+        WireError::Vertex => String::from(VERTEX_MESSAGE),
+        WireError::Body { .. }
+        | WireError::Encode { .. }
+        | WireError::Decode { .. }
+        | WireError::Url { .. }
+        | WireError::Header { .. }
+        | WireError::Provider { .. }
+        | WireError::Transport { .. }
+        | WireError::Proxy { .. }
+        | WireError::Config { .. }
+        | WireError::Client { .. }
+        | WireError::MissingAzureBase => source.to_string(),
+    };
+    let kind = match &source {
+        WireError::Transport { .. } => "APIConnectionError",
+        WireError::Decode { .. } => "APIResponseValidationError",
+        WireError::Body { .. }
         | WireError::Encode { .. }
         | WireError::Url { .. }
         | WireError::Header { .. }
+        | WireError::Provider { .. }
         | WireError::Proxy { .. }
         | WireError::Config { .. }
-        | WireError::Client { .. } => Raised::Failure(Box::new(exception_failure(message))),
-    }
+        | WireError::Client { .. }
+        | WireError::MissingOpenAiKey
+        | WireError::MissingAzureKey
+        | WireError::MissingAzureBase
+        | WireError::Vertex => "Exception",
+    };
+    failure(kind, text)
 }
 
-pub(crate) fn create_failure(error: FineTuningCreateError<WireError>) -> Raised {
-    let message = error.to_string();
-    match error {
-        FineTuningCreateError::Unsupported { provider } => {
-            Raised::Failure(Box::new(unsupported_failure(&provider, message)))
-        }
-        FineTuningCreateError::Timeout(_) | FineTuningCreateError::Data(_) => {
-            Raised::Python(PyValueError::new_err(message))
-        }
-        FineTuningCreateError::Dispatch(source) => wire_failure(source),
-    }
+// The error a call's own steps raised, before it becomes the class LiteLLM shows the caller.
+pub(crate) enum TuningFailure {
+    Create(FineTuningCreateError<WireError>),
+    Read(FineTuningReadError<WireError>),
+    Cancel(FineTuningCancelError<WireError>),
 }
 
-pub(crate) fn read_failure(error: FineTuningReadError<WireError>) -> Raised {
-    let message = error.to_string();
-    match error {
-        FineTuningReadError::Timeout(_) => Raised::Python(PyValueError::new_err(message)),
-        FineTuningReadError::UnsupportedList { provider }
-        | FineTuningReadError::UnsupportedRetrieve { provider } => {
-            Raised::Failure(Box::new(unsupported_failure(&provider, message)))
+// One place maps every fine-tuning failure, so the create, read and cancel paths cannot drift apart.
+impl From<TuningFailure> for Raised {
+    fn from(outcome: TuningFailure) -> Self {
+        match outcome {
+            TuningFailure::Create(error) => {
+                let message = error.to_string();
+                match error {
+                    FineTuningCreateError::Unsupported { provider } => {
+                        Raised::Failure(Box::new(unsupported_failure(&provider, message)))
+                    }
+                    FineTuningCreateError::Timeout(_) | FineTuningCreateError::Data(_) => {
+                        Raised::Python(PyValueError::new_err(message))
+                    }
+                    FineTuningCreateError::Dispatch(source) => wire_failure(source),
+                }
+            }
+            TuningFailure::Read(error) => {
+                let message = error.to_string();
+                match error {
+                    FineTuningReadError::Timeout(_) => {
+                        Raised::Python(PyValueError::new_err(message))
+                    }
+                    FineTuningReadError::UnsupportedList { provider }
+                    | FineTuningReadError::UnsupportedRetrieve { provider } => {
+                        Raised::Failure(Box::new(unsupported_failure(&provider, message)))
+                    }
+                    FineTuningReadError::Decode(_) | FineTuningReadError::Page { .. } => {
+                        Raised::Failure(Box::new(failure("APIResponseValidationError", message)))
+                    }
+                    FineTuningReadError::Dispatch(source) => wire_failure(source),
+                }
+            }
+            TuningFailure::Cancel(error) => {
+                let message = error.to_string();
+                match error {
+                    FineTuningCancelError::Timeout(_) => {
+                        Raised::Python(PyValueError::new_err(message))
+                    }
+                    FineTuningCancelError::Unsupported { provider } => {
+                        Raised::Failure(Box::new(unsupported_failure(&provider, message)))
+                    }
+                    FineTuningCancelError::Dispatch(source) => wire_failure(source),
+                }
+            }
         }
-        FineTuningReadError::Decode(_) | FineTuningReadError::Page { .. } => {
-            Raised::Failure(Box::new(validation_failure(message)))
-        }
-        FineTuningReadError::Dispatch(source) => wire_failure(source),
-    }
-}
-
-pub(crate) fn cancel_failure(error: FineTuningCancelError<WireError>) -> Raised {
-    let message = error.to_string();
-    match error {
-        FineTuningCancelError::Timeout(_) => Raised::Python(PyValueError::new_err(message)),
-        FineTuningCancelError::Unsupported { provider } => {
-            Raised::Failure(Box::new(unsupported_failure(&provider, message)))
-        }
-        FineTuningCancelError::Dispatch(source) => wire_failure(source),
     }
 }

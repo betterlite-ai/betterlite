@@ -28,11 +28,6 @@ pub(crate) struct Failure {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum WireError {
-    #[error("the native request text is not JSON of the expected shape: {source}")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("the provider answer is not JSON of the expected shape: {source}")]
     Body {
         #[source]

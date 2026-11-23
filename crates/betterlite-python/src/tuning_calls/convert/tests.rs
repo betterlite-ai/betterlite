@@ -3,15 +3,16 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::resource_sdk_settings::Raw;
 use betterlite_core::api::fine_tuning_cancel_call::{
-    AzureFineTuningCancel, FineTuningCancelError, FineTuningCancelTarget, FineTuningCancelValues,
-    OpenAiFineTuningCancel,
+    AzureFineTuningCancel, FineTuningCancelError, FineTuningCancelValues, OpenAiFineTuningCancel,
 };
 use betterlite_core::api::fine_tuning_create::{
-    AzureCreateCall, FineTuningCreateError, FineTuningCreateTarget, OpenAiCreateCall,
+    AzureCreateCall, FineTuningCreateError, OpenAiCreateCall,
 };
 use betterlite_core::api::fine_tuning_read::{
-    AzureReadCall, FineTuningReadError, OpenAiReadCall, ReadOperation, ReadTarget, ReadValues,
+    AzureReadCall, FineTuningReadError, OpenAiReadCall, ReadOperation, ReadValues,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError,
@@ -28,18 +29,9 @@ use url::Url;
 
 use super::super::error::{Failure, Raised, WireError};
 use super::super::register as register_tuning;
-use super::failures::{
-    cancel_failure, class_for, create_failure, provider_failure, read_failure, response_headers,
-    wire_failure,
-};
-use super::requests::{
-    azure_cancel_request, azure_create_request, azure_read_request, create_body, deadline,
-    openai_cancel_request, openai_create_request, openai_read_request,
-};
-use super::{
-    CancelCall, CreateCall, ReadCall, SettingsWire, cancel_request, create_request, parse,
-    read_request,
-};
+use super::SettingsWire;
+use super::failures::{TuningFailure, class_for, provider_failure, response_headers, wire_failure};
+use super::requests::{WireCall, create_body, deadline, request_for};
 use crate::completion::register as register_completion;
 
 fn openai_timeout() -> FineTuningTimeout {
@@ -47,16 +39,22 @@ fn openai_timeout() -> FineTuningTimeout {
 }
 
 fn data() -> FineTuneCreate {
-    let mut record = FineTuneCreate {
-        model: "gpt-4o-mini".to_owned(),
-        training_file: "file-abc".to_owned(),
-        seed: Some(0),
-        suffix: Some("trial".to_owned()),
-        ..FineTuneCreate::default()
-    };
+    let mut record = FineTuneCreate::default();
+    record.model = "gpt-4o-mini".to_owned();
+    record.training_file = "file-abc".to_owned();
+    record.seed = Some(0);
+    record.suffix = Some("trial".to_owned());
     record.hyperparameters =
         Some(serde_json::from_str(r#"{"n_epochs": 2}"#).expect("the sample map parses"));
     record
+}
+
+fn request_of(call: WireCall<'_>) -> OutboundRequest {
+    request_for(call, None).expect("the request builds").0
+}
+
+fn flag_of(call: WireCall<'_>) -> bool {
+    request_for(call, None).expect("the request builds").1
 }
 
 fn openai_create() -> OpenAiCreateCall {
@@ -123,7 +121,7 @@ fn json_error() -> serde_json::Error {
 
 #[test]
 fn request_openai_create_writes_the_sdk_wire() {
-    let request = openai_create_request(&openai_create(), None).unwrap();
+    let request = request_of(WireCall::OpenAiCreate(&openai_create()));
     assert_eq!(request.method, Method::POST);
     assert_eq!(
         request.url.as_str(),
@@ -209,7 +207,7 @@ fn request_azure_create_defaults_the_training_type() {
 
 #[test]
 fn request_azure_create_uses_the_api_key_header() {
-    let request = azure_create_request(&azure_create(), None).unwrap();
+    let request = request_of(WireCall::AzureCreate(&azure_create()));
     assert_eq!(
         request.url.as_str(),
         "https://example.openai.azure.com/openai/fine_tuning/jobs"
@@ -229,7 +227,7 @@ fn request_azure_create_uses_the_api_key_header() {
 fn request_azure_create_v1_uses_a_bearer_token() {
     let mut call = azure_create();
     call.api_version = Some("v1".to_owned());
-    let request = azure_create_request(&call, None).unwrap();
+    let request = request_of(WireCall::AzureCreate(&call));
     assert_eq!(
         request.url.as_str(),
         "https://example.openai.azure.com/openai/v1/fine_tuning/jobs"
@@ -246,7 +244,7 @@ fn request_azure_create_v1_uses_a_bearer_token() {
 fn request_azure_create_keeps_a_deployments_base() {
     let mut call = azure_create();
     call.api_base = Some("https://example.openai.azure.com/openai/deployments/deploy".to_owned());
-    let request = azure_create_request(&call, None).unwrap();
+    let request = request_of(WireCall::AzureCreate(&call));
     assert_eq!(
         request.url.as_str(),
         "https://example.openai.azure.com/openai/deployments/deploy/fine_tuning/jobs"
@@ -257,7 +255,7 @@ fn request_azure_create_keeps_a_deployments_base() {
 fn request_azure_create_reads_an_empty_version_as_absent() {
     let mut call = azure_create();
     call.api_version = Some(String::new());
-    let request = azure_create_request(&call, None).unwrap();
+    let request = request_of(WireCall::AzureCreate(&call));
     assert_eq!(
         request.query,
         vec![("api-version".to_owned(), "2025-02-01-preview".to_owned())]
@@ -283,7 +281,7 @@ fn request_list_sends_the_cursor_and_a_zero_limit() {
         api_version: None,
         organization: None,
     };
-    let request = openai_read_request(&call).unwrap();
+    let request = request_of(WireCall::OpenAiRead(&call));
     assert_eq!(request.method, Method::GET);
     assert_eq!(
         request.url.as_str(),
@@ -317,7 +315,7 @@ fn request_list_drops_an_empty_cursor() {
         api_version: None,
         organization: None,
     };
-    let request = openai_read_request(&call).unwrap();
+    let request = request_of(WireCall::OpenAiRead(&call));
     assert!(request.query.is_empty());
 }
 
@@ -337,7 +335,7 @@ fn request_retrieve_appends_the_job_id() {
         api_version: None,
         organization: Some("org-1"),
     };
-    let request = openai_read_request(&call).unwrap();
+    let request = request_of(WireCall::OpenAiRead(&call));
     assert_eq!(
         request.url.as_str(),
         "http://127.0.0.1:9/v1/fine_tuning/jobs/ftjob-1"
@@ -368,7 +366,7 @@ fn request_azure_list_names_the_api_version() {
         api_version: None,
         organization: Some("org-1"),
     };
-    let request = azure_read_request(&call).unwrap();
+    let request = request_of(WireCall::AzureRead(&call));
     assert_eq!(
         request.url.as_str(),
         "https://example.openai.azure.com/openai/fine_tuning/jobs"
@@ -403,7 +401,7 @@ fn request_cancel_posts_without_a_body() {
         organization: Some("org-1"),
         client: None,
     };
-    let request = openai_cancel_request(&call).unwrap();
+    let request = request_of(WireCall::OpenAiCancel(&call));
     assert_eq!(request.method, Method::POST);
     assert_eq!(
         request.url.as_str(),
@@ -438,7 +436,7 @@ fn request_cancel_keeps_the_structured_read_timeout() {
         api_version: Some("2025-02-01-preview"),
         organization: None,
     };
-    let request = azure_cancel_request(&call).unwrap();
+    let request = request_of(WireCall::AzureCancel(&call));
     assert_eq!(request.deadline, Duration::from_secs(15));
     assert_eq!(
         request.query,
@@ -469,7 +467,7 @@ fn request_settings_take_the_environment() {
     environment.insert("OPENAI_API_KEY".to_owned(), "sk-env".to_owned());
     environment.insert("OPENAI_BASE_URL".to_owned(), "http://env/v1".to_owned());
     environment.insert("AZURE_API_VERSION".to_owned(), String::new());
-    let settings = wire.configured(&environment).unwrap();
+    let settings = Raw { settings: wire.raw }.convert(&environment).unwrap();
     assert_eq!(settings.api_base.as_deref(), Some("http://call/v1"));
     assert_eq!(settings.openai_base_url.as_deref(), Some("http://env/v1"));
     assert_eq!(settings.azure_api_version.as_deref(), Some(""));
@@ -484,24 +482,26 @@ fn request_settings_take_the_environment() {
 
 #[test]
 fn request_create_route_returns_the_azure_flag() {
-    let (request, is_azure) =
-        create_request(FineTuningCreateTarget::OpenAi(openai_create()), None).unwrap();
-    assert!(!is_azure);
-    assert_eq!(request.method, Method::POST);
-    let (azure, is_azure) =
-        create_request(FineTuningCreateTarget::Azure(azure_create()), None).unwrap();
-    assert!(is_azure);
+    let openai = openai_create();
+    assert!(!flag_of(WireCall::OpenAiCreate(&openai)));
     assert_eq!(
-        header(&azure.headers, "api-key").as_deref(),
+        request_of(WireCall::OpenAiCreate(&openai)).method,
+        Method::POST
+    );
+    let azure = azure_create();
+    assert!(flag_of(WireCall::AzureCreate(&azure)));
+    let request = request_of(WireCall::AzureCreate(&azure));
+    assert_eq!(
+        header(&request.headers, "api-key").as_deref(),
         Some("sk-azure")
     );
 }
 
 #[test]
-fn request_list_route_matches_the_direct_builder() {
+fn request_read_route_names_the_azure_flag() {
     let key = SecretString::from("sk-test");
     let timeout = openai_timeout();
-    let call = OpenAiReadCall {
+    let openai = OpenAiReadCall {
         values: ReadValues {
             is_async: false,
             operation: ReadOperation::List {
@@ -516,17 +516,32 @@ fn request_list_route_matches_the_direct_builder() {
         api_version: None,
         organization: None,
     };
-    let direct = openai_read_request(&call).unwrap();
-    let routed = read_request(ReadTarget::OpenAi(call)).unwrap();
-    assert_eq!(direct.url, routed.url);
-    assert_eq!(direct.method, routed.method);
+    assert!(!flag_of(WireCall::OpenAiRead(&openai)));
+    let azure = AzureReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::List {
+                after: None,
+                limit: None,
+            },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: Some("https://example.openai.azure.com"),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    };
+    let request = request_of(WireCall::AzureRead(&azure));
+    assert!(flag_of(WireCall::AzureRead(&azure)));
+    assert_eq!(request.method, Method::GET);
 }
 
 #[test]
 fn request_cancel_route_builds_the_azure_url() {
     let key = SecretString::from("sk-azure");
     let timeout = openai_timeout();
-    let target = FineTuningCancelTarget::Azure(AzureFineTuningCancel {
+    let azure = AzureFineTuningCancel {
         values: FineTuningCancelValues {
             is_async: false,
             job_id: "ftjob-1",
@@ -537,8 +552,9 @@ fn request_cancel_route_builds_the_azure_url() {
         api_key: Some(&key),
         api_version: None,
         organization: None,
-    });
-    let request = cancel_request(target).unwrap();
+    };
+    let request = request_of(WireCall::AzureCancel(&azure));
+    assert!(flag_of(WireCall::AzureCancel(&azure)));
     assert_eq!(
         request.url.as_str(),
         "https://example.openai.azure.com/openai/fine_tuning/jobs/ftjob-1/cancel"
@@ -614,9 +630,9 @@ fn error_conflict_and_unknown_statuses_are_api_errors() {
 
 #[test]
 fn error_unsupported_provider_is_a_bad_request() {
-    let raised = create_failure(FineTuningCreateError::Unsupported {
+    let raised = Raised::from(TuningFailure::Create(FineTuningCreateError::Unsupported {
         provider: "bedrock".to_owned(),
-    });
+    }));
     let failure = failure_of(raised);
     assert_eq!(failure.kind, "BadRequestError");
     assert_eq!(failure.status_code, Some(400));
@@ -633,23 +649,11 @@ fn error_unsupported_provider_is_a_bad_request() {
 }
 
 #[test]
-fn error_parse_rejects_a_bad_request() {
-    let error = parse::<CreateCall>("not json").expect_err("the text is not a call");
-    assert!(matches!(error, WireError::Json { .. }));
-    let error =
-        parse::<ReadCall>(r#"{"input": {"nope": {}}}"#).expect_err("the input names no call");
-    assert!(matches!(error, WireError::Json { .. }));
-    let error = parse::<CancelCall>(r#"{"call": {"fine_tuning_job_id": 1}}"#)
-        .err()
-        .expect("the id is not text");
-    assert!(matches!(error, WireError::Json { .. }));
-}
-
-#[test]
 fn error_missing_openai_key() {
     let mut call = openai_create();
     call.api_key = None;
-    let error = openai_create_request(&call, None).expect_err("no key means no request");
+    let error =
+        request_for(WireCall::OpenAiCreate(&call), None).expect_err("no key means no request");
     assert!(matches!(error, WireError::MissingOpenAiKey));
 }
 
@@ -657,7 +661,8 @@ fn error_missing_openai_key() {
 fn error_missing_azure_base() {
     let mut call = azure_create();
     call.api_base = None;
-    let error = azure_create_request(&call, None).expect_err("no base means no request");
+    let error =
+        request_for(WireCall::AzureCreate(&call), None).expect_err("no base means no request");
     assert!(matches!(error, WireError::MissingAzureBase));
 }
 
@@ -665,7 +670,8 @@ fn error_missing_azure_base() {
 fn error_missing_azure_key() {
     let mut call = azure_create();
     call.api_key = None;
-    let error = azure_create_request(&call, None).expect_err("no key means no request");
+    let error =
+        request_for(WireCall::AzureCreate(&call), None).expect_err("no key means no request");
     assert!(matches!(error, WireError::MissingAzureKey));
 }
 
@@ -710,58 +716,74 @@ fn error_vertex_names_the_task() {
 #[test]
 fn error_timeout_and_data_are_python_value_errors() {
     assert!(matches!(
-        create_failure(FineTuningCreateError::Timeout(TimeoutError::NonFinite)),
+        Raised::from(TuningFailure::Create(FineTuningCreateError::Timeout(
+            TimeoutError::NonFinite
+        ))),
         Raised::Python(_)
     ));
     assert!(matches!(
-        create_failure(FineTuningCreateError::Data(json_error())),
+        Raised::from(TuningFailure::Create(FineTuningCreateError::Data(
+            json_error()
+        ))),
         Raised::Python(_)
     ));
     assert!(matches!(
-        read_failure(FineTuningReadError::Timeout(TimeoutError::NonFinite)),
+        Raised::from(TuningFailure::Read(FineTuningReadError::Timeout(
+            TimeoutError::NonFinite
+        ))),
         Raised::Python(_)
     ));
     assert!(matches!(
-        cancel_failure(FineTuningCancelError::Timeout(TimeoutError::NonFinite)),
+        Raised::from(TuningFailure::Cancel(FineTuningCancelError::Timeout(
+            TimeoutError::NonFinite
+        ))),
         Raised::Python(_)
     ));
 }
 
 #[test]
 fn error_read_failures_keep_their_class() {
-    let failure = failure_of(read_failure(FineTuningReadError::UnsupportedList {
-        provider: "bedrock".to_owned(),
-    }));
+    let failure = failure_of(Raised::from(TuningFailure::Read(
+        FineTuningReadError::UnsupportedList {
+            provider: "bedrock".to_owned(),
+        },
+    )));
     assert_eq!(failure.kind, "BadRequestError");
     assert!(failure.message.contains("'create_batch'"));
-    let failure = failure_of(read_failure(FineTuningReadError::UnsupportedRetrieve {
-        provider: "bedrock".to_owned(),
-    }));
+    let failure = failure_of(Raised::from(TuningFailure::Read(
+        FineTuningReadError::UnsupportedRetrieve {
+            provider: "bedrock".to_owned(),
+        },
+    )));
     assert_eq!(failure.kind, "BadRequestError");
     assert!(failure.message.contains("'retrieve_fine_tuning_job'"));
 }
 
 #[test]
 fn error_page_and_cancel_failures_keep_their_class() {
-    let failure = failure_of(read_failure(FineTuningReadError::Page {
-        source: json_error(),
-    }));
+    let failure = failure_of(Raised::from(TuningFailure::Read(
+        FineTuningReadError::Page {
+            source: json_error(),
+        },
+    )));
     assert_eq!(failure.kind, "APIResponseValidationError");
-    let failure = failure_of(cancel_failure(FineTuningCancelError::Unsupported {
-        provider: "bedrock".to_owned(),
-    }));
+    let failure = failure_of(Raised::from(TuningFailure::Cancel(
+        FineTuningCancelError::Unsupported {
+            provider: "bedrock".to_owned(),
+        },
+    )));
     assert_eq!(failure.kind, "BadRequestError");
     assert_eq!(failure.status_code, Some(400));
 }
 
 #[test]
 fn error_a_dispatched_failure_keeps_the_native_class() {
-    let failure = failure_of(create_failure(FineTuningCreateError::Dispatch(
-        WireError::MissingOpenAiKey,
+    let failure = failure_of(Raised::from(TuningFailure::Create(
+        FineTuningCreateError::Dispatch(WireError::MissingOpenAiKey),
     )));
     assert_eq!(failure.kind, "Exception");
-    let failure = failure_of(read_failure(FineTuningReadError::Dispatch(
-        WireError::MissingAzureKey,
+    let failure = failure_of(Raised::from(TuningFailure::Read(
+        FineTuningReadError::Dispatch(WireError::MissingAzureKey),
     )));
     assert_eq!(failure.kind, "Exception");
     assert!(failure.message.contains("AZURE_OPENAI_API_KEY"));
@@ -785,6 +807,7 @@ fn error_a_read_call_needs_its_key() {
         api_version: None,
         organization: None,
     };
-    let error = openai_read_request(&call).expect_err("no key means no request");
+    let error =
+        request_for(WireCall::OpenAiRead(&call), None).expect_err("no key means no request");
     assert!(matches!(error, WireError::MissingOpenAiKey));
 }
