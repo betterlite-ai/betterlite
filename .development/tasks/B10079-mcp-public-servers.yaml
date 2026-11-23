@@ -1,0 +1,91 @@
+id: B10079
+title: Public MCP server selection
+description: >-
+  Two callers ask the MCP registry which servers are public: the unauthenticated hub GET /public/mcp_hub (public_endpoints.py L302, B3194) and the is_public flag of the management server views (mcp_management_endpoints.py L653, B4717). LiteLLM answers with two MCPServerManager methods, is_mcp_server_public (mcp_server_manager.py L6954) and get_public_mcp_servers (L6962). B4731 used to own them as item 4 of its registry reads. This task builds them on their own, so B3194 waits on this small task and not on B4731, which waits on B743.
+
+
+  Layout. Module registry::public_servers in betterlite-mcp, crates/betterlite-mcp/src/registry/public_servers.rs with its tests in registry/public_servers/tests.rs. The file is an empty stub registry.rs already declares. Write both functions as an `impl ServerRegistry` block over B10020's type (crates/betterlite-mcp/src/registry/servers.rs, on main); add no field and no second registry type. The public list and the strict flag are the registry's own `settings.public_mcp_servers` (Vec<String>, LiteLLM's litellm.public_mcp_servers, default None, read as empty) and `settings.public_hub_strict` (litellm.public_mcp_hub_strict_whitelist, default true). B9997 fills both from B10009's public_discovery config section, and B4721's make-public route updates the live list, so read them on every call and cache nothing.
+
+
+  Functions to build (LiteLLM names in backticks).
+
+  1. `is_server_public(&self, server_id: &str, public_ids: Option<&[String]>) -> bool` (`is_mcp_server_public`). Look the record up in db_servers first and then in config_servers; this is not get_registry's order. With public_ids None use settings.public_mcp_servers; a list that is passed in is used as it is, even when empty, since LiteLLM tests `public_ids is None` and not truthiness. The answer is true when a record exists and either its server_id is in the list, or public_hub_strict is false and the record's `fields.available_on_public_internet` is true.
+
+  2. `public_servers(&self) -> Vec<&MCPServer>` (`get_public_mcp_servers`). Take settings.public_mcp_servers once, then walk B10020's get_registry in order (config servers first, then database servers, a shared id at the config position with the database record) and keep every record for which is_server_public(record id, Some(that list)) is true.
+
+
+  Oracle. The b10079 helper runs one operation per call: list, which returns the ids of public_servers in order, or is_public, which takes a server_id and an optional public_ids list and returns the bool. Each call also carries config_servers and db_servers as ordered lists of MCPServer records, public_mcp_servers (a list or null) and the strict flag. The Python side builds the manager with `MCPServerManager.__new__(MCPServerManager)` and sets only `config_mcp_servers` and `registry` (dicts keyed by server_id), since these two methods read nothing else and __init__ builds token stores and discovery caches. It sets litellm.public_mcp_servers and litellm.public_mcp_hub_strict_whitelist for the call and restores both afterwards. The Rust side deserializes the records into MCPServer, as registry/servers/tests.rs does, and builds a ServerRegistry with RegistrySettings from the same values. Add helper_case corpus seeds named mcp-public-servers-*.
+
+
+  Tests in registry::public_servers::tests, names starting with is_public_ for function 1 (a listed id with strict on, an unlisted public-internet server with strict on and off, available_on_public_internet false with strict off, an unknown listed id, an id in both maps answered from the database record, an explicit empty list overriding the settings) and list_ for function 2 (registry order kept, strict default keeps only listed ids, legacy mode adds unlisted public-internet servers, an empty registry and an empty list giving nothing). There is no fuzz target: both functions read typed records.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/registry/public_servers.rs
+    - crates/betterlite-mcp/src/registry/public_servers/**
+    - tools/oracle/cases/helpers/mcp-public-servers/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-public-servers-*"
+    - tools/oracle/helpers/b10079.py
+    - tools/oracle/helpers/b10079/**
+    - tools/oracle/src/helpers/mcp/b10079.rs
+    - tools/oracle/src/helpers/mcp/b10079/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6954-L6984
+    why: Owned. is_mcp_server_public with its database-first lookup and strict flag, and get_public_mcp_servers over get_registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L506-L507
+    why: The defaults, public_mcp_servers None and public_mcp_hub_strict_whitelist True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L297-L315
+    why: B3194's hub, the main caller of get_public_mcp_servers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L184-L186
+    why: access_groups and available_on_public_internet on the record; the second defaults to True.
+dod:
+  - text: is_server_public looks in the database map before the config map, uses the passed list even when empty and the settings list otherwise, and counts available_on_public_internet only when the strict flag is off.
+    proof: [is-public-tests, oracle, helper-python]
+  - text: public_servers keeps registry order and returns only listed servers with the strict default, plus unlisted public-internet servers when the flag is off.
+    proof: [list-tests, oracle, helper-python]
+  - text: New mcp-public-servers seeds for b10079 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: is-public-tests
+      why: The per-server public rule is missing, reads the maps in the wrong order or ignores the strict flag.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::public_servers::tests::is_public_/)'
+    - id: list-tests
+      why: The public server list is missing, out of registry order or wrong for the strict or legacy mode.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::public_servers::tests::list_/)'
+    - id: helper-python
+      why: The b10079 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10079.py tools/oracle/helpers/b10079)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10079 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-public-servers-*")" &&
+        grep -lE 'b10079"?:' tools/oracle/fuzz/corpus/helper_case/mcp-public-servers-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-public-servers/strict-lists-only-allowlisted.yaml
+  - tools/oracle/cases/helpers/mcp-public-servers/legacy-adds-public-internet.yaml
+  - tools/oracle/cases/helpers/mcp-public-servers/database-record-wins.yaml
+  - tools/oracle/cases/helpers/mcp-public-servers/explicit-empty-list.yaml
+  - tools/oracle/cases/helpers/mcp-public-servers/unknown-listed-id.yaml
+deviations:
+  - what: The public list and the strict flag come from the registry's RegistrySettings, not from the litellm.public_mcp_servers and litellm.public_mcp_hub_strict_whitelist globals.
+    why: betterlite has no module-level state; B9997 fills the settings from the same config keys and B4721 updates the list in place.
+out_of_scope:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py: _is_server_accessible_from_ip, get_mcp_server_by_id, get_mcp_server_by_name, get_filtered_registry, expand_permission_list, expand_tool_permissions, _build_mcp_server_table, get_all_mcp_servers_unfiltered and the tool owner lookups: B4731. get_registry and the other registry-order reads: B10020. Every other function has the owner B139's and B4731's out_of_scope name."
+  - "The /public/mcp_hub projection with is_public and is_public_explicit: B3194. The is_public flag in the management views: B4717. The make-public route that updates the list: B4721."
+  - "Filling RegistrySettings from litellm_settings.public_mcp_servers and public_mcp_hub_strict_whitelist: B9997, over B10009's public_discovery section."
+pitfalls:
+  - "is_mcp_server_public reads self.registry (the database map) before config_mcp_servers, so an id in both maps answers with the database record's available_on_public_internet even though get_registry puts it at the config position."
+  - "public_mcp_hub_strict_whitelist defaults to True, so out of the box only ids in public_mcp_servers are public; available_on_public_internet, which defaults to True on every record, only counts once the flag is false."
+  - "An id in public_mcp_servers that matches no record is not public, and public_servers walks the registry, so a listed but unknown id never shows up on the hub."
+  - "available_on_public_internet also feeds B4731's IP check (_is_server_accessible_from_ip); the hub rule here never looks at a client IP, so do not call that check."
+  - "The b10079 Python helper must restore litellm.public_mcp_servers and litellm.public_mcp_hub_strict_whitelist after each call, or one case leaks its list and flag into the next."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

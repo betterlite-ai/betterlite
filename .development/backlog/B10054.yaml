@@ -1,0 +1,14 @@
+id: B10054
+milestone: M8 platform
+title: Supported DB object gate
+status: done
+depends_on: [B4140, B8410]
+file: tasks/B10054-supported-db-objects.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: B8380
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3044

@@ -1,0 +1,6 @@
+task: B356
+deviations:
+  - what: The shadow_body byte parser refuses a start body past 1048576 bytes before decoding it and reports the byte count and limit, while LiteLLM hands the body straight to its request model.
+    why: The source has no equivalent byte bound at this parser boundary, and betterlite bounds every outside byte parser. The per-field limits LiteLLM declares still apply unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1578-L1799
+kept_bugs: []

@@ -14,7 +14,9 @@ description: >-
   standard logging and cost details. Return dict with "result" (ModelResponse) and "kwargs"
   (updated request context).
 
-  Implement _get_user_from_metadata to read user from request_body via get_end_user_id_from_request_body,
+  Implement _get_user_from_metadata to read user from request_body via get_end_user_id_from_request_body
+  (B10050's request_end_user_id in this crate's end_user::extraction, called with no headers and the
+  IdSettings the handler takes through its constructor),
   returning None if no request_body or no extracted user. This method accepts PassthroughStandardLoggingPayload.
 
   Implement build_response_logging_payload to compute completion_cost from the transformed response,
@@ -188,8 +190,8 @@ out_of_scope:
   and owned by B190; this task calls it in build_response_logging_payload to construct the
   standard logging object with status="success".
 - >-
-  get_end_user_id_from_request_body is imported from litellm.proxy.auth.auth_utils and owned by B880
-  (betterlite-auth end_user_identity);
+  get_end_user_id_from_request_body is imported from litellm.proxy.auth.auth_utils and owned by B10050
+  (betterlite-logging end_user::extraction, request_end_user_id);
   this task calls it in _get_user_from_metadata to extract end_user_id from the request body.
 - >-
   PassthroughStandardLoggingPayload is a TypedDict imported from litellm.types.passthrough_endpoints
