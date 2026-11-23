@@ -9,4 +9,4 @@ src = ["python"]
 "python/betterlite/_completion/*" = ["B006", "BLE001", "PLR0913", "PLR0917"] # LiteLLM's 44-parameter completion, its messages: list = [] defaults, the 6-parameter acount_tokens and keyword-only LiteLLM(), and its broad proxy-auth catch stay as LiteLLM has them
 "python/betterlite/_completion/acompletion.py" = ["ASYNC109"] # LiteLLM's acompletion is async and keeps the timeout parameter its signature carries
 "python/betterlite/_completion/errors.py" = ["C901", "PLR0912", "PLR0915"] # one dispatch over the native error types, as the task requires, is over ruff's default branch, complexity and statement limits
-"python/betterlite/_embeddings/*" = ["A002", "B006", "FBT002", "PLR0913", "PLR0917"] # LiteLLM's 14-parameter embedding keeps its input=[] and caching=False defaults and its parameter names
+"python/betterlite/_embeddings/*" = ["A002", "B006", "FBT001", "FBT002", "PLR0913", "PLR0917"] # LiteLLM's 14-parameter embedding keeps its bool caching parameter, its input=[] and caching=False defaults and its parameter names

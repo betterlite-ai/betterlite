@@ -77,6 +77,11 @@ class ReferenceModule(Protocol):
     def __getattr__(self, name: str) -> ReferenceCall: ...
 
 
+class DefaultView(Protocol):
+    @property
+    def default(self) -> JsonValue: ...
+
+
 REFERENCE: ReferenceModule = importlib.import_module("litellm")
 
 
@@ -124,7 +129,7 @@ class BarrierServer(ThreadingHTTPServer):
 def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     rows: list[tuple[str, str, str]] = []
     for parameter in signature.parameters.values():
-        default: inspect.Parameter = parameter
+        default: DefaultView = parameter
         rows.append((parameter.name, parameter.kind.name, repr(default.default)))
     return rows
 
@@ -187,11 +192,12 @@ def body_of(call: RecordedCall) -> dict[str, JsonValue]:
 
 
 async def two_embeddings(base: str) -> list[EmbeddingResponse]:
-    rows = await asyncio.gather(
-        aembedding(model=GOOD_MODEL, input="one", api_base=base, api_key=GOOD_KEY),
-        aembedding(model=GOOD_MODEL, input="two", api_base=base, api_key=GOOD_KEY),
+    return list(
+        await asyncio.gather(
+            aembedding(model=GOOD_MODEL, input="one", api_base=base, api_key=GOOD_KEY),
+            aembedding(model=GOOD_MODEL, input="two", api_base=base, api_key=GOOD_KEY),
+        )
     )
-    return rows
 
 
 def test_signature_matches_litellm() -> None:
@@ -443,7 +449,9 @@ def test_async_runs_concurrently() -> None:
 
 def test_async_model_before_await() -> None:
     pending = aembedding(model=None, input="hi")
-    assert inspect.iscoroutine(pending)
+    # inspect.iscoroutine narrows its argument to Any, so the result goes in a bool first
+    returns_coroutine = inspect.iscoroutine(pending)
+    assert returns_coroutine
     with pytest.raises(BadRequestError) as caught:
         asyncio.run(pending)
     assert caught.value.status_code == BAD_REQUEST_STATUS
