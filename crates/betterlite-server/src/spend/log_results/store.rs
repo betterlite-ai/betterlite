@@ -59,6 +59,8 @@ impl LogResultsStore for PostgresLogResults {
         &self,
         query: &SummaryQuery,
     ) -> Result<Vec<DailySummaryRow>, StoreError> {
-        self.decoded(&query.sql, &query.params).await
+        // the grouped row as one JSON object, the shape decoded reads
+        let sql = format!("SELECT row_to_json(x)::text FROM ({query.sql}) x");
+        self.decoded(&sql, &query.params).await
     }
 }

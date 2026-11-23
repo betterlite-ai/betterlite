@@ -8,6 +8,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
 use super::support::{decimal, json};
+use crate::spend::log_payload::daily_summary::{SummaryFilters, daily_summary_sql};
 use crate::spend::log_results::filters::LegacyFilters;
 use crate::spend::log_results::query::decode_legacy_spend_query;
 use crate::spend::log_results::rows::spend_log_rows_query;
@@ -144,6 +145,40 @@ async fn an_sk_api_key_is_hashed_before_it_reaches_the_query() {
     assert_eq!(rows[0].request_id, "by-key");
 }
 
+const SUMMARY_ROWS: &str = r#"
+INSERT INTO "LiteLLM_SpendLogs"
+(request_id, call_type, api_key, spend, "startTime", "endTime", model, "user") VALUES
+('sum-a', 'acompletion', 'k1', 0.5, '2024-03-01 10:00:00', '2024-03-01 10:00:01', 'gpt-4o', 'alice'),
+('sum-b', 'acompletion', 'k1', 0.25, '2024-03-01 11:00:00', '2024-03-01 11:00:01', 'gpt-4o', 'alice'),
+('sum-c', 'acompletion', 'k1', 2, '2024-03-02 00:00:00', '2024-03-02 00:00:01', 'gpt-4o', 'alice'),
+('sum-d', 'acompletion', 'k1', 4, '2024-03-03 00:00:00', '2024-03-03 00:00:01', 'gpt-4o', 'alice');
+"#;
+
+#[tokio::test]
+async fn the_daily_summary_groups_each_day_through_the_inclusive_end() {
+    let (_fixture, pool) = database().await;
+    execute(&pool, SUMMARY_ROWS).await;
+    let store = log_results_store(&pool);
+    let query = daily_summary_sql(
+        "2024-03-01T00:00:00+00:00",
+        "2024-03-02T00:00:00+00:00",
+        SummaryFilters {
+            api_key: None,
+            request_id: None,
+            user_id: None,
+        },
+    );
+    let rows = store.daily_summary(&query).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].day, "2024-03-01");
+    assert_eq!(rows[0].spend.0, decimal("0.75"));
+    assert_eq!(rows[0].api_key.as_deref(), Some("k1"));
+    assert_eq!(rows[0].user.as_deref(), Some("alice"));
+    assert_eq!(rows[0].model, "gpt-4o");
+    assert_eq!(rows[1].day, "2024-03-02");
+    assert_eq!(rows[1].spend.0, decimal("2"));
+}
+
 const AGGREGATE_ROWS: &str = r#"
 INSERT INTO "LiteLLM_SpendLogs"
 (request_id, call_type, api_key, spend, total_tokens, prompt_tokens, completion_tokens,
@@ -162,6 +197,12 @@ FROM generate_series(1, 11) AS i;
 INSERT INTO "LiteLLM_SpendLogs"
 (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user", session_id)
 VALUES ('model-empty', 'acompletion', 'k1', 0, '2024-02-02 00:00:00', '2024-02-02 00:00:01', '', 'alice', 's2');
+
+INSERT INTO "LiteLLM_SpendLogs"
+(request_id, call_type, api_key, spend, "startTime", "endTime", model, "user", session_id)
+SELECT 'ten-' || lpad(i::text, 2, '0'), 'acompletion', 'k1', 0,
+       '2024-02-03 00:00:00', '2024-02-03 00:00:01', 'n' || lpad(i::text, 2, '0'), 'alice', 's3'
+FROM generate_series(1, 10) AS i;
 "#;
 
 fn find<'row>(
@@ -181,11 +222,11 @@ async fn session_aggregates_group_by_session_and_key() {
     execute(&pool, AGGREGATE_ROWS).await;
     let store = log_results_store(&pool);
     let lookup = SessionLookup {
-        session_ids: vec![String::from("s1"), String::from("s2")],
+        session_ids: vec![String::from("s1"), String::from("s2"), String::from("s3")],
         api_keys: vec![String::from("k1"), String::from("k2")],
     };
     let aggregates = store.session_aggregates(&lookup).await.unwrap();
-    assert_eq!(aggregates.len(), 3);
+    assert_eq!(aggregates.len(), 4);
     let s1k1 = find(&aggregates, "s1", "k1");
     assert_eq!(s1k1.session_total_count, 3);
     assert_eq!(s1k1.session_total_spend, decimal("1"));
@@ -212,4 +253,8 @@ async fn session_aggregates_group_by_session_and_key() {
         ]
     );
     assert!(s2k1.session_models_truncated);
+    // exactly _SESSION_MODELS_LIMIT models fit, so the page keeps all ten and does not flag them
+    let s3k1 = find(&aggregates, "s3", "k1");
+    assert_eq!(s3k1.session_models.len(), 10);
+    assert!(!s3k1.session_models_truncated);
 }
