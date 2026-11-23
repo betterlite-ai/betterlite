@@ -1,12 +1,3 @@
 task: B9993
-deviations:
-  - what: >-
-      A text completion answered from an Anthropic Messages reply keeps the reply's own id (msg_...), where LiteLLM
-      answers a freshly generated chatcmpl uuid because its Anthropic transform never copies the provider id onto the
-      chat response.
-    why: >-
-      The bridge converts the reply the adapter already parsed, and that reply carries the upstream message id, so the
-      text body repeats it. Both values are opaque per-call identifiers, and the oracle case ignores /id for this
-      reason.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2218-L2219
+deviations: []
 kept_bugs: []
