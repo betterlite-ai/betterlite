@@ -16,7 +16,7 @@ use betterlite_openai::chat::response::{
 use betterlite_redact::secret::Redactor;
 use chrono::DateTime;
 
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::ResponseSeed;
 

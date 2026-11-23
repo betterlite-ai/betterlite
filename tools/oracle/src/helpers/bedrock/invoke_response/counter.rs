@@ -76,5 +76,5 @@ fn count(input: Value) -> Result<i64, CountError> {
     let Some(value) = counted.value else {
         return Err(CountError::MissingInput);
     };
-    serde_json::from_value(value).map_err(|_error| CountError::MissingInput)
+    from_value(value).map_err(|_error| CountError::MissingInput)
 }

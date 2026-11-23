@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, from_value, json, to_value};
 use tokio::runtime::Builder;
 
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod counter;
