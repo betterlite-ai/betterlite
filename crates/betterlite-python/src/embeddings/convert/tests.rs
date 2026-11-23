@@ -880,22 +880,7 @@ fn request_a_provider_answer_carries_headers_and_hidden_params() {
     assert_ne!(hidden.get("response_cost"), Some(&Json::Null));
 }
 #[test]
-fn request_the_environment_key_authorizes_the_call() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address: SocketAddr = listener.local_addr().unwrap();
-    let arguments_json = format!(
-        r#"{{"model": "text-embedding-3-small", "input": "hi", "api_base": "http://{address}/v1", "timeout": 5}}"#
-    );
-    let keyed = session_from(r#"{"environment": {"OPENAI_API_KEY": "sk-env"}}"#);
-    let (sent, outcome) = served_in(&listener, &keyed, "200 OK", EMBEDDING_BODY, &arguments_json);
-    outcome.unwrap();
-    assert!(
-        sent.to_lowercase().contains("authorization: bearer sk-env"),
-        "{sent}"
-    );
-}
-#[test]
-fn request_the_environment_base_reaches_the_provider() {
+fn request_the_environment_authorizes_and_locates_the_call() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address: SocketAddr = listener.local_addr().unwrap();
     let keyed = session_from(&format!(
@@ -910,6 +895,10 @@ fn request_the_environment_base_reaches_the_provider() {
     );
     outcome.unwrap();
     assert!(sent.starts_with("POST /v1/embeddings "), "{sent}");
+    assert!(
+        sent.to_lowercase().contains("authorization: bearer sk-env"),
+        "{sent}"
+    );
 }
 #[test]
 fn error_a_served_401_raises_the_authentication_class() {
