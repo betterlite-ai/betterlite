@@ -94,7 +94,7 @@ class Answer(TypedDict):
     logs: list[LogEntry]
 
 
-# The fields of JWTAuthBuilderResult this double fills, typed so no expression of the pinned Any-carrying dict is built.
+# The JWTAuthBuilderResult fields this double fills, typed so no expression of the pinned dict is built.
 class JwtAuthResult(TypedDict):
     is_proxy_admin: bool
     team_object: LiteLLM_TeamTable | None

@@ -19,7 +19,7 @@ use super::{
     TokenExchangeInputs, TokenExchangePrerequisites,
 };
 use crate::gateway_dcr::subject_token::{
-    ExchangeSubjectToken as _, RefusalCode, SubjectIdentity, SubjectTokenRefusal,
+    ExchangeSubjectToken, RefusalCode, SubjectIdentity, SubjectTokenRefusal,
 };
 
 const JWT: &str = "header.payload.signature";
