@@ -122,8 +122,8 @@ LITELLM_EMBEDDING: EmbeddingModule = importlib.import_module("litellm")
 
 
 class RecordingBackend:
-    fail_read = False
-    fail_write = False
+    fail_read: bool = False
+    fail_write: bool = False
 
     def __init__(self) -> None:
         self.values: dict[str, JsonValue] = {}
@@ -180,11 +180,11 @@ class RecordingBackend:
 
 
 class FailingBackend(RecordingBackend):
-    fail_write = True
+    fail_write: bool = True
 
 
 class FailingReadBackend(RecordingBackend):
-    fail_read = True
+    fail_read: bool = True
 
 
 class Cache(CacheOperations):
