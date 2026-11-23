@@ -1,17 +1,16 @@
 use super::convert::{
     ConvertError, TextArguments, TextCallWire, chat_messages, completion_request, prompt,
 };
-use super::error::{
-    CallFacts, CallFailure, Raised, completion_failure, convert_failure, mock_timeout_failure,
-    raised, stream_failure,
-};
+use super::error::{CallFacts, CallFailure, Raised, RawSource, convert_failure, raised};
 use super::session::{DeploymentFacts, TextSession, secret_text};
 use crate::completion::setup::global_credentials;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
-use betterlite_openai::text_completion_execution::{CompletionCallAnswer, CompletionSend};
+use betterlite_openai::text_completion_execution::{
+    CompletionCallAnswer, CompletionExecutor, CompletionSend,
+};
 use betterlite_openai::text_completion_request::{CompletionRequest, PromptRefusal};
 use betterlite_openai::text_completion_response::CompletionResponse;
 use betterlite_openai::text_completion_stream::shaped_chunk;
@@ -21,7 +20,6 @@ use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
 use serde::Serialize;
 
-// What main.py's text completion answers: the completion itself, the chunks of a stream, or the messages a chat provider gets.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub(crate) enum TextAnswer {
@@ -30,7 +28,6 @@ pub(crate) enum TextAnswer {
     Chat { messages: Vec<Json> },
 }
 
-// main.py's text completion, from the resolved deployment to the answer Python turns into a TextCompletionResponse.
 pub(crate) async fn call(
     session: &TextSession,
     wire: TextCallWire,
@@ -76,72 +73,61 @@ async fn answer_for(
     arguments: &TextArguments,
     facts: &CallFacts<'_>,
 ) -> Result<TextAnswer, CallFailure> {
-    // a mock timeout is the SDK mock entry's timeout error, raised before any provider runs
-    if let Some(Json::Bool(true)) = arguments.extra.get("mock_timeout") {
-        return Err(mock_timeout_failure(facts, &session.redactor));
+    // a mock entry answers before any provider runs, and the SDK completion entry on the chat path applies it
+    let answered = ["mock_response", "mock_tool_calls", "mock_timeout"]
+        .iter()
+        .filter_map(|name| arguments.extra.get(*name))
+        .any(|value| !matches!(value, Json::Null));
+    if answered || session.executor.endpoint(deployment).await == CompletionEndpoint::Chat {
+        return chat_messages(arguments)
+            .map(|messages| TextAnswer::Chat { messages })
+            .map_err(|error| convert_failure(error, facts));
     }
-    // a mock answer comes from the SDK completion entry, which applies it before any provider runs
-    let endpoint = if mocked(arguments) {
-        CompletionEndpoint::Chat
-    } else {
-        session.executor.endpoint(deployment).await
-    };
-    match endpoint {
-        CompletionEndpoint::Chat => {
-            let messages =
-                chat_messages(arguments).map_err(|error| convert_failure(error, facts))?;
-            Ok(TextAnswer::Chat { messages })
-        }
-        CompletionEndpoint::Text => text_answer(session, deployment, arguments, facts).await,
-    }
+    sent_text(
+        &session.executor,
+        deployment,
+        arguments,
+        facts,
+        &session.redactor,
+    )
+    .await
 }
 
-// main.py's completion entry answers a mock response itself, before it reaches any provider
-fn mocked(arguments: &TextArguments) -> bool {
-    arguments
-        .extra
-        .get("mock_response")
-        .is_some_and(|value| !matches!(value, Json::Null))
-}
-
-// The text endpoint's call: the completion body, the provider's answer, and a stream drained into its chunks.
-async fn text_answer(
-    session: &TextSession,
+async fn sent_text(
+    executor: &CompletionExecutor,
     deployment: &ChatDeployment,
     arguments: &TextArguments,
     facts: &CallFacts<'_>,
+    redactor: &Redactor,
 ) -> Result<TextAnswer, CallFailure> {
     let request = completion_request(arguments).map_err(|error| convert_failure(error, facts))?;
     let streamed = arguments.stream == Some(true);
-    let mut transport = session
-        .executor
+    let mut transport = executor
         .text_transport(deployment, &request, streamed)
         .await
-        .map_err(|failure| completion_failure(&failure, facts, &session.redactor))?;
+        .map_err(|failure| provider_failure(RawSource::Completion(&failure), facts, redactor))?;
     forward_parameters(&request, &mut transport);
     let mut logger = TracingCompletionLog;
-    let answer = session
-        .executor
+    let answer = executor
         .send(CompletionSend {
             deployment,
             request: transport,
             streamed,
-            redactor: &session.redactor,
+            redactor,
             logger: &mut logger,
         })
         .await
-        .map_err(|failure| completion_failure(&failure, facts, &session.redactor))?;
+        .map_err(|failure| provider_failure(RawSource::Completion(&failure), facts, redactor))?;
     match answer {
         CompletionCallAnswer::Buffered(buffered) => Ok(TextAnswer::Text {
             response: buffered.response,
         }),
         CompletionCallAnswer::Streamed(streamed) => Ok(TextAnswer::Chunks {
-            chunks: collect_stream(streamed.stream, facts, &session.redactor).await?,
+            chunks: collect_stream(streamed.stream, facts, redactor).await?,
         }),
     }
 }
 
-// echo, best_of and suffix are completion parameters the proxy's own request model does not hold, so the transport drops them
 fn forward_parameters(request: &CompletionRequest, transport: &mut TransportRequest) {
     for name in ["best_of", "echo", "suffix"] {
         if let Some(value) = request.passthrough.get(name) {
@@ -161,7 +147,8 @@ async fn collect_stream(
     let mut remaining = stream;
     let mut kept = Vec::new();
     while let Some(item) = remaining.next().await {
-        let chunk = item.map_err(|error| stream_failure(&error, facts, redactor))?;
+        let chunk =
+            item.map_err(|error| provider_failure(RawSource::Stream(&error), facts, redactor))?;
         if chunk.choices.is_empty() {
             if let Some(usage) = chunk.usage {
                 if let Some(last) = kept.last_mut() {

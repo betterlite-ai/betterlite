@@ -6,7 +6,6 @@ use betterlite_openai::moderation_request::ModerationRequest;
 use betterlite_openai::moderation_response::ModerationResponse;
 use indexmap::IndexMap;
 
-// main.py's moderation: the openai moderations endpoint, the caller's key chain and the joined key.
 pub(crate) async fn moderate(
     session: &TextSession,
     wire: ModerationCallWire,

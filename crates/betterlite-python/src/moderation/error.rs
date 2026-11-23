@@ -1,6 +1,5 @@
-use super::convert::{ConvertError, NativeTextErrorPayload, UNMAPPED_PROMPT};
+use super::convert::{ConvertError, NativeTextErrorPayload};
 use crate::completion::error::SessionError as CompletionSessionError;
-use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_core::operation::moderation::route_error;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
 use betterlite_error::error::details::ResponseDetails;
@@ -17,13 +16,11 @@ use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 
 create_exception!(betterlite_native, NativeTextError, PyException);
 
-// the identity every error carries back to Python
 pub(crate) struct CallFacts<'facts> {
     pub(crate) model: &'facts str,
     pub(crate) provider: &'facts str,
 }
 
-// One failed call, as the LiteLLM exception class main.py re-raises.
 #[derive(Debug)]
 pub(crate) struct CallFailure(pub(crate) Box<ErrorClass>);
 
@@ -40,7 +37,6 @@ pub(crate) enum SessionError {
     },
 }
 
-// The LiteLLM exception classes main.py raises itself, around the provider's own errors.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Raised {
     BadRequest,
@@ -91,14 +87,9 @@ impl From<SessionError> for PyErr {
         let message = error.to_string();
         match error {
             SessionError::Json(ConvertError::Json { .. }) => PyValueError::new_err(message),
-            SessionError::Json(
-                ConvertError::Encode { .. }
-                | ConvertError::Body { .. }
-                | ConvertError::Unsupported { .. }
-                | ConvertError::Prompt,
-            )
-            | SessionError::Completion(_)
-            | SessionError::Redact { .. } => PyRuntimeError::new_err(message),
+            SessionError::Json(_) | SessionError::Completion(_) | SessionError::Redact { .. } => {
+                PyRuntimeError::new_err(message)
+            }
         }
     }
 }
@@ -112,148 +103,107 @@ pub(crate) fn resolution_failure(error: &ResolutionError, model: &str) -> CallFa
     )
 }
 
-// A request the native method must refuse before a provider runs: the prompt shape is main.py's bare Exception.
-pub(crate) fn convert_failure(error: ConvertError, facts: &CallFacts<'_>) -> CallFailure {
-    if matches!(error, ConvertError::Prompt) {
-        return raised(
-            Raised::Plain,
-            String::from(UNMAPPED_PROMPT),
-            Some(facts.model.to_owned()),
-            Some(facts.provider.to_owned()),
-        );
-    }
-    if matches!(error, ConvertError::Unsupported { .. }) {
-        return raised(
-            Raised::UnsupportedParams,
-            error.to_string(),
-            Some(facts.model.to_owned()),
-            Some(facts.provider.to_owned()),
-        );
-    }
+fn refused(kind: Raised, message: String, facts: &CallFacts<'_>) -> CallFailure {
     raised(
-        Raised::BadRequest,
-        error.to_string(),
+        kind,
+        message,
         Some(facts.model.to_owned()),
         Some(facts.provider.to_owned()),
     )
 }
 
-// the parts of a provider failure that pick its status, type, param and code
-struct RawFailure {
-    message: String,
-    status: Option<u16>,
-    error_type: Option<String>,
-    param: Option<String>,
-    code: Option<String>,
-}
-
-// Every prepare, execute and decode failure, as the LiteLLM exception class main.py re-raises.
-pub(crate) fn completion_failure(
-    failure: &CompletionFailure,
-    facts: &CallFacts<'_>,
-    redactor: &Redactor,
-) -> CallFailure {
-    raw_failure(
-        RawFailure {
-            message: failure.message.clone(),
-            status: Some(failure.status),
-            error_type: failure.error_type.clone(),
-            param: failure.param.clone(),
-            code: None,
-        },
-        facts,
-        redactor,
-    )
-}
-
-// A provider stream that stops with a chunk it cannot shape
-pub(crate) fn stream_failure(
-    error: &TextCompletionError,
-    facts: &CallFacts<'_>,
-    redactor: &Redactor,
-) -> CallFailure {
-    let status = match &error.status {
-        ErrorStatus::Missing | ErrorStatus::Null => None,
-        ErrorStatus::Code(code) => Some(*code),
+pub(crate) fn convert_failure(error: ConvertError, facts: &CallFacts<'_>) -> CallFailure {
+    let kind = match &error {
+        ConvertError::Prompt => Raised::Plain,
+        ConvertError::Unsupported { .. } => Raised::UnsupportedParams,
+        ConvertError::Json { .. } | ConvertError::Encode { .. } | ConvertError::Body { .. } => {
+            Raised::BadRequest
+        }
     };
-    raw_failure(
-        RawFailure {
-            message: error.message.clone(),
-            status,
-            error_type: None,
-            param: None,
-            code: None,
-        },
-        facts,
-        redactor,
-    )
+    refused(kind, error.to_string(), facts)
 }
 
-// The moderation route's own status, type and param, mapped to LiteLLM's exception class.
-pub(crate) fn moderation_failure(
-    error: &ModerationError,
+pub(crate) enum RawSource<'failure> {
+    Completion(&'failure CompletionFailure),
+    Stream(&'failure TextCompletionError),
+    Moderation(&'failure ModerationError),
+}
+
+pub(crate) fn provider_failure(
+    source: RawSource<'_>,
     facts: &CallFacts<'_>,
     redactor: &Redactor,
 ) -> CallFailure {
-    let failure = route_error(error, redactor);
-    if matches!(error, ModerationError::MissingApiKey) {
-        // the openai client raises its own bare Exception when no key source is set
-        return raised(
-            Raised::Plain,
-            failure.message,
-            Some(facts.model.to_owned()),
-            Some(facts.provider.to_owned()),
-        );
-    }
-    raw_failure(
-        RawFailure {
-            message: failure.message,
-            status: Some(failure.status),
-            error_type: failure.error_type,
-            param: failure.param,
-            code: failure.code,
-        },
-        facts,
-        redactor,
-    )
-}
-
-// A mock timeout: the SDK mock entry's timeout error, raised before any provider runs.
-pub(crate) fn mock_timeout_failure(facts: &CallFacts<'_>, redactor: &Redactor) -> CallFailure {
-    let error = MockError::Timeout;
-    raw_failure(
-        RawFailure {
-            message: error.to_string(),
-            status: error.status(),
-            error_type: None,
-            param: None,
-            code: None,
-        },
-        facts,
-        redactor,
-    )
-}
-
-// exception_type's mapping of a raw provider failure, keyed on its status and the body fields it answers with
-fn raw_failure(failure: RawFailure, facts: &CallFacts<'_>, redactor: &Redactor) -> CallFailure {
+    let (message, status, body) = fields(source, redactor);
     let raw = RawException {
         model: facts.model.to_owned(),
         custom_llm_provider: facts.provider.to_owned(),
-        error_str: failure.message,
-        status_code: failure.status,
+        error_str: message,
+        status_code: status,
         status_code_is_synthesized: false,
         message: None,
-        body: Some(RawExceptionBody {
-            kind: failure.error_type,
-            param: failure.param,
-            code: failure.code,
-            message: None,
-            error: None,
-        }),
+        body: Some(body),
         exception_type: String::new(),
     };
     CallFailure(Box::new(dispatch(
         &DispatchInput::Raw(Box::new(raw)),
         redactor,
     )))
+}
+
+fn fields(source: RawSource<'_>, redactor: &Redactor) -> (String, Option<u16>, RawExceptionBody) {
+    match source {
+        RawSource::Completion(error) => (
+            error.message.clone(),
+            Some(error.status),
+            RawExceptionBody {
+                kind: error.error_type.clone(),
+                param: error.param.clone(),
+                ..RawExceptionBody::default()
+            },
+        ),
+        RawSource::Stream(error) => (
+            error.message.clone(),
+            stream_status(error),
+            RawExceptionBody::default(),
+        ),
+        RawSource::Moderation(error) => moderation_fields(error, redactor),
+    }
+}
+
+// The moderation route's own status, type and param: a missing key is the openai client's bare Exception.
+pub(crate) fn moderation_failure(
+    error: &ModerationError,
+    facts: &CallFacts<'_>,
+    redactor: &Redactor,
+) -> CallFailure {
+    if matches!(error, ModerationError::MissingApiKey) {
+        let failure = route_error(error, redactor);
+        return refused(Raised::Plain, failure.message, facts);
+    }
+    provider_failure(RawSource::Moderation(error), facts, redactor)
+}
+
+fn moderation_fields(
+    error: &ModerationError,
+    redactor: &Redactor,
+) -> (String, Option<u16>, RawExceptionBody) {
+    let failure = route_error(error, redactor);
+    (
+        failure.message,
+        Some(failure.status),
+        RawExceptionBody {
+            kind: failure.error_type,
+            param: failure.param,
+            code: failure.code,
+            ..RawExceptionBody::default()
+        },
+    )
+}
+
+fn stream_status(error: &TextCompletionError) -> Option<u16> {
+    match &error.status {
+        ErrorStatus::Missing | ErrorStatus::Null => None,
+        ErrorStatus::Code(code) => Some(*code),
+    }
 }

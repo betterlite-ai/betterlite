@@ -1,4 +1,4 @@
-use super::convert::{ConvertError, OPENAI_PROVIDER, SessionWire, TextArguments, TextSettingsWire};
+use super::convert::{ConvertError, OPENAI_PROVIDER, SessionWire, SettingsWire, TextArguments};
 use super::error::{CallFailure, Raised, SessionError, raised, resolution_failure};
 use crate::completion::setup::{ModuleCredentials, openai_defaults, outbound_client};
 use betterlite_config::loader::startup::process_environment;
@@ -33,7 +33,6 @@ pub(crate) enum Entry {
     Async,
 }
 
-// Everything one Python session owns: the environment snapshot, the HTTP client and the catalog it resolves against.
 pub(crate) struct TextSession {
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) catalog: Arc<ModelCatalog>,
@@ -111,25 +110,11 @@ impl TextSession {
         }
     }
 
-    // get_llm_provider's inputs, turned into the deployment the shared provider pipeline prepares
     pub(crate) fn deployment(
         &self,
         facts: &DeploymentFacts<'_>,
     ) -> Result<ChatDeployment, CallFailure> {
-        ChatDeployment::resolve_with(
-            &declared(facts),
-            &self.defaults,
-            None,
-            &self.context(facts.globals),
-        )
-        .map_err(|error| {
-            raised(
-                Raised::BadRequest,
-                error.to_string(),
-                Some(facts.model.to_owned()),
-                Some(facts.provider.to_owned()),
-            )
-        })
+        self.resolved(&declared(facts), facts.model, facts.provider, facts.globals)
     }
 
     // moderation always calls the openai moderations endpoint; the model keeps no provider prefix of its own
@@ -159,18 +144,27 @@ impl TextSession {
             },
         };
         let globals = GlobalCredentials::default();
-        ChatDeployment::resolve_with(&deployment, &self.defaults, None, &self.context(&globals))
+        self.resolved(&deployment, model, OPENAI_PROVIDER, &globals)
+    }
+
+    fn resolved(
+        &self,
+        deployment: &ModelDeployment,
+        model: &str,
+        provider: &str,
+        globals: &GlobalCredentials,
+    ) -> Result<ChatDeployment, CallFailure> {
+        ChatDeployment::resolve_with(deployment, &self.defaults, None, &self.context(globals))
             .map_err(|error| {
                 raised(
                     Raised::BadRequest,
                     error.to_string(),
                     Some(model.to_owned()),
-                    Some(String::from(OPENAI_PROVIDER)),
+                    Some(provider.to_owned()),
                 )
             })
     }
 
-    // The moderation entry reads the deployment, the client and the catalog, and no routing state.
     pub(crate) fn chat_executor(
         &self,
         deployment: &ChatDeployment,
@@ -192,7 +186,6 @@ impl TextSession {
     }
 }
 
-// get_llm_provider's answer next to the call's own key and arguments
 pub(crate) struct DeploymentFacts<'call> {
     pub(crate) resolved: &'call ResolvedModel,
     pub(crate) arguments: &'call TextArguments,
@@ -202,23 +195,18 @@ pub(crate) struct DeploymentFacts<'call> {
     pub(crate) globals: &'call GlobalCredentials,
 }
 
-// the deployment a router entry would declare for this call's resolved model, key and version
 fn declared(facts: &DeploymentFacts<'_>) -> ModelDeployment {
+    let resolved_base = &facts.resolved.api_base;
+    let api_base = resolved_base.clone().filter(|text| !text.is_empty());
+    let resolved_key = &facts.resolved.api_key;
+    let api_key = resolved_key.clone().or_else(|| facts.api_key.clone());
     ModelDeployment {
         model_name: facts.model.to_owned(),
         litellm_params: LiteLlmParams {
             ssl_verify: None,
             model: Some(format!("{}/{}", facts.provider, facts.model)),
-            api_base: facts
-                .resolved
-                .api_base
-                .clone()
-                .filter(|text| !text.is_empty()),
-            api_key: facts
-                .resolved
-                .api_key
-                .clone()
-                .or_else(|| facts.api_key.clone()),
+            api_base,
+            api_key,
             api_version: facts.arguments.api_version.clone(),
             timeout: facts.arguments.timeout,
             stream_timeout: None,
@@ -234,7 +222,7 @@ fn declared(facts: &DeploymentFacts<'_>) -> ModelDeployment {
     }
 }
 
-impl ModuleCredentials for TextSettingsWire {
+impl ModuleCredentials for SettingsWire {
     fn api_key(&self) -> Option<SecretString> {
         secret_text(self.api_key.as_ref())
     }

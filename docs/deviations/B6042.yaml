@@ -27,9 +27,9 @@ deviations:
   - what: A positional argument that repeats a named one replaces it in atext_completion and is ignored in text_completion.
     why: LiteLLM passes *args into completion after its named arguments, which raises TypeError for a repeated value; betterlite's native layer takes one fixed parameter list.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7460
-  - what: mock_timeout=True raises the 408 timeout the SDK mock entry raises, and mock_response answers a chat completion that main.py converts to text; mock_delay and mock_tool_calls are not read on the text path.
-    why: the Rust text completion execution path has no mock entry of its own, so the native layer answers mocks itself and keeps the SDK's timeout status and message.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L817-L825
+  - what: mock_timeout=True without a timeout raises a 400 instead of LiteLLM's default mock answer.
+    why: mock_completion only honors mock_timeout when timeout is set and otherwise answers "This is a mock request"; betterlite hands mocks to its SDK entry, whose mock call needs mock_response or mock_tool_calls and refuses a bare mock_timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L929-L934
 kept_bugs:
   - what: A list of strings given as the prompt of a chat provider becomes one user message per string.
     why: LiteLLM builds that message list before it knows the endpoint, and a setup that reads the chat answer of a multi-prompt text call relies on the message count.

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::{
     CompletionPrompt, ModerationArguments, TextArguments, TextCallWire, body, chat_messages,
     completion_request, moderation_model, prompt,
@@ -102,6 +104,14 @@ fn request_num_retries_becomes_max_retries() {
     let text = encoded(&built);
     assert!(text.contains(r#""max_retries":4"#));
     assert!(!text.contains("num_retries"));
+}
+
+#[test]
+fn request_num_retries_wins_over_max_retries() {
+    let after = arguments(r#"{"prompt": "hello", "max_retries": 1, "num_retries": 4}"#);
+    assert!(encoded(&body(&after).unwrap()).contains(r#""max_retries":4"#));
+    let before = arguments(r#"{"prompt": "hello", "num_retries": 4, "max_retries": 1}"#);
+    assert!(encoded(&body(&before).unwrap()).contains(r#""max_retries":4"#));
 }
 
 #[test]
