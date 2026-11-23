@@ -6,7 +6,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_context::non_default_params::Params;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -26,9 +25,7 @@ use betterlite_openai::response_events::{
     ApiKeySources, RawResponse, ResponsesProvider, ResponsesReply, WorkloadIdentity,
     get_complete_url, transform_response, validate_environment,
 };
-use betterlite_openai::response_input::{
-    ResponsesInput, ResponsesTool, transform_responses_request,
-};
+use betterlite_openai::response_input::{ResponsesInput, transform_responses_request};
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use betterlite_prompts::file_ids::mapping::FileIdMapping;
 use betterlite_provider::api::responses_provider_contract::records::{
@@ -47,26 +44,24 @@ use crate::api::responses_agentic_execution::executor::{
 use crate::api::responses_compact_http::error::ConfigFailure;
 use crate::api::responses_compact_http::service::SharedSession;
 use crate::api::responses_create::bridge::{BridgeCall, ChatBridge, Created, StampedResponse};
-use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_create::deps::{
     ConfigRequest, CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps,
 };
-use crate::api::responses_create::error::{
-    BridgeError, CreateError, CreateFailure, CreateParamError, InterceptionError,
-};
-use crate::api::responses_create::execute::{create, mock_responses_api_response};
+use crate::api::responses_create::error::{BridgeError, InterceptionError};
+use crate::api::responses_create::execute::mock_responses_api_response;
 use crate::api::responses_create::interception::{
-    CreateInterception, DispatchArgs, FileSearchExtras, Interception,
+    CreateInterception, DispatchArgs, FileSearchArgs, Interception, InterceptionResult,
 };
 use crate::api::responses_create_http::config::{
     CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, Headers, Signed,
 };
 use crate::api::responses_create_http::service::{
-    ClientSource, CreateHooks, CreateRequest, CreateTransport, LogContext, SentReply,
+    ClientSource, CreateHooks, CreateRequest, CreateTransport, SentReply,
 };
 use crate::api::responses_hook_policy::callbacks::{
     CallbackLists, DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
 };
+use crate::api::responses_parameters::error::ResponsesParametersError;
 use crate::api::responses_parameters::provider::ResponsesParamProvider;
 use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::prompting::{
@@ -75,6 +70,8 @@ use crate::api::responses_provider_selection::prompting::{
 use crate::api::responses_provider_selection::provider_config::{ConfigLookup, NativeConfig};
 use crate::api::responses_provider_selection::resolution::ModelResolver;
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError, HeaderMap};
+
+pub(crate) use super::seams::*;
 
 pub(crate) const OK_RESPONSE: &str = r#"{"id":"resp_a","created_at":100,"object":"response","status":"completed","model":"gpt-4o","output":[]}"#;
 
@@ -116,31 +113,34 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) fn new() -> Self {
-        let init: LoggingInit = serde_json::from_str(
-            r#"{"model":"gpt-4o","call_type":"responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
-        )
-        .expect("the logging fixture is valid");
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
         let now =
             DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses");
-        let state = LoggingState::new(
-            init,
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &redactor,
-            || String::from("generated"),
-            Duration::default,
-        )
-        .expect("the logging state builds");
         Self {
+            state: logging_state(&redactor),
             redactor,
             sink: Sink,
             now,
-            state,
         }
     }
+}
+
+fn logging_state(redactor: &Redactor) -> LoggingState {
+    let init: LoggingInit = serde_json::from_str(
+        r#"{"model":"gpt-4o","call_type":"responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
+    )
+    .expect("the logging fixture is valid");
+    LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || String::from("generated"),
+        Duration::default,
+    )
+    .expect("the logging state builds")
 }
 
 pub(crate) fn environment<'env>(
@@ -400,7 +400,7 @@ impl CreateConfig for TestConfig {
 }
 
 impl ResponsesParamProvider for TestConfig {
-    type Error = CreateParamError;
+    type Error = ResponsesParametersError;
 
     fn name(&self) -> &'static str {
         "openai"
@@ -452,7 +452,7 @@ impl CreateCapabilities for TestConfig {
     }
 }
 
-fn round_trip<Wire, Body>(data: &Body) -> Result<Wire, ConfigFailure>
+pub(crate) fn round_trip<Wire, Body>(data: &Body) -> Result<Wire, ConfigFailure>
 where
     Wire: DeserializeOwned,
     Body: Serialize + ?Sized,
@@ -636,41 +636,54 @@ impl CreateInterception<()> for NoInterception {
         false
     }
 
-    async fn mcp(
-        &self,
-        _args: &DispatchArgs<'_>,
-        context: (),
-    ) -> Result<Interception<()>, InterceptionError> {
+    async fn mcp(&self, _args: &DispatchArgs<'_>, context: ()) -> InterceptionResult<()> {
         Ok(Interception::Continue(context))
     }
 
-    async fn file_search(
-        &self,
-        _args: &DispatchArgs<'_>,
-        _extras: &FileSearchExtras<'_>,
-        context: (),
-    ) -> Result<Interception<()>, InterceptionError> {
+    async fn file_search(&self, _args: &FileSearchArgs<'_>, context: ()) -> InterceptionResult<()> {
         Ok(Interception::Continue(context))
     }
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct McpRecord {
+pub(crate) struct DispatchRecord {
     pub(crate) reasoning: Option<Json>,
     pub(crate) tools: Option<Vec<JsonValue>>,
     pub(crate) kwargs: ParameterMap,
     pub(crate) extra_headers: Option<Headers>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct FileSearchRecord {
-    pub(crate) reasoning: Option<Json>,
     pub(crate) service_tier: Option<String>,
     pub(crate) safety_identifier: Option<String>,
     pub(crate) text_format: Option<Json>,
     pub(crate) allowed_openai_params: Option<Vec<String>>,
     pub(crate) use_chat_completions_api: bool,
-    pub(crate) kwargs: ParameterMap,
+}
+
+impl From<&DispatchArgs<'_>> for DispatchRecord {
+    fn from(args: &DispatchArgs<'_>) -> Self {
+        Self {
+            reasoning: args.reasoning.cloned(),
+            tools: args.tools.map(<[JsonValue]>::to_vec),
+            kwargs: args.kwargs.clone(),
+            extra_headers: args.extra_headers.cloned(),
+            service_tier: None,
+            safety_identifier: None,
+            text_format: None,
+            allowed_openai_params: None,
+            use_chat_completions_api: false,
+        }
+    }
+}
+
+impl From<&FileSearchArgs<'_>> for DispatchRecord {
+    fn from(args: &FileSearchArgs<'_>) -> Self {
+        let mut record = Self::from(&args.call);
+        record.service_tier = args.service_tier.map(str::to_owned);
+        record.safety_identifier = args.safety_identifier.map(str::to_owned);
+        record.text_format = args.text_format.cloned();
+        record.allowed_openai_params = args.allowed_openai_params.map(<[String]>::to_vec);
+        record.use_chat_completions_api = args.use_chat_completions_api;
+        record
+    }
 }
 
 // The gateway double records what each dispatch received and either answers it or passes it on
@@ -678,8 +691,8 @@ pub(crate) struct Gateway {
     pub(crate) events: Events,
     pub(crate) mcp_requested: bool,
     pub(crate) handle: bool,
-    pub(crate) mcp: Mutex<Option<McpRecord>>,
-    pub(crate) file_search: Mutex<Option<FileSearchRecord>>,
+    pub(crate) mcp: Mutex<Option<DispatchRecord>>,
+    pub(crate) file_search: Mutex<Option<DispatchRecord>>,
 }
 
 impl Gateway {
@@ -709,19 +722,44 @@ impl Gateway {
         }
     }
 
-    pub(crate) fn mcp_record(&self) -> Option<McpRecord> {
+    pub(crate) fn mcp_record(&self) -> Option<DispatchRecord> {
         self.mcp
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 
-    pub(crate) fn file_search_record(&self) -> Option<FileSearchRecord> {
+    pub(crate) fn file_search_record(&self) -> Option<DispatchRecord> {
         self.file_search
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn intercepted(&self, label: &str, context: ()) -> InterceptionResult<()> {
+        if !self.handle {
+            return Ok(Interception::Continue(context));
+        }
+        handled(label)
+            .map(|created| Interception::Handled(Box::new(created)))
+            .map_err(|error| InterceptionError {
+                message: error.to_string(),
+            })
+    }
+
+    fn record_mcp(&self, args: &DispatchArgs<'_>) {
+        self.events.push("mcp");
+        record_into(&self.mcp, McpRecord::from(args));
+    }
+
+    fn record_file_search(&self, args: &FileSearchArgs<'_>) {
+        self.events.push("file_search");
+        record_into(&self.file_search, FileSearchRecord::from(args));
+    }
+}
+
+fn record_into<T>(slot: &Mutex<Option<T>>, value: T) {
+    *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
 }
 
 #[async_trait]
@@ -730,55 +768,14 @@ impl CreateInterception<()> for Gateway {
         self.mcp_requested
     }
 
-    async fn mcp(
-        &self,
-        args: &DispatchArgs<'_>,
-        context: (),
-    ) -> Result<Interception<()>, InterceptionError> {
-        self.events.push("mcp");
-        *self.mcp.lock().unwrap_or_else(PoisonError::into_inner) = Some(McpRecord {
-            reasoning: args.reasoning.cloned(),
-            tools: args.tools.map(<[JsonValue]>::to_vec),
-            kwargs: args.kwargs.clone(),
-            extra_headers: args.extra_headers.cloned(),
-        });
-        if self.handle {
-            return handled("mcp handled")
-                .map(|created| Interception::Handled(Box::new(created)))
-                .map_err(|error| InterceptionError {
-                    message: error.to_string(),
-                });
-        }
-        Ok(Interception::Continue(context))
+    async fn mcp(&self, args: &DispatchArgs<'_>, context: ()) -> InterceptionResult<()> {
+        self.record_mcp(args);
+        self.intercepted("mcp handled", context)
     }
 
-    async fn file_search(
-        &self,
-        args: &DispatchArgs<'_>,
-        extras: &FileSearchExtras<'_>,
-        context: (),
-    ) -> Result<Interception<()>, InterceptionError> {
-        self.events.push("file_search");
-        *self
-            .file_search
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(FileSearchRecord {
-            reasoning: args.reasoning.cloned(),
-            service_tier: extras.service_tier.map(str::to_owned),
-            safety_identifier: extras.safety_identifier.map(str::to_owned),
-            text_format: extras.text_format.cloned(),
-            allowed_openai_params: extras.allowed_openai_params.map(<[String]>::to_vec),
-            use_chat_completions_api: extras.use_chat_completions_api,
-            kwargs: args.kwargs.clone(),
-        });
-        if self.handle {
-            return handled("file search handled")
-                .map(|created| Interception::Handled(Box::new(created)))
-                .map_err(|error| InterceptionError {
-                    message: error.to_string(),
-                });
-        }
-        Ok(Interception::Continue(context))
+    async fn file_search(&self, args: &FileSearchArgs<'_>, context: ()) -> InterceptionResult<()> {
+        self.record_file_search(args);
+        self.intercepted("file search handled", context)
     }
 }
 
@@ -891,10 +888,14 @@ pub(crate) struct Rig {
 
 impl Rig {
     pub(crate) fn new() -> Self {
+        Self::with_env(&[])
+    }
+
+    pub(crate) fn with_env(values: &[(&str, &str)]) -> Self {
         let events = Events::new();
         let wire = Wire::new(&events);
         let source = Source::new(&wire);
-        Self {
+        let mut rig = Self {
             events: events.clone(),
             wire,
             source,
@@ -902,11 +903,7 @@ impl Rig {
             lookup: Registry { encrypted: true },
             configs: Configs::new(&events),
             variables: env_vars(&[("OPENAI_API_KEY", "sk-provider")]),
-        }
-    }
-
-    pub(crate) fn with_env(values: &[(&str, &str)]) -> Self {
-        let mut rig = Self::new();
+        };
         rig.variables.extend(env_vars(values));
         rig
     }
@@ -970,158 +967,4 @@ impl<'seams> Seams<'seams> {
             reasoning_auto_summary: self.reasoning_auto_summary,
         }
     }
-}
-
-pub(crate) fn call(model: &str) -> ResponsesCreateCall {
-    ResponsesCreateCall {
-        model: model.to_owned(),
-        input: ResponsesInput::Text(String::from("hello")),
-        include: None,
-        instructions: None,
-        max_output_tokens: None,
-        prompt: None,
-        metadata: None,
-        parallel_tool_calls: None,
-        previous_response_id: None,
-        reasoning: None,
-        store: None,
-        background: None,
-        stream: None,
-        temperature: None,
-        text: None,
-        text_format: None,
-        tool_choice: None,
-        tools: None,
-        top_p: None,
-        truncation: None,
-        user: None,
-        service_tier: None,
-        safety_identifier: None,
-        extra_headers: None,
-        extra_query: None,
-        extra_body: None,
-        timeout: None,
-        allowed_openai_params: None,
-        custom_llm_provider: None,
-        api_key: None,
-        api_base: Some(String::from("http://mock.test/v1")),
-        ssl_verify: None,
-        shared_session: None,
-        kwargs: ParameterMap::new(),
-    }
-}
-
-pub(crate) fn kwargs(text: &str) -> ParameterMap {
-    serde_json::from_str(text).expect("the kwargs are JSON")
-}
-
-pub(crate) fn json(text: &str) -> Json {
-    serde_json::from_str(text).expect("the JSON parses")
-}
-
-pub(crate) fn tools(text: &str) -> Vec<ResponsesTool> {
-    serde_json::from_str(text).expect("the tools are JSON")
-}
-
-pub(crate) fn item_input(text: &str) -> ResponsesInput {
-    serde_json::from_str(text).expect("the item input is JSON")
-}
-
-pub(crate) fn values(text: &str) -> Vec<JsonValue> {
-    serde_json::from_str(text).expect("the values are JSON")
-}
-
-pub(crate) async fn run_create(
-    deps: &ResponsesCreateDeps<'_, Source, Configs, Nothing, Nothing, ()>,
-    call: &ResponsesCreateCall,
-    harness: &mut Harness,
-) -> Result<Created<()>, CreateError> {
-    let env = environment(&harness.redactor, &harness.sink, harness.now);
-    let mut log = LogContext {
-        state: &mut harness.state,
-        env: &env,
-    };
-    create(deps, call, (), &mut log).await
-}
-
-pub(crate) fn env_vars(values: &[(&str, &str)]) -> BTreeMap<String, String> {
-    values
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
-}
-
-pub(crate) fn body_json(request: &CreateRequest) -> PromptJson {
-    let RequestBody::Json(bytes) = &request.body else {
-        panic!("the create request must carry a JSON body");
-    };
-    serde_json::from_slice(bytes).expect("the create request body is JSON")
-}
-
-pub(crate) fn object(value: &PromptJson) -> Object {
-    let PromptJson::Object(fields) = value else {
-        panic!("the value must be an object");
-    };
-    fields.clone()
-}
-
-pub(crate) fn text(fields: &Object, name: &str) -> String {
-    let Some(PromptJson::Text(found)) = fields.get(name) else {
-        panic!("the field must hold text");
-    };
-    found.clone()
-}
-
-pub(crate) fn field<'value>(fields: &'value Object, name: &str) -> &'value PromptJson {
-    fields.get(name).unwrap_or_else(|| {
-        panic!("the field must exist");
-    })
-}
-
-pub(crate) fn list(value: &PromptJson) -> Vec<PromptJson> {
-    let PromptJson::List(items) = value else {
-        panic!("the value must be a list");
-    };
-    items.clone()
-}
-
-pub(crate) fn number_is(fields: &Object, name: &str, expected: f64) {
-    let Some(PromptJson::Number(found)) = fields.get(name) else {
-        panic!("the field must hold a number");
-    };
-    let parsed = found.as_f64().expect("the number is finite");
-    assert!((parsed - expected).abs() < 1e-9_f64, "{name}: {parsed}");
-}
-
-pub(crate) fn value_number(map: &ParameterMap, name: &str) -> f64 {
-    let Some(JsonValue::Number(found)) = map.get(name) else {
-        panic!("the field must hold a number");
-    };
-    found.as_f64().expect("the number is finite")
-}
-
-pub(crate) fn response_json(created: &Created<()>) -> PromptJson {
-    let Created::Responses(stamped) = created else {
-        panic!("the create answer must carry a typed response");
-    };
-    round_trip(&stamped.response).expect("the response serializes")
-}
-
-pub(crate) fn header_values(request: &CreateRequest, name: &str) -> Vec<String> {
-    request
-        .headers
-        .iter()
-        .filter(|(candidate, _value)| candidate.as_str().eq_ignore_ascii_case(name))
-        .map(|(_name, value)| {
-            value
-                .to_str()
-                .expect("the header value is visible text")
-                .to_owned()
-        })
-        .collect()
-}
-
-pub(crate) fn failure(error: &CreateError) -> CreateFailure {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    error.sdk_failure("openai", "gpt-4o", &redactor)
 }

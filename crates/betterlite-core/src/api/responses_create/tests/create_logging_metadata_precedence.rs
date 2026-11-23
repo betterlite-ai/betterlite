@@ -28,6 +28,10 @@ pub(crate) async fn logged_parameters() {
     run_create(&seams.deps(), &first, &mut harness)
         .await
         .expect("the logged create answers");
+    assert_logged(&harness);
+}
+
+fn assert_logged(harness: &Harness) {
     let params = &harness.state.litellm_params;
     assert_eq!(params.get("aresponses"), Some(&Json::Bool(false)));
     assert_eq!(
@@ -178,6 +182,10 @@ pub(crate) async fn stamped_and_synthetic() {
         Some(&Json::Text(String::from("openai")))
     );
 
+    synthetic_answer(&seams, &rig, &mut harness).await;
+}
+
+async fn synthetic_answer(seams: &Seams<'_>, rig: &Rig, harness: &mut Harness) {
     let mut synthetic = call("openai/fake-stream");
     synthetic.stream = Some(true);
     let synthetic_created = run_create(&seams.deps(), &synthetic, &mut harness)

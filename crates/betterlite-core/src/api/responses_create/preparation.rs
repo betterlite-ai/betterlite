@@ -23,7 +23,6 @@ use betterlite_openai::response_input::ResponsesInput;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::BTreeMap;
-// Everything the create wrapper computes before a provider is chosen
 pub struct Prepared<'call> {
     pub call: &'call ResponsesCreateCall,
     pub kwargs: ParameterMap,
@@ -39,7 +38,6 @@ pub struct Prepared<'call> {
     pub require_encrypted: bool,
     pub deployment_model_info: Option<Json>,
 }
-// get_llm_provider's answer once the caller's key and base are folded in
 pub struct Resolved {
     pub model: String,
     pub provider: String,
@@ -47,7 +45,12 @@ pub struct Resolved {
     pub api_key: Option<SecretString>,
     pub deployment_model_info: Json,
 }
-// The wrapper's head: the trusted pops, the header merge, the text conversion, the model prefix and the provisional provider
+struct Flags {
+    is_async: bool,
+    skip_mcp: bool,
+    require_encrypted: bool,
+    use_chat: bool,
+}
 pub fn begin<'call>(
     call: &'call ResponsesCreateCall,
     resolver: &dyn ModelResolver,
@@ -55,43 +58,10 @@ pub fn begin<'call>(
     prompts: Option<&dyn PromptManager>,
 ) -> Result<Prepared<'call>, CreateError> {
     let mut kwargs = connection_kwargs(call);
-    let is_async = matches!(
-        kwargs.shift_remove("aresponses"),
-        Some(JsonValue::Bool(true))
-    );
-    let skip_mcp = kwargs
-        .shift_remove("_skip_mcp_handler")
-        .is_some_and(|value| match value {
-            JsonValue::Null => false,
-            JsonValue::Bool(flag) => flag,
-            JsonValue::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
-            JsonValue::Text(text) => !text.is_empty(),
-            JsonValue::Array(items) => !items.is_empty(),
-            JsonValue::Object(fields) => !fields.is_empty(),
-        });
-    let require_encrypted = matches!(
-        kwargs.shift_remove("_require_encrypted_task_support"),
-        Some(JsonValue::Bool(true))
-    );
-    let mut use_chat = pop_use_chat_completions_api(&mut kwargs);
+    let flags = request_flags(&mut kwargs);
     let extra_headers = merged_headers(call, &kwargs)?;
-    let text_format = call.text_format.as_ref().map(json_value);
-    let given_text = call.text.as_ref().map(json_value);
-    let text = text_format_to_text(text_format.as_ref(), given_text.as_ref())?
-        .as_ref()
-        .map(decision_json);
-    let (model, prefixed) = normalize_openai_chat_model(&call.model);
-    use_chat |= prefixed;
-    // get_llm_provider runs before the provider config exists, with the caller's key and base left out
-    let (model, provider) = if let Some(named) = call.custom_llm_provider.as_deref() {
-        (model, Some(named.to_owned()))
-    } else {
-        let mut params = CallParams::default();
-        let mut local_vars = ParameterMap::new();
-        let (resolved, provider) =
-            resolve_model_provider(resolver, &model, None, &mut params, &mut local_vars)?;
-        (resolved, Some(provider))
-    };
+    let text = response_text(call)?;
+    let (model, provider, use_chat) = resolved_names(call, resolver, flags.use_chat)?;
     let mut local_vars = named_locals(call, text.as_ref());
     let outcome = apply_prompt_management(
         PromptRequest {
@@ -117,13 +87,61 @@ pub fn begin<'call>(
         use_chat,
         extra_headers,
         text,
+        is_async: flags.is_async,
+        skip_mcp: flags.skip_mcp,
+        require_encrypted: flags.require_encrypted,
+        deployment_model_info: outcome.deployment_model_info.as_ref().map(decision_json),
+    })
+}
+fn request_flags(kwargs: &mut ParameterMap) -> Flags {
+    let is_async = kwargs.shift_remove("aresponses") == Some(JsonValue::Bool(true));
+    let skip_mcp = kwargs
+        .shift_remove("_skip_mcp_handler")
+        .is_some_and(|value| match value {
+            JsonValue::Null => false,
+            JsonValue::Bool(flag) => flag,
+            JsonValue::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
+            JsonValue::Text(text) => !text.is_empty(),
+            JsonValue::Array(items) => !items.is_empty(),
+            JsonValue::Object(fields) => !fields.is_empty(),
+        });
+    let require_encrypted =
+        kwargs.shift_remove("_require_encrypted_task_support") == Some(JsonValue::Bool(true));
+    let use_chat = pop_use_chat_completions_api(kwargs);
+    Flags {
         is_async,
         skip_mcp,
         require_encrypted,
-        deployment_model_info: outcome.deployment_model_info,
-    })
+        use_chat,
+    }
 }
-// The full resolution reads the caller's key and base, then lets the resolver override them
+fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError> {
+    let text_format = call.text_format.as_ref().map(json_value);
+    let given_text = call.text.as_ref().map(json_value);
+    Ok(
+        text_format_to_text(text_format.as_ref(), given_text.as_ref())?
+            .as_ref()
+            .map(decision_json),
+    )
+}
+fn resolved_names(
+    call: &ResponsesCreateCall,
+    resolver: &dyn ModelResolver,
+    mut use_chat: bool,
+) -> Result<(String, Option<String>, bool), CreateError> {
+    let (normalized, prefixed) = normalize_openai_chat_model(&call.model);
+    use_chat |= prefixed;
+    let (model, provider) = if let Some(named) = call.custom_llm_provider.as_deref() {
+        (normalized, Some(named.to_owned()))
+    } else {
+        let mut params = CallParams::default();
+        let mut local_vars = ParameterMap::new();
+        let (resolved, provider) =
+            resolve_model_provider(resolver, &normalized, None, &mut params, &mut local_vars)?;
+        (resolved, Some(provider))
+    };
+    Ok((model, provider, use_chat))
+}
 pub fn resolve(
     prep: &mut Prepared<'_>,
     call: &ResponsesCreateCall,
@@ -150,7 +168,6 @@ pub fn resolve(
         deployment_model_info: prep.deployment_model_info.clone().unwrap_or(Json::Null),
     })
 }
-// add_provider_affinity_header only runs when the caller configured a header; otherwise the merged headers stand
 pub fn affinity(prep: &mut Prepared<'_>, call: &ResponsesCreateCall) -> Result<(), CreateError> {
     let Some(header) = text_param(&prep.kwargs, "provider_affinity_header")? else {
         return Ok(());
@@ -163,34 +180,26 @@ pub fn affinity(prep: &mut Prepared<'_>, call: &ResponsesCreateCall) -> Result<(
         metadata: session_metadata(call.metadata.as_ref(), "metadata")?,
         litellm_metadata: session_metadata(litellm_metadata.as_ref(), "litellm_metadata")?,
     };
-    let headers: IndexMap<String, String> = prep
-        .extra_headers
-        .clone()
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    let given = prep.extra_headers.clone().unwrap_or_default();
+    let headers: IndexMap<String, String> = given.into_iter().collect();
     let updated = add_provider_affinity_header(&headers, &params)?;
     prep.extra_headers = Some(updated.into_iter().collect());
     Ok(())
 }
-// dict(litellm_params): the caller's kwargs, with the connection values responses() names itself
 pub(super) fn connection_kwargs(call: &ResponsesCreateCall) -> ParameterMap {
     let mut kwargs = call.kwargs.clone();
     if let Some(base) = &call.api_base {
         kwargs.insert(String::from("api_base"), JsonValue::Text(base.clone()));
     }
     if let Some(key) = &call.api_key {
-        kwargs.insert(
-            String::from("api_key"),
-            JsonValue::Text(key.expose_secret().to_owned()),
-        );
+        let secret = JsonValue::Text(key.expose_secret().to_owned());
+        kwargs.insert(String::from("api_key"), secret);
     }
     if let Some(verify) = call.ssl_verify {
         kwargs.insert(String::from("ssl_verify"), JsonValue::Bool(verify));
     }
     kwargs
 }
-// merge_client_forwarded_headers: the client's headers lose, case-insensitively, to the caller's extra headers
 pub(super) fn merged_headers(
     call: &ResponsesCreateCall,
     kwargs: &ParameterMap,
@@ -206,20 +215,24 @@ pub(super) fn merged_headers(
         .transpose()
 }
 fn client_headers(kwargs: &ParameterMap) -> Result<Option<BTreeMap<String, String>>, CreateError> {
-    match kwargs.get("headers") {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Object(fields)) => header_strings(fields.clone().into_iter()).map(Some),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
-        ) => Err(CreateError::Field {
+    let Some(headers) = kwargs
+        .get("headers")
+        .filter(|value| **value != JsonValue::Null)
+    else {
+        return Ok(None);
+    };
+    let JsonValue::Object(fields) = headers else {
+        return Err(CreateError::Field {
             field: "headers",
             expected: "an object",
-        }),
-    }
+        });
+    };
+    header_strings(fields.clone().into_iter()).map(Some)
 }
-fn header_strings(
-    pairs: impl Iterator<Item = (String, JsonValue)>,
-) -> Result<Headers, CreateError> {
+fn header_strings<I>(pairs: I) -> Result<Headers, CreateError>
+where
+    I: Iterator<Item = (String, JsonValue)>,
+{
     pairs
         .map(|(name, value)| match value {
             JsonValue::Text(text) => Ok((name, text)),

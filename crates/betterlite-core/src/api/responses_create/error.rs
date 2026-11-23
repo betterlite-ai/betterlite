@@ -1,5 +1,6 @@
 use crate::api::assistant_records::error::class_name;
 use crate::api::response_id_traversal::response_id::ResponseRewriteError;
+use crate::api::responses_compact_call::error::CompactFailure;
 use crate::api::responses_create_http::error::CreateError as HttpCreateError;
 use crate::api::responses_create_http::error::ParamError as HttpParamError;
 use crate::api::responses_parameters::error::{
@@ -11,22 +12,13 @@ use crate::api::responses_provider_selection::prompting::PromptError;
 use crate::api::responses_provider_selection::provider_config::CompatibilityFailure;
 use betterlite_config::env_integer::timeout::TimeoutError;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
-use betterlite_error::error::ErrorClass;
-use betterlite_error::error::ErrorContext;
-use betterlite_error::error::class_message;
 use betterlite_error::error::details::ResponseDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::headers::affinity::AffinityError;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
-// Every provider config the factory yields reports parameter failures through this one type
-#[derive(Debug, Error)]
-pub enum CreateParamError {
-    #[error(transparent)]
-    Params(#[from] ResponsesParametersError),
-}
-// A dispatch port's own refusal, which the create wrapper reports as the call's failure
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct InterceptionError {
@@ -44,7 +36,7 @@ pub enum CreateError {
     #[error(transparent)]
     Prompt(#[from] PromptError),
     #[error(transparent)]
-    Param(#[from] CreateParamError),
+    Param(#[from] ResponsesParametersError),
     #[error(transparent)]
     Params(#[from] HttpParamError),
     #[error(transparent)]
@@ -76,28 +68,14 @@ pub enum CreateError {
         field: &'static str,
         expected: &'static str,
     },
-    #[error("litellm_metadata could not be read")]
-    Metadata(#[source] serde_json::Error),
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
 }
-// The SDK exception a caller sees; a local failure carries no body, so type, param and code stay absent
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateFailure {
-    pub class: &'static str,
-    pub status: u16,
-    pub kind: Option<String>,
-    pub param: Option<String>,
-    pub code: Option<String>,
-    pub message: String,
-}
+pub type CreateFailure = CompactFailure;
 impl CreateError {
     #[must_use]
     pub fn sdk_failure(&self, provider: &str, model: &str, redactor: &Redactor) -> CreateFailure {
-        if let Self::Param(CreateParamError::Params(
-            ResponsesParametersError::UnsupportedParams { .. },
-        )) = self
-        {
+        if let Self::Param(ResponsesParametersError::UnsupportedParams { .. }) = self {
             return CreateFailure {
                 class: "UnsupportedParamsError",
                 status: UNSUPPORTED_PARAMS_STATUS,
@@ -122,7 +100,6 @@ impl CreateError {
         if let Self::Compatibility(failure) = self {
             return compatibility_failure(*failure, model, Some(provider), redactor);
         }
-        // litellm.BadRequestError(message=str(affinity_error)): the constructor prefixes the class it raises
         if let Self::Affinity(error) = self {
             let context = ErrorContext {
                 message: format!("litellm.BadRequestError: {error}"),

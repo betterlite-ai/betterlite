@@ -9,12 +9,10 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
 use serde_json::value::RawValue;
-// A native response keeps the hidden params the outer wrapper stamps on it
 pub struct StampedResponse {
     pub response: ResponsesApiResponse,
     pub hidden: HiddenParams,
 }
-// What a create call hands back: a native response, a body no typed response decoded, a stream, or the chat bridge's own outcome
 pub enum Created<Context> {
     Responses(Box<StampedResponse>),
     Raw(Box<RawValue>),
@@ -22,7 +20,6 @@ pub enum Created<Context> {
     Synthetic(Box<CreateSynthetic>),
     Chat(Box<CallOutcome<Context>>),
 }
-// The arguments litellm_completion_transformation_handler.response_api_handler receives
 pub struct BridgeCall<'call> {
     pub model: &'call str,
     pub input: &'call ResponsesInput,
@@ -31,7 +28,6 @@ pub struct BridgeCall<'call> {
     pub is_async: bool,
     pub stream: Option<bool>,
     pub extra_headers: Option<&'call Headers>,
-    // The completion arguments: bridge_kwargs plus extra_body, timeout and allowed_openai_params
     pub kwargs: &'call ParameterMap,
 }
 #[async_trait]

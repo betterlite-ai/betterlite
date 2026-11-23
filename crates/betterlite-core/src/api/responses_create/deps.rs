@@ -1,11 +1,9 @@
 use super::bridge::ChatBridge;
-use super::error::CreateParamError;
 use super::interception::CreateInterception;
-use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
 use crate::api::responses_compact_http::service::SuppliedClient;
 use crate::api::responses_create_http::config::CreateConfig;
 use crate::api::responses_create_http::service::{ClientSource, CreateHooks};
-use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
+use crate::api::responses_parameters::error::ResponsesParametersError;
 use crate::api::responses_parameters::provider::ResponsesParamProvider;
 use crate::api::responses_provider_selection::prompting::PromptManager;
 use crate::api::responses_provider_selection::provider_config::ConfigLookup;
@@ -13,14 +11,12 @@ use crate::api::responses_provider_selection::resolution::ModelResolver;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_prompts::file_ids::mapping::FileIdMapping;
-// What the factory needs to build a provider's config: the resolved model and provider, the caller's base and the deployment's model info
 pub struct ConfigRequest<'request> {
     pub model: &'request str,
     pub provider: &'request str,
     pub api_base: Option<&'request str>,
     pub model_info: &'request JsonValue,
 }
-// Two provider capabilities the create wrapper reads before the config is asked for a request
 pub trait CreateCapabilities {
     fn supports_native_file_search(&self) -> bool;
     fn should_fake_stream(
@@ -30,20 +26,13 @@ pub trait CreateCapabilities {
         custom_llm_provider: &str,
     ) -> bool;
 }
-// B157 decides whether a provider has a responses config; the factory builds the object every later step reads
 pub trait CreateConfigFactory: Send + Sync {
     type Provider: CreateConfig
-        + ResponsesParamProvider<Error = CreateParamError>
+        + ResponsesParamProvider<Error = ResponsesParametersError>
         + CreateCapabilities;
     fn create_config(&self, request: &ConfigRequest<'_>) -> Option<Self::Provider>;
 }
-pub struct ResponsesCreateDeps<'deps, S, F, D: ?Sized, E: ?Sized, Context: Send>
-where
-    S: ClientSource,
-    F: CreateConfigFactory,
-    D: DeploymentHookDispatcher + ?Sized,
-    E: ContinuationExecutor + ?Sized,
-{
+pub struct ResponsesCreateDeps<'deps, S: ClientSource, F, D: ?Sized, E: ?Sized, Context: Send> {
     pub resolver: &'deps (dyn ModelResolver + Send + Sync),
     pub lookup: &'deps (dyn ConfigLookup + Send + Sync),
     pub configs: &'deps F,

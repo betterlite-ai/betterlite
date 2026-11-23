@@ -8,7 +8,6 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
-// The named arguments both gateway dispatches receive; the four file-search-only arguments stay out
 pub struct DispatchArgs<'call> {
     pub model: &'call str,
     pub input: &'call ResponsesInput,
@@ -38,8 +37,8 @@ pub struct DispatchArgs<'call> {
     pub kwargs: &'call ParameterMap,
     pub is_async: bool,
 }
-// The four arguments the emulated file-search dispatch adds to the shared set, plus the bridge flag
-pub struct FileSearchExtras<'call> {
+pub struct FileSearchArgs<'call> {
+    pub call: DispatchArgs<'call>,
     pub service_tier: Option<&'call str>,
     pub safety_identifier: Option<&'call str>,
     pub text_format: Option<&'call Json>,
@@ -50,23 +49,17 @@ pub enum Interception<Context> {
     Continue(Context),
     Handled(Box<Created<Context>>),
 }
-// The MCP gateway and the emulated file-search dispatch are other tasks' handlers; this seam only asks them
+pub type InterceptionResult<Context> = Result<Interception<Context>, InterceptionError>;
 #[async_trait]
 pub trait CreateInterception<Context: Send>: Send + Sync {
     fn mcp_requested(&self, tools: Option<&[JsonValue]>) -> bool;
-    async fn mcp(
-        &self,
-        args: &DispatchArgs<'_>,
-        context: Context,
-    ) -> Result<Interception<Context>, InterceptionError>;
+    async fn mcp(&self, args: &DispatchArgs<'_>, context: Context) -> InterceptionResult<Context>;
     async fn file_search(
         &self,
-        args: &DispatchArgs<'_>,
-        extras: &FileSearchExtras<'_>,
+        args: &FileSearchArgs<'_>,
         context: Context,
-    ) -> Result<Interception<Context>, InterceptionError>;
+    ) -> InterceptionResult<Context>;
 }
-// The named argument set both dispatches receive, built from the prepared call
 pub(super) fn dispatch_args<'call>(
     prep: &'call Prepared<'_>,
     reasoning: Option<&'call Json>,

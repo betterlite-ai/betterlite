@@ -47,22 +47,29 @@ pub(crate) async fn bridge_selection() {
     assert_eq!(record.input, ResponsesInput::Text(String::from("hello")));
     assert!(record.extra_headers.is_none());
 
+    flagged_bridges(&nothing, &gateway, &mut harness).await;
+    absent_config_bridges(&nothing, &gateway, &mut harness).await;
+}
+
+async fn flagged_bridges(nothing: &Nothing, gateway: &NoInterception, harness: &mut Harness) {
     let flagged = Rig::new();
     let flag_bridge = RecordingBridge::new(&flagged.events);
-    let flag_seams = Seams::new(&flagged, &nothing, &gateway, &flag_bridge);
+    let flag_seams = Seams::new(&flagged, nothing, gateway, &flag_bridge);
     let mut with_flag = call("openai/gpt-4o");
     with_flag.kwargs = kwargs(r#"{"use_chat_completions_api":true}"#);
-    run_create(&flag_seams.deps(), &with_flag, &mut harness)
+    run_create(&flag_seams.deps(), &with_flag, harness)
         .await
         .expect("the flag bridges");
     assert_eq!(flag_bridge.calls().len(), 1);
     assert!(flagged.wire.requests().is_empty());
+}
 
+async fn absent_config_bridges(nothing: &Nothing, gateway: &NoInterception, harness: &mut Harness) {
     let absent = Rig::new();
     let absent_bridge = RecordingBridge::new(&absent.events);
-    let absent_seams = Seams::new(&absent, &nothing, &gateway, &absent_bridge);
+    let absent_seams = Seams::new(&absent, nothing, gateway, &absent_bridge);
     let other = call("anthropic/claude");
-    run_create(&absent_seams.deps(), &other, &mut harness)
+    run_create(&absent_seams.deps(), &other, harness)
         .await
         .expect("an absent native config bridges");
     let absent_calls = absent_bridge.calls();
@@ -94,32 +101,33 @@ pub(crate) async fn reasoning() {
     assert!(winning_mapped.get("summary").is_none());
     assert!(winning_request.get("reasoning_effort").is_none());
 
-    let summary_rig = Rig::new();
-    let summary_bridge = RecordingBridge::new(&summary_rig.events);
-    let mut summary_seams = Seams::new(&summary_rig, &nothing, &gateway, &summary_bridge);
-    summary_seams.reasoning_auto_summary = true;
+    mapped_effort(&nothing, &gateway, &mut harness, true).await;
+    mapped_effort(&nothing, &gateway, &mut harness, false).await;
+}
+
+async fn mapped_effort(
+    nothing: &Nothing,
+    gateway: &NoInterception,
+    harness: &mut Harness,
+    auto_summary: bool,
+) {
+    let rig = Rig::new();
+    let bridge = RecordingBridge::new(&rig.events);
+    let mut seams = Seams::new(&rig, nothing, gateway, &bridge);
+    seams.reasoning_auto_summary = auto_summary;
     let mut effort = call("openai/gpt-4o");
     effort.kwargs = kwargs(r#"{"use_chat_completions_api":true,"reasoning_effort":"low"}"#);
-    run_create(&summary_seams.deps(), &effort, &mut harness)
+    run_create(&seams.deps(), &effort, harness)
         .await
-        .expect("the effort maps with the auto summary");
-    let summary_request = object(&summary_bridge.calls()[0].request);
-    let summary_mapped = object(field(&summary_request, "reasoning"));
-    assert_eq!(text(&summary_mapped, "effort"), "low");
-    assert_eq!(text(&summary_mapped, "summary"), "detailed");
-
-    let plain_rig = Rig::new();
-    let plain_bridge = RecordingBridge::new(&plain_rig.events);
-    let plain_seams = Seams::new(&plain_rig, &nothing, &gateway, &plain_bridge);
-    let mut plain = call("openai/gpt-4o");
-    plain.kwargs = kwargs(r#"{"use_chat_completions_api":true,"reasoning_effort":"low"}"#);
-    run_create(&plain_seams.deps(), &plain, &mut harness)
-        .await
-        .expect("the effort maps without a summary");
-    let plain_request = object(&plain_bridge.calls()[0].request);
-    let plain_mapped = object(field(&plain_request, "reasoning"));
-    assert_eq!(text(&plain_mapped, "effort"), "low");
-    assert!(plain_mapped.get("summary").is_none());
+        .expect("the effort maps");
+    let request = object(&bridge.calls()[0].request);
+    let mapped = object(field(&request, "reasoning"));
+    assert_eq!(text(&mapped, "effort"), "low");
+    if auto_summary {
+        assert_eq!(text(&mapped, "summary"), "detailed");
+    } else {
+        assert!(mapped.get("summary").is_none());
+    }
 }
 
 pub(crate) async fn timeouts() {
@@ -143,37 +151,37 @@ pub(crate) async fn timeouts() {
     assert_eq!(requests[0].timeout, Duration::from_secs(6000));
     assert_eq!(requests[1].timeout, Duration::from_secs(6000));
 
+    injected_and_bridged(&nothing, &gateway, &mut harness).await;
+}
+
+async fn injected_and_bridged(nothing: &Nothing, gateway: &NoInterception, harness: &mut Harness) {
     let injected = Rig::with_env(&[("REQUEST_TIMEOUT", "17")]);
     injected.wire.queue(200, OK_RESPONSE);
     let injected_bridge = RecordingBridge::new(&injected.events);
-    let injected_seams = Seams::new(&injected, &nothing, &gateway, &injected_bridge);
-    run_create(&injected_seams.deps(), &call("openai/gpt-4o"), &mut harness)
+    let injected_seams = Seams::new(&injected, nothing, gateway, &injected_bridge);
+    run_create(&injected_seams.deps(), &call("openai/gpt-4o"), harness)
         .await
         .expect("the injected timeout answers");
     assert_eq!(injected.wire.requests()[0].timeout, Duration::from_secs(17));
 
     let bridged = Rig::new();
     let bridged_bridge = RecordingBridge::new(&bridged.events);
-    let bridged_seams = Seams::new(&bridged, &nothing, &gateway, &bridged_bridge);
+    let bridged_seams = Seams::new(&bridged, nothing, gateway, &bridged_bridge);
     let mut bridged_zero = call("openai/gpt-4o");
     bridged_zero.kwargs = kwargs(r#"{"use_chat_completions_api":true}"#);
     bridged_zero.timeout = Some(0.0_f64);
-    run_create(&bridged_seams.deps(), &bridged_zero, &mut harness)
+    run_create(&bridged_seams.deps(), &bridged_zero, harness)
         .await
         .expect("a zero bridge timeout stays");
     assert!(value_number(&bridged_bridge.calls()[0].kwargs, "timeout").abs() < 1e-9_f64);
 
     let bridged_injected = RecordingBridge::new(&injected.events);
-    let bridged_injected_seams = Seams::new(&injected, &nothing, &gateway, &bridged_injected);
+    let bridged_injected_seams = Seams::new(&injected, nothing, gateway, &bridged_injected);
     let mut bridged_default = call("openai/gpt-4o");
     bridged_default.kwargs = kwargs(r#"{"use_chat_completions_api":true}"#);
-    run_create(
-        &bridged_injected_seams.deps(),
-        &bridged_default,
-        &mut harness,
-    )
-    .await
-    .expect("the bridge uses the shared default timeout");
+    run_create(&bridged_injected_seams.deps(), &bridged_default, harness)
+        .await
+        .expect("the bridge uses the shared default timeout");
     let timeout = value_number(&bridged_injected.calls()[0].kwargs, "timeout");
     assert!((timeout - 17.0_f64).abs() < 1e-9_f64);
 }

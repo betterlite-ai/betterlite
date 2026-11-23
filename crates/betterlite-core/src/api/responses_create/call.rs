@@ -6,14 +6,13 @@ use crate::api::responses_provider_selection::ParameterMap;
 use betterlite_context::non_default_params::Params;
 use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::controls::json_value::JsonValue;
-use betterlite_models::controls::optional_params::OptionalParams;
 use betterlite_models::decisions::Json;
-use betterlite_models::headers::affinity::{AffinityParams, SessionMetadata};
+use betterlite_models::headers::affinity::SessionMetadata;
 use betterlite_openai::response_input::{ResponsesInput, ResponsesTool};
+use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Number;
-// The arguments of responses(): the named parameters, then the caller's kwargs
 #[derive(Clone, Debug, Deserialize)]
 pub struct ResponsesCreateCall {
     pub model: String,
@@ -53,27 +52,15 @@ pub struct ResponsesCreateCall {
     #[serde(default)]
     pub kwargs: ParameterMap,
 }
-// get_llm_provider receives the caller's key and base through litellm_params
 #[must_use]
 pub fn resolution_params(call: &ResponsesCreateCall) -> CallParams {
+    let defaults = CallParams::default();
     CallParams {
-        model: None,
         api_key: call.api_key.clone(),
         api_base: call.api_base.clone(),
-        custom_llm_provider: None,
-        metadata: None,
-        litellm_metadata: None,
-        litellm_session_id: None,
-        litellm_trace_id: None,
-        no_log: None,
-        drop_params: None,
-        control: None,
-        credentials: None,
-        optional: OptionalParams::default(),
-        affinity: AffinityParams::default(),
+        ..defaults
     }
 }
-// A named argument with its null default, as locals() keeps it before any step overwrites it
 macro_rules! named {
     ($values:expr; $( $name:literal : $value:expr ),* $(,)?) => {
         $( $values.insert(String::from($name), $value.unwrap_or(JsonValue::Null)); )*

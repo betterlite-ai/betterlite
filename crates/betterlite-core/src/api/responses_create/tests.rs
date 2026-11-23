@@ -5,6 +5,7 @@ mod create_affinity_and_interception_order;
 mod create_logging_metadata_precedence;
 mod mock_response_literals;
 mod native_create_options_and_ids;
+mod seams;
 mod support;
 
 #[tokio::test]

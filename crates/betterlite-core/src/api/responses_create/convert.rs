@@ -4,7 +4,6 @@ use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
-// The three JSON enums share one shape, so a re-encode carries a value between them without a converter per pair
 pub fn reencode<T, U>(value: &T) -> Result<U, serde_json::Error>
 where
     T: Serialize + ?Sized,
@@ -15,7 +14,6 @@ where
         Err(error) => Err(error),
     }
 }
-// The three enums spell their list variant differently, so one template writes each direction
 macro_rules! convert_json {
     ($name:ident, $source:ident, $target:ident, $source_list:ident, $target_list:ident) => {
         #[must_use]

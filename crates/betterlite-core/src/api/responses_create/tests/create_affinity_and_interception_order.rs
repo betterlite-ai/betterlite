@@ -107,6 +107,15 @@ pub(crate) async fn mcp_first_and_mapped() {
     let created = run_create(&seams.deps(), &first, &mut harness)
         .await
         .expect("the handled MCP answers");
+    assert_mcp_dispatch(&gateway, &rig);
+    let body = object(&response_json(&created));
+    assert_eq!(
+        text(&body, "id"),
+        "resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b"
+    );
+}
+
+fn assert_mcp_dispatch(gateway: &Gateway, rig: &Rig) {
     assert_eq!(
         rig.events.recorded(),
         vec![String::from("prompt"), String::from("mcp")]
@@ -134,11 +143,6 @@ pub(crate) async fn mcp_first_and_mapped() {
         list(field(&container, "file_ids")),
         vec![PromptJson::Text(String::from("provider-file-xyz"))]
     );
-    let body = object(&response_json(&created));
-    assert_eq!(
-        text(&body, "id"),
-        "resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b"
-    );
 }
 
 pub(crate) async fn file_search_extras() {
@@ -163,6 +167,15 @@ pub(crate) async fn file_search_extras() {
     let created = run_create(&seams.deps(), &first, &mut harness)
         .await
         .expect("the file-search dispatch answers");
+    assert_file_search_dispatch(&gateway, &rig);
+    let body = object(&response_json(&created));
+    assert_eq!(
+        text(&body, "id"),
+        "resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b"
+    );
+}
+
+fn assert_file_search_dispatch(gateway: &Gateway, rig: &Rig) {
     assert_eq!(
         rig.events.recorded(),
         vec![
@@ -184,11 +197,6 @@ pub(crate) async fn file_search_extras() {
     );
     assert!(!record.use_chat_completions_api);
     assert!(!record.kwargs.contains_key("litellm_call_id"));
-    let body = object(&response_json(&created));
-    assert_eq!(
-        text(&body, "id"),
-        "resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b"
-    );
 }
 
 pub(crate) async fn encrypted_support() {
@@ -218,12 +226,25 @@ pub(crate) async fn encrypted_support() {
     assert!(gateway.file_search_record().is_none());
     assert!(rig.wire.requests().is_empty());
 
+    bridged_encrypted(&nothing, &gateway, &bridge, &mut harness).await;
+    let tolerant = r#"{"_require_encrypted_task_support":1}"#;
+    encrypted_case(&nothing, &gateway, &mut harness, tolerant, false).await;
+    let demanded = r#"{"_require_encrypted_task_support":true}"#;
+    encrypted_case(&nothing, &gateway, &mut harness, demanded, true).await;
+}
+
+async fn bridged_encrypted(
+    nothing: &Nothing,
+    gateway: &Gateway,
+    bridge: &RecordingBridge,
+    harness: &mut Harness,
+) {
     let bridged = Rig::new();
-    let bridged_seams = Seams::new(&bridged, &nothing, &gateway, &bridge);
+    let bridged_seams = Seams::new(&bridged, nothing, gateway, bridge);
     let mut chat = call("openai/gpt-4o");
     chat.kwargs =
         kwargs(r#"{"_require_encrypted_task_support":true,"use_chat_completions_api":true}"#);
-    let bridged_error = run_create(&bridged_seams.deps(), &chat, &mut harness)
+    let bridged_error = run_create(&bridged_seams.deps(), &chat, harness)
         .await
         .expect_err("a bridged target rejects the demand");
     assert!(matches!(
@@ -231,27 +252,24 @@ pub(crate) async fn encrypted_support() {
         CreateError::Compatibility(CompatibilityFailure::EncryptedTaskUnsupported)
     ));
     assert!(bridged.wire.requests().is_empty());
+}
 
-    let tolerant = Rig::new();
-    tolerant.lookup.encrypted = false;
-    tolerant.wire.queue(200, OK_RESPONSE);
-    let tolerant_bridge = RecordingBridge::new(&tolerant.events);
-    let tolerant_seams = Seams::new(&tolerant, &nothing, &gateway, &tolerant_bridge);
-    let mut numeric = call("openai/gpt-4o");
-    numeric.kwargs = kwargs(r#"{"_require_encrypted_task_support":1}"#);
-    run_create(&tolerant_seams.deps(), &numeric, &mut harness)
-        .await
-        .expect("only an exact true demands encrypted support");
-    assert_eq!(tolerant.wire.requests().len(), 1);
-
+async fn encrypted_case(
+    nothing: &Nothing,
+    gateway: &Gateway,
+    harness: &mut Harness,
+    demand: &str,
+    lookup_encrypted: bool,
+) {
     let capable = Rig::new();
+    capable.lookup.encrypted = lookup_encrypted;
     capable.wire.queue(200, OK_RESPONSE);
     let capable_bridge = RecordingBridge::new(&capable.events);
-    let capable_seams = Seams::new(&capable, &nothing, &gateway, &capable_bridge);
-    let mut demanded = call("openai/gpt-4o");
-    demanded.kwargs = kwargs(r#"{"_require_encrypted_task_support":true}"#);
-    run_create(&capable_seams.deps(), &demanded, &mut harness)
+    let capable_seams = Seams::new(&capable, nothing, gateway, &capable_bridge);
+    let mut request = call("openai/gpt-4o");
+    request.kwargs = kwargs(demand);
+    run_create(&capable_seams.deps(), &request, harness)
         .await
-        .expect("a capable target satisfies the demand");
+        .expect("the demand is satisfied or not made");
     assert_eq!(capable.wire.requests().len(), 1);
 }

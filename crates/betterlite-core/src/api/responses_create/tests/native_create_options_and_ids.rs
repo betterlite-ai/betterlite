@@ -20,6 +20,12 @@ pub(crate) async fn options_and_ids() {
     let bridge = RecordingBridge::new(&rig.events);
     let nothing = Nothing;
     let seams = Seams::new(&rig, &nothing, &gateway, &bridge);
+    let created = first_request(&seams).await;
+    assert_options(&rig);
+    assert_ids(&rig, &created);
+}
+
+async fn first_request(seams: &Seams<'_>) -> Created<()> {
     let mut first = call("openai/gpt-4o");
     first.extra_headers = Some(BTreeMap::from([(
         String::from("x-trace"),
@@ -34,9 +40,12 @@ pub(crate) async fn options_and_ids() {
     first.safety_identifier = Some(String::from("user-a"));
     first.extra_query = Some(json(r#"{"ignored":"yes"}"#));
     let mut harness = Harness::new();
-    let created = run_create(&seams.deps(), &first, &mut harness)
+    run_create(&seams.deps(), &first, &mut harness)
         .await
-        .expect("the native create answers");
+        .expect("the native create answers")
+}
+
+fn assert_options(rig: &Rig) {
     let requests = rig.wire.requests();
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
@@ -66,12 +75,15 @@ pub(crate) async fn options_and_ids() {
             .expect("the request body serializes")
             .contains("ignored")
     );
-    let response = object(&response_json(&created));
+}
+
+fn assert_ids(rig: &Rig, created: &Created<()>) {
+    let response = object(&response_json(created));
     assert_eq!(
         text(&response, "id"),
         build_response_id(Some("openai"), Some("deployment_a"), "resp_a")
     );
-    let Created::Responses(stamped) = &created else {
+    let Created::Responses(stamped) = created else {
         panic!("the answer is a typed response");
     };
     assert_eq!(
