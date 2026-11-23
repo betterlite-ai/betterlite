@@ -10,7 +10,7 @@ use betterlite_models::catalog::CatalogError;
 use betterlite_redact::error::RedactionError;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::PyType;
-use pyo3::{PyErr, Python};
+use pyo3::{Py, PyErr, Python};
 
 use super::convert::{ConvertError, NativeContainerPayload};
 

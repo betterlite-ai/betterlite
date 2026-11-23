@@ -84,7 +84,8 @@ impl Configs {
 
 impl ContainerConfigLookup for Configs {
     fn container_config(&self, provider: ProviderId) -> Option<&dyn BaseContainerConfig> {
-        (provider == ProviderId::Openai).then_some(&self.openai as &dyn BaseContainerConfig)
+        let config: &dyn BaseContainerConfig = &self.openai;
+        (provider == ProviderId::Openai).then_some(config)
     }
 }
 

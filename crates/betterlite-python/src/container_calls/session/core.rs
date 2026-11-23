@@ -9,9 +9,9 @@ use betterlite_core::api::container_create_list::handler::GenericCollectionHandl
 use betterlite_core::api::container_create_list::{
     ContainerCallDeps, ContainerCreateCall, ContainerListCall, create_container, list_containers,
 };
+use betterlite_core::api::container_resource_http::ContainerResourceHandler;
 use betterlite_core::api::container_resource_ops::ContainerOperationRequest;
 use betterlite_core::api::container_resource_ops::ContainerOperations;
-use betterlite_core::api::container_resource_ops::handler::ContainerResourceHandler;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::api::container_contracts::records::ContainerObject;
@@ -99,7 +99,7 @@ impl SessionCore {
         let env_api_key = environment
             .get("OPENAI_API_KEY")
             .filter(|key| !key.is_empty())
-            .map(SecretString::from);
+            .map(|key| SecretString::from(key.as_str()));
         let client = stack::outbound_client(&environment)?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
             .map_err(|source| SessionError::Redact { source })?;
