@@ -8,16 +8,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, Self, TypedDict
 
-import litellm.exceptions as their_errors
 import pytest
 from pydantic import BaseModel, JsonValue
 from typing_extensions import override
 
 import betterlite.exceptions as our_errors
-import betterlite.skills as skills
+from betterlite import skills
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import CallValue
-from betterlite._native import NativeSkillError
 from betterlite.exceptions import BadRequestError, NotFoundError
 from betterlite.skills import (
     acreate_skill,
@@ -93,7 +91,7 @@ class RefCall(Protocol):
 
 
 class RefAsyncCall(Protocol):
-    def __call__(self, **values: CallValue) -> Coroutine[object, object, BaseModel]: ...
+    def __call__(self, **values: CallValue) -> Coroutine[None, None, BaseModel]: ...
 
 
 class RefModule(Protocol):
@@ -104,8 +102,31 @@ class RefAsyncModule(Protocol):
     def __getattr__(self, name: str) -> RefAsyncCall: ...
 
 
+class SkillCall(Protocol):
+    def __call__(self, skill_id: str, extra_headers: dict[str, str] | None = None,
+                 extra_query: dict[str, JsonValue] | None = None, timeout: float | None = None,
+                 custom_llm_provider: str | None = None,
+                 **kwargs: CallValue) -> BaseModel: ...
+
+
+class AsyncSkillCall(Protocol):
+    def __call__(self, skill_id: str, extra_headers: dict[str, str] | None = None,
+                 extra_query: dict[str, JsonValue] | None = None, timeout: float | None = None,
+                 custom_llm_provider: str | None = None,
+                 **kwargs: CallValue) -> Coroutine[None, None, BaseModel]: ...
+
+
+class SkillsReferenceError(Exception):
+    status_code: int
+
+
+class RefErrorModule(Protocol):
+    def __getattr__(self, name: str) -> type[SkillsReferenceError]: ...
+
+
 REFERENCE: RefModule = importlib.import_module("litellm")
 REFERENCE_ASYNC: RefAsyncModule = importlib.import_module("litellm")
+REFERENCE_ERRORS: RefErrorModule = importlib.import_module("litellm.exceptions")
 
 
 class SkillsServer(ThreadingHTTPServer):
@@ -200,10 +221,8 @@ def header_of(call: Recorded, name: str) -> str | None:
 
 
 def part_field(body: bytes, marker: bytes) -> list[str]:
-    values: list[str] = []
-    for chunk in body.split(marker)[1:]:
-        values.append(chunk.partition(b'"')[0].decode())
-    return values
+    chunks = body.split(marker)[1:]
+    return [chunk.partition(b'"')[0].decode() for chunk in chunks]
 
 
 def test_signature_names() -> None:
@@ -307,74 +326,44 @@ def test_signature_list() -> None:
     assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
 
 
-def test_signature_get() -> None:
+def test_signature_get_and_delete() -> None:
+    cases: tuple[tuple[SkillCall, RefCall, AsyncSkillCall], ...] = (
+        (get_skill, REFERENCE.get_skill, aget_skill),
+        (delete_skill, REFERENCE.delete_skill, adelete_skill),
+    )
     with SkillsServer() as server:
-        ours = get_skill(
-            SKILL_ID,
-            extra_headers={CUSTOM_HEADER: CUSTOM_VALUE},
-            extra_query=QUERY,
-            timeout=TIMEOUT,
-            custom_llm_provider=ANTHROPIC,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference = REFERENCE.get_skill(
-            skill_id=SKILL_ID,
-            extra_headers={CUSTOM_HEADER: CUSTOM_VALUE},
-            extra_query=QUERY,
-            timeout=TIMEOUT,
-            custom_llm_provider=ANTHROPIC,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        awaited = asyncio.run(
-            aget_skill(
+        for ours, theirs, awaited in cases:
+            our_answer = ours(
                 SKILL_ID,
+                extra_headers={CUSTOM_HEADER: CUSTOM_VALUE},
+                extra_query=QUERY,
                 timeout=TIMEOUT,
                 custom_llm_provider=ANTHROPIC,
                 api_base=server.url,
                 api_key=GOOD_KEY,
             )
-        )
-        our_call = server.calls[-3]
-    assert dumped(ours) == dumped(reference) == dumped(awaited)
-    assert our_call["path"] == f"{SKILLS_PATH}/{SKILL_ID}"
-    assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
-
-
-def test_signature_delete() -> None:
-    with SkillsServer() as server:
-        ours = delete_skill(
-            SKILL_ID,
-            extra_headers={CUSTOM_HEADER: CUSTOM_VALUE},
-            extra_query=QUERY,
-            timeout=TIMEOUT,
-            custom_llm_provider=ANTHROPIC,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference = REFERENCE.delete_skill(
-            skill_id=SKILL_ID,
-            extra_headers={CUSTOM_HEADER: CUSTOM_VALUE},
-            extra_query=QUERY,
-            timeout=TIMEOUT,
-            custom_llm_provider=ANTHROPIC,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        awaited = asyncio.run(
-            adelete_skill(
-                SKILL_ID,
+            their_answer = theirs(
+                skill_id=SKILL_ID,
+                extra_headers={CUSTOM_HEADER: CUSTOM_VALUE},
+                extra_query=QUERY,
                 timeout=TIMEOUT,
                 custom_llm_provider=ANTHROPIC,
                 api_base=server.url,
                 api_key=GOOD_KEY,
             )
-        )
-        our_call = server.calls[-3]
-    assert dumped(ours) == dumped(reference) == dumped(awaited)
-    assert our_call["path"] == f"{SKILLS_PATH}/{SKILL_ID}"
-    assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
+            awaited_answer = asyncio.run(
+                awaited(
+                    SKILL_ID,
+                    timeout=TIMEOUT,
+                    custom_llm_provider=ANTHROPIC,
+                    api_base=server.url,
+                    api_key=GOOD_KEY,
+                )
+            )
+            our_call = server.calls[-3]
+            assert dumped(our_answer) == dumped(their_answer) == dumped(awaited_answer)
+            assert our_call["path"] == f"{SKILLS_PATH}/{SKILL_ID}"
+            assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
 
 
 def test_signature_unknown_keyword() -> None:
@@ -452,29 +441,20 @@ def test_calls_list() -> None:
     assert our_call["path"] == their_call["path"] == expected
 
 
-def test_calls_get() -> None:
+def test_calls_get_and_delete() -> None:
+    cases: tuple[tuple[SkillCall, RefCall, str], ...] = (
+        (get_skill, REFERENCE.get_skill, "GET"),
+        (delete_skill, REFERENCE.delete_skill, "DELETE"),
+    )
     with SkillsServer() as server:
-        ours = get_skill(SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
-        reference = REFERENCE.get_skill(
-            skill_id=SKILL_ID, api_base=server.url, api_key=GOOD_KEY
-        )
-        our_call = server.calls[-2]
-        their_call = server.calls[-1]
-    assert dumped(ours) == dumped(reference)
-    assert our_call["path"] == their_call["path"] == f"{SKILLS_PATH}/{SKILL_ID}"
-
-
-def test_calls_delete() -> None:
-    with SkillsServer() as server:
-        ours = delete_skill(SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
-        reference = REFERENCE.delete_skill(
-            skill_id=SKILL_ID, api_base=server.url, api_key=GOOD_KEY
-        )
-        our_call = server.calls[-2]
-        their_call = server.calls[-1]
-    assert dumped(ours) == dumped(reference)
-    assert our_call["path"] == their_call["path"] == f"{SKILLS_PATH}/{SKILL_ID}"
-    assert our_call["method"] == their_call["method"] == "DELETE"
+        for ours, theirs, method in cases:
+            our_answer = ours(SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
+            their_answer = theirs(skill_id=SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
+            our_call = server.calls[-2]
+            their_call = server.calls[-1]
+            assert dumped(our_answer) == dumped(their_answer)
+            assert our_call["path"] == their_call["path"] == f"{SKILLS_PATH}/{SKILL_ID}"
+            assert our_call["method"] == their_call["method"] == method
 
 
 def test_calls_bytes_file() -> None:
@@ -528,7 +508,7 @@ def test_error_create() -> None:
     with SkillsServer(failing=True) as server:
         with pytest.raises(BadRequestError) as ours:
             create_skill(display_title=TITLE, api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(their_errors.BadRequestError) as theirs:
+        with pytest.raises(REFERENCE_ERRORS.BadRequestError) as theirs:
             REFERENCE.create_skill(
                 display_title=TITLE, api_base=server.url, api_key=GOOD_KEY
             )
@@ -545,31 +525,26 @@ def test_error_delete() -> None:
     with SkillsServer(failing=True) as server:
         with pytest.raises(NotFoundError) as ours:
             delete_skill(SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(their_errors.NotFoundError) as theirs:
+        with pytest.raises(REFERENCE_ERRORS.NotFoundError) as theirs:
             REFERENCE.delete_skill(skill_id=SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
     assert ours.value.status_code == theirs.value.status_code == NOT_FOUND
     assert "skill not found" in str(ours.value)
     assert "skill not found" in str(theirs.value)
 
 
-def test_error_get() -> None:
+def test_error_get_and_list() -> None:
     with SkillsServer(failing=True) as server:
-        with pytest.raises(NotFoundError) as ours:
+        with pytest.raises(NotFoundError) as fetched:
             get_skill(SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(their_errors.APIConnectionError):
+        with pytest.raises(REFERENCE_ERRORS.APIConnectionError):
             REFERENCE.get_skill(skill_id=SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
-    assert ours.value.status_code == NOT_FOUND
-    assert "skill not found" in str(ours.value)
-
-
-def test_error_list() -> None:
-    with SkillsServer(failing=True) as server:
-        with pytest.raises(NotFoundError) as ours:
+        with pytest.raises(NotFoundError) as listed:
             list_skills(api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(their_errors.APIConnectionError):
+        with pytest.raises(REFERENCE_ERRORS.APIConnectionError):
             REFERENCE.list_skills(api_base=server.url, api_key=GOOD_KEY)
-    assert ours.value.status_code == NOT_FOUND
-    assert "skill not found" in str(ours.value)
+    for error in (fetched, listed):
+        assert error.value.status_code == NOT_FOUND
+        assert "skill not found" in str(error.value)
 
 
 def test_error_no_database() -> None:
@@ -590,7 +565,7 @@ def test_error_no_database() -> None:
 def test_unsupported_provider() -> None:
     with pytest.raises(our_errors.APIConnectionError) as ours:
         create_skill(api_key=GOOD_KEY, custom_llm_provider=OPENAI)
-    with pytest.raises(their_errors.APIConnectionError) as theirs:
+    with pytest.raises(REFERENCE_ERRORS.APIConnectionError) as theirs:
         REFERENCE.create_skill(api_key=GOOD_KEY, custom_llm_provider=OPENAI)
     assert ours.value.status_code == theirs.value.status_code == SERVER_ERROR
     assert "CREATE skill is not supported for openai" in str(ours.value)
