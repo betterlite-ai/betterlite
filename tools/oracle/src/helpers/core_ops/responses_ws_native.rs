@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::future::{Future, ready};
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::{Mutex, PoisonError};
 
@@ -72,9 +73,12 @@ impl FakeSocket {
 impl ResponsesClientWebSocket for FakeSocket {
     type Error = BackendError<IoError>;
 
-    async fn send_text(&self, data: &str) -> Result<(), Self::Error> {
+    fn send_text<'call>(
+        &'call self,
+        data: &'call str,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
         self.record(data);
-        Ok(())
+        ready(Ok(()))
     }
 
     async fn receive_text(&self) -> Result<String, Self::Error> {
@@ -86,21 +90,27 @@ impl ResponsesClientWebSocket for FakeSocket {
 impl NativeWsBackend for FakeSocket {
     type Error = IoError;
 
-    async fn recv_raw(&self) -> Result<ResponsesWebSocketMessage, BackendError<Self::Error>> {
-        self.pop_frame().map(ResponsesWebSocketMessage::Text)
+    fn recv_raw(
+        &self,
+    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<Self::Error>>> + Send + '_
+    {
+        ready(self.pop_frame().map(ResponsesWebSocketMessage::Text))
     }
 
     async fn recv(&self) -> Result<ResponsesWebSocketMessage, BackendError<Self::Error>> {
         self.recv_raw().await
     }
 
-    async fn send(&self, message: &str) -> Result<(), Self::Error> {
+    fn send<'call>(
+        &'call self,
+        message: &'call str,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
         self.record(message);
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn close(&self) -> Result<(), Self::Error> {
-        Ok(())
+    fn close(&self) -> impl Future<Output = Result<(), Self::Error>> + Send + '_ {
+        ready(Ok(()))
     }
 }
 
@@ -112,14 +122,14 @@ impl PresidioGuardrailCallback for FakeSocket {
         None
     }
 
-    async fn check_pii(
-        &self,
-        text: &str,
+    fn check_pii<'call>(
+        &'call self,
+        text: &'call str,
         _output_parse_pii: bool,
-        _presidio_config: Option<&()>,
-        _request_data: &RequestData,
-    ) -> Result<String, IoError> {
-        Ok(text.to_owned())
+        _presidio_config: Option<&'call ()>,
+        _request_data: &'call RequestData,
+    ) -> impl Future<Output = Result<String, IoError>> + Send + 'call {
+        ready(Ok(text.to_owned()))
     }
 }
 
