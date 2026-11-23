@@ -144,6 +144,7 @@ class ScriptedLogging(Logging):
         self.recording = {"checks": 0, "ran": 0, "sync_checks": 0, "calls": []}
 
     @override
+    # ast-grep-ignore: no-long-names
     def should_run_prompt_management_hooks(
         self,
         non_default_params: dict[str, JsonValue],
@@ -170,6 +171,7 @@ class ScriptedLogging(Logging):
         prompt_management_logger: CustomLogger | None = None,
         prompt_label: str | None = None,
         prompt_version: int | None = None,
+        # ast-grep-ignore: no-loose-types
         request_kwargs: dict[str, object] | None = None,
         injected_for_every_deployment: bool = False,
     ) -> tuple[str, list[AllMessageValues], dict[str, JsonValue]]:
@@ -180,6 +182,7 @@ class ScriptedLogging(Logging):
         return model, messages, {}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
 
     @override
+    # ast-grep-ignore: no-long-names
     async def async_get_chat_completion_prompt(
         self,
         model: str,
@@ -192,6 +195,7 @@ class ScriptedLogging(Logging):
         tools: list[dict[str, JsonValue]] | None = None,
         prompt_label: str | None = None,
         prompt_version: int | None = None,
+        # ast-grep-ignore: no-loose-types
         request_kwargs: dict[str, object] | None = None,
         injected_for_every_deployment: bool = False,
     ) -> tuple[str, list[AllMessageValues], dict[str, JsonValue]]:
