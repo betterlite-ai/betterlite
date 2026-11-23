@@ -21,4 +21,7 @@ deviations:
   - what: OCR request faults carry betterlite's core wording, and the OCR and search response models are exported from betterlite.ocr and betterlite.search.
     why: The native OCR route words its own validation errors, and the Python call maps them through the same exception_type port LiteLLM uses, so the class and status match while document and field messages name the field from the core; the models follow betterlite's module layout.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/python-bridge/src/routes/ocr/document.rs#L1-L120
+  - what: A search timeout below zero is refused as a ValueError before the provider call.
+    why: The native call carries the timeout as a duration, so a negative number cannot cross; LiteLLM hands the float to httpx, which does not reject it on its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L172
 kept_bugs: []
