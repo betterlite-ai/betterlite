@@ -143,9 +143,10 @@ async fn refused(drop_policy: DeploymentDropPolicy, request: &str) -> OperationE
     let error = OpenAi
         .prepare(&chat(request), &deployment, &support::composition().catalog)
         .expect_err("the parameter check refuses the call");
-    if timeout(QUIET, listener.accept()).await.is_ok() {
-        panic!("a refused call sends no request");
-    }
+    assert!(
+        timeout(QUIET, listener.accept()).await.is_err(),
+        "a refused call sends no request"
+    );
     error
 }
 
@@ -171,6 +172,12 @@ pub(super) async fn deployment_additional_drop_params() {
         "the deployment additional_drop_params takes temperature out"
     );
     assert!(body.get("additional_drop_params").is_none());
+    request_list_replaces_the_deployment_list().await;
+    provider_name_dropped().await;
+    nested_path_refused().await;
+}
+
+async fn request_list_replaces_the_deployment_list() {
     let replaced = format!(
         r#"{{"model":"{MODEL}","messages":{MESSAGES},"temperature":0.5,"top_p":0.9,"additional_drop_params":["top_p"]}}"#
     );
@@ -184,6 +191,9 @@ pub(super) async fn deployment_additional_drop_params() {
         body.get("top_p").is_none(),
         "the request additional_drop_params takes top_p out"
     );
+}
+
+async fn provider_name_dropped() {
     let provider = format!(
         r#"{{"model":"{MODEL}","messages":{MESSAGES},"x_custom":1,"additional_drop_params":["x_custom"]}}"#
     );
@@ -192,6 +202,9 @@ pub(super) async fn deployment_additional_drop_params() {
         body.get("x_custom").is_none(),
         "a provider-specific name the list names is not sent either"
     );
+}
+
+async fn nested_path_refused() {
     // docs/deviations/B9992.yaml: the shared mapping refuses a nested path instead of deleting the nested key
     let nested = format!(
         r#"{{"model":"{MODEL}","messages":{MESSAGES},"additional_drop_params":["metadata.trace_id"]}}"#
@@ -226,12 +239,12 @@ pub(super) async fn openai_unsupported_param_dropped() {
     let requested = format!(
         r#"{{"model":"{MODEL}","messages":{MESSAGES},"response_format":{{"type":"json_object"}},"drop_params":true}}"#
     );
-    let body = sent_body(DeploymentDropPolicy::default(), &requested).await;
+    let requested_body = sent_body(DeploymentDropPolicy::default(), &requested).await;
     assert!(
-        body.get("response_format").is_none(),
+        requested_body.get("response_format").is_none(),
         "the request flag drops the unsupported parameter"
     );
-    assert!(body.get("drop_params").is_none());
+    assert!(requested_body.get("drop_params").is_none());
 }
 
 pub(super) async fn openai_allowed_param() {
