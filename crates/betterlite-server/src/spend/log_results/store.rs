@@ -31,8 +31,7 @@ impl PostgresLogResults {
         for value in params {
             bound.push(value);
         }
-        // every bound value is text; declaring that keeps the driver from typing a date cast's
-        // parameter as a timestamp it then refuses to serialize a string into
+        // every value bound here is text; the date cast, not the driver, types the window bounds
         let types = vec![Type::TEXT; params.len()];
         let statement = client
             .prepare_typed(sql, &types)
