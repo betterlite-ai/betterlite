@@ -171,7 +171,7 @@ def test_signature_matches_litellm() -> None:
     assert not inspect.iscoroutinefunction(search)
 
 
-def test_create_calls_match_litellm() -> None:
+def test_calls_create() -> None:
     with VectorServer() as server:
         ours = create(
             name=STORE_NAME,
@@ -206,7 +206,7 @@ def test_create_calls_match_litellm() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_search_calls_match_litellm() -> None:
+def test_calls_search() -> None:
     with VectorServer() as server:
         ours = search(
             vector_store_id=STORE_ID,
@@ -242,7 +242,7 @@ def test_search_calls_match_litellm() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_search_defaults_calls_match_litellm() -> None:
+def test_calls_search_defaults() -> None:
     with VectorServer() as server:
         ours = search(
             vector_store_id=STORE_ID,
@@ -267,7 +267,7 @@ def test_search_defaults_calls_match_litellm() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_async_calls_match_litellm() -> None:
+def test_calls_async() -> None:
     with VectorServer() as server:
         results = asyncio.run(
             resolved_calls(
@@ -294,7 +294,7 @@ def test_async_calls_match_litellm() -> None:
     assert JSON.validate_python(searched) == JSON.validate_python(reference_searched)
 
 
-def test_flagged_calls_are_coroutines() -> None:
+def test_calls_flagged() -> None:
     with VectorServer() as server:
         plain_create = create(name=STORE_NAME, api_base=server.url, api_key=GOOD_KEY)
         plain_search = search(
@@ -317,7 +317,7 @@ def test_flagged_calls_are_coroutines() -> None:
     assert JSON.validate_python(searched) == JSON.validate_python(plain_search)
 
 
-def test_mock_helpers_match_litellm() -> None:
+def test_mock_helpers() -> None:
     ours_search = mock_vector_store_search_response()
     reference_search = LITELLM_HELPERS.mock_vector_store_search_response()
     assert JSON.validate_python(ours_search) == JSON.validate_python(reference_search)
@@ -326,7 +326,7 @@ def test_mock_helpers_match_litellm() -> None:
     assert JSON.validate_python(ours_create) == JSON.validate_python(reference_create)
 
 
-def test_mock_results_match_litellm() -> None:
+def test_mock_results() -> None:
     ours = mock_vector_store_search_response(RESULTS)
     reference = LITELLM_HELPERS.mock_vector_store_search_response(
         mock_results=JSON.validate_python(RESULTS)
@@ -334,7 +334,7 @@ def test_mock_results_match_litellm() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_create_mock_response_matches_litellm() -> None:
+def test_mock_create_response() -> None:
     reference = LITELLM_HELPERS.mock_vector_store_create_response(
         mock_response=JSON.validate_python(SEEDED)
     )
@@ -349,7 +349,7 @@ def test_create_mock_response_matches_litellm() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_search_mock_string_matches_litellm() -> None:
+def test_mock_search_string() -> None:
     with VectorServer() as server:
         ours = search(
             vector_store_id=STORE_ID,
@@ -369,7 +369,7 @@ def test_search_mock_string_matches_litellm() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_search_mock_list_matches_litellm() -> None:
+def test_mock_search_list() -> None:
     with VectorServer() as server:
         ours = search(
             vector_store_id=STORE_ID,
@@ -389,7 +389,7 @@ def test_search_mock_list_matches_litellm() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_refused_handles_raise() -> None:
+def test_refuse_handles() -> None:
     with pytest.raises(UnsupportedCallArgument, match="router"):
         search(vector_store_id=STORE_ID, query=QUERY_TEXT, router=HandleStub())
     with pytest.raises(UnsupportedCallArgument, match="_direct_vector_store_embedding_executor"):
@@ -406,7 +406,7 @@ def test_refused_handles_raise() -> None:
         create(name=STORE_NAME, shared_session=HandleStub())
 
 
-def test_provider_error_keeps_class_and_cause() -> None:
+def test_error_keeps_class() -> None:
     reference_class = LITELLM_ERRORS.AuthenticationError
     with VectorServer() as server:
         with pytest.raises(AuthenticationError) as ours_caught:
