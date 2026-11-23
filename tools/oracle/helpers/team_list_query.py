@@ -112,7 +112,13 @@ def run(input_value: Input) -> JsonValue:
         keys_count_by_team=input_value.get("keys_count_by_team"),
     )
     if use_deleted_table:
-        deleted = [deleted_item_view(DELETED_ITEM.validate_json(item.model_dump_json())) for item in converted]
+        deleted = [
+            deleted_item_view(DELETED_ITEM.validate_json(item.model_dump_json()))
+            for item in converted
+        ]
         return {"teams": deleted}
-    live = [live_item_view(LIVE_ITEM.validate_json(item.model_dump_json())) for item in converted]
+    live = [
+        live_item_view(LIVE_ITEM.validate_json(item.model_dump_json()))
+        for item in converted
+    ]
     return {"teams": live}
