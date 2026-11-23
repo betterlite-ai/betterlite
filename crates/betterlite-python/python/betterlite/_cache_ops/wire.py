@@ -118,7 +118,5 @@ def embedding_records(result: InitValue) -> list[JsonValue]:
     match dumped(result):
         case {"data": list() as records}:
             return [*records]
-        case {"data": None | str() | int() | float() | dict()}:
-            return []
-        case None | str() | int() | float() | Sequence() | dict():
+        case dict() | list() | str() | bool() | int() | float() | None:
             return []
