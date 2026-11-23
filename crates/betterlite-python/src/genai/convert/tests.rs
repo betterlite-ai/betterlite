@@ -68,6 +68,11 @@ fn request_arguments_parse_field_for_field() {
             ),
         ]))
     );
+}
+
+#[test]
+fn request_extras_parse_field_for_field() {
+    let call: GenaiCall = parse(FULL_CALL).unwrap();
     assert_eq!(
         call.extra_headers,
         Some(IndexMap::from([("x-test".to_owned(), "1".to_owned())]))

@@ -14,14 +14,14 @@ use betterlite_core::genai_setup::config::{
     GenerateContentProviderConfig, GenerateContentRequest as SetupRequest,
 };
 use betterlite_core::genai_setup::params::VertexCredentials;
-use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_vertex::aws_federation::AwsCredentialsResolver;
 use betterlite_vertex::credential_sources::files::StdFiles;
 use betterlite_vertex::credential_sources::getters::VertexParams;
 use betterlite_vertex::credential_sources::handles::{LoadDeps, load_auth};
-use betterlite_vertex::credential_sources::sdk::{CredentialClock, GoogleAuth, HttpPolicy};
+use betterlite_vertex::credential_sources::sdk::{CredentialClock, GoogleAuth};
 use betterlite_vertex::genai::genai_contract::config::TOP_LEVEL_FIELDS;
 use betterlite_vertex::google_native_content::auth::{
     AuthTarget as VertexTarget, NativeAuth, auth_token_and_url as vertex_auth,
@@ -99,8 +99,8 @@ impl GenerateContentHttpConfig for NativeContentConfig {
             .map(configured_credentials)
             .transpose();
         async move {
-            let configured = configured?;
-            self.target(call, configured.as_ref()).await
+            let resolved = configured?;
+            self.target(call, resolved.as_ref()).await
         }
     }
     // transform_generate_content_response: a reply it cannot read becomes the provider's own error class
@@ -141,8 +141,7 @@ impl NativeContentConfig {
         let resolver = move |credentials: Option<&ConfiguredCredentials>, project: Option<&str>| {
             lookup(
                 vertex,
-                client,
-                policy,
+                GoogleAuth { client, policy },
                 clock,
                 credentials.cloned(),
                 project.map(str::to_owned),
@@ -184,37 +183,33 @@ impl NativeContentConfig {
     }
 }
 // VertexBase.load_auth: the fresh handle, then the token and the project it resolved
-fn lookup(
+async fn lookup(
     vertex: VertexSettings,
-    client: ProxiedClient,
-    policy: HttpPolicy,
+    google: GoogleAuth,
     clock: Arc<dyn CredentialClock>,
     credentials: Option<ConfiguredCredentials>,
     project: Option<String>,
-) -> impl Future<Output = Result<AccessToken, CredentialCacheError>> + Send {
-    async move {
-        let google = GoogleAuth { client, policy };
-        let files = StdFiles;
-        let deps = LoadDeps {
-            environment: &vertex.adc,
-            files: &files,
-            http: &google,
-            aws: Arc::new(UnavailableAws),
-            clock,
-        };
-        let loaded = load_auth(credentials.as_ref(), project.as_deref(), &deps)
-            .await
-            .map_err(CredentialCacheError::Load)?;
-        let token = loaded
-            .handle
-            .access_token()
-            .await
-            .map_err(CredentialCacheError::Load)?;
-        Ok(AccessToken {
-            token,
-            project: loaded.project,
-        })
-    }
+) -> Result<AccessToken, CredentialCacheError> {
+    let files = StdFiles;
+    let deps = LoadDeps {
+        environment: &vertex.adc,
+        files: &files,
+        http: &google,
+        aws: Arc::new(UnavailableAws),
+        clock,
+    };
+    let loaded = load_auth(credentials.as_ref(), project.as_deref(), &deps)
+        .await
+        .map_err(CredentialCacheError::Load)?;
+    let token = loaded
+        .handle
+        .access_token()
+        .await
+        .map_err(CredentialCacheError::Load)?;
+    Ok(AccessToken {
+        token,
+        project: loaded.project,
+    })
 }
 fn native_request(request: &SetupRequest<'_>) -> VertexRequest {
     VertexRequest {

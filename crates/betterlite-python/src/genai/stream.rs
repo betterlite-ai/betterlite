@@ -11,16 +11,16 @@ use tokio::sync::Mutex;
 mod tests;
 // The two iterator classes LiteLLM answers a stream with: the sync entry point's and the async one's.
 pub(crate) enum StreamKind {
-    Blocking(GoogleGenAiStream),
-    Asynchronous(AsyncGoogleGenAiStream),
+    Blocking(Box<GoogleGenAiStream>),
+    Asynchronous(Box<AsyncGoogleGenAiStream>),
 }
 // One stream object Python iterates with for or async for; dropping the last chunk closes the connection.
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeGenaiStream {
     kind: Arc<Mutex<Option<StreamKind>>>,
 }
-impl NativeGenaiStream {
-    pub(crate) fn new(kind: StreamKind) -> Self {
+impl From<StreamKind> for NativeGenaiStream {
+    fn from(kind: StreamKind) -> Self {
         Self {
             kind: Arc::new(Mutex::new(Some(kind))),
         }
@@ -66,21 +66,19 @@ async fn pull(kind: Arc<Mutex<Option<StreamKind>>>) -> Result<Option<Vec<u8>>, G
         return Ok(None);
     };
     let pulled = match stream {
-        StreamKind::Blocking(stream) => stream.next(),
-        StreamKind::Asynchronous(stream) => match stream.next_event().await {
+        StreamKind::Blocking(blocking) => blocking.next(),
+        StreamKind::Asynchronous(asynchronous) => match asynchronous.next_event().await {
             Ok(event) => event.map(Ok),
             Err(error) => Some(Err(error)),
         },
     };
+    if !matches!(pulled, Some(Ok(_))) {
+        guard.take();
+    }
+    drop(guard);
     match pulled {
         Some(Ok(event)) => Ok(Some(event)),
-        Some(Err(error)) => {
-            guard.take();
-            Err(error)
-        }
-        None => {
-            guard.take();
-            Ok(None)
-        }
+        Some(Err(error)) => Err(error),
+        None => Ok(None),
     }
 }

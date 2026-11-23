@@ -34,6 +34,6 @@ fn a_file_marker_is_refused_before_any_request() {
         let session = NativeGenaiSession::new(SESSION).unwrap();
         let payload = r#"{"model": "gemini/gemini-2.5-flash", "contents": [{"parts": [{"$file": {"blob": 0, "name": "a.txt"}}]}], "kwargs": {}}"#;
         let refused = session.content(py, payload, vec![b"hi".to_vec()]);
-        assert!(refused.is_err());
+        refused.unwrap_err();
     });
 }

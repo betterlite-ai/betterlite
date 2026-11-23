@@ -36,12 +36,11 @@ pub(crate) struct GenaiCall {
 impl GenaiCall {
     // timeout or request_timeout hands the handler seconds; a zero is no timeout, and B3489 resolves it then
     pub(crate) fn timeout(&self) -> Result<Option<Duration>, ConvertError> {
-        match self.timeout {
-            None => Ok(None),
-            Some(seconds) => Duration::try_from_secs_f64(seconds)
+        self.timeout.map_or(Ok(None), |seconds| {
+            Duration::try_from_secs_f64(seconds)
                 .map(Some)
-                .map_err(|source| ConvertError::Timeout { source }),
-        }
+                .map_err(|source| ConvertError::Timeout { source })
+        })
     }
 }
 #[derive(Debug, thiserror::Error)]

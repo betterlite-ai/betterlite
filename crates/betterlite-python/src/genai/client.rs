@@ -19,9 +19,9 @@ pub(crate) struct NativeClients {
 impl NativeClients {
     pub(crate) fn build(environment: &BTreeMap<String, String>) -> Result<Self, SessionError> {
         let trust = ProxyTrust::default();
-        let policy = ProxyPolicy::resolve(&trust, environment)
+        let resolved = ProxyPolicy::resolve(&trust, environment)
             .map_err(|source| SessionError::Proxy { source })?;
-        let policy = Arc::new(policy);
+        let policy = Arc::new(resolved);
         let default =
             ProxiedClient::outbound(&policy).map_err(|source| SessionError::Client { source })?;
         Ok(Self {

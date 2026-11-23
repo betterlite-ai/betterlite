@@ -6,13 +6,14 @@ use pyo3::prelude::*;
 
 use super::{NativeGenaiStream, StreamKind};
 
-fn stream_of(events: Vec<&[u8]>) -> NativeGenaiStream {
-    let source: Vec<Result<Vec<u8>, HttpError>> =
-        events.into_iter().map(<[u8]>::to_vec).map(Ok).collect();
-    NativeGenaiStream::new(StreamKind::Blocking(GoogleGenAiStream::new(
-        source.into_iter(),
-        1024,
-    )))
+fn stream_of(events: Vec<&'static [u8]>) -> NativeGenaiStream {
+    let source = events
+        .into_iter()
+        .map(<[u8]>::to_vec)
+        .map(Ok::<Vec<u8>, HttpError>);
+    NativeGenaiStream::from(StreamKind::Blocking(Box::new(GoogleGenAiStream::new(
+        source, 1024,
+    ))))
 }
 
 #[test]
