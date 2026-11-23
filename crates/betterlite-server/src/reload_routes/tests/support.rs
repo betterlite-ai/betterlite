@@ -442,10 +442,10 @@ impl Harness {
     }
 
     fn state(&self) -> ReloadRoutesState {
-        let config: Option<Arc<dyn ReloadConfigStore>> = match &self.store {
-            Some(fake) => Some(Arc::new(fake.clone())),
-            None => None,
-        };
+        let config: Option<Arc<dyn ReloadConfigStore>> = self
+            .store
+            .as_ref()
+            .map_or_else(|| None, |fake| Some(Arc::new(fake.clone())));
         let now = self.now;
         ReloadRoutesState {
             config,

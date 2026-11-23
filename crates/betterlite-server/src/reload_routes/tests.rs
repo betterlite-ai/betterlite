@@ -463,7 +463,7 @@ async fn oneshot_answers_the_cost_map_source(
     assert_eq!(status, StatusCode::OK);
     let reply = parsed(&text);
     assert_eq!(reply["source"], source);
-    assert_eq!(reply["model_count"], 0);
+    assert_eq!(reply["model_count"], 0_i32);
 }
 
 #[tokio::test]
