@@ -39,4 +39,16 @@ deviations:
   - what: A CookieJar becomes name and value pairs, so domain, path, expiry and secure attributes do not cross.
     why: The native request builds one Cookie header from the pairs.
     link: ""
+  - what: content bytes are sent with Content-Type application/octet-stream, where httpx sends content with no Content-Type header.
+    why: The native wire labels a raw body with its byte type, so an upstream that requires a content type still accepts the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: A files tuple of four items, whose last item maps per-part headers, raises TypeError from to_call_payload instead of sending those headers on the multipart part.
+    why: The $file marker carries a filename, a blob and a content type only, which is B6040's refusal for the same tuple, so the fourth item has nowhere to go on the wire.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: params given as a multi-valued mapping such as httpx.QueryParams sends only the first value of each repeated name, where httpx sends every pair.
+    why: A mapping is read through items(), which a multi-valued mapping defines as one value per key; the route has no multi_items method to ask.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: A stream that fails after its first chunk closes the relay and raises betterlite's APIError with the synthesized 500, where LiteLLM closes the response and re-raises the transport error unchanged, such as httpx.RemoteProtocolError.
+    why: The native relay carries the failure as the same APIError payload every other native failure uses, so the call and the iteration raise one class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L234-L246
 kept_bugs: []
