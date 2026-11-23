@@ -62,5 +62,20 @@ call:
         response:
           id: chatcmpl-empty
           choices: []
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": [1, 2]}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "4"], [x-amzn-bedrock-output-token-count, "2"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-tool
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: prior, tool_calls: []}}
 env: {}
 compare: {ignore: []}

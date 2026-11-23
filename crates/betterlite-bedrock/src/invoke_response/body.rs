@@ -159,11 +159,10 @@ pub(super) fn assign_content(
     output: &Json,
 ) -> Result<(), ContentReason> {
     let text = match output {
-        Json::Text(text) => Some(text),
-        Json::Null => None,
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            return Err(ContentReason::NotText);
-        }
+        Json::Text(text) => text.as_str(),
+        Json::Null => "",
+        Json::Bool(_) | Json::Number(_) => return Err(ContentReason::NotText),
+        Json::List(_) | Json::Object(_) => "",
     };
     let Some(choice) = choices.first_mut() else {
         return Err(ContentReason::NoChoice);
@@ -171,13 +170,19 @@ pub(super) fn assign_content(
     if choice.message.tool_calls.is_some() {
         return Ok(());
     }
-    match text {
-        Some(value) if !value.is_empty() => {
-            choice.message.content = Some(value.clone());
-            Ok(())
-        }
-        None | Some(_) => Err(ContentReason::Empty),
+    let non_text = match output {
+        Json::List(items) => !items.is_empty(),
+        Json::Object(fields) => !fields.is_empty(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => false,
+    };
+    if non_text {
+        return Err(ContentReason::NotText);
     }
+    if text.is_empty() {
+        return Err(ContentReason::Empty);
+    }
+    choice.message.content = Some(text.to_owned());
+    Ok(())
 }
 
 // A non-string output is spelled as standard JSON, since Python's str form is not ported.

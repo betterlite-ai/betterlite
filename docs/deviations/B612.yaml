@@ -3,7 +3,7 @@ deviations:
   - what: "A token-count header whose value is negative or beyond the unsigned range is rejected with a usage-field error, where LiteLLM builds a Usage holding that number, so a reply with a negative prompt or completion count comes back."
     why: "Our usage fields are unsigned; a negative count cannot be represented, and a total that overflows stays an error instead of wrapping. A working Bedrock response carries non-negative counts, so no setup relies on the rejected values."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L396-L407
-  - what: "A non-empty output text that a JSON list or object holds is refused with the parse error at the response's status, where LiteLLM assigns the list or object to the message content and returns it."
+  - what: "A non-empty output text that a JSON list or object holds is refused with the parse error at the response's status when the choice carries no tool calls, where LiteLLM assigns the list or object to the message content and returns it."
     why: "message.content is a string in our response type, and a list or object there would break every consumer that reads the text; the same reply is refused rather than carried as a value of the wrong type."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L375-L393
   - what: "A reply clock or a seeded created value that does not fit an i64 is rejected with a range error, where LiteLLM's int time value has no such bound."
