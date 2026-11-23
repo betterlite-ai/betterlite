@@ -206,7 +206,7 @@ async fn skip_mcp_truthiness(nothing: &Nothing, harness: &mut Harness) {
 pub(crate) async fn file_search_extras() {
     let mut rig = Rig::new();
     rig.configs.native_file_search = false;
-    let gateway = Gateway::passing(&rig.events);
+    let gateway = Gateway::answering_file_search(&rig.events);
     let bridge = RecordingBridge::new(&rig.events);
     let nothing = Nothing;
     let prompt = PromptMark::new(&rig.events);

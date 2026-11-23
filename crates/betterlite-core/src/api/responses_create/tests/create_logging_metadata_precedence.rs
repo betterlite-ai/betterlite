@@ -48,7 +48,10 @@ fn assert_logged(harness: &Harness) {
         params.get("data_residency"),
         Some(&Json::Text(String::from("eu")))
     );
-    assert_eq!(params.get("metadata"), Some(&Json::Null));
+    assert!(
+        params.get("metadata").is_none(),
+        "a null metadata is dropped from the logged params"
+    );
     assert_eq!(
         params.get("provider_affinity_header"),
         Some(&Json::Text(String::from("X-Session")))
@@ -89,10 +92,9 @@ pub(crate) async fn metadata_precedence() {
     run_create(&seams.deps(), &null_override, &mut harness)
         .await
         .expect("the null override answers");
-    assert_eq!(
-        harness.state.litellm_params.get("metadata"),
-        Some(&Json::Null),
-        "a present null litellm_metadata wins the lookup"
+    assert!(
+        harness.state.litellm_params.get("metadata").is_none(),
+        "a null litellm_metadata wins the lookup and the merge drops it"
     );
     assert_eq!(
         harness.state.optional_params.get("metadata"),

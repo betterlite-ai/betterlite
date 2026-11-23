@@ -733,6 +733,14 @@ impl Gateway {
     pub(crate) fn passing(events: &Events) -> Self {
         Self {
             mcp_requested: false,
+            handle: false,
+            ..Self::requesting(events)
+        }
+    }
+
+    pub(crate) fn answering_file_search(events: &Events) -> Self {
+        Self {
+            mcp_requested: false,
             handle: true,
             ..Self::requesting(events)
         }

@@ -94,7 +94,13 @@ fn message_and_usage(body: &Object) {
     number_is(&usage, "total_tokens", 123.0_f64);
     let input_details = object(field(&usage, "input_tokens_details"));
     number_is(&input_details, "cached_tokens", 0.0_f64);
-    assert!(object(field(&usage, "output_tokens_details")).is_empty());
+    let output_details = object(field(&usage, "output_tokens_details"));
+    assert_eq!(field(&output_details, "audio_tokens"), &PromptJson::Null);
+    assert_eq!(
+        field(&output_details, "reasoning_tokens"),
+        &PromptJson::Null
+    );
+    assert_eq!(field(&output_details, "text_tokens"), &PromptJson::Null);
 }
 
 pub(crate) async fn shortcut_and_skips() {
