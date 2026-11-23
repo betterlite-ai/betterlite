@@ -104,15 +104,9 @@ pub(crate) fn local_provenance() -> CatalogProvenance {
 }
 
 pub(crate) fn env_forced_provenance() -> CatalogProvenance {
-    CatalogProvenance {
-        kind: SourceKind::Local,
-        url: None,
-        is_env_forced: true,
-        fallback_reason: None,
-        loaded_at: None,
-        source_revision: None,
-        etag: None,
-    }
+    let mut provenance = local_provenance();
+    provenance.is_env_forced = true;
+    provenance
 }
 
 pub(crate) fn provenance_loaded_at(loaded_at: DateTime<Utc>) -> CatalogProvenance {
@@ -128,15 +122,13 @@ pub(crate) fn provenance_loaded_at(loaded_at: DateTime<Utc>) -> CatalogProvenanc
 }
 
 pub(crate) fn reloaded_provenance() -> CatalogProvenance {
-    CatalogProvenance {
-        kind: SourceKind::Remote,
-        url: Some("https://example.test/cost.json".to_owned()),
-        is_env_forced: false,
-        fallback_reason: None,
-        loaded_at: Some(moment()),
-        source_revision: Some("rev-1".to_owned()),
-        etag: Some("etag-1".to_owned()),
-    }
+    let mut provenance = local_provenance();
+    provenance.kind = SourceKind::Remote;
+    provenance.url = Some("https://example.test/cost.json".to_owned());
+    provenance.loaded_at = Some(moment());
+    provenance.source_revision = Some("rev-1".to_owned());
+    provenance.etag = Some("etag-1".to_owned());
+    provenance
 }
 
 pub(crate) fn snapshot(provenance: CatalogProvenance, adopted_size: usize) -> Arc<CatalogSnapshot> {
@@ -337,12 +329,11 @@ impl FakeCatalog {
     }
 
     pub(crate) fn unavailable(reason: &str) -> Self {
-        Self::new(
-            snapshot(local_provenance(), 4),
-            ReloadOutcome::Unavailable(Unavailable {
-                reason: reason.to_owned(),
-            }),
-        )
+        let current = snapshot(local_provenance(), 4);
+        let outcome = ReloadOutcome::Unavailable(Unavailable {
+            reason: reason.to_owned(),
+        });
+        Self::new(current, outcome)
     }
 
     fn new(current: Arc<CatalogSnapshot>, outcome: ReloadOutcome) -> Self {
@@ -429,14 +420,18 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) fn new() -> Self {
+        let store = Some(FakeStore::default());
+        let catalog = FakeCatalog::reloaded(snapshot(reloaded_provenance(), 3));
+        let beta = FakeBeta::new(beta_matrix());
+        let reloads = Arc::new(PeriodicReloads::new(
+            &CatalogProvenance::default(),
+            moment(),
+        ));
         Self {
-            store: Some(FakeStore::default()),
-            catalog: FakeCatalog::reloaded(snapshot(reloaded_provenance(), 3)),
-            beta: FakeBeta::new(beta_matrix()),
-            reloads: Arc::new(PeriodicReloads::new(
-                &CatalogProvenance::default(),
-                moment(),
-            )),
+            store,
+            catalog,
+            beta,
+            reloads,
             now: moment(),
         }
     }
@@ -478,27 +473,21 @@ pub(crate) async fn send(
     (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
-pub(crate) async fn denied_on_every_route(
+pub(crate) async fn every_route_answer(
     harness: &Harness,
     who: &AuthContext,
     routes: &[(Method, &str)],
-    role: &str,
+    denied_role: Option<&str>,
 ) {
     for (method, uri) in routes {
         let (status, text) = send(harness, Some(who.clone()), method.clone(), uri).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
-        assert_eq!(parsed(&text)["detail"], format!("{FORBIDDEN_ROLE} {role}"));
-    }
-}
-
-pub(crate) async fn admitted_on_every_route(
-    harness: &Harness,
-    who: &AuthContext,
-    routes: &[(Method, &str)],
-) {
-    for (method, uri) in routes {
-        let (status, text) = send(harness, Some(who.clone()), method.clone(), uri).await;
-        assert_eq!(status, StatusCode::OK, "{uri} {text}");
+        match denied_role {
+            Some(role) => {
+                assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+                assert_eq!(parsed(&text)["detail"], format!("{FORBIDDEN_ROLE} {role}"));
+            }
+            None => assert_eq!(status, StatusCode::OK, "{uri} {text}"),
+        }
     }
 }
 

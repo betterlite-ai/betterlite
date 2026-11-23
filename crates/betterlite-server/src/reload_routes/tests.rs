@@ -20,11 +20,10 @@ use crate::periodic_reloads::state::PeriodicReloads;
 use self::support::{
     BETA_RELOAD, BETA_SCHEDULE, BETA_SCHEDULE_2_HOURS, BETA_STATUS, COST_MAP_RELOAD,
     COST_MAP_SCHEDULE, COST_MAP_SCHEDULE_2_HOURS, COST_MAP_SOURCE, COST_MAP_STATUS, FORBIDDEN_ROLE,
-    FakeCatalog, FakeStore, Harness, READS, STORE_FAILURE, WRITES, admitted_on_every_route, at,
-    at_year, context, denied_on_every_route, env_forced_provenance, json_data, key_caller,
-    key_with, local_provenance, master, moment, one_hour_before_datetime_max, parsed,
-    platform_admin, platform_viewer, provenance_loaded_at, reloaded_provenance, send, snapshot,
-    with_micros,
+    FakeCatalog, FakeStore, Harness, READS, STORE_FAILURE, WRITES, at, at_year, context,
+    env_forced_provenance, every_route_answer, json_data, key_caller, key_with, local_provenance,
+    master, moment, one_hour_before_datetime_max, parsed, platform_admin, platform_viewer,
+    provenance_loaded_at, reloaded_provenance, send, snapshot, with_micros,
 };
 
 #[tokio::test]
@@ -40,11 +39,11 @@ async fn oneshot_rejects_an_anonymous_caller() {
 #[tokio::test]
 async fn oneshot_rejects_a_non_admin_on_every_write_route() {
     let harness = Harness::new();
-    denied_on_every_route(
+    every_route_answer(
         &harness,
         &key_with("internal_user"),
         &WRITES,
-        "internal_user",
+        Some("internal_user"),
     )
     .await;
     assert!(harness.store().snapshot().written_intervals.is_empty());
@@ -77,17 +76,17 @@ async fn oneshot_renders_the_current_role_in_the_write_denial(
 #[tokio::test]
 async fn oneshot_admits_an_admin_to_every_write_route(#[case] who: AuthContext) {
     let harness = Harness::new();
-    admitted_on_every_route(&harness, &who, &WRITES).await;
+    every_route_answer(&harness, &who, &WRITES, None).await;
 }
 
 #[tokio::test]
 async fn oneshot_rejects_a_caller_without_admin_view_on_every_read_route() {
     let harness = Harness::new();
-    denied_on_every_route(
+    every_route_answer(
         &harness,
         &key_with("internal_user"),
         &READS,
-        "internal_user",
+        Some("internal_user"),
     )
     .await;
 }
@@ -101,7 +100,7 @@ async fn oneshot_rejects_a_caller_without_admin_view_on_every_read_route() {
 #[tokio::test]
 async fn oneshot_admits_every_admin_view_caller_to_the_read_routes(#[case] who: AuthContext) {
     let harness = Harness::new();
-    admitted_on_every_route(&harness, &who, &READS).await;
+    every_route_answer(&harness, &who, &READS, None).await;
 }
 
 #[rstest]
