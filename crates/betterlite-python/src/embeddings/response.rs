@@ -96,11 +96,11 @@ pub(crate) fn response_cost(
 }
 fn catalog_price(catalog: &ModelCatalog, model: &str, provider: &str) -> Option<Decimal> {
     let prefixed = format!("{provider}/{model}");
-    catalog
+    let entry = catalog
         .entries
         .get(model)
-        .or_else(|| catalog.entries.get(&prefixed))
-        .and_then(|entry| entry.prices.values.input.input_token)
+        .or_else(|| catalog.entries.get(&prefixed))?;
+    entry.prices.values.input.input_token
 }
 // mock_embedding's Usage(prompt_tokens=10, completion_tokens=0) keeps total_tokens at its 0 default
 #[must_use]

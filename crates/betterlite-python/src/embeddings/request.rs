@@ -45,7 +45,7 @@ pub(crate) fn build(
     params.remove("encoding_format");
     // the mapping keeps or drops the caller's own value, so its presence decides and the typed argument fills it
     let dimensions = params.remove("dimensions").and(arguments.dimensions);
-    let user = params.remove("user").and(arguments.user.clone());
+    let user = params.remove("user").and_then(|_| arguments.user.clone());
     let mut fields = body_fields(&mut params)?;
     let encoding_format = encoding_field(requested, &mut fields);
     let value =

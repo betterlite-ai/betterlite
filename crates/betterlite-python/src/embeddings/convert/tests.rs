@@ -37,6 +37,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Number;
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
+use std::iter;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::str;
 use std::sync::Arc;
@@ -243,9 +244,7 @@ fn request_unknown_kwargs_keep_the_shape_they_arrived_in() {
     assert_eq!(
         call.extra.get("extra_body"),
         Some(&Json::Object(
-            [(String::from("z"), Json::Number(Number::from(1_u32)))]
-                .into_iter()
-                .collect()
+            iter::once((String::from("z"), Json::Number(Number::from(1_u32)))).collect()
         ))
     );
 }
