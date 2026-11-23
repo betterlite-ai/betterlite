@@ -480,8 +480,7 @@ async fn the_pending_record_drops_members_whose_local_copy_expired() {
     let recorded: usize = pending.values().map(BTreeMap::len).sum();
     let expired = pending
         .values()
-        .flat_map(BTreeMap::keys)
-        .filter(|member| member.contains("first-window-"))
+        .filter(|window| window.keys().any(|member| member.contains("first-window-")))
         .count();
     assert_eq!(
         recorded,

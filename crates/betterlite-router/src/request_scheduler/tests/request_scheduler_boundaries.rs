@@ -292,7 +292,7 @@ fn assert_provider_failure(cause: &ErrorClass) {
 // every compare lost to another writer: the update stops at the attempt bound and names the model
 #[tokio::test]
 async fn a_shared_queue_that_keeps_losing_the_compare_answers_contended() {
-    let (service, server) = shared_scheduler_with(local_store()).await;
+    let (service, server) = shared_scheduler_with(local_store(), 100).await;
     service
         .add_request(&item(128, "first", MODEL))
         .await
