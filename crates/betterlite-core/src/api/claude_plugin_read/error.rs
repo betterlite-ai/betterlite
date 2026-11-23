@@ -6,7 +6,7 @@ use crate::api::claude_plugin_policy::{
 
 #[derive(Debug, Error)]
 pub enum PluginManifestError {
-    #[error("the stored plugin manifest is not a JSON object")]
+    #[error("the stored plugin manifest is not an object")]
     NotAnObject,
 }
 
