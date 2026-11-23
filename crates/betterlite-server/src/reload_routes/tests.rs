@@ -159,7 +159,8 @@ async fn oneshot_answers_422_when_hours_is_missing(#[case] uri: &str) {
 #[case::float("1.5")]
 #[case::empty("")]
 #[case::boolean("true")]
-#[case::overflow("-99999999999999999999")]
+#[case::overflow_low("-99999999999999999999")]
+#[case::overflow_high("99999999999999999999")]
 #[tokio::test]
 async fn oneshot_answers_422_when_hours_is_not_an_integer(#[case] value: &str) {
     let expected = parsed(
