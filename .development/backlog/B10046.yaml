@@ -1,0 +1,15 @@
+id: B10046
+milestone: M2 routing
+title: IO token and remaining usage rate-limit headers
+status: done
+depends_on: [B206, B365]
+file: tasks/B10046-remaining-usage-headers.yaml
+covers:
+  - "litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py"
+  - "litellm/router_utils/add_retry_fallback_headers.py"
+parent: B019
+split_from: B019
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3041

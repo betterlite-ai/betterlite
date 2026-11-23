@@ -1,0 +1,58 @@
+kind: helper
+name: azure-native-speech-selection
+call:
+  azure_speech:
+    native_speech_selection:
+      calls:
+        - model: tts-1
+          input: hello
+          voice: {name: alloy}
+          timeout_seconds: 5
+          api_base: https://explicit.example
+          api_key: sk-explicit
+          litellm_params: {api_base: https://params.example, api_key: sk-params}
+          optional_params: {speed: 1.5}
+          extra_headers: {x-call: "1"}
+          aspeech: true
+          globals: {api_base: https://global.example, api_key: sk-global, azure_key: sk-azure-global}
+          environment: {AZURE_API_BASE: https://env.example, AZURE_OPENAI_API_KEY: sk-env}
+        - model: tts-1
+          input: hello
+          voice: 7
+          timeout_seconds: 4
+          litellm_params: {api_base: https://params.example, api_key: sk-params}
+          globals: {api_base: https://global.example, api_key: sk-global}
+          environment: {AZURE_API_BASE: https://env.example}
+        - model: tts-1
+          input: hello
+          voice: {}
+          timeout_seconds: 3
+          globals: {api_base: https://global.example, api_key: sk-global}
+        - model: tts-1
+          input: hello
+          voice: shimmer
+          timeout_seconds: 3
+          globals: {azure_key: sk-azure-global}
+          environment: {AZURE_API_BASE: https://env.example, AZURE_OPENAI_API_KEY: sk-env}
+        - model: tts-1
+          input: hello
+          voice: null
+          timeout_seconds: 2
+          environment: {AZURE_API_BASE: https://env.example, AZURE_OPENAI_API_KEY: sk-env}
+        - model: tts-1
+          input: hello
+          voice: nova
+          timeout_seconds: 2
+          environment: {AZURE_API_BASE: https://env.example, AZURE_OPENAI_API_KEY: "", AZURE_API_KEY: sk-azure-env}
+        - model: tts-1
+          input: hello
+          voice: echo
+          timeout_seconds: 1
+          globals: {api_base: https://global.example, api_key: sk-global-key}
+          environment: {AZURE_API_BASE: "", AZURE_OPENAI_API_KEY: ""}
+        - model: tts-1
+          input: hello
+          voice: alloy
+          timeout_seconds: 1
+env: {}
+compare: {ignore: []}

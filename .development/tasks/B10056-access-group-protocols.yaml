@@ -1,0 +1,118 @@
+id: B10056
+title: Access group record and transaction protocols
+description: >-
+  Every access group handler reads and writes four tables through the same narrow protocols in
+  access_group_endpoints.py (L47-L154): the access group, team, key (LiteLLM_VerificationToken) and agent tables, each
+  with a few typed calls, plus _AccessGroupTx, the open transaction that hands out all four. B821's GET handlers read
+  through them, B2340's assignment helpers write team, key and agent rows through them, and B822's create, update and
+  delete run them inside one transaction. B2340 needs only these protocols and none of B821's handlers, so they are
+  their own task: B2340 and B821 both build on it.
+
+
+  Layout. Build crates/betterlite-server/src/access_group_read/protocols.rs with submodules under
+  access_group_read/protocols/ and a tests.rs beside each. The skeleton creates the file and declares `pub mod
+  protocols;` in access_group_read.rs, B821's module; leave that parent file as it is. Callers reach it as
+  betterlite_server::access_group_read::protocols.
+
+
+  Records. `AccessGroupRecord` has every column of "LiteLLM_AccessGroupTable" (schema.prisma L1537-L1554):
+  access_group_id, access_group_name, description, the five lists access_model_names, access_mcp_server_ids,
+  access_agent_ids, assigned_team_ids and assigned_key_ids, created_at, created_by, updated_at and updated_by. B821's
+  response keeps the raw row, so the record carries all of it; it replaces the protocol's dict(). `TeamRecord` is
+  team_id, team_alias and access_group_ids; `KeyRecord` is token (the stored hash, never plaintext) and
+  access_group_ids; `AgentRecord` is agent_id and access_group_ids. Every list is Option<Vec<String>>, as the protocols
+  declare `Sequence[str] | None`: the columns are nullable TEXT[] in the migrations, B821 keeps a stored NULL visible to
+  its response validation, and B2340 reads NULL as an empty list itself. created_at and updated_at are TIMESTAMP(3)
+  without zone, read as NaiveDateTime and taken as UTC.
+
+
+  Tables. One trait per protocol, with methods returning `impl Future<Output = Result<_, AccessGroupStoreError>> +
+  Send`, like access_group_models' ModelGrantDatabase. Each method is one call LiteLLM makes through the protocol, with
+  typed arguments instead of Prisma's where and data maps:
+
+  - `AccessGroupTable`: find_by_id (find_unique on access_group_id), find_by_name (find_unique on the unique
+  access_group_name, the create conflict check), list_newest_first (find_many ordered by created_at descending, the list
+  route), create(NewAccessGroup) and update(id, AccessGroupChanges), both answering the written record, and delete(id).
+
+  - `TeamTable`: find(team_id), find_many(TeamWhere) and set_access_group_ids(team_id, ids). TeamWhere is IdIn(ids)
+  (_require_teams_exist), CarryingAny(group ids) (the hasSome filter delete uses) or CarryingAnyOrIdIn { groups, ids }
+  (_teams_touching's OR).
+
+  - `KeyTable`: find(token), find_carrying(group id) and set_access_group_ids(token, ids).
+
+  - `AgentTable`: find_carrying(group id) and set_access_group_ids(agent_id, ids). LiteLLM's _HasSomeFilter,
+  _AgentAccessGroupsWhere, _AgentIdWhere and _AgentAccessGroupsData TypedDicts are exactly these two calls, so they
+  become their arguments and no where or data type remains.
+
+  - `AccessGroupTx`: hands out the four tables, as the litellm_accessgrouptable, litellm_teamtable,
+  litellm_verificationtoken and litellm_agentstable properties do.
+
+  NewAccessGroup holds access_group_name, description, the five lists, created_by and updated_by. AccessGroupChanges
+  always writes updated_by and writes each other column only when the caller set it: access_group_name, description
+  (it may be set to null) and the five lists. B822 builds both from its request; this task does not read requests.
+
+
+  Postgres. `PgAccessGroupTables` implements all five traits over any tokio_postgres GenericClient: a pooled client from
+  B700's PostgresStore for B821's reads outside a transaction (LiteLLM reads those through B726's AccessGroupRepository
+  and TeamRepository tables) or an open Transaction for the writes. SQL is plain with `$n` parameters on
+  "LiteLLM_AccessGroupTable", "LiteLLM_TeamTable", "LiteLLM_VerificationToken" and "LiteLLM_AgentsTable", the tables
+  B726's bindings name. This module never begins, commits or rolls back: B822 owns the transaction, and B2340's tests
+  roll theirs back. Write what Prisma writes: create sets access_group_id to a new random UUID v4 string, since Prisma's
+  @default(uuid()) runs in the client and the column has no default; every update on all four tables sets updated_at to
+  the current time, as @updatedAt does; reads that LiteLLM sends without an order have no ORDER BY. An empty id or
+  group list matches no rows. `AccessGroupStoreError` is the module's thiserror enum; it keeps B700's database error,
+  SQLSTATE included, so B822 can tell a unique violation on access_group_name apart, and it never puts a row value in its
+  text.
+
+
+  Tests run on real Postgres the way agent_rows' test support does (betterlite-postgres-fixture's PostgresFixture
+  with the packaged migration catalogs, POSTGRES_TEST_URL when set): a group created and read back by id and by name with
+  a UUID id; list_newest_first order; an update that sets only description to null and leaves the lists, writes
+  updated_by and moves updated_at; delete; NULL list columns read as None on all four records; each TeamWhere variant,
+  including empty lists that return no rows without an SQL error; the key and agent carrying queries; set_access_group_ids
+  on teams, keys and agents moving updated_at; and writes made through a Transaction the test rolls back leaving every
+  row as it was.
+scope:
+  paths:
+    - crates/betterlite-server/src/access_group_read/protocols.rs
+    - crates/betterlite-server/src/access_group_read/protocols/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L47-L154
+    why: Owned. The record, table and transaction protocols and the four filter TypedDicts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L259-L286
+    why: Call sites. _teams_touching's OR filter and _require_teams_exist's id list (B821).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L317-L376
+    why: Call sites. Team, key and agent reads and access_group_ids writes inside the transaction (B2340).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L513-L813
+    why: Call sites. Create, update and delete with their find_unique, create, update, hasSome and delete calls (B822).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L1537-L1554
+    why: The access group columns, the client-side uuid default and @updatedAt.
+dod:
+  - text: Access group records are created with a UUID id, read back by id, by name and newest first, updated column by column with updated_at moved, and deleted, against real Postgres.
+    proof: [protocol-tests]
+  - text: Team, key and agent reads match each filter LiteLLM sends, an empty list matches no rows, and set_access_group_ids writes the list and moves updated_at.
+    proof: [protocol-tests]
+  - text: NULL list columns read as None on every record, and writes inside a transaction the caller rolls back leave no trace.
+    proof: [protocol-tests]
+checks:
+  optional: []
+  commands:
+    - id: protocol-tests
+      why: An access group, team, key or agent protocol call is missing or reads or writes differently from LiteLLM's Prisma calls
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^access_group_read::protocols::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "access_group_endpoints.py: B821 owns _ResourceNames, the guards and projections (L157-L309), list_access_groups and get_access_group (L584-L613) and the GET aliases (L824-L835). B2340 owns the assignment, agent detach and cache patch helpers (L317-L500). B822 owns create_access_group (L513-L577), update_access_group (L620-L710), delete_access_group (L717-L813) and the write aliases."
+  - "Opening and committing the transaction, and mapping a unique violation to an HTTP error: B822."
+  - "B726's PrismaTableRepository and its config-sync wrapper: LiteLLM's transaction tables are Prisma's raw ones, so these writes publish nothing."
+pitfalls:
+  - "betterlite-db's resource_rows::access_group::AccessGroupTable decodes lists into Vec<String> with serde defaults, so it can't hold a stored NULL; it is the cached LiteLLM_AccessGroupTable shape B821 converts to, not this record."
+  - "Prisma's hasSome is the Postgres overlap operator `access_group_ids && $1::text[]`, and `team_id IN ()` is a syntax error; use `= ANY($1)` so an empty id list returns no rows."
+  - "Team rows come back in the order Postgres returns them, and B821's carrying order depends on it; adding an ORDER BY to team, key or agent reads changes B821's responses."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

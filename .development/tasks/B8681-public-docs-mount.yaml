@@ -7,7 +7,8 @@ description: >-
   `docs_routes::docs_router(DocsRouteConfig)` (the Swagger page at docs_url, /docs/oauth2-redirect, ReDoc at redoc_url,
   the /swagger assets and the root redirect) and registers nothing. B123 builds the OpenAPI document in
   betterlite-openapi and leaves the openapi_url route and the route list to this task. This task mounts all three
-  through `mount_public` in crates/betterlite-server/src/app/edge.rs, with the document code in
+  by filling the `mount_public` stub B10082 put in crates/betterlite-server/src/app/edge.rs (B10082's
+  app::mount_public calls it and router() merges the result outside the auth layers), with the document code in
   crates/betterlite-server/src/app/edge/openapi.rs and app/edge/openapi/ (declared by the skeleton). It never edits
   routes.rs, server.rs or app.rs.
 

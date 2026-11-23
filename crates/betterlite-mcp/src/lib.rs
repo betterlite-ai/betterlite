@@ -1,4 +1,5 @@
 pub mod access;
+pub mod access_group_servers;
 pub mod allowed_union;
 pub mod auth;
 pub mod bridge_credentials;
@@ -51,6 +52,7 @@ pub mod session_admission;
 pub mod session_credentials;
 pub mod session_tokens;
 pub mod sso_assertions;
+pub mod static_credential;
 pub mod tool_access;
 pub mod tool_registry;
 pub mod tools;

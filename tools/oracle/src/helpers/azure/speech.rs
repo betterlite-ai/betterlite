@@ -1,11 +1,16 @@
+mod cases;
+mod fixtures;
+mod input;
+mod tests;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("azure_speech")
+    fn run(input: &Self::Input) -> HelperResult {
+        cases::run(input)
     }
 }

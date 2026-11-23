@@ -1,0 +1,73 @@
+id: B10052
+title: Admin or same-user check inside management routes
+description: >-
+  B1209's team listing lets a caller list other users' teams only when LiteLLM's allowed_route_check_inside_route passes, and refuses the rest with 401. That 14-line check is all B1209 needs from B742, whose route policy waits on B883 and B1229. This task builds the check alone so B1209 can start now; B742 depends on it and no longer owns it.
+
+
+  Layout. Module self_access under betterlite-auth's resolved_key: crates/betterlite-auth/src/resolved_key/self_access.rs, with tests in resolved_key/self_access/tests.rs. The file is an empty stub that resolved_key.rs (B732's module, merged) declares. It sits next to B2314's user_api_key_has_admin_view in resolved_key/auth.rs, but in a file of its own because B8802 has auth.rs in scope. It stays in betterlite-auth because UserAPIKeyAuth keeps its fields pub(crate).
+
+
+  The check. `allowed_inside_route(auth: &UserAPIKeyAuth, requested_user_id: Option<&str>) -> bool` (the LiteLLM name is past the 30-character limit; auth_checks.py L1404-L1417). It is true when `user_api_key_has_admin_view(auth)` is, that is for proxy_admin and proxy_admin_viewer; call it rather than matching the roles again. It is also true when requested_user_id and the key's user_id are both set and equal, and two empty strings count as equal. Everything else is false: a missing requested id, a key without a user_id, or another user's id. It reads nothing else and raises nothing; B1209 turns false into its own 401 (team_endpoints.py L5580).
+
+
+  Oracle. Helper cases on the b10052 operation, each a list of rows: the caller's user_role and user_id and the requested user_id, either one null where the case needs it. The Python side builds a UserAPIKeyAuth with those two fields and calls allowed_route_check_inside_route; the Rust side builds the same principal through B732's types and calls allowed_inside_route. The answer is the list of booleans.
+
+
+  Tests in resolved_key/self_access/tests.rs: proxy_admin_allowed, admin_viewer_allowed, same_user_allowed, empty_ids_match, other_user_refused, missing_requested_id_refused, keyless_user_refused and other_roles_need_same_user.
+scope:
+  paths:
+    - crates/betterlite-auth/src/resolved_key/self_access.rs
+    - crates/betterlite-auth/src/resolved_key/self_access/**
+    - tools/oracle/cases/helpers/inside-route-check/**
+    - tools/oracle/fuzz/corpus/helper_case/inside-route-check-*
+    - tools/oracle/helpers/b10052.py
+    - tools/oracle/helpers/b10052/**
+    - tools/oracle/src/helpers/auth/b10052.rs
+    - tools/oracle/src/helpers/auth/b10052/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1404-L1417
+    why: Owned. allowed_route_check_inside_route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3554
+    why: user_api_key_has_admin_view, the same two roles, already on main from B2314.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5516-L5590
+    why: The only caller at the pin, _enforce_list_team_v2_access in B1209, which answers 401 when the check is false.
+dod:
+  - text: proxy_admin and proxy_admin_viewer pass whatever user is requested, through user_api_key_has_admin_view.
+    proof: [self-access-tests, oracle, helper-python]
+  - text: Any other caller passes only when the requested user_id and its own user_id are both set and equal, empty strings included, and fails for a missing id on either side.
+    proof: [self-access-tests, oracle, helper-python, helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: self-access-tests
+      why: The inside-route check lets another user through, refuses an admin or viewer, or treats a missing id as a match.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::self_access::/)'
+    - id: helper-python
+      why: The b10052 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10052.py tools/oracle/helpers/b10052)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10052 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/inside-route-check-*")" &&
+        grep -lE 'b10052"?:' tools/oracle/fuzz/corpus/helper_case/inside-route-check-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/inside-route-check/admin-roles.yaml
+  - tools/oracle/cases/helpers/inside-route-check/same-user.yaml
+deviations: []
+out_of_scope:
+  - "_is_api_route_allowed, _allowed_routes_check and allowed_routes_check (auth_checks.py L1313-L1401) and the route_checks.py policy: B742."
+  - "user_api_key_has_admin_view: B2314, merged. The 401 detail and the rest of team listing: B1209."
+  - "Every other function in auth_checks.py: the owners B742's out_of_scope list names."
+pitfalls:
+  - "LiteLLM sets the result to False for non-admin roles first and can only turn it back to True on a same-user match, so an internal_user asking for its own id passes and an admin never fails."
+  - "The comparison is plain string equality with no trim or case fold, and None never equals None: a key without a user_id asking about no user is refused."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

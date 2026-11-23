@@ -33,8 +33,8 @@ description: >-
   B882 wildcard matching. PROXY_ADMIN uses admin_allowed_routes; TEAM uses team_allowed_routes,
   with a None value falling back to only openai_routes and info_routes. An empty list denies all;
   every other role returns False. B869 owns the typed default lists (admin management/spend/global
-  spend/info; team openai/info/mcp/messages/count_tokens). allowed_route_check_inside_route permits
-  admin/viewer, or matching nonnull caller/requested user IDs including empty strings; others fail.
+  spend/info; team openai/info/mcp/messages/count_tokens). allowed_route_check_inside_route, the
+  admin-or-same-user check inside team listing, is B10052's and is not built here.
 
 
   Build the production auth_route_policy module in betterlite-auth; reuse the typed dependencies listed
@@ -48,7 +48,7 @@ description: >-
   lines), RouteChecks.custom_admin_only_route_check (L368-L382; 14 source lines), RouteChecks._check_proxy_admin_viewer_access
   (L835-L951; 84 source lines). litellm/proxy/auth/auth_checks.py: _is_api_route_allowed (L1313-L1337;
   23 source lines), _allowed_routes_check (L1350-L1369; 18 source lines), allowed_routes_check (L1372-L1401;
-  28 source lines), allowed_route_check_inside_route (L1404-L1417; 14 source lines).
+  28 source lines).
 
 
   general_settings.admin_only_routes is absent by default and matches exact routes only. Source logs
@@ -86,7 +86,7 @@ description: >-
   is isolated from the equality corpus, which runs without the enterprise package.
 
 
-  Sizing: 310 owned function lines plus 69 nonblank table lines; allow 300 production, 300 table-driven
+  Sizing: 296 owned function lines plus 69 nonblank table lines; allow 300 production, 300 table-driven
   tests, 75 adapters, 65 wiring and 50 config lines, 790 within 800. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
@@ -155,8 +155,6 @@ references:
     why: Own _allowed_routes_check; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1372-L1401
     why: Own allowed_routes_check; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1404-L1417
-    why: Own allowed_route_check_inside_route; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L378-L383
     why: general_settings.admin_only_routes default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5356-L5375
@@ -184,10 +182,9 @@ dod:
       Masking cases cover empty_short_mask, five_to_eight_all_masked,
       long_id_six_two_visible and unknown_identity_masked. Run named HTTP cases for all denials.'
     proof: [behavior-tests, helper-python, oracle]
-  - text: 'JWT and self-access cases name admin_default_groups, team_default_groups,
+  - text: 'JWT cases name admin_default_groups, team_default_groups,
       team_none_two_group_fallback, empty_routes_deny, other_role_denied,
-      route_group_template, route_wildcard, admin_viewer_self_check,
-      matching_user_self_check and absent_user_not_self. Configured-admin license behavior
+      route_group_template and route_wildcard. Configured-admin license behavior
       has native tests; the MIT HTTP case asserts its warning and skipped policy.'
     proof: [behavior-tests, config-tests, oracle, helper-python]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -251,7 +248,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-route-policy/masked-denial.yaml
   - tools/oracle/cases/helpers/auth-route-policy/non-admin-401-auth-error.yaml
   - tools/oracle/cases/helpers/auth-route-policy/viewer-table-and-verbs.yaml
-  - tools/oracle/cases/helpers/auth-route-policy/jwt-groups-and-self.yaml
+  - tools/oracle/cases/helpers/auth-route-policy/jwt-route-groups.yaml
   - tools/oracle/cases/auth/auth-route-policy/viewer-read-only.yaml
   - tools/oracle/cases/auth/auth-route-policy/non-admin-management-denied.yaml
   - tools/oracle/cases/auth/auth-route-policy/masked-denial.yaml
@@ -264,6 +261,7 @@ deviations:
     why: No paid tier; all MIT policy functionality is available.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L368-L382
 out_of_scope:
+  - 'litellm/proxy/auth/auth_checks.py: B10052 owns allowed_route_check_inside_route (L1404-L1417).'
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -358,7 +356,7 @@ out_of_scope:
     stamp_matched_model_access_groups (L4917-L4954).'
   - 'litellm/proxy/auth/auth_checks.py: B886 owns can_key_call_model (L4957-L5005), can_key_call_resolved_model
     (L5008-L5100), can_org_access_model (L5103-L5119), can_team_access_model (L5122-L5164), get_authorized_resources_from_key_access_groups
-    (L5167-L5212), _key_access_group_grants_model (L5215-L5246), can_project_access_model (L5249-L5266),
+    (L5167-L5212), _key_access_group_grants_model (L5215-L5246), can_project_access_model (L5249-L5266); B10051 owns
     can_user_call_model (L5269-L5297).'
   - 'litellm/proxy/auth/auth_checks.py: B887 owns _check_team_member_budget (L5823-L5910), _check_team_member_model_access
     (L5913-L5972), _team_max_budget_check (L5975-L6022), _team_multi_budget_check (L6025-L6062), _team_soft_budget_check

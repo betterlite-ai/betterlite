@@ -1,0 +1,106 @@
+id: B10071
+title: Vector store index admin gate and lifecycle check
+description: >-
+  Creating, changing or deleting a vector store index is for proxy admins only. vector_store_endpoints/utils.py decides that in four small functions at L40-L99: _is_proxy_admin, assert_proxy_admin_for_vector_store_index_management, _suffix_after_index_name and _is_vector_store_index_lifecycle_request. This task builds those four and nothing else from the file. B1060's store access checks short-circuit on the admin predicate, B1061's endpoint grant checks call the lifecycle check and the admin gate, and the index routes call the gate before they touch the database.
+
+
+  Layout. Module vector_index_admin in betterlite-auth: crates/betterlite-auth/src/vector_index_admin.rs with its tests in vector_index_admin/tests.rs, and the lifecycle check in vector_index_admin/lifecycle.rs with its tests in vector_index_admin/lifecycle/tests.rs. lib.rs already declares the module over an empty stub file. The code lives in betterlite-auth because UserAPIKeyAuth keeps user_role pub(crate) there and no public reader of it exists (B2314's user_api_key_has_admin_view also admits proxy_admin_viewer, so it is not this check). betterlite-auth already holds vector store authorization reads (auth_resource_grants, B749), and betterlite-core, where B1060 and B1061 live, already depends on it; no Cargo.toml changes.
+
+
+  1. auth_is_proxy_admin(auth: &UserAPIKeyAuth) -> bool is LiteLLM's _is_proxy_admin: true only when user_role is proxy_admin. Write it as one exhaustive match over UserRole with no wildcard arm, the shape user_api_key_has_admin_view has in crates/betterlite-auth/src/resolved_key/auth.rs: a new role then fails the build until someone decides whether it administers indexes. B1060 calls it for its two admin short circuits and B1061 for its two admin bypasses, so none of them compares the role on its own.
+
+
+  2. IndexOperation is an enum with Create, Delete, Update and List, displayed as "create", "delete", "update" and "list" (LiteLLM's operation literal; its default is create, and callers here always pass one). IndexAdminError is this module's error enum with one variant, NotProxyAdmin(IndexOperation), whose message is "Only proxy admins can <operation> vector store indexes. Contact your LiteLLM administrator.". require_index_admin(auth: &UserAPIKeyAuth, operation: IndexOperation) -> Result<(), IndexAdminError> is assert_proxy_admin_for_vector_store_index_management: Ok for a proxy admin, else NotProxyAdmin with the operation. Callers turn the error into LiteLLM's HTTPException, status 403 with that message as detail; it carries no error type, param or code.
+
+
+  3. is_index_lifecycle_request(method: &str, path: &str, index_name: &str) -> bool is _is_vector_store_index_lifecycle_request, in lifecycle.rs. A method other than "POST", "PUT", "DELETE" or "PATCH" (exact strings) gives false. Then the suffix after the index name (_suffix_after_index_name, private here): the text after the first occurrence of "/indexes/" followed by the literal index name whose next character is the end of the path, "/" or "?"; None when there is no such occurrence. A suffix that starts with "/docs" gives false at once (document operations). An empty suffix or one that starts with "?" gives true (the index itself). Otherwise, and when there is no suffix, the path is cut at its first "?", every trailing "/" is trimmed, and the answer is true only for POST on a path that then ends with "/indexes" (create at the service level). Everything else is false. No regex is needed.
+
+
+  Oracle. No route reaches this code yet, so the helper operation b10071 compares the gate and the lifecycle check with LiteLLM. Its input names the function: for the gate, a user_role (a LitellmUserRoles value or null) and an operation; for the lifecycle check, the method, path and index name. The Rust side builds the auth with UserAPIKeyAuth::construct from a dict holding user_role. The Python adapter builds LiteLLM's UserAPIKeyAuth with that role, calls assert_proxy_admin_for_vector_store_index_management and catches HTTPException, and calls _is_vector_store_index_lifecycle_request with keyword arguments. The answer is whether the gate passed with the status of the refusal, or the boolean.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/vector_index_admin.rs
+    - crates/betterlite-auth/src/vector_index_admin/**
+    - tools/oracle/cases/helpers/vector-index-admin/**
+    - "tools/oracle/fuzz/corpus/helper_case/vector-index-admin-*"
+    - tools/oracle/helpers/b10071.py
+    - tools/oracle/helpers/b10071/**
+    - tools/oracle/src/helpers/auth/b10071.rs
+    - tools/oracle/src/helpers/auth/b10071/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L40-L99
+    why: Owned. The admin predicate, the gate with its operation literal and message, the suffix lookahead and the lifecycle rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L414-L460
+    why: Caller. is_allowed_to_call_vector_store_endpoint compares the role inline, then maps the method to an operation and calls the gate on a lifecycle request (B1061).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L148-L175
+    why: Caller. can_user_access_vector_store returns early for a proxy admin (B1060); filter_listable_vector_stores at L248-L257 does the same.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L576-L579
+    why: Caller. The index create route gates with operation create; L630-L633 gates the index list with operation list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2189
+    why: Caller. The pass-through index create gates with operation create.
+
+dod:
+  - text: >-
+      auth_is_proxy_admin is true for proxy_admin and false for proxy_admin_viewer, org_admin, internal_user and no role;
+      require_index_admin passes a proxy admin and refuses everyone else with NotProxyAdmin, whose message names create, delete, update or list as LiteLLM's does.
+    proof: [admin-tests, helper-case-corpus, helper-python, helper-tests, oracle]
+  - text: >-
+      is_index_lifecycle_request is true for POST, PUT, DELETE and PATCH on /indexes/<name> and /indexes/<name>?x=1 and for POST on /indexes and /indexes/?x=1;
+      it is false for GET, for /indexes/<name>/docs/search and /indexes/<name>/docsanything, for a trailing slash after the name, for "axb" when the name is "a.b",
+      and for /indexes/name2 when the name is "name", and it finds the name at a later occurrence when an earlier one is followed by another character.
+    proof: [lifecycle-tests, helper-case-corpus, helper-python, helper-tests, oracle]
+  - text: The b10071 helper cases exist for the gate and the lifecycle check, survive the corpus replay and match LiteLLM.
+    proof: [helper-case-corpus, helper-python, helper-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: admin-tests
+      why: the admin predicate admits the wrong role or the gate refuses with the wrong operation
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^vector_index_admin::tests::/)'
+    - id: lifecycle-tests
+      why: an index create, update or delete is not recognized, or a document call is taken for one
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^vector_index_admin::lifecycle::tests::/)'
+    - id: helper-tests
+      why: the b10071 adapter does not call the production gate and lifecycle check
+      run: cargo nextest run --locked -p betterlite-oracle-auth --no-tests=fail -E 'test(/^b10071::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: tools/oracle/helpers/b10071.py is missing or fails ruff or basedpyright
+      run: test -f tools/oracle/helpers/b10071.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added vector-index-admin helper case reaches the shared parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vector-index-admin-*')" && grep -qE '^[[:space:]]+b10071:' tools/oracle/fuzz/corpus/helper_case/vector-index-admin-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/vector-index-admin/gate-proxy-admin-passes.yaml
+  - tools/oracle/cases/helpers/vector-index-admin/gate-viewer-refused.yaml
+  - tools/oracle/cases/helpers/vector-index-admin/gate-no-role-refused.yaml
+  - tools/oracle/cases/helpers/vector-index-admin/lifecycle-index-itself.yaml
+  - tools/oracle/cases/helpers/vector-index-admin/lifecycle-service-create.yaml
+  - tools/oracle/cases/helpers/vector-index-admin/lifecycle-document-paths.yaml
+  - tools/oracle/cases/helpers/vector-index-admin/lifecycle-read-methods.yaml
+  - tools/oracle/cases/helpers/vector-index-admin/lifecycle-literal-name.yaml
+
+deviations: []
+
+out_of_scope:
+  - "_normalize_litellm_params, _object_permission_allows_vector_store, _get_object_permission_for_id, can_user_access_vector_store, _is_vector_store_granted, _team_auth_context, _vector_store_auth_contexts, _is_vector_store_granted_to_any and filter_listable_vector_stores: B1060, which calls auth_is_proxy_admin."
+  - "get_litellm_managed_vector_store, assert_user_can_access_vector_store and assert_user_can_access_vector_store_id: B10014."
+  - "_does_endpoint_match, check_vector_store_permission, is_allowed_to_call_vector_store_endpoint and is_allowed_to_call_vector_store_files_endpoint: B1061, which calls all three public functions here."
+  - "The index create and list routes and the pass-through index create, with their 403 envelopes: the route tasks that own them (B1067, B3624)."
+
+pitfalls:
+  - LiteLLM's admin check accepts proxy_admin only, so proxy_admin_viewer is refused here although user_api_key_has_admin_view admits it.
+  - "_suffix_after_index_name relies on the lookahead (?=$|[/?]) and the regex crate has none; scan the occurrences of \"/indexes/<name>\" with match_indices, because re.search moves on past an occurrence the lookahead rejects, so \"/indexes/name2/indexes/name\" matches the second one."
+  - The index name is escaped in LiteLLM (re.escape), so compare it as a literal; "a.b" must not match "axb".
+  - A "/docs" suffix returns false before the POST rule runs, and a suffix like "/" or "/other" falls through to it; only a path that ends in "/indexes" after the query cut and the trim is a create.
+  - Python's rstrip("/") removes every trailing slash, so POST "/azure_ai/indexes///" is a create; trim all of them, not one.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

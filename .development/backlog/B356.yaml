@@ -1,7 +1,7 @@
 id: B356
 milestone: M2 routing
 title: Start and stop automatic-router shadow evaluations
-status: todo
+status: done
 depends_on: [B345, B380, B4083, B051, B301, B361]
 file: tasks/B356-shadow-eval-lifecycle.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/management_endpoints/auto_router_endpoints.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3015
