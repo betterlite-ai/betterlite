@@ -2,8 +2,9 @@ id: B886
 title: Model grants for keys and parent entities
 description: >-
   Authorize requested and resolved models against key, team, organization, project and user grant snapshots;
-  preserve access-group resource expansion. Expose can_user_call_model for organization creation and can_key_call_resolved_model
-  for admission/fallback. Use B747's alias/model matcher and B737's entity reads; B885's attribution
+  preserve access-group resource expansion. Expose can_key_call_resolved_model for admission/fallback. The
+  user grant is B10051's can_user_call_model (betterlite-auth auth_model_patterns::user_model); this task
+  calls it where its stage checks the user and does not build it. Use B747's alias/model matcher and B737's entity reads; B885's attribution
   collection is not called by these functions.
 
   can_key_call_model first uses B747's resolved key models, team aliases, trusted key aliases and team ID.
@@ -11,9 +12,8 @@ description: >-
   alone when nonempty. Empty groups rethrow the original denial. Team access similarly retries after
   ProxyException but combines original team models with group models, deduplicating in first-seen order.
   Other errors propagate without fallback. Org/project calls pass their respective models (or [] for
-  absent objects) and object_type; missing users return True. A user's no-default-models sentinel raises
-  403 key_model_access_denied with param model, intentionally not user_model_access_denied. Other
-  model denials use 403, param model and key/team/org/project/user_model_access_denied from B747.
+  absent objects) and object_type. Model denials use 403, param model and key/team/org/project_model_access_denied
+  from B747; the user denials, including the no-default-models one, come from B10051.
   Client messages identify the requested model but do not expose the internal allowlist diagnostic.
 
   Resolved-model admission skips the key check for truthy token.config or list models containing
@@ -45,8 +45,8 @@ description: >-
   can_key_call_model (L4957-L5005; 45 source lines), can_key_call_resolved_model (L5008-L5100; 88 source
   lines), can_org_access_model (L5103-L5119; 16 source lines), can_team_access_model (L5122-L5164; 41
   source lines), get_authorized_resources_from_key_access_groups (L5167-L5212; 41 source lines), _key_access_group_grants_model
-  (L5215-L5246; 32 source lines), can_project_access_model (L5249-L5266; 17 source lines), can_user_call_model
-  (L5269-L5297; 27 source lines).
+  (L5215-L5246; 32 source lines), can_project_access_model (L5249-L5266; 17 source lines). B10051 owns
+  can_user_call_model (L5269-L5297).
 
 
   Add the entity_model_access operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -61,8 +61,8 @@ description: >-
   routing; the pure grant cases must distinguish replacement from union rather than just allow/deny.
 
 
-  Sizing: 307 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  300 production, 270 behavior tests, 75 adapters and 65 wiring lines, 710 within a 750-line gate.
+  Sizing: 280 nonblank, noncomment pinned source lines after B10051 took can_user_call_model (including
+  owned declarations/static SQL).
   Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
@@ -108,16 +108,14 @@ references:
     why: Own _key_access_group_grants_model; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5249-L5266
     why: Own can_project_access_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5269-L5297
-    why: Own can_user_call_model; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: org_denial, key_resolved_target,
-      user_model_denial, project_model_denial, key_groups_replace_grants,
+      project_model_denial, key_groups_replace_grants,
       team_groups_union_preserves_order, only_proxy_exception_falls_back,
-      empty_groups_original_denial, entity_denial_type_matrix, user_missing_allows,
-      no_default_models_uses_key_error, configured_key_skips_check, all_team_models_skips_key,
+      empty_groups_original_denial, entity_denial_type_matrix,
+      configured_key_skips_check, all_team_models_skips_key,
       resolved_default_db_argument, team_lookup_error_snapshot, only_team_denial_override,
       member_check_requires_live_team, project_after_member_nonempty_only,
       resource_missing_inputs_empty, group_team_or_key_owner, key_team_precedes_supplied_team,
@@ -165,7 +163,6 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/entity-model-access/org-denial.yaml
   - tools/oracle/cases/helpers/entity-model-access/key-resolved-target.yaml
-  - tools/oracle/cases/helpers/entity-model-access/user-model-denial.yaml
   - tools/oracle/cases/helpers/entity-model-access/project-model-denial.yaml
   - tools/oracle/cases/helpers/entity-model-access/key-and-team-group-retry.yaml
   - tools/oracle/cases/helpers/entity-model-access/resolved-check-order.yaml
@@ -229,7 +226,7 @@ out_of_scope:
     (L2166-L2172), get_model_access_group_budgets_batch (L2176-L2204), _fetch_uncached_tags (L2207-L2243),
     get_tag_objects_batch (L2247-L2287).'
   - 'litellm/proxy/auth/auth_checks.py: B742 owns _is_api_route_allowed (L1313-L1337), _allowed_routes_check
-    (L1350-L1369), allowed_routes_check (L1372-L1401), allowed_route_check_inside_route (L1404-L1417).'
+    (L1350-L1369), allowed_routes_check (L1372-L1401); B10052 owns allowed_route_check_inside_route (L1404-L1417).'
   - 'litellm/proxy/auth/auth_checks.py: B747 owns _get_resources_from_access_groups (L4237-L4297), _get_models_from_access_groups
     (L4300-L4316), _get_mcp_server_ids_from_access_groups (L4319-L4337), _get_agent_ids_from_access_groups
     (L4340-L4358), _resolve_all_team_model_sentinel_for_auth_check (L4361-L4372), _check_model_access_helper
@@ -290,6 +287,7 @@ out_of_scope:
     identifier search finds only this definition.'
   - 'litellm/proxy/auth/auth_checks.py::model_in_access_group: no production caller at the pinned commit;
     repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/auth/auth_checks.py: B10051 owns can_user_call_model (L5269-L5297); this task calls it.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as entity_model_access in the server group. Replace the stub Op in tools/oracle/src/helpers/server/entity_model_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/entity_model_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
