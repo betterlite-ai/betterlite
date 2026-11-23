@@ -1,0 +1,237 @@
+use super::convert::{self, ReloadEnvelope, ReloadQuery};
+use super::error::ModelInfoError;
+use super::map::finalize;
+use super::state::{Runtime, catalog_settings};
+use betterlite_config::loader::startup::process_environment;
+use betterlite_models::catalog_generalizations::CatalogGeneralizations;
+use betterlite_models::fetch_policy::client::{CatalogClient, CatalogRequest};
+use betterlite_models::fetch_policy::integrity::{IntegrityPolicy, validate_model_cost_map};
+use betterlite_models::fetch_policy::outcome::{
+    AttemptOutcome, FetchResult, classify_fetch_error, classify_fetch_response,
+};
+use betterlite_models::fetch_policy::retry::{CatalogSleeper, JitterSource, fetch_with_retry};
+use betterlite_models::model_metadata_resolution::names::ModelCostMap;
+use betterlite_models::source::{CatalogProvenance, SourceKind};
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
+// ast-grep-ignore: no-padded-one-line-functions - the environment must be read off the caller's process
+pub(crate) async fn reload_blocking(
+    runtime: &Runtime,
+    query: &ReloadQuery,
+) -> Result<String, ModelInfoError> {
+    let environment = process_environment();
+    reload_blocking_with(runtime, query, &runtime.fetch, &environment).await
+}
+pub(crate) async fn reload_blocking_with<Client>(
+    runtime: &Runtime,
+    query: &ReloadQuery,
+    client: &Client,
+    environment: &BTreeMap<String, String>,
+) -> Result<String, ModelInfoError>
+where
+    Client: CatalogClient,
+{
+    let settings = catalog_settings(environment)?;
+    let loaded_at = Utc::now();
+    if settings.local {
+        return bundled_answer(runtime, env_forced_provenance(runtime, loaded_at));
+    }
+    runtime.update(|state| {
+        state.provenance.url = Some(query.url.clone());
+        state.provenance.is_env_forced = false;
+        state.provenance.loaded_at = Some(loaded_at);
+    });
+    let request = CatalogRequest {
+        url: query.url.clone(),
+        timeout: query.timeout()?,
+    };
+    let outcome = match client.get_async(&request).await {
+        Ok(response) => classify_fetch_response(response, &request.url),
+        Err(error) => classify_fetch_error(&error, &request.url),
+    };
+    match outcome {
+        AttemptOutcome::Retryable(retryable) => fallback(
+            runtime,
+            loaded_at,
+            format!("Remote fetch failed: {}", retryable.reason),
+        ),
+        AttemptOutcome::Unavailable(unavailable) => fallback(
+            runtime,
+            loaded_at,
+            format!("Remote fetch failed: {}", unavailable.reason),
+        ),
+        AttemptOutcome::Reloaded(fetched) => {
+            if validate_model_cost_map(
+                &fetched.models,
+                runtime.bundled.count,
+                IntegrityPolicy::default(),
+            )
+            .is_err()
+            {
+                return fallback(
+                    runtime,
+                    loaded_at,
+                    "Remote data failed integrity validation".to_owned(),
+                );
+            }
+            let map = ModelCostMap::parse(&fetched.body)?.entries;
+            let finalized = finalize(map)?;
+            let rules = Arc::new(CatalogGeneralizations::install(finalized.rules).0);
+            let provenance = CatalogProvenance {
+                kind: SourceKind::Remote,
+                url: Some(query.url.clone()),
+                is_env_forced: false,
+                fallback_reason: None,
+                loaded_at: Some(loaded_at),
+                source_revision: Some(fetched.revision.clone()),
+                etag: fetched.etag.clone(),
+            };
+            runtime.update(|state| {
+                state.generalizations = Arc::clone(&rules);
+                state.provenance = provenance;
+            });
+            convert::reload_result(&ReloadEnvelope::Reloaded {
+                model_cost_map: &finalized.entries,
+                revision: Some(&fetched.revision),
+                etag: fetched.etag.as_deref(),
+            })
+        }
+    }
+}
+// ast-grep-ignore: no-padded-one-line-functions - the environment must be read off the caller's process
+pub(crate) async fn reload_async(
+    runtime: &Runtime,
+    query: &ReloadQuery,
+) -> Result<String, ModelInfoError> {
+    let environment = process_environment();
+    reload_async_with(runtime, query, &runtime.fetch, &environment, &TokioSleep).await
+}
+pub(crate) async fn reload_async_with<Client, Sleeper>(
+    runtime: &Runtime,
+    query: &ReloadQuery,
+    client: &Client,
+    environment: &BTreeMap<String, String>,
+    sleeper: &Sleeper,
+) -> Result<String, ModelInfoError>
+where
+    Client: CatalogClient,
+    Sleeper: CatalogSleeper,
+{
+    let settings = catalog_settings(environment)?;
+    if settings.local {
+        let loaded_at = Utc::now();
+        return bundled_answer(runtime, env_forced_provenance(runtime, loaded_at));
+    }
+    let request = CatalogRequest {
+        url: query.url.clone(),
+        timeout: query.timeout()?,
+    };
+    let mut jitter = NoJitter;
+    match fetch_with_retry(&request, query.max_attempts, client, sleeper, &mut jitter).await {
+        FetchResult::Unavailable(unavailable) => unavailable_answer(&unavailable.reason),
+        FetchResult::Reloaded(fetched) => {
+            if validate_model_cost_map(
+                &fetched.models,
+                runtime.bundled.count,
+                IntegrityPolicy::default(),
+            )
+            .is_err()
+            {
+                let reason = format!(
+                    "model cost map from {} failed integrity validation",
+                    request.url
+                );
+                return unavailable_answer(&reason);
+            }
+            let map = ModelCostMap::parse(&fetched.body)?.entries;
+            let finalized = finalize(map)?;
+            let rules = Arc::new(CatalogGeneralizations::install(finalized.rules).0);
+            let provenance = CatalogProvenance {
+                kind: SourceKind::Remote,
+                url: Some(query.url.clone()),
+                is_env_forced: false,
+                fallback_reason: None,
+                loaded_at: Some(Utc::now()),
+                source_revision: Some(fetched.revision.clone()),
+                etag: fetched.etag.clone(),
+            };
+            runtime.update(|state| {
+                state.generalizations = Arc::clone(&rules);
+                state.provenance = provenance;
+            });
+            convert::reload_result(&ReloadEnvelope::Reloaded {
+                model_cost_map: &finalized.entries,
+                revision: Some(&fetched.revision),
+                etag: fetched.etag.as_deref(),
+            })
+        }
+    }
+}
+// ast-grep-ignore: no-one-line-functions - every unavailable answer is built the same way
+fn unavailable_answer(reason: &str) -> Result<String, ModelInfoError> {
+    convert::reload_result(&ReloadEnvelope::Unavailable { reason })
+}
+fn env_forced_provenance(runtime: &Runtime, loaded_at: DateTime<Utc>) -> CatalogProvenance {
+    CatalogProvenance {
+        kind: SourceKind::Local,
+        url: None,
+        is_env_forced: true,
+        fallback_reason: None,
+        loaded_at: Some(loaded_at),
+        source_revision: runtime.bundled.revision.clone(),
+        etag: None,
+    }
+}
+// The bundled map is the answer for env-forced reloads and for every failed remote fetch.
+fn bundled_answer(
+    runtime: &Runtime,
+    provenance: CatalogProvenance,
+) -> Result<String, ModelInfoError> {
+    let bundled = &runtime.bundled;
+    runtime.update(|state| {
+        state.generalizations = Arc::clone(&bundled.rules);
+        state.provenance = provenance;
+    });
+    convert::reload_result(&ReloadEnvelope::Reloaded {
+        model_cost_map: &bundled.finalized,
+        revision: bundled.revision.as_deref(),
+        etag: None,
+    })
+}
+fn fallback(
+    runtime: &Runtime,
+    loaded_at: DateTime<Utc>,
+    reason: String,
+) -> Result<String, ModelInfoError> {
+    let url = runtime.state().provenance.url.clone();
+    let provenance = CatalogProvenance {
+        kind: SourceKind::Local,
+        url,
+        is_env_forced: false,
+        fallback_reason: Some(reason),
+        loaded_at: Some(loaded_at),
+        source_revision: runtime.bundled.revision.clone(),
+        etag: None,
+    };
+    bundled_answer(runtime, provenance)
+}
+struct TokioSleep;
+impl CatalogSleeper for TokioSleep {
+    fn sleep(&self, seconds: Decimal) -> impl Future<Output = ()> + Send {
+        let delay = Duration::try_from_secs_f64(seconds.to_f64().unwrap_or_default())
+            .unwrap_or(Duration::ZERO);
+        tokio::time::sleep(delay)
+    }
+}
+struct NoJitter;
+impl JitterSource for NoJitter {
+    fn unit_interval(&mut self) -> Decimal {
+        Decimal::ZERO
+    }
+}
+mod tests;
