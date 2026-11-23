@@ -364,6 +364,15 @@ pub(super) fn field(record: &Json, name: &str) -> Json {
     fields.get(name).cloned().unwrap_or(Json::Null)
 }
 
+// a record the store wrote since owners existed keeps the response behind its envelope
+pub(super) fn response(record: &Json) -> Json {
+    match field(record, "response") {
+        value @ Json::Object(_) => value,
+        Json::Null => record.clone(),
+        other => panic!("response is not an object: {other:?}"),
+    }
+}
+
 pub(super) fn text(record: &Json, name: &str) -> String {
     match field(record, name) {
         Json::Text(value) => value,

@@ -140,7 +140,7 @@ pub(super) fn assert_warned(warnings: &[String], needle: &str) {
 }
 
 pub(super) fn assert_failed_message(scenario: &Scenario, message: &str) {
-    let record = support::last_write(&scenario.cache);
+    let record = support::response(&support::last_write(&scenario.cache));
     assert_eq!(support::text(&record, "status"), "failed");
     let error = support::field(&record, "error");
     assert_eq!(support::text(&error, "type"), "internal_error");
