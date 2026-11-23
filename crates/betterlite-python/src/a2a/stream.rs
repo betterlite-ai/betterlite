@@ -223,3 +223,5 @@ fn chunk_of(item: Result<AgentJson, EntryError>) -> Result<String, PyErr> {
         Err(error) => Err(entry_error(error, true)),
     }
 }
+
+mod tests;
