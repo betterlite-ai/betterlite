@@ -489,12 +489,12 @@ impl LeaseHarness {
 
     pub(super) fn renewal(
         &self,
-        interval: Duration,
+        redis_default_ttl: i64,
         request_timeout: Duration,
     ) -> LeaseRenewal<'_> {
         LeaseRenewal {
             leases: Arc::clone(&self.recorder),
-            interval,
+            redis_default_ttl,
             request_timeout,
             tasks: &self.tracker,
         }

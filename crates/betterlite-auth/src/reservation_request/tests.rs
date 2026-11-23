@@ -14,7 +14,7 @@ use crate::reservation_admission::error::AdmissionError;
 use crate::reservation_settlement::handle::get_reserved_counter_keys;
 
 use super::error::ReservationRequestError;
-use super::lease;
+use super::lease::{self, renewal_interval};
 use super::reserve_budget_for_request;
 use super::routes::{is_token_counting_route, is_unbilled_route};
 use super::start_renewal;
@@ -24,6 +24,8 @@ use self::support::{
     reservation_entry, reservation_handle, reservation_handle_without_keys,
 };
 
+// the TTL half of BaseCache's 60 second default
+const TTL: i64 = 60;
 const INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
 
@@ -382,7 +384,7 @@ async fn lease_successful_reservation_starts_the_renewal() {
     let harness = LeaseHarness::new();
     let body = support::body();
     let request = RequestFixture::new(&body, ROUTE, &world).build();
-    let renewal = harness.renewal(INTERVAL, REQUEST_TIMEOUT);
+    let renewal = harness.renewal(TTL, REQUEST_TIMEOUT);
     let handle = reserve_budget_for_request(&request, &world.services(Some(renewal)))
         .await
         .expect("the reservation finishes")
@@ -414,18 +416,42 @@ async fn lease_does_not_start_without_counter_keys() {
     let world = World::new();
     let harness = LeaseHarness::new();
     let handle = reservation_handle_without_keys();
-    let renewal = harness.renewal(INTERVAL, REQUEST_TIMEOUT);
+    let renewal = harness.renewal(TTL, REQUEST_TIMEOUT);
     let services = world.services(Some(renewal));
     start_renewal(&handle, &services);
     yield_now().await;
     assert!(harness.tracker.is_empty());
 }
 
+#[test]
+fn lease_renewal_interval_halves_the_redis_ttl() {
+    assert_eq!(renewal_interval(60), Some(Duration::from_secs(30)));
+    assert_eq!(renewal_interval(21), Some(Duration::from_millis(10_500)));
+    assert_eq!(renewal_interval(1), Some(Duration::from_millis(500)));
+    assert_eq!(renewal_interval(0), None);
+    assert_eq!(renewal_interval(-60), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn lease_zero_ttl_does_not_start_a_renewal() {
+    let world = World::new();
+    let harness = LeaseHarness::new();
+    let handle = reservation_handle(&[KEY]);
+    let renewal = harness.renewal(0, REQUEST_TIMEOUT);
+    let services = world.services(Some(renewal));
+    start_renewal(&handle, &services);
+    yield_now().await;
+    assert!(harness.tracker.is_empty());
+    advance(INTERVAL).await;
+    yield_now().await;
+    assert!(harness.refreshed().is_empty());
+}
+
 #[tokio::test(start_paused = true)]
 async fn lease_renews_each_key_every_interval() {
     let harness = LeaseHarness::new();
     let handle = reservation_handle(&["spend:key:a", "spend:key:b"]);
-    let renewal = harness.renewal(INTERVAL, REQUEST_TIMEOUT);
+    let renewal = harness.renewal(TTL, REQUEST_TIMEOUT);
     lease::start(
         &renewal,
         Arc::downgrade(&handle.0),
@@ -448,7 +474,7 @@ async fn lease_renews_each_key_every_interval() {
 async fn lease_does_not_renew_before_the_first_interval() {
     let harness = LeaseHarness::new();
     let handle = reservation_handle(&[KEY]);
-    let renewal = harness.renewal(INTERVAL, REQUEST_TIMEOUT);
+    let renewal = harness.renewal(TTL, REQUEST_TIMEOUT);
     lease::start(
         &renewal,
         Arc::downgrade(&handle.0),
@@ -467,7 +493,7 @@ async fn lease_does_not_renew_before_the_first_interval() {
 async fn lease_stops_after_finalization() {
     let harness = LeaseHarness::new();
     let handle = reservation_handle(&[KEY]);
-    let renewal = harness.renewal(INTERVAL, REQUEST_TIMEOUT);
+    let renewal = harness.renewal(TTL, REQUEST_TIMEOUT);
     lease::start(
         &renewal,
         Arc::downgrade(&handle.0),
@@ -485,7 +511,7 @@ async fn lease_stops_after_finalization() {
 async fn lease_stops_when_the_record_is_dropped() {
     let harness = LeaseHarness::new();
     let handle = reservation_handle(&[KEY]);
-    let renewal = harness.renewal(INTERVAL, REQUEST_TIMEOUT);
+    let renewal = harness.renewal(TTL, REQUEST_TIMEOUT);
     lease::start(
         &renewal,
         Arc::downgrade(&handle.0),
@@ -503,7 +529,7 @@ async fn lease_stops_when_the_record_is_dropped() {
 async fn lease_stops_at_the_request_timeout() {
     let harness = LeaseHarness::new();
     let handle = reservation_handle(&[KEY]);
-    let renewal = harness.renewal(INTERVAL, Duration::from_secs(90));
+    let renewal = harness.renewal(TTL, Duration::from_secs(90));
     lease::start(
         &renewal,
         Arc::downgrade(&handle.0),

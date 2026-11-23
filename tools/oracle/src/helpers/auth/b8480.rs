@@ -2,8 +2,11 @@ mod support;
 
 use std::collections::BTreeMap;
 
-use betterlite_auth::reservation_counters::CounterServices;
-use betterlite_auth::reservation_request::production::RequestCounters;
+use async_trait::async_trait;
+use betterlite_auth::budget_counter::BudgetCounter;
+use betterlite_auth::reservation_counters::error::ReservationCounterError;
+use betterlite_auth::reservation_counters::{CounterInput, CounterServices, budget_counters};
+use betterlite_auth::reservation_request::ports::ReservationCounterSource;
 use betterlite_auth::reservation_request::{
     ReservationRequest, ReservationServices, reserve_budget_for_request,
 };
@@ -37,6 +40,21 @@ struct Input {
     routes: Vec<String>,
 }
 
+// the counter source the reservation calls, over the same CounterServices the server builds
+struct CaseCounters<'services> {
+    services: CounterServices<'services>,
+}
+
+#[async_trait]
+impl ReservationCounterSource for CaseCounters<'_> {
+    async fn counters(
+        &self,
+        input: &CounterInput<'_>,
+    ) -> Result<Vec<BudgetCounter>, ReservationCounterError> {
+        budget_counters(input, &self.services).await
+    }
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -59,7 +77,7 @@ async fn execute(input: &Input) -> HelperResult {
     let tags = NoTags;
     let groups = NoGroups;
     let durations = Durations(TimeZoneDatabase::from_env());
-    let counters = RequestCounters {
+    let counters = CaseCounters {
         services: CounterServices {
             database: false,
             cache: &cache,
@@ -90,7 +108,7 @@ async fn execute(input: &Input) -> HelperResult {
 }
 
 fn build_services<'services>(
-    counters: &'services RequestCounters<'services>,
+    counters: &'services CaseCounters<'services>,
     costs: &'services RecordingCosts,
     admission: &'services NeverAdmission,
     settlement: &'services NeverSettlement,

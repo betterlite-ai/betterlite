@@ -10,10 +10,10 @@ use crate::reservation_settlement::handle::ReservationState;
 
 use super::ports::ReservationLeases;
 
-// the spend counter Redis backend the renewal refreshes through, with the TTL-derived interval and the request deadline
+// the spend counter cache's Redis backend, whose default TTL halves into the interval, and the request deadline
 pub struct LeaseRenewal<'services> {
     pub leases: Arc<dyn ReservationLeases>,
-    pub interval: Duration,
+    pub redis_default_ttl: i64,
     pub request_timeout: Duration,
     pub tasks: &'services TaskTracker,
 }
@@ -24,12 +24,25 @@ pub fn start(
     state: Weak<Mutex<ReservationState>>,
     counter_keys: BTreeSet<String>,
 ) {
-    let interval = renewal.interval;
+    let Some(interval) = renewal_interval(renewal.redis_default_ttl) else {
+        return;
+    };
     let deadline = renewal_deadline(renewal.request_timeout);
     let leases = Arc::clone(&renewal.leases);
     let _task = renewal.tasks.spawn(async move {
         renew(state, counter_keys, interval, deadline, leases).await;
     });
+}
+
+// BaseCache.default_ttl halved, in milliseconds so an odd TTL keeps its half second
+#[must_use]
+pub fn renewal_interval(default_ttl: i64) -> Option<Duration> {
+    let ttl = u64::try_from(default_ttl).ok()?;
+    if ttl == 0 {
+        return None;
+    }
+    let half_millis = ttl.checked_mul(500)?;
+    Some(Duration::from_millis(half_millis))
 }
 
 // litellm.request_timeout from the monotonic clock; a timeout too large to place ends the renewal at once
