@@ -464,3 +464,84 @@ async fn prequery_failure_propagates() {
         .expect_err("the registry read sits outside the catch");
     assert!(matches!(error, EndUserObjectError::Registry(_)));
 }
+
+#[tokio::test]
+async fn none_id_returns_none() {
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(None));
+    let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
+    let cache = ScriptedCache::new();
+    let registry = guard_off();
+    let store = PostgresStore { pool: None };
+    let objects = EndUserObjects {
+        rows: Some(&rows),
+        budgets: Some(&budgets),
+        cache: &cache,
+        registry: &registry,
+        store: &store,
+        max_end_user_budget_id: None,
+    };
+    assert!(
+        objects
+            .get_end_user_object(&request(None, None, None))
+            .await
+            .expect("an absent id is not a lookup")
+            .is_none()
+    );
+    assert!(rows.queries().is_empty());
+    assert!(cache.reads().is_empty());
+}
+
+#[tokio::test]
+async fn row_cache_write_failure_returns_none() {
+    let row = end_user_row("alice", "0", None, None);
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
+    let cache = ScriptedCache::failing(None, Some(Surface::EndUser));
+    let registry = guard_off();
+    let store = PostgresStore { pool: None };
+    let objects = EndUserObjects {
+        rows: Some(&rows),
+        budgets: Some(&budgets),
+        cache: &cache,
+        registry: &registry,
+        store: &store,
+        max_end_user_budget_id: None,
+    };
+    assert!(
+        objects
+            .get_end_user_object(&request(Some("alice"), None, None))
+            .await
+            .expect("a failed row write is silent")
+            .is_none()
+    );
+    assert_eq!(rows.queries(), vec!["alice".to_owned()]);
+    assert_eq!(
+        cache.writes(),
+        vec!["end_user:end_user_id:alice:45".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn cached_row_default_failure_propagates() {
+    let cached = end_user_row("alice", "0", None, None);
+    let cache = ScriptedCache::failing(Some(Surface::Budget), None);
+    cache.put_end_user("end_user_id:alice", cached);
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Failure);
+    let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
+    let registry = guard_off();
+    let store = PostgresStore { pool: None };
+    let objects = EndUserObjects {
+        rows: Some(&rows),
+        budgets: Some(&budgets),
+        cache: &cache,
+        registry: &registry,
+        store: &store,
+        max_end_user_budget_id: None,
+    };
+    let error = objects
+        .get_end_user_object(&request(Some("alice"), Some("key"), None))
+        .await
+        .expect_err("the cached-row default read sits outside the catch");
+    assert!(matches!(error, EndUserObjectError::Defaults(_)));
+    assert!(rows.queries().is_empty());
+}
