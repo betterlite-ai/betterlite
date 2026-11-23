@@ -37,6 +37,9 @@ const BATCH: &str = r#"{"id":"batch-1","completion_window":"24h","created_at":0,
 const CREATE: &str = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"file-1","custom_llm_provider":"openai","model":"gpt-4o"}"#;
 const READ: &str = r#"{"batch_id":"batch-1","provider":"openai"}"#;
 const EMPTY_ENVIRONMENT: &str = r#"{"environment":{}}"#;
+// no listener answers port 1, so a session's provider call fails without any network behind it
+const CREATE_REFUSED: &str = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"file-1","custom_llm_provider":"openai","model":"gpt-4o","optional_params":{"api_base":"http://127.0.0.1:1/v1","api_key":"sk-test"}}"#;
+const READ_REFUSED: &str = r#"{"batch_id":"batch-1","provider":"openai","model":"gpt-4o","optional_params":{"api_base":"http://127.0.0.1:1/v1","api_key":"sk-test"}}"#;
 
 #[derive(Debug, Deserialize)]
 struct AnswerView {
@@ -328,6 +331,33 @@ fn register_adds_the_batch_classes() {
         register(&module).unwrap();
         assert!(module.hasattr("NativeBatchSession").unwrap());
         assert!(module.hasattr("NativeBatchError").unwrap());
+    });
+}
+
+// every sync session method runs its call and hands back the provider and model the payload asked for
+#[test]
+fn session_errors_name_the_provider_and_model_the_payload_asked_for() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchSession").unwrap();
+        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
+        for (method, payload) in [("create", CREATE_REFUSED), ("retrieve", READ_REFUSED)] {
+            let error = session
+                .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
+                .unwrap_err();
+            let message = error.value(py).to_string();
+            assert!(message.starts_with(r#"{"type":"#), "{method}: {message}");
+            assert!(
+                message.contains(r#""llm_provider":"openai""#),
+                "{method}: {message}"
+            );
+            assert!(
+                message.contains(r#""model":"gpt-4o""#),
+                "{method}: {message}"
+            );
+        }
     });
 }
 
