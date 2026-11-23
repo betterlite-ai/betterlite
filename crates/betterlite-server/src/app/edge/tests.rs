@@ -169,18 +169,18 @@ async fn public_merged_routes_keep_the_default_fallback() {
 async fn public_swagger_page_and_document_use_the_server_root_path() {
     let config = config_with(&[("SERVER_ROOT_PATH", "/api")]);
     let router = mounted(&[], &config);
-    let (page_status, _, page) = send(&router, Method::GET, "/").await;
+    let (page_status, _, html) = send(&router, Method::GET, "/").await;
     assert_eq!(page_status, StatusCode::OK);
     assert!(
-        String::from_utf8(page)
+        String::from_utf8(html)
             .unwrap()
             .contains("url: '/api/openapi.json'")
     );
     let (document_status, _, body) = send(&router, Method::GET, "/openapi.json").await;
     assert_eq!(document_status, StatusCode::OK);
-    let document = served_document(&body);
-    assert_eq!(document.servers.len(), 1);
-    assert_eq!(document.servers[0].url, "/api");
+    let parsed = served_document(&body);
+    assert_eq!(parsed.servers.len(), 1);
+    assert_eq!(parsed.servers[0].url, "/api");
 }
 
 #[tokio::test]
@@ -207,15 +207,18 @@ async fn public_docs_paths_follow_the_docs_settings() {
         ],
         &empty_config(),
     );
-    let (root_status, headers, _) = send(&router, Method::GET, "/").await;
-    assert_eq!(root_status, StatusCode::TEMPORARY_REDIRECT);
+    let (redirect, headers, _) = send(&router, Method::GET, "/").await;
+    assert_eq!(redirect, StatusCode::TEMPORARY_REDIRECT);
     assert_eq!(headers.get(header::LOCATION).unwrap(), "/ui");
-    let (docs_status, _, _) = send(&router, Method::GET, "/docs").await;
-    assert_eq!(docs_status, StatusCode::OK);
-    let (old_redoc_status, _, _) = send(&router, Method::GET, "/redoc").await;
-    assert_eq!(old_redoc_status, StatusCode::NOT_FOUND);
-    let (redoc_status, _, _) = send(&router, Method::GET, "/redocly").await;
-    assert_eq!(redoc_status, StatusCode::OK);
+    assert_eq!(send(&router, Method::GET, "/docs").await.0, StatusCode::OK);
+    assert_eq!(
+        send(&router, Method::GET, "/redoc").await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(&router, Method::GET, "/redocly").await.0,
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]
@@ -228,6 +231,6 @@ async fn public_no_docs_and_no_redoc_remove_the_pages() {
         let (status, _, _) = send(&router, Method::GET, path).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{path} is unmounted");
     }
-    let (document_status, _, _) = send(&router, Method::GET, "/openapi.json").await;
-    assert_eq!(document_status, StatusCode::OK);
+    let (document_code, _, _) = send(&router, Method::GET, "/openapi.json").await;
+    assert_eq!(document_code, StatusCode::OK);
 }

@@ -25,7 +25,7 @@ pub fn mount(router: Router, _state: &Arc<ServerState>) -> Router {
 
 pub fn mount_public(router: Router, state: &Arc<ServerState>) -> Router {
     let environment = process_environment();
-    let urls = DocsEnv {
+    let resolved = DocsEnv {
         docs_url: environment.get("DOCS_URL").cloned(),
         redoc_url: environment.get("REDOC_URL").cloned(),
         openapi_url: environment.get("OPENAPI_URL").cloned(),
@@ -43,11 +43,12 @@ pub fn mount_public(router: Router, state: &Arc<ServerState>) -> Router {
         .clone();
     let title = state.config.sections.public_discovery.docs_title.clone();
     let docs = docs_router(DocsRouteConfig {
-        urls: urls.clone(),
+        urls: resolved.clone(),
         title: title.clone(),
         server_root_path: server_root_path.clone(),
     });
-    let document = openapi::document_router(urls.openapi_url.as_deref(), &server_root_path, &title);
+    let document =
+        openapi::document_router(resolved.openapi_url.as_deref(), &server_root_path, &title);
     router.merge(providers_routes()).merge(docs).merge(document)
 }
 

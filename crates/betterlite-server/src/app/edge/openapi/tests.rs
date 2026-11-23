@@ -60,11 +60,11 @@ const EXPECTED_WEBSOCKET_ROUTES: [(&str, &str, &[&str]); 5] = [
 fn openapi_inputs_list_the_eleven_post_routes() {
     let inputs = document_inputs("", "1.2.3");
     assert_eq!(inputs.routes.len(), EXPECTED_POST_ROUTES.len());
-    for (route, (path, name, tag)) in inputs.routes.iter().zip(EXPECTED_POST_ROUTES) {
+    for (route, (path, operation, category)) in inputs.routes.iter().zip(EXPECTED_POST_ROUTES) {
         assert_eq!(route.path, path);
         assert_eq!(route.method, "POST");
-        assert_eq!(route.name, name);
-        assert_eq!(route.tags, vec![tag.to_owned()]);
+        assert_eq!(route.name, operation);
+        assert_eq!(route.tags, vec![category.to_owned()]);
         assert!(route.parameters.is_empty());
         assert!(route.request_body.is_none());
         assert!(route.summary.is_none());
@@ -79,15 +79,15 @@ fn openapi_inputs_list_the_eleven_post_routes() {
 fn openapi_inputs_list_the_websocket_routes() {
     let inputs = document_inputs("", "1.2.3");
     assert_eq!(inputs.websockets.len(), EXPECTED_WEBSOCKET_ROUTES.len());
-    for (route, (path, name, query_params)) in
+    for (route, (path, operation, query_params)) in
         inputs.websockets.iter().zip(EXPECTED_WEBSOCKET_ROUTES)
     {
         assert_eq!(route.path, path);
-        assert_eq!(route.name.as_deref(), Some(name));
+        assert_eq!(route.name.as_deref(), Some(operation));
         assert_eq!(route.query_params.len(), query_params.len());
-        for (param, expected) in route.query_params.iter().zip(query_params) {
-            assert_eq!(param.name, *expected);
-            assert!(!param.required);
+        for (declared, expected) in route.query_params.iter().zip(query_params) {
+            assert_eq!(declared.name, *expected);
+            assert!(!declared.required);
         }
     }
 }
@@ -149,14 +149,14 @@ fn openapi_document_carries_the_server_entry_only_for_a_non_empty_root_path(
     let inputs = document_inputs(server_root_path, "1.2.3");
     assert_eq!(inputs.server_root_path, server_root_path);
     let document = build_document(&inputs);
-    let servers = document.get("servers");
+    let entries = document.get("servers");
     if server_root_path.is_empty() {
-        assert!(servers.is_none());
+        assert!(entries.is_none());
         return;
     }
     let expected = JsonTree::Array(vec![JsonTree::Object(JsonObject::from([(
         "url".to_owned(),
         JsonTree::Text("/api".to_owned()),
     )]))]);
-    assert_eq!(servers, Some(&expected));
+    assert_eq!(entries, Some(&expected));
 }

@@ -106,13 +106,13 @@ fn llm_routes() -> Vec<RouteDoc> {
     routes
 }
 
-fn post_route(path: &str, name: &str, tag: &str) -> RouteDoc {
+fn post_route(path: &str, operation: &str, category: &str) -> RouteDoc {
     RouteDoc {
         path: path.to_owned(),
         method: "POST".to_owned(),
-        name: name.to_owned(),
+        name: operation.to_owned(),
         summary: None,
-        tags: vec![tag.to_owned()],
+        tags: vec![category.to_owned()],
         parameters: Vec::new(),
         request_body: None,
         error_responses: false,
@@ -149,14 +149,14 @@ fn websocket_routes() -> Vec<WebsocketRoute> {
     ]
 }
 
-fn websocket_route(path: &str, name: &str, query_params: &[&str]) -> WebsocketRoute {
+fn websocket_route(path: &str, operation: &str, query_params: &[&str]) -> WebsocketRoute {
     WebsocketRoute {
         path: path.to_owned(),
-        name: Some(name.to_owned()),
+        name: Some(operation.to_owned()),
         query_params: query_params
             .iter()
-            .map(|param| QueryParam {
-                name: (*param).to_owned(),
+            .map(|declared| QueryParam {
+                name: (*declared).to_owned(),
                 required: false,
             })
             .collect(),
