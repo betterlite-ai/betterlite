@@ -344,6 +344,11 @@ def group_messages():
                 guardrail, {"input": [{"role": "user", "content": "hi"}], "messages": []}
             ),
             "advisory_empty": advisory(guardrail, {}),
+            "masked": guardrail.mask_content_in_string("abcdef", "**", 2, 4),
+            "masked_outside": guardrail.mask_content_in_string("abc", "**", 2, 9),
+            "config_model": str(guardrail.get_config_model()),
+            "supported_hooks": str(guardrail.get_supported_event_hooks()),
+            "routes": guardrail.should_route_on_sensitive_data(),
         }
         updated = base(guardrail_name="probe")
         updated.update_in_memory_litellm_params(
@@ -454,12 +459,31 @@ def group_records():
             raised = "none"
         except Exception as error:
             raised = type(error).__name__
+
+        class CustomCodeGuardrailProbe(base):
+            def __init__(self):
+                super().__init__(guardrail_name="probe", event_hook=hooks.pre_call)
+
+            async def apply_guardrail(self, inputs, request_data, input_type, logging_obj=None):
+                raise ValueError("denied")
+
+        deny_logging = FakeLogging()
+        try:
+            await CustomCodeGuardrailProbe().apply_guardrail(
+                inputs={"texts": ["hi"]},
+                request_data={"guardrails": ["probe"]},
+                input_type="request",
+                logging_obj=deny_logging,
+            )
+        except Exception:
+            pass
         return {
             "direct": direct,
             "result": result,
             "raised": raised,
             "success": normalize(success_logging.litellm_params["metadata"]),
             "failure": normalize(failure_logging.litellm_params["metadata"]),
+            "deny": normalize(deny_logging.litellm_params["metadata"]),
         }
 
     for side, types in SIDES.items():
