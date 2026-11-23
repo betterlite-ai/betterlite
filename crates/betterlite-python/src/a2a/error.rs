@@ -3,7 +3,6 @@ use betterlite_config::loader::ConfigError;
 use betterlite_config::tls::TlsPolicyError;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
-use betterlite_http::tls::TlsError;
 use betterlite_redact::error::RedactionError;
 use betterlite_tokenizer::count::error::CountError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
@@ -70,11 +69,6 @@ pub(crate) enum A2aCallError {
         #[source]
         source: TlsPolicyError,
     },
-    #[error("the a2a TLS policy could not be applied: {source}")]
-    Tls {
-        #[source]
-        source: TlsError,
-    },
     #[error("the tokenizer counter could not be built: {source}")]
     Tokenizer {
         #[source]
@@ -106,7 +100,6 @@ impl A2aCallError {
             | Self::Config { .. }
             | Self::Client { .. }
             | Self::Policy { .. }
-            | Self::Tls { .. }
             | Self::Tokenizer { .. }
             | Self::Redactor { .. } => ErrorPayload::empty("RuntimeError", self.to_string()),
         }

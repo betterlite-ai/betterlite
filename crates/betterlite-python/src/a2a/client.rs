@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_a2a::card_resolver::CardResolver;
 use betterlite_a2a::client::A2AClient;
 use betterlite_a2a::client::create_a2a_client;
+use betterlite_a2a::client::{effective_client, resolve_timeout};
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 
@@ -10,7 +11,7 @@ use super::card;
 use super::convert::{Call, Settings, parse};
 use super::error::A2aCallError;
 use super::send;
-use super::setup::{Setup, card_headers, effective_client, resolve_timeout};
+use super::setup::{Setup, card_headers};
 use super::stream;
 
 #[pyclass(module = "betterlite._native")]
@@ -52,15 +53,18 @@ pub(crate) async fn create(settings: Settings) -> Result<NativeA2aClient, PyErr>
 // LiteLLM's aget_agent_card fetches the card and stops there, without normalizing its interfaces.
 pub(crate) async fn fetch_card(settings: Settings) -> Result<String, PyErr> {
     let setup = Setup::build()?;
-    let timeout = resolve_timeout(&setup.environment, settings.timeout)?;
-    let client = effective_client(&setup.client, &setup.tls, timeout)?;
-    let headers = card_headers(settings.extra_headers.as_ref())?;
+    let client_settings = settings.into_settings(setup.tls.clone())?;
+    let timeout =
+        resolve_timeout(&setup.environment, client_settings.timeout).map_err(A2aCallError::from)?;
+    let client =
+        effective_client(&setup.client, &setup.tls, timeout).map_err(A2aCallError::from)?;
+    let headers = card_headers(Some(&client_settings.extra_headers))?;
     let resolver = CardResolver {
-        base_url: settings.base_url,
+        base_url: client_settings.base_url,
         client,
     };
     let found = resolver
-        .get_agent_card(settings.relative_card_path.as_deref(), &headers)
+        .get_agent_card(client_settings.relative_card_path.as_deref(), &headers)
         .await
         .map_err(A2aCallError::from)?;
     Ok(card::text(&found)?)

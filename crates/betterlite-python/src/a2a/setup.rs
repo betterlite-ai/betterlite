@@ -1,20 +1,14 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use super::error::A2aCallError;
-use betterlite_a2a::client::{A2A_TIMEOUT_ENV, DEFAULT_A2A_AGENT_TIMEOUT};
-use betterlite_a2a::errors::A2AError;
-use betterlite_a2a::errors::retries::RetryCounts;
 use betterlite_a2a::send::deps::NativeDeps;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
-use betterlite_http::proxy::limits::TransportLimits;
-use betterlite_http::proxy::{ProxiedClient, base_builder};
-use betterlite_http::tls::apply_policy;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::runtime::runtime_counter;
@@ -96,58 +90,6 @@ fn runtime_config(environment: &BTreeMap<String, String>) -> Result<Config, A2aC
     match loader.load("") {
         Ok(config) => Ok(config),
         Err(source) => Err(A2aCallError::Config { source }),
-    }
-}
-
-// B4801 hands the configured timeout to a pooled client built with the same TLS policy and proxy route.
-pub(crate) fn effective_client(
-    pool: &ProxiedClient,
-    tls: &TlsPolicy,
-    timeout: Duration,
-) -> Result<ProxiedClient, A2aCallError> {
-    let limits = TransportLimits {
-        connect_timeout: timeout,
-        read_timeout: timeout,
-        ..pool.limits
-    };
-    let builder =
-        apply_policy(base_builder(), tls).map_err(|source| A2aCallError::Tls { source })?;
-    let mut client = ProxiedClient::build(builder, &pool.policy, limits)
-        .map_err(|source| A2aCallError::Client { source })?;
-    client.tracker = pool.tracker.clone();
-    client.network_mock = pool.network_mock;
-    Ok(client)
-}
-
-// The card fetch reads DEFAULT_A2A_AGENT_TIMEOUT when the settings carried no timeout, as create_a2a_client does.
-pub(crate) fn resolve_timeout(
-    environment: &BTreeMap<String, String>,
-    configured: Option<f64>,
-) -> Result<Duration, A2aCallError> {
-    if let Some(seconds) = configured {
-        return Duration::try_from_secs_f64(seconds)
-            .map_err(|_source| A2aCallError::Timeout { field: "timeout" });
-    }
-    let Some(raw) = environment
-        .get(A2A_TIMEOUT_ENV)
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(DEFAULT_A2A_AGENT_TIMEOUT);
-    };
-    let parsed = raw
-        .parse::<f64>()
-        .ok()
-        .and_then(|value| Duration::try_from_secs_f64(value).ok());
-    parsed.ok_or_else(|| A2aCallError::A2A(invalid_timeout(raw)))
-}
-
-// B4801 states a bad DEFAULT_A2A_AGENT_TIMEOUT as an A2AError, so both client and card paths say the same.
-fn invalid_timeout(raw: &str) -> A2AError {
-    A2AError::Base {
-        message: format!("{A2A_TIMEOUT_ENV} {raw:?} is not a valid number of seconds"),
-        model: None,
-        debug_info: None,
-        retries: RetryCounts::default(),
     }
 }
 

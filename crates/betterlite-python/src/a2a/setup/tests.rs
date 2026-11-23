@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_a2a::client::{A2A_TIMEOUT_ENV, DEFAULT_A2A_AGENT_TIMEOUT};
+use betterlite_a2a::client::{A2A_TIMEOUT_ENV, DEFAULT_A2A_AGENT_TIMEOUT, resolve_timeout};
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{card_headers, resolve_timeout, runtime_config, trace_ids};
+use super::{card_headers, runtime_config, trace_ids};
 use crate::a2a::error::A2aCallError;
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -22,31 +22,6 @@ fn secrets(pairs: &[(&str, &str)]) -> BTreeMap<String, SecretString> {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
         .collect()
-}
-
-#[rstest]
-#[case::fractional(Some(12.5), Ok(Duration::from_millis(12_500)))]
-#[case::zero(Some(0.0), Ok(Duration::ZERO))]
-#[case::negative(Some(-1.0), Err("timeout"))]
-#[case::not_a_number(Some(f64::NAN), Err("timeout"))]
-#[case::infinite(Some(f64::INFINITY), Err("timeout"))]
-fn resolve_timeout_uses_the_configured_seconds(
-    #[case] configured: Option<f64>,
-    #[case] expected: Result<Duration, &str>,
-) {
-    match expected {
-        Ok(want) => assert_eq!(
-            resolve_timeout(&environment(&[]), configured).unwrap(),
-            want
-        ),
-        Err(want) => {
-            let error = resolve_timeout(&environment(&[]), configured).unwrap_err();
-            let A2aCallError::Timeout { field } = error else {
-                panic!("a bad configured timeout is not a timeout error");
-            };
-            assert_eq!(field, want);
-        }
-    }
 }
 
 #[rstest]
@@ -71,9 +46,10 @@ fn resolve_timeout_rejects_a_bad_environment_value(
     #[case] pairs: &[(&str, &str)],
     #[case] raw: &str,
 ) {
-    let payload = resolve_timeout(&environment(pairs), None)
-        .unwrap_err()
-        .payload();
+    let payload = A2aCallError::from(
+        resolve_timeout(&environment(pairs), None).expect_err("a bad timeout is rejected"),
+    )
+    .payload();
     assert_eq!(payload.kind, "A2AError");
     assert!(payload.message.contains(raw));
     assert!(payload.message.contains(A2A_TIMEOUT_ENV));
