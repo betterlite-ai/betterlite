@@ -32,6 +32,7 @@ from betterlite.vector_stores._create_search import (
     mock_vector_store_create_response,
     mock_vector_store_search_response,
     search,
+    settled,
 )
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -41,6 +42,8 @@ FILE_IDS: Final[list[str]] = ["file-1", "file-2"]
 METADATA: Final[dict[str, str]] = {"team": "search"}
 FILTERS: Final[dict[str, JsonValue]] = {"type": "eq", "key": "source", "value": "doc.md"}
 RANKING: Final[dict[str, JsonValue]] = {"ranker": "default-2024-11-15"}
+MAX_NUM_RESULTS: Final = 2
+UNAUTHORIZED: Final = 401
 RESULTS: Final[list[VectorStoreSearchResult]] = [
     {
         "score": 0.5,
@@ -87,8 +90,7 @@ class DefaultView(Protocol):
 
 
 class HandleStub:
-    def read(self) -> bytes:
-        return b""
+    def read(self) -> bytes: ...
 
 
 LITELLM: VectorStores = importlib.import_module("litellm.vector_stores")
@@ -105,32 +107,12 @@ def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     return rows
 
 
-async def settled_create(
-    pending: VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse],
-) -> VectorStoreCreateResponse:
-    match pending:
-        case Awaitable():
-            return await pending
-        case object():
-            return pending
-
-
-async def settled_search(
-    pending: VectorStoreSearchResponse | Awaitable[VectorStoreSearchResponse],
-) -> VectorStoreSearchResponse:
-    match pending:
-        case Awaitable():
-            return await pending
-        case object():
-            return pending
-
-
 async def settled_flags(
     flagged_create: VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse],
     flagged_search: VectorStoreSearchResponse | Awaitable[VectorStoreSearchResponse],
 ) -> tuple[VectorStoreCreateResponse, VectorStoreSearchResponse]:
-    created = await settled_create(flagged_create)
-    searched = await settled_search(flagged_search)
+    created = await settled(flagged_create)
+    searched = await settled(flagged_search)
     return (created, searched)
 
 
@@ -184,8 +166,8 @@ def test_calls_create() -> None:
         ours_call = server.calls[-1]
         reference = LITELLM.create(
             name=STORE_NAME,
-            file_ids=FILE_IDS,
-            metadata=METADATA,
+            file_ids=JSON.validate_python(FILE_IDS),
+            metadata=JSON.validate_python(METADATA),
             extra_headers={"X-Custom": "yes"},
             api_base=server.url,
             api_key=GOOD_KEY,
@@ -212,7 +194,7 @@ def test_calls_search() -> None:
             vector_store_id=STORE_ID,
             query=QUERY_PARTS,
             filters=FILTERS,
-            max_num_results=2,
+            max_num_results=MAX_NUM_RESULTS,
             ranking_options=RANKING,
             rewrite_query=True,
             api_base=server.url,
@@ -221,9 +203,9 @@ def test_calls_search() -> None:
         ours_call = server.calls[-1]
         reference = LITELLM.search(
             vector_store_id=STORE_ID,
-            query=QUERY_PARTS,
+            query=JSON.validate_python(QUERY_PARTS),
             filters=FILTERS,
-            max_num_results=2,
+            max_num_results=MAX_NUM_RESULTS,
             ranking_options=RANKING,
             rewrite_query=True,
             api_base=server.url,
@@ -235,7 +217,7 @@ def test_calls_search() -> None:
     assert ours_call["body"] == reference_call["body"]
     assert ours_call["body"]["query"] == QUERY_PARTS
     assert ours_call["body"]["filters"] == FILTERS
-    assert ours_call["body"]["max_num_results"] == 2
+    assert ours_call["body"]["max_num_results"] == MAX_NUM_RESULTS
     assert ours_call["body"]["ranking_options"] == RANKING
     assert ours_call["body"]["rewrite_query"] is True
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
@@ -349,36 +331,30 @@ def test_mock_create_response() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_mock_search_string() -> None:
+def test_mock_search_forms() -> None:
     with VectorServer() as server:
-        ours = search(
+        string_ours = search(
             vector_store_id=STORE_ID,
             query=QUERY_TEXT,
             mock_response="hello",
             api_base=server.url,
             api_key=GOOD_KEY,
         )
-        reference = LITELLM.search(
+        string_reference = LITELLM.search(
             vector_store_id=STORE_ID,
             query=QUERY_TEXT,
             mock_response="hello",
             api_base=server.url,
             api_key=GOOD_KEY,
         )
-        assert server.calls == []
-    assert JSON.validate_python(ours) == JSON.validate_python(reference)
-
-
-def test_mock_search_list() -> None:
-    with VectorServer() as server:
-        ours = search(
+        list_ours = search(
             vector_store_id=STORE_ID,
             query=QUERY_TEXT,
             mock_response=JSON.validate_python(RESULTS),
             api_base=server.url,
             api_key=GOOD_KEY,
         )
-        reference = LITELLM.search(
+        list_reference = LITELLM.search(
             vector_store_id=STORE_ID,
             query=QUERY_TEXT,
             mock_response=JSON.validate_python(RESULTS),
@@ -386,7 +362,8 @@ def test_mock_search_list() -> None:
             api_key=GOOD_KEY,
         )
         assert server.calls == []
-    assert JSON.validate_python(ours) == JSON.validate_python(reference)
+    assert JSON.validate_python(string_ours) == JSON.validate_python(string_reference)
+    assert JSON.validate_python(list_ours) == JSON.validate_python(list_reference)
 
 
 def test_refuse_handles() -> None:
@@ -397,6 +374,14 @@ def test_refuse_handles() -> None:
             vector_store_id=STORE_ID,
             query=QUERY_TEXT,
             _direct_vector_store_embedding_executor=HandleStub(),
+        )
+    with pytest.raises(UnsupportedCallArgument, match="_direct_vector_store_embedding_executor"):
+        asyncio.run(
+            asearch(
+                vector_store_id=STORE_ID,
+                query=QUERY_TEXT,
+                _direct_vector_store_embedding_executor=HandleStub(),
+            )
         )
     with pytest.raises(UnsupportedCallArgument, match="client"):
         create(name=STORE_NAME, client=HandleStub())
@@ -424,7 +409,7 @@ def test_error_keeps_class() -> None:
                 api_key=BAD_KEY,
             )
     assert type(ours_caught.value).__name__ == reference_class.__name__
-    assert ours_caught.value.status_code == 401
+    assert ours_caught.value.status_code == UNAUTHORIZED
     match ours_caught.value.__cause__:
         case NativeVectorSearchError():
             pass
