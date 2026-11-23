@@ -20,7 +20,7 @@ pub struct DecisionsRequest {
     pub timeout: Option<Duration>,
 }
 
-pub(super) type Answer = Result<UpstreamResponse, RequestFailure>;
+pub type Answer = Result<UpstreamResponse, RequestFailure>;
 
 // LiteLLM's HTTPHandler: a blocking POST whose deadline is the one the caller passed, or its client's own
 pub trait DecisionsSyncTransport: Send + Sync {
