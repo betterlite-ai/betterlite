@@ -70,7 +70,7 @@ impl PollingCache for CaptureCache {
 
 // the cancel route writes the same key from outside the worker, and the worker never reads it back
 fn cancel(cache: &CaptureCache, key: &str) -> Result<(), PollingCacheError> {
-    let mut entries = cache.entries.lock().unwrap_or_else(PoisonError::into_inner);
+    let entries = cache.entries.lock().unwrap_or_else(PoisonError::into_inner);
     let Some(stored) = entries.get(key).cloned() else {
         return Ok(());
     };
