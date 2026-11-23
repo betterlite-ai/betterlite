@@ -2,7 +2,7 @@ id: B4655
 milestone: M9 agents and mcp
 title: MCP redirect trust and dashboard session admission
 status: todo
-depends_on: [B4654, B738, B1223]
+depends_on: [B4654, B738, B1223, B10062]
 file: tasks/B4655-mcp-oauth-browser-trust.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/oauth_utils.py"
