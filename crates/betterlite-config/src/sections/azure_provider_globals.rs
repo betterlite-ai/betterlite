@@ -13,14 +13,6 @@ pub const API_KEY_VARIABLE: &str = "AZURE_API_KEY";
 pub const OPENAI_API_KEY_VARIABLE: &str = "AZURE_OPENAI_API_KEY";
 pub const AD_TOKEN_VARIABLE: &str = "AZURE_AD_TOKEN";
 pub const API_TYPE_VARIABLE: &str = "AZURE_API_TYPE";
-const VARIABLES: [&str; 6] = [
-    API_BASE_VARIABLE,
-    API_KEY_VARIABLE,
-    API_VERSION_VARIABLE,
-    OPENAI_API_KEY_VARIABLE,
-    AD_TOKEN_VARIABLE,
-    API_TYPE_VARIABLE,
-];
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -46,10 +38,21 @@ pub struct GlobalSettings {
     pub headers: Option<BTreeMap<String, String>>,
 }
 
+// The six Azure variables the adapter reads, with the three secrets typed until the slot copies them out at startup
+#[derive(Debug, Clone, Default)]
+pub struct Environment {
+    pub api_base: Option<String>,
+    pub api_version: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub openai_api_key: Option<SecretString>,
+    pub ad_token: Option<SecretString>,
+    pub api_type: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub globals: GlobalSettings,
-    pub environment: BTreeMap<String, String>,
+    pub environment: Environment,
 }
 
 impl Section for Raw {
@@ -76,18 +79,19 @@ impl Section for Raw {
 }
 
 // LiteLLM reads each Azure variable with get_secret or get_secret_str, where an empty value counts as unset
-fn environment<L>(lookup: &L) -> BTreeMap<String, String>
+fn environment<L>(lookup: &L) -> Environment
 where
     L: EnvironmentLookup,
 {
-    let mut environment = BTreeMap::new();
-    for name in VARIABLES {
-        let value = lookup.lookup(name).filter(|text| !text.is_empty());
-        if let Some(text) = value {
-            environment.insert(name.to_owned(), text);
-        }
+    let read = |name: &str| lookup.lookup(name).filter(|text| !text.is_empty());
+    Environment {
+        api_base: read(API_BASE_VARIABLE),
+        api_version: read(API_VERSION_VARIABLE),
+        api_key: read(API_KEY_VARIABLE).map(SecretString::from),
+        openai_api_key: read(OPENAI_API_KEY_VARIABLE).map(SecretString::from),
+        ad_token: read(AD_TOKEN_VARIABLE).map(SecretString::from),
+        api_type: read(API_TYPE_VARIABLE),
     }
-    environment
 }
 
 fn resolve_text<L>(

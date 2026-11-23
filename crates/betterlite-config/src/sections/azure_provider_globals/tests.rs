@@ -76,30 +76,26 @@ fn azure_provider_environment_variables_are_read_at_load() {
     .expect("the config should load");
     let environment = &loaded.environment;
     assert_eq!(
-        environment.get(API_BASE_VARIABLE).map(String::as_str),
+        environment.api_base.as_deref(),
         Some("https://environment.example")
     );
-    assert_eq!(
-        environment.get(API_VERSION_VARIABLE).map(String::as_str),
-        Some("2024-06-01")
-    );
-    assert_eq!(
-        environment.get(API_KEY_VARIABLE).map(String::as_str),
-        Some("environment-key")
-    );
-    assert_eq!(
-        environment.get(OPENAI_API_KEY_VARIABLE).map(String::as_str),
-        Some("openai-environment-key")
-    );
-    assert_eq!(
-        environment.get(AD_TOKEN_VARIABLE).map(String::as_str),
-        Some("ad-token")
-    );
-    assert_eq!(
-        environment.get(API_TYPE_VARIABLE).map(String::as_str),
-        Some("azure_ad")
-    );
-    assert_eq!(environment.len(), 6);
+    assert_eq!(environment.api_version.as_deref(), Some("2024-06-01"));
+    let api_key = environment
+        .api_key
+        .as_ref()
+        .expect("the environment api key");
+    assert_eq!(api_key.expose_secret(), "environment-key");
+    let openai_key = environment
+        .openai_api_key
+        .as_ref()
+        .expect("the environment openai key");
+    assert_eq!(openai_key.expose_secret(), "openai-environment-key");
+    let ad_token = environment
+        .ad_token
+        .as_ref()
+        .expect("the environment ad token");
+    assert_eq!(ad_token.expose_secret(), "ad-token");
+    assert_eq!(environment.api_type.as_deref(), Some("azure_ad"));
 }
 
 #[test]
@@ -113,7 +109,29 @@ fn an_empty_azure_environment_value_counts_as_unset() {
         ],
     )
     .expect("the config should load");
-    assert!(loaded.environment.is_empty());
+    assert!(loaded.environment.api_base.is_none());
+    assert!(loaded.environment.api_key.is_none());
+    assert!(loaded.environment.api_type.is_none());
+}
+
+// the loaded config's Debug is what a dump or a panic prints, so the three environment secrets stay out of it
+#[test]
+fn the_section_debug_carries_no_azure_secret() {
+    let loaded = load(
+        "",
+        &[
+            (API_BASE_VARIABLE, "https://debug.example"),
+            (API_KEY_VARIABLE, "debug-api-key"),
+            (OPENAI_API_KEY_VARIABLE, "debug-openai-key"),
+            (AD_TOKEN_VARIABLE, "debug-ad-token"),
+        ],
+    )
+    .expect("the config should load");
+    let rendered = format!("{loaded:?}");
+    assert!(rendered.contains("https://debug.example"), "{rendered}");
+    assert!(!rendered.contains("debug-api-key"), "{rendered}");
+    assert!(!rendered.contains("debug-openai-key"), "{rendered}");
+    assert!(!rendered.contains("debug-ad-token"), "{rendered}");
 }
 
 #[test]
@@ -124,7 +142,12 @@ fn azure_provider_globals_default_to_none() {
     assert!(loaded.globals.api_key.is_none());
     assert!(loaded.globals.azure_key.is_none());
     assert!(loaded.globals.headers.is_none());
-    assert!(loaded.environment.is_empty());
+    assert!(loaded.environment.api_base.is_none());
+    assert!(loaded.environment.api_version.is_none());
+    assert!(loaded.environment.api_key.is_none());
+    assert!(loaded.environment.openai_api_key.is_none());
+    assert!(loaded.environment.ad_token.is_none());
+    assert!(loaded.environment.api_type.is_none());
 }
 
 #[test]

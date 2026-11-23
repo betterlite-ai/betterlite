@@ -66,27 +66,36 @@ fn the_azure_slot_carries_the_startup_environment() {
             String::from("https://environment.example"),
         ),
         (
+            String::from("AZURE_API_VERSION"),
+            String::from("2024-06-01"),
+        ),
+        (
             String::from("AZURE_API_KEY"),
             String::from("environment-key"),
         ),
+        (
+            String::from("AZURE_OPENAI_API_KEY"),
+            String::from("openai-environment-key"),
+        ),
+        (String::from("AZURE_AD_TOKEN"), String::from("ad-token")),
+        (String::from("AZURE_API_TYPE"), String::from("azure_ad")),
     ]);
     let config = load("", &environment);
     let slot = Slot::new(&config);
-    assert_eq!(
-        slot.composition
-            .secret("AZURE_API_BASE")
-            .expect("the environment base")
-            .expose_secret(),
-        "https://environment.example"
-    );
-    assert_eq!(
-        slot.composition
-            .secret("AZURE_API_KEY")
-            .expect("the environment key")
-            .expose_secret(),
-        "environment-key"
-    );
-    assert!(slot.composition.secret("AZURE_OPENAI_API_KEY").is_none());
+    for (name, expected) in [
+        ("AZURE_API_BASE", "https://environment.example"),
+        ("AZURE_API_VERSION", "2024-06-01"),
+        ("AZURE_API_KEY", "environment-key"),
+        ("AZURE_OPENAI_API_KEY", "openai-environment-key"),
+        ("AZURE_AD_TOKEN", "ad-token"),
+        ("AZURE_API_TYPE", "azure_ad"),
+    ] {
+        assert_eq!(
+            slot.composition.secret(name).expect(name).expose_secret(),
+            expected,
+            "{name}"
+        );
+    }
 }
 
 // AZURE_DEFAULT_API_VERSION stays with the endpoints section, which already resolved the key and its default
