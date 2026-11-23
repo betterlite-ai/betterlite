@@ -246,13 +246,14 @@ impl Harness {
             .max_size(POOL_SIZE)
             .build()
             .expect("the fixture pool builds");
+        let table_client = TableClient { pool: pool.clone() };
         let store = PostgresStore {
             pool: Some(pool.clone()),
         };
         Self {
             fixture,
-            table_client: TableClient { pool: pool.clone() },
             pool,
+            table_client,
             store,
             broken: PostgresStore { pool: None },
             availability: Availability::default(),
