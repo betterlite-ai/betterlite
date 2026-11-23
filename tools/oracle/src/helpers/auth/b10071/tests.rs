@@ -11,14 +11,14 @@ use serde_json::{Value, json};
 
 use super::Op;
 
-fn run(input: Value) -> Value {
-    Op::decode_and_run(&input).unwrap()
+fn run(input: &Value) -> Value {
+    Op::decode_and_run(input).unwrap()
 }
 
 #[test]
 fn a_proxy_admin_passes_the_gate() {
     assert_eq!(
-        run(json!({"function": "gate", "user_role": "proxy_admin", "operation": "create"})),
+        run(&json!({"function": "gate", "user_role": "proxy_admin", "operation": "create"})),
         json!({"passed": true, "status": null})
     );
 }
@@ -30,7 +30,7 @@ fn a_proxy_admin_passes_the_gate() {
 #[case::internal_user_viewer("internal_user_viewer", "list")]
 fn a_role_that_is_not_the_proxy_admin_is_refused(#[case] role: &str, #[case] operation: &str) {
     assert_eq!(
-        run(json!({"function": "gate", "user_role": role, "operation": operation})),
+        run(&json!({"function": "gate", "user_role": role, "operation": operation})),
         json!({"passed": false, "status": 403})
     );
 }
@@ -38,7 +38,7 @@ fn a_role_that_is_not_the_proxy_admin_is_refused(#[case] role: &str, #[case] ope
 #[test]
 fn a_caller_without_a_role_is_refused() {
     assert_eq!(
-        run(json!({"function": "gate", "user_role": null, "operation": "create"})),
+        run(&json!({"function": "gate", "user_role": null, "operation": "create"})),
         json!({"passed": false, "status": 403})
     );
 }
@@ -60,7 +60,7 @@ fn the_lifecycle_adapter_returns_the_litellm_answer(
         "path": path,
         "index_name": index_name,
     });
-    assert_eq!(run(input), json!(expected));
+    assert_eq!(run(&input), json!(expected));
 }
 
 #[rstest]
