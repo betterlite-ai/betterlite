@@ -47,7 +47,7 @@ description: >-
 
   Only after those writes, a caller with models=[] skips model checks. Otherwise requested models=[]
   raises 400 "User not allowed to give access to all models. Select models you want org to have access to.";
-  each requested model is checked in order by B886.can_user_call_model with llm_router and the optional
+  each requested model is checked in order by B10051's can_user_call_model with llm_router and the optional
   fetched user object. It does not directly compare the requested list to caller.models. Cases
   unrestricted_caller_skips_model_checks, restricted_caller_all_models_denied and model_check_inputs_order
   verify this boundary. budget_survives_permission_failure and permission_survives_model_denial prove

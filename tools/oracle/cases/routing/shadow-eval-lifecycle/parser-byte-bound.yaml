@@ -1,0 +1,27 @@
+kind: probe
+name: shadow-eval-lifecycle-parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_lifecycle:
+        router:
+          - model_name: judge-model
+            litellm_params: {model: openai/gpt-4o-mini}
+          - model_name: shadow-router
+            litellm_params:
+              model: auto_router/complexity_router
+              complexity_router_default_model: judge-model
+        now_millis: 1700000000000
+        steps:
+          - parse:
+              text: '{"router_names": ["shadow-router"], "api_key_ids": ["key-1"], "judge_model": "judge-model", "shadow_percentage": 10, "max_budget": 10}'
+              pad_to: 1048577
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/shadow_eval_lifecycle/steps/0
+      reference: {outcome: accepted}
+      rust: {outcome: over_limit, bytes: 1048577, limit: 1048576}
+      why: betterlite refuses a shadow eval body past 1048576 bytes before decoding it, a bound LiteLLM's request model has no equivalent for
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1578-L1799

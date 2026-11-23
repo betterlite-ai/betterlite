@@ -1,0 +1,90 @@
+id: B10055
+title: Periodic reload state
+description: >-
+  Each pod remembers three things about its last reloads: which cost map reload revision it has applied, when its cost
+  map was loaded, and when it last reloaded the Anthropic beta headers config. B8385's timer checks write them and
+  B8586's manual reload and status routes read and write the same values. LiteLLM keeps the first two on ProxyConfig
+  (proxy_server.py L5409-L5419) and the third in the module global last_anthropic_beta_headers_reload (L2682). This
+  task builds that state alone, so B8586 no longer waits for the timer checks and B8385 builds on it.
+
+
+  Layout. Build crates/betterlite-server/src/periodic_reloads/state.rs, with a tests.rs beside it in
+  periodic_reloads/state/. The skeleton creates the file and declares `pub mod state;` in periodic_reloads.rs,
+  B8385's module; leave that parent file as it is. Callers reach it as betterlite_server::periodic_reloads::state.
+
+
+  `PeriodicReloads` holds, behind one std::sync::Mutex, the cost map applied revision as u32 (the type B4145's
+  pod_reload_is_due takes and record_manual_reload returns), the cost map loaded_at as DateTime<Utc>, and the last beta
+  headers reload as Option<DateTime<Utc>>. The lifespan builds one and the timer job and the routes share it through an
+  Arc, so every method takes &self; none is async, so no guard lives across an await. Handle a poisoned lock the way
+  B194's CatalogStore does.
+
+  `PeriodicReloads::new(provenance: &CatalogProvenance, now: DateTime<Utc>)` starts as LiteLLM's constructor: applied
+  revision 0, loaded_at from B194's provenance (betterlite_models::source::CatalogProvenance, its loaded_at, LiteLLM's
+  get_model_cost_map_loaded_at()) and now when that is None, and no beta headers reload. The revision starts unapplied
+  on purpose: a fresh pod reloads once when the schedule row already carries a revision above 0.
+  Accessors: cost_map_applied_revision and set_cost_map_applied_revision, cost_map_loaded_at, last_beta_headers_reload
+  and set_last_beta_headers_reload.
+
+
+  The swap. `swap_in_model_cost_map(&self, snapshot: &CatalogSnapshot, at: DateTime<Utc>) -> usize` ports
+  _swap_in_model_cost_map (L5161-L5164) together with the loaded_at write both of its callers make right after it. B194's
+  CatalogService::reload has already adopted the snapshot into the CatalogStore when it answers Reloaded, so nothing is
+  swapped here: set loaded_at to `at` and return the model count LiteLLM's adopt_model_cost_map returns:
+  `snapshot.catalog.adopted_size` (the finalized map's top-level entries, aliases and reserved keys included). B8385
+  passes the time its check read before asking pod_reload_is_due; B8586 passes the time after the reload. Neither caller
+  touches loaded_at in any other way.
+
+
+  Tests. state::tests covers new with and without a provenance loaded_at, the starting revision and beta headers
+  value, each setter read back through a second Arc clone used from a spawned thread, and swap_in_model_cost_map on a
+  catalog parsed with B194's ModelCatalog::parse from a map whose entry carries aliases, asserting the count equals
+  adopted_size and differs from entries.len(), and that loaded_at moved to `at`. No oracle case: the state is read only
+  through the reload routes, and B8676 runs their HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/periodic_reloads/state.rs
+    - crates/betterlite-server/src/periodic_reloads/state/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5409-L5419
+    why: Owned. The initial loaded_at and the unapplied revision 0 on ProxyConfig.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2681-L2682
+    why: Owned. The last beta headers reload global, None at start.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5161-L5164
+    why: Owned. _swap_in_model_cost_map, a call into adopt_model_cost_map that returns the count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L556-L567
+    why: adopt_model_cost_map, whose return value is the count this task reports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8623-L8629
+    why: Call site in the periodic check, the loaded_at write and the revision adopted last (B8385).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19376-L19385
+    why: Call site in the manual reload route (B8586).
+dod:
+  - text: A new PeriodicReloads starts at applied revision 0 with no beta headers reload, and takes loaded_at from the catalog provenance or from now when the provenance has none.
+    proof: [reload-state-tests]
+  - text: swap_in_model_cost_map returns the snapshot's adopted_size and moves loaded_at to the given time.
+    proof: [reload-state-tests]
+  - text: Every setter is seen through every clone of the shared Arc, across threads.
+    proof: [reload-state-tests]
+checks:
+  optional: []
+  commands:
+    - id: reload-state-tests
+      why: The pod reload state is missing, starts differently from LiteLLM or counts the adopted map differently
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^periodic_reloads::state::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "check_periodic_reloads, the cost map check and _check_and_reload_anthropic_beta_headers (L8578-L8731): B8385."
+  - "The manual reload, schedule, status and source routes that read this state: B8586. Building the one PeriodicReloads in the lifespan and holding it in Shared: B8613 and B8610."
+  - "Refetching and adopting the cost map, its provenance and adopted_size: B194. Reload schedules and revisions: B4145."
+  - "The rest of proxy_server.py: the other parts of B124, listed by area in B124's out_of_scope."
+pitfalls:
+  - "Counting snapshot.catalog.entries gives fewer models than LiteLLM's len(new_model_cost_map) counts every alias and sample_spec as its own key; adopted_size already holds that count."
+  - "LiteLLM stores the beta headers time as current_time.isoformat() text and only ever writes it from the clock, so a typed DateTime never fails to parse; B8586 formats it for last_run."
+  - "Keep loaded_at and the applied revision as separate writes: B8385 adopts the revision only after record_reload_run succeeds, so a method that set both at once would mark a failed run as served."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

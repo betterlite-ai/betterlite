@@ -7,13 +7,13 @@ use betterlite_provider::azure_media_dispatch::AzureMediaResult;
 use betterlite_provider::azure_media_dispatch::call::{
     AzureMediaOperation, TranscriptionOperation,
 };
-use betterlite_provider::azure_media_dispatch::test_support::exchange;
 use betterlite_provider::operation::OperationResult;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use uuid::Uuid;
 
 use super::case::Input;
+use super::exchange;
 use super::{
     AUDIO, AUDIO_FILE, AUDIO_TYPE, first_request, json_reply, outcome_error, transcription_view,
 };
@@ -43,7 +43,7 @@ pub(super) async fn transcription(input: &Input) -> HelperResult {
         AzureMediaOperation::Transcription(Box::new(call)),
         vec![reply],
     )
-    .await;
+    .await?;
     let Ok(OperationResult::AzureMedia(AzureMediaResult::Transcription(transcribed))) =
         &outcome.result
     else {
