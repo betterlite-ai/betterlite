@@ -17,9 +17,11 @@ use betterlite_openai::containers::costs::ContainerCosts;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::Object;
 use pyo3::prelude::*;
+use pyo3_async_runtimes::tokio::get_runtime;
 use rust_decimal::Decimal;
 
 use super::super::NativeContainerSession;
+use super::asynchronous;
 use super::{CollectionCall, SessionCore, encode, encode_created, resource_call_type};
 use crate::container_calls::convert::{CallWire, ConvertError, NativeContainerPayload, parse};
 use crate::container_calls::error::{SessionFailure, native_error};
@@ -84,6 +86,25 @@ fn call_delete_answers_the_mocked_deletion() {
     let answer = core().call(&wire(&request)).unwrap();
     let deleted: DeleteContainerResult = serde_json::from_str(&answer).unwrap();
     assert_eq!(deleted.id, "cntr_1");
+    assert!(deleted.deleted);
+}
+
+#[test]
+fn asynchronous_call_answers_a_mocked_create() {
+    let request = mocked("create_container", r#""name":"box""#, CONTAINER);
+    let answer = get_runtime()
+        .block_on(asynchronous::acall(&core(), &wire(&request)))
+        .unwrap();
+    assert!(answer.contains("cntr_1"));
+}
+
+#[test]
+fn asynchronous_call_answers_a_mocked_delete() {
+    let request = mocked("delete_container", r#""container_id":"cntr_1""#, DELETED);
+    let answer = get_runtime()
+        .block_on(asynchronous::acall(&core(), &wire(&request)))
+        .unwrap();
+    let deleted: DeleteContainerResult = serde_json::from_str(&answer).unwrap();
     assert!(deleted.deleted);
 }
 
@@ -190,6 +211,12 @@ fn init_carries_the_call_type_and_the_call_id() {
 fn catalog_costs_debug_names_the_type() {
     let costs = stack::CatalogCosts::new(&BTreeMap::new()).unwrap();
     assert!(format!("{costs:?}").contains("CatalogCosts"));
+}
+
+#[test]
+fn catalog_costs_reads_the_openai_code_interpreter_fee() {
+    let costs = stack::CatalogCosts::new(&BTreeMap::new()).unwrap();
+    assert_eq!(costs.code_interpreter_cost(1, "openai"), Decimal::new(3, 2));
 }
 
 #[test]
