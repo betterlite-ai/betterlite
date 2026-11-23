@@ -187,12 +187,8 @@ pub(crate) fn application(
     });
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
     let slot = &state.anthropic_runtime;
-    let calls = Arc::new(ChatCalls::new(
-        config,
-        Arc::clone(&executor),
-        slot,
-        &state.azure_runtime,
-    )?);
+    let azure = &state.azure_runtime;
+    let calls = Arc::new(ChatCalls::new(config, Arc::clone(&executor), slot, azure)?);
     let counter = Arc::clone(&calls.counter);
     let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let read_through = state.model_read_through.read_through.clone();
@@ -201,12 +197,7 @@ pub(crate) fn application(
         .error_body_call_id
         .include_call_id_in_error_body;
     let endpoints = chat_routes_with_call_id(calls, include_call_id)?;
-    let embeddings = embedding_routes(
-        executor,
-        vertex,
-        read_through,
-        &state.azure_runtime.composition,
-    );
+    let embeddings = embedding_routes(executor, vertex, read_through, &azure.composition);
     // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
     let routed = router(state, shutting_down, endpoints, embeddings).layer(Extension(counter));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
