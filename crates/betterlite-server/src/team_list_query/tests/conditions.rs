@@ -82,17 +82,20 @@ async fn insensitive_alias() {
     fixture.close().await;
 }
 
-#[tokio::test]
-async fn literal_wildcards_in_filters() {
-    let seed = [
+fn wildcard_seed() -> String {
+    [
         organization_insert("org-1"),
         team_insert("wild-1", "50% off", Some("org-1"), &[], &[]),
         team_insert("wild-2", "50x off", Some("org-1"), &[], &[]),
         team_insert("wild-3", "a_b team", Some("org-1"), &[], &[]),
         team_insert("wild-4", "axb team", Some("org-1"), &[], &[]),
     ]
-    .concat();
-    let fixture = database(&seed).await;
+    .concat()
+}
+
+#[tokio::test]
+async fn literal_wildcards_in_filters() {
+    let fixture = database(&wildcard_seed()).await;
     let cache = Arc::new(RecordingCache::default());
     let no_database = lookup(&cache, None);
     // Prisma escapes LIKE metacharacters, so a filter matches them literally
@@ -115,6 +118,14 @@ async fn literal_wildcards_in_filters() {
         fixture.matching_team_ids(&underscore_clause, false).await,
         vec!["wild-3".to_owned()]
     );
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn literal_wildcards_in_prefix_search() {
+    let fixture = database(&wildcard_seed()).await;
+    let cache = Arc::new(RecordingCache::default());
+    let no_database = lookup(&cache, None);
     let prefixed = searching("a_", true);
     let prefix_clause = build_where_conditions(&no_database, &prefixed, TeamListScope::default())
         .await
@@ -157,17 +168,27 @@ async fn search_and_scope_intersection() {
         fixture.matching_team_ids(&union_clause, false).await,
         vec!["in-scope".to_owned(), "own-outside".to_owned()]
     );
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn org_scope_without_own_teams() {
+    let fixture = database(&scope_seed()).await;
+    let cache = Arc::new(RecordingCache::default());
+    let no_database = lookup(&cache, None);
+    let filters = team_filters(None, None, None, None);
+    let administered = vec!["org-1".to_owned()];
     // a caller with no own team in the database reads the administered orgs alone
-    let org_only = TeamListScope {
+    let scope = TeamListScope {
         org_admin_org_ids: Some(&administered),
         own_team_ids: &[],
     };
-    let org_clause = build_where_conditions(&no_database, &unfiltered, org_only)
+    let clause = build_where_conditions(&no_database, &filters, scope)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(
-        fixture.matching_team_ids(&org_clause, false).await,
+        fixture.matching_team_ids(&clause, false).await,
         vec!["in-scope".to_owned()]
     );
     fixture.close().await;
