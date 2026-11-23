@@ -27,6 +27,7 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::Utc;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use uuid::Uuid;
 
