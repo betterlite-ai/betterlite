@@ -239,10 +239,7 @@ fn request_named_arguments_are_read_off_the_text() {
         r#"{"model": "m", "input": "hi", "dimensions": 3, "encoding_format": "base64",
             "timeout": 12.5, "user": "alice", "api_base": "http://base", "api_key": "sk-key",
             "custom_llm_provider": "openai", "litellm_call_id": "call-1",
-            "headers": {"x-base": "1"}, "mock_response": [0.5],
-            "input_cost_per_token": 0.1, "output_cost_per_token": 0.2,
-            "allowed_openai_params": ["dimensions"], "additional_drop_params": ["user"],
-            "drop_params": true}"#,
+            "headers": {"x-base": "1"}, "mock_response": [0.5]}"#,
     );
     assert_eq!(call.dimensions, Some(3));
     assert_eq!(call.encoding_format.as_deref(), Some("base64"));
@@ -266,6 +263,14 @@ fn request_named_arguments_are_read_off_the_text() {
         Some(Json::List(vec![Json::Number(
             Number::from_f64(0.5_f64).unwrap()
         )]))
+    );
+}
+#[test]
+fn request_prices_and_switches_are_read_off_the_text() {
+    let call = arguments(
+        r#"{"model": "m", "input": "hi", "input_cost_per_token": 0.1,
+            "output_cost_per_token": 0.2, "allowed_openai_params": ["dimensions"],
+            "additional_drop_params": ["user"], "drop_params": true}"#,
     );
     assert_eq!(call.input_cost_per_token, Some(Decimal::new(1_i64, 1_u32)));
     assert_eq!(call.output_cost_per_token, Some(Decimal::new(2_i64, 1_u32)));
