@@ -1,0 +1,14 @@
+kind: helper
+name: vector-endpoint-access-permission-seed
+call:
+  vector_endpoint_access:
+    function: permission
+    index_name: idx
+    permission: read
+    key_metadata:
+      allowed_vector_store_indexes:
+        - index_name: idx
+          index_permissions: [read]
+    team_metadata: null
+env: {}
+compare: {ignore: []}
