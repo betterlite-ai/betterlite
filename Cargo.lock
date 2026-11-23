@@ -4222,6 +4222,7 @@ dependencies = [
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-http-fixture",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
