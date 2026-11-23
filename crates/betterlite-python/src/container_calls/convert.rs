@@ -143,8 +143,8 @@ impl Arguments {
 }
 
 // The timeout a caller gave, left for the operation to resolve: LiteLLM's `timeout or DEFAULT_REQUEST_TIMEOUT` reads both none and zero
-pub(crate) fn requested_timeout(seconds: Option<f64>) -> Result<Option<Duration>, ConvertError> {
-    let Some(seconds) = seconds else {
+pub(crate) fn requested_timeout(given: Option<f64>) -> Result<Option<Duration>, ConvertError> {
+    let Some(seconds) = given else {
         return Ok(None);
     };
     Duration::try_from_secs_f64(seconds)
@@ -156,11 +156,11 @@ pub(crate) fn requested_timeout(seconds: Option<f64>) -> Result<Option<Duration>
 pub(crate) fn query_values(
     values: Option<&IndexMap<String, Json>>,
 ) -> Result<Option<IndexMap<String, ParamValue>>, ConvertError> {
-    let Some(values) = values else {
+    let Some(given) = values else {
         return Ok(None);
     };
-    let mut converted = IndexMap::with_capacity(values.len());
-    for (name, value) in values {
+    let mut converted = IndexMap::with_capacity(given.len());
+    for (name, value) in given {
         let param = match value {
             Json::Text(text) => ParamValue::Text(text.clone()),
             Json::Number(number) => match number.as_i64() {

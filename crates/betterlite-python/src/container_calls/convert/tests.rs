@@ -19,7 +19,7 @@ use std::time::Duration;
 fn context() -> ErrorContext {
     ErrorContext {
         message: String::from("no such container"),
-        model: Some(String::from("")),
+        model: Some(String::new()),
         provider: Some(String::from("openai")),
         max_retries: None,
         num_retries: None,
@@ -55,7 +55,7 @@ fn request_create_keeps_its_named_arguments() {
         call.expires_after
             .as_ref()
             .and_then(|after| after.get("minutes")),
-        Some(&serde_json::json!(20))
+        Some(&serde_json::json!(20_i32))
     );
     assert_eq!(call.file_ids, Some(Vec::from([String::from("file_1")])));
 }
@@ -170,7 +170,7 @@ fn request_extra_query_keeps_text_and_integers() {
 fn request_extra_query_names_a_value_that_cannot_be_sent() {
     let values = IndexMap::from([(String::from("limit"), Json::Bool(true))]);
     let error = query_values(Some(&values)).unwrap_err();
-    assert!(matches!(error, ConvertError::QueryValue { ref name } if name == "limit"));
+    assert!(matches!(&error, ConvertError::QueryValue { name } if name == "limit"));
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn request_create_answer_keeps_the_hidden_params() {
     let mut created = container();
     created.hidden_params.insert(
         String::from("additional_headers"),
-        serde_json::json!({"llm_provider-x-litellm-response-cost": 0.03_f64}),
+        serde_json::from_str(r#"{"llm_provider-x-litellm-response-cost":0.03}"#).unwrap(),
     );
     let text = serde_json::to_string(&CreatedAnswer {
         container: &created,

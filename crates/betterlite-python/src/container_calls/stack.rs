@@ -126,10 +126,8 @@ impl ContainerCosts for CatalogCosts {
 }
 
 impl Debug for CatalogCosts {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("CatalogCosts")
-            .finish_non_exhaustive()
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CatalogCosts").finish_non_exhaustive()
     }
 }
 

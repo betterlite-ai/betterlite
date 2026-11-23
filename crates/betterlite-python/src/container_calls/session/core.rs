@@ -118,8 +118,8 @@ impl SessionCore {
     // the operation the request text names, through the steps LiteLLM's four functions take
     pub(crate) fn call(&self, wire: &CallWire) -> Result<String, SessionFailure> {
         match wire.operation.as_str() {
-            CREATE => self.collection(wire, CollectionCall::Create(&wire.arguments.create()?)),
-            LIST => self.collection(wire, CollectionCall::List(&wire.arguments.list()?)),
+            CREATE => self.collection(wire, &CollectionCall::Create(&wire.arguments.create()?)),
+            LIST => self.collection(wire, &CollectionCall::List(&wire.arguments.list()?)),
             RETRIEVE => self.resource(wire, false),
             DELETE => self.resource(wire, true),
             other => Err(SessionFailure::from(ConvertError::Operation {
@@ -132,9 +132,9 @@ impl SessionCore {
     fn collection(
         &self,
         wire: &CallWire,
-        call: CollectionCall<'_>,
+        call: &CollectionCall<'_>,
     ) -> Result<String, SessionFailure> {
-        let (configs, logging, handler) = self.collection_pieces(wire, &call)?;
+        let (configs, logging, handler) = self.collection_pieces(wire, call)?;
         let deps = self.deps(&logging);
         match call {
             CollectionCall::Create(create) => {
@@ -182,9 +182,9 @@ impl SessionCore {
     }
 
     // the collaborators the collection operations read, over the logging object of this call
-    fn deps<'deps>(&'deps self, logging: &'deps Mutex<LoggingState>) -> ContainerCallDeps<'deps> {
+    const fn deps<'deps>(&'deps self, log: &'deps Mutex<LoggingState>) -> ContainerCallDeps<'deps> {
         ContainerCallDeps {
-            logging,
+            logging: log,
             redactor: &self.redactor,
             request_timeout_seconds: self.request_timeout_seconds,
         }
@@ -210,7 +210,7 @@ impl SessionCore {
         Ok((configs, logging, handler))
     }
 
-    fn operations<'deps>(
+    const fn operations<'deps>(
         &'deps self,
         handler: &'deps ResourceHandler,
         configs: &'deps stack::Configs,
@@ -242,8 +242,8 @@ impl SessionCore {
     }
 
     // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured request timeout
-    fn deadline(&self, seconds: Option<f64>) -> Result<Duration, SessionFailure> {
-        let seconds = match seconds {
+    fn deadline(&self, requested: Option<f64>) -> Result<Duration, SessionFailure> {
+        let seconds = match requested {
             Some(given) if given > 0.0_f64 => given,
             Some(_) | None => self.request_timeout_seconds,
         };
