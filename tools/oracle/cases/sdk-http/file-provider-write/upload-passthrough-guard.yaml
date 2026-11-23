@@ -1,0 +1,55 @@
+kind: sdk_http
+name: file-provider-write-upload-passthrough-guard
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  file_provider_write:
+    steps:
+      - create_file:
+          file: {filename: batch.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          custom_llm_provider: openai
+          params: {passthrough: true}
+      - create_file:
+          file: {filename: batch.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: assistants
+          custom_llm_provider: vertex_ai
+          params: {passthrough: true}
+      - create_file:
+          file: {filename: batch.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          params: {passthrough: true}
+      - acreate_file:
+          file: {filename: notes.txt, content_type: text/plain, content: "hello"}
+          purpose: messages
+          custom_llm_provider: anthropic
+          params: {passthrough: true, api_key: sk-ant}
+      - create_file:
+          file: {filename: batch.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          custom_llm_provider: openai
+          params: {passthrough: false}
+      - file_delete:
+          file_id: file-abc
+          custom_llm_provider: openai
+          params: {passthrough: true}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: file-abc
+      object: file
+      bytes: 2
+      created_at: 1700000000
+      filename: batch.jsonl
+      purpose: batch
+      status: processed
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-abc, object: file, deleted: true}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}

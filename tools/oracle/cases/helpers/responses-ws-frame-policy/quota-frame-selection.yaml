@@ -1,0 +1,48 @@
+kind: helper
+name: quota-frame-selection
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: []
+      refuse_send: false
+    - kind: quota
+      message: not-json
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '[1, 2, 3]'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '"response.create"'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.completed", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [accept, accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd", "model": "client"}'
+      authorized_model: null
+      verdicts: [accept]
+      refuse_send: false
+env: {}
+compare:
+  ignore: []
