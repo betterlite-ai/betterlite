@@ -35,7 +35,7 @@ fn arguments_are_interpolated_raw() {
 
 fn missing_pieces_default_empty() {
     for (call, name, arguments) in [
-        (r#"{}"#, "", ""),
+        ("{}", "", ""),
         (r#"{"function": {}}"#, "", ""),
         (r#"{"function": {"name": "only"}}"#, "only", ""),
         (

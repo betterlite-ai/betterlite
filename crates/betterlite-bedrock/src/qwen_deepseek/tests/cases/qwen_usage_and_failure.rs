@@ -168,6 +168,13 @@ fn usage_errors() {
 }
 
 fn json_and_shape_errors() {
+    decode_errors();
+    not_object_errors();
+    not_text_errors();
+    failure_log_fields();
+}
+
+fn decode_errors() {
     let case = fixture();
     for body in ["not json", "{", r#"{"generation": "x""#] {
         let run = qwen(&case, QwenProjection::Qwen2, body);
@@ -177,6 +184,10 @@ fn json_and_shape_errors() {
         );
         assert!(run.logged(), "body {body} is logged");
     }
+}
+
+fn not_object_errors() {
+    let case = fixture();
     for body in ["[]", r#""x""#, "5", "null"] {
         let run = qwen(&case, QwenProjection::Qwen2, body);
         assert!(
@@ -184,6 +195,10 @@ fn json_and_shape_errors() {
             "body {body}"
         );
     }
+}
+
+fn not_text_errors() {
+    let case = fixture();
     let qwen3_null = qwen(&case, QwenProjection::Qwen3, r#"{"generation": null}"#);
     assert!(matches!(
         qwen3_null.error(),
@@ -194,7 +209,10 @@ fn json_and_shape_errors() {
         qwen2_number.error(),
         QwenReplyError::NotText { field } if *field == "generation"
     ));
+}
 
+fn failure_log_fields() {
+    let case = fixture();
     let logged = qwen(&case, QwenProjection::Qwen3, "not json");
     assert_eq!(
         logged.logged_response(),

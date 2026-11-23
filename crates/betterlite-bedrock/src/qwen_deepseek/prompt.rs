@@ -82,8 +82,8 @@ fn tool_call_block(tool_call: &Json, index: usize, call: usize) -> Result<String
         }
         None => None,
     };
-    let name = content_text(function_fields.and_then(|fields| fields.get("name")))?;
-    let arguments = content_text(function_fields.and_then(|fields| fields.get("arguments")))?;
+    let name = content_text(function_fields.and_then(|function| function.get("name")))?;
+    let arguments = content_text(function_fields.and_then(|function| function.get("arguments")))?;
     Ok(format!(
         "{ASSISTANT_START}<tool_call>\n{{\"name\": \"{name}\", \"arguments\": \"{arguments}\"}}\n</tool_call>{IM_END}"
     ))
@@ -106,8 +106,8 @@ fn user_items(items: &[Json], index: usize) -> Result<String, PromptError> {
             return Err(PromptError::ContentItemNotObject { index, item });
         };
         let kind = fields.get("type").and_then(Json::as_str);
-        if kind == Some("text") {
-            match fields.get("text") {
+        match kind {
+            Some("text") => match fields.get("text") {
                 Some(Json::Text(text)) => texts.push(text.clone()),
                 Some(
                     Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
@@ -116,9 +116,9 @@ fn user_items(items: &[Json], index: usize) -> Result<String, PromptError> {
                     texts.push(String::new());
                 }
                 None => texts.push(String::new()),
-            }
-        } else if kind == Some("image_url") {
-            texts.push(VISION_PLACEHOLDER.to_owned());
+            },
+            Some("image_url") => texts.push(VISION_PLACEHOLDER.to_owned()),
+            Some(_) | None => {}
         }
     }
     if let Some(item) = non_text {

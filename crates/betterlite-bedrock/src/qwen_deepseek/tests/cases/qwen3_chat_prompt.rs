@@ -101,6 +101,11 @@ fn non_user_lists_keep_python_display() {
 }
 
 fn malformed_values_fail() {
+    message_and_item_errors();
+    tool_call_errors();
+}
+
+fn message_and_item_errors() {
     let not_a_message = prompts(r#"["hello"]"#);
     assert!(matches!(
         convert_messages_to_prompt(&not_a_message).expect_err("a string message fails"),
@@ -118,23 +123,26 @@ fn malformed_values_fail() {
         convert_messages_to_prompt(&not_text).expect_err("a null text fails"),
         PromptError::ContentItemText { index, item } if index == 0 && item == 0
     ));
+}
+
+fn tool_call_errors() {
     let not_a_call = prompts(r#"[{"role": "assistant", "tool_calls": [7]}]"#);
     assert!(matches!(
         convert_messages_to_prompt(&not_a_call).expect_err("a numeric tool call fails"),
         PromptError::ToolCallNotObject { index, call } if index == 0 && call == 0
     ));
-    for call in [
+    for function in [
         r#"{"function": null}"#,
         r#"{"function": 5}"#,
         r#"{"function": []}"#,
     ] {
-        let source = format!(r#"[{{"role": "assistant", "tool_calls": [{call}]}}]"#);
+        let source = format!(r#"[{{"role": "assistant", "tool_calls": [{function}]}}]"#);
         assert!(
             matches!(
                 convert_messages_to_prompt(&prompts(&source)).expect_err("a non-object function fails"),
                 PromptError::FunctionNotObject { index, call } if index == 0 && call == 0
             ),
-            "{call}"
+            "{function}"
         );
     }
 }

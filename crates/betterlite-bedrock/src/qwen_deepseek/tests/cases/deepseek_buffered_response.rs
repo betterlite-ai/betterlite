@@ -103,24 +103,27 @@ fn split_reasoning_and_content() {
     merged.request_data = object(r#"{"prompt": "solve<think>"}"#);
     merged.response.choices[0].message.provider_specific_fields =
         Some(object(r#"{"existing": "kept"}"#));
-    let run = deepseek(&merged, r#"{"generation": "thinking</think>answer"}"#);
+    let with_existing = deepseek(&merged, r#"{"generation": "thinking</think>answer"}"#);
     assert_eq!(
-        run.reply().choices[0].message.provider_specific_fields,
+        with_existing.reply().choices[0]
+            .message
+            .provider_specific_fields,
         Some(object(
             r#"{"existing": "kept", "reasoning_content": "thinking"}"#
         )),
         "a truthy reasoning merges into the existing fields"
     );
 
-    let run = deepseek(&case, r#"{"generation": "plain answer"}"#);
+    let plain = deepseek(&case, r#"{"generation": "plain answer"}"#);
     assert_eq!(
-        run.reply().choices[0].message.content.as_deref(),
+        plain.reply().choices[0].message.content.as_deref(),
         Some("<think>plain answer"),
         "the prepended token stays without a closing tag"
     );
     assert_eq!(
-        run.reply().choices[0].message.provider_specific_fields,
-        None
+        plain.reply().choices[0].message.provider_specific_fields,
+        Some(object("{}")),
+        "a triggered reply always carries a fields map"
     );
 }
 
@@ -134,18 +137,18 @@ fn empty_reasoning_keeps_the_key() {
     );
     assert_eq!(
         run.reply().choices[0].message.provider_specific_fields,
-        None,
-        "an empty reasoning sets no key"
+        Some(object("{}")),
+        "an empty reasoning adds no key and leaves the map"
     );
 
-    let run = deepseek(&case, r#"{"generation": "thought</think>"}"#);
+    let closing = deepseek(&case, r#"{"generation": "thought</think>"}"#);
     assert_eq!(
-        run.reply().choices[0].message.content.as_deref(),
+        closing.reply().choices[0].message.content.as_deref(),
         Some(""),
         "the content after the closing tag can be empty"
     );
     assert_eq!(
-        run.reply().choices[0].message.provider_specific_fields,
+        closing.reply().choices[0].message.provider_specific_fields,
         Some(object(r#"{"reasoning_content": "thought"}"#))
     );
 }
@@ -217,14 +220,16 @@ fn trigger_conditions() {
     ] {
         let mut case = deepseek_fixture();
         case.request_data = object(&format!(r#"{{"prompt": {value}}}"#));
-        let run = deepseek(&case, body);
+        let triggered = deepseek(&case, body);
         assert_eq!(
-            run.reply().choices[0].message.content.as_deref(),
+            triggered.reply().choices[0].message.content.as_deref(),
             Some("rest"),
             "prompt {value} triggers"
         );
         assert_eq!(
-            run.reply().choices[0].message.provider_specific_fields,
+            triggered.reply().choices[0]
+                .message
+                .provider_specific_fields,
             Some(object(r#"{"reasoning_content": "answer"}"#)),
             "prompt {value}"
         );

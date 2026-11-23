@@ -79,6 +79,7 @@ enum ReplyKind {
     Deepseek,
 }
 
+#[derive(Clone, Copy)]
 struct ReplyWire<'a> {
     kind: ReplyKind,
     model: &'a str,

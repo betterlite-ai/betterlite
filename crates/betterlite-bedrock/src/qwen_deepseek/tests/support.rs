@@ -230,12 +230,13 @@ impl DeepseekRun {
     }
 
     pub(super) fn bedrock(&self) -> &BedrockError {
-        match self.error() {
-            DeepseekReplyError::Base(error) => error
-                .bedrock()
-                .expect("the base failure carries a Bedrock error"),
-            other => panic!("the failure is not a base failure: {other}"),
-        }
+        let found = self.error();
+        let DeepseekReplyError::Base(error) = found else {
+            panic!("the failure is not a base failure: {found}");
+        };
+        error
+            .bedrock()
+            .expect("the base failure carries a Bedrock error")
     }
 }
 

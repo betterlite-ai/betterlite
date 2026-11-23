@@ -49,9 +49,9 @@ pub fn decode_qwen_reply(
     let started = generated
         .strip_prefix(ASSISTANT_START)
         .unwrap_or(&generated);
-    let generated = started.strip_suffix(IM_END).unwrap_or(started).to_owned();
+    let content = started.strip_suffix(IM_END).unwrap_or(started).to_owned();
     if let Some(choice) = response.choices.first_mut() {
-        choice.message.content = Some(generated);
+        choice.message.content = Some(content);
         choice.finish_reason = Some(String::from("stop"));
     }
     if let Some(usage) = fields.get("usage") {
@@ -188,7 +188,8 @@ where
     Ok(reply)
 }
 
-// Only a prompt that trims to a trailing <think>, and a first content, reach the reasoning split.
+// Only a prompt that trims to a trailing <think>, and a first content, reach the reasoning split;
+// the rebuilt message always carries a fields map, empty when no reasoning was parsed.
 fn apply_reasoning(
     request_data: &IndexMap<String, Json>,
     reply: &mut Reply,
@@ -199,10 +200,10 @@ fn apply_reasoning(
     if !is_present(prompt) {
         return Ok(());
     }
-    let Json::Text(prompt) = prompt else {
+    let Json::Text(text) = prompt else {
         return Err(DeepseekError::PromptNotText);
     };
-    if !strip_str_whitespace(prompt).ends_with("<think>") {
+    if !strip_str_whitespace(text).ends_with("<think>") {
         return Ok(());
     }
     let Some(choice) = reply.choices.first_mut() else {
@@ -227,7 +228,7 @@ fn apply_reasoning(
     if let Some(reasoning) = parsed_reasoning.filter(|reasoning| !reasoning.is_empty()) {
         fields.insert(String::from("reasoning_content"), Json::Text(reasoning));
     }
-    choice.message.provider_specific_fields = (!fields.is_empty()).then_some(fields);
+    choice.message.provider_specific_fields = Some(fields);
     Ok(())
 }
 

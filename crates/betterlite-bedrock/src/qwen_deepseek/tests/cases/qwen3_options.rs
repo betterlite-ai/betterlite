@@ -25,14 +25,14 @@ fn class_defaults_are_none() {
     assert_eq!(defaults.stop, None);
     let configured = Options {
         max_tokens: Some(64),
-        temperature: Some(0.5),
-        top_p: Some(0.9),
+        temperature: Some(0.5_f64),
+        top_p: Some(0.9_f64),
         top_k: Some(40),
         stop: Some(vec![String::from("END")]),
     };
     assert_eq!(configured.max_tokens, Some(64));
-    assert_eq!(configured.temperature, Some(0.5));
-    assert_eq!(configured.top_p, Some(0.9));
+    assert_eq!(configured.temperature, Some(0.5_f64));
+    assert_eq!(configured.top_p, Some(0.9_f64));
     assert_eq!(configured.top_k, Some(40));
     assert_eq!(configured.stop, Some(vec![String::from("END")]));
 }

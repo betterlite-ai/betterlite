@@ -22,13 +22,13 @@ pub(super) fn reply_view(reply: &Reply) -> Value {
 }
 
 fn choice_view(choice: &Choice) -> Value {
-    let fields = choice.message.provider_specific_fields.as_ref();
-    let reasoning = fields.and_then(|fields| fields.get("reasoning_content"));
+    let specific = choice.message.provider_specific_fields.as_ref();
+    let reasoning = specific.and_then(|fields| fields.get("reasoning_content"));
     json!({
         "index": choice.index,
         "finish_reason": choice.finish_reason,
         "content": choice.message.content,
         "reasoning_content": reasoning,
-        "provider_specific_fields": fields,
+        "provider_specific_fields": specific,
     })
 }

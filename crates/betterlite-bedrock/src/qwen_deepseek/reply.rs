@@ -110,7 +110,7 @@ fn seed_choice(choice: &Choice) -> ChatChoice {
 
 // The base changes content, finish_reason, model, created and usage; every other field comes back as seeded.
 pub(super) fn from_chat(response: ChatResponse, seed: &Reply) -> Result<Reply, DeepseekReplyError> {
-    let usage = usage_from_chat(response.usage)?;
+    let usage = usage_from_chat(&response.usage)?;
     let choices = response
         .choices
         .into_iter()
@@ -124,11 +124,11 @@ pub(super) fn from_chat(response: ChatResponse, seed: &Reply) -> Result<Reply, D
                     content: choice.message.content,
                     tool_calls: choice.message.tool_calls,
                     provider_specific_fields: seeded
-                        .and_then(|seeded| seeded.message.provider_specific_fields.clone()),
+                        .and_then(|source| source.message.provider_specific_fields.clone()),
                 },
                 finish_reason: choice.finish_reason,
                 provider_specific_fields: seeded
-                    .and_then(|seeded| seeded.provider_specific_fields.clone()),
+                    .and_then(|source| source.provider_specific_fields.clone()),
             }
         })
         .collect();
@@ -142,7 +142,7 @@ pub(super) fn from_chat(response: ChatResponse, seed: &Reply) -> Result<Reply, D
     })
 }
 
-fn usage_from_chat(usage: ChatUsage) -> Result<Usage, DeepseekReplyError> {
+fn usage_from_chat(usage: &ChatUsage) -> Result<Usage, DeepseekReplyError> {
     Ok(Usage {
         prompt_tokens: i64::try_from(usage.prompt_tokens).map_err(|_error| {
             DeepseekReplyError::UsageRange {
