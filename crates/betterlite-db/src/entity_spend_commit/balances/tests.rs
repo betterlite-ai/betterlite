@@ -178,6 +178,25 @@ async fn last_active(client: &Client, token: &str) -> NaiveDateTime {
         .get(0)
 }
 
+// The rows are decoded before the session is taken: with no pool, a write that opened one first would fail as a statement.
+#[tokio::test]
+async fn a_malformed_team_member_key_is_refused_before_a_connection() {
+    let ports = Ports::new();
+    let writer = ports.tables(PostgresStore { pool: None });
+    let rows = increments(&[("team_id::t1::user_id", "1")]);
+    let error = writer
+        .write_table(SpendTable::TeamMemberList, &rows)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        EntityTableError::Key {
+            table: SpendTable::TeamMemberList,
+            ..
+        }
+    ));
+}
+
 #[tokio::test]
 async fn zero_then_fractional_costs_share_one_connection() {
     let database = Database::open(1).await;
