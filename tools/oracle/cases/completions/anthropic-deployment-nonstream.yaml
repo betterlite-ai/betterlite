@@ -27,5 +27,5 @@ compare:
   headers_present: [x-litellm-call-id]
   upstream_headers: [x-api-key, anthropic-version, content-type]
   ignore:
-    - {pointer: /id, why: LiteLLM generates the completion id and betterlite keeps the upstream message id}
+    - {pointer: /id, why: each side generates its own chatcmpl uuid for the chat reply, so the ids differ per call}
     - {pointer: /created, why: the completion time is read from the clock on each side}
