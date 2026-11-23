@@ -1,0 +1,42 @@
+kind: helper
+name: prometheus-deployment-failure-metadata-fallbacks
+call:
+  b3881:
+    function: failure
+    kwargs:
+      model: gpt-4o
+      litellm_params:
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info: {id: internal-id}
+        metadata:
+          model_info: {id: caller-id}
+          model_group: caller-group
+    exception:
+      status_code: "400"
+    payload:
+      id: payload
+      trace_id: trace
+      session_id: session
+      call_type: completion
+      status: success
+      status_fields: {llm_api_status: success, guardrail_status: not_run}
+      startTime: 0
+      endTime: 0
+      completionStartTime: 0
+      response_time: 0
+      response_cost: 0
+      model_map_information: {}
+      model: gpt-4o
+      api_base: ""
+      metadata:
+        user_api_key_hash: payload-hash
+      saved_cache_cost: 0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {additional_headers: {}}
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+env: {}
+compare: {ignore: []}

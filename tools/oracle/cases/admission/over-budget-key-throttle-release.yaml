@@ -1,0 +1,27 @@
+kind: helper
+name: admission-over-budget-key-throttle-release
+call:
+  b3004:
+    token:
+      token: k1
+      max_budget: 10.0
+      spend: 9.0
+      tpm_limit: 10
+      rpm_limit: null
+      throttle: true
+      user_id: u1
+    reservation_cost: 4.0
+    fail_closed: false
+    throttle_percentage: 0.5
+    user:
+      user_id: u1
+      max_budget: 20.0
+      spend: 0.0
+    memory:
+      "spend:key:k1": 9.0
+      "spend:user:u1": 0.0
+    sources: {}
+    failures: []
+    pipeline_fails: false
+env: {}
+compare: {ignore: []}

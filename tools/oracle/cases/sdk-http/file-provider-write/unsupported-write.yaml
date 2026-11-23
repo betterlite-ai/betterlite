@@ -1,0 +1,30 @@
+kind: sdk_http
+name: file-provider-write-unsupported-write
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  file_provider_write:
+    steps:
+      - create_file:
+          file: {filename: a.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          custom_llm_provider: cohere
+      - afile_delete:
+          file_id: file-abc
+          custom_llm_provider: cohere
+      - acreate_file:
+          file: {filename: a.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          custom_llm_provider: not-a-provider
+      - file_delete:
+          file_id: file-abc
+          custom_llm_provider: not-a-provider
+      - file_delete:
+          file_id: file-abc
+          custom_llm_provider: gmi
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

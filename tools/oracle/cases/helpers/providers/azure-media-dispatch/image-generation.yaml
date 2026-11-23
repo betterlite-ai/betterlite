@@ -1,0 +1,19 @@
+kind: helper
+name: azure-image-generation
+call:
+  azure_media_dispatch:
+    case: image_generation
+    api_base: https://example.openai.azure.com
+    api_version: 2025-02-01-preview
+    model: dall-e-3
+    prompt: a cat
+    api_key: sk-azure-fixture
+    options:
+      size: 1024x1024
+    reply:
+      created: 1700000000
+      data:
+        - b64_json: aW1hZ2U=
+          revised_prompt: a cat
+env: {}
+compare: {ignore: []}

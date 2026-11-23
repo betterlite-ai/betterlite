@@ -1,0 +1,27 @@
+kind: helper
+name: admission-counter-initialization-unavailable-fail-closed
+call:
+  b3004:
+    token:
+      token: k1
+      max_budget: 10.0
+      spend: 1.0
+      tpm_limit: 10
+      rpm_limit: null
+      throttle: false
+      user_id: u1
+    reservation_cost: 4.0
+    fail_closed: true
+    throttle_percentage: null
+    user:
+      user_id: u1
+      max_budget: 5.0
+      spend: 0.0
+    memory:
+      "spend:key:k1": 1.0
+    sources: {}
+    failures:
+      - "spend:user:u1"
+    pipeline_fails: false
+env: {}
+compare: {ignore: []}

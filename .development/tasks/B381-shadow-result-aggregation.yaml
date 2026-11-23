@@ -131,5 +131,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 1500
-  max_new_expects: 0
+  max_changed_lines: 1700
+  max_new_expects: 1

@@ -64,13 +64,16 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L29-L31
   - what: >-
-      An unknown provider name is this module's UnknownProvider error, "<name>" is not a provider
-      betterlite knows. LiteLLM builds a litellm.LlmProviders from the name there and the enum raises
-      ValueError("<name> is not a valid LlmProviders"), so both reach the exception mapping with no
-      status code and the provider resolved so far.
+      A BadRequest (400) with model "" and the provider resolved so far answers an unknown provider name
+      and a known provider with no container config, this module's UnknownProvider and NoProviderConfig
+      errors. LiteLLM builds a litellm.LlmProviders from the name there, whose ValueError for a name
+      outside the set and the None check's ValueError for a missing container config both reach
+      exception_type as an APIConnectionError (500).
     why: >-
-      The provider set is betterlite's own ProviderId enum, and its parse failure names the value the
-      caller gave. The class is the same, since neither error carries a status.
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client
+      the server broke when its own request was wrong. The provider set is betterlite's own ProviderId
+      enum, and its parse failure names the value the caller gave; only the message differs from
+      LiteLLM's.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L94-L99
   - what: >-

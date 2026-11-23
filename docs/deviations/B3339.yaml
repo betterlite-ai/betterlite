@@ -9,4 +9,20 @@ deviations:
   - what: The client kwarg arrives as an explicit argument of the call rather than inside the kwargs map.
     why: betterlite's request types hold the typed arguments and leave kwargs for the free-form ones, as docs/compatibility.md explains.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L366
+  - what: >-
+      A video_status call whose provider is unknown or has no video config answers a BadRequestError (400) with
+      model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as an
+      APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1033-L1037
+  - what: >-
+      A video_content call whose provider is unknown or has no video config answers a BadRequestError (400) with
+      model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as an
+      APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L331-L335
 kept_bugs: []

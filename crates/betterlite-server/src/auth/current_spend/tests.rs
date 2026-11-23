@@ -22,9 +22,12 @@ use betterlite_auth::spend_reseed::values::SpendValueError;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_db::database_failures::gate::{
     DbLookupStallTracker, LoopBoundSemaphore, SystemClock,
 };
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -53,8 +56,14 @@ fn slot(source: &str) -> Slot {
     .expect("the test config loads");
     let shared = Shared {
         bundled_catalog: BundledCatalog::default().get(),
+        client: transport(),
     };
     Slot::new(&config, &shared)
+}
+
+fn transport() -> ProxiedClient {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }
 
 fn reseed_without_database() -> SpendCounterReseed<SqlSpendCounterRows> {
