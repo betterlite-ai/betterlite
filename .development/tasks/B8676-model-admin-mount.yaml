@@ -18,7 +18,7 @@ description: >-
   1. Keyed routes. `pub(crate) fn mount_models(router: Router, state: &Arc<ServerState>) -> Router` merges, each once
   and on its own line: root_routes::routes (it takes the router from `shared.router`, the RouterHandle, and reads it
   per request, so a router installed later by the database sync answers too; no router or no adaptive routers is
-  LiteLLM's 404), reload_routes::routes (over the one B8385 `PeriodicReloads` that the lifespan timer checks also
+  LiteLLM's 404), reload_routes::routes (over the one B10055 `PeriodicReloads` that the lifespan timer checks also
   use, handed over as `shared.periodic_reloads`; never build a second one, or the status routes show another pod's
   times) and model_metrics_routes::routes (over `shared.db`; B8386 also takes
   `shared.proxy_logging` for the slow response threshold). LiteLLM puts user_api_key_auth on every one of these
@@ -95,7 +95,7 @@ oracle_cases:
 
 deviations: []
 out_of_scope:
-  - "The handlers: B8597, B8586, B8386 and B3190. PeriodicReloads: B8385. The model insights routes, their merge line and cases: B8272. The availability route and its catalog hand-over: B379."
+  - "The handlers: B8597, B8586, B8386 and B3190. PeriodicReloads: B10055. The model insights routes, their merge line and cases: B8272. The availability route and its catalog hand-over: B379."
   - "B3191's agent_fields_routes: the agents area."
   - "Handing DeploymentSync and PeriodicReloads to Shared: the foundation parts."
 pitfalls:

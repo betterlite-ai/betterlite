@@ -62,7 +62,7 @@ description: >-
   after the auth cache is created, and `startup_event(router, usage_redis)` at the position of
   ProxyStartupEvent._initialize_startup_logging (L1415-L1420), after the Redis selection and before the transaction
   buffer check. The B8590 alerting port that B8374 calls updates this same value. Right after ProxyLogging is built, make the one B8666 `GuardrailClasses::new(runtime, ports)` over the GuardrailRuntime from step 8 (the `ClassPorts` also carry the settings B8990's Vigil runtime needs and the existing secret-lookup handle from step 2), pass its `callbacks()` (a live source that reads the handler on every call) to B8399's add_guardrail_callbacks, and keep it in Started for SharedGuardrails.classes. The lifespan never calls init_callbacks: B8742's callback_loggers slot calls `shared.proxy_logging.init_callbacks(resolver)` from app::callbacks::start.
-  10. Periodic reloads. One B8385 `PeriodicReloads` before B8374 registers the background jobs. B8372's
+  10. Periodic reloads. One B10055 `PeriodicReloads` before B8374 registers the background jobs. B8372's
   BackgroundJobInputs (the periodic_reload_job) and B8384's beta header reload get this one; Started carries it for
   B8586's routes.
   11. Deployment sync. B8381's `DeploymentSync` as one Arc: the one B8374 hands to B8372's jobs and stops at shutdown
