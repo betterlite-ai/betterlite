@@ -1,0 +1,14 @@
+kind: helper
+name: admin-roles
+call:
+  b10052:
+    rows:
+      - {user_role: proxy_admin, user_id: admin-1, requested_user_id: other-user}
+      - {user_role: proxy_admin, user_id: null, requested_user_id: other-user}
+      - {user_role: proxy_admin, user_id: admin-1, requested_user_id: null}
+      - {user_role: proxy_admin_viewer, user_id: viewer-1, requested_user_id: other-user}
+      - {user_role: proxy_admin_viewer, user_id: null, requested_user_id: null}
+      - {user_role: proxy_admin_viewer, user_id: null, requested_user_id: other-user}
+env: {}
+compare:
+  ignore: []
