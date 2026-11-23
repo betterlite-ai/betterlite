@@ -10,8 +10,7 @@ use crate::key_policy_fields::{
 use super::super::Row;
 use super::super::error::KeyPatchError;
 
-// duration is request-only: it becomes expires, or clears it for null and "-1"; "" leaves the column alone.
-// budget_duration null clears the stored duration and its reset; "" leaves both as stored.
+// duration and budget_duration feed expires and budget_reset_at; null clears them, "" leaves the stored column alone.
 pub(super) fn apply_request_times(
     values: &mut Row,
     clock: KeyClock<'_>,
