@@ -225,7 +225,7 @@ pub(crate) async fn provider_failure() {
     let rig = Rig::new();
     rig.wire.queue(
         401,
-        r#"{"error":{"message":"invalid api key","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}"#,
+        r#"{"error":{"message":"Incorrect API key provided: sk-provider. You can find your API key at https://platform.openai.com/account/api-keys.","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}"#,
     );
     let gateway = NoInterception;
     let bridge = RecordingBridge::new(&rig.events);
