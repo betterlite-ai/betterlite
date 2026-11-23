@@ -1,0 +1,12 @@
+kind: helper
+name: io-both-limits-floored
+call:
+  b10046:
+    function: build
+    itpm: 100
+    otpm: 50
+    current_itpm: 120
+    current_otpm: 10
+    now: 60
+env: {}
+compare: {ignore: []}
