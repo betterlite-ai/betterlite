@@ -102,41 +102,24 @@ pub(super) fn xai_branch_base_chain_without_a_dynamic_base() {
     let litellm_params = IndexMap::new();
     let mut environment = settings();
     environment.xai_api_base = Some(String::from("https://xai-env.example"));
-    let mut connect = params();
-    connect.generic_api_base = Some(String::from("https://xai-generic.example"));
-    let generic_request = call("xai/grok-4", &connect, None, &litellm_params, false);
-    let generic: RealtimeConnection<TestConfig> = direct_connection(
-        DirectProvider::Xai,
-        &environment,
-        &generic_request,
-        &prepared,
-    );
-    assert_eq!(
-        generic.args.api_base.as_deref(),
-        Some("https://xai-generic.example")
-    );
+    let mut generic = params();
+    generic.generic_api_base = Some(String::from("https://xai-generic.example"));
     let bare = params();
-    let environment_request = call("xai/grok-4", &bare, None, &litellm_params, false);
-    let from_environment: RealtimeConnection<TestConfig> = direct_connection(
-        DirectProvider::Xai,
-        &environment,
-        &environment_request,
-        &prepared,
-    );
-    assert_eq!(
-        from_environment.args.api_base.as_deref(),
-        Some("https://xai-env.example")
-    );
-    let from_default: RealtimeConnection<TestConfig> = direct_connection(
-        DirectProvider::Xai,
-        &settings(),
-        &environment_request,
-        &prepared,
-    );
-    assert_eq!(
-        from_default.args.api_base.as_deref(),
-        Some("https://api.x.ai/v1")
-    );
+    let defaults = settings();
+    for (connection_settings, connect, expected) in [
+        (&environment, &generic, "https://xai-generic.example"),
+        (&environment, &bare, "https://xai-env.example"),
+        (&defaults, &bare, "https://api.x.ai/v1"),
+    ] {
+        let request = call("xai/grok-4", connect, None, &litellm_params, false);
+        let connection: RealtimeConnection<TestConfig> = direct_connection(
+            DirectProvider::Xai,
+            connection_settings,
+            &request,
+            &prepared,
+        );
+        assert_eq!(connection.args.api_base.as_deref(), Some(expected));
+    }
 }
 
 pub(super) async fn vertex_ai_project_alias_reaches_the_resolver() {
