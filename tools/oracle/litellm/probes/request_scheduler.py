@@ -155,9 +155,11 @@ async def schedule_step(step: ScheduleStep, router: SchedulerCall, answer: Answe
             return (Errored(), Failure(status=error.status_code, code=None, priority=None))
     used = _HIDDEN.validate_python(get_hidden_params_dict(response))["additional_headers"]
     return (Scheduled(prioritized=used["x-litellm-request-prioritization-used"], priority=step.priority), None)
-async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcome, Failure | None]:
+# parameters keep the protocol type; a local assigned from router.scheduler narrows back to the pin's Scheduler
+async def apply_step(
+    step: Step, router: Router, watch: HealthWatch, answer: Answer
+) -> tuple[Outcome, Failure | None]:
     scheduler: Scheduler = router.scheduler
-    watch: HealthWatch = router.scheduler
     error: Failure | None = None
     outcome: Outcome
     if isinstance(step, AddStep):
@@ -218,7 +220,7 @@ class RequestScheduler(Operation):
                     )
             outputs: list[StepOutput] = []
             for step in self.steps:
-                outcome, error = await apply_step(step, router, answer)
+                outcome, error = await apply_step(step, router, router.scheduler, answer)
                 queue = await read_queue(router.scheduler, step.model)
                 outputs.append(StepOutput(outcome=outcome, queue=queue, depth=len(queue), error=error))
             return Output(steps=outputs, calls=answer.calls)
