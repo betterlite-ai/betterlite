@@ -1,4 +1,4 @@
-use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::resource_repository::model::ModelRepository;
 use betterlite_logging::callback_config::FeatureFlags;
@@ -16,8 +16,10 @@ use super::Row;
 use super::drop_request_only_fields;
 use super::error::KeyPatchError;
 use super::metadata::{
-    MetadataContext, PatchWarning, is_catalog_field, prepare_metadata_fields, python_isoformat,
+    MetadataContext, PatchWarning, is_catalog_field, isoformat_timestamp, prepare_metadata_fields,
 };
+use super::object_of;
+use super::string_of;
 use super::timing::{apply_budget_duration, apply_budget_windows, apply_duration};
 
 pub struct PrepareContext<'existing> {
@@ -42,13 +44,13 @@ where
     let mut supplied = request.project()?.supplied;
     validate_router_settings(&supplied, context).await?;
     check_service_account_team(&supplied, context.existing.team_id.as_deref())?;
-    let fields = metadata_fields(supplied.clone(), expiry_of(request));
+    let fields = metadata_fields(request, supplied.clone());
     drop_request_only_fields(&mut supplied);
     let mut values = key_fields_only(&supplied);
     apply_duration(&mut values, context.clock)?;
     apply_budget_duration(&mut values, context.clock)?;
     apply_budget_windows(&mut values, context.clock)?;
-    validate_model_budget(&values)?;
+    validate_model_max_budget(values.get("model_max_budget").and_then(object_of))?;
     serialize_router_settings(&mut values)?;
     let mut metadata_context = MetadataContext {
         flags: context.flags,
@@ -65,14 +67,12 @@ where
 }
 
 // the pydantic dump prepare_metadata_fields folds, without nulls, with each datetime rendered as isoformat
-pub fn metadata_request_fields(request: &UpdateKeyRequest) -> Result<Row, KeyPatchError> {
-    Ok(metadata_fields(
-        request.project()?.supplied,
-        expiry_of(request),
-    ))
-}
-
-fn metadata_fields(supplied: Row, expiry: Option<&Timestamp>) -> Row {
+pub fn metadata_fields(request: &UpdateKeyRequest, supplied: Row) -> Row {
+    let expiry = request
+        .update
+        .temp_budget_expiry
+        .as_ref()
+        .and_then(Option::as_ref);
     let mut fields: Row = supplied
         .into_iter()
         .filter(|(_, value)| !matches!(value, JsonData::Null))
@@ -80,18 +80,10 @@ fn metadata_fields(supplied: Row, expiry: Option<&Timestamp>) -> Row {
     if let Some(expiry) = expiry {
         fields.insert(
             String::from("temp_budget_expiry"),
-            JsonData::String(python_isoformat(expiry)),
+            JsonData::String(isoformat_timestamp(expiry)),
         );
     }
     fields
-}
-
-fn expiry_of(request: &UpdateKeyRequest) -> Option<&Timestamp> {
-    request
-        .update
-        .temp_budget_expiry
-        .as_ref()
-        .and_then(Option::as_ref)
 }
 
 // The request's own fields, without the two metadata catalogs.
@@ -116,24 +108,15 @@ fn check_service_account_team(
     if account.is_none_or(|value| matches!(value, JsonData::Null)) {
         return Ok(());
     }
-    if supplied_team(supplied).or(existing_team).is_some() {
+    if supplied
+        .get("team_id")
+        .and_then(string_of)
+        .or(existing_team)
+        .is_some()
+    {
         return Ok(());
     }
     Err(KeyPatchError::ServiceAccountTeamRequired)
-}
-
-fn supplied_team(supplied: &Row) -> Option<&str> {
-    match supplied.get("team_id") {
-        Some(JsonData::String(team)) => Some(team.as_str()),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_),
-        )
-        | None => None,
-    }
 }
 
 // The source validates router weights when they are supplied or when an omitted patch inherits a new team's.
@@ -144,7 +127,7 @@ async fn validate_router_settings(
     let router_settings = supplied.get("router_settings");
     let explicit = matches!(router_settings, Some(value) if !matches!(value, JsonData::Null));
     let team_changed = supplied.contains_key("team_id")
-        && supplied_team(supplied) != context.existing.team_id.as_deref();
+        && supplied.get("team_id").and_then(string_of) != context.existing.team_id.as_deref();
     if !explicit && !(router_settings.is_none() && team_changed) {
         return Ok(());
     }
@@ -153,7 +136,7 @@ async fn validate_router_settings(
         Some(value) => Some(serde_json::from_value(serde_json::to_value(value)?)?),
     };
     let team_id = if supplied.contains_key("team_id") {
-        supplied_team(supplied)
+        supplied.get("team_id").and_then(string_of)
     } else {
         context.existing.team_id.as_deref()
     };
@@ -176,21 +159,6 @@ fn stored_router_settings(
     };
     let value = serde_json::to_value(settings)?;
     Ok(Some(serde_json::from_value(value)?))
-}
-
-fn validate_model_budget(values: &Row) -> Result<(), KeyPatchError> {
-    let Some(value) = values.get("model_max_budget") else {
-        return Ok(());
-    };
-    let budgets = match value {
-        JsonData::Object(fields) => Some(fields),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_) => None,
-    };
-    Ok(validate_model_max_budget(budgets)?)
 }
 
 // safe_dumps of a nonnull router_settings: the stored column is JSON text, not an object

@@ -10,35 +10,18 @@ use super::error::KeyPatchError;
 pub const SOFT_BUDGET: &str = "soft_budget";
 pub const MAX_BUDGET: &str = "max_budget";
 
-// The amount a 400 rejects: non-finite, or finite and below zero; Python compares with zero, so -0.0 passes.
-fn rejected_amount(amount: Option<Amount>) -> Option<Amount> {
-    match amount {
-        Some(Amount::Nan | Amount::PositiveInfinity | Amount::NegativeInfinity) => Some(amount),
-        Some(Amount::Finite(decimal)) if decimal.is_sign_negative() && !decimal.is_zero() => {
-            Some(amount)
-        }
+// _validate_soft_budget_value and _validate_max_budget: None and zero pass; non-finite or below-zero is the 400 (so -0.0 passes).
+pub fn validate_budget(field: &'static str, amount: Option<Amount>) -> Result<(), KeyPatchError> {
+    let rejected = match amount {
+        Some(Amount::Nan | Amount::PositiveInfinity | Amount::NegativeInfinity) => amount,
+        Some(Amount::Finite(decimal)) if decimal.is_sign_negative() && !decimal.is_zero() => amount,
         Some(Amount::Finite(_)) | None => None,
-    }
-}
-
-// _validate_soft_budget_value: None and zero pass, a negative or non-finite amount is the 400.
-pub fn validate_soft_budget_value(soft_budget: Option<Amount>) -> Result<(), KeyPatchError> {
-    let Some(rejected) = rejected_amount(soft_budget) else {
+    };
+    let Some(rejected) = rejected else {
         return Ok(());
     };
     Err(KeyPatchError::NonFiniteBudget {
-        field: SOFT_BUDGET,
-        received: describe_amount(Some(rejected)),
-    })
-}
-
-// _validate_max_budget: the same check for the hard limit.
-pub fn validate_max_budget(max_budget: Option<Amount>) -> Result<(), KeyPatchError> {
-    let Some(rejected) = rejected_amount(max_budget) else {
-        return Ok(());
-    };
-    Err(KeyPatchError::NonFiniteBudget {
-        field: MAX_BUDGET,
+        field,
         received: describe_amount(Some(rejected)),
     })
 }

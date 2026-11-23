@@ -8,6 +8,8 @@ use crate::object_permissions::update::handle_update_object_permission_common;
 
 use super::Row;
 use super::error::KeyPatchError;
+use super::object_of;
+use super::string_of;
 
 // ast-grep-ignore: no-long-names - _handle_update_object_permission: the request's permission row is persisted and swapped for its id.
 pub async fn handle_update_object_permission(
@@ -37,13 +39,10 @@ pub async fn handle_update_object_permission(
     Ok(())
 }
 
-// is_different_team: an omitted team changes nothing, and a team against an unset stored team always differs.
 #[must_use]
+// ast-grep-ignore: no-one-line-functions - is_different_team: an omitted team changes nothing, and a team against an unset stored team always differs.
 pub fn is_different_team(request_team: Option<&str>, existing_team: Option<&str>) -> bool {
-    let Some(team) = request_team else {
-        return false;
-    };
-    existing_team.is_none_or(|existing| existing != team)
+    request_team.is_some_and(|team| existing_team != Some(team))
 }
 
 // _resolve_token_to_update: the request's key wins even when empty, then the stored token, then the 404.
@@ -51,10 +50,9 @@ pub fn resolve_token_to_update<'token>(
     request_key: Option<&'token str>,
     existing_token: Option<&'token str>,
 ) -> Result<&'token str, KeyPatchError> {
-    if let Some(key) = request_key {
-        return Ok(key);
-    }
-    existing_token.ok_or(KeyPatchError::KeyNotFound)
+    request_key
+        .or(existing_token)
+        .ok_or(KeyPatchError::KeyNotFound)
 }
 
 // ast-grep-ignore: no-one-line-functions - _require_prisma_client: a write without a database is the 500 the source raises.
@@ -73,27 +71,14 @@ pub fn requested_end_user_budget_id(request: &KeyRequestBase) -> Option<String> 
     let Some(Some(metadata)) = &request.base.base.metadata else {
         return None;
     };
-    match metadata.0.get("end_user_budget_id") {
-        Some(JsonData::String(text)) => Some(text.clone()),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_),
-        )
-        | None => Some(String::new()),
-    }
+    let supplied = metadata.0.get("end_user_budget_id").and_then(string_of);
+    Some(supplied.map_or_else(String::new, str::to_owned))
 }
 
 // _general_settings: the loaded globals must be a JSON object; the loader itself belongs to the config crate.
 pub fn general_settings(value: &JsonData) -> Result<Row, KeyPatchError> {
-    match value {
-        JsonData::Object(settings) => Ok(settings.clone()),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_) => Err(KeyPatchError::GeneralSettings),
+    match object_of(value) {
+        Some(settings) => Ok(settings.clone()),
+        None => Err(KeyPatchError::GeneralSettings),
     }
 }

@@ -44,9 +44,9 @@ pub enum KeyPatchError {
     #[error(transparent)]
     Column(#[from] ColumnError),
     #[error("the key request could not be projected")]
-    Request(#[source] DecodeError),
+    Request(#[from] DecodeError),
     #[error("the stored key row could not be decoded")]
-    StoredRow(#[source] TokenDecodeError),
+    StoredRow(#[from] TokenDecodeError),
     #[error("the stored key row is not a JSON object")]
     StoredRowShape,
     #[error("{name} is not a key column")]
@@ -56,7 +56,7 @@ pub enum KeyPatchError {
     #[error(transparent)]
     Database(#[from] DbError<Infallible>),
     #[error("the key patch could not be encoded")]
-    Json(#[source] serde_json::Error),
+    Json(#[from] serde_json::Error),
 }
 
 impl KeyPatchError {
@@ -93,51 +93,17 @@ impl KeyPatchError {
     // Only a missing key raises the ProxyException shape; every other failure is an HTTPException or a 500.
     #[must_use]
     pub fn proxy_exception(&self) -> Option<ProxyException> {
-        match self {
-            Self::KeyNotFound => Some(ProxyException::new(ProxyExceptionInit {
-                message: String::from("Key not found."),
-                error_type: ProxyErrorTypes::NotFoundError.to_string(),
-                param: Some(String::from("key")),
-                code: ExceptionCode::Status(404),
-                headers: BTreeMap::new(),
-                openai_code: None,
-                provider_specific_fields: BTreeMap::new(),
-            })),
-            Self::ImmutableMetadata { .. }
-            | Self::ServiceAccountTeamRequired
-            | Self::NonFiniteBudget { .. }
-            | Self::DatabaseNotConnected
-            | Self::LoggingMetadata(_)
-            | Self::RouterWeights(_)
-            | Self::ModelBudget(_)
-            | Self::ObjectPermission(_)
-            | Self::Clock(_)
-            | Self::Column(_)
-            | Self::Request(_)
-            | Self::StoredRow(_)
-            | Self::StoredRowShape
-            | Self::UnknownColumn { .. }
-            | Self::GeneralSettings
-            | Self::Database(_)
-            | Self::Json(_) => None,
-        }
-    }
-}
-
-impl From<DecodeError> for KeyPatchError {
-    fn from(source: DecodeError) -> Self {
-        Self::Request(source)
-    }
-}
-
-impl From<TokenDecodeError> for KeyPatchError {
-    fn from(source: TokenDecodeError) -> Self {
-        Self::StoredRow(source)
-    }
-}
-
-impl From<serde_json::Error> for KeyPatchError {
-    fn from(source: serde_json::Error) -> Self {
-        Self::Json(source)
+        let Self::KeyNotFound = self else {
+            return None;
+        };
+        Some(ProxyException::new(ProxyExceptionInit {
+            message: String::from("Key not found."),
+            error_type: ProxyErrorTypes::NotFoundError.to_string(),
+            param: Some(String::from("key")),
+            code: ExceptionCode::Status(404),
+            headers: BTreeMap::new(),
+            openai_code: None,
+            provider_specific_fields: BTreeMap::new(),
+        }))
     }
 }

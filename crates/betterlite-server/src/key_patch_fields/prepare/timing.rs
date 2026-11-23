@@ -14,26 +14,17 @@ pub(super) fn apply_duration(values: &mut Row, clock: KeyClock<'_>) -> Result<()
     let Some(duration) = values.remove("duration") else {
         return Ok(());
     };
-    match duration {
-        JsonData::Null => {
-            values.insert(String::from("expires"), JsonData::Null);
+    let expires = match duration {
+        JsonData::String(text) if text.is_empty() => return Ok(()),
+        JsonData::String(text) if text != "-1" => {
+            JsonData::String(zulu_datetime(shifted_by(clock.now, &text, clock)?))
         }
-        JsonData::String(text) if text == "-1" => {
-            values.insert(String::from("expires"), JsonData::Null);
+        JsonData::Null | JsonData::String(_) => JsonData::Null,
+        JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_) => {
+            return Ok(());
         }
-        JsonData::String(text) if !text.is_empty() => {
-            let instant = shifted_by(clock.now, &text, clock)?;
-            values.insert(
-                String::from("expires"),
-                JsonData::String(zulu_datetime(instant)),
-            );
-        }
-        JsonData::String(_)
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::Array(_)
-        | JsonData::Object(_) => {}
-    }
+    };
+    values.insert(String::from("expires"), expires);
     Ok(())
 }
 
@@ -42,17 +33,12 @@ pub(super) fn apply_budget_duration(
     values: &mut Row,
     clock: KeyClock<'_>,
 ) -> Result<(), KeyPatchError> {
-    let Some(budget_duration) = values.remove("budget_duration") else {
+    let Some(removed) = values.remove("budget_duration") else {
         return Ok(());
     };
-    match budget_duration {
-        JsonData::Null => {
-            values.insert(String::from("budget_duration"), JsonData::Null);
-            values.insert(String::from("budget_reset_at"), JsonData::Null);
-        }
-        JsonData::String(text) if text.is_empty() => {}
-        JsonData::String(text) => {
-            let reset = compute_budget_reset_at(&text, clock.reset, clock.now, clock.database)
+    if let JsonData::String(text) = &removed {
+        if !text.is_empty() {
+            let reset = compute_budget_reset_at(text, clock.reset, clock.now, clock.database)
                 .map_err(|source| ClockError::Duration {
                     spec: text.clone(),
                     source,
@@ -61,9 +47,13 @@ pub(super) fn apply_budget_duration(
                 String::from("budget_reset_at"),
                 JsonData::String(zulu_datetime(microsecond_precision(reset.instant))),
             );
-            values.insert(String::from("budget_duration"), JsonData::String(text));
+            values.insert(String::from("budget_duration"), removed);
         }
-        JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_) => {}
+        return Ok(());
+    }
+    if matches!(removed, JsonData::Null) {
+        values.insert(String::from("budget_duration"), JsonData::Null);
+        values.insert(String::from("budget_reset_at"), JsonData::Null);
     }
     Ok(())
 }

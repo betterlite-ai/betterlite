@@ -20,6 +20,7 @@ use crate::management_guards::amounts::Amount;
 use super::Row;
 use super::error::KeyPatchError;
 use super::soft_budget::{SoftBudgetStore, apply_soft_budget_update};
+use super::string_of;
 
 const UPDATE_BUDGET_SQL: &str = "UPDATE \"LiteLLM_BudgetTable\" SET \"soft_budget\" = $1::text::double precision, \"updated_by\" = $2::text, \"updated_at\" = now() WHERE \"budget_id\" = $3::text";
 const INSERT_BUDGET_SQL: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"soft_budget\", \"created_by\", \"updated_by\") VALUES ($1::text, $2::text::double precision, $3::text, $3::text)";
@@ -128,7 +129,9 @@ async fn write_key_row(
     let Some(stored) = stored else {
         return Ok(Row::new());
     };
-    let mut fields = row_object(&stored)?;
+    let JsonData::Object(mut fields) = row_json(&stored)? else {
+        return Err(KeyPatchError::StoredRowShape);
+    };
     attach_object_permission(transaction, &mut fields).await?;
     // the row dump the source returns: the stored row decoded to the key model
     let model: LiteLLMVerificationToken = decode_mapping(fields)?;
@@ -163,17 +166,7 @@ async fn attach_object_permission(
     transaction: &DbSession<'_>,
     fields: &mut Row,
 ) -> Result<(), KeyPatchError> {
-    let permission_id = match fields.get("object_permission_id") {
-        Some(JsonData::String(id)) => Some(id.clone()),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_),
-        )
-        | None => None,
-    };
+    let permission_id = fields.get("object_permission_id").and_then(string_of);
     let value = match permission_id {
         Some(id) => {
             let stored = transaction
@@ -189,17 +182,6 @@ async fn attach_object_permission(
     };
     fields.insert(String::from("object_permission"), value);
     Ok(())
-}
-
-fn row_object(row: &StoredRow) -> Result<Row, KeyPatchError> {
-    match row_json(row)? {
-        JsonData::Object(fields) => Ok(fields),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_) => Err(KeyPatchError::StoredRowShape),
-    }
 }
 
 fn row_json(row: &StoredRow) -> Result<JsonData, KeyPatchError> {

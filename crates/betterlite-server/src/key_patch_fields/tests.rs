@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 
 use crate::key_access::error::DetailShape;
 use crate::management_guards::amounts::Amount;
+use crate::router_weight_references::error::RouterWeightError;
 
 use super::Row;
 use super::accessors::{
@@ -14,11 +15,10 @@ use super::accessors::{
 };
 use super::drop_request_only_fields;
 use super::error::KeyPatchError;
-use super::metadata::PatchWarning;
-use super::prepare::metadata_request_fields;
+use super::metadata::METADATA_WARNING;
+use super::prepare::metadata_fields;
 use super::soft_budget::{
-    apply_soft_budget_update, update_key_soft_budget, validate_max_budget,
-    validate_soft_budget_value,
+    MAX_BUDGET, SOFT_BUDGET, apply_soft_budget_update, update_key_soft_budget, validate_budget,
 };
 use super::transaction::{KeyPatchWrite, update_key_row_with_soft_budget, update_statement};
 
@@ -26,10 +26,9 @@ mod support;
 
 use self::support::{
     FakeSoftBudgetStore, assert_all_catalog_fields, assert_close, assert_created_budget,
-    assert_isoformat, assert_metadata, assert_pinned_rows, assert_router_invalid,
-    assert_router_unavailable, base_request, callback_secret, cipher, existing, fixture, instant,
-    json, json_text, number_f64, object, prepare_error, prepared, prepared_row, run_metadata,
-    string_field, update_request,
+    assert_isoformat, assert_metadata, assert_pinned_rows, assert_router_unavailable, base_request,
+    callback_secret, cipher, existing, fixture, instant, json, json_text, number_f64, object,
+    prepare_error, prepared, prepared_row, run_metadata, string_field, update_request,
 };
 use crate::key_patch_fields::fixtures::database::TestDatabase;
 
@@ -88,7 +87,8 @@ async fn all_metadata_field_names_and_datetime() {
         fields.get("temp_budget_expiry"),
         Some(&json_text("2026-05-02T10:00:00.500000+02:00"))
     );
-    let request_fields = metadata_request_fields(&request).expect("the request's metadata fields");
+    let request_fields =
+        metadata_fields(&request, request.project().expect("a projection").supplied);
     assert_eq!(
         request_fields.get("temp_budget_expiry"),
         Some(&json_text("2026-05-02T10:00:00.500000+02:00"))
@@ -117,14 +117,7 @@ async fn metadata_partial_loop_error_logged() {
     let (result, warnings) = prepared(&fixture, &stored, &update_request(request)).await;
     let values = result.expect("the request is kept");
     assert_eq!(values.get("metadata"), Some(&JsonData::Null));
-    assert_eq!(warnings, vec![PatchWarning::MetadataNotAnObject]);
-    assert_eq!(
-        warnings
-            .iter()
-            .map(|warning| warning.subject())
-            .collect::<Vec<_>>(),
-        vec!["metadata"]
-    );
+    assert_eq!(warnings, vec![METADATA_WARNING]);
     assert!(!values.contains_key("end_user_budget_id"));
     assert!(!values.contains_key("enable_prompt_caching"));
     let premium_only = r#"{"key": "tok", "metadata": null, "tags": ["a"]}"#;
@@ -132,7 +125,7 @@ async fn metadata_partial_loop_error_logged() {
         prepared(&fixture, &stored, &update_request(premium_only)).await;
     let premium_values = premium_result.expect("the request is kept");
     assert_eq!(premium_values.get("metadata"), Some(&JsonData::Null));
-    assert_eq!(premium_warnings, vec![PatchWarning::MetadataNotAnObject]);
+    assert_eq!(premium_warnings, vec![METADATA_WARNING]);
 }
 
 // README excludes paid gating: every premium field is projected, where LiteLLM's paid check aborts the loop.
@@ -200,17 +193,17 @@ fn soft_and_max_negative_nonfinite_400(
     #[case] rejected: Option<&str>,
 ) {
     let Some(received) = rejected else {
-        validate_soft_budget_value(amount).unwrap();
-        validate_max_budget(amount).unwrap();
+        validate_budget(SOFT_BUDGET, amount).unwrap();
+        validate_budget(MAX_BUDGET, amount).unwrap();
         return;
     };
-    let soft = validate_soft_budget_value(amount).unwrap_err();
+    let soft = validate_budget(SOFT_BUDGET, amount).unwrap_err();
     assert_eq!(
         soft.to_string(),
         format!("soft_budget must be a non-negative finite number. Received: {received}")
     );
     assert_eq!(soft.response(), (Some(400_u16), Some(DetailShape::Error)));
-    let hard = validate_max_budget(amount).unwrap_err();
+    let hard = validate_budget(MAX_BUDGET, amount).unwrap_err();
     assert_eq!(
         hard.to_string(),
         format!("max_budget must be a non-negative finite number. Received: {received}")
@@ -302,7 +295,12 @@ async fn router_revalidation_presence_matrix() {
         "{\"allow_retries\":true}"
     );
     let zero = r#"{"key": "tok", "router_settings": {"weights": {"gpt": {"dep-1": 0.0}}}}"#;
-    assert_router_invalid(&fixture, &plain, &update_request(zero)).await;
+    let invalid = prepare_error(&fixture, &plain, &update_request(zero)).await;
+    assert!(matches!(
+        invalid,
+        KeyPatchError::RouterWeights(RouterWeightError::InvalidSettings(_))
+    ));
+    assert_eq!(invalid.response(), (Some(400_u16), Some(DetailShape::Text)));
 }
 
 #[tokio::test]

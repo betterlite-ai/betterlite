@@ -25,3 +25,21 @@ pub fn drop_request_only_fields(fields: &mut Row) {
         fields.remove(name);
     }
 }
+
+pub(crate) fn string_of(value: &JsonData) -> Option<&str> {
+    match value {
+        JsonData::String(text) => Some(text),
+        JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::Array(_)
+        | JsonData::Object(_) => None,
+    }
+}
+
+pub(crate) fn object_of(value: &JsonData) -> Option<&Row> {
+    let JsonData::Object(fields) = value else {
+        return None;
+    };
+    Some(fields)
+}

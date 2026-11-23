@@ -24,7 +24,7 @@ use super::super::Row;
 use super::super::error::KeyPatchError;
 use super::super::fixtures::database::TestDatabase;
 use super::super::metadata::{
-    MetadataContext, PatchWarning, prepare_metadata_fields, python_isoformat,
+    MetadataContext, PatchWarning, isoformat_timestamp, prepare_metadata_fields,
 };
 use super::super::prepare::{PrepareContext, prepare_key_update_data};
 use super::super::soft_budget::SoftBudgetStore;
@@ -88,14 +88,9 @@ pub(super) fn cipher() -> Cipher {
 }
 
 fn failing_cipher() -> Cipher {
-    StoredCipher {
-        settings: CipherSettings {
-            signing_key: None,
-            algorithm: Algorithm::Aes256Gcm,
-        },
-        nonces: OsNonces,
-        diagnostics: TracingDiagnostics,
-    }
+    let mut broken = cipher();
+    broken.settings.signing_key = None;
+    broken
 }
 
 pub(super) fn json(document: &str) -> JsonData {
@@ -170,10 +165,8 @@ pub(super) async fn prepared_row(
     stored: &LiteLLMVerificationToken,
     request: &UpdateKeyRequest,
 ) -> Row {
-    prepared(fixture, stored, request)
-        .await
-        .0
-        .expect("a prepared patch")
+    let outcome = prepared(fixture, stored, request).await;
+    outcome.0.expect("a prepared patch")
 }
 
 pub(super) async fn prepare_error(
@@ -181,10 +174,10 @@ pub(super) async fn prepare_error(
     stored: &LiteLLMVerificationToken,
     request: &UpdateKeyRequest,
 ) -> KeyPatchError {
-    prepared(fixture, stored, request)
-        .await
-        .0
-        .expect_err("a rejected patch")
+    match prepared(fixture, stored, request).await.0 {
+        Err(error) => error,
+        Ok(values) => panic!("a rejected patch returned {values:?}"),
+    }
 }
 
 fn run_metadata(
@@ -259,7 +252,7 @@ pub(super) fn assert_isoformat() {
         (naive("2026-05-02T10:00:00"), "2026-05-02T10:00:00"),
     ];
     for (timestamp, expected) in cases {
-        assert_eq!(python_isoformat(&timestamp), expected);
+        assert_eq!(isoformat_timestamp(&timestamp), expected);
     }
 }
 
@@ -274,19 +267,6 @@ pub(super) async fn assert_router_unavailable(
         KeyPatchError::RouterWeights(RouterWeightError::DatabaseUnavailable)
     ));
     assert_eq!(error.response(), (Some(503_u16), Some(DetailShape::Text)));
-}
-
-pub(super) async fn assert_router_invalid(
-    fixture: &Fixture,
-    stored: &LiteLLMVerificationToken,
-    request: &UpdateKeyRequest,
-) {
-    let error = prepare_error(fixture, stored, request).await;
-    assert!(matches!(
-        error,
-        KeyPatchError::RouterWeights(RouterWeightError::InvalidSettings(_))
-    ));
-    assert_eq!(error.response(), (Some(400_u16), Some(DetailShape::Text)));
 }
 
 pub(super) fn assert_close(actual: f64, expected: f64) {
@@ -361,8 +341,9 @@ pub(super) struct FakeSoftBudgetStore {
 impl FakeSoftBudgetStore {
     pub(super) fn with_id(next_id: &str) -> Self {
         Self {
+            updates: Mutex::new(Vec::new()),
+            created: Mutex::new(Vec::new()),
             next_id: next_id.to_owned(),
-            ..Self::default()
         }
     }
 

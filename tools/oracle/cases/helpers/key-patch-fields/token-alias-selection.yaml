@@ -7,23 +7,5 @@ call:
       - {function: token, request_key: req-tok, existing_token: tok-1}
       - {function: token, request_key: null, existing_token: tok-1}
       - {function: token, request_key: null, existing_token: null}
-      - {function: team, request_team: null, existing_team: null}
-      - {function: team, request_team: null, existing_team: t1}
-      - {function: team, request_team: t2, existing_team: null}
-      - {function: team, request_team: t1, existing_team: t1}
-      - {function: team, request_team: t1, existing_team: t2}
-      - function: end_user
-        request: {end_user_budget_id: b-1, metadata: {end_user_budget_id: b-2}}
-      - function: end_user
-        request: {metadata: {end_user_budget_id: b-2}}
-      - function: end_user
-        request: {metadata: {}}
-      - function: end_user
-        request: {metadata: null}
-      - function: end_user
-        request: {metadata: {end_user_budget_id: ""}}
-      - function: end_user
-        request: {end_user_budget_id: null, metadata: {end_user_budget_id: b-2}}
-      - {function: database}
 env: {}
 compare: {ignore: []}

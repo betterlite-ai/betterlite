@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::identity_rows::Payload;
 use betterlite_logging::callback_config::FeatureFlags;
@@ -13,21 +11,11 @@ use crate::management_guards::metadata::{METADATA_FIELDS, PREMIUM_METADATA_FIELD
 use super::RESERVED_METADATA_FIELDS;
 use super::Row;
 use super::error::KeyPatchError;
+use super::object_of;
 
 // A category in the projection loop that ended early; the source logs it and keeps the request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PatchWarning {
-    MetadataNotAnObject,
-}
-
-impl PatchWarning {
-    #[must_use]
-    pub const fn subject(self) -> &'static str {
-        match self {
-            Self::MetadataNotAnObject => "metadata",
-        }
-    }
-}
+pub type PatchWarning = &'static str;
+pub const METADATA_WARNING: PatchWarning = "metadata";
 
 pub struct MetadataContext<'cipher, N, D> {
     pub flags: FeatureFlags,
@@ -46,54 +34,19 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    check_logging_config(values.get("metadata"), context.flags)?;
+    if let Some(JsonData::Object(fields)) = values.get("metadata") {
+        check_key_logging_config(Some(&Payload(fields.clone())), context.flags)
+            .map_err(|error| KeyPatchError::LoggingMetadata(Box::new(error)))?;
+    }
     if !values.contains_key("metadata") {
         values.insert(
             String::from("metadata"),
             JsonData::Object(existing_metadata.clone()),
         );
     }
-    let mut casted = object_or_null(values.get("metadata"));
-    apply_reserved_fields(&mut casted, existing_metadata)?;
-    project_catalog_fields(request, &mut casted, context.warnings);
-    let metadata = encrypt_metadata(casted, context.cipher)?;
-    values.insert(String::from("metadata"), metadata);
-    Ok(())
-}
-
-// The logging validator runs first, on the request's metadata, before any copy or reserved-field check.
-fn check_logging_config(
-    metadata: Option<&JsonData>,
-    flags: FeatureFlags,
-) -> Result<(), KeyPatchError> {
-    let Some(JsonData::Object(fields)) = metadata else {
-        return Ok(());
-    };
-    check_key_logging_config(Some(&Payload(fields.clone())), flags)
-        .map_err(|error| KeyPatchError::LoggingMetadata(Box::new(error)))
-}
-
-fn object_or_null(value: Option<&JsonData>) -> Option<BTreeMap<String, JsonData>> {
-    match value {
-        Some(JsonData::Object(fields)) => Some(fields.clone()),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::String(_)
-            | JsonData::Array(_),
-        )
-        | None => None,
-    }
-}
-
-// A reserved field keeps the stored value; a null request metadata or a different value is the 400.
-fn apply_reserved_fields(
-    casted: &mut Option<BTreeMap<String, JsonData>>,
-    existing: &Row,
-) -> Result<(), KeyPatchError> {
+    let mut casted = values.get("metadata").and_then(object_of).cloned();
     for field in RESERVED_METADATA_FIELDS {
-        let Some(stored) = existing
+        let Some(stored) = existing_metadata
             .get(field)
             .filter(|value| !matches!(value, JsonData::Null))
         else {
@@ -111,53 +64,36 @@ fn apply_reserved_fields(
             fields.insert(field.to_owned(), stored.clone());
         }
     }
-    Ok(())
-}
-
-// The source writes each present catalog field into the metadata; with no metadata map the first one raises.
-fn project_catalog_fields(
-    request: &Row,
-    casted: &mut Option<BTreeMap<String, JsonData>>,
-    warnings: &mut Vec<PatchWarning>,
-) {
-    let Some(fields) = casted.as_mut() else {
-        if request.keys().any(|field| is_catalog_field(field)) {
-            warnings.push(PatchWarning::MetadataNotAnObject);
+    match casted.as_mut() {
+        Some(fields) => {
+            for (field, value) in request {
+                if is_catalog_field(field) {
+                    fields.insert(field.clone(), value.clone());
+                }
+            }
         }
-        return;
+        None => {
+            if request.keys().any(|field| is_catalog_field(field)) {
+                context.warnings.push(METADATA_WARNING);
+            }
+        }
+    }
+    let metadata = match casted {
+        Some(fields) => {
+            let value = serde_json::to_value(JsonData::Object(fields))?;
+            let encrypted = transform_callback_vars(&value, &Transform::Encrypt(context.cipher));
+            serde_json::from_value(encrypted)?
+        }
+        None => JsonData::Null,
     };
-    for field in PREMIUM_METADATA_FIELDS {
-        if let Some(value) = request.get(field) {
-            fields.insert(field.to_owned(), value.clone());
-        }
-    }
-    for (field, value) in request {
-        if is_catalog_field(field) {
-            fields.insert(field.clone(), value.clone());
-        }
-    }
+    values.insert(String::from("metadata"), metadata);
+    Ok(())
 }
 
 #[must_use]
 // ast-grep-ignore: no-one-line-functions - one catalog predicate shared by the projection loop and the key-field filter
 pub(crate) fn is_catalog_field(field: &str) -> bool {
     METADATA_FIELDS.contains(&field) || PREMIUM_METADATA_FIELDS.contains(&field)
-}
-
-fn encrypt_metadata<N, D>(
-    casted: Option<BTreeMap<String, JsonData>>,
-    cipher: &StoredCipher<N, D>,
-) -> Result<JsonData, KeyPatchError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    let Some(fields) = casted else {
-        return Ok(JsonData::Null);
-    };
-    let value = serde_json::to_value(JsonData::Object(fields))?;
-    let encrypted = transform_callback_vars(&value, &Transform::Encrypt(cipher));
-    Ok(serde_json::from_value(encrypted)?)
 }
 
 const AWARE_SECONDS: &str = "%Y-%m-%dT%H:%M:%S%:z";
@@ -167,23 +103,27 @@ const NAIVE_MICROS: &str = "%Y-%m-%dT%H:%M:%S%.6f";
 
 // pydantic hands the loop a datetime, so its metadata copy is isoformat(): own offset, micros only when nonzero.
 #[must_use]
-pub fn python_isoformat(value: &Timestamp) -> String {
+pub fn isoformat_timestamp(value: &Timestamp) -> String {
     match value {
         Timestamp::Aware(aware) => {
-            let format = if aware.naive_local().and_utc().timestamp_subsec_micros() != 0 {
-                AWARE_MICROS
-            } else {
-                AWARE_SECONDS
-            };
-            aware.format(format).to_string()
+            let micros = aware.naive_local().and_utc().timestamp_subsec_micros();
+            aware
+                .format(if micros == 0 {
+                    AWARE_SECONDS
+                } else {
+                    AWARE_MICROS
+                })
+                .to_string()
         }
         Timestamp::Naive(naive) => {
-            let format = if naive.and_utc().timestamp_subsec_micros() != 0 {
-                NAIVE_MICROS
-            } else {
-                NAIVE_SECONDS
-            };
-            naive.format(format).to_string()
+            let micros = naive.and_utc().timestamp_subsec_micros();
+            naive
+                .format(if micros == 0 {
+                    NAIVE_SECONDS
+                } else {
+                    NAIVE_MICROS
+                })
+                .to_string()
         }
     }
 }
