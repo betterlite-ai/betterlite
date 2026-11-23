@@ -29,6 +29,7 @@ description: >-
   Provider for azure or azure_text pass an injected composition.
 scope:
   paths:
+  - "crates/betterlite-server/src/routes/embeddings/vertex.rs"
   - "crates/betterlite-server/src/server.rs"
   - "crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs"
   - "crates/betterlite-server/src/server/chat_setup/provider_call/tests/defaults.rs"
