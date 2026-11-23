@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
 use rust_decimal::Decimal;
 
 use super::super::check::{BUDGET_EXCEEDED_STATUS, EndUserBudgetError, check_end_user_budget};
@@ -37,10 +38,7 @@ fn rig(answer: Option<Decimal>) -> Rig {
     }
 }
 
-fn limited(
-    max_budget: &str,
-    spend: &str,
-) -> betterlite_db::identity_rows::end_user::LiteLLMEndUserTable {
+fn limited(max_budget: &str, spend: &str) -> LiteLLMEndUserTable {
     let relation = budget_fixture("limited", Some(max_budget));
     end_user_row("alice", spend, Some("limited"), Some(&relation))
 }

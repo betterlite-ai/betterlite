@@ -426,13 +426,6 @@ impl ScriptedEndUserRows {
         }
     }
 
-    pub(super) fn set(&self, end_user_id: &str, answer: EndUserAnswer) {
-        self.answers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(end_user_id.to_owned(), answer);
-    }
-
     pub(super) fn queries(&self) -> Vec<String> {
         entries(&self.queries)
     }
