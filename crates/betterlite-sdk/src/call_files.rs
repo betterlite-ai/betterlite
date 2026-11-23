@@ -56,14 +56,15 @@ fn collect_files(
     files: &mut Vec<(String, CallFile)>,
 ) -> Result<(), CallFilesError> {
     match value {
-        Json::Object(fields) => match fields.get(FILE_KEY) {
-            Some(marker) => files.push((key.to_owned(), call_file(key, marker, blobs, used)?)),
-            None => {
+        Json::Object(fields) => {
+            if let Some(marker) = fields.get(FILE_KEY) {
+                files.push((key.to_owned(), call_file(key, marker, blobs, used)?));
+            } else {
                 for (field, nested) in fields {
                     collect_files(field, nested, blobs, used, files)?;
                 }
             }
-        },
+        }
         Json::List(items) => {
             for item in items {
                 collect_files(key, item, blobs, used, files)?;

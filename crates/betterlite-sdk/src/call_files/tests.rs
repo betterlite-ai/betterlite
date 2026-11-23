@@ -171,8 +171,9 @@ fn call_files_move_the_blob_out_of_the_list() {
     let request = payload(vec![("image", marker(Some("cat.png"), Some(0), None))]);
     let mut blobs = vec![b"cat".to_vec()];
 
-    files_from_payload(&request, &mut blobs).unwrap();
+    let files = files_from_payload(&request, &mut blobs).unwrap();
 
+    assert_eq!(files.len(), 1);
     assert_eq!(blobs, vec![Vec::new()]);
 }
 
