@@ -14,7 +14,7 @@ description: >-
   processing. The uploaded video becomes a named byte buffer through B082's upload-to-buffer helper (filename kept,
   bytes kept) and is stored as data["video"]. Then: target_model_names is run through B3330's
   extract_model_from_target_model_names; when it returns a name and data has no truthy model, data["model"] is set
-  to that name. The provider is the first truthy of: B2400's header reader (custom-llm-provider), B2400's query
+  to that name. The provider is the first truthy of: B10059's header reader (custom-llm-provider), B10059's query
   reader (custom_llm_provider), B3330's get_custom_provider_from_data(data) (the body field, then the extra_body
   field), and the literal "openai". The result is written to data["custom_llm_provider"]. B004's
   B8801's PreCall step runs first (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`), then base_process_llm_request is called with the VideoCreateCharacter core entry (LiteLLM route_type "avideo_create_character"), model=None and the usual
@@ -29,7 +29,7 @@ description: >-
   Get takes character_id from the path. data starts as {"character_id": <path value>}. B672's
   decode_character_id_with_provider splits the path value into provider, model id and the raw id; when the raw id is
   truthy it replaces data["character_id"] (a plain id decodes to itself). The provider is the first truthy of: header
-  custom-llm-provider, query custom_llm_provider, the request body field custom_llm_provider (B2400's body reader,
+  custom-llm-provider, query custom_llm_provider, the request body field custom_llm_provider (B10059's body reader,
   which reads the cached body and treats an empty GET body as {}), the provider decoded from the id, and "openai".
   When the decoded model id is truthy and a router exists, B844's resolve_model_name_from_model_id is asked for a
   model name, and a non-empty answer is stored as data["model"]; with no router or no answer, data has no model key.
@@ -81,7 +81,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L122-L196
     why: B672 owns the codec; the id format is character_ plus base64 of "litellm:custom_llm_provider:<p>;model_id:<m>;character_id:<id>".
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L84
-    why: B2400 owns the three provider readers; the body reader returns the field only when the key is present.
+    why: B10059 owns the three provider readers; the body reader returns the field only when the key is present.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11528-L11583
     why: B844 owns resolve_model_name_from_model_id; the route stores its answer as data["model"] when non-empty.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L45-L64
@@ -175,7 +175,7 @@ deviations:
 out_of_scope:
   - B3341 owns avideo_create_character and avideo_get_character and their call-level defaults; this task supplies data to B004 and fills the two core entries that call them.
   - B3330 owns extract_model_from_target_model_names, get_custom_provider_from_data, encode_character_id_in_response and the CharacterObject record; B672 owns the id codec.
-  - B8801 owns common_processing_pre_call_logic; B004 owns base_process_llm_request and _handle_llm_api_exception with their error envelopes and headers; B1100 owns _read_request_body; B1101 owns multipart parsing; B2400 owns the three provider readers; B844 owns resolve_model_name_from_model_id; B052 owns authentication.
+  - B8801 owns common_processing_pre_call_logic; B004 owns base_process_llm_request and _handle_llm_api_exception with their error envelopes and headers; B1100 owns _read_request_body; B1101 owns multipart parsing; B10059 owns the three provider readers; B844 owns resolve_model_name_from_model_id; B052 owns authentication.
   - B082 owns uploadfile_to_bytesio and batch_to_bytesio in image_endpoints/endpoints.py.
   - B3343 and B3344 own video_generation, video_list, video_status, video_content and video_remix in the same file; video_edit and video_extension (L725-L923) belong to B6360 and are not built here.
 

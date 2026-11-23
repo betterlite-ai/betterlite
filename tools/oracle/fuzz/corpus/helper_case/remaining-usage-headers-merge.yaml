@@ -1,0 +1,13 @@
+kind: helper
+name: remaining-usage-headers-merge
+call:
+  b10046:
+    function: apply
+    headers:
+      x-ratelimit-limit-output-tokens: null
+    remaining:
+      x-ratelimit-limit-input-tokens: 100
+      x-ratelimit-limit-output-tokens: 50
+      x-ratelimit-reset-input-tokens: 60
+env: {}
+compare: {ignore: []}

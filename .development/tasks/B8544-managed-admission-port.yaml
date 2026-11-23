@@ -7,8 +7,8 @@ description: >-
   a configured capability without its port, so a proxy with agents has no working admission until something implements that
   port. B4781 built the two functions, `admit_managed_actor` and `prepare_agent_invocation`, in
   crates/betterlite-auth/src/managed_admission, generic over the store; B4773 built `AgentIdentityStore` in
-  crates/betterlite-auth/src/agent_store. This task joins them and installs the result. Read B855's port in
-  crates/betterlite-auth/src/auth_admission and B4781's ports.rs first; use the method names and outcome types they define and
+  crates/betterlite-auth/src/agent_store. This task joins them and installs the result. Read B10083's port in
+  crates/betterlite-auth/src/auth_admission/ports.rs and B4781's ports.rs first; use the method names and outcome types they define and
   add no third shape.
 
   New betterlite-server module `managed_admission_port` (crates/betterlite-server/src/managed_admission_port.rs and
@@ -16,17 +16,17 @@ description: >-
   and B4780 `AgentAccessResolver`, the read-through registry lookup B4781's invoke step takes, and an
   `Option<AgentIdentityStore>`; take all four from B8645's AgentServices::new(config, shared) instead of building them here. Build it at server start: the store is Some exactly when the server holds a database pool (B700),
   built over B726's repositories and the shared cache B4773 names, and None otherwise, which is what LiteLLM's "create a managed
-  identity store only when DB exists" means. Implement B855's ManagedAdmission for it. The admit method forwards to
+  identity store only when DB exists" means. Implement B10083's ManagedAdmission for it. The admit method forwards to
   admit_managed_actor with the store as Option<&S>; the prepare method forwards to prepare_agent_invocation with the target name and
-  the billable flag B855 computed. Map B4781's `AdmissionError { status, detail }` to B855's outcome type without changing the
-  status or the text: 403 and 503 stay as they are, and "Managed agent policy requires a database" stays word for word.
+  the billable flag B855 computed. Return B4781's `AdmissionError { status, detail }` as it is, since B10083's port methods return that
+  type: 403 and 503 stay as they are, and "Managed agent policy requires a database" stays word for word.
 
   Install it in crates/betterlite-server/src/state/auth_admission.rs, where B855 builds its admission state, so every route that
   runs B052's user_api_key_auth gets it. Nothing else in that file changes.
 
   Tests in `managed_admission_port::tests`: with no database the port answers the 503 for a registered managed agent and passes a
   plain agent; with an in-memory store fake the admit and prepare calls reach B4781's functions with the same arguments, and an
-  AdmissionError keeps its status and detail through the mapping; a PostgreSQL test seeds an agent key bound to a managed agent and
+  AdmissionError keeps its status and detail through the port; a PostgreSQL test seeds an agent key bound to a managed agent and
   runs one admission through the real store. No oracle case: every path needs a database-backed agent key, the oracle runs without
   a database, and B855's own cases already cover the order.
 scope:
