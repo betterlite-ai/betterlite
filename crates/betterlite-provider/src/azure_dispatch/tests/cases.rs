@@ -36,6 +36,12 @@ pub(super) fn chat_dispatch() {
     let answer = Fixture::ok(support::CHAT_REPLY);
     let optional = support::object(r#"{"temperature":1}"#);
     let call = support::chat("gpt-4o", optional, credentials);
+    let buffered =
+        prepare(&composition, Request::Chat(Box::new(call.clone()))).expect("the chat call");
+    assert!(matches!(
+        prepared_request(buffered),
+        PreparedRequest::Chat(_)
+    ));
     let result = dispatch(&composition, Request::Chat(Box::new(call)), &answer);
     let sent = answer.sent();
     assert_eq!(sent.len(), 1);
@@ -43,6 +49,7 @@ pub(super) fn chat_dispatch() {
     chat_body_shape(&sent[0]);
     reply_shape(&result, "chatcmpl-1", "gpt-4o-2024-08-06", "hi");
     chat_stream_and_supplied(&composition);
+    extra_body_wins_over_stream(&composition);
     deployment_route_base();
     upstream_refusal(&composition);
 }
@@ -71,6 +78,8 @@ fn chat_body_shape(request: &RecordedRequest) {
     assert_eq!(support::body_number(request, "x-extra"), Some(1));
     assert!(support::body_at(request, "azure_ad_token").is_none());
     assert!(support::body_at(request, "max_retries").is_none());
+    // a call that never passed stream sends no key at all
+    assert!(support::body_at(request, "stream").is_none());
 }
 
 fn reply_shape(result: &AzureResult, id: &str, model: &str, content: &str) {
@@ -97,10 +106,16 @@ fn chat_stream_and_supplied(composition: &Composition) {
             ..support::credentials()
         },
     );
-    stream_call.stream = true;
+    stream_call.stream = Some(true);
     stream_call.supplied = Some(SuppliedClient {
         api_version: Some(String::from("2024-10-21")),
     });
+    let streamed = prepare(composition, Request::Chat(Box::new(stream_call.clone())))
+        .expect("the streaming call");
+    assert!(matches!(
+        prepared_request(streamed),
+        PreparedRequest::Stream(_)
+    ));
     let stream_answer = Fixture::ok(support::CHAT_REPLY);
     let mut mismatched = stream_call.clone();
     mismatched.supplied = Some(SuppliedClient {
@@ -122,6 +137,23 @@ fn chat_stream_and_supplied(composition: &Composition) {
         &stream_answer,
     );
     assert_eq!(rebuilt.error, Json::Null);
+}
+
+// The SDK merges extra_body over the body it was handed, so its stream key wins over the typed argument.
+fn extra_body_wins_over_stream(composition: &Composition) {
+    let credentials = Credentials {
+        extra_body: Some(support::json(r#"{"stream":true}"#)),
+        ..base_credentials()
+    };
+    let mut call = support::chat("gpt-4o", Object::new(), credentials);
+    call.stream = Some(false);
+    let answer = Fixture::ok(support::CHAT_REPLY);
+    let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    assert_eq!(result.error, Json::Null);
+    assert_eq!(
+        support::body_at(&answer.sent()[0], "stream"),
+        Some(&Json::Bool(true))
+    );
 }
 
 // a refusing upstream keeps its status in the observed error, with nothing projected

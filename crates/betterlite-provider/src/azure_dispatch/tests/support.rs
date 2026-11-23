@@ -115,7 +115,7 @@ pub(crate) fn chat(model: &str, optional: Object, credentials: Credentials) -> C
         messages: messages(),
         optional,
         credentials,
-        stream: false,
+        stream: None,
         supplied: None,
     }
 }

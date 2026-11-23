@@ -61,7 +61,7 @@ pub(crate) fn request(case: &Case) -> Result<Request, Box<HelperError>> {
             messages: messages(case)?,
             optional: optional(case)?,
             credentials,
-            stream: false,
+            stream: None,
             supplied: None,
         }))),
         Operation::Embedding => embedding_request(case, credentials),

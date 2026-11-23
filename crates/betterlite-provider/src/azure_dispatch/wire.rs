@@ -115,12 +115,13 @@ pub(crate) fn chat(
         base_model,
         openai_system_messages_first,
     )?;
-    // the SDK merges extra_body over the body it was handed
+    // the SDK takes stream as a call argument, so the body carries it only when main.py was handed one
+    if let Some(stream) = call.stream {
+        body.insert(String::from(STREAM_KEY), Json::Bool(stream));
+    }
+    // the SDK merges extra_body over the body it was handed, so an extra body key wins over a typed one
     for (name, value) in &resolved.extra_body {
         body.insert(name.clone(), value.clone());
-    }
-    if call.stream {
-        body.insert(String::from(STREAM_KEY), Json::Bool(true));
     }
     let api_version = resolved.api_version.as_deref();
     let url = url_for(

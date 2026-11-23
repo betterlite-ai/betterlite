@@ -74,14 +74,15 @@ impl Adapter for Azure {
         deployment: &Deployment,
         _catalog: &CatalogCapabilities,
     ) -> Result<PreparedRequest, OperationError> {
+        // LiteLLM's router hands its own stream default to every routed call, so a routed body always carries the key
         match request.kind() {
             RequestKind::Chat(chat) => prepared(
                 &self.composition,
-                call::Request::Chat(Box::new(chat_call(chat, deployment, false)?)),
+                call::Request::Chat(Box::new(chat_call(chat, deployment, Some(false))?)),
             ),
             RequestKind::Stream(chat) => prepared(
                 &self.composition,
-                call::Request::Chat(Box::new(chat_call(chat, deployment, true)?)),
+                call::Request::Chat(Box::new(chat_call(chat, deployment, Some(true))?)),
             ),
             RequestKind::Embedding(embedding) => prepared(
                 &self.composition,
@@ -118,7 +119,7 @@ fn prepared(
 fn chat_call(
     chat: &ChatOperation,
     deployment: &Deployment,
-    stream: bool,
+    stream: Option<bool>,
 ) -> Result<call::ChatCall, OperationError> {
     let fields = chat_request_fields(&chat.request)?;
     let messages: Vec<Message> = resolve::convert(&fields.messages)?;

@@ -11,6 +11,7 @@ use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -215,6 +216,11 @@ fn check_adapter_prepare() {
             .get("api-key")
             .and_then(|value| value.to_str().ok()),
         Some("http-key")
+    );
+    // the router always passes its stream default, so a routed body names the key
+    assert_eq!(
+        support::at(&support::parse(&chat.http.body), "stream"),
+        Some(&Json::Bool(false))
     );
 }
 

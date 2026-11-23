@@ -93,7 +93,8 @@ pub struct ChatCall {
     pub messages: Vec<Message>,
     pub optional: Object,
     pub credentials: Credentials,
-    pub stream: bool,
+    // main.py's stream kwarg: a value when the caller passed one, None when it passed none at all
+    pub stream: Option<bool>,
     pub supplied: Option<SuppliedClient>,
 }
 #[derive(Clone)]

@@ -105,7 +105,7 @@ fn chat_part(composition: &Composition, call: &ChatCall) -> Result<Prepared, Azu
         mode: ReplyMode::Chat { json_mode },
         detection: Some(detection),
         client_model: call.client_model.clone(),
-        stream: call.stream,
+        stream: call.stream == Some(true),
     })
 }
 fn text_part(composition: &Composition, call: &TextCall) -> Result<Prepared, AzureProviderError> {
