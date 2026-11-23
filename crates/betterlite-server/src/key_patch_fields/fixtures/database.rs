@@ -79,12 +79,12 @@ struct Environment {
     url: Option<String>,
 }
 
-pub(crate) struct SeedKey<'a> {
-    pub(crate) token: &'a str,
-    pub(crate) key_alias: Option<&'a str>,
-    pub(crate) metadata: &'a str,
-    pub(crate) budget_id: Option<&'a str>,
-    pub(crate) team_id: Option<&'a str>,
+pub(crate) struct SeedKey<'seed> {
+    pub(crate) token: &'seed str,
+    pub(crate) key_alias: Option<&'seed str>,
+    pub(crate) metadata: &'seed str,
+    pub(crate) budget_id: Option<&'seed str>,
+    pub(crate) team_id: Option<&'seed str>,
 }
 
 pub(crate) struct TestDatabase {

@@ -21,6 +21,7 @@ use betterlite_server::management_guards::amounts::Amount;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -86,11 +87,14 @@ pub(super) fn answer(call: &Call) -> Result<Value, CallFailed> {
     }
 }
 
-fn answered<T: Serialize>(
+fn answered<T>(
     outcome: Result<T, KeyPatchError>,
     warnings: &[PatchWarning],
     effects: Vec<Value>,
-) -> Result<Value, CallFailed> {
+) -> Result<Value, CallFailed>
+where
+    T: Serialize,
+{
     let (value, error) = match outcome {
         Ok(value) => (serde_json::to_value(value)?, None),
         Err(error) => (Value::Null, Some(error_json(&error))),
