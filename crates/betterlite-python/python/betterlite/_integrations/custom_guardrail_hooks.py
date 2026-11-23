@@ -1,6 +1,6 @@
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Literal, Protocol
+from typing import Literal, TypeAlias
 
 from pydantic import JsonValue
 from typing_extensions import override
@@ -17,12 +17,13 @@ from betterlite._integrations.guardrail_types import OBJECT, GenericGuardrailAPI
 from betterlite.types.litellm_params_state import JsonMap
 
 
-class ApplyGuardrailHook(Protocol):
-    def __call__(
-        self, owner: "GuardrailHooks", inputs: GenericGuardrailAPIInputs,
-        request_data: dict[str, JsonValue], input_type: Literal["request", "response"],
-        logging_obj: LiteLLMLoggingObj | None,
-    ) -> Awaitable[GenericGuardrailAPIInputs]: ...
+ApplyGuardrailHook: TypeAlias = Callable[
+    [
+        "GuardrailHooks", GenericGuardrailAPIInputs, dict[str, JsonValue],
+        Literal["request", "response"], LiteLLMLoggingObj | None,
+    ],
+    Awaitable[GenericGuardrailAPIInputs],
+]
 
 
 class GuardrailHooks(GuardrailRecording):
@@ -43,7 +44,7 @@ class GuardrailHooks(GuardrailRecording):
         logging_obj: LiteLLMLoggingObj | None,
     ) -> GenericGuardrailAPIInputs:
         start = datetime.now(tz=UTC)
-        original_inputs = OBJECT.validate_python(dict(inputs))
+        original_inputs = OBJECT.validate_python(inputs)
         fallback = request_data.get("litellm_logging_obj")
         log_obj = fallback if logging_obj is None else logging_obj
         self._guardrail_self_recorded = False
@@ -56,7 +57,6 @@ class GuardrailHooks(GuardrailRecording):
                     duration=(now - start).total_seconds(), event_type=None,
                     original_inputs=original_inputs,
                 )
-            return response
         except Exception as error:
             LOGGER.debug("Guardrail %s raised", "apply_guardrail", exc_info=True)
             if not self._guardrail_self_recorded:
@@ -66,6 +66,8 @@ class GuardrailHooks(GuardrailRecording):
                     duration=(now - start).total_seconds(), event_type=None,
                 )
             raise
+        else:
+            return response
         finally:
             self._guardrail_self_recorded = False
             sync_guardrail_info(request_data, log_obj)

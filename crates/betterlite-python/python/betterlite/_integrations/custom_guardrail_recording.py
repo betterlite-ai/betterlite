@@ -95,7 +95,8 @@ class GuardrailRecording(GuardrailSelection, GuardrailRecorder):
         original_inputs: Mapping[str, JsonValue] | None,
         event_type: GuardrailEventHooks | None,
     ) -> GuardrailValue:
-        return guardrail_summary(response, original_inputs, event_type)
+        baseline = None if original_inputs is None else dict(original_inputs)
+        return guardrail_summary(response, baseline, event_type)
 
     @override
     def _process_error(

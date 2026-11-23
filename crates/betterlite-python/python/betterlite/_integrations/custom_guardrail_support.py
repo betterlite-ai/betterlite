@@ -101,8 +101,6 @@ def json_projection(value: GuardrailValue) -> JsonValue:
             return JSON.validate_python(value.model_dump(mode="json"))
         case dict() | list() | bool() | int() | float() | str() | None:
             return JSON.validate_python(value)
-        case object():
-            return str(value)
 
 
 def hook_json(
@@ -112,7 +110,7 @@ def hook_json(
         case Mode():
             return JSON.validate_python(value.model_dump(mode="json"))
         case list():
-            return JSON.validate_python([str(item) for item in value])
+            return JSON.validate_json(json.dumps(value))
         case GuardrailEventHooks() | None:
             return None if value is None else str(value)
 
@@ -158,7 +156,8 @@ def selection_answer(
     suppressed: frozenset[str],
 ) -> bool:
     data_text = json.dumps(json_projection(dict(data)))
-    names = json.dumps(sorted(suppressed))
+    ordered: list[str] = sorted(suppressed)
+    names = json.dumps(ordered)
     return guarded(partial(handle.should_run_guardrail, data_text, str(event_type), names))
 
 
@@ -174,8 +173,8 @@ def dynamic_params(
     return OBJECT.validate_json(guarded(partial(handle.dynamic_request_body_params, text)))
 
 
-def render_message(handle: NativeGuardrail, default: str, context: Mapping[str, str]) -> str:
-    text = json.dumps(dict(context))
+def render_message(handle: NativeGuardrail, default: str, context: dict[str, str]) -> str:
+    text = json.dumps(context)
     return guarded(partial(handle.render_violation_message, default, text))
 
 
@@ -187,8 +186,8 @@ def advisory_message(
     return written, OBJECT.validate_json(updated)
 
 
-def update_native_params(handle: NativeGuardrail, params: Mapping[str, JsonValue]) -> None:
-    payload = json.dumps(dict(params))
+def update_native_params(handle: NativeGuardrail, params: dict[str, JsonValue]) -> None:
+    payload = json.dumps(params)
     guarded(partial(handle.update_params, payload))
 
 
@@ -208,10 +207,10 @@ def record_add(
 
 def guardrail_summary(
     response: GuardrailValue,
-    baseline: Mapping[str, JsonValue] | None,
+    baseline: dict[str, JsonValue] | None,
     event_type: GuardrailEventHooks | None,
 ) -> JsonValue:
-    baseline_text = None if baseline is None else json.dumps(dict(baseline))
+    baseline_text = None if baseline is None else json.dumps(baseline)
     event_text = None if event_type is None else str(event_type)
     call = partial(
         summarize_guardrail_response, json.dumps(json_projection(response)),
