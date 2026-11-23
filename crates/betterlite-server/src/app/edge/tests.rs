@@ -10,6 +10,7 @@ use betterlite_config::types::Config;
 use rstest::rstest;
 use tower::ServiceExt as _;
 
+use crate::app::mount_public;
 use crate::routes::tests::{empty_config, state_for};
 
 // every docs setting starts unset so the host running the tests cannot move the routes
@@ -58,9 +59,7 @@ fn mounted(overrides: &[(&str, &str)], config: &Config) -> Router {
     for (name, value) in overrides {
         variables.push((*name, Some(*value)));
     }
-    temp_env::with_vars(variables, || {
-        crate::app::mount_public(Router::new(), &state)
-    })
+    temp_env::with_vars(variables, || mount_public(Router::new(), &state))
 }
 
 async fn send(router: &Router, method: Method, uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
