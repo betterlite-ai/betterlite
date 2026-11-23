@@ -92,13 +92,17 @@ fn replays_corpus() {
         .map(|entry| entry.expect("the corpus entry lists").path())
         .collect();
     assert!(!seeds.is_empty(), "the corpus has seeds");
-    seeds.iter().for_each(|path| {
-        let bytes = fs::read(path).expect("the seed reads");
-        let decoded = decode_responses_poll_state(&bytes, ApiLimits::default());
-        let rejected = matches!(
-            path.file_name().and_then(|name| name.to_str()),
-            Some("malformed.json" | "array.json" | "scalar.json" | "empty.bin")
-        );
-        assert_eq!(decoded.is_err(), rejected, "{}", path.display());
-    });
+    let wrong = seeds
+        .iter()
+        .filter(|path| {
+            let bytes = fs::read(path).expect("the seed reads");
+            let decoded = decode_responses_poll_state(&bytes, ApiLimits::default());
+            let rejected = matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some("malformed.json" | "array.json" | "scalar.json" | "empty.bin")
+            );
+            decoded.is_err() != rejected
+        })
+        .count();
+    assert_eq!(wrong, 0, "every seed decodes the right way");
 }
