@@ -5,7 +5,10 @@ use betterlite_openai::openai_base_config::Object;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
 
-use super::{ConvertError, ErrorPayload, call_args};
+use super::{
+    API_ERROR, BAD_REQUEST, BAD_REQUEST_STATUS, ConvertError, ErrorPayload, SYNTHESIZED_STATUS,
+    call_args,
+};
 
 const FULL_REQUEST: &str = r#"{
     "method": "POST",
@@ -204,7 +207,11 @@ fn error_upstream_names_a_body_that_is_not_utf8() {
 
 #[test]
 fn error_resolution_is_a_bad_request() {
-    let payload = ErrorPayload::resolution(String::from("LLM Provider NOT provided"));
+    let payload = ErrorPayload::failed(
+        BAD_REQUEST,
+        Some(BAD_REQUEST_STATUS),
+        String::from("LLM Provider NOT provided"),
+    );
     assert_eq!(payload.kind, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
     assert_eq!(payload.message, "LLM Provider NOT provided");
@@ -229,7 +236,11 @@ fn error_routing_keeps_the_router_status() {
 
 #[test]
 fn error_transport_is_a_synthesized_500() {
-    let payload = ErrorPayload::invalid(String::from("connection refused"));
+    let payload = ErrorPayload::failed(
+        API_ERROR,
+        Some(SYNTHESIZED_STATUS),
+        String::from("connection refused"),
+    );
     assert_eq!(payload.kind, "APIError");
     assert_eq!(payload.status_code, Some(500));
     assert_eq!(payload.message, "connection refused");

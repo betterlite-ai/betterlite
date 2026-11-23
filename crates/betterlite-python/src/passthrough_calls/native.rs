@@ -53,8 +53,7 @@ impl NativePassthroughSession {
     }
 }
 
-// A finished call is either the whole body or the stream of chunks Python iterates, with the
-// upstream status and headers beside it.
+// A finished call is the whole body, or the stream of chunks, with the upstream status and headers.
 fn answer(py: Python<'_>, reply: PassthroughReply) -> PyResult<Py<PyAny>> {
     let body = match reply.body {
         PassthroughBody::Full(bytes) => PyBytes::new(py, bytes.as_ref()).into_any().unbind(),

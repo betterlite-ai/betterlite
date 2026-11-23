@@ -1,6 +1,5 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::api::passthrough_call::{PassthroughCallArgs, PassthroughUpload};
-use betterlite_core::passthrough_stream::error::PassthroughStreamError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::openai_base_config::Object;
@@ -14,15 +13,14 @@ mod tests;
 
 const CONTENT_KEY: &str = "content";
 const FILES_KEY: &str = "files";
-const API_ERROR: &str = "APIError";
-const BAD_REQUEST: &str = "BadRequestError";
+pub(crate) const API_ERROR: &str = "APIError";
+pub(crate) const BAD_REQUEST: &str = "BadRequestError";
 const PLAIN_EXCEPTION: &str = "Exception";
-const BAD_REQUEST_STATUS: u16 = 400;
-const SYNTHESIZED_STATUS: u16 = 500;
+pub(crate) const BAD_REQUEST_STATUS: u16 = 400;
+pub(crate) const SYNTHESIZED_STATUS: u16 = 500;
 
-// One llm_passthrough_route call, one field per named parameter of LiteLLM's signature; the
-// caller's loose keyword arguments land in extra and reach the call as its kwargs.
-#[derive(Debug, Default, Deserialize)]
+// One llm_passthrough_route call, one field per named parameter of LiteLLM's signature.
+#[derive(Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct CallRequest {
     pub(crate) method: String,
@@ -39,6 +37,7 @@ pub(crate) struct CallRequest {
     pub(crate) json: Option<JsonValue>,
     pub(crate) params: Option<Vec<(String, String)>>,
     pub(crate) cookies: Option<Vec<(String, String)>>,
+    // the caller's loose keyword arguments reach the call as its kwargs
     #[serde(flatten)]
     pub(crate) extra: Object,
 }
@@ -64,7 +63,10 @@ pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
 where
     T: Deserialize<'text>,
 {
-    serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(ConvertError::Json { source }),
+    }
 }
 
 // The wire's file markers become the call's content and multipart uploads, each blob moved out once.
@@ -73,8 +75,7 @@ pub(crate) fn call_args(
     blobs: &mut [Vec<u8>],
 ) -> Result<PassthroughCallArgs, ConvertError> {
     let request: CallRequest = parse(text)?;
-    let content = content_bytes(request.content.as_ref(), blobs)?;
-    let files = uploads(request.files.as_ref(), blobs)?;
+    let body = call_body(&request, blobs)?;
     Ok(PassthroughCallArgs {
         method: request.method,
         endpoint: request.endpoint,
@@ -86,9 +87,9 @@ pub(crate) fn call_args(
         request_headers: request
             .request_headers
             .map(|headers| headers.into_iter().collect()),
-        content,
+        content: body.content,
         data: request.data,
-        files,
+        files: body.files,
         json: request.json,
         params: request.params,
         cookies: request.cookies,
@@ -97,30 +98,9 @@ pub(crate) fn call_args(
     })
 }
 
-fn content_bytes(
-    marker: Option<&Json>,
-    blobs: &mut [Vec<u8>],
-) -> Result<Option<Bytes>, ConvertError> {
-    let Some(marker) = marker else {
-        return Ok(None);
-    };
-    let taken = marker_files(CONTENT_KEY, marker, blobs)?;
-    let bytes = taken
-        .into_iter()
-        .next()
-        .map(|(_key, file)| Bytes::from(file.bytes));
-    bytes.map_or(Err(ConvertError::Content), |body| Ok(Some(body)))
-}
-
-fn uploads(
-    marker: Option<&Json>,
-    blobs: &mut [Vec<u8>],
-) -> Result<Option<Vec<PassthroughUpload>>, ConvertError> {
-    let Some(marker) = marker else {
-        return Ok(None);
-    };
-    let taken = marker_files(FILES_KEY, marker, blobs)?;
-    Ok(Some(taken.into_iter().map(upload).collect()))
+struct CallBody {
+    content: Option<Bytes>,
+    files: Option<Vec<PassthroughUpload>>,
 }
 
 fn marker_files(
@@ -129,7 +109,29 @@ fn marker_files(
     blobs: &mut [Vec<u8>],
 ) -> Result<Vec<(String, CallFile)>, ConvertError> {
     let payload = IndexMap::from([(key.to_owned(), marker.clone())]);
-    files_from_payload(&payload, blobs).map_err(|source| ConvertError::File { key, source })
+    match files_from_payload(&payload, blobs) {
+        Ok(files) => Ok(files),
+        Err(source) => Err(ConvertError::File { key, source }),
+    }
+}
+
+fn call_body(request: &CallRequest, blobs: &mut [Vec<u8>]) -> Result<CallBody, ConvertError> {
+    let content = match request.content.as_ref() {
+        None => None,
+        Some(marker) => {
+            let mut taken = marker_files(CONTENT_KEY, marker, blobs)?;
+            let (_key, file) = taken.pop().ok_or(ConvertError::Content)?;
+            Some(Bytes::from(file.bytes))
+        }
+    };
+    let files = match request.files.as_ref() {
+        None => None,
+        Some(marker) => {
+            let taken = marker_files(FILES_KEY, marker, blobs)?;
+            Some(taken.into_iter().map(upload).collect())
+        }
+    };
+    Ok(CallBody { content, files })
 }
 
 fn upload((field, file): (String, CallFile)) -> PassthroughUpload {
@@ -141,8 +143,7 @@ fn upload((field, file): (String, CallFile)) -> PassthroughUpload {
     }
 }
 
-// The JSON text a NativePassthroughError carries: LiteLLM's exception name and the fields its
-// class keeps, so Python rebuilds the same class the rest of the wheel raises.
+// The JSON text a NativePassthroughError carries: LiteLLM's exception name and the fields its class keeps.
 #[derive(Debug, Serialize)]
 pub(crate) struct ErrorPayload {
     #[serde(rename = "type")]
@@ -156,62 +157,10 @@ pub(crate) struct ErrorPayload {
 }
 
 impl ErrorPayload {
-    // _handle_error's provider error: the status, message and body the provider's own class carries
-    pub(crate) fn provider(error: &ProviderError, provider: &str, model: &str) -> Self {
+    fn of_kind(kind: &'static str) -> Self {
         Self {
-            kind: API_ERROR.to_owned(),
-            message: error.message.clone(),
-            status_code: Some(error.status_code),
-            llm_provider: Some(provider.to_owned()),
-            model: Some(model.to_owned()),
-            body: error.body.clone().map(JsonValue::Object),
-            headers: error.headers.clone().map(pair_map),
-        }
-    }
-
-    // raise_for_status: the upstream answered past 400 and its body is what the class reports
-    pub(crate) fn upstream(status: u16, headers: &[(String, String)], body: &[u8]) -> Self {
-        Self {
-            kind: API_ERROR.to_owned(),
-            message: body_text(body),
-            status_code: Some(status),
-            llm_provider: None,
-            model: None,
-            body: serde_json::from_slice(body).ok(),
-            headers: Some(pairs(headers)),
-        }
-    }
-
-    pub(crate) fn transport(message: String) -> Self {
-        Self {
-            kind: API_ERROR.to_owned(),
-            message,
-            status_code: Some(SYNTHESIZED_STATUS),
-            llm_provider: None,
-            model: None,
-            body: None,
-            headers: None,
-        }
-    }
-
-    // get_llm_provider refused the model: BadRequestError, as every LiteLLM call reports it
-    pub(crate) fn resolution(message: String) -> Self {
-        Self {
-            kind: BAD_REQUEST.to_owned(),
-            message,
-            status_code: Some(BAD_REQUEST_STATUS),
-            llm_provider: None,
-            model: None,
-            body: None,
-            headers: None,
-        }
-    }
-
-    // "Provider {custom_llm_provider} not found" is a plain Exception in LiteLLM's route
-    pub(crate) fn provider_not_found(provider: &str) -> Self {
-        Self {
-            kind: PLAIN_EXCEPTION.to_owned(),
-            message: format!("Provider {provider} not found"),
+            kind: kind.to_owned(),
+            message: String::new(),
             status_code: None,
             llm_provider: None,
             model: None,
@@ -220,26 +169,57 @@ impl ErrorPayload {
         }
     }
 
-    // the router refused the route before any provider saw it, so its status is the class's
-    pub(crate) fn routing(status: u16, message: &str) -> Self {
+    // _handle_error's provider error: the status, message and body the provider's own class carries
+    pub(crate) fn provider(error: &ProviderError, provider: &str, model: &str) -> Self {
         Self {
-            kind: API_ERROR.to_owned(),
-            message: message.to_owned(),
-            status_code: Some(status),
-            llm_provider: None,
-            model: None,
-            body: None,
-            headers: None,
+            message: error.message.clone(),
+            status_code: Some(error.status_code),
+            llm_provider: Some(provider.to_owned()),
+            model: Some(model.to_owned()),
+            body: error.body.clone().map(JsonValue::Object),
+            headers: error
+                .headers
+                .clone()
+                .map(|headers| headers.into_iter().collect()),
+            ..Self::of_kind(API_ERROR)
         }
     }
 
-    pub(crate) fn stream(error: &PassthroughStreamError) -> Self {
-        Self::transport(error.to_string())
+    // raise_for_status: the upstream answered past 400 and its body is what the class reports
+    pub(crate) fn upstream(status: u16, headers: &[(String, String)], body: &[u8]) -> Self {
+        Self {
+            message: body_text(body),
+            status_code: Some(status),
+            body: serde_json::from_slice(body).ok(),
+            headers: Some(pairs(headers)),
+            ..Self::of_kind(API_ERROR)
+        }
     }
 
-    // a request text or a keyword argument the native call cannot read
-    pub(crate) fn invalid(message: String) -> Self {
-        Self::transport(message)
+    // a failure with no provider fields of its own: the class and status the route reports
+    pub(crate) fn failed(kind: &'static str, status: Option<u16>, message: String) -> Self {
+        Self {
+            message,
+            status_code: status,
+            ..Self::of_kind(kind)
+        }
+    }
+
+    // "Provider {custom_llm_provider} not found" is a plain Exception in LiteLLM's route
+    pub(crate) fn provider_not_found(provider: &str) -> Self {
+        Self {
+            message: format!("Provider {provider} not found"),
+            ..Self::of_kind(PLAIN_EXCEPTION)
+        }
+    }
+
+    // the router refused the route before any provider saw it, so its status is the class's
+    pub(crate) fn routing(status: u16, message: &str) -> Self {
+        Self {
+            message: message.to_owned(),
+            status_code: Some(status),
+            ..Self::of_kind(API_ERROR)
+        }
     }
 }
 
@@ -248,10 +228,6 @@ fn pairs(headers: &[(String, String)]) -> IndexMap<String, String> {
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
-}
-
-fn pair_map(headers: Vec<(String, String)>) -> IndexMap<String, String> {
-    headers.into_iter().collect()
 }
 
 // the class keeps the upstream body as text; bytes that are not UTF-8 have no text form

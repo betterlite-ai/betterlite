@@ -3,8 +3,8 @@
 use pyo3::prelude::*;
 
 use super::{
-    encode_bedrock_runtime_modelid_arn, forward_headers_from_request, merge_query_parameters,
-    resolve_passthrough_timeout, resolve_sdk_timeout,
+    encode_arn, forward_headers_from_request, merge_query_parameters, resolve_passthrough_timeout,
+    resolve_sdk_timeout,
 };
 
 #[test]
@@ -78,7 +78,7 @@ fn encode_bedrock_runtime_modelid_arn_encodes_an_application_inference_profile()
     let endpoint =
         "/model/arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123/invoke";
     assert_eq!(
-        encode_bedrock_runtime_modelid_arn(endpoint),
+        encode_arn(endpoint),
         "/model/arn:aws:bedrock:us-east-1:123456789012:application-inference-profile%2Fabc123/invoke"
     );
 }
@@ -86,7 +86,7 @@ fn encode_bedrock_runtime_modelid_arn_encodes_an_application_inference_profile()
 #[test]
 fn encode_bedrock_runtime_modelid_arn_leaves_an_endpoint_without_an_arn_alone() {
     let endpoint = "/model/anthropic.claude-3/invoke";
-    assert_eq!(encode_bedrock_runtime_modelid_arn(endpoint), endpoint);
+    assert_eq!(encode_arn(endpoint), endpoint);
 }
 
 #[test]

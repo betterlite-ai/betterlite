@@ -1,5 +1,5 @@
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn as encode_arn;
+use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn as runtime_arn;
 use betterlite_models::passthrough_policies::generic_timeout::{
     DEFAULT_TIMEOUT_SECONDS, resolve_passthrough_timeout as resolve_generic,
 };
@@ -51,12 +51,15 @@ pub(crate) fn forward_headers_from_request(
 
 // CommonUtils.encode_bedrock_runtime_modelid_arn, which encodes the resource separator in a model ARN.
 #[pyfunction]
-pub(crate) fn encode_bedrock_runtime_modelid_arn(endpoint: &str) -> String {
-    encode_arn(endpoint)
+#[pyo3(name = "encode_bedrock_runtime_modelid_arn")]
+// ast-grep-ignore: no-one-line-functions - a pyfunction's only call site is Python, which cannot call the crate function
+pub(crate) fn encode_arn(endpoint: &str) -> String {
+    runtime_arn(endpoint)
 }
 
 // resolve_pass_through_request_timeout: the endpoint's own timeout, else the 600 second default.
 #[pyfunction]
+// ast-grep-ignore: no-one-line-functions - a pyfunction's only call site is Python, which cannot call the policy
 pub(crate) fn resolve_passthrough_timeout(endpoint_timeout: Option<f64>) -> f64 {
     resolve_generic(endpoint_timeout, DEFAULT_TIMEOUT_SECONDS)
 }
@@ -118,12 +121,18 @@ fn read<T>(text: &str) -> PyResult<T>
 where
     T: for<'text> Deserialize<'text>,
 {
-    serde_json::from_str(text).map_err(|error| PyValueError::new_err(error.to_string()))
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(error) => Err(PyValueError::new_err(error.to_string())),
+    }
 }
 
 fn encode<T>(value: &T) -> PyResult<String>
 where
     T: Serialize,
 {
-    serde_json::to_string(value).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+    match serde_json::to_string(value) {
+        Ok(text) => Ok(text),
+        Err(error) => Err(PyRuntimeError::new_err(error.to_string())),
+    }
 }

@@ -6,7 +6,7 @@ use pyo3::types::PyBytes;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use tokio::sync::Mutex;
 
-use super::convert::ErrorPayload;
+use super::convert::{API_ERROR, ErrorPayload, SYNTHESIZED_STATUS};
 use super::error::native_error;
 
 // One relayed upstream body, handed out as the byte chunks Python iterates.
@@ -34,7 +34,13 @@ impl NativePassthroughStream {
                 guard.next_chunk().await
             })
         });
-        let chunk = next.map_err(|error| native_error(ErrorPayload::stream(&error)))?;
+        let chunk = next.map_err(|error| {
+            native_error(ErrorPayload::failed(
+                API_ERROR,
+                Some(SYNTHESIZED_STATUS),
+                error.to_string(),
+            ))
+        })?;
         Ok(chunk.map(|bytes| PyBytes::new(py, &bytes).unbind()))
     }
 
@@ -44,7 +50,13 @@ impl NativePassthroughStream {
         let relay = Arc::clone(&self.relay);
         future_into_py(py, async move {
             let next = relay.lock().await.next_chunk().await;
-            let chunk = next.map_err(|error| native_error(ErrorPayload::stream(&error)))?;
+            let chunk = next.map_err(|error| {
+                native_error(ErrorPayload::failed(
+                    API_ERROR,
+                    Some(SYNTHESIZED_STATUS),
+                    error.to_string(),
+                ))
+            })?;
             Python::attach(
                 |attached| Ok(chunk.map(|bytes| PyBytes::new(attached, &bytes).unbind())),
             )

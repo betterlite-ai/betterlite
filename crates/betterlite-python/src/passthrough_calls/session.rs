@@ -25,7 +25,10 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::convert::{ConvertError, ErrorPayload, parse};
+use super::convert::{
+    API_ERROR, BAD_REQUEST, BAD_REQUEST_STATUS, ConvertError, ErrorPayload, SYNTHESIZED_STATUS,
+    parse,
+};
 
 mod tests;
 
@@ -93,9 +96,13 @@ fn failure(error: &PassthroughCallError, provider: &str, model: &str) -> ErrorPa
             body,
         } => ErrorPayload::upstream(*status, headers, body),
         PassthroughCallError::ProviderNotFound(name) => ErrorPayload::provider_not_found(name),
-        PassthroughCallError::Resolution(error) => ErrorPayload::resolution(error.to_string()),
+        PassthroughCallError::Resolution(error) => {
+            ErrorPayload::failed(BAD_REQUEST, Some(BAD_REQUEST_STATUS), error.to_string())
+        }
         PassthroughCallError::Mapped(error) => ErrorPayload::provider(error, provider, model),
-        PassthroughCallError::Transport(error) => ErrorPayload::transport(error.to_string()),
+        PassthroughCallError::Transport(error) => {
+            ErrorPayload::failed(API_ERROR, Some(SYNTHESIZED_STATUS), error.to_string())
+        }
         PassthroughCallError::Routing { status, message } => {
             ErrorPayload::routing(*status, message)
         }
@@ -104,8 +111,9 @@ fn failure(error: &PassthroughCallError, provider: &str, model: &str) -> ErrorPa
 
 // the logging state the proxy hands the route in kwargs, built here from the call alone
 pub(crate) fn logging_state(model: &str) -> Result<LoggingState, ErrorPayload> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map_err(|error| ErrorPayload::invalid(error.to_string()))?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
+        ErrorPayload::failed(API_ERROR, Some(SYNTHESIZED_STATUS), error.to_string())
+    })?;
     let mut context = CorrelationContext::default();
     let setup = CorrelationSetup {
         context: &mut context,
@@ -120,7 +128,7 @@ pub(crate) fn logging_state(model: &str) -> Result<LoggingState, ErrorPayload> {
         || Uuid::new_v4().to_string(),
         clock,
     )
-    .map_err(|error| ErrorPayload::invalid(error.to_string()))
+    .map_err(|error| ErrorPayload::failed(API_ERROR, Some(SYNTHESIZED_STATUS), error.to_string()))
 }
 
 fn logging_init(model: &str) -> LoggingInit {
