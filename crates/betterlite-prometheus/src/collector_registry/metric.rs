@@ -205,12 +205,12 @@ impl PrometheusMetric {
     // prometheus_client writes a family's series in the order their label sets were first used, its dict's order
     #[must_use]
     pub fn series_in_use_order(&self) -> Vec<(Vec<String>, Sample)> {
-        self.samples
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|(labels, sample)| (labels.clone(), sample.clone()))
-            .collect()
+        let samples = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut series = Vec::with_capacity(samples.len());
+        for (labels, sample) in &*samples {
+            series.push((labels.clone(), sample.clone()));
+        }
+        series
     }
 }
 

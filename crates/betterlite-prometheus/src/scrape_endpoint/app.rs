@@ -15,14 +15,12 @@ use super::{RESPONSE_CHUNK_SIZE_BYTES, parse_scrape_request};
 
 // LiteLLM's make_metrics_asgi_app: every method and path answers a scrape, at whatever prefix the caller mounts it
 pub fn make_metrics_app(registry: Arc<CollectorRegistry>) -> Router {
-    metrics_app(Arc::new(CoalescedScrapeRenderer::new(registry)))
+    let renderer = Arc::new(CoalescedScrapeRenderer::new(registry));
+    let router = Router::new().fallback(scrape);
+    router.with_state(renderer)
 }
 
-pub(crate) fn metrics_app(renderer: Arc<CoalescedScrapeRenderer>) -> Router {
-    Router::new().fallback(scrape).with_state(renderer)
-}
-
-async fn scrape(
+pub(crate) async fn scrape(
     State(renderer): State<Arc<CoalescedScrapeRenderer>>,
     headers: HeaderMap,
     Query(parameters): Query<Vec<(String, String)>>,

@@ -5,6 +5,7 @@ use std::io::Read as _;
 use std::sync::{Arc, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::http::{Request, StatusCode, header};
 use axum::response::Response;
@@ -19,7 +20,7 @@ use tower::ServiceExt as _;
 use crate::collector_factory::collector::{Collector as _, MetricValue};
 use crate::collector_registry::CollectorRegistry;
 use crate::collector_registry::metric::{Bucket, CollectorKind, PrometheusMetric, prepare_buckets};
-use crate::scrape_endpoint::app::{make_metrics_app, metrics_app};
+use crate::scrape_endpoint::app::{make_metrics_app, scrape};
 use crate::scrape_endpoint::float::float_to_go_string;
 use crate::scrape_endpoint::renderer::{CoalescedScrapeRenderer, InFlight, shared_render};
 use crate::scrape_endpoint::{
@@ -379,9 +380,9 @@ fn created_text_block_trails_the_family_and_openmetrics_inlines_it() {
 #[test]
 fn series_order_follows_first_use_not_label_sorting() {
     let metric = gauge("in_flight", "in flight", &["model"]);
-    for model in ["c", "a", "b"] {
-        metric.labels(&[("model", model)]).set(finite(1));
-    }
+    metric.labels(&[("model", "c")]).set(finite(1));
+    metric.labels(&[("model", "a")]).set(finite(1));
+    metric.labels(&[("model", "b")]).set(finite(1));
     let body = body_text(&registry_with(metric), &request("", "", &[]));
     let lines: Vec<&str> = body.lines().collect();
     assert_eq!(lines[2], "in_flight{model=\"c\"} 1.0");
@@ -671,6 +672,14 @@ async fn frames(response: Response) -> Vec<Bytes> {
     frames
 }
 
+fn join_frames(frames: &[Bytes]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for frame in frames {
+        bytes.extend_from_slice(frame);
+    }
+    bytes
+}
+
 fn plain_app() -> Arc<CollectorRegistry> {
     let metric = gauge("in_flight", "in flight", &[]);
     Arc::new(registry_with(metric))
@@ -736,19 +745,11 @@ async fn app_gzip_round_trips() {
             .unwrap(),
         "gzip"
     );
-    let compressed = frames(compressed_response).await;
-    let mut joined = Vec::new();
-    for frame in &compressed {
-        joined.extend_from_slice(frame);
-    }
-    let mut decoder = GzDecoder::new(&joined[..]);
+    let compressed = join_frames(&frames(compressed_response).await);
+    let mut decoder = GzDecoder::new(&compressed[..]);
     let mut plain_body = Vec::new();
     decoder.read_to_end(&mut plain_body).unwrap();
-    let mut expected = Vec::new();
-    for frame in &plain {
-        expected.extend_from_slice(frame);
-    }
-    assert_eq!(plain_body, expected);
+    assert_eq!(plain_body, join_frames(&plain));
 }
 
 #[tokio::test]
@@ -773,11 +774,10 @@ async fn app_streams_a_body_over_the_chunk_size_in_several_frames() {
             .iter()
             .all(|frame| frame.len() <= RESPONSE_CHUNK_SIZE_BYTES)
     );
-    let mut streamed = Vec::new();
-    for frame in &frames {
-        streamed.extend_from_slice(frame);
-    }
-    assert_eq!(streamed, render_scrape(&registry, &request("", "", &[])));
+    assert_eq!(
+        join_frames(&frames),
+        render_scrape(&registry, &request("", "", &[]))
+    );
 }
 
 #[tokio::test]
@@ -813,15 +813,11 @@ async fn app_reads_repeated_name_parameters() {
         )
         .await
         .unwrap();
-    let body = frames(response).await;
-    let mut joined = Vec::new();
-    for frame in &body {
-        joined.extend_from_slice(frame);
-    }
+    let body = join_frames(&frames(response).await);
     let expected = render_scrape(&registry, &request("", "", &["in_flight", "other_total"]));
-    assert_eq!(joined, expected);
+    assert_eq!(body, expected);
     assert!(
-        String::from_utf8(joined)
+        String::from_utf8(body)
             .unwrap()
             .contains("in_flight{model=\"a\"} 1.0")
     );
@@ -832,7 +828,8 @@ async fn app_answers_a_stopped_render_with_500() {
     let registry = Arc::new(CollectorRegistry::default());
     let renderer = Arc::new(CoalescedScrapeRenderer::new(registry));
     install_stopped(&renderer, request("", "", &[]));
-    let response = metrics_app(renderer)
+    let app: Router = Router::new().fallback(scrape).with_state(renderer);
+    let response = app
         .oneshot(
             Request::builder()
                 .uri("/metrics")
