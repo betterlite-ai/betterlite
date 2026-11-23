@@ -99,39 +99,25 @@ fn selected_from_inputs(inputs: ClientInputs<'_>) -> Result<Selected<'_>, AzureS
         ClientInputs::Azure(azure) => {
             let base_url = normalized_base_url(&azure.endpoint)?;
             let auth = azure_key(azure.azure_ad_token, azure.token_provider, azure.api_key);
-            Ok(selected(
-                Family::Azure,
+            Ok(Selected {
+                family: Family::Azure,
                 base_url,
-                Some(azure.api_version),
+                api_version: Some(azure.api_version),
                 auth,
-            ))
+            })
         }
         ClientInputs::OpenAiV1(keys) => {
             let Some(base_url) = keys.base_url else {
                 return Err(AzureSpeechError::MissingBase);
             };
             let auth = v1_key(keys.key);
-            Ok(selected(
-                Family::OpenAiV1,
-                with_trailing_slash(&base_url)?,
-                None,
+            Ok(Selected {
+                family: Family::OpenAiV1,
+                base_url: with_trailing_slash(&base_url)?,
+                api_version: None,
                 auth,
-            ))
+            })
         }
-    }
-}
-
-const fn selected(
-    family: Family,
-    base_url: String,
-    api_version: Option<String>,
-    auth: Key<'_>,
-) -> Selected<'_> {
-    Selected {
-        family,
-        base_url,
-        api_version,
-        auth,
     }
 }
 
@@ -194,12 +180,12 @@ fn azure_fallback<'data>(
         .or_else(|| wiring.environment.lookup("AZURE_API_VERSION"))
         .unwrap_or_else(|| wiring.settings.azure_default_api_version.clone());
     let base_url = normalized_base_url(&selection)?;
-    Ok(selected(
-        Family::Azure,
+    Ok(Selected {
+        family: Family::Azure,
         base_url,
-        Some(version),
-        fallback_key(connection),
-    ))
+        api_version: Some(version),
+        auth: fallback_key(connection),
+    })
 }
 
 fn v1_fallback<'data>(connection: &SpeechConnection) -> Result<Selected<'data>, AzureSpeechError> {
@@ -216,12 +202,12 @@ fn v1_fallback<'data>(connection: &SpeechConnection) -> Result<Selected<'data>, 
             })
     });
     let auth = v1_key(key.or_else(|| connection.params.azure_ad_token.clone().map(V1Key::Static)));
-    Ok(selected(
-        Family::OpenAiV1,
-        with_trailing_slash(&format!("{api_base}/openai/v1/"))?,
-        None,
+    Ok(Selected {
+        family: Family::OpenAiV1,
+        base_url: with_trailing_slash(&format!("{api_base}/openai/v1/"))?,
+        api_version: None,
         auth,
-    ))
+    })
 }
 
 fn fallback_key<'data>(connection: &SpeechConnection) -> Key<'data> {
@@ -292,10 +278,18 @@ fn provider_token(provider: &TokenProvider<'_>) -> Result<SecretString, AzureSpe
         })?;
     match token {
         TokenReply::Text(text) if !text.expose_secret().is_empty() => Ok(text),
-        TokenReply::Text(_) | TokenReply::NonText { .. } => Err(AzureSpeechError::Handler {
-            class: String::from("Exception"),
-            status: None,
-            message: String::from("Expected `azure_ad_token_provider` argument to return a string"),
-        }),
+        TokenReply::Text(_) => Err(token_not_string("")),
+        TokenReply::NonText { type_name } => Err(token_not_string(&type_name)),
+    }
+}
+
+// The SDK names the reply it could not use; a text reply is never printed, since it can hold a credential
+fn token_not_string(returned: &str) -> AzureSpeechError {
+    AzureSpeechError::Handler {
+        class: String::from("ValueError"),
+        status: None,
+        message: format!(
+            "Expected `azure_ad_token_provider` argument to return a string but it returned {returned}"
+        ),
     }
 }

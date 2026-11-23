@@ -667,23 +667,28 @@ fn provider_tokens() {
         support::header(&request, "authorization"),
         Some("Bearer ad-token")
     );
-    assert_token_failure(TokenReply::Text(SecretString::from("")));
-    assert_token_failure(TokenReply::NonText {
-        type_name: String::from("int"),
-    });
+    assert_token_failure(TokenReply::Text(SecretString::from("")), "");
+    assert_token_failure(
+        TokenReply::NonText {
+            type_name: String::from("int"),
+        },
+        "int",
+    );
 }
 
-fn assert_token_failure(reply: TokenReply) {
+// the SDK names the reply it could not use, but never prints a text reply, which can hold a credential
+fn assert_token_failure(reply: TokenReply, returned: &str) {
     let mut call = support::call("tts", "hello", "alloy", IndexMap::new());
     call.api_key = None;
     call.provider = Some(support::provider(reply));
     let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
-        .expect_err("a non-string token cannot authenticate");
-    assert_eq!(error.class(), "Exception");
-    assert!(
-        error
-            .to_string()
-            .contains("Expected `azure_ad_token_provider` argument to return a string")
+        .expect_err("a token the SDK cannot use fails the call");
+    assert_eq!(error.class(), "ValueError");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Expected `azure_ad_token_provider` argument to return a string but it returned {returned}"
+        )
     );
 }
 
