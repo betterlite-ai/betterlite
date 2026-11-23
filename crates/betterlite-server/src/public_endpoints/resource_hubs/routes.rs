@@ -7,9 +7,11 @@ mod public_endpoints {
         use axum::Router;
         use axum::body::{Body, to_bytes};
         use axum::http::{Request, StatusCode};
-        use betterlite_auth::agent_registry::AgentRegistry;
+        use betterlite_auth::agent_policy::AgentResponse;
+        use betterlite_auth::agent_registry::{AgentRegistry, AgentRegistryApi as _};
         use betterlite_core::api::claude_plugin_policy::DB_NOT_CONNECTED;
         use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry};
+        use betterlite_mcp::server_record::MCPServer;
         use betterlite_server::agent_endpoints::admin_actions::ports::PublicGroupStore;
         use betterlite_server::custom_url::CustomUrls;
         use betterlite_server::public_endpoints::resource_hubs::{
@@ -53,6 +55,7 @@ mod public_endpoints {
             Request::builder()
                 .method("GET")
                 .uri(path)
+                .header("host", "testserver")
                 .body(Body::empty())
                 .expect("the request builds")
         }
@@ -76,6 +79,46 @@ mod public_endpoints {
                 body_text(resource_hubs_routes(state()), "/public/agent_hub").await;
             assert_eq!(status, StatusCode::OK);
             assert_eq!(text, "[]");
+        }
+
+        #[tokio::test]
+        async fn agent_hub_lists_the_agent_of_an_allowlisted_group() {
+            let agents = AgentRegistry::default();
+            let record = r#"{"agent_id":"alpha","agent_name":"alpha","agent_card_params":{"protocolVersion":"0.3.0","name":"planner"}}"#;
+            agents
+                .register_agent(serde_json::from_str::<AgentResponse>(record).expect("the agent"));
+            let mut hubs = state();
+            hubs.agents = Arc::new(agents);
+            hubs.public_agent_groups =
+                Arc::new(NoGroups(Mutex::new(Some(vec![String::from("alpha")]))));
+            let (status, text) = body_text(resource_hubs_routes(hubs), "/public/agent_hub").await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(
+                text.contains(r#""url":"http://testserver/a2a/alpha""#),
+                "{text}"
+            );
+            assert!(text.contains(r#""name":"planner""#), "{text}");
+        }
+
+        #[tokio::test]
+        async fn mcp_hub_lists_a_server_that_is_public_on_the_internet() {
+            let record = r#"{"server_id":"open","name":"Open","transport":"http","available_on_public_internet":true}"#;
+            let server: MCPServer = serde_json::from_str(record).expect("the MCP server record");
+            let mut hubs = state();
+            hubs.mcp = Arc::new(RwLock::new(ServerRegistry::new(
+                RegistrySettings {
+                    public_mcp_servers: Vec::new(),
+                    public_hub_strict: false,
+                    internal_ip_ranges: None,
+                },
+                vec![server],
+                Vec::new(),
+            )));
+            let (status, text) = body_text(resource_hubs_routes(hubs), "/public/mcp_hub").await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(text.contains(r#""server_id":"open""#), "{text}");
+            assert!(text.contains(r#""is_public":true"#), "{text}");
+            assert!(text.contains(r#""is_public_explicit":false"#), "{text}");
         }
 
         #[tokio::test]
