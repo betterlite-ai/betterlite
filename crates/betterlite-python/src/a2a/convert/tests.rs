@@ -17,7 +17,7 @@ use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::{JsonRpcId, LiteLLMSendMessageResponse};
 use pyo3::prelude::*;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{Call, Settings, parse, response_text};
 use crate::a2a::error::A2aCallError;
@@ -54,19 +54,25 @@ fn header(headers: Option<&BTreeMap<String, String>>, name: &str) -> Option<Stri
     headers.and_then(|pairs| pairs.get(name).cloned())
 }
 
+fn secret_header(headers: Option<&BTreeMap<String, SecretString>>, name: &str) -> Option<String> {
+    headers
+        .and_then(|pairs| pairs.get(name))
+        .map(|value| value.expose_secret().clone())
+}
+
 #[test]
 fn request_settings_take_every_given_key() {
     let text = r#"{"base_url":"http://agent.example","timeout":3.5,"extra_headers":{"X-Test":"1"},"streaming":true,"relative_card_path":"agentCard/v1.0"}"#;
     let settings = parse::<Settings>(text).unwrap();
     assert_eq!(settings.base_url, "http://agent.example");
     assert_eq!(settings.timeout, Some(3.5));
-    assert_eq!(settings.streaming, Some(true));
+    assert!(settings.streaming);
     assert_eq!(
         settings.relative_card_path.as_deref(),
         Some("agentCard/v1.0")
     );
     assert_eq!(
-        header(settings.extra_headers.as_ref(), "X-Test").as_deref(),
+        secret_header(settings.extra_headers.as_ref(), "X-Test").as_deref(),
         Some("1")
     );
     let built = settings.into_settings(tls()).unwrap();
@@ -84,7 +90,7 @@ fn request_settings_default_every_absent_key() {
     let settings = parse::<Settings>("{}").unwrap();
     assert_eq!(settings.base_url, "");
     assert_eq!(settings.timeout, None);
-    assert_eq!(settings.streaming, None);
+    assert!(!settings.streaming);
     assert!(settings.extra_headers.is_none());
     assert!(settings.relative_card_path.is_none());
     let built = settings.into_settings(tls()).unwrap();
@@ -95,10 +101,9 @@ fn request_settings_default_every_absent_key() {
 
 #[test]
 fn request_settings_take_an_explicit_null_as_the_default() {
-    let text = r#"{"base_url":"http://agent.example","timeout":null,"extra_headers":null,"streaming":null,"relative_card_path":null}"#;
+    let text = r#"{"base_url":"http://agent.example","timeout":null,"extra_headers":null,"relative_card_path":null}"#;
     let settings = parse::<Settings>(text).unwrap();
     assert_eq!(settings.timeout, None);
-    assert_eq!(settings.streaming, None);
     assert!(settings.extra_headers.is_none());
     assert!(settings.relative_card_path.is_none());
     assert!(!settings.into_settings(tls()).unwrap().streaming);

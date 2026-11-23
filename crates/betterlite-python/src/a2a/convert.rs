@@ -19,8 +19,8 @@ use super::error::A2aCallError;
 pub(crate) struct Settings {
     pub(crate) base_url: String,
     pub(crate) timeout: Option<f64>,
-    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
-    pub(crate) streaming: Option<bool>,
+    pub(crate) extra_headers: Option<BTreeMap<String, SecretString>>,
+    pub(crate) streaming: bool,
     pub(crate) relative_card_path: Option<String>,
 }
 
@@ -62,13 +62,8 @@ impl Settings {
             base_url: self.base_url,
             timeout,
             tls,
-            extra_headers: self
-                .extra_headers
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(name, value)| (name, SecretString::from(value.as_str())))
-                .collect(),
-            streaming: self.streaming.unwrap_or(false),
+            extra_headers: self.extra_headers.unwrap_or_default(),
+            streaming: self.streaming,
             relative_card_path: self.relative_card_path,
         })
     }

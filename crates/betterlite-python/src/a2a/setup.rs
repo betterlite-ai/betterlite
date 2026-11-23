@@ -20,6 +20,7 @@ use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::runtime::runtime_counter;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
+use secrecy::{ExposeSecret as _, SecretString};
 
 // The process values every A2A call reads: the environment snapshot, the pool and the TLS policy resolved from it.
 pub(crate) struct Setup {
@@ -151,7 +152,7 @@ fn invalid_timeout(raw: &str) -> A2AError {
 }
 
 pub(crate) fn card_headers(
-    extra: Option<&BTreeMap<String, String>>,
+    extra: Option<&BTreeMap<String, SecretString>>,
 ) -> Result<HeaderMap, A2aCallError> {
     extra
         .into_iter()
@@ -162,12 +163,13 @@ pub(crate) fn card_headers(
                     name: name.clone(),
                     source,
                 })?;
-            let header_value = HeaderValue::try_from(value.as_str()).map_err(|source| {
-                A2aCallError::HeaderValue {
-                    name: name.clone(),
-                    source,
-                }
-            })?;
+            let header_value =
+                HeaderValue::try_from(value.expose_secret().as_str()).map_err(|source| {
+                    A2aCallError::HeaderValue {
+                        name: name.clone(),
+                        source,
+                    }
+                })?;
             Ok((header_name, header_value))
         })
         .collect()

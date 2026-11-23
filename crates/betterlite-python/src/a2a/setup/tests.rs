@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use betterlite_a2a::client::{A2A_TIMEOUT_ENV, DEFAULT_A2A_AGENT_TIMEOUT};
 use rstest::rstest;
+use secrecy::SecretString;
 
 use super::{card_headers, resolve_timeout, runtime_config, trace_ids};
 use crate::a2a::error::A2aCallError;
@@ -13,6 +14,13 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+fn secrets(pairs: &[(&str, &str)]) -> BTreeMap<String, SecretString> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
         .collect()
 }
 
@@ -73,7 +81,7 @@ fn resolve_timeout_rejects_a_bad_environment_value(
 
 #[test]
 fn card_headers_keep_every_given_pair() {
-    let extra = environment(&[("X-One", "1"), ("x-two", "2")]);
+    let extra = secrets(&[("X-One", "1"), ("x-two", "2")]);
     let headers = match card_headers(Some(&extra)) {
         Ok(headers) => headers,
         Err(error) => panic!("valid headers were rejected: {error}"),
@@ -95,7 +103,7 @@ fn card_headers_reject_an_invalid_pair(
     #[case] value: &str,
     #[case] field: &str,
 ) {
-    let extra = environment(&[(name, value)]);
+    let extra = secrets(&[(name, value)]);
     match (card_headers(Some(&extra)), field) {
         (Err(A2aCallError::HeaderName { .. }), "name") => {}
         (Err(A2aCallError::HeaderValue { .. }), "value") => {}
