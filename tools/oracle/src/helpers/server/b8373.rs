@@ -13,10 +13,8 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::coord_redis_boot::settings::CoordinationGeneralSettings;
 use betterlite_server::proxy_request_contracts::coordination_redis::BoolOrText;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
-use serde::de::Error as _;
-use serde_json::{Error as JsonError, Value, json};
+use serde_json::{Value, json};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -146,16 +144,13 @@ impl Helper for Op {
                 max_budget,
                 database_configured,
             } => {
-                let budget = max_budget.to_f64().ok_or_else(|| {
-                    JsonError::custom(format!("max_budget {max_budget} has no f64 representation"))
-                })?;
                 let database = if *database_configured {
                     DatabasePresence::Present
                 } else {
                     DatabasePresence::Absent
                 };
                 Ok(warned_message(|| {
-                    warn_budget_without_db(Some(budget), database);
+                    warn_budget_without_db(*max_budget, database);
                 }))
             }
             Input::FailClosedWarning {

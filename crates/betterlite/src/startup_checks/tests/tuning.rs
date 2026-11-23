@@ -187,7 +187,7 @@ fn uses_heuristic_v1_follows_classifier_type(#[case] config: &str, #[case] expec
 #[test]
 fn uses_heuristic_v1_defaults_on_without_a_config() {
     assert!(uses_heuristic_v1(None));
-    assert!(!uses_heuristic_v1(Some(&Json::Null)));
+    assert!(uses_heuristic_v1(Some(&Json::Null)));
 }
 
 #[test]

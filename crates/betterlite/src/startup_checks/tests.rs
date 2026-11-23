@@ -145,11 +145,10 @@ fn params_with_teams(teams: JsonData) -> DefaultUserParams {
 #[test]
 fn budget_warning_fires_only_without_database_and_above_zero() {
     let (logs, _guard) = capture_logs();
-    warn_budget_without_db(Some(10.0_f64), DatabasePresence::Absent);
-    warn_budget_without_db(None, DatabasePresence::Absent);
-    warn_budget_without_db(Some(0.0_f64), DatabasePresence::Absent);
-    warn_budget_without_db(Some(-1.0_f64), DatabasePresence::Absent);
-    warn_budget_without_db(Some(10.0_f64), DatabasePresence::Present);
+    warn_budget_without_db(Decimal::from(10_i32), DatabasePresence::Absent);
+    warn_budget_without_db(Decimal::ZERO, DatabasePresence::Absent);
+    warn_budget_without_db(Decimal::from(-1_i32), DatabasePresence::Absent);
+    warn_budget_without_db(Decimal::from(10_i32), DatabasePresence::Present);
     let contents = logs.contents();
     assert_eq!(contents.matches("A proxy-wide budget").count(), 1);
     assert!(contents.contains("litellm.max_budget=10.0"));
@@ -158,7 +157,7 @@ fn budget_warning_fires_only_without_database_and_above_zero() {
 #[test]
 fn budget_warning_keeps_litellm_text() {
     let (logs, _guard) = capture_logs();
-    warn_budget_without_db(Some(3.0_f64), DatabasePresence::Absent);
+    warn_budget_without_db(Decimal::from(3_i32), DatabasePresence::Absent);
     let expected = "A proxy-wide budget (litellm.max_budget=3.0) is configured but no database is connected, so the budget will NOT be enforced and requests will never be blocked. Set DATABASE_URL or general_settings.database_url and restart. Redis and fail_closed_budget_enforcement do not cover the proxy-wide budget because there is no global spend counter; Redis alone is not a substitute.";
     assert!(logs.contents().contains(expected));
 }

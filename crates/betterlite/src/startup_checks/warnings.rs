@@ -1,19 +1,20 @@
 use betterlite_config::sections::mock_testing_params;
 use betterlite_logging::analytics::python::float_text;
 use betterlite_server::messages_call::steps::MOCK_TESTING_CONFIG_KEY;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use tracing::warn;
 
 use crate::startup_checks::presence::{DatabasePresence, RedisPresence};
 
 // litellm.max_budget is a float in LiteLLM, so the message carries Python's repr of it
-pub fn warn_budget_without_db(max_budget: Option<f64>, database: DatabasePresence) {
-    let Some(amount) = max_budget else {
-        return;
-    };
-    if database == DatabasePresence::Present || amount <= 0.0_f64 {
+pub fn warn_budget_without_db(max_budget: Decimal, database: DatabasePresence) {
+    if database == DatabasePresence::Present || max_budget <= Decimal::ZERO {
         return;
     }
-    let budget = float_text(amount);
+    let budget = max_budget
+        .to_f64()
+        .map_or_else(|| max_budget.to_string(), float_text);
     warn!(
         "A proxy-wide budget (litellm.max_budget={budget}) is configured but no database is connected, so the budget will NOT be enforced and requests will never be blocked. Set DATABASE_URL or general_settings.database_url and restart. Redis and fail_closed_budget_enforcement do not cover the proxy-wide budget because there is no global spend counter; Redis alone is not a substitute."
     );
