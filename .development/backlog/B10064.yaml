@@ -1,14 +1,14 @@
 id: B10064
 milestone: M9 agents and mcp
 title: SSO assertion reads and the assertion store port
-status: todo
+status: done
 depends_on: [B1600, B10003, B10010, B10011]
 file: tasks/B10064-sso-assertion-reads.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py"
 parent: B137
 split_from: B4663
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3069

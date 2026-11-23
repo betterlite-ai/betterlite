@@ -1,0 +1,9 @@
+task: B10086
+deviations: []
+kept_bugs:
+  - what: A recognized scheme removes every occurrence of its own text rather than just the leading prefix, so "Bearer aBearer b" parses to "ab".
+    why: LiteLLM's two helpers parse the presented key with str.replace, so a key or custom header whose text contains "Bearer ", "Basic " or "bearer " authenticates as the shorter string; betterlite parses it identically so the same request authenticates the same key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L588-L593
+  - what: In the AWS4-HMAC-SHA256 branch, Python's \s also matches the separators U+001C to U+001F, so a credential token ends at one of them where Unicode whitespace would not.
+    why: LiteLLM's patterns are Python regexes, and a signature value that carries one of those separators authenticates as the text before it; betterlite spells the class out so it splits at the same byte.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L598-L609
