@@ -15,7 +15,7 @@ pub struct PeriodicReloads {
 
 impl PeriodicReloads {
     #[must_use]
-    pub const fn new(provenance: &CatalogProvenance, now: DateTime<Utc>) -> Self {
+    pub fn new(provenance: &CatalogProvenance, now: DateTime<Utc>) -> Self {
         Self {
             state: Mutex::new(ReloadState {
                 // a fresh pod starts unapplied, so its first poll adopts a schedule row already above zero
