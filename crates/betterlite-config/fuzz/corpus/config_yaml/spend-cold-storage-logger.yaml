@@ -1,0 +1,6 @@
+# the spend storage policy reads the callback that keeps request bodies in cold storage
+litellm_settings:
+  cold_storage_custom_logger: s3_v2
+general_settings:
+  store_prompts_in_spend_logs: false
+model_list: []

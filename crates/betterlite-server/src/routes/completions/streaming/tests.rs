@@ -18,6 +18,7 @@ use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::OperationResult;
 use futures_util::{StreamExt as _, stream};
 use http::HeaderMap;
@@ -34,8 +35,8 @@ use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
+use super::chunks::chat_stream_answer;
 use super::{StreamRoute, StreamUsage, provider_stream, render};
-use crate::routes::completions::bridge::chat_stream_answer;
 use crate::server::application;
 use crate::server::chat_setup::chat_executor;
 
@@ -226,6 +227,7 @@ async fn provider_body(usage: StreamUsage, request: &str) -> Json {
     let executor = chat_setup(address);
     let deployment = executor.deployments[0].clone();
     let parsed = ChatRequest::parse(request.as_bytes()).expect("chat request");
+    let azure = Arc::new(Composition::default());
     let mut tasks = JoinSet::new();
     tasks.spawn(captured_request(listener));
     let upstream = provider_stream(
@@ -236,6 +238,7 @@ async fn provider_body(usage: StreamUsage, request: &str) -> Json {
         StreamRoute {
             usage,
             anthropic: None,
+            azure: &azure,
         },
     )
     .await
@@ -316,6 +319,7 @@ async fn chat_stream_setup() -> (ChatExecutor, ChatDeployment, ChatRequest, Join
 #[tokio::test]
 async fn chat_stream_answer_decodes_the_chat_events() {
     let (executor, deployment, parsed, mut tasks) = chat_stream_setup().await;
+    let azure = Arc::new(Composition::default());
     let (result, headers) = provider_stream(
         &executor,
         &deployment,
@@ -324,6 +328,7 @@ async fn chat_stream_answer_decodes_the_chat_events() {
         StreamRoute {
             usage: StreamUsage::Text,
             anthropic: None,
+            azure: &azure,
         },
     )
     .await

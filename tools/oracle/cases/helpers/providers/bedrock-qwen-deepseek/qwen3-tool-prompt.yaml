@@ -1,0 +1,76 @@
+kind: helper
+name: qwen3-tool-prompt
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply: []
+    qwen_request:
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: ignored
+        tool_calls:
+        - function:
+            name: read
+            arguments: '{"path": "a"}'
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: ignored
+        tool_calls:
+        - function:
+            name: read
+            arguments: '{"path": "a"}'
+        - function:
+            name: say
+            arguments: say "hi"
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: ignored
+        tool_calls:
+        - {}
+      - role: assistant
+        content: ignored
+        tool_calls:
+        - function: {}
+      - role: assistant
+        content: ignored
+        tool_calls:
+        - function:
+            name: only
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: ignored
+        tool_calls:
+        - function:
+            name: 12
+            arguments: true
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: plain
+        tool_calls: []
+      - role: assistant
+        content: object
+        tool_calls: {}
+      - role: assistant
+        content: null_calls
+        tool_calls: null
+      - role: assistant
+        content: text_calls
+        tool_calls: x
+      non_default_params: {}
+      optional_params: {}
+    deepseek_reply: []
+env: {}
+compare:
+  ignore: []

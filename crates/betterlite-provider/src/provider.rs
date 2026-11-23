@@ -1,7 +1,7 @@
 use std::future::{Future, ready};
 use std::pin::Pin;
+use std::sync::Arc;
 
-use betterlite_config::loader::startup::process_environment;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::{ChatDeployment, Provider as DeploymentProvider};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -142,25 +142,32 @@ macro_rules! dispatch_to_adapters {
 
 impl Provider {
     // The model the resolver keeps carries the slug that picks aiohttp or a stub; OpenAI is named by the resolver itself
-    pub fn from_deployment(deployment: &ChatDeployment) -> Result<Self, OperationError> {
+    pub fn from_deployment(
+        deployment: &ChatDeployment,
+        composition: &Arc<Composition>,
+    ) -> Result<Self, OperationError> {
         match &deployment.provider {
             DeploymentProvider::OpenAi { .. } => Ok(Self::OpenAi(OpenAi)),
             DeploymentProvider::Unsupported { model } => Self::from_slug(
                 model
                     .split_once('/')
                     .map_or(model.as_str(), |(slug, _model)| slug),
+                composition,
             ),
         }
     }
 
-    pub(crate) fn from_slug(slug: &str) -> Result<Self, OperationError> {
+    // the caller owns the one Azure composition, so the adapter reads no environment of its own
+    pub(crate) fn from_slug(
+        slug: &str,
+        composition: &Arc<Composition>,
+    ) -> Result<Self, OperationError> {
         match slug {
             "openai" => Ok(Self::OpenAi(OpenAi)),
             "aiohttp_openai" => Ok(Self::AiohttpOpenAi(AiohttpOpenAi)),
-            "azure" | "azure_text" => {
-                let composition = Composition::from_environment(process_environment());
-                Ok(Self::Azure(Box::new(Azure { composition })))
-            }
+            "azure" | "azure_text" => Ok(Self::Azure(Box::new(Azure {
+                composition: Arc::clone(composition),
+            }))),
             "azure_ai" => Ok(Self::AzureAi(AzureAi)),
             "anthropic" => Ok(Self::Anthropic(Anthropic {
                 surface: Surface::Messages,

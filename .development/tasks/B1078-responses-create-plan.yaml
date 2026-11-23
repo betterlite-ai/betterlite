@@ -35,6 +35,13 @@ description: >-
   285 implementation, 160 tests, 115 fixtures, 130 adapters and 35 wiring, 725 total under 790.
 scope:
   paths:
+  - "crates/betterlite-core/src/api.rs"
+  - "crates/betterlite-core/src/api/responses_json.rs"
+  - "crates/betterlite-core/src/api/responses_compact_call.rs"
+  - "crates/betterlite-core/src/api/responses_compact_call/logging.rs"
+  - "crates/betterlite-core/src/api/responses_compact_call/execute.rs"
+  - "crates/betterlite-core/src/api/responses_compact_call/convert.rs"
+  - "crates/betterlite-core/src/api/response_id_traversal/restore.rs"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_create.rs
   - crates/betterlite-core/src/api/responses_create/**
@@ -166,5 +173,5 @@ pitfalls:
 - MCP receives bound reasoning before reasoning_effort mapping and omits four arguments present in file-search dispatch.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2300
   max_new_expects: 0

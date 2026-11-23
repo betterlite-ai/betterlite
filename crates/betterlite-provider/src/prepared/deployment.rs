@@ -12,6 +12,7 @@ use thiserror::Error;
 use url::Url;
 
 use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
+use crate::azure_dispatch::call::Composition;
 use crate::operation::OperationError;
 use crate::provider::Provider;
 
@@ -127,9 +128,10 @@ impl Deployment {
 
 // only a prefix that names a provider comes off; an org/model name keeps its slash
 fn stripped_model(litellm_model: &str) -> String {
+    let composition = Arc::new(Composition::default());
     litellm_model
         .split_once('/')
-        .filter(|(slug, _model)| Provider::from_slug(slug).is_ok())
+        .filter(|(slug, _model)| Provider::from_slug(slug, &composition).is_ok())
         .map_or_else(|| litellm_model.to_owned(), |(_, model)| model.to_owned())
 }
 

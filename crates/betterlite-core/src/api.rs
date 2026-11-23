@@ -221,6 +221,7 @@ pub mod responses_id_security;
 pub mod responses_input_content;
 pub mod responses_input_messages;
 pub mod responses_input_tokens;
+pub mod responses_json;
 pub mod responses_lifecycle_call;
 pub mod responses_lifecycle_write;
 pub mod responses_mcp_discovery;

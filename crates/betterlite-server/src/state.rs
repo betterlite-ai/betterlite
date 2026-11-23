@@ -24,6 +24,7 @@ pub mod auth_resource_grants;
 pub mod auth_route_policy;
 pub mod auth_tag_budgets;
 pub mod auth_tenant_budgets;
+pub mod azure_runtime;
 pub mod budget_admission_handoff;
 pub mod callback_loggers;
 pub mod central_auth_checks;
@@ -100,6 +101,7 @@ pub struct ServerState {
     pub auth_route_policy: auth_route_policy::Slot,
     pub auth_tag_budgets: auth_tag_budgets::Slot,
     pub auth_tenant_budgets: auth_tenant_budgets::Slot,
+    pub azure_runtime: azure_runtime::Slot,
     pub budget_admission_handoff: budget_admission_handoff::Slot,
     pub callback_loggers: callback_loggers::Slot,
     pub central_auth_checks: central_auth_checks::Slot,
@@ -175,6 +177,7 @@ impl ServerState {
             auth_route_policy: auth_route_policy::Slot::new(config, &shared),
             auth_tag_budgets: auth_tag_budgets::Slot::new(config, &shared),
             auth_tenant_budgets: auth_tenant_budgets::Slot::new(config, &shared),
+            azure_runtime: azure_runtime::Slot::new(config),
             budget_admission_handoff: budget_admission_handoff::Slot::new(config, &shared),
             callback_loggers: callback_loggers::Slot::new(config, &shared),
             central_auth_checks: central_auth_checks::Slot::new(config, &shared),
