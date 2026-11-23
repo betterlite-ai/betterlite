@@ -55,7 +55,9 @@ struct QwenReplyCall {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QwenRequestCall {
-    model: String,
+    // LiteLLM's request API takes the model; the Rust projection takes none.
+    #[serde(rename = "model")]
+    _model: String,
     messages: Vec<PromptJson>,
     non_default_params: Params,
     optional_params: Params,
@@ -80,15 +82,15 @@ enum ReplyKind {
 }
 
 #[derive(Clone, Copy)]
-struct ReplyWire<'a> {
+struct ReplyWire<'wire> {
     kind: ReplyKind,
-    model: &'a str,
-    messages: &'a Json,
-    request_data: &'a IndexMap<String, Json>,
-    response: &'a Reply,
-    body: &'a [u8],
+    model: &'wire str,
+    messages: &'wire Json,
+    request_data: &'wire IndexMap<String, Json>,
+    response: &'wire Reply,
+    body: &'wire [u8],
     status: u16,
-    headers: &'a [(String, String)],
+    headers: &'wire [(String, String)],
 }
 
 impl Helper for Op {
@@ -232,10 +234,9 @@ fn qwen_answer(outcome: Result<Reply, QwenReplyError>, logged: bool) -> Value {
 
 fn deepseek_error(error: &DeepseekReplyError) -> Value {
     let (class, status) = match error {
-        DeepseekReplyError::Base(base) => match base.bedrock() {
-            Some(bedrock) => ("BedrockError", Some(bedrock.error.status_code)),
-            None => ("ValueError", None),
-        },
+        DeepseekReplyError::Base(base) => base.bedrock().map_or(("ValueError", None), |bedrock| {
+            ("BedrockError", Some(bedrock.error.status_code))
+        }),
         DeepseekReplyError::NotChat | DeepseekReplyError::UsageRange { .. } => ("ValueError", None),
         DeepseekReplyError::PromptNotText => ("AttributeError", None),
     };
