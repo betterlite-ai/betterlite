@@ -188,6 +188,18 @@ class FailingReadBackend(RecordingBackend):
     fail_read: bool = True
 
 
+# A semantic backend answers the similarity on the metadata copy the lookup handed it, as RedisCache does.
+class SimilarityBackend(RecordingBackend):
+    def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
+        match kwargs.get("metadata"):
+            case dict() as metadata:
+                metadata["semantic-similarity"] = 0.5
+            case None | str() | int() | float() | list():
+                pass
+        self.calls.append(("get_cache", key))
+        return self.values.get(key)
+
+
 class StoredEnvelope(TypedDict):
     timestamp: float
     response: JsonValue
@@ -325,6 +337,17 @@ def test_cache_ops_lookup_dynamic() -> None:
     assert asyncio.run(ours.async_get_cache(ours_async, **CHAT)) is None
     assert asyncio.run(reference.async_get_cache(reference_async, **CHAT)) is None
     assert ours_async.arguments == reference_async.arguments
+
+
+def test_cache_ops_lookup_similarity() -> None:
+    ours = Cache(SimilarityBackend())
+    ours_kwargs: dict[str, JsonValue] = {**CHAT, "metadata": {}}
+    assert ours.get_cache(None, **ours_kwargs) is None
+    reference = LITELLM_CACHE.Cache(_backend=SimilarityBackend(), type="local")
+    reference_kwargs: dict[str, JsonValue] = {**CHAT, "metadata": {}}
+    assert reference.get_cache(None, **reference_kwargs) is None
+    assert ours_kwargs["metadata"] == reference_kwargs["metadata"]
+    assert ours_kwargs["metadata"] == {"semantic-similarity": 0.5}
 
 
 def test_cache_ops_async_lookup() -> None:
