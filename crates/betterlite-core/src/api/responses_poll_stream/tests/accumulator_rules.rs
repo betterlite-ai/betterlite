@@ -526,19 +526,14 @@ fn delta_text_stops_at_the_json_bound() {
     accumulator
         .apply(event(PART_EMPTY))
         .expect("the part applies");
-    let text = "x".repeat(1024);
+    let id = Some(String::from("m1"));
     accumulator
-        .apply(PollEvent::OutputTextDelta(
-            Some(String::from("m1")),
-            0,
-            text,
-        ))
+        .apply(PollEvent::OutputTextDelta(id.clone(), 0, "x".repeat(1024)))
         .expect("the delta applies");
     let output = forced(&mut accumulator, &clock);
     let values = Json::List(vec![output, Json::Text(String::from("completed"))]);
-    let observed = serde_json::to_vec(&values)
-        .expect("the measured output encodes")
-        .len();
+    let bytes = serde_json::to_vec(&values).expect("the measured output encodes");
+    let observed = bytes.len();
     let limits = ApiLimits {
         max_json_bytes: observed,
         max_event_bytes: 16 * 1024 * 1024,
@@ -548,11 +543,7 @@ fn delta_text_stops_at_the_json_bound() {
         .check_limits(limits)
         .expect("the text is exactly at the limit");
     accumulator
-        .apply(PollEvent::OutputTextDelta(
-            Some(String::from("m1")),
-            0,
-            String::from("x"),
-        ))
+        .apply(PollEvent::OutputTextDelta(id, 0, String::from("x")))
         .expect("the delta applies");
     let error = accumulator
         .check_limits(limits)
