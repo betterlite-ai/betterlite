@@ -1,0 +1,15 @@
+kind: helper
+name: env-login-disabled
+call:
+  b10067:
+    calls:
+      - general_settings: {disable_env_credential_login: true}
+        sso_provider_ready: false
+      - general_settings: {disable_env_credential_login: true}
+        sso_provider_ready: true
+      - general_settings: {disable_env_credential_login: true, disable_password_login_when_sso_enabled: false}
+        sso_provider_ready: true
+      - general_settings: {disable_env_credential_login: true, disable_password_login_when_sso_enabled: null}
+        sso_provider_ready: false
+env: {}
+compare: {ignore: []}

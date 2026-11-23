@@ -4451,6 +4451,7 @@ version = "0.1.0"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
@@ -4470,6 +4471,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "lru",
  "prometheus-client",
  "rand 0.10.3",
  "rand_distr",

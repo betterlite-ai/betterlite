@@ -1,0 +1,10 @@
+kind: helper
+name: preset-text-fallback
+call:
+  b10087:
+    function: resolve
+    text: null
+    preset_id: claude-code-v1
+    kind: harness
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: vector-index-admin-lifecycle-seed
+call:
+  b10071:
+    function: lifecycle
+    method: DELETE
+    path: /azure_ai/indexes/my-index
+    index_name: my-index
+calls:
+  - b10071:
+      function: lifecycle
+      method: POST
+      path: /indexes
+      index_name: name
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: vector-index-admin-gate-proxy-admin-passes
+call:
+  b10071: {function: gate, user_role: "proxy_admin", operation: "create"}
+calls:
+  - b10071: {function: gate, user_role: "proxy_admin", operation: "delete"}
+  - b10071: {function: gate, user_role: "proxy_admin", operation: "update"}
+  - b10071: {function: gate, user_role: "proxy_admin", operation: "list"}
+env: {}
+compare: {ignore: []}
