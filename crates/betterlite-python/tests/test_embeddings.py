@@ -60,7 +60,16 @@ FIXTURE_VECTOR: Final[list[JsonValue]] = [0.1, 0.2]
 MISSING_MODEL_TEXT: Final = "model parameter is required but was None"
 MISSING_KEY_TEXT: Final = "Missing credentials"
 DIMENSIONS_TEXT: Final = "Setting dimensions is not supported"
-AUTH_TEXT: Final = "Invalid API key provided: bad-key"
+# OpenAI's own 401 body: LiteLLM reads "Incorrect API key provided" as an authentication failure
+AUTH_TEXT: Final = "Incorrect API key provided: bad-key"
+AUTH_BODY: Final[dict[str, JsonValue]] = {
+    "error": {
+        "message": AUTH_TEXT,
+        "type": "invalid_request_error",
+        "param": None,
+        "code": "invalid_api_key",
+    }
+}
 HEADERS_ONE: Final[dict[str, str]] = {"x-custom": "one"}
 HEADERS_TWO: Final[dict[str, str]] = {"x-custom": "two"}
 
@@ -89,6 +98,8 @@ REFERENCE: ReferenceModule = importlib.import_module("litellm")
 
 class EmbeddingHandler(BaseHTTPRequestHandler):
     parties: ClassVar[threading.Barrier]
+    status: ClassVar[int] = OK
+    body: ClassVar[dict[str, JsonValue]] = RESPONSES[EMBEDDINGS_PATH]
 
     def do_POST(self) -> None:
         declared = self.headers.get("Content-Length")
@@ -99,8 +110,8 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
         except threading.BrokenBarrierError:
             self.send_error(SERVER_ERROR_STATUS)
             return
-        content = json.dumps(RESPONSES[EMBEDDINGS_PATH]).encode()
-        self.send_response(OK)
+        content = json.dumps(self.body).encode()
+        self.send_response(self.status)
         self.send_header("Content-Type", JSON_TYPE)
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
@@ -111,10 +122,18 @@ class BarrierServer(ThreadingHTTPServer):
     daemon_threads = True
     parties: threading.Barrier
 
-    def __init__(self) -> None:
-        self.parties = threading.Barrier(PARTIES)
+    # one party is no barrier: wait returns at once, for a test that sends a single call
+    def __init__(
+        self,
+        parties: int = PARTIES,
+        status: int = OK,
+        body: dict[str, JsonValue] | None = None,
+    ) -> None:
+        self.parties = threading.Barrier(parties)
         super().__init__((HOST, 0), EmbeddingHandler)
         EmbeddingHandler.parties = self.parties
+        EmbeddingHandler.status = status
+        EmbeddingHandler.body = RESPONSES[EMBEDDINGS_PATH] if body is None else body
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
@@ -152,8 +171,9 @@ def usage_of(response: EmbeddingResponse) -> dict[str, JsonValue]:
 
 
 def hidden_of(response: EmbeddingResponse) -> dict[str, JsonValue]:
-    hidden = response["_hidden_params"]
-    return DUMP.validate_python(hidden)
+    private: dict[str, JsonValue] | None = response.__pydantic_private__
+    assert private is not None
+    return DUMP.validate_python(private["_hidden_params"])
 
 
 def response_of(
@@ -363,13 +383,12 @@ def test_call_mock_base64() -> None:
 
 
 def test_error_unauthorized() -> None:
-    with closing(EndpointServer()) as server, pytest.raises(AuthenticationError) as caught:
-        embedding(
-            model=GOOD_MODEL,
-            input="hi",
-            api_base=server.url + API_BASE_PATH,
-            api_key=BAD_KEY,
-        )
+    server = BarrierServer(parties=1, status=AUTH_STATUS, body=AUTH_BODY)
+    try:
+        with pytest.raises(AuthenticationError) as caught:
+            embedding(model=GOOD_MODEL, input="hi", api_base=server.url, api_key=BAD_KEY)
+    finally:
+        server.close()
     error = caught.value
     assert error.status_code == AUTH_STATUS
     assert error.model == GOOD_MODEL
