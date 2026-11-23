@@ -15,7 +15,6 @@ use betterlite_bedrock::qwen_deepseek::{
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_tokenizer::count::request::Message;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, from_str, json};
@@ -80,25 +79,62 @@ enum Projection {
     Qwen3,
 }
 
+// Which Bedrock reply transform a wire feeds, and the input values the two reply kinds differ in.
+#[derive(Clone, Copy)]
+enum ReplyKind {
+    Qwen(QwenProjection),
+    Deepseek,
+}
+
+struct ReplyWire<'a> {
+    kind: ReplyKind,
+    model: &'a str,
+    messages: &'a Json,
+    request_data: &'a IndexMap<String, Json>,
+    response: &'a Reply,
+    body: &'a [u8],
+    status: u16,
+    headers: &'a [(String, String)],
+}
+
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         let mut answers = Vec::new();
         for call in &input.qwen_reply {
-            answers.push(qwen_reply(call)?);
+            answers.push(reply_case(ReplyWire {
+                kind: ReplyKind::Qwen(projection(call.projection)),
+                model: &call.model,
+                messages: &call.messages,
+                request_data: &IndexMap::new(),
+                response: &call.response,
+                body: call.body.as_bytes(),
+                status: 200,
+                headers: &[],
+            })?);
         }
         for call in &input.qwen_request {
             answers.push(qwen_request(call)?);
         }
         for call in &input.deepseek_reply {
-            answers.push(deepseek_reply(call)?);
+            answers.push(reply_case(ReplyWire {
+                kind: ReplyKind::Deepseek,
+                model: &call.model,
+                messages: &Json::List(Vec::new()),
+                request_data: &call.request_data,
+                response: &call.response,
+                body: call.body.as_bytes(),
+                status: call.status,
+                headers: &call.headers,
+            })?);
         }
         Ok(json!({ "results": answers }))
     }
 }
 
-fn qwen_reply(call: &QwenReplyCall) -> Result<Value, Box<HelperError>> {
+// Both reply projections share this invoke wiring; only the transform and its answer shape differ.
+fn reply_case(wire: ReplyWire<'_>) -> Result<Value, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let sink = Silent;
     let (mut state, env) = logging(&redactor, &sink)?;
@@ -106,10 +142,10 @@ fn qwen_reply(call: &QwenReplyCall) -> Result<Value, Box<HelperError>> {
     let optional = OptionalParams::default();
     let mappings: IndexMap<String, String> = IndexMap::new();
     let invoke = InvokeReplyCall {
-        model: &call.model,
-        messages: &call.messages,
+        model: wire.model,
+        messages: wire.messages,
         counted_messages: &[],
-        request_data: &empty,
+        request_data: wire.request_data,
         optional_params: &empty,
         optional: &optional,
         litellm_params: &empty,
@@ -124,24 +160,32 @@ fn qwen_reply(call: &QwenReplyCall) -> Result<Value, Box<HelperError>> {
         },
     };
     let raw = RawInvokeReply {
-        status: 200,
-        headers: &[],
-        body: call.body.as_bytes(),
+        status: wire.status,
+        headers: wire.headers,
+        body: wire.body,
     };
-    let outcome = transform_qwen_response(
-        projection(call.projection),
-        invoke,
-        &raw,
-        build_reply(&call.response),
-    );
-    let logged = state.model_call_details.contains_key("log_event_type");
-    Ok(match outcome {
-        Ok(reply) => json!({ "ok": reply_view(&reply), "logged": logged }),
-        Err(error) => json!({
-            "error": { "class": qwen_class(&error), "status": Value::Null },
-            "logged": logged,
-        }),
-    })
+    match wire.kind {
+        ReplyKind::Qwen(projection) => {
+            let outcome =
+                transform_qwen_response(projection, invoke, &raw, build_reply(wire.response));
+            let logged = state.model_call_details.contains_key("log_event_type");
+            Ok(qwen_answer(outcome, logged))
+        }
+        ReplyKind::Deepseek => {
+            let runtime = Builder::new_current_thread().build().or_value_error()?;
+            let outcome = runtime.block_on(decode_deepseek_reply(
+                invoke,
+                &raw,
+                build_reply(wire.response),
+                &ZeroCounter,
+                &NoReasoning,
+            ));
+            match outcome {
+                Ok(reply) => Ok(json!({ "ok": reply_view(&reply) })),
+                Err(error) => Ok(json!({ "error": deepseek_error(&error) })),
+            }
+        }
+    }
 }
 
 fn qwen_request(call: &QwenRequestCall) -> Result<Value, Box<HelperError>> {
@@ -154,77 +198,34 @@ fn qwen_request(call: &QwenRequestCall) -> Result<Value, Box<HelperError>> {
                 "body": params_json(&body)?,
             }
         }),
-        Err(error) => json!({
-            "error": { "class": prompt_class(&error), "status": Value::Null },
-        }),
+        Err(error) => {
+            let class = match error {
+                PromptError::ContentItemText { .. } => "TypeError",
+                PromptError::MessageNotObject { .. }
+                | PromptError::ContentItemNotObject { .. }
+                | PromptError::ToolCallNotObject { .. }
+                | PromptError::FunctionNotObject { .. } => "AttributeError",
+                PromptError::Format(_) | PromptError::Encode(_) => "ValueError",
+            };
+            json!({ "error": { "class": class, "status": Value::Null } })
+        }
     })
 }
 
-fn deepseek_reply(call: &DeepseekReplyCall) -> Result<Value, Box<HelperError>> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
-    let sink = Silent;
-    let (mut state, env) = logging(&redactor, &sink)?;
-    let optional = OptionalParams::default();
-    let mappings: IndexMap<String, String> = IndexMap::new();
-    let counted: Vec<Message> = Vec::new();
-    let messages = Json::List(Vec::new());
-    let empty: IndexMap<String, Json> = IndexMap::new();
-    let invoke = InvokeReplyCall {
-        model: &call.model,
-        messages: &messages,
-        counted_messages: &counted,
-        request_data: &call.request_data,
-        optional_params: &empty,
-        optional: &optional,
-        litellm_params: &empty,
-        tool_name_mappings: &mappings,
-        json_mode: None,
-        disable_add_prefix_to_prompt: false,
-        now: 0.0_f64,
-        ids: &UuidV4,
-        log: LogContext {
-            state: &mut state,
-            env: &env,
-        },
-    };
-    let raw = RawInvokeReply {
-        status: call.status,
-        headers: &call.headers,
-        body: call.body.as_bytes(),
-    };
-    let runtime = Builder::new_current_thread().build().or_value_error()?;
-    let outcome = runtime.block_on(decode_deepseek_reply(
-        invoke,
-        &raw,
-        build_reply(&call.response),
-        &ZeroCounter,
-        &NoReasoning,
-    ));
-    Ok(match outcome {
-        Ok(reply) => json!({ "ok": reply_view(&reply) }),
-        Err(error) => json!({ "error": deepseek_error(&error) }),
-    })
-}
-
-// The Python class each Rust reply error stands for, since LiteLLM re-raises whatever it caught.
-fn qwen_class(error: &QwenReplyError) -> &'static str {
-    match error {
-        QwenReplyError::Decode(_) => "JSONDecodeError",
-        QwenReplyError::NotObject
-        | QwenReplyError::NotText { .. }
-        | QwenReplyError::UsageNotObject => "AttributeError",
-        QwenReplyError::UsageCount { .. } => "ValidationError",
-    }
-}
-
-fn prompt_class(error: &PromptError) -> &'static str {
-    match error {
-        PromptError::ContentItemText { .. } => "TypeError",
-        PromptError::MessageNotObject { .. }
-        | PromptError::ContentItemNotObject { .. }
-        | PromptError::ToolCallNotObject { .. }
-        | PromptError::FunctionNotObject { .. } => "AttributeError",
-        PromptError::Format(_) | PromptError::Encode(_) => "ValueError",
+// The Python class each Qwen reply error stands for, since LiteLLM re-raises whatever it caught.
+fn qwen_answer(outcome: Result<Reply, QwenReplyError>, logged: bool) -> Value {
+    match outcome {
+        Ok(reply) => json!({ "ok": reply_view(&reply), "logged": logged }),
+        Err(error) => {
+            let class = match error {
+                QwenReplyError::Decode(_) => "JSONDecodeError",
+                QwenReplyError::UsageCount { .. } => "ValidationError",
+                QwenReplyError::NotObject
+                | QwenReplyError::NotText { .. }
+                | QwenReplyError::UsageNotObject => "AttributeError",
+            };
+            json!({ "error": { "class": class, "status": Value::Null }, "logged": logged })
+        }
     }
 }
 

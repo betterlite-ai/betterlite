@@ -167,10 +167,13 @@ pub(super) fn qwen(fixture: &Fixture, projection: QwenProjection, body: &str) ->
     qwen_bytes(fixture, projection, body.as_bytes())
 }
 
-pub(super) fn qwen_bytes(fixture: &Fixture, projection: QwenProjection, body: &[u8]) -> QwenRun {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
-    let sink = DiscardingSink;
-    let (mut state, env) = logging(&redactor, &sink);
+// The invoke call and raw reply every reply test hands to the transform under test.
+fn invoke_call<'call, 'log, 'env>(
+    fixture: &'call Fixture,
+    body: &'call [u8],
+    state: &'log mut LoggingState,
+    env: &'log PrePostEnv<'env>,
+) -> (InvokeReplyCall<'call, 'log, 'env>, RawInvokeReply<'call>) {
     let call = InvokeReplyCall {
         model: &fixture.model,
         messages: &fixture.messages,
@@ -184,16 +187,21 @@ pub(super) fn qwen_bytes(fixture: &Fixture, projection: QwenProjection, body: &[
         disable_add_prefix_to_prompt: fixture.disable_add_prefix_to_prompt,
         now: fixture.now,
         ids: &UuidV4,
-        log: LogContext {
-            state: &mut state,
-            env: &env,
-        },
+        log: LogContext { state, env },
     };
     let raw = RawInvokeReply {
         status: fixture.status,
         headers: &fixture.headers,
         body,
     };
+    (call, raw)
+}
+
+pub(super) fn qwen_bytes(fixture: &Fixture, projection: QwenProjection, body: &[u8]) -> QwenRun {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
+    let sink = DiscardingSink;
+    let (mut state, env) = logging(&redactor, &sink);
+    let (call, raw) = invoke_call(fixture, body, &mut state, &env);
     let reply = transform_qwen_response(projection, call, &raw, fixture.response.clone());
     QwenRun {
         reply,
@@ -244,29 +252,7 @@ pub(super) fn deepseek_with(
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
     let sink = DiscardingSink;
     let (mut state, env) = logging(&redactor, &sink);
-    let call = InvokeReplyCall {
-        model: &fixture.model,
-        messages: &fixture.messages,
-        counted_messages: &fixture.counted_messages,
-        request_data: &fixture.request_data,
-        optional_params: &fixture.optional_params,
-        optional: &fixture.optional,
-        litellm_params: &fixture.litellm_params,
-        tool_name_mappings: &fixture.tool_name_mappings,
-        json_mode: fixture.json_mode,
-        disable_add_prefix_to_prompt: fixture.disable_add_prefix_to_prompt,
-        now: fixture.now,
-        ids: &UuidV4,
-        log: LogContext {
-            state: &mut state,
-            env: &env,
-        },
-    };
-    let raw = RawInvokeReply {
-        status: fixture.status,
-        headers: &fixture.headers,
-        body,
-    };
+    let (call, raw) = invoke_call(fixture, body, &mut state, &env);
     let reply = block_on(decode_deepseek_reply(
         call,
         &raw,

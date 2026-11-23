@@ -62,7 +62,7 @@ class QwenRequestApi(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
-        drop_params: bool,
+        drop_params: bool,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L62-L82
     ) -> dict[str, JsonValue]: ...
 
     def transform_request(
@@ -205,7 +205,7 @@ def qwen_reply_config(projection: Projection) -> ReplyApi:
 def deepseek_config() -> ReplyApi:
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L78-L80
         "ReplyApi",
-        AmazonDeepSeekR1Config(),  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L78-L80
+        AmazonDeepSeekR1Config(),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L78-L80
     )
 
 

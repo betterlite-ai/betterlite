@@ -3,7 +3,6 @@ pub mod options;
 pub mod prompt;
 pub mod reply;
 
-#[cfg(test)]
 mod tests;
 
 use std::convert::Infallible;
@@ -23,6 +22,9 @@ use error::DeepseekReplyError as DeepseekError;
 use error::QwenReplyError;
 use prompt::{ASSISTANT_START, IM_END};
 use reply::{Reply, Usage};
+
+// The reply object fields every Qwen transform reads its generation and usage from.
+type Fields = IndexMap<String, Json>;
 
 // AmazonQwen2Config only changes the reply projection; its request and option code is Qwen3's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,10 +59,7 @@ pub fn decode_qwen_reply(
 }
 
 // Qwen2 prefers a truthy generation value and only then falls back to text; Qwen3 reads generation alone.
-fn generation(
-    fields: &IndexMap<String, Json>,
-    projection: QwenProjection,
-) -> Result<String, QwenReplyError> {
+fn generation(fields: &Fields, projection: QwenProjection) -> Result<String, QwenReplyError> {
     if projection == QwenProjection::Qwen2 {
         if let Some(generation) = fields.get("generation").filter(|value| is_present(value)) {
             return text_value(generation, "generation");
@@ -71,10 +70,7 @@ fn generation(
 }
 
 // A missing generation key is empty; a present null or non-string is the source's AttributeError.
-fn text_field(
-    fields: &IndexMap<String, Json>,
-    name: &'static str,
-) -> Result<String, QwenReplyError> {
+fn text_field(fields: &Fields, name: &'static str) -> Result<String, QwenReplyError> {
     let Some(value) = fields.get(name) else {
         return Ok(String::new());
     };
@@ -93,20 +89,20 @@ fn usage_from(value: &Json) -> Result<Usage, QwenReplyError> {
         return Err(QwenReplyError::UsageNotObject);
     };
     Ok(Usage {
-        prompt_tokens: usage_count(fields, "prompt_tokens")?,
-        completion_tokens: usage_count(fields, "completion_tokens")?,
-        total_tokens: usage_count(fields, "total_tokens")?,
+        prompt_tokens: usage_count(fields.get("prompt_tokens"), "prompt_tokens")?,
+        completion_tokens: usage_count(fields.get("completion_tokens"), "completion_tokens")?,
+        total_tokens: usage_count(fields.get("total_tokens"), "total_tokens")?,
     })
 }
 
-fn usage_count(fields: &IndexMap<String, Json>, name: &'static str) -> Result<i64, QwenReplyError> {
-    let Some(value) = fields.get(name) else {
-        return Ok(0);
-    };
-    let Json::Number(number) = value else {
-        return Err(QwenReplyError::UsageCount { name });
-    };
-    number.as_i64().ok_or(QwenReplyError::UsageCount { name })
+fn usage_count(value: Option<&Json>, name: &'static str) -> Result<i64, QwenReplyError> {
+    match value {
+        None => Ok(0),
+        Some(Json::Number(number)) => number.as_i64().ok_or(QwenReplyError::UsageCount { name }),
+        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(QwenReplyError::UsageCount { name })
+        }
+    }
 }
 
 // The Qwen transforms log the source messages and response before re-raising, and nothing on success.

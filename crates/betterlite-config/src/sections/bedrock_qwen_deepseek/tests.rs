@@ -33,82 +33,75 @@ fn global(fields: &str) -> String {
 }
 
 fn assert_integer_field(key: &str, read: fn(&QwenValues) -> Option<i64>) {
+    assert_sources(key, read, ("64", 64), ("128", 128), "0");
+    assert_environment(key, read, (Some(16_i64), "16"));
+    assert_integer_failures(key);
+}
+
+fn assert_float_field(key: &str, read: fn(&QwenValues) -> Option<f64>) {
+    assert_sources(key, read, ("0.2", 0.2_f64), ("0.7", 0.7_f64), "0.0");
+    assert_environment(key, read, (Some(0.3_f64), "0.3"));
+    assert_float_failures(key);
+}
+
+// Every numeric field resolves the same way: default, module, deployment over module, and an explicit zero.
+fn assert_sources<T>(
+    key: &str,
+    read: fn(&QwenValues) -> Option<T>,
+    deployed: (&str, T),
+    module: (&str, T),
+    zero: &str,
+) where
+    T: Copy + Debug + Default + PartialEq,
+{
     let default = load("").unwrap();
     assert_eq!(read(&default.litellm_settings), None, "{key} default");
     assert!(default.deployments.is_empty());
-    let only_deployment = load(&deployment(&format!("{key}: 64"))).unwrap();
+    let only_deployment = load(&deployment(&format!("{key}: {}", deployed.0))).unwrap();
     assert_eq!(
         read(only_deployment.deployments.first().unwrap()),
-        Some(64),
+        Some(deployed.1),
         "{key} deployment"
     );
-    let only_global = load(&global(&format!("{key}: 128"))).unwrap();
+    let only_module = load(&global(&format!("{key}: {}", module.0))).unwrap();
     assert_eq!(
-        read(&only_global.litellm_settings),
-        Some(128),
-        "{key} global"
+        read(&only_module.litellm_settings),
+        Some(module.1),
+        "{key} module"
     );
-    assert_both_configured(key, read);
-    let zero = load(&deployment(&format!("{key}: 0"))).unwrap();
+    let configured = load(&format!(
+        "{}{}",
+        deployment(&format!("{key}: {}", deployed.0)),
+        global(&format!("{key}: {}", module.0))
+    ))
+    .unwrap();
     assert_eq!(
-        read(zero.deployments.first().unwrap()),
-        Some(0),
+        (read(&configured.resolve(0)), read(&configured.resolve(1))),
+        (Some(deployed.1), Some(module.1)),
+        "{key} resolves the deployment over the module"
+    );
+    let zeroed = load(&deployment(&format!("{key}: {zero}"))).unwrap();
+    assert_eq!(
+        read(zeroed.deployments.first().unwrap()),
+        Some(T::default()),
         "{key} keeps an explicit zero"
     );
 }
 
-fn assert_integer_environment(key: &str, read: fn(&QwenValues) -> Option<i64>) {
+fn assert_environment<T>(key: &str, read: fn(&QwenValues) -> Option<T>, sample: (Option<T>, &str))
+where
+    T: Copy + Debug + PartialEq,
+{
     let variable = format!("QWEN_CONFIG_{}", key.to_uppercase());
-    let referenced = load_with(
-        &deployment(&format!("{key}: os.environ/{variable}")),
-        &[(variable.as_str(), "16")],
-    )
-    .unwrap();
-    assert_eq!(
-        read(referenced.deployments.first().unwrap()),
-        Some(16),
-        "{key} reads the environment"
-    );
-    let blank = load_with(
-        &deployment(&format!("{key}: os.environ/{variable}")),
-        &[(variable.as_str(), "")],
-    )
-    .unwrap();
-    assert_eq!(
-        read(blank.deployments.first().unwrap()),
-        None,
-        "{key} treats an empty variable as unset"
-    );
-    assert_integer_failures(key);
-}
-
-fn assert_both_configured(key: &str, read: fn(&QwenValues) -> Option<i64>) {
-    let configured = load(&format!(
-        "{}{}",
-        deployment(&format!("{key}: 64")),
-        global(&format!("{key}: 128"))
-    ))
-    .unwrap();
-    assert_eq!(
-        read(configured.deployments.first().unwrap()),
-        Some(64),
-        "{key} keeps the deployment value"
-    );
-    assert_eq!(
-        read(&configured.litellm_settings),
-        Some(128),
-        "{key} keeps the module value"
-    );
-    assert_eq!(
-        read(&configured.resolve(0)),
-        Some(64),
-        "{key} resolves the deployment over the module"
-    );
-    assert_eq!(
-        read(&configured.resolve(1)),
-        Some(128),
-        "{key} without a deployment"
-    );
+    let source = deployment(&format!("{key}: os.environ/{variable}"));
+    for (expected, text) in [sample, (None, "")] {
+        let settings = load_with(&source, &[(variable.as_str(), text)]).unwrap();
+        assert_eq!(
+            read(settings.deployments.first().unwrap()),
+            expected,
+            "{key} reads the environment text {text:?}"
+        );
+    }
 }
 
 fn assert_integer_failures(key: &str) {
@@ -126,63 +119,7 @@ fn assert_integer_failures(key: &str) {
     );
 }
 
-fn assert_float_field(key: &str, read: fn(&QwenValues) -> Option<f64>) {
-    assert_float_sources(key, read);
-    assert_float_environment(key, read);
-}
-
-fn assert_float_sources(key: &str, read: fn(&QwenValues) -> Option<f64>) {
-    let default = load("").unwrap();
-    assert_eq!(read(&default.litellm_settings), None, "{key} default");
-    assert!(default.deployments.is_empty());
-    let only_deployment = load(&deployment(&format!("{key}: 0.2"))).unwrap();
-    assert_eq!(
-        read(only_deployment.deployments.first().unwrap()),
-        Some(0.2),
-        "{key} deployment"
-    );
-    let only_global = load(&global(&format!("{key}: 0.7"))).unwrap();
-    assert_eq!(
-        read(&only_global.litellm_settings),
-        Some(0.7),
-        "{key} global"
-    );
-    let configured = load(&format!(
-        "{}{}",
-        deployment(&format!("{key}: 0.2")),
-        global(&format!("{key}: 0.7"))
-    ))
-    .unwrap();
-    assert_eq!(
-        read(&configured.resolve(0)),
-        Some(0.2),
-        "{key} resolves the deployment over the module"
-    );
-    assert_eq!(
-        read(&configured.resolve(1)),
-        Some(0.7),
-        "{key} without a deployment"
-    );
-    let zero = load(&deployment(&format!("{key}: 0.0"))).unwrap();
-    assert_eq!(
-        read(zero.deployments.first().unwrap()),
-        Some(0.0),
-        "{key} keeps an explicit zero"
-    );
-}
-
-fn assert_float_environment(key: &str, read: fn(&QwenValues) -> Option<f64>) {
-    let variable = format!("QWEN_CONFIG_{}", key.to_uppercase());
-    let referenced = load_with(
-        &deployment(&format!("{key}: os.environ/{variable}")),
-        &[(variable.as_str(), "0.3")],
-    )
-    .unwrap();
-    assert_eq!(
-        read(referenced.deployments.first().unwrap()),
-        Some(0.3),
-        "{key} reads the environment"
-    );
+fn assert_float_failures(key: &str) {
     let expected = format!("model_list.0.litellm_params.amazon_qwen3.{key}");
     let invalid = load(&deployment(&format!("{key}: 'many'"))).unwrap_err();
     assert!(
@@ -193,7 +130,6 @@ fn assert_float_environment(key: &str, read: fn(&QwenValues) -> Option<f64>) {
 
 fn loads_amazonqwen3config_max_tokens() {
     assert_integer_field("max_tokens", |values| values.max_tokens);
-    assert_integer_environment("max_tokens", |values| values.max_tokens);
 }
 
 fn loads_amazonqwen3config_temperature() {
@@ -206,7 +142,6 @@ fn loads_amazonqwen3config_top_p() {
 
 fn loads_amazonqwen3config_top_k() {
     assert_integer_field("top_k", |values| values.top_k);
-    assert_integer_environment("top_k", |values| values.top_k);
 }
 
 fn loads_amazonqwen3config_stop() {
