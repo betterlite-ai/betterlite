@@ -35,8 +35,8 @@ use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
+use super::chunks::chat_stream_answer;
 use super::{StreamRoute, StreamUsage, provider_stream, render};
-use crate::routes::completions::bridge::chat_stream_answer;
 use crate::server::application;
 use crate::server::chat_setup::chat_executor;
 

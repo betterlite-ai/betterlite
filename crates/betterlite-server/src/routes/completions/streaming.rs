@@ -36,10 +36,11 @@ use crate::routes::chat::headers::success_headers;
 use crate::routes::chat::streaming::recovery;
 use crate::server::chat_setup::provider_call::{CallError, chat_error};
 
+use self::chunks::chat_stream_answer;
 use self::pump::{FrameSource, Pump, next_frame};
 
 use super::CompletionCalls;
-use super::bridge::{chat_call_failure, chat_stream_answer, converted};
+use super::bridge::{chat_call_failure, converted};
 
 // The route whose upstream rules a chat stream follows: only the chat route's provider adds stream usage
 #[derive(Clone, Copy)]
@@ -268,5 +269,6 @@ fn include_usage(request: &CompletionRequest) -> bool {
         .is_some_and(|chosen| chosen.include_usage)
 }
 
+pub(crate) mod chunks;
 pub(crate) mod pump;
 mod tests;
