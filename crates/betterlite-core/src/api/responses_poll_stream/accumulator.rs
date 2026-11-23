@@ -218,8 +218,12 @@ impl OutputAccumulator {
 // the store counts one item for every object member and array element it decodes
 fn json_children(value: &Json) -> usize {
     match value {
-        Json::List(items) => items.len() + items.iter().map(json_children).sum::<usize>(),
-        Json::Object(fields) => fields.len() + fields.values().map(json_children).sum::<usize>(),
+        Json::List(items) => items
+            .len()
+            .saturating_add(items.iter().map(json_children).sum()),
+        Json::Object(fields) => fields
+            .len()
+            .saturating_add(fields.values().map(json_children).sum()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => 0,
     }
 }
