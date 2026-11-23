@@ -136,7 +136,8 @@ pitfalls:
 - 'A stream chunk is bytes, not str. Do not decode it.'
 - 'The `betterlite.messages` package must still import when `betterlite.anthropic_interface.messages` imports it, so keep the import one way.'
 - 'Close a stream once: `close` after the end does nothing and does not raise.'
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001, FBT002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 8
