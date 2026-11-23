@@ -51,7 +51,9 @@ fn number_field(json: &AgentJson, key: &str) -> Option<u64> {
 }
 
 fn header(headers: Option<&BTreeMap<String, String>>, name: &str) -> Option<String> {
-    headers.and_then(|pairs| pairs.get(name).cloned())
+    let pairs = headers?;
+    let value = pairs.get(name)?;
+    Some(value.clone())
 }
 
 fn secret_header(headers: Option<&BTreeMap<String, SecretString>>, name: &str) -> Option<String> {
@@ -65,7 +67,7 @@ fn request_settings_take_every_given_key() {
     let text = r#"{"base_url":"http://agent.example","timeout":3.5,"extra_headers":{"X-Test":"1"},"streaming":true,"relative_card_path":"agentCard/v1.0"}"#;
     let settings = parse::<Settings>(text).unwrap();
     assert_eq!(settings.base_url, "http://agent.example");
-    assert_eq!(settings.timeout, Some(3.5));
+    assert_eq!(settings.timeout, Some(3.5_f64));
     assert!(settings.streaming);
     assert_eq!(
         settings.relative_card_path.as_deref(),
@@ -81,7 +83,7 @@ fn request_settings_take_every_given_key() {
     assert!(built.streaming);
     assert_eq!(built.relative_card_path.as_deref(), Some("agentCard/v1.0"));
     assert_eq!(built.extra_headers.len(), 1);
-    let sent = built.extra_headers.get("X-Test").unwrap();
+    let sent = &built.extra_headers["X-Test"];
     assert_eq!(sent.expose_secret(), "1");
 }
 
@@ -662,10 +664,13 @@ fn error_entry_error_wraps_both_sources() {
             SendEntryError::<Unavailable, Unavailable>::Bridge(BridgeError::Provider(Unavailable)),
             true,
         );
-        let json: AgentJson = serde_json::from_str(&bridge.value(py).to_string()).unwrap();
-        assert_eq!(text_field(&json, "type").as_deref(), Some("RuntimeError"));
+        let bridge_json: AgentJson = serde_json::from_str(&bridge.value(py).to_string()).unwrap();
         assert_eq!(
-            text_field(&json, "message").as_deref(),
+            text_field(&bridge_json, "type").as_deref(),
+            Some("RuntimeError")
+        );
+        assert_eq!(
+            text_field(&bridge_json, "message").as_deref(),
             Some("the A2A provider config failed")
         );
     });

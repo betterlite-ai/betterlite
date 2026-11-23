@@ -1,7 +1,8 @@
-use std::future::Future;
-use std::pin::Pin;
+use std::future::{Future, poll_fn};
+use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::Poll;
 use std::time::Instant;
 
 use betterlite_a2a::client::A2AClient;
@@ -32,6 +33,11 @@ type EntryError = SendEntryError<Unavailable, Unavailable>;
 type Delivery = Result<(), SendError<Chunk>>;
 type Driver = Pin<Box<dyn Future<Output = Delivery> + Send>>;
 
+enum ChunkRace {
+    Receiver(Option<Chunk>),
+    DriverFinished,
+}
+
 // One queued chunk plus the future still reading the agent; the future owns the sender and its connection.
 struct Feed {
     receiver: mpsc::Receiver<Chunk>,
@@ -41,18 +47,29 @@ struct Feed {
 impl Feed {
     // The caller holds the feed lock for one wait, so a close must not need that lock.
     async fn next_chunk(&mut self) -> Option<Chunk> {
-        if let Some(mut driver) = self.driver.take() {
-            tokio::select! {
-                item = self.receiver.recv() => {
-                    if item.is_some() {
-                        self.driver = Some(driver);
-                    }
-                    return item;
-                }
-                _finished = &mut driver => {}
+        let Some(mut driver) = self.driver.take() else {
+            return self.receiver.recv().await;
+        };
+        let receiver = &mut self.receiver;
+        let race = poll_fn(|context| {
+            if let Poll::Ready(item) = receiver.poll_recv(context) {
+                return Poll::Ready(ChunkRace::Receiver(item));
             }
+            if driver.as_mut().poll(context).is_ready() {
+                return Poll::Ready(ChunkRace::DriverFinished);
+            }
+            Poll::Pending
+        })
+        .await;
+        match race {
+            ChunkRace::Receiver(item) => {
+                if item.is_some() {
+                    self.driver = Some(driver);
+                }
+                item
+            }
+            ChunkRace::DriverFinished => self.receiver.recv().await,
         }
-        self.receiver.recv().await
     }
 }
 
@@ -63,25 +80,23 @@ pub(crate) struct NativeA2aStream {
     closed: Arc<AtomicBool>,
 }
 
-impl NativeA2aStream {
-    fn new(receiver: mpsc::Receiver<Chunk>, driver: Driver) -> Self {
-        Self {
-            feed: Arc::new(Mutex::new(Feed {
-                receiver,
-                driver: Some(driver),
-            })),
-            cancel: Arc::new(Notify::new()),
-            closed: Arc::new(AtomicBool::new(false)),
-        }
+fn build_stream(receiver: mpsc::Receiver<Chunk>, driver: Driver) -> NativeA2aStream {
+    NativeA2aStream {
+        feed: Arc::new(Mutex::new(Feed {
+            receiver,
+            driver: Some(driver),
+        })),
+        cancel: Arc::new(Notify::new()),
+        closed: Arc::new(AtomicBool::new(false)),
     }
+}
 
-    // aclose and a dropped handle both stop the producer through this one path.
-    fn stop(&self) {
-        self.closed.store(true, Ordering::SeqCst);
-        self.cancel.notify_one();
-        if let Ok(mut locked) = self.feed.try_lock() {
-            locked.driver = None;
-        }
+// aclose and a dropped handle both stop the producer through this one path.
+fn stop_stream(stream: &NativeA2aStream) {
+    stream.closed.store(true, Ordering::SeqCst);
+    stream.cancel.notify_one();
+    if let Ok(mut locked) = stream.feed.try_lock() {
+        locked.driver = None;
     }
 }
 
@@ -99,14 +114,25 @@ async fn take_chunk(
         locked.driver = None;
         return None;
     }
-    let item = tokio::select! {
-        item = locked.next_chunk() => item,
-        () = cancel.notified() => None,
+    let item = {
+        let mut next = pin!(locked.next_chunk());
+        let mut notified = pin!(cancel.notified());
+        poll_fn(|context| {
+            if let Poll::Ready(item) = next.as_mut().poll(context) {
+                return Poll::Ready(item);
+            }
+            if notified.as_mut().poll(context).is_ready() {
+                return Poll::Ready(None);
+            }
+            Poll::Pending
+        })
+        .await
     };
     if closed.load(Ordering::SeqCst) {
         locked.driver = None;
         return None;
     }
+    drop(locked);
     item
 }
 
@@ -126,14 +152,14 @@ impl NativeA2aStream {
     }
 
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.stop();
+        stop_stream(self);
         future_into_py(py, async { Ok::<(), PyErr>(()) })
     }
 }
 
 impl Drop for NativeA2aStream {
     fn drop(&mut self) {
-        self.stop();
+        stop_stream(self);
         if let Some(feed) = Arc::get_mut(&mut self.feed) {
             feed.get_mut().driver = None;
         }
@@ -157,7 +183,7 @@ pub(crate) fn start(
     };
     let (sender, receiver) = mpsc::channel(CHUNK_QUEUE);
     let driver: Driver = Box::pin(produce(resolved.trace_id, wire, sender));
-    Ok(NativeA2aStream::new(receiver, driver))
+    Ok(build_stream(receiver, driver))
 }
 
 // The failure is queued after the chunks the agent already produced, and a closed consumer simply stops reading it.
@@ -166,7 +192,7 @@ async fn produce(
     call: StreamCall,
     sender: mpsc::Sender<Chunk>,
 ) -> Delivery {
-    let failure = match run(trace_id, call, &sender).await {
+    let failure = match Box::pin(run(trace_id, call, &sender)).await {
         Ok(()) => return Ok(()),
         Err(error) => error,
     };

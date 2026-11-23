@@ -8,19 +8,19 @@ use betterlite_core::agents::json::AgentJson;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Mutex, Notify, mpsc};
 
-use super::{Chunk, Delivery, Feed, NativeA2aStream, chunk_of, start, take_chunk};
+use super::{Chunk, Delivery, Feed, build_stream, chunk_of, start, stop_stream, take_chunk};
 use crate::a2a::convert::Call;
 use crate::a2a::error::A2aCallError;
 
 #[test]
 fn closing_a_stream_marks_it_closed_for_aclose_and_drop() {
     let (_explicit_sender, explicit_receiver) = mpsc::channel(1);
-    let explicit = NativeA2aStream::new(explicit_receiver, Box::pin(pending::<Delivery>()));
-    explicit.stop();
+    let explicit = build_stream(explicit_receiver, Box::pin(pending::<Delivery>()));
+    stop_stream(&explicit);
     assert!(explicit.closed.load(Ordering::SeqCst));
     assert!(explicit.feed.try_lock().unwrap().driver.is_none());
     let (_dropped_sender, dropped_receiver) = mpsc::channel(1);
-    let dropped = NativeA2aStream::new(dropped_receiver, Box::pin(pending::<Delivery>()));
+    let dropped = build_stream(dropped_receiver, Box::pin(pending::<Delivery>()));
     let closed = Arc::clone(&dropped.closed);
     drop(dropped);
     assert!(closed.load(Ordering::SeqCst));

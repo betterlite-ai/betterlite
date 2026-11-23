@@ -18,12 +18,12 @@ fn json(text: &str) -> AgentJson {
 
 fn fixture_card(url: Option<&str>, interface: Option<&str>) -> AgentCard {
     let mut fields = vec![String::from(r#""name":"a""#)];
-    if let Some(url) = url {
-        fields.push(format!(r#""url":{url}"#));
+    if let Some(card_url) = url {
+        fields.push(format!(r#""url":{card_url}"#));
     }
-    if let Some(interface) = interface {
+    if let Some(interface_text) = interface {
         fields.push(format!(
-            r#""supportedInterfaces":[{{"url":{interface},"protocolBinding":"JSONRPC"}}]"#
+            r#""supportedInterfaces":[{{"url":{interface_text},"protocolBinding":"JSONRPC"}}]"#
         ));
     }
     let body = fields.join(",");
@@ -41,10 +41,9 @@ fn written(card: &AgentCard) -> AgentJson {
 }
 
 fn field(card: &AgentCard, key: &str) -> AgentJson {
-    match written(card).get(key) {
-        Some(value) => value.clone(),
-        None => AgentJson::Null,
-    }
+    written(card)
+        .get(key)
+        .map_or(AgentJson::Null, AgentJson::clone)
 }
 
 fn interface_url(card: &AgentCard) -> AgentJson {

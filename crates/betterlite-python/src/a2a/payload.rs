@@ -45,7 +45,7 @@ pub(crate) struct FailurePayload {
 }
 
 impl ErrorPayload {
-    pub(crate) fn empty(kind: &'static str, message: String) -> Self {
+    pub(crate) const fn empty(kind: &'static str, message: String) -> Self {
         Self {
             kind,
             message,
@@ -63,33 +63,52 @@ impl ErrorPayload {
         }
     }
 
-    pub(crate) fn base(message: String) -> Self {
+    pub(crate) const fn base(message: String) -> Self {
         Self {
+            kind: "A2AError",
+            message,
             status_code: Some(BASE_STATUS),
             llm_provider: Some(LLM_PROVIDER),
-            ..Self::empty("A2AError", message)
+            url: None,
+            model: None,
+            litellm_debug_info: None,
+            max_retries: None,
+            num_retries: None,
+            base_url: None,
+            localhost_url: None,
+            failures: None,
+            original_error: None,
         }
     }
 
-    fn connection(message: String, url: Option<String>) -> Self {
+    const fn connection(message: String, url: Option<String>) -> Self {
         Self {
+            kind: "A2AConnectionError",
+            message,
             status_code: Some(CONNECTION_STATUS),
             llm_provider: Some(LLM_PROVIDER),
             url,
-            ..Self::empty("A2AConnectionError", message)
+            model: None,
+            litellm_debug_info: None,
+            max_retries: None,
+            num_retries: None,
+            base_url: None,
+            localhost_url: None,
+            failures: None,
+            original_error: None,
         }
     }
 
     // LiteLLM's A2AError keeps its message, model, debug info and retry counts.
     fn detailed(
         payload: Self,
-        model: &Option<String>,
-        debug_info: &Option<String>,
+        model: Option<&str>,
+        debug_info: Option<&str>,
         retries: &RetryCounts,
     ) -> Self {
         Self {
-            model: model.clone(),
-            litellm_debug_info: debug_info.clone(),
+            model: model.map(str::to_owned),
+            litellm_debug_info: debug_info.map(str::to_owned),
             max_retries: retries.max,
             num_retries: retries.retried,
             ..payload
@@ -136,17 +155,17 @@ impl ErrorPayload {
     fn localhost(
         localhost_url: &str,
         base_url: &str,
-        model: &Option<String>,
-        original_error: &Option<Box<A2AError>>,
+        model: Option<&str>,
+        original_error: Option<&A2AError>,
     ) -> Self {
         Self {
             status_code: Some(CONNECTION_STATUS),
             llm_provider: Some(LLM_PROVIDER),
             url: Some(localhost_url.to_owned()),
-            model: model.clone(),
+            model: model.map(str::to_owned),
             base_url: Some(base_url.to_owned()),
             localhost_url: Some(localhost_url.to_owned()),
-            original_error: original_error.as_ref().map(ToString::to_string),
+            original_error: original_error.map(ToString::to_string),
             ..Self::empty(
                 "A2ALocalhostURLError",
                 format!(
@@ -164,7 +183,12 @@ impl ErrorPayload {
                 model,
                 debug_info,
                 retries,
-            } => Self::detailed(Self::base(message.to_owned()), model, debug_info, retries),
+            } => Self::detailed(
+                Self::base(message.to_owned()),
+                model.as_deref(),
+                debug_info.as_deref(),
+                retries,
+            ),
             A2AError::Connection {
                 message,
                 model,
@@ -173,8 +197,8 @@ impl ErrorPayload {
                 ..
             } => Self::detailed(
                 Self::connection(message.to_owned(), url),
-                model,
-                debug_info,
+                model.as_deref(),
+                debug_info.as_deref(),
                 retries,
             ),
             A2AError::AgentCard {
@@ -192,7 +216,12 @@ impl ErrorPayload {
                 base_url,
                 model,
                 original_error,
-            } => Self::localhost(localhost_url, base_url, model, original_error),
+            } => Self::localhost(
+                localhost_url,
+                base_url,
+                model.as_deref(),
+                original_error.as_deref(),
+            ),
         }
     }
 

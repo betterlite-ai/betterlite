@@ -16,10 +16,7 @@ fn json(text: &str) -> AgentJson {
 }
 
 fn url_of(card: &AgentJson) -> AgentJson {
-    match card.get("url") {
-        Some(url) => url.clone(),
-        None => AgentJson::Null,
-    }
+    card.get("url").map_or(AgentJson::Null, AgentJson::clone)
 }
 
 fn interface_url_of(card: &AgentJson) -> AgentJson {

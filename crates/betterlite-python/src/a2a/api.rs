@@ -30,7 +30,7 @@ pub(crate) fn get_agent_card<'py>(py: Python<'py>, settings: &str) -> PyResult<B
 pub(crate) fn send_message_direct<'py>(py: Python<'py>, call: &str) -> PyResult<Bound<'py, PyAny>> {
     let wire: Call = parse(call)?;
     let sending = send::send(None, wire);
-    future_into_py(py, async move { sending.await })
+    future_into_py(py, sending)
 }
 
 #[pyfunction]
@@ -48,10 +48,7 @@ pub(crate) fn send_message_streaming_direct<'py>(
 
 #[pyfunction]
 pub(crate) fn is_localhost_or_internal_url(url: Option<&str>) -> bool {
-    match url {
-        Some(candidate) => localhost::is_localhost_or_internal_url(Some(candidate)),
-        None => false,
-    }
+    url.is_some_and(|candidate| localhost::is_localhost_or_internal_url(Some(candidate)))
 }
 
 #[pyfunction(name = "normalize_agent_card_interfaces")]

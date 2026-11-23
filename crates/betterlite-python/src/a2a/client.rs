@@ -21,19 +21,17 @@ pub(crate) struct NativeA2aClient {
     client: A2AClient,
 }
 
-impl NativeA2aClient {
-    // A2AClient is not Clone and a send takes it by value, so every call copies the handles it shares.
-    fn copy_client(client: &A2AClient) -> A2AClient {
-        A2AClient {
-            http_client: client.http_client.clone(),
-            call_context: client.call_context.clone(),
-            agent_card: client.agent_card.clone(),
-            streaming: client.streaming,
-            endpoint: client.endpoint.clone(),
-            timeout: client.timeout,
-            tenant: client.tenant.clone(),
-            request_ids: Arc::clone(&client.request_ids),
-        }
+// A2AClient is not Clone and a send takes it by value, so every call copies the handles it shares.
+fn copy_client(client: &A2AClient) -> A2AClient {
+    A2AClient {
+        http_client: client.http_client.clone(),
+        call_context: client.call_context.clone(),
+        agent_card: client.agent_card.clone(),
+        streaming: client.streaming,
+        endpoint: client.endpoint.clone(),
+        timeout: client.timeout,
+        tenant: client.tenant.clone(),
+        request_ids: Arc::clone(&client.request_ids),
     }
 }
 
@@ -80,8 +78,9 @@ impl NativeA2aClient {
 
     fn send_message<'py>(&self, py: Python<'py>, call: &str) -> PyResult<Bound<'py, PyAny>> {
         let wire: Call = parse(call)?;
-        let client = Self::copy_client(&self.client);
-        future_into_py(py, async move { send::send(Some(client), wire).await })
+        let client = copy_client(&self.client);
+        let sending = send::send(Some(client), wire);
+        future_into_py(py, sending)
     }
 
     fn send_message_streaming<'py>(
@@ -90,7 +89,7 @@ impl NativeA2aClient {
         call: &str,
     ) -> PyResult<Bound<'py, PyAny>> {
         let wire: Call = parse(call)?;
-        let client = Self::copy_client(&self.client);
+        let client = copy_client(&self.client);
         future_into_py(py, async move {
             let started = stream::start(Some(client), wire)?;
             Python::attach(|attached| Py::new(attached, started))

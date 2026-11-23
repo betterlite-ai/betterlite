@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_a2a::completion_bridge::EventSource;
+use betterlite_a2a::completion_bridge::EventSource as _;
 use pyo3::prelude::*;
 use uuid::Uuid;
 

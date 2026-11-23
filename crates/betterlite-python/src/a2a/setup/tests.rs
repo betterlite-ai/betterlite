@@ -80,10 +80,11 @@ fn card_headers_reject_an_invalid_pair(
     #[case] field: &str,
 ) {
     let extra = secrets(&[(name, value)]);
-    match (card_headers(Some(&extra)), field) {
-        (Err(A2aCallError::HeaderName { .. }), "name") => {}
-        (Err(A2aCallError::HeaderValue { .. }), "value") => {}
-        (found, want) => panic!("expected the {want} to be rejected, got {found:?}"),
+    let rejected = card_headers(Some(&extra)).expect_err("an invalid pair is rejected");
+    match field {
+        "name" => assert!(matches!(rejected, A2aCallError::HeaderName { .. })),
+        "value" => assert!(matches!(rejected, A2aCallError::HeaderValue { .. })),
+        other => panic!("unexpected field {other}"),
     }
 }
 
