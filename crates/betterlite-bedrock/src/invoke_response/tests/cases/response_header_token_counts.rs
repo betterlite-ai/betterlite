@@ -150,7 +150,7 @@ fn counter_failures_surface() {
 fn clock_and_created_ranges_surface() {
     let mut case = fixture();
     case.headers = headers("1", "2");
-    case.now = -1.5;
+    case.now = -1.5_f64;
     let negative_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
     assert!(matches!(
         negative_run.failure(),
@@ -170,7 +170,7 @@ fn clock_and_created_ranges_surface() {
 fn created_and_model_are_set() {
     let mut case = fixture();
     case.headers = headers("1", "2");
-    case.now = 1_700_000_123.9;
+    case.now = 1_700_000_123.9_f64;
     let mut response = seeded();
     response.system_fingerprint = Some(String::from("fp-1"));
     case.response = response;
