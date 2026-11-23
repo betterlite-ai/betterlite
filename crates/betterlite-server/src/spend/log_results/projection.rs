@@ -196,24 +196,15 @@ fn apply_aggregates(
     aggregates: &BTreeMap<String, BTreeMap<String, SessionAggregate>>,
 ) {
     for row in rows {
-        let stats = row
-            .session_id
-            .as_deref()
-            .filter(|session_id| !session_id.is_empty())
-            .zip(row.api_key.as_deref())
-            .and_then(|(session_id, api_key)| {
-                aggregates
-                    .get(session_id)
-                    .and_then(|by_key| by_key.get(api_key))
-            });
+        let found = row_aggregate(row, aggregates);
         row.session_total_count =
-            Some(stats.map_or(1, |stats| i64::from(stats.session_total_count)));
-        let Some(stats) = stats else {
+            Some(found.map_or(1, |stats| i64::from(stats.session_total_count)));
+        let Some(stats) = found else {
             continue;
         };
         row.session_total_spend = Some(stats.session_total_spend);
         row.session_total_duration_ms = Some(stats.session_total_duration_ms);
-        if stats.mcp_tool_call_count != 0 {
+        if stats.mcp_tool_call_count != 0_i32 {
             row.mcp_tool_call_count = Some(i64::from(stats.mcp_tool_call_count));
             row.mcp_tool_call_spend = Some(stats.mcp_tool_call_spend);
         }
@@ -226,4 +217,17 @@ fn apply_aggregates(
         row.session_models = Some(stats.session_models.clone());
         row.session_models_truncated = Some(stats.session_models_truncated);
     }
+}
+
+// the aggregate for one page row, which needs both the session id and the key the row shows
+fn row_aggregate<'page>(
+    row: &SpendLogListRow,
+    aggregates: &'page BTreeMap<String, BTreeMap<String, SessionAggregate>>,
+) -> Option<&'page SessionAggregate> {
+    let session_id = row
+        .session_id
+        .as_deref()
+        .filter(|session_id| !session_id.is_empty())?;
+    let api_key = row.api_key.as_deref()?;
+    aggregates.get(session_id)?.get(api_key)
 }

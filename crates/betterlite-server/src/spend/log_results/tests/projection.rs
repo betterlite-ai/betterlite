@@ -116,7 +116,8 @@ async fn a_row_without_stats_counts_one_call_and_invents_no_fields() {
     assert_eq!(row.session_total_duration_ms, None);
     assert_eq!(row.mcp_tool_call_count, None);
     assert_eq!(row.session_models, None);
-    let fields = object(&as_json(row));
+    let row_value = as_json(row);
+    let fields = object(&row_value);
     assert_eq!(fields.get("session_total_count"), Some(&json("1")));
     assert_eq!(fields.get("session_total_spend"), None);
     assert_eq!(fields.get("session_models_truncated"), None);
@@ -151,7 +152,8 @@ async fn stats_fill_every_session_field() {
     assert_eq!(row.session_total_tokens, Some(30));
     assert_eq!(row.session_models, Some(vec![String::from("m")]));
     assert_eq!(row.session_models_truncated, Some(false));
-    let fields = object(&as_json(row));
+    let row_value = as_json(row);
+    let fields = object(&row_value);
     assert_eq!(
         fields.get("session_total_completion_tokens"),
         Some(&json("20"))
@@ -178,7 +180,8 @@ async fn a_zero_mcp_count_adds_neither_mcp_field() {
     let row = &built.data[0];
     assert_eq!(row.mcp_tool_call_count, None);
     assert_eq!(row.mcp_tool_call_spend, None);
-    let fields = object(&as_json(row));
+    let row_value = as_json(row);
+    let fields = object(&row_value);
     assert_eq!(fields.get("mcp_tool_call_count"), None);
     assert_eq!(fields.get("mcp_tool_call_spend"), None);
 }
@@ -206,7 +209,8 @@ async fn a_nonzero_mcp_count_adds_both_mcp_fields() {
     let row = &built.data[0];
     assert_eq!(row.mcp_tool_call_count, Some(2));
     assert_eq!(row.mcp_tool_call_spend, Some(decimal("0.5")));
-    let fields = object(&as_json(row));
+    let row_value = as_json(row);
+    let fields = object(&row_value);
     assert_eq!(fields.get("mcp_tool_call_count"), Some(&json("2")));
     assert_eq!(fields.get("mcp_tool_call_spend"), Some(&json("0.5")));
 }
@@ -277,9 +281,11 @@ async fn public_v2_skips_the_query_and_keeps_the_envelope() {
     assert!(seen(&events).is_empty());
     assert_eq!(built.data[0].session_total_count, None);
     assert_eq!(built.data[0].session_total_spend, None);
-    let row_fields = object(&as_json(&built.data[0]));
+    let row_value = as_json(&built.data[0]);
+    let row_fields = object(&row_value);
     assert_eq!(row_fields.get("session_total_count"), None);
-    let fields = object(&as_json(&built));
+    let page_value = as_json(&built);
+    let fields = object(&page_value);
     assert!(fields.contains_key("data"));
     assert_eq!(fields.get("total"), Some(&json("2")));
     assert_eq!(fields.get("page"), Some(&json("1")));

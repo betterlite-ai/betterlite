@@ -75,7 +75,7 @@ impl Failure {
         match self {
             Self::Database => StoreError::Database(DbError::NoDbConnected),
             Self::Row => StoreError::Row(RowError::NotAnObject),
-            Self::Proxy => StoreError::Proxy(ProxyException::new(ProxyExceptionInit {
+            Self::Proxy => StoreError::Proxy(Box::new(ProxyException::new(ProxyExceptionInit {
                 message: "budget exceeded".to_owned(),
                 error_type: "budget_exceeded".to_owned(),
                 param: None,
@@ -83,7 +83,7 @@ impl Failure {
                 headers: BTreeMap::new(),
                 openai_code: None,
                 provider_specific_fields: BTreeMap::new(),
-            })),
+            }))),
             Self::Http => StoreError::Http {
                 status: 403,
                 detail: "no team budget".to_owned(),

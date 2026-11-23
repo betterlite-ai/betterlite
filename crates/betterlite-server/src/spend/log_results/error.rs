@@ -40,13 +40,14 @@ pub enum StoreError {
     Database(#[from] DbError),
     #[error(transparent)]
     Row(#[from] RowError),
+    // boxed to keep the error under result_large_err's 128-byte limit
     #[error(transparent)]
-    Proxy(#[from] ProxyException),
+    Proxy(#[from] Box<ProxyException>),
     #[error("an HTTP exception was raised while reading spend logs")]
     Http { status: u16, detail: String },
 }
 
-fn spend_logs_error(message: String) -> Response {
+fn spend_logs_error(message: &str) -> Response {
     let exception = ProxyException::new(ProxyExceptionInit {
         message: format!("{ERROR_PREFIX}{message}"),
         error_type: String::from(INTERNAL_ERROR_TYPE),
@@ -76,8 +77,8 @@ fn store_response(error: &StoreError) -> Response {
     match error {
         StoreError::Proxy(exception) => denial_response(exception),
         StoreError::Http { status, detail } => http_exception_response(*status, detail),
-        StoreError::Database(source) => spend_logs_error(source.to_string()),
-        StoreError::Row(source) => spend_logs_error(source.to_string()),
+        StoreError::Database(source) => spend_logs_error(&source.to_string()),
+        StoreError::Row(source) => spend_logs_error(&source.to_string()),
     }
 }
 
@@ -85,11 +86,11 @@ impl IntoResponse for LogResultsError {
     fn into_response(self) -> Response {
         match self {
             Self::Query(error) => error.into_response(),
-            Self::Identity(source) => spend_logs_error(source.to_string()),
-            Self::Dates(error) => spend_logs_error(error.to_string()),
-            Self::NoDatabase => spend_logs_error(String::from(NO_DATABASE_MESSAGE)),
+            Self::Identity(source) => spend_logs_error(&source.to_string()),
+            Self::Dates(error) => spend_logs_error(&error.to_string()),
+            Self::NoDatabase => spend_logs_error(NO_DATABASE_MESSAGE),
             Self::Store(error) => store_response(&error),
-            Self::Summary(error) => spend_logs_error(error.to_string()),
+            Self::Summary(error) => spend_logs_error(&error.to_string()),
         }
     }
 }
