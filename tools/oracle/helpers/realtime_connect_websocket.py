@@ -165,8 +165,8 @@ def dispatch(case: Case) -> dict[str, JsonValue]:
     if config is None:
         builder = DIRECT_BRANCHES.get(case.provider)
         if builder is None:
-            return {"branch": "error", "model": None,
-                "error": f"Unsupported model: {case.model}"}
+            error = f"Unsupported model: {case.model}"
+            return {"branch": "error", "model": None, "error": error}
         return builder(case)
     branch = record(case, PROVIDER_TAGS[type(config).__name__], {})
     branch["api_base"] = text_field(case.params, "api_base")
@@ -181,8 +181,9 @@ def azure_branch(case: Case) -> dict[str, JsonValue]:
     api_key = first_text([
         case.api_key, litellm.api_key, litellm.openai_key, get_secret_str("AZURE_API_KEY")])
     version = first_text([
-        text_field(case.params, "api_version"), text_field(case.params, "generic_api_version"),
-        AZURE_DEFAULT_API_VERSION])
+        text_field(case.params, "api_version"), text_field(case.params, "generic_api_version")])
+    if version is None:
+        version = AZURE_DEFAULT_API_VERSION
     ad_token = None
     if api_key is None:
         ad_params = TypeAdapter(GenericLiteLLMParams).validate_python(case.params)
