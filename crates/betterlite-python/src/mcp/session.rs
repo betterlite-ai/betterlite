@@ -216,7 +216,7 @@ fn closed_payload() -> NativeMcpErrorPayload {
     let kind = McpErrorKind::RuntimeError;
     NativeMcpErrorPayload::plain(kind, message)
 }
-fn finish<Value, Failure>(
+pub(crate) fn finish<Value, Failure>(
     outcome: Result<Value, Failure>,
     to_payload: fn(&Failure) -> NativeMcpErrorPayload,
 ) -> Result<String, NativeMcpErrorPayload>

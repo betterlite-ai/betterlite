@@ -1,7 +1,7 @@
 use super::convert::{
     self, CallToolWire, GetPromptWire, McpErrorKind, NativeMcpErrorPayload, session_payload,
 };
-use super::session::NoProgress;
+use super::session::{NoProgress, finish};
 use betterlite_config::tls::TlsPolicy;
 use betterlite_core::api::mcp_client_resources::operations::McpResourceOperations as _;
 use betterlite_core::api::mcp_client_resources::settings::ResourceSettings;
@@ -35,6 +35,13 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
+}
+// The three lists B4746 exposes: Python's method picks one and they share the answer path
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ResourceList {
+    Prompts,
+    Resources,
+    Templates,
 }
 // One native client owns this state; every Python call builds a fresh session client over it (B4744)
 pub(crate) struct ClientState {
@@ -147,8 +154,7 @@ impl ClientState {
         T: Serialize,
     {
         self.remember_instructions(client);
-        let value = outcome.map_err(|error| session_payload(&error))?;
-        convert::encode(&value)
+        finish(outcome, session_payload)
     }
 
     pub(crate) async fn list_tools(&self, raise_on_error: bool) -> TextResult {
@@ -166,31 +172,14 @@ impl ClientState {
     }
 
     // rustc can't prove these list futures Send, so block_in_place runs each on this runtime
-    pub(crate) fn list_prompts(&self, raise_on_error: bool) -> TextResult {
+    pub(crate) fn list_items(&self, list: ResourceList, raise_on_error: bool) -> TextResult {
         let settings = self.resource_settings();
         let mut client = self.session_client();
-        let outcome = block_in_place(|| {
-            Handle::current().block_on(client.list_prompts(&settings, raise_on_error))
+        let text = block_in_place(|| {
+            Handle::current().block_on(resource_items(list, &mut client, &settings, raise_on_error))
         });
-        self.answer(&client, outcome)
-    }
-
-    pub(crate) fn list_resources(&self, raise_on_error: bool) -> TextResult {
-        let settings = self.resource_settings();
-        let mut client = self.session_client();
-        let outcome = block_in_place(|| {
-            Handle::current().block_on(client.list_resources(&settings, raise_on_error))
-        });
-        self.answer(&client, outcome)
-    }
-
-    pub(crate) fn list_resource_templates(&self, raise_on_error: bool) -> TextResult {
-        let settings = self.resource_settings();
-        let mut client = self.session_client();
-        let outcome = block_in_place(|| {
-            Handle::current().block_on(client.list_resource_templates(&settings, raise_on_error))
-        });
-        self.answer(&client, outcome)
+        self.remember_instructions(&client);
+        text
     }
 
     pub(crate) async fn get_prompt(&self, wire: GetPromptWire) -> TextResult {
@@ -205,5 +194,29 @@ impl ClientState {
         let mut client = self.session_client();
         let outcome = client.read_resource(endpoint).await;
         self.answer(&client, outcome)
+    }
+}
+// B4746 lists prompts, resources and resource templates through three operations that answer alike
+async fn resource_items(
+    list: ResourceList,
+    client: &mut SessionClient<SdkRuntime>,
+    settings: &ResourceSettings,
+    raise_on_error: bool,
+) -> TextResult {
+    match list {
+        ResourceList::Prompts => finish(
+            client.list_prompts(settings, raise_on_error).await,
+            session_payload,
+        ),
+        ResourceList::Resources => finish(
+            client.list_resources(settings, raise_on_error).await,
+            session_payload,
+        ),
+        ResourceList::Templates => finish(
+            client
+                .list_resource_templates(settings, raise_on_error)
+                .await,
+            session_payload,
+        ),
     }
 }
