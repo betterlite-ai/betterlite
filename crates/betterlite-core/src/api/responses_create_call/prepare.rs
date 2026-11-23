@@ -39,10 +39,8 @@ pub(super) async fn prepare(
     call: &ResponsesCreateCall,
 ) -> Result<PreparedCall, AsyncCreateError> {
     let mut converted = convert(call)?;
-    let provider = match initial_provider(deps.resolver, call) {
-        Ok(provider) => provider,
-        Err(error) => return Err(AsyncCreateError::create(error, "", &call.model)),
-    };
+    let provider = initial_provider(deps.resolver, call)
+        .map_err(|error| AsyncCreateError::create(error, "", &call.model))?;
     converted.custom_llm_provider = Some(provider.clone());
     let Some(port) = deps.prompts else {
         return Ok(PreparedCall::settled(converted, provider, &call.model));
@@ -53,10 +51,8 @@ pub(super) async fn prepare(
 // LiteLLM converts text_format to text, then sends aresponses=True on to the sync entry
 fn convert(call: &ResponsesCreateCall) -> Result<ResponsesCreateCall, AsyncCreateError> {
     let mut converted = call.clone();
-    let text = match response_text(call) {
-        Ok(text) => text,
-        Err(error) => return Err(AsyncCreateError::create(error, "", &call.model)),
-    };
+    let text =
+        response_text(call).map_err(|error| AsyncCreateError::create(error, "", &call.model))?;
     converted.text = text.map(decision_json);
     converted.text_format = None;
     converted

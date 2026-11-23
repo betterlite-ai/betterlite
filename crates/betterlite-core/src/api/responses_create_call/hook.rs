@@ -44,13 +44,10 @@ pub(super) async fn prompted(
     if !port.runs_prompt_hooks(&hook) {
         return Ok(PreparedCall::settled(converted, provider, &call.model));
     }
-    let client_input = match input_json(&call.input) {
-        Ok(input) => match input_to_chat_messages(Some(&input)) {
-            Ok(messages) => messages,
-            Err(error) => return Err(merge_failure(error, &provider, &call.model)),
-        },
-        Err(error) => return Err(AsyncCreateError::create(error, &provider, &call.model)),
-    };
+    let input = input_json(&call.input)
+        .map_err(|error| AsyncCreateError::create(error, &provider, &call.model))?;
+    let client_input = input_to_chat_messages(Some(&input))
+        .map_err(|error| merge_failure(error, &provider, &call.model))?;
     let bridged = bridges(deps.lookup, call, &provider, &kwargs);
     let answer = match run_hook(port, call, &mut kwargs, &client_input, bridged).await {
         Ok(answer) => answer,
