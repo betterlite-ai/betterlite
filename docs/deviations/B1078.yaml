@@ -1,0 +1,11 @@
+task: B1078
+deviations:
+  - what: >-
+      Internal SDK errors keep LiteLLM's class and status but carry the bounded B184/B187 message instead of
+      LiteLLM's Python traceback text, so create's exception mapper reports the same error class with shorter
+      diagnostics.
+    why: >-
+      The existing diagnostic policy applies to the responses create path too, and the oracle case ignores only the
+      message pointer of the compatibility failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1450-L1458
+kept_bugs: []
