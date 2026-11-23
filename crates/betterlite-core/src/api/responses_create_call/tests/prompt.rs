@@ -25,6 +25,7 @@ pub(super) async fn prompt_outcomes() {
     credential_boundary().await;
     bridged_signal().await;
     carry_removed_on_error().await;
+    non_text_prompt_id().await;
 }
 
 // One async hook merges the prompt, the sync entry consumes the outcome once and never re-runs the hook
@@ -209,4 +210,20 @@ async fn carry_removed_on_error() {
     assert_eq!(error.message, "the hook failed");
     assert!(port.records()[0].carry);
     assert!(!kwargs.contains_key(CARRY_UNMATCHED_MESSAGE_POINTS));
+}
+
+// LiteLLM's cast leaves a non-string prompt_id as it is; the port declares a string, so it counts as absent
+async fn non_text_prompt_id() {
+    let call =
+        support::call_from(r#"{"model":"openai/gpt-4o","input":"hello","kwargs":{"prompt_id":7}}"#);
+    let port = ScriptedPort::answering(
+        true,
+        PortAnswer::Answer(support::answer("openai/gpt-4o", &[USER])),
+    );
+    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
+    let resolver = ScriptedResolver::default();
+    support::drive(&resolver, Some(&port), &handoff, &call)
+        .await
+        .expect("the prompt merges");
+    assert_eq!(port.checked_prompt_ids(), vec![None]);
 }

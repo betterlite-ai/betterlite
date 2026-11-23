@@ -18,6 +18,24 @@ pub(super) async fn parameter_handoff() {
     supplied(&calls[0]);
     omitted(&calls[0]);
     assert_eq!(handoff.contexts(), vec![String::from("ctx")]);
+    named_provider().await;
+}
+
+// A caller-named provider is forwarded as given, and detection never sees the model
+async fn named_provider() {
+    let call = support::call_from(
+        r#"{"model":"gpt-4o","input":"hello","custom_llm_provider":"anthropic"}"#,
+    );
+    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
+    let resolver = ScriptedResolver::default();
+    support::drive(&resolver, None, &handoff, &call)
+        .await
+        .expect("the wrapper answers");
+    let calls = handoff.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].model, "gpt-4o");
+    assert_eq!(calls[0].custom_llm_provider.as_deref(), Some("anthropic"));
+    assert!(resolver.requests().is_empty());
 }
 
 // Every named argument of the call reaches the sync entry unchanged
