@@ -242,7 +242,7 @@ deviations: []
 out_of_scope:
   - "ZipArchiveResponse, ensure_index_enabled, stored_skills, stored_skill, agent_skills_index, agent_skills_archive, _installable, _archive_for, _base_name, _slugify, _deduplicated, _with_ordinal and _description in agent_skills_endpoints.py are implemented by B8274; this task adds their missing HTTP comparisons."
   - "AgentSkillsIndexEntry, AgentSkillsIndex and their constants are consumed by B8274's Rust handlers and ported as Python public types by B7949, whose covers include the type file."
-  - "The discovery package __init__.py re-exports the two routers and defines __all__; its skill export is B8274's and its UI export is B3211's, with application mounts already owned by B10027 and B8670 and aggregation by B8610."
+  - "The discovery package __init__.py re-exports the two routers and defines __all__; its skill export is B8274's and its UI export is B3211's, with application mounts already owned by B10027 and B8670 and aggregation by B10082."
   - "All agent_skills_archive.py functions belong to B3210, with B5096's completed archive fixes; row conversion, list/get and cache reads belong to B3212, and the cache implementation belongs to B2226."
   - "get_ui_config and its response model belong to B3211; B8670 owns UI startup inputs and existing HTTP defaults/flags cases; get_custom_url and join_paths belong to B7323 and request/scalar root resolution to B4200."
   - "The HTTPException and unhandled-error response implementations belong to B8591 and their edge composition to B8680; this task only compares discovery requests passing through them."
