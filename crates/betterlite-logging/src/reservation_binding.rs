@@ -56,7 +56,7 @@ fn object_at_mut(
     Some(found)
 }
 
-// The mutable twin of reservation_from_metadata, whose lookup decides the same slot on the shared borrow
+// The shared probe ends before the mutable lookup starts, so the same slot rule can hand the reservation out mutably
 fn reservation_mut(metadata: &mut IndexMap<String, Json>) -> Option<&mut IndexMap<String, Json>> {
     if object_at(metadata, RESERVATION_KEY).is_some() {
         return object_at_mut(metadata, RESERVATION_KEY);
