@@ -170,7 +170,7 @@ fn chat_request(
     catalog: &CatalogCapabilities,
     stream: bool,
 ) -> Result<PreparedRequest, OperationError> {
-    let mut fields = chat_fields(&chat.request, &chat.model, catalog)?;
+    let mut fields = chat_fields(&chat.request, &chat.model, catalog, deployment)?;
     // OpenAILikeChatConfig.map_openai_params sends max_completion_tokens as max_tokens
     if let Some(limit) = fields.shift_remove("max_completion_tokens") {
         fields.insert(String::from("max_tokens"), limit);

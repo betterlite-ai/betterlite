@@ -113,6 +113,7 @@ fn defaults_to_the_openai_base_and_long_timeout(result: &Result<Deployment, Depl
     assert!(deployment.organization.is_none());
     assert!(deployment.max_retries.is_none());
     assert!(deployment.drop_params.is_none());
+    assert!(deployment.additional_drop_params.is_empty());
 }
 
 fn reads_the_given_connection_values(result: &Result<Deployment, DeploymentError>) {
@@ -155,4 +156,5 @@ fn provider_framework_tests_behavior(
     check(&Deployment::from_params(given));
 }
 
+mod drop_policy;
 mod identity;

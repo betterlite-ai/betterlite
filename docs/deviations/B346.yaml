@@ -1,0 +1,30 @@
+task: B346
+deviations:
+  - what: Each model's scheduler queue holds at most 1024 pending requests, and a request that would exceed the cap is rejected with a 429 rate-limit error.
+    why: The bounded-inputs rule forbids an unbounded queue; LiteLLM's heap takes any number of entries and the pin has no queue bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L42-L50
+  - what: A change a worker makes while the shared store is down cancels the record of the opposite change, so an add and its removal leave no fallback record and a re-added member is recorded again when it leaves; a present record lives only while its member is in this worker's local queue, so the first fallback change after the local copy's 5-second ttl passes drops the records of the members the copy no longer holds, and the record holds at most one entry per member of this worker's local queue plus one per member of the shared queue it mirrors, inside twice the 1024-request cap per model.
+    why: A record that kept an entry for every add and its later removal would grow with the outage's request rate, and one that outlived the local copy would grow by a fresh queue every ttl the outage lasts; a change and its reverse net to nothing against the shared queue, so neither should leave a record, and a member the local tier has dropped is no longer queued by this worker, so its record must go before recovery carries a completed request back into the shared queue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L87-L96
+  - what: A scheduled request leaves the queue when it completes or is cancelled as well as when it times out.
+    why: The async-hygiene rule forbids orphaned entries; LiteLLM removes an entry only on the timeout path, so every completed request and every request that ran through the healthy-deployment poll leaves its entry behind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4437-L4453
+  - what: A request scheduled through the queue runs its provider call once and never queues itself again, including when default_priority is configured.
+    why: LiteLLM calls Router.acompletion without the request's priority, so a configured default_priority makes the inner call schedule the same request again; each nested copy waits for its own timeout and the request ends in a Timeout without reaching the provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4437-L4445
+  - what: A priority outside 0 to 255 is refused at the request and config boundaries with an error that names the field.
+    why: FlowItem documents the range but LiteLLM stores the value unchecked, so an out-of-range priority silently orders the heap by a number the typed queue cannot carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L14-L18
+  - what: A shared queue update goes through a compare-and-set loop; a lost compare re-reads the queue and decides again, and eight lost compares answer an internal error naming the model and the attempt count.
+    why: LiteLLM's save_queue overwrites the cached list, so two workers adding at once lose one request; the atomic store operation is this task's declared requirement, and a hot queue must not spin forever.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L131-L137
+  - what: A queue read asks the shared store first and applies the changes this worker recorded while the store was down to the shared answer (entries it added are inserted, entries it removed are dropped), so an entry accepted during an outage stays visible after recovery and an entry removed during one stays out; a broken local copy never hides the shared answer.
+    why: DualCache.async_get_cache reads the in-memory copy first and only asks Redis when it misses, which hides another worker's update for the local TTL; reading the shared tier first keeps the queue's order current, and applying only the recorded changes keeps an outage's entries without reviving one this worker removed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261-L297
+  - what: A queue read or write that the shared store fails answers from this worker's copy and reports a warning naming the failed operation.
+    why: LiteLLM's DualCache swallows the Redis exceptions in both directions (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261-L297, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L519), so a failed read makes get_queue return an empty list and poll raise a bare exception (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L64-L67, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L118-L129), a 500 where the worker's own copy can still serve the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261-L297
+  - what: A scheduled call that answers with no response object returns it without the prioritization header.
+    why: Router.schedule_acompletion writes _response._hidden_params without a guard, so a None response raises AttributeError; no working setup relies on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4440-L4441
+kept_bugs: []

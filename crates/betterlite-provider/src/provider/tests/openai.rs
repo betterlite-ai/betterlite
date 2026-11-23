@@ -34,6 +34,7 @@ fn deployment() -> Deployment {
         timeout: Duration::from_secs(30),
         max_retries: None,
         drop_params: None,
+        additional_drop_params: Vec::new(),
         global_drop_params: false,
         provider_affinity_header: None,
         anthropic: None,

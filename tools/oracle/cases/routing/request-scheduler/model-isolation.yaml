@@ -1,0 +1,15 @@
+kind: probe
+name: request-scheduler-model-isolation
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      request_scheduler:
+        timeout: "1.0"
+        steps:
+          - {op: add, priority: 0, request_id: first}
+          - {op: add, priority: 255, request_id: second, model: gpt-4o-mini}
+          - {op: queue}
+          - {op: queue, model: gpt-4o-mini}
+compare:
+  ignore: []
