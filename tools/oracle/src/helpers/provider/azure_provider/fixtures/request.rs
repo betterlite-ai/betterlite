@@ -57,6 +57,7 @@ pub(crate) fn request(case: &Case) -> Result<Request, Box<HelperError>> {
     match case.operation {
         Operation::Chat => Ok(Request::Chat(Box::new(ChatCall {
             model: case.model.clone(),
+            client_model: None,
             messages: messages(case)?,
             optional: optional(case)?,
             credentials,
