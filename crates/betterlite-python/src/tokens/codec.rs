@@ -19,11 +19,11 @@ async fn engine_for(
     model: &str,
     handle: Option<u64>,
 ) -> Result<(Engine, TokenizerType), TokensError> {
-    match handle {
-        // a handle only ever holds a hugging face tokenizer, which the two builders load
-        Some(handle) => Ok((store::engine(handle)?, TokenizerType::HuggingFace)),
-        None => Ok(runtime.selector.select(model, None).await?),
+    // a handle only ever holds a hugging face tokenizer, which the two builders load
+    if let Some(id) = handle {
+        return Ok((store::engine(id)?, TokenizerType::HuggingFace));
     }
+    Ok(runtime.selector.select(model, None).await?)
 }
 
 fn pretrained(identifier: &str, revision: &str, auth_token: Option<&str>) -> CustomTokenizer {

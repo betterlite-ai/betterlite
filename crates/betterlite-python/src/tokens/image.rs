@@ -42,8 +42,8 @@ pub(crate) fn image_tile_count(request: &str) -> PyResult<u64> {
 }
 
 #[pyfunction]
-pub(crate) fn image_type(data: Vec<u8>) -> Option<&'static str> {
-    header_type(&data).map(ImageType::as_str)
+pub(crate) fn image_type(data: &[u8]) -> Option<&'static str> {
+    header_type(data).map(ImageType::as_str)
 }
 
 #[pyfunction]

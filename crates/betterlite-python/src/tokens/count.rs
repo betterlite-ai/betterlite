@@ -11,10 +11,10 @@ use super::runtime::TokensRuntime;
 use super::store;
 
 fn custom_tokenizer(handle: Option<u64>) -> Result<Option<SelectedTokenizer>, TokensError> {
-    match handle {
-        None => Ok(None),
-        Some(handle) => Ok(Some(SelectedTokenizer::HuggingFace(store::engine(handle)?))),
+    if let Some(id) = handle {
+        return Ok(Some(SelectedTokenizer::HuggingFace(store::engine(id)?)));
     }
+    Ok(None)
 }
 
 impl TokenCountRequest {
