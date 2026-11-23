@@ -3,7 +3,7 @@ use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::table_ops::rows::{RowError, SpendLogRow};
 use serde::de::DeserializeOwned;
-use tokio_postgres::types::ToSql;
+use tokio_postgres::types::{ToSql, Type};
 
 use super::error::StoreError;
 use super::rows::SpendLogRowsQuery;
@@ -31,8 +31,15 @@ impl PostgresLogResults {
         for value in params {
             bound.push(value);
         }
+        // every bound value is text; declaring that keeps the driver from typing a date cast's
+        // parameter as a timestamp it then refuses to serialize a string into
+        let types = vec![Type::TEXT; params.len()];
+        let statement = client
+            .prepare_typed(sql, &types)
+            .await
+            .map_err(|source| StoreError::Database(backend(source)))?;
         let rows = client
-            .query(sql, &bound)
+            .query(&statement, &bound)
             .await
             .map_err(|source| StoreError::Database(backend(source)))?;
         let mut decoded = Vec::with_capacity(rows.len());
