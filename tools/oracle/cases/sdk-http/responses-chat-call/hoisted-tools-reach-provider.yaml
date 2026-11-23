@@ -1,0 +1,39 @@
+kind: sdk_http
+name: sdk-http-responses-chat-call-hoisted-tools-reach-provider
+env: {}
+call:
+  responses_chat_call:
+    mode: sync
+    model: gpt-4o-mini
+    request:
+      model: gpt-4o-mini
+      input:
+        - {role: user, content: hello}
+        - type: additional_tools
+          role: developer
+          tools:
+            - {type: function, name: lookup, description: Find, parameters: {type: object, properties: {}}}
+    api_key: sk-test
+    timeout_seconds: 10
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chat_a
+      created: 0
+      object: chat.completion
+      model: gpt-4o-mini
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+              - {id: call_1, type: function, function: {name: lookup, arguments: '{}'}}
+          finish_reason: tool_calls
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []

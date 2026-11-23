@@ -1,0 +1,38 @@
+kind: sdk_http
+name: file-provider-read-unsupported-file-read
+env:
+  OPENAI_API_KEY: sk-env
+  COHERE_API_KEY: co-env
+call:
+  file_provider_read:
+    steps:
+      - function: file_retrieve
+        file_id: file-a
+        custom_llm_provider: cohere
+      - function: afile_retrieve
+        file_id: file-a
+        custom_llm_provider: cohere
+      - function: file_list
+        custom_llm_provider: cohere
+        purpose: batch
+      - function: afile_list
+        custom_llm_provider: cohere
+      - function: file_retrieve
+        file_id: file-a
+        custom_llm_provider: bogus
+      - function: afile_list
+        custom_llm_provider: bogus
+      - function: file_list
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /file_provider_read/value/steps/4/failure/message
+      why: Python's enum lookup text and betterlite's provider-name text differ
+    - pointer: /file_provider_read/value/steps/5/failure/message
+      why: Python's enum lookup text and betterlite's provider-name text differ

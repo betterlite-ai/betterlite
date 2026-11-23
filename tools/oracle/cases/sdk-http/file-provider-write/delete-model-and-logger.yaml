@@ -1,0 +1,39 @@
+kind: sdk_http
+name: file-provider-write-delete-model-and-logger
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  file_provider_write:
+    steps:
+      - file_delete:
+          file_id: file_011
+          model: anthropic/claude-3-5-sonnet-20240620
+          custom_llm_provider: ""
+          params: {api_key: sk-ant}
+      - afile_delete:
+          file_id: file_012
+          model: gpt-4o
+          custom_llm_provider: anthropic
+          params: {api_key: sk-ant}
+      - file_delete:
+          file_id: file_013
+          model: not-a-known-model
+          custom_llm_provider: ""
+      - afile_delete:
+          file_id: file-abc
+          model: gpt-4o
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_011, type: file_deleted}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_012, type: file_deleted}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-abc, object: file, deleted: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, x-api-key]
+  ignore: []

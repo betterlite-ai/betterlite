@@ -6,3 +6,6 @@ src = ["python"]
 "python/betterlite/*.pyi" = ["F403"] # _native.pyi star-imports one stub per native family
 "tests/*" = ["INP001", "S101"] # pytest finds test_package.py by path and checks with assert
 "python/betterlite/_custom_llm/*" = ["A002", "ARG002", "ASYNC109", "FBT001", "PLE0302", "PLR0913", "PLR0917", "PYI036"] # user subclasses override LiteLLM's handler signatures, so these parameters stay as LiteLLM has them
+"python/betterlite/_completion/*" = ["B006", "BLE001", "PLR0913", "PLR0917"] # LiteLLM's 44-parameter completion, its messages: list = [] defaults, the 6-parameter acount_tokens and keyword-only LiteLLM(), and its broad proxy-auth catch stay as LiteLLM has them
+"python/betterlite/_completion/acompletion.py" = ["ASYNC109"] # LiteLLM's acompletion is async and keeps the timeout parameter its signature carries
+"python/betterlite/_completion/errors.py" = ["C901", "PLR0912", "PLR0915"] # one dispatch over the native error types, as the task requires, is over ruff's default branch, complexity and statement limits
