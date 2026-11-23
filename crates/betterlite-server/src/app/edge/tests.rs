@@ -148,13 +148,16 @@ async fn public_openapi_url_moves_the_document() {
     );
 }
 
+#[rstest]
+#[case("/openapi.json")]
+#[case("/")]
+#[case("/redoc")]
+#[case("/docs/oauth2-redirect")]
 #[tokio::test]
-async fn public_no_openapi_removes_the_document_and_the_pages() {
+async fn public_no_openapi_removes_the_document_and_the_pages(#[case] path: &str) {
     let router = mounted(&[("NO_OPENAPI", "true")], &empty_config());
-    for path in ["/openapi.json", "/", "/redoc", "/docs/oauth2-redirect"] {
-        let (status, _, _) = send(&router, Method::GET, path).await;
-        assert_eq!(status, StatusCode::NOT_FOUND, "{path} is unmounted");
-    }
+    let (status, _, _) = send(&router, Method::GET, path).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{path} is unmounted");
 }
 
 #[tokio::test]
@@ -221,16 +224,17 @@ async fn public_docs_paths_follow_the_docs_settings() {
     );
 }
 
+#[rstest]
+#[case("/")]
+#[case("/redoc")]
 #[tokio::test]
-async fn public_no_docs_and_no_redoc_remove_the_pages() {
+async fn public_no_docs_and_no_redoc_remove_the_pages(#[case] path: &str) {
     let router = mounted(
         &[("NO_DOCS", "true"), ("NO_REDOC", "true")],
         &empty_config(),
     );
-    for path in ["/", "/redoc"] {
-        let (status, _, _) = send(&router, Method::GET, path).await;
-        assert_eq!(status, StatusCode::NOT_FOUND, "{path} is unmounted");
-    }
+    let (status, _, _) = send(&router, Method::GET, path).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{path} is unmounted");
     let (document_code, _, _) = send(&router, Method::GET, "/openapi.json").await;
     assert_eq!(document_code, StatusCode::OK);
 }

@@ -30,7 +30,7 @@ const EMBEDDING_PATHS: [&str; 4] = [
 const RESPONSES_API_PATHS: [&str; 3] = ["/v1/responses", "/responses", "/openai/v1/responses"];
 
 const REALTIME_QUERY_PARAMS: [&str; 3] = ["model", "intent", "guardrails"];
-const RESPONSES_WEBSOCKET_QUERY_PARAMS: [&str; 1] = ["model"];
+const RESPONSES_WS_QUERY_PARAMS: [&str; 1] = ["model"];
 
 #[derive(Debug, Error)]
 pub enum DocumentError {
@@ -119,46 +119,47 @@ fn post_route(path: &str, operation: &str, category: &str) -> RouteDoc {
     }
 }
 
-fn websocket_routes() -> Vec<WebsocketRoute> {
-    vec![
-        websocket_route(
-            "/openai/v1/realtime",
-            "realtime_websocket_endpoint",
-            &REALTIME_QUERY_PARAMS,
-        ),
-        websocket_route(
-            "/v1/realtime",
-            "realtime_websocket_endpoint",
-            &REALTIME_QUERY_PARAMS,
-        ),
-        websocket_route(
-            "/realtime",
-            "realtime_websocket_endpoint",
-            &REALTIME_QUERY_PARAMS,
-        ),
-        websocket_route(
-            "/v1/responses",
-            "responses_websocket_endpoint",
-            &RESPONSES_WEBSOCKET_QUERY_PARAMS,
-        ),
-        websocket_route(
-            "/responses",
-            "responses_websocket_endpoint",
-            &RESPONSES_WEBSOCKET_QUERY_PARAMS,
-        ),
-    ]
-}
+const WEBSOCKET_ROUTES: [(&str, &str, &[&str]); 5] = [
+    (
+        "/openai/v1/realtime",
+        "realtime_websocket_endpoint",
+        &REALTIME_QUERY_PARAMS,
+    ),
+    (
+        "/v1/realtime",
+        "realtime_websocket_endpoint",
+        &REALTIME_QUERY_PARAMS,
+    ),
+    (
+        "/realtime",
+        "realtime_websocket_endpoint",
+        &REALTIME_QUERY_PARAMS,
+    ),
+    (
+        "/v1/responses",
+        "responses_websocket_endpoint",
+        &RESPONSES_WS_QUERY_PARAMS,
+    ),
+    (
+        "/responses",
+        "responses_websocket_endpoint",
+        &RESPONSES_WS_QUERY_PARAMS,
+    ),
+];
 
-fn websocket_route(path: &str, operation: &str, query_params: &[&str]) -> WebsocketRoute {
-    WebsocketRoute {
-        path: path.to_owned(),
-        name: Some(operation.to_owned()),
-        query_params: query_params
-            .iter()
-            .map(|declared| QueryParam {
-                name: (*declared).to_owned(),
-                required: false,
-            })
-            .collect(),
-    }
+fn websocket_routes() -> Vec<WebsocketRoute> {
+    WEBSOCKET_ROUTES
+        .iter()
+        .map(|(path, operation, query_params)| WebsocketRoute {
+            path: (*path).to_owned(),
+            name: Some((*operation).to_owned()),
+            query_params: query_params
+                .iter()
+                .map(|declared| QueryParam {
+                    name: (*declared).to_owned(),
+                    required: false,
+                })
+                .collect(),
+        })
+        .collect()
 }

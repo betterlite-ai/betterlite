@@ -6,90 +6,99 @@ use rstest::rstest;
 
 use super::document_inputs;
 
-const EXPECTED_POST_ROUTES: [(&str, &str, &str); 11] = [
-    (
-        "/v1/chat/completions",
-        "chat_completion",
-        "chat/completions",
-    ),
-    ("/chat/completions", "chat_completion", "chat/completions"),
-    (
-        "/engines/{model}/chat/completions",
-        "chat_completion",
-        "chat/completions",
-    ),
-    (
-        "/openai/deployments/{model}/chat/completions",
-        "chat_completion",
-        "chat/completions",
-    ),
-    ("/v1/embeddings", "embeddings", "embeddings"),
-    ("/embeddings", "embeddings", "embeddings"),
-    ("/engines/{model}/embeddings", "embeddings", "embeddings"),
-    (
-        "/openai/deployments/{model}/embeddings",
-        "embeddings",
-        "embeddings",
-    ),
-    ("/v1/responses", "responses_api", "responses"),
-    ("/responses", "responses_api", "responses"),
-    ("/openai/v1/responses", "responses_api", "responses"),
-];
-
-const EXPECTED_WEBSOCKET_ROUTES: [(&str, &str, &[&str]); 5] = [
-    (
-        "/openai/v1/realtime",
-        "realtime_websocket_endpoint",
-        &["model", "intent", "guardrails"],
-    ),
-    (
-        "/v1/realtime",
-        "realtime_websocket_endpoint",
-        &["model", "intent", "guardrails"],
-    ),
-    (
-        "/realtime",
-        "realtime_websocket_endpoint",
-        &["model", "intent", "guardrails"],
-    ),
-    ("/v1/responses", "responses_websocket_endpoint", &["model"]),
-    ("/responses", "responses_websocket_endpoint", &["model"]),
-];
+#[rstest]
+#[case(0, "/v1/chat/completions", "chat_completion", "chat/completions")]
+#[case(1, "/chat/completions", "chat_completion", "chat/completions")]
+#[case(
+    2,
+    "/engines/{model}/chat/completions",
+    "chat_completion",
+    "chat/completions"
+)]
+#[case(
+    3,
+    "/openai/deployments/{model}/chat/completions",
+    "chat_completion",
+    "chat/completions"
+)]
+#[case(4, "/v1/embeddings", "embeddings", "embeddings")]
+#[case(5, "/embeddings", "embeddings", "embeddings")]
+#[case(6, "/engines/{model}/embeddings", "embeddings", "embeddings")]
+#[case(
+    7,
+    "/openai/deployments/{model}/embeddings",
+    "embeddings",
+    "embeddings"
+)]
+#[case(8, "/v1/responses", "responses_api", "responses")]
+#[case(9, "/responses", "responses_api", "responses")]
+#[case(10, "/openai/v1/responses", "responses_api", "responses")]
+fn openapi_inputs_list_the_eleven_post_routes(
+    #[case] index: usize,
+    #[case] path: &str,
+    #[case] operation: &str,
+    #[case] category: &str,
+) {
+    let inputs = document_inputs("", "1.2.3");
+    assert_eq!(inputs.routes.len(), 11);
+    let route = &inputs.routes[index];
+    assert_eq!(route.path, path);
+    assert_eq!(route.method, "POST");
+    assert_eq!(route.name, operation);
+    assert_eq!(route.tags, vec![category.to_owned()]);
+    assert!(route.parameters.is_empty());
+    assert!(route.request_body.is_none());
+    assert!(route.summary.is_none());
+    assert!(!route.error_responses);
+}
 
 #[test]
-fn openapi_inputs_list_the_eleven_post_routes() {
+fn openapi_inputs_leave_the_request_schemas_empty() {
     let inputs = document_inputs("", "1.2.3");
-    assert_eq!(inputs.routes.len(), EXPECTED_POST_ROUTES.len());
-    for (route, (path, operation, category)) in inputs.routes.iter().zip(EXPECTED_POST_ROUTES) {
-        assert_eq!(route.path, path);
-        assert_eq!(route.method, "POST");
-        assert_eq!(route.name, operation);
-        assert_eq!(route.tags, vec![category.to_owned()]);
-        assert!(route.parameters.is_empty());
-        assert!(route.request_body.is_none());
-        assert!(route.summary.is_none());
-        assert!(!route.error_responses);
-    }
     assert!(inputs.llm_schemas.chat_completion.is_none());
     assert!(inputs.llm_schemas.embedding.is_none());
     assert!(inputs.llm_schemas.responses.is_none());
 }
 
-#[test]
-fn openapi_inputs_list_the_websocket_routes() {
+#[rstest]
+#[case(
+    0,
+    "/openai/v1/realtime",
+    "realtime_websocket_endpoint",
+    &["model", "intent", "guardrails"]
+)]
+#[case(
+    1,
+    "/v1/realtime",
+    "realtime_websocket_endpoint",
+    &["model", "intent", "guardrails"]
+)]
+#[case(
+    2,
+    "/realtime",
+    "realtime_websocket_endpoint",
+    &["model", "intent", "guardrails"]
+)]
+#[case(3, "/v1/responses", "responses_websocket_endpoint", &["model"])]
+#[case(4, "/responses", "responses_websocket_endpoint", &["model"])]
+fn openapi_inputs_list_the_websocket_routes(
+    #[case] index: usize,
+    #[case] path: &str,
+    #[case] operation: &str,
+    #[case] query_params: &[&str],
+) {
     let inputs = document_inputs("", "1.2.3");
-    assert_eq!(inputs.websockets.len(), EXPECTED_WEBSOCKET_ROUTES.len());
-    for (route, (path, operation, query_params)) in
-        inputs.websockets.iter().zip(EXPECTED_WEBSOCKET_ROUTES)
-    {
-        assert_eq!(route.path, path);
-        assert_eq!(route.name.as_deref(), Some(operation));
-        assert_eq!(route.query_params.len(), query_params.len());
-        for (declared, expected) in route.query_params.iter().zip(query_params) {
-            assert_eq!(declared.name, *expected);
-            assert!(!declared.required);
-        }
-    }
+    assert_eq!(inputs.websockets.len(), 5);
+    let route = &inputs.websockets[index];
+    assert_eq!(route.path, path);
+    assert_eq!(route.name.as_deref(), Some(operation));
+    let declared: Vec<&str> = route
+        .query_params
+        .iter()
+        .map(|param| param.name.as_str())
+        .collect();
+    assert_eq!(declared.as_slice(), query_params);
+    assert!(route.query_params.iter().all(|param| !param.required));
 }
 
 #[test]
