@@ -136,16 +136,16 @@ async fn assert_absent_groups_read_none<C: GenericClient + Sync>(
     );
 }
 
-fn clearing_changes() -> AccessGroupChanges {
+fn untouched_changes() -> AccessGroupChanges {
     AccessGroupChanges {
         access_group_name: None,
-        description: FieldWrite::Null,
+        description: FieldWrite::Unchanged,
         access_model_names: None,
         access_mcp_server_ids: None,
         access_agent_ids: None,
         assigned_team_ids: None,
         assigned_key_ids: None,
-        updated_by: Some("editor".to_owned()),
+        updated_by: None,
     }
 }
 
@@ -172,32 +172,6 @@ async fn restore_description<C: GenericClient + Sync>(
     assert_eq!(rewritten.description.as_deref(), Some("Math tools"));
 }
 
-fn renamed_changes() -> AccessGroupChanges {
-    AccessGroupChanges {
-        access_group_name: Some("renamed".to_owned()),
-        description: FieldWrite::Unchanged,
-        access_model_names: Some(groups(&["model-b"])),
-        access_mcp_server_ids: None,
-        access_agent_ids: None,
-        assigned_team_ids: Some(Vec::new()),
-        assigned_key_ids: None,
-        updated_by: None,
-    }
-}
-
-fn set_lists_changes() -> AccessGroupChanges {
-    AccessGroupChanges {
-        access_group_name: None,
-        description: FieldWrite::Unchanged,
-        access_model_names: None,
-        access_mcp_server_ids: Some(groups(&["server-b"])),
-        access_agent_ids: Some(groups(&["agent-b"])),
-        assigned_team_ids: None,
-        assigned_key_ids: Some(Vec::new()),
-        updated_by: None,
-    }
-}
-
 fn assert_renamed_only(updated: &AccessGroupRecord) {
     assert_eq!(updated.access_group_name, "renamed");
     assert_eq!(updated.description.as_deref(), Some("Math tools"));
@@ -206,6 +180,25 @@ fn assert_renamed_only(updated: &AccessGroupRecord) {
     assert_eq!(updated.assigned_team_ids, Some(Vec::new()));
     assert_eq!(updated.assigned_key_ids, Some(groups(&["token-a"])));
     assert_eq!(updated.updated_by, None);
+}
+
+async fn assert_renamed_row<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+    access_group_id: &str,
+) {
+    let renamed = tables
+        .find_by_name("renamed")
+        .await
+        .expect("the name query runs")
+        .expect("the renamed row");
+    assert_eq!(renamed.access_group_id, access_group_id);
+    assert_eq!(
+        tables
+            .find_by_name("math")
+            .await
+            .expect("the name query runs"),
+        None
+    );
 }
 
 fn assert_lists_written(rewritten: &AccessGroupRecord) {
@@ -426,7 +419,11 @@ async fn an_update_can_clear_the_description() {
         &created.access_group_id,
     )
     .await;
-    let changes = clearing_changes();
+    let changes = AccessGroupChanges {
+        description: FieldWrite::Null,
+        updated_by: Some("editor".to_owned()),
+        ..untouched_changes()
+    };
     let updated = tables
         .update(&created.access_group_id, &changes)
         .await
@@ -452,26 +449,24 @@ async fn an_update_writes_only_the_columns_the_caller_set() {
     let client = database.client().await;
     let tables = PgAccessGroupTables { client: &client };
     let created = create_group(&tables).await;
-    let changes = renamed_changes();
+    let changes = AccessGroupChanges {
+        access_group_name: Some("renamed".to_owned()),
+        access_model_names: Some(groups(&["model-b"])),
+        assigned_team_ids: Some(Vec::new()),
+        ..untouched_changes()
+    };
     let updated = tables
         .update(&created.access_group_id, &changes)
         .await
         .expect("the access group row updates");
     assert_renamed_only(&updated);
-    let renamed = tables
-        .find_by_name("renamed")
-        .await
-        .expect("the name query runs")
-        .expect("the renamed row");
-    assert_eq!(renamed.access_group_id, created.access_group_id);
-    assert_eq!(
-        tables
-            .find_by_name("math")
-            .await
-            .expect("the name query runs"),
-        None
-    );
-    let lists = set_lists_changes();
+    assert_renamed_row(&tables, &created.access_group_id).await;
+    let lists = AccessGroupChanges {
+        access_mcp_server_ids: Some(groups(&["server-b"])),
+        access_agent_ids: Some(groups(&["agent-b"])),
+        assigned_key_ids: Some(Vec::new()),
+        ..untouched_changes()
+    };
     let rewritten = tables
         .update(&created.access_group_id, &lists)
         .await
