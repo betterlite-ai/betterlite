@@ -114,12 +114,13 @@ class SpeechLog(Logging):
 
 def wire_view(sent: httpx.Request) -> JsonValue:
     headers = dict(sent.headers)
-    return {
-        "method": sent.method, "url": str(sent.url), "api_key": headers.get("api-key"),
-        "authorization": headers.get("authorization"), "accept": headers.get("accept"),
-        "x_extra": headers.get("x-extra"),
-        "body": None if not sent.content else JSON.validate_json(sent.content),
-    }
+    view: dict[str, JsonValue] = {"method": sent.method, "url": str(sent.url)}
+    view["api_key"] = headers.get("api-key")
+    view["authorization"] = headers.get("authorization")
+    view["accept"] = headers.get("accept")
+    view["x_extra"] = headers.get("x-extra")
+    view["body"] = None if not sent.content else JSON.validate_json(sent.content)
+    return view
 
 
 def audio_view(case: AudioSpeech) -> JsonValue:
@@ -165,13 +166,16 @@ class RecordingHandler:
 
     def text_to_speech_handler(self, **kwargs: JsonValue) -> str:
         self.calls.append({
-            "voice": kwargs["voice"], "extra_headers": kwargs["extra_headers"],
+            "voice": kwargs["voice"],
             "litellm_params": OBJECT.validate_python(kwargs["litellm_params"]),
             "optional_params": OBJECT.validate_python(kwargs["text_to_speech_optional_params"]),
-            "is_async": kwargs["_is_async"], "client": kwargs["client"],
+            "extra_headers": kwargs["extra_headers"],
+            "is_async": kwargs["_is_async"],
             "timeout": str(int(SECONDS.validate_python(kwargs["timeout"]))),
             "provider": TEXT.validate_python(kwargs["custom_llm_provider"]),
-            "result": "handler-answer", "error": None,
+            "client": kwargs["client"],
+            "result": "handler-answer",
+            "error": None,
         })
         return "handler-answer"
 
@@ -192,7 +196,7 @@ def native_view(call: NativeCall) -> JsonValue:
     optional_params: dict[str, JsonValue] = {} if raw_optional is None else dict(raw_optional)
     litellm_params: dict[str, JsonValue] = {} if raw_params is None else dict(raw_params)
     handler = RecordingHandler()
-    _answered: object = CONFIG.dispatch_text_to_speech(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L62-L134
+    _answered = CONFIG.dispatch_text_to_speech(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L62-L134
         model=call["model"], input=call["input"], aspeech=call.get("aspeech") is True,
         optional_params=optional_params, litellm_params_dict=litellm_params,
         logging_obj=SpeechLog(), timeout=float(call["timeout_seconds"]),
@@ -208,7 +212,7 @@ def native_view(call: NativeCall) -> JsonValue:
 
 class NoHeadersReply:
     def create(self, **kwargs: JsonValue) -> None:
-        self.sent = kwargs
+        ...
 
 
 class NoHeadersClient:
@@ -231,7 +235,7 @@ def probe_headers(
     headers: dict[str, JsonValue] | None = None
     raised: dict[str, JsonValue] | None = None
     try:
-        raw_headers: dict[str, JsonValue] = AzureChatCompletion().get_headers(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1473-L1540
+        raw_headers: dict[str, JsonValue] = AzureChatCompletion().get_headers(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1473-L1540
             model=scenario.get("model"), api_key=scenario["api_key"],
             api_base=scenario["api_base"], api_version=scenario["api_version"],
             timeout=600.0, mode="chat" if mode is None else mode,
@@ -272,7 +276,7 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
             return audio_view(AUDIO.validate_python(input_value.get("audio_speech")))
         case "supported_params":
             supported_case = AUDIO.validate_python(input_value.get("supported_params"))
-            supported: list[str] = CONFIG.get_supported_openai_params(supported_case["model"])  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L136-L143
+            supported: list[str] = CONFIG.get_supported_openai_params(supported_case["model"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L136-L143
             speech = audio_view(supported_case)
             return {"supported": JSON.validate_python(supported), "speech": speech}
         case "native_speech_selection":
