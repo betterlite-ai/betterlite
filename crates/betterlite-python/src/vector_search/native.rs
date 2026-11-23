@@ -12,6 +12,9 @@ use super::session::{Pending, SessionCore};
 
 mod tests;
 
+// the attached-file list every call takes; a vector store call only reads whether it is empty
+type Blobs<'py> = Bound<'py, PyList>;
+
 // main.py's module-level entry points: one session owning the configs and the client every call goes through.
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeVectorSearchSession {
@@ -29,43 +32,31 @@ impl NativeVectorSearchSession {
     }
 
     // the synchronous create: one attempt on the runtime, blocking this thread with the GIL released
-    fn create(&self, py: Python<'_>, request: &str, blobs: &Bound<'_, PyList>) -> PyResult<String> {
-        let wire: CreateWire = parse(request, blobs.len())?;
+    fn create(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
+        let wire: CreateWire = parse(text, blobs.len())?;
         let pending = Pending::Create(wire);
         settled(py, &self.core, pending)
     }
 
     // the synchronous search, with the query sent as the text or the list the caller gave
-    fn search(&self, py: Python<'_>, request: &str, blobs: &Bound<'_, PyList>) -> PyResult<String> {
-        let wire: SearchWire = parse(request, blobs.len())?;
+    fn search(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
+        let wire: SearchWire = parse(text, blobs.len())?;
         let pending = Pending::Search(wire);
         settled(py, &self.core, pending)
     }
 
     // the awaitable create: the same call on the asyncio loop's runtime, handed back as a coroutine
-    fn acreate(
-        &self,
-        py: Python<'_>,
-        request: &str,
-        blobs: &Bound<'_, PyList>,
-    ) -> PyResult<Py<PyAny>> {
-        let wire: CreateWire = parse(request, blobs.len())?;
+    fn acreate(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<Py<PyAny>> {
+        let wire: CreateWire = parse(text, blobs.len())?;
         let pending = Pending::Create(wire);
-        let answer = awaitable(py, Arc::clone(&self.core), pending)?;
-        Ok(answer.unbind())
+        awaitable(py, Arc::clone(&self.core), pending)
     }
 
     // the awaitable search: the same call on the asyncio loop's runtime, handed back as a coroutine
-    fn asearch(
-        &self,
-        py: Python<'_>,
-        request: &str,
-        blobs: &Bound<'_, PyList>,
-    ) -> PyResult<Py<PyAny>> {
-        let wire: SearchWire = parse(request, blobs.len())?;
+    fn asearch(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<Py<PyAny>> {
+        let wire: SearchWire = parse(text, blobs.len())?;
         let pending = Pending::Search(wire);
-        let answer = awaitable(py, Arc::clone(&self.core), pending)?;
-        Ok(answer.unbind())
+        awaitable(py, Arc::clone(&self.core), pending)
     }
 }
 
@@ -77,17 +68,14 @@ fn settled(py: Python<'_>, core: &SessionCore, pending: Pending) -> PyResult<Str
 }
 
 // The awaitable path: the same call driven by the asyncio loop's runtime and handed back as a coroutine
-fn awaitable(
-    py: Python<'_>,
-    core: Arc<SessionCore>,
-    pending: Pending,
-) -> PyResult<Bound<'_, PyAny>> {
-    future_into_py(py, async move {
+fn awaitable(py: Python<'_>, core: Arc<SessionCore>, pending: Pending) -> PyResult<Py<PyAny>> {
+    let coroutine = future_into_py(py, async move {
         let body = Box::pin(core.run(pending))
             .await
             .map_err(|error| Python::attach(|attached| raise(attached, &error, &core.redactor)))?;
         to_text(&body)
-    })
+    })?;
+    Ok(coroutine.unbind())
 }
 
 // The answer is JSON text, the one shape every native family hands back to Python
