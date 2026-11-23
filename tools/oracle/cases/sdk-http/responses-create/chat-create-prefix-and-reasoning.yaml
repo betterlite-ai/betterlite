@@ -41,4 +41,8 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, content-type]
-  ignore: []
+  ignore:
+    - pointer: /responses_create/value/runs/0/result/output/0/id
+      why: LiteLLM stamps the message item with a fresh uuid4 while betterlite feeds the pinned id source
+    - pointer: /responses_create/value/runs/1/result/output/0/id
+      why: LiteLLM stamps the message item with a fresh uuid4 while betterlite feeds the pinned id source
