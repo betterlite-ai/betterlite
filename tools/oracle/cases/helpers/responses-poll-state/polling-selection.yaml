@@ -1,0 +1,220 @@
+kind: helper
+name: polling-selection
+call:
+  responses_poll_state:
+    now: 1700000000
+    ttl: 3600
+    uuid: "00000000-0000-4000-8000-000000000001"
+    calls: []
+    selections:
+      - background: true
+        selector: "all"
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector: "all"
+        redis: false
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: false
+        selector: "all"
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector: false
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector: null
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector: true
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector: "openai"
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector: "other"
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector: true
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-5
+        router: null
+      - background: true
+        selector: "all"
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-5
+        router: null
+      - background: true
+        selector: "all"
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-4o
+        router: null
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: openai/gpt-4o
+        native_background_mode: []
+        router: null
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: anthropic/claude
+        native_background_mode: []
+        router:
+          indices:
+            - 0
+          deployments:
+            - custom_llm_provider: openai
+              model: null
+      - background: true
+        selector:
+          - azure
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices:
+            - 0
+            - 1
+          deployments:
+            - custom_llm_provider: openai
+              model: null
+            - custom_llm_provider: azure
+              model: null
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices:
+            - 0
+          deployments:
+            - custom_llm_provider: bedrock
+              model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices:
+            - 0
+          deployments:
+            - custom_llm_provider: ""
+              model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices:
+            - 0
+          deployments:
+            - custom_llm_provider: null
+              model: null
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices: []
+          deployments:
+            - custom_llm_provider: null
+              model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices:
+            - 1
+          deployments:
+            - custom_llm_provider: null
+              model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices:
+            - 0
+            - 1
+          deployments:
+            - custom_llm_provider: null
+              model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router:
+          indices:
+            - 1
+            - 0
+          deployments:
+            - custom_llm_provider: null
+              model: openai/gpt-5
+      - background: true
+        selector: []
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-5
+        router: null
+      - background: true
+        selector:
+          - groq
+        redis: true
+        model: gpt-5
+        native_background_mode: []
+        router: null
+env: {}
+compare: {ignore: []}
