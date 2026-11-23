@@ -1,0 +1,14 @@
+kind: helper
+name: vector-index-admin-lifecycle-service-create
+call:
+  b10071: {function: lifecycle, method: "POST", path: "/indexes", index_name: "my-index"}
+calls:
+  - b10071: {function: lifecycle, method: "POST", path: "/indexes/", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "POST", path: "/indexes/?x=1", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "POST", path: "/azure_ai/indexes", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "POST", path: "/azure_ai/indexes///", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "POST", path: "/prefix/indexes", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "POST", path: "/v1/indexes?x=1", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "POST", path: "/indexes/my-index/indexes", index_name: "my-index"}
+env: {}
+compare: {ignore: []}
