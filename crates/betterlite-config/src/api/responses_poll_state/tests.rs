@@ -29,17 +29,19 @@ fn lookup(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 fn integer_path(result: Result<PollingSettings, ConfigError>) -> String {
-    match result.unwrap_err() {
-        ConfigError::InvalidInteger { path, .. } => path,
-        other => panic!("expected an invalid integer, got {other}"),
-    }
+    let error = result.unwrap_err();
+    let ConfigError::InvalidInteger { path, .. } = &error else {
+        panic!("expected an invalid integer, got {error:?}");
+    };
+    path.clone()
 }
 
 fn scalar_path(result: Result<PollingSettings, ConfigError>) -> String {
-    match result.unwrap_err() {
-        ConfigError::InvalidScalar { path, .. } => path,
-        other => panic!("expected an invalid scalar, got {other}"),
-    }
+    let error = result.unwrap_err();
+    let ConfigError::InvalidScalar { path, .. } = &error else {
+        panic!("expected an invalid scalar, got {error:?}");
+    };
+    path.clone()
 }
 
 #[rstest]

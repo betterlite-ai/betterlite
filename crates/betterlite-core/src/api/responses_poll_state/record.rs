@@ -12,14 +12,14 @@ use super::error::UnknownPatchField;
 pub type PolledResponse = IndexMap<String, Json>;
 
 // the architect's private envelope: the owner rides beside the response and never inside it
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PollRecord {
     pub owner: Option<PollOwner>,
     pub response: PolledResponse,
 }
 
 // request_data.metadata as the source reads it: absent defaults to {}, null stays null
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum PollMetadata {
     Fields(IndexMap<String, Json>),
@@ -31,7 +31,7 @@ const PATCH_FIELDS: &str = "status output usage error incomplete_details reasoni
      model instructions temperature top_p max_output_tokens previous_response_id text truncation \
      parallel_tool_calls user store";
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "IndexMap<String, Json>")]
 pub struct PollPatch(pub(crate) IndexMap<String, Json>);
 

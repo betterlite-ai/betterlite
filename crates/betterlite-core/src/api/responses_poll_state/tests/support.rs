@@ -14,6 +14,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
+use uuid::Uuid;
 
 use crate::api::api_boundaries::ApiLimits;
 
@@ -23,7 +24,7 @@ use super::super::cache::{PollingCache, PollingCacheError};
 use super::super::error::PollingError;
 use super::super::record::{PollMetadata, PollPatch};
 use super::super::selection::{
-    DeploymentProjection, DeploymentProvider, should_use_polling_for_request,
+    DeploymentProjection, DeploymentProvider, PollingRequest, should_use_polling_for_request,
 };
 use super::super::store::{NewPollRequest, ResponsePollingStore};
 use super::super::store::{StoredPollState, decode_responses_poll_state};
@@ -80,13 +81,6 @@ impl FakeCache {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    pub(super) fn effect_count(&self) -> usize {
-        self.effects
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
     }
 
     pub(super) fn count(&self, operation: CacheOperation) -> usize {
@@ -371,8 +365,7 @@ pub(super) fn assert_denial(error: PollingError, denial: PollDenial) {
 }
 
 pub(super) fn keys_and_ids() {
-    let uuid =
-        uuid::Uuid::parse_str("00000000-0000-4000-8000-000000000001").expect("the UUID parses");
+    let uuid = Uuid::parse_str("00000000-0000-4000-8000-000000000001").expect("the UUID parses");
     let polling_id = generate_polling_id(uuid);
     assert_eq!(
         polling_id,
@@ -405,9 +398,9 @@ pub(super) fn providers(names: &[&str]) -> PollingSettings {
     )
 }
 
-pub(super) fn deployment_list(
-    entries: &[(Option<&str>, Option<&str>)],
-) -> Vec<DeploymentProvider<'_>> {
+pub(super) fn deployment_list<'entry>(
+    entries: &'entry [(Option<&'entry str>, Option<&'entry str>)],
+) -> Vec<DeploymentProvider<'entry>> {
     entries
         .iter()
         .map(|(custom, model)| DeploymentProvider {
@@ -417,10 +410,10 @@ pub(super) fn deployment_list(
         .collect()
 }
 
-pub(super) fn projection<'a>(
-    indices: &'a [usize],
-    deployments: &'a [DeploymentProvider<'a>],
-) -> DeploymentProjection<'a> {
+pub(super) fn projection<'router>(
+    indices: &'router [usize],
+    deployments: &'router [DeploymentProvider<'router>],
+) -> DeploymentProjection<'router> {
     DeploymentProjection {
         indices,
         deployments,
@@ -434,7 +427,7 @@ pub(super) fn stored_state(cache: &FakeCache, polling_id: &str) -> StoredPollSta
     decode_responses_poll_state(bytes.as_bytes(), ApiLimits::default()).expect("the state decodes")
 }
 
-pub(super) fn new_request<'a>(polling_id: &'a str, owner: Option<PollOwner>) -> NewPollRequest<'a> {
+pub(super) fn new_request(polling_id: &str, owner: Option<PollOwner>) -> NewPollRequest<'_> {
     NewPollRequest {
         polling_id,
         created_at: 1_700_000_000,
@@ -453,5 +446,10 @@ pub(super) fn selection_enabled(
     settings: &PollingSettings,
     router: Option<&DeploymentProjection<'_>>,
 ) -> bool {
-    should_use_polling_for_request(background, model, settings, true, router)
+    let request = PollingRequest {
+        background,
+        model,
+        redis_available: true,
+    };
+    should_use_polling_for_request(request, settings, router)
 }

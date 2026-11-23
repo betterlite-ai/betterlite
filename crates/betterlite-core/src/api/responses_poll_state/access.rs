@@ -51,9 +51,9 @@ impl PollCaller {
 
 // AuthDisabled is the configured auth-disabled mode, where the route has no trusted principal at all
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PollAccess<'a> {
+pub enum PollAccess<'caller> {
     AuthDisabled,
-    Caller(&'a PollCaller),
+    Caller(&'caller PollCaller),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -80,10 +80,12 @@ pub fn authorize(state: &StoredPollState, access: PollAccess<'_>) -> Result<(), 
     }
     match state {
         StoredPollState::Legacy(_) => Err(PollDenial::OwnerlessRecord),
-        StoredPollState::Record(record) => match record.owner.as_ref() {
-            None => Err(PollDenial::AnonymousRecord),
-            Some(owner) => check_owner(owner, caller),
-        },
+        StoredPollState::Record(record) => record
+            .owner
+            .as_ref()
+            .map_or(Err(PollDenial::AnonymousRecord), |owner| {
+                check_owner(owner, caller)
+            }),
     }
 }
 

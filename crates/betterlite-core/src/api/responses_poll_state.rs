@@ -7,11 +7,12 @@ pub mod store;
 
 mod tests;
 
+use betterlite_config::api::responses_poll_state::DEFAULT_POLLING_TTL;
 use uuid::Uuid;
 
 pub const CACHE_KEY_PREFIX: &str = "litellm:polling:response:";
 pub const POLLING_ID_PREFIX: &str = "litellm_poll_";
-pub const DEFAULT_TTL: i64 = betterlite_config::api::responses_poll_state::DEFAULT_POLLING_TTL;
+pub const DEFAULT_TTL: i64 = DEFAULT_POLLING_TTL;
 
 #[must_use]
 // ast-grep-ignore: no-one-line-functions - the source keeps these as its public id helpers, and B938 dispatches on is_polling_id

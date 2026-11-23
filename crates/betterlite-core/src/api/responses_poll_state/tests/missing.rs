@@ -54,13 +54,17 @@ pub(super) async fn missing_state(cache: &FakeCache, store: &ResponsePollingStor
 pub(super) async fn unreadable_states(cache: &FakeCache, store: &ResponsePollingStore) {
     let id = "litellm_poll_empty";
     cache.seed_bytes(&get_cache_key(id), &[]);
-    assert_eq!(
-        store
-            .get_state(id, PollAccess::AuthDisabled)
-            .await
-            .expect("the empty value reads as absent"),
-        None
-    );
+    assert_empty_value_absent(store, id).await;
+    assert_corrupt_values(cache, store).await;
+    assert_eq!(cache.count(CacheOperation::Write), 0);
+}
+
+async fn assert_empty_value_absent(store: &ResponsePollingStore, id: &str) {
+    let state = store
+        .get_state(id, PollAccess::AuthDisabled)
+        .await
+        .expect("the empty value reads as absent");
+    assert!(state.is_none());
     let update = store
         .update_state(
             id,
@@ -70,15 +74,16 @@ pub(super) async fn unreadable_states(cache: &FakeCache, store: &ResponsePolling
         .await
         .expect("the empty value is a no-op");
     assert_eq!(update, PollingUpdate::MissingState);
-    assert!(
-        store
-            .cancel_polling(id, PollAccess::AuthDisabled)
-            .await
-            .expect("the empty cancel still succeeds")
-    );
-    assert_eq!(cache.count(CacheOperation::Write), 0);
+    let cancelled = store
+        .cancel_polling(id, PollAccess::AuthDisabled)
+        .await
+        .expect("the empty cancel still succeeds");
+    assert!(cancelled);
+}
+
+async fn assert_corrupt_values(cache: &FakeCache, store: &ResponsePollingStore) {
     let corrupt = "litellm_poll_corrupt";
-    for raw in [r#"{"id":"#, r#"[{"id":"one"}]"#, r#"NaN"#, r#""text""#] {
+    for raw in [r#"{"id":"#, r#"[{"id":"one"}]"#, "NaN", r#""text""#] {
         cache.seed(&get_cache_key(corrupt), raw);
         let error = store
             .get_state(corrupt, PollAccess::AuthDisabled)
@@ -95,7 +100,6 @@ pub(super) async fn unreadable_states(cache: &FakeCache, store: &ResponsePolling
         .await
         .expect_err("an unreadable cached value fails the update too");
     assert!(matches!(error, PollingError::Decode(_)));
-    assert_eq!(cache.count(CacheOperation::Write), 0);
 }
 
 // deviation: the source raises KeyError or TypeError while it logs; betterlite logs and keeps the write
@@ -128,6 +132,12 @@ pub(super) async fn present_state(cache: &FakeCache, store: &ResponsePollingStor
         &get_cache_key(id),
         r#"{"id":"litellm_poll_present","object":"response","status":"in_progress","output":[]}"#,
     );
+    assert_present_read(cache, store, id).await;
+    assert_present_cancel(cache, store, id).await;
+    assert_present_delete(cache, store, id).await;
+}
+
+async fn assert_present_read(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     let reads = cache.count(CacheOperation::Read);
     let state = store
         .get_state(id, PollAccess::AuthDisabled)
@@ -138,12 +148,14 @@ pub(super) async fn present_state(cache: &FakeCache, store: &ResponsePollingStor
     assert_eq!(cache.count(CacheOperation::Read), reads.saturating_add(1));
     assert_eq!(cache.count(CacheOperation::Write), 0);
     assert!(cache.effects().last().expect("the read was recorded").hit);
-    assert!(
-        store
-            .cancel_polling(id, PollAccess::AuthDisabled)
-            .await
-            .expect("the present cancel writes")
-    );
+}
+
+async fn assert_present_cancel(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
+    let cancelled = store
+        .cancel_polling(id, PollAccess::AuthDisabled)
+        .await
+        .expect("the present cancel writes");
+    assert!(cancelled);
     let written = support::stored(cache, id);
     assert_eq!(
         support::field(&written, "status"),
@@ -160,14 +172,17 @@ pub(super) async fn present_state(cache: &FakeCache, store: &ResponsePollingStor
     let last = effects.last().expect("the cancel wrote");
     assert_eq!(last.operation, CacheOperation::Write);
     assert_eq!(last.ttl, Some(3600));
-    assert!(store.delete_polling(id).await.expect("the delete succeeds"));
+}
+
+async fn assert_present_delete(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
+    let deleted = store.delete_polling(id).await.expect("the delete succeeds");
+    assert!(deleted);
     assert!(cache.entry(&get_cache_key(id)).is_none());
-    assert!(
-        store
-            .delete_polling(id)
-            .await
-            .expect("a delete without a key still succeeds")
-    );
+    let deleted_again = store
+        .delete_polling(id)
+        .await
+        .expect("a delete without a key still succeeds");
+    assert!(deleted_again);
 }
 
 pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStore) {
@@ -176,6 +191,12 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         &get_cache_key(id),
         r#"{"id":"litellm_poll_failures","status":"in_progress","output":[]}"#,
     );
+    assert_read_failures(cache, store, id).await;
+    assert_write_failures(cache, store, id).await;
+    assert_delete_failure(cache, store, id).await;
+}
+
+async fn assert_read_failures(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Read);
     let error = store
         .get_state(id, PollAccess::AuthDisabled)
@@ -186,7 +207,7 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         PollingError::Cache(PollingCacheError::Read(_))
     ));
     cache.fail_next(CacheOperation::Read);
-    let error = store
+    let update_error = store
         .update_state(
             id,
             PollAccess::AuthDisabled,
@@ -195,9 +216,12 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         .await
         .expect_err("the update read error propagates");
     assert!(matches!(
-        error,
+        update_error,
         PollingError::Cache(PollingCacheError::Read(_))
     ));
+}
+
+async fn assert_write_failures(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Write);
     let error = store
         .update_state(
@@ -211,6 +235,18 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         error,
         PollingError::Cache(PollingCacheError::Write(_))
     ));
+    cache.fail_next(CacheOperation::Write);
+    let create_error = store
+        .create_initial_state(support::new_request(id, None))
+        .await
+        .expect_err("the create write error propagates");
+    assert!(matches!(
+        create_error,
+        PollingError::Cache(PollingCacheError::Write(_))
+    ));
+}
+
+async fn assert_delete_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Delete);
     let error = store
         .delete_polling(id)
@@ -219,15 +255,6 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
     assert!(matches!(
         error,
         PollingError::Cache(PollingCacheError::Delete(_))
-    ));
-    cache.fail_next(CacheOperation::Write);
-    let error = store
-        .create_initial_state(support::new_request(id, None))
-        .await
-        .expect_err("the create write error propagates");
-    assert!(matches!(
-        error,
-        PollingError::Cache(PollingCacheError::Write(_))
     ));
 }
 
@@ -238,13 +265,19 @@ pub(super) async fn absent_cache() {
         limits: ApiLimits::default(),
     };
     let id = "litellm_poll_no_cache";
-    assert_eq!(
-        store
-            .get_state(id, PollAccess::AuthDisabled)
-            .await
-            .expect("no cache reads as absent"),
-        None
-    );
+    assert_absent_reads(&store, id).await;
+    assert_absent_writes(&store, id).await;
+}
+
+async fn assert_absent_reads(store: &ResponsePollingStore, id: &str) {
+    let state = store
+        .get_state(id, PollAccess::AuthDisabled)
+        .await
+        .expect("no cache reads as absent");
+    assert!(state.is_none());
+}
+
+async fn assert_absent_writes(store: &ResponsePollingStore, id: &str) {
     let update = store
         .update_state(
             id,
@@ -254,18 +287,16 @@ pub(super) async fn absent_cache() {
         .await
         .expect("no cache skips the update");
     assert_eq!(update, PollingUpdate::NoCache);
-    assert!(
-        store
-            .cancel_polling(id, PollAccess::AuthDisabled)
-            .await
-            .expect("no cache still cancels")
-    );
-    assert!(
-        !store
-            .delete_polling(id)
-            .await
-            .expect("no cache has nothing to delete")
-    );
+    let cancelled = store
+        .cancel_polling(id, PollAccess::AuthDisabled)
+        .await
+        .expect("no cache still cancels");
+    assert!(cancelled);
+    let deleted = store
+        .delete_polling(id)
+        .await
+        .expect("no cache has nothing to delete");
+    assert!(!deleted);
     let response = store
         .create_initial_state(support::new_request(id, None))
         .await

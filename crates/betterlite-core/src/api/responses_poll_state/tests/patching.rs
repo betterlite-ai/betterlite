@@ -22,6 +22,12 @@ const PRESENT: &str = concat!(
 );
 
 pub(super) async fn falsy_patches(cache: &FakeCache, store: &ResponsePollingStore) {
+    assert_empty_status_ignored(cache, store).await;
+    assert_empty_output_replaces(cache, store).await;
+    assert_empty_objects_ignored(cache, store).await;
+}
+
+async fn assert_empty_status_ignored(cache: &FakeCache, store: &ResponsePollingStore) {
     let update = store
         .update_state(
             ID,
@@ -40,6 +46,9 @@ pub(super) async fn falsy_patches(cache: &FakeCache, store: &ResponsePollingStor
         support::field(&written, "output"),
         support::json(r#"[{"id":"old"}]"#)
     );
+}
+
+async fn assert_empty_output_replaces(cache: &FakeCache, store: &ResponsePollingStore) {
     let _update = store
         .update_state(
             ID,
@@ -50,6 +59,9 @@ pub(super) async fn falsy_patches(cache: &FakeCache, store: &ResponsePollingStor
         .expect("an empty output list replaces the old one");
     let written = support::stored(cache, ID);
     assert_eq!(support::field(&written, "output"), support::json("[]"));
+}
+
+async fn assert_empty_objects_ignored(cache: &FakeCache, store: &ResponsePollingStore) {
     let _update = store
         .update_state(
             ID,

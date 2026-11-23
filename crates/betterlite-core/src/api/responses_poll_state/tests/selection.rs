@@ -1,6 +1,6 @@
 use betterlite_config::api::responses_poll_state::PollingSelector;
 
-use super::super::selection::should_use_polling_for_request;
+use super::super::selection::{PollingRequest, should_use_polling_for_request};
 use super::support::{Watch, deployment_list, projection, providers, selection_enabled, settings};
 
 pub(super) fn requires_conditions() {
@@ -13,7 +13,13 @@ pub(super) fn requires_conditions() {
         None
     ));
     assert!(!should_use_polling_for_request(
-        true, "gpt-4o", &all, false, None
+        PollingRequest {
+            background: true,
+            model: "gpt-4o",
+            redis_available: false,
+        },
+        &all,
+        None
     ));
     assert!(!selection_enabled(
         true,
@@ -95,8 +101,8 @@ pub(super) fn bad_index() {
     let indices = [3_usize];
     let missing = projection(&indices, &deployments);
     assert!(!selection_enabled(true, "alias", &openai, Some(&missing)));
-    let indices = [0_usize, 3];
-    let reaching = projection(&indices, &deployments);
+    let padded = [0_usize, 3];
+    let reaching = projection(&padded, &deployments);
     assert!(selection_enabled(true, "alias", &openai, Some(&reaching)));
 }
 

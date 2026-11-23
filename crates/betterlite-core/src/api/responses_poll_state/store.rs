@@ -18,8 +18,8 @@ use super::get_cache_key;
 use super::record::{PollMetadata, PollPatch, PollRecord, PolledResponse, queued_response};
 
 #[derive(Debug, Clone)]
-pub struct NewPollRequest<'a> {
-    pub polling_id: &'a str,
+pub struct NewPollRequest<'request> {
+    pub polling_id: &'request str,
     pub created_at: i64,
     pub metadata: Option<PollMetadata>,
     pub owner: Option<PollOwner>,
