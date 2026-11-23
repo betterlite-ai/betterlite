@@ -673,9 +673,13 @@ fn error_missing_azure_key() {
 fn error_missing_credentials_name_the_environment_variable() {
     let failure = failure_of(wire_failure(WireError::MissingOpenAiKey));
     assert_eq!(failure.kind, "Exception");
+    assert!(failure.message.starts_with("Missing credentials."));
     assert!(failure.message.contains("OPENAI_API_KEY"));
-    let failure = failure_of(wire_failure(WireError::MissingAzureBase));
-    assert!(failure.message.contains("AZURE_OPENAI_ENDPOINT"));
+    assert!(failure.message.contains("OPENAI_ADMIN_KEY"));
+    let failure = failure_of(wire_failure(WireError::MissingAzureKey));
+    assert_eq!(failure.kind, "Exception");
+    assert!(failure.message.starts_with("Missing credentials."));
+    assert!(failure.message.contains("AZURE_OPENAI_API_KEY"));
 }
 
 #[test]

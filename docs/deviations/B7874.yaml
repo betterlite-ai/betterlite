@@ -12,9 +12,12 @@ deviations:
   - what: An extra_body mapping is merged into the create body root on the openai path too, where LiteLLM forwards extra_body only on its Azure branch and drops it for an openai create.
     why: The create call's extra_body travels in the same body the Azure path flattens, and request_create_body_flattens_extra_body proves the merge on the openai wire; dropping the argument for openai alone would split one body builder in two.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L230-L242
-  - what: A create call with no resolvable API key raises Exception carrying the OpenAI SDK's own "The api_key client option must be set ..." text, where LiteLLM builds the client and lets openai.OpenAIError propagate.
+  - what: A create call with no resolvable API key raises Exception carrying the openai SDK's own missing-credentials text (the one naming OPENAI_API_KEY and OPENAI_ADMIN_KEY), where LiteLLM builds the client and lets openai.OpenAIError propagate.
     why: betterlite builds the request itself, so it keeps the message a working setup may match but not the client library's class.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L77-L93
+  - what: An azure create with no resolvable api_key raises Exception carrying the AzureOpenAI client's own missing-credentials text, where LiteLLM builds the client and lets openai.OpenAIError propagate.
+    why: betterlite builds the request itself, so it keeps the message a working setup may match but not the client library's class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/fine_tuning/handler.py#L181-L204
   - what: A 409 answer and any status outside 400, 401, 403, 404, 422, 429 and 5xx raise APIError, where the openai client raises ConflictError for 409 and APIStatusError elsewhere.
     why: The family's error table predates this task and has no ConflictError entry; the status code and response body are still on the raised error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L100

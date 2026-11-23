@@ -13,7 +13,7 @@ use super::super::error::{Failure, Raised, WireError};
 
 const UNSUPPORTED_BODY: &str = "Unsupported provider";
 // the messages the openai SDK raises when it cannot build the client LiteLLM asks it for
-const OPENAI_KEY_MESSAGE: &str = "The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable";
+const OPENAI_KEY_MESSAGE: &str = "Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.";
 const AZURE_KEY_MESSAGE: &str = "Missing credentials. Please pass one of `api_key`, `azure_ad_token`, `azure_ad_token_provider`, or the `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN` environment variables.";
 const AZURE_BASE_MESSAGE: &str = "Must provide one of the `base_url` or `azure_endpoint` arguments, or the `AZURE_OPENAI_ENDPOINT` environment variable";
 const VERTEX_MESSAGE: &str = "the vertex_ai fine-tuning call is not implemented yet (B1384)";
@@ -143,9 +143,9 @@ pub(crate) fn wire_failure(source: WireError) -> Raised {
         WireError::MissingOpenAiKey => Raised::Failure(Box::new(exception_failure(String::from(
             OPENAI_KEY_MESSAGE,
         )))),
-        WireError::MissingAzureBase => Raised::Failure(Box::new(exception_failure(String::from(
-            AZURE_BASE_MESSAGE,
-        )))),
+        WireError::MissingAzureBase => {
+            Raised::Python(PyValueError::new_err(String::from(AZURE_BASE_MESSAGE)))
+        }
         WireError::MissingAzureKey => {
             Raised::Failure(Box::new(exception_failure(String::from(AZURE_KEY_MESSAGE))))
         }

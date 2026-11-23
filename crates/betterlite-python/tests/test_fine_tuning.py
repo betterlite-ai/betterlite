@@ -429,6 +429,26 @@ def test_error_class_and_cause() -> None:
             raise AssertionError("the provider error kept no native cause")
 
 
+def test_error_missing_azure_base_is_a_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AZURE_API_BASE", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_ENDPOINT", raising=False)
+    with pytest.raises(ValueError) as reference_caught:
+        LITELLM.create_fine_tuning_job(
+            model=MODEL,
+            training_file=TRAINING_FILE,
+            custom_llm_provider="azure",
+            api_key=GOOD_KEY,
+        )
+    with pytest.raises(ValueError) as ours_caught:
+        create_fine_tuning_job(
+            model=MODEL,
+            training_file=TRAINING_FILE,
+            custom_llm_provider="azure",
+            api_key=GOOD_KEY,
+        )
+    assert str(ours_caught.value) == str(reference_caught.value)
+
+
 def test_error_client_is_refused() -> None:
     with pytest.raises(UnsupportedCallArgument):
         create_fine_tuning_job(model=MODEL, training_file=TRAINING_FILE, client="client")
