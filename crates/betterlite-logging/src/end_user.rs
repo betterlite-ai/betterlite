@@ -1,3 +1,5 @@
+pub mod extraction;
+
 use betterlite_models::model_registration::JsonObject;
 
 use crate::spend_metadata::{SpendMetadataError, merged_spend_metadata, optional_text_field};

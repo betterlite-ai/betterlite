@@ -80,7 +80,8 @@ description: >-
   non-streaming and streaming helpers return; use a boxed `Stream<Item = Result<Bytes, reqwest::Error>>` at the boundary), the exchange
   (body NotRead), request_body, url_route, start_time, the logging object, `call_log: CallLog` (owned, since the completion runs after the handler returns), custom_llm_provider, the
   PassThroughRequestState, the kwargs, `Arc<PassThroughSuccessCompletion>`, the B191 worker handle and a budget binder `Arc<dyn
-  ReservationBinder>` (one method over B1719's bind function in betterlite-auth::reservation_state; read the merged name). Each chunk is
+  ReservationBinder>` (B10088's one-method port in betterlite-logging::reservation_binding; its production impl is B1719's
+  RequestReservationBinder in betterlite-auth::reservation_state, which stamps the metadata through B10088 and sets the handle flag). Each chunk is
   yielded unchanged and its length is added to a bytes_relayed counter (use usize::checked_add; on overflow stop counting and keep going).
   The completion runs exactly once, when the stream ends (clean end, upstream read error or the client dropping the body). The end is
   either poll_next returning None or Some(Err), or Drop of RelayedBody, whichever comes first. If the upstream was not fully read, log
@@ -268,7 +269,7 @@ out_of_scope:
   - "The failure path of the relay (_relay_reporting_failures, _log_passthrough_upstream_failure, the error preview) belongs to B3610. This relay is only for responses that are not buffered."
   - "_own_streamed_managed_ids (pass_through_endpoints.py L2744-L2771) wraps a stream in the managed-id rewriter and reads proxy_server globals. It has no owner among B3600 to B3613 and B3613 calls it on the SSE path, so nothing here builds it."
   - "The TinyFish, AssemblyAI and Transcribe handlers (polling, billing, pricing) belong to B3648 and B3649, B3647 and B3646; this task only decides when to call them."
-  - "The logging worker, its queue and its enqueue call belong to B191, and bind_budget_reservation_to_callbacks to B1719."
+  - "The logging worker, its queue and its enqueue call belong to B191. bind_budget_reservation_to_callbacks: B10088 owns the ReservationBinder port and the metadata stamp, B1719 the production binder that also marks the reservation handle."
 pitfalls:
   - "The TinyFish block is a plain `if`, not part of the chain. A TinyFish POST to /v1/automation/run (not run-async) falls through, is tested for AssemblyAI, Langfuse and Transcribe, and ends in Normalize where B3606's Tinyfish branch prices it."
   - "A Transcribe request whose x-amz-target operation is not StartTranscriptionJob is not an early exit; it takes the else branch and goes through normalize like any other route."

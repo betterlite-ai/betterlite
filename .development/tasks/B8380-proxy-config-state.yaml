@@ -17,7 +17,7 @@ description: >-
   merged section equals the stored one, write JSON), then apply the written section to its store and invalidate the
   config param through B8397. Top-level keys outside those sections and the exclusions that differ from the baseline
   are inserted as config rows. With include_env_vars, environment_variables are encrypted for the database with
-  B8382 and inserted. Then the snapshot and baseline become baseline plus new config. Without a database it writes the
+  B10074 and inserted. Then the snapshot and baseline become baseline plus new config. Without a database it writes the
   config as YAML to the config file path.
 
   `reject_config_owned_writes(section, changed)` and `reject_config_owned_deletes(section, keys)` raise
@@ -27,20 +27,17 @@ description: >-
   shadowed keys, keys, section, stored_database_values_ignored, and resolution "edit {path} to change it, or remove it
   from the file to let the database own it" (them for several). `save_environment_variables(updates, db)` is a no-op
   without a DB-backed config; otherwise it merges into the environment_variables row: a None value deletes the key,
-  other values are encrypted with B8382, unnamed keys stay, then the param is invalidated. `team_config(team_id)` ports
+  other values are encrypted with B10074, unnamed keys stay, then the param is invalidated. `team_config(team_id)` ports
   load_team_config and _get_team_config: read litellm_settings.default_team_settings from the snapshot, fail when an
   entry has no team_id (the message masks the entry), pick the matching team and resolve its os.environ/ values.
 
-  `should_load_db_object(kind)` ports the supported_db_objects gate over B8410's SupportedDBObjectType, reading
-  general_settings from the store: unset loads everything; a value that is not a list logs "supported_db_objects is not
-  a list, got {type}. Loading all objects." and loads everything; otherwise the kind loads only when an entry's text
-  equals the kind's text. It lives here, beside the general settings store, so the server-crate callers (B8231's
-  registry read-through, B8385) and the binary-crate loaders (B8379, B8381, B8384) share one rule.
+  The supported_db_objects gate, should_load_db_object, is B10054's, in proxy_config_state::supported_db_objects, a
+  submodule the skeleton declares in this module: leave that file and its `pub mod supported_db_objects;` line as they
+  are, and don't build the gate again here.
 
   Tests use an in-memory config repository. HTTP cases come from the routes that call these (B1653, B1656, B1662);
   this task adds helper cases (operation b8380 with an `operation:` field) for the config-owned error detail with one
-  key, two keys and a shadowed key, and for should_load_db_object with the setting unset, a list and a non-list,
-  written under tools/oracle/cases/helpers/proxy-config-state/.
+  key, two keys and a shadowed key, written under tools/oracle/cases/helpers/proxy-config-state/.
 scope:
   paths:
     - crates/betterlite-server/src/proxy_config_state.rs
@@ -58,8 +55,6 @@ references:
     why: Team config lookup.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6078-L6095
     why: Snapshot copies.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5183-L5205
-    why: should_load_db_object and its non-list warning.
 dod:
   - text: save_config writes only changed sections under a row lock, applies them to the stores, invalidates the param and updates the baseline.
     proof: [config-state-tests]
@@ -69,15 +64,13 @@ dod:
     proof: [config-state-tests]
   - text: team_config finds the team, resolves os.environ/ values and refuses an entry without team_id.
     proof: [config-state-tests]
-  - text: should_load_db_object loads everything when supported_db_objects is unset or not a list, and otherwise only listed kinds.
-    proof: [config-state-tests, oracle, helper-python]
 checks:
   optional: []
   commands:
     - id: config-state-tests
       why: A config save, guard, env update or team lookup is missing or differs from LiteLLM
       run: >-
-        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_config_state::/)'
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_config_state::/) - test(/^proxy_config_state::supported_db_objects::/)'
     - id: helper-python
       why: The strict oracle adapter for the config state cases fails lint or type checks
       run: >-
@@ -88,12 +81,10 @@ oracle_cases:
   - tools/oracle/cases/helpers/proxy-config-state/owned-one-key.yaml
   - tools/oracle/cases/helpers/proxy-config-state/owned-two-keys.yaml
   - tools/oracle/cases/helpers/proxy-config-state/owned-shadowed-value.yaml
-  - tools/oracle/cases/helpers/proxy-config-state/supported-objects-unset.yaml
-  - tools/oracle/cases/helpers/proxy-config-state/supported-objects-list.yaml
-  - tools/oracle/cases/helpers/proxy-config-state/supported-objects-not-list.yaml
 deviations: []
 out_of_scope:
   - "Re-reading config and the database overlay: B8379. The routes that call these: B1653, B1656, B1662."
+  - "should_load_db_object (L5183-L5205) and its helper cases: B10054."
 pitfalls:
   - The guard sees only the keys the diff marks as changed, so resending a config-owned key with its current value passes, while removing it from the section is not checked by the write guard at all.
   - The upsert skips the write when the merged section equals the stored one, and then the store and cache are left alone.

@@ -165,7 +165,7 @@ out_of_scope:
   - "get_all_route_types (handler_factory.py L37-L40): no caller at the pin (grep finds only its definition). Route type names reach B7430 as ContainerRouteType and the catalog's async_names."
   - "_load_endpoints_config (L30-L34): replaced by B3360's embedded catalog, see deviations; no separate function is built."
   - "_get_container_provider_config (L43-L53): no caller at the pin (grep finds only its definition). Provider config lookup is B3361's."
-  - "_process_binary_request and _process_multipart_upload_request (L164-L357) and `pick_provider`: B3371. The ownership service and its 403: B3362. Request form reading: B1101. The header and query provider accessors: B2400."
+  - "_process_binary_request and _process_multipart_upload_request (L164-L357) and `pick_provider`: B3371. The ownership service and its 403: B3362. Request form reading: B1101. The header and query provider accessors: B10059."
   - "common_processing_pre_call_logic: B8801 (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`). ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004. Authentication: B756 and B732."
   - "The core dispatch that maps the container route types (aupload_container_file, aretrieve_container_file_content and the others) to B3368's acontainer_file_call, the router wrappers and route_llm_request's container branch: B7430."
   - "The generated container file operations that the route type finally reaches: B3368. Container create, list, retrieve and delete routes in proxy/container_endpoints/endpoints.py: B7326."

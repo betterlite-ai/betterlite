@@ -1,0 +1,118 @@
+id: B10062
+title: MCP redirect URI shape and native callback allowlist
+description: >-
+  Every redirect_uri the MCP OAuth surface takes passes one hygiene rule before any trust policy looks at it. LiteLLM's validate_redirect_uri_shape in oauth_utils.py is that rule: an allowlisted native callback such as cursor://anysphere.cursor-mcp/oauth/callback is accepted outright, an http or https URI goes on to the caller's own policy, and anything else (another scheme, a fragment, no host, userinfo, a backslash in the host) is refused with 400 invalid_request. B4674's public client registration and B4655's loopback and trusted-redirect policies all call it, so it is built here on its own and registration no longer waits for B4655's session admission.
+
+
+  Layout. Module redirect_trust::shape in betterlite-mcp: crates/betterlite-mcp/src/redirect_trust/shape.rs, with its tests in redirect_trust/shape/tests.rs. The file is an empty stub that redirect_trust.rs declares; redirect_trust.rs itself and its other submodules are B4655's. URLs are split with B5082's betterlite_http::user_url::split::urlparse (default scheme ""), which keeps the query, the fragment and the userinfo this rule reads, and its Parsed type is what every function here takes. oauth_resource::python_url can't serve here, because it drops the query and the fragment.
+
+
+  The rejection. RedirectUriRejected is LiteLLM's _oauth_invalid_request. Fields: description: String, hint: Option<String> and redirect_uri: Option<String>; Display is the description. It answers status 400 with the detail object {"error": "invalid_request", "error_description": description}, adding "hint" and "redirect_uri" only when they are set. B4655 sets redirect_uri on its trusted-redirect rejection; nothing in this module sets it.
+
+
+  parse_redirect_uri(redirect_uri: &str) -> Result<Parsed, RedirectUriRejected> is _parse_redirect_uri_for_validation: an error from urlparse becomes "redirect_uri is not a valid URL." with the hint "Use a full absolute URL for redirect_uri (e.g. https://your-host/ui/mcp/oauth/callback)."
+
+
+  is_loopback_redirect_host(parsed: &Parsed) -> bool is true when Parsed::hostname (already lowercase) is "localhost" or an IP address that is loopback, and false for no host or a name that is no IP. IPv4 loopback is 127.0.0.0/8. IPv6 text goes through B5082's parse_ipv6, so a zone id parses the way Python's ipaddress takes it; ::1 is loopback, and an IPv4-mapped address such as ::ffff:127.0.0.1 is judged by its IPv4 part, as Python 3.13 does.
+
+
+  native_callbacks(configured: &str) -> Vec<String> is _parse_trusted_native_redirect_uris. It starts from the built-in list, which holds one entry, "cursor://anysphere.cursor-mcp/oauth/callback", lowercased. Then it trims the text, splits it on commas, trims and lowercases each entry and appends it when it is non-empty and not listed yet. The text is MCP_TRUSTED_NATIVE_REDIRECT_URIS, empty when unset, which B10094's section carries as config.sections.mcp_redirect_trust.native_redirect_uris; callers build the list once from it and pass it in, since rules.yaml keeps env reads in betterlite-config.
+
+
+  validate_redirect_uri_shape(parsed: &Parsed, native_callbacks: &[String]) -> Result<RedirectShape, RedirectUriRejected>, where RedirectShape is NativeCallback (LiteLLM returns True) or NeedsTrustPolicy (False). Checks in this order. A scheme other than http or https is NativeCallback when the native match passes, and otherwise refused with "redirect_uri scheme '<scheme>' is not allowed; use http/https or a registered native callback (e.g. cursor://)." and the hint "Add the full URI to MCP_TRUSTED_NATIVE_REDIRECT_URIS for custom native clients." Then a non-empty fragment is "redirect_uri must not contain a URL fragment (#...).", an empty netloc "redirect_uri must include a host (e.g. https://your-host/path).", an @ anywhere in the netloc "redirect_uri must not contain userinfo (user:pass@host)." and a backslash in the netloc "redirect_uri host must not contain backslashes." Anything left is NeedsTrustPolicy.
+
+
+  The native match is private here: LiteLLM's _matches_trusted_native_redirect_uri with _normalize_native_redirect_uri and _native_wildcard_prefix_matches. It fails on a non-empty fragment or query, an empty netloc, userinfo or a backslash in the netloc. Otherwise it rebuilds the URI from the lowercased scheme, netloc and path alone (Parsed::unparse with params, query and fragment empty) and compares it with each entry in order. An entry without a trailing * must be equal. An entry ending in * matches when the rebuilt URI starts with the entry minus its *, and then either nothing follows, the prefix ends with /, or what follows starts with /.
+
+
+  This task parses no outside bytes of its own: the URL text goes through B5082's urlparse, and B5082's user_url fuzz target covers that.
+
+
+  Oracle. Helper cases on the b10062 operation; no route reaches this code yet, and B4674 and B4655 compare it again through their own callers. A case gives the MCP_TRUSTED_NATIVE_REDIRECT_URIS text (or null for unset) and a list of URIs. The Python adapter sets or removes the variable, reports _parse_trusted_native_redirect_uris(), and for each URI runs _parse_redirect_uri_for_validation, is_loopback_redirect_host and validate_redirect_uri_shape, reporting the loopback answer and native_callback, needs_trust_policy, or the HTTPException's status and detail error code. A URI that fails to parse reports only the refusal. The Rust side runs native_callbacks on the same text and the same steps per URI.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/redirect_trust/shape.rs
+    - crates/betterlite-mcp/src/redirect_trust/shape/**
+    - tools/oracle/cases/helpers/redirect-shape/**
+    - tools/oracle/fuzz/corpus/helper_case/redirect-shape-*
+    - tools/oracle/helpers/b10062.py
+    - tools/oracle/helpers/b10062/**
+    - tools/oracle/src/helpers/mcp/b10062.rs
+    - tools/oracle/src/helpers/mcp/b10062/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L46-L55
+    why: Owned. The MCP_TRUSTED_NATIVE_REDIRECT_URIS name, the prefix-entry comment and the built-in cursor callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L60-L79
+    why: Owned. _oauth_invalid_request and the shape of its 400 detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L357-L425
+    why: Owned. Native callback normalization, the allowlist parse, the prefix match and the native match with its refusals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L428-L493
+    why: Owned. _parse_redirect_uri_for_validation, is_loopback_redirect_host and validate_redirect_uri_shape with its check order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L410-L425
+    why: Call site. Registration takes True as an accepted native callback and translates a refusal into invalid_redirect_uri, in B4674's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L615-L646
+    why: Call site. validate_trusted_redirect_uri runs the parse and the shape check before its own trust policy, in B4655's code.
+  - url: https://docs.python.org/3.13/library/ipaddress.html#ipaddress.IPv6Address.is_loopback
+    why: Python 3.13 judges an IPv4-mapped IPv6 address by its IPv4 part.
+dod:
+  - text: native_callbacks keeps the cursor callback first, trims and lowercases every configured entry, skips empty and repeated ones, and gives only the built-in entry for empty text.
+    proof: [shape-tests, oracle, helper-python]
+  - text: The built-in callback and an exact configured entry are NativeCallback in any letter case, a prefix entry accepts deeper paths, and callback* refuses callback-2 while callback/* takes callback/x.
+    proof: [shape-tests, oracle, helper-python]
+  - text: A native callback with a query, a fragment, userinfo or a backslash in its host, and a custom scheme no entry lists, is refused with 400 invalid_request.
+    proof: [shape-tests, oracle, helper-python]
+  - text: An http or https URI with a fragment, no host, userinfo (an empty one too) or a backslash in its host is refused with 400 invalid_request, an empty fragment after a trailing hash passes, and a clean one is NeedsTrustPolicy.
+    proof: [shape-tests, oracle, helper-python]
+  - text: is_loopback_redirect_host is true for localhost in any case, 127.0.0.0/8, ::1 written short and in full, and ::ffff:127.0.0.1, and false for 0.0.0.0, ::, localhost.evil.example and a URI with no host.
+    proof: [shape-tests, oracle, helper-python]
+  - text: Text urlparse refuses is a 400 invalid_request from parse_redirect_uri, and the detail object carries hint and redirect_uri only when they are set.
+    proof: [shape-tests, oracle, helper-python]
+  - text: The b10062 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: shape-tests
+      why: The allowlist, native match, hygiene order, loopback or rejection detail tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^redirect_trust::shape::tests::/)'
+    - id: helper-python
+      why: The b10062 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10062.py tools/oracle/helpers/b10062)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10062 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/redirect-shape-*")" &&
+        grep -lE 'b10062"?:' tools/oracle/fuzz/corpus/helper_case/redirect-shape-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/redirect-shape/native-callback-list.yaml
+  - tools/oracle/cases/helpers/redirect-shape/native-exact-any-case.yaml
+  - tools/oracle/cases/helpers/redirect-shape/native-prefix-entries.yaml
+  - tools/oracle/cases/helpers/redirect-shape/native-refusals.yaml
+  - tools/oracle/cases/helpers/redirect-shape/custom-scheme-refused.yaml
+  - tools/oracle/cases/helpers/redirect-shape/web-uri-hygiene.yaml
+  - tools/oracle/cases/helpers/redirect-shape/loopback-hosts.yaml
+  - tools/oracle/cases/helpers/redirect-shape/unparseable-uri.yaml
+deviations: []
+out_of_scope:
+  - "validate_loopback_redirect_uri, validate_trusted_redirect_uri, _parse_trusted_redirect_origins, _matches_trusted_origin_entry, _resolve_proxy_base_for_redirect, _trusted_redirect_uri_is_allowed, _build_trusted_redirect_rejection_message, _raise_trusted_redirect_uri_rejected and _origin_label: B4655, which calls this module."
+  - "get_request_base_url, _strip_default_port, the resource URL helpers and the rest of oauth_utils.py: B4654."
+  - "register_aggregate_client's own https-or-loopback-http rule and the invalid_redirect_uri translation: B4674."
+  - "Reading MCP_TRUSTED_NATIVE_REDIRECT_URIS from the environment: B10094's mcp_redirect_trust section. Building the list from it: B8623, once; B8702 passes the same list to the browser routes and B4674's registration."
+  - "urlparse and parse_ipv6: B5082, on main."
+pitfalls:
+  - "Rust's Ipv6Addr::is_loopback is true only for ::1, but Python 3.13 says ::ffff:127.0.0.1 is loopback; check to_ipv4_mapped first or a mapped loopback callback is refused."
+  - "https://@host/cb has an empty username, which Python reads as userinfo present, so test for any @ in the netloc rather than a non-empty user."
+  - "A trailing # leaves an empty fragment, and LiteLLM only refuses a non-empty one, so https://host/cb# is NeedsTrustPolicy."
+  - "The scheme refusal comes before the fragment check, so ftp://host/cb#x is refused for its scheme, while cursor://anysphere.cursor-mcp/oauth/callback#x fails the native match and then gets the same scheme refusal."
+  - "The native match compares scheme, netloc and path only after lowercasing all three, so CURSOR://AnySphere.Cursor-MCP/OAuth/Callback is the built-in callback."
+  - "A prefix entry myapp://host/oauth/callback* must refuse myapp://host/oauth/callback-2; only an empty rest, a prefix ending in / or a rest starting with / matches."
+  - "NeedsTrustPolicy is not an acceptance; B4674 and B4655 each run their own policy after it, so never fold it into NativeCallback."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

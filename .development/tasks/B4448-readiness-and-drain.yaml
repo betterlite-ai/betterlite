@@ -52,12 +52,14 @@ description: >-
   `should_allow_request_on_db_unavailable` is false. `show_no_redis_warning()`: false when Redis is configured
   anywhere (the coordination cache or the router's own Redis, reported by `ReadinessSources::redis_configured`), false
   when LITELLM_DISABLE_NO_REDIS_WARNING is true, true when no database is configured, else true unless
-  live_worker_count() is exactly Some(1) (None counts as not one). `show_env_credential_login_warning()` calls B788's
-  `is_env_credential_login_enabled` with the general settings.
+  live_worker_count() is exactly Some(1) (None counts as not one). The env credential login warning calls B10067's
+  `env_credential_login::is_enabled` with config.sections.env_credential_login (B10067's section) and the answer of
+  `ReadinessSources::sso_provider_ready()`.
 
   Readiness details (`readiness_details`). Inputs come through a second injected trait `ReadinessSources` (async where
   noted): `success_callback_names()` (names from B189's registry, via `callback_name`), `cache_report()` (async),
-  `redis_configured()`, `log_level()` (name such as "INFO" or "DEBUG") and `version()`. `cache_report` is None when no
+  `redis_configured()`, `sso_provider_ready()` (LiteLLM's is_sso_provider_fully_configured; B881 builds it), `log_level()`
+  (name such as "INFO" or "DEBUG") and `version()`. `cache_report` is None when no
   cache exists, the cache type string, or, for a Redis or Valkey semantic cache, an object `{"type": <type>, "index_info": <value>}`
   where a failing index lookup becomes the string `index does not exist - error: <error text>`. The value comes from B4382's `RedisSemanticCache::index_info(&self) -> Result<Json, RedisSemanticError>` or, for Valkey, B8296's index_info, whose Display text is the bare Redis error, so build the string from that text and add no other prefix. Build the body: status
   "healthy", db, cache, litellm_version, success_callbacks, use_aiohttp_transport (false when B173's
@@ -223,7 +225,8 @@ out_of_scope:
   - "The proxy lifespan and its shutdown calls: B8374. The liveliness and liveness handlers over ShutdownState and the SIGTERM flag: B8540."
   - "GET /health/liveliness and /health/liveness (the GET handlers): B003 owns them. They must read this module's ShutdownState instead of B003's bare flag; B8540 does that wiring."
   - "Calling start_shutdown and wait_for_drain from the SIGTERM path and the lifespan teardown (proxy_server.py lines 1584-1591): the startup and shutdown owner does it with the ShutdownState built here."
-  - "The production DatabaseProbe and ReadinessSources implementations over the database, cache and Redis crates: B8540 builds them. This task defines the traits and fakes only."
+  - "The production DatabaseProbe and ReadinessSources implementations over the database, cache and Redis crates: B8540 builds them, sso_provider_ready over B881's is_sso_provider_fully_configured included. This task defines the traits and fakes only."
+  - "is_env_credential_login_enabled and the two general_settings flags it reads: B10067, which this task calls."
   - "test_endpoint, health_services_endpoint, get_callback_identifier and every other route above line 1412 of the file: B4447 and B4444 to B4446 own them. B4447 calls `callback_name` from here."
   - "_read_license_data and _read_allowed_features: no license source exists in betterlite, and the deviation answers the route with the constant body."
   - "SIGTERM handling and axum graceful serve: B003 owns crates/betterlite-server/src/shutdown.rs."

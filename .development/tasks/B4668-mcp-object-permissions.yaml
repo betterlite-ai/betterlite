@@ -183,7 +183,7 @@ out_of_scope:
   - "The no-mcp-servers sentinel and its early return: owned by B4669"
   - "Server and tool ceilings (_get_allowed_mcp_servers_for_org, _for_end_user, _for_user, get_allowed_mcp_servers_for_agent, _apply_primary_org_ceiling, _apply_user_server_ceiling, apply_agent_caller_ceiling, _user_places_mcp_ceiling, admin_view_unscoped, _agent_capped_servers, _get_agent_access_group_server_ceiling, the five tool ceilings and get_agent_tool_permissions_for_server): owned by B4670"
   - "Tool access control beyond permission resolution (tool_is_granted): owned by B4672"
-  - "Access group resolution (_get_mcp_servers_from_access_groups): owned by B735"
+  - "Access group resolution (_get_mcp_servers_from_access_groups): owned by B10078"
   - "Tool permission expansion (global_mcp_server_manager.expand_tool_permissions): owned by B136"
   - "Toolset resolution (global_mcp_server_manager.resolve_toolset_tool_permissions): owned by B136"
   - "Key and team server resolution (_get_allowed_mcp_servers_for_key, _get_allowed_mcp_servers_for_team, _allowed_mcp_servers_for_single_team) and the fail-closed handling for the key path: owned by B4669"
