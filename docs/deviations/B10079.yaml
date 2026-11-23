@@ -1,0 +1,6 @@
+task: B10079
+deviations:
+  - what: The public list and the strict flag come from the registry's RegistrySettings, not from the litellm.public_mcp_servers and litellm.public_mcp_hub_strict_whitelist globals.
+    why: betterlite has no module-level state; B9997 fills the settings from the same config keys and B4721 updates the list in place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6956
+kept_bugs: []

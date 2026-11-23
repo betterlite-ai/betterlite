@@ -27,7 +27,7 @@ description: >-
   then the same: availability and agents answer empty, preview and sample need storage and answer 501); ModelNames is
   `lens::RouterModelNames`, which takes `shared.router.get()` per call, answers B844's get_model_names(team_id) on that
   router's catalog (read proxy_router.rs for how ProxyRouter exposes B844's indexes) and is absent from the state when
-  the handle holds no router, as LiteLLM passes None when llm_router is None; KeyResolver is B4504's port backed by the
+  the handle holds no router, as LiteLLM passes None when llm_router is None; KeyResolver is B10091's port backed by the
   B870 IdentityStore that B052's virtual key auth slot builds (read state/virtual_key_auth.rs and reuse its constructor
   and inputs: `shared.db` and `shared.auth_cache`); Clock is `lens::SystemClock` (now in UTC); IdSource is
   `lens::RandomIds` (uuid v4 text and the operating system's random bytes for the worker token).

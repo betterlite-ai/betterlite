@@ -1,0 +1,25 @@
+kind: helper
+name: supported-db-objects-kinds-outside-the-enum-match-by-text
+call:
+  b10054:
+    general_settings:
+      supported_db_objects:
+        - agents
+        - search_tools
+    object_type: agents
+calls:
+  - b10054:
+      general_settings:
+        supported_db_objects:
+          - agents
+          - search_tools
+      object_type: search_tools
+  - b10054:
+      general_settings:
+        supported_db_objects:
+          - agents
+          - search_tools
+      object_type: models
+env: {}
+compare:
+  ignore: []

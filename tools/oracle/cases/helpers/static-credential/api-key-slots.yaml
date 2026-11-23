@@ -1,0 +1,81 @@
+kind: helper
+name: static-credential-api-key-slots
+call:
+  b10065:
+    auth_type: api_key
+    headers: {X-API-Key: opaque-key}
+    upstream_token_header: null
+    static_header_names: []
+calls:
+  - b10065:
+      auth_type: api_key
+      headers: {X-API-Key: Bearer}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-API-Key: "Bearer Bearer"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-API-Key: apikey}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {x-api-key: key}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-Api-Key: key}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-API-Key: ""}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-API-Key: "   "}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-Custom: key}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {apikey: static-key}
+      upstream_token_header: null
+      static_header_names: [apikey]
+  - b10065:
+      auth_type: api_key
+      headers: {apikey: static-key}
+      upstream_token_header: null
+      static_header_names: [X-Tenant]
+  - b10065:
+      auth_type: api_key
+      headers: {X-Tenant: key}
+      upstream_token_header: X-Tenant
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {x-api-key: key}
+      upstream_token_header: X-Tenant
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-API-Key: "", x-api-key: key}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {X-API-Key: "", x-api-key: "  "}
+      upstream_token_header: null
+      static_header_names: []
+env: {}
+compare: {ignore: []}
