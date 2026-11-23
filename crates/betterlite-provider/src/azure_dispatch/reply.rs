@@ -18,7 +18,6 @@ use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_openai::text_completion_transport::reply::CompletionReply;
 use serde_json::Error as JsonError;
-use std::collections::BTreeMap;
 use std::io::Error as IoError;
 use uuid::Uuid;
 pub(crate) enum Projection<'name> {
@@ -137,21 +136,12 @@ fn text_reply(response: &UpstreamResponse) -> Result<ChatResponse, OperationErro
 pub(crate) fn embedding_response(
     response: UpstreamResponse,
 ) -> Result<EmbeddingResponse, OperationError> {
-    let response = success(response)?;
-    let headers: BTreeMap<String, String> = response
-        .headers
-        .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str().to_owned(),
-                value.to_str().unwrap_or_default().to_owned(),
-            )
-        })
-        .collect();
+    let checked = success(response)?;
+    let headers = SecretHeaders::from_response(&checked.headers).0;
     let raw = RawEmbedding {
-        status: response.status,
+        status: checked.status,
         headers,
-        body: response.body,
+        body: checked.body,
     };
     let parsed = raw.parse().map_err(|error| OperationError::Decode {
         operation: "embedding",

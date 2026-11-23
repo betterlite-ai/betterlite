@@ -108,6 +108,14 @@ impl Ranks<'_, '_> {
             Operation::Chat => Ok((api_base, Some(defaulted(api_version, default_api_version)))),
         }
     }
+    // AZURE_API_TYPE names the api type, and an unset or empty value keeps the module default
+    fn api_type(&self) -> String {
+        self.composition
+            .environment
+            .lookup("AZURE_API_TYPE")
+            .filter(|kind| !kind.is_empty())
+            .unwrap_or_else(|| DEFAULT_API_TYPE.to_owned())
+    }
 }
 // chat and embeddings end their version chain with the module default, so an empty one falls through
 fn defaulted(api_version: Option<String>, default_api_version: &str) -> String {
@@ -143,11 +151,7 @@ pub(crate) fn resolve(
         api_base,
         api_version,
         api_key: ranks.api_key(),
-        api_type: composition
-            .environment
-            .lookup("AZURE_API_TYPE")
-            .filter(|kind| !kind.is_empty())
-            .unwrap_or_else(|| DEFAULT_API_TYPE.to_owned()),
+        api_type: ranks.api_type(),
         auth_token: filled_secret(credentials.azure_ad_token.as_ref()),
         azure_ad_token: from_body
             .map(SecretString::from)
