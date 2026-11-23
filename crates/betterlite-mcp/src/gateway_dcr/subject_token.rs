@@ -1,6 +1,5 @@
 mod tests;
 
-use std::fmt;
 use std::future::Future;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,7 +8,8 @@ pub struct SubjectIdentity {
     pub team_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+#[strum(serialize_all = "snake_case")]
 pub enum RefusalCode {
     UnsupportedGrantType,
     InvalidRequest,
@@ -24,12 +24,6 @@ impl RefusalCode {
             Self::InvalidRequest => "invalid_request",
             Self::TemporarilyUnavailable => "temporarily_unavailable",
         }
-    }
-}
-
-impl fmt::Display for RefusalCode {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
     }
 }
 
