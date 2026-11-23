@@ -201,6 +201,13 @@ def test_rerank_response_access() -> None:
     assert "missing" not in response
 
 
+def test_rerank_response_missing_key() -> None:
+    response = betterlite_rerank.RerankResponse(id="r")
+    with pytest.raises(AttributeError):
+        _ = response["missing"]
+    assert response["_hidden_params"] == {}
+
+
 def test_rerank_hidden_params() -> None:
     first = betterlite_rerank.RerankResponse(id="a")
     second = betterlite_rerank.RerankResponse(id="b")
