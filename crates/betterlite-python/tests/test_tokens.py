@@ -120,7 +120,7 @@ def test_counter_message_roles(message: dict[str, JsonValue]) -> None:
 
 def test_counter_message_objects() -> None:
     ours = betterlite.token_counter(model="gpt-4o", messages=[Message(role="user", content=TEXT)])
-    theirs = litellm.token_counter(
+    theirs: int = litellm.token_counter(
         model="gpt-4o", messages=[LiteLLMMessage(role="user", content=TEXT)]
     )
     assert ours == theirs
@@ -135,7 +135,9 @@ def test_counter_tool_list() -> None:
 @pytest.mark.parametrize("choice", TOOL_CHOICES)
 def test_counter_tool_choice(choice: dict[str, JsonValue] | str) -> None:
     ours = betterlite.token_counter(model="gpt-4o", messages=PLAIN_MESSAGES, tool_choice=choice)
-    theirs = litellm.token_counter(model="gpt-4o", messages=PLAIN_MESSAGES, tool_choice=choice)
+    theirs: int = litellm.token_counter(
+        model="gpt-4o", messages=PLAIN_MESSAGES, tool_choice=choice
+    )
     assert ours == theirs, choice
 
 
@@ -204,7 +206,9 @@ def test_counter_disabled() -> None:
     betterlite.disable_token_counter = True
     litellm.disable_token_counter = True
     try:
-        assert betterlite.token_counter(text=TEXT) == litellm.token_counter(text=TEXT) == 0
+        ours = betterlite.token_counter(text=TEXT)
+        theirs: int = litellm.token_counter(text=TEXT)
+        assert ours == theirs == 0
     finally:
         betterlite.disable_token_counter = False
         litellm.disable_token_counter = False
