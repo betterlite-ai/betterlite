@@ -31,7 +31,7 @@ struct ScriptedClient {
 impl ScriptedClient {
     fn new(responses: Vec<Result<FetchResponse, FetchError>>) -> Self {
         Self {
-            responses: Mutex::new(responses.into()),
+            responses: Mutex::new(VecDeque::from(responses)),
             calls: AtomicU32::new(0),
         }
     }

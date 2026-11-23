@@ -23,7 +23,6 @@ use betterlite_openai::openai_base_config::{
 };
 use betterlite_openai::text_completion_execution::catalog::CompletionCatalog;
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 pub(crate) async fn model_info(
@@ -38,12 +37,11 @@ pub(crate) async fn model_info(
         &query.model,
         query.custom_llm_provider.as_deref(),
     );
-    let api_key = query.api_key.clone().map(SecretString::from);
     let request = MetadataRequest {
         model: &query.model,
         custom_llm_provider: query.custom_llm_provider.as_deref(),
         api_base: query.api_base.as_deref(),
-        api_key: api_key.as_ref(),
+        api_key: query.api_key.as_ref(),
     };
     let environment = MetadataEnvironment {
         model_cost: &state.entries,
@@ -124,15 +122,12 @@ fn exact_max_tokens(
     };
     let fields: BTreeMap<String, Box<RawValue>> =
         serde_json::from_str(entry.get()).map_err(ModelInfoError::Request)?;
-    if let Some(value) = fields.get("max_output_tokens") {
-        return serde_json::from_str(value.get())
-            .map(Some)
-            .map_err(ModelInfoError::Request);
-    }
-    if let Some(value) = fields.get("max_tokens") {
-        return serde_json::from_str(value.get())
-            .map(Some)
-            .map_err(ModelInfoError::Request);
+    for name in ["max_output_tokens", "max_tokens"] {
+        if let Some(value) = fields.get(name) {
+            return serde_json::from_str(value.get())
+                .map(Some)
+                .map_err(ModelInfoError::Request);
+        }
     }
     Ok(None)
 }
@@ -149,7 +144,6 @@ pub(crate) fn provider_info(
         .map(Some)
         .map_err(ModelInfoError::Result)
 }
-// ast-grep-ignore: no-padded-one-line-functions - the catalog depends on the provider
 fn provider_overlay(
     state: &State,
     model: &str,

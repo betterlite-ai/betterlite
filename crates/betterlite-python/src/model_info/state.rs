@@ -18,7 +18,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::source::{CatalogProvenance, SourceKind};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -71,23 +71,8 @@ impl Runtime {
         let settings = catalog_settings(&environment)?;
         let fetch = HttpFetch::new(&environment)?;
         let bundled = Bundled::parse(text)?;
-        let provenance = CatalogProvenance {
-            kind: SourceKind::Local,
-            url: None,
-            is_env_forced: settings.local,
-            fallback_reason: None,
-            loaded_at: Some(Utc::now()),
-            source_revision: bundled.revision.clone(),
-            etag: None,
-        };
-        let state = State {
-            entries: bundled.finalized.clone(),
-            vertex: VertexModelSets::build(&bundled.finalized),
-            catalog: Arc::clone(&bundled.catalog),
-            generalizations: Arc::clone(&bundled.rules),
-            provenance,
-            generation: 0,
-        };
+        let provenance = local_provenance(bundled.revision.clone(), settings.local, Utc::now());
+        let state = initial_state(&bundled, provenance);
         Ok(Self {
             bundled,
             environment,
@@ -104,7 +89,10 @@ impl Runtime {
         Arc::clone(&guard)
     }
     // ast-grep-ignore: no-padded-one-line-functions - the lock guard must outlive the change
-    pub(crate) fn update(&self, change: impl FnOnce(&mut State)) {
+    pub(crate) fn update<F>(&self, change: F)
+    where
+        F: FnOnce(&mut State),
+    {
         let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         change(Arc::make_mut(&mut guard));
     }
@@ -136,14 +124,11 @@ impl Runtime {
     pub(crate) fn adopt(&self, text: &str) -> Result<usize, ModelInfoError> {
         let entries: IndexMap<String, Box<RawValue>> = serde_json::from_str(text)?;
         let count = entries.len();
-        let catalog = match catalog_for(&entries) {
-            Ok(catalog) => catalog,
-            Err(_) => ModelCatalog::default(),
-        };
+        let catalog = Arc::new(catalog_for(&entries));
         self.update(move |state| {
+            state.vertex = VertexModelSets::build(&entries);
+            state.catalog = catalog;
             state.entries = entries;
-            state.vertex = VertexModelSets::build(&state.entries);
-            state.catalog = Arc::new(catalog);
             state.generation = state.generation.saturating_add(1);
         });
         Ok(count)
@@ -166,9 +151,37 @@ impl Runtime {
         serde_json::to_string(&info).map_err(ModelInfoError::Result)
     }
 }
-fn catalog_for(entries: &IndexMap<String, Box<RawValue>>) -> Result<ModelCatalog, ModelInfoError> {
-    let text = serde_json::to_string(entries).map_err(ModelInfoError::Result)?;
-    ModelCatalog::parse(text.as_bytes(), UnknownFields::Warn).map_err(ModelInfoError::Catalog)
+fn initial_state(bundled: &Bundled, provenance: CatalogProvenance) -> State {
+    State {
+        entries: bundled.finalized.clone(),
+        vertex: VertexModelSets::build(&bundled.finalized),
+        catalog: Arc::clone(&bundled.catalog),
+        generalizations: Arc::clone(&bundled.rules),
+        provenance,
+        generation: 0,
+    }
+}
+pub(crate) fn local_provenance(
+    revision: Option<String>,
+    is_env_forced: bool,
+    loaded_at: DateTime<Utc>,
+) -> CatalogProvenance {
+    CatalogProvenance {
+        kind: SourceKind::Local,
+        url: None,
+        is_env_forced,
+        fallback_reason: None,
+        loaded_at: Some(loaded_at),
+        source_revision: revision,
+        etag: None,
+    }
+}
+// a cost map Python adopts keeps the lookup working even when the catalog rejects a field
+fn catalog_for(entries: &IndexMap<String, Box<RawValue>>) -> ModelCatalog {
+    serde_json::to_string(entries)
+        .ok()
+        .and_then(|text| ModelCatalog::parse(text.as_bytes(), UnknownFields::Warn).ok())
+        .unwrap_or_default()
 }
 pub(crate) fn catalog_settings(
     environment: &BTreeMap<String, String>,

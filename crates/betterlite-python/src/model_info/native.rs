@@ -1,8 +1,10 @@
 use super::convert::{self, ModelQuery, ProviderQuery, ReloadQuery, RuntimeEntries};
+use super::error::ModelInfoError;
 use super::state::Runtime;
 use super::{lookup, reload};
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
+use std::future::Future;
 use std::sync::Arc;
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeCatalog {
@@ -17,13 +19,10 @@ impl NativeCatalog {
             runtime: Arc::new(runtime),
         })
     }
+    // ast-grep-ignore: no-padded-one-line-functions - a pymethod is a boundary Python calls by name
     fn model_info(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let query: ModelQuery = convert::parse(request)?;
-        py.detach(|| {
-            pyo3_async_runtimes::tokio::get_runtime()
-                .block_on(lookup::model_info(&self.runtime, &query))
-        })
-        .map_err(PyErr::from)
+        detach_block(py, || lookup::model_info(&self.runtime, &query))
     }
     fn max_tokens(&self, py: Python<'_>, model: &str) -> PyResult<Option<i64>> {
         let model = model.to_owned();
@@ -43,13 +42,10 @@ impl NativeCatalog {
         self.runtime.apply_runtime_entries(entries);
         Ok(())
     }
+    // ast-grep-ignore: no-padded-one-line-functions - a pymethod is a boundary Python calls by name
     fn reload_blocking(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let query: ReloadQuery = convert::parse(request)?;
-        py.detach(|| {
-            pyo3_async_runtimes::tokio::get_runtime()
-                .block_on(reload::reload_blocking(&self.runtime, &query))
-        })
-        .map_err(PyErr::from)
+        detach_block(py, || reload::reload_blocking(&self.runtime, &query))
     }
     fn reload_async<'py>(&self, py: Python<'py>, request: &str) -> PyResult<Bound<'py, PyAny>> {
         let query: ReloadQuery = convert::parse(request)?;
@@ -72,4 +68,14 @@ impl NativeCatalog {
     fn generation(&self) -> u64 {
         self.runtime.state().generation
     }
+}
+// the synchronous entry points all wait on the runtime with the GIL released
+fn detach_block<T, Task, Start>(py: Python<'_>, start: Start) -> PyResult<T>
+where
+    Start: FnOnce() -> Task + Send,
+    Task: Future<Output = Result<T, ModelInfoError>>,
+    T: Send,
+{
+    py.detach(|| pyo3_async_runtimes::tokio::get_runtime().block_on(start()))
+        .map_err(PyErr::from)
 }

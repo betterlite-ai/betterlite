@@ -1,5 +1,6 @@
 use super::error::ModelInfoError;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -21,7 +22,7 @@ pub(crate) struct ModelQuery {
     #[serde(default)]
     pub api_base: Option<String>,
     #[serde(default)]
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct ProviderQuery {
