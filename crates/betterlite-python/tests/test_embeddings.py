@@ -460,6 +460,15 @@ def test_error_token_refused() -> None:
         )
 
 
+def test_error_client_refused() -> None:
+    with pytest.raises(UnsupportedCallArgument) as client_caught:
+        embedding(model=GOOD_MODEL, input="hi", client=object())
+    assert client_caught.value.argument == "client"
+    with pytest.raises(UnsupportedCallArgument) as session_caught:
+        embedding(model=GOOD_MODEL, input="hi", shared_session=object())
+    assert session_caught.value.argument == "shared_session"
+
+
 def test_async_aembedding() -> None:
     with closing(EndpointServer()) as server:
         response = asyncio.run(
