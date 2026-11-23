@@ -4214,6 +4214,9 @@ name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-types",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4221,8 +4224,10 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-sdk",
@@ -4241,6 +4246,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
+ "url",
  "uuid",
 ]
 
