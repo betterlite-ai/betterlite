@@ -52,6 +52,7 @@ fn an_empty_list_loads_no_kind() {
 
 #[test]
 fn a_list_loads_only_the_kinds_it_names() {
+    let (logs, guard) = capture_logs();
     let mut store = SettingsStore::from(Section::GeneralSettings);
     store.load_yaml(BTreeMap::from([(
         SUPPORTED_DB_OBJECTS.to_owned(),
@@ -61,6 +62,20 @@ fn a_list_loads_only_the_kinds_it_names() {
     assert!(should_load_db_object(&store, "mcp"));
     assert!(!should_load_db_object(&store, "model_cost_map"));
     assert!(!should_load_db_object(&store, "agents"));
+    drop(guard);
+    assert!(logs.contents().is_empty());
+}
+
+#[test]
+fn a_list_entry_that_is_not_a_string_matches_no_kind() {
+    let mut store = SettingsStore::from(Section::GeneralSettings);
+    store.load_yaml(BTreeMap::from([(
+        SUPPORTED_DB_OBJECTS.to_owned(),
+        json!(["models", 5, null, ["mcp"]]),
+    )]));
+    assert!(should_load_db_object(&store, "models"));
+    assert!(!should_load_db_object(&store, "mcp"));
+    assert!(!should_load_db_object(&store, "5"));
 }
 
 #[test]
