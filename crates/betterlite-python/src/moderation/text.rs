@@ -1,7 +1,9 @@
 use super::convert::{
     ConvertError, TextArguments, TextCallWire, chat_messages, completion_request, prompt,
 };
-use super::error::{CallFacts, CallFailure, Raised, RawSource, convert_failure, raised};
+use super::error::{
+    CallFacts, CallFailure, Raised, RawSource, convert_failure, provider_failure, raised,
+};
 use super::session::{DeploymentFacts, TextSession, secret_text};
 use crate::completion::setup::global_credentials;
 use betterlite_models::decisions::Json;
