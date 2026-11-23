@@ -149,11 +149,15 @@ fn tokens_request_image_tokens_reads_the_mode_and_base() {
 #[test]
 fn tokens_request_tile_reads_custom_tile_sizes() {
     let request: TileRequest =
-        read(r#"{"resized_width":800,"resized_height":600,"tile_width":100}"#).unwrap();
+        read(r#"{"resized_width":800,"resized_height":600,"tile_width":100,"tile_height":64}"#)
+            .unwrap();
     assert_eq!(request.resized_width, 800);
     assert_eq!(request.resized_height, 600);
     assert_eq!(request.settings().tile_width, 100);
-    assert_eq!(request.settings().tile_height, 512);
+    assert_eq!(request.settings().tile_height, 64);
+    let default_height: TileRequest =
+        read(r#"{"resized_width":800,"resized_height":600,"tile_width":100}"#).unwrap();
+    assert_eq!(default_height.settings().tile_height, 512);
 }
 
 #[test]
