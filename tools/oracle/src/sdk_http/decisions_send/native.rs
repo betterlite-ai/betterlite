@@ -182,7 +182,7 @@ fn fields_of(run: &Run, kwargs: &Extra) -> Result<RequestFields, PrepareError> {
     let raw_questions = run.questions.clone();
     if state.is_some() {
         let questions = raw_questions
-            .map(|value| serde_json::from_value::<IndexMap<String, Json>>(value))
+            .map(|value| serde_json::from_value(serde_json::to_value(value)?))
             .transpose()
             .map_err(|source| invalid_request(run, source))?;
         return Ok(RequestFields::SystemOne(SystemOneRequestFields {
@@ -191,7 +191,7 @@ fn fields_of(run: &Run, kwargs: &Extra) -> Result<RequestFields, PrepareError> {
         }));
     }
     let questions = raw_questions
-        .map(|value| serde_json::from_value::<Vec<Json>>(value))
+        .map(|value| serde_json::from_value(serde_json::to_value(value)?))
         .transpose()
         .map_err(|source| invalid_request(run, source))?;
     Ok(RequestFields::OpenAi(OpenAiDecisionRequestFields {
