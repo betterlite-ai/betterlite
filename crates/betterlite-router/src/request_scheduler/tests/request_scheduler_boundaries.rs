@@ -6,7 +6,6 @@ use betterlite_config::sections::request_scheduler::Settings;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use rstest::rstest;
-use tokio::time::sleep;
 
 use crate::request_scheduler::error::SchedulerError;
 use crate::request_scheduler::flow::Priority;
@@ -434,16 +433,19 @@ async fn a_timed_out_request_answers_its_timeout_when_the_cleanup_fails() {
         .add_request(&item(Priority::High.value(), "head", MODEL))
         .await
         .expect("the head queues");
-    let call = ScriptedCall::answered(0);
-    let flipping = Arc::clone(&broken);
-    let flip = async move {
-        sleep(Duration::from_millis(10)).await;
-        flipping.store(true, Ordering::SeqCst);
-    };
-    let late = item(Priority::Low.value(), "late", MODEL);
-    let deadline = plan(0.5);
-    let (scheduled, ()) = tokio::join!(service.schedule(&late, &call, &deadline), flip);
-    let error = scheduled.expect_err("the deadline expires");
-    assert!(matches!(error, SchedulerError::TimedOut { .. }));
+    // the store breaks at the first poll, so the request queues first and only the deadline's removal fails
+    let call = ScriptedCall::answered_breaking_the_store(0, Arc::clone(&broken));
+    let error = service
+        .schedule(
+            &item(Priority::Low.value(), "late", MODEL),
+            &call,
+            &plan(0.5),
+        )
+        .await
+        .expect_err("the deadline expires");
+    assert!(
+        matches!(error, SchedulerError::TimedOut { .. }),
+        "the deadline answered its timeout, got {error:?}"
+    );
     assert_eq!(call.calls(), 0);
 }

@@ -119,11 +119,12 @@ class Answer:
 class QueueReader(Protocol):
     async def get_queue(self, model_name: str) -> list[tuple[int, str]]: ...
 class HealthWatch(Protocol):
+    # the pin names its first argument id, but a probe cannot shadow a builtin
     async def poll(
-        self, id: str, model_name: str, health_deployments: list[dict[str, str]]
+        self, request_id: str, /, model_name: str, health_deployments: list[dict[str, str]]
     ) -> bool: ...
     async def peek(
-        self, id: str, model_name: str, health_deployments: list[dict[str, str]]
+        self, request_id: str, /, model_name: str, health_deployments: list[dict[str, str]]
     ) -> bool: ...
 class SchedulerCall(Protocol):
     async def schedule_acompletion(
@@ -131,6 +132,7 @@ class SchedulerCall(Protocol):
         model: str,
         messages: list[AllMessageValues],
         priority: int,
+        *,
         stream: Literal[False] = False,
     ) -> ModelResponse: ...
 def entry(model: str) -> dict[str, object]:
@@ -166,7 +168,7 @@ async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcom
     elif isinstance(step, PollStep):
         outcome = Polled(
             allowed=await watch.poll(
-                id=step.request_id,
+                step.request_id,
                 model_name=step.model,
                 health_deployments=[{}] * step.healthy,
             )
@@ -174,7 +176,7 @@ async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcom
     elif isinstance(step, PeekStep):
         outcome = Peeked(
             head=await watch.peek(
-                id=step.request_id,
+                step.request_id,
                 model_name=step.model,
                 health_deployments=[],
             )

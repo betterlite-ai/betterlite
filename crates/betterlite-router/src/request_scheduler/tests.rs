@@ -237,6 +237,8 @@ pub(super) struct ScriptedCall {
     answer: Result<headers::Response, Box<ErrorClass>>,
     // flipped as the call runs, so a test can make the removal after it fail
     flip: Option<Arc<AtomicBool>>,
+    // flipped at the first poll, so a waiting request queues first and only the removal after its wait fails
+    break_store: Option<Arc<AtomicBool>>,
     // the caller going away while the request waits, cancelled at its first poll
     cancel: Option<CancellationToken>,
     calls: AtomicUsize,
@@ -249,6 +251,7 @@ impl ScriptedCall {
             healthy,
             answer: Ok(headers::Response::Object(JsonObject::new())),
             flip: None,
+            break_store: None,
             cancel: None,
             calls: AtomicUsize::new(0),
         }
@@ -268,6 +271,13 @@ impl ScriptedCall {
     pub(super) fn answered_flipping(healthy: usize, flip: Arc<AtomicBool>) -> Self {
         Self {
             flip: Some(flip),
+            ..Self::idle(healthy)
+        }
+    }
+
+    pub(super) fn answered_breaking_the_store(healthy: usize, broken: Arc<AtomicBool>) -> Self {
+        Self {
+            break_store: Some(broken),
             ..Self::idle(healthy)
         }
     }
@@ -309,6 +319,9 @@ impl ScheduledCall for ScriptedCall {
     fn healthy_deployments(&self) -> usize {
         if let Some(cancel) = &self.cancel {
             cancel.cancel();
+        }
+        if let Some(broken) = &self.break_store {
+            broken.store(true, Ordering::SeqCst);
         }
         self.healthy
     }
