@@ -72,8 +72,10 @@ pub async fn user_team_ids_from_db(
     lookup: &UserLookup,
     user_id: &str,
 ) -> Result<Vec<String>, TeamListQueryError> {
-    let found = find_row(lookup, user_id, Some(true), MissingRow::NotFoundOnly).await?;
-    Ok(found.map_or_else(Vec::new, |user| user.teams))
+    let Some(user) = find_row(lookup, user_id, Some(true), MissingRow::NotFoundOnly).await? else {
+        return Ok(Vec::new());
+    };
+    Ok(user.teams)
 }
 
 // a requested user's team membership filter; a missing or unreadable row is 404
