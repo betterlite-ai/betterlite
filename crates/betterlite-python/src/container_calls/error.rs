@@ -64,7 +64,7 @@ pub(crate) enum SessionError {
 // A native method answers the class LiteLLM's exception_type would raise, or a local failure it never saw
 #[derive(Debug)]
 pub(crate) enum SessionFailure {
-    Raised(NativeContainerPayload),
+    Raised(Box<NativeContainerPayload>),
     Invalid(ConvertError),
     Setup(SessionError),
 }
@@ -72,7 +72,7 @@ pub(crate) enum SessionFailure {
 impl SessionFailure {
     pub(crate) fn into_pyerr(self, py: Python<'_>, error_type: &Py<PyType>) -> PyErr {
         match self {
-            Self::Raised(payload) => native_error(py, error_type, &payload),
+            Self::Raised(payload) => native_error(py, error_type, payload.as_ref()),
             Self::Invalid(error) => PyErr::from(error),
             Self::Setup(error) => PyErr::from(error),
         }
@@ -94,13 +94,13 @@ pub(crate) fn native_error(
 
 impl From<CollectionFailure> for SessionFailure {
     fn from(failure: CollectionFailure) -> Self {
-        Self::Raised(NativeContainerPayload::from_class(&failure.class))
+        Self::Raised(Box::new(NativeContainerPayload::from_class(&failure.class)))
     }
 }
 
 impl From<ResourceFailure> for SessionFailure {
     fn from(failure: ResourceFailure) -> Self {
-        Self::Raised(NativeContainerPayload::from_class(&failure.class))
+        Self::Raised(Box::new(NativeContainerPayload::from_class(&failure.class)))
     }
 }
 
