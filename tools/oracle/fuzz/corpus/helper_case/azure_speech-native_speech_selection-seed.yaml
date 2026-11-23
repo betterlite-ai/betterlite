@@ -1,0 +1,22 @@
+kind: helper
+name: azure_speech-native_speech_selection-seed
+call:
+  azure_speech:
+    native_speech_selection:
+      calls:
+        - model: tts-1
+          input: hello
+          voice: {name: alloy}
+          timeout_seconds: 3
+          litellm_params: {api_base: https://params.example, api_key: sk-params}
+          optional_params: {speed: 1.5}
+          extra_headers: {x-call: "1"}
+          aspeech: true
+          environment: {AZURE_API_BASE: https://env.example}
+        - model: tts-1
+          input: hello
+          voice: 3
+          timeout_seconds: 1
+          globals: {azure_key: sk-azure-global}
+env: {}
+compare: {ignore: []}

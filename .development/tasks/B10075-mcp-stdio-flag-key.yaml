@@ -1,0 +1,70 @@
+id: B10075
+title: MCP stdio flag key in the mcp_env_values section
+description: >-
+  Only the proxy's own environment may turn stdio MCP servers on. LiteLLM enforces that with two items in stdio_gate.py: `MCP_STDIO_ENABLED_ENV_VAR = "LITELLM_ENABLE_MCP_STDIO"` (L7) and `is_mcp_stdio_flag_key(env_var_name)` (L18-L19), true when `env_var_name.upper()` equals the constant. The config file loader (`_load_environment_variables`, proxy_server.py L6190-L6195) and the stored environment loader (`_decrypt_and_set_db_env_variables`, L7597-L7604) both skip a key that matches, so neither a config file nor a database row can set the flag. B8382 builds the stored loader and B3211's ui_discovery section reads the variable, so both need the name and the check from one place.
+
+
+  Main already spells the name twice in private: `STDIO_ENABLED_VAR` in crates/betterlite-config/src/sections/mcp_env_values.rs (B4716's section, which reads the variable into `StdioPolicy.enabled`) and `MCP_STDIO_ENABLED` with its own uppercase compare in crates/betterlite/src/config_boot/environment.rs (B8590's config file overlay). This task makes the section the one home and points the overlay at it.
+
+
+  In mcp_env_values.rs, rename `STDIO_ENABLED_VAR` to `pub const MCP_STDIO_ENABLED_ENV_VAR: &str = "LITELLM_ENABLE_MCP_STDIO"`, and keep the section reading the variable through it with `betterlite_env::flag` as it does now. Add `pub fn is_mcp_stdio_flag_key(name: &str) -> bool`, which returns `name.to_uppercase() == MCP_STDIO_ENABLED_ENV_VAR`. The function cannot fail, so the section's error type does not change.
+
+
+  In config_boot/environment.rs, delete `MCP_STDIO_ENABLED`, import both items from `betterlite_config::sections::mcp_env_values`, replace the inline compare in `overlay_entry` with `is_mcp_stdio_flag_key(key)` and interpolate `MCP_STDIO_ENABLED_ENV_VAR` in the warning. The text stays exactly "Ignoring LITELLM_ENABLE_MCP_STDIO set in the config file. Set it in the proxy's environment instead", and the blocked-key check still runs first.
+
+
+  Tests in `sections::mcp_env_values::tests`, each named starting with `stdio_flag_key`: "LITELLM_ENABLE_MCP_STDIO", "litellm_enable_mcp_stdio" and "Litellm_Enable_Mcp_Stdio" match; "l\u{131}tellm_enable_mcp_std\u{131}o" (dotless i) and "LITELLM_ENABLE_MCP_\u{17f}TDIO" (long s) match too, because Python's str.upper maps both letters onto the ASCII ones; "LITELLM_ENABLE_MCP_STDIO_X", " LITELLM_ENABLE_MCP_STDIO", "MCP_STDIO" and "" do not. The existing section tests and config_boot's `the_mcp_stdio_flag_is_skipped_in_any_case` keep passing unchanged.
+
+
+  No helper cases: the predicate is one comparison, and the behavior it drives is compared against LiteLLM by B8382's stdio-flag-skipped case and by config boot.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/mcp_env_values.rs
+    - crates/betterlite-config/src/sections/mcp_env_values/**
+    - crates/betterlite/src/config_boot/environment.rs
+    - crates/betterlite/src/config_boot/environment/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L7-L19
+    why: Owned. MCP_STDIO_ENABLED_ENV_VAR and is_mcp_stdio_flag_key; is_mcp_stdio_enabled in between belongs to B3211.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6181-L6195
+    why: The config file loader skips the flag key after the blocked keys, with the warning config_boot already logs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7585-L7612
+    why: The stored environment loader, B8382's, skips the same key with a warn-once database message.
+dod:
+  - text: MCP_STDIO_ENABLED_ENV_VAR is public in the mcp_env_values section, which reads the variable through it, and no second constant with that name remains there.
+    proof: [section-tests]
+  - text: is_mcp_stdio_flag_key matches LITELLM_ENABLE_MCP_STDIO in any case under Unicode uppercasing, dotless i and long s included, and nothing else.
+    proof: [flag-key-tests]
+  - text: The config file overlay skips the flag through is_mcp_stdio_flag_key with the same warning and keeps no copy of the name.
+    proof: [config-boot-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: section-tests
+      why: The section still keeps a private name for the variable, or stopped reading it after the rename.
+      run: >-
+        test -z "$(grep -nw 'STDIO_ENABLED_VAR' crates/betterlite-config/src/sections/mcp_env_values.rs)" &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_env_values::/)'
+    - id: flag-key-tests
+      why: is_mcp_stdio_flag_key is missing, compares case-sensitively or misses a name Python's upper maps onto the constant.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_env_values::tests::stdio_flag_key/)'
+    - id: config-boot-tests
+      why: The config file overlay still spells the variable itself, or its skip and warning changed.
+      run: >-
+        test -z "$(grep -n 'LITELLM_ENABLE_MCP_STDIO' crates/betterlite/src/config_boot/environment.rs)" &&
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^config_boot::environment::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "is_mcp_stdio_enabled and the ui_discovery section's mcp_stdio_enabled: B3211, which reads the variable through MCP_STDIO_ENABLED_ENV_VAR."
+  - "MCP_STDIO_DISABLED_MESSAGE, is_mcp_stdio_blocked and warn_if_mcp_stdio_blocked: B4716 built them in betterlite-mcp's server_payload rules (B136 covers the file). The message spells the variable inside one literal and stays as it is."
+  - "The stored environment loader decrypt_and_export_env and its warn-once database message: B8382."
+pitfalls:
+  - 'to_ascii_uppercase misses "l\u{131}tellm_enable_mcp_stdio" and "LITELLM_ENABLE_MCP_\u{17f}TDIO", which Python''s str.upper turns into LITELLM_ENABLE_MCP_STDIO, so a config entry spelled that way would switch stdio on; use to_uppercase.'
+  - "config_boot's test asserts the whole warning text, so interpolate the imported constant and keep the words around it."
+  - "The section reads the variable with betterlite_env::flag and its name argument shows up in the load error; keep passing the renamed constant so the error still names LITELLM_ENABLE_MCP_STDIO."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

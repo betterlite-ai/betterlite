@@ -1,0 +1,60 @@
+name: claude-plugin-write-route-aliases
+config: |
+  general_settings:
+    master_key: oracle-master-routes
+env: {}
+upstream: []
+steps:
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master-routes}
+      body:
+        name: route-plugin
+        source: {source: github, repo: org/route-plugin}
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: PUT
+      path: /claude-code/plugins/route-plugin
+      headers: {content-type: application/json, authorization: Bearer oracle-master-routes}
+      body:
+        source: {source: github, repo: org/route-plugin}
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /claude-code/plugins/route-plugin/enable
+      headers: {authorization: Bearer oracle-master-routes}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /claude-code/plugins/route-plugin/disable
+      headers: {authorization: Bearer oracle-master-routes}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: DELETE
+      path: /claude-code/plugins/route-plugin
+      headers: {authorization: Bearer oracle-master-routes}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []

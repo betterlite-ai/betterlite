@@ -8,7 +8,9 @@ description: >-
   _detach_access_group_from_agents (L365-L376), _detach_access_group_from_agent_registry (L379-L393),
   _patch_team_caches_add_access_group (L401-L427), _patch_team_caches_remove_access_group (L430-L450),
   _patch_key_caches_add_access_group (L453-L478) and _patch_key_caches_remove_access_group (L481-L500).
-  B821 provides the transaction protocols; this task never opens/commits a transaction or registers a route.
+  B10056 provides the transaction protocols (access_group_read::protocols: AccessGroupTx with its TeamTable,
+  KeyTable and AgentTable traits and the Postgres implementation the tests run on); this task never opens/commits a
+  transaction or registers a route.
 
   Team/key assignment helpers visit supplied IDs in order, reading each current row on the supplied
   transaction. Missing rows are silently skipped. Add appends the group only when absent, treating a null
@@ -75,7 +77,8 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B821 owns access_group_endpoints.py L49-L309 declarations, guards and projections, plus GET handlers L584-L613.
+  - B10056 owns the access_group_endpoints.py record, table and transaction protocols L47-L154. B821 owns the guards
+    and projections L157-L309, plus GET handlers L584-L613.
   - B822 owns create_access_group L513-L577, update_access_group L620-L710, delete_access_group L717-L813
     and write aliases L817-L823/L836-L847; it controls transaction and post-commit ordering.
   - B821 owns GET aliases L824-L835; B4776 owns registry implementation, B733/B734/B737 own cache primitives.

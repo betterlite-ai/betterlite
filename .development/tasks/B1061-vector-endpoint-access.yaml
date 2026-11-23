@@ -4,8 +4,11 @@ description: >-
   Implement the four complete functions at vector_store_endpoints/utils.py:354-559 in core::api::vector_endpoint_access: _does_endpoint_match, check_vector_store_permission, is_allowed_to_call_vector_store_endpoint and is_allowed_to_call_vector_store_files_endpoint. The managed-id resolution and the ownership assertions at L260-L353 are B10014's, and nothing here calls them.
 
   Endpoint authorization uses B741's canonical request route, B010 provider selection and B1058/B1071
-  provider endpoint contracts. Admin bypass runs before config lookup. Unsupported providers return null.
-  Store index lifecycle uses B1060's admin policy; other requests classify writes before reads with the
+  provider endpoint contracts. Admin bypass runs before config lookup; both bypasses (L428 and L512) call
+  B10071's auth_is_proxy_admin instead of comparing the role here. Unsupported providers return null.
+  Store index lifecycle uses B10071's is_index_lifecycle_request and require_index_admin
+  (betterlite_auth::vector_index_admin), with DELETE mapped to delete, PUT and PATCH to update and the
+  rest to create; other requests classify writes before reads with the
   pinned substring/prefix matcher. Grants come from either key_metadata or team_metadata under
   allowed_vector_store_indexes. Store unknown endpoints deny, while attached-file unknown endpoints
   return null. Do not conflate these outcomes or strengthen the matcher's prefix semantics.
@@ -43,7 +46,7 @@ dod:
 - text: >-
     write_before_read_and_lifecycle uses Azure AI Search index analyze-x and its document batch-write
     endpoint, which also contains /analyze: a read-only grant denies and write permits. Non-admin
-    DELETE/PUT/PATCH on the index itself and POST on /indexes deny with B1060's delete/update/create
+    DELETE/PUT/PATCH on the index itself and POST on /indexes deny with B10071's delete/update/create
     admin message even with write grants. Admin returns true before provider lookup. Unsupported provider
     returns null before lifecycle classification. Store unmatched endpoint or missing classified grant
     raises 403 detail="User does not have permission to call vector store endpoint idx. Ask your administrator to add the necessary permissions to your API key/Team."
@@ -74,7 +77,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/vector-endpoint-access/attachment-endpoint-policy.yaml
 deviations: []
 out_of_scope:
-- B1060 owns utils.py:25-257 normalization, owner grants and lifecycle recognition. B10014 owns utils.py:260-353, the managed-id resolution and the ownership assertions.
+- B10071 owns utils.py:40-99, the admin predicate, the index admin gate and lifecycle recognition; this task calls them. B1060 owns the rest of utils.py:25-257, normalization and owner grants, and nothing here calls it. B10014 owns utils.py:260-353, the managed-id resolution and the ownership assertions.
 - B741 owns canonical request routing; B527/B558 own provider endpoint tables. Gateway response conversion and actual provider HTTP remain in route/SDK tasks.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as vector_endpoint_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_endpoint_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_endpoint_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

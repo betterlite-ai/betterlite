@@ -1,0 +1,15 @@
+kind: helper
+name: azure-native-ssml
+call:
+  azure_media_dispatch:
+    case: native_ssml
+    api_base: https://westus.api.cognitive.microsoft.com
+    api_version: "2024-06-01"
+    model: tts-model
+    input: hello
+    voice: en-US-JennyNeural
+    api_key: sk-azure-fixture
+    options: {}
+env: {}
+compare:
+  ignore: [{pointer: /value/accept, why: "httpx adds its own accept default to the SSML post, which the AVA handler never sets"}]

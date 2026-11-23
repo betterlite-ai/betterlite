@@ -1,0 +1,14 @@
+id: B10075
+milestone: M4 keys, spend and management
+title: MCP stdio flag key in the mcp_env_values section
+status: done
+depends_on: [B4716, B8590]
+file: tasks/B10075-mcp-stdio-flag-key.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/stdio_gate.py"
+parent: B078
+split_from: B3211
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3043

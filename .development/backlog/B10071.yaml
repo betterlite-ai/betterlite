@@ -1,0 +1,14 @@
+id: B10071
+milestone: M5 api families
+title: Vector store index admin gate and lifecycle check
+status: todo
+depends_on: [B2314]
+file: tasks/B10071-vector-index-admin.yaml
+covers:
+  - "litellm/proxy/vector_store_endpoints/utils.py"
+parent: B090
+split_from: B1060
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

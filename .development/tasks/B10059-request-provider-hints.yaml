@@ -1,0 +1,91 @@
+id: B10059
+title: Request provider hint accessors
+description: >-
+  Many file, batch, container and video routes pick a provider from three request hints: the custom-llm-provider header, the custom_llm_provider query parameter and the custom_llm_provider field of the JSON body. LiteLLM reads each with one small accessor in litellm/proxy/common_utils/openai_endpoint_utils.py (L52-L81). They were planned inside B2400, which waits on the bug report work for its exception conversion, so every route that only reads a hint waited with it. Build the three accessors here as module api::provider_hints in betterlite-server (crates/betterlite-server/src/api/provider_hints.rs, an empty stub the skeleton declares in api/mod.rs, with tests in provider_hints/tests.rs). The module sits outside B2400's api::proxy_endpoint_support on purpose, so the two tasks never share files.
+
+
+  Each accessor returns its own value and nothing else. The caller applies the order of the sources and the truthiness rule; every route at the pin lets an empty string fall through to the next source, but that is the route's choice, so an empty value comes back here as Some("").
+
+
+  provider_from_headers(&HeaderMap) -> Option<String> returns the first custom-llm-provider header, matched case-insensitively, with its bytes decoded as Latin-1 the way Starlette decodes header values. A header spelled custom_llm_provider is another name and does not match.
+
+
+  provider_from_query(query: Option<&str>) -> Option<String> takes the raw query string (Uri::query) and reads it the way Starlette's QueryParams does: form decoding with "+" as a space and percent escapes decoded, blank values kept, and the last value when the key repeats. A bare custom_llm_provider without "=" gives Some("").
+
+
+  provider_from_body(body: &JsonObject) -> Option<&serde_json::Value> takes the decoded body B1100's read_request_body returned (its body field, betterlite_core::api::request_body::JsonObject) and returns the custom_llm_provider field as it is: null stays null and 123 stays 123, and the caller validates the type. LiteLLM's accessor reads the body itself through _read_request_body; here the route reads it once through B1100 and passes the object in, so this module never touches body bytes and B1100's decoding errors stay the route's.
+
+
+  Oracle. Helper cases on the b10059 operation take the headers as ordered name and value pairs, a raw query string and a JSON body object, and answer the three results. The Python adapter builds a Starlette Request from the same headers, query string and JSON body and awaits the pinned accessors; the Rust adapter runs the three functions, decoding the body object the way B1100 does. No route is registered and no byte decoder is added, so there is no fuzz target. Budget from about 25 owned LiteLLM lines: about 70 production lines, 120 adapter lines and 150 test lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/provider_hints.rs
+    - crates/betterlite-server/src/api/provider_hints/**
+    - tools/oracle/src/helpers/server/b10059.rs
+    - tools/oracle/src/helpers/server/b10059/**
+    - tools/oracle/helpers/b10059.py
+    - tools/oracle/helpers/b10059/**
+    - tools/oracle/cases/helpers/provider-hints/**
+    - tools/oracle/fuzz/corpus/helper_case/provider-hints-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
+    why: Owned. The three accessors; the header is spelled with hyphens, the query and body key with underscores.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L175-L282
+    why: _read_request_body, which B1100 ports; the route passes its decoded object to provider_from_body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L192-L196
+    why: A typical caller; the route chains the accessors with or, so an empty value falls through there and not here.
+dod:
+  - text: >-
+      provider_from_headers returns None without the header, Some("") for an empty value, the first value when the header repeats, matches CUSTOM-LLM-PROVIDER, ignores a custom_llm_provider header and decodes a byte above 0x7F as its Latin-1 character.
+    proof: [header-tests, oracle, helper-python]
+  - text: >-
+      provider_from_query returns None without the key or without a query, Some("") for custom_llm_provider= and for a bare key, the last value when the key repeats, and decodes "+" and percent escapes.
+    proof: [query-tests, oracle, helper-python]
+  - text: >-
+      provider_from_body returns None when the field is absent and the field's value unchanged otherwise, so "", null, 123 and "bedrock" come back as they are.
+    proof: [body-tests, oracle, helper-python]
+  - text: A new b10059 seed reaches the shared helper case parser.
+    proof: [helper-case-corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: header-tests
+      why: the header accessor tests are missing, or the accessor drops an empty value, the first repeat or a Latin-1 byte
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::provider_hints::(.*::)?header_/)'
+    - id: query-tests
+      why: the query accessor tests are missing, or the accessor keeps the first repeat or skips form decoding
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::provider_hints::(.*::)?query_/)'
+    - id: body-tests
+      why: the body accessor tests are missing, or the accessor converts the field's type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::provider_hints::(.*::)?body_/)'
+    - id: helper-python
+      why: the b10059 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10059.py tools/oracle/helpers/b10059)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10059 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider-hints-*")" &&
+        grep -lE 'b10059"?:' tools/oracle/fuzz/corpus/helper_case/provider-hints-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/provider-hints/provider-hint-sources.yaml
+  - tools/oracle/cases/helpers/provider-hints/repeated-and-empty.yaml
+  - tools/oracle/cases/helpers/provider-hints/body-field-values.yaml
+deviations: []
+out_of_scope:
+  - "handle_exception_on_proxy, _recreate_writer_on_read_only_transaction, is_known_model, the disconnect release and remove_sensitive_info_from_deployment: B2400, in api::proxy_endpoint_support."
+  - "_read_request_body and its decoding errors: B1100. The route reads the body and passes the decoded object here."
+  - "The order of the sources, the empty-string fall-through and the default provider of each route: the route tasks, for example B3371's pick_provider."
+pitfalls:
+  - The header name is custom-llm-provider with hyphens, while the query and body key is custom_llm_provider with underscores.
+  - Starlette's Headers returns the first of repeated headers, but QueryParams keeps the last of repeated keys.
+  - HeaderValue::to_str fails on any byte above 0x7E, while Starlette decodes every header byte as Latin-1, so decode the raw bytes instead.
+  - The body field is returned untyped; a route that reads it as a string must handle null and numbers itself, as LiteLLM's callers do later.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
