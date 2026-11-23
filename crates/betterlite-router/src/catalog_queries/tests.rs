@@ -402,6 +402,16 @@ fn team_mapping_ignores_an_empty_public_name() {
 }
 
 #[test]
+fn team_mapping_takes_the_first_team_row() {
+    let world = World::new(&[
+        team_row("internal-a", "dep-a", "team-1", None),
+        team_row("internal-b", "dep-b", "team-1", Some("public-b")),
+    ]);
+    let mapped = world.queries().map_team_model(None, "team-1").unwrap();
+    assert_eq!(mapped.as_deref(), Some("internal-a"));
+}
+
+#[test]
 fn team_mapping_is_none_without_a_team_row() {
     let world = World::new(&[plain("global", "dep-g", "openai/m")]);
     let mapped = world.queries().map_team_model(None, "team-1").unwrap();
@@ -762,7 +772,9 @@ fn can_fall_back_reads_the_request_fallbacks_before_the_router_list() {
 #[test]
 fn can_fall_back_is_true_for_a_client_fallback_list() {
     let world = World::new(&[]);
-    let call = Call::default().fallbacks(vec![FallbackChainEntry::Target(name("claude"))]);
+    let call = Call::default()
+        .fallbacks(vec![FallbackChainEntry::Target(name("claude"))])
+        .tried(&[name("claude")]);
     let config = RouterConfig::new(plans(Vec::new(), Vec::new()));
     let answer = world
         .queries()
@@ -774,12 +786,14 @@ fn can_fall_back_is_true_for_a_client_fallback_list() {
 #[test]
 fn can_fall_back_is_true_for_a_parameterized_client_target() {
     let world = World::new(&[]);
-    let call = Call::default().fallbacks(vec![FallbackChainEntry::Target(
-        FallbackTarget::Parameters(ParameterizedTarget {
-            model: "claude".to_owned(),
-            parameters: IndexMap::new(),
-        }),
-    )]);
+    let call = Call::default()
+        .fallbacks(vec![FallbackChainEntry::Target(
+            FallbackTarget::Parameters(ParameterizedTarget {
+                model: "claude".to_owned(),
+                parameters: IndexMap::new(),
+            }),
+        )])
+        .tried(&[name("claude")]);
     let config = RouterConfig::new(plans(Vec::new(), Vec::new()));
     let answer = world
         .queries()
