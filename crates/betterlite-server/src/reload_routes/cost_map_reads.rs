@@ -1,20 +1,19 @@
 use axum::Json;
 use axum::extract::{Extension, State};
-use axum::response::{IntoResponse, Response};
 use betterlite_db::reload_schedule::status_formatting::reload_schedule_status;
-use betterlite_models::source::SourceKind;
+use betterlite_models::source::{CatalogSnapshot, SourceKind};
 use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::reload_routes::ReloadRoutesState;
 
-use super::caller::{caller_principal, require_admin_view};
-use super::error::{ReloadError, WrappedCause};
+use super::caller::admin_read_snapshot;
+use super::error::{ReloadError, store_call};
 
 const STATUS_FAILED: &str = "Failed to get model cost map reload status";
 
 #[derive(Serialize)]
-struct StatusBody {
+pub(super) struct StatusBody {
     scheduled: bool,
     interval_hours: Option<u32>,
     last_run: Option<String>,
@@ -24,7 +23,7 @@ struct StatusBody {
 }
 
 #[derive(Serialize)]
-struct SourceBody {
+pub(super) struct SourceBody {
     source: &'static str,
     url: Option<String>,
     is_env_forced: bool,
@@ -38,46 +37,39 @@ struct SourceBody {
 pub(super) async fn cost_map_reload_status(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
-) -> Result<Response, ReloadError> {
-    let principal = caller_principal(caller)?;
-    require_admin_view(&principal)?;
-    let snapshot = state.catalog.current();
+) -> Result<Json<StatusBody>, ReloadError> {
+    let snapshot = admin_read_snapshot(&state, caller)?;
     let provenance = &snapshot.provenance;
     let mut schedule = None;
     if let Some(store) = state.config.as_deref() {
-        schedule = store
-            .read_schedule()
-            .await
-            .map_err(|source| ReloadError::Wrapped {
-                prefix: STATUS_FAILED,
-                cause: WrappedCause::Store(source),
-            })?;
+        schedule = Some(store_call(store.read_schedule(), STATUS_FAILED).await?);
     }
     let status = reload_schedule_status(schedule.as_ref());
-    let body = StatusBody {
+    Ok(Json(StatusBody {
         scheduled: status.scheduled,
         interval_hours: status.interval_hours,
         last_run: status.last_run,
         next_run: status.next_run,
         source_revision: provenance.source_revision.clone(),
         etag: provenance.etag.clone(),
-    };
-    Ok(Json(body).into_response())
+    }))
 }
 
 pub(super) async fn model_cost_map_source(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
-) -> Result<Response, ReloadError> {
-    let principal = caller_principal(caller)?;
-    require_admin_view(&principal)?;
-    let snapshot = state.catalog.current();
+) -> Result<Json<SourceBody>, ReloadError> {
+    let snapshot = admin_read_snapshot(&state, caller)?;
+    Ok(Json(source_body(&snapshot)))
+}
+
+fn source_body(snapshot: &CatalogSnapshot) -> SourceBody {
     let provenance = &snapshot.provenance;
     let source = match provenance.kind {
         SourceKind::Local => "local",
         SourceKind::Remote => "remote",
     };
-    let body = SourceBody {
+    SourceBody {
         source,
         url: provenance.url.clone(),
         is_env_forced: provenance.is_env_forced,
@@ -86,6 +78,5 @@ pub(super) async fn model_cost_map_source(
         source_revision: provenance.source_revision.clone(),
         etag: provenance.etag.clone(),
         model_count: snapshot.catalog.adopted_size,
-    };
-    Ok(Json(body).into_response())
+    }
 }

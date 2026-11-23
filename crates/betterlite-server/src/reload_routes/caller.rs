@@ -1,12 +1,17 @@
+use std::sync::Arc;
+
 use axum::extract::Extension;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
+use betterlite_models::source::CatalogSnapshot;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::plugin_routes::routes::{PROXY_ADMIN_ROLE, caller_identity};
+use crate::reload_routes::ReloadRoutesState;
 
 use super::error::ReloadError;
+use super::ports::ReloadConfigStore;
 
 // B003 authenticates the master key into this subject, and its request carries no key record to read a role from
 const MASTER_KEY_SUBJECT: &str = "master_key";
@@ -54,4 +59,33 @@ pub(super) fn require_admin_view(principal: &Principal) -> Result<(), ReloadErro
     Err(ReloadError::Forbidden {
         role: user_role(principal),
     })
+}
+
+// the cancel handlers check the role and nothing else before the database
+pub(super) fn require_write_admin(
+    caller: Option<Extension<AuthContext>>,
+) -> Result<(), ReloadError> {
+    let principal = caller_principal(caller)?;
+    require_proxy_admin(&principal)
+}
+
+// the write handlers' database check, which LiteLLM's catch turns into a wrapped 500
+pub(super) fn write_store<'state>(
+    state: &'state ReloadRoutesState,
+    prefix: &'static str,
+) -> Result<&'state dyn ReloadConfigStore, ReloadError> {
+    state
+        .config
+        .as_deref()
+        .ok_or_else(|| ReloadError::missing_database(prefix))
+}
+
+// the two read handlers start alike: an admin-view caller reads the pod's current snapshot
+pub(super) fn admin_read_snapshot(
+    state: &ReloadRoutesState,
+    caller: Option<Extension<AuthContext>>,
+) -> Result<Arc<CatalogSnapshot>, ReloadError> {
+    let principal = caller_principal(caller)?;
+    require_admin_view(&principal)?;
+    Ok(state.catalog.current())
 }

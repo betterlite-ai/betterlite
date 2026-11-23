@@ -1,15 +1,14 @@
 use axum::Json;
 use axum::extract::{Extension, State};
 use axum::http::Uri;
-use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::reload_routes::ReloadRoutesState;
 
 use super::beta_config::reload_config_value;
-use super::caller::{caller_principal, require_proxy_admin};
-use super::error::{ReloadError, WrappedCause};
+use super::caller::{caller_principal, require_proxy_admin, require_write_admin, write_store};
+use super::error::{ReloadError, store_call};
 use super::hours::parse_hours;
 use super::wire::naive_utc_isoformat;
 
@@ -17,7 +16,7 @@ const SCHEDULE_FAILED: &str = "Failed to schedule anthropic beta headers reload"
 const CANCEL_FAILED: &str = "Failed to cancel anthropic beta headers reload";
 
 #[derive(Serialize)]
-struct ScheduleBody {
+pub(super) struct ScheduleBody {
     message: String,
     status: &'static str,
     interval_hours: i64,
@@ -25,7 +24,7 @@ struct ScheduleBody {
 }
 
 #[derive(Serialize)]
-struct CancelBody {
+pub(super) struct CancelBody {
     message: &'static str,
     status: &'static str,
     timestamp: String,
@@ -35,74 +34,38 @@ pub(super) async fn schedule_beta_headers_reload(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
     uri: Uri,
-) -> Result<Response, ReloadError> {
+) -> Result<Json<ScheduleBody>, ReloadError> {
     let principal = caller_principal(caller)?;
     let hours = parse_hours(&uri)?;
     require_proxy_admin(&principal)?;
     if hours <= 0 {
         return Err(ReloadError::HoursNotPositive);
     }
-    let Some(store) = state.config.as_deref() else {
-        return Err(ReloadError::Wrapped {
-            prefix: SCHEDULE_FAILED,
-            cause: WrappedCause::MissingDatabase,
-        });
-    };
-    store
-        .write_beta_config(reload_config_value(Some(hours), false))
-        .await
-        .map_err(|source| ReloadError::Wrapped {
-            prefix: SCHEDULE_FAILED,
-            cause: WrappedCause::Store(source),
-        })?;
-    store
-        .invalidate_beta_config()
-        .await
-        .map_err(|source| ReloadError::Wrapped {
-            prefix: SCHEDULE_FAILED,
-            cause: WrappedCause::Store(source),
-        })?;
+    let store = write_store(&state, SCHEDULE_FAILED)?;
+    let value = reload_config_value(Some(hours), false);
+    store_call(store.write_beta_config(value), SCHEDULE_FAILED).await?;
+    store_call(store.invalidate_beta_config(), SCHEDULE_FAILED).await?;
     let now = (state.clock)();
-    let body = ScheduleBody {
+    Ok(Json(ScheduleBody {
         message: format!("Anthropic beta headers reload scheduled for every {hours} hours"),
         status: "success",
         interval_hours: hours,
         timestamp: naive_utc_isoformat(now),
-    };
-    Ok(Json(body).into_response())
+    }))
 }
 
 pub(super) async fn cancel_beta_headers_reload(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
-) -> Result<Response, ReloadError> {
-    let principal = caller_principal(caller)?;
-    require_proxy_admin(&principal)?;
-    let Some(store) = state.config.as_deref() else {
-        return Err(ReloadError::Wrapped {
-            prefix: CANCEL_FAILED,
-            cause: WrappedCause::MissingDatabase,
-        });
-    };
-    store
-        .delete_beta_config()
-        .await
-        .map_err(|source| ReloadError::Wrapped {
-            prefix: CANCEL_FAILED,
-            cause: WrappedCause::Store(source),
-        })?;
-    store
-        .invalidate_beta_config()
-        .await
-        .map_err(|source| ReloadError::Wrapped {
-            prefix: CANCEL_FAILED,
-            cause: WrappedCause::Store(source),
-        })?;
+) -> Result<Json<CancelBody>, ReloadError> {
+    require_write_admin(caller)?;
+    let store = write_store(&state, CANCEL_FAILED)?;
+    store_call(store.delete_beta_config(), CANCEL_FAILED).await?;
+    store_call(store.invalidate_beta_config(), CANCEL_FAILED).await?;
     let now = (state.clock)();
-    let body = CancelBody {
+    Ok(Json(CancelBody {
         message: "Anthropic beta headers reload schedule cancelled",
         status: "success",
         timestamp: naive_utc_isoformat(now),
-    };
-    Ok(Json(body).into_response())
+    }))
 }
