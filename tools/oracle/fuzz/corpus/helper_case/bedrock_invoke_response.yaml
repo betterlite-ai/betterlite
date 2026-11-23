@@ -1,0 +1,22 @@
+kind: helper
+name: bedrock-invoke-response-titan-seed
+call:
+  bedrock_invoke_response:
+    reply:
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "seed answer"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "3"], [x-amzn-bedrock-output-token-count, "2"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-seed
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+env: {}
+compare: {ignore: []}

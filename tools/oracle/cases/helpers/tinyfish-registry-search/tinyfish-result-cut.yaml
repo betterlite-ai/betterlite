@@ -1,0 +1,72 @@
+kind: helper
+name: tinyfish-result-cut
+call:
+  b048:
+    op: request
+    query: "q"
+    optional_params: {}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply:
+      status: 200
+      body: '{"results":[{"title":"t0","url":"https://example.test/0","snippet":"s0"},{"title":"t1","url":"https://example.test/1","snippet":"s1"},{"title":"t2","url":"https://example.test/2","snippet":"s2"},{"title":"t3","url":"https://example.test/3","snippet":"s3"},{"title":"t4","url":"https://example.test/4","snippet":"s4"},{"title":"t5","url":"https://example.test/5","snippet":"s5"},{"title":"t6","url":"https://example.test/6","snippet":"s6"},{"title":"t7","url":"https://example.test/7","snippet":"s7"},{"title":"t8","url":"https://example.test/8","snippet":"s8"},{"title":"t9","url":"https://example.test/9","snippet":"s9"},{"title":"t10","url":"https://example.test/10","snippet":"s10"},{"title":"t11","url":"https://example.test/11","snippet":"s11"}]}'
+calls:
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {max_results: 3}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":"t0","url":"https://example.test/0","snippet":"s0"},{"title":"t1","url":"https://example.test/1","snippet":"s1"},{"title":"t2","url":"https://example.test/2","snippet":"s2"},{"title":"t3","url":"https://example.test/3","snippet":"s3"},{"title":"t4","url":"https://example.test/4","snippet":"s4"}]}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {max_results: 10}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":"t0","url":"https://example.test/0","snippet":"s0"},{"title":"t1","url":"https://example.test/1","snippet":"s1"},{"title":"t2","url":"https://example.test/2","snippet":"s2"},{"title":"t3","url":"https://example.test/3","snippet":"s3"},{"title":"t4","url":"https://example.test/4","snippet":"s4"},{"title":"t5","url":"https://example.test/5","snippet":"s5"},{"title":"t6","url":"https://example.test/6","snippet":"s6"},{"title":"t7","url":"https://example.test/7","snippet":"s7"},{"title":"t8","url":"https://example.test/8","snippet":"s8"},{"title":"t9","url":"https://example.test/9","snippet":"s9"},{"title":"t10","url":"https://example.test/10","snippet":"s10"},{"title":"t11","url":"https://example.test/11","snippet":"s11"}]}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {max_results: 1}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":"t0","url":"https://example.test/0","snippet":"s0"},{"title":"t1","url":"https://example.test/1","snippet":"s1"}]}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {max_results: "2"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":"t0","url":"https://example.test/0","snippet":"s0"},{"title":"t1","url":"https://example.test/1","snippet":"s1"},{"title":"t2","url":"https://example.test/2","snippet":"s2"},{"title":"t3","url":"https://example.test/3","snippet":"s3"},{"title":"t4","url":"https://example.test/4","snippet":"s4"}]}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {max_results: 25}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":"t0","url":"https://example.test/0","snippet":"s0"},{"title":"t1","url":"https://example.test/1","snippet":"s1"},{"title":"t2","url":"https://example.test/2","snippet":"s2"},{"title":"t3","url":"https://example.test/3","snippet":"s3"},{"title":"t4","url":"https://example.test/4","snippet":"s4"},{"title":"t5","url":"https://example.test/5","snippet":"s5"},{"title":"t6","url":"https://example.test/6","snippet":"s6"},{"title":"t7","url":"https://example.test/7","snippet":"s7"},{"title":"t8","url":"https://example.test/8","snippet":"s8"},{"title":"t9","url":"https://example.test/9","snippet":"s9"},{"title":"t10","url":"https://example.test/10","snippet":"s10"},{"title":"t11","url":"https://example.test/11","snippet":"s11"}]}'
+env: {}
+compare: {ignore: []}

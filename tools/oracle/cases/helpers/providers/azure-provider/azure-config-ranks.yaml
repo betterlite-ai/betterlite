@@ -1,0 +1,52 @@
+kind: helper
+name: azure-config-ranks
+call:
+  azure_provider:
+    case: chat
+    model: gpt-4o
+    api_base: null
+    api_version: null
+    api_key: null
+    azure_ad_token: null
+    headers: null
+    extra_headers: null
+    extra_body:
+      azure_ad_token: body-token
+    max_retries: null
+    messages:
+      - role: user
+        content: hi
+    optional_params: {}
+    embedding: null
+    acompletion: false
+    environment:
+      AZURE_API_BASE: https://env.test
+      AZURE_API_VERSION: "2024-06-01"
+      AZURE_API_TYPE: azure
+      AZURE_OPENAI_API_KEY: env-openai
+      AZURE_API_KEY: env-key
+      AZURE_AD_TOKEN: env-token
+    globals:
+      api_base: https://global.test
+      api_version: "2024-09-01"
+      api_key: global-key
+      azure_key: azure-global
+      headers: null
+      azure_default_api_version: null
+    chat_defaults: null
+    o_series_defaults: null
+    status: 200
+    reply:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o-2024-08-06
+      choices:
+        - index: 0
+          message: {role: assistant, content: hi}
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    second: null
+env: {}
+compare: {ignore: []}

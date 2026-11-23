@@ -1,0 +1,24 @@
+task: B6040
+deviations:
+  - what: Files cross to Rust as raw blobs next to the JSON text and not as base64 inside it.
+    why: Audio and image files can be many megabytes, and base64 would copy them twice.
+    link: ""
+  - what: A file tuple with more than three items is refused with a TypeError naming the key, where LiteLLM passes the fourth item's headers mapping through to the OpenAI SDK, which sends it on the multipart part.
+    why: The task's file forms stop at (name, content, content_type), and the $file marker carries no per-part headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L190
+  - what: A timeout object with connect, read, write and pool phases becomes the largest of the four before it reaches Rust, where LiteLLM hands the object to its HTTP client and each phase keeps its own limit.
+    why: The Rust transport enforces one deadline per call, as B5659's deviations record, and the task text asks for the largest phase.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L814-L827
+  - what: "`client` and `shared_session` raise `UnsupportedCallArgument` where LiteLLM hands them to its provider call."
+    why: A Python HTTP client cannot drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6355-L6356
+  - what: "`logger_fn` is accepted and never called, and a warning is logged once per call."
+    why: The endpoint call runs in Rust and has no point to call back into Python at each step.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1400-L1408
+  - what: The proxy auth failure warning carries the failed call's traceback, where LiteLLM logs the message alone.
+    why: Ruff's blind-except rule allows the broad `except Exception` only when the exception is logged with `exc_info` enabled, and this task's budget allows no noqa.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6369-L6374
+  - what: "`RerankResponse` takes its item access from the shared `ResponseObject`: a key it does not hold, `_hidden_params` included, raises `AttributeError` where LiteLLM's `self.__dict__[key]` raises `KeyError`; `get` returns None and `in` is False for the same keys in both."
+    why: Every ported model under betterlite.types uses ResponseObject, the base B5657 and B5658 ported, and B5657 records the same base behavior; the declared fields, defaults and dumps match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L88-L95
+kept_bugs: []

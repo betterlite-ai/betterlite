@@ -1,0 +1,204 @@
+kind: helper
+name: tinyfish-param-encoding
+call:
+  b048:
+    op: request
+    query: "rust"
+    optional_params: {}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply: null
+calls:
+  - b048:
+      op: request
+      query: ["rust", "lang"]
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "a&b=c"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {country: "US"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {location: "Berlin"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {phrase: "a&b c"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {flag: true}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {flag: false}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {count: 7}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {ratio: 2.5}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {whole: 10.0}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {tags: ["a", "b"]}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {filter: {"a": 1, "b": 2}}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {max_tokens_per_page: 5}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {country: "", location: "X"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {alpha: "one", beta: 2}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {phrase: "a&b c", country: "DE"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {note: null}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {}
+      api_key: null
+      api_base: null
+      environment: {TINYFISH_API_KEY: "env-key"}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {}
+      api_key: null
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: "https://proxy.test/api/search"
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {TINYFISH_API_BASE: "https://env.test/search"}
+      headers: {}
+      reply: null
+env: {}
+compare: {ignore: []}

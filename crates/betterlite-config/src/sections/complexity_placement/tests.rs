@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::loader::ConfigLoader;
-use crate::sections::complexity_placement::{Config, Settings};
+use crate::sections::complexity_placement::{Config, DeploymentPin, Placement, Settings};
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
     let lookup: BTreeMap<String, String> = variables
@@ -44,13 +44,21 @@ fn the_defaults_are_the_pinned_litellm_values() {
             max_tokens_from_tier_model: true,
         }
     );
+    // ComplexityRouterConfig.deployment_affinity declares default=True
+    assert_eq!(DeploymentPin::default(), DeploymentPin::InUse);
 }
 
 #[test]
 fn an_empty_router_config_resolves_to_the_defaults() {
     let source = "model_list:\n  - model_name: router\n    litellm_params:\n      model: openai/gpt-4o\n      complexity_router_config: {}\n";
     let resolved = settings(source, &[]).unwrap();
-    assert_eq!(resolved.deployments, vec![Some(Config::default())]);
+    assert_eq!(
+        resolved.deployments,
+        vec![Some(Placement {
+            config: Config::default(),
+            pin: DeploymentPin::InUse,
+        })]
+    );
 }
 
 #[test]
@@ -60,9 +68,12 @@ fn declared_values_replace_the_defaults() {
     let resolved = settings(&source, &[]).unwrap();
     assert_eq!(
         resolved.deployments,
-        vec![Some(Config {
-            return_raw_model_name: true,
-            max_tokens_from_tier_model: false,
+        vec![Some(Placement {
+            config: Config {
+                return_raw_model_name: true,
+                max_tokens_from_tier_model: false,
+            },
+            pin: DeploymentPin::InUse,
         })]
     );
 }
@@ -75,6 +86,7 @@ fn an_environment_flag_resolves_to_a_bool() {
         resolved.deployments[0]
             .as_ref()
             .unwrap()
+            .config
             .return_raw_model_name
     );
 }
@@ -87,6 +99,7 @@ fn an_empty_environment_flag_takes_the_default() {
         resolved.deployments[0]
             .as_ref()
             .unwrap()
+            .config
             .max_tokens_from_tier_model
     );
 }
@@ -113,6 +126,7 @@ fn a_flag_of_explicit_false_stays_off() {
         !resolved.deployments[0]
             .as_ref()
             .unwrap()
+            .config
             .max_tokens_from_tier_model
     );
 }
@@ -134,8 +148,86 @@ fn the_router_sibling_keys_do_not_become_unsupported() {
         resolved.deployments[0]
             .as_ref()
             .unwrap()
+            .config
             .return_raw_model_name
     );
+}
+
+#[test]
+fn a_deployment_affinity_router_stamps_the_session_marker() {
+    let source = router("        deployment_affinity: true\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments,
+        vec![Some(Placement {
+            config: Config::default(),
+            pin: DeploymentPin::InUse,
+        })]
+    );
+    assert!(resolved.stamps_session_marker());
+}
+
+// _uses_tier_pin: user-turn classification pins the tier, and the deployment pin follows the tier pin
+#[test]
+fn a_user_turn_classifier_stamps_the_session_marker() {
+    let source =
+        router("        deployment_affinity: false\n        classification_mode: user_turn\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(resolved.deployments[0].unwrap().pin, DeploymentPin::InUse);
+}
+
+#[test]
+fn a_session_affinity_router_stamps_the_session_marker() {
+    let source = router("        deployment_affinity: false\n        session_affinity: true\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(resolved.deployments[0].unwrap().pin, DeploymentPin::InUse);
+    assert!(resolved.stamps_session_marker());
+}
+
+// plugins replace the pin machinery, so a non-empty list turns the marker off
+#[test]
+fn a_plugin_list_turns_the_marker_off() {
+    let source =
+        router("        deployment_affinity: true\n        plugins:\n          - name: p\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(resolved.deployments[0].unwrap().pin, DeploymentPin::Unused);
+    assert!(!resolved.stamps_session_marker());
+}
+
+#[test]
+fn an_empty_plugin_list_keeps_the_marker() {
+    let source = router("        deployment_affinity: true\n        plugins: []\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert!(resolved.stamps_session_marker());
+}
+
+#[test]
+fn a_router_configuring_no_pin_keeps_the_marker_off() {
+    let source = router("        deployment_affinity: false\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(resolved.deployments[0].unwrap().pin, DeploymentPin::Unused);
+    assert!(!resolved.stamps_session_marker());
+}
+
+// _uses_deployment_pin is read over every router the config registers, so one pinning deployment is enough
+#[test]
+fn one_pinning_deployment_stamps_the_marker_for_the_section() {
+    let source = "model_list:\n  - model_name: plain\n    litellm_params:\n      model: openai/gpt-4o\n      complexity_router_config:\n        deployment_affinity: false\n  - model_name: router\n    litellm_params:\n      model: openai/gpt-4o\n      complexity_router_config: {}\n";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments,
+        vec![
+            Some(Placement {
+                config: Config::default(),
+                pin: DeploymentPin::Unused,
+            }),
+            Some(Placement {
+                config: Config::default(),
+                pin: DeploymentPin::InUse,
+            }),
+        ]
+    );
+    assert!(resolved.stamps_session_marker());
 }
 
 #[test]
@@ -143,5 +235,11 @@ fn an_extra_router_config_key_is_allowed() {
     // ComplexityRouterConfig is extra="allow", and the other section views claim these siblings
     let source = router("        placement_mystery: true\n");
     let resolved = settings(&source, &[]).unwrap();
-    assert_eq!(resolved.deployments, vec![Some(Config::default())]);
+    assert_eq!(
+        resolved.deployments,
+        vec![Some(Placement {
+            config: Config::default(),
+            pin: DeploymentPin::InUse,
+        })]
+    );
 }
