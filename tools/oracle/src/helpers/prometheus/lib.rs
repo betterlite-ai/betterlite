@@ -4,5 +4,5 @@
 )]
 
 betterlite_oracle_helper_api::helper_group! {
-    "b10090" => b10090, "b3886" => b3886,
+    "b10090" => b10090, "b10095" => b10095, "b3886" => b3886,
 }

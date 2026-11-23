@@ -40,13 +40,28 @@ description: >-
   2. Shared discoverable endpoints: parse with B10062's parse_redirect_uri and run B10062's validate_redirect_uri_shape
      with the native callback list first; NativeCallback is accepted, its rejection is the answer, and only
      NeedsTrustPolicy reaches these rules: same-origin (matching the proxy's resolved origin), loopback, or
-     ops-trusted https hosts from ``MCP_TRUSTED_REDIRECT_ORIGINS`` (env var, comma-separated, supporting wildcard
+     ops-trusted https hosts from ``MCP_TRUSTED_REDIRECT_ORIGINS`` (comma-separated, supporting wildcard
      subdomains like ``*.example.com``).
      Same-origin comparison strips default ports for the scheme (443 for https, 80 for http) so ``https://host:443``
      matches ``https://host``. PROXY_BASE_URL (env var, explicit https origin) overrides request-header origin detection.
      Untrusted proxies (X-Forwarded-* disabled or caller not in mcp_trusted_proxy_ranges) use only the literal request
      origin and the allowlists; trusted proxies may trust X-Forwarded-Proto/Host/Port. A refusal here is B10062's
      RedirectUriRejected with redirect_uri set, as LiteLLM's _raise_trusted_redirect_uri_rejected passes it.
+
+
+  The two allowlists are arguments. Nothing in betterlite-mcp reads MCP_TRUSTED_REDIRECT_ORIGINS or
+  MCP_TRUSTED_NATIVE_REDIRECT_URIS, because rules.yaml keeps environment reads in betterlite-config: B10094's section
+  config.sections.mcp_redirect_trust carries both as raw text (trusted_origins and native_redirect_uris, empty when
+  unset). Define `pub struct RedirectAllowlists { pub origins: Vec<String>, pub native_callbacks: Vec<String> }` in
+  redirect_trust and make validate_trusted_redirect_uri take `&RedirectAllowlists` beside the request and the
+  redirect_uri; the shape check gets its native_callbacks, and _trusted_redirect_uri_is_allowed walks its origins. The
+  callers build one value when they build their state, with a struct literal: origins is
+  `parse_trusted_redirect_origins(&settings.trusted_origins)` and native_callbacks is B10062's
+  `native_callbacks(&settings.native_redirect_uris)`. So parse_trusted_redirect_origins(text: &str) -> Vec<String> is
+  pub. It is _parse_trusted_redirect_origins over that text: trimmed empty text is an empty list; otherwise split on
+  commas, trim and lowercase each entry, skip it when empty, drop everything up to the first "://", keep what comes
+  before the first "/", skip it when empty, and strip a default :443 with B4654's strip_default_port("https", entry)
+  unless the entry starts with "*.". The rejection warning logs the two lists where LiteLLM logs the raw variables.
 
 
   Build the production modules in betterlite-mcp (a new crate in crates/betterlite-mcp/ for MCP-specific logic)
@@ -144,6 +159,11 @@ dod:
     proof:
       - behavior-tests
       - redirect-integration-tests
+  - text: 'parse_trusted_redirect_origins and the allowlists argument work for every listed case: origins_empty_text,
+      origins_strip_scheme_path_and_case, origins_strip_default_https_port, origins_keep_wildcard_port and
+      trusted_allowlists_come_from_argument (an origin allowed only through RedirectAllowlists, with no environment set).'
+    proof:
+      - behavior-tests
   - text: The production decode_session_cookie decoder is used by the service and its fuzz target and rejects
       malformed/invalid input without panic.
     proof:
@@ -221,6 +241,8 @@ out_of_scope:
     validate_redirect_uri_shape (L428-493), in redirect_trust::shape.'
   - 'litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py: _purge_expired_codes (L70-75),
     _verify_pkce (L58-63), _oauth_token_error (L77-83), _build_authorize_html (L187-200+) are owned by B4678.'
+  - 'Reading MCP_TRUSTED_REDIRECT_ORIGINS and MCP_TRUSTED_NATIVE_REDIRECT_URIS: B10094''s mcp_redirect_trust section.
+    Building RedirectAllowlists from it: B8623 for the OAuth flows of B7531 and B7532, B8702 for B7971''s RedirectTrust port.'
 
 pitfalls:
   - 'The JWT decode must reject any token with type=="byok_session", since the MCP /token endpoint also
@@ -239,6 +261,8 @@ pitfalls:
     Untrusted proxies never use X-Forwarded-* even when set, preserving the loopback + allowlist fallback.
     Mixing these two rules in one function creates TOCTOU bugs.'
   - 'B4654 owns get_request_base_url and strip_default_port, and B10062 owns parse_redirect_uri, is_loopback_redirect_host, validate_redirect_uri_shape and RedirectUriRejected; this task calls them and builds none of them again.'
+  - 'No std::env read belongs in redirect_trust: a test that sets MCP_TRUSTED_REDIRECT_ORIGINS in the process would pass while production, which only has RedirectAllowlists, refuses the origin.'
+  - 'parse_trusted_redirect_origins strips :443 only from entries without the *. prefix, so *.example.com:443 keeps its port and then never matches, since a wildcard compares the host alone.'
 
 budget:
   max_changed_lines: 1500
