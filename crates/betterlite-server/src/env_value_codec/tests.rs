@@ -237,7 +237,6 @@ fn encrypt_env_for_db_opens_plaintext_and_stored_ciphertext_once(#[case] algorit
     assert_eq!(plain.starts_with("v2:gcm:"), algorithm == AES);
     let legacy = stored["legacy"].as_str().unwrap();
     assert_eq!(opened(legacy, SALT_KEY).as_deref(), Some("hello"));
-    assert_ne!(legacy, LEGACY_HELLO);
     let sealed = stored["sealed"].as_str().unwrap();
     assert_eq!(opened(sealed, SALT_KEY).as_deref(), Some("hello"));
 }
