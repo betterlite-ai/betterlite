@@ -1,0 +1,59 @@
+kind: helper
+name: bedrock-qwen-deepseek-deepseek-seed
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply: []
+    qwen_request: []
+    deepseek_reply:
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '3'
+      - - x-amzn-bedrock-output-token-count
+        - '2'
+      request_data:
+        prompt: seed<think>
+      body: '{"generation": "seed reasoning</think>seed answer"}'
+      response:
+        id: chatcmpl-seed
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 400
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '1'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data: {}
+      body: '{"generation": "plain seed"}'
+      response:
+        id: chatcmpl-seed
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+env: {}
+compare:
+  ignore: []
