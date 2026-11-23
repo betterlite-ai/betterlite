@@ -14,6 +14,7 @@ import pytest
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict, override
 
+import betterlite.passthrough
 from betterlite._completion.arguments import SessionLike
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeError
@@ -61,6 +62,11 @@ VOLATILE: Final[frozenset[str]] = frozenset(
 DEAD_BASE: Final = f"http://{HOST}:9{API_PATH}"
 POSITIONAL: Final = "POST"
 EXPECTED_CALLS: Final = 2
+EXPECTED_EXPORTS: Final[list[str]] = [
+    "BasePassthroughUtils",
+    "allm_passthrough_route",
+    "llm_passthrough_route",
+]
 TIMEOUT_SECONDS: Final = 12.5
 ROUTER_SECONDS: Final = 40
 STREAM_TIMEOUT: Final = 5
@@ -478,6 +484,11 @@ def test_signature_matches() -> None:
     view = signature_view()
     for name, rows in view["reference"].items():
         assert view["ours"][name] == rows, name
+
+
+def test_signature_exports_match() -> None:
+    exports = betterlite.passthrough.__all__
+    assert exports == EXPECTED_EXPORTS
 
 
 def test_signature_refusal() -> None:
