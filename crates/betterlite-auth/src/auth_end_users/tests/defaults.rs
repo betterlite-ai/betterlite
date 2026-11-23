@@ -86,8 +86,10 @@ fn whitespace_id_kept() {
 
 #[tokio::test]
 async fn explicit_empty_id_overrides() {
-    let rows =
-        ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(budget_fixture("from-empty", None))));
+    let rows = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(Box::new(budget_fixture(
+        "from-empty",
+        None,
+    )))));
     let cache = ScriptedCache::new();
     let defaults = lookup(Some(&rows), &cache, Some("proxy"));
     let found = defaults
@@ -229,8 +231,10 @@ async fn default_decode_error_none() {
 #[tokio::test]
 async fn default_cache_write_error_none() {
     let (log, _guard) = capture_events();
-    let rows =
-        ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(budget_fixture("b1", Some("100")))));
+    let rows = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(Box::new(budget_fixture(
+        "b1",
+        Some("100"),
+    )))));
     let cache = ScriptedCache::failing(None, Some(Surface::Budget));
     let found = lookup(Some(&rows), &cache, None)
         .default_end_user_budget(Some("b1"))
@@ -300,8 +304,9 @@ async fn member_decode_error_propagates() {
 
 #[tokio::test]
 async fn member_cache_write_error_propagates() {
-    let rows =
-        ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(budget_fixture("member", None))));
+    let rows = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(Box::new(budget_fixture(
+        "member", None,
+    )))));
     let cache = ScriptedCache::failing(None, Some(Surface::Budget));
     let error = lookup(Some(&rows), &cache, None)
         .team_member_default_budget("member")
@@ -324,8 +329,10 @@ async fn member_cache_read_error_propagates() {
 
 #[tokio::test]
 async fn management_ttl_consumed() {
-    let rows =
-        ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(budget_fixture("b1", Some("100")))));
+    let rows = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(Box::new(budget_fixture(
+        "b1",
+        Some("100"),
+    )))));
     let cache = ScriptedCache::with_ttl(33.0_f64);
     let defaults = lookup(Some(&rows), &cache, None);
     assert!(
@@ -356,7 +363,7 @@ async fn key_before_proxy_default() {
     let rows = ScriptedBudgetRows::answering(BudgetAnswer::QueryFailure);
     rows.set(
         "key",
-        BudgetAnswer::Row(Some(budget_fixture("key-budget", Some("10")))),
+        BudgetAnswer::Row(Some(Box::new(budget_fixture("key-budget", Some("10"))))),
     );
     let cache = ScriptedCache::new();
     let found = lookup(Some(&rows), &cache, Some("proxy"))
@@ -376,10 +383,10 @@ async fn key_before_proxy_default() {
 
 #[tokio::test]
 async fn missing_key_budget_uses_proxy() {
-    let rows = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(budget_fixture(
+    let rows = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(Box::new(budget_fixture(
         "proxy-budget",
         Some("10"),
-    ))));
+    )))));
     rows.set("key", BudgetAnswer::Row(None));
     let cache = ScriptedCache::new();
     let found = lookup(Some(&rows), &cache, Some("proxy"))

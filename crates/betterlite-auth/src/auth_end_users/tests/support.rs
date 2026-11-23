@@ -335,21 +335,21 @@ impl EndUserCache for ScriptedCache {
         if self.fail_writes == Some(surface) {
             return Err(cache_error());
         }
-        let mut rows = if budget {
-            self.budgets.lock().unwrap_or_else(PoisonError::into_inner)
+        let rows = if budget {
+            &self.budgets
         } else {
-            self.end_users
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
+            &self.end_users
         };
-        rows.insert(cache_key.to_owned(), encoded);
+        rows.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(cache_key.to_owned(), encoded);
         Ok(())
     }
 }
 
 #[derive(Clone, Debug)]
 pub(super) enum BudgetAnswer {
-    Row(Option<LiteLLMBudgetTable>),
+    Row(Option<Box<LiteLLMBudgetTable>>),
     QueryFailure,
     DecodeFailure,
 }
@@ -396,7 +396,7 @@ impl BudgetRows for ScriptedBudgetRows {
             .cloned()
             .unwrap_or_else(|| self.fallback.clone());
         match answer {
-            BudgetAnswer::Row(row) => Ok(row),
+            BudgetAnswer::Row(row) => Ok(row.map(|budget| *budget)),
             BudgetAnswer::QueryFailure => Err(BudgetFetchError::Query(Box::new(query_failure()))),
             BudgetAnswer::DecodeFailure => {
                 Err(BudgetFetchError::Decode(Box::new(decode_failure())))
@@ -407,7 +407,7 @@ impl BudgetRows for ScriptedBudgetRows {
 
 #[derive(Clone, Debug)]
 pub(super) enum EndUserAnswer {
-    Row(Option<LiteLLMEndUserTable>),
+    Row(Option<Box<LiteLLMEndUserTable>>),
     Failure,
 }
 
@@ -445,10 +445,10 @@ impl EndUserRows for ScriptedEndUserRows {
             .get(end_user_id)
             .cloned();
         match answer {
-            Some(EndUserAnswer::Row(row)) => Ok(row),
+            Some(EndUserAnswer::Row(row)) => Ok(row.map(|end_user| *end_user)),
             Some(EndUserAnswer::Failure) => Err(EndUserFetchError::Read(Box::new(query_failure()))),
             None => match self.fallback.clone() {
-                EndUserAnswer::Row(row) => Ok(row),
+                EndUserAnswer::Row(row) => Ok(row.map(|end_user| *end_user)),
                 EndUserAnswer::Failure => Err(EndUserFetchError::Read(Box::new(query_failure()))),
             },
         }

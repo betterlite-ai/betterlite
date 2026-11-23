@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_config::sections::end_user_registry::Settings;
+use betterlite_db::budget_permission_rows::LiteLLMBudgetTable;
 use betterlite_db::postgres_store::session::PostgresStore;
 use rust_decimal::Decimal;
 
@@ -37,11 +38,24 @@ fn request<'req>(
     }
 }
 
+// the default the lookup applies to alice for one key, through the full object lookup
+async fn resolved_budget(
+    objects: &EndUserObjects<'_, ScriptedEndUserRows, ScriptedBudgetRows, ScriptedCache>,
+    key: &str,
+) -> Option<LiteLLMBudgetTable> {
+    objects
+        .get_end_user_object(&request(Some("alice"), Some(key), None))
+        .await
+        .expect("the key resolves")
+        .expect("the row exists")
+        .litellm_budget_table
+}
+
 #[tokio::test]
 async fn own_resolved_budget_wins() {
     let own = budget_fixture("own", Some("100"));
     let row = end_user_row("alice", "0", Some("own"), Some(&own));
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row.clone())));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row.clone()))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::QueryFailure);
     let cache = ScriptedCache::new();
     let registry = guard_off();
@@ -72,8 +86,8 @@ async fn own_resolved_budget_wins() {
 async fn dangling_budget_uses_default() {
     let proxy = budget_fixture("proxy", Some("100"));
     let row = end_user_row("alice", "0", Some("dangling"), None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
-    let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(proxy.clone())));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row))));
+    let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(Some(Box::new(proxy.clone()))));
     let cache = ScriptedCache::new();
     let registry = guard_off();
     let store = PostgresStore { pool: None };
@@ -102,9 +116,9 @@ async fn dangling_budget_uses_default() {
 async fn default_copy_preserves_id() {
     let key = budget_fixture("key-budget", Some("50"));
     let row = end_user_row("alice", "0", Some("own"), None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row.clone())));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row.clone()))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
-    budgets.set("key", BudgetAnswer::Row(Some(key.clone())));
+    budgets.set("key", BudgetAnswer::Row(Some(Box::new(key.clone()))));
     let cache = ScriptedCache::new();
     let registry = guard_off();
     let store = PostgresStore { pool: None };
@@ -155,7 +169,7 @@ async fn db_required_before_none_id() {
 #[tokio::test]
 async fn empty_id_queries() {
     let row = end_user_row("", "0", None, None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
     let cache = ScriptedCache::new();
     let registry = guard_off();
@@ -214,7 +228,7 @@ async fn unrestricted_registry_skips_row() {
 #[tokio::test]
 async fn budget_forces_registry_lookup() {
     let row = end_user_row("alice", "0", None, None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
     let cache = ScriptedCache::new();
     cache.put_registry(&["other-user"]);
@@ -258,10 +272,10 @@ async fn proxy_default_cached_before_key_default() {
     let proxy = budget_fixture("proxy", Some("100"));
     let key = budget_fixture("key-budget", Some("50"));
     let row = end_user_row("alice", "0", None, None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
-    budgets.set("proxy", BudgetAnswer::Row(Some(proxy)));
-    budgets.set("key", BudgetAnswer::Row(Some(key.clone())));
+    budgets.set("proxy", BudgetAnswer::Row(Some(Box::new(proxy))));
+    budgets.set("key", BudgetAnswer::Row(Some(Box::new(key.clone()))));
     let cache = ScriptedCache::new();
     let registry = guard_off();
     let store = PostgresStore { pool: None };
@@ -303,11 +317,11 @@ async fn two_keys_do_not_share_defaults() {
     let key_a = budget_fixture("key-a", Some("50"));
     let key_b = budget_fixture("key-b", Some("25"));
     let row = end_user_row("alice", "0", None, None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
-    budgets.set("proxy", BudgetAnswer::Row(Some(proxy.clone())));
-    budgets.set("key-a", BudgetAnswer::Row(Some(key_a.clone())));
-    budgets.set("key-b", BudgetAnswer::Row(Some(key_b.clone())));
+    budgets.set("proxy", BudgetAnswer::Row(Some(Box::new(proxy.clone()))));
+    budgets.set("key-a", BudgetAnswer::Row(Some(Box::new(key_a.clone()))));
+    budgets.set("key-b", BudgetAnswer::Row(Some(Box::new(key_b.clone()))));
     let cache = ScriptedCache::new();
     let registry = guard_off();
     let store = PostgresStore { pool: None };
@@ -319,18 +333,8 @@ async fn two_keys_do_not_share_defaults() {
         store: &store,
         max_end_user_budget_id: Some("proxy"),
     };
-    let first = objects
-        .get_end_user_object(&request(Some("alice"), Some("key-a"), None))
-        .await
-        .expect("the first key resolves")
-        .expect("the row exists");
-    assert_eq!(first.litellm_budget_table, Some(key_a));
-    let second = objects
-        .get_end_user_object(&request(Some("alice"), Some("key-b"), None))
-        .await
-        .expect("the second key resolves from the cache")
-        .expect("the row exists");
-    assert_eq!(second.litellm_budget_table, Some(key_b));
+    assert_eq!(resolved_budget(&objects, "key-a").await, Some(key_a));
+    assert_eq!(resolved_budget(&objects, "key-b").await, Some(key_b));
     let stored = cache
         .stored_end_user("end_user_id:alice")
         .expect("the fetched row is cached");
@@ -353,7 +357,7 @@ async fn cached_default_resolved_again() {
     let cached = end_user_row("alice", "0", None, Some(&proxy));
     let rows = ScriptedEndUserRows::answering(EndUserAnswer::Failure);
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
-    budgets.set("key", BudgetAnswer::Row(Some(key.clone())));
+    budgets.set("key", BudgetAnswer::Row(Some(Box::new(key.clone()))));
     let cache = ScriptedCache::new();
     cache.put_end_user("end_user_id:alice", cached);
     let registry = guard_off();
@@ -408,7 +412,7 @@ async fn db_block_failure_returns_none() {
     assert!(cache.writes().is_empty());
 
     let missing = ScriptedEndUserRows::answering(EndUserAnswer::Row(None));
-    let objects = EndUserObjects {
+    let missing_objects = EndUserObjects {
         rows: Some(&missing),
         budgets: Some(&budgets),
         cache: &cache,
@@ -417,7 +421,7 @@ async fn db_block_failure_returns_none() {
         max_end_user_budget_id: None,
     };
     assert!(
-        objects
+        missing_objects
             .get_end_user_object(&request(Some("alice"), None, None))
             .await
             .expect("a missing row is silent")
@@ -448,21 +452,21 @@ async fn prequery_failure_propagates() {
     assert!(matches!(error, EndUserObjectError::CacheRead(_)));
     assert!(rows.queries().is_empty());
 
-    let cache = ScriptedCache::failing(Some(Surface::Registry), None);
-    let registry = registry_on();
-    let objects = EndUserObjects {
+    let registry_cache = ScriptedCache::failing(Some(Surface::Registry), None);
+    let open_registry = registry_on();
+    let registry_objects = EndUserObjects {
         rows: Some(&rows),
         budgets: Some(&budgets),
-        cache: &cache,
-        registry: &registry,
+        cache: &registry_cache,
+        registry: &open_registry,
         store: &store,
         max_end_user_budget_id: None,
     };
-    let error = objects
+    let registry_error = registry_objects
         .get_end_user_object(&request(Some("alice"), None, None))
         .await
         .expect_err("the registry read sits outside the catch");
-    assert!(matches!(error, EndUserObjectError::Registry(_)));
+    assert!(matches!(registry_error, EndUserObjectError::Registry(_)));
 }
 
 #[tokio::test]
@@ -494,7 +498,7 @@ async fn none_id_returns_none() {
 #[tokio::test]
 async fn row_cache_write_failure_returns_none() {
     let row = end_user_row("alice", "0", None, None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
     let cache = ScriptedCache::failing(None, Some(Surface::EndUser));
     let registry = guard_off();
@@ -549,7 +553,7 @@ async fn cached_row_default_failure_propagates() {
 #[tokio::test]
 async fn missing_key_budget_leaves_the_row_unchanged() {
     let row = end_user_row("alice", "0", Some("dangling"), None);
-    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(row)));
+    let rows = ScriptedEndUserRows::answering(EndUserAnswer::Row(Some(Box::new(row))));
     let budgets = ScriptedBudgetRows::answering(BudgetAnswer::Row(None));
     let cache = ScriptedCache::new();
     let registry = guard_off();

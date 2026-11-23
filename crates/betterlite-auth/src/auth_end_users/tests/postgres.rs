@@ -5,11 +5,13 @@ use std::sync::{Arc, Mutex};
 use betterlite_config::sections::end_user_registry::Settings;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
+use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
@@ -21,7 +23,7 @@ use super::support::{TestCache, money, reseed_over, spend_dual_cache, test_cache
 use crate::current_spend::CurrentSpend;
 use crate::end_user_registry::EndUserRegistry;
 use crate::spend_reads::batch::NoSpendBatch;
-use crate::spend_reseed::cache::ReseedCache;
+use crate::spend_reseed::cache::ReseedCache as _;
 use crate::spend_reseed::sql::SqlSpendCounterRows;
 
 const SEED: &str = r#"
@@ -106,6 +108,68 @@ fn request(end_user_id: &str) -> EndUserRequest<'_> {
     }
 }
 
+const fn end_user_objects<'deps>(
+    rows: &'deps DatabaseEndUsers,
+    store: &'deps PostgresStore,
+    cache: &'deps TestCache,
+    registry: &'deps EndUserRegistry,
+    max_end_user_budget_id: Option<&'deps str>,
+) -> EndUserObjects<'deps, DatabaseEndUsers, DatabaseEndUsers, TestCache> {
+    EndUserObjects {
+        rows: Some(rows),
+        budgets: Some(rows),
+        cache,
+        registry,
+        store,
+        max_end_user_budget_id,
+    }
+}
+
+async fn resolved(
+    objects: &EndUserObjects<'_, DatabaseEndUsers, DatabaseEndUsers, TestCache>,
+    end_user_id: &str,
+) -> LiteLLMEndUserTable {
+    objects
+        .get_end_user_object(&request(end_user_id))
+        .await
+        .expect("the row resolves")
+        .expect("the row exists")
+}
+
+fn relation_budget_id(end_user: &LiteLLMEndUserTable) -> Option<&str> {
+    end_user
+        .litellm_budget_table
+        .as_ref()
+        .and_then(|budget| budget.budget_id.as_deref())
+}
+
+// the budget decision over a live database spend, with an optional conflicting cached counter
+async fn check_with_cached_spend(
+    store: &PostgresStore,
+    end_user: &LiteLLMEndUserTable,
+    cached: Option<Decimal>,
+) -> Result<(), Decimal> {
+    let cache = spend_dual_cache();
+    if let Some(amount) = cached {
+        cache
+            .memory_set(&format!("spend:end_user:{}", end_user.user_id), amount)
+            .await
+            .expect("the conflicting cached spend");
+    }
+    let reseed = reseed_over(Some(SqlSpendCounterRows::from(store.clone())));
+    let current = CurrentSpend {
+        cache: &cache,
+        batch: &NoSpendBatch,
+        reseed: &reseed,
+        fail_closed_budget_enforcement: false,
+    };
+    match check_end_user_budget(end_user, "/v1/chat/completions", &current).await {
+        Ok(()) => Ok(()),
+        Err(EndUserBudgetError::Exceeded(exceeded)) => Err(exceeded.details.current_cost),
+        Err(EndUserBudgetError::Spend(source)) => panic!("the spend read failed: {source}"),
+    }
+}
+
 async fn stored_budget_id(pool: &Pool, user_id: &str) -> Option<String> {
     let client = pool.get().await.expect("the database connection");
     let row = client
@@ -124,25 +188,10 @@ async fn relation_includes() {
     seed(&pool).await;
     let rows = database_rows(&pool);
     let store = store(&pool);
-    let cache: TestCache = test_cache();
+    let cache = test_cache();
     let registry = guard_off();
-    let objects = EndUserObjects {
-        rows: Some(&rows),
-        budgets: Some(&rows),
-        cache: &cache,
-        registry: &registry,
-        store: &store,
-        max_end_user_budget_id: None,
-    };
-    let with_budget = objects
-        .get_end_user_object(&EndUserRequest {
-            end_user_id: Some("with-budget"),
-            key_end_user_budget_id: None,
-            token_end_user_max_budget: None,
-        })
-        .await
-        .expect("the row resolves")
-        .expect("the row exists");
+    let objects = end_user_objects(&rows, &store, &cache, &registry, None);
+    let with_budget = resolved(&objects, "with-budget").await;
     assert_eq!(with_budget.budget_id.as_deref(), Some("budget-1"));
     assert_eq!(with_budget.spend, money("5"));
     let relation = with_budget
@@ -152,16 +201,7 @@ async fn relation_includes() {
     assert_eq!(relation.budget_id.as_deref(), Some("budget-1"));
     assert_eq!(relation.max_budget, Some(money("100")));
     assert!(with_budget.object_permission.is_none());
-
-    let permission_user = objects
-        .get_end_user_object(&EndUserRequest {
-            end_user_id: Some("permission-user"),
-            key_end_user_budget_id: None,
-            token_end_user_max_budget: None,
-        })
-        .await
-        .expect("the row resolves")
-        .expect("the row exists");
+    let permission_user = resolved(&objects, "permission-user").await;
     let permission = permission_user
         .object_permission
         .as_ref()
@@ -179,80 +219,24 @@ async fn database_rows_and_conflicting_spend() {
     let store = store(&pool);
     let cache = test_cache();
     let registry = guard_off();
-    let objects = EndUserObjects {
-        rows: Some(&rows),
-        budgets: Some(&rows),
-        cache: &cache,
-        registry: &registry,
-        store: &store,
-        max_end_user_budget_id: Some("budget-1"),
-    };
-    let plain = objects
-        .get_end_user_object(&request("plain"))
-        .await
-        .expect("the plain row resolves")
-        .expect("the row exists");
+    let objects = end_user_objects(&rows, &store, &cache, &registry, Some("budget-1"));
+    let plain = resolved(&objects, "plain").await;
     assert!(plain.budget_id.is_none());
-    assert_eq!(
-        plain
-            .litellm_budget_table
-            .as_ref()
-            .and_then(|budget| budget.budget_id.as_deref()),
-        Some("budget-1")
-    );
-    let dangling = objects
-        .get_end_user_object(&request("dangling"))
-        .await
-        .expect("the dangling row resolves")
-        .expect("the row exists");
+    assert_eq!(relation_budget_id(&plain), Some("budget-1"));
+    let dangling = resolved(&objects, "dangling").await;
     assert_eq!(dangling.budget_id.as_deref(), Some("missing"));
-    assert_eq!(
-        dangling
-            .litellm_budget_table
-            .as_ref()
-            .and_then(|budget| budget.budget_id.as_deref()),
-        Some("budget-1")
-    );
+    assert_eq!(relation_budget_id(&dangling), Some("budget-1"));
     assert_eq!(
         stored_budget_id(&pool, "dangling").await.as_deref(),
         Some("missing")
     );
     assert!(stored_budget_id(&pool, "plain").await.is_none());
-
-    let with_budget = objects
-        .get_end_user_object(&request("with-budget"))
-        .await
-        .expect("the budget row resolves")
-        .expect("the row exists");
-    let cached_spend = spend_dual_cache();
-    cached_spend
-        .memory_set("spend:end_user:with-budget", money("150"))
-        .await
-        .expect("the conflicting cached spend");
-    let cached_reseed = reseed_over(Some(SqlSpendCounterRows::from(store.clone())));
-    let cached = CurrentSpend {
-        cache: &cached_spend,
-        batch: &NoSpendBatch,
-        reseed: &cached_reseed,
-        fail_closed_budget_enforcement: false,
-    };
-    let error = check_end_user_budget(&with_budget, "/v1/chat/completions", &cached)
+    let with_budget = resolved(&objects, "with-budget").await;
+    let cost = check_with_cached_spend(&store, &with_budget, Some(money("150")))
         .await
         .expect_err("the cached spend exceeds the budget");
-    let EndUserBudgetError::Exceeded(exceeded) = error else {
-        panic!("an overrun is a budget rejection");
-    };
-    assert_eq!(exceeded.details.current_cost, money("150"));
-
-    let cold_spend = spend_dual_cache();
-    let cold_reseed = reseed_over(Some(SqlSpendCounterRows::from(store.clone())));
-    let cold = CurrentSpend {
-        cache: &cold_spend,
-        batch: &NoSpendBatch,
-        reseed: &cold_reseed,
-        fail_closed_budget_enforcement: false,
-    };
-    check_end_user_budget(&with_budget, "/v1/chat/completions", &cold)
+    assert_eq!(cost, money("150"));
+    check_with_cached_spend(&store, &with_budget, None)
         .await
         .expect("the database spend of the row is within budget");
     close(fixture, pool).await;

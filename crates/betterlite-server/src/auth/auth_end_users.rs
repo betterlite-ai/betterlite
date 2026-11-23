@@ -108,11 +108,11 @@ pub(crate) async fn prefetch(stage: &EndUserStageInput) -> Result<(), Box<ProxyE
         )
         .await
         .map_err(|failure| Box::new(exception(&failure)))?;
-    let Some(end_user) = end_user else {
+    let Some(found) = end_user else {
         return Ok(());
     };
     lookup
-        .check_budget(&end_user, &stage.route)
+        .check_budget(&found, &stage.route)
         .await
         .map_err(|failure| Box::new(exception(&failure)))
 }
