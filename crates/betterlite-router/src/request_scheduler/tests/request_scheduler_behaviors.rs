@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::request_scheduler::Settings;
@@ -14,11 +13,12 @@ use crate::request_scheduler::queue;
 use crate::request_scheduler::schedule::PRIORITIZATION_HEADER;
 use crate::router_core::headers::Response;
 use crate::routing_state_store::error::StoreWarning;
-use crate::routing_value_store::{RouteValue, RoutingValueStore, StoreSettings};
+use crate::routing_value_store::RouteValue;
 
 use super::{
-    MODEL, ScriptedCall, entries, item, plan, queue_all, queue_and_remove, scheduler,
-    shared_scheduler, shared_scheduler_with,
+    MODEL, ScriptedCall, churn_and_queue_window, entries, item, local_store_with, pending_counts,
+    plan, queue_all, queue_and_remove, recovered_queue, scheduler, shared_scheduler,
+    shared_scheduler_with,
 };
 
 // Scheduler.add_request + get_queue: the queue serves lower priorities first and the request id breaks a tie
@@ -419,15 +419,12 @@ async fn the_pending_changes_stay_bounded_while_the_shared_tier_is_down() {
         .map(|index| format!("outage-{index}"))
         .collect();
     queue_and_remove(&service, request_ids).await;
-    let pending = service
-        .pending
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let recorded: usize = pending.values().map(BTreeMap::len).sum();
+    let (recorded, marked) = pending_counts(&service, "outage-");
     assert_eq!(
         recorded, 0,
         "more than 1024 add-and-remove pairs leave no record in the pending map"
     );
+    assert_eq!(marked, 0, "no churned request keeps an entry either");
 }
 
 // the local queue's ttl outlives its members: once the copy expires mid-outage, the next window's churn drops their record, so the record holds one window and a recovery never brings the expired requests back
@@ -435,53 +432,16 @@ async fn the_pending_changes_stay_bounded_while_the_shared_tier_is_down() {
 async fn the_pending_record_drops_members_whose_local_copy_expired() {
     let clock = Arc::new(AtomicU64::new(0));
     let reading = Arc::clone(&clock);
-    let local = RoutingValueStore::new(
-        StoreSettings {
-            max_size_in_memory: None,
-            default_ttl_seconds: None,
-            max_size_per_item: Some(1024),
-            loaded_max_size_per_item_kib: 1024,
-        },
-        Arc::new(move || Duration::from_millis(reading.load(Ordering::SeqCst)).as_secs_f64()),
-    )
-    .expect("the local store builds");
+    let local = local_store_with(Arc::new(move || {
+        Duration::from_millis(reading.load(Ordering::SeqCst)).as_secs_f64()
+    }));
     // the breaker never opens here, so the read after the outage reaches the shared tier
     let (service, server) = shared_scheduler_with(local, u32::MAX).await;
     server.set_down(true);
-    let first_churn: Vec<String> = (0..=queue::MAX_PENDING_REQUESTS)
-        .map(|index| format!("first-churn-{index}"))
-        .collect();
-    queue_and_remove(&service, first_churn).await;
-    let first_window: Vec<String> = (0..queue::MAX_PENDING_REQUESTS)
-        .map(|index| format!("first-window-{index}"))
-        .collect();
-    let first_added: Vec<(u8, &str)> = first_window
-        .iter()
-        .map(|request_id| (0, request_id.as_str()))
-        .collect();
-    queue_all(&service, &first_added).await;
+    churn_and_queue_window(&service, "first").await;
     clock.store(6_000, Ordering::SeqCst);
-    let second_churn: Vec<String> = (0..=queue::MAX_PENDING_REQUESTS)
-        .map(|index| format!("second-churn-{index}"))
-        .collect();
-    queue_and_remove(&service, second_churn).await;
-    let second_window: Vec<String> = (0..queue::MAX_PENDING_REQUESTS)
-        .map(|index| format!("second-window-{index}"))
-        .collect();
-    let second_added: Vec<(u8, &str)> = second_window
-        .iter()
-        .map(|request_id| (0, request_id.as_str()))
-        .collect();
-    queue_all(&service, &second_added).await;
-    let pending = service
-        .pending
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let recorded: usize = pending.values().map(BTreeMap::len).sum();
-    let expired = pending
-        .values()
-        .filter(|window| window.keys().any(|member| member.contains("first-window-")))
-        .count();
+    churn_and_queue_window(&service, "second").await;
+    let (recorded, expired) = pending_counts(&service, "first-window-");
     assert_eq!(
         recorded,
         queue::MAX_PENDING_REQUESTS,
@@ -491,24 +451,12 @@ async fn the_pending_record_drops_members_whose_local_copy_expired() {
         expired, 0,
         "the first window's expired members leave no record behind"
     );
-    drop(pending);
     server.set_down(false);
-    let queued = service.queue(MODEL).await.expect("the queue reads");
-    assert!(
-        queued.warning.is_none(),
-        "the recovered read answers from the shared tier"
-    );
+    let queued = recovered_queue(&service, "second-window-").await;
     assert_eq!(
-        queued.value.len(),
+        queued.len(),
         queue::MAX_PENDING_REQUESTS,
         "only the window the local copy still holds reaches the shared queue"
-    );
-    assert!(
-        queued
-            .value
-            .iter()
-            .all(|entry| entry.request_id.starts_with("second-window-")),
-        "a request whose local copy expired never returns after recovery"
     );
 }
 

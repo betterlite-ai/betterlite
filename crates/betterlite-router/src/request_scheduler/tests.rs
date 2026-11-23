@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::redis_failure_policy::Settings as BreakerSettings;
 use crate::request_scheduler::flow::FlowItem;
+use crate::request_scheduler::queue;
 use crate::request_scheduler::schedule::ScheduledCall;
 use crate::request_scheduler::service::{RequestIdSource, RequestScheduler};
 use crate::router_core::headers;
@@ -27,7 +28,7 @@ use crate::routing_timeouts::plan::{
     DeploymentTimeouts, RequestTimeouts, RouterTimeoutSources, TimeoutPlan, resolve_router_timeouts,
 };
 use crate::routing_timeouts::seconds::Seconds;
-use crate::routing_value_store::{RoutingValueStore, SchedulerTuple, StoreSettings};
+use crate::routing_value_store::{Clock, RoutingValueStore, SchedulerTuple, StoreSettings};
 
 mod request_scheduler_behaviors;
 mod request_scheduler_boundaries;
@@ -35,6 +36,11 @@ mod request_scheduler_boundaries;
 pub(super) const MODEL: &str = "gpt-4o";
 
 pub(super) fn local_store() -> RoutingValueStore {
+    local_store_with(Arc::new(|| 0.0_f64))
+}
+
+// the same store over the test's own clock, so the local copy expires when the test says
+pub(super) fn local_store_with(clock: Clock) -> RoutingValueStore {
     RoutingValueStore::new(
         StoreSettings {
             max_size_in_memory: None,
@@ -42,7 +48,7 @@ pub(super) fn local_store() -> RoutingValueStore {
             max_size_per_item: Some(1024),
             loaded_max_size_per_item_kib: 1024,
         },
-        Arc::new(|| 0.0_f64),
+        clock,
     )
     .expect("the local store builds")
 }
@@ -133,6 +139,57 @@ pub(super) async fn queue_and_remove(service: &RequestScheduler, mut request_ids
             .await
             .expect("the fallback queue removes the request");
     }
+}
+
+// one outage window: more add-and-remove pairs than the cap, then a full window left queued under the name
+pub(super) async fn churn_and_queue_window(service: &RequestScheduler, name: &str) {
+    let churn: Vec<String> = (0..=queue::MAX_PENDING_REQUESTS)
+        .map(|index| format!("{name}-churn-{index}"))
+        .collect();
+    queue_and_remove(service, churn).await;
+    let window: Vec<String> = (0..queue::MAX_PENDING_REQUESTS)
+        .map(|index| format!("{name}-window-{index}"))
+        .collect();
+    let added: Vec<(u8, &str)> = window
+        .iter()
+        .map(|request_id| (0, request_id.as_str()))
+        .collect();
+    queue_all(service, &added).await;
+}
+
+// the pending record's entry count and how many models hold an entry the marker names
+pub(super) fn pending_counts(service: &RequestScheduler, marker: &str) -> (usize, usize) {
+    let pending = service
+        .pending
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let recorded: usize = pending.values().map(BTreeMap::len).sum();
+    let marked = pending
+        .values()
+        .filter(|changes| changes.keys().any(|member| member.contains(marker)))
+        .count();
+    drop(pending);
+    (recorded, marked)
+}
+
+// the queue a recovered read answers: no warning, and only the window whose local copy survived
+pub(super) async fn recovered_queue(
+    service: &RequestScheduler,
+    window: &str,
+) -> Vec<SchedulerTuple> {
+    let queued = service.queue(MODEL).await.expect("the queue reads");
+    assert!(
+        queued.warning.is_none(),
+        "the recovered read answers from the shared tier"
+    );
+    assert!(
+        queued
+            .value
+            .iter()
+            .all(|entry| entry.request_id.starts_with(window)),
+        "a request whose local copy expired never returns after recovery"
+    );
+    queued.value
 }
 
 pub(super) fn entry(priority: u8, request_id: &str) -> SchedulerTuple {
