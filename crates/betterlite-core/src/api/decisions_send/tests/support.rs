@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, ThreadId};
@@ -19,8 +19,13 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::systemone;
 use betterlite_models::decisions::{DecisionsJson, Extra, Json, TokenCount, ir, openai};
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::decisions::call::DecisionsCall;
 use betterlite_openai::decisions::call::azure::AzureAiConfig;
