@@ -65,7 +65,6 @@ enum ParsedInteger {
 }
 
 // FastAPI validates the endpoint's own query parameters in their declared order
-#[must_use]
 pub fn decode_session_query(
     raw_query: Option<&str>,
 ) -> Result<SessionExpansionQuery, SessionQueryIssues> {
@@ -85,8 +84,8 @@ pub fn decode_session_query(
     let page = decode_bounded(&values, PAGE_BOUND, &mut issues);
     let page_size = decode_bounded(&values, PAGE_SIZE_BOUND, &mut issues);
     match (session_id, issues.is_empty()) {
-        (Some(session_id), true) => Ok(SessionExpansionQuery {
-            session_id,
+        (Some(found), true) => Ok(SessionExpansionQuery {
+            session_id: found,
             page,
             page_size,
         }),
@@ -153,10 +152,10 @@ fn above_issue(name: &'static str, maximum: i64) -> SessionQueryIssue {
 // pydantic reads an integer from text: surrounding space, a sign, digit groups joined by single underscores and a zeros-only fraction, while a magnitude past i64 keeps the sign it was written with and a positive one answers the declared bound
 fn parse_integer(text: &str) -> ParsedInteger {
     let trimmed = text.trim();
-    let (negative, unsigned) = match trimmed.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
+    let (negative, unsigned) = trimmed.strip_prefix('-').map_or_else(
+        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| (true, rest),
+    );
     let (whole, fraction) = match unsigned.split_once('.') {
         Some((whole, fraction)) => (whole, Some(fraction)),
         None => (unsigned, None),

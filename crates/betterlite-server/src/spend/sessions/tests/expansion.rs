@@ -22,7 +22,7 @@ fn fake(rows: Vec<SessionSpendRow>, row_count: i64) -> Fake {
     }
 }
 
-fn failing() -> Fake {
+fn failing(failure: Failure) -> Fake {
     Fake {
         events: Events::default(),
         groups: Vec::new(),
@@ -30,7 +30,7 @@ fn failing() -> Fake {
         representatives: Vec::new(),
         rows: Vec::new(),
         row_count: 0,
-        failure: Some(Failure::Database),
+        failure: Some(failure),
     }
 }
 
@@ -284,7 +284,7 @@ async fn a_proxy_without_a_database_is_a_500_detail() {
 // the count runs first, so its failure leaves no row query behind
 #[tokio::test]
 async fn a_store_failure_is_a_500_detail_after_the_count() {
-    let fake = failing();
+    let fake = failing(Failure::Database);
     let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake)), None),
@@ -300,6 +300,23 @@ async fn a_store_failure_is_a_500_detail_after_the_count() {
         )
     );
     assert_eq!(kinds(&events), ["row_count"]);
+}
+
+// any other read failure is the same 500 detail, carrying the store error's own message
+#[tokio::test]
+async fn a_row_failure_is_a_500_detail() {
+    let fake = failing(Failure::Row);
+    let reply = call(
+        state(Some(Arc::new(fake)), None),
+        "/spend/logs/session/ui?session_id=s1",
+        Some(&admin()),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        reply.json(),
+        json(r#"{"detail":"the stored row is not a JSON object"}"#)
+    );
 }
 
 #[tokio::test]
@@ -393,5 +410,5 @@ async fn metadata_is_decoded_and_tags_stay_text() {
     assert_eq!(row.get("request_duration_ms"), None);
     assert_eq!(row.get("session_total_count"), None);
     let fields = body(&reply);
-    assert!(fields.get("total_is_capped").is_none());
+    assert!(!fields.contains_key("total_is_capped"));
 }

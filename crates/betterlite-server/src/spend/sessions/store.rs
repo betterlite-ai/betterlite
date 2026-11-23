@@ -48,24 +48,20 @@ impl PostgresSessions {
     }
 
     async fn counted(&self, query: &SessionQuery) -> Result<i64, SessionsStoreError> {
-        match self
-            .decoded::<SessionGroupCount>(query)
+        self.decoded::<SessionGroupCount>(query)
             .await?
             .into_iter()
             .next()
-        {
-            Some(row) => Ok(row.total_count),
-            None => Ok(0),
-        }
+            .map_or(Ok(0), |row| Ok(row.total_count))
     }
 }
 
 // the Prisma query_raw serialiser hands a JSONB column back as its text, so hydration decodes metadata afterwards while request_tags stays the text it reads
 fn prisma_text(value: Option<JsonData>) -> Result<Option<JsonData>, SessionsStoreError> {
-    let Some(value) = value else {
+    let Some(data) = value else {
         return Ok(None);
     };
-    let text = serde_json::to_string(&value)
+    let text = serde_json::to_string(&data)
         .map_err(|source| SessionsStoreError::Row(RowError::Json(source)))?;
     Ok(Some(JsonData::String(text)))
 }

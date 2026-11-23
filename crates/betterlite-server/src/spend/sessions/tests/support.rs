@@ -271,19 +271,12 @@ pub(super) fn spend_row(
     user: Option<&str>,
     team_id: Option<&str>,
 ) -> SessionSpendRow {
-    serde_json::from_value(serde_json::json!({
-        "request_id": request_id,
-        "call_type": "acompletion",
-        "api_key": "hashed",
-        "startTime": start,
-        "endTime": start,
-        "session_id": session_id,
-        "user": user,
-        "team_id": team_id,
-        "metadata": "{\"status\":\"success\"}",
-        "request_tags": "[]",
-    }))
-    .unwrap()
+    let user_json = user.map_or_else(|| String::from("null"), |id| format!("\"{id}\""));
+    let team_json = team_id.map_or_else(|| String::from("null"), |id| format!("\"{id}\""));
+    let text = format!(
+        "{{\"request_id\":\"{request_id}\",\"call_type\":\"acompletion\",\"api_key\":\"hashed\",\"startTime\":\"{start}\",\"endTime\":\"{start}\",\"session_id\":\"{session_id}\",\"user\":{user_json},\"team_id\":{team_json},\"metadata\":\"{{\\\"status\\\":\\\"success\\\"}}\",\"request_tags\":\"[]\"}}"
+    );
+    serde_json::from_str(&text).unwrap()
 }
 
 fn principal(roles: Vec<Role>, user_id: Option<&str>) -> Principal {

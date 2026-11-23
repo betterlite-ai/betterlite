@@ -32,20 +32,17 @@ pub fn page_query(page: &GroupedPage<'_>) -> SessionQuery {
     let comparison = if page.descending { "<" } else { ">" };
     let direction = if page.descending { "DESC" } else { "ASC" };
     let mut params = page.params.clone();
-    let having = match page.cursor.as_ref() {
-        Some(cursor) => {
-            let time_index = params.len().saturating_add(1);
-            let session_index = time_index.saturating_add(1);
-            let api_index = session_index.saturating_add(1);
-            params.push(SessionParam::Text(cursor.last_activity.clone()));
-            params.push(SessionParam::Text(cursor.session_key.clone()));
-            params.push(SessionParam::Text(cursor.api_key_hash.clone()));
-            format!(
-                "HAVING (MAX(\"startTime\"), {SESSION_GROUP_KEY_SQL}) {comparison} (${time_index}::timestamp, ${session_index}, ${api_index})"
-            )
-        }
-        None => String::new(),
-    };
+    let having = page.cursor.as_ref().map_or_else(String::new, |cursor| {
+        let time_index = params.len().saturating_add(1);
+        let session_index = time_index.saturating_add(1);
+        let api_index = session_index.saturating_add(1);
+        params.push(SessionParam::Text(cursor.last_activity.clone()));
+        params.push(SessionParam::Text(cursor.session_key.clone()));
+        params.push(SessionParam::Text(cursor.api_key_hash.clone()));
+        format!(
+            "HAVING (MAX(\"startTime\"), {SESSION_GROUP_KEY_SQL}) {comparison} (${time_index}::timestamp, ${session_index}, ${api_index})"
+        )
+    });
     let limit_index = params.len().saturating_add(1);
     params.push(SessionParam::Integer(page.page_limit.saturating_add(1)));
     let offset_clause = if page.offset != 0 && page.page_limit > 0 {

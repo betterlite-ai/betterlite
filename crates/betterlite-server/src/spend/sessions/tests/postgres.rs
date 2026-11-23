@@ -273,13 +273,13 @@ async fn a_cursor_page_continues_after_the_reported_position() {
         page: 2,
         ..first
     };
-    let page = ui_session_grouped_spend_logs(&store, None, &second)
+    let second_page = ui_session_grouped_spend_logs(&store, None, &second)
         .await
         .unwrap();
-    assert_eq!(page_ids(&page), ["r-s2", "r-s1"]);
-    assert!(!page.has_more);
-    assert_eq!(page.page.total, 4);
-    assert_eq!(page.next_session_cursor, None);
+    assert_eq!(page_ids(&second_page), ["r-s2", "r-s1"]);
+    assert!(!second_page.has_more);
+    assert_eq!(second_page.page.total, 4);
+    assert_eq!(second_page.next_session_cursor, None);
 }
 
 const CAP_ROWS: &str = r#"
