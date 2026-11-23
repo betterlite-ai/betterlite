@@ -1,0 +1,9 @@
+kind: helper
+name: startup-checks-fail-closed-warning
+call:
+  b8373:
+    operation: fail_closed_warning
+    enabled: true
+    redis_configured: false
+env: {}
+compare: {ignore: []}
