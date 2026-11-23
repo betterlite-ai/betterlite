@@ -13,6 +13,9 @@ description: >-
   The stamp. `stamp_callback_bound(litellm_params: &mut IndexMap<String, Json>, callback_bound: bool)` covers _stamp_budget_reservation_callback_bound and both public wrappers: bind_budget_reservation_to_callbacks is a call with true, unbind_budget_reservation_from_callbacks a call with false. Write no wrapper for either (rules.yaml no-one-line-functions, and both LiteLLM names are over the 30-character limit); name them in the doc comment so a reader can trace them. For "metadata" and then "litellm_metadata": skip a bucket that is absent or not an object, find its reservation by the lookup rule, and set that reservation's callback_bound member to the bool, replacing it in place when present and appending it when missing. Never create a bucket, a reservation or an auth record. In LiteLLM both buckets usually point at one shared dict; here each bucket holds its own copy, so stamping both gives the same records.
 
 
+  The binder port. Declare `pub trait ReservationBinder: Send + Sync` here with one method, `fn bind(&self, litellm_params: &mut IndexMap<String, Json>)`. Callers in betterlite-logging (B3609's stream) and betterlite-server (B3607's byte relay) bind through it, since the reservation record they must also mark, B3003's ReservationHandle, lives in betterlite-auth, which betterlite-logging cannot reach. B1719's reservation_state provides the production binder; this module only declares the trait, with no implementation and no test of its own.
+
+
   Oracle. Helper cases on the b10088 operation with two variants. lookup takes one metadata bucket and answers the reservation or null. stamp takes litellm_params and the bool and answers litellm_params after the stamp. The Python adapter builds plain dicts from the case and calls budget_reservation_from_metadata, bind_budget_reservation_to_callbacks and unbind_budget_reservation_from_callbacks from litellm.litellm_core_utils.core_helpers; the Rust side calls the two production functions. Add helper_case corpus seeds named reservation-binding-*. These cases replace the two reservation_state cases B1719 had planned.
 
 
@@ -72,13 +75,11 @@ oracle_cases:
   - tools/oracle/cases/helpers/reservation-binding/non-object-values-absent.yaml
   - tools/oracle/cases/helpers/reservation-binding/bind-both-buckets.yaml
   - tools/oracle/cases/helpers/reservation-binding/unbind-without-creating.yaml
-deviations:
-  - what: The callback_bound stamp changes only the reservation copies in the request's JSON metadata. For now the request-end release does not see it, so it still releases a reservation a callback was bound to.
-    why: LiteLLM's buckets, the auth object and request.state share one reservation dict, so its request-end release reads the stamp. In betterlite the metadata holds a JSON copy (betterlite-server passthrough request_context metadata.rs clones it), while B8270's release layer reads callback_bound on B3003's ReservationHandle. How the stamp reaches that handle is an open question for the settlement and release owners, not for this task.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L384-L406
+deviations: []
 out_of_scope:
   - "The settlement coordinator, its port and its cleanup order in proxy_track_cost_callback.py: B1719. The cost callback that reads the reservation: B069."
   - "Reservation records, settlement, release and ReservationHandle: B3003 in betterlite-auth. The request-end release layer: B8270."
+  - "Setting callback_bound on B3003's ReservationHandle, which the request-end release reads, and the production ReservationBinder that does it together with this stamp: B1719's betterlite-auth reservation_state."
   - "Choosing when to bind or unbind: each caller (B3609, B3607, the pass-through endpoints and the SDK client wrapper)."
   - "litellm/litellm_core_utils/core_helpers.py: every other function, with B206 and the owners B1719's out_of_scope names."
 pitfalls:

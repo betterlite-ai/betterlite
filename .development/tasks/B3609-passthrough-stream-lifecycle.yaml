@@ -39,8 +39,11 @@ description: >-
   status < 400), schedule deferred logging if the success handler armed it, or
   enqueue immediate logging in the finally block if deferred was not scheduled. Bind
   budget-reservation callbacks after successful enqueue to attach spend-tracking
-  callbacks to the request, by calling B10088's stamp_callback_bound on the logging
-  object's litellm_params with true. Never double-log via deferred and immediate paths.
+  callbacks to the request, by calling bind on an injected `Arc<dyn ReservationBinder>`
+  (B10088's port in betterlite-logging::reservation_binding) with the logging object's
+  litellm_params. The production binder is B1719's RequestReservationBinder, which stamps the
+  metadata and marks the reservation handle, and B8931 supplies it; the budget_binding tests use
+  a recording fake binder. Never double-log via deferred and immediate paths.
 
   Preserve the ordered semantics of the finally block: GeneratorExit and Exception
   paths skip logging, success paths schedule deferred (if armed) or immediate (if not),
@@ -208,7 +211,7 @@ out_of_scope:
   - "B191 owns GLOBAL_LOGGING_WORKER.ensure_initialized_and_enqueue for logging dispatch."
   - "B247 owns Logging._update_completion_start_time for first-token timestamp."
   - "B251 owns record_partial_usage_for_failure and dispatch_failure_handlers for failure accounting."
-  - "B10088 owns bind_budget_reservation_to_callbacks for spend-tracking attachment, as stamp_callback_bound(litellm_params, true) in betterlite-logging::reservation_binding."
+  - "bind_budget_reservation_to_callbacks for spend-tracking attachment: B10088 owns the ReservationBinder port and the metadata stamp (betterlite-logging::reservation_binding), B1719 the production binder that also sets callback_bound on the reservation handle (betterlite-auth::reservation_state), and B8931 hands it to this stream."
   - "B005 owns split_complete_sse_frames for SSE frame reassembly."
   - "ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection (B8930) owns cost injection into SSE frames; this task routes frames to it."
   - "Provider-leaf tasks (gap A) own handle_logging_tinyfish_collected_chunks, start_sse_run_billing, run_id_from_sse_frames, sse_poller_spawned, and AnthropicPassthroughLoggingHandler.record_partial_usage_for_failure."

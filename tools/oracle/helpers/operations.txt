@@ -1830,7 +1830,6 @@ request_records
 request_setup_options
 rerank_contracts
 rerank_guardrail_fields
-reservation_state
 reservation_tokens
 resolved_key
 resource_delegation

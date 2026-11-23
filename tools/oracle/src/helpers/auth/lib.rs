@@ -28,7 +28,7 @@ betterlite_oracle_helper_api::helper_group! {
     "oauth_tokens" => oauth_tokens, "oidc_token_response" => oidc_token_response,
     "pass_through_registry" => pass_through_registry, "rejection_provider" => rejection_provider,
     "request_ban_catalog" => request_ban_catalog, "request_body_safety" => request_body_safety,
-    "reservation_state" => reservation_state, "resolved_key" => resolved_key,
+    "resolved_key" => resolved_key,
     "session_token_codec" => session_token_codec, "spend_counter_batch" => spend_counter_batch,
     "spend_reseed" => spend_reseed, "sso_claims" => sso_claims,
     "sso_mapping_input" => sso_mapping_input, "sso_roles" => sso_roles,
