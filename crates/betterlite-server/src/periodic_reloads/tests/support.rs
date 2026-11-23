@@ -36,6 +36,7 @@ pub(super) fn moment(hour: u32) -> DateTime<Utc> {
 
 pub(super) fn moment_at(hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 5, 6, hour, minute, 0)
+        .single()
         .expect("the fixed moment is valid")
 }
 
@@ -194,7 +195,7 @@ impl FakeCostMap {
 }
 
 impl ModelCostMapSource for FakeCostMap {
-    fn refetch_cost_map<'call>(&'call self) -> CostMapFuture<'call> {
+    fn refetch_cost_map(&self) -> CostMapFuture<'_> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let outcome = self
             .queue
@@ -228,7 +229,7 @@ impl FakeBetaHeaders {
 }
 
 impl BetaHeadersSource for FakeBetaHeaders {
-    fn reload<'call>(&'call self) -> BetaMatrixFuture<'call> {
+    fn reload(&self) -> BetaMatrixFuture<'_> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let matrix = Arc::clone(&self.matrix);
         Box::pin(async move { matrix })

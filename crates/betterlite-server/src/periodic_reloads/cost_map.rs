@@ -7,11 +7,14 @@ use crate::periodic_reloads::state::PeriodicReloads;
 
 const MODEL_COST_MAP_DESCRIPTION: &str = "Model cost map";
 
-pub(crate) async fn reload<Rows: ReloadConfigRows>(
+pub(crate) async fn reload<Rows>(
     db: &Rows,
     reloads: &PeriodicReloads,
     sources: &ReloadSources,
-) -> Result<(), Rows::Error> {
+) -> Result<(), Rows::Error>
+where
+    Rows: ReloadConfigRows,
+{
     let Some(schedule) = db.read_schedule().await? else {
         return Ok(());
     };

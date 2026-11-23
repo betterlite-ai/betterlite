@@ -25,16 +25,16 @@ pub struct ReloadSources {
 }
 
 pub trait ModelCostMapSource: Send + Sync {
-    fn refetch_cost_map<'call>(&'call self) -> CostMapFuture<'call>;
+    fn refetch_cost_map(&self) -> CostMapFuture<'_>;
 }
 
 pub trait BetaHeadersSource: Send + Sync {
-    fn reload<'call>(&'call self) -> BetaMatrixFuture<'call>;
+    fn reload(&self) -> BetaMatrixFuture<'_>;
 }
 
 impl BetaHeadersSource for BetaConfigLoader {
-    fn reload<'call>(&'call self) -> BetaMatrixFuture<'call> {
-        Box::pin(BetaConfigLoader::reload(self))
+    fn reload(&self) -> BetaMatrixFuture<'_> {
+        Box::pin(Self::reload(self))
     }
 }
 
@@ -59,7 +59,7 @@ where
     S: CatalogSleeper,
     Factory: JitterFactory,
 {
-    fn refetch_cost_map<'call>(&'call self) -> CostMapFuture<'call> {
+    fn refetch_cost_map(&self) -> CostMapFuture<'_> {
         Box::pin(async move {
             // B194 holds the jitter for &mut through every attempt of one fetch, so each poll builds its own
             let mut jitter = self.jitter.create();

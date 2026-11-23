@@ -23,11 +23,10 @@ pub struct PeriodicReloadChecks {
 }
 
 impl PeriodicReloadChecks {
-    pub async fn check_periodic_reloads<Rows: ReloadConfigRows>(
-        &self,
-        db: &Rows,
-        general_settings: &SettingsStore,
-    ) {
+    pub async fn check_periodic_reloads<Rows>(&self, db: &Rows, general_settings: &SettingsStore)
+    where
+        Rows: ReloadConfigRows,
+    {
         if !should_load_db_object(
             general_settings,
             &SupportedDbObjectType::ModelCostMap.to_string(),
@@ -39,7 +38,10 @@ impl PeriodicReloadChecks {
         }
     }
 
-    pub async fn check_beta_headers_reload<Rows: ReloadConfigRows>(&self, db: &Rows) {
+    pub async fn check_beta_headers_reload<Rows>(&self, db: &Rows)
+    where
+        Rows: ReloadConfigRows,
+    {
         if let Err(error) = beta_headers::reload(db, &self.reloads, &self.sources).await {
             tracing::error!("Error in _check_and_reload_anthropic_beta_headers: {error}");
         }

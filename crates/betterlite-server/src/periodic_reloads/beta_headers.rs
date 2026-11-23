@@ -53,11 +53,14 @@ struct BetaReloadConfig {
     force_reload: bool,
 }
 
-pub(crate) async fn reload<Rows: ReloadConfigRows>(
+pub(crate) async fn reload<Rows>(
     db: &Rows,
     reloads: &PeriodicReloads,
     sources: &ReloadSources,
-) -> Result<(), BetaReloadError<Rows::Error>> {
+) -> Result<(), BetaReloadError<Rows::Error>>
+where
+    Rows: ReloadConfigRows,
+{
     let Some(row) = db.read_beta_headers().await? else {
         return Ok(());
     };
@@ -120,13 +123,16 @@ fn reload_is_due(reloads: &PeriodicReloads, config: &BetaReloadConfig, now: Date
     true
 }
 
-async fn perform_reload<Rows: ReloadConfigRows>(
+async fn perform_reload<Rows>(
     db: &Rows,
     reloads: &PeriodicReloads,
     sources: &ReloadSources,
     config: &BetaReloadConfig,
     now: DateTime<Utc>,
-) -> Result<(), BetaReloadError<Rows::Error>> {
+) -> Result<(), BetaReloadError<Rows::Error>>
+where
+    Rows: ReloadConfigRows,
+{
     let matrix = sources.beta_headers.reload().await;
     reloads.set_last_beta_headers_reload(now);
     db.write_beta_headers(encode_beta_reload_config(config.interval_hours))
