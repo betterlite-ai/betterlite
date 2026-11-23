@@ -21,8 +21,9 @@ use super::observation::observation;
 
 pub(crate) async fn run_scenario(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
     let tokens = scripted_tokens(scenario.token.as_ref());
+    let token_source = Arc::clone(&tokens);
     let fixture = Fixture {
-        tokens: Arc::clone(&tokens),
+        tokens: token_source,
     };
     let (catalog, names, environment) = (ModelCatalog::default(), BTreeSet::new(), BTreeMap::new());
     let resolution = ResolutionContext {
