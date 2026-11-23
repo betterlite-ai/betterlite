@@ -12,6 +12,7 @@ from tuning_server import (
     BAD_KEY,
     CANCEL_PATH,
     GOOD_KEY,
+    JOB,
     JOB_ID,
     JOB_PATH,
     JOBS_PATH,
@@ -34,7 +35,7 @@ from betterlite.fine_tuning.main import (
     list_fine_tuning_jobs,
     retrieve_fine_tuning_job,
 )
-from betterlite.fine_tuning.types import FineTuningJobPage
+from betterlite.fine_tuning.types import FineTuningJobPage, page_value
 from betterlite.types.utils import LiteLLMFineTuningJob
 
 MODEL: Final = "gpt-4o-mini-2024-07-18"
@@ -342,6 +343,18 @@ def test_list_matches_litellm() -> None:
     assert listed.first_id == JOB_ID
     assert listed.last_id == SECOND_JOB_ID
     assert listed.data[0].status == JOB_STATUS
+
+
+def test_list_normalizes_an_all_null_error() -> None:
+    job: JsonValue = {**JOB, "error": {"code": None, "message": None, "param": None}}
+    page: JsonValue = {
+        "object": "list",
+        "data": [job],
+        "has_more": False,
+        "first_id": JOB_ID,
+        "last_id": JOB_ID,
+    }
+    assert page_value(page).data[0].error is None
 
 
 def test_cancel_matches_litellm() -> None:
