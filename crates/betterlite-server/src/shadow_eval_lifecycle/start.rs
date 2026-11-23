@@ -206,6 +206,7 @@ where
         .now
         .checked_add_signed(window)
         .ok_or(LifecycleError::WindowOverflow)?;
+    let max_turns = i32::try_from(SHADOW_EVAL_TURN_VALVE).unwrap_or(i32::MAX);
     let mut legs = Vec::new();
     for (target_type, target_ids) in requested {
         for target_id in target_ids {
@@ -222,7 +223,7 @@ where
                 baseline_model: request.baseline_model.clone(),
                 judge_model: request.judge_model.clone(),
                 shadow_percentage: request.shadow_percentage,
-                max_turns: i64::from(SHADOW_EVAL_TURN_VALVE),
+                max_turns,
                 max_budget: request.max_budget,
                 created_by: call.caller.map(str::to_owned),
                 created_at: call.now,
