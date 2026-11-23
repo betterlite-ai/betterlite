@@ -50,10 +50,8 @@ fn number_field(json: &AgentJson, key: &str) -> Option<u64> {
     json.get(key).and_then(AgentJson::as_u64)
 }
 
-fn header(headers: &Option<BTreeMap<String, String>>, name: &str) -> Option<String> {
-    headers
-        .as_ref()
-        .and_then(|pairs| pairs.get(name).map(str::to_owned))
+fn header(headers: Option<&BTreeMap<String, String>>, name: &str) -> Option<String> {
+    headers.and_then(|pairs| pairs.get(name).cloned())
 }
 
 #[test]
@@ -68,7 +66,7 @@ fn request_settings_take_every_given_key() {
         Some("agentCard/v1.0")
     );
     assert_eq!(
-        header(&settings.extra_headers, "X-Test").as_deref(),
+        header(settings.extra_headers.as_ref(), "X-Test").as_deref(),
         Some("1")
     );
     let built = settings.into_settings(tls()).unwrap();
@@ -77,13 +75,8 @@ fn request_settings_take_every_given_key() {
     assert!(built.streaming);
     assert_eq!(built.relative_card_path.as_deref(), Some("agentCard/v1.0"));
     assert_eq!(built.extra_headers.len(), 1);
-    assert_eq!(
-        built
-            .extra_headers
-            .get("X-Test")
-            .map(|value| value.expose_secret()),
-        Some("1")
-    );
+    let sent = built.extra_headers.get("X-Test").unwrap();
+    assert_eq!(sent.expose_secret(), "1");
 }
 
 #[test]
@@ -125,23 +118,33 @@ fn request_settings_reject_a_wrong_type(#[case] text: &str) {
 }
 
 #[rstest]
-#[case::zero(r#"{"base_url":"u","timeout":0.0}"#, Ok(Duration::ZERO))]
-#[case::negative(r#"{"base_url":"u","timeout":-1.0}"#, Err("timeout"))]
-#[case::absent(r#"{"base_url":"u"}"#, Ok(None))]
+#[case::zero(r#"{"base_url":"u","timeout":0.0}"#, Some(Duration::ZERO))]
+#[case::fractional(
+    r#"{"base_url":"u","timeout":2.5}"#,
+    Some(Duration::from_millis(2_500))
+)]
+#[case::absent(r#"{"base_url":"u"}"#, None)]
 fn request_settings_resolve_the_timeout_seconds(
     #[case] text: &str,
-    #[case] expected: Result<Option<Duration>, &str>,
+    #[case] expected: Option<Duration>,
 ) {
-    let outcome = parse::<Settings>(text)
+    let built = parse::<Settings>(text)
         .unwrap()
         .into_settings(tls())
-        .map(|built| built.timeout);
-    match (outcome, expected) {
-        (Ok(Some(found)), Ok(_zero)) => assert_eq!(found, _zero),
-        (Ok(None), Ok(_zero)) => panic!("expected the configured timeout, got none"),
-        (Err(A2aCallError::Timeout { field }), Err(want)) => assert_eq!(field, want),
-        (found, want) => panic!("expected {want:?}, got {found:?}"),
-    }
+        .unwrap();
+    assert_eq!(built.timeout, expected);
+}
+
+#[test]
+fn request_settings_reject_a_negative_timeout() {
+    let error = parse::<Settings>(r#"{"base_url":"u","timeout":-1.0}"#)
+        .unwrap()
+        .into_settings(tls())
+        .unwrap_err();
+    let A2aCallError::Timeout { field } = error else {
+        panic!("a negative timeout is not a timeout error");
+    };
+    assert_eq!(field, "timeout");
 }
 
 #[test]
@@ -165,7 +168,7 @@ fn request_call_resolves_every_send_field() {
     assert_eq!(resolved.agent_id.as_deref(), Some("agent-7"));
     assert_eq!(resolved.trace_id.as_deref(), Some("trace-1"));
     assert_eq!(
-        header(&resolved.agent_extra_headers, "X-Agent").as_deref(),
+        header(resolved.agent_extra_headers.as_ref(), "X-Agent").as_deref(),
         Some("a")
     );
     assert!(resolved.metadata.is_some());
@@ -366,9 +369,8 @@ fn error_agent_card_keeps_its_status_code(#[case] status: u16) {
     );
 }
 
-#[test]
-fn error_discovery_lists_every_failed_path() {
-    let error = A2AError::agent_card_discovery(
+fn two_probe_error() -> A2AError {
+    A2AError::agent_card_discovery(
         String::from("http://agent.example"),
         vec![
             ProbeFailure {
@@ -380,8 +382,12 @@ fn error_discovery_lists_every_failed_path() {
                 reason: CardFetchError::Status { status: 502 },
             },
         ],
-    );
-    let json = written(&ErrorPayload::from_a2a(&error));
+    )
+}
+
+#[test]
+fn error_discovery_lists_every_failed_path() {
+    let json = written(&ErrorPayload::from_a2a(&two_probe_error()));
     assert_eq!(
         text_field(&json, "type").as_deref(),
         Some("A2AAgentCardDiscoveryError")
@@ -401,6 +407,11 @@ fn error_discovery_lists_every_failed_path() {
         text_field(&json, "url").as_deref(),
         Some("http://agent.example")
     );
+}
+
+#[test]
+fn error_discovery_reports_each_probe_failure() {
+    let json = written(&ErrorPayload::from_a2a(&two_probe_error()));
     let failures = json.get("failures").and_then(AgentJson::as_array).unwrap();
     assert_eq!(failures.len(), 2);
     assert_eq!(
@@ -430,8 +441,7 @@ fn error_discovery_with_only_missing_paths_reports_404() {
     assert_eq!(number_field(&json, "status_code"), Some(404));
 }
 
-#[test]
-fn error_localhost_url_names_the_original() {
+fn localhost_error() -> A2AError {
     let original = A2AError::Connection {
         message: String::from("connection refused"),
         url: Some(String::from("http://localhost:9/")),
@@ -439,13 +449,17 @@ fn error_localhost_url_names_the_original() {
         debug_info: None,
         retries: RetryCounts::default(),
     };
-    let error = A2AError::LocalhostUrl {
+    A2AError::LocalhostUrl {
         localhost_url: String::from("http://localhost:9/"),
         base_url: String::from("http://agent.example"),
         model: Some(String::from("agent")),
         original_error: Some(Box::new(original)),
-    };
-    let json = written(&ErrorPayload::from_a2a(&error));
+    }
+}
+
+#[test]
+fn error_localhost_url_names_the_type_the_status_and_the_advice() {
+    let json = written(&ErrorPayload::from_a2a(&localhost_error()));
     assert_eq!(
         text_field(&json, "type").as_deref(),
         Some("A2ALocalhostURLError")
@@ -457,6 +471,11 @@ fn error_localhost_url_names_the_original() {
             "Agent card contains localhost/internal URL 'http://localhost:9/'. Retrying with base URL 'http://agent.example'."
         )
     );
+}
+
+#[test]
+fn error_localhost_url_carries_the_urls_the_model_and_the_original() {
+    let json = written(&ErrorPayload::from_a2a(&localhost_error()));
     assert_eq!(
         text_field(&json, "url").as_deref(),
         Some("http://localhost:9/")
@@ -522,7 +541,7 @@ fn error_value_and_runtime_payloads_name_their_kind() {
 }
 
 #[test]
-fn error_send_payload_maps_every_send_call_error() {
+fn error_send_payload_names_the_client_and_the_params_failures() {
     let missing = send_payload(SendCallError::MissingClient, false);
     assert_eq!(missing.kind, "ValueError");
     assert_eq!(
@@ -552,6 +571,10 @@ fn error_send_payload_maps_every_send_call_error() {
         false,
     );
     assert_eq!(client.kind, "A2AConnectionError");
+}
+
+#[test]
+fn error_send_payload_maps_a_failed_send() {
     let no_response = send_payload(SendCallError::Send(SendError::NoResponse), false);
     assert_eq!(no_response.kind, "RuntimeError");
     assert_eq!(
@@ -580,6 +603,10 @@ fn error_send_payload_maps_every_send_call_error() {
     );
     assert_eq!(unnamed.kind, "A2AConnectionError");
     assert!(unnamed.url.is_none());
+}
+
+#[test]
+fn error_send_payload_maps_the_recovery_and_the_token_failures() {
     let recovery = send_payload(
         SendCallError::Send(SendError::Recovery(Box::new(
             RecoveryError::<ClientError>::MissingAgentCard,

@@ -35,7 +35,7 @@ fn fixture_card(url: Option<&str>, interface: Option<&str>) -> AgentCard {
 
 fn written(card: &AgentCard) -> AgentJson {
     match text(card) {
-        Ok(json) => json(&json),
+        Ok(rendered) => json(&rendered),
         Err(error) => panic!("the card does not serialize: {error}"),
     }
 }
