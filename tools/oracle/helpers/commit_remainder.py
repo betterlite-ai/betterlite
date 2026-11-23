@@ -142,9 +142,11 @@ class CaseWriter(DBSpendUpdateWriter):
         recorder: ProxyLogging,
         transactions: dict[str, DailyUserSpendTransaction],
     ) -> None:
-        await self._update_daily_spend(
-            n_retry_times=retries, prisma_client=client, proxy_logging_obj=recorder,
-            daily_spend_transactions=transactions, entity_type="user", entity_id_field="user_id",
+        await self.update_daily_user_spend(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2568
+            n_retry_times=retries,
+            prisma_client=client,
+            proxy_logging_obj=recorder,
+            daily_spend_transactions=transactions,
         )
 
 
