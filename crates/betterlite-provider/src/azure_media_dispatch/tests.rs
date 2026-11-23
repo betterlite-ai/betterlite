@@ -513,13 +513,14 @@ fn speech_operation() -> OpenAiSpeechOperation {
     }
 }
 
+// the operation the core speech service dispatches, whose mapping already turned alloy into this Azure voice
 fn ssml_operation() -> NativeSsmlOperation {
     let extra_headers = BTreeMap::from([(String::from("x-call"), String::from("1"))]);
     let api_base = String::from("https://westus.api.cognitive.microsoft.com");
     NativeSsmlOperation {
         model: String::from("tts-model"),
         input: String::from("hello"),
-        voice: Some(Json::Text(String::from("alloy"))),
+        voice: Some(Json::Text(String::from("en-US-JennyNeural"))),
         optional_params: IndexMap::new(),
         litellm_params: IndexMap::new(),
         api_key: Some(key()),
