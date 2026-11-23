@@ -52,7 +52,7 @@ where
     })
 }
 
-pub(super) async fn vertex_connection<Dispatch>(
+pub(crate) async fn vertex_connection<Dispatch>(
     settings: &RealtimeConnectionSettings,
     dispatch: &Dispatch,
     call: &RealtimeConnectCall<'_>,

@@ -16,6 +16,7 @@ use super::{
 };
 
 // OpenAI and xAI differ only in where their base and key come from
+#[derive(Clone, Copy)]
 pub(super) enum DirectProvider {
     OpenAi,
     Xai,

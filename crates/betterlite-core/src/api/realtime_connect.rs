@@ -22,6 +22,8 @@ use crate::api::realtime_contracts::error::HeaderMap;
 use crate::api::vertex_chirp::target::AccessTokenResolver;
 use crate::dispatch::error::DispatchError;
 
+use self::token::VertexAccessTokenSource;
+
 pub const AZURE_DEFAULT_API_VERSION: &str = "2024-10-01-preview";
 pub const QUERY_MODEL_KEY: &str = "model";
 pub const GUARDRAILS_KEY: &str = "guardrails";

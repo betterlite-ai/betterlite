@@ -69,7 +69,7 @@ fn branch_observation<Config>(
     }
 }
 
-fn provider_tag(tag: RealtimeConfigTag) -> &'static str {
+const fn provider_tag(tag: RealtimeConfigTag) -> &'static str {
     match tag {
         RealtimeConfigTag::Gemini => "gemini",
         RealtimeConfigTag::Meta => "meta",

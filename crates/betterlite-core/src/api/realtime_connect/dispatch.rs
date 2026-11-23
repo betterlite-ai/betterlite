@@ -22,7 +22,7 @@ use super::{
 use crate::api::realtime_contracts::error::HeaderMap;
 
 // Everything the branches share: the resolved identity, the merged headers, the copied query, the metadata and the logging update.
-pub(super) struct Prepared {
+pub(crate) struct Prepared {
     pub(super) model: String,
     pub(super) provider: ProviderIdentity,
     pub(super) dynamic_api_base: Option<String>,
@@ -33,6 +33,7 @@ pub(super) struct Prepared {
 }
 
 // which optional arguments a branch forwards, since only B2457 and the Vertex transport take them all
+#[derive(Clone, Copy)]
 pub(super) enum Forwarding {
     Provider,
     Connector,
@@ -97,7 +98,8 @@ where
         model: resolved.model,
         provider: resolved.provider,
         dynamic_api_base: resolved.api_base,
-        dynamic_api_key: resolved.api_key,
+        // get_llm_provider hands the caller's api_key back when no provider key replaced it
+        dynamic_api_key: resolved.api_key.or_else(|| call.params.api_key.clone()),
         headers,
         query_params,
         metadata,

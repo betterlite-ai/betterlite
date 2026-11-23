@@ -31,12 +31,21 @@ fn exposed(value: Option<&SecretString>) -> Option<&str> {
 #[test]
 fn loads_realtime_connection_settings() {
     let defaults = load_settings(DEFAULTS, lookup(&[])).unwrap();
+    assert_no_default_globals(&defaults);
+    assert_no_default_environment_values(&defaults);
+    assert_default_credential_timeout(&defaults);
+}
+
+fn assert_no_default_globals(defaults: &RealtimeConnectionSettings) {
     assert_eq!(defaults.api_base, None);
     assert_eq!(exposed(defaults.api_key.as_ref()), None);
     assert_eq!(exposed(defaults.openai_key.as_ref()), None);
     assert_eq!(exposed(defaults.xai_key.as_ref()), None);
     assert_eq!(defaults.vertex_project, None);
     assert_eq!(defaults.vertex_location, None);
+}
+
+fn assert_no_default_environment_values(defaults: &RealtimeConnectionSettings) {
     assert_eq!(defaults.azure_api_base, None);
     assert_eq!(exposed(defaults.azure_api_key.as_ref()), None);
     assert_eq!(exposed(defaults.openai_api_key.as_ref()), None);
@@ -46,6 +55,9 @@ fn loads_realtime_connection_settings() {
     assert_eq!(defaults.vertexai_project, None);
     assert_eq!(defaults.vertexai_location, None);
     assert_eq!(defaults.azure_realtime_protocol, None);
+}
+
+fn assert_default_credential_timeout(defaults: &RealtimeConnectionSettings) {
     assert_eq!(
         defaults.credential_timeout_seconds.to_bits(),
         DEFAULT_TIMEOUT_SECONDS.to_bits()

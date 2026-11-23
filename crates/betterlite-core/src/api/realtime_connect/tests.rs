@@ -204,6 +204,136 @@ async fn realtime_openai_and_azure_credentials() {
     azure_named_version_and_protocol(&dispatch, &settings, &litellm_params).await;
     azure_ad_token_fallback(&litellm_params).await;
     openai_credentials(&dispatch, &litellm_params).await;
+    named_api_key_wins(&litellm_params).await;
+    azure_settings_key_fallbacks(&litellm_params).await;
+    openai_settings_key_fallbacks(&litellm_params).await;
+    azure_protocol_negotiation(&litellm_params).await;
+}
+
+async fn named_api_key_wins(litellm_params: &IndexMap<String, Json>) {
+    let dispatch = Recorder::default();
+    let mut globals = settings();
+    globals.api_key = Some(secret("sk-global"));
+    globals.azure_api_key = Some(secret("azure-key"));
+    globals.openai_api_key = Some(secret("openai-key"));
+    let mut named = params();
+    named.api_key = Some(secret("sk-named"));
+    assert_eq!(
+        key_for(
+            &dispatch,
+            &globals,
+            "azure/my-deployment",
+            &named,
+            litellm_params
+        )
+        .await
+        .as_deref(),
+        Some("sk-named")
+    );
+    assert_eq!(
+        key_for(
+            &dispatch,
+            &globals,
+            "openai/gpt-realtime",
+            &named,
+            litellm_params
+        )
+        .await
+        .as_deref(),
+        Some("sk-named")
+    );
+}
+
+async fn key_for(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    model: &str,
+    connect: &RealtimeConnectParams,
+    litellm_params: &IndexMap<String, Json>,
+) -> Option<String> {
+    let call = call(model, connect, None, litellm_params, false);
+    let (_, result) = run(dispatch, settings, &call).await;
+    result
+        .unwrap()
+        .args
+        .api_key
+        .map(|key| key.expose_secret().to_owned())
+}
+
+async fn azure_settings_key_fallbacks(litellm_params: &IndexMap<String, Json>) {
+    let dispatch = Recorder::default();
+    let mut environment_only = settings();
+    environment_only.azure_api_key = Some(secret("azure-only-key"));
+    assert_eq!(
+        key_for(
+            &dispatch,
+            &environment_only,
+            "azure/my-deployment",
+            &params(),
+            litellm_params
+        )
+        .await
+        .as_deref(),
+        Some("azure-only-key")
+    );
+    let mut legacy_only = settings();
+    legacy_only.openai_key = Some(secret("sk-openai-global"));
+    assert_eq!(
+        key_for(
+            &dispatch,
+            &legacy_only,
+            "azure/my-deployment",
+            &params(),
+            litellm_params
+        )
+        .await
+        .as_deref(),
+        Some("sk-openai-global")
+    );
+}
+
+async fn openai_settings_key_fallbacks(litellm_params: &IndexMap<String, Json>) {
+    let dispatch = Recorder::default();
+    let mut environment_only = settings();
+    environment_only.openai_api_key = Some(secret("openai-only-key"));
+    assert_eq!(
+        key_for(
+            &dispatch,
+            &environment_only,
+            "openai/gpt-realtime",
+            &params(),
+            litellm_params
+        )
+        .await
+        .as_deref(),
+        Some("openai-only-key")
+    );
+}
+
+async fn azure_protocol_negotiation(litellm_params: &IndexMap<String, Json>) {
+    assert_eq!(azure_client_protocol(litellm_params, true).await, "beta");
+    assert_eq!(azure_client_protocol(litellm_params, false).await, "GA");
+}
+
+async fn azure_client_protocol(
+    litellm_params: &IndexMap<String, Json>,
+    client_sent_beta: bool,
+) -> String {
+    let dispatch = Recorder::with_ad_token(Some(secret("resolved-ad")));
+    let mut settings = settings();
+    settings.azure_api_base = Some(String::from("https://azure.example"));
+    let call = call(
+        "azure/my-deployment",
+        &params(),
+        None,
+        litellm_params,
+        client_sent_beta,
+    );
+    let (_, result) = run(&dispatch, &settings, &call).await;
+    let Branch::Azure { protocol, .. } = result.unwrap().branch else {
+        panic!("an azure model must take the azure branch");
+    };
+    protocol
 }
 
 async fn azure_global_credentials(
@@ -538,14 +668,14 @@ async fn xai_base_fallbacks(
     xai: &RealtimeConnectionSettings,
     litellm_params: &IndexMap<String, Json>,
 ) {
-    let connection = xai_connection(dispatch, xai, &params(), litellm_params).await;
+    let from_environment = xai_connection(dispatch, xai, &params(), litellm_params).await;
     assert_eq!(
-        connection.args.api_base.as_deref(),
+        from_environment.args.api_base.as_deref(),
         Some("https://xai-env.example")
     );
     let mut without_environment_base = xai.clone();
     without_environment_base.xai_api_base = None;
-    let connection = xai_connection(
+    let from_default = xai_connection(
         dispatch,
         &without_environment_base,
         &params(),
@@ -553,7 +683,7 @@ async fn xai_base_fallbacks(
     )
     .await;
     assert_eq!(
-        connection.args.api_base.as_deref(),
+        from_default.args.api_base.as_deref(),
         Some("https://api.x.ai/v1")
     );
 }
@@ -590,6 +720,88 @@ async fn realtime_vertex_credentials_and_refresh() {
     assert_vertex_connection(&settings, &connection, tokens.as_ref(), &named_credentials).await;
     assert_vertex_token_failures(tokens.as_ref()).await;
     vertex_settings_credentials().await;
+    vertex_global_settings_placement(&litellm_params).await;
+    vertex_environment_settings_placement(&litellm_params).await;
+    vertex_ai_credentials_alias(&litellm_params).await;
+}
+
+async fn vertex_global_settings_placement(litellm_params: &IndexMap<String, Json>) {
+    let tokens = ScriptedTokens::with(vec![Ok((
+        secret("token"),
+        String::from("resolved-project"),
+    ))]);
+    let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
+    let mut globals = settings();
+    globals.vertex_project = Some(String::from("global-project"));
+    globals.vertexai_project = Some(String::from("env-project"));
+    globals.vertex_location = Some(String::from("global-region"));
+    globals.vertexai_location = Some(String::from("env-region"));
+    let call = call(
+        "vertex_ai/gemini-live",
+        &params(),
+        None,
+        litellm_params,
+        false,
+    );
+    let (_, result) = run(&dispatch, &globals, &call).await;
+    let Branch::Vertex { location, .. } = result.unwrap().branch else {
+        panic!("a vertex_ai model must take the vertex branch");
+    };
+    assert_eq!(location.as_deref(), Some("global-region"));
+    assert_eq!(
+        *tokens.calls.lock().unwrap_or_else(PoisonError::into_inner),
+        vec![(None, Some(String::from("global-project")))]
+    );
+}
+
+async fn vertex_environment_settings_placement(litellm_params: &IndexMap<String, Json>) {
+    let tokens = ScriptedTokens::with(vec![Ok((
+        secret("token"),
+        String::from("resolved-project"),
+    ))]);
+    let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
+    let mut environment = settings();
+    environment.vertexai_project = Some(String::from("env-project"));
+    environment.vertexai_location = Some(String::from("env-region"));
+    let call = call(
+        "vertex_ai/gemini-live",
+        &params(),
+        None,
+        litellm_params,
+        false,
+    );
+    let (_, result) = run(&dispatch, &environment, &call).await;
+    let Branch::Vertex { location, .. } = result.unwrap().branch else {
+        panic!("a vertex_ai model must take the vertex branch");
+    };
+    assert_eq!(location.as_deref(), Some("env-region"));
+    assert_eq!(
+        *tokens.calls.lock().unwrap_or_else(PoisonError::into_inner),
+        vec![(None, Some(String::from("env-project")))]
+    );
+}
+
+async fn vertex_ai_credentials_alias(litellm_params: &IndexMap<String, Json>) {
+    let tokens = ScriptedTokens::with(vec![Ok((
+        secret("token"),
+        String::from("resolved-project"),
+    ))]);
+    let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
+    let mut connect = params();
+    connect.vertex_ai_credentials = Some(text("ai-credentials"));
+    let call = call(
+        "vertex_ai/gemini-live",
+        &connect,
+        None,
+        litellm_params,
+        false,
+    );
+    let (_, result) = run(&dispatch, &settings(), &call).await;
+    assert!(matches!(result.unwrap().branch, Branch::Vertex { .. }));
+    assert_eq!(
+        *tokens.calls.lock().unwrap_or_else(PoisonError::into_inner),
+        vec![(Some(text("ai-credentials")), None)]
+    );
 }
 
 async fn vertex_settings_credentials() {

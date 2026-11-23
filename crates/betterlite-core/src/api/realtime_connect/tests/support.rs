@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::io::Error as IoError;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -34,9 +35,9 @@ use super::super::{
     RealtimeConnectParams, RealtimeConnection,
 };
 
-type TestError = std::io::Error;
+type TestError = IoError;
 
-struct TestBackend;
+pub(super) struct TestBackend;
 
 #[async_trait]
 impl RealtimeBackend for TestBackend {
@@ -145,7 +146,7 @@ pub(super) struct Recorder {
     tags: Mutex<Vec<RealtimeConfigTag>>,
     pub(super) ad_requests: Mutex<Vec<(Option<String>, Option<String>)>>,
     ad_reply: Mutex<Option<Option<SecretString>>>,
-    tokens: Mutex<Option<Arc<ScriptedTokens>>>,
+    tokens: Mutex<Option<Arc<dyn VertexAccessTokenSource<Error = TestError>>>>,
 }
 
 impl Recorder {
@@ -196,17 +197,13 @@ impl RealtimeConnectDispatch for Recorder {
         Arc<dyn VertexAccessTokenSource<Error = Self::Error>>,
         RealtimeConnectError<Self::Error>,
     > {
-        match self
-            .tokens
+        self.tokens
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-        {
-            Some(tokens) => Ok(tokens),
-            None => Err(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
+            .ok_or(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
                 entry: "vertex_access_token_resolver",
-            })),
-        }
+            }))
     }
 
     fn azure_ad_token(
@@ -222,17 +219,13 @@ impl RealtimeConnectDispatch for Recorder {
                     .map(|token| token.expose_secret().to_owned()),
                 request.params.tenant_id.clone(),
             ));
-        match self
-            .ad_reply
+        self.ad_reply
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-        {
-            Some(reply) => Ok(reply),
-            None => Err(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
+            .ok_or(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
                 entry: "azure_ad_token_credentials",
-            })),
-        }
+            }))
     }
 }
 
