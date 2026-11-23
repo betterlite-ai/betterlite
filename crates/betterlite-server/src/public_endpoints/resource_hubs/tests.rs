@@ -507,10 +507,7 @@ async fn skill_hub_without_a_database_answers_500_with_the_policy_detail() {
         .await
         .expect("the body reads");
     let text = from_utf8(&body).expect("the body is UTF-8");
-    assert_eq!(
-        text,
-        format!(r#"{{"detail":{{"error":"{DB_NOT_CONNECTED}"}}}}"#)
-    );
+    assert_eq!(text, format!(r#"{{"detail":"{DB_NOT_CONNECTED}"}}"#));
 }
 
 #[derive(Parser)]

@@ -22,36 +22,15 @@ pub enum ResourceHubsError {
     PluginPolicy(ClaudePluginPolicyError),
 }
 
-#[derive(Serialize)]
-struct ErrorDetail {
-    error: String,
-}
-
+// The skill hub's except Exception wraps even an HTTPException into HTTPException(500, detail=str(e)), so every
+// failure answers {"detail": "<text>"}, never the {"detail": {"error": ...}} shape the unwrapped routes produce.
 #[derive(Serialize)]
 struct DetailBody {
     detail: String,
 }
 
-// FastAPI renders HTTPException(detail={...}) as {"detail": {...}}, the body LiteLLM's _get_prisma_client produces.
-#[derive(Serialize)]
-struct PolicyBody {
-    detail: ErrorDetail,
-}
-
 impl IntoResponse for ResourceHubsError {
     fn into_response(self) -> Response {
-        if let Self::PluginPolicy(policy) = &self {
-            let fields = policy.fields();
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(PolicyBody {
-                    detail: ErrorDetail {
-                        error: fields.detail.error,
-                    },
-                }),
-            )
-                .into_response();
-        }
         tracing::warn!(error = %self, "public resource hub failed");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
