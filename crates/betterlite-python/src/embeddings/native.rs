@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use std::sync::Arc;
+mod tests;
 // main.py's embedding entry points, one session owning the client every call goes through.
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeEmbeddingSession {

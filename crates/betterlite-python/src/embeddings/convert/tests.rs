@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::super::call::{Entry, call};
 use super::super::error::{CallFacts, CallFailure, Raised, operation_failure, raised};
 use super::super::request::build;
