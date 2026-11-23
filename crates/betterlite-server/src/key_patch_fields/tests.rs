@@ -27,8 +27,9 @@ mod support;
 use self::support::{
     FakeSoftBudgetStore, assert_all_catalog_fields, assert_close, assert_created_budget,
     assert_isoformat, assert_metadata, assert_pinned_rows, assert_router_unavailable, base_request,
-    callback_secret, cipher, existing, fixture, instant, json, json_text, number_f64, object,
-    prepare_error, prepared, prepared_row, run_metadata, string_field, update_request,
+    callback_secret, cipher, existing, failing_cipher, fixture, instant, json, json_text,
+    number_f64, object, prepare_error, prepared, prepared_row, run_metadata, string_field,
+    update_request,
 };
 use crate::key_patch_fields::fixtures::database::TestDatabase;
 

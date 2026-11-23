@@ -87,7 +87,7 @@ pub(super) fn cipher() -> Cipher {
     }
 }
 
-fn failing_cipher() -> Cipher {
+pub(super) fn failing_cipher() -> Cipher {
     let mut broken = cipher();
     broken.settings.signing_key = None;
     broken
@@ -182,7 +182,7 @@ pub(super) async fn prepare_error(
     }
 }
 
-fn run_metadata(
+pub(super) fn run_metadata(
     request: &Row,
     existing_metadata: &Row,
     cipher: &Cipher,
@@ -201,7 +201,7 @@ fn run_metadata(
     (projected, warnings)
 }
 
-fn callback_secret(request: &Row, cipher: &Cipher) -> JsonData {
+pub(super) fn callback_secret(request: &Row, cipher: &Cipher) -> JsonData {
     let (result, _) = run_metadata(request, &Row::new(), cipher);
     let JsonData::Object(projected) = result.expect("prepared metadata") else {
         panic!("metadata is an object");
