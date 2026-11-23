@@ -1,0 +1,47 @@
+kind: helper
+name: azure-o-series-dispatch
+call:
+  azure_provider:
+    case: chat
+    model: o1-mini
+    api_base: https://fixture.test
+    api_version: "2024-12-01-preview"
+    api_key: sk-o1
+    azure_ad_token: null
+    headers: null
+    extra_headers: null
+    extra_body: null
+    max_retries: null
+    messages:
+      - role: user
+        content: hi
+    optional_params: {}
+    embedding: null
+    acompletion: false
+    environment: {}
+    globals:
+      api_base: null
+      api_version: null
+      api_key: null
+      azure_key: null
+      headers: null
+      azure_default_api_version: null
+    chat_defaults:
+      temperature: 1
+    o_series_defaults:
+      max_tokens: 64
+    status: 200
+    reply:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: o1-mini-2024-09-12
+      choices:
+        - index: 0
+          message: {role: assistant, content: hi}
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    second: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,63 @@
+kind: helper
+name: azure-openai-regression
+call:
+  azure_provider:
+    case: chat
+    model: gpt-4o
+    api_base: https://azure-one.test
+    api_version: "2024-10-21"
+    api_key: sk-azure-one
+    azure_ad_token: null
+    headers:
+      x-caller: "one"
+    extra_headers: null
+    extra_body:
+      azure_ad_token: body-token-one
+    max_retries: null
+    messages:
+      - role: user
+        content: first
+    optional_params: {}
+    embedding: null
+    acompletion: false
+    environment: {}
+    globals:
+      api_base: null
+      api_version: null
+      api_key: null
+      azure_key: null
+      headers: null
+      azure_default_api_version: null
+    chat_defaults: null
+    o_series_defaults: null
+    status: 200
+    reply:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o-2024-08-06
+      choices:
+        - index: 0
+          message: {role: assistant, content: hi}
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    second:
+      case: chat
+      model: gpt-4o
+      api_base: https://azure-two.test
+      api_version: "2024-06-01"
+      api_key: sk-azure-two
+      azure_ad_token: null
+      headers: null
+      extra_headers: null
+      extra_body: null
+      max_retries: null
+      messages:
+        - role: user
+          content: second
+      optional_params: {}
+      embedding: null
+      acompletion: false
+env: {}
+compare: {ignore: []}

@@ -1,11 +1,16 @@
+mod fixtures;
+mod tests;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = fixtures::case::Case;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("azure_provider")
+    fn run(input: &Self::Input) -> HelperResult {
+        let observations = fixtures::execute::run(input)?;
+        serde_json::to_value(observations)
+            .map_err(|error| fixtures::case::failure("ValueError", error))
     }
 }
