@@ -3,7 +3,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::error::StoreError;
-use super::pages::{lock_comparison, stored_record, unknown_publication, withdraw};
+use super::pages::{Comparison, lock_comparison, stored_record, unknown_publication, withdraw};
 use super::sql::{
     ADVANCE_REVISION, CREATE_COMPARISON, INSERT_RECORD, MARK_CONFLICT, READ_CANONICAL,
 };
@@ -63,19 +63,7 @@ async fn append_rows<G>(
 where
     G: Fn() -> Uuid + Sync,
 {
-    let scope = &record.scope;
-    transaction
-        .execute(
-            CREATE_COMPARISON,
-            &[
-                scope,
-                &record.api_key,
-                &record.session_id,
-                &record.router_name,
-            ],
-        )
-        .await?;
-    let Some(comparison) = lock_comparison(transaction, scope).await? else {
+    let Some(comparison) = lock_for_append(transaction, record).await? else {
         return Ok(AppendResult::Unavailable);
     };
     let revision = comparison
@@ -87,36 +75,88 @@ where
         Insertion::Duplicate(found) => Some(found),
         Insertion::Foreign => return Ok(AppendResult::Conflict),
     };
-    // A retired comparison reports the request as unknown, against the canonical row when one already exists.
     if comparison.retired {
-        let canonical = existing.as_ref().map(|found| &found.row);
-        let owner = canonical
-            .map(|row| decode_baseline_record(row.data.as_bytes()))
-            .transpose()?;
-        let previous = canonical
-            .and_then(|row| row.publication.as_deref())
-            .map(|text| decode_baseline_publication(text.as_bytes()))
-            .transpose()?;
-        let started_at = canonical.map_or(record.observation.started_at, |row| row.started_at);
-        let retired = unknown_publication(scope, started_at, "comparison_retired");
-        let correction = change(
-            owner.as_ref().unwrap_or(record),
-            previous.as_ref(),
-            &retired,
-        );
-        publish(transaction, &[correction], generate_id).await?;
+        retire_comparison(transaction, record, existing.as_ref(), generate_id).await?;
         return Ok(AppendResult::Retired);
     }
     if existing.as_ref().is_none_or(|found| found.conflicted) {
-        let started_at = existing
-            .as_ref()
-            .map_or(record.observation.started_at, |found| found.row.started_at);
-        withdraw(transaction, scope, started_at, generate_id).await?;
-        transaction
-            .execute(ADVANCE_REVISION, &[scope, &revision])
-            .await?;
+        withdraw_observation(
+            transaction,
+            record,
+            existing.as_ref(),
+            revision,
+            generate_id,
+        )
+        .await?;
     }
     Ok(AppendResult::Recorded)
+}
+
+// The comparison row is created on first sight and locked before any observation of the scope is read.
+async fn lock_for_append(
+    transaction: &Transaction<'_>,
+    record: &BaselineAccountingRecord,
+) -> Result<Option<Comparison>, StoreError> {
+    transaction
+        .execute(
+            CREATE_COMPARISON,
+            &[
+                &record.scope,
+                &record.api_key,
+                &record.session_id,
+                &record.router_name,
+            ],
+        )
+        .await?;
+    lock_comparison(transaction, &record.scope).await
+}
+
+// A retired comparison reports the request as unknown, against the canonical row when one already exists.
+async fn retire_comparison<G>(
+    transaction: &Transaction<'_>,
+    record: &BaselineAccountingRecord,
+    existing: Option<&Existing>,
+    generate_id: &G,
+) -> Result<(), StoreError>
+where
+    G: Fn() -> Uuid + Sync,
+{
+    let canonical = existing.map(|found| &found.row);
+    let owner = canonical
+        .map(|row| decode_baseline_record(row.data.as_bytes()))
+        .transpose()?;
+    let previous = canonical
+        .and_then(|row| row.publication.as_deref())
+        .map(|text| decode_baseline_publication(text.as_bytes()))
+        .transpose()?;
+    let started_at = canonical.map_or(record.observation.started_at, |row| row.started_at);
+    let retired = unknown_publication(&record.scope, started_at, "comparison_retired");
+    let correction = change(
+        owner.as_ref().unwrap_or(record),
+        previous.as_ref(),
+        &retired,
+    );
+    publish(transaction, &[correction], generate_id).await?;
+    Ok(())
+}
+
+// Fresh or conflicting evidence withdraws every estimate from the canonical start time and dirties the comparison.
+async fn withdraw_observation<G>(
+    transaction: &Transaction<'_>,
+    record: &BaselineAccountingRecord,
+    existing: Option<&Existing>,
+    revision: i64,
+    generate_id: &G,
+) -> Result<(), StoreError>
+where
+    G: Fn() -> Uuid + Sync,
+{
+    let started_at = existing.map_or(record.observation.started_at, |found| found.row.started_at);
+    withdraw(transaction, &record.scope, started_at, generate_id).await?;
+    transaction
+        .execute(ADVANCE_REVISION, &[&record.scope, &revision])
+        .await?;
+    Ok(())
 }
 
 async fn insert_observation(

@@ -7,7 +7,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::error::StoreError;
-use super::pages::{PageQuery, lock_comparison, read_page};
+use super::pages::{Comparison, PageQuery, lock_comparison, read_page};
 use super::sql::{CHANGED_BEFORE, MISSING_LOG, STORE_HISTORY};
 use super::{
     ACCOUNTING_LIMITS, BaselineAccountingStore, ProjectResult, TRANSACTION_TIMEOUT, begin,
@@ -56,13 +56,30 @@ where
     if state.retired || state.revision == state.published_revision {
         return Ok(ProjectResult::Unchanged);
     }
-    if transaction
-        .query_opt(MISSING_LOG, &[&scope])
-        .await?
-        .is_some()
-    {
+    let missing_log = transaction.query_opt(MISSING_LOG, &[&scope]).await?;
+    if missing_log.is_some() {
         return Ok(ProjectResult::Unavailable);
     }
+    let (start, after_revision) = replay_start(transaction, scope, &state).await?;
+    let query = PageQuery {
+        scope,
+        after_revision,
+        withdraw_from: None,
+    };
+    let history = replay(transaction, store, &query, start).await?;
+    let stored = serde_json::to_string(&history)?;
+    transaction
+        .execute(STORE_HISTORY, &[&scope, &stored])
+        .await?;
+    Ok(ProjectResult::Published)
+}
+
+// The replay starts from the stored checkpoint, or from the comparison's initial equivalence when none is stored.
+async fn replay_start(
+    transaction: &Transaction<'_>,
+    scope: &str,
+    state: &Comparison,
+) -> Result<(BaselineHistory, i64), StoreError> {
     let initial = BaselineHistory {
         first_at: None,
         last_at: None,
@@ -84,22 +101,10 @@ where
         )
         .await?;
     // A newer observation at or before the checkpoint changes what it folded, so the replay restarts from scratch.
-    let (start, after_revision) = if late.is_some() {
-        (initial, 0)
-    } else {
-        (checkpoint, state.published_revision)
-    };
-    let query = PageQuery {
-        scope,
-        after_revision,
-        withdraw_from: None,
-    };
-    let history = replay(transaction, store, &query, start).await?;
-    let stored = serde_json::to_string(&history)?;
-    transaction
-        .execute(STORE_HISTORY, &[&scope, &stored])
-        .await?;
-    Ok(ProjectResult::Published)
+    if late.is_some() {
+        return Ok((initial, 0));
+    }
+    Ok((checkpoint, state.published_revision))
 }
 
 // Each page folds its complete start-time groups and publishes their corrections before the next page reads.
