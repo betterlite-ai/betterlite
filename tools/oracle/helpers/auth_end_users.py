@@ -170,7 +170,7 @@ def seed(call: Call, fixture: Fixture) -> None:
     if cached_budget is not None:
         # the LiteLLM model class trips mypy's Any check, so the cache key comes from the raw row
         budget_id = cached_budget.get("budget_id")
-        prefix = budget_id if isinstance(budget_id, str) else "None"
+        prefix = "None" if budget_id is None else f"{budget_id}"
         fixture.values[f"default_end_user_budget:{prefix}"] = cached_budget
         fixture.values[f"team_member_default_budget:{prefix}"] = cached_budget
     cached_end_user = call.get("cached_end_user")
