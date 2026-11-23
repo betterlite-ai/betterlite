@@ -29,41 +29,41 @@ pub trait SsoAssertionStore {
     ) -> impl Future<Output = Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>> + Send;
 }
 
-impl<R> DbSsoAssertionStore<R>
+// The store's one inherent impl lives in store.rs: multiple_inherent_impl denies a second block here.
+pub async fn fetch_uncached<R>(
+    store: &DbSsoAssertionStore<R>,
+    user_id: &str,
+) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>
 where
     R: AssertionRows + Send + Sync,
 {
-    pub async fn fetch_uncached(
-        &self,
-        user_id: &str,
-    ) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable> {
-        let Some(rows) = self.rows.as_ref() else {
-            return Ok(None);
-        };
-        let found = rows
-            .find(user_id)
-            .await
-            .map_err(|source| AssertionStoreUnavailable {
-                cause: Box::new(source),
-            })?;
-        let Some(row) = found else {
-            return Ok(None);
-        };
-        let sealed = StoredValue::<Infallible>::Text(SecretString::from(row.assertion_b64));
-        let opened =
-            self.cipher
-                .decrypt_value(sealed, ASSERTION_DECRYPT_FIELD, ASSERTION_DECRYPT_POLICY);
-        let Some(StoredValue::Text(plaintext)) = opened else {
-            return Ok(None);
-        };
-        match decode_payload(plaintext.expose_secret()) {
-            Ok(assertion) => Ok(Some(assertion)),
-            Err(_refused) => {
-                tracing::warn!(
-                    "Stored SSO identity assertion for user_id={user_id} could not be parsed; treating as absent."
-                );
-                Ok(None)
-            }
+    let Some(rows) = store.rows.as_ref() else {
+        return Ok(None);
+    };
+    let found = rows
+        .find(user_id)
+        .await
+        .map_err(|source| AssertionStoreUnavailable {
+            cause: Box::new(source),
+        })?;
+    let Some(row) = found else {
+        return Ok(None);
+    };
+    let sealed = StoredValue::<Infallible>::Text(SecretString::from(row.assertion_b64));
+    let opened =
+        store
+            .cipher
+            .decrypt_value(sealed, ASSERTION_DECRYPT_FIELD, ASSERTION_DECRYPT_POLICY);
+    let Some(StoredValue::Text(plaintext)) = opened else {
+        return Ok(None);
+    };
+    match decode_payload(plaintext.expose_secret()) {
+        Ok(assertion) => Ok(Some(assertion)),
+        Err(_refused) => {
+            tracing::warn!(
+                "Stored SSO identity assertion for user_id={user_id} could not be parsed; treating as absent."
+            );
+            Ok(None)
         }
     }
 }
@@ -81,7 +81,7 @@ where
         }
         // the epoch is read before the row read, so a login that lands during it stops this cache write
         let seen_epoch = self.cache.epoch();
-        let assertion = self.fetch_uncached(user_id).await?;
+        let assertion = fetch_uncached(self, user_id).await?;
         if let Some(found) = assertion.as_ref() {
             self.cache.set_if_unchanged(user_id, found, seen_epoch);
         }

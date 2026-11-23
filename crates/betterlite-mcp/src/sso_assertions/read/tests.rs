@@ -15,14 +15,14 @@ use betterlite_secrets::secret_codec::{
     Algorithm, CipherSettings, OsNonces, StoredCipher, StoredValue,
 };
 use chrono::{DateTime, Utc};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use super::SsoAssertionStore;
+use super::{SsoAssertionStore, fetch_uncached};
 use crate::credential_contracts::byok_cache::SystemClock;
 use crate::sso_assertions::assertion::SsoIdentityAssertion;
 use crate::sso_assertions::cache::{CacheState, SsoAssertionCache};
@@ -298,13 +298,13 @@ async fn fetch_uncached_reads_the_row_every_time_and_leaves_the_cache_as_it_was(
     let cache = empty_cache();
     cache.set_if_unchanged("alice", &assertion("cached-token", None), cache.epoch());
     let store = store_with(Some(rows), Arc::clone(&cache));
-    let first = store.fetch_uncached("alice").await.unwrap().unwrap();
+    let first = fetch_uncached(&store, "alice").await.unwrap().unwrap();
     assert_eq!(first.id_token.expose_secret(), "row-token");
     assert_eq!(
         cached_token(&cache, "alice").as_deref(),
         Some("cached-token")
     );
-    let second = store.fetch_uncached("alice").await.unwrap().unwrap();
+    let second = fetch_uncached(&store, "alice").await.unwrap().unwrap();
     assert_eq!(second.id_token.expose_secret(), "row-token");
     assert_eq!(reads(store.rows.as_ref().unwrap()), 2);
     assert_eq!(
@@ -349,7 +349,7 @@ async fn fetch_uncached_reports_a_row_read_failure_as_an_unavailable_store() {
         })),
         empty_cache(),
     );
-    let error = store.fetch_uncached("alice").await.unwrap_err();
+    let error = fetch_uncached(&store, "alice").await.unwrap_err();
     assert_eq!(
         error.cause.to_string(),
         "the in-memory assertion rows failed on Find"
@@ -361,7 +361,7 @@ async fn no_database_reads_as_absent_from_both_methods() {
     let cache = empty_cache();
     let store = store_with(None, Arc::clone(&cache));
     assert!(store.fetch("alice").await.unwrap().is_none());
-    assert!(store.fetch_uncached("alice").await.unwrap().is_none());
+    assert!(fetch_uncached(&store, "alice").await.unwrap().is_none());
     assert!(cache.get("alice").is_none());
 }
 
@@ -379,7 +379,7 @@ async fn a_row_that_will_not_decrypt_reads_as_absent() {
     let _guard = set_default(registry().with(logs.clone()));
     let cache = empty_cache();
     let store = store_with(Some(rows), Arc::clone(&cache));
-    assert!(store.fetch_uncached("alice").await.unwrap().is_none());
+    assert!(fetch_uncached(&store, "alice").await.unwrap().is_none());
     assert!(store.fetch("alice").await.unwrap().is_none());
     assert_eq!(reads(store.rows.as_ref().unwrap()), 2);
     assert!(cache.get("alice").is_none());
@@ -394,7 +394,7 @@ async fn an_unparsable_payload_logs_the_warning_and_reads_as_absent() {
     let _guard = set_default(registry().with(logs.clone()));
     let cache = empty_cache();
     let store = store_with(Some(rows), Arc::clone(&cache));
-    assert!(store.fetch_uncached("alice").await.unwrap().is_none());
+    assert!(fetch_uncached(&store, "alice").await.unwrap().is_none());
     assert!(store.fetch("alice").await.unwrap().is_none());
     assert_eq!(
         logs.messages(),
@@ -418,12 +418,12 @@ async fn a_stored_payload_with_only_some_fields_reads_back() {
         r#"{"id_token":"empty-claims-token","refresh_token":"","issuer":""}"#,
     );
     let store = store_with(Some(rows), empty_cache());
-    let only = store.fetch_uncached("alice").await.unwrap().unwrap();
+    let only = fetch_uncached(&store, "alice").await.unwrap().unwrap();
     assert_eq!(only.id_token.expose_secret(), "only-token");
     assert!(only.refresh_token.is_none());
     assert!(only.issuer.is_none());
     assert!(only.expires_at.is_none());
-    let empty = store.fetch_uncached("bravo").await.unwrap().unwrap();
+    let empty = fetch_uncached(&store, "bravo").await.unwrap().unwrap();
     assert_eq!(empty.id_token.expose_secret(), "empty-claims-token");
     assert!(empty.refresh_token.is_none());
     assert_eq!(empty.issuer.as_deref(), Some(""));
@@ -439,7 +439,7 @@ async fn a_naive_expires_at_reads_as_utc() {
         r#"{"id_token":"naive-token","issuer":"https://idp.test","expires_at":"2031-02-03T04:05:06"}"#,
     );
     let store = store_with(Some(rows), empty_cache());
-    let found = store.fetch_uncached("alice").await.unwrap().unwrap();
+    let found = fetch_uncached(&store, "alice").await.unwrap().unwrap();
     assert_eq!(found.id_token.expose_secret(), "naive-token");
     assert_eq!(found.issuer.as_deref(), Some("https://idp.test"));
     assert_eq!(
@@ -468,7 +468,7 @@ async fn no_token_text_reaches_logs_or_debug_output() {
     let logs = Logs::default();
     let _guard = set_default(registry().with(logs.clone()));
     let store = store_with(Some(rows), empty_cache());
-    assert!(store.fetch_uncached("alice").await.unwrap().is_none());
+    assert!(fetch_uncached(&store, "alice").await.unwrap().is_none());
     let valid = store.fetch("bravo").await.unwrap().unwrap();
     assert!(!format!("{valid:?}").contains("sk-valid-id-token-9f31"));
     assert!(!format!("{valid:?}").contains("valid-refresh-token-9f31"));
