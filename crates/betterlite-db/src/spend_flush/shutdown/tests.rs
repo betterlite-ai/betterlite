@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use std::sync::Arc;
+use std::io::{Result as IoResult, Write};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -10,10 +11,12 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Mutex as WriteLock;
 use tokio::task::{JoinSet, yield_now};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_postgres::NoTls;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 
-use super::{MonitorStartError, SpendLogsMonitorSlot, drain_spend_logs_queue};
+use super::{MAX_DRAIN_PASSES, MonitorStartError, SpendLogsMonitorSlot, drain_spend_logs_queue};
 use crate::daily_spend_sql::entities::{DailySpendEntity, SpendRow};
 use crate::daily_spend_sql::values::SpendColumnValue;
 use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
@@ -104,7 +107,9 @@ async fn a_cancel_before_the_first_chunk_returns_the_whole_map() {
     case.enqueue(&key_range(2)).await;
     let mut tasks = JoinSet::new();
     case.spawn(&mut tasks);
-    case.writer.entered().notified().await;
+    timeout(Duration::from_secs(5), case.writer.entered().notified())
+        .await
+        .unwrap();
 
     case.shutdown.cancel();
     yield_now().await;
@@ -123,7 +128,9 @@ async fn a_cancel_after_the_first_chunk_returns_only_the_rows_left() {
     case.enqueue(&key_range(101)).await;
     let mut tasks = JoinSet::new();
     case.spawn(&mut tasks);
-    case.writer.entered().notified().await;
+    timeout(Duration::from_secs(5), case.writer.entered().notified())
+        .await
+        .unwrap();
 
     case.shutdown.cancel();
     yield_now().await;
@@ -141,7 +148,9 @@ async fn a_commit_interrupted_mid_statement_is_left_to_the_queue() {
     case.enqueue(&key_range(1)).await;
     let mut tasks = JoinSet::new();
     case.spawn(&mut tasks);
-    case.writer.entered().notified().await;
+    timeout(Duration::from_secs(5), case.writer.entered().notified())
+        .await
+        .unwrap();
 
     case.shutdown.cancel();
     yield_now().await;
@@ -165,7 +174,9 @@ async fn an_interrupted_commit_that_fails_returns_its_rows_when_it_settles() {
     case.enqueue(&key_range(2)).await;
     let mut tasks = JoinSet::new();
     case.spawn(&mut tasks);
-    case.writer.entered().notified().await;
+    timeout(Duration::from_secs(5), case.writer.entered().notified())
+        .await
+        .unwrap();
 
     case.shutdown.cancel();
     yield_now().await;
@@ -238,11 +249,60 @@ fn memory_only_buffer() -> RedisUpdateBuffer {
     }
 }
 
-fn monitor_settings() -> SpendMonitorSettings {
+fn monitor_settings(base_interval: Duration) -> SpendMonitorSettings {
     SpendMonitorSettings {
         queue_size_threshold: 100,
-        base_interval: Duration::from_secs(2),
+        base_interval,
     }
+}
+
+// The shutdown's own log lines, kept instead of printed, so a test can read what a drain reported.
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLogs {
+    fn has(&self, needle: &str) -> bool {
+        let written = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(written)
+            .expect("the log writer records UTF-8")
+            .contains(needle)
+    }
+}
+
+impl Write for CapturedLogs {
+    fn write(&mut self, buffer: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CapturedLogs {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn capture_logs() -> (CapturedLogs, DefaultGuard) {
+    let logs = CapturedLogs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::ERROR)
+        .with_writer(logs.clone())
+        .finish();
+    (logs, set_default(subscriber))
 }
 
 #[tokio::test]
@@ -253,10 +313,12 @@ async fn a_shutdown_joins_the_monitor_before_its_first_drain_pass() {
         .start(
             Arc::clone(&case.service),
             Arc::clone(&case.queue),
-            monitor_settings(),
+            monitor_settings(Duration::from_secs(2)),
         )
         .unwrap();
-    case.service.entered().notified().await;
+    timeout(Duration::from_secs(5), case.service.entered().notified())
+        .await
+        .unwrap();
     assert!(case.slot.is_running());
 
     let outcome = case.drain(&redis_buffer(&case.lists)).await;
@@ -344,14 +406,65 @@ async fn a_running_monitor_refuses_a_second_start_until_the_drain_stops_it() {
     let queue = Arc::clone(&case.queue);
 
     case.slot
-        .start(Arc::clone(&service), Arc::clone(&queue), monitor_settings())
+        .start(
+            Arc::clone(&service),
+            Arc::clone(&queue),
+            monitor_settings(Duration::from_secs(2)),
+        )
         .unwrap();
     assert!(matches!(
-        case.slot.start(service, queue, monitor_settings()),
+        case.slot
+            .start(service, queue, monitor_settings(Duration::from_secs(2))),
         Err(MonitorStartError::AlreadyRunning)
     ));
     case.drain(&memory_only_buffer()).await.unwrap();
     assert!(!case.slot.is_running());
+}
+
+// A monitor polling with no wait between passes: only a drain that really joins it keeps its events from growing.
+#[tokio::test]
+async fn a_stopped_monitor_runs_no_further_pass() {
+    let case = DrainCase::new(vec![0]);
+    case.slot
+        .start(
+            Arc::clone(&case.service),
+            Arc::clone(&case.queue),
+            monitor_settings(Duration::ZERO),
+        )
+        .unwrap();
+
+    case.drain(&memory_only_buffer()).await.unwrap();
+    let stopped = case.events.entries().len();
+    yield_now().await;
+    yield_now().await;
+
+    assert_eq!(case.events.entries().len(), stopped);
+}
+
+#[tokio::test]
+async fn a_drain_that_leaves_rows_logs_how_many_are_lost() {
+    let case = DrainCase::new(vec![1]);
+    let (logs, _capture) = capture_logs();
+
+    let outcome = case.drain(&memory_only_buffer()).await;
+
+    outcome.unwrap();
+    assert!(logs.has(&format!(
+        "1 spend log rows still queued after {MAX_DRAIN_PASSES} drain passes"
+    )));
+}
+
+#[tokio::test]
+async fn a_drain_that_empties_on_its_last_census_logs_no_lost_rows() {
+    let mut census = vec![1; usize::try_from(MAX_DRAIN_PASSES).unwrap()];
+    census.push(0);
+    let case = DrainCase::new(census);
+    let (logs, _capture) = capture_logs();
+
+    let outcome = case.drain(&memory_only_buffer()).await;
+
+    outcome.unwrap();
+    assert!(!logs.has("still queued"));
 }
 
 // The row the real daily user upsert writes, with every column that table requires.

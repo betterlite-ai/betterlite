@@ -11,6 +11,8 @@ use crate::tool_policy_store::discovery::batch_upsert_tools;
 use crate::tool_policy_store::records::ToolDiscoveryItem as ToolRecord;
 use crate::tool_policy_store::records::ToolIdGenerator;
 
+mod tests;
+
 pub type DiscoveryFuture<'run, Failure> =
     Pin<Box<dyn Future<Output = Result<(), Failure>> + Send + 'run>>;
 

@@ -54,6 +54,8 @@ pub async fn monitor_spend_logs_queue<Service>(
         if shutdown.run_until_cancelled(pass).await.is_none() {
             return;
         }
+        // A pass that answered without awaiting still hands the runtime on before the next one, so the monitor never holds its turn.
+        yield_now().await;
     }
 }
 
