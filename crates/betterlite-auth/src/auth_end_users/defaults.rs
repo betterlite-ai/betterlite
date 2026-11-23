@@ -78,18 +78,11 @@ where
         &self,
         budget_id: Option<&str>,
     ) -> Result<Option<LiteLLMBudgetTable>, PayloadError> {
-        let Some(rows) = self.rows else {
+        let (Some(rows), Some(id)) = (self.rows, budget_id.or(self.max_end_user_budget_id)) else {
             return Ok(None);
         };
-        let Some(id) = budget_id.or(self.max_end_user_budget_id) else {
-            return Ok(None);
-        };
-        let cache_key = EndUserCacheKey::DefaultEndUserBudget(id).render();
-        if let Some(cached) = self
-            .cache
-            .read_row::<LiteLLMBudgetTable>(&cache_key)
-            .await?
-        {
+        let cache_key = EndUserCacheKey::DefaultEndUserBudget(id);
+        if let Some(cached) = self.cached_budget(cache_key).await? {
             return Ok(Some(cached));
         }
         let fetched = match rows.find_budget(id).await {
@@ -106,11 +99,7 @@ where
                 return Ok(None);
             }
         };
-        if let Err(error) = self
-            .cache
-            .write_row(&cache_key, &fetched, self.cache.management_ttl())
-            .await
-        {
+        if let Err(error) = self.store_budget(cache_key, &fetched).await {
             tracing::error!(error = %error, "Error fetching default end user budget");
             return Ok(None);
         }
@@ -125,12 +114,8 @@ where
         let Some(rows) = self.rows else {
             return Ok(None);
         };
-        let cache_key = EndUserCacheKey::TeamMemberDefaultBudget(budget_id).render();
-        if let Some(cached) = self
-            .cache
-            .read_row::<LiteLLMBudgetTable>(&cache_key)
-            .await?
-        {
+        let cache_key = EndUserCacheKey::TeamMemberDefaultBudget(budget_id);
+        if let Some(cached) = self.cached_budget(cache_key).await? {
             return Ok(Some(cached));
         }
         let fetched = match rows.find_budget(budget_id).await {
@@ -153,10 +138,29 @@ where
             );
             return Ok(None);
         };
-        self.cache
-            .write_row(&cache_key, &budget, self.cache.management_ttl())
-            .await?;
+        self.store_budget(cache_key, &budget).await?;
         Ok(Some(budget))
+    }
+
+    // both budget reads answer a cached row before touching the database, under their own key
+    async fn cached_budget(
+        &self,
+        key: EndUserCacheKey<'_>,
+    ) -> Result<Option<LiteLLMBudgetTable>, PayloadError> {
+        self.cache
+            .read_row::<LiteLLMBudgetTable>(&key.render())
+            .await
+    }
+
+    // both budget reads store a fetched row under the management ttl, so the next read hits it
+    async fn store_budget(
+        &self,
+        key: EndUserCacheKey<'_>,
+        budget: &LiteLLMBudgetTable,
+    ) -> Result<(), AuthCacheError> {
+        self.cache
+            .write_row(&key.render(), budget, self.cache.management_ttl())
+            .await
     }
 
     // LiteLLM's resolve_default_budget: the key's budget first, the proxy default second
