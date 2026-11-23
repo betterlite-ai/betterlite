@@ -1,0 +1,18 @@
+kind: sdk_http
+name: responses-create-mock-shortcut-corpus
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_create:
+    runs:
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        stream: true
+        kwargs:
+          mock_response: hi
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

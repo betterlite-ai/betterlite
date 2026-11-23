@@ -1,0 +1,44 @@
+kind: sdk_http
+name: responses-create-chat-prefix-and-reasoning
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_create:
+    runs:
+      - mode: sync
+        model: openai/chat_completions/gpt-4o
+        input: hello
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        kwargs:
+          use_chat_completions_api: true
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl_a
+      object: chat.completion
+      created: 1750000000
+      model: gpt-4o-2024-08-06
+      choices:
+        - index: 0
+          message: {role: assistant, content: hello}
+          finish_reason: stop
+      usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl_b
+      object: chat.completion
+      created: 1750000001
+      model: gpt-4o-2024-08-06
+      choices:
+        - index: 0
+          message: {role: assistant, content: again}
+          finish_reason: stop
+      usage: {prompt_tokens: 6, completion_tokens: 3, total_tokens: 9}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
