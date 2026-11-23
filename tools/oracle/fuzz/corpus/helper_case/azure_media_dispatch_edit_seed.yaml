@@ -1,0 +1,13 @@
+kind: helper
+name: azure-media-dispatch-edit-seed
+call:
+  azure_media_dispatch:
+    case: image_edit
+    api_base: https://example.openai.azure.com
+    api_version: 2025-04-01-preview
+    model: gpt-image-1
+    prompt: a seed edit
+    api_key: sk-azure-fixture
+    options: {}
+env: {}
+compare: {ignore: []}

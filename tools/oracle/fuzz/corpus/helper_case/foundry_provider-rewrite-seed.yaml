@@ -1,0 +1,9 @@
+kind: helper
+name: foundry-provider-rewrite-seed
+call:
+  foundry_provider:
+    inputs:
+      - op: rewrite
+        base: https://res.services.ai.azure.com
+env: {}
+compare: {ignore: []}

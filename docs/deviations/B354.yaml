@@ -1,0 +1,24 @@
+task: B354
+deviations:
+  - what: 'A tier_distance_penalty that is not finite is refused when the config resolves, where LiteLLM''s ge=0.0 field accepts +inf and every candidate then scores -inf.'
+    why: A penalty of infinity makes every placement score -inf, so the strict comparison keeps the first candidate for every request and the distance penalty silently becomes a hard preference for whichever model the candidate order puts first; betterlite fails at the config boundary instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1207-L1211
+  - what: A non-finite scripted sample, bandit delta, quality sample, cost score, weight, distance penalty or selection score is refused with an error that names the field, where LiteLLM's float arithmetic carries NaN or infinity into the Beta draw and the score comparison.
+    why: The task requires rejecting nonfinite statistical input. A NaN score loses every comparison, so the first candidate stays selected for every draw and the poisoned posterior never recovers; betterlite fails at the boundary instead of silently routing on it, matching B339's boundary for the same bandit math.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L78-L97
+  - what: A cost score is computed exactly in Decimal from the deployment prices and converted to f64 once, so a price without an exact binary representation can land one ulp away from LiteLLM's float arithmetic in the diagnostic cost_score and score fields.
+    why: The task keeps prices and spend in rust_decimal::Decimal. The difference is confined to the diagnostic score fields and can only reorder two candidates whose float scores are within one ulp; every money value stays exact, and equal prices still produce equal scores.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L84-L97
+  - what: available_models, the all-pools candidate list and the recorded candidate order follow the ladder's severity order (SIMPLE, MEDIUM, COMPLEX, REASONING for the built-in set, the definition order for a custom one), where LiteLLM iterates the configured tiers in YAML declaration order.
+    why: B374's TierSet keeps its pools in a BTreeMap, so the declaration order is not available to this service. Severity order is what LiteLLM's own default config and documentation declare, so the common config keeps LiteLLM's order; a config that declares its tiers in another order can see a different all-pools candidate order, a different recorded candidate list, and a different first candidate when two scores tie exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3010
+  - what: adaptive=true with a custom tier set builds here, where LiteLLM raises ValueError constructing ComplexityTier(tier_name) while initializing the adaptive router. A custom classified tier then takes _fitting_tier_fallback, the same guard LiteLLM applies to a value that is not a ComplexityTier.
+    why: betterlite's ladder is a set of tier names, so a custom ladder has no ComplexityTier member to index; refusing the service would remove the tier fallback a custom ladder can otherwise use. The pick's guard keeps LiteLLM's contract that no adaptive scoring happens without a built-in classified tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2955-L2958
+  - what: 'The adaptive pool checks run when the placement service is built: at least one non-empty pool, and no configured pool left empty, where LiteLLM''s config model rejects the router configuration itself at construction.'
+    why: betterlite's config section reads only the four owned keys and B366 composes the placement service, so the pools exist at that boundary. The refused configurations and the reported conditions are the same as _validate_adaptive_pools.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L2052-L2061
+kept_bugs:
+  - what: A declared adaptive_weights object that names only quality keeps AdaptiveRouterWeights' own cost default of 0.3 without running the sum check, so weights summing to 0.8 are accepted.
+    why: LiteLLM's validator runs only for a supplied cost, and a released config may already rely on a lone quality weight being accepted; betterlite resolves it the same way, so upgrading does not reject a router that runs today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1221-L1231

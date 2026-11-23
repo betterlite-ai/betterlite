@@ -1,0 +1,69 @@
+kind: helper
+name: azure-resource-dispatch-files-batches
+call:
+  azure_resource_dispatch:
+    case: files_batches
+    steps:
+      - kind: file_create
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"batch","status":"processed"}'
+      - kind: file_content
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: "plain text"
+        target_id: "file-1"
+      - kind: file_retrieve
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"batch","status":"processed"}'
+        target_id: "file-1"
+      - kind: file_list
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"object":"list","data":[{"id":"file-1","object":"file","bytes":5,"created_at":1700000000,"filename":"notes.txt","purpose":"batch","status":"processed"}],"has_more":false}'
+      - kind: file_delete
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"id":"file-1","object":"file","deleted":true}'
+        target_id: "file-1"
+      - kind: batch_create
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"id":"batch_1","completion_window":"24h","created_at":1700000000,"endpoint":"/v1/embeddings","input_file_id":"file-1","object":"batch","status":"validating","cancelled_at":null,"cancelling_at":null,"completed_at":null,"error_file_id":null,"errors":null,"expired_at":null,"expires_at":null,"failed_at":null,"finalizing_at":null,"in_progress_at":null,"metadata":null,"model":null,"output_file_id":null,"request_counts":null,"usage":null}'
+      - kind: batch_retrieve
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        target_id: "batch_1"
+        body: '{"id":"batch_1","completion_window":"24h","created_at":1700000000,"endpoint":"/v1/embeddings","input_file_id":"file-1","object":"batch","status":"validating","cancelled_at":null,"cancelling_at":null,"completed_at":null,"error_file_id":null,"errors":null,"expired_at":null,"expires_at":null,"failed_at":null,"finalizing_at":null,"in_progress_at":null,"metadata":null,"model":null,"output_file_id":null,"request_counts":null,"usage":null}'
+      - kind: batch_cancel
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        target_id: "batch_1"
+        body: '{"id":"batch_1","completion_window":"24h","created_at":1700000000,"endpoint":"/v1/embeddings","input_file_id":"file-1","object":"batch","status":"validating","cancelled_at":null,"cancelling_at":null,"completed_at":null,"error_file_id":null,"errors":null,"expired_at":null,"expires_at":null,"failed_at":null,"finalizing_at":null,"in_progress_at":null,"metadata":null,"model":null,"output_file_id":null,"request_counts":null,"usage":null}'
+      - kind: batch_list
+        api_base: "https://example.test"
+        api_version: "2024-02-01"
+        api_key: "sk-fixture"
+        status: 200
+        after: "batch_0"
+        limit: 20
+        body: '{"object":"list","data":[{"id":"batch_1","completion_window":"24h","created_at":1700000000,"endpoint":"/v1/embeddings","input_file_id":"file-1","object":"batch","status":"validating","cancelled_at":null,"cancelling_at":null,"completed_at":null,"error_file_id":null,"errors":null,"expired_at":null,"expires_at":null,"failed_at":null,"finalizing_at":null,"in_progress_at":null,"metadata":null,"model":null,"output_file_id":null,"request_counts":null,"usage":null}],"first_id":"batch_1","last_id":"batch_1","has_more":false}'
+env: {}
+compare: {ignore: []}

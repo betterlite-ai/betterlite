@@ -90,11 +90,16 @@ fn provider_an_unknown_name_never_reaches_the_lookup() {
             .to_string()
             .contains("is not a provider betterlite knows")
     );
-    let ErrorClass::ApiConnection(context) = &failure.class else {
-        panic!("expected a value error, got {:?}", failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
     };
-    assert_eq!(context.provider.as_deref(), Some("not_a_provider"));
-    assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "\"not_a_provider\" is not a provider betterlite knows"
+    );
+    assert_eq!(details.provider.as_deref(), Some("not_a_provider"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert!(fixture.lookup.asked().is_empty());
     assert!(fixture.calls().is_empty());
     assert_eq!(fixture.logging.lock().unwrap().call_type, INITIAL_CALL_TYPE);
@@ -116,7 +121,16 @@ fn provider_a_known_provider_without_a_config_reports_the_missing_config() {
         failure.error.to_string(),
         "Container provider config not found for provider: anthropic"
     );
-    assert!(matches!(&failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for provider: anthropic"
+    );
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(fixture.lookup.asked(), vec![ProviderId::Anthropic]);
     assert!(fixture.calls().is_empty());
     assert_eq!(fixture.logging.lock().unwrap().call_type, INITIAL_CALL_TYPE);
