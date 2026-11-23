@@ -2,11 +2,11 @@ use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::HelperResult;
-use betterlite_provider::azure_media_dispatch::AzureMediaResult;
 use betterlite_provider::azure_media_dispatch::call::{
     AzureMediaOperation, NativeSsmlOperation, OpenAiSpeechOperation,
 };
 use betterlite_provider::azure_media_dispatch::test_support::Reply;
+use betterlite_provider::azure_media_dispatch::{AzureMediaResult, error::AzureMediaError};
 use betterlite_provider::operation::OperationResult;
 use http::HeaderMap;
 use indexmap::IndexMap;
@@ -81,15 +81,15 @@ pub(super) async fn run(input: &Input, arm: Arm) -> HelperResult {
     speech_view(&sent, status, body, arm.key_header())
 }
 
-fn openai_reply(result: &OperationResult) -> Option<(u16, &[u8])> {
-    let OperationResult::AzureMedia(AzureMediaResult::OpenAiSpeech(content)) = result else {
+fn openai_reply(result: &Result<OperationResult, AzureMediaError>) -> Option<(u16, &[u8])> {
+    let Ok(OperationResult::AzureMedia(AzureMediaResult::OpenAiSpeech(content))) = result else {
         return None;
     };
     Some((content.status, &content.body))
 }
 
-fn native_reply(result: &OperationResult) -> Option<(u16, &[u8])> {
-    let OperationResult::AzureMedia(AzureMediaResult::NativeSsml(response)) = result else {
+fn native_reply(result: &Result<OperationResult, AzureMediaError>) -> Option<(u16, &[u8])> {
+    let Ok(OperationResult::AzureMedia(AzureMediaResult::NativeSsml(response))) = result else {
         return None;
     };
     Some((response.content.status, &response.content.body))
