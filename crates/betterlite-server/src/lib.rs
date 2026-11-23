@@ -89,6 +89,8 @@ pub mod default_user_teams;
 pub mod deployment_checks;
 pub mod docs_routes;
 pub mod endpoints;
+pub mod env_credential_login;
+pub mod env_value_codec;
 pub mod error;
 mod error_body;
 pub mod error_handlers;
