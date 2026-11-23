@@ -9,7 +9,7 @@ use super::sql::{
 };
 use super::{ACCOUNTING_LIMITS, AppendResult, BaselineAccountingStore, TRANSACTION_TIMEOUT, begin};
 use crate::autorouter_turn_sql::write::write_autorouter_turn;
-use crate::baseline::publication::change::change;
+use crate::baseline::publication::change::{Change, change};
 use crate::baseline::publication::decode::decode_baseline_publication;
 use crate::baseline::publication::project::StoredRecord;
 use crate::baseline::publication::publish::publish;
@@ -88,7 +88,8 @@ where
         Insertion::Foreign => return Ok(AppendResult::Conflict),
     };
     if comparison.retired {
-        publish_retired(transaction, record, existing.as_ref(), generate_id).await?;
+        let correction = retired_correction(record, existing.as_ref())?;
+        publish(transaction, &[correction], generate_id).await?;
         return Ok(AppendResult::Retired);
     }
     if existing.as_ref().is_none_or(|found| found.conflicted) {
@@ -141,15 +142,10 @@ async fn insert_observation(
 }
 
 // A retired comparison reports the request as unknown, against the canonical row when one already exists.
-async fn publish_retired<G>(
-    transaction: &Transaction<'_>,
+fn retired_correction(
     record: &BaselineAccountingRecord,
     existing: Option<&Existing>,
-    generate_id: &G,
-) -> Result<(), StoreError>
-where
-    G: Fn() -> Uuid + Sync,
-{
+) -> Result<Change, StoreError> {
     let canonical = existing.map(|found| &found.row);
     let owner = canonical
         .map(|row| decode_baseline_record(row.data.as_bytes()))
@@ -160,11 +156,9 @@ where
         .transpose()?;
     let started_at = canonical.map_or(record.observation.started_at, |row| row.started_at);
     let retired = unknown_publication(&record.scope, started_at, "comparison_retired");
-    let correction = change(
+    Ok(change(
         owner.as_ref().unwrap_or(record),
         previous.as_ref(),
         &retired,
-    );
-    publish(transaction, &[correction], generate_id).await?;
-    Ok(())
+    ))
 }
