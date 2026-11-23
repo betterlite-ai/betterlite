@@ -78,11 +78,9 @@ async fn view(
     let storage_key = resolved
         .as_ref()
         .map_or(request_id, |found| found.storage_key.as_str());
-    let owner_check = if admin {
-        None
-    } else {
-        visibility.map(|checks| (checks, &caller))
-    };
+    let owner_check = visibility
+        .filter(|_checks| !admin)
+        .map(|checks| (checks, &caller));
     if let Some(payload) =
         callback_payload(state, storage_key, &window, owner_check, request_id).await?
     {
