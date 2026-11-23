@@ -52,49 +52,66 @@ pub(super) async fn call_result(
     cache: &Arc<ScriptedCache>,
     watch: &Watch,
 ) -> Result<Value, Box<HelperError>> {
-    let key = get_cache_key(&call.polling_id);
-    if let Some(seed) = call.seed.as_ref() {
-        if let Some(raw) = seed.raw.as_ref() {
-            cache.seed_bytes(&key, raw.as_bytes());
-        } else if let Some(response) = seed.response.as_ref() {
-            let text = serde_json::to_string(response)?;
-            cache.seed_bytes(&key, text.as_bytes());
-        }
-    }
+    seed_cache(cache, call)?;
     let effects_start = cache.effect_count();
     let logs_start = watch
         .lines
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .len();
-    let handle: Option<Arc<dyn PollingCache>> = if call.redis {
-        Some(Arc::clone(cache))
-    } else {
-        None
-    };
-    let store = ResponsePollingStore {
-        cache: handle,
-        ttl: call.ttl.unwrap_or(input.ttl),
-        limits: ApiLimits::default(),
-    };
+    let store = store_for(input, call, cache);
     let (returned, error) = match execute(call, input.now, uuid, &store).await {
         Ok(value) => (value, Value::Null),
         Err(failure) => (Value::Null, Value::String(label(&failure).to_owned())),
     };
-    let effects = {
-        let guard = cache.effects.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(guard.iter().skip(effects_start).cloned().collect())
-    };
-    let logs = {
-        let guard = watch.lines.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(guard.iter().skip(logs_start).cloned().collect())
-    };
+    let effects = snapshot_effects(cache, effects_start);
+    let logs = snapshot_logs(watch, logs_start);
     Ok(json!({
         "returned": returned,
         "error": error,
         "effects": effects,
         "logs": logs,
     }))
+}
+
+fn seed_cache(cache: &ScriptedCache, call: &StateCall) -> Result<(), Box<HelperError>> {
+    let Some(seed) = call.seed.as_ref() else {
+        return Ok(());
+    };
+    let key = get_cache_key(&call.polling_id);
+    let Some(raw) = seed.raw.as_ref() else {
+        return seed_response(cache, &key, seed);
+    };
+    cache.seed_bytes(&key, raw.as_bytes());
+    Ok(())
+}
+
+fn seed_response(cache: &ScriptedCache, key: &str, seed: &Seed) -> Result<(), Box<HelperError>> {
+    let Some(response) = seed.response.as_ref() else {
+        return Ok(());
+    };
+    let text = serde_json::to_string(response)?;
+    cache.seed_bytes(key, text.as_bytes());
+    Ok(())
+}
+
+fn store_for(input: &Input, call: &StateCall, cache: &Arc<ScriptedCache>) -> ResponsePollingStore {
+    let handle: Option<Arc<dyn PollingCache>> = call.redis.then_some(Arc::clone(cache));
+    ResponsePollingStore {
+        cache: handle,
+        ttl: call.ttl.unwrap_or(input.ttl),
+        limits: ApiLimits::default(),
+    }
+}
+
+fn snapshot_effects(cache: &ScriptedCache, start: usize) -> Value {
+    let guard = cache.effects.lock().unwrap_or_else(PoisonError::into_inner);
+    Value::Array(guard.iter().skip(start).cloned().collect())
+}
+
+fn snapshot_logs(watch: &Watch, start: usize) -> Value {
+    let guard = watch.lines.lock().unwrap_or_else(PoisonError::into_inner);
+    Value::Array(guard.iter().skip(start).cloned().collect())
 }
 
 async fn execute(
@@ -121,13 +138,12 @@ async fn execute(
                 .await?;
             Ok(Value::Null)
         }
-        StateOp::Get => match store
+        StateOp::Get => Ok(store
             .get_state(&call.polling_id, PollAccess::AuthDisabled)
             .await?
-        {
-            Some(state) => Ok(serde_json::to_value(&state)?),
-            None => Ok(Value::Null),
-        },
+            .map(|state| serde_json::to_value(&state))
+            .transpose()?
+            .unwrap_or(Value::Null)),
         StateOp::Cancel => Ok(Value::Bool(
             store
                 .cancel_polling(&call.polling_id, PollAccess::AuthDisabled)
