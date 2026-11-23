@@ -116,6 +116,20 @@ impl ModelResolver for ScriptedResolver {
         })
     }
 }
+// get_llm_provider reads the caller's prefix even when the prefix names the provider, and none means unresolved
+pub(super) fn scripted(model: &str, custom_llm_provider: Option<&str>) -> (String, String) {
+    if let Some(given) = custom_llm_provider {
+        let resolved = match model.split_once('/') {
+            Some((prefix, rest)) if prefix == given => rest.to_owned(),
+            Some(_) | None => model.to_owned(),
+        };
+        return (given.to_owned(), resolved);
+    }
+    let Some((prefix, rest)) = model.split_once('/') else {
+        return (String::new(), model.to_owned());
+    };
+    (prefix.to_owned(), rest.to_owned())
+}
 pub(super) struct Configs {
     pub(super) api_key: Option<SecretString>,
 }
