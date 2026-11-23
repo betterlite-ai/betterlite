@@ -21,4 +21,7 @@ deviations:
   - what: "`azure_ad_token_provider` is left out of the call payload, so an azure embedding call never asks it for a token."
     why: A Python callable cannot cross into Rust; an azure call still authenticates with `api_key` or the azure environment values.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6360
+  - what: "`cost_per_second`, `input_cost_per_second` and `output_cost_per_second` stay out of the body but do not price the answer; `response_cost` uses only the per-token pair and the catalog."
+    why: Per-second pricing is registered through the `@client` wrapper's cost tracking, which an embedding call does not run yet (see the CallWrapper entry above).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6421-L6432
 kept_bugs: []
