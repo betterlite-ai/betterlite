@@ -117,6 +117,14 @@ pub(super) fn beta_row(interval_hours: Option<u32>, force_reload: bool) -> Confi
     raw_beta_row(value)
 }
 
+pub(super) fn beta_row_without_force_reload(interval_hours: u32) -> ConfigParamRow {
+    let value = JsonData::Object(BTreeMap::from([(
+        "interval_hours".to_owned(),
+        JsonData::Number(serde_json::Number::from(interval_hours)),
+    )]));
+    raw_beta_row(value)
+}
+
 pub(super) fn general_settings(objects: &[&str]) -> SettingsStore {
     let mut store = SettingsStore::from(Section::GeneralSettings);
     store.load_yaml(BTreeMap::from([(

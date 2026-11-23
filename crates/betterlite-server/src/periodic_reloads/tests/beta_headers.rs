@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use rstest::rstest;
 
 use super::support::{
-    Harness, beta_row, capture_logs, moment, moment_at, raw_beta_row, run_beta_check,
+    Harness, beta_row, beta_row_without_force_reload, capture_logs, moment, moment_at,
+    raw_beta_row, run_beta_check,
 };
 
 #[tokio::test]
@@ -82,6 +83,23 @@ async fn an_interval_without_a_recorded_reload_reloads() {
         logs.contents()
             .contains("Anthropic beta headers reload triggered - no previous reload time recorded")
     );
+}
+
+#[tokio::test]
+async fn an_absent_force_flag_reads_as_false_and_the_interval_reloads() {
+    let (logs, guard) = capture_logs();
+    let harness = Harness::new(moment(1));
+    harness
+        .rows
+        .set_beta_row(Some(beta_row_without_force_reload(2)));
+    run_beta_check(&harness).await;
+    drop(guard);
+    assert_eq!(harness.beta.calls(), 1);
+    let text = logs.contents();
+    assert!(
+        text.contains("Anthropic beta headers reload triggered - no previous reload time recorded")
+    );
+    assert!(!text.contains("Anthropic beta headers reload triggered by force reload flag"));
 }
 
 #[rstest]
