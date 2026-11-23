@@ -745,6 +745,52 @@ async fn auth_invalid() {
     );
 }
 
+#[tokio::test]
+async fn invalid_enabled_only_is_rejected_before_the_database_check() {
+    let reply = booted_call(
+        booted("oracle-master"),
+        "/claude-code/plugins?enabled_only=maybe",
+        Some("Bearer oracle-master"),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        reply.text,
+        r#"{"detail":[{"loc":["query","enabled_only"],"msg":"not a boolean","type":"bool_parsing"}]}"#
+    );
+}
+
+#[tokio::test]
+async fn visibility_is_checked_before_the_manifest_is_parsed() {
+    let store = Arc::new(FakeStore::new());
+    let mut broken = stored_row("private-broken", false, at(13, 0, 0));
+    broken.manifest_json = Some("{not json".to_owned());
+    store.seed(broken);
+    let hidden = call(
+        &store,
+        Some(&plain_user()),
+        "/claude-code/plugins/private-broken",
+    )
+    .await;
+    assert_eq!(hidden.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        hidden.text,
+        r#"{"detail":{"error":"Plugin 'private-broken' is not granted to this key"}}"#
+    );
+    let granted = call(
+        &store,
+        Some(&master()),
+        "/claude-code/plugins/private-broken",
+    )
+    .await;
+    assert_eq!(granted.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(granted.text, INVALID_MANIFEST_DETAIL);
+    store.ignore_filters.store(true, Ordering::SeqCst);
+    let listed = call(&store, Some(&plain_user()), "/claude-code/plugins").await;
+    assert_eq!(listed.status, StatusCode::OK);
+    assert_eq!(listed.text, r#"{"plugins":[],"count":0}"#);
+}
+
 #[test]
 fn decoder_reads_the_manifest_fields() {
     let fields = decode_claude_plugin_read(
