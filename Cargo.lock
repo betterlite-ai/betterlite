@@ -4214,6 +4214,7 @@ name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-a2a",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4221,6 +4222,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
@@ -4229,6 +4231,7 @@ dependencies = [
  "betterlite-secrets",
  "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "pyo3",
  "pyo3-async-runtimes",
