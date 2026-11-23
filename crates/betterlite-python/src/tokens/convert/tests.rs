@@ -2,11 +2,11 @@
 
 use betterlite_tokenizer::count::request::ToolChoice;
 use betterlite_tokenizer::image::tokens::Mode;
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 
 use super::{
     BoundRequest, DecodeRequest, DimensionsRequest, EncodeRequest, ImageTokensRequest, LoadRequest,
-    ModelRequest, ModifiedRequest, ResizeRequest, TileRequest, TokenCountRequest, Wire, read,
+    ModelRequest, ModifiedRequest, ResizeRequest, TileRequest, TokenCountRequest, Wire as _, read,
 };
 
 #[test]
@@ -229,9 +229,9 @@ fn tokens_request_malformed_json_names_the_request() {
             .starts_with("the token count request could not be read as JSON")
     );
     let wrong: Result<ResizeRequest, _> = read(r#"{"width":"wide"}"#);
-    let error = wrong.unwrap_err();
+    let wrong_error = wrong.unwrap_err();
     assert!(
-        error
+        wrong_error
             .to_string()
             .starts_with("the image resize request could not be read as JSON")
     );

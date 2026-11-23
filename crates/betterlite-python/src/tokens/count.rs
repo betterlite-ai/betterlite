@@ -20,13 +20,13 @@ fn custom_tokenizer(handle: Option<u64>) -> Result<Option<SelectedTokenizer>, To
 impl TokenCountRequest {
     fn counting<'request>(
         &'request self,
-        custom: &'request Option<SelectedTokenizer>,
-        text: &'request Option<TextInput>,
+        custom: Option<&'request SelectedTokenizer>,
+        text: Option<&'request TextInput>,
     ) -> TokenRequest<'request> {
         TokenRequest {
             model: &self.model,
-            custom_tokenizer: custom.as_ref(),
-            text: text.as_ref(),
+            custom_tokenizer: custom,
+            text,
             messages: self.messages.as_deref(),
             count_response_tokens: self.count_response_tokens,
             tools: self.tools.as_deref(),
@@ -41,7 +41,7 @@ pub(crate) fn token_count(py: Python<'_>, request: &str) -> PyResult<usize> {
     let wire: TokenCountRequest = read(request)?;
     let text: Option<TextInput> = wire.text.clone().map(TextInput::One);
     let custom = custom_tokenizer(wire.custom_tokenizer)?;
-    let counting = wire.counting(&custom, &text);
+    let counting = wire.counting(custom.as_ref(), text.as_ref());
     let counted = py.detach(|| -> Result<usize, TokensError> {
         let runtime = TokensRuntime::build()?;
         get_runtime()
