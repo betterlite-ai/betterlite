@@ -1,0 +1,18 @@
+task: B7875
+deviations:
+- what: "`router` and `_direct_vector_store_embedding_executor` raise `UnsupportedCallArgument` naming the argument, where LiteLLM uses them to embed the query on the client side."
+  why: Both carry Python objects Rust cannot call, and no task plans a native Router handle for them, so the call is refused rather than run without the executor.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L46-L53
+- what: "`client` and `shared_session` in kwargs raise `UnsupportedCallArgument` instead of being passed to the vector store handler."
+  why: They are live Python HTTP clients; betterlite makes its own request through its Rust transport, so accepting them would silently ignore the client the caller gave.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L271
+- what: "A create `mock_response` dict answers with `mock_vector_store_create_response`, where LiteLLM turns the dict into a ModelResponse before its `isinstance(..., dict)` guard reads it, so the guard never fires and the call reaches the provider."
+  why: The dict is the documented create mock; answering it is what a caller passing one asks for, and LiteLLM's coercion is a bug no working setup can rely on.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L211-L215
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server in crates/betterlite-python/tests/test_vector_create_search.py.
+  link: ""
+kept_bugs:
+- what: "A search `mock_response` string is only checked for truthiness: the answer is the sample page, and the string itself never becomes the result text."
+  why: The task text says the helper builds one result from that text, but LiteLLM at the pinned commit leaves `mock_results` unset for a string and answers with the default page; a working setup relies on that answer, so betterlite copies it.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L410-L415
