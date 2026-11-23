@@ -120,45 +120,14 @@ fn logging_init() -> LoggingInit {
     .expect("the logging fixture is valid")
 }
 
-fn logging_state(redactor: &Redactor) -> LoggingState {
-    LoggingState::new(
-        logging_init(),
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || String::from("generated"),
-        Duration::default,
-    )
-    .expect("the logging state builds")
-}
-
-fn logging_env<'env>(redactor: &'env Redactor, sink: &'env Sink) -> PrePostEnv<'env> {
-    PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses"),
-    }
-}
-
 fn record_speech_pre_call(state: &mut LoggingState, env: &PrePostEnv<'_>) {
-    PrePostLogger { state, env }
-        .pre_call(SpeechPreCall {
-            input: "hello",
-            api_base: API_BASE,
-            data: IndexMap::from([(String::from("voice"), json(r#""alloy""#))]),
-        })
-        .expect("pre_call records");
+    let mut logger = PrePostLogger { state, env };
+    let record = SpeechPreCall {
+        input: "hello",
+        api_base: API_BASE,
+        data: IndexMap::from([(String::from("voice"), json(r#""alloy""#))]),
+    };
+    logger.pre_call(record).expect("pre_call records");
 }
 
 fn assert_pre_call_details(state: &LoggingState) {
@@ -189,9 +158,32 @@ fn assert_pre_call_details(state: &LoggingState) {
 #[test]
 fn speech_pre_post_logger_records_the_pre_call() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    let mut state = logging_state(&redactor);
+    let mut state = LoggingState::new(
+        logging_init(),
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &redactor,
+        || String::from("generated"),
+        Duration::default,
+    )
+    .expect("the logging state builds");
     let sink = Sink::default();
-    let env = logging_env(&redactor, &sink);
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &redactor,
+        log: &sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses"),
+    };
     record_speech_pre_call(&mut state, &env);
     assert_pre_call_details(&state);
 }
