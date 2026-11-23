@@ -23,6 +23,7 @@ import betterlite.exceptions as errors
 from betterlite._completion.errors import UnsupportedCallArgumentError
 from betterlite._endpoints.payload import CallValue
 from betterlite.assistants import _records
+from betterlite.types.utils import Message
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 UNAUTHORIZED_STATUS: Final = 401
@@ -218,6 +219,11 @@ def test_calls_threads() -> None:
         )
         same_call(reference_thread_call, server.calls.pop())
         assert dump_of(ours_got) == dump_of(reference_got)
+
+
+def test_calls_message_object() -> None:
+    dumped = _records.thread_message(Message(content="hi", role="user"))
+    assert dumped == {"role": "user", "content": "hi"}
 
 
 def test_async_flag_coroutines() -> None:
