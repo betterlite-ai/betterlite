@@ -12,6 +12,7 @@ use super::dates::{DetailDates, decode_detail_dates};
 use super::error::LogPayloadError;
 use crate::auth::auth_identity::AuthContext;
 use crate::plugin_routes::routes::caller_identity;
+use crate::spend::log_query::decode_spend_log_query;
 use crate::spend::visibility::roles::is_admin_view_safe;
 use crate::spend::visibility::service::SpendLogVisibility;
 use crate::team_access::caller::TeamCaller;
@@ -69,8 +70,8 @@ async fn view(
             .assert_can_view_request_id(&caller, request_id)
             .await?;
     }
-    let (start_date, end_date) = detail_dates(raw_query);
-    let window = decode_detail_dates(start_date.as_deref(), end_date.as_deref())?;
+    let dates = decode_spend_log_query(raw_query).dates;
+    let window = decode_detail_dates(dates.start_date.as_deref(), dates.end_date.as_deref())?;
     let resolved = match visibility {
         Some(checks) => Some(checks.resolve_payload_row(&caller, request_id).await?),
         None => None,
@@ -118,18 +119,4 @@ async fn callback_payload(
         return Ok(Some(payload));
     }
     Ok(None)
-}
-
-// FastAPI reads each query value once, the last one sent winning, with no trimming
-fn detail_dates(raw_query: Option<&str>) -> (Option<String>, Option<String>) {
-    let mut start_date = None;
-    let mut end_date = None;
-    for (name, value) in form_urlencoded::parse(raw_query.unwrap_or_default().as_bytes()) {
-        match name.as_ref() {
-            "start_date" => start_date = Some(value.into_owned()),
-            "end_date" => end_date = Some(value.into_owned()),
-            _ => {}
-        }
-    }
-    (start_date, end_date)
 }

@@ -202,7 +202,7 @@ async fn an_admin_without_a_database_reads_callbacks_by_the_url_id(
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call(
-            "/spend/logs/ui/call-7?end_date=2025-05-06%2007:08:09",
+            "/spend/logs/ui/call-7?end_date=1999-01-01%2000:00:00&end_date=2025-05-06%2007:08:09",
             Some(&admin()),
         )
         .await;
