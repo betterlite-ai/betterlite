@@ -6,7 +6,7 @@ use betterlite_provider::azure_media_dispatch::AzureMediaResult;
 use betterlite_provider::azure_media_dispatch::call::{
     AzureMediaOperation, NativeSsmlOperation, OpenAiSpeechOperation,
 };
-use betterlite_provider::azure_media_dispatch::test_support::{Reply, exchange};
+use betterlite_provider::azure_media_dispatch::test_support::Reply;
 use betterlite_provider::operation::OperationResult;
 use http::HeaderMap;
 use indexmap::IndexMap;
@@ -14,6 +14,7 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::case::Input;
+use super::exchange;
 use super::{first_request, header, outcome_error};
 use crate::openai_media_dispatch::failure;
 
@@ -68,9 +69,7 @@ impl Arm {
 }
 
 pub(super) async fn run(input: &Input, arm: Arm) -> HelperResult {
-    let outcome = exchange(arm.operation(input), vec![speech_reply()])
-        .await
-        .map_err(|error| failure("RuntimeError", error))?;
+    let outcome = exchange(arm.operation(input), vec![speech_reply()]).await?;
     let sent = first_request(outcome.fixture.outbound())?;
     let reply = match arm {
         Arm::OpenAi => openai_reply(&outcome.result),

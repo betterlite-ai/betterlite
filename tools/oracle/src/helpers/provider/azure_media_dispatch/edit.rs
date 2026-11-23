@@ -5,14 +5,14 @@ use betterlite_openai::image_edits::file::ImageEditFile;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::azure_media_dispatch::AzureMediaResult;
 use betterlite_provider::azure_media_dispatch::call::{AzureMediaOperation, ImageEditOperation};
-use betterlite_provider::azure_media_dispatch::test_support::{Reply, exchange};
+use betterlite_provider::azure_media_dispatch::test_support::Reply;
 use betterlite_provider::operation::OperationResult;
 use secrecy::SecretString;
 use uuid::Uuid;
 
 use super::case::Input;
+use super::exchange;
 use super::{EDIT_REPLY, IMAGE, NOW, edit_view, outcome_error};
-use crate::openai_media_dispatch::failure;
 
 pub(super) async fn image_edit(input: &Input) -> HelperResult {
     let call = ImageEditOperation {
@@ -39,8 +39,7 @@ pub(super) async fn image_edit(input: &Input) -> HelperResult {
         AzureMediaOperation::ImageEdit(Box::new(call)),
         vec![Reply::json(200, EDIT_REPLY)],
     )
-    .await
-    .map_err(|error| failure("RuntimeError", error))?;
+    .await?;
     let Ok(OperationResult::AzureMedia(AzureMediaResult::ImageEdit(edited))) = &outcome.result
     else {
         return outcome_error(&outcome.result);
