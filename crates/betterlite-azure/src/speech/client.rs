@@ -84,8 +84,13 @@ pub fn select_client<'data>(
     let v1 = matches!(kind, ClientKind::OpenAi | ClientKind::AsyncOpenAi);
     match inputs {
         Some(inputs) => selected_from_inputs(inputs),
-        None if v1 => v1_fallback(connection),
-        None => azure_fallback(connection, custom_query.as_ref(), wiring),
+        None => {
+            if v1 {
+                v1_fallback(connection)
+            } else {
+                azure_fallback(connection, custom_query.as_ref(), wiring)
+            }
+        }
     }
 }
 
