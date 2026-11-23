@@ -188,7 +188,7 @@ where
     Ok(reply)
 }
 
-// Only a trailing-<think> prompt with a first content reaches the split, which always rebuilds a fields map.
+// Only a prompt that strips to a trailing <think>, with a first content, splits; the rebuilt map keeps seeded fields and adds non-empty reasoning.
 fn apply_reasoning(
     request_data: &IndexMap<String, Json>,
     reply: &mut Reply,
