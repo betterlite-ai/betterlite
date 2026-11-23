@@ -2,6 +2,8 @@ use std::error::Error;
 
 use betterlite_a2a::client::error::ClientError;
 use betterlite_a2a::client::retry::SendError;
+use betterlite_a2a::errors::attempts::ProbeAttempts;
+use betterlite_a2a::errors::retries::RetryCounts;
 use betterlite_a2a::errors::{A2AError, LLM_PROVIDER};
 use betterlite_a2a::send::error::{SendCallError, SendEntryError};
 use pyo3::PyErr;
@@ -78,8 +80,99 @@ impl ErrorPayload {
         }
     }
 
+    // LiteLLM's A2AError keeps its message, model, debug info and retry counts.
+    fn base_details(
+        message: &str,
+        model: &Option<String>,
+        debug_info: &Option<String>,
+        retries: &RetryCounts,
+    ) -> Self {
+        Self {
+            model: model.clone(),
+            litellm_debug_info: debug_info.clone(),
+            max_retries: retries.max,
+            num_retries: retries.retried,
+            ..Self::base(message.to_owned())
+        }
+    }
+
+    fn connection_details(
+        message: &str,
+        url: Option<String>,
+        model: &Option<String>,
+        debug_info: &Option<String>,
+        retries: &RetryCounts,
+    ) -> Self {
+        Self {
+            model: model.clone(),
+            litellm_debug_info: debug_info.clone(),
+            max_retries: retries.max,
+            num_retries: retries.retried,
+            ..Self::connection(message.to_owned(), url)
+        }
+    }
+
+    // A2AAgentCardError keeps the status the card fetch failed with.
+    fn agent_card(message: &str, url: Option<String>, status_code: u16) -> Self {
+        Self {
+            status_code: Some(status_code),
+            llm_provider: Some(LLM_PROVIDER),
+            url,
+            ..Self::empty("A2AAgentCardError", message.to_owned())
+        }
+    }
+
+    // A2AAgentCardDiscoveryError names the base URL and every path it tried.
+    fn discovery(base_url: &str, attempts: &ProbeAttempts, status_code: u16) -> Self {
+        let failures = attempts
+            .failures
+            .iter()
+            .map(|failure| FailurePayload {
+                path: failure.path.clone(),
+                error: failure.reason.to_string(),
+            })
+            .collect();
+        Self {
+            status_code: Some(status_code),
+            llm_provider: Some(LLM_PROVIDER),
+            url: Some(base_url.to_owned()),
+            base_url: Some(base_url.to_owned()),
+            failures: Some(failures),
+            ..Self::empty(
+                "A2AAgentCardDiscoveryError",
+                format!(
+                    "Failed to fetch agent card from {base_url}. Tried {}",
+                    attempts.render()
+                ),
+            )
+        }
+    }
+
+    // A2ALocalhostURLError carries both URLs and the connection failure it replaces.
+    fn localhost(
+        localhost_url: &str,
+        base_url: &str,
+        model: &Option<String>,
+        original_error: &Option<Box<A2AError>>,
+    ) -> Self {
+        Self {
+            status_code: Some(CONNECTION_STATUS),
+            llm_provider: Some(LLM_PROVIDER),
+            url: Some(localhost_url.to_owned()),
+            model: model.clone(),
+            base_url: Some(base_url.to_owned()),
+            localhost_url: Some(localhost_url.to_owned()),
+            original_error: original_error.as_ref().map(ToString::to_string),
+            ..Self::empty(
+                "A2ALocalhostURLError",
+                format!(
+                    "Agent card contains localhost/internal URL '{localhost_url}'. Retrying with base URL '{base_url}'."
+                ),
+            )
+        }
+    }
+
     pub(crate) fn from_a2a(error: &A2AError) -> Self {
-        let status_code = Some(error.status_code());
         let url = error.url().map(str::to_owned);
         match error {
             A2AError::Base {
@@ -87,87 +180,30 @@ impl ErrorPayload {
                 model,
                 debug_info,
                 retries,
-            } => Self {
-                status_code,
-                llm_provider: Some(LLM_PROVIDER),
-                url,
-                model: model.clone(),
-                litellm_debug_info: debug_info.clone(),
-                max_retries: retries.max,
-                num_retries: retries.retried,
-                ..Self::empty("A2AError", message.clone())
-            },
+            } => Self::base_details(message, model, debug_info, retries),
             A2AError::Connection {
                 message,
                 model,
                 debug_info,
                 retries,
                 ..
-            } => Self {
-                status_code,
-                llm_provider: Some(LLM_PROVIDER),
-                url,
-                model: model.clone(),
-                litellm_debug_info: debug_info.clone(),
-                max_retries: retries.max,
-                num_retries: retries.retried,
-                ..Self::empty("A2AConnectionError", message.clone())
-            },
+            } => Self::connection_details(message, url, model, debug_info, retries),
             A2AError::AgentCard {
                 message,
-                status_code: card_status,
-                ..
-            } => Self {
-                status_code: Some(*card_status),
-                llm_provider: Some(LLM_PROVIDER),
-                url,
-                ..Self::empty("A2AAgentCardError", message.clone())
-            },
-            A2AError::AgentCardDiscovery {
-                base_url, attempts, ..
-            } => Self {
                 status_code,
-                llm_provider: Some(LLM_PROVIDER),
-                url: Some(base_url.clone()),
-                base_url: Some(base_url.clone()),
-                failures: Some(
-                    attempts
-                        .failures
-                        .iter()
-                        .map(|failure| FailurePayload {
-                            path: failure.path.clone(),
-                            error: failure.reason.to_string(),
-                        })
-                        .collect(),
-                ),
-                ..Self::empty(
-                    "A2AAgentCardDiscoveryError",
-                    format!(
-                        "Failed to fetch agent card from {base_url}. Tried {}",
-                        attempts.render()
-                    ),
-                )
-            },
+                ..
+            } => Self::agent_card(message, url, *status_code),
+            A2AError::AgentCardDiscovery {
+                base_url,
+                attempts,
+                status_code,
+            } => Self::discovery(base_url, attempts, *status_code),
             A2AError::LocalhostUrl {
                 localhost_url,
                 base_url,
                 model,
                 original_error,
-            } => Self {
-                status_code,
-                llm_provider: Some(LLM_PROVIDER),
-                url,
-                model: model.clone(),
-                base_url: Some(base_url.clone()),
-                localhost_url: Some(localhost_url.clone()),
-                original_error: original_error.as_ref().map(|source| source.to_string()),
-                ..Self::empty(
-                    "A2ALocalhostURLError",
-                    format!(
-                        "Agent card contains localhost/internal URL '{localhost_url}'. Retrying with base URL '{base_url}'."
-                    ),
-                )
-            },
+            } => Self::localhost(localhost_url, base_url, model, original_error),
         }
     }
 
