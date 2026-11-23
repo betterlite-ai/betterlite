@@ -168,9 +168,11 @@ class FakePrismaClient(PrismaClient):
 def seed(call: Call, fixture: Fixture) -> None:
     cached_budget = call.get("cached_budget")
     if cached_budget is not None:
-        budget = LiteLLM_BudgetTable.model_validate(cached_budget)
-        fixture.values[f"default_end_user_budget:{budget.budget_id}"] = cached_budget
-        fixture.values[f"team_member_default_budget:{budget.budget_id}"] = cached_budget
+        # the LiteLLM model class trips mypy's Any check, so the cache key comes from the raw row
+        budget_id = cached_budget.get("budget_id")
+        prefix = budget_id if isinstance(budget_id, str) else "None"
+        fixture.values[f"default_end_user_budget:{prefix}"] = cached_budget
+        fixture.values[f"team_member_default_budget:{prefix}"] = cached_budget
     cached_end_user = call.get("cached_end_user")
     if cached_end_user is not None:
         row = LiteLLM_EndUserTable.model_validate(cached_end_user)
