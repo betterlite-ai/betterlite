@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use betterlite_cache::backend::{BackendError, CacheResult, Ttl};
+use betterlite_cache::backend::CacheBackend;
+use betterlite_cache::backend::memory::MemoryCache;
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::configuration::backend_construction::BackendConstructionError;
 use betterlite_cache::disk::Clock;
 use betterlite_cache::embedding::embedding_cache::add_embedding_entry_to_cache;
-use betterlite_cache::envelope::backend::EnvelopeBackend;
+use betterlite_cache::envelope::backend::{EnvelopeBackend, StoredBackend};
 use betterlite_cache::envelope::decode::decode_cached;
-use betterlite_cache::envelope::lookup::CacheLookup;
-use betterlite_context::local_ttl_cache::CacheValue;
 use pyo3::prelude::*;
 
 use super::convert;
+use super::error::CacheError;
 
 mod tests;
 
@@ -63,7 +64,14 @@ pub(crate) fn cache_embedding(settings: &str, request: &str) -> PyResult<String>
     let call = convert::parse_call(request)?;
     let mut envelope = call.envelope_request()?;
     let clock: Clock = Arc::new(convert::wall_clock);
-    let backend: Arc<dyn EnvelopeBackend> = Arc::new(NoBackend);
+    // The entry rules read the facade's key settings and clock and store nothing, so this in-memory backend never answers.
+    let operations = LocalMemoryOps::new(1024_i64, Arc::clone(&clock)).map_err(|source| {
+        CacheError::Construction {
+            source: Box::new(BackendConstructionError::Memory { source }),
+        }
+    })?;
+    let stored: Arc<dyn CacheBackend> = Arc::new(MemoryCache { operations });
+    let backend: Arc<dyn EnvelopeBackend> = Arc::new(StoredBackend { backend: stored });
     let facade = convert::facade(&wire, backend, wire.effective_ttl(), clock)?;
     let result = call.embedding_result()?;
     let entry = add_embedding_entry_to_cache(
@@ -74,39 +82,4 @@ pub(crate) fn cache_embedding(settings: &str, request: &str) -> PyResult<String>
         call.result_index(),
     )?;
     Ok(convert::embedding_text(&entry)?)
-}
-
-// The entry rules read the facade's key settings and clock but store nothing, so this backend never answers.
-struct NoBackend;
-
-#[async_trait]
-impl EnvelopeBackend for NoBackend {
-    fn get_cache(&self, _key: &str, _lookup: &mut CacheLookup) -> CacheResult<Option<CacheValue>> {
-        Err(BackendError::Unsupported("get_cache"))
-    }
-
-    fn set_cache(&self, _key: &str, _value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
-        Err(BackendError::Unsupported("set_cache"))
-    }
-
-    async fn async_get_cache(
-        &self,
-        _key: &str,
-        _lookup: &mut CacheLookup,
-    ) -> CacheResult<Option<CacheValue>> {
-        Err(BackendError::Unsupported("async_get_cache"))
-    }
-
-    async fn async_set_cache(&self, _key: &str, _value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
-        Err(BackendError::Unsupported("async_set_cache"))
-    }
-
-    async fn batch_cache_write(
-        &self,
-        _key: &str,
-        _value: CacheValue,
-        _ttl: Ttl,
-    ) -> CacheResult<()> {
-        Err(BackendError::Unsupported("batch_cache_write"))
-    }
 }

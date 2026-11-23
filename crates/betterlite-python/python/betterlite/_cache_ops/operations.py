@@ -129,36 +129,24 @@ class CacheOperations:
 
     def generate_streaming_content(self, content: str) -> Iterator[dict[str, JsonValue]]:
         for index in range(0, len(content), _CHUNK_SIZE):
-            chunk: dict[str, JsonValue] = {
-                "choices": [
-                    {
-                        "delta": {
-                            "role": "assistant",
-                            "content": content[index : index + _CHUNK_SIZE],
-                        }
-                    }
-                ]
-            }
-            yield chunk
+            text = content[index : index + _CHUNK_SIZE]
+            yield {"choices": [{"delta": {"role": "assistant", "content": text}}]}
             time.sleep(CACHED_STREAMING_CHUNK_DELAY)
 
     async def ping(self) -> bool | None:
-        cache = self.cache
-        match cache:
-            case CacheLifecycle():
+        match self.cache:
+            case CacheLifecycle() as cache:
                 return await cache.ping()
         return None
 
     async def delete_cache_keys(self, keys: list[str]) -> None:
-        cache = self.cache
-        match cache:
-            case CacheLifecycle():
+        match self.cache:
+            case CacheLifecycle() as cache:
                 await cache.delete_cache_keys(keys)
 
     async def disconnect(self) -> None:
-        cache = self.cache
-        match cache:
-            case CacheLifecycle():
+        match self.cache:
+            case CacheLifecycle() as cache:
                 await cache.disconnect()
 
     def _read(self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]) -> JsonValue:
