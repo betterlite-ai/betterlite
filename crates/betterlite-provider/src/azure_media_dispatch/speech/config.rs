@@ -28,6 +28,8 @@ use crate::api::speech_provider_contract::{
 pub(crate) struct AvaSpeechConfig;
 
 impl TextToSpeechConfig for AvaSpeechConfig {
+    // The AVA config carries no class attributes, so replacing the body with Default changes nothing
+    #[cfg_attr(test, mutants::skip)]
     fn class_attributes(&self) -> IndexMap<String, ClassAttribute> {
         IndexMap::new()
     }
