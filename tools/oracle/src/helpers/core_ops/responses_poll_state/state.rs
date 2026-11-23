@@ -144,7 +144,7 @@ async fn execute(
     }
 }
 
-fn label(error: &PollingError) -> &'static str {
+const fn label(error: &PollingError) -> &'static str {
     match error {
         PollingError::Cache(PollingCacheError::Read(_)) => "read",
         PollingError::Cache(PollingCacheError::Write(_)) => "write",
