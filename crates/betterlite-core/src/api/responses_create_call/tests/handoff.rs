@@ -79,8 +79,7 @@ fn supplied(call: &ResponsesCreateCall) {
 // text_format becomes text, the sync entry gets the trusted async flag, and the options nobody set stay absent
 fn omitted(call: &ResponsesCreateCall) {
     converted(call);
-    absent_requests(call);
-    absent_transport(call);
+    absent(call);
 }
 
 fn converted(call: &ResponsesCreateCall) {
@@ -94,27 +93,33 @@ fn converted(call: &ResponsesCreateCall) {
     assert_eq!(support::input_json(call), support::json("\"hello\""));
 }
 
-fn absent_requests(call: &ResponsesCreateCall) {
-    assert_eq!(call.include, None);
-    assert_eq!(call.max_output_tokens, None);
-    assert_eq!(call.prompt, None);
-    assert_eq!(call.metadata, None);
-    assert_eq!(call.previous_response_id, None);
-    assert_eq!(call.reasoning, None);
-    assert_eq!(call.stream, None);
-    assert_eq!(call.tool_choice, None);
-    assert_eq!(call.tools, None);
-    assert_eq!(call.top_p, None);
-}
-
-fn absent_transport(call: &ResponsesCreateCall) {
-    assert_eq!(call.truncation, None);
-    assert_eq!(call.user, None);
-    assert_eq!(call.extra_query, None);
-    assert_eq!(call.extra_body, None);
-    assert_eq!(call.timeout, None);
-    assert_eq!(call.allowed_openai_params, None);
-    assert!(call.api_key.is_none());
-    assert_eq!(call.api_base, None);
-    assert_eq!(call.ssl_verify, None);
+// Every named option the caller left out stays absent from the handoff
+fn absent(call: &ResponsesCreateCall) {
+    let fields = [
+        ("include", call.include.is_none()),
+        ("max_output_tokens", call.max_output_tokens.is_none()),
+        ("prompt", call.prompt.is_none()),
+        ("metadata", call.metadata.is_none()),
+        ("previous_response_id", call.previous_response_id.is_none()),
+        ("reasoning", call.reasoning.is_none()),
+        ("stream", call.stream.is_none()),
+        ("tool_choice", call.tool_choice.is_none()),
+        ("tools", call.tools.is_none()),
+        ("top_p", call.top_p.is_none()),
+        ("truncation", call.truncation.is_none()),
+        ("user", call.user.is_none()),
+        ("extra_query", call.extra_query.is_none()),
+        ("extra_body", call.extra_body.is_none()),
+        ("timeout", call.timeout.is_none()),
+        (
+            "allowed_openai_params",
+            call.allowed_openai_params.is_none(),
+        ),
+        ("api_key", call.api_key.is_none()),
+        ("api_base", call.api_base.is_none()),
+        ("ssl_verify", call.ssl_verify.is_none()),
+    ];
+    for (name, is_none) in fields {
+        assert!(is_none, "{name} stays absent");
+    }
 }
