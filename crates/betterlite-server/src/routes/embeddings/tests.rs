@@ -26,6 +26,7 @@ use super::{EmbeddingError, dispatch_failure, embedding_port_failure, embedding_
 use crate::route_read_through::ModelReadThrough;
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
+use crate::state::azure_runtime;
 use async_trait::async_trait;
 use betterlite_core::operation::embedding::{
     EmbeddingCall, EmbeddingCallInput, EmbeddingFailure, EmbeddingResult, route_error,
@@ -500,6 +501,39 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         envelope.error.message,
         "betterlite does not serve deepseek embeddings yet"
     );
+}
+
+// the embeddings route hands the startup composition to the adapter, so the configured version and the startup key reach Azure
+#[tokio::test]
+async fn azure_embedding_uses_the_startup_composition() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let source = format!(
+        "litellm_settings:\n  api_base: '{base}'\n  api_version: '2024-06-01'\nmodel_list:\n  - {{model_name: emb, litellm_params: {{model: azure/embed-up}}, model_info: {{id: dep-1}}}}\n"
+    );
+    let environment = BTreeMap::from([("AZURE_API_KEY".to_owned(), "startup-key".to_owned())]);
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &environment, StdRng::seed_from_u64(1)).expect("executor");
+    let azure = azure_runtime::Slot::new(&config);
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+        .expect("request");
+    let call =
+        embedding_routes(Arc::new(executor), None, None, &azure.composition).oneshot(request);
+    let (sent, answered) = tokio::join!(provider(listener), call);
+    assert_eq!(answered.expect("response").status(), StatusCode::OK);
+    let lowered = sent.to_lowercase();
+    assert!(
+        lowered.starts_with("post /openai/deployments/embed-up/embeddings?api-version=2024-06-01 "),
+        "{sent}"
+    );
+    assert!(lowered.contains("api-key: startup-key"), "{sent}");
 }
 
 struct CountingVertex {
