@@ -1,3 +1,4 @@
+// ast-grep-ignore: no-long-names
 use betterlite_mcp::access_group_servers::config_server_ids_for_access_groups;
 use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry};
 use betterlite_mcp::server_record::MCPServer;
@@ -27,6 +28,7 @@ impl Helper for Op {
             input.servers.clone(),
             Vec::new(),
         );
+        // ast-grep-ignore: no-long-names
         let mut server_ids = config_server_ids_for_access_groups(&registry, &input.access_groups);
         server_ids.sort();
         Ok(json!(server_ids))

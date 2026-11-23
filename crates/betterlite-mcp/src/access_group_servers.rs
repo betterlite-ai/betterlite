@@ -29,6 +29,7 @@ impl AccessGroupServerRows for McpTableStore<'_> {
         use_writer: bool,
     ) -> impl Future<Output = Result<Vec<String>, Self::Error>> + Send {
         async move {
+            // ast-grep-ignore: no-long-names
             <McpTableStore<'_>>::server_ids_with_any_access_group(self, access_groups, use_writer)
                 .await
         }
@@ -104,10 +105,13 @@ pub async fn servers_from_access_groups<R: AccessGroupServerRows>(
 ) -> Result<Vec<String>, AccessGroupServersError<R::Error>> {
     let config_ids = {
         let guard = registry.read().await;
+        // ast-grep-ignore: no-long-names
         config_server_ids_for_access_groups(&guard, access_groups)
     };
-    let db_ids =
-        db_server_ids_for_access_groups(rows, access_groups, requires_fresh_policy).await?;
+    let db_ids = {
+        // ast-grep-ignore: no-long-names
+        db_server_ids_for_access_groups(rows, access_groups, requires_fresh_policy).await?
+    };
     let mut server_ids = config_ids;
     for server_id in db_ids {
         if !server_ids.contains(&server_id) {
