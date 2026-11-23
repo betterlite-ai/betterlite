@@ -105,11 +105,13 @@ out_of_scope:
 - "`create_file`, `file_retrieve`, `file_delete` and `file_list` belong to B7871, and the `files` package `__init__` and `main.py` are written there."
 - "The `@client` wrapper behavior (callbacks, retries, caching) belongs to B5368 and runs on the Rust side."
 pitfalls:
+- "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
 - "`close()` swaps the inner iterator for an empty one before closing it, so a second `next()` after `close()` ends the loop instead of raising."
 - "An async-only native stream must still allow `close()` from sync code, and a sync-only one must allow `aclose()`, since LiteLLM tries both close methods."
 - "`chunk_size` is bytes and defaults to 1048576, so a test that streams a small file sees one chunk, not many."
 - "The non-streaming bytes arrive as a blob, so build `HttpxBinaryResponseContent` from the blob and don't decode text from the JSON."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001, FBT002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 8
