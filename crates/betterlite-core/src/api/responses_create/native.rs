@@ -1,15 +1,12 @@
-use std::time::Duration;
-
-use betterlite_config::env_integer::timeout::RequestTimeout;
-use betterlite_context::non_default_params::Params;
-use betterlite_models::call_helpers::drop_params::normalize_drop_params;
-use betterlite_models::controls::json_value::JsonValue;
-use betterlite_models::decisions::{HiddenParams, Json};
-use betterlite_openai::api::responses_objects::ResponsesApiResponse;
-use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
-use secrecy::ExposeSecret as _;
-use serde_json::Number;
-
+use super::bridge::{BridgeCall, ChatBridge, Created, StampedResponse};
+use super::call::ResponsesCreateCall;
+use super::convert::{
+    decision_json, decision_prompt, object_from_params, object_value, prompt_decision, reencode,
+};
+use super::deps::{CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps};
+use super::error::CreateError;
+use super::logging;
+use super::preparation::{Prepared, Resolved};
 use crate::api::response_id_traversal::metadata::AffinityMetadata;
 use crate::api::response_id_traversal::record::Record;
 use crate::api::response_id_traversal::response_id::rewrite_typed_response;
@@ -26,17 +23,16 @@ use crate::api::responses_parameters::provider::DropPolicy;
 use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::bridging::bridge_kwargs;
 use crate::api::responses_provider_selection::provider_config::ResponsesApiConfig;
-
-use super::bridge::{BridgeCall, Created, StampedResponse};
-use super::call::ResponsesCreateCall;
-use super::convert::{
-    decision_json, decision_prompt, object_from_params, object_value, prompt_decision, reencode,
-};
-use super::deps::{CreateConfigFactory, ResponsesCreateDeps};
-use super::error::CreateError;
-use super::logging;
-use super::preparation::{Prepared, Resolved};
-
+use betterlite_config::env_integer::timeout::RequestTimeout;
+use betterlite_context::non_default_params::Params;
+use betterlite_models::call_helpers::drop_params::normalize_drop_params;
+use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::{HiddenParams, Json};
+use betterlite_openai::api::responses_objects::ResponsesApiResponse;
+use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
+use secrecy::ExposeSecret as _;
+use serde_json::Number;
+use std::time::Duration;
 // The native tail: filter the options through the provider, log, restore IDs, POST, then stamp the response
 pub(super) async fn native<S, F, D, E, Context>(
     deps: &ResponsesCreateDeps<'_, S, F, D, E, Context>,
@@ -55,13 +51,15 @@ where
     E: ContinuationExecutor + ?Sized,
     Context: Send,
 {
-    let allowed = call.allowed_openai_params.clone().unwrap_or_default();
     let filtered = optional_params_responses(
         provider_config,
         &resolved.model,
         &mut requested,
-        &allowed,
-        drop_policy(&prep.kwargs, deps.drop_params),
+        &call.allowed_openai_params.clone().unwrap_or_default(),
+        DropPolicy {
+            global: deps.drop_params,
+            call: normalize_drop_params(prep.kwargs.get("drop_params").map(decision_json).as_ref()),
+        },
     )
     .map_err(CreateError::from)?;
     logging::log_call(
@@ -76,7 +74,12 @@ where
     let optional_params = object_from_params(&filtered);
     let params = create_params(resolved, call, &prep.kwargs)?;
     let metadata = litellm_metadata(&prep.kwargs)?;
-    let timeout = native_timeout(call.timeout, request_timeout)?;
+    let seconds = call
+        .timeout
+        .filter(|value| *value != 0.0_f64)
+        .unwrap_or(request_timeout.seconds);
+    let timeout = Duration::try_from_secs_f64(seconds)
+        .map_err(|_error| CreateError::InvalidTimeout { seconds })?;
     let fake = Json::Bool(provider_config.should_fake_stream(
         &resolved.model,
         call.stream,
@@ -111,7 +114,6 @@ where
     let outcome = run(&http, mode, &create_call, &deps.hooks, log).await?;
     finish(outcome, resolved, metadata.as_ref())
 }
-
 // The bridged tail: litellm_completion_transformation_handler.response_api_handler, then its answer as the call's result
 pub(super) async fn bridge<S, F, D, E, Context>(
     deps: &ResponsesCreateDeps<'_, S, F, D, E, Context>,
@@ -129,8 +131,11 @@ where
     E: ContinuationExecutor + ?Sized,
     Context: Send,
 {
-    let allowed = call.allowed_openai_params.clone().unwrap_or_default();
-    let mut kwargs = bridge_kwargs(&prep.kwargs, config, &allowed);
+    let mut kwargs = bridge_kwargs(
+        &prep.kwargs,
+        config,
+        &call.allowed_openai_params.clone().unwrap_or_default(),
+    );
     let seconds = call.timeout.unwrap_or(request_timeout.seconds);
     let Some(timeout) = Number::from_f64(seconds) else {
         return Err(CreateError::InvalidTimeout { seconds });
@@ -163,7 +168,6 @@ where
     };
     Ok(deps.bridge.respond(&bridge_call, context).await?)
 }
-
 // _update_responses_api_response_id_with_model_id, then the provider stamp the callbacks read
 fn finish<Context>(
     outcome: CreateOutcome,
@@ -172,31 +176,28 @@ fn finish<Context>(
 ) -> Result<Created<Context>, CreateError> {
     match outcome {
         CreateOutcome::Value(raw) => {
-            match serde_json::from_str::<ResponsesApiResponse>(raw.get()) {
-                Ok(mut response) => {
-                    let affinity: AffinityMetadata = match metadata {
-                        Some(map) => reencode(map)?,
-                        None => AffinityMetadata::default(),
-                    };
-                    rewrite_typed_response(&mut response, Some(&resolved.provider), &affinity)?;
-                    let mut hidden = HiddenParams::new();
-                    hidden.insert(
-                        String::from("custom_llm_provider"),
-                        Json::Text(resolved.provider.clone()),
-                    );
-                    Ok(Created::Responses(Box::new(StampedResponse {
-                        response,
-                        hidden,
-                    })))
-                }
-                Err(_) => Ok(Created::Raw(raw)),
-            }
+            let Ok(mut response) = serde_json::from_str::<ResponsesApiResponse>(raw.get()) else {
+                return Ok(Created::Raw(raw));
+            };
+            let affinity: AffinityMetadata = match metadata {
+                Some(map) => reencode(map)?,
+                None => AffinityMetadata::default(),
+            };
+            rewrite_typed_response(&mut response, Some(&resolved.provider), &affinity)?;
+            let mut hidden = HiddenParams::new();
+            hidden.insert(
+                String::from("custom_llm_provider"),
+                Json::Text(resolved.provider.clone()),
+            );
+            Ok(Created::Responses(Box::new(StampedResponse {
+                response,
+                hidden,
+            })))
         }
         CreateOutcome::Live(live) => Ok(Created::Live(live)),
         CreateOutcome::Synthetic(synthetic) => Ok(Created::Synthetic(synthetic)),
     }
 }
-
 // _restore_encrypted_content_item_ids_in_input decodes the litellm-encoded item IDs before the request is sent
 fn restored(input: &ResponsesInput) -> ResponsesInput {
     let ResponsesInput::Items(items) = input else {
@@ -219,7 +220,6 @@ fn restored(input: &ResponsesInput) -> ResponsesInput {
             .collect(),
     )
 }
-
 // dict(litellm_params) with the base, key and TLS choice the settings resolved
 fn create_params(
     resolved: &Resolved,
@@ -241,7 +241,6 @@ fn create_params(
     }
     CreateParams::from_map(map).map_err(CreateError::from)
 }
-
 // kwargs.get("litellm_metadata", {}): absent is an empty object, an explicit null stays empty too
 fn litellm_metadata(kwargs: &ParameterMap) -> Result<Option<HttpParams>, CreateError> {
     match kwargs.get("litellm_metadata") {
@@ -255,23 +254,4 @@ fn litellm_metadata(kwargs: &ParameterMap) -> Result<Option<HttpParams>, CreateE
             expected: "an object",
         }),
     }
-}
-
-fn drop_policy(kwargs: &ParameterMap, global: bool) -> DropPolicy {
-    let value = kwargs.get("drop_params").map(decision_json);
-    DropPolicy {
-        global,
-        call: normalize_drop_params(value.as_ref()),
-    }
-}
-
-// `timeout or request_timeout`: zero falls back, and the fallback reads REQUEST_TIMEOUT with its 6000s default
-fn native_timeout(
-    configured: Option<f64>,
-    request_timeout: RequestTimeout,
-) -> Result<Duration, CreateError> {
-    let seconds = configured
-        .filter(|value| *value != 0.0_f64)
-        .unwrap_or(request_timeout.seconds);
-    Duration::try_from_secs_f64(seconds).map_err(|_error| CreateError::InvalidTimeout { seconds })
 }

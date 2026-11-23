@@ -1,16 +1,13 @@
+use super::bridge::Created;
+use super::error::InterceptionError;
+use super::preparation::Prepared;
+use crate::api::responses_create_http::config::Headers;
+use crate::api::responses_provider_selection::ParameterMap;
 use async_trait::async_trait;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
-
-use crate::api::responses_create_http::config::Headers;
-use crate::api::responses_provider_selection::ParameterMap;
-
-use super::bridge::Created;
-use super::error::InterceptionError;
-use super::preparation::Prepared;
-
 // The named arguments both gateway dispatches receive; the four file-search-only arguments stay out
 pub struct DispatchArgs<'call> {
     pub model: &'call str,
@@ -41,7 +38,6 @@ pub struct DispatchArgs<'call> {
     pub kwargs: &'call ParameterMap,
     pub is_async: bool,
 }
-
 // The four arguments the emulated file-search dispatch adds to the shared set, plus the bridge flag
 pub struct FileSearchExtras<'call> {
     pub service_tier: Option<&'call str>,
@@ -50,23 +46,19 @@ pub struct FileSearchExtras<'call> {
     pub allowed_openai_params: Option<&'call [String]>,
     pub use_chat_completions_api: bool,
 }
-
 pub enum Interception<Context> {
     Continue(Context),
     Handled(Box<Created<Context>>),
 }
-
 // The MCP gateway and the emulated file-search dispatch are other tasks' handlers; this seam only asks them
 #[async_trait]
 pub trait CreateInterception<Context: Send>: Send + Sync {
     fn mcp_requested(&self, tools: Option<&[JsonValue]>) -> bool;
-
     async fn mcp(
         &self,
         args: &DispatchArgs<'_>,
         context: Context,
     ) -> Result<Interception<Context>, InterceptionError>;
-
     async fn file_search(
         &self,
         args: &DispatchArgs<'_>,
@@ -74,40 +66,6 @@ pub trait CreateInterception<Context: Send>: Send + Sync {
         context: Context,
     ) -> Result<Interception<Context>, InterceptionError>;
 }
-
-// No dispatch is composed until B955 is wired in; a request that reaches one has no handler
-pub struct NoInterception;
-
-#[async_trait]
-impl<Context: Send> CreateInterception<Context> for NoInterception {
-    fn mcp_requested(&self, _tools: Option<&[JsonValue]>) -> bool {
-        false
-    }
-
-    async fn mcp(
-        &self,
-        _args: &DispatchArgs<'_>,
-        _context: Context,
-    ) -> Result<Interception<Context>, InterceptionError> {
-        Err(uncomposed())
-    }
-
-    async fn file_search(
-        &self,
-        _args: &DispatchArgs<'_>,
-        _extras: &FileSearchExtras<'_>,
-        _context: Context,
-    ) -> Result<Interception<Context>, InterceptionError> {
-        Err(uncomposed())
-    }
-}
-
-fn uncomposed() -> InterceptionError {
-    InterceptionError {
-        message: String::from("the responses interception is not composed"),
-    }
-}
-
 // The named argument set both dispatches receive, built from the prepared call
 pub(super) fn dispatch_args<'call>(
     prep: &'call Prepared<'_>,

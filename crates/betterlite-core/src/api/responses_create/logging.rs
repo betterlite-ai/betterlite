@@ -1,3 +1,7 @@
+use super::call::ResponsesCreateCall;
+use super::convert::decision_json;
+use super::preparation::Resolved;
+use crate::api::responses_provider_selection::ParameterMap;
 use betterlite_context::non_default_params::Params;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::LoggingStateError;
@@ -5,13 +9,6 @@ use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs}
 use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::{DataResidency, infer_openai_data_residency};
 use indexmap::IndexMap;
-
-use crate::api::responses_provider_selection::ParameterMap;
-
-use super::call::ResponsesCreateCall;
-use super::convert::decision_json;
-use super::preparation::Resolved;
-
 // litellm_logging_obj.update_from_kwargs, with litellm_params built as the wrapper builds it
 pub fn log_call(
     state: &mut LoggingState,
@@ -28,9 +25,14 @@ pub fn log_call(
     litellm_params.insert(String::from("aresponses"), Json::Bool(is_async));
     litellm_params.insert(
         String::from("litellm_call_id"),
-        named(kwargs, "litellm_call_id"),
+        kwargs
+            .get("litellm_call_id")
+            .map_or(Json::Null, decision_json),
     );
-    litellm_params.insert(String::from("model_info"), named(kwargs, "model_info"));
+    litellm_params.insert(
+        String::from("model_info"),
+        kwargs.get("model_info").map_or(Json::Null, decision_json),
+    );
     litellm_params.insert(
         String::from("data_residency"),
         residency_json(infer_openai_data_residency(
@@ -40,14 +42,18 @@ pub fn log_call(
     );
     // an explicit litellm_metadata wins over the named metadata even when it is null
     let metadata = if kwargs.contains_key("litellm_metadata") {
-        named(kwargs, "litellm_metadata")
+        kwargs
+            .get("litellm_metadata")
+            .map_or(Json::Null, decision_json)
     } else {
-        named(kwargs, "metadata")
+        kwargs.get("metadata").map_or(Json::Null, decision_json)
     };
     litellm_params.insert(String::from("metadata"), metadata);
     litellm_params.insert(
         String::from("provider_affinity_header"),
-        named(kwargs, "provider_affinity_header"),
+        kwargs
+            .get("provider_affinity_header")
+            .map_or(Json::Null, decision_json),
     );
     let optional_params = filtered
         .iter()
@@ -73,11 +79,6 @@ pub fn log_call(
         },
     )
 }
-
-fn named(kwargs: &ParameterMap, name: &str) -> Json {
-    kwargs.get(name).map_or(Json::Null, decision_json)
-}
-
 fn residency_json(residency: Option<DataResidency>) -> Json {
     match residency {
         Some(DataResidency::Eu) => Json::Text(String::from("eu")),

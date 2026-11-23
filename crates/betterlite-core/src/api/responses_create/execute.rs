@@ -1,13 +1,11 @@
-use betterlite_config::env_integer::timeout::RequestTimeout;
-use betterlite_context::non_default_params::Params;
-use betterlite_models::controls::json_value::JsonValue;
-use betterlite_models::decisions::HiddenParams;
-use betterlite_openai::response_input::ResponsesInput;
-use betterlite_prompts::file_ids::mapping::FileIdMapping;
-use betterlite_prompts::file_ids::responses::ResponsesInput as PromptInput;
-use betterlite_prompts::file_ids::tools::ResponsesTool as PromptTool;
-use indexmap::IndexMap;
-
+use super::bridge::{Created, StampedResponse};
+use super::call::ResponsesCreateCall;
+use super::convert::{decision_json, json_value, reencode};
+use super::deps::{ConfigRequest, CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps};
+use super::error::{CreateError, CreateParamError};
+use super::interception::{CreateInterception, FileSearchExtras, Interception, dispatch_args};
+use super::native::{bridge, native};
+use super::preparation::{self, Prepared};
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
 use crate::api::responses_create_http::service::{ClientSource, LogContext};
 use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
@@ -17,18 +15,15 @@ use crate::api::responses_provider_selection::file_ids::apply_managed_file_id_ma
 use crate::api::responses_provider_selection::provider_config::{
     bridges_to_chat_completions, encrypted_task_support_failure, resolve_provider_config,
 };
-use crate::api::responses_provider_selection::resolution::ModelResolver;
-
-use super::bridge::{Created, StampedResponse};
-use super::call::ResponsesCreateCall;
-use super::convert::{decision_json, json_value, reencode};
-use super::deps::{ConfigRequest, CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps};
-use super::error::{CreateError, CreateParamError};
-use super::interception::{FileSearchExtras, Interception, dispatch_args};
-use super::mock::{has_file_search_tool, mock_responses_api_response};
-use super::native::{bridge, native};
-use super::preparation::{self, Prepared};
-
+use betterlite_config::env_integer::timeout::RequestTimeout;
+use betterlite_context::non_default_params::Params;
+use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::HiddenParams;
+use betterlite_openai::api::responses_objects::ResponsesApiResponse;
+use betterlite_prompts::file_ids::mapping::FileIdMapping;
+use betterlite_prompts::file_ids::responses::ResponsesInput as PromptInput;
+use betterlite_prompts::file_ids::tools::ResponsesTool as PromptTool;
+use indexmap::IndexMap;
 // responses()'s whole synchronous path, in the order the source takes each step
 pub async fn create<S, F, D, E, Context>(
     deps: &ResponsesCreateDeps<'_, S, F, D, E, Context>,
@@ -46,8 +41,12 @@ where
     let request_timeout = RequestTimeout::resolve(deps.environment)?;
     let mut prep = preparation::begin(call, deps.resolver, deps.lookup, deps.prompts)?;
     preparation::affinity(&mut prep, call)?;
-    if let Some(text) = mock_text(call, deps.mock_response.as_deref()) {
-        return mock_created(text);
+    if let Some(text) = mock_text(call) {
+        let response = mock_responses_api_response(Some(text))?;
+        return Ok(Created::Responses(Box::new(StampedResponse {
+            response,
+            hidden: HiddenParams::new(),
+        })));
     }
     let resolved = preparation::resolve(&mut prep, call, deps.resolver)?;
     let tools = mapped_tools(&mut prep, deps.file_mapping)?;
@@ -86,14 +85,27 @@ where
         return Err(CreateError::Compatibility(failure));
     }
     let (requested, reasoning) = requested_params(&prep, deps.reasoning_auto_summary)?;
-    let native_search =
-        provider_config.is_some_and(CreateCapabilities::supports_native_file_search);
+    let native_search = provider_config
+        .as_ref()
+        .is_some_and(CreateCapabilities::supports_native_file_search);
     let emulated = has_file_search_tool(tools.as_deref())
         && (config.is_none() || prep.use_chat || !native_search);
     let context = if emulated {
         let mut kwargs = prep.kwargs.clone();
         kwargs.shift_remove("litellm_call_id");
-        match file_search_dispatch(deps, &prep, tools.as_deref(), &reasoning, &kwargs, context)
+        let mapped_reasoning =
+            (!matches!(reasoning, JsonValue::Null)).then(|| decision_json(&reasoning));
+        let args = dispatch_args(&prep, mapped_reasoning.as_ref(), tools.as_deref(), &kwargs);
+        let extras = FileSearchExtras {
+            service_tier: prep.call.service_tier.as_deref(),
+            safety_identifier: prep.call.safety_identifier.as_deref(),
+            text_format: prep.call.text_format.as_ref(),
+            allowed_openai_params: prep.call.allowed_openai_params.as_deref(),
+            use_chat_completions_api: prep.use_chat,
+        };
+        match deps
+            .interception
+            .file_search(&args, &extras, context)
             .await?
         {
             Interception::Handled(created) => return Ok(*created),
@@ -129,12 +141,8 @@ where
     )
     .await
 }
-
-// litellm_params.mock_response is a truthy string; a non-string call value wins over the configured default
-fn mock_text<'call>(
-    call: &'call ResponsesCreateCall,
-    global: Option<&'call str>,
-) -> Option<&'call str> {
+// litellm_params.mock_response is the call's own truthy string; an empty or non-string value skips the shortcut
+fn mock_text(call: &ResponsesCreateCall) -> Option<&str> {
     match call.kwargs.get("mock_response") {
         Some(JsonValue::Text(text)) => Some(text.as_str()).filter(|text| !text.is_empty()),
         Some(
@@ -143,19 +151,10 @@ fn mock_text<'call>(
             | JsonValue::Number(_)
             | JsonValue::Array(_)
             | JsonValue::Object(_),
-        ) => None,
-        None => global.filter(|text| !text.is_empty()),
+        )
+        | None => None,
     }
 }
-
-fn mock_created<Context>(text: &str) -> Result<Created<Context>, CreateError> {
-    let response = mock_responses_api_response(Some(text))?;
-    Ok(Created::Responses(Box::new(StampedResponse {
-        response,
-        hidden: HiddenParams::new(),
-    })))
-}
-
 // _apply_managed_file_id_mapping rewrites the input and tools before any dispatch sees them
 fn mapped_tools(
     prep: &mut Prepared<'_>,
@@ -197,37 +196,6 @@ fn mapped_tools(
         .transpose()
         .map_err(CreateError::from)
 }
-
-async fn file_search_dispatch<S, F, D, E, Context>(
-    deps: &ResponsesCreateDeps<'_, S, F, D, E, Context>,
-    prep: &Prepared<'_>,
-    tools: Option<&[JsonValue]>,
-    reasoning: &JsonValue,
-    kwargs: &ParameterMap,
-    context: Context,
-) -> Result<Interception<Context>, CreateError>
-where
-    S: ClientSource,
-    F: CreateConfigFactory,
-    D: DeploymentHookDispatcher + ?Sized,
-    E: ContinuationExecutor + ?Sized,
-    Context: Send,
-{
-    let mapped = (!matches!(reasoning, JsonValue::Null)).then(|| decision_json(reasoning));
-    let args = dispatch_args(prep, mapped.as_ref(), tools, kwargs);
-    let extras = FileSearchExtras {
-        service_tier: prep.call.service_tier.as_deref(),
-        safety_identifier: prep.call.safety_identifier.as_deref(),
-        text_format: prep.call.text_format.as_ref(),
-        allowed_openai_params: prep.call.allowed_openai_params.as_deref(),
-        use_chat_completions_api: prep.use_chat,
-    };
-    Ok(deps
-        .interception
-        .file_search(&args, &extras, context)
-        .await?)
-}
-
 // local_vars.update(kwargs), the mapped reasoning, then get_requested_response_api_optional_param
 fn requested_params(
     prep: &Prepared<'_>,
@@ -255,7 +223,6 @@ fn requested_params(
         .map_err(CreateError::from)?;
     Ok((requested, reasoning))
 }
-
 // _map_reasoning_effort: an object is the Reasoning itself; a string becomes one, with the auto summary attached
 fn request_reasoning(locals: &Params, auto_summary: bool) -> Result<JsonValue, CreateError> {
     if let Some(current) = locals
@@ -290,4 +257,24 @@ fn request_reasoning(locals: &Params, auto_summary: bool) -> Result<JsonValue, C
             })
         }
     }
+}
+pub const DEFAULT_MOCK_TEXT: &str = "In a peaceful grove beneath a silver moon, a unicorn named Lumina discovered a hidden pool that reflected the stars. As she dipped her horn into the water, the pool began to shimmer, revealing a pathway to a magical realm of endless night skies. Filled with wonder, Lumina whispered a wish for all who dream to find their own hidden magic, and as she glanced back, her hoofprints sparkled like stardust.";
+// mock_responses_api_response's literal body, with the one caller-chosen field left as a placeholder
+const MOCK_RESPONSE: &str = r#"{"id":"resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b","object":"response","created_at":1741476542,"status":"completed","error":null,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"model":"gpt-4.1-2025-04-14","output":[{"type":"message","id":"msg_67ccd2bf17f0819081ff3bb2cf6508e60bb6a6b452d3795b","status":"completed","role":"assistant","content":[{"type":"output_text","text":$TEXT,"annotations":[]}]}],"parallel_tool_calls":true,"previous_response_id":null,"reasoning":{"effort":null,"summary":null},"store":true,"temperature":1.0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":1.0,"truncation":"disabled","usage":{"input_tokens":36,"input_tokens_details":{"cached_tokens":0},"output_tokens":87,"output_tokens_details":{},"total_tokens":123},"user":null,"metadata":{}}"#;
+pub fn mock_responses_api_response(
+    mock_response: Option<&str>,
+) -> Result<ResponsesApiResponse, serde_json::Error> {
+    serde_json::from_str(&MOCK_RESPONSE.replace(
+        "$TEXT",
+        &serde_json::to_string(mock_response.unwrap_or(DEFAULT_MOCK_TEXT))?,
+    ))
+}
+// _has_file_search_tool: any tool entry that is an object with type file_search
+#[must_use]
+pub fn has_file_search_tool(tools: Option<&[JsonValue]>) -> bool {
+    tools.is_some_and(|present| {
+        present.iter().any(|tool| {
+            matches!(tool, JsonValue::Object(fields) if matches!(fields.get("type"), Some(JsonValue::Text(kind)) if kind == "file_search"))
+        })
+    })
 }
