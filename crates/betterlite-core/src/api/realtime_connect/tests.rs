@@ -220,24 +220,35 @@ async fn azure_generic_precedence(
     connect.generic_api_base = Some(String::from("https://generic.example"));
     connect.generic_api_version = Some(String::from("2025-06-01"));
     connect.generic_realtime_protocol = Some(String::from("beta"));
-    let call = call("azure/my-deployment", &connect, None, litellm_params, false);
+    assert_eq!(
+        azure_observed(dispatch, settings, &connect, litellm_params).await,
+        (
+            Some(String::from("https://generic.example")),
+            String::from("2025-06-01"),
+            String::from("beta")
+        )
+    );
+    azure_environment_protocol(dispatch, settings, litellm_params).await;
+}
+
+async fn azure_observed(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    connect: &RealtimeConnectParams,
+    litellm_params: &IndexMap<String, Json>,
+) -> (Option<String>, String, String) {
+    let call = call("azure/my-deployment", connect, None, litellm_params, false);
     let (_, result) = run(dispatch, settings, &call).await;
     let connection = result.unwrap();
     let Branch::Azure {
         api_version,
         protocol,
         ..
-    } = &connection.branch
+    } = connection.branch
     else {
         panic!("an azure model must take the azure branch");
     };
-    assert_eq!(
-        connection.args.api_base.as_deref(),
-        Some("https://generic.example")
-    );
-    assert_eq!(api_version, "2025-06-01");
-    assert_eq!(protocol, "beta");
-    azure_environment_protocol(dispatch, settings, litellm_params).await;
+    (connection.args.api_base, api_version, protocol)
 }
 
 async fn azure_environment_protocol(
