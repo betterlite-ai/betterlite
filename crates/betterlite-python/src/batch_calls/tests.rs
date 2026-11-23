@@ -23,6 +23,7 @@ use betterlite_openai::batches::error::{BatchesError, SdkError};
 use betterlite_openai::batches::records::BatchObject;
 use betterlite_openai::batches::sdk::Timeout;
 use betterlite_openai::xai_batches::error::XaiBatchesError;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
 use rstest::rstest;
@@ -362,6 +363,35 @@ fn session_errors_name_the_provider_and_model_the_payload_asked_for(
             message.contains(r#""model":"gpt-4o""#),
             "{method}: {message}"
         );
+    });
+}
+
+#[rstest]
+#[case::create("create")]
+#[case::retrieve("retrieve")]
+fn session_bad_json_is_a_value_error(#[case] method: &str) {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchSession").unwrap();
+        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
+        let error = session
+            .call_method1(method, ("not json", Vec::<Vec<u8>>::new()))
+            .unwrap_err();
+        assert!(error.is_instance_of::<PyValueError>(py));
+    });
+}
+
+#[test]
+fn session_bad_settings_text_is_a_value_error() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchSession").unwrap();
+        let error = class.call1(("not json",)).unwrap_err();
+        assert!(error.is_instance_of::<PyValueError>(py));
     });
 }
 
