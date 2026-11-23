@@ -3,11 +3,12 @@
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_context::resource_config_selection::vector_stores::VectorStoresConfigTag;
 use betterlite_core::api::vector_search_execution::config::Params;
-use betterlite_core::api::vector_store_search::service::OptionalParamFilters as _;
+use betterlite_core::api::vector_store_search::service::{
+    OptionalParamFilters as _, VectorStoreConfigs as _,
+};
 use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::LiteLlmGlobals;
-use secrecy::ExposeSecret as _;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{Configs, Filters, globals};
 
@@ -79,7 +80,7 @@ fn globals_copies_every_credential_field() {
     assert_eq!(copied.api_base, source.api_base);
     assert_eq!(copied.organization, source.organization);
     assert_eq!(
-        copied.api_key.as_ref().map(|key| key.expose_secret()),
+        copied.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-key")
     );
     assert!(copied.openai_key.is_none());
