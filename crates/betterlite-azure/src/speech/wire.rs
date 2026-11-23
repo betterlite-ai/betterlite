@@ -7,8 +7,7 @@ use super::client::RequestAuth;
 use super::error::AzureSpeechError;
 use crate::transcription::encoding::quote_plus;
 
-// The SDK appends the route to a client base ending in a slash, adds the deployment segment and merges the query.
-// Every selected client hands a base with that slash, so nothing here adds one.
+// The SDK appends the route to a client base that ends in a slash, and every selected client hands one with it.
 pub(super) fn compose_url(
     base: &str,
     deployment: Option<&str>,

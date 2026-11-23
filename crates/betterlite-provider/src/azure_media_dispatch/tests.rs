@@ -59,16 +59,6 @@ async fn exchange(operation: AzureMediaOperation, replies: Vec<Reply>) -> Outcom
     .expect("the logging fixture builds")
 }
 
-async fn exchange_request(
-    request: OperationRequest,
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-) -> Outcome {
-    super::test_support::exchange::exchange_request_with(request, operation, replies, |_logging| {})
-        .await
-        .expect("the logging fixture builds")
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Family {
     ImageGeneration,
@@ -97,12 +87,14 @@ async fn azure_media_dispatch_cases(#[case] family: Family) {
 
 #[tokio::test]
 async fn azure_media_dispatch_unsupported_operation() {
-    let outcome = exchange_request(
+    let outcome = super::test_support::exchange::exchange_request_with(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
         AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation())),
         Vec::new(),
+        |_logging| {},
     )
-    .await;
+    .await
+    .expect("the logging fixture builds");
     assert!(matches!(
         outcome.result,
         Err(AzureMediaError::UnsupportedOperation)
@@ -522,6 +514,8 @@ fn speech_operation() -> OpenAiSpeechOperation {
 }
 
 fn ssml_operation() -> NativeSsmlOperation {
+    let extra_headers = BTreeMap::from([(String::from("x-call"), String::from("1"))]);
+    let api_base = String::from("https://westus.api.cognitive.microsoft.com");
     NativeSsmlOperation {
         model: String::from("tts-model"),
         input: String::from("hello"),
@@ -529,12 +523,9 @@ fn ssml_operation() -> NativeSsmlOperation {
         optional_params: IndexMap::new(),
         litellm_params: IndexMap::new(),
         api_key: Some(key()),
-        api_base: Some(String::from("https://westus.api.cognitive.microsoft.com")),
+        api_base: Some(api_base),
         timeout: None,
-        extra_headers: Some(BTreeMap::from([(
-            String::from("x-call"),
-            String::from("1"),
-        )])),
+        extra_headers: Some(extra_headers),
         aspeech: false,
     }
 }
@@ -677,8 +668,7 @@ async fn ssml_failure() {
     speech_error(&outcome, 400, "bad ssml");
 }
 
-// AVA maps the OpenAI speech params onto Azure SSML fields: the voice table, mp3 to its output format, speed to a
-// prosody rate and the SSML kwargs through unchanged; a dict voice has no name to map
+// AVA maps the OpenAI voice, mp3 format, speed rate and SSML kwargs; a dict voice has no name to map
 #[test]
 fn ava_speech_maps_openai_params() {
     let config = AvaSpeechConfig;
@@ -706,7 +696,8 @@ fn ava_speech_maps_openai_params() {
     );
     let dict_voice = SpeechMappingOptions {
         voice: Some(SpeechVoice::Options(object(r#"{"name":"alloy"}"#))),
-        ..SpeechMappingOptions::default()
+        drop_params: false,
+        kwargs: Object::new(),
     };
     let (dict_mapped, dict_params) = config.map_openai_params("tts", Object::new(), &dict_voice);
     assert_eq!(dict_mapped, None);
