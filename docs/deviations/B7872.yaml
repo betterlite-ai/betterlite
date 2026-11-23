@@ -24,6 +24,12 @@ deviations:
 - what: "Every `LiteLLMBatch` field except the seven the provider always sends has a None default, and `errors`, `request_counts` and `metadata` are plain dicts."
   why: "LiteLLM's openai Batch model requires every key; the Rust answer always writes all 22, so a lenient model only changes what a hand-built value accepts, and an unknown key from a provider survives the round trip."
   link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4320"
+- what: "A `completion_window` other than \"24h\" or an `endpoint` outside the eleven paths answers a `ValueError` from the native payload parse; LiteLLM passes the value to the provider, whose 400 becomes a `BadRequestError`."
+  why: "B1036's request types declare both literals as Rust enums, so the typed wire parse refuses another value before a provider call exists; Python adds no runtime check of its own."
+  link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L240"
+- what: "A `custom_llm_provider` outside create_batch's eight answers a `ValueError` from the native payload parse; LiteLLM reaches its unsupported-provider branch and raises a `BadRequestError`."
+  why: "B1036's `BatchProvider` enum names only the providers it can dispatch, so the typed parse refuses a string it does not know, while retrieve keeps unknown providers in `BatchReadProvider::Other` and answers the 400."
+  link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L362"
 kept_bugs:
 - what: "`retrieve_batch` and `aretrieve_batch` accept a `metadata` argument and never send it."
   why: "LiteLLM's signature carries it and its RetrieveBatchRequest has no metadata key, so a caller's metadata is silently dropped in both."

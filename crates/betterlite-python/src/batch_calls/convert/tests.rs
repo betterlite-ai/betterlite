@@ -219,6 +219,21 @@ fn request_create_payload_refuses_an_unknown_key() {
     assert!(nested_error.to_string().contains("num_retries"));
 }
 
+// B1036's request types carry the literals as enums, so the parse, not the provider, refuses a value outside them.
+#[test]
+fn request_create_payload_refuses_a_value_outside_the_literal() {
+    let window =
+        r#"{"completion_window":"48h","endpoint":"/v1/chat/completions","input_file_id":"f"}"#;
+    let window_error = parse::<BatchProviderCreateInput>(window).unwrap_err();
+    assert!(window_error.to_string().contains("48h"));
+    let endpoint = r#"{"completion_window":"24h","endpoint":"/v1/files","input_file_id":"f"}"#;
+    let endpoint_error = parse::<BatchProviderCreateInput>(endpoint).unwrap_err();
+    assert!(endpoint_error.to_string().contains("/v1/files"));
+    let provider = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"cohere"}"#;
+    let provider_error = parse::<BatchProviderCreateInput>(provider).unwrap_err();
+    assert!(provider_error.to_string().contains("cohere"));
+}
+
 #[test]
 fn request_read_payload_defaults_the_provider() {
     let input: BatchProviderReadInput =
