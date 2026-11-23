@@ -21,10 +21,11 @@ from endpoint_server import (
 )
 from pydantic import JsonValue, TypeAdapter
 
+from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite.exceptions import (
+    APIConnectionError,
     AuthenticationError,
     BadRequestError,
-    InternalServerError,
     UnsupportedParamsError,
 )
 from betterlite.main import aembedding, embedding
@@ -45,6 +46,7 @@ DIMENSIONS: Final = 2
 CUSTOM_COST: Final = 0.0001
 CUSTOM_TOTAL: Final = 0.0002
 CALL_ID: Final = "call-1"
+MODEL_ID: Final = "deployment-1"
 USER: Final = "reader"
 MOCK_ERROR_TEXT: Final = "Mock error"
 BASE64_TEXT: Final = "AAAAAAAAAAA="
@@ -297,8 +299,34 @@ def test_call_hidden_params() -> None:
     assert hidden["litellm_model_name"] == GOOD_MODEL
     assert hidden["litellm_call_id"] == CALL_ID
     assert hidden["api_base"] == base
-    assert headers["llm_provider-content-type"] == JSON_TYPE
+    assert headers == {}
     assert FLOAT.validate_python(hidden["response_cost"]) > 0.0
+
+
+def test_call_hidden_params_name_the_caller_model() -> None:
+    with closing(EndpointServer()) as server:
+        base = server.url + API_BASE_PATH
+        prefixed = response_of(
+            embedding(
+                model=f"{PROVIDER}/{GOOD_MODEL}",
+                input="hi",
+                api_base=base,
+                api_key=GOOD_KEY,
+            )
+        )
+        labelled = response_of(
+            embedding(
+                model=GOOD_MODEL,
+                input="hi",
+                model_info={"id": MODEL_ID},
+                api_base=base,
+                api_key=GOOD_KEY,
+            )
+        )
+    prefixed_hidden = hidden_of(prefixed)
+    assert prefixed_hidden["litellm_model_name"] == f"{PROVIDER}/{GOOD_MODEL}"
+    assert prefixed_hidden["model_id"] is None
+    assert hidden_of(labelled)["model_id"] == MODEL_ID
 
 
 def test_call_custom_cost() -> None:
@@ -389,7 +417,7 @@ def test_error_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_BASE", raising=False)
-    with closing(EndpointServer()) as server, pytest.raises(InternalServerError) as caught:
+    with closing(EndpointServer()) as server, pytest.raises(APIConnectionError) as caught:
         embedding(model=GOOD_MODEL, input="hi", api_base=server.url + API_BASE_PATH)
     error = caught.value
     assert error.status_code == SERVER_ERROR_STATUS
@@ -415,6 +443,23 @@ def test_error_mock_text() -> None:
     assert str(caught.value) == MOCK_ERROR_TEXT
 
 
+def test_async_mock_text_is_the_connection_class() -> None:
+    with pytest.raises(APIConnectionError) as caught:
+        asyncio.run(aembedding(model=GOOD_MODEL, input="hi", mock_response="error"))
+    assert caught.value.status_code == SERVER_ERROR_STATUS
+    assert MOCK_ERROR_TEXT in caught.value.message
+
+
+def test_error_azure_ad_token_provider_refused() -> None:
+    with pytest.raises(UnsupportedCallArgument) as caught:
+        embedding(model=GOOD_MODEL, input="hi", azure_ad_token_provider=object())
+    assert caught.value.argument == "azure_ad_token_provider"
+    with pytest.raises(UnsupportedCallArgument):
+        asyncio.run(
+            aembedding(model=GOOD_MODEL, input="hi", azure_ad_token_provider=object())
+        )
+
+
 def test_async_aembedding() -> None:
     with closing(EndpointServer()) as server:
         response = asyncio.run(
@@ -427,6 +472,20 @@ def test_async_aembedding() -> None:
         )
     assert dumped_of(response)["model"] == GOOD_MODEL
     assert records_of(response)[0]["embedding"] == FIXTURE_VECTOR
+
+
+def test_async_hidden_params_hold_only_the_provider() -> None:
+    with closing(EndpointServer()) as server:
+        response = asyncio.run(
+            aembedding(
+                model=GOOD_MODEL,
+                input="hi",
+                litellm_call_id=CALL_ID,
+                api_base=server.url + API_BASE_PATH,
+                api_key=GOOD_KEY,
+            )
+        )
+    assert hidden_of(response) == {"custom_llm_provider": PROVIDER}
 
 
 def test_async_flag_coroutine() -> None:

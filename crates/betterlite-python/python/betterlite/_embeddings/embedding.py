@@ -5,6 +5,7 @@ from typing import Final, TypedDict
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite import exceptions
+from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import (
     CallPayload,
     CallValue,
@@ -154,6 +155,8 @@ def call_payload(values: Mapping[str, CallValue]) -> CallPayload:
 
 
 def forwarded_arguments(values: Mapping[str, CallValue]) -> dict[str, CallValue]:
+    if values.get("azure_ad_token_provider") is not None:
+        raise UnsupportedCallArgument("azure_ad_token_provider")
     model = TEXT.validate_python(values.get("model"))
     given_input = JSON.validate_python(values.get("input"))
     given_timeout = values.get("timeout")
