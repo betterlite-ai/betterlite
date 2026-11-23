@@ -60,7 +60,8 @@ impl OutputAccumulator {
         limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
         limits.check(ApiBoundariesInput::Json(JsonBoundary {
             known_bytes: self.text_bytes,
-        }))
+        }))?;
+        Ok(())
     }
 
     fn store_item(&mut self, item: Item) {

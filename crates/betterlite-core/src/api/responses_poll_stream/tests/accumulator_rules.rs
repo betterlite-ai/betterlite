@@ -509,13 +509,10 @@ fn items_stop_at_the_items_bound() {
     let error = accumulator
         .check_limits(limits)
         .expect_err("the item past the limit is refused");
-    assert_eq!(
-        error,
-        ApiLimitError::TooManyItems {
-            observed: 3_usize,
-            limit: 2_usize,
-        }
-    );
+    let ApiLimitError::TooManyItems { observed, limit } = error else {
+        panic!("the item bound rejects the third item");
+    };
+    assert_eq!((observed, limit), (3_usize, 2_usize));
 }
 
 #[test]
