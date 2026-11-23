@@ -1,0 +1,6 @@
+task: B357
+deviations:
+  - what: The shadow_q query parser refuses a query past 1048576 bytes before decoding it and reports the byte count and limit, while LiteLLM hands the query string straight to FastAPI's parameter binder.
+    why: The source has no equivalent byte bound at this parser boundary, and bounded-inputs requires a finite limit. The declared query types and their 1..200 limit still apply unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1802-L1895
+kept_bugs: []
