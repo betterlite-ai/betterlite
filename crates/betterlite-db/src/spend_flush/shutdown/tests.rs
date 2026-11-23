@@ -13,7 +13,7 @@ use tokio::sync::Mutex as WriteLock;
 use tokio::task::{JoinSet, yield_now};
 use tokio::time::{sleep, timeout};
 use tokio_postgres::NoTls;
-use tracing::subscriber::{DefaultGuard, set_default};
+use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 
 use super::{MAX_DRAIN_PASSES, MonitorStartError, SpendLogsMonitorSlot, drain_spend_logs_queue};
@@ -297,12 +297,12 @@ impl<'writer> MakeWriter<'writer> for CapturedLogs {
 
 fn capture_logs() -> (CapturedLogs, DefaultGuard) {
     let logs = CapturedLogs::default();
-    let subscriber = tracing_subscriber::fmt()
+    let guard = tracing_subscriber::fmt()
+        .with_writer(logs.clone())
         .with_ansi(false)
         .with_max_level(tracing::Level::ERROR)
-        .with_writer(logs.clone())
-        .finish();
-    (logs, set_default(subscriber))
+        .set_default();
+    (logs, guard)
 }
 
 #[tokio::test]
