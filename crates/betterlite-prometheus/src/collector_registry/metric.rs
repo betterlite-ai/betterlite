@@ -210,6 +210,7 @@ impl PrometheusMetric {
         for (labels, sample) in &*samples {
             series.push((labels.clone(), sample.clone()));
         }
+        drop(samples);
         series
     }
 }
