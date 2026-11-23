@@ -1,0 +1,11 @@
+router_settings:
+  optional_pre_call_checks:
+    - deployment_affinity
+    - session_affinity
+  model_group_affinity_config:
+    gpt-4o:
+      - deployment_affinity
+      - responses_api_deployment_check
+  deployment_affinity_ttl_seconds: 120
+litellm_settings:
+  enable_anthropic_prompt_caching: true

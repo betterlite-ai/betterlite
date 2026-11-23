@@ -1,0 +1,12 @@
+task: B1029
+deviations:
+  - what: A failed timeout conversion or an unknown provider name carries betterlite's own message, where LiteLLM raises Python's float() or LlmProviders lookup text.
+    why: docs/compatibility.md keeps Python's runtime messages out of the port; the class and the point where the call stops before any request are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L365-L366
+kept_bugs:
+  - what: When the caller passes id=None, the logging object file_list creates gets the function_id text "None", while file_retrieve's gets an empty one.
+    why: list writes str(kwargs.get("id", "")) and retrieve writes str(kwargs.get("id") or ""); the task asks for both forms, and a callback keyed on function_id may read the text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L744
+  - what: The placeholder request on file_retrieve's unsupported-provider 400 names the method CREATE_THREAD.
+    why: The branch was copied from the thread code; a caller that reads error.response.request sees that text, so it stays.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L455
