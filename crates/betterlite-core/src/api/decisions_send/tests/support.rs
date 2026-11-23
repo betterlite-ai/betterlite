@@ -597,7 +597,7 @@ impl Fixture {
             events: self.recording.events.clone(),
         };
         DecisionsSender::new(&mut self.clients, &self.log.env())
-            .asend_with(call, &self.config, signing)
+            .asend_with(call, &self.config, &signing)
             .await
     }
 }

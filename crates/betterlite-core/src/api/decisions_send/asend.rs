@@ -19,7 +19,7 @@ impl<Clients: DecisionsAsyncTransport> DecisionsSender<'_, Clients> {
         &mut self,
         call: &DecisionsCall<'_>,
         config: &T,
-        signing: S,
+        signing: &S,
     ) -> Result<DecisionsOutput, DecisionsSendError>
     where
         T: DecisionsProviderConfig + Sync,

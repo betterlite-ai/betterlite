@@ -66,7 +66,7 @@ impl<'env, Clients: DecisionsSyncTransport + DecisionsAsyncTransport>
         call: &DecisionsCall<'_>,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
         with_config!(call, |config| {
-            self.asend_with(call, config.as_ref(), BlockingSigning)
+            self.asend_with(call, config.as_ref(), &BlockingSigning)
                 .await
         })
     }
