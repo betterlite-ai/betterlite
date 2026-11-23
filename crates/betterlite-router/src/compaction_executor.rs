@@ -8,7 +8,7 @@ use std::future::Future;
 
 use async_trait::async_trait;
 use betterlite_anthropic::native_compaction::protocol::{CompactionProtocol, Mapping};
-use tokio::task::task_local;
+use tokio::task_local;
 
 mod tests;
 

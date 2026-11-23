@@ -120,25 +120,33 @@ async fn a_spawned_task_does_not_inherit_the_scope() {
     native_compaction_call(Some("gpt-parent"), Some("claude-compactor"), async {
         let mut tasks = JoinSet::new();
         let _task = tasks.spawn(async {
-            let outside = (
+            (
                 is_native_compaction_call(),
                 native_compaction_parent("claude-compactor"),
-            );
-            let inside =
-                native_compaction_call(Some("gpt-parent"), Some("claude-compactor"), async {
-                    (
-                        is_native_compaction_call(),
-                        native_compaction_parent("claude-compactor"),
-                    )
-                })
-                .await;
-            (outside, inside)
+            )
         });
-        let (outside, inside) = tasks.join_next().await.unwrap().unwrap();
-        assert_eq!(outside, (false, None));
-        assert_eq!(inside, (true, Some("gpt-parent".to_owned())));
+        assert_eq!(tasks.join_next().await.unwrap().unwrap(), (false, None));
     })
     .await;
+}
+
+#[tokio::test]
+async fn an_entered_scope_in_a_spawned_task_sets_the_flag() {
+    let mut tasks = JoinSet::new();
+    let _task = tasks.spawn(native_compaction_call(
+        Some("gpt-parent"),
+        Some("claude-compactor"),
+        async {
+            (
+                is_native_compaction_call(),
+                native_compaction_parent("claude-compactor"),
+            )
+        },
+    ));
+    assert_eq!(
+        tasks.join_next().await.unwrap().unwrap(),
+        (true, Some("gpt-parent".to_owned()))
+    );
 }
 
 #[rstest]
