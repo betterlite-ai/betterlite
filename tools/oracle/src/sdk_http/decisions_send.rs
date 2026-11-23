@@ -50,7 +50,6 @@ pub struct Run {
     pub kwargs: IndexMap<String, Json>,
 }
 
-// The SDK exception decisions raises: every one of them derives from openai's APIError
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Failure {
@@ -66,7 +65,6 @@ pub struct Failure {
     pub message: String,
 }
 
-// What each wrapper call produced, in the order the case made them
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {

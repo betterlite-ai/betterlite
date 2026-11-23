@@ -8,7 +8,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::decisions::call::error::PrepareError;
 use serde::Serialize;
 
-// The SDK response: the shape _format_response chose, carried as its model_dump_json would
 pub(super) fn output(response: DecisionsOutput) -> Result<RunOutcome, SdkHttpError> {
     let record = match response {
         DecisionsOutput::SystemOne(systemone) => serialized(systemone)?,
@@ -41,7 +40,6 @@ pub(super) fn mapped(class: &ErrorClass, message: String) -> Result<RunOutcome, 
     })
 }
 
-// prepare_call raises its own LiteLLM class, before anything reaches the wire
 pub(super) fn prepared(error: &PrepareError) -> Result<RunOutcome, SdkHttpError> {
     let class = error.class();
     let message = visible_message(&class);

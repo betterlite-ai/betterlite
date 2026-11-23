@@ -50,22 +50,14 @@ fn blocked(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<RunOutcome, SdkHttpError> {
-    std::thread::scope(|scope| {
-        let joined = scope
-            .spawn(|| match sent(run, api_base, env) {
-                Ok(outcome) => Ok(outcome),
-                Err(error) => Err(error.to_string()),
-            })
-            .join();
-        match joined {
-            Ok(Ok(outcome)) => Ok(outcome),
-            Ok(Err(message)) => Err(SdkHttpError::Invalid(message)),
+    std::thread::scope(
+        |scope| match scope.spawn(|| sent(run, api_base, env)).join() {
+            Ok(outcome) => outcome.map_err(|error| SdkHttpError::Invalid(error.to_string())),
             Err(payload) => std::panic::resume_unwind(payload),
-        }
-    })
+        },
+    )
 }
 
-// decisions(): the blocking client, one POST, and the formatted answer or the mapped exception
 fn sent(
     run: &Run,
     api_base: &str,
@@ -83,7 +75,6 @@ fn sent(
     finished(sender.send(&decisions))
 }
 
-// adecisions(): the provider's async client, awaited on the runtime that drives the case
 async fn answered(
     run: &Run,
     api_base: &str,
@@ -152,7 +143,7 @@ fn prepared_call(
 
 fn arguments_of(run: &Run, mock_base: &str) -> Result<Arguments, PrepareError> {
     let (globals, azure_ai) = base_config();
-    let kwargs = substituted_kwargs(run, mock_base);
+    let kwargs = substituted_kwargs(run, mock_base)?;
     Ok(Arguments {
         fields: fields_of(run, &kwargs)?,
         api_key: run
@@ -173,47 +164,20 @@ fn arguments_of(run: &Run, mock_base: &str) -> Result<Arguments, PrepareError> {
     })
 }
 
-// The harness names its own origin wherever a case's kwargs carry {mock}
-fn substituted_kwargs(run: &Run, mock_base: &str) -> Extra {
-    run.kwargs
-        .iter()
-        .map(|(name, value)| (name.replace(MOCK, mock_base), substituted(value, mock_base)))
-        .collect()
-}
-
-fn substituted(value: &Json, mock_base: &str) -> Json {
-    match value {
-        Json::Null => Json::Null,
-        Json::Bool(flag) => Json::Bool(*flag),
-        Json::Number(number) => Json::Number(number.clone()),
-        Json::Text(text) => Json::Text(text.replace(MOCK, mock_base)),
-        Json::List(items) => Json::List(
-            items
-                .iter()
-                .map(|item| substituted(item, mock_base))
-                .collect(),
-        ),
-        Json::Object(entries) => Json::Object(
-            entries
-                .iter()
-                .map(|(name, item)| (name.replace(MOCK, mock_base), substituted(item, mock_base)))
-                .collect(),
-        ),
-    }
+// The harness names its own origin wherever a case's kwargs carry {mock}, so kwargs substitute through their JSON text
+fn substituted_kwargs(run: &Run, mock_base: &str) -> Result<Extra, PrepareError> {
+    let text = serde_json::to_string(&run.kwargs)
+        .map_err(|source| invalid_request(run, source))?
+        .replace(MOCK, mock_base);
+    serde_json::from_str(&text).map_err(|source| invalid_request(run, source))
 }
 
 // No global credentials are set, and Azure's URL hook only returns the base it was given
 fn base_config() -> (LiteLlmGlobals, AzureAiConfig) {
-    let globals = LiteLlmGlobals {
-        api_base: None,
-        api_key: None,
-        openai_key: None,
-        organization: None,
-    };
     let azure_ai = AzureAiConfig {
         complete_url: Box::new(|base: &str, _model: &str| base.to_owned()),
     };
-    (globals, azure_ai)
+    (LiteLlmGlobals::default(), azure_ai)
 }
 
 // _request_fields: a state key selects the SystemOne envelope, and is filtered out of the kwargs after
@@ -255,7 +219,6 @@ fn litellm_params(mut kwargs: Extra) -> Extra {
     kwargs
 }
 
-// The B3510 responses, or the mapped exception send raised after the handler call
 fn finished(
     result: Result<DecisionsOutput, DecisionsSendError>,
 ) -> Result<RunOutcome, SdkHttpError> {

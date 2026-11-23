@@ -17,14 +17,12 @@ use super::super::error::SdkHttpError;
 // 2026-01-01T00:00:05+00:00, the fixed instant every logging record in a case is stamped with
 pub(super) const FIXTURE_NOW_NANOS: i64 = 1_767_225_605_000_000_000;
 
-// The case configures no callbacks, so a logging sink that keeps nothing is what pre_call reports to
 pub(super) struct Sink;
 
 impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-// The pool the handler draws both clients from; the case env carries any proxy settings
 pub(super) fn clients(environment: &BTreeMap<String, String>) -> Result<HttpClients, SdkHttpError> {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
         .map_err(SdkHttpError::ProxyPolicy)?;
@@ -41,7 +39,6 @@ pub(super) fn clients(environment: &BTreeMap<String, String>) -> Result<HttpClie
     ))
 }
 
-// The logging environment send sees: no logging object means pre_call never runs
 pub(super) fn prepost_env<'env>(
     redactor: &'env Redactor,
     log: &'env dyn LogSink,
