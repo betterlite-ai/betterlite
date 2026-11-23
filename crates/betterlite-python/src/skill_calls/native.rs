@@ -6,11 +6,13 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
-use betterlite_core::api::skills::get_delete::error::SkillAction;
-
-use crate::skill_calls::convert;
 use crate::skill_calls::error::{SkillFailure, native_error};
-use crate::skill_calls::session::{SkillCore, SkillOutcome};
+use crate::skill_calls::session::{Call, Mode, SkillCore, SkillOutcome};
+
+type Answer<'py> = PyResult<Bound<'py, PyAny>>;
+type Arguments = IndexMap<String, Json>;
+type Blobs = Vec<Vec<u8>>;
+type Outcome = Result<SkillOutcome, SkillFailure>;
 
 // betterlite.skills.main's module-level entry points, one session owning the client every call goes through.
 #[pyclass(module = "betterlite._native")]
@@ -18,15 +20,24 @@ pub(crate) struct NativeSkillSession {
     core: Arc<SkillCore>,
 }
 
-impl NativeSkillSession {
-    fn arguments(request: &str) -> PyResult<IndexMap<String, Json>> {
-        convert::parse(request).map_err(|error| PyValueError::new_err(error.to_string()))
-    }
+fn parse(request: &str, blobs: Blobs) -> PyResult<Call> {
+    let arguments: Arguments =
+        serde_json::from_str(request).map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok((arguments, blobs))
+}
 
-    fn answer(outcome: Result<SkillOutcome, SkillFailure>) -> PyResult<String> {
-        let value = outcome.map_err(|failure| native_error(&failure))?;
-        serde_json::to_string(&value).map_err(|error| PyRuntimeError::new_err(error.to_string()))
-    }
+// The call's answer as Python reads it: the provider's JSON object, or the native error naming its class.
+fn native_answer(outcome: Outcome) -> PyResult<String> {
+    serde_json::to_string(&outcome.map_err(|failure| native_error(&failure))?)
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
+// The awaitable calls: the same attempt on the asyncio loop's runtime, handed back as a coroutine.
+fn prompt<'py>(py: Python<'py>, core: Arc<SkillCore>, mode: Mode, call: Call) -> Answer<'py> {
+    future_into_py(py, async move {
+        let outcome = core.execute(mode, call).await;
+        Python::attach(|_attached| native_answer(outcome))
+    })
 }
 
 #[pymethods]
@@ -38,92 +49,51 @@ impl NativeSkillSession {
         })
     }
 
-    // the synchronous calls: one attempt on the runtime, blocking this thread with the GIL released
-    fn create_skill(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let arguments = Self::arguments(request)?;
-        let outcome = py.detach(|| get_runtime().block_on(self.core.create(arguments, blobs)));
-        Self::answer(outcome)
+    fn create_skill(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
+        let call = parse(request, blobs)?;
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::Create, call)));
+        native_answer(outcome)
     }
 
-    fn list_skills(&self, py: Python<'_>, request: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let arguments = Self::arguments(request)?;
-        let outcome = py.detach(|| get_runtime().block_on(self.core.list(arguments)));
-        Self::answer(outcome)
+    fn list_skills(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
+        let call = parse(request, blobs)?;
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::List, call)));
+        native_answer(outcome)
     }
 
-    fn get_skill(&self, py: Python<'_>, request: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let arguments = Self::arguments(request)?;
-        let outcome =
-            py.detach(|| get_runtime().block_on(self.core.skill(SkillAction::Get, arguments)));
-        Self::answer(outcome)
+    fn get_skill(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
+        let call = parse(request, blobs)?;
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::Get, call)));
+        native_answer(outcome)
     }
 
-    fn delete_skill(
-        &self,
-        py: Python<'_>,
-        request: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<String> {
-        let arguments = Self::arguments(request)?;
-        let outcome =
-            py.detach(|| get_runtime().block_on(self.core.skill(SkillAction::Delete, arguments)));
-        Self::answer(outcome)
+    fn delete_skill(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
+        let call = parse(request, blobs)?;
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::Delete, call)));
+        native_answer(outcome)
     }
 
-    // the awaitable calls: the same call on the asyncio loop's runtime, handed back as a coroutine
-    fn acreate_skill<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let arguments = Self::arguments(request)?;
+    fn acreate_skill<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
+        let call = parse(request, blobs)?;
         let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let outcome = core.create(arguments, blobs).await;
-            Python::attach(|_attached| Self::answer(outcome))
-        })
+        prompt(py, core, Mode::Create, call)
     }
 
-    fn alist_skills<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let arguments = Self::arguments(request)?;
+    fn alist_skills<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
+        let call = parse(request, blobs)?;
         let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let outcome = core.list(arguments).await;
-            Python::attach(|_attached| Self::answer(outcome))
-        })
+        prompt(py, core, Mode::List, call)
     }
 
-    fn aget_skill<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let arguments = Self::arguments(request)?;
+    fn aget_skill<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
+        let call = parse(request, blobs)?;
         let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let outcome = core.skill(SkillAction::Get, arguments).await;
-            Python::attach(|_attached| Self::answer(outcome))
-        })
+        prompt(py, core, Mode::Get, call)
     }
 
-    fn adelete_skill<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let arguments = Self::arguments(request)?;
+    fn adelete_skill<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
+        let call = parse(request, blobs)?;
         let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let outcome = core.skill(SkillAction::Delete, arguments).await;
-            Python::attach(|_attached| Self::answer(outcome))
-        })
+        prompt(py, core, Mode::Delete, call)
     }
 }

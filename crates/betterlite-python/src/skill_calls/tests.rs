@@ -3,6 +3,7 @@
 use std::net::TcpListener;
 
 use indexmap::IndexMap;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
 
@@ -13,7 +14,7 @@ use betterlite_sdk::call_wrapper::error::class_name;
 
 use super::error::{NO_DATABASE, SkillFailure};
 use super::native::NativeSkillSession;
-use super::session::SkillCore;
+use super::session::{Mode, SkillCore};
 
 fn arguments(text: &str) -> IndexMap<String, Json> {
     serde_json::from_str(text).unwrap()
@@ -59,7 +60,7 @@ fn a_create_call_for_an_http_provider_reaches_the_transport() {
     let request =
         format!(r#"{{"display_title": "T", "api_key": "sk-test", "api_base": "{base}"}}"#);
     let failure = get_runtime()
-        .block_on(core().create(arguments(&request), Vec::new()))
+        .block_on(core().execute(Mode::Create, (arguments(&request), Vec::new())))
         .err()
         .unwrap();
     refusal(&failure);
@@ -70,7 +71,7 @@ fn a_list_call_for_an_http_provider_reaches_the_transport() {
     let base = closed_base();
     let request = format!(r#"{{"source": "custom", "api_key": "sk-test", "api_base": "{base}"}}"#);
     let failure = get_runtime()
-        .block_on(core().list(arguments(&request)))
+        .block_on(core().execute(Mode::List, (arguments(&request), Vec::new())))
         .err()
         .unwrap();
     refusal(&failure);
@@ -154,6 +155,16 @@ fn the_native_session_answers_a_hosted_delete_call_with_the_connection_error() {
             r#"{"skill_id":"s","custom_llm_provider":"litellm_proxy"}"#,
             Vec::new(),
         ));
+    });
+}
+
+#[test]
+fn a_request_that_is_not_a_json_object_is_a_value_error() {
+    Python::initialize();
+    Python::attach(|py| {
+        let session = NativeSkillSession::new(r#"{"environment":{}}"#).unwrap();
+        let error = session.get_skill(py, "[1, 2]", Vec::new()).err().unwrap();
+        assert!(error.is_instance_of::<PyValueError>(py), "{error}");
     });
 }
 

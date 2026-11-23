@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::*;
 use betterlite_error::error::class_message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -14,15 +16,8 @@ fn field(marker: &str, blob: u64) -> String {
 }
 
 #[test]
-fn request_text_is_a_json_object() {
-    let parsed = parse(r#"{"skill_id": "s1"}"#).unwrap();
-    assert_eq!(parsed.get("skill_id"), Some(&Json::Text("s1".to_owned())));
-    parse("[1, 2]").unwrap_err();
-}
-
-#[test]
 fn request_skill_arguments_split_named_parameters() {
-    let parsed = skill_arguments(arguments(
+    let parsed = skill::arguments(arguments(
         r#"{"skill_id": "s1", "api_key": "k", "api_base": "https://x", "extra_headers": {"x-a": "b"}, "extra_query": {"q": 1}, "timeout": 3, "custom_llm_provider": "anthropic", "metadata": {"m": true}}"#,
     ))
     .unwrap();
@@ -44,7 +39,7 @@ fn request_skill_arguments_split_named_parameters() {
 
 #[test]
 fn request_skill_arguments_default_provider_is_anthropic() {
-    let parsed = skill_arguments(arguments(r#"{"skill_id": "s1"}"#)).unwrap();
+    let parsed = skill::arguments(arguments(r#"{"skill_id": "s1"}"#)).unwrap();
     assert_eq!(parsed.params.provider(), "anthropic");
     assert_eq!(
         parsed.params.custom_llm_provider.as_deref(),
@@ -54,7 +49,7 @@ fn request_skill_arguments_default_provider_is_anthropic() {
 
 #[test]
 fn request_skill_arguments_require_a_skill_id() {
-    let Err(RequestError::FieldType { provider, name }) = skill_arguments(arguments(r#"{}"#))
+    let Err(RequestError::FieldType { provider, name }) = skill::arguments(arguments(r#"{}"#))
     else {
         panic!("a missing skill_id is a field error");
     };
@@ -64,7 +59,7 @@ fn request_skill_arguments_require_a_skill_id() {
 
 #[test]
 fn request_skill_arguments_carry_the_named_provider() {
-    let Err(RequestError::FieldType { provider, name }) = skill_arguments(arguments(
+    let Err(RequestError::FieldType { provider, name }) = skill::arguments(arguments(
         r#"{"skill_id": 7, "custom_llm_provider": "openai"}"#,
     )) else {
         panic!("a skill_id that is not text is a field error");
@@ -75,7 +70,7 @@ fn request_skill_arguments_carry_the_named_provider() {
 
 #[test]
 fn request_create_arguments_split_kwargs() {
-    let parsed = create_arguments(arguments(
+    let parsed = create::arguments(arguments(
         r#"{"display_title": "T", "files": [{"$file": {"blob": 0}}], "extra_body": {"description": "D"}, "timeout": 9, "user_id": "u", "api_key": "k"}"#,
     ))
     .unwrap();
@@ -98,14 +93,14 @@ fn request_create_arguments_split_kwargs() {
 
 #[test]
 fn request_create_arguments_without_files() {
-    let parsed = create_arguments(arguments(r#"{"display_title": "T", "files": null}"#)).unwrap();
+    let parsed = create::arguments(arguments(r#"{"display_title": "T", "files": null}"#)).unwrap();
     assert!(parsed.files.is_none());
 }
 
 #[test]
 fn request_create_arguments_reject_files_of_the_wrong_type() {
     let Err(RequestError::FieldType { name, .. }) =
-        create_arguments(arguments(r#"{"files": "a.txt"}"#))
+        create::arguments(arguments(r#"{"files": "a.txt"}"#))
     else {
         panic!("files that are not a list are a field error");
     };
@@ -114,7 +109,7 @@ fn request_create_arguments_reject_files_of_the_wrong_type() {
 
 #[test]
 fn request_list_arguments_fields() {
-    let parsed = list_arguments(arguments(
+    let parsed = list::arguments(arguments(
         r#"{"limit": 5, "page": "p", "source": "s", "api_base": "https://x", "metadata": {}}"#,
     ))
     .unwrap();
@@ -129,7 +124,7 @@ fn request_list_arguments_fields() {
 #[test]
 fn request_list_arguments_reject_a_limit_of_the_wrong_type() {
     let Err(RequestError::FieldType { provider, name }) =
-        list_arguments(arguments(r#"{"limit": "5"}"#))
+        list::arguments(arguments(r#"{"limit": "5"}"#))
     else {
         panic!("a limit that is not a number is a field error");
     };
@@ -139,7 +134,7 @@ fn request_list_arguments_reject_a_limit_of_the_wrong_type() {
 
 #[test]
 fn request_extra_headers_become_a_header_map() {
-    let parsed = skill_arguments(arguments(
+    let parsed = skill::arguments(arguments(
         r#"{"skill_id": "s1", "extra_headers": {"x-a": "b", "anthropic-beta": "c"}}"#,
     ))
     .unwrap();
@@ -148,7 +143,7 @@ fn request_extra_headers_become_a_header_map() {
         parsed.params.extra_headers.get("anthropic-beta").unwrap(),
         "c"
     );
-    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(
+    let Err(RequestError::FieldType { name, .. }) = skill::arguments(arguments(
         r#"{"skill_id": "s1", "extra_headers": {"x-a": 3}}"#,
     )) else {
         panic!("a header that is not text is a field error");
@@ -158,7 +153,7 @@ fn request_extra_headers_become_a_header_map() {
 
 #[test]
 fn request_extra_query_must_be_an_object() {
-    let parsed = list_arguments(arguments(
+    let parsed = list::arguments(arguments(
         r#"{"extra_query": {"limit": 2, "unknown": "x"}}"#,
     ))
     .unwrap();
@@ -167,7 +162,7 @@ fn request_extra_query_must_be_an_object() {
         Some(arguments(r#"{"limit": 2, "unknown": "x"}"#))
     );
     let Err(RequestError::FieldType { name, .. }) =
-        list_arguments(arguments(r#"{"extra_query": "limit=2"}"#))
+        list::arguments(arguments(r#"{"extra_query": "limit=2"}"#))
     else {
         panic!("an extra_query that is not an object is a field error");
     };
@@ -176,14 +171,14 @@ fn request_extra_query_must_be_an_object() {
 
 #[test]
 fn request_timeout_is_seconds() {
-    let parsed = skill_arguments(arguments(r#"{"skill_id": "s1", "timeout": 0.5}"#)).unwrap();
+    let parsed = skill::arguments(arguments(r#"{"skill_id": "s1", "timeout": 0.5}"#)).unwrap();
     assert_eq!(parsed.params.timeout, Some(Duration::from_millis(500)));
 }
 
 #[test]
 fn request_timeout_rejects_text() {
     let text = r#"{"skill_id": "s1", "timeout": "5"}"#;
-    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(text)) else {
+    let Err(RequestError::FieldType { name, .. }) = skill::arguments(arguments(text)) else {
         panic!("a timeout that is text is a field error");
     };
     assert_eq!(name, "timeout");
@@ -192,7 +187,7 @@ fn request_timeout_rejects_text() {
 #[test]
 fn request_timeout_rejects_a_negative_number() {
     let text = r#"{"skill_id": "s1", "timeout": -1}"#;
-    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(text)) else {
+    let Err(RequestError::FieldType { name, .. }) = skill::arguments(arguments(text)) else {
         panic!("a negative timeout is a field error");
     };
     assert_eq!(name, "timeout");
@@ -201,7 +196,7 @@ fn request_timeout_rejects_a_negative_number() {
 #[test]
 fn request_timeout_rejects_a_flag() {
     let text = r#"{"skill_id": "s1", "timeout": true}"#;
-    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(text)) else {
+    let Err(RequestError::FieldType { name, .. }) = skill::arguments(arguments(text)) else {
         panic!("a timeout that is a flag is a field error");
     };
     assert_eq!(name, "timeout");

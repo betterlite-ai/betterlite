@@ -1,15 +1,10 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_anthropic::skills::config::BaseSkillsApiConfig;
-use betterlite_anthropic::skills::wire::{
-    CreateSkillRequest, DeleteSkillResponse, ListSkillsResponse, Skill,
-};
-use betterlite_core::api::skills::create::handler::{
-    CreateSkillHttpRequest, SkillsCreateHttpHandler,
-};
+use betterlite_anthropic::skills::error::SkillsError;
+use betterlite_anthropic::skills::wire::{DeleteSkillResponse, ListSkillsResponse, Skill};
 use betterlite_core::api::skills::get_delete::handler::{
     SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler,
 };
@@ -20,34 +15,121 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::watsonx_audio::error::body_text;
 use http::Method;
-use http::header::{CONTENT_TYPE, HeaderMap};
+use http::header::HeaderMap;
 use url::Url;
-use uuid::Uuid;
 
-use crate::skill_calls::convert;
-
+pub(super) mod create;
 mod multipart;
 mod tests;
 
 // LiteLLM's get and list go through the cached httpx client, whose 600 second total applies whatever REQUEST_TIMEOUT says
 const GET_SKILLS_TIMEOUT: Duration = Duration::from_secs(600);
 
-// The read deadline LiteLLM gives one call, and the status its timeouts take: the httpx handler answers APITimeoutError.
+// The verb one skill call sends: read is what both get and list use.
+#[derive(Clone, Copy)]
+enum Action {
+    Read,
+    Post,
+    Delete,
+}
+
+impl Action {
+    const fn method(self) -> Method {
+        match self {
+            Self::Read => Method::GET,
+            Self::Post => Method::POST,
+            Self::Delete => Method::DELETE,
+        }
+    }
+}
+
+// The deadline LiteLLM gives one call and the status its timeouts take: the httpx handler answers APITimeoutError.
 #[derive(Clone, Copy)]
 struct Exchange {
+    action: Action,
     after: Duration,
     timeout_status: Option<u16>,
 }
 
-// One upstream call: the parts each operation assembles, with the deadline its LiteLLM handler gives it.
-struct UpstreamCall {
-    method: Method,
+impl Exchange {
+    const READ: Self = Self {
+        action: Action::Read,
+        after: GET_SKILLS_TIMEOUT,
+        timeout_status: None,
+    };
+
+    const fn delete(timeout: Duration) -> Self {
+        Self {
+            action: Action::Delete,
+            after: timeout,
+            timeout_status: Some(408_u16),
+        }
+    }
+
+    const fn create(timeout: Duration) -> Self {
+        Self {
+            action: Action::Post,
+            after: timeout,
+            timeout_status: Some(408_u16),
+        }
+    }
+}
+
+// One upstream call: the parts each operation assembles, the config that reads its answer, and its deadline.
+struct Call<'request> {
     url: String,
     headers: HeaderMap,
     query: Vec<(String, String)>,
     body: RequestBody,
-    deadline: Exchange,
+    config: &'request dyn BaseSkillsApiConfig,
+    exchange: Exchange,
 }
+
+impl<'request> Call<'request> {
+    const fn new(
+        url: String,
+        headers: HeaderMap,
+        query: Vec<(String, String)>,
+        config: &'request dyn BaseSkillsApiConfig,
+        exchange: Exchange,
+    ) -> Self {
+        Self {
+            url,
+            headers,
+            query,
+            body: RequestBody::Empty,
+            config,
+            exchange,
+        }
+    }
+}
+
+// A get or delete call: the skill request's parts under the verb its exchange names, with no body.
+impl<'request> From<(Exchange, SkillHttpRequest<'request>)> for Call<'request> {
+    fn from((exchange, request): (Exchange, SkillHttpRequest<'request>)) -> Self {
+        Self::new(
+            request.url,
+            request.headers,
+            Vec::new(),
+            request.config,
+            exchange,
+        )
+    }
+}
+
+const fn list_call(request: ListSkillsHttpRequest<'_>) -> Call<'_> {
+    let config = request.config;
+    let query = request.query_params;
+    Call::new(request.url, request.headers, query, config, Exchange::READ)
+}
+
+// The transform each operation applies to the provider's answer body.
+type Transform<T> = fn(&dyn BaseSkillsApiConfig, &[u8]) -> Result<T, SkillsError>;
+const GET_SKILL: Transform<Skill> = |config, body| config.transform_get_skill_response(body);
+const DELETE_SKILL: Transform<DeleteSkillResponse> =
+    |config, body| config.transform_delete_skill_response(body);
+const LIST_SKILLS: Transform<ListSkillsResponse> =
+    |config, body| config.transform_list_skills_response(body);
 
 // The session's http side: the calls every skill operation can make without a database.
 pub(super) struct HttpSkills {
@@ -59,56 +141,16 @@ impl SkillsHttpHandler for HttpSkills {
         &self,
         request: SkillHttpRequest<'_>,
     ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
-        async move {
-            let response = exchange(
-                &self.client,
-                UpstreamCall {
-                    method: Method::GET,
-                    url: request.url,
-                    headers: request.headers,
-                    query: Vec::new(),
-                    body: RequestBody::Empty,
-                    deadline: Exchange {
-                        after: GET_SKILLS_TIMEOUT,
-                        timeout_status: None,
-                    },
-                },
-            )
-            .await?;
-            ensure_success(&response, request.config)?;
-            request
-                .config
-                .transform_get_skill_response(&response.body)
-                .map_err(SkillsHandlerError::from)
-        }
+        let call = Call::from((Exchange::READ, request));
+        answered(&self.client, call, GET_SKILL)
     }
 
     fn delete_skill(
         &self,
         request: SkillHttpRequest<'_>,
     ) -> impl Future<Output = Result<DeleteSkillResponse, SkillsHandlerError>> + Send {
-        async move {
-            let response = exchange(
-                &self.client,
-                UpstreamCall {
-                    method: Method::DELETE,
-                    url: request.url,
-                    headers: request.headers,
-                    query: Vec::new(),
-                    body: RequestBody::Empty,
-                    deadline: Exchange {
-                        after: request.timeout,
-                        timeout_status: Some(408_u16),
-                    },
-                },
-            )
-            .await?;
-            ensure_success(&response, request.config)?;
-            request
-                .config
-                .transform_delete_skill_response(&response.body)
-                .map_err(SkillsHandlerError::from)
-        }
+        let call = Call::from((Exchange::delete(request.timeout), request));
+        answered(&self.client, call, DELETE_SKILL)
     }
 }
 
@@ -117,108 +159,26 @@ impl SkillsListHttpHandler for HttpSkills {
         &self,
         request: ListSkillsHttpRequest<'_>,
     ) -> impl Future<Output = Result<ListSkillsResponse, SkillsHandlerError>> + Send {
-        async move {
-            let response = exchange(
-                &self.client,
-                UpstreamCall {
-                    method: Method::GET,
-                    url: request.url,
-                    headers: request.headers,
-                    query: request.query_params,
-                    body: RequestBody::Empty,
-                    deadline: Exchange {
-                        after: GET_SKILLS_TIMEOUT,
-                        timeout_status: None,
-                    },
-                },
-            )
-            .await?;
-            ensure_success(&response, request.config)?;
-            request
-                .config
-                .transform_list_skills_response(&response.body)
-                .map_err(SkillsHandlerError::from)
-        }
+        let call = list_call(request);
+        answered(&self.client, call, LIST_SKILLS)
     }
 }
 
-// The create call, holding this call's blobs until the assembled body resolves its $file markers.
-pub(super) struct CreateTransport {
-    pub(super) client: ProxiedClient,
-    pub(super) blobs: Mutex<Vec<Vec<u8>>>,
-}
-
-impl SkillsCreateHttpHandler for CreateTransport {
-    fn create_skill(
-        &self,
-        request: CreateSkillHttpRequest<'_>,
-    ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
-        async move {
-            let (headers, body) = create_body(&request, &self.blobs)?;
-            let response = exchange(
-                &self.client,
-                UpstreamCall {
-                    method: Method::POST,
-                    url: request.url,
-                    headers,
-                    query: Vec::new(),
-                    body,
-                    deadline: Exchange {
-                        after: request.timeout,
-                        timeout_status: Some(408_u16),
-                    },
-                },
-            )
-            .await?;
-            ensure_success(&response, request.config)?;
-            request
-                .config
-                .transform_create_skill_response(&response.body)
-                .map_err(SkillsHandlerError::from)
-        }
-    }
-}
-
-// LiteLLM sends multipart only when files is non-empty, and the body JSON otherwise.
-fn create_body(
-    request: &CreateSkillHttpRequest<'_>,
-    blobs: &Mutex<Vec<Vec<u8>>>,
-) -> Result<(HeaderMap, RequestBody), SkillsHandlerError> {
-    let mut headers = request.headers.clone();
-    let Some(files) = request
-        .body
-        .files
-        .as_deref()
-        .filter(|files| !files.is_empty())
-    else {
-        let encoded = serde_json::to_vec(request.body).map_err(|error| {
-            provider_failure(
-                500,
-                format!("the request body could not be written: {error}"),
-                true,
-            )
-        })?;
-        return Ok((headers, RequestBody::Json(encoded)));
-    };
-    let mut owned = match blobs.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    let resolved = convert::files(request.custom_llm_provider, files, owned.as_mut_slice())
-        .map_err(|error| provider_failure(400, error.to_string(), false))?;
-    drop(owned);
-    headers.remove(CONTENT_TYPE);
-    let parts = multipart::parts(request.body, resolved);
-    let body = RequestBody::Multipart {
-        boundary: Uuid::new_v4().to_string(),
-        parts,
-    };
-    Ok((headers, body))
+// What every operation does with the transport's answer: refuse a non-2xx status, then read the body as the provider writes it.
+async fn answered<T>(
+    client: &ProxiedClient,
+    call: Call<'_>,
+    transform: Transform<T>,
+) -> Result<T, SkillsHandlerError> {
+    let config = call.config;
+    let response = exchange(client, call).await?;
+    ensure_success(&response, config)?;
+    transform(config, &response.body).map_err(SkillsHandlerError::from)
 }
 
 async fn exchange(
     client: &ProxiedClient,
-    call: UpstreamCall,
+    call: Call<'_>,
 ) -> Result<UpstreamResponse, SkillsHandlerError> {
     let url = Url::parse(&call.url).map_err(|_invalid| {
         provider_failure(
@@ -227,19 +187,19 @@ async fn exchange(
             true,
         )
     })?;
-    let deadline = call.deadline;
+    let exchange = call.exchange;
     let request = OutboundRequest {
-        method: call.method,
+        method: exchange.action.method(),
         url,
         query: call.query,
         headers: call.headers,
         body: call.body,
-        deadline: deadline.after,
+        deadline: exchange.after,
     };
     client
         .send_buffered(request)
         .await
-        .map_err(|error| transport_failure(&error, deadline))
+        .map_err(|error| transport_failure(&error, exchange))
 }
 
 fn ensure_success(
@@ -275,7 +235,11 @@ fn transport_failure(error: &TransportError, deadline: Exchange) -> SkillsHandle
     }
 }
 
-fn provider_failure(status_code: u16, message: String, synthesized: bool) -> SkillsHandlerError {
+const fn provider_failure(
+    status_code: u16,
+    message: String,
+    synthesized: bool,
+) -> SkillsHandlerError {
     SkillsHandlerError::Provider {
         status_code,
         message,

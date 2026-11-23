@@ -23,7 +23,8 @@ use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use super::{Exchange, HttpSkills, create_body, ensure_success, transport_failure};
+use super::create::create_body;
+use super::{Exchange, HttpSkills, ensure_success, transport_failure};
 
 fn config() -> AnthropicSkillsConfig {
     AnthropicSkillsConfig {
@@ -191,10 +192,7 @@ fn an_error_status_is_the_providers_error() {
 fn a_non_timeout_error_is_a_server_error_whatever_the_handler() {
     let error = transport_failure(
         &TransportError::HeadersTooLarge { limit: 4 },
-        Exchange {
-            after: Duration::from_secs(30),
-            timeout_status: Some(408_u16),
-        },
+        Exchange::delete(Duration::from_secs(30)),
     );
     let (status_code, _, synthesized) = provider(error);
     assert_eq!(status_code, 500);
@@ -203,13 +201,7 @@ fn a_non_timeout_error_is_a_server_error_whatever_the_handler() {
 
 #[test]
 fn an_error_without_a_timeout_status_is_a_server_error() {
-    let error = transport_failure(
-        &TransportError::Closed,
-        Exchange {
-            after: Duration::from_secs(30),
-            timeout_status: None,
-        },
-    );
+    let error = transport_failure(&TransportError::Closed, Exchange::READ);
     let (status_code, _, synthesized) = provider(error);
     assert_eq!(status_code, 500);
     assert!(synthesized);

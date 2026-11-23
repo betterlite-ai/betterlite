@@ -9,9 +9,16 @@ use betterlite_sdk::call_setup::RequestMap;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
+
 mod tests;
+
+pub(super) mod create;
+pub(super) mod list;
+pub(super) mod skill;
+
 const FILES_KEY: &str = "files";
 const FILE_KEY: &str = "$file";
+
 // A skill call argument outside the type LiteLLM declares: docs/compatibility.md answers it with a 400 naming the field
 #[derive(Debug, thiserror::Error)]
 pub(super) enum RequestError {
@@ -21,6 +28,7 @@ pub(super) enum RequestError {
         name: &'static str,
     },
 }
+
 impl RequestError {
     fn field(provider: &str, name: &'static str) -> Self {
         Self::FieldType {
@@ -28,6 +36,7 @@ impl RequestError {
             name,
         }
     }
+
     pub(super) fn class(&self) -> ErrorClass {
         let Self::FieldType { provider, name } = self;
         ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
@@ -45,18 +54,21 @@ impl RequestError {
         )))
     }
 }
+
 // one skill file resolved from its $file marker, ready to become a multipart part
 pub(super) struct SkillFile {
     pub(super) name: String,
     pub(super) content_type: Option<String>,
     pub(super) bytes: Vec<u8>,
 }
+
 pub(super) struct SkillArguments {
     pub(super) params: SkillsCallParams,
     pub(super) skill_id: String,
     pub(super) kwargs: IndexMap<String, Json>,
     pub(super) litellm_call_id: Option<String>,
 }
+
 pub(super) struct CreateArguments {
     pub(super) params: SkillsCallParams,
     pub(super) display_title: Option<String>,
@@ -65,6 +77,7 @@ pub(super) struct CreateArguments {
     pub(super) kwargs: IndexMap<String, Json>,
     pub(super) litellm_call_id: Option<String>,
 }
+
 pub(super) struct ListArguments {
     pub(super) params: SkillsCallParams,
     pub(super) limit: Option<i64>,
@@ -73,77 +86,52 @@ pub(super) struct ListArguments {
     pub(super) kwargs: IndexMap<String, Json>,
     pub(super) litellm_call_id: Option<String>,
 }
-pub(super) fn parse(text: &str) -> Result<IndexMap<String, Json>, serde_json::Error> {
-    serde_json::from_str(text)
+
+// The Json shape a skill argument must have; absent and null both take LiteLLM's default instead.
+pub(super) trait Field: Sized {
+    fn take(json: Json) -> Option<Self>;
 }
-pub(super) fn skill_arguments(
-    mut arguments: IndexMap<String, Json>,
-) -> Result<SkillArguments, RequestError> {
-    let provider = provider(&mut arguments)?;
-    let common = common(&provider, &mut arguments)?;
-    let skill_id = text(&provider, arguments.remove("skill_id"), "skill_id")?
-        .ok_or_else(|| RequestError::field(&provider, "skill_id"))?;
-    Ok(SkillArguments {
-        params: common.0,
-        skill_id,
-        kwargs: arguments,
-        litellm_call_id: common.1,
-    })
+
+impl Field for String {
+    fn take(json: Json) -> Option<Self> {
+        let Json::Text(text) = json else {
+            return None;
+        };
+        Some(text)
+    }
 }
-pub(super) fn create_arguments(
-    mut arguments: IndexMap<String, Json>,
-) -> Result<CreateArguments, RequestError> {
-    let provider = provider(&mut arguments)?;
-    let common = common(&provider, &mut arguments)?;
-    let display_title = text(
-        &provider,
-        arguments.remove("display_title"),
-        "display_title",
-    )?;
-    let files = match arguments.remove("files") {
-        None | Some(Json::Null) => None,
-        Some(Json::List(items)) => Some(items),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(RequestError::field(&provider, "files"));
-        }
-    };
-    let extra_body = object(&provider, arguments.remove("extra_body"), "extra_body")?;
-    Ok(CreateArguments {
-        params: common.0,
-        display_title,
-        files,
-        extra_body,
-        kwargs: arguments,
-        litellm_call_id: common.1,
-    })
+
+impl Field for IndexMap<String, Json> {
+    fn take(json: Json) -> Option<Self> {
+        let Json::Object(fields) = json else {
+            return None;
+        };
+        Some(fields)
+    }
 }
-pub(super) fn list_arguments(
-    mut arguments: IndexMap<String, Json>,
-) -> Result<ListArguments, RequestError> {
-    let provider = provider(&mut arguments)?;
-    let common = common(&provider, &mut arguments)?;
-    let limit = match arguments.remove("limit") {
-        None | Some(Json::Null) => None,
-        Some(Json::Number(number)) => Some(
-            number
-                .as_i64()
-                .ok_or_else(|| RequestError::field(&provider, "limit"))?,
-        ),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(RequestError::field(&provider, "limit"));
-        }
-    };
-    let page = text(&provider, arguments.remove("page"), "page")?;
-    let source = text(&provider, arguments.remove("source"), "source")?;
-    Ok(ListArguments {
-        params: common.0,
-        limit,
-        page,
-        source,
-        kwargs: arguments,
-        litellm_call_id: common.1,
-    })
+
+impl Field for f64 {
+    fn take(json: Json) -> Option<Self> {
+        let Json::Number(number) = json else {
+            return None;
+        };
+        number.as_f64()
+    }
 }
+
+fn field<T: Field>(
+    provider: &str,
+    value: Option<Json>,
+    name: &'static str,
+) -> Result<Option<T>, RequestError> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(json) => T::take(json)
+            .map(Some)
+            .ok_or_else(|| RequestError::field(provider, name)),
+    }
+}
+
 // Each file Python sent is a $file marker: the bytes stay in the call's blobs and the marker names one.
 pub(super) fn files(
     provider: &str,
@@ -174,6 +162,7 @@ pub(super) fn files(
         })
         .collect())
 }
+
 // LiteLLM defaults an absent provider to anthropic; a provider of the wrong type is a field error.
 fn provider(arguments: &mut IndexMap<String, Json>) -> Result<String, RequestError> {
     match arguments.remove("custom_llm_provider") {
@@ -184,18 +173,20 @@ fn provider(arguments: &mut IndexMap<String, Json>) -> Result<String, RequestErr
         ),
     }
 }
+
 // api_key and api_base stay in kwargs, since LiteLLM reads them there as well as from the call's own arguments
 fn common(
     provider: &str,
     arguments: &mut IndexMap<String, Json>,
 ) -> Result<(SkillsCallParams, Option<String>), RequestError> {
-    let api_key =
-        text(provider, arguments.get("api_key").cloned(), "api_key")?.map(SecretString::from);
-    let api_base = text(provider, arguments.get("api_base").cloned(), "api_base")?;
+    let api_key = field::<String>(provider, arguments.get("api_key").cloned(), "api_key")?
+        .map(SecretString::from);
+    let api_base = field::<String>(provider, arguments.get("api_base").cloned(), "api_base")?;
     let extra_headers = headers(provider, arguments.remove("extra_headers"))?;
-    let extra_query = object(provider, arguments.remove("extra_query"), "extra_query")?;
+    let extra_query =
+        field::<IndexMap<String, Json>>(provider, arguments.remove("extra_query"), "extra_query")?;
     let timeout = timeout(provider, arguments.remove("timeout"))?;
-    let litellm_call_id = text(
+    let litellm_call_id = field::<String>(
         provider,
         arguments.get("litellm_call_id").cloned(),
         "litellm_call_id",
@@ -210,34 +201,9 @@ fn common(
     };
     Ok((params, litellm_call_id))
 }
-fn text(
-    provider: &str,
-    value: Option<Json>,
-    name: &'static str,
-) -> Result<Option<String>, RequestError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(RequestError::field(provider, name))
-        }
-    }
-}
-fn object(
-    provider: &str,
-    value: Option<Json>,
-    name: &'static str,
-) -> Result<Option<IndexMap<String, Json>>, RequestError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => Ok(Some(fields)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(RequestError::field(provider, name))
-        }
-    }
-}
+
 fn headers(provider: &str, value: Option<Json>) -> Result<HeaderMap, RequestError> {
-    let Some(fields) = object(provider, value, "extra_headers")? else {
+    let Some(fields) = field::<IndexMap<String, Json>>(provider, value, "extra_headers")? else {
         return Ok(HeaderMap::new());
     };
     let mut headers = HeaderMap::new();
@@ -253,20 +219,13 @@ fn headers(provider: &str, value: Option<Json>) -> Result<HeaderMap, RequestErro
     }
     Ok(headers)
 }
+
 // LiteLLM's timeout argument is a number of seconds; zero takes REQUEST_TIMEOUT further down.
 fn timeout(provider: &str, value: Option<Json>) -> Result<Option<Duration>, RequestError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => {
-            let seconds = number
-                .as_f64()
-                .ok_or_else(|| RequestError::field(provider, "timeout"))?;
-            let duration = Duration::try_from_secs_f64(seconds)
-                .map_err(|_invalid| RequestError::field(provider, "timeout"))?;
-            Ok(Some(duration))
-        }
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(RequestError::field(provider, "timeout"))
-        }
-    }
+    let Some(seconds) = field::<f64>(provider, value, "timeout")? else {
+        return Ok(None);
+    };
+    Ok(Some(Duration::try_from_secs_f64(seconds).map_err(
+        |_invalid| RequestError::field(provider, "timeout"),
+    )?))
 }
