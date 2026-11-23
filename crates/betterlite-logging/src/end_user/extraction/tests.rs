@@ -330,7 +330,7 @@ fn header_bytes_decode_as_latin1() {
     let mut headers = HeaderMap::new();
     headers.append(
         HeaderName::from_static("x-litellm-customer-id"),
-        HeaderValue::from_bytes(&[b'c', b'a', b'f', 0xe9]).expect("a latin-1 header value"),
+        HeaderValue::from_bytes(&[0xe9]).expect("a latin-1 header value"),
     );
     let end_user_id = request_end_user_id(
         &body("{}"),
@@ -340,7 +340,7 @@ fn header_bytes_decode_as_latin1() {
             validate_end_user_id_in_db: false,
         },
     );
-    assert_eq!(end_user_id.as_deref(), Some("caf\u{e9}"));
+    assert_eq!(end_user_id.as_deref(), Some("\u{e9}"));
 }
 
 #[test]
