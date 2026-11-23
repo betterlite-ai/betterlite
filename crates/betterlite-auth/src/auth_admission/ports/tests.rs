@@ -20,11 +20,23 @@ fn empty_key() -> UserAPIKeyAuth {
 
 fn shared_across_threads<T: Send + Sync + ?Sized>(_value: &T) {}
 
-struct MarkingAdmission;
+struct RecordingAdmission {
+    refusal: Option<AdmissionError>,
+}
+
+impl RecordingAdmission {
+    fn refuse(&self) -> Result<(), AdmissionError> {
+        match &self.refusal {
+            Some(refusal) => Err(refusal.clone()),
+            None => Ok(()),
+        }
+    }
+}
 
 #[async_trait]
-impl ManagedAdmission for MarkingAdmission {
+impl ManagedAdmission for RecordingAdmission {
     async fn admit(&self, auth: &mut UserAPIKeyAuth) -> Result<(), AdmissionError> {
+        self.refuse()?;
         auth.extra.requires_fresh_policy = true;
         Ok(())
     }
@@ -35,6 +47,7 @@ impl ManagedAdmission for MarkingAdmission {
         target_name: &str,
         billable: bool,
     ) -> Result<(), AdmissionError> {
+        self.refuse()?;
         auth.extra.invoked_agent_id = Some(target_name.to_owned());
         auth.extra.agent_invocation_cost = Some(if billable {
             Decimal::ONE
@@ -45,28 +58,8 @@ impl ManagedAdmission for MarkingAdmission {
     }
 }
 
-struct RefusingAdmission {
-    refusal: AdmissionError,
-}
-
-#[async_trait]
-impl ManagedAdmission for RefusingAdmission {
-    async fn admit(&self, _auth: &mut UserAPIKeyAuth) -> Result<(), AdmissionError> {
-        Err(self.refusal.clone())
-    }
-
-    async fn prepare(
-        &self,
-        _auth: &mut UserAPIKeyAuth,
-        _target_name: &str,
-        _billable: bool,
-    ) -> Result<(), AdmissionError> {
-        Err(self.refusal.clone())
-    }
-}
-
-#[derive(Default)]
 struct RecordingDestinations {
+    failing: bool,
     headers: Mutex<Vec<IndexMap<String, String>>>,
     end_users: Mutex<Vec<Option<String>>>,
 }
@@ -77,6 +70,11 @@ impl TenantDestinations for RecordingDestinations {
         auth: &UserAPIKeyAuth,
         headers: &IndexMap<String, String>,
     ) -> Result<(), DestinationSeedError> {
+        if self.failing {
+            return Err(DestinationSeedError {
+                source: Box::new(TenantExporterFailure),
+            });
+        }
         self.headers.lock().unwrap().push(headers.clone());
         self.end_users
             .lock()
@@ -90,23 +88,9 @@ impl TenantDestinations for RecordingDestinations {
 #[error("the tenant exporter could not be built")]
 struct TenantExporterFailure;
 
-struct FailingDestinations;
-
-impl TenantDestinations for FailingDestinations {
-    fn seed(
-        &self,
-        _auth: &UserAPIKeyAuth,
-        _headers: &IndexMap<String, String>,
-    ) -> Result<(), DestinationSeedError> {
-        Err(DestinationSeedError {
-            source: Box::new(TenantExporterFailure),
-        })
-    }
-}
-
 #[tokio::test]
 async fn admit_changes_reach_the_caller() {
-    let port: Arc<dyn ManagedAdmission> = Arc::new(MarkingAdmission);
+    let port: Arc<dyn ManagedAdmission> = Arc::new(RecordingAdmission { refusal: None });
     let mut auth = empty_key();
     assert!(!auth.extra.requires_fresh_policy);
     port.admit(&mut auth).await.unwrap();
@@ -121,7 +105,7 @@ async fn prepare_receives_the_target_and_billable_flag(
     #[case] billable: bool,
     #[case] cost: Decimal,
 ) {
-    let port: Arc<dyn ManagedAdmission> = Arc::new(MarkingAdmission);
+    let port: Arc<dyn ManagedAdmission> = Arc::new(RecordingAdmission { refusal: None });
     let mut auth = empty_key();
     port.prepare(&mut auth, "managed-agent", billable)
         .await
@@ -138,11 +122,12 @@ async fn prepare_receives_the_target_and_billable_flag(
 #[case::policy_unavailable(503, "Managed agent policy requires a database")]
 #[tokio::test]
 async fn admission_error_keeps_its_status_and_detail(#[case] status: u16, #[case] detail: &str) {
-    let port: Arc<dyn ManagedAdmission> = Arc::new(RefusingAdmission {
-        refusal: AdmissionError {
-            status,
-            detail: detail.to_owned(),
-        },
+    let refusal = AdmissionError {
+        status,
+        detail: detail.to_owned(),
+    };
+    let port: Arc<dyn ManagedAdmission> = Arc::new(RecordingAdmission {
+        refusal: Some(refusal),
     });
     let mut auth = empty_key();
     let error = port.admit(&mut auth).await.unwrap_err();
@@ -152,7 +137,11 @@ async fn admission_error_keeps_its_status_and_detail(#[case] status: u16, #[case
 
 #[test]
 fn seed_receives_the_auth_and_safe_headers() {
-    let destinations = Arc::new(RecordingDestinations::default());
+    let destinations = Arc::new(RecordingDestinations {
+        failing: false,
+        headers: Mutex::new(Vec::new()),
+        end_users: Mutex::new(Vec::new()),
+    });
     let port: Arc<dyn TenantDestinations> = Arc::clone(&destinations);
     let mut auth = empty_key();
     auth.view.end_user_id = Some(String::from("tenant-user"));
@@ -172,15 +161,23 @@ fn seed_receives_the_auth_and_safe_headers() {
 
 #[test]
 fn ports_are_object_safe_and_send_and_sync() {
-    let admission: Arc<dyn ManagedAdmission> = Arc::new(MarkingAdmission);
+    let admission: Arc<dyn ManagedAdmission> = Arc::new(RecordingAdmission { refusal: None });
     shared_across_threads(admission.as_ref());
-    let destinations: Arc<dyn TenantDestinations> = Arc::new(RecordingDestinations::default());
+    let destinations: Arc<dyn TenantDestinations> = Arc::new(RecordingDestinations {
+        failing: false,
+        headers: Mutex::new(Vec::new()),
+        end_users: Mutex::new(Vec::new()),
+    });
     shared_across_threads(destinations.as_ref());
 }
 
 #[test]
 fn destination_seed_error_shows_only_its_cause() {
-    let port: Arc<dyn TenantDestinations> = Arc::new(FailingDestinations);
+    let port: Arc<dyn TenantDestinations> = Arc::new(RecordingDestinations {
+        failing: true,
+        headers: Mutex::new(Vec::new()),
+        end_users: Mutex::new(Vec::new()),
+    });
     let auth = empty_key();
     let error = port.seed(&auth, &IndexMap::new()).unwrap_err();
     assert_eq!(error.to_string(), TenantExporterFailure.to_string());
