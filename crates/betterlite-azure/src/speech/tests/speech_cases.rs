@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
+use crate::credentials::source::TokenReply;
 use crate::speech::binary::finish_audio_speech;
 use crate::speech::dispatch::{
     DispatchCall, SpeechEnvironment, SpeechGlobals, dispatch_text_to_speech,
@@ -118,6 +119,8 @@ fn openai_audio_speech_path() {
     );
     assert_eq!(inputs.cache.entries.len(), 1);
     speech_response_bytes();
+    credential_paths();
+    unusable_headers();
 }
 
 fn speech_response_bytes() {
@@ -396,6 +399,8 @@ fn binary_speech_body() {
     logged_speech_options(logger);
     options_from_params();
     duplicate_option();
+    base_queries();
+    wrong_controls();
 }
 
 fn logged_speech_options(logger: Recorder) {
@@ -611,4 +616,138 @@ fn probe_requires_options() {
     };
     let key_error = probe_request(&empty).expect_err("an empty key cannot authenticate");
     assert_eq!(key_error.class(), "ValueError");
+}
+
+// the caller's authorization header stands in for the SDK's key, and a call with neither fails as ValueError
+fn credential_paths() {
+    let caller = support::pairs(&[(
+        "extra_headers",
+        json(r#"{"authorization":"Bearer caller"}"#),
+    )]);
+    let mut call = support::call("tts", "hello", "alloy", caller);
+    call.api_key = None;
+    let request = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+        .expect("the caller's authorization authenticates the call");
+    assert_eq!(
+        support::header(&request, "authorization"),
+        Some("Bearer caller")
+    );
+    assert_eq!(support::header(&request, "api-key"), None);
+    missing_key();
+    empty_key();
+    provider_tokens();
+}
+
+fn missing_key() {
+    let mut call = support::call("tts", "hello", "alloy", IndexMap::new());
+    call.api_key = None;
+    let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+        .expect_err("a keyless azure call cannot authenticate");
+    assert_eq!(error.class(), "ValueError");
+    assert_eq!(error.status(), None);
+}
+
+fn empty_key() {
+    let mut call = support::call("tts", "hello", "alloy", IndexMap::new());
+    call.api_key = Some(SecretString::from(""));
+    let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+        .expect_err("an empty key cannot authenticate");
+    assert_eq!(error.class(), "ValueError");
+}
+
+// an azure_ad_token_provider answers with the bearer token, and anything but a non-empty string fails
+fn provider_tokens() {
+    let token = TokenReply::Text(SecretString::from("ad-token"));
+    let mut call = support::call("tts", "hello", "alloy", IndexMap::new());
+    call.api_key = None;
+    call.provider = Some(support::provider(token));
+    let request = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+        .expect("the token provider authenticates the call");
+    assert_eq!(
+        support::header(&request, "authorization"),
+        Some("Bearer ad-token")
+    );
+    assert_token_failure(TokenReply::Text(SecretString::from("")));
+    assert_token_failure(TokenReply::NonText {
+        type_name: String::from("int"),
+    });
+}
+
+fn assert_token_failure(reply: TokenReply) {
+    let mut call = support::call("tts", "hello", "alloy", IndexMap::new());
+    call.api_key = None;
+    call.provider = Some(support::provider(reply));
+    let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+        .expect_err("a non-string token cannot authenticate");
+    assert_eq!(error.class(), "Exception");
+    assert!(
+        error
+            .to_string()
+            .contains("Expected `azure_ad_token_provider` argument to return a string")
+    );
+}
+
+// a header the wire cannot carry fails before the send, as the SDK's client construction does
+fn unusable_headers() {
+    for headers in [json(r#"{"bad header":"v"}"#), json(r#"{"x-bad":"a\nb"}"#)] {
+        let call = support::call(
+            "tts",
+            "hello",
+            "alloy",
+            support::pairs(&[("extra_headers", headers)]),
+        );
+        let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+            .expect_err("an unusable header cannot be sent");
+        assert_eq!(error.class(), "Exception");
+    }
+}
+
+// a base that already names the deployment keeps its own query, and extra_query overrides a repeated key
+fn base_queries() {
+    let optional = support::pairs(&[(
+        "extra_query",
+        json(r#"{"api-version":"1999-01-01","trace":"abc"}"#),
+    )]);
+    let mut call = support::call("tts", "hello", "alloy", optional);
+    call.api_base = Some(String::from(
+        "https://gateway.example/openai/deployments/tts?foo=bar&",
+    ));
+    let request = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+        .expect("a deployment endpoint with a query builds");
+    assert_eq!(
+        request.url.as_str(),
+        "https://gateway.example/openai/deployments/tts/audio/speech?foo=bar&api-version=1999-01-01&trace=abc"
+    );
+}
+
+// the caller controls the SDK takes are not body fields, and a wrong type names the option
+fn wrong_controls() {
+    let body = support::pairs(&[("extra_body", json("\"hi\""))]);
+    let body_call = support::call("tts", "hello", "alloy", body);
+    let error = support::start(&mut Inputs::default(), &body_call, &mut Recorder::default())
+        .expect_err("a text extra_body cannot merge");
+    assert_eq!(error.class(), "RuntimeError");
+    assert!(
+        error
+            .to_string()
+            .contains("Unexpected JSON data type, string, cannot merge with `extra_body`")
+    );
+    let headers = support::pairs(&[("extra_headers", json("\"x\""))]);
+    let headers_call = support::call("tts", "hello", "alloy", headers);
+    let error = support::start(
+        &mut Inputs::default(),
+        &headers_call,
+        &mut Recorder::default(),
+    )
+    .expect_err("a text extra_headers is not a mapping");
+    assert!(error.to_string().contains("is not a mapping of strings"));
+    let timeout = support::pairs(&[("timeout", json("\"5\""))]);
+    let timeout_call = support::call("tts", "hello", "alloy", timeout);
+    let error = support::start(
+        &mut Inputs::default(),
+        &timeout_call,
+        &mut Recorder::default(),
+    )
+    .expect_err("a text timeout is not a number of seconds");
+    assert!(error.to_string().contains("is not a number of seconds"));
 }

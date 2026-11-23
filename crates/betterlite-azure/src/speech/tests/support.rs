@@ -14,9 +14,13 @@ use secrecy::SecretString;
 
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use crate::credentials::cache::RefreshProviderCache;
-use crate::credentials::source::{CallableTokenProvider, CredentialSources, SourceFailure};
+use crate::credentials::source::{
+    CallableTokenProvider, CredentialSources, ProviderFailure, SourceFailure, TokenReply,
+};
 use crate::endpoints::get_client::ClientCache;
-use crate::endpoints::projection::{ClientIdentity, ClientKind, LiteLlmParams, SessionKind};
+use crate::endpoints::projection::{
+    CallableProvider, ClientIdentity, ClientKind, LiteLlmParams, SessionKind,
+};
 use crate::oidc_exchange::OidcExchangeInput;
 use crate::speech::binary::{AudioSpeechCall, audio_speech};
 use crate::speech::client::ClientWiring;
@@ -63,6 +67,22 @@ pub(crate) fn call<'data>(
         supplied: None,
         session: SessionKind::Dedicated,
         refresh_enabled: false,
+    }
+}
+
+struct FixedToken(TokenReply);
+
+impl CallableTokenProvider for FixedToken {
+    fn token(&self) -> Result<TokenReply, ProviderFailure> {
+        Ok(self.0.clone())
+    }
+}
+
+// the callable audio_speech hands the SDK, answering with one fixed reply
+pub(crate) fn provider(reply: TokenReply) -> CallableProvider {
+    CallableProvider {
+        provider: Arc::new(FixedToken(reply)),
+        identity: 7,
     }
 }
 
