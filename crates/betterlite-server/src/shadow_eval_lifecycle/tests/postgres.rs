@@ -139,6 +139,11 @@ VALUES
     ('a3', 'v1', 'r3', 'real', 0.25, 0, 0),
     ('a4', 'v1', 'r4', 'real', 0.25, 0, 0)"#;
 
+const STAMPED_GROUPS_SQL: &str = r#"SELECT "group_id" FROM "LiteLLM_ShadowEvalJob"
+    WHERE "stopped_at" IS NOT NULL ORDER BY "group_id""#;
+
+const FUNNEL_IDS_SQL: &str = r#"SELECT "job_id" FROM "LiteLLM_ShadowEvalFunnel" ORDER BY "job_id""#;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -175,33 +180,10 @@ async fn execute(pool: &Pool, sql: &str) {
     client.batch_execute(sql).await.unwrap();
 }
 
-async fn groups_stamped(pool: &Pool) -> Vec<String> {
+async fn column(pool: &Pool, sql: &str) -> Vec<String> {
     let client = pool.get().await.unwrap();
-    let rows = client
-        .query(
-            r#"SELECT "group_id" FROM "LiteLLM_ShadowEvalJob"
-               WHERE "stopped_at" IS NOT NULL ORDER BY "group_id""#,
-            &[],
-        )
-        .await
-        .unwrap();
-    rows.iter()
-        .map(|row| row.get::<_, String>("group_id"))
-        .collect()
-}
-
-async fn funnel_ids(pool: &Pool) -> Vec<String> {
-    let client = pool.get().await.unwrap();
-    let rows = client
-        .query(
-            r#"SELECT "job_id" FROM "LiteLLM_ShadowEvalFunnel" ORDER BY "job_id""#,
-            &[],
-        )
-        .await
-        .unwrap();
-    rows.iter()
-        .map(|row| row.get::<_, String>("job_id"))
-        .collect()
+    let rows = client.query(sql, &[]).await.unwrap();
+    rows.iter().map(|row| row.get::<_, String>(0)).collect()
 }
 
 async fn created_by_of(pool: &Pool, id: &str) -> Option<String> {
@@ -302,7 +284,7 @@ async fn sweep_finished_stamps_every_finished_leg_and_skips_a_stopped_one() {
         )
         .await
         .unwrap();
-    let stamped = groups_stamped(&pool).await;
+    let stamped = column(&pool, STAMPED_GROUPS_SQL).await;
     let open = store.legs("g-open").await.unwrap();
     let done = store.legs("g-done").await.unwrap();
     pool.close();
@@ -442,7 +424,7 @@ async fn seed_funnel_keeps_one_row_per_leg() {
     let ids = ["leg-a".to_owned(), "leg-b".to_owned()];
     store.seed_funnel(&ids).await.unwrap();
     store.seed_funnel(&ids).await.unwrap();
-    let seeded = funnel_ids(&pool).await;
+    let seeded = column(&pool, FUNNEL_IDS_SQL).await;
     pool.close();
     fixture.close_async().await.unwrap();
     assert_eq!(seeded, ["leg-a", "leg-b"]);
