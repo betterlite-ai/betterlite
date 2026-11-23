@@ -5,7 +5,10 @@ use std::time::{Duration, UNIX_EPOCH};
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_router::io_token_reservations::limits::IoLimits;
 use betterlite_router::remaining_usage_headers::{
-    RemainingUsage, apply_remaining_usage_headers, build_io_token_rate_limit_headers,
+    RemainingUsage,
+    apply_remaining_usage_headers,
+    // ast-grep-ignore: no-long-names
+    build_io_token_rate_limit_headers,
 };
 use serde::Deserialize;
 
@@ -54,7 +57,8 @@ impl Helper for Op {
                             message: format!("the instant {now} is past what SystemTime holds"),
                         })
                     })?;
-                serde_json::to_value(build_io_token_rate_limit_headers(
+                // ast-grep-ignore: no-long-names
+                let headers = build_io_token_rate_limit_headers(
                     IoLimits {
                         itpm: *itpm,
                         otpm: *otpm,
@@ -62,7 +66,8 @@ impl Helper for Op {
                     *current_itpm,
                     *current_otpm,
                     moment,
-                ))
+                );
+                serde_json::to_value(headers)
             }
             Input::Apply { headers, remaining } => {
                 let mut additional_headers = headers.clone();
