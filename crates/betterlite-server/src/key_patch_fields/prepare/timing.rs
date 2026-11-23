@@ -1,6 +1,7 @@
 use betterlite_core::budget_reset::compute_budget_reset_at;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::search_tools::convert::isoformat;
+use chrono::{DateTime, Utc};
 
 use crate::key_policy_fields::{
     ClockError, KeyClock, microsecond_precision, shifted_by, zulu_datetime,
@@ -10,42 +11,34 @@ use super::super::Row;
 use super::super::error::KeyPatchError;
 
 // duration is request-only: it becomes expires, or clears it for null and "-1"; "" leaves the column alone.
-pub(super) fn apply_duration(values: &mut Row, clock: KeyClock<'_>) -> Result<(), KeyPatchError> {
-    let Some(duration) = values.remove("duration") else {
-        return Ok(());
-    };
-    let expires = match duration {
-        JsonData::String(text) if text.is_empty() => return Ok(()),
-        JsonData::String(text) if text != "-1" => {
-            JsonData::String(zulu_datetime(shifted_by(clock.now, &text, clock)?))
-        }
-        JsonData::Null | JsonData::String(_) => JsonData::Null,
-        JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_) => {
-            return Ok(());
-        }
-    };
-    values.insert(String::from("expires"), expires);
-    Ok(())
-}
-
 // budget_duration null clears the stored duration and its reset; "" leaves both as stored.
-pub(super) fn apply_budget_duration(
+pub(super) fn apply_request_times(
     values: &mut Row,
     clock: KeyClock<'_>,
 ) -> Result<(), KeyPatchError> {
+    let expiry = match values.remove("duration") {
+        Some(JsonData::String(text)) if text.is_empty() => None,
+        Some(JsonData::String(text)) if text != "-1" => Some(JsonData::String(zulu_datetime(
+            shifted_by(clock.now, &text, clock)?,
+        ))),
+        Some(JsonData::Null | JsonData::String(_)) => Some(JsonData::Null),
+        Some(
+            JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
+        )
+        | None => None,
+    };
+    if let Some(expires) = expiry {
+        values.insert(String::from("expires"), expires);
+    }
     let Some(removed) = values.remove("budget_duration") else {
         return Ok(());
     };
     if let JsonData::String(text) = &removed {
         if !text.is_empty() {
-            let reset = compute_budget_reset_at(text, clock.reset, clock.now, clock.database)
-                .map_err(|source| ClockError::Duration {
-                    spec: text.clone(),
-                    source,
-                })?;
+            let reset = microsecond_precision(budget_reset(text, clock)?);
             values.insert(
                 String::from("budget_reset_at"),
-                JsonData::String(zulu_datetime(microsecond_precision(reset.instant))),
+                JsonData::String(zulu_datetime(reset)),
             );
             values.insert(String::from("budget_duration"), removed);
         }
@@ -104,11 +97,19 @@ fn initialize_window(entry: JsonData, clock: KeyClock<'_>) -> Result<JsonData, K
     let Some(JsonData::String(spec)) = fields.get("budget_duration").cloned() else {
         return Ok(JsonData::Object(fields));
     };
-    let reset = compute_budget_reset_at(&spec, clock.reset, clock.now, clock.database)
-        .map_err(|source| ClockError::Duration { spec, source })?;
+    let reset = budget_reset(&spec, clock)?;
     fields.insert(
         String::from("reset_at"),
-        JsonData::String(isoformat(microsecond_precision(reset.instant))),
+        JsonData::String(isoformat(microsecond_precision(reset))),
     );
     Ok(JsonData::Object(fields))
+}
+
+fn budget_reset(spec: &str, clock: KeyClock<'_>) -> Result<DateTime<Utc>, ClockError> {
+    compute_budget_reset_at(spec, clock.reset, clock.now, clock.database)
+        .map_err(|source| ClockError::Duration {
+            spec: spec.to_owned(),
+            source,
+        })
+        .map(|reset| reset.instant)
 }

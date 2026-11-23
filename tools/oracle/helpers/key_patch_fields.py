@@ -79,26 +79,26 @@ class _CreatedBudget:
     budget_id: str = "budget-created"
 
 
+def _effect(
+    kind: str,
+    budget_id: JsonValue,
+    soft_budget: JsonValue,
+    actor: JsonValue,
+) -> JsonValue:
+    effect: JsonValue = {
+        "kind": kind,
+        "budget_id": budget_id,
+        "soft_budget": soft_budget,
+        "actor": actor,
+    }
+    return effect
+
+
 class _Budgets:
     effects: list[JsonValue]
 
     def __init__(self, effects: list[JsonValue]) -> None:
         self.effects = effects
-
-    def _record(
-        self,
-        kind: str,
-        budget_id: JsonValue,
-        soft_budget: JsonValue,
-        actor: JsonValue,
-    ) -> None:
-        effect: JsonValue = {
-            "kind": kind,
-            "budget_id": budget_id,
-            "soft_budget": soft_budget,
-            "actor": actor,
-        }
-        self.effects.append(effect)
 
     async def update(
         self,
@@ -106,10 +106,14 @@ class _Budgets:
         where: Mapping[str, JsonValue],
         data: Mapping[str, JsonValue],
     ) -> None:
-        self._record("update", where["budget_id"], data["soft_budget"], data["updated_by"])
+        effect = _effect("update", where["budget_id"], data["soft_budget"], data["updated_by"])
+        self.effects.append(effect)
 
     async def create(self, *, data: Mapping[str, JsonValue]) -> _CreatedBudget:
-        self._record("create", _CreatedBudget.budget_id, data["soft_budget"], data["created_by"])
+        effect = _effect(
+            "create", _CreatedBudget.budget_id, data["soft_budget"], data["created_by"]
+        )
+        self.effects.append(effect)
         return _CreatedBudget()
 
 
@@ -135,7 +139,7 @@ def _proxy_failure(error: ProxyException, warnings: list[JsonValue]) -> Envelope
 def _metadata_answer(call: MetadataCall, warnings: list[JsonValue]) -> Envelope:
     data = UpdateKeyRequest.model_validate(call["request"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441
     supplied: dict[str, JsonValue] = _MAP.validate_json(data.model_dump_json(exclude_unset=True))
-    projected: dict[str, JsonValue] = _MAP.validate_python(prepare_metadata_fields(data, supplied, dict(call["existing_metadata"])))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2325-L2373
+    projected: dict[str, JsonValue] = _MAP.validate_python(prepare_metadata_fields(data, supplied, dict(call["existing_metadata"])))  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2325-L2373
     return {"value": projected, "error": None, "warnings": warnings, "effects": []}
 
 
@@ -144,7 +148,7 @@ def _soft_budget_answer(call: SoftBudgetCall) -> Envelope:
     existing = _verification_token_from_row(call["existing"])
     effects: list[JsonValue] = []
     budgets = _Budgets(effects)
-    projected: dict[str, JsonValue] = _MAP.validate_python(asyncio.run(_apply_soft_budget_update(data=data, non_default_values=call["non_default_values"], db=_FakeTx(budgets), existing_key_row=existing, changed_by="admin")))  # type: ignore[misc, arg-type]  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2407-L2423
+    projected: dict[str, JsonValue] = _MAP.validate_python(asyncio.run(_apply_soft_budget_update(data=data, non_default_values=call["non_default_values"], db=_FakeTx(budgets), existing_key_row=existing, changed_by="admin")))  # type: ignore[arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2407-L2423
     return {"value": projected, "error": None, "warnings": [], "effects": effects}
 
 
@@ -160,7 +164,7 @@ def _token_answer(call: TokenCall) -> Envelope:
 def _prepare_answer(call: PrepareCall, warnings: list[JsonValue]) -> Envelope:
     data = UpdateKeyRequest.model_validate(call["request"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441
     existing = _verification_token_from_row(call["existing"])
-    projected: dict[str, JsonValue] = _MAP.validate_python(asyncio.run(prepare_key_update_data(data, existing)))  # type: ignore[misc]  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2460-L2563
+    projected: dict[str, JsonValue] = _MAP.validate_python(asyncio.run(prepare_key_update_data(data, existing)))  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2460-L2563
     return {"value": projected, "error": None, "warnings": warnings, "effects": []}
 
 

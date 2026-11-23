@@ -20,7 +20,7 @@ use super::metadata::{
 };
 use super::object_of;
 use super::string_of;
-use super::timing::{apply_budget_duration, apply_budget_windows, apply_duration};
+use super::timing::{apply_budget_windows, apply_request_times};
 
 pub struct PrepareContext<'existing> {
     pub existing: &'existing LiteLLMVerificationToken,
@@ -47,8 +47,7 @@ where
     let fields = metadata_fields(request, supplied.clone());
     drop_request_only_fields(&mut supplied);
     let mut values = key_fields_only(&supplied);
-    apply_duration(&mut values, context.clock)?;
-    apply_budget_duration(&mut values, context.clock)?;
+    apply_request_times(&mut values, context.clock)?;
     apply_budget_windows(&mut values, context.clock)?;
     validate_model_max_budget(values.get("model_max_budget").and_then(object_of))?;
     serialize_router_settings(&mut values)?;

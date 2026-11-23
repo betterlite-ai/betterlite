@@ -165,8 +165,10 @@ pub(super) async fn prepared_row(
     stored: &LiteLLMVerificationToken,
     request: &UpdateKeyRequest,
 ) -> Row {
-    let outcome = prepared(fixture, stored, request).await;
-    outcome.0.expect("a prepared patch")
+    prepared(fixture, stored, request)
+        .await
+        .0
+        .expect("a prepared patch")
 }
 
 pub(super) async fn prepare_error(
