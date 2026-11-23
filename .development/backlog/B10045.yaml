@@ -1,13 +1,13 @@
 id: B10045
 milestone: R2 bug fixes
 title: The session rollup group test deletes the same rows on every run
-status: todo
+status: done
 depends_on: []
 file: tasks/B10045-session-rollup-test-flake.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3028
