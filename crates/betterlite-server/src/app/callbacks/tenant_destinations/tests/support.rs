@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_auth::auth_admission::ports::TenantDestinations as _;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::{ConfigLoader, EnvironmentLookup};
 use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
@@ -29,6 +30,7 @@ use betterlite_logging::otel::plumbing::exporters::{
 };
 use betterlite_logging::otel::plumbing::sinks::SpanSink;
 use betterlite_logging::otel::proxy_runtime::runtime::{ProxyRuntimeInputs, build_proxy_runtime};
+use betterlite_logging::otel::proxy_runtime::slot::request_slot_scope;
 use betterlite_logging::otel::proxy_runtime::sources::ProxyTraceSources;
 use chrono::FixedOffset;
 use indexmap::IndexMap;
@@ -387,6 +389,20 @@ pub(crate) fn endpoints(destinations: &[OtelDestination]) -> Vec<String> {
 
 pub(crate) fn slot(runtime: &LoggerRuntime) -> Vec<OtelDestination> {
     runtime.scope.scope().destinations
+}
+
+pub(crate) async fn seeded_names(
+    runtime: &LoggerRuntime,
+    adapter: &Adapter,
+    key: &UserAPIKeyAuth,
+    headers: &IndexMap<String, String>,
+) -> Vec<String> {
+    let (_, names) = request_slot_scope(async {
+        adapter.seed(key, headers).expect("the key seeds");
+        callback_names(&slot(runtime))
+    })
+    .await;
+    names
 }
 
 pub(crate) fn prior_destination() -> OtelDestination {
