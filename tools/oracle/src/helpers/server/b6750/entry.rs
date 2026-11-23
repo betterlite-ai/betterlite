@@ -110,13 +110,9 @@ pub(super) async fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
         },
         next_id: || FIXED_ID.to_owned(),
     };
+    let mode = step.mode.clone();
     let outcome = entry
-        .check_health(
-            params,
-            step.mode.clone(),
-            step.prompt.clone(),
-            step.inputs.clone(),
-        )
+        .check_health(params, mode, step.prompt.clone(), step.inputs.clone())
         .await;
     Ok(step_view(&resolver, &recorder, &outcome))
 }
