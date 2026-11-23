@@ -31,7 +31,7 @@ def answer(uri: str) -> JsonValue:
     try:
         parsed = oauth_utils._parse_redirect_uri_for_validation(uri)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L428
     except HTTPException as error:
-        parse_refusal: dict[str, JsonValue] = {"loopback": None, "refusal": refusal(error)}
+        parse_refusal: dict[str, JsonValue] = {"refusal": refusal(error)}
         return JSON.validate_python(parse_refusal)
     loopback = oauth_utils.is_loopback_redirect_host(parsed)
     try:

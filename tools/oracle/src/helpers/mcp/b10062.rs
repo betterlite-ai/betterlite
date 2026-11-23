@@ -32,23 +32,27 @@ impl Helper for Op {
 fn answer(uri: &str, callbacks: &[String]) -> serde_json::Value {
     let parsed = parse_redirect_uri(uri);
     let loopback = parsed.as_ref().ok().map(is_loopback_redirect_host);
-    let shape = parsed.and_then(|parsed_uri| validate_redirect_uri_shape(&parsed_uri, callbacks));
-    match shape {
-        Ok(RedirectShape::NativeCallback) => {
-            json!({"loopback": loopback, "result": {"native_callback": true}})
-        }
-        Ok(RedirectShape::NeedsTrustPolicy) => {
-            json!({"loopback": loopback, "result": {"needs_trust_policy": true}})
-        }
+    let outcome = parsed.and_then(|parsed_uri| validate_redirect_uri_shape(&parsed_uri, callbacks));
+    let shape = match outcome {
+        Ok(shape) => shape,
         Err(rejected) => {
             let detail = rejected.detail();
-            json!({
-                "loopback": loopback,
-                "refusal": {
-                    "status": RedirectUriRejected::STATUS.as_u16(),
-                    "detail_error": detail.error,
-                },
-            })
+            let refusal = json!({
+                "status": RedirectUriRejected::STATUS.as_u16(),
+                "detail_error": detail.error,
+            });
+            return match loopback {
+                Some(host_is_loopback) => json!({"loopback": host_is_loopback, "refusal": refusal}),
+                None => json!({"refusal": refusal}),
+            };
+        }
+    };
+    match shape {
+        RedirectShape::NativeCallback => {
+            json!({"loopback": loopback, "result": {"native_callback": true}})
+        }
+        RedirectShape::NeedsTrustPolicy => {
+            json!({"loopback": loopback, "result": {"needs_trust_policy": true}})
         }
     }
 }
