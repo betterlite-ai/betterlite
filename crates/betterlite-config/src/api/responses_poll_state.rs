@@ -126,8 +126,7 @@ fn resolve_list(items: &[Json], path: &str, lookup: &dyn EnvironmentLookup) -> P
     Ok(values)
 }
 
-// the source hands any integer to the cache; a fractional ttl is an invalid scalar, which
-// resolve_number would report as an invalid integer, so only that arm stays local
+// a fractional ttl stays an invalid scalar, which resolve_number would report as an invalid integer
 fn ttl(raw: Option<RawNumber>, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
     if matches!(raw, Some(RawNumber::Float(_))) {
         return Err(invalid_scalar(TTL_PATH, &Json::Null));
