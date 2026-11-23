@@ -31,16 +31,16 @@ struct HookAnswer {
 
 // The scripted stand-in for LiteLLMLoggingObj's async prompt hook, counted the way the adapter observes it
 pub(super) struct ScriptedPort {
-    answer: HookAnswer,
+    answer: Option<HookAnswer>,
     checks: AtomicU32,
     ran: AtomicU32,
     records: Mutex<Vec<HookCall>>,
 }
 
 impl ScriptedPort {
-    pub(super) fn new(script: HookScript) -> Self {
+    pub(super) fn new(script: Option<HookScript>) -> Self {
         Self {
-            answer: script.answer,
+            answer: script.map(|hook| hook.answer),
             checks: AtomicU32::new(0),
             ran: AtomicU32::new(0),
             records: Mutex::new(Vec::new()),
@@ -76,13 +76,17 @@ impl AsyncPromptPort for ScriptedPort {
         &self,
         request: &MergeRequest<'_>,
     ) -> Result<MergeAnswer, PromptManagerError> {
+        let Some(answer) = &self.answer else {
+            return Err(PromptManagerError {
+                message: String::from("the case configured no hook answer"),
+            });
+        };
         let call = observed(request);
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
-        let messages = self
-            .answer
+        let messages = answer
             .messages
             .iter()
             .map(|message| ReturnedMessage {
@@ -90,14 +94,18 @@ impl AsyncPromptPort for ScriptedPort {
                 message: json_value(message),
             })
             .collect();
-        let optional_params = match &self.answer.optional_params {
+        let optional_params = match &answer.optional_params {
             Json::Null => ParameterMap::new(),
-            value => transcode(value).map_err(|error| PromptManagerError {
+            value @ (Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_)) => transcode(value).map_err(|error| PromptManagerError {
                 message: error.to_string(),
             })?,
         };
         Ok(MergeAnswer {
-            model: self.answer.model.clone(),
+            model: answer.model.clone(),
             messages,
             optional_params,
         })

@@ -2,7 +2,7 @@ use super::fixtures::{
     Configs, Fixture, NoBridge, NoInterception, Nothing, Outbound, ScriptedResolver,
 };
 use super::scripted::{HookScript, ScriptedPort};
-use super::{Call, HookObservation, Outcome, RunOutcome};
+use super::{Call, Outcome, RunOutcome};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::Failure;
 use betterlite_core::api::response_id_traversal::response_id::transcode;
@@ -85,7 +85,9 @@ async fn run_once(
     deps: &CreateDeps<'_>,
 ) -> Result<RunOutcome, SdkHttpError> {
     let request = create_call(run, api_base)?;
-    let port = hook_script(run)?.map(ScriptedPort::new);
+    let hook = hook_script(run)?;
+    let enabled = hook.is_some();
+    let scripted = ScriptedPort::new(hook);
     let mut fixture = Fixture::new("responses")?;
     let environment = PrePostEnv {
         debug: DebugSettings::default(),
@@ -105,10 +107,8 @@ async fn run_once(
         state: &mut fixture.state,
         env: &environment,
     };
-    let answer = wrapped(deps, &request, port.as_ref(), &mut log).await;
-    let hooks = port
-        .as_ref()
-        .map_or_else(HookObservation::default, ScriptedPort::observation);
+    let answer = wrapped(deps, &request, enabled.then_some(&scripted), &mut log).await;
+    let hooks = scripted.observation();
     match answer {
         Ok(created) => Ok(RunOutcome {
             result: Some(created_json(created)?),
@@ -127,14 +127,10 @@ async fn run_once(
 async fn wrapped(
     deps: &CreateDeps<'_>,
     request: &ResponsesCreateCall,
-    port: Option<&ScriptedPort>,
+    prompts: Option<&dyn AsyncPromptPort>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<Created<()>, AsyncCreateError> {
     let execution = CreateExecution { deps };
-    let prompts: Option<&dyn AsyncPromptPort> = match port {
-        Some(scripted) => Some(scripted),
-        None => None,
-    };
     let create = AsyncCreateDeps {
         resolver: deps.resolver,
         lookup: deps.lookup,
