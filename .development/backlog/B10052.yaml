@@ -1,14 +1,14 @@
 id: B10052
 milestone: M4 keys, spend and management
 title: Admin or same-user check inside management routes
-status: todo
+status: done
 depends_on: [B171, B732, B2314]
 file: tasks/B10052-inside-route-check.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
 parent: B052
 split_from: B742
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3042
