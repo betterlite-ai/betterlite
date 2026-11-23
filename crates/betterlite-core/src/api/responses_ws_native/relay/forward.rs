@@ -76,7 +76,7 @@ where
                     tracing::error!("Error in responses WS backend_to_client: {error}");
                 }
             }
-            Either::Right(((), client_pending)) => {
+            Either::Right((_logged, client_pending)) => {
                 client_pending.await;
             }
         }
