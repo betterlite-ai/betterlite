@@ -13,7 +13,7 @@ use axum::routing::post;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_org_lookup::error::{OrgFailure, OrgLookupError};
 use betterlite_auth::auth_org_lookup::organization::OrgLookup;
-use betterlite_auth::auth_org_lookup::ports::OrgCache;
+use betterlite_auth::auth_org_lookup::ports::{OrgCache, OrgStore, StoreAnswer};
 use betterlite_auth::auth_prefetch::rows::CachedProject;
 use betterlite_auth::auth_read::table::AuthReadError;
 use betterlite_config::loader::ConfigLoader;
@@ -319,19 +319,41 @@ impl OrgCache for NoCache {
     }
 }
 
+// the row a database would answer, so the domain lookup comes back with a filled organization
+struct OneStore;
+
+#[async_trait]
+impl OrgStore for OneStore {
+    async fn find_org(&self, _org_id: &str, _include_budget: bool) -> StoreAnswer<Option<String>> {
+        Ok(Some(
+            serde_json::to_string(&org()).expect("the row serializes"),
+        ))
+    }
+
+    async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    async fn find_project(&self, _project_id: &str) -> StoreAnswer<Option<String>> {
+        Ok(None)
+    }
+}
+
 #[tokio::test]
 async fn the_trait_runs_the_production_lookup() {
+    let store: Arc<dyn OrgStore> = Arc::new(OneStore);
     let lookup = OrgLookup {
-        store: None,
+        store: Some(store),
         cache: Arc::new(NoCache),
         in_memory_ttl: 5.0_f64,
     };
-    // get_org_object alone answers NoDatabase; continuing without limits proves the trait delegates
+    // the stored row comes back through the trait, so a stub answer cannot stand in for the delegation
     let found = lookup
         .org_object("o1", &AllowRequestsOnOutage::Boolean(false))
         .await
-        .unwrap();
-    assert!(found.is_none());
+        .unwrap()
+        .expect("the stored row is found");
+    assert_eq!(found.organization_id.as_deref(), Some("o1"));
 }
 
 #[test]
