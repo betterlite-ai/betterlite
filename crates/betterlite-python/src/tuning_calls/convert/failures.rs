@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 
 use betterlite_core::api::fine_tuning_cancel_call::FineTuningCancelError;
 use betterlite_core::api::fine_tuning_create::FineTuningCreateError;
@@ -22,7 +23,7 @@ pub(crate) fn provider_error(response: UpstreamResponse) -> WireError {
     let body = match serde_json::from_slice::<Json>(&response.body) {
         Ok(value) => value,
         Err(_source) => Json::Text(
-            std::str::from_utf8(&response.body)
+            from_utf8(&response.body)
                 .map(str::to_owned)
                 .unwrap_or_default(),
         ),
