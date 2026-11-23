@@ -2,8 +2,8 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import JsonValue
 
+from betterlite._cost.cost_logging import CostLogging, logging_model
 from betterlite._cost.engine import ENGINE, charge_answer
-from betterlite._cost.logging import CostLogging, logging_model
 from betterlite._cost.objects import dump_object, hidden_params, response_kind, source_value
 from betterlite._cost.wire import (
     CompletionRequestWire,
@@ -13,19 +13,6 @@ from betterlite._cost.wire import (
     object_value,
     text_value,
 )
-
-
-def response_wire(response: JsonSource) -> ResponseWire:
-    dumped = dump_object(response)
-    return ResponseWire(
-        kind=response_kind(response),
-        model=text_value(dumped.get("model")),
-        usage=object_value(dumped.get("usage")),
-        service_tier=text_value(dumped.get("service_tier")),
-        hidden_params=hidden_params(response),
-        created=number_value(dumped.get("created")),
-        ended=number_value(dumped.get("ended")),
-    )
 
 
 def completion_request(
@@ -49,6 +36,18 @@ def completion_request(
     vertex_location: str | None,
     request_model: str | None,
 ) -> CompletionRequestWire:
+    response: ResponseWire | None = None
+    if completion_response is not None:
+        dumped = dump_object(completion_response)
+        response = ResponseWire(
+            kind=response_kind(completion_response),
+            model=text_value(dumped.get("model")),
+            usage=object_value(dumped.get("usage")),
+            service_tier=text_value(dumped.get("service_tier")),
+            hidden_params=hidden_params(completion_response),
+            created=number_value(dumped.get("created")),
+            ended=number_value(dumped.get("ended")),
+        )
     return CompletionRequestWire(
         model=model,
         prompt=prompt,
@@ -68,7 +67,7 @@ def completion_request(
         data_residency=data_residency,
         vertex_location=vertex_location,
         request_model=request_model,
-        response=None if completion_response is None else response_wire(completion_response),
+        response=response,
     )
 
 

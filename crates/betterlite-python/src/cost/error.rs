@@ -12,7 +12,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use serde::Serialize;
 
-use crate::cost::billing::{CallRequest, CompletionRequest};
+use crate::cost::billing::CompletionRequest;
 use crate::cost::convert::ConvertError;
 use crate::cost::settings::SettingsError;
 
@@ -40,7 +40,7 @@ pub(crate) struct CostErrorPayload {
 }
 
 // The class completion's family registered, so Python can raise it through raise_native_error.
-fn native_error(py: Python<'_>, payload: CostErrorPayload) -> PyErr {
+pub(crate) fn native_error(py: Python<'_>, payload: CostErrorPayload) -> PyErr {
     let text = match serde_json::to_string(&payload) {
         Ok(text) => text,
         Err(_encoding) => return PyRuntimeError::new_err(payload.message),
@@ -55,39 +55,11 @@ fn native_error(py: Python<'_>, payload: CostErrorPayload) -> PyErr {
     }
 }
 
-fn payload(message: String) -> CostErrorPayload {
+pub(crate) fn payload(message: String) -> CostErrorPayload {
     CostErrorPayload {
         kind: "Exception",
         message,
     }
-}
-
-fn exception_class<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
-    py.import("betterlite.exceptions")?.getattr(name)
-}
-
-// LiteLLM's own class for a model it has no price for, raised with its own sentence.
-fn not_mapped_error(py: Python<'_>, message: String) -> PyErr {
-    match exception_class(py, "ModelNotMappedError").and_then(|class| class.call1((message,))) {
-        Ok(value) => PyErr::from_value(value),
-        Err(failure) => failure,
-    }
-}
-
-// LiteLLM raises this one with the model, an empty provider and get_llm_provider's text.
-fn provider_missing_error(py: Python<'_>, message: String, model: &str) -> PyErr {
-    match exception_class(py, "BadRequestError")
-        .and_then(|class| class.call1((message.as_str(), model, "")))
-    {
-        Ok(value) => PyErr::from_value(value),
-        Err(failure) => failure,
-    }
-}
-
-// cost_per_token's failures: LiteLLM's class for each model it cannot price.
-pub(crate) fn call_error(py: Python<'_>, error: &EngineError, request: &CallRequest) -> PyErr {
-    let model = request.model.as_deref().unwrap_or_default();
-    priced_error(py, error, model, request.custom_llm_provider.as_deref())
 }
 
 // completion_cost's and response_cost's failures: the response's model can be the only one named.
@@ -115,11 +87,6 @@ pub(crate) fn charge_error(
     priced_error(py, error, model, request.custom_llm_provider.as_deref())
 }
 
-// get_usage_object's failures: LiteLLM's conversion raises one plain Exception.
-pub(crate) fn usage_error(py: Python<'_>, error: &EngineError) -> PyErr {
-    native_error(py, payload(error.to_string()))
-}
-
 const MODEL_MISSING: &str = "Model is None and does not exist in passed completion_response. Passed completion_response=None, model=None";
 
 // LiteLLM tokenizes the request when a response carries no usage; this family prices usage only.
@@ -128,16 +95,51 @@ passed a response without usage or request text whose tokens would have to be co
 response with usage, or the prompt and completion with a custom token count.";
 
 // LiteLLM reports every model it cannot price with this one sentence, whichever lookup stage failed.
-fn priced_error(py: Python<'_>, error: &EngineError, model: &str, provider: Option<&str>) -> PyErr {
-    match price_failure(error) {
-        Some(CallPriceError::Generic(TokenCostError::UnknownModel))
-        | Some(CallPriceError::Duration(DurationCostError::UnknownModel { .. })) => {
-            not_mapped_error(py, model_not_mapped_message(model, provider))
-        }
-        Some(CallPriceError::Resolution {
-            source: ResolutionError::MissingProvider { model: missing },
-        }) => provider_missing_error(py, provider_missing_message(missing), missing),
-        _ => native_error(py, payload(error.to_string())),
+pub(crate) fn priced_error(
+    py: Python<'_>,
+    error: &EngineError,
+    model: &str,
+    provider: Option<&str>,
+) -> PyErr {
+    let failure = price_failure(error);
+    if let Some(
+        CallPriceError::Generic(TokenCostError::UnknownModel)
+        | CallPriceError::Duration(DurationCostError::UnknownModel { .. }),
+    ) = failure
+    {
+        let message = model_not_mapped_message(model, provider);
+        return exception_error(py, "ModelNotMappedError", message, None);
+    }
+    if let Some(CallPriceError::Resolution {
+        source: ResolutionError::MissingProvider { model: missing },
+    }) = failure
+    {
+        return exception_error(
+            py,
+            "BadRequestError",
+            provider_missing_message(missing),
+            Some(missing.as_str()),
+        );
+    }
+    native_error(py, payload(error.to_string()))
+}
+
+// LiteLLM's own exception class, built with the message and, for BadRequestError, the model.
+fn exception_error(py: Python<'_>, name: &str, message: String, model: Option<&str>) -> PyErr {
+    let class = match py
+        .import("betterlite.exceptions")
+        .and_then(|module| module.getattr(name))
+    {
+        Ok(found) => found,
+        Err(failure) => return failure,
+    };
+    let called = match model {
+        Some(missing) => class.call1((message.as_str(), missing, "")),
+        None => class.call1((message,)),
+    };
+    match called {
+        Ok(value) => PyErr::from_value(value),
+        Err(failure) => failure,
     }
 }
 

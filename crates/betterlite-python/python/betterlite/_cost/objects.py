@@ -23,11 +23,9 @@ def dump_object(value: JsonSource) -> dict[str, JsonValue]:
 
 
 def source_value(value: JsonSource | None) -> dict[str, JsonValue] | None:
-    match value:
-        case None:
-            return None
-        case Dumpable() | Mapping():
-            return dump_object(value)
+    if value is None:
+        return None
+    return dump_object(value)
 
 
 # The response class decides how B068 reads its usage and which prices apply.
@@ -49,9 +47,7 @@ def response_kind(response: JsonSource) -> str:
             return "text_completion"
         case ResponsesAPIResponse():
             return "responses"
-        case Dumpable():
-            return "other"
-        case Mapping():
+        case Dumpable() | Mapping():
             return "other"
 
 
@@ -78,9 +74,9 @@ def hidden_params(response: JsonSource) -> dict[str, JsonValue] | None:
 
 def has_hidden_params(response: JsonSource) -> bool:
     match response:
+        case DecisionsResponse() | OpenAIDecisionResponse():
+            return response.hidden_params is not None
         case ResponseObject():
             return "_hidden_params" in response
-        case DecisionsResponse() | OpenAIDecisionResponse():
-            return True
         case Dumpable() | Mapping():
             return False

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::str::FromStr as _;
 
 use betterlite_core::cost::usage::{BillingUsage, ResponseKind};

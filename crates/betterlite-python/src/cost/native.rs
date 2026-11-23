@@ -9,13 +9,12 @@ use crate::cost::convert::{
     Amount, CostAnswer, RatesView, UsageAnswer, UsageRecord, UsageRequest, encode, parse,
 };
 use crate::cost::engine::Engine;
-use crate::cost::error::{call_error, charge_error, usage_error};
+use crate::cost::error::{charge_error, native_error, payload, priced_error};
 use crate::cost::settings::{Settings, SettingsWire};
 
 mod tests;
 
-// The cost family's one entry point: the settings text builds the engine, and every method takes one
-// request object as JSON.
+// The cost family's one entry point: settings text in, one request object as JSON per call.
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeCost {
     engine: Engine,
@@ -35,22 +34,28 @@ impl NativeCost {
     // LiteLLM's pair of floats, in the order cost_per_token returns them.
     fn cost_per_token(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let wire: CallRequest = parse(request)?;
-        let priced = self
-            .engine
-            .cost_per_token(&wire)
-            .map_err(|error| call_error(py, &error, &wire))?;
+        let priced = self.engine.cost_per_token(&wire).map_err(|error| {
+            priced_error(
+                py,
+                &error,
+                wire.model.as_deref().unwrap_or_default(),
+                wire.custom_llm_provider.as_deref(),
+            )
+        })?;
         encode(&[Amount(priced.0), Amount(priced.1)]).map_err(PyErr::from)
     }
 
+    // ast-grep-ignore: no-one-line-functions
     fn completion_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         priced_response(py, &self.engine, request)
     }
 
+    // ast-grep-ignore: no-one-line-functions
     fn response_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         priced_response(py, &self.engine, request)
     }
 
-    // get_usage_object's conversion, so the Python helper and completion_cost read one implementation.
+    // ast-grep-ignore: no-one-line-functions
     fn usage_object(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         usage_answer(py, &self.engine, request)
     }
@@ -60,7 +65,7 @@ fn usage_answer(py: Python<'_>, engine: &Engine, request: &str) -> PyResult<Stri
     let wire: UsageRequest = parse(request)?;
     let usage = engine
         .usage_object(&wire)
-        .map_err(|error| usage_error(py, &error))?;
+        .map_err(|error| native_error(py, payload(error.to_string())))?;
     encode(&UsageAnswer {
         usage: usage.as_ref().map(UsageRecord::from),
     })

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_core::cost::call_price::error::CallPriceError;
 use betterlite_core::cost::completion::error::CompletionCostError;
 use betterlite_core::cost::prepare::error::PrepareError;
@@ -8,9 +10,9 @@ use betterlite_models::token_cost::error::TokenCostError;
 use betterlite_tokenizer::count::error::CountError;
 use pyo3::prelude::*;
 
-use crate::cost::billing::{CallRequest, CompletionRequest};
+use crate::cost::billing::CompletionRequest;
 use crate::cost::convert::{ConvertError, parse};
-use crate::cost::error::{EngineError, call_error, charge_error, usage_error};
+use crate::cost::error::{EngineError, charge_error, native_error, payload, priced_error};
 use crate::cost::settings::SettingsError;
 
 const NATIVE_FAKE: &std::ffi::CStr = c"class NativeError(Exception):\n    pass\n";
@@ -51,29 +53,24 @@ fn install_fakes(py: Python<'_>) {
         .expect("the exceptions fake registers");
 }
 
-fn call_request(text: &str) -> CallRequest {
-    parse(text).expect("the per-token request parses")
-}
-
 fn completion_request(text: &str) -> CompletionRequest {
     parse(text).expect("the completion request parses")
 }
 
 fn json_error() -> serde_json::Error {
-    serde_json::from_str::<CallRequest>("not json").expect_err("the text is not JSON")
+    serde_json::from_str::<CompletionRequest>("not json").expect_err("the text is not JSON")
 }
 
 #[test]
-fn cost_call_error_raises_model_not_mapped_for_a_model_without_a_price() {
+fn cost_priced_error_raises_model_not_mapped_for_a_model_without_a_price() {
     Python::initialize();
     Python::attach(|py| {
         install_fakes(py);
-        let request =
-            call_request(r#"{"model": "unknown-model", "custom_llm_provider": "openai"}"#);
-        let error = call_error(
+        let error = priced_error(
             py,
             &EngineError::Price(CallPriceError::Generic(TokenCostError::UnknownModel)),
-            &request,
+            "unknown-model",
+            Some("openai"),
         );
         assert_eq!(
             error.to_string(),
@@ -83,19 +80,19 @@ fn cost_call_error_raises_model_not_mapped_for_a_model_without_a_price() {
 }
 
 #[test]
-fn cost_call_error_raises_bad_request_when_no_provider_resolves() {
+fn cost_priced_error_raises_bad_request_when_no_provider_resolves() {
     Python::initialize();
     Python::attach(|py| {
         install_fakes(py);
-        let request = call_request(r#"{"model": "unknown-model"}"#);
-        let error = call_error(
+        let error = priced_error(
             py,
             &EngineError::Price(CallPriceError::Resolution {
                 source: ResolutionError::MissingProvider {
                     model: "unknown-model".to_owned(),
                 },
             }),
-            &request,
+            "unknown-model",
+            None,
         );
         assert_eq!(
             error.to_string(),
@@ -105,15 +102,11 @@ fn cost_call_error_raises_bad_request_when_no_provider_resolves() {
 }
 
 #[test]
-fn cost_call_error_keeps_the_null_model_exception() {
+fn cost_priced_error_keeps_the_null_model_exception() {
     Python::initialize();
     Python::attach(|py| {
         install_fakes(py);
-        let error = call_error(
-            py,
-            &EngineError::Price(CallPriceError::NullModel),
-            &call_request("{}"),
-        );
+        let error = priced_error(py, &EngineError::Price(CallPriceError::NullModel), "", None);
         assert!(
             error
                 .to_string()
@@ -124,18 +117,17 @@ fn cost_call_error_keeps_the_null_model_exception() {
 }
 
 #[test]
-fn cost_call_error_sees_a_price_failure_inside_a_completion_error() {
+fn cost_priced_error_sees_a_price_failure_inside_a_completion_error() {
     Python::initialize();
     Python::attach(|py| {
         install_fakes(py);
-        let request =
-            call_request(r#"{"model": "unknown-model", "custom_llm_provider": "openai"}"#);
-        let error = call_error(
+        let error = priced_error(
             py,
             &EngineError::Completion(CompletionCostError::Price(CallPriceError::Generic(
                 TokenCostError::UnknownModel,
             ))),
-            &request,
+            "unknown-model",
+            Some("openai"),
         );
         assert!(
             error
@@ -199,15 +191,18 @@ fn cost_charge_error_explains_the_uncounted_text() {
 }
 
 #[test]
-fn cost_usage_error_answers_the_plain_exception_payload() {
+fn cost_native_error_answers_the_plain_exception_payload() {
     Python::initialize();
     Python::attach(|py| {
         install_fakes(py);
-        let error = usage_error(
+        let error = native_error(
             py,
-            &EngineError::Usage(BillingUsageError::Token {
-                field: "prompt_tokens",
-            }),
+            payload(
+                EngineError::Usage(BillingUsageError::Token {
+                    field: "prompt_tokens",
+                })
+                .to_string(),
+            ),
         );
         assert!(error.to_string().contains("\"type\":\"Exception\""));
         assert!(

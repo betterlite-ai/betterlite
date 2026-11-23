@@ -8,8 +8,7 @@ use rust_decimal::Decimal;
 
 mod tests;
 
-// The breakdown one charge leaves for Python. betterlite-logging's LoggingState stores it too, but it
-// needs the whole logging state to exist, so the two field rules below repeat that one impl.
+// The breakdown one charge leaves for Python; LoggingState's impl needs the whole logging state.
 #[derive(Debug, Default)]
 pub(crate) struct Capture {
     pub(crate) breakdown: Option<CostBreakdown>,

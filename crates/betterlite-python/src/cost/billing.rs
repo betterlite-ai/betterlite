@@ -25,6 +25,7 @@ pub(crate) struct CustomRate {
     #[serde(default)]
     pub(crate) cache_read_input_token_cost: Option<Amount>,
     #[serde(default)]
+    // ast-grep-ignore: no-long-names
     pub(crate) cache_creation_input_token_cost: Option<Amount>,
 }
 
@@ -35,6 +36,7 @@ impl CustomRate {
             input_cost_per_token: self.input_cost_per_token.0,
             output_cost_per_token: self.output_cost_per_token.0,
             cache_read_input_token_cost: optional(self.cache_read_input_token_cost),
+            // ast-grep-ignore: no-long-names
             cache_creation_cost: optional(self.cache_creation_input_token_cost),
         }
     }

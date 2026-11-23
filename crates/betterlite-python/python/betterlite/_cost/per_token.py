@@ -23,7 +23,7 @@ def cost_per_token(
     usage_object: JsonSource | None = None,
     rerank_billed_units: JsonSource | None = None,
     call_type: str = "completion",
-    audio_transcription_file_duration: float = 0.0,
+    audio_transcription_file_duration: float = 0.0,  # ast-grep-ignore: no-long-names
     service_tier: str | None = None,
     data_residency: str | None = None,
     vertex_location: str | None = None,
@@ -48,6 +48,7 @@ def cost_per_token(
         usage=source_value(usage_object),
         rerank_billed_units=source_value(rerank_billed_units),
         call_type=call_type,
+        # ast-grep-ignore: no-long-names
         audio_seconds=audio_transcription_file_duration,
         service_tier=service_tier,
         data_residency=data_residency,

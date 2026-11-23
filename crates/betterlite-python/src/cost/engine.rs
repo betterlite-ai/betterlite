@@ -128,15 +128,18 @@ impl Engine {
         };
         let usage = match kind {
             ResponseKind::Transcription => {
-                transcription = typed_usage(mapping)?;
+                let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
+                transcription = serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
                 BillingUsage::Transcription(&transcription)
             }
             ResponseKind::DecisionsIr => {
-                decisions_ir = typed_usage(mapping)?;
+                let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
+                decisions_ir = serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
                 BillingUsage::DecisionsIr(&decisions_ir)
             }
             ResponseKind::DecisionsOpenAi => {
-                decisions_openai = typed_usage(mapping)?;
+                let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
+                decisions_openai = serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
                 BillingUsage::DecisionsOpenAi(&decisions_openai)
             }
             ResponseKind::Chat
@@ -234,17 +237,7 @@ fn usage_from_mapping(
     })
 }
 
-// One typed usage object parsed back out of the mapping Python dumped, as the proxy parses its own.
-fn typed_usage<T>(mapping: &IndexMap<String, Json>) -> Result<T, BillingUsageError>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
-    serde_json::from_str(&text).map_err(BillingUsageError::Json)
-}
-
-// LiteLLM counts tokens only when a response carries no usage; this family has no tokenizer, so any
-// text that would need counting fails rather than pricing zero tokens, and an empty text stays zero.
+// LiteLLM counts tokens only when a response has no usage; with no tokenizer, counting fails.
 struct NoCounting;
 
 #[async_trait]

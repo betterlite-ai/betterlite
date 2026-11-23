@@ -58,6 +58,7 @@ class CompletionRequestWire(TypedDict, total=False):
     service_tier: str | None
     data_residency: str | None
     vertex_location: str | None
+    request_model: str | None
     response: ResponseWire | None
 
 class BreakdownWire(TypedDict, total=False):
@@ -69,7 +70,7 @@ class BreakdownWire(TypedDict, total=False):
     total_cost: float
     tool_usage_cost: float
     guardrail_cost: float
-    additional_costs: dict[str, float]
+    additional_costs: dict[str, JsonValue]
     original_cost: float
     discount_percent: float
     discount_amount: float
@@ -84,10 +85,10 @@ class RatesWire(TypedDict):
     input_cost_per_token: float
     output_cost_per_token: float
     cache_read_input_token_cost: float
-    cache_read_input_audio_token_cost: float  # ast-grep-ignore: no-long-names
-    cache_creation_input_token_cost: float  # ast-grep-ignore: no-long-names
-    cache_creation_input_token_cost_above_1hr: float  # ast-grep-ignore: no-long-names
-    output_cost_per_reasoning_token: float  # ast-grep-ignore: no-long-names
+    cache_read_input_audio_token_cost: float
+    cache_creation_input_token_cost: float
+    cache_creation_input_token_cost_above_1hr: float
+    output_cost_per_reasoning_token: float
 
 class CostAnswerWire(TypedDict, total=False):
     cost: float
@@ -123,10 +124,10 @@ def object_value(value: InitValue) -> dict[str, JsonValue] | None:
             return None
 
 def number_value(value: JsonValue) -> float | None:
+    if value is None:
+        return None
     match value:
         case bool() | int() | float() | str():
             return float(value)
-        case None:
-            return None
         case list() | Mapping():
             raise TypeError("a response timestamp must be a number")

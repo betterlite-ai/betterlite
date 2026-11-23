@@ -36,9 +36,13 @@ pub(crate) struct RatesView {
     pub(crate) input_cost_per_token: Amount,
     pub(crate) output_cost_per_token: Amount,
     pub(crate) cache_read_input_token_cost: Amount,
+    // ast-grep-ignore: no-long-names
     pub(crate) cache_read_input_audio_token_cost: Amount,
+    // ast-grep-ignore: no-long-names
     pub(crate) cache_creation_input_token_cost: Amount,
+    // ast-grep-ignore: no-long-names
     pub(crate) cache_creation_input_token_cost_above_1hr: Amount,
+    // ast-grep-ignore: no-long-names
     pub(crate) output_cost_per_reasoning_token: Amount,
 }
 
@@ -48,9 +52,13 @@ impl From<BilledTokenRates> for RatesView {
             input_cost_per_token: Amount(rates.input_cost_per_token),
             output_cost_per_token: Amount(rates.output_cost_per_token),
             cache_read_input_token_cost: Amount(rates.cache_read_input_token_cost),
+            // ast-grep-ignore: no-long-names
             cache_read_input_audio_token_cost: Amount(rates.audio_read),
+            // ast-grep-ignore: no-long-names
             cache_creation_input_token_cost: Amount(rates.cache_write),
+            // ast-grep-ignore: no-long-names
             cache_creation_input_token_cost_above_1hr: Amount(rates.cache_write_1h),
+            // ast-grep-ignore: no-long-names
             output_cost_per_reasoning_token: Amount(rates.reasoning),
         }
     }
@@ -117,6 +125,7 @@ where
     }
 }
 
+// ast-grep-ignore: no-one-line-functions
 pub(crate) fn encode<T>(value: &T) -> Result<String, ConvertError>
 where
     T: Serialize + ?Sized,

@@ -1,6 +1,9 @@
+#![cfg(test)]
+
 use std::str::FromStr as _;
 use std::time::SystemTime;
 
+use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_core::cost::completion::error::CompletionCostError;
 use betterlite_core::cost::prepare::error::PrepareError;
 use indexmap::IndexMap;
@@ -33,7 +36,8 @@ fn engine() -> Engine {
     let model_cost: IndexMap<String, Json> = parse(CATALOG).expect("the fixture catalog parses");
     let settings = Settings::build(SettingsWire {
         model_cost,
-        ..SettingsWire::default()
+        cost_discount_config: CostAdjustmentMap::default(),
+        cost_margin_config: CostAdjustmentMap::default(),
     })
     .expect("the fixture settings build");
     Engine { settings }
@@ -191,7 +195,7 @@ fn cost_usage_object_reads_the_supplied_usage_and_answers_none_without_one() {
     let usage = engine
         .usage_object(&UsageRequest {
             usage: request.usage.clone(),
-            ..UsageRequest::default()
+            kind: None,
         })
         .expect("the usage reads");
     assert_eq!(usage.map(|found| found.total_tokens), Some(6));

@@ -3,7 +3,7 @@ from collections.abc import Callable
 from typing import Final
 
 from betterlite._completion.errors import raise_native_error
-from betterlite._cost.logging import CostLogging, store_breakdown
+from betterlite._cost.cost_logging import CostLogging, store_breakdown
 from betterlite._cost.wire import (
     COST_ANSWER,
     COST_PAIR,
@@ -16,7 +16,7 @@ from betterlite._native import NativeCost, NativeError
 from betterlite._settings.cost import cost_discount_config, cost_margin_config, model_cost
 from betterlite.types.utils.usage import Usage
 
-# The pricing settings the native engine reads once; the catalog is the model_cost map LiteLLM prices from.
+# The pricing settings the native engine reads once; the catalog is LiteLLM's model_cost map.
 SETTINGS: Final = {
     "model_cost": model_cost,
     "cost_discount_config": cost_discount_config,
@@ -53,4 +53,4 @@ def usage_value(request: UsageRequestWire) -> Usage | None:
     found = answer["usage"]
     if found is None:
         return None
-    return Usage(**found)
+    return Usage.model_validate(found)

@@ -3,14 +3,14 @@ from collections.abc import Mapping
 from pydantic import JsonValue
 
 from betterlite._cost.completion import completion_request
+from betterlite._cost.cost_logging import CostLogging, logging_model
 from betterlite._cost.engine import ENGINE, charge_answer
 from betterlite._cost.helpers import get_response_cost_from_hidden_params
-from betterlite._cost.logging import CostLogging, logging_model
 from betterlite._cost.objects import hidden_params
 from betterlite._cost.wire import JsonSource
 
 
-# response_cost_calculator: a cache hit is free, a provider-stated cost wins, and the rest is completion_cost.
+# response_cost_calculator: a cache hit is free, a provider-stated cost wins, else completion_cost.
 def response_cost_calculator(
     response_object: JsonSource,
     model: str,

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use crate::cost::convert::parse;
 use crate::cost::settings::{Settings, SettingsWire};
 
