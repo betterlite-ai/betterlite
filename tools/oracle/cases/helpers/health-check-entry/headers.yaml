@@ -1,0 +1,63 @@
+kind: helper
+name: health-check-entry-headers
+call:
+  b6750:
+    steps:
+      # a reply without a headers value answers with an empty result
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # an empty headers map answers with an empty result too
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: {}
+        failure: null
+        raw_request: null
+      # only the header the reply carried comes back
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: {x-ratelimit-remaining-requests: "3"}
+        failure: null
+        raw_request: null
+      # the three allowed headers come back and every other header is dropped
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers:
+          x-ratelimit-remaining-requests: "7"
+          x-ratelimit-remaining-tokens: "500"
+          x-ms-region: westus
+          authorization: secret
+        failure: null
+        raw_request: null
+env: {}
+compare: {ignore: []}
