@@ -30,26 +30,25 @@ impl Helper for Op {
 }
 
 fn answer(uri: &str, callbacks: &[String]) -> serde_json::Value {
-    let parsed = match parse_redirect_uri(uri) {
-        Ok(parsed) => parsed,
-        Err(rejected) => return json!({"refusal": refusal(&rejected)}),
-    };
-    let loopback = is_loopback_redirect_host(&parsed);
-    let shape = match validate_redirect_uri_shape(&parsed, callbacks) {
-        Ok(shape) => shape,
-        Err(rejected) => return json!({"loopback": loopback, "refusal": refusal(&rejected)}),
-    };
+    let parsed = parse_redirect_uri(uri);
+    let loopback = parsed.as_ref().ok().map(is_loopback_redirect_host);
+    let shape = parsed.and_then(|parsed_uri| validate_redirect_uri_shape(&parsed_uri, callbacks));
     match shape {
-        RedirectShape::NativeCallback => {
+        Ok(RedirectShape::NativeCallback) => {
             json!({"loopback": loopback, "result": {"native_callback": true}})
         }
-        RedirectShape::NeedsTrustPolicy => {
+        Ok(RedirectShape::NeedsTrustPolicy) => {
             json!({"loopback": loopback, "result": {"needs_trust_policy": true}})
         }
+        Err(rejected) => {
+            let detail = rejected.detail();
+            json!({
+                "loopback": loopback,
+                "refusal": {
+                    "status": RedirectUriRejected::STATUS.as_u16(),
+                    "detail_error": detail.error,
+                },
+            })
+        }
     }
-}
-
-fn refusal(rejected: &RedirectUriRejected) -> serde_json::Value {
-    let detail = rejected.detail();
-    json!({"status": RedirectUriRejected::STATUS.as_u16(), "detail_error": detail.error})
 }

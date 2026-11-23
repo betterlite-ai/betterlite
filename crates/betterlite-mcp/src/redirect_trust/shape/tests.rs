@@ -70,62 +70,52 @@ fn wildcard_native_callbacks_take_deeper_paths(#[case] uri: &str, #[case] config
 }
 
 #[rstest]
-#[case::star_refuses_a_sibling("myapp://host/cb-2", "myapp://host/cb*")]
-#[case::slash_prefix_refuses_a_missing_slash("myapp://host/oauth", "myapp://host/oauth/*")]
-#[case::slash_prefix_refuses_a_sibling("myapp://host/oauthx", "myapp://host/oauth/*")]
-#[case::exact_refuses_a_deeper_path("myapp://host/cb/x", "myapp://host/cb")]
-fn unlisted_native_callbacks_are_refused(#[case] uri: &str, #[case] configured: &str) {
-    let parsed = parse_redirect_uri(uri).unwrap();
-    let rejected = validate_redirect_uri_shape(&parsed, &native_callbacks(configured)).unwrap_err();
-    assert_eq!(
-        rejected.description,
-        "redirect_uri scheme 'myapp' is not allowed; use http/https or a registered native callback (e.g. cursor://)."
-    );
-    assert_eq!(rejected.hint.as_deref(), Some(SCHEME_HINT));
-    assert_eq!(rejected.redirect_uri, None);
-}
-
-// the native match refuses these before comparing, so an entry equal to the URI does not help
-#[rstest]
-#[case::fragment("myapp://host/cb#frag", "myapp://host/cb", "myapp")]
-#[case::query("myapp://host/cb?x=1", "myapp://host/cb", "myapp")]
-#[case::userinfo("myapp://user:pass@host/cb", "myapp://user:pass@host/cb", "myapp")]
-#[case::empty_netloc("mailto:user@example.com", "mailto:user@example.com", "mailto")]
-fn an_allowlisted_entry_does_not_excuse_a_fragment_query_userinfo_or_no_host(
+#[case::star_refuses_a_sibling("myapp://host/cb-2", "myapp://host/cb*", "myapp")]
+#[case::slash_prefix_refuses_a_missing_slash("myapp://host/oauth", "myapp://host/oauth/*", "myapp")]
+#[case::slash_prefix_refuses_a_sibling("myapp://host/oauthx", "myapp://host/oauth/*", "myapp")]
+#[case::exact_refuses_a_deeper_path("myapp://host/cb/x", "myapp://host/cb", "myapp")]
+#[case::fragment_still_refused_when_allowlisted("myapp://host/cb#frag", "myapp://host/cb", "myapp")]
+#[case::query_still_refused_when_allowlisted("myapp://host/cb?x=1", "myapp://host/cb", "myapp")]
+#[case::userinfo_still_refused_when_allowlisted(
+    "myapp://user:pass@host/cb",
+    "myapp://user:pass@host/cb",
+    "myapp"
+)]
+#[case::empty_netloc_still_refused_when_allowlisted(
+    "mailto:user@example.com",
+    "mailto:user@example.com",
+    "mailto"
+)]
+#[case::custom_scheme("myapp://host/cb", "", "myapp")]
+#[case::scheme_with_a_fragment("ftp://host/cb#x", "", "ftp")]
+#[case::builtin_with_a_query("cursor://anysphere.cursor-mcp/oauth/callback?x=1", "", "cursor")]
+#[case::builtin_with_a_fragment("cursor://anysphere.cursor-mcp/oauth/callback#frag", "", "cursor")]
+#[case::builtin_with_a_nonempty_fragment(
+    "cursor://anysphere.cursor-mcp/oauth/callback?x=1#",
+    "",
+    "cursor"
+)]
+#[case::builtin_with_userinfo(
+    "cursor://user:pass@anysphere.cursor-mcp/oauth/callback",
+    "",
+    "cursor"
+)]
+#[case::builtin_with_empty_userinfo("cursor://@anysphere.cursor-mcp/oauth/callback", "", "cursor")]
+#[case::builtin_with_a_backslash("cursor://anysphere.cursor-mcp\\/oauth/callback", "", "cursor")]
+#[case::builtin_with_a_deeper_path(
+    "cursor://anysphere.cursor-mcp/oauth/callback/extra",
+    "",
+    "cursor"
+)]
+#[case::no_scheme("not a url", "", "")]
+#[case::mailto("mailto:user@example.com", "", "mailto")]
+fn schemes_that_are_not_http_or_native_are_refused(
     #[case] uri: &str,
     #[case] configured: &str,
     #[case] scheme: &str,
 ) {
     let parsed = parse_redirect_uri(uri).unwrap();
     let rejected = validate_redirect_uri_shape(&parsed, &native_callbacks(configured)).unwrap_err();
-    assert_eq!(
-        rejected.description,
-        format!(
-            "redirect_uri scheme '{scheme}' is not allowed; use http/https or a registered native callback (e.g. cursor://)."
-        )
-    );
-    assert_eq!(rejected.hint.as_deref(), Some(SCHEME_HINT));
-    assert_eq!(rejected.redirect_uri, None);
-}
-
-#[rstest]
-#[case::custom_scheme("myapp://host/cb", "myapp")]
-#[case::scheme_with_a_fragment("ftp://host/cb#x", "ftp")]
-#[case::builtin_with_a_query("cursor://anysphere.cursor-mcp/oauth/callback?x=1", "cursor")]
-#[case::builtin_with_a_fragment("cursor://anysphere.cursor-mcp/oauth/callback#frag", "cursor")]
-#[case::builtin_with_a_nonempty_fragment(
-    "cursor://anysphere.cursor-mcp/oauth/callback?x=1#",
-    "cursor"
-)]
-#[case::builtin_with_userinfo("cursor://user:pass@anysphere.cursor-mcp/oauth/callback", "cursor")]
-#[case::builtin_with_empty_userinfo("cursor://@anysphere.cursor-mcp/oauth/callback", "cursor")]
-#[case::builtin_with_a_backslash("cursor://anysphere.cursor-mcp\\/oauth/callback", "cursor")]
-#[case::builtin_with_a_deeper_path("cursor://anysphere.cursor-mcp/oauth/callback/extra", "cursor")]
-#[case::no_scheme("not a url", "")]
-#[case::mailto("mailto:user@example.com", "mailto")]
-fn schemes_that_are_not_http_or_native_are_refused(#[case] uri: &str, #[case] scheme: &str) {
-    let parsed = parse_redirect_uri(uri).unwrap();
-    let rejected = validate_redirect_uri_shape(&parsed, &native_callbacks("")).unwrap_err();
     assert_eq!(
         rejected.description,
         format!(
@@ -215,7 +205,7 @@ fn loopback_hosts_are_recognised(#[case] uri: &str, #[case] expected: bool) {
 #[case::ipv4_in_brackets("http://[127.0.0.1]/cb")]
 #[case::not_an_address("http://[gg::1]/cb")]
 #[case::ipvfuture_without_address("http://[v1.]/cb")]
-fn unparseable_uris_are_refused(#[case] uri: &str) {
+fn unparsable_uris_are_refused(#[case] uri: &str) {
     let rejected = parse_redirect_uri(uri).unwrap_err();
     assert_eq!(rejected.description, "redirect_uri is not a valid URL.");
     assert_eq!(
