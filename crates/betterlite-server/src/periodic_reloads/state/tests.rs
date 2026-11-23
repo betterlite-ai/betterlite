@@ -50,16 +50,18 @@ fn setters_are_seen_through_every_arc_clone_across_threads() {
     let initial = moment(3);
     let reloads = Arc::new(PeriodicReloads::new(&provenance(Some(initial)), initial));
     reloads.set_cost_map_applied_revision(3);
-    let shared = Arc::clone(&reloads);
-    let handle = thread::spawn(move || {
-        assert_eq!(shared.cost_map_applied_revision(), 3);
-        shared.set_cost_map_applied_revision(7);
-        shared.set_last_beta_headers_reload(moment(4));
-        assert_eq!(shared.cost_map_applied_revision(), 7);
-        assert_eq!(shared.last_beta_headers_reload(), Some(moment(4)));
-        assert_eq!(shared.cost_map_loaded_at(), initial);
+    thread::scope(|scope| {
+        let shared = Arc::clone(&reloads);
+        let spawned = scope.spawn(move || {
+            assert_eq!(shared.cost_map_applied_revision(), 3);
+            shared.set_cost_map_applied_revision(7);
+            shared.set_last_beta_headers_reload(moment(4));
+            assert_eq!(shared.cost_map_applied_revision(), 7);
+            assert_eq!(shared.last_beta_headers_reload(), Some(moment(4)));
+            assert_eq!(shared.cost_map_loaded_at(), initial);
+        });
+        spawned.join().unwrap();
     });
-    handle.join().unwrap();
     assert_eq!(reloads.cost_map_applied_revision(), 7);
     assert_eq!(reloads.last_beta_headers_reload(), Some(moment(4)));
     assert_eq!(reloads.cost_map_loaded_at(), initial);
