@@ -251,6 +251,16 @@ impl Call {
         self.disable = true;
         self
     }
+
+    fn selecting(mut self, chosen: Option<&str>, group: Option<&str>) -> Self {
+        self.metadata = metadata(chosen, group);
+        self
+    }
+
+    fn team(mut self, team_id: &str) -> Self {
+        self.team_id = Some(team_id.to_owned());
+        self
+    }
 }
 
 // The tables a fallback key resolves its provider names through.
@@ -478,8 +488,7 @@ fn order_levels_prefer_the_pre_routing_selection() {
         params_ordered("gpt-4", "dep-b", 2),
         params_ordered("tier", "dep-c", 7),
     ]);
-    let mut call = Call::default();
-    call.metadata = metadata(Some("tier"), None);
+    let call = Call::default().selecting(Some("tier"), None);
     let levels = world
         .queries()
         .messages_order_levels("gpt-4", &call.request())
@@ -545,16 +554,16 @@ fn order_levels_read_the_metadata_team_id() {
         params_ordered("shared", "dep-a", 1),
         team_ordered("internal-b", "dep-b", "team-1", "shared", 5),
     ]);
-    let mut call = Call::default();
+    let call = Call::default();
     let global = world
         .queries()
         .messages_order_levels("shared", &call.request())
         .unwrap();
     assert_eq!(global, [1]);
-    call.team_id = Some("team-1".to_owned());
+    let team_call = call.team("team-1");
     let owned = world
         .queries()
-        .messages_order_levels("shared", &call.request())
+        .messages_order_levels("shared", &team_call.request())
         .unwrap();
     assert_eq!(owned, [5]);
 }
@@ -809,8 +818,7 @@ fn can_fall_back_reaches_the_generic_star_chain() {
 #[test]
 fn can_fall_back_reads_the_request_model_group() {
     let world = World::new(&[]);
-    let mut call = Call::default();
-    call.metadata = metadata(None, Some("tier"));
+    let call = Call::default().selecting(None, Some("tier"));
     let config = RouterConfig::new(plans(vec![group("tier", vec![name("backup")])], Vec::new()));
     let answer = world
         .queries()

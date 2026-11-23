@@ -1,7 +1,7 @@
 use crate::catalog_queries::CatalogQueries;
 use crate::catalog_queries::error::CatalogQueryError;
 use crate::deployment_catalog::scope::litellm_model;
-use crate::model_catalog_lookup::fields::text;
+use crate::deployment_model_info::text;
 
 impl CatalogQueries<'_> {
     // Router.is_recognized_model: a deployment name, id or alias, or a callable routing group.
