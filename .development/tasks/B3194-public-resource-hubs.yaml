@@ -11,8 +11,8 @@ description: >-
   list if the allowlist is None (feature disabled). MCP hub returns the servers `get_public_mcp_servers` selects:
   with the strict hub flag on, those whose `server_id` is in `litellm.public_mcp_servers`; with it off (legacy), also
   servers that are available on the public internet without being listed. Both read their source registries
-  through the composition (the agent registry of B4776, `get_public_agent_list` and `ids_for_agent`, and the MCP registry
-  of B4731, `get_public_mcp_servers`), called without auth. The public_agent_groups and public_mcp_servers values
+  through the composition (the agent registry of B4776, `get_public_agent_list` and `ids_for_agent`, and B10079's
+  `public_servers` (`get_public_mcp_servers`) on B10020's MCP registry), called without auth. The public_agent_groups and public_mcp_servers values
   are supplied by composition (B077 passes the live settings), never read from a global here.
 
   Skill hub returns enabled Claude Code plugins from the database, extracting each
@@ -62,7 +62,7 @@ dod:
   - text: Agent hub returns agents from the global registry filtered by public_agent_groups allowlist,
       with a public URL per agent, or empty list when the allowlist is None.
     proof: [resource-hub-tests, oracle]
-  - text: MCP hub returns the servers B4731 selects, the public_mcp_servers allowlist members in strict mode and
+  - text: MCP hub returns the servers B10079 selects, the public_mcp_servers allowlist members in strict mode and
       also unlisted public-internet servers when the strict flag is off.
     proof: [resource-hub-tests, oracle]
   - text: Skill hub returns enabled plugins with manifests fully parsed and all string fields
@@ -108,7 +108,7 @@ deviations: []
 out_of_scope:
   - B4776 owns the agent registry's `get_public_agent_list()` and `ids_for_agent()` (litellm/proxy/agent_endpoints/agent_registry.py);
     B3194 calls them to retrieve and filter agents.
-  - B4731 owns `global_mcp_server_manager.get_public_mcp_servers()` (litellm/proxy/_experimental/mcp_server/mcp_server_manager.py), including the strict-whitelist flag;
+  - B10079 owns `global_mcp_server_manager.get_public_mcp_servers()` (litellm/proxy/_experimental/mcp_server/mcp_server_manager.py), built as ServerRegistry::public_servers, including the strict-whitelist flag;
     B3194 calls it to retrieve and filter MCP servers.
   - B1140 owns `_get_prisma_client` (litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py);
     B3194 uses it to fetch the prisma client for plugin table queries.
@@ -132,7 +132,7 @@ pitfalls:
   - Timestamps extracted from plugin.created_at and plugin.updated_at are None or datetime;
     stringify them with str() to match the response model type.
   - >-
-    MCP selection belongs to B4731's get_public_mcp_servers and, with the strict flag off, includes servers that are not in
+    MCP selection belongs to B10079's public_servers (get_public_mcp_servers) and, with the strict flag off, includes servers that are not in
     the explicit allowlist; the is_public field in the response is always true for returned servers, and the
     is_public_explicit field records whether the server_id was in the explicit allowlist.
 

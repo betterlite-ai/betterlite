@@ -1,0 +1,6 @@
+task: B10058
+deviations:
+  - what: Lines inside one section come in sorted key order, not in the order the config file lists the keys.
+    why: The snapshot holds each config object as a BTreeMap, whose keys are sorted; this workspace builds serde_json without preserve_order, and switching that on would reorder every JSON map in the server build. Which lines appear and their text stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L145-L150
+kept_bugs: []

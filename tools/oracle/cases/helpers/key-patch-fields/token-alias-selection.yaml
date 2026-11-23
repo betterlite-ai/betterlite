@@ -1,0 +1,11 @@
+kind: helper
+name: key-patch-fields-token-alias-selection
+call:
+  key_patch_fields:
+    calls:
+      - {function: token, request_key: "", existing_token: tok-1}
+      - {function: token, request_key: req-tok, existing_token: tok-1}
+      - {function: token, request_key: null, existing_token: tok-1}
+      - {function: token, request_key: null, existing_token: null}
+env: {}
+compare: {ignore: []}

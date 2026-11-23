@@ -1,0 +1,9 @@
+kind: helper
+name: supported-db-objects-unset-loads-every-kind
+call:
+  b10054:
+    general_settings: {}
+    object_type: models
+env: {}
+compare:
+  ignore: []
