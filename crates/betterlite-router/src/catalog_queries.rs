@@ -1,5 +1,4 @@
 pub mod error;
-pub mod group_info;
 pub mod messages;
 pub mod queries;
 
