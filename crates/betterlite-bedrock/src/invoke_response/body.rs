@@ -69,10 +69,10 @@ fn field<'value>(
     key: &str,
     name: &'static str,
 ) -> Result<&'value Json, FamilyError> {
-    match fields.get(key) {
-        Some(value) => Ok(value),
-        None => Err(FamilyError::Malformed { field: name }),
-    }
+    let Some(value) = fields.get(key) else {
+        return Err(FamilyError::Malformed { field: name });
+    };
+    Ok(value)
 }
 
 fn cohere(fields: &Object, choices: &mut [ChatChoice]) -> Result<Json, FamilyError> {

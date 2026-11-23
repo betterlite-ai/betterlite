@@ -32,7 +32,11 @@ where
         Some(count) => count,
         None => completion_count(response, counter).await?,
     };
-    let total = i128::from(prompt) + i128::from(completion);
+    let total = i128::from(prompt)
+        .checked_add(i128::from(completion))
+        .ok_or(InvokeReplyError::UsageRange {
+            name: "total_tokens",
+        })?;
     response.usage = ChatUsage {
         prompt_tokens: u64::try_from(i128::from(prompt)).map_err(|_error| {
             InvokeReplyError::UsageRange {
