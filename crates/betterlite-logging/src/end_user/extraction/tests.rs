@@ -292,6 +292,36 @@ fn malformed_json_text_kept(#[case] id: &str) {
 }
 
 #[test]
+fn oversized_or_deep_json_text_stays_an_id() {
+    let oversized = format!("{{\"a\": \"{}\"}}", "x".repeat(1_100_000));
+    let value = Json::Text(oversized.clone());
+    assert_eq!(
+        coerce_user_id(&value, true).as_deref(),
+        Some(oversized.as_str())
+    );
+    let mut deep = "[".repeat(70);
+    deep.push_str(&"]".repeat(70));
+    let value = Json::Text(deep.clone());
+    assert_eq!(coerce_user_id(&value, true).as_deref(), Some(deep.as_str()));
+}
+
+#[test]
+fn oversized_metadata_string_is_not_decoded() {
+    let mut metadata_text = String::from("{\"user_id\": \"");
+    metadata_text.push_str(&"x".repeat(1_100_000));
+    metadata_text.push_str("\"}");
+    let encoded = format!(
+        "{{\"metadata\": {}, \"safety_identifier\": \"sid\"}}",
+        serde_json::to_string(&metadata_text).expect("a JSON string")
+    );
+    let settings = header_settings(&[], None);
+    assert_eq!(
+        resolved(&encoded, &[], &settings, false).as_deref(),
+        Some("sid")
+    );
+}
+
+#[test]
 fn header_bytes_decode_as_latin1() {
     let settings = header_settings(&[], None);
     let mut headers = HeaderMap::new();
