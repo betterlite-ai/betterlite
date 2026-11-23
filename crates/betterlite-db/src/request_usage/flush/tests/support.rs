@@ -13,7 +13,7 @@ use crate::baseline::flush::queue::BaselineQueue;
 use crate::baseline::records::{BaselineAccountingRecord, decode_baseline_record};
 use crate::guardrail_usage_rollups::SharedPendingRollups;
 use crate::guardrail_usage_rollups::pending::PendingRollups;
-use crate::model_usage::ModelUsageTransaction;
+use crate::model_usage::{ModelUsageKey, ModelUsageTransaction};
 use crate::redis_spend::buffer::RedisUpdateBuffer;
 use crate::redis_spend::events::NoRedisBufferEventSink;
 use crate::redis_spend::log_row::{SpendLogRow, SpendLogValue};
@@ -248,14 +248,14 @@ fn guardrail_metadata() -> SpendLogValue {
 
 // A spend log row with one successful guardrail outcome and a start time the usage tracker can read.
 pub(super) fn guardrail_row(request_id: &str) -> SpendLogRow {
-    BTreeMap::from([
-        ("request_id".to_owned(), text(request_id)),
-        ("startTime".to_owned(), text("2026-01-02T03:04:05")),
-        ("api_key".to_owned(), text("sk-1")),
-        ("team_id".to_owned(), text("t1")),
-        ("spend".to_owned(), amount(Decimal::new(25, 2))),
-        ("metadata".to_owned(), guardrail_metadata()),
-    ])
+    let mut row = BTreeMap::new();
+    row.insert("request_id".to_owned(), text(request_id));
+    row.insert("startTime".to_owned(), text("2026-01-02T03:04:05"));
+    row.insert("api_key".to_owned(), text("sk-1"));
+    row.insert("team_id".to_owned(), text("t1"));
+    row.insert("spend".to_owned(), amount(Decimal::new(25, 2)));
+    row.insert("metadata".to_owned(), guardrail_metadata());
+    row
 }
 
 // The same row with a start time the guardrail payload cannot read.
@@ -279,14 +279,15 @@ pub(super) fn tool_transaction(request_id: &str) -> ToolUsageTransaction {
 }
 
 pub(super) fn model_transaction() -> ModelUsageTransaction {
+    let key = ModelUsageKey {
+        date: "2026-01-02".to_owned(),
+        model_group: "gpt-4o".to_owned(),
+        model: "gpt-4o".to_owned(),
+        custom_llm_provider: "openai".to_owned(),
+        task_type: "uncategorized".to_owned(),
+    };
     ModelUsageTransaction {
-        key: crate::model_usage::ModelUsageKey {
-            date: "2026-01-02".to_owned(),
-            model_group: "gpt-4o".to_owned(),
-            model: "gpt-4o".to_owned(),
-            custom_llm_provider: "openai".to_owned(),
-            task_type: "uncategorized".to_owned(),
-        },
+        key,
         spend: SpendAmount(Decimal::new(25, 2)),
         prompt_tokens: 3,
         completion_tokens: 4,
@@ -316,6 +317,16 @@ pub(super) fn turn_transaction(session_id: &str) -> AutoRouterTurnTransaction {
         savings_estimated_actual_spend: Decimal::ZERO,
         savings_estimated_saved_spend: Decimal::ZERO,
         user_id: "u1".to_owned(),
+    }
+}
+
+// Fill a request-time queue with the count records the case builds, failing the test if the queue rejects one.
+pub(super) async fn fill_queue<T, F>(queue: &UsageQueue<T>, count: u32, make: F)
+where
+    F: Fn(u32) -> T,
+{
+    for index in 0..count {
+        queue.push(make(index)).await.unwrap();
     }
 }
 

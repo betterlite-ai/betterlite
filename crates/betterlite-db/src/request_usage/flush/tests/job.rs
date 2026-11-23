@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use crate::request_usage::flush::{SpendLogsJobError, total_queued_spend_transactions};
+use crate::request_usage::flush::{SpendLogsJobError, queued_spend_transactions};
 use crate::shadow_tables::rows::FunnelStage;
 use crate::spend_log_storage::rows::QueuePosition;
 
 use super::fakes::ScriptedFailure;
 use super::support::{
-    Harness, baseline_record, guardrail_row, model_transaction, tool_transaction, turn_transaction,
-    unreadable_guardrail_row,
+    Harness, baseline_record, fill_queue, guardrail_row, model_transaction, tool_transaction,
+    turn_transaction, unreadable_guardrail_row,
 };
 
 #[tokio::test]
@@ -30,9 +30,9 @@ async fn sums_every_queue_and_the_funnel_in_the_census() {
     harness.baseline.push(baseline_record()).await.unwrap();
     harness.funnel.record("job-1", FunnelStage::Shed);
     let job = harness.job();
-    assert_eq!(total_queued_spend_transactions(&job.queues), 6);
+    assert_eq!(queued_spend_transactions(&job.queues), 6);
     drop(harness.logs.dequeue(1));
-    assert_eq!(total_queued_spend_transactions(&job.queues), 5);
+    assert_eq!(queued_spend_transactions(&job.queues), 5);
 }
 
 #[tokio::test]
@@ -190,12 +190,10 @@ async fn a_dropped_write_returns_the_popped_rows_to_the_queue_head() {
 #[tokio::test]
 async fn drains_10000_logs_in_one_pass() {
     let harness = Harness::new();
-    for index in 0..10_001_u32 {
-        harness.logs.enqueue(
-            &[guardrail_row(&format!("log-{index}"))],
-            QueuePosition::Tail,
-        );
-    }
+    let rows: Vec<_> = (0_u32..10_001)
+        .map(|index| guardrail_row(&format!("log-{index}")))
+        .collect();
+    harness.logs.enqueue(&rows, QueuePosition::Tail);
     harness.job().update_spend_logs_job().await.unwrap();
     assert_eq!(harness.logs.len(), 1);
     assert_eq!(harness.log_writer.rows().len(), 10_000);
@@ -204,14 +202,11 @@ async fn drains_10000_logs_in_one_pass() {
 #[tokio::test]
 async fn drains_10000_tool_records_and_every_model_record_in_one_pass() {
     let harness = Harness::new();
-    for index in 0..10_001_u32 {
-        harness
-            .tool_usage
-            .push(tool_transaction(&format!("tool-{index}")))
-            .await
-            .unwrap();
-        harness.model_usage.push(model_transaction()).await.unwrap();
-    }
+    fill_queue(&harness.tool_usage, 10_001, |index| {
+        tool_transaction(&format!("tool-{index}"))
+    })
+    .await;
+    fill_queue(&harness.model_usage, 10_001, |_| model_transaction()).await;
     harness.job().update_spend_logs_job().await.unwrap();
     assert_eq!(harness.tool_usage.len(), 1);
     assert!(harness.model_usage.is_empty());
@@ -227,13 +222,10 @@ async fn drains_10000_tool_records_and_every_model_record_in_one_pass() {
 #[tokio::test]
 async fn drains_10000_turns_in_one_pass() {
     let harness = Harness::new();
-    for index in 0..10_001_u32 {
-        harness
-            .turns_queue
-            .push(turn_transaction(&format!("sess-{index}")))
-            .await
-            .unwrap();
-    }
+    fill_queue(&harness.turns_queue, 10_001, |index| {
+        turn_transaction(&format!("sess-{index}"))
+    })
+    .await;
     harness.job().update_spend_logs_job().await.unwrap();
     assert_eq!(harness.turns_queue.len(), 1);
     assert_eq!(harness.turn_writer.turns().len(), 10_000);

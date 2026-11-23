@@ -1,3 +1,4 @@
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::baseline::records::{BaselineEntity, DailyBaselineTarget};
@@ -33,17 +34,21 @@ async fn a_captured_observation_replaces_the_actual_turn() {
     assert!(case.flushed().await);
 }
 
+#[rstest]
+#[case::other_key("sk-other", "sess-1")]
+#[case::other_session("sk-capture", "sess-2")]
 #[tokio::test]
-async fn a_capture_naming_another_log_keeps_the_actual_turn() {
-    for (api_key, session_id) in [("sk-other", "sess-1"), ("sk-capture", "sess-2")] {
-        let case = TurnCase::new();
-        let capture = captured(api_key, session_id);
-        case.enqueue(&turn_payload(&turn_metadata(Some(&capture))))
-            .await;
-        assert_eq!(case.turn_count(), 1);
-        assert!(case.baseline_records().is_empty());
-        assert!(!case.flushed().await);
-    }
+async fn a_capture_naming_another_log_keeps_the_actual_turn(
+    #[case] api_key: &str,
+    #[case] session_id: &str,
+) {
+    let case = TurnCase::new();
+    let capture = captured(api_key, session_id);
+    case.enqueue(&turn_payload(&turn_metadata(Some(&capture))))
+        .await;
+    assert_eq!(case.turn_count(), 1);
+    assert!(case.baseline_records().is_empty());
+    assert!(!case.flushed().await);
 }
 
 #[tokio::test]
@@ -101,25 +106,29 @@ fn a_capture_over_the_buffer_budget_is_refused_before_it_is_parsed() {
     ));
 }
 
+#[rstest]
+#[case::without_api_key(None, Some("sess-1"))]
+#[case::without_session(Some("sk-capture"), None)]
 #[tokio::test]
-async fn a_capture_without_the_logs_api_key_or_session_is_rejected() {
-    for (api_key, session_id) in [(None, Some("sess-1")), (Some("sk-capture"), None)] {
-        let case = TurnCase::new();
-        let capture = captured("sk-capture", "sess-1");
-        let metadata = empty_metadata();
-        let daily = daily_payload("{}");
-        let input = BaselineCaptureInput {
-            serialized: Some(&capture),
-            api_key,
-            session_id,
-            request_id: Some("req-log"),
-            spend: Some(Decimal::ONE),
-            turn: None,
-            metadata: &metadata,
-        };
-        let error = case.enqueue_baseline(&daily, &input).await.unwrap_err();
-        assert!(matches!(error, BaselineCaptureError::MissingLogIdentity));
-    }
+async fn a_capture_without_the_logs_api_key_or_session_is_rejected(
+    #[case] api_key: Option<&str>,
+    #[case] session_id: Option<&str>,
+) {
+    let case = TurnCase::new();
+    let capture = captured("sk-capture", "sess-1");
+    let metadata = empty_metadata();
+    let daily = daily_payload("{}");
+    let input = BaselineCaptureInput {
+        serialized: Some(&capture),
+        api_key,
+        session_id,
+        request_id: Some("req-log"),
+        spend: Some(Decimal::ONE),
+        turn: None,
+        metadata: &metadata,
+    };
+    let error = case.enqueue_baseline(&daily, &input).await.unwrap_err();
+    assert!(matches!(error, BaselineCaptureError::MissingLogIdentity));
 }
 
 #[tokio::test]
@@ -158,30 +167,28 @@ async fn a_capture_without_the_logs_spend_or_request_id_is_rejected() {
     assert!(matches!(error, BaselineCaptureError::MissingRequestId));
 }
 
+#[rstest]
+#[case::number_routing_decision(r#"{"routing_decision":5}"#)]
+#[case::text_routing_decision(r#"{"routing_decision":"auto-router"}"#)]
+#[case::text_cost_breakdown(r#"{"cost_breakdown":"charged"}"#)]
 #[tokio::test]
-async fn a_capture_whose_evidence_field_is_not_a_mapping_is_rejected() {
-    for text in [
-        r#"{"routing_decision":5}"#,
-        r#"{"routing_decision":"auto-router"}"#,
-        r#"{"cost_breakdown":"charged"}"#,
-    ] {
-        let case = TurnCase::new();
-        let capture = captured("sk-capture", "sess-1");
-        let metadata = metadata_object(text);
-        let daily = daily_payload("{}");
-        let input = BaselineCaptureInput {
-            serialized: Some(&capture),
-            api_key: Some("sk-capture"),
-            session_id: Some("sess-1"),
-            request_id: Some("req-log"),
-            spend: Some(Decimal::ONE),
-            turn: None,
-            metadata: &metadata,
-        };
-        let error = case.enqueue_baseline(&daily, &input).await.unwrap_err();
-        assert!(matches!(error, BaselineCaptureError::Mapping { .. }));
-        assert!(case.baseline_records().is_empty());
-    }
+async fn a_capture_whose_evidence_field_is_not_a_mapping_is_rejected(#[case] evidence: &str) {
+    let case = TurnCase::new();
+    let capture = captured("sk-capture", "sess-1");
+    let metadata = metadata_object(evidence);
+    let daily = daily_payload("{}");
+    let input = BaselineCaptureInput {
+        serialized: Some(&capture),
+        api_key: Some("sk-capture"),
+        session_id: Some("sess-1"),
+        request_id: Some("req-log"),
+        spend: Some(Decimal::ONE),
+        turn: None,
+        metadata: &metadata,
+    };
+    let error = case.enqueue_baseline(&daily, &input).await.unwrap_err();
+    assert!(matches!(error, BaselineCaptureError::Mapping { .. }));
+    assert!(case.baseline_records().is_empty());
 }
 
 #[tokio::test]

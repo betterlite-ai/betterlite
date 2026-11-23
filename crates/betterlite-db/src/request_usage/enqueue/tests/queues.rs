@@ -67,12 +67,9 @@ async fn closing_wakes_a_producer_waiting_for_room() {
 #[tokio::test]
 async fn a_drain_takes_only_the_limit_it_was_given() {
     let queue = UsageQueue::new(4).unwrap();
-    for item in [1_u8, 2_u8, 3_u8] {
-        tokio::time::timeout(Duration::from_secs(1), queue.push(item))
-            .await
-            .expect("room for the record")
-            .unwrap();
-    }
+    queue.push(1_u8).await.unwrap();
+    queue.push(2_u8).await.unwrap();
+    queue.push(3_u8).await.unwrap();
     assert_eq!(queue.len(), 3);
     assert!(!queue.is_empty());
     assert_eq!(queue.drain(2), vec![1_u8, 2_u8]);

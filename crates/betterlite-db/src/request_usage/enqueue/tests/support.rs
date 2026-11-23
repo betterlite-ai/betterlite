@@ -55,17 +55,28 @@ struct CasePrices {
     prices: BTreeMap<String, PriceRecord>,
 }
 
+impl CasePrices {
+    // The priced form of one resolved record, with no tiered or off-peak tables behind it.
+    fn priced(record: PriceRecord) -> PricedModel {
+        PricedModel {
+            record,
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
+        }
+    }
+}
+
 impl PriceLookup for CasePrices {
     fn effective_model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        self.raw_cost_map_entry(&format!(
-            "{}/{}",
-            custom_llm_provider.unwrap_or_default(),
-            model
-        ))
+        let Some(provider) = custom_llm_provider else {
+            return self.raw_cost_map_entry(&format!("/{model}"));
+        };
+        self.raw_cost_map_entry(&format!("{provider}/{model}"))
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -74,29 +85,21 @@ impl PriceLookup for CasePrices {
 
     fn effective_priced_model(
         &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
+        name: &str,
+        provider_hint: Option<&str>,
     ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(|record| PricedModel {
-                record,
-                tiered_pricing: Vec::new(),
-                off_peak_pricing: None,
-                off_peak_cache_read_present: false,
-            })
+        self.effective_model_info(name, provider_hint)
+            .map(Self::priced)
     }
 }
 
 impl SavingsPricingContext for CasePrices {
-    fn resolve_model(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<ModelIdentity> {
-        Some(ModelIdentity {
-            model: model.to_owned(),
-            provider: custom_llm_provider.unwrap_or_default().to_owned(),
-        })
+    fn resolve_model(&self, name: &str, provider_hint: Option<&str>) -> Option<ModelIdentity> {
+        let identity = ModelIdentity {
+            model: name.to_owned(),
+            provider: provider_hint.unwrap_or_default().to_owned(),
+        };
+        Some(identity)
     }
 
     fn deployment_price(
@@ -153,9 +156,8 @@ impl TurnCase {
     }
 
     pub(super) async fn enqueue(&self, payload: &str) {
-        let pricing = self.environment.pricing();
         let environment = TurnEnvironment {
-            pricing: &pricing,
+            pricing: &self.environment.pricing(),
             endpoints: &self.environment.endpoints,
         };
         enqueue_autorouter_turn(Some(&self.queues()), &environment, payload.as_bytes()).await;
@@ -163,9 +165,8 @@ impl TurnCase {
 
     // The same enqueue with no router catalog in scope, which the source's get_llm_router leaves None.
     pub(super) async fn enqueue_without_queues(&self, payload: &str) {
-        let pricing = self.environment.pricing();
         let environment = TurnEnvironment {
-            pricing: &pricing,
+            pricing: &self.environment.pricing(),
             endpoints: &self.environment.endpoints,
         };
         enqueue_autorouter_turn(None, &environment, payload.as_bytes()).await;

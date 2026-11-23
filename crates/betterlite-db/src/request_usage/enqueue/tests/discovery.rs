@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use rstest::rstest;
+
 use crate::request_usage::discovery::enqueue_tool_registry_upsert;
 use crate::tool_discovery::{ToolDiscoveryItem, ToolDiscoveryQueue};
 
@@ -53,13 +55,13 @@ async fn discovers_every_tool_source_in_precedence_order() {
             ("response_tool".to_owned(), "user_defined".to_owned()),
         ]
     );
-    for item in &items {
-        assert_eq!(item.key_hash.as_deref(), Some("kh"));
-        assert_eq!(item.team_id.as_deref(), Some("t1"));
-        assert_eq!(item.key_alias.as_deref(), Some("alias"));
-        assert_eq!(item.user_agent.as_deref(), Some("agent/1.0"));
-        assert_eq!(item.created_by, None);
-    }
+    assert!(items.iter().all(|item| {
+        item.key_hash.as_deref() == Some("kh")
+            && item.team_id.as_deref() == Some("t1")
+            && item.key_alias.as_deref() == Some("alias")
+            && item.user_agent.as_deref() == Some("agent/1.0")
+            && item.created_by.is_none()
+    }));
 }
 
 #[tokio::test]
@@ -152,21 +154,24 @@ async fn a_malformed_mcp_source_stops_the_request_tools() {
     assert!(queue.flush().is_empty());
 }
 
+#[rstest]
+#[case::list_metadata(
+    r#"{"standard_logging_object":{"metadata":[]},"tools":[{"function":{"name":"kept"}}]}"#
+)]
+#[case::text_mcp_metadata(
+    r#"{"standard_logging_object":{"metadata":{"mcp_tool_call_metadata":"bad"}},"tools":[{"function":{"name":"kept"}}]}"#
+)]
+#[case::empty_mcp_metadata(
+    r#"{"standard_logging_object":{"metadata":{"mcp_tool_call_metadata":{}}},"tools":[{"function":{"name":"kept"}}]}"#
+)]
 #[tokio::test]
-async fn a_falsey_or_unreadable_mcp_metadata_leaves_the_request_tools() {
-    let cases = [
-        r#"{"standard_logging_object":{"metadata":[]},"tools":[{"function":{"name":"kept"}}]}"#,
-        r#"{"standard_logging_object":{"metadata":{"mcp_tool_call_metadata":"bad"}},"tools":[{"function":{"name":"kept"}}]}"#,
-        r#"{"standard_logging_object":{"metadata":{"mcp_tool_call_metadata":{}}},"tools":[{"function":{"name":"kept"}}]}"#,
-    ];
-    for kwargs in cases {
-        let queue = ToolDiscoveryQueue::new(8).unwrap();
-        enqueue_tool_registry_upsert(&queue, Some(kwargs.as_bytes()), None, None, &[]).await;
-        assert_eq!(
-            discovered(&queue.flush()),
-            vec![("kept".to_owned(), "user_defined".to_owned())]
-        );
-    }
+async fn a_falsey_or_unreadable_mcp_metadata_leaves_the_request_tools(#[case] kwargs: &str) {
+    let queue = ToolDiscoveryQueue::new(8).unwrap();
+    enqueue_tool_registry_upsert(&queue, Some(kwargs.as_bytes()), None, None, &[]).await;
+    assert_eq!(
+        discovered(&queue.flush()),
+        vec![("kept".to_owned(), "user_defined".to_owned())]
+    );
 }
 
 #[tokio::test]

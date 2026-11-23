@@ -1,4 +1,5 @@
 use betterlite_models::tool_spend::ToolUsageTransaction;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::request_usage::enqueue::{ToolUsageError, enqueue_tool_usage, tool_usage_transaction};
@@ -58,30 +59,27 @@ async fn drops_a_tool_usage_row_whose_queue_no_longer_admits_records() {
     assert!(queue.is_empty());
 }
 
+#[rstest]
+#[case::request_id(
+    r#"{"startTime":"2026-01-02T03:04:05Z","spend":0.25,"total_tokens":10}"#,
+    "request_id"
+)]
+#[case::spend(
+    r#"{"request_id":"r","startTime":"2026-01-02T03:04:05Z","total_tokens":10}"#,
+    "spend"
+)]
+#[case::total_tokens(
+    r#"{"request_id":"r","startTime":"2026-01-02T03:04:05Z","spend":0.25}"#,
+    "total_tokens"
+)]
+#[case::start_time(r#"{"request_id":"r","spend":0.25,"total_tokens":10}"#, "startTime")]
 #[test]
-fn tool_usage_transaction_names_each_missing_indexed_field() {
-    let cases = [
-        (
-            r#"{"startTime":"2026-01-02T03:04:05Z","spend":0.25,"total_tokens":10}"#,
-            "request_id",
-        ),
-        (
-            r#"{"request_id":"r","startTime":"2026-01-02T03:04:05Z","total_tokens":10}"#,
-            "spend",
-        ),
-        (
-            r#"{"request_id":"r","startTime":"2026-01-02T03:04:05Z","spend":0.25}"#,
-            "total_tokens",
-        ),
-        (
-            r#"{"request_id":"r","spend":0.25,"total_tokens":10}"#,
-            "startTime",
-        ),
-    ];
-    for (payload, field) in cases {
-        let error = tool_usage_transaction(payload.as_bytes(), &[], &[]).unwrap_err();
-        assert!(matches!(error, ToolUsageError::Field { field: expected } if expected == field));
-    }
+fn tool_usage_transaction_names_each_missing_indexed_field(
+    #[case] payload: &str,
+    #[case] field: &str,
+) {
+    let error = tool_usage_transaction(payload.as_bytes(), &[], &[]).unwrap_err();
+    assert!(matches!(error, ToolUsageError::Field { field: expected } if expected == field));
 }
 
 #[test]

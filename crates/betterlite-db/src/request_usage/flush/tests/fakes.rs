@@ -242,6 +242,14 @@ impl FakeGuardrailSink {
     fn failed(&self) -> bool {
         self.fail.load(Ordering::SeqCst)
     }
+
+    fn check(&self) -> Result<(), RollupFailure> {
+        self.trace.record("guardrail");
+        if self.failed() {
+            return Err(RollupFailure);
+        }
+        Ok(())
+    }
 }
 
 impl GuardrailRollupSink for FakeGuardrailSink {
@@ -252,10 +260,7 @@ impl GuardrailRollupSink for FakeGuardrailSink {
         rows: &'rows [GuardrailIndexRow],
     ) -> RollupFuture<'rows, RollupFailure> {
         Box::pin(async move {
-            self.trace.record("guardrail");
-            if self.failed() {
-                return Err(RollupFailure);
-            }
+            self.check()?;
             self.rows
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -269,13 +274,7 @@ impl GuardrailRollupSink for FakeGuardrailSink {
         _key: &'row MetricsKey,
         _counts: GuardrailCounts,
     ) -> RollupFuture<'row, RollupFailure> {
-        Box::pin(async move {
-            self.trace.record("guardrail");
-            if self.failed() {
-                return Err(RollupFailure);
-            }
-            Ok(())
-        })
+        Box::pin(ready(self.check()))
     }
 
     fn upsert_units<'row>(
@@ -283,13 +282,7 @@ impl GuardrailRollupSink for FakeGuardrailSink {
         _key: &'row UsageUnitKey,
         _increment: &'row UsageUnitIncrement,
     ) -> RollupFuture<'row, RollupFailure> {
-        Box::pin(async move {
-            self.trace.record("guardrail");
-            if self.failed() {
-                return Err(RollupFailure);
-            }
-            Ok(())
-        })
+        Box::pin(ready(self.check()))
     }
 }
 
@@ -304,6 +297,7 @@ impl ToolSpendFailure for ToolFailure {
 }
 
 // The tool writer counts index rows and keeps the rollups it was handed.
+#[derive(Default)]
 pub(super) struct FakeToolWriter {
     pub(super) trace: Trace,
     index_rows: AtomicUsize,
@@ -313,12 +307,8 @@ pub(super) struct FakeToolWriter {
 
 impl FakeToolWriter {
     pub(super) fn new(trace: Trace) -> Self {
-        Self {
-            trace,
-            index_rows: AtomicUsize::new(0),
-            rollups: Mutex::new(Vec::new()),
-            fail: AtomicBool::new(false),
-        }
+        let writer = Self::default();
+        Self { trace, ..writer }
     }
 
     pub(super) fn fail(&self) {
@@ -339,6 +329,27 @@ impl FakeToolWriter {
     fn failed(&self) -> bool {
         self.fail.load(Ordering::SeqCst)
     }
+
+    fn check(&self) -> Result<(), ToolFailure> {
+        self.trace.record("tool");
+        if self.failed() {
+            return Err(ToolFailure);
+        }
+        Ok(())
+    }
+
+    fn count_rows(&self, rows: &[ToolIndexRow]) -> Result<(), ToolFailure> {
+        self.check()?;
+        self.index_rows.fetch_add(rows.len(), Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn store_rollups(&self, rollups: &[ToolDayRollup]) -> Result<(), ToolFailure> {
+        self.check()?;
+        let mut stored = self.rollups.lock().unwrap_or_else(PoisonError::into_inner);
+        stored.extend_from_slice(rollups);
+        Ok(())
+    }
 }
 
 impl ToolSpendWriter for FakeToolWriter {
@@ -348,31 +359,14 @@ impl ToolSpendWriter for FakeToolWriter {
         &'writer self,
         rows: &'writer [ToolIndexRow],
     ) -> FlushFuture<'writer, ToolFailure> {
-        Box::pin(async move {
-            self.trace.record("tool");
-            if self.failed() {
-                return Err(ToolFailure);
-            }
-            self.index_rows.fetch_add(rows.len(), Ordering::SeqCst);
-            Ok(())
-        })
+        Box::pin(async move { self.count_rows(rows) })
     }
 
     fn apply_rollups<'writer>(
         &'writer self,
         rollups: &'writer [ToolDayRollup],
     ) -> FlushFuture<'writer, ToolFailure> {
-        Box::pin(async move {
-            self.trace.record("tool");
-            if self.failed() {
-                return Err(ToolFailure);
-            }
-            self.rollups
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .extend_from_slice(rollups);
-            Ok(())
-        })
+        Box::pin(async move { self.store_rollups(rollups) })
     }
 }
 
@@ -416,6 +410,21 @@ impl FakeModelWriter {
     fn failed(&self) -> bool {
         self.fail.load(Ordering::SeqCst)
     }
+
+    fn check(&self) -> Result<(), ModelFailure> {
+        self.trace.record("model");
+        if self.failed() {
+            return Err(ModelFailure);
+        }
+        Ok(())
+    }
+
+    fn store_rollups(&self, rollups: &[ModelUsageRollup]) -> Result<(), ModelFailure> {
+        self.check()?;
+        let mut stored = self.rollups.lock().unwrap_or_else(PoisonError::into_inner);
+        stored.extend_from_slice(rollups);
+        Ok(())
+    }
 }
 
 impl ModelUsageWriter for FakeModelWriter {
@@ -425,17 +434,7 @@ impl ModelUsageWriter for FakeModelWriter {
         &'writer self,
         rollups: &'writer [ModelUsageRollup],
     ) -> ModelUsageFuture<'writer, ModelFailure> {
-        Box::pin(async move {
-            self.trace.record("model");
-            if self.failed() {
-                return Err(ModelFailure);
-            }
-            self.rollups
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .extend_from_slice(rollups);
-            Ok(())
-        })
+        Box::pin(async move { self.store_rollups(rollups) })
     }
 }
 

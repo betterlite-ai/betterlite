@@ -65,15 +65,12 @@ fn the_captured_baseline_corpus_decodes_the_cases_that_are_valid() {
     assert_eq!(identity.session_id, "sess-2");
 }
 
-#[test]
-fn the_captured_baseline_corpus_rejects_each_malformed_case() {
-    for bytes in [
-        EXTRA_FIELD,
-        OBSERVATION_EXTRA_FIELD,
-        MISSING_SESSION,
-        EMPTY_REQUEST_ID,
-        PRICES_NOT_A_MAP,
-    ] {
-        assert!(decode_captured_baseline(captured_json(bytes)).is_err());
-    }
+#[rstest]
+#[case::extra_field(EXTRA_FIELD)]
+#[case::observation_extra_field(OBSERVATION_EXTRA_FIELD)]
+#[case::missing_session(MISSING_SESSION)]
+#[case::empty_request_id(EMPTY_REQUEST_ID)]
+#[case::prices_not_a_map(PRICES_NOT_A_MAP)]
+fn the_captured_baseline_corpus_rejects_each_malformed_case(#[case] bytes: &'static [u8]) {
+    assert!(decode_captured_baseline(captured_json(bytes)).is_err());
 }

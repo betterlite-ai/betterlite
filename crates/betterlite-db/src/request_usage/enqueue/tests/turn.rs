@@ -1,4 +1,5 @@
 use chrono::NaiveDateTime;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::autorouter_turn_sql::transaction::TurnTime;
@@ -36,22 +37,19 @@ async fn enqueues_one_turn_for_a_routed_request() {
     assert!(case.baseline_records().is_empty());
 }
 
+#[rstest]
+#[case::empty("")]
+#[case::empty_object("{}")]
+#[case::empty_decision(r#"{"routing_decision":{}}"#)]
+#[case::text_decision(r#"{"routing_decision":"auto-router"}"#)]
+#[case::list_decision(r#"{"routing_decision":[]}"#)]
+#[case::null_decision(r#"{"routing_decision":null}"#)]
 #[tokio::test]
-async fn skips_a_turn_that_names_no_routing_decision() {
-    let cases = [
-        String::new(),
-        String::from("{}"),
-        String::from(r#"{"routing_decision":{}}"#),
-        String::from(r#"{"routing_decision":"auto-router"}"#),
-        String::from(r#"{"routing_decision":[]}"#),
-        String::from(r#"{"routing_decision":null}"#),
-    ];
-    for metadata in cases {
-        let case = TurnCase::new();
-        case.enqueue_result(&turn_payload(&metadata)).await.unwrap();
-        assert!(case.turns().is_empty());
-        assert!(case.baseline_records().is_empty());
-    }
+async fn skips_a_turn_that_names_no_routing_decision(#[case] metadata: &str) {
+    let case = TurnCase::new();
+    case.enqueue_result(&turn_payload(metadata)).await.unwrap();
+    assert!(case.turns().is_empty());
+    assert!(case.baseline_records().is_empty());
 }
 
 #[tokio::test]
@@ -75,21 +73,23 @@ async fn a_request_with_no_router_catalog_enqueues_nothing() {
     assert!(!case.flushed().await);
 }
 
+#[rstest]
+#[case::capture_only(false)]
+#[case::empty_decision(true)]
 #[tokio::test]
-async fn a_capture_without_a_routing_decision_publishes_nothing() {
+async fn a_capture_without_a_routing_decision_publishes_nothing(#[case] with_decision: bool) {
     let capture = captured("sk-capture", "sess-1");
     let quoted = serde_json::to_string(&capture).unwrap();
-    let cases = [
-        format!(r#"{{"autorouter_baseline_observation":{quoted}}}"#),
-        format!(r#"{{"routing_decision":{{}},"autorouter_baseline_observation":{quoted}}}"#),
-    ];
-    for metadata in cases {
-        let case = TurnCase::new();
-        case.enqueue(&turn_payload(&metadata)).await;
-        assert!(case.turns().is_empty());
-        assert!(case.baseline_records().is_empty());
-        assert!(!case.flushed().await);
-    }
+    let metadata = if with_decision {
+        format!(r#"{{"routing_decision":{{}},"autorouter_baseline_observation":{quoted}}}"#)
+    } else {
+        format!(r#"{{"autorouter_baseline_observation":{quoted}}}"#)
+    };
+    let case = TurnCase::new();
+    case.enqueue(&turn_payload(&metadata)).await;
+    assert!(case.turns().is_empty());
+    assert!(case.baseline_records().is_empty());
+    assert!(!case.flushed().await);
 }
 
 #[tokio::test]
@@ -136,17 +136,20 @@ async fn rejects_a_request_whose_payload_is_not_json() {
     assert!(matches!(error, TurnEnqueueError::Payload(_)));
 }
 
+#[rstest]
+#[case::bool("true")]
+#[case::number("5")]
+#[case::list("[1]")]
+#[case::object(r#"{"at":1}"#)]
 #[tokio::test]
-async fn rejects_an_end_time_that_is_not_a_bill_time() {
-    for end_time in ["true", "5", "[1]", "{\"at\":1}"] {
-        let case = TurnCase::new();
-        let payload = turn_payload(&turn_metadata(None)).replace(
-            r#""endTime":"2026-01-02T03:04:06Z""#,
-            &format!(r#""endTime":{end_time}"#),
-        );
-        let error = case.enqueue_result(&payload).await.unwrap_err();
-        assert!(matches!(error, TurnEnqueueError::EndTime));
-    }
+async fn rejects_an_end_time_that_is_not_a_bill_time(#[case] end_time: &str) {
+    let case = TurnCase::new();
+    let payload = turn_payload(&turn_metadata(None)).replace(
+        r#""endTime":"2026-01-02T03:04:06Z""#,
+        &format!(r#""endTime":{end_time}"#),
+    );
+    let error = case.enqueue_result(&payload).await.unwrap_err();
+    assert!(matches!(error, TurnEnqueueError::EndTime));
 }
 
 #[tokio::test]
