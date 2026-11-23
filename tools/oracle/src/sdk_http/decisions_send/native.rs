@@ -21,9 +21,8 @@ use betterlite_openai::decisions::call::{DecisionsCall, PrepareCall, prepare_cal
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 use std::collections::{BTreeMap, BTreeSet};
-use std::panic::resume_unwind;
-use std::thread::scope;
 use std::time::Duration;
+use std::{panic::resume_unwind, thread::scope};
 
 // The case's runs in order, each through the wrapper the case asked for
 pub(super) async fn execute(
