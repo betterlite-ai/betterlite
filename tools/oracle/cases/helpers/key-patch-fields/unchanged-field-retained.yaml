@@ -1,0 +1,10 @@
+kind: helper
+name: key-patch-fields-unchanged-field-retained
+call:
+  key_patch_fields:
+    calls:
+      - function: prepare
+        request: {key: hashed, key_alias: unchanged, max_budget: null, enable_prompt_caching: true, soft_budget: 2.5}
+        existing: {token: hashed, key_alias: old, team_id: t1, budget_id: budget-1, metadata: {team: t1, service_account_id: sa-1}}
+env: {}
+compare: {ignore: []}

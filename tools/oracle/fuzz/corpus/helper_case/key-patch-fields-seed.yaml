@@ -1,0 +1,9 @@
+kind: helper
+name: key-patch-fields-seed
+call:
+  key_patch_fields:
+    calls:
+      - {function: token, request_key: seed, existing_token: null}
+      - {function: budget_check, field: max, value: null}
+env: {}
+compare: {ignore: []}

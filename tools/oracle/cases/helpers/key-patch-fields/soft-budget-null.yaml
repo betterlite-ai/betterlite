@@ -1,0 +1,23 @@
+kind: helper
+name: key-patch-fields-soft-budget-null
+call:
+  key_patch_fields:
+    calls:
+      - {function: budget_check, field: soft, value: -1.0}
+      - {function: budget_check, field: max, value: -0.5}
+      - {function: budget_check, field: soft, value: 0.0}
+      - {function: budget_check, field: max, value: null}
+      - function: soft_budget_update
+        request: {key: tok, soft_budget: null}
+        existing: {token: tok, budget_id: budget-1}
+        non_default_values: {key_alias: x, soft_budget: null}
+      - function: soft_budget_update
+        request: {key: tok, soft_budget: 2.5}
+        existing: {token: tok}
+        non_default_values: {key_alias: x, soft_budget: 2.5}
+      - function: soft_budget_update
+        request: {key: tok, soft_budget: null}
+        existing: {token: tok}
+        non_default_values: {key_alias: x, soft_budget: null}
+env: {}
+compare: {ignore: []}
