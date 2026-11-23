@@ -4,9 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 
-use super::membership::{
-    MemberSpendWrite, org_member_rows, team_member_rows, write_member_spend,
-};
+use super::membership::{MemberSpendWrite, org_member_rows, team_member_rows, write_member_spend};
 use super::{EntityTableError, EntityTableWriter, TableFuture};
 use crate::key_user_writes::retry::WriteClock;
 use crate::postgres_store::errors::{DbError, backend};
@@ -68,7 +66,9 @@ impl PostgresEntityTables<'_> {
             }
             SpendTable::ProjectList => TableWrite::Rows(PROJECT_SPEND_SQL, increments),
             SpendTable::TagList => TableWrite::Rows(TAG_SPEND_SQL, increments),
-            SpendTable::ModelAccessGroupList => TableWrite::Rows(ACCESS_GROUP_SPEND_SQL, increments),
+            SpendTable::ModelAccessGroupList => {
+                TableWrite::Rows(ACCESS_GROUP_SPEND_SQL, increments)
+            }
             SpendTable::AgentList => TableWrite::Rows(AGENT_SPEND_SQL, increments),
         };
         let committing = AtomicBool::new(false);
