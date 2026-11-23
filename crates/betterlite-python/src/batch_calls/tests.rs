@@ -105,7 +105,7 @@ fn proxied() -> ProxiedClient {
     ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }
 
-fn decode_limits() -> WireDecodeLimits {
+const fn decode_limits() -> WireDecodeLimits {
     WireDecodeLimits {
         max_json_bytes: 1024,
         max_event_bytes: 1024,
@@ -249,7 +249,7 @@ fn transport_refuses_an_unwired_create_provider() {
         Err(BatchProviderCreateError::UnsupportedProvider { provider }) => {
             assert_eq!(provider, BatchProvider::Azure);
         }
-        Ok(_) | Err(_other) => panic!("the azure branch is not wired in this build"),
+        Ok(_) | Err(_) => panic!("the azure branch is not wired in this build"),
     }
     let config = BatchProviderCreateCall::ProviderConfig(ProviderConfigCall {
         provider: BatchProvider::Bedrock,
@@ -265,7 +265,7 @@ fn transport_refuses_an_unwired_create_provider() {
         Err(BatchProviderCreateError::UnsupportedProvider { provider }) => {
             assert_eq!(provider, BatchProvider::Bedrock);
         }
-        Ok(_) | Err(_other) => panic!("the provider config branch is not wired in this build"),
+        Ok(_) | Err(_) => panic!("the provider config branch is not wired in this build"),
     }
 }
 
@@ -304,7 +304,7 @@ fn dispatch_refuses_an_unwired_read_provider() {
         Err(DispatchFailure::Unsupported { provider }) => {
             assert_eq!(provider, "anthropic");
         }
-        Ok(_) | Err(_other) => panic!("the anthropic branch is not wired in this build"),
+        Ok(_) | Err(_) => panic!("the anthropic branch is not wired in this build"),
     }
 }
 
@@ -381,7 +381,7 @@ fn dispatch_failures_keep_the_provider_status() {
             assert_eq!(status, 400);
             assert_eq!(message, "bad");
         }
-        other => panic!("unexpected failure: {other:?}"),
+        other => panic!("unexpected failure: {other}"),
     }
     let connection = DispatchFailure::from(BatchesError::NotInitialized);
     assert!(matches!(connection, DispatchFailure::Connection(_)));

@@ -13,7 +13,7 @@ use betterlite_core::api::batch_provider_read::{BatchReadDispatch, BatchReadProv
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::batches::error::{BatchesError, SdkError};
-use betterlite_openai::batches::http::HttpConstructor;
+use betterlite_openai::batches::http::{HttpBatchesClient, HttpConstructor};
 use betterlite_openai::batches::records::BatchObject;
 use betterlite_openai::batches::sdk::{ClientSettings, Connection, Timeout};
 use betterlite_openai::batches::{BatchOperation, BatchesApi};
@@ -27,7 +27,7 @@ use super::convert::request::{batch_create, batch_query, duration_of};
 use super::error::DispatchFailure;
 
 // the BatchesApi both OpenAI entry points build over the shared pooled client
-fn openai_batches(client: &ProxiedClient) -> BatchesApi {
+fn openai_batches(client: &ProxiedClient) -> BatchesApi<HttpConstructor> {
     BatchesApi {
         constructor: HttpConstructor {
             transport: client.clone(),
@@ -39,7 +39,7 @@ fn openai_batches(client: &ProxiedClient) -> BatchesApi {
 }
 
 // OpenAIBatchesAPI's constructor settings for a create call
-fn openai_connection(call: &ProviderBatchCall) -> Connection {
+fn openai_connection(call: &ProviderBatchCall) -> Connection<HttpBatchesClient> {
     Connection {
         is_async: call.is_async,
         settings: ClientSettings {
@@ -60,37 +60,49 @@ pub(crate) struct BatchTransport {
     pub(crate) limits: WireDecodeLimits,
 }
 
+impl BatchTransport {
+    // OpenAIBatchesAPI.create_batch over the shared pooled client
+    fn openai_create(
+        &self,
+        call: &ProviderBatchCall,
+    ) -> Result<BatchObject, BatchProviderCreateError> {
+        let request = batch_create(&call.body).map_err(|_source| INVALID_CALL)?;
+        let operation = BatchOperation::Create(&request);
+        blocking_create(
+            openai_batches(&self.client).batch(openai_connection(call), operation),
+            create_status,
+        )
+    }
+
+    // XAIBatchesHandler.create_batch over the shared pooled client
+    fn xai_create(
+        &self,
+        call: &ProviderBatchCall,
+    ) -> Result<BatchObject, BatchProviderCreateError> {
+        let timeout =
+            duration_of(&Timeout::Seconds(call.timeout)).map_err(|_source| INVALID_CALL)?;
+        let batches = XaiBatches {
+            transport: self.client.clone(),
+            settings: self.xai.clone(),
+            limits: self.limits,
+        };
+        let context = CallContext {
+            api_base: call.api_base.as_deref(),
+            api_key: call.api_key.as_ref(),
+            timeout,
+        };
+        blocking_create(batches.create_batch(&call.body, context), xai_status)
+    }
+}
+
 impl BatchCreateTransport for BatchTransport {
     fn create(
         &self,
         call: &BatchProviderCreateCall,
     ) -> Result<BatchObject, BatchProviderCreateError> {
         match call {
-            // OpenAIBatchesAPI.create_batch over the shared pooled client
-            BatchProviderCreateCall::OpenAiCompatible(inner) => {
-                let request = batch_create(&inner.body).map_err(|_| INVALID_CALL)?;
-                let operation = BatchOperation::Create(&request);
-                blocking_create(
-                    openai_batches(&self.client).batch(openai_connection(inner), operation),
-                    create_status,
-                )
-            }
-            // XAIBatchesHandler.create_batch over the shared pooled client
-            BatchProviderCreateCall::Xai(inner) => {
-                let timeout =
-                    duration_of(&Timeout::Seconds(inner.timeout)).map_err(|_| INVALID_CALL)?;
-                let batches = XaiBatches {
-                    transport: self.client.clone(),
-                    settings: self.xai.clone(),
-                    limits: self.limits,
-                };
-                let context = CallContext {
-                    api_base: inner.api_base.as_deref(),
-                    api_key: inner.api_key.as_ref(),
-                    timeout,
-                };
-                blocking_create(batches.create_batch(&inner.body, context), xai_status)
-            }
+            BatchProviderCreateCall::OpenAiCompatible(inner) => self.openai_create(inner),
+            BatchProviderCreateCall::Xai(inner) => self.xai_create(inner),
             BatchProviderCreateCall::ProviderConfig(inner) => {
                 Err(BatchProviderCreateError::UnsupportedProvider {
                     provider: inner.provider,
@@ -128,7 +140,7 @@ where
         })
 }
 
-pub(crate) fn create_status(error: &BatchesError) -> u16 {
+pub(crate) const fn create_status(error: &BatchesError) -> u16 {
     match error {
         BatchesError::NotInitialized => 401,
         BatchesError::Sdk { source } => sdk_status(source),
@@ -136,14 +148,14 @@ pub(crate) fn create_status(error: &BatchesError) -> u16 {
     }
 }
 
-pub(crate) fn sdk_status(error: &SdkError) -> u16 {
+pub(crate) const fn sdk_status(error: &SdkError) -> u16 {
     if let SdkError::Status { status, .. } = error {
         return *status;
     }
     500
 }
 
-pub(crate) fn xai_status(error: &XaiBatchesError) -> u16 {
+pub(crate) const fn xai_status(error: &XaiBatchesError) -> u16 {
     match error {
         XaiBatchesError::MissingApiKey => 401,
         XaiBatchesError::InputFileRequired => 400,
@@ -172,12 +184,12 @@ impl BatchReadDispatch for BatchDispatch {
         &self,
         call: &BatchProviderReadCall,
     ) -> impl Future<Output = Result<BatchObject, DispatchFailure>> + Send {
-        let call = call.clone();
+        let owned = call.clone();
         let client = self.client.clone();
         let xai = self.xai.clone();
         let limits = self.limits;
         async move {
-            match call {
+            match owned {
                 BatchProviderReadCall::OpenAiCompatible(inner) => {
                     openai_retrieve(&client, inner.as_ref()).await
                 }

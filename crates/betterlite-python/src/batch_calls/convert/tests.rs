@@ -109,7 +109,7 @@ fn read_call(provider: &str, model: Option<&str>) -> BatchProviderReadInput {
     input
 }
 
-fn phases() -> TimeoutPhases {
+const fn phases() -> TimeoutPhases {
     TimeoutPhases {
         connect: None,
         read: None,
@@ -133,12 +133,18 @@ fn request_read_mode_sets_aretrieve_batch() {
 }
 
 #[test]
-fn request_create_payload_carries_every_argument() {
+fn request_create_payload_keeps_the_identifying_fields() {
     let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
     assert_eq!(input.completion_window, CompletionWindow::Day);
     assert_eq!(input.endpoint, BatchEndpoint::ChatCompletions);
     assert_eq!(input.input_file_id, "file-1");
     assert_eq!(input.custom_llm_provider, BatchProvider::Openai);
+    assert_eq!(input.model.as_deref(), Some("gpt-4o"));
+}
+
+#[test]
+fn request_create_payload_keeps_the_passthrough_maps() {
+    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
     assert_eq!(
         input
             .metadata
@@ -173,7 +179,11 @@ fn request_create_payload_carries_every_argument() {
             seconds: 3600,
         })
     );
-    assert_eq!(input.model.as_deref(), Some("gpt-4o"));
+}
+
+#[test]
+fn request_create_payload_keeps_the_optional_params() {
+    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
     assert_eq!(
         input.optional_params.api_base.as_deref(),
         Some("http://local/v1")
@@ -307,7 +317,7 @@ fn request_create_settings_resolve_the_environment() {
     assert_eq!(settings.openai_organization.as_deref(), Some("env-org"));
     assert_eq!(settings.vertex_project.as_deref(), Some("proj"));
     assert_eq!(settings.vertex_location, None);
-    assert_eq!(settings.azure_key, None);
+    assert!(settings.azure_key.is_none());
 }
 
 #[test]
@@ -526,7 +536,7 @@ fn request_create_hidden_params_follow_a_provider_config() {
 }
 
 #[test]
-fn request_read_hidden_params_follow_each_call() {
+fn request_read_hidden_params_follow_the_openai_call() {
     let input = read_call("openai", Some("gpt-4o"));
     let openai = BatchProviderReadCall::OpenAiCompatible(Box::new(OpenAiBatchReadCall {
         request: BatchIdRequest::default(),
@@ -550,7 +560,10 @@ fn request_read_hidden_params_follow_each_call() {
         FinishedCall::Read(&openai).api_base().as_deref(),
         Some("http://local/v1")
     );
+}
 
+#[test]
+fn request_read_hidden_params_follow_the_xai_call() {
     let xai = BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
         batch_id: "b".to_owned(),
         api_base: Some("http://xai".to_owned()),
@@ -562,15 +575,18 @@ fn request_read_hidden_params_follow_each_call() {
         FinishedCall::Read(&xai).api_base().as_deref(),
         Some("http://xai")
     );
-    let xai_absent = BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
+    let absent = BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
         batch_id: "b".to_owned(),
         api_base: None,
         api_key: None,
         timeout: Timeout::Seconds(1.0),
         is_async: false,
     }));
-    assert_eq!(FinishedCall::Read(&xai_absent).api_base(), None);
+    assert_eq!(FinishedCall::Read(&absent).api_base(), None);
+}
 
+#[test]
+fn request_read_hidden_params_follow_the_azure_and_vertex_calls() {
     let azure = BatchProviderReadCall::Azure(Box::new(AzureBatchReadCall {
         request: BatchIdRequest::default(),
         api_base: Some("http://azure".to_owned()),
@@ -585,7 +601,6 @@ fn request_read_hidden_params_follow_each_call() {
         FinishedCall::Read(&azure).api_base().as_deref(),
         Some("http://azure")
     );
-
     let vertex = BatchProviderReadCall::VertexAi(Box::new(VertexBatchReadCall {
         batch_id: "b".to_owned(),
         api_base: "http://vertex".to_owned(),
@@ -600,7 +615,10 @@ fn request_read_hidden_params_follow_each_call() {
         FinishedCall::Read(&vertex).api_base().as_deref(),
         Some("http://vertex")
     );
+}
 
+#[test]
+fn request_read_hidden_params_follow_the_anthropic_call() {
     let anthropic = BatchProviderReadCall::Anthropic(Box::new(AnthropicBatchReadCall {
         batch_id: "b".to_owned(),
         api_base: Some("http://anthropic".to_owned()),
@@ -613,19 +631,24 @@ fn request_read_hidden_params_follow_each_call() {
         FinishedCall::Read(&anthropic).api_base().as_deref(),
         Some("http://anthropic")
     );
+}
 
+#[test]
+fn request_read_hidden_params_stay_absent_for_bedrock() {
     let bedrock = BatchProviderReadCall::BedrockAsyncInvoke(Box::new(BedrockAsyncInvokeReadCall {
         batch_id: "arn".to_owned(),
         aws: AwsCredentials::default(),
     }));
     assert_eq!(FinishedCall::Read(&bedrock).api_base(), None);
-    let bedrock_job =
-        BatchProviderReadCall::BedrockModelInvocationJob(Box::new(BedrockJobReadCall {
-            batch_id: "arn".to_owned(),
-            aws: AwsCredentials::default(),
-        }));
-    assert_eq!(FinishedCall::Read(&bedrock_job).api_base(), None);
+    let job = BatchProviderReadCall::BedrockModelInvocationJob(Box::new(BedrockJobReadCall {
+        batch_id: "arn".to_owned(),
+        aws: AwsCredentials::default(),
+    }));
+    assert_eq!(FinishedCall::Read(&job).api_base(), None);
+}
 
+#[test]
+fn request_read_hidden_params_follow_a_provider_config() {
     let config = BatchProviderReadCall::ProviderConfig(Box::new(ProviderConfigReadCall {
         provider: BatchReadProvider::Bedrock,
         model: "m".to_owned(),
@@ -722,12 +745,12 @@ fn error_create_payload_maps_a_provider_status() {
 
 #[test]
 fn error_create_payload_maps_a_limit() {
-    let limits = ApiLimits {
+    let api_limits = ApiLimits {
         max_json_bytes: 1,
         max_event_bytes: 1,
         max_items: 0,
     };
-    let limit = limits
+    let limit = api_limits
         .check(ApiBoundariesInput::Json(JsonBoundary { known_bytes: 2 }))
         .unwrap_err();
     let expected = limit.fields();
@@ -832,12 +855,12 @@ fn error_read_payload_maps_a_timeout_failure() {
 
 #[test]
 fn error_read_payload_maps_a_limit() {
-    let limits = ApiLimits {
+    let api_limits = ApiLimits {
         max_json_bytes: 0,
         max_event_bytes: 1,
         max_items: 1,
     };
-    let limit = limits
+    let limit = api_limits
         .check(ApiBoundariesInput::Json(JsonBoundary { known_bytes: 3 }))
         .unwrap_err();
     let payload = read_error_payload(&BatchProviderReadError::Limits(limit), "openai", None);

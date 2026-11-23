@@ -85,12 +85,15 @@ impl BatchCore {
         }
     }
 
-    pub(crate) fn create_with<Transport: BatchCreateTransport>(
+    pub(crate) fn create_with<Transport>(
         &self,
         input: BatchProviderCreateInput,
         mode: CallMode,
         transport: Transport,
-    ) -> Result<String, BatchError> {
+    ) -> Result<String, BatchError>
+    where
+        Transport: BatchCreateTransport,
+    {
         let prepared = create_input(input, mode);
         let catalog = BundledCatalog::default().get();
         let names = BTreeSet::new();

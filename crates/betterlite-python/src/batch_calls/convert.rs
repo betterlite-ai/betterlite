@@ -10,7 +10,6 @@ use betterlite_core::api::batch_provider_read::call::BatchProviderReadCall;
 use betterlite_openai::batches::records::BatchObject;
 use pyo3::PyErr;
 use pyo3::exceptions::PyValueError;
-use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod request;
@@ -24,14 +23,15 @@ pub(crate) struct SessionWire {
     pub(crate) settings: ModuleSettings,
 }
 
-// the module globals a batch call reads, under the names betterlite exposes them
+// the module globals a batch call reads, under the names betterlite exposes them; the secrets stay text
+// here because the section parsers turn them into SecretString, which its serde rules never write out
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct ModuleSettings {
     pub(crate) api_base: Option<String>,
-    pub(crate) api_key: Option<SecretString>,
-    pub(crate) openai_key: Option<SecretString>,
-    pub(crate) azure_key: Option<SecretString>,
+    pub(crate) api_key: Option<String>,
+    pub(crate) openai_key: Option<String>,
+    pub(crate) azure_key: Option<String>,
     pub(crate) api_version: Option<String>,
     pub(crate) organization: Option<String>,
     pub(crate) vertex_project: Option<String>,
@@ -77,7 +77,7 @@ pub(crate) enum CallMode {
     Async,
 }
 
-pub(crate) fn create_input(
+pub(crate) const fn create_input(
     mut input: BatchProviderCreateInput,
     mode: CallMode,
 ) -> BatchProviderCreateInput {
@@ -85,7 +85,7 @@ pub(crate) fn create_input(
     input
 }
 
-pub(crate) fn read_input(
+pub(crate) const fn read_input(
     mut input: BatchProviderReadInput,
     mode: CallMode,
 ) -> BatchProviderReadInput {
@@ -104,7 +104,7 @@ pub(crate) struct HiddenParams {
 
 impl HiddenParams {
     pub(crate) fn new(provider: &str, model: Option<&str>, call: FinishedCall<'_>) -> Self {
-        HiddenParams {
+        Self {
             llm_provider: provider.to_owned(),
             // LiteLLM takes model_id from model_info.id, which the Python facade writes into this key after the call
             model_id: None,
@@ -123,14 +123,14 @@ pub(crate) enum FinishedCall<'call> {
 impl FinishedCall<'_> {
     pub(crate) fn api_base(self) -> Option<String> {
         match self {
-            FinishedCall::Create(call) => match call {
+            Self::Create(call) => match call {
                 BatchProviderCreateCall::ProviderConfig(inner) => inner.api_base.clone(),
                 BatchProviderCreateCall::Xai(inner)
                 | BatchProviderCreateCall::OpenAiCompatible(inner)
                 | BatchProviderCreateCall::Azure(inner)
                 | BatchProviderCreateCall::VertexAi(inner) => inner.api_base.clone(),
             },
-            FinishedCall::Read(call) => match call {
+            Self::Read(call) => match call {
                 BatchProviderReadCall::OpenAiCompatible(inner) => Some(inner.api_base.clone()),
                 BatchProviderReadCall::VertexAi(inner) => Some(inner.api_base.clone()),
                 BatchProviderReadCall::ProviderConfig(inner) => inner.api_base.clone(),

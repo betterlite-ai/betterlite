@@ -4,7 +4,7 @@ use betterlite_openai::xai_batches::error::XaiBatchesError;
 use crate::batch_calls::error::DispatchFailure;
 
 // one shape for both executors: a provider status keeps its own message, anything else is a connection failure
-fn failure(status: Option<u16>, message: String) -> DispatchFailure {
+const fn failure(status: Option<u16>, message: String) -> DispatchFailure {
     match status {
         Some(status) => DispatchFailure::Status { status, message },
         None => DispatchFailure::Connection(message),
@@ -20,7 +20,7 @@ impl From<BatchesError> for DispatchFailure {
             },
         } = &error
         {
-            return DispatchFailure::Status {
+            return Self::Status {
                 status: *status,
                 message: message.clone(),
             };
@@ -34,7 +34,7 @@ impl From<XaiBatchesError> for DispatchFailure {
         match &error {
             XaiBatchesError::Status {
                 status, message, ..
-            } => DispatchFailure::Status {
+            } => Self::Status {
                 status: *status,
                 message: message.clone(),
             },

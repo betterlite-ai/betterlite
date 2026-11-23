@@ -4,7 +4,7 @@ use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use pyo3::PyErr;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyRuntimeError};
+use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 
 use super::convert::request::{BodyError, DurationError};
 use super::convert::{ConvertError, SettingsError};
@@ -49,7 +49,7 @@ impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         match &error {
             SessionError::Json(_) | SessionError::Settings(_) => {
-                pyo3::exceptions::PyValueError::new_err(error.to_string())
+                PyValueError::new_err(error.to_string())
             }
             SessionError::Proxy { .. } | SessionError::Client { .. } => {
                 PyRuntimeError::new_err(error.to_string())
