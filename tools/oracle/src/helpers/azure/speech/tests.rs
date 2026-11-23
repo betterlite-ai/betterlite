@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::case::helper::parse_helper_case;
 use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 const VARIANTS: [&str; 4] = [
@@ -38,9 +38,8 @@ fn helper_seeds_select_azure_speech() {
 fn seed_variants(seeds: &[(String, String)]) -> BTreeSet<String> {
     let mut seen = BTreeSet::new();
     for (name, source) in seeds {
-        let case: HelperCase = serde_saphyr::from_str(source).unwrap();
+        let case = parse_helper_case(Path::new(name), source).unwrap();
         assert_eq!(case.call.operation, "azure_speech");
-        validate_helper(Path::new("<helper>"), &case).unwrap();
         let variant = case
             .call
             .input

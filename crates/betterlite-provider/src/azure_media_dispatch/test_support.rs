@@ -21,13 +21,15 @@ use betterlite_openai::image_generation::logging::{
 use betterlite_openai::transcription::transport::TranscriptionTransport;
 use http::header::{HeaderMap, HeaderValue};
 
+use super::AzureMediaRequest;
+use super::call::AzureMediaOperation;
 use super::error::AzureMediaError;
-use crate::operation::OperationResult;
+use crate::operation::{OperationRequest, OperationResult};
 
 pub mod exchange;
 pub mod speech;
 
-use self::speech::SpeechLogging;
+use self::speech::{FixtureError, SpeechLogging};
 
 // one scripted reply per request the transport will receive, in order
 pub struct Reply {
@@ -222,4 +224,18 @@ pub struct Outcome {
     pub fixture: Fixture,
     pub logger: Recorder,
     pub speech: SpeechLogging,
+}
+
+// Every Azure media case dispatches the same unit request; only the speech logging fixture can fail to build
+pub async fn exchange(
+    operation: AzureMediaOperation,
+    replies: Vec<Reply>,
+) -> Result<Outcome, FixtureError> {
+    exchange::exchange_request_with(
+        OperationRequest::AzureMedia(AzureMediaRequest),
+        operation,
+        replies,
+        |_logging| {},
+    )
+    .await
 }
