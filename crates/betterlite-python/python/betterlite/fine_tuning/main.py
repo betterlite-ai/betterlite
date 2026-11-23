@@ -3,14 +3,16 @@ from typing import Final
 
 from pydantic import JsonValue, TypeAdapter
 
-from betterlite._endpoints import acall_native, call_native, read_settings, to_call_payload
+from betterlite._endpoints import CallPayload, acall_native, call_native
+from betterlite._endpoints.runner import AsyncNativeCall, NativeCall
 from betterlite._native import NativeTuningError, NativeTuningSession
 from betterlite.fine_tuning._calls import (
-    configured_params,
-    list_input,
-    retrieve_input,
+    HYPERPARAMETERS_DEFAULT,
+    cancel_payload,
+    create_payload,
+    read_payload,
 )
-from betterlite.fine_tuning.types import FineTuningJobPage, page_value
+from betterlite.fine_tuning._page import FineTuningJobPage
 from betterlite.types.utils import LiteLLMFineTuningJob
 from betterlite.types.utils.base import validated_value
 
@@ -26,11 +28,16 @@ __all__ = [
 ]
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-HYPERPARAMETERS_DEFAULT: Final[dict[str, JsonValue]] = {}
-SETTINGS: Final[tuple[str, ...]] = (
-    "api_base", "api_key", "api_version", "azure_key", "openai_key", "organization",
-    "vertex_location", "vertex_project",
-)
+
+
+def job_answer(method: NativeCall, payload: CallPayload) -> LiteLLMFineTuningJob:
+    answer = call_native(method, payload, NativeTuningError)
+    return validated_value(answer, LiteLLMFineTuningJob)
+
+
+async def async_job_answer(method: AsyncNativeCall, payload: CallPayload) -> LiteLLMFineTuningJob:
+    answer = await acall_native(method, payload, NativeTuningError)
+    return validated_value(answer, LiteLLMFineTuningJob)
 
 
 def create_fine_tuning_job(
@@ -51,24 +58,11 @@ def create_fine_tuning_job(
             model, training_file, hyperparameters, suffix, validation_file, integrations,
             seed, custom_llm_provider, extra_headers, extra_body, **kwargs,
         )
-    source = {} if hyperparameters is None else hyperparameters
-    call: dict[str, JsonValue] = {
-        "model": model,
-        "training_file": training_file,
-        "hyperparameters": dict(source),
-        "suffix": suffix,
-        "validation_file": validation_file,
-        "integrations": JSON.validate_python(integrations),
-        "seed": seed,
-        "custom_llm_provider": custom_llm_provider,
-        "extra_headers": JSON.validate_python(extra_headers),
-        "extra_body": extra_body,
-        "params": configured_params(kwargs),
-        "is_async": False,
-    }
-    payload = to_call_payload({"call": call, "settings": read_settings(SETTINGS)})
-    job = call_native(NativeTuningSession().create, payload, NativeTuningError)
-    return validated_value(job, LiteLLMFineTuningJob)
+    payload = create_payload(
+        model, training_file, hyperparameters, suffix, validation_file, integrations,
+        seed, custom_llm_provider, extra_headers, extra_body, kwargs, is_async=False,
+    )
+    return job_answer(NativeTuningSession().create, payload)
 
 
 async def acreate_fine_tuning_job(
@@ -84,24 +78,11 @@ async def acreate_fine_tuning_job(
     extra_body: dict[str, JsonValue] | None = None,
     **kwargs: JsonValue,
 ) -> LiteLLMFineTuningJob:
-    source = {} if hyperparameters is None else hyperparameters
-    call: dict[str, JsonValue] = {
-        "model": model,
-        "training_file": training_file,
-        "hyperparameters": dict(source),
-        "suffix": suffix,
-        "validation_file": validation_file,
-        "integrations": JSON.validate_python(integrations),
-        "seed": seed,
-        "custom_llm_provider": custom_llm_provider,
-        "extra_headers": JSON.validate_python(extra_headers),
-        "extra_body": extra_body,
-        "params": configured_params(kwargs),
-        "is_async": True,
-    }
-    payload = to_call_payload({"call": call, "settings": read_settings(SETTINGS)})
-    job = await acall_native(NativeTuningSession().acreate, payload, NativeTuningError)
-    return validated_value(job, LiteLLMFineTuningJob)
+    payload = create_payload(
+        model, training_file, hyperparameters, suffix, validation_file, integrations,
+        seed, custom_llm_provider, extra_headers, extra_body, kwargs, is_async=True,
+    )
+    return await async_job_answer(NativeTuningSession().acreate, payload)
 
 
 def retrieve_fine_tuning_job(
@@ -115,17 +96,18 @@ def retrieve_fine_tuning_job(
         return aretrieve_fine_tuning_job(
             fine_tuning_job_id, custom_llm_provider, extra_headers, extra_body, **kwargs,
         )
-    call = retrieve_input(
-        fine_tuning_job_id=fine_tuning_job_id,
-        custom_llm_provider=custom_llm_provider,
-        extra_headers=JSON.validate_python(extra_headers),
-        extra_body=extra_body,
-        params=configured_params(kwargs),
+    payload = read_payload(
+        "retrieve",
+        {
+            "fine_tuning_job_id": fine_tuning_job_id,
+            "provider": custom_llm_provider,
+            "extra_headers": JSON.validate_python(extra_headers),
+            "extra_body": extra_body,
+        },
+        kwargs,
         is_async=False,
     )
-    payload = to_call_payload({**call, "settings": read_settings(SETTINGS)})
-    job = call_native(NativeTuningSession().retrieve, payload, NativeTuningError)
-    return validated_value(job, LiteLLMFineTuningJob)
+    return job_answer(NativeTuningSession().retrieve, payload)
 
 
 async def aretrieve_fine_tuning_job(
@@ -135,17 +117,14 @@ async def aretrieve_fine_tuning_job(
     extra_body: dict[str, JsonValue] | None = None,
     **kwargs: JsonValue,
 ) -> LiteLLMFineTuningJob:
-    call = retrieve_input(
-        fine_tuning_job_id=fine_tuning_job_id,
-        custom_llm_provider=custom_llm_provider,
-        extra_headers=JSON.validate_python(extra_headers),
-        extra_body=extra_body,
-        params=configured_params(kwargs),
-        is_async=True,
-    )
-    payload = to_call_payload({**call, "settings": read_settings(SETTINGS)})
-    job = await acall_native(NativeTuningSession().aretrieve, payload, NativeTuningError)
-    return validated_value(job, LiteLLMFineTuningJob)
+    fields: dict[str, JsonValue] = {
+        "fine_tuning_job_id": fine_tuning_job_id,
+        "provider": custom_llm_provider,
+        "extra_headers": JSON.validate_python(extra_headers),
+        "extra_body": extra_body,
+    }
+    payload = read_payload("retrieve", fields, kwargs, is_async=True)
+    return await async_job_answer(NativeTuningSession().aretrieve, payload)
 
 
 def list_fine_tuning_jobs(
@@ -160,18 +139,20 @@ def list_fine_tuning_jobs(
         return alist_fine_tuning_jobs(
             after, limit, custom_llm_provider, extra_headers, extra_body, **kwargs,
         )
-    call = list_input(
-        after=after,
-        limit=limit,
-        custom_llm_provider=custom_llm_provider,
-        extra_headers=JSON.validate_python(extra_headers),
-        extra_body=extra_body,
-        params=configured_params(kwargs),
+    page = read_payload(
+        "list",
+        {
+            "after": after,
+            "limit": limit,
+            "provider": custom_llm_provider,
+            "extra_headers": JSON.validate_python(extra_headers),
+            "extra_body": extra_body,
+        },
+        kwargs,
         is_async=False,
     )
-    payload = to_call_payload({**call, "settings": read_settings(SETTINGS)})
-    page = call_native(NativeTuningSession().list, payload, NativeTuningError)
-    return page_value(page)
+    answer = call_native(NativeTuningSession().list, page, NativeTuningError)
+    return validated_value(answer, FineTuningJobPage)
 
 
 async def alist_fine_tuning_jobs(
@@ -182,18 +163,20 @@ async def alist_fine_tuning_jobs(
     extra_body: dict[str, JsonValue] | None = None,
     **kwargs: JsonValue,
 ) -> FineTuningJobPage:
-    call = list_input(
-        after=after,
-        limit=limit,
-        custom_llm_provider=custom_llm_provider,
-        extra_headers=JSON.validate_python(extra_headers),
-        extra_body=extra_body,
-        params=configured_params(kwargs),
+    page = read_payload(
+        "list",
+        {
+            "after": after,
+            "limit": limit,
+            "provider": custom_llm_provider,
+            "extra_headers": JSON.validate_python(extra_headers),
+            "extra_body": extra_body,
+        },
+        kwargs,
         is_async=True,
     )
-    payload = to_call_payload({**call, "settings": read_settings(SETTINGS)})
-    page = await acall_native(NativeTuningSession().alist, payload, NativeTuningError)
-    return page_value(page)
+    answer = await acall_native(NativeTuningSession().alist, page, NativeTuningError)
+    return validated_value(answer, FineTuningJobPage)
 
 
 def cancel_fine_tuning_job(
@@ -203,21 +186,20 @@ def cancel_fine_tuning_job(
     extra_body: dict[str, JsonValue] | None = None,
     **kwargs: JsonValue,
 ) -> LiteLLMFineTuningJob | Awaitable[LiteLLMFineTuningJob]:
-    if kwargs.pop("acancel_fine_tuning_job", False) is True:
+    forwarded = kwargs.pop("acancel_fine_tuning_job", False)
+    if forwarded is True:
         return acancel_fine_tuning_job(
             fine_tuning_job_id, custom_llm_provider, extra_headers, extra_body, **kwargs,
         )
-    call: dict[str, JsonValue] = {
-        "fine_tuning_job_id": fine_tuning_job_id,
-        "custom_llm_provider": custom_llm_provider,
-        "extra_headers": JSON.validate_python(extra_headers),
-        "extra_body": extra_body,
-        "acancel_fine_tuning_job": False,
-        "params": configured_params(kwargs),
-    }
-    payload = to_call_payload({"call": call, "settings": read_settings(SETTINGS)})
-    job = call_native(NativeTuningSession().cancel, payload, NativeTuningError)
-    return validated_value(job, LiteLLMFineTuningJob)
+    payload = cancel_payload(
+        fine_tuning_job_id,
+        custom_llm_provider,
+        extra_headers,
+        extra_body,
+        kwargs,
+        is_async=False,
+    )
+    return job_answer(NativeTuningSession().cancel, payload)
 
 
 async def acancel_fine_tuning_job(
@@ -227,14 +209,12 @@ async def acancel_fine_tuning_job(
     extra_body: dict[str, JsonValue] | None = None,
     **kwargs: JsonValue,
 ) -> LiteLLMFineTuningJob:
-    call: dict[str, JsonValue] = {
-        "fine_tuning_job_id": fine_tuning_job_id,
-        "custom_llm_provider": custom_llm_provider,
-        "extra_headers": JSON.validate_python(extra_headers),
-        "extra_body": extra_body,
-        "acancel_fine_tuning_job": True,
-        "params": configured_params(kwargs),
-    }
-    payload = to_call_payload({"call": call, "settings": read_settings(SETTINGS)})
-    job = await acall_native(NativeTuningSession().acancel, payload, NativeTuningError)
-    return validated_value(job, LiteLLMFineTuningJob)
+    payload = cancel_payload(
+        fine_tuning_job_id,
+        custom_llm_provider,
+        extra_headers,
+        extra_body,
+        kwargs,
+        is_async=True,
+    )
+    return await async_job_answer(NativeTuningSession().acancel, payload)

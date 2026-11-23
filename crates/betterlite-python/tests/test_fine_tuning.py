@@ -1,11 +1,11 @@
 import asyncio
 import inspect
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from typing import Final, Protocol
 
 import openai
 import pytest
-from completion_server import LITELLM, Dumpable
+from completion_server import LITELLM, Dumpable, RefResult
 from pydantic import JsonValue, TypeAdapter
 from tuning_server import (
     AZURE_JOBS_PATH,
@@ -24,6 +24,7 @@ from tuning_server import (
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeTuningError
 from betterlite.exceptions import AuthenticationError
+from betterlite.fine_tuning._page import FineTuningJobPage
 from betterlite.fine_tuning.main import (
     HYPERPARAMETERS_DEFAULT,
     acancel_fine_tuning_job,
@@ -35,8 +36,8 @@ from betterlite.fine_tuning.main import (
     list_fine_tuning_jobs,
     retrieve_fine_tuning_job,
 )
-from betterlite.fine_tuning.types import FineTuningJobPage, page_value
 from betterlite.types.utils import LiteLLMFineTuningJob
+from betterlite.types.utils.base import validated_value
 
 MODEL: Final = "gpt-4o-mini-2024-07-18"
 TRAINING_FILE: Final = "file-abc"
@@ -50,6 +51,7 @@ AZURE_HYPERPARAMETERS: Final[dict[str, JsonValue]] = {
     "prompt_loss_weight": 0.1,
 }
 AZURE_VERSION: Final = "2024-10-21"
+AZURE_QUERY: Final = f"api-version={AZURE_VERSION}"
 LIMIT: Final = 2
 AFTER: Final = "ftjob-0"
 MISSING_KEY_TEXT: Final = "Invalid API key provided: bad-key"
@@ -57,6 +59,22 @@ JOB_STATUS: Final = "running"
 CANCELLED_STATUS: Final = "cancelled"
 REFERENCE_CALLS: Final = 2
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+EXPECTED_CREATE_BODY: Final[dict[str, JsonValue]] = {
+    "model": MODEL,
+    "training_file": TRAINING_FILE,
+    "hyperparameters": dict(HYPERPARAMETERS),
+    "suffix": SUFFIX,
+    "validation_file": VALIDATION_FILE,
+    "integrations": list(INTEGRATIONS),
+    "seed": SEED,
+}
+EXPECTED_AZURE_BODY: Final[dict[str, JsonValue]] = {
+    "model": MODEL,
+    "training_file": TRAINING_FILE,
+    "hyperparameters": {"n_epochs": 2},
+    "prompt_loss_weight": 0.1,
+    "trainingType": 1,
+}
 
 SIGNATURES: Final[list[tuple[str, inspect.Signature, inspect.Signature]]] = [
     (
@@ -120,24 +138,98 @@ def body_json(record: RecordedCall) -> JsonValue:
     return JSON.validate_json(body)
 
 
-async def awaited_job(
+# LiteLLM's call answers RefResult, and only a constructed model carries the job the caller gets.
+def reference_dump(answer: RefResult) -> JsonValue:
+    match answer:
+        case Dumpable() as job:
+            return JSON.validate_python(job.model_dump())
+        case object():
+            raise AssertionError("the reference call answered with no job")
+
+
+def ours_dump(answer: LiteLLMFineTuningJob | Awaitable[LiteLLMFineTuningJob]) -> JsonValue:
+    match answer:
+        case LiteLLMFineTuningJob() as job:
+            return JSON.validate_python(job.model_dump())
+        case Awaitable():
+            raise AssertionError("the sync call answered with a coroutine")
+
+
+def page_of(answer: FineTuningJobPage | Awaitable[FineTuningJobPage]) -> FineTuningJobPage:
+    match answer:
+        case FineTuningJobPage() as page:
+            return page
+        case Awaitable():
+            raise AssertionError("the sync list answered with a coroutine")
+
+
+def job_of(
     answer: LiteLLMFineTuningJob | Awaitable[LiteLLMFineTuningJob],
 ) -> LiteLLMFineTuningJob:
     match answer:
+        case LiteLLMFineTuningJob() as job:
+            return job
+        case Awaitable():
+            raise AssertionError("the sync call answered with a coroutine")
+
+
+# Both clients sent the same request; only create carries a JSON body.
+def exchange_body(
+    calls: Sequence[RecordedCall], method: str, path: str, query: str
+) -> JsonValue | None:
+    assert len(calls) == REFERENCE_CALLS
+    first, second = calls
+    assert first["method"] == second["method"] == method
+    assert first["path"] == second["path"] == path
+    assert first["query"] == second["query"] == query
+    if not second["body"]:
+        assert first["body"] == second["body"] == b""
+        return None
+    assert body_json(first) == body_json(second)
+    return body_json(second)
+
+
+# The four flag redirects, each answered by the coroutine its a-prefixed twin would return.
+async def flagged_results(base: str) -> list[str]:
+    results: list[str] = []
+    created = create_fine_tuning_job(
+        model=MODEL,
+        training_file=TRAINING_FILE,
+        acreate_fine_tuning_job=True,
+        api_base=base,
+        api_key=GOOD_KEY,
+    )
+    match created:
         case LiteLLMFineTuningJob():
-            raise AssertionError("the flagged call answered with a job, not a coroutine")
-        case Awaitable():
-            return await answer
-
-
-async def awaited_page(
-    answer: FineTuningJobPage | Awaitable[FineTuningJobPage],
-) -> FineTuningJobPage:
-    match answer:
+            raise AssertionError("the flagged create answered with a job")
+        case Awaitable() as pending:
+            results.append((await pending).id)
+    retrieved = retrieve_fine_tuning_job(
+        JOB_ID, aretrieve_fine_tuning_job=True, api_base=base, api_key=GOOD_KEY
+    )
+    match retrieved:
+        case LiteLLMFineTuningJob():
+            raise AssertionError("the flagged retrieve answered with a job")
+        case Awaitable() as pending:
+            results.append((await pending).id)
+    listed = list_fine_tuning_jobs(
+        alist_fine_tuning_jobs=True, api_base=base, api_key=GOOD_KEY
+    )
+    match listed:
         case FineTuningJobPage():
-            raise AssertionError("the flagged call answered with a page, not a coroutine")
-        case Awaitable():
-            return await answer
+            raise AssertionError("the flagged list answered with a page")
+        case Awaitable() as pending:
+            page = await pending
+            results.append(",".join(job.id for job in page.data))
+    cancelled = cancel_fine_tuning_job(
+        JOB_ID, acancel_fine_tuning_job=True, api_base=base, api_key=GOOD_KEY
+    )
+    match cancelled:
+        case LiteLLMFineTuningJob():
+            raise AssertionError("the flagged cancel answered with a job")
+        case Awaitable() as pending:
+            results.append((await pending).status)
+    return results
 
 
 def test_signatures_match_litellm() -> None:
@@ -152,200 +244,130 @@ def test_signatures_match_litellm() -> None:
 
 def test_create_matches_litellm() -> None:
     with TuningServer() as server:
-        match LITELLM.create_fine_tuning_job(
-            model=MODEL,
-            training_file=TRAINING_FILE,
-            hyperparameters=dict(HYPERPARAMETERS),
-            suffix=SUFFIX,
-            validation_file=VALIDATION_FILE,
-            integrations=JSON.validate_python(INTEGRATIONS),
-            seed=SEED,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case Dumpable() as reference_job:
-                reference = JSON.validate_python(reference_job.model_dump())
-            case object():
-                raise AssertionError("the reference create answered with no job")
-        match create_fine_tuning_job(
-            model=MODEL,
-            training_file=TRAINING_FILE,
-            hyperparameters=dict(HYPERPARAMETERS),
-            suffix=SUFFIX,
-            validation_file=VALIDATION_FILE,
-            integrations=list(INTEGRATIONS),
-            seed=SEED,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case LiteLLMFineTuningJob() as job:
-                ours = JSON.validate_python(job.model_dump())
-            case Awaitable():
-                raise AssertionError("the sync create answered with a coroutine")
+        reference = reference_dump(
+            LITELLM.create_fine_tuning_job(
+                model=MODEL,
+                training_file=TRAINING_FILE,
+                hyperparameters=dict(HYPERPARAMETERS),
+                suffix=SUFFIX,
+                validation_file=VALIDATION_FILE,
+                integrations=JSON.validate_python(INTEGRATIONS),
+                seed=SEED,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
+        ours = ours_dump(
+            create_fine_tuning_job(
+                model=MODEL,
+                training_file=TRAINING_FILE,
+                hyperparameters=dict(HYPERPARAMETERS),
+                suffix=SUFFIX,
+                validation_file=VALIDATION_FILE,
+                integrations=list(INTEGRATIONS),
+                seed=SEED,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
         calls = server.calls
-    assert len(calls) == REFERENCE_CALLS
-    first, second = calls
-    assert first["method"] == second["method"] == "POST"
-    assert first["path"] == second["path"] == JOBS_PATH
-    assert first["query"] == second["query"] == ""
-    assert second["headers"]["authorization"] == f"Bearer {GOOD_KEY}"
-    assert first["headers"]["authorization"] == second["headers"]["authorization"]
-    assert body_json(first) == body_json(second)
-    expected: dict[str, JsonValue] = {
-        "model": MODEL,
-        "training_file": TRAINING_FILE,
-        "hyperparameters": dict(HYPERPARAMETERS),
-        "suffix": SUFFIX,
-        "validation_file": VALIDATION_FILE,
-        "integrations": list(INTEGRATIONS),
-        "seed": SEED,
-    }
-    assert body_json(second) == expected
     assert ours == reference
-
-
-def test_azure_create_parity() -> None:
+    assert exchange_body(calls, "POST", JOBS_PATH, "") == EXPECTED_CREATE_BODY
+    assert calls[1]["headers"]["authorization"] == f"Bearer {GOOD_KEY}"
     with TuningServer() as server:
-        match LITELLM.create_fine_tuning_job(
-            model=MODEL,
-            training_file=TRAINING_FILE,
-            hyperparameters=dict(AZURE_HYPERPARAMETERS),
-            custom_llm_provider="azure",
-            api_version=AZURE_VERSION,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case Dumpable() as reference_job:
-                reference = JSON.validate_python(reference_job.model_dump())
-            case object():
-                raise AssertionError("the reference create answered with no job")
-        match create_fine_tuning_job(
-            model=MODEL,
-            training_file=TRAINING_FILE,
-            hyperparameters=dict(AZURE_HYPERPARAMETERS),
-            custom_llm_provider="azure",
-            api_version=AZURE_VERSION,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case LiteLLMFineTuningJob() as job:
-                ours = JSON.validate_python(job.model_dump())
-            case Awaitable():
-                raise AssertionError("the sync create answered with a coroutine")
+        reference = reference_dump(
+            LITELLM.create_fine_tuning_job(
+                model=MODEL,
+                training_file=TRAINING_FILE,
+                hyperparameters=dict(AZURE_HYPERPARAMETERS),
+                custom_llm_provider="azure",
+                api_version=AZURE_VERSION,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
+        ours = ours_dump(
+            create_fine_tuning_job(
+                model=MODEL,
+                training_file=TRAINING_FILE,
+                hyperparameters=dict(AZURE_HYPERPARAMETERS),
+                custom_llm_provider="azure",
+                api_version=AZURE_VERSION,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
         calls = server.calls
-    assert len(calls) == REFERENCE_CALLS
-    first, second = calls
-    assert first["method"] == second["method"] == "POST"
-    assert first["path"] == second["path"] == AZURE_JOBS_PATH
-    assert first["query"] == second["query"] == f"api-version={AZURE_VERSION}"
-    assert first["headers"]["api-key"] == second["headers"]["api-key"] == GOOD_KEY
-    assert body_json(first) == body_json(second)
-    expected: dict[str, JsonValue] = {
-        "model": MODEL,
-        "training_file": TRAINING_FILE,
-        "hyperparameters": {"n_epochs": 2},
-        "prompt_loss_weight": 0.1,
-        "trainingType": 1,
-    }
-    assert body_json(second) == expected
     assert ours == reference
+    assert exchange_body(calls, "POST", AZURE_JOBS_PATH, AZURE_QUERY) == EXPECTED_AZURE_BODY
+    assert calls[1]["headers"]["api-key"] == GOOD_KEY
 
 
 def test_default_hyperparameters() -> None:
-    assert HYPERPARAMETERS_DEFAULT == {}
+    source = dict(AZURE_HYPERPARAMETERS)
     with TuningServer() as server:
-        source = dict(AZURE_HYPERPARAMETERS)
-        match create_fine_tuning_job(
-            model=MODEL,
-            training_file=TRAINING_FILE,
-            hyperparameters=source,
-            custom_llm_provider="azure",
-            api_version=AZURE_VERSION,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case LiteLLMFineTuningJob():
-                pass
-            case Awaitable():
-                raise AssertionError("the sync create answered with a coroutine")
-        match create_fine_tuning_job(
-            model=MODEL,
-            training_file=TRAINING_FILE,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case LiteLLMFineTuningJob() as job:
-                assert job.id == JOB_ID
-            case Awaitable():
-                raise AssertionError("the sync create answered with a coroutine")
+        azure_job = job_of(
+            create_fine_tuning_job(
+                model=MODEL,
+                training_file=TRAINING_FILE,
+                hyperparameters=source,
+                custom_llm_provider="azure",
+                api_version=AZURE_VERSION,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
+        default_job = job_of(
+            create_fine_tuning_job(
+                model=MODEL,
+                training_file=TRAINING_FILE,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
+    assert azure_job.id == default_job.id == JOB_ID
     assert source == AZURE_HYPERPARAMETERS
-    assert "prompt_loss_weight" in source
     assert HYPERPARAMETERS_DEFAULT == {}
 
 
-def test_retrieve_matches_litellm() -> None:
+def test_retrieve_cancel_parity() -> None:
     with TuningServer() as server:
-        match LITELLM.retrieve_fine_tuning_job(
-            fine_tuning_job_id=JOB_ID,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case Dumpable() as reference_job:
-                reference = JSON.validate_python(reference_job.model_dump())
-            case object():
-                raise AssertionError("the reference retrieve answered with no job")
-        match retrieve_fine_tuning_job(JOB_ID, api_base=server.url, api_key=GOOD_KEY):
-            case LiteLLMFineTuningJob() as job:
-                ours = JSON.validate_python(job.model_dump())
-            case Awaitable():
-                raise AssertionError("the sync retrieve answered with a coroutine")
+        reference = LITELLM.retrieve_fine_tuning_job(
+            JOB_ID, api_base=server.url, api_key=GOOD_KEY
+        )
+        ours = retrieve_fine_tuning_job(JOB_ID, api_base=server.url, api_key=GOOD_KEY)
+        assert ours_dump(ours) == reference_dump(reference)
         calls = server.calls
-    assert len(calls) == REFERENCE_CALLS
-    first, second = calls
-    assert first["method"] == second["method"] == "GET"
-    assert first["path"] == second["path"] == JOB_PATH
-    assert first["query"] == second["query"] == ""
-    assert first["body"] == second["body"] == b""
-    assert ours == reference
+    assert exchange_body(calls, "GET", JOB_PATH, "") is None
+    with TuningServer() as server:
+        reference = LITELLM.cancel_fine_tuning_job(JOB_ID, api_base=server.url, api_key=GOOD_KEY)
+        ours = cancel_fine_tuning_job(JOB_ID, api_base=server.url, api_key=GOOD_KEY)
+        assert ours_dump(ours) == reference_dump(reference)
+        calls = server.calls
+    assert exchange_body(calls, "POST", CANCEL_PATH, "") is None
 
 
 def test_list_matches_litellm() -> None:
     with TuningServer() as server:
         assert LITELLM.list_fine_tuning_jobs(
-            after=AFTER,
-            limit=LIMIT,
-            api_base=server.url,
-            api_key=GOOD_KEY,
+            after=AFTER, limit=LIMIT, api_base=server.url, api_key=GOOD_KEY
         ) is not None
-        match list_fine_tuning_jobs(
-            after=AFTER,
-            limit=LIMIT,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case FineTuningJobPage() as page:
-                listed = page
-            case Awaitable():
-                raise AssertionError("the sync list answered with a coroutine")
+        page = page_of(
+            list_fine_tuning_jobs(
+                after=AFTER, limit=LIMIT, api_base=server.url, api_key=GOOD_KEY
+            )
+        )
         calls = server.calls
-    assert len(calls) == REFERENCE_CALLS
-    first, second = calls
-    assert first["method"] == second["method"] == "GET"
-    assert first["path"] == second["path"] == JOBS_PATH
-    assert first["query"] == second["query"] == f"after={AFTER}&limit={LIMIT}"
-    assert first["body"] == second["body"] == b""
-    match listed.data[0]:
-        case LiteLLMFineTuningJob() as first_job:
-            assert first_job.id == JOB_ID
-    assert [job.id for job in listed.data] == [JOB_ID, SECOND_JOB_ID]
-    assert listed.object == "list"
-    assert listed.has_more is False
-    assert listed.first_id == JOB_ID
-    assert listed.last_id == SECOND_JOB_ID
-    assert listed.data[0].status == JOB_STATUS
+    assert exchange_body(calls, "GET", JOBS_PATH, f"after={AFTER}&limit={LIMIT}") is None
+    assert [job.id for job in page.data] == [JOB_ID, SECOND_JOB_ID]
+    assert page.object == "list"
+    assert page.has_more is False
+    assert page.first_id == JOB_ID
+    assert page.last_id == SECOND_JOB_ID
+    assert page.data[0].status == JOB_STATUS
 
 
-def test_list_normalizes_an_all_null_error() -> None:
+def test_list_null_error_to_none() -> None:
     job: JsonValue = {**JOB, "error": {"code": None, "message": None, "param": None}}
     page: JsonValue = {
         "object": "list",
@@ -354,66 +376,14 @@ def test_list_normalizes_an_all_null_error() -> None:
         "first_id": JOB_ID,
         "last_id": JOB_ID,
     }
-    assert page_value(page).data[0].error is None
-
-
-def test_cancel_matches_litellm() -> None:
-    with TuningServer() as server:
-        match LITELLM.cancel_fine_tuning_job(
-            fine_tuning_job_id=JOB_ID,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        ):
-            case Dumpable() as reference_job:
-                reference = JSON.validate_python(reference_job.model_dump())
-            case object():
-                raise AssertionError("the reference cancel answered with no job")
-        match cancel_fine_tuning_job(JOB_ID, api_base=server.url, api_key=GOOD_KEY):
-            case LiteLLMFineTuningJob() as job:
-                ours = JSON.validate_python(job.model_dump())
-            case Awaitable():
-                raise AssertionError("the sync cancel answered with a coroutine")
-        calls = server.calls
-    assert len(calls) == REFERENCE_CALLS
-    first, second = calls
-    assert first["method"] == second["method"] == "POST"
-    assert first["path"] == second["path"] == CANCEL_PATH
-    assert first["query"] == second["query"] == ""
-    assert first["body"] == second["body"] == b""
-    assert ours == reference
+    loaded = validated_value(page, FineTuningJobPage)
+    assert loaded.data[0].error is None
 
 
 def test_retrieve_list_flags() -> None:
     with TuningServer() as server:
-        created = create_fine_tuning_job(
-            model=MODEL,
-            training_file=TRAINING_FILE,
-            acreate_fine_tuning_job=True,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        assert asyncio.run(awaited_job(created)).id == JOB_ID
-        retrieved = retrieve_fine_tuning_job(
-            JOB_ID,
-            aretrieve_fine_tuning_job=True,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        assert asyncio.run(awaited_job(retrieved)).id == JOB_ID
-        listed = list_fine_tuning_jobs(
-            alist_fine_tuning_jobs=True,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        page = asyncio.run(awaited_page(listed))
-        assert [job.id for job in page.data] == [JOB_ID, SECOND_JOB_ID]
-        cancelled = cancel_fine_tuning_job(
-            JOB_ID,
-            acancel_fine_tuning_job=True,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        assert asyncio.run(awaited_job(cancelled)).status == CANCELLED_STATUS
+        results = asyncio.run(flagged_results(server.url))
+    assert results == [JOB_ID, JOB_ID, f"{JOB_ID},{SECOND_JOB_ID}", CANCELLED_STATUS]
 
 
 def test_error_class_and_cause() -> None:
@@ -442,17 +412,17 @@ def test_error_class_and_cause() -> None:
             raise AssertionError("the provider error kept no native cause")
 
 
-def test_error_missing_azure_base_is_a_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_error_missing_azure_base(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AZURE_API_BASE", raising=False)
     monkeypatch.delenv("AZURE_OPENAI_ENDPOINT", raising=False)
-    with pytest.raises(ValueError) as reference_caught:
+    with pytest.raises(ValueError, match="AZURE_OPENAI_ENDPOINT") as reference_caught:
         LITELLM.create_fine_tuning_job(
             model=MODEL,
             training_file=TRAINING_FILE,
             custom_llm_provider="azure",
             api_key=GOOD_KEY,
         )
-    with pytest.raises(ValueError) as ours_caught:
+    with pytest.raises(ValueError, match="AZURE_OPENAI_ENDPOINT") as ours_caught:
         create_fine_tuning_job(
             model=MODEL,
             training_file=TRAINING_FILE,

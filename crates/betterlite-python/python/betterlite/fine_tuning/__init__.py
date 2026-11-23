@@ -1,3 +1,4 @@
+from betterlite.fine_tuning._page import FineTuningJobPage
 from betterlite.fine_tuning.main import (
     acancel_fine_tuning_job,
     acreate_fine_tuning_job,
@@ -8,7 +9,6 @@ from betterlite.fine_tuning.main import (
     list_fine_tuning_jobs,
     retrieve_fine_tuning_job,
 )
-from betterlite.fine_tuning.types import FineTuningJobPage
 
 __all__ = [
     "FineTuningJobPage",
