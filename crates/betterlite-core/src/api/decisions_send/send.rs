@@ -94,7 +94,7 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
     }
 }
 
-// A client the pool cannot build raises no request, so exception_type's catchall maps it like any plain exception
+// A failure outside the provider's own class - building the client, serializing the body, an unusable header or url - goes to exception_type's catchall
 pub(super) fn plain(
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
