@@ -20,6 +20,10 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::api::realtime_backend_transport::dial::{
+    ConnectedBackend, DialRequest, RealtimeWebSocketDialer,
+};
+use crate::api::realtime_backend_transport::error::DialError;
 use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
 use crate::api::realtime_contracts::error::{HeaderMap, WebSocketError};
 use crate::api::realtime_contracts::events::{
@@ -247,6 +251,18 @@ impl RealtimeConnectDispatch for BareDispatch {
     type ProviderConfig = TestConfig;
 }
 
+// The dispatch only stores the caller's client, so a dial through this one would be a defect.
+pub(super) struct UnusedDialer;
+
+#[async_trait]
+impl RealtimeWebSocketDialer for UnusedDialer {
+    async fn connect(&self, _request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
+        Err(DialError::Other {
+            message: String::from("the connection dispatch never dials"),
+        })
+    }
+}
+
 fn logging_state() -> LoggingState {
     let init: LoggingInit = serde_json::from_str(
         r#"{"model":"realtime","call_type":"realtime","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
@@ -325,4 +341,15 @@ pub(super) fn call<'call>(
         client_sent_beta,
         litellm_params,
     }
+}
+
+pub(super) fn call_with_client<'call>(
+    model: &'call str,
+    connect: &'call RealtimeConnectParams,
+    client: &Arc<dyn RealtimeWebSocketDialer>,
+    litellm_params: &'call IndexMap<String, Json>,
+) -> RealtimeConnectCall<'call> {
+    let mut request = call(model, connect, None, litellm_params, false);
+    request.client = Some(Arc::clone(client));
+    request
 }

@@ -1,4 +1,7 @@
 #![cfg(test)]
+mod credentials;
+mod forwarding;
+mod guardrails;
 mod support;
 
 use std::sync::{Arc, PoisonError};
@@ -29,6 +32,7 @@ async fn realtime_generic_dispatch() {
     assert_eq!(dispatch.tags(), vec![RealtimeConfigTag::Gemini]);
     assert_generic_arguments(&connection, &caller_query);
     assert_generic_metadata_and_logging(&connection, &logging);
+    guardrails::kwargs_guardrails_fallback().await;
 }
 
 async fn generic_connection(
@@ -55,6 +59,7 @@ async fn generic_connection(
         (String::from("guardrails"), Json::List(vec![text("third")])),
         (String::from("trace"), text("t1")),
     ]));
+    connect.user = Some(String::from("u-1"));
     let litellm_params = IndexMap::new();
     let caller_query = IndexMap::from([
         (String::from("model"), String::from("alias")),
@@ -116,6 +121,7 @@ fn assert_generic_metadata_and_logging(
     );
     assert_eq!(metadata.get("trace"), Some(&text("t1")));
     assert_eq!(logging.model, "gemini-2.0-flash-live-001");
+    assert_eq!(logging.user.as_deref(), Some("u-1"));
     assert_eq!(
         logging.litellm_params.get("_arealtime"),
         Some(&Json::Bool(true))
@@ -203,12 +209,14 @@ async fn realtime_openai_and_azure_credentials() {
     azure_global_credentials(&dispatch, &settings, &litellm_params).await;
     azure_named_version_and_protocol(&dispatch, &settings, &litellm_params).await;
     azure_ad_token_fallback(&litellm_params).await;
-    openai_credentials(&dispatch, &litellm_params).await;
+    credentials::openai_credentials(&dispatch, &litellm_params).await;
     named_api_key_wins().await;
     azure_settings_key_fallbacks().await;
-    openai_settings_key_fallbacks().await;
+    credentials::openai_settings_key_fallbacks().await;
     azure_generic_precedence(&dispatch, &settings, &litellm_params).await;
     azure_protocol_negotiation(&litellm_params).await;
+    credentials::openai_generic_base_and_global_key_win().await;
+    forwarding::connector_branches_drop_the_client().await;
 }
 
 async fn azure_generic_precedence(
@@ -293,7 +301,7 @@ async fn named_api_key_wins() {
     .await;
 }
 
-async fn assert_api_key(
+pub(super) async fn assert_api_key(
     dispatch: &Recorder,
     settings: &RealtimeConnectionSettings,
     model: &str,
@@ -334,20 +342,6 @@ async fn azure_settings_key_fallbacks() {
         "azure/my-deployment",
         &params(),
         "sk-openai-global",
-    )
-    .await;
-}
-
-async fn openai_settings_key_fallbacks() {
-    let dispatch = Recorder::default();
-    let mut environment_only = settings();
-    environment_only.openai_api_key = Some(secret("openai-only-key"));
-    assert_api_key(
-        &dispatch,
-        &environment_only,
-        "openai/gpt-realtime",
-        &params(),
-        "openai-only-key",
     )
     .await;
 }
@@ -486,29 +480,6 @@ fn assert_azure_ad_request(dispatch: &Recorder) {
     );
 }
 
-async fn openai_credentials(dispatch: &Recorder, litellm_params: &IndexMap<String, Json>) {
-    let mut openai = settings();
-    openai.api_key = None;
-    openai.openai_key = Some(secret("sk-openai-global"));
-    let connect = params();
-    let call = call("openai/gpt-realtime", &connect, None, litellm_params, false);
-    let (_, result) = run(dispatch, &openai, &call).await;
-    let connection = result.unwrap();
-    assert!(matches!(connection.branch, Branch::OpenAi));
-    assert_eq!(
-        connection.args.api_base.as_deref(),
-        Some("https://api.openai.com/")
-    );
-    assert_eq!(
-        connection
-            .args
-            .api_key
-            .as_ref()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("sk-openai-global")
-    );
-}
-
 async fn azure_named_version_and_protocol(
     dispatch: &Recorder,
     settings: &RealtimeConnectionSettings,
@@ -551,6 +522,7 @@ async fn realtime_bedrock_and_xai_arguments() {
     bedrock_ignores_generic_and_global(&dispatch, &litellm_params).await;
     xai_arguments(&dispatch, &litellm_params).await;
     xai_key_fallbacks(&dispatch).await;
+    credentials::xai_generic_base_wins_over_the_environment().await;
 }
 
 fn bedrock_params() -> RealtimeConnectParams {
@@ -776,6 +748,10 @@ async fn realtime_vertex_credentials_and_refresh() {
     vertex_placement_settings(&litellm_params).await;
     vertex_ai_credentials_alias(&litellm_params).await;
     vertex_generic_base(&litellm_params).await;
+    credentials::vertex_ai_project_alias_reaches_the_resolver().await;
+    credentials::vertex_ai_credentials_alias_beats_the_environment().await;
+    credentials::vertex_zero_credential_timeout_expires_without_resolving().await;
+    forwarding::vertex_forwards_the_client().await;
 }
 
 async fn vertex_generic_base(litellm_params: &IndexMap<String, Json>) {
