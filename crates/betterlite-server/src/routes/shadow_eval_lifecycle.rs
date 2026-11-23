@@ -215,7 +215,7 @@ async fn start_job(
 }
 
 // this server installs no live DeploymentCatalog yet, so a start answers the no-router 400 until one is installed
-fn start_deps<'deps>(
+const fn start_deps<'deps>(
     state: &'deps LifecycleState,
     sdk: &'deps dyn JudgeSdk,
     resolution: &'deps ResolutionContext<'deps>,
