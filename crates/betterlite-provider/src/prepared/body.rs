@@ -12,6 +12,8 @@ use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers as OpenAiHeaders, OpenAiConfig, OpenAiSettings,
 };
+use betterlite_paths::paths::delete::remove;
+use betterlite_paths::paths::{Document, PathLimits};
 use http::HeaderValue;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -33,6 +35,13 @@ const REMOVED_KEYS: [&str; 5] = [
 ];
 // get_non_default_completion_params drops LiteLLM's own kwargs before the check, and metadata is one of them
 const OWNED_PARAMETER_NAMES: [&str; 1] = ["metadata"];
+// the same bounds the responses side gives its drop paths (crates/betterlite-core/src/api/responses_parameters/nested.rs)
+const DROP_PATH_LIMITS: PathLimits = PathLimits {
+    max_path_bytes: 512,
+    max_depth: 32,
+    max_selectors: 32,
+    max_visits: 4096,
+};
 
 pub(crate) struct ChatRequestFields {
     pub(crate) messages: JsonValue,
@@ -71,6 +80,7 @@ pub(crate) fn chat_fields(
     let supported = policy.supported_params(model, catalog);
     // _check_valid_arg runs before the body is built, so an unsupported name answers 400 here
     let mapping = listed_parameters(&params, &supported, model, deployment)?;
+    let (drop_policy, _call_drop) = parameter_policy(&params, deployment)?;
     let (known, forwarded): (IndexMap<String, JsonValue>, IndexMap<String, JsonValue>) = params
         .into_iter()
         .partition(|(name, _value)| KNOWN_PARAMS.split(' ').any(|known| known == name));
@@ -88,6 +98,7 @@ pub(crate) fn chat_fields(
             optional.insert(name, value);
         }
     }
+    drop_nested_paths(&mut optional, &drop_policy.additional_drop_params)?;
     let mut body: IndexMap<String, JsonValue> = IndexMap::new();
     body.insert(String::from("model"), JsonValue::Text(model.to_owned()));
     body.insert(String::from("messages"), messages);
@@ -102,7 +113,11 @@ pub(crate) fn listed_parameters(
     model: &str,
     deployment: &Deployment,
 ) -> Result<ParameterMapping, OperationError> {
-    let (policy, _call_drop) = parameter_policy(fields, deployment)?;
+    let (mut policy, _call_drop) = parameter_policy(fields, deployment)?;
+    // a nested path is not a parameter name: it stays out of the flat check and drop_nested_paths applies it later
+    policy
+        .additional_drop_params
+        .retain(|name| !name.contains('.') && !name.contains('['));
     let parameters = chat_parameters(fields)?;
     map_listed_parameters(
         supported,
@@ -112,6 +127,42 @@ pub(crate) fn listed_parameters(
         &policy,
     )
     .map_err(|source| OperationError::Parameters { source })
+}
+
+// get_optional_params deletes every nested additional_drop_params path from the mapped parameters last (utils.py L5035-L5041)
+pub(crate) fn drop_nested_paths<T>(
+    optional: &mut IndexMap<String, T>,
+    additional_drop_params: &[String],
+) -> Result<(), OperationError>
+where
+    T: Serialize + DeserializeOwned,
+{
+    let nested: Vec<&String> = additional_drop_params
+        .iter()
+        .filter(|path| path.contains('.') || path.contains('['))
+        .collect();
+    if nested.is_empty() {
+        return Ok(());
+    }
+    let json =
+        serde_json::to_value(&*optional).map_err(|source| OperationError::Encode { source })?;
+    let mut document = Document { json };
+    for path in nested {
+        document = remove(&DROP_PATH_LIMITS, &document, path).map_err(|source| {
+            OperationError::Parameters {
+                source: ParameterError::Encode {
+                    source: JsonError::io(IoError::other(format!(
+                        "the drop path {path} cannot be applied: {source}"
+                    ))),
+                },
+            }
+        })?;
+    }
+    *optional =
+        serde_json::from_value(document.json).map_err(|source| OperationError::Parameters {
+            source: ParameterError::Encode { source },
+        })?;
+    Ok(())
 }
 
 // The router spreads the deployment's litellm_params under the request's kwargs, so a value the request sends wins.

@@ -22,7 +22,7 @@ use secrecy::SecretString;
 
 use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use crate::operation::{AnthropicCallError, OperationError};
-use crate::prepared::body::{convert, listed_parameters, parameter_policy};
+use crate::prepared::body::{convert, drop_nested_paths, listed_parameters, parameter_policy};
 use crate::prepared::deployment::Deployment;
 
 // The runtime values every parameter step reads, borrowed once so each step takes one argument.
@@ -103,6 +103,7 @@ async fn optional_parameters(
     copy_provider_fields(provider, &mut optional);
     optional = openai_overrides(optional, standard, policy)?;
     copy_extra_body(extra_body, policy, &mut optional)?;
+    drop_nested_paths(&mut optional, &policy.additional_drop_params)?;
     Ok(optional)
 }
 
