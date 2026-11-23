@@ -18,7 +18,9 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::{Chunk, StreamFieldError, extract_message_start_field, resolve_logged_model};
+use super::{
+    Chunk, StreamFieldError, extract_message_start_field, resolve_logged_model, split_lines,
+};
 
 const MODEL_EVENT: &str =
     r#"data: {"type": "message_start", "message": {"id": "msg_1", "model": "chunk-model"}}"#;
@@ -103,6 +105,17 @@ fn fields_extract_splits_on_every_splitlines_boundary(#[case] separator: &str) {
         extract_message_start_field(&chunks, "model").expect("valid text"),
         Some("chunk-model".to_owned())
     );
+}
+
+#[test]
+fn fields_split_lines_matches_python_splitlines() {
+    assert_eq!(split_lines("a\r\nb"), vec!["a", "b"]);
+    assert_eq!(split_lines("a\rb"), vec!["a", "b"]);
+    assert_eq!(split_lines("a\n"), vec!["a"]);
+    assert_eq!(split_lines("a\n\n"), vec!["a", ""]);
+    assert_eq!(split_lines("a\u{2028}b\u{2029}"), vec!["a", "b"]);
+    assert_eq!(split_lines(""), Vec::<&str>::new());
+    assert_eq!(split_lines("no boundary"), vec!["no boundary"]);
 }
 
 #[test]

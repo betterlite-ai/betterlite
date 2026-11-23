@@ -14,7 +14,6 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -214,6 +213,20 @@ fn costing_compute_counts_model_info_custom_pricing() {
 }
 
 #[test]
+fn costing_compute_counts_model_info_pricing_fields() {
+    let call_log = logging_state(
+        &[(
+            "metadata",
+            object(r#"{"model_info": {"input_cost_per_token": 0}}"#),
+        )],
+        &[],
+    );
+    let cost = FakeCost::priced(Decimal::new(25, 2));
+    compute_response_cost(&cost, &object("{}"), "claude", &call_log).expect("a price");
+    assert_eq!(cost.calls()[0].custom_pricing, Some(true));
+}
+
+#[test]
 fn costing_compute_ignores_a_top_level_off_peak_pricing() {
     let call_log = logging_state(
         &[("off_peak_pricing", object(r#"{"input_cost_per_token": 1}"#))],
@@ -323,7 +336,7 @@ impl ResponseCostService for FakeCost {
     }
 }
 
-fn object(text: &str) -> JsonObject {
+fn object(text: &str) -> Json {
     serde_json::from_str(text).expect("a JSON object")
 }
 

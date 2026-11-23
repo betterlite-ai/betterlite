@@ -134,7 +134,7 @@ const PAYLOAD_TEMPLATE: &str = r#"{
 
 #[test]
 fn payload_sets_the_cost_model_and_the_call_log_response_cost() {
-    let mut response = object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
     let mut call_log = logging_state();
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::returning();
@@ -176,12 +176,14 @@ fn payload_sets_the_cost_model_and_the_call_log_response_cost() {
 
 #[test]
 fn payload_uses_end_user_argument() {
-    let mut response = object(r#"{"id": "upstream-id"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
     let mut params = JsonObject::new();
     params.insert(
         "proxy_server_request".to_owned(),
-        object(r#"{"url": "https://upstream", "method": "POST", "body": {"user": "body-user"}}"#),
+        json_object(
+            r#"{"url": "https://upstream", "method": "POST", "body": {"user": "body-user"}}"#,
+        ),
     );
     let kwargs = logging_kwargs(
         params,
@@ -209,7 +211,7 @@ fn payload_uses_end_user_argument() {
 #[case(None)]
 #[case(Some(""))]
 fn payload_skips_the_user_without_a_usable_end_user(#[case] end_user: Option<&str>) {
-    let mut response = object(r#"{"id": "upstream-id"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
     let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::priced(Decimal::new(25, 2));
@@ -230,7 +232,7 @@ fn payload_skips_the_user_without_a_usable_end_user(#[case] end_user: Option<&st
 
 #[test]
 fn payload_skips_the_user_without_a_request_body() {
-    let mut response = object(r#"{"id": "upstream-id"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::returning();
@@ -255,7 +257,7 @@ fn payload_skips_the_user_without_a_request_body() {
 
 #[test]
 fn payload_skips_the_user_for_an_empty_request_body() {
-    let mut response = object(r#"{"id": "upstream-id"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
     let kwargs = logging_kwargs(JsonObject::new(), Some(JsonObject::new()));
     let cost = FakeCost::priced(Decimal::new(25, 2));
@@ -277,7 +279,7 @@ fn payload_skips_the_user_for_an_empty_request_body() {
 #[test]
 fn payload_stops_after_a_cost_failure() {
     let (log, _guard) = capture_logs(tracing::Level::ERROR);
-    let mut response = object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
     let mut call_log = logging_state();
     let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::unpriced();
@@ -311,7 +313,7 @@ fn payload_stops_after_a_cost_failure() {
 #[test]
 fn payload_keeps_finished_steps_when_the_standard_object_fails() {
     let (log, _guard) = capture_logs(tracing::Level::ERROR);
-    let mut response = object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
     let mut call_log = logging_state();
     let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::priced(Decimal::new(25, 2));
@@ -384,7 +386,7 @@ fn payload_keeps_the_object_when_the_response_is_not_an_object() {
 #[test]
 fn payload_logs_the_standard_object_at_debug() {
     let (log, _guard) = capture_logs(tracing::Level::DEBUG);
-    let mut response = object(r#"{"id": "upstream-id"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::returning();
@@ -405,7 +407,7 @@ fn payload_logs_the_standard_object_at_debug() {
 
 #[test]
 fn payload_builds_the_standard_object_from_the_updated_state() {
-    let mut response = object(r#"{"id": "upstream-id"}"#);
+    let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
     let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::priced(Decimal::new(25, 2));
@@ -418,7 +420,7 @@ fn payload_builds_the_standard_object_from_the_updated_state() {
     let calls = builder.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "requested-model");
-    assert_eq!(calls[0].response, object(r#"{"id": "upstream-id"}"#));
+    assert_eq!(calls[0].response, json_object(r#"{"id": "upstream-id"}"#));
     assert_eq!(
         calls[0].litellm_params.get("proxy_server_request"),
         Some(&Json::Object(object(
@@ -603,6 +605,10 @@ fn logging_kwargs(
 
 fn object(text: &str) -> JsonObject {
     serde_json::from_str(text).expect("a JSON object")
+}
+
+fn json_object(text: &str) -> Json {
+    Json::Object(object(text))
 }
 
 fn json_text(value: &str) -> Json {

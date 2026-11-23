@@ -90,7 +90,9 @@ fn apply_cost(
         custom_pricing: None,
         router_model_id: None,
     };
-    let response_cost = cost.completion_cost(&request)?;
+    let response_cost = cost
+        .completion_cost(&request)
+        .map_err(ResponseCostError::Completion)?;
     input.kwargs.response_cost = Some(response_cost);
     input.kwargs.model = Some(input.model.to_owned());
     input
