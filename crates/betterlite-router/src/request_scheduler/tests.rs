@@ -57,11 +57,13 @@ pub(super) fn scheduler(settings: Settings) -> RequestScheduler {
 
 // the shared tier the pin attaches when Redis is configured, with the same defaults the server builds
 pub(super) async fn shared_scheduler() -> (RequestScheduler, FakeRedis) {
-    shared_scheduler_with(local_store()).await
+    shared_scheduler_with(local_store(), 100).await
 }
 
+// the breaker's threshold, raised by a test whose outage has to end at the shared tier rather than at an open circuit
 pub(super) async fn shared_scheduler_with(
     local: RoutingValueStore,
+    breaker_threshold: u32,
 ) -> (RequestScheduler, FakeRedis) {
     let server = FakeRedis::try_start().await.expect("the fake redis starts");
     let settings = SharedSettings {
@@ -78,7 +80,7 @@ pub(super) async fn shared_scheduler_with(
         },
         breaker: BreakerSettings {
             enabled: true,
-            failure_threshold: 100,
+            failure_threshold: breaker_threshold,
             recovery_timeout: Duration::from_secs(60),
             timeout_min_duration: Duration::from_secs(5),
             timeout_log_interval: Duration::from_secs(1),

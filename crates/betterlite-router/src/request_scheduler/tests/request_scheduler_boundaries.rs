@@ -366,7 +366,7 @@ async fn the_local_queue_copy_expires_at_the_shared_ttl() {
         Arc::new(move || Duration::from_millis(reading.load(Ordering::SeqCst)).as_secs_f64()),
     )
     .expect("the local store builds");
-    let (service, server) = shared_scheduler_with(local).await;
+    let (service, server) = shared_scheduler_with(local, 100).await;
     service
         .add_request(&item(0, "first", MODEL))
         .await
@@ -415,7 +415,7 @@ fn breakable_local_store(broken: &Arc<AtomicBool>) -> RoutingValueStore {
 #[tokio::test(start_paused = true)]
 async fn a_completed_request_keeps_its_response_when_the_cleanup_fails() {
     let broken = Arc::new(AtomicBool::new(false));
-    let (service, _server) = shared_scheduler_with(breakable_local_store(&broken)).await;
+    let (service, _server) = shared_scheduler_with(breakable_local_store(&broken), 100).await;
     let call = ScriptedCall::answered_flipping(0, Arc::clone(&broken));
     let outcome = service
         .schedule(&item(0, "completed", MODEL), &call, &plan(0.5))
@@ -429,7 +429,7 @@ async fn a_completed_request_keeps_its_response_when_the_cleanup_fails() {
 #[tokio::test(start_paused = true)]
 async fn a_timed_out_request_answers_its_timeout_when_the_cleanup_fails() {
     let broken = Arc::new(AtomicBool::new(false));
-    let (service, _server) = shared_scheduler_with(breakable_local_store(&broken)).await;
+    let (service, _server) = shared_scheduler_with(breakable_local_store(&broken), 100).await;
     service
         .add_request(&item(Priority::High.value(), "head", MODEL))
         .await

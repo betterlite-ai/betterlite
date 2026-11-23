@@ -20,13 +20,9 @@ impl From<SchedulerError> for SharedChange {
 fn apply_carried(members: &mut BTreeSet<String>, carried: &PendingChanges) {
     for (member, state) in carried {
         match state {
-            MemberState::Present => {
-                members.insert(member.clone());
-            }
-            MemberState::Absent => {
-                members.remove(member);
-            }
-        }
+            MemberState::Present => members.insert(member.clone()),
+            MemberState::Absent => members.remove(member),
+        };
     }
 }
 // one retry loop for the shared tier: a lost compare-and-set re-reads and decides again
@@ -230,7 +226,9 @@ where
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     let recorded = pending.entry(model.to_owned()).or_default();
-    // a change and its reverse cancel, so an add and its removal leave nothing behind and a re-added shared member is recorded again when it leaves
+    // a present record lives only while its member is in the local queue, and a change and its reverse cancel, so an expired copy cannot grow the record and a re-added member is recorded again when it leaves
+    recorded
+        .retain(|member, state| *state != MemberState::Present || queued.value.contains(member));
     for member in next.difference(&queued.value) {
         if recorded.remove(member) != Some(MemberState::Absent) {
             changes.insert(member.clone(), MemberState::Present);
