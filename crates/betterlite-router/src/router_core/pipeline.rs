@@ -216,6 +216,8 @@ async fn narrowed_pool(
         deployments: without_blocked(set.deployments),
     };
     set.deployments = context.services.filter_deployments(set.deployments)?;
+    // the affinity callback is registered before the prompt caching one, and the callback list keeps its order
+    set = context::run(RouteStage::DeploymentAffinity, set, context).await?;
     set = context::run(RouteStage::PromptAffinity, set, context).await?;
     set = CandidateSet {
         deployments: pre_call_pool(context, group, set.deployments)?,

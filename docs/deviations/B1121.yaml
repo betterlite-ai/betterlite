@@ -1,0 +1,20 @@
+task: B1121
+deviations:
+  - what: >-
+      aimage_generation awaits image_generation on the caller's async runtime instead
+      of copying contextvars and running the sync function in the default executor.
+    why: >-
+      betterlite's image_generation is already async, and its request slot is a
+      task-local that a thread-pool worker would not carry; awaiting in line keeps the
+      request context on the request task and does not occupy a pool thread per call.
+      Generation still runs exactly once and every result shape and error maps the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L101-L107
+kept_bugs:
+  - what: >-
+      With a positional argument the first argument is used as the wrapper's model for
+      provider attribution, although image_generation binds that position as the prompt.
+    why: >-
+      The task requires the SDK's positional selection preserved, and a caller that
+      passes the prompt positionally would otherwise get a different exception
+      provider than LiteLLM reports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L92

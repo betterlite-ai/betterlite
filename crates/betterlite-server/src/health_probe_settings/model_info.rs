@@ -15,7 +15,7 @@ pub struct CatalogModelInfo<'catalog> {
     pub catalog: &'catalog ModelCatalog,
 }
 
-const fn mode_name(mode: Mode) -> &'static str {
+pub(crate) const fn mode_name(mode: Mode) -> &'static str {
     match mode {
         Mode::AudioSpeech => "audio_speech",
         Mode::AudioTranscription => "audio_transcription",

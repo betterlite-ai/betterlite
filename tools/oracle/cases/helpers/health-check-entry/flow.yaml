@@ -1,0 +1,57 @@
+kind: helper
+name: health-check-entry-flow
+call:
+  b6750:
+    steps:
+      # chat: the full parameter map reaches acompletion, the reply's three headers survive the filter
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+          custom_llm_provider: openai
+          api_base: https://api.example.com
+          api_key: sk-health
+          max_tokens: 64
+          temperature: 0
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers:
+          x-ratelimit-remaining-requests: "9"
+          x-ratelimit-remaining-tokens: "1000"
+          x-ms-region: eastus
+          x-unlisted: dropped
+        failure: null
+        raw_request: null
+      # completion: messages are filtered out and the prompt defaults into the call
+      - params:
+          model: gpt-3.5-turbo-instruct
+          messages: [{role: user, content: hi}]
+          custom_llm_provider: openai
+        mode: completion
+        prompt: ping
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-3.5-turbo-instruct, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # embedding: messages are filtered out and the scripted inputs become the call's input
+      - params:
+          model: text-embedding-3-small
+          messages: [{role: user, content: hi}]
+          custom_llm_provider: openai
+        mode: embedding
+        prompt: null
+        inputs: [alpha, beta]
+        catalog: {}
+        resolution: {model: text-embedding-3-small, provider: openai}
+        cheapest: []
+        headers: {x-ratelimit-remaining-tokens: "42"}
+        failure: null
+        raw_request: null
+env: {}
+compare: {ignore: []}

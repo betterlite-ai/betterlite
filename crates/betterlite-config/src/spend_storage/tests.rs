@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_db::spend_partitions::calendar::PartitionInterval;
-use betterlite_db::spend_retention::batches::settings::{CleanupBounds, DurationParser, Retention};
+use betterlite_db::spend_retention::batches::settings::{
+    CleanupBounds, DurationParser, Retention, SettingValue,
+};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use tracing::Subscriber;
@@ -643,6 +645,53 @@ fn loads_spend_retention_settings_live_after_a_reset() {
             .retention
             .retention_seconds(Retention::SpendLogs, &Durations),
         None
+    );
+}
+
+#[test]
+fn loads_retention_partition_switch() {
+    let defaults = load("general_settings: {}\n", &[]);
+    assert_eq!(defaults.retention.general.use_spend_logs_partitioning, None);
+    let enabled = load(
+        "general_settings:\n  use_spend_logs_partitioning: true\n  maximum_spend_logs_retention_period: 7d\n",
+        &[],
+    );
+    assert_eq!(
+        enabled.retention.general.use_spend_logs_partitioning,
+        Some(SettingValue::Flag(true))
+    );
+    assert_eq!(
+        enabled
+            .retention
+            .retention_seconds(Retention::SpendLogs, &Durations),
+        Some(604_800)
+    );
+    let disabled = load(
+        "general_settings:\n  use_spend_logs_partitioning: false\n",
+        &[],
+    );
+    assert_eq!(
+        disabled.retention.general.use_spend_logs_partitioning,
+        Some(SettingValue::Flag(false))
+    );
+    let cleared = load(
+        "general_settings:\n  use_spend_logs_partitioning: null\n",
+        &[],
+    );
+    assert_eq!(cleared.retention.general.use_spend_logs_partitioning, None);
+}
+
+#[test]
+fn a_non_boolean_partition_switch_fails_loading() {
+    let error = load_spend_storage_policy(
+        "general_settings:\n  use_spend_logs_partitioning: always\n",
+        &environment(&[]),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("general_settings.use_spend_logs_partitioning")
     );
 }
 
