@@ -3,7 +3,7 @@ from typing import Final
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite._native import NativeProviders
-from betterlite._provider.lookup import NativeCall, TEXT, call_lookup
+from betterlite._provider.lookup import TEXT, NativeCall, call_lookup
 from betterlite._provider.settings import provider_settings
 
 PAIR: Final[TypeAdapter[tuple[str, str | None]]] = TypeAdapter(tuple[str, str | None])

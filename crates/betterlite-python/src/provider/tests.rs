@@ -8,7 +8,7 @@ use secrecy::SecretString;
 
 use crate::provider::compatible::openai_compatible_info;
 use crate::provider::convert::{
-    CompatibleRequest, HandlerRequest, LookupRequest, LookupResult, encode, parse,
+    CompatibleRequest, HandlerRequest, LookupRequest, LookupResult, parse,
 };
 use crate::provider::error::ProviderError;
 use crate::provider::handlers::{handle_anthropic, handle_cohere};
@@ -200,17 +200,20 @@ fn provider_result_writes_the_handler_pair() {
         Some("cohere_chat".to_owned()),
     );
     assert_eq!(
-        encode(&moved).unwrap(),
+        serde_json::to_string(&moved).unwrap(),
         r#"["command-r-plus-08-2024","cohere_chat"]"#
     );
     let kept = ("gpt-4".to_owned(), None::<String>);
-    assert_eq!(encode(&kept).unwrap(), r#"["gpt-4",null]"#);
+    assert_eq!(serde_json::to_string(&kept).unwrap(), r#"["gpt-4",null]"#);
 }
 
 #[test]
 fn provider_result_writes_the_declared_provider() {
-    assert_eq!(encode(&Some("chatgpt")).unwrap(), r#""chatgpt""#);
-    assert_eq!(encode(&None::<&str>).unwrap(), "null");
+    assert_eq!(
+        serde_json::to_string(&Some("chatgpt")).unwrap(),
+        r#""chatgpt""#
+    );
+    assert_eq!(serde_json::to_string(&None::<&str>).unwrap(), "null");
 }
 
 #[test]

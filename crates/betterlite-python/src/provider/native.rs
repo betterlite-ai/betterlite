@@ -3,7 +3,8 @@ use betterlite_models::catalog::BundledCatalog;
 use pyo3::prelude::*;
 
 use crate::provider::compatible::openai_compatible_info;
-use crate::provider::convert::{CompatibleRequest, HandlerRequest, LookupRequest, encode, parse};
+use crate::provider::convert::{CompatibleRequest, HandlerRequest, LookupRequest, parse};
+use crate::provider::error::ProviderError;
 use crate::provider::handlers::{
     handle_anthropic as anthropic_handler, handle_cohere as cohere_handler,
 };
@@ -48,18 +49,21 @@ impl NativeProviders {
     fn declared_authenticating(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let call: HandlerRequest = parse(request).map_err(|error| error.into_pyerr(py))?;
         let declared = declared_provider(&call);
-        encode(&declared.as_deref()).map_err(|error| error.into_pyerr(py))
+        serde_json::to_string(&declared.as_deref())
+            .map_err(|source| ProviderError::Encode { source }.into_pyerr(py))
     }
 
     fn handle_cohere(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let call: HandlerRequest = parse(request).map_err(|error| error.into_pyerr(py))?;
         let pair = cohere_handler(&self.snapshot, &call);
-        encode(&pair).map_err(|error| error.into_pyerr(py))
+        serde_json::to_string(&pair)
+            .map_err(|source| ProviderError::Encode { source }.into_pyerr(py))
     }
 
     fn handle_anthropic(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let call: HandlerRequest = parse(request).map_err(|error| error.into_pyerr(py))?;
         let pair = anthropic_handler(&call);
-        encode(&pair).map_err(|error| error.into_pyerr(py))
+        serde_json::to_string(&pair)
+            .map_err(|source| ProviderError::Encode { source }.into_pyerr(py))
     }
 }

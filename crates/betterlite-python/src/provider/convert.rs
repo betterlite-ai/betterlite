@@ -1,6 +1,5 @@
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::provider::error::ProviderError;
@@ -45,7 +44,7 @@ pub(crate) struct LookupResult {
 
 impl LookupResult {
     pub(crate) fn to_json(&self) -> Result<String, ProviderError> {
-        encode(&(
+        serde_json::to_string(&(
             self.model.as_str(),
             self.provider.as_str(),
             self.api_key
@@ -53,6 +52,7 @@ impl LookupResult {
                 .map(secrecy::ExposeSecret::expose_secret),
             self.api_base.as_deref(),
         ))
+        .map_err(|source| ProviderError::Encode { source })
     }
 }
 
@@ -64,11 +64,4 @@ where
         Ok(value) => Ok(value),
         Err(source) => Err(ProviderError::Json { source }),
     }
-}
-
-pub(crate) fn encode<T>(value: &T) -> Result<String, ProviderError>
-where
-    T: Serialize + ?Sized,
-{
-    serde_json::to_string(value).map_err(|source| ProviderError::Encode { source })
 }
