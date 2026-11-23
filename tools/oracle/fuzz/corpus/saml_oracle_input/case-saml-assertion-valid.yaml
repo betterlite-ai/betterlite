@@ -1,0 +1,50 @@
+name: saml-assertion-valid
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+steps:
+  - request:
+      method: GET
+      path: "/sso/key/generate"
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+    captures:
+      - name: authn_request
+        source:
+          location_query:
+            name: SAMLRequest
+    form: false
+  - request:
+      method: POST
+      path: "/sso/key/generate"
+      headers: {}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+    captures: []
+    form: false
+    saml_assertion:
+      subject: alice@example.com
+      attributes:
+        email:
+          - alice@example.com
+        role:
+          - internal_user
+      audience: urn:betterlite:sp
+      destination: http://127.0.0.1:4000/sso/key/generate
+      request_id_capture: authn_request
+      assertion_id: _assertion_oracle_case
+      not_before_offset_seconds: -60
+      not_on_or_after_offset_seconds: 300
+      relay_state: /ui
+      mutation: subject_confirmation_only

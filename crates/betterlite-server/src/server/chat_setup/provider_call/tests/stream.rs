@@ -3,12 +3,9 @@ use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
-use rand::SeedableRng as _;
-use rand::rngs::StdRng;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -16,8 +13,6 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use crate::routes::chat::chat_routes_with_call_id;
-use crate::routes::chat::streaming::ChatCalls;
-use crate::server::chat_setup::chat_executor;
 
 const FIRST: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n";
 const SECOND: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"second\"}}]}\n\n";
@@ -63,13 +58,7 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
         "model_list:\n  - {{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, timeout: 10}}}}\n"
     );
     let environment = BTreeMap::new();
-    let config = ConfigLoader {
-        lookup: environment.clone(),
-    }
-    .load(&source)
-    .unwrap();
-    let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let calls = super::chat_calls(&source, &environment);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!(
         "http://{}/v1/chat/completions",

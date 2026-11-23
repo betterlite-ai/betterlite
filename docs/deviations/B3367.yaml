@@ -25,12 +25,14 @@ deviations:
     why: LiteLLM takes extra_body as a named argument and does not pass it to generic_container_handler.handle.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1264
   - what: >-
-      A provider name outside the known set and a known provider with no container config fail with the same
-      ApiConnection class, and every failure is mapped once, with the provider the managed id resolved to.
+      A BadRequest (400) with model "" and the provider the managed id resolved to answers a provider name outside
+      the known set and a known provider with no container config, where LiteLLM's ValueError reaches
+      exception_type as an APIConnectionError (500). Every failure is still mapped once.
     why: >-
-      B3361's get_provider_container_config answers None for both, and LiteLLM reaches the same ValueError branch for
-      an unknown LlmProviders enum name and for a missing config. The async wrapper's second exception_type pass
-      returns an already-mapped exception unchanged, so mapping once gives the same result.
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong. LiteLLM reaches the same ValueError branch for an unknown LlmProviders
+      name and for a missing container config, and the async wrapper's second pass returns an already-mapped
+      exception unchanged, so mapping once gives the same result.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1333-L1338
   - what: >-
       The resolved timeout reaches the executor as f64 seconds and the httpx.Timeout alternative is not modeled, and

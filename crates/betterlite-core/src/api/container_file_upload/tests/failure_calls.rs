@@ -4,7 +4,7 @@ use betterlite_error::error::ErrorClass;
 
 use super::error::{ContainerFileUploadError, failure};
 use super::test_support::{
-    CONTAINER_ID, Fixture, FixtureFailure, StubExecutor, redactor, timeout_failure,
+    CONTAINER_ID, Fixture, FixtureFailure, StubExecutor, object, redactor, timeout_failure,
 };
 use super::upload_container_file;
 use crate::api::response_id_codecs::container::build_container_id;
@@ -77,4 +77,31 @@ fn failure_carries_the_provider_the_managed_id_resolved_to() {
     };
     assert_eq!(context.provider.as_deref(), Some("azure"));
     assert_eq!(executor.call_count(), 1);
+}
+
+#[test]
+fn upload_a_known_provider_without_a_container_config_is_a_bad_request() {
+    let mut fixture = Fixture::new();
+    fixture.provider = Some("anthropic".to_owned());
+    let request = fixture.request();
+    let executor = StubExecutor::replying(object("file_1"));
+
+    let error = upload_container_file(&executor, fixture.deps(), &request)
+        .expect_err("anthropic has no container config");
+
+    assert_eq!(
+        error.error.to_string(),
+        "Container provider config not found for provider: anthropic"
+    );
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for provider: anthropic"
+    );
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(executor.call_count(), 0);
 }

@@ -1,0 +1,51 @@
+task: B3881
+deviations:
+  - what: >-
+      Timestamps arrive as one typed decimal instant instead of Python datetimes, so the latency arithmetic cannot fail on a
+      mix of naive and timezone-aware values.
+    why: >-
+      Python only raises there because datetimes carry two kinds; the typed payload B254 supplies has one, as B3878 also records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3187-L3205
+  - what: >-
+      A collector or label error comes back as PrometheusDeploymentError, where LiteLLM raises it, and the failure and success
+      entry points catch it and log it at debug and error as LiteLLM's catch-all does.
+    why: >-
+      Errors are typed values in betterlite; the visible result, the request is unaffected and the later writes are skipped,
+      is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3206-L3208
+  - what: >-
+      A remaining-requests or remaining-tokens header value is read into a decimal from a JSON number or numeric string, where
+      LiteLLM hands the value to prometheus_client, whose Gauge.set converts it with float(); a value that cannot be read as a
+      number is the failure the catch-all logs, as float()'s ValueError is in LiteLLM.
+    why: >-
+      The typed payload keeps header values as JSON values, and docs/compatibility.md reads a declared number from its numeric
+      text; the spellings float() accepts that a decimal does not, inf and nan, are not values a working setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3111-L3152
+  - what: >-
+      The router view and the metadata bucket come in as arguments, a requested model catalog and a metadata slots value, not
+      from proxy_server globals.
+    why: >-
+      Dependencies come in through constructors and module-level state is forbidden, as B3880 records.
+    link: ""
+  - what: >-
+      The deployment writers are generic over a deployment metrics trait and no adapter for the Prometheus exporters ships in
+      this task, so nothing calls them until B8561 wires the prometheus hooks.
+    why: >-
+      The task builds the writers and their oracle helper; B8561 is named as the hook owner in the task file. The metric names,
+      labels and amounts the writers produce are the ones LiteLLM produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1503-L1512
+  - what: >-
+      increment_deployment_cooled_down keeps only the five label names the metric still declares, where prometheus_client raises
+      when a configured exclude_labels leaves fewer names than the five positional arguments.
+    why: >-
+      With the default configuration all five names are declared and both sides record the same series; a deployment that
+      excludes one of these labels records the remaining ones in betterlite instead of dropping the increment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3565-L3580
+kept_bugs:
+  - what: >-
+      A supported label with no value reaches the deployment, fallback and state series as the literal string "None", because
+      LiteLLM fills every missing supported label with None and prometheus_client renders it with str().
+    why: >-
+      Metrics scraped from a working LiteLLM proxy carry "None" in those label values and dashboards and recording rules match
+      on them, so betterlite keeps the literal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4682-L4683

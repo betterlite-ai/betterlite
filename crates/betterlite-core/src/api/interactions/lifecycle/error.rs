@@ -85,12 +85,14 @@ where
             ClientError::FieldType { field, expected } => {
                 field_type_class(field, expected, provider)
             }
-            ClientError::Tls(_) | ClientError::Build(_) | ClientError::UnknownProvider { .. } => {
-                dispatch(
-                    &DispatchInput::Raw(Box::new(value_error(&error, provider))),
-                    redactor,
-                )
+            // a provider name betterlite does not know is the caller's input, not a transport failure
+            ClientError::UnknownProvider { provider: named } => {
+                bad_request(error.to_string(), named)
             }
+            ClientError::Tls(_) | ClientError::Build(_) => dispatch(
+                &DispatchInput::Raw(Box::new(value_error(&error, provider))),
+                redactor,
+            ),
         },
         InteractionLifecycleError::Provider(carried) => dispatch(
             &DispatchInput::Raw(Box::new(RawException {
@@ -99,8 +101,11 @@ where
             })),
             redactor,
         ),
-        InteractionLifecycleError::Unsupported { .. }
-        | InteractionLifecycleError::Logging(_)
+        // LiteLLM raises the same ValueError when the provider has no interactions config
+        InteractionLifecycleError::Unsupported { provider: named } => {
+            bad_request(error.to_string(), named)
+        }
+        InteractionLifecycleError::Logging(_)
         | InteractionLifecycleError::Transport(_)
         | InteractionLifecycleError::Timeout { .. }
         | InteractionLifecycleError::Settlement(_) => dispatch(
@@ -109,6 +114,15 @@ where
         ),
     };
     InteractionLifecycleFailure { error, class }
+}
+
+// the caller named a provider the call cannot use, so LiteLLM's ValueError becomes a 400 instead of a 500
+fn bad_request(message: String, provider: &str) -> ErrorClass {
+    ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
+        message,
+        Some(String::new()),
+        provider,
+    )))
 }
 
 // docs/compatibility.md rejects a value outside the declared type with a 400 naming the field

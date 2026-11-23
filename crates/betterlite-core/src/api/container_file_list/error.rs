@@ -94,9 +94,12 @@ pub fn failure(
         ContainerFileListError::Handler(handler_error) => {
             handler_class(handler_error, provider, redactor)
         }
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+        ContainerFileListError::ProviderConfigMissing { .. } => ErrorClass::BadRequest(Box::new(
+            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
+        )),
         ContainerFileListError::Mock(_)
         | ContainerFileListError::Params(_)
-        | ContainerFileListError::ProviderConfigMissing { .. }
         | ContainerFileListError::Logging(_) => value_error(error.to_string(), provider, redactor),
     };
     ContainerFileListFailure { error, class }
