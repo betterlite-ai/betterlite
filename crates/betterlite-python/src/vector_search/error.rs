@@ -80,11 +80,10 @@ pub(crate) enum SessionError {
 
 impl From<ConvertError> for PyErr {
     fn from(error: ConvertError) -> Self {
+        let text = error.to_string();
         match &error {
-            ConvertError::Json { .. } | ConvertError::Files { .. } => {
-                PyValueError::new_err(error.to_string())
-            }
-            ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
+            ConvertError::Json { .. } | ConvertError::Files { .. } => PyValueError::new_err(text),
+            ConvertError::Encode { .. } => PyRuntimeError::new_err(text),
         }
     }
 }

@@ -44,9 +44,9 @@ const SEARCH_CALL_TYPE: &str = "vector_store_search";
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct SessionWire {
     pub(crate) environment: Option<BTreeMap<String, String>>,
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) api_base: Option<String>,
-    pub(crate) openai_key: Option<String>,
+    pub(crate) openai_key: Option<SecretString>,
     pub(crate) organization: Option<String>,
 }
 
@@ -85,8 +85,8 @@ impl SessionCore {
             .map(|value| SecretString::from(value.clone()));
         let globals = LiteLlmGlobals {
             api_base: wire.api_base,
-            api_key: wire.api_key.map(SecretString::from),
-            openai_key: wire.openai_key.map(SecretString::from),
+            api_key: wire.api_key,
+            openai_key: wire.openai_key,
             organization: wire.organization,
         };
         Ok(Self {
