@@ -1,4 +1,5 @@
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Final, TypeAlias
 
 import litellm
@@ -178,33 +179,36 @@ def test_lookup_params_fill() -> None:
     assert ours == theirs
 
 
-@pytest.fixture(scope="function")
-def custom_maps() -> Iterator[list[str]]:
+@contextmanager
+def custom_maps() -> Iterator[str]:
     betterlite.custom_provider_map = [{"provider": "myprovider"}]
     litellm.custom_provider_map = [{"provider": "myprovider", "custom_handler": CustomLLM()}]
-    yield ["myprovider"]
-    betterlite.custom_provider_map = []
-    litellm.custom_provider_map = []
+    try:
+        yield "myprovider"
+    finally:
+        betterlite.custom_provider_map = []
+        litellm.custom_provider_map = []
 
 
-def test_lookup_later_provider_map(custom_maps: list[str]) -> None:
-    provider = custom_maps[0]
-    ours = betterlite.get_llm_provider(model=f"{provider}/model-x")
-    theirs = get_llm_provider_logic.get_llm_provider(model=f"{provider}/model-x")
-    assert ours == theirs
+def test_lookup_later_provider_map() -> None:
+    with custom_maps() as provider:
+        ours = betterlite.get_llm_provider(model=f"{provider}/model-x")
+        theirs = get_llm_provider_logic.get_llm_provider(model=f"{provider}/model-x")
+        assert ours == theirs
 
 
-def test_inferred_custom_map(custom_maps: list[str]) -> None:
-    provider = custom_maps[0]
-    theirs = get_llm_provider_logic.inferred_provider(f"{provider}/model-x")
-    assert betterlite.inferred_provider(f"{provider}/model-x") == theirs
+def test_inferred_custom_map() -> None:
+    with custom_maps() as provider:
+        theirs = get_llm_provider_logic.inferred_provider(f"{provider}/model-x")
+        assert betterlite.inferred_provider(f"{provider}/model-x") == theirs
 
 
 @pytest.mark.parametrize("name", [None, "myprovider", "other"])
-def test_lookup_registered_map(custom_maps: list[str], name: str | None) -> None:
-    theirs = get_llm_provider_logic.is_registered_custom_provider(name)
-    assert betterlite.is_registered_custom_provider(name) == theirs
-    assert betterlite.is_registered_custom_provider(name) is (name in custom_maps)
+def test_lookup_registered_map(name: str | None) -> None:
+    with custom_maps() as provider:
+        theirs = get_llm_provider_logic.is_registered_custom_provider(name)
+        assert betterlite.is_registered_custom_provider(name) == theirs
+        assert betterlite.is_registered_custom_provider(name) is (name == provider)
 
 
 @pytest.mark.parametrize(("model", "provider"), DECLARED_PAIRS)
