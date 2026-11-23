@@ -17,24 +17,62 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::api::container_contracts::records::ContainerObject;
 use betterlite_openai::containers::costs::ContainerCosts;
 use betterlite_openai::credentials::LiteLlmGlobals;
-use betterlite_redact::secret::Redactor;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 use serde::Serialize;
 
-use super::super::convert::{CallWire, ConvertError, CreatedAnswer, SessionWire, parse};
+use super::super::convert::{
+    CallWire, ConvertError, CreatedAnswer, SessionWire, parse, query_values, requested_timeout,
+};
 use super::super::error::{SessionError, SessionFailure};
 use super::super::stack;
 use super::super::transport::Source;
 
-mod asynchronous;
+pub(super) mod asynchronous;
 
-const CREATE_CALL_TYPE: &str = "create_container";
-const LIST_CALL_TYPE: &str = "list_containers";
-const RETRIEVE_CALL_TYPE: &str = "retrieve_container";
-const DELETE_CALL_TYPE: &str = "delete_container";
+const CREATE: &str = "create_container";
+const LIST: &str = "list_containers";
+const RETRIEVE: &str = "retrieve_container";
+const DELETE: &str = "delete_container";
 
+type CollectionHandler = GenericCollectionHandler<Source, stack::NoPreCall>;
+type CollectionPieces = (stack::Configs, Mutex<LoggingState>, CollectionHandler);
 type ResourceHandler = ContainerResourceHandler<Source, stack::NoPreCall>;
 type OperationPieces = (stack::Configs, Mutex<LoggingState>, ResourceHandler);
+
+// The two collection operations as one shape: each names the logging call it makes and carries the id and timeout it logs
+enum CollectionCall<'call> {
+    Create(&'call ContainerCreateCall),
+    List(&'call ContainerListCall),
+}
+
+impl CollectionCall<'_> {
+    fn call_type(&self) -> &'static str {
+        match self {
+            Self::Create(_call) => CREATE,
+            Self::List(_call) => LIST,
+        }
+    }
+
+    fn call_id(&self) -> Option<&str> {
+        match self {
+            Self::Create(call) => call.litellm_call_id.as_deref(),
+            Self::List(call) => call.litellm_call_id.as_deref(),
+        }
+    }
+
+    fn timeout(&self) -> Option<f64> {
+        match self {
+            Self::Create(call) => call.timeout,
+            Self::List(call) => call.timeout,
+        }
+    }
+}
+
+// the logging call type LiteLLM's retrieve and delete name
+const fn resource_call_type(delete: bool) -> &'static str {
+    if delete { DELETE } else { RETRIEVE }
+}
 
 // Everything one Python container session owns: the openai credentials, the cost map and the client every call goes through
 pub(crate) struct SessionCore {
@@ -61,7 +99,8 @@ impl SessionCore {
             .filter(|key| !key.is_empty())
             .map(SecretString::from);
         let client = stack::outbound_client(&environment)?;
-        let redactor = stack::redactor()?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+            .map_err(|source| SessionError::Redact { source })?;
         let costs = Arc::new(stack::CatalogCosts::new(&environment)?);
         Ok(Self {
             settings,
@@ -74,86 +113,79 @@ impl SessionCore {
         })
     }
 
-    // LiteLLM's create_container: the mock, the handler's POST, then the created record with its hidden params
-    pub(crate) fn create(
-        &self,
-        wire: &CallWire,
-        call: &ContainerCreateCall,
-    ) -> Result<String, SessionFailure> {
-        let configs = self.configs(wire);
-        let logging = stack::logging_state(
-            CREATE_CALL_TYPE,
-            call.litellm_call_id.as_deref(),
-            &self.redactor,
-        )?;
-        let source = Source {
-            client: self.client.clone(),
-            deadline: self.deadline(call.timeout)?,
-        };
-        let handler = GenericCollectionHandler {
-            source,
-            hook: stack::NoPreCall,
-        };
-        let deps = ContainerCallDeps {
-            logging: &logging,
-            redactor: &self.redactor,
-            request_timeout_seconds: self.request_timeout_seconds,
-        };
-        let created = create_container(&handler, &configs, deps, call)?;
-        encode_created(&created)
+    // the operation the request text names, through the steps LiteLLM's four functions take
+    pub(crate) fn call(&self, wire: &CallWire) -> Result<String, SessionFailure> {
+        match wire.operation.as_str() {
+            CREATE => self.collection(wire, CollectionCall::Create(&wire.arguments.create()?)),
+            LIST => self.collection(wire, CollectionCall::List(&wire.arguments.list()?)),
+            RETRIEVE => self.resource(wire, false),
+            DELETE => self.resource(wire, true),
+            other => Err(SessionFailure::from(ConvertError::Operation {
+                operation: other.to_owned(),
+            })),
+        }
     }
 
-    // LiteLLM's list_containers: the query carries only the values the caller set
-    pub(crate) fn list(
+    // LiteLLM's create_container and list_containers: the mock, the handler's call, then the encoded reply
+    fn collection(
         &self,
         wire: &CallWire,
-        call: &ContainerListCall,
+        call: CollectionCall<'_>,
     ) -> Result<String, SessionFailure> {
-        let configs = self.configs(wire);
-        let logging = stack::logging_state(
-            LIST_CALL_TYPE,
-            call.litellm_call_id.as_deref(),
-            &self.redactor,
-        )?;
-        let source = Source {
-            client: self.client.clone(),
-            deadline: self.deadline(call.timeout)?,
-        };
-        let handler = GenericCollectionHandler {
-            source,
-            hook: stack::NoPreCall,
-        };
-        let deps = ContainerCallDeps {
-            logging: &logging,
-            redactor: &self.redactor,
-            request_timeout_seconds: self.request_timeout_seconds,
-        };
-        let reply = list_containers(&handler, &configs, deps, call)?;
-        encode(&reply)
+        let (configs, logging, handler) = self.collection_pieces(wire, &call)?;
+        let deps = self.deps(&logging);
+        match call {
+            CollectionCall::Create(create) => {
+                let created = create_container(&handler, &configs, deps, create)?;
+                encode_created(&created)
+            }
+            CollectionCall::List(list) => encode(&list_containers(&handler, &configs, deps, list)?),
+        }
     }
 
-    // LiteLLM's retrieve_container: the managed id decodes to its provider, then the GET reads the record back
-    pub(crate) fn retrieve(
-        &self,
-        wire: &CallWire,
-        request: &ContainerOperationRequest<'_>,
-    ) -> Result<String, SessionFailure> {
+    // retrieve_container and delete_container share their request; only the handler method differs
+    fn resource(&self, wire: &CallWire, delete: bool) -> Result<String, SessionFailure> {
+        let extra_query = query_values(wire.arguments.extra_query.as_ref())?;
+        let timeout = requested_timeout(wire.arguments.timeout)?;
+        let request = wire
+            .arguments
+            .operation_request(extra_query.as_ref(), timeout);
         let (configs, logging, handler) =
-            self.operation_stack(wire, request, RETRIEVE_CALL_TYPE)?;
+            self.operation_stack(wire, &request, resource_call_type(delete))?;
         let operations = self.operations(&handler, &configs, &logging);
-        let reply = operations.retrieve_container(request)?;
+        let reply = match delete {
+            true => operations.delete_container(&request)?,
+            false => operations.retrieve_container(&request)?,
+        };
         encode(&reply)
     }
 
-    pub(crate) fn delete(
+    // the pieces every create or list call shares, with the call type and call id its logging object takes
+    fn collection_pieces(
         &self,
         wire: &CallWire,
-        request: &ContainerOperationRequest<'_>,
-    ) -> Result<String, SessionFailure> {
-        let (configs, logging, handler) = self.operation_stack(wire, request, DELETE_CALL_TYPE)?;
-        let operations = self.operations(&handler, &configs, &logging);
-        let reply = operations.delete_container(request)?;
-        encode(&reply)
+        call: &CollectionCall<'_>,
+    ) -> Result<CollectionPieces, SessionFailure> {
+        let configs = self.configs(wire);
+        let logging = stack::logging_state(call.call_type(), call.call_id(), &self.redactor)?;
+        let source = Source {
+            client: self.client.clone(),
+            deadline: self.deadline(call.timeout())?,
+        };
+        let handler = GenericCollectionHandler {
+            source,
+            hook: stack::NoPreCall,
+        };
+        Ok((configs, logging, handler))
+    }
+
+    // the collaborators the collection operations read, over the logging object of this call
+    fn deps<'deps>(&'deps self, logging: &'deps Mutex<LoggingState>) -> ContainerCallDeps<'deps> {
+        ContainerCallDeps {
+            logging,
+            redactor: &self.redactor,
+            request_timeout_seconds: self.request_timeout_seconds,
+        }
     }
 
     // the config the call resolves against, the logging object and the handler its blocking or async form asks

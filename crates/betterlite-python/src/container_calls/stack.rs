@@ -41,7 +41,7 @@ use betterlite_openai::containers::container_file_http::PreCallHook;
 use betterlite_openai::containers::costs::ContainerCosts;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::Object;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::secret::Redactor;
 use chrono::Utc;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -57,10 +57,6 @@ pub(crate) fn outbound_client(
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
         .map_err(|source| SessionError::Proxy { source })?;
     ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| SessionError::Client { source })
-}
-
-pub(crate) fn redactor() -> Result<Redactor, SessionError> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|source| SessionError::Redact { source })
 }
 
 // LiteLLM's manager answers a container config for openai and for no other provider here

@@ -65,6 +65,7 @@ pub(crate) enum SessionError {
 #[derive(Debug)]
 pub(crate) enum SessionFailure {
     Raised(NativeContainerPayload),
+    Invalid(ConvertError),
     Setup(SessionError),
 }
 
@@ -72,6 +73,7 @@ impl SessionFailure {
     pub(crate) fn into_pyerr(self, py: Python<'_>, error_type: &Py<PyType>) -> PyErr {
         match self {
             Self::Raised(payload) => native_error(py, error_type, &payload),
+            Self::Invalid(error) => PyErr::from(error),
             Self::Setup(error) => PyErr::from(error),
         }
     }
@@ -110,7 +112,7 @@ impl From<SessionError> for SessionFailure {
 
 impl From<ConvertError> for SessionFailure {
     fn from(error: ConvertError) -> Self {
-        Self::Setup(SessionError::from(error))
+        Self::Invalid(error)
     }
 }
 
@@ -120,7 +122,8 @@ impl From<ConvertError> for PyErr {
             ConvertError::Json { .. } => PyValueError::new_err(error.to_string()),
             ConvertError::Encode { .. }
             | ConvertError::Timeout { .. }
-            | ConvertError::QueryValue { .. } => PyRuntimeError::new_err(error.to_string()),
+            | ConvertError::QueryValue { .. }
+            | ConvertError::Operation { .. } => PyRuntimeError::new_err(error.to_string()),
         }
     }
 }

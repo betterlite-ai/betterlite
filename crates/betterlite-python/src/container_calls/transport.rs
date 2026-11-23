@@ -60,21 +60,16 @@ impl CollectionClientSource for Source {
     type Blocking = BlockingTransport;
     type Asynchronous = AsyncTransport;
 
+    // the collection traits ask the same two questions of the one source, so the first impl answers both
     fn blocking_client(
         &self,
-        _ssl_verify: Option<&SslVerify>,
+        ssl_verify: Option<&SslVerify>,
     ) -> Result<BlockingTransport, PoolError> {
-        Ok(BlockingTransport {
-            client: self.client.clone(),
-            deadline: self.deadline,
-        })
+        ClientSource::blocking_client(self, ssl_verify)
     }
 
-    fn async_client(&self, _ssl_verify: Option<&SslVerify>) -> Result<AsyncTransport, PoolError> {
-        Ok(AsyncTransport {
-            client: self.client.clone(),
-            deadline: self.deadline,
-        })
+    fn async_client(&self, ssl_verify: Option<&SslVerify>) -> Result<AsyncTransport, PoolError> {
+        ClientSource::async_client(self, ssl_verify)
     }
 }
 

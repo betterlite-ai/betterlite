@@ -25,10 +25,11 @@ pub(crate) struct SessionWire {
     pub(crate) environment: Option<BTreeMap<String, String>>,
 }
 
-// The one text a native method takes: the call's arguments and the Python-side globals they fall back to.
+// The one text a native method takes: the operation it names, the call's arguments and the globals they fall back to.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct CallWire {
+    pub(crate) operation: String,
     pub(crate) settings: SettingsWire,
     #[serde(flatten)]
     pub(crate) arguments: Arguments,
@@ -72,54 +73,48 @@ pub(crate) struct Arguments {
     pub(crate) extra: IndexMap<String, Json>,
 }
 
-impl Arguments {
-    // create_container's keywords, in the shape B3369's operation takes them
-    pub(crate) fn create(&self) -> Result<ContainerCreateCall, ConvertError> {
-        Ok(ContainerCreateCall {
-            name: self.name.clone().unwrap_or_default(),
-            expires_after: self.expires_after.clone(),
-            file_ids: self.file_ids.clone(),
+// Both collection calls carry the same twelve keywords under the same names, so one template spells them
+macro_rules! collection_arguments {
+    ($call:ident, $arguments:expr, { $($own:ident: $value:expr),* $(,)? }) => {
+        $call {
+            $($own: $value,)*
             // `timeout or DEFAULT_REQUEST_TIMEOUT` is the operation's own rule, so a zero and a none pass through
-            timeout: self.timeout,
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.clone(),
-            api_version: self.api_version.clone(),
-            custom_llm_provider: self
+            timeout: $arguments.timeout,
+            api_key: $arguments.api_key.clone(),
+            api_base: $arguments.api_base.clone(),
+            api_version: $arguments.api_version.clone(),
+            custom_llm_provider: $arguments
                 .custom_llm_provider
                 .clone()
                 .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()),
-            extra_headers: self.extra_headers.clone(),
-            extra_query: query_values(self.extra_query.as_ref())?,
-            extra_body: self.extra_body.clone(),
-            mock_response: self.mock_response.clone(),
-            litellm_metadata: self.litellm_metadata.as_ref().map(json_values),
-            litellm_call_id: self.litellm_call_id.clone(),
-            extra: self.extra.clone(),
-        })
+            extra_headers: $arguments.extra_headers.clone(),
+            extra_query: query_values($arguments.extra_query.as_ref())?,
+            extra_body: $arguments.extra_body.clone(),
+            mock_response: $arguments.mock_response.clone(),
+            litellm_metadata: $arguments.litellm_metadata.as_ref().map(json_values),
+            litellm_call_id: $arguments.litellm_call_id.clone(),
+            extra: $arguments.extra.clone(),
+        }
+    };
+}
+
+impl Arguments {
+    // create_container's keywords, in the shape B3369's operation takes them
+    pub(crate) fn create(&self) -> Result<ContainerCreateCall, ConvertError> {
+        Ok(collection_arguments!(ContainerCreateCall, self, {
+            name: self.name.clone().unwrap_or_default(),
+            expires_after: self.expires_after.clone(),
+            file_ids: self.file_ids.clone(),
+        }))
     }
 
     // list_containers' keywords: a limit and an order the caller did not set stay absent from the query
     pub(crate) fn list(&self) -> Result<ContainerListCall, ConvertError> {
-        Ok(ContainerListCall {
+        Ok(collection_arguments!(ContainerListCall, self, {
             after: self.after.clone(),
             limit: self.limit,
             order: self.order.clone(),
-            timeout: self.timeout,
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.clone(),
-            api_version: self.api_version.clone(),
-            custom_llm_provider: self
-                .custom_llm_provider
-                .clone()
-                .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()),
-            extra_headers: self.extra_headers.clone(),
-            extra_query: query_values(self.extra_query.as_ref())?,
-            extra_body: self.extra_body.clone(),
-            mock_response: self.mock_response.clone(),
-            litellm_metadata: self.litellm_metadata.as_ref().map(json_values),
-            litellm_call_id: self.litellm_call_id.clone(),
-            extra: self.extra.clone(),
-        })
+        }))
     }
 
     // retrieve_container's and delete_container's keywords, with the timeout the operation resolves itself
@@ -263,6 +258,8 @@ pub(crate) enum ConvertError {
     },
     #[error("the {name} query value is not a string or an integer")]
     QueryValue { name: String },
+    #[error("the {operation} operation is not a container call")]
+    Operation { operation: String },
 }
 
 // the one boundary every native method crosses: the text into the shape that method takes
