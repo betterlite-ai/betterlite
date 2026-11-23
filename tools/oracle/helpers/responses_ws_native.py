@@ -5,11 +5,11 @@ from typing import Final, TypedDict
 import websockets.exceptions
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.responses.streaming_iterator import ResponsesWebSocketStreaming
-from litellm.types.responses.streaming_websocket import ResponsesClientWebSocket
+from litellm.types.responses.streaming_websocket import ResponsesBackendWebSocket, ResponsesClientWebSocket
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-JSON: Final = TypeAdapter(JsonValue)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 OBJECTS: Final = TypeAdapter(dict[str, object])
 STARTED: Final = datetime.fromisoformat("2026-01-01T00:00:00+00:00")
 
@@ -27,7 +27,7 @@ async def idle() -> None:
     await done
 
 
-class Socket(ResponsesClientWebSocket):
+class Socket(ResponsesClientWebSocket, ResponsesBackendWebSocket):
     def __init__(self, frames: list[str]) -> None:
         self.sent: list[str] = []
         self.frames = frames
@@ -42,13 +42,16 @@ class Socket(ResponsesClientWebSocket):
         await asyncio.sleep(0)
         return self.pop()
 
+    @override
     async def recv(self, decode: bool = True) -> str:
         await idle()
         return self.pop()
 
+    @override
     async def send(self, message: str) -> None:
         await self.send_text(message)
 
+    @override
     async def close(self) -> None:
         await idle()
 
@@ -61,7 +64,15 @@ class Socket(ResponsesClientWebSocket):
 async def run_scenario(scenario: Scenario) -> JsonValue:
     client = Socket(scenario["client_frames"])
     backend = Socket(scenario["backend_frames"])
-    logging_obj = Logging("gpt-4o", None, True, "responses", STARTED, "call-1", "fn-1")
+    logging_obj = Logging(
+        model="gpt-4o",
+        messages=None,
+        stream=True,
+        call_type="responses",
+        start_time=STARTED,
+        litellm_call_id="call-1",
+        function_id="fn-1",
+    )
     relay = ResponsesWebSocketStreaming(
         websocket=client,
         backend_ws=backend,
