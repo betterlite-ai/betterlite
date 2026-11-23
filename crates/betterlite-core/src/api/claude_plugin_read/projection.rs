@@ -177,22 +177,20 @@ fn string_list(
     field: &'static str,
     value: Json,
 ) -> Result<Option<Vec<String>>, ClaudePluginReadFailure> {
-    match value {
-        Json::Null => Ok(None),
-        Json::List(items) => {
-            let mut texts = Vec::with_capacity(items.len());
-            for item in items {
-                let Json::Text(text) = item else {
-                    return Err(invalid_field(field));
-                };
-                texts.push(text);
-            }
-            Ok(Some(texts))
-        }
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            Err(invalid_field(field))
-        }
+    if let Json::Null = value {
+        return Ok(None);
     }
+    let Json::List(items) = value else {
+        return Err(invalid_field(field));
+    };
+    let mut texts = Vec::with_capacity(items.len());
+    for item in items {
+        let Json::Text(text) = item else {
+            return Err(invalid_field(field));
+        };
+        texts.push(text);
+    }
+    Ok(Some(texts))
 }
 
 fn invalid_field(field: &'static str) -> ClaudePluginReadFailure {

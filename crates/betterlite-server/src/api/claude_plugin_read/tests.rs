@@ -18,7 +18,7 @@ use betterlite_core::api::claude_plugin_policy::{
     DB_NOT_CONNECTED, NameFilter, PluginWhere, PluginWhereBranch,
 };
 use betterlite_core::api::claude_plugin_read::{
-    ClaudePluginReadInput, ClaudePluginReadOperation, PluginManifestFields, PluginRow,
+    ClaudePluginReadInput, ClaudePluginReadOperation, PluginRow,
 };
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -28,6 +28,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use tower::ServiceExt as _;
 
+use super::flow::plugin_row;
 use super::store::{ClaudePluginReadStore, StoredPluginRow};
 use super::{ClaudePluginReadState, decode_claude_plugin_read, mount};
 use crate::auth::auth_identity::AuthContext;
@@ -534,17 +535,21 @@ async fn list_sorting() {
 
 fn visibility_store() -> Arc<FakeStore> {
     let store = Arc::new(FakeStore::new());
-    let mut public = stored_row("public-plugin", true, at(11, 0, 0));
-    public.manifest_json = Some(
-        r#"{"name":"public-plugin","source":{"source":"github","repo":"org/public"}}"#.to_owned(),
-    );
-    let mut private = stored_row("private-plugin", false, at(11, 1, 0));
-    private.manifest_json = Some(r#"{"name":"private-plugin"}"#.to_owned());
-    let mut other = stored_row("other-plugin", false, at(11, 2, 0));
-    other.manifest_json = Some(r#"{"name":"other-plugin"}"#.to_owned());
-    store.seed(public);
-    store.seed(private);
-    store.seed(other);
+    let seeds = [
+        (
+            "public-plugin",
+            true,
+            0,
+            r#"{"name":"public-plugin","source":{"source":"github","repo":"org/public"}}"#,
+        ),
+        ("private-plugin", false, 1, r#"{"name":"private-plugin"}"#),
+        ("other-plugin", false, 2, r#"{"name":"other-plugin"}"#),
+    ];
+    for (name, enabled, hour, manifest) in seeds {
+        let mut row = stored_row(name, enabled, at(11, hour, 0));
+        row.manifest_json = Some(manifest.to_owned());
+        store.seed(row);
+    }
     store
 }
 
@@ -846,17 +851,11 @@ fn decoder_rejects_bytes_over_the_limit() {
 }
 
 fn core_row(name: &str, enabled: bool) -> PluginRow {
-    PluginRow {
-        id: format!("plugin-{name}"),
-        name: name.to_owned(),
-        version: None,
-        description: None,
-        enabled,
-        created_at: None,
-        updated_at: None,
-        created_by: None,
-        manifest: PluginManifestFields::default(),
-    }
+    plugin_row(
+        stored_row(name, enabled, at(12, 0, 0)),
+        &ApiLimits::default(),
+    )
+    .expect("the core row")
 }
 
 #[test]

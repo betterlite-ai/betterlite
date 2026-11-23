@@ -103,11 +103,14 @@ impl ClaudePluginReadStore for PostgresPluginReadStore {
 
     async fn find_by_name(&self, plugin_name: &str) -> Result<Option<StoredPluginRow>, TableError> {
         let session = self.read_session().await?;
-        let found = session
-            .query_opt(FIND_SQL, &[&plugin_name])
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
-        found.as_ref().map(decode_row).transpose()
+        let row = match session.query_opt(FIND_SQL, &[&plugin_name]).await {
+            Ok(row) => row,
+            Err(source) => return Err(TableError::Database(backend(source))),
+        };
+        match row.as_ref() {
+            Some(row) => decode_row(row).map(Some),
+            None => Ok(None),
+        }
     }
 }
 

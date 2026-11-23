@@ -4,7 +4,9 @@ use axum::Json;
 use axum::extract::{Extension, Path, RawQuery, State};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::claude_plugin_policy::{PluginRecord, plugin_not_found_error};
+use betterlite_core::api::claude_plugin_policy::{
+    PluginRecord, plugin_not_found_error, skill_visibility,
+};
 use betterlite_core::api::claude_plugin_read::error::plugin_not_granted_error;
 use betterlite_core::api::claude_plugin_read::{
     ClaudePluginReadInput, ClaudePluginReadOperation, ClaudePluginReadResult, PluginManifestFields,
@@ -39,11 +41,9 @@ pub(super) async fn get(
     State(state): State<Arc<ClaudePluginReadState>>,
     caller: Option<Extension<AuthContext>>,
     Path(path): Path<PluginPath>,
-) -> Response {
-    match get_plugin(state.as_ref(), caller, &path.plugin_name).await {
-        Ok(result) => Json(result).into_response(),
-        Err(error) => error.into_response(),
-    }
+) -> Result<Json<ClaudePluginReadResult>, ClaudePluginReadError> {
+    let result = get_plugin(state.as_ref(), caller, &path.plugin_name).await?;
+    Ok(Json(result))
 }
 
 async fn list_plugins(
@@ -61,7 +61,7 @@ async fn list_plugins(
     let filter = input.list_filter();
     let stored = store.list(&filter).await?;
     // list_plugins parses each manifest only after visibility.allows passes, so the decode waits too
-    let visibility = input.visibility();
+    let visibility = skill_visibility(input.caller.as_ref());
     let mut rows = Vec::with_capacity(stored.len());
     for row in stored {
         if !visibility.allows(&record(&row)) {
@@ -91,7 +91,7 @@ async fn get_plugin(
         )));
     };
     // get_plugin checks the grant before it parses the manifest, so an unreadable one still answers 403
-    let visibility = input.visibility();
+    let visibility = skill_visibility(input.caller.as_ref());
     if !visibility.allows(&record(&row)) {
         return Err(ClaudePluginReadError::from(plugin_not_granted_error(
             plugin_name,
@@ -110,7 +110,7 @@ fn record(row: &StoredPluginRow) -> PluginRecord {
     }
 }
 
-fn plugin_row(
+pub(super) fn plugin_row(
     row: StoredPluginRow,
     limits: &ApiLimits,
 ) -> Result<PluginRow, ClaudePluginReadError> {

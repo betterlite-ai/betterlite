@@ -9,8 +9,7 @@ use serde::Serialize;
 
 use crate::api::claude_plugin_policy::source::PluginSource;
 use crate::api::claude_plugin_policy::{
-    PluginCaller, PluginRecord, PluginWhere, SkillVisibility, plugin_not_found_error,
-    skill_visibility,
+    PluginCaller, PluginRecord, PluginWhere, plugin_not_found_error, skill_visibility,
 };
 
 use self::error::{ClaudePluginReadFailure, PluginManifestError, plugin_not_granted_error};
@@ -36,8 +35,7 @@ pub struct ClaudePluginReadInput {
     pub caller: Option<PluginCaller>,
 }
 
-// The manifest keys both read handlers use, as the stored JSON has them; a missing key and an
-// explicit null stay apart because list_plugins shows the first as {} and refuses the second.
+// The manifest keys both read handlers use, as the stored JSON holds them.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PluginManifestFields {
     pub source: Option<Json>,
@@ -135,13 +133,7 @@ impl PluginManifestFields {
 }
 
 impl ClaudePluginReadInput {
-    #[must_use]
-    pub fn visibility(&self) -> SkillVisibility {
-        skill_visibility(self.caller.as_ref())
-    }
-
-    // find_many's where clause: enabled_only replaces the visibility filter, and both handlers
-    // still drop every row visibility.allows refuses after the query
+    // find_many's where clause; run still drops the rows visibility.allows refuses.
     #[must_use]
     pub fn list_filter(&self) -> PluginWhere {
         match &self.operation {
@@ -151,7 +143,7 @@ impl ClaudePluginReadInput {
             },
             ClaudePluginReadOperation::List {
                 enabled_only: false,
-            } => self.visibility().where_clause(),
+            } => skill_visibility(self.caller.as_ref()).where_clause(),
             ClaudePluginReadOperation::Get { .. } => PluginWhere {
                 enabled: None,
                 any: None,
@@ -163,7 +155,7 @@ impl ClaudePluginReadInput {
         &self,
         rows: Vec<PluginRow>,
     ) -> Result<ClaudePluginReadResult, ClaudePluginReadFailure> {
-        let visibility = self.visibility();
+        let visibility = skill_visibility(self.caller.as_ref());
         match &self.operation {
             ClaudePluginReadOperation::List { .. } => {
                 let mut plugins = Vec::with_capacity(rows.len());
