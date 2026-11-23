@@ -76,16 +76,6 @@ pub(crate) enum Equivalence {
     Different,
 }
 
-impl From<bool> for Equivalence {
-    fn from(equivalent: bool) -> Self {
-        if equivalent {
-            Self::Equivalent
-        } else {
-            Self::Different
-        }
-    }
-}
-
 pub(crate) struct ComparisonRow {
     pub(crate) revision: i64,
     pub(crate) published: i64,
@@ -155,7 +145,11 @@ pub(crate) async fn comparison(client: &Client, scope: &str) -> ComparisonRow {
         published: row.get(1),
         unattempted: row.get(2),
         retired: row.get(3),
-        initial_equivalent: Equivalence::from(row.get(4)),
+        initial_equivalent: if row.get(4) {
+            Equivalence::Equivalent
+        } else {
+            Equivalence::Different
+        },
         history: row.get(5),
     }
 }
