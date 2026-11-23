@@ -6,7 +6,7 @@ from typing import Final, Protocol
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, override
 
 from betterlite._cache_ops import CacheOperations
 from betterlite._cache_ops.types import CacheStore
@@ -190,6 +190,7 @@ class FailingReadBackend(RecordingBackend):
 
 # A semantic backend writes the similarity into the metadata copy it was handed.
 class SimilarityBackend(RecordingBackend):
+    @override
     def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
         match kwargs.get("metadata"):
             case dict() as metadata:
@@ -225,16 +226,14 @@ class Cache(CacheOperations):
         ttl: float | None = None,
         mode: str = "default_on",
         native: NativeCache | None = None,
-        cache_type: LiteLLMCacheType = LiteLLMCacheType.LOCAL,
-        flush_size: int | None = None,
     ) -> None:
         self.cache = backend
-        self.type = cache_type
+        self.type = LiteLLMCacheType.LOCAL
         self.namespace = namespace
         self.ttl = ttl
         self.mode = mode
         self.supported_call_types = None
-        self.redis_flush_size = flush_size
+        self.redis_flush_size = None
         self.semantic_cache_scope = "key"
         self._native_cache = native
 
@@ -451,7 +450,9 @@ def test_cache_ops_batch_write() -> None:
 
 def test_cache_ops_flush_write() -> None:
     ours_backend = RecordingBackend()
-    ours = Cache(ours_backend, cache_type=LiteLLMCacheType.REDIS, flush_size=1000)
+    ours = Cache(ours_backend)
+    ours.type = LiteLLMCacheType.REDIS
+    ours.redis_flush_size = 1000
     asyncio.run(ours.async_add_cache(CHAT_RESPONSE, None, **CHAT))
     reference_backend = RecordingBackend()
     reference = LITELLM_CACHE.Cache(
