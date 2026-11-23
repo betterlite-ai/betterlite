@@ -1,6 +1,7 @@
 #![no_main]
 
 use betterlite_db::model_usage::decode::decode_model_usage_fields;
+use betterlite_db::request_usage::baseline_capture::decode_captured_baseline;
 use betterlite_db::window_queue::stamp::decode_window_stamp;
 use libfuzzer_sys::fuzz_target;
 
@@ -8,6 +9,10 @@ fuzz_target!(|bytes: &[u8]| {
     let Some((&tag, rest)) = bytes.split_first() else {
         return;
     };
+    if (tag & 2) != 0 {
+        drop(decode_captured_baseline(rest));
+        return;
+    }
     if (tag & 1) == 0 {
         drop(decode_window_stamp(rest));
     } else {
