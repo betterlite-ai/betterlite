@@ -15,10 +15,10 @@ from litellm.proxy._types import (
     LiteLLM_TeamMembership,
     LiteLLM_TeamTable,
     LiteLLM_UserTable,
-    ManagedAgentContext,
     ProxyException,
 )
 from litellm.proxy.auth.handle_jwt import JWTHandler
+from litellm.types.proxy.agent_identity import ManagedAgentContext
 from prisma.errors import PrismaError
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
