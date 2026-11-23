@@ -11,7 +11,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
-use super::super::store::{PostgresPluginReadStore, StoredPluginRow};
+use super::super::store::{ClaudePluginReadStore as _, PostgresPluginReadStore, StoredPluginRow};
 use super::{ALL_FILTER, ENABLED_FILTER, at, granted_filter};
 
 const INSERT_SQL: &str = r#"INSERT INTO "LiteLLM_ClaudeCodePluginTable" (id, name, version, description, manifest_json, enabled, created_at, updated_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
@@ -22,16 +22,16 @@ struct Environment {
     url: Option<String>,
 }
 
-struct SeedRow<'a> {
-    id: &'a str,
-    name: &'a str,
-    version: Option<&'a str>,
-    description: Option<&'a str>,
-    manifest: Option<&'a str>,
+struct SeedRow<'text> {
+    id: &'text str,
+    name: &'text str,
+    version: Option<&'text str>,
+    description: Option<&'text str>,
+    manifest: Option<&'text str>,
     enabled: bool,
     created: NaiveDateTime,
     updated: NaiveDateTime,
-    created_by: Option<&'a str>,
+    created_by: Option<&'text str>,
 }
 
 async fn insert_row(pool: &Pool, seed: SeedRow<'_>) {

@@ -33,12 +33,12 @@ struct KeyPermissions {
 pub(super) fn caller(
     context: Option<Extension<AuthContext>>,
 ) -> Result<Option<PluginCaller>, ClaudePluginReadError> {
-    let Some(Extension(context)) = context else {
+    let Some(Extension(identity)) = context else {
         return Ok(None);
     };
-    let granted = permissions(&context.principal)?;
+    let granted = permissions(&identity.principal)?;
     Ok(Some(PluginCaller {
-        principal: admin_principal(&context.principal),
+        principal: admin_principal(&identity.principal),
         object_permission: granted.object,
         team_object_permission: granted.team,
     }))

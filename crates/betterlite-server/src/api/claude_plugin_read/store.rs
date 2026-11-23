@@ -107,10 +107,8 @@ impl ClaudePluginReadStore for PostgresPluginReadStore {
             Ok(row) => row,
             Err(source) => return Err(TableError::Database(backend(source))),
         };
-        match row.as_ref() {
-            Some(row) => decode_row(row).map(Some),
-            None => Ok(None),
-        }
+        row.as_ref()
+            .map_or_else(|| Ok(None), |found| decode_row(found).map(Some))
     }
 }
 

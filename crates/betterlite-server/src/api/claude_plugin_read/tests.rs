@@ -123,10 +123,7 @@ fn matches_filter(row: &StoredPluginRow, filter: &PluginWhere) -> bool {
             PluginWhereBranch::Name { name } => name.names.contains(&row.name),
         });
     }
-    match filter.enabled {
-        Some(enabled) => row.enabled == enabled,
-        None => true,
-    }
+    filter.enabled.is_none_or(|enabled| row.enabled == enabled)
 }
 
 #[async_trait]
@@ -135,7 +132,7 @@ impl ClaudePluginReadStore for FakeStore {
         if self.fail.load(Ordering::SeqCst) {
             return Err(TableError::MissingRow);
         }
-        let guard = self.state.lock().expect("the fake store");
+        let mut guard = self.state.lock().expect("the fake store");
         guard.filters.push(filter.clone());
         let rows = if self.ignore_filters.load(Ordering::SeqCst) {
             guard.rows.clone()
