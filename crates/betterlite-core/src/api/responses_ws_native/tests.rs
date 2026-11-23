@@ -164,6 +164,8 @@ fn assert_frame_routing() {
     );
     let matching = r#"{"type":"response.create","input":"routed"}"#;
     assert_eq!(routed_first_frame(matching, Some(&routed)), matching);
+    let no_routed_input = r#"{"type":"response.create","input":"old"}"#;
+    assert_eq!(routed_first_frame(no_routed_input, None), no_routed_input);
     let nested_matching = r#"{"type":"response.create","response":{"input":"routed"}}"#;
     assert_eq!(
         routed_first_frame(nested_matching, Some(&routed)),
@@ -258,6 +260,14 @@ async fn non_string_first_message_request() -> support::RecordedRequest {
     entry.request().await
 }
 
+async fn null_routed_input_request() -> support::RecordedRequest {
+    let mut entry = Entry::new();
+    entry.kwargs = object(
+        r#"{"input":null,"first_message":"{\"type\":\"response.create\",\"input\":\"old\"}"}"#,
+    );
+    entry.request().await
+}
+
 #[tokio::test]
 async fn request_defaults_and_routing() {
     assert_frame_routing();
@@ -278,6 +288,11 @@ async fn request_defaults_and_routing() {
     assert!(request.overrides.is_empty());
     let non_string = non_string_first_message_request().await;
     assert_eq!(non_string.first_message, None);
+    let null_routed = null_routed_input_request().await;
+    assert_eq!(
+        null_routed.first_message.as_deref(),
+        Some(r#"{"type":"response.create","input":"old"}"#)
+    );
 }
 
 async fn merged_metadata_request() -> support::RecordedRequest {

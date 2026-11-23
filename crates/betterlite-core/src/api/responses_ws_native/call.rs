@@ -134,7 +134,12 @@ where
     let deployment_kwargs = without_keys(call.kwargs, &RESPONSES_WS_ROUTING_HINT_KEYS);
     let remaining_kwargs = without_keys(call.kwargs, &EXPLICIT_KEYS);
     let first_message = match call.kwargs.get("first_message") {
-        Some(Json::Text(text)) => Some(routed_first_frame(text, call.kwargs.get("input"))),
+        Some(Json::Text(text)) => Some(routed_first_frame(
+            text,
+            call.kwargs
+                .get("input")
+                .filter(|value| !matches!(**value, Json::Null)),
+        )),
         None
         | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             None
