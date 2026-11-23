@@ -5,7 +5,7 @@ from pydantic import JsonValue, TypeAdapter
 
 from betterlite._completion.arguments import SessionLike
 from betterlite._completion.errors import raise_native_error
-from betterlite._endpoints.payload import CallValue, to_call_payload
+from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
 from betterlite._native import (
     NativeError,
     NativePassthroughError,
@@ -31,6 +31,14 @@ ERROR_STATUS: Final = 400
 ReplyHeaders: TypeAlias = list[tuple[str, str]]
 ReplyBody: TypeAlias = bytes | NativePassthroughStream
 ResponseParts: TypeAlias = tuple[int, ReplyHeaders, ReplyBody]
+
+
+def chunk_or_stop(
+    chunk: bytes | None, exhausted: type[StopIteration] | type[StopAsyncIteration]
+) -> bytes:
+    if chunk is None:
+        raise exhausted
+    return chunk
 
 
 class PassthroughResponse(Response):
@@ -69,15 +77,12 @@ class PassthroughStreamingResponse:
         return self
 
     def __next__(self) -> bytes:
-        chunk: bytes | None = None
         try:
             chunk = self._stream.next_chunk()
         except NativePassthroughError as failure:
             self.close()
             raise_native_error(NativeError(str(failure)))
-        if chunk is None:
-            raise StopIteration
-        return chunk
+        return chunk_or_stop(chunk, StopIteration)
 
     # ast-grep-ignore: no-one-line-functions
     def close(self) -> None:
@@ -112,15 +117,12 @@ class AsyncPassthroughStreamingResponse:
         return self
 
     async def __anext__(self) -> bytes:
-        chunk: bytes | None = None
         try:
             chunk = await self._stream.anext_chunk()
         except NativePassthroughError as failure:
             await self.aclose()
             raise_native_error(NativeError(str(failure)))
-        if chunk is None:
-            raise StopAsyncIteration
-        return chunk
+        return chunk_or_stop(chunk, StopAsyncIteration)
 
     # ast-grep-ignore: no-one-line-functions
     async def aclose(self) -> None:
@@ -147,10 +149,13 @@ def reply_response(
             return PassthroughResponse(status_code, dict(headers), content)
 
 
-def call_route(route: RouteValues) -> ResponseParts:
+def route_session(route: RouteValues) -> tuple[CallPayload, NativePassthroughSession]:
     payload = to_call_payload(request_values(route))
-    session = NativePassthroughSession("{}")
-    parts: ResponseParts
+    return payload, NativePassthroughSession("{}")
+
+
+def call_route(route: RouteValues) -> ResponseParts:
+    payload, session = route_session(route)
     try:
         parts = session.call(payload.text, payload.blobs)
     except NativePassthroughError as failure:
@@ -159,9 +164,7 @@ def call_route(route: RouteValues) -> ResponseParts:
 
 
 async def acall_route(route: RouteValues) -> ResponseParts:
-    payload = to_call_payload(request_values(route))
-    session = NativePassthroughSession("{}")
-    parts: ResponseParts
+    payload, session = route_session(route)
     try:
         parts = await session.acall(payload.text, payload.blobs)
     except NativePassthroughError as failure:

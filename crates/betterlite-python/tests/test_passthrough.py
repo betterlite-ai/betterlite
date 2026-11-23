@@ -6,7 +6,7 @@ import threading
 from collections.abc import AsyncIterator, Generator, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
-from typing import ClassVar, Final, Protocol, Self, TypeAlias, runtime_checkable
+from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar, runtime_checkable
 
 import httpx
 import pytest
@@ -20,8 +20,10 @@ from betterlite._endpoints.payload import CallValue
 from betterlite._native import NativeError
 from betterlite.exceptions import APIError
 from betterlite.passthrough.main import (
+    AsyncPassthroughStreamingResponse,
     AsyncStreamReply,
     PassthroughResponse,
+    PassthroughStreamingResponse,
     StreamReply,
     allm_passthrough_route,
     llm_passthrough_route,
@@ -130,53 +132,35 @@ import json
 
 def rows(function):
     return [
-        [
-            parameter.name,
-            parameter.kind.name,
-            "" if parameter.default is inspect.Parameter.empty else repr(parameter.default),
-        ]
-        for parameter in inspect.signature(function).parameters.values()
+        [p.name, p.kind.name, "" if p.default is inspect.Parameter.empty else repr(p.default)]
+        for p in inspect.signature(function).parameters.values()
     ]
 
 
-ours = importlib.import_module("betterlite.passthrough.main")
-theirs = importlib.import_module("litellm.passthrough.main")
-ours_utils = importlib.import_module("betterlite.passthrough.utils")
-theirs_utils = importlib.import_module("litellm.passthrough.utils")
-ours_timeouts = importlib.import_module("betterlite.passthrough.timeout_utils")
-theirs_timeouts = importlib.import_module("litellm.passthrough.timeout_utils")
-pairs = {
-    "llm_passthrough_route": (ours.llm_passthrough_route, theirs.llm_passthrough_route),
-    "allm_passthrough_route": (ours.allm_passthrough_route, theirs.allm_passthrough_route),
-    "get_merged_query_parameters": (
-        ours_utils.BasePassthroughUtils.get_merged_query_parameters,
-        theirs_utils.BasePassthroughUtils.get_merged_query_parameters,
-    ),
-    "forward_headers_from_request": (
-        ours_utils.BasePassthroughUtils.forward_headers_from_request,
-        theirs_utils.BasePassthroughUtils.forward_headers_from_request,
-    ),
-    "encode_bedrock_runtime_modelid_arn": (
-        ours_utils.CommonUtils.encode_bedrock_runtime_modelid_arn,
-        theirs_utils.CommonUtils.encode_bedrock_runtime_modelid_arn,
-    ),
-    "resolve_pass_through_request_timeout": (
-        ours_timeouts.resolve_pass_through_request_timeout,
-        theirs_timeouts.resolve_pass_through_request_timeout,
-    ),
-    "resolve_llm_passthrough_timeout": (
-        ours_timeouts.resolve_llm_passthrough_timeout,
-        theirs_timeouts.resolve_llm_passthrough_timeout,
-    ),
-}
-print(
-    json.dumps(
-        {
-            "ours": {name: rows(ours_rows) for name, (ours_rows, _) in pairs.items()},
-            "reference": {name: rows(theirs_rows) for name, (_, theirs_rows) in pairs.items()},
-        }
-    )
-)
+def pairs():
+    found = {}
+    for name, group, owner in (
+        ("llm_passthrough_route", "main", None),
+        ("allm_passthrough_route", "main", None),
+        ("get_merged_query_parameters", "utils", "BasePassthroughUtils"),
+        ("forward_headers_from_request", "utils", "BasePassthroughUtils"),
+        ("encode_bedrock_runtime_modelid_arn", "utils", "CommonUtils"),
+        ("resolve_pass_through_request_timeout", "timeout_utils", None),
+        ("resolve_llm_passthrough_timeout", "timeout_utils", None),
+    ):
+        ours = importlib.import_module(f"betterlite.passthrough.{group}")
+        theirs = importlib.import_module(f"litellm.passthrough.{group}")
+        if owner is not None:
+            ours, theirs = getattr(ours, owner), getattr(theirs, owner)
+        found[name] = (getattr(ours, name), getattr(theirs, name))
+    return found
+
+
+table = pairs()
+print(json.dumps({
+    "ours": {name: rows(ours) for name, (ours, _) in table.items()},
+    "reference": {name: rows(theirs) for name, (_, theirs) in table.items()},
+}))
 """
 
 BODY_VIEW: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
@@ -198,7 +182,6 @@ class PartView(TypedDict):
 
 
 class RouteShape(TypedDict, total=False):
-    api_base: str | None
     content: Content | None
     data: dict[str, CallValue] | None
     files: Files | None
@@ -207,6 +190,22 @@ class RouteShape(TypedDict, total=False):
     request_query_params: dict[str, JsonValue] | None
     request_headers: dict[str, str] | None
     forward_headers: bool
+
+
+class CallShape(TypedDict):
+    method: str
+    endpoint: str
+    model: str
+    custom_llm_provider: str
+    api_base: str
+    json: dict[str, JsonValue]
+
+
+class TimeoutCase(TypedDict, total=False):
+    kwargs: dict[str, JsonValue]
+    litellm_params: dict[str, JsonValue]
+    router_timeout: float
+    router_stream_timeout: float
 
 
 class SignatureView(TypedDict):
@@ -224,6 +223,7 @@ class CallResult(Protocol):
 
 Answer: TypeAlias = tuple[int, dict[str, str], bytes]
 CallArgument: TypeAlias = JsonValue | SessionLike
+ErrorType = TypeVar("ErrorType", bound=Exception)
 
 
 @runtime_checkable
@@ -333,7 +333,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.reply(OK, ANSWER, JSON_TYPE)
 
     def read_body(self) -> bytes:
-        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+        encoding = self.headers.get("Transfer-Encoding")
+        if encoding is not None and encoding.lower() == "chunked":
             return self.read_chunked()
         declared = self.headers.get("Content-Length")
         return self.rfile.read(0 if declared is None else int(declared))
@@ -386,14 +387,16 @@ class _Handler(BaseHTTPRequestHandler):
         self.close_connection = True
 
 
+@pytest.fixture(autouse=False)
+def server() -> Iterator[PassthroughServer]:
+    with PassthroughServer() as running:
+        yield running
+
+
 def compared_headers(headers: Mapping[str, str]) -> dict[str, str]:
-    kept: dict[str, str] = {}
-    for name, value in headers.items():
-        lowered = name.lower()
-        if lowered in VOLATILE:
-            continue
-        kept[lowered] = value
-    return kept
+    return {
+        name.lower(): value for name, value in headers.items() if name.lower() not in VOLATILE
+    }
 
 
 def expected_headers(content_type: str, length: int | None = None) -> dict[str, str]:
@@ -414,6 +417,23 @@ def signature_view() -> SignatureView:
     )
     assert done.returncode == 0, done.stderr
     return SIGNATURE_VIEW.validate_json(done.stdout)
+
+
+def call_for(
+    body: dict[str, JsonValue],
+    base: str,
+    endpoint: str = CHAT_ENDPOINT,
+    model: str = MODEL,
+    provider: str = PROVIDER,
+) -> CallShape:
+    return CallShape(
+        method="POST",
+        endpoint=endpoint,
+        model=model,
+        custom_llm_provider=provider,
+        api_base=base,
+        json=dict(body),
+    )
 
 
 def answer_parts(answer: StreamReply | AnswerView) -> Answer:
@@ -507,46 +527,14 @@ async def reference_async_stream(answer: CallResult) -> Answer:
 
 
 async def ours_async(base: str) -> tuple[Answer, Answer]:
-    full = await allm_passthrough_route(
-        method="POST",
-        endpoint=CHAT_ENDPOINT,
-        model=MODEL,
-        custom_llm_provider=PROVIDER,
-        api_base=base,
-        json=dict(INPUT_BODY),
-    )
-    streamed = await allm_passthrough_route(
-        method="POST",
-        endpoint=CHAT_ENDPOINT,
-        model=MODEL,
-        custom_llm_provider=PROVIDER,
-        api_base=base,
-        json=dict(STREAM_BODY),
-    )
+    full = await allm_passthrough_route(**call_for(INPUT_BODY, base))
+    streamed = await allm_passthrough_route(**call_for(STREAM_BODY, base))
     return await async_answer(full), await async_stream(streamed)
 
 
 async def reference_async(base: str) -> tuple[Answer, Answer]:
-    full = await awaited(
-        REFERENCES.allm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=base,
-            json=dict(INPUT_BODY),
-        )
-    )
-    streamed = await awaited(
-        REFERENCES.allm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=base,
-            json=dict(STREAM_BODY),
-        )
-    )
+    full = await awaited(REFERENCES.allm_passthrough_route(**call_for(INPUT_BODY, base)))
+    streamed = await awaited(REFERENCES.allm_passthrough_route(**call_for(STREAM_BODY, base)))
     return reference_parts(full), await reference_async_stream(streamed)
 
 
@@ -555,34 +543,41 @@ async def reference_positional() -> None:
         await awaited(REFERENCES.allm_passthrough_route(POSITIONAL))
 
 
-async def truncated_async(base: str) -> None:
-    response = await allm_passthrough_route(
-        method="POST",
-        endpoint=TRUNCATED_ENDPOINT,
-        model=MODEL,
-        custom_llm_provider=PROVIDER,
-        api_base=base,
-        json=dict(STREAM_BODY),
-    )
-    match response:
-        case AsyncStreamView() as stream:
-            iterator = aiter(stream)
-            handed_out: bytes | None = None
-            failure: APIError | None = None
-            try:
-                async for chunk in iterator:
-                    if handed_out is None:
-                        handed_out = chunk
-            except APIError as caught:
-                failure = caught
-            assert failure is not None
-            assert failure.status_code == SERVER_ERROR
-            assert handed_out is not None
-            assert TRUNCATED_FRAME.startswith(handed_out)
-            with pytest.raises(StopAsyncIteration):
-                await anext(iterator)
+def stream_of(answer: StreamReply) -> PassthroughStreamingResponse:
+    match answer:
+        case PassthroughStreamingResponse() as stream:
+            return stream
         case object():
-            raise AssertionError("the truncated call answered with no stream")
+            raise AssertionError("the truncated call answered with a full response")
+
+
+# ast-grep-ignore: no-long-names
+def astream_of(answer: AsyncStreamReply) -> AsyncPassthroughStreamingResponse:
+    match answer:
+        # ast-grep-ignore: no-long-names
+        case AsyncPassthroughStreamingResponse() as stream:
+            return stream
+        case object():
+            raise AssertionError("the truncated call answered with a full response")
+
+
+def first_then_failure(stream: PassthroughStreamingResponse) -> tuple[bytes, APIError]:
+    first = next(stream)
+    with pytest.raises(APIError) as failure:
+        next(stream)
+    with pytest.raises(StopIteration):
+        next(stream)
+    return first, failure.value
+
+
+# ast-grep-ignore: no-long-names
+async def afirst_then_failure(stream: AsyncPassthroughStreamingResponse) -> tuple[bytes, APIError]:
+    first = await anext(stream)
+    with pytest.raises(APIError) as failure:
+        await anext(stream)
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+    return first, failure.value
 
 
 def passthrough_response(answer: StreamReply) -> PassthroughResponse:
@@ -591,6 +586,24 @@ def passthrough_response(answer: StreamReply) -> PassthroughResponse:
             return response
         case object():
             raise AssertionError("the call answered with a stream")
+
+
+def native_cause(error: BaseException) -> None:
+    match error.__cause__:
+        case NativeError():
+            pass
+        case object():
+            raise AssertionError("the raised error carries no native cause")
+
+
+def both_raise(
+    asked: CallShape, error: type[ErrorType], match: str
+) -> tuple[ErrorType, Exception]:
+    with pytest.raises(error, match=match) as ours_error:
+        llm_passthrough_route(**asked)
+    with pytest.raises(Exception, match=match) as reference_error:
+        REFERENCES.llm_passthrough_route(**asked)
+    return ours_error.value, reference_error.value
 
 
 def compared_request_headers(record: RecordedCall) -> dict[str, str]:
@@ -610,7 +623,7 @@ def part_headers(text: str) -> dict[str, str]:
 
 
 def multipart_parts(record: RecordedCall) -> list[PartView]:
-    content_type = record["headers"].get("content-type", "")
+    content_type = record["headers"]["content-type"]
     boundary = content_type.partition("boundary=")[2]
     assert boundary, content_type
     parts: list[PartView] = []
@@ -626,39 +639,24 @@ def multipart_parts(record: RecordedCall) -> list[PartView]:
 
 
 def round_trip(
-    server: PassthroughServer, shape: RouteShape
+    server: PassthroughServer, shape: RouteShape, base: str | None = None
 ) -> tuple[RecordedCall, RecordedCall]:
-    api_base = shape.get("api_base")
-    base = server.base if api_base is None else api_base
+    address = server.base if base is None else base
     ours = llm_passthrough_route(
         method="POST",
         endpoint=CHAT_ENDPOINT,
         model=MODEL,
         custom_llm_provider=PROVIDER,
-        api_base=base,
-        request_query_params=shape.get("request_query_params"),
-        request_headers=shape.get("request_headers"),
-        content=shape.get("content"),
-        data=shape.get("data"),
-        files=shape.get("files"),
-        params=shape.get("params"),
-        cookies=shape.get("cookies"),
-        forward_headers=shape.get("forward_headers", False),
+        api_base=address,
+        **shape,
     )
     reference = REFERENCES.llm_passthrough_route(
         method="POST",
         endpoint=CHAT_ENDPOINT,
         model=MODEL,
         custom_llm_provider=PROVIDER,
-        api_base=base,
-        request_query_params=shape.get("request_query_params"),
-        request_headers=shape.get("request_headers"),
-        content=shape.get("content"),
-        data=shape.get("data"),
-        files=shape.get("files"),
-        params=shape.get("params"),
-        cookies=shape.get("cookies"),
-        forward_headers=shape.get("forward_headers", False),
+        api_base=address,
+        **shape,
     )
     assert answer_parts(ours) == reference_parts(reference)
     ours_call, reference_call = server.calls[-2:]
@@ -696,422 +694,234 @@ def test_signature_refusal_async() -> None:
     asyncio.run(reference_positional())
 
 
-def test_calls_match() -> None:
-    with PassthroughServer() as server:
-        ours = llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=server.base,
-            json=dict(INPUT_BODY),
-        )
-        reference = REFERENCES.llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=server.base,
-            json=dict(INPUT_BODY),
-        )
-        records = list(server.calls)
+def test_calls_match(server: PassthroughServer) -> None:
+    ours = llm_passthrough_route(**call_for(INPUT_BODY, server.base))
+    reference = REFERENCES.llm_passthrough_route(**call_for(INPUT_BODY, server.base))
     assert answer_parts(ours) == reference_parts(reference)
     assert answer_parts(ours) == (OK, expected_headers(JSON_TYPE, len(ANSWER)), ANSWER)
-    assert len(records) == EXPECTED_CALLS
-    assert [record["path"] for record in records] == [CHAT_PATH, CHAT_PATH]
-    assert [recorded_body(record) for record in records] == [INPUT_BODY, INPUT_BODY]
+    assert [record["path"] for record in server.calls] == [CHAT_PATH] * EXPECTED_CALLS
+    assert [recorded_body(record) for record in server.calls] == [INPUT_BODY] * EXPECTED_CALLS
     response = passthrough_response(ours)
-    assert response.json() == ANSWER_BODY
-    assert response.text == ANSWER.decode()
+    assert (response.json(), response.text) == (ANSWER_BODY, ANSWER.decode())
 
 
-def test_response_raise_for_status() -> None:
+def test_calls_raise_for_status() -> None:
     with pytest.raises(APIError) as failure:
         PassthroughResponse(UNAUTHORIZED, {}, ERROR_TEXT.encode()).raise_for_status()
-    assert failure.value.status_code == UNAUTHORIZED
-    assert failure.value.message == ERROR_TEXT
-    assert PassthroughResponse(OK, {}, ANSWER).raise_for_status() is None
+    assert (failure.value.status_code, failure.value.message) == (UNAUTHORIZED, ERROR_TEXT)
+    PassthroughResponse(OK, {}, ANSWER).raise_for_status()
 
 
-def test_calls_stream_match() -> None:
-    with PassthroughServer() as server:
-        ours = llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=server.base,
-            json=dict(STREAM_BODY),
-        )
-        reference = REFERENCES.llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=server.base,
-            json=dict(STREAM_BODY),
-        )
-        ours_answer = stream_parts(ours)
-        reference_answer = reference_stream_parts(reference)
-    assert ours_answer == reference_answer
-    assert ours_answer == (OK, expected_headers(EVENT_TYPE), STREAM_BYTES)
+def test_calls_stream_match(server: PassthroughServer) -> None:
+    ours = stream_parts(llm_passthrough_route(**call_for(STREAM_BODY, server.base)))
+    reference = REFERENCES.llm_passthrough_route(**call_for(STREAM_BODY, server.base))
+    assert ours == reference_stream_parts(reference)
+    assert ours == (OK, expected_headers(EVENT_TYPE), STREAM_BYTES)
 
 
-def test_calls_async_match() -> None:
-    with PassthroughServer() as server:
-        ours = asyncio.run(ours_async(server.base))
-        reference = asyncio.run(reference_async(server.base))
-    assert ours == reference
-    assert ours == (
+def test_calls_async_match(server: PassthroughServer) -> None:
+    ours = asyncio.run(ours_async(server.base))
+    expected = (
         (OK, expected_headers(JSON_TYPE, len(ANSWER)), ANSWER),
         (OK, expected_headers(EVENT_TYPE), STREAM_BYTES),
     )
+    assert ours == expected == asyncio.run(reference_async(server.base))
 
 
-def test_calls_content_match() -> None:
-    with PassthroughServer() as server:
-        text = round_trip(server, RouteShape(content="hi"))
-        raw = round_trip(server, RouteShape(content=b"raw"))
-        chunks = round_trip(server, RouteShape(content=[b"a", b"b"]))
-    assert [call[0]["body"] for call in (text, raw, chunks)] == [b"hi", b"raw", b"ab"]
-    for ours, reference in (text, raw, chunks):
-        assert ours["headers"].get("content-type") == OCTET_TYPE
+def test_calls_content_match(server: PassthroughServer) -> None:
+    text = round_trip(server, RouteShape(content="hi"))
+    raw = round_trip(server, RouteShape(content=b"raw"))
+    chunks = round_trip(server, RouteShape(content=[b"a", b"b"]))
+    calls = (text, raw, chunks)
+    assert [call[0]["body"] for call in calls] == [b"hi", b"raw", b"ab"]
+    for ours, reference in calls:
+        assert ours["headers"]["content-type"] == OCTET_TYPE
         assert "content-type" not in reference["headers"]
 
 
-def test_calls_form_match() -> None:
-    with PassthroughServer() as server:
-        ours, reference = round_trip(
-            server, RouteShape(data={"field": "value", "repeat": ["1", "2"]})
-        )
+def test_calls_form_match(server: PassthroughServer) -> None:
+    ours, reference = round_trip(server, RouteShape(data={"field": "value", "repeat": ["1", "2"]}))
     assert ours["body"] == reference["body"] == b"field=value&repeat=1&repeat=2"
-    assert ours["headers"].get("content-type") == FORM_TYPE
-    assert reference["headers"].get("content-type") == FORM_TYPE
+    assert (ours["headers"]["content-type"], reference["headers"]["content-type"]) == (
+        FORM_TYPE,
+        FORM_TYPE,
+    )
 
 
-def test_calls_params_match() -> None:
-    with PassthroughServer() as server:
-        mapping = round_trip(server, RouteShape(params={"q": "1", "tag": ["a", "b"]}))
-        text = round_trip(server, RouteShape(params="a=1&b=2"))
-        sequence = round_trip(server, RouteShape(params=[("k", "v"), ("k2", "v2")]))
-    assert mapping[0]["path"] == mapping[1]["path"] == f"{CHAT_PATH}?q=1&tag=a&tag=b"
-    assert text[0]["path"] == text[1]["path"] == f"{CHAT_PATH}?a=1&b=2"
-    assert sequence[0]["path"] == sequence[1]["path"] == f"{CHAT_PATH}?k=v&k2=v2"
+def test_calls_params_match(server: PassthroughServer) -> None:
+    mapping = round_trip(server, RouteShape(params={"q": "1", "tag": ["a", "b"]}))
+    text = round_trip(server, RouteShape(params="a=1&b=2"))
+    sequence = round_trip(server, RouteShape(params=[("k", "v"), ("k2", "v2")]))
+    assert [call[0]["path"] for call in (mapping, text, sequence)] == [
+        f"{CHAT_PATH}?q=1&tag=a&tag=b",
+        f"{CHAT_PATH}?a=1&b=2",
+        f"{CHAT_PATH}?k=v&k2=v2",
+    ]
 
 
-def test_calls_query_params_match() -> None:
-    with PassthroughServer() as server:
-        plain = round_trip(server, RouteShape(request_query_params={"req": "1"}))
-        asked = round_trip(
-            server,
-            RouteShape(
-                api_base=f"{server.base}?from_base=1",
-                request_query_params={"req": "1"},
-            ),
-        )
-    assert plain[0]["path"] == plain[1]["path"] == f"{CHAT_PATH}?req=1"
+def test_calls_base_query_match(server: PassthroughServer) -> None:
+    plain = round_trip(server, RouteShape(request_query_params={"req": "1"}))
+    asked = round_trip(
+        server, RouteShape(request_query_params={"req": "1"}), base=f"{server.base}?from_base=1"
+    )
     # format_url replaces the base query, so the endpoint text never leaves the path
-    assert asked[0]["path"] == asked[1]["path"] == f"{API_PATH}?req=1"
+    assert (plain[0]["path"], asked[0]["path"]) == (f"{CHAT_PATH}?req=1", f"{API_PATH}?req=1")
 
 
-def test_calls_cookies_match() -> None:
-    with PassthroughServer() as server:
-        ours, reference = round_trip(server, RouteShape(cookies={"session": "abc"}))
-    assert ours["headers"].get("cookie") == reference["headers"].get("cookie")
-    assert ours["headers"].get("cookie") == "session=abc"
+def test_calls_cookies_match(server: PassthroughServer) -> None:
+    ours, reference = round_trip(server, RouteShape(cookies={"session": "abc"}))
+    assert ours["headers"]["cookie"] == reference["headers"]["cookie"] == "session=abc"
 
 
-def test_calls_files_match() -> None:
-    with PassthroughServer() as server:
-        mapping = round_trip(
-            server, RouteShape(files={"image": ("cat.png", b"png-bytes", "image/png")})
-        )
-        repeated = round_trip(
-            server,
-            RouteShape(
-                files=[
-                    ("image", ("one.png", b"one", "image/png")),
-                    ("image", ("two.png", b"two", "image/png")),
-                ]
-            ),
-        )
-    assert mapping[0]["headers"].get("content-type", "").startswith(MULTIPART_TYPE)
-    assert mapping[1]["headers"].get("content-type", "").startswith(MULTIPART_TYPE)
+def test_calls_files_match(server: PassthroughServer) -> None:
+    image = ("cat.png", b"png-bytes", "image/png")
+    mapping = round_trip(server, RouteShape(files={"image": image}))
+    first = ("one.png", b"one", "image/png")
+    second = ("two.png", b"two", "image/png")
+    repeated = round_trip(server, RouteShape(files=[("image", first), ("image", second)]))
     assert multipart_parts(mapping[0]) == multipart_parts(mapping[1])
     assert multipart_parts(repeated[0]) == multipart_parts(repeated[1])
+    assert [part["body"] for part in multipart_parts(repeated[0])] == [b"one", b"two"]
     assert [part["headers"]["content-disposition"] for part in multipart_parts(mapping[0])] == [
         'form-data; name="image"; filename="cat.png"'
     ]
-    assert [part["body"] for part in multipart_parts(repeated[0])] == [b"one", b"two"]
+    for call in (mapping[0], mapping[1]):
+        assert call["headers"]["content-type"].startswith(MULTIPART_TYPE)
 
 
-def test_calls_request_headers_match() -> None:
-    request_headers = {"x-pass-anthropic-beta": "beta-1", "x-request": "1"}
-    with PassthroughServer() as server:
-        quiet = round_trip(server, RouteShape(request_headers=dict(request_headers)))
-        asked = round_trip(
-            server,
-            RouteShape(request_headers=dict(request_headers), forward_headers=True),
-        )
+# the route hands forward_headers=False to the policy, so the flag changes nothing
+def test_calls_headers_match(server: PassthroughServer) -> None:
+    headers = {"x-pass-anthropic-beta": "beta-1", "x-request": "1"}
+    quiet = round_trip(server, RouteShape(request_headers=dict(headers)))
+    asked = round_trip(server, RouteShape(request_headers=dict(headers), forward_headers=True))
     for ours in (quiet[0], asked[0]):
-        assert ours["headers"].get("anthropic-beta") == "beta-1"
+        assert ours["headers"]["anthropic-beta"] == "beta-1"
         assert "x-request" not in ours["headers"]
-    assert quiet[0]["headers"].get("anthropic-beta") == quiet[1]["headers"].get("anthropic-beta")
 
 
 def test_calls_helpers_match() -> None:
     url = httpx.URL(f"http://{HOST}:9{API_PATH}?from_url=url&shared=url&blank=")
-    ours_query = BasePassthroughUtils.get_merged_query_parameters(url, MERGE_QUERY, MERGE_DEFAULTS)
-    reference_query = QUERY_VIEW.validate_python(
-        REFERENCE_UTILS.BasePassthroughUtils.get_merged_query_parameters(
-            existing_url=url,
-            request_query_params=MERGE_QUERY,
-            default_query_params=MERGE_DEFAULTS,
-        )
+    ours = BasePassthroughUtils.get_merged_query_parameters(url, MERGE_QUERY, MERGE_DEFAULTS)
+    reference = REFERENCE_UTILS.BasePassthroughUtils.get_merged_query_parameters(
+        existing_url=url, request_query_params=MERGE_QUERY, default_query_params=MERGE_DEFAULTS
     )
-    assert ours_query == reference_query
-    ours_headers = BasePassthroughUtils.forward_headers_from_request(
+    assert ours == QUERY_VIEW.validate_python(reference)
+    relative_url = httpx.URL("/v1/chat?from_url=url")
+    relative = BasePassthroughUtils.get_merged_query_parameters(
+        relative_url, MERGE_QUERY, MERGE_DEFAULTS
+    )
+    relative_reference = REFERENCE_UTILS.BasePassthroughUtils.get_merged_query_parameters(
+        existing_url=relative_url,
+        request_query_params=MERGE_QUERY,
+        default_query_params=MERGE_DEFAULTS,
+    )
+    assert relative == QUERY_VIEW.validate_python(relative_reference)
+    forwarded = BasePassthroughUtils.forward_headers_from_request(
         dict(FORWARD_REQUEST), dict(CUSTOM_HEADERS), forward_headers=True
     )
-    reference_headers = HEADER_VIEW.validate_python(
-        REFERENCE_UTILS.BasePassthroughUtils.forward_headers_from_request(
-            request_headers=dict(FORWARD_REQUEST),
-            headers=dict(CUSTOM_HEADERS),
-            forward_headers=True,
-        )
+    forwarded_reference = REFERENCE_UTILS.BasePassthroughUtils.forward_headers_from_request(
+        request_headers=dict(FORWARD_REQUEST),
+        headers=dict(CUSTOM_HEADERS),
+        forward_headers=True,
     )
-    assert ours_headers == reference_headers
-    ours_pass = BasePassthroughUtils.forward_headers_from_request(
+    assert forwarded == HEADER_VIEW.validate_python(forwarded_reference)
+    passed = BasePassthroughUtils.forward_headers_from_request(
         dict(PASS_REQUEST), dict(NO_HEADERS), forward_headers=False
     )
-    reference_pass = HEADER_VIEW.validate_python(
-        REFERENCE_UTILS.BasePassthroughUtils.forward_headers_from_request(
-            request_headers=dict(PASS_REQUEST),
-            headers=dict(NO_HEADERS),
-            forward_headers=False,
-        )
+    passed_reference = REFERENCE_UTILS.BasePassthroughUtils.forward_headers_from_request(
+        request_headers=dict(PASS_REQUEST),
+        headers=dict(NO_HEADERS),
+        forward_headers=False,
     )
-    assert ours_pass == reference_pass
-    ours_arn = CommonUtils.encode_bedrock_runtime_modelid_arn(ARN_ENDPOINT)
-    reference_arn = str_of(
-        REFERENCE_UTILS.CommonUtils.encode_bedrock_runtime_modelid_arn(endpoint=ARN_ENDPOINT)
+    assert passed == HEADER_VIEW.validate_python(passed_reference)
+    arn = CommonUtils.encode_bedrock_runtime_modelid_arn(ARN_ENDPOINT)
+    arn_reference = REFERENCE_UTILS.CommonUtils.encode_bedrock_runtime_modelid_arn(
+        endpoint=ARN_ENDPOINT
     )
-    assert ours_arn == reference_arn == ARN_ENCODED
-    assert resolve_pass_through_request_timeout() == float_of(
-        REFERENCE_TIMEOUTS.resolve_pass_through_request_timeout()
+    assert (arn, str_of(arn_reference)) == (ARN_ENCODED, ARN_ENCODED)
+    with pytest.raises(ValueError, match="not a URL"):
+        BasePassthroughUtils.get_merged_query_parameters("http://", MERGE_QUERY, MERGE_DEFAULTS)
+
+
+def test_calls_timeout_matches() -> None:
+    asked = REFERENCE_TIMEOUTS.resolve_pass_through_request_timeout(
+        endpoint_timeout=TIMEOUT_SECONDS
     )
-    assert resolve_pass_through_request_timeout(TIMEOUT_SECONDS) == float_of(
-        REFERENCE_TIMEOUTS.resolve_pass_through_request_timeout(
-            endpoint_timeout=TIMEOUT_SECONDS
-        )
-    )
-    assert resolve_llm_passthrough_timeout() == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout()
-    )
-    assert resolve_llm_passthrough_timeout({"timeout": TIMEOUT_SECONDS}) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            kwargs={"timeout": TIMEOUT_SECONDS}
-        )
-    )
-    assert resolve_llm_passthrough_timeout(
-        {"stream": True, "stream_timeout": STREAM_TIMEOUT, "timeout": GENERIC_TIMEOUT}
-    ) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            kwargs={
-                "stream": True,
-                "stream_timeout": STREAM_TIMEOUT,
-                "timeout": GENERIC_TIMEOUT,
-            }
-        )
-    )
-    assert resolve_llm_passthrough_timeout(router_timeout=ROUTER_SECONDS) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(router_timeout=ROUTER_SECONDS)
-    )
-    assert resolve_llm_passthrough_timeout({"timeout": STRING_TIMEOUT}) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            kwargs={"timeout": STRING_TIMEOUT}
-        )
-    )
-    assert resolve_llm_passthrough_timeout(
-        litellm_params={"timeout": TIMEOUT_SECONDS}
-    ) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            litellm_params={"timeout": TIMEOUT_SECONDS}
-        )
-    )
-    assert resolve_llm_passthrough_timeout(
-        litellm_params={"request_timeout": STRING_TIMEOUT}
-    ) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            litellm_params={"request_timeout": STRING_TIMEOUT}
-        )
-    )
-    assert resolve_llm_passthrough_timeout(
-        kwargs={"stream": True}, litellm_params={"stream_timeout": STREAM_TIMEOUT}
-    ) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            kwargs={"stream": True}, litellm_params={"stream_timeout": STREAM_TIMEOUT}
-        )
-    )
-    assert resolve_llm_passthrough_timeout(
-        kwargs={"stream": True, "timeout": GENERIC_TIMEOUT},
-        router_stream_timeout=ROUTER_SECONDS,
-    ) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            kwargs={"stream": True, "timeout": GENERIC_TIMEOUT},
-            router_stream_timeout=ROUTER_SECONDS,
-        )
-    )
-    assert resolve_llm_passthrough_timeout({"request_timeout": TIMEOUT_SECONDS}) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            kwargs={"request_timeout": TIMEOUT_SECONDS}
-        )
-    )
-    assert resolve_llm_passthrough_timeout(
-        {"timeout": GENERIC_TIMEOUT}, litellm_params={"timeout": "later"}
-    ) == float_of(
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(
-            kwargs={"timeout": GENERIC_TIMEOUT}, litellm_params={"timeout": "later"}
-        )
-    )
+    default = REFERENCE_TIMEOUTS.resolve_pass_through_request_timeout()
+    assert resolve_pass_through_request_timeout(TIMEOUT_SECONDS) == float_of(asked)
+    assert resolve_pass_through_request_timeout() == float_of(default)
+
+
+TIMEOUT_CASES: Final[tuple[TimeoutCase, ...]] = (
+    {},
+    {"kwargs": {"timeout": TIMEOUT_SECONDS}},
+    {"kwargs": {"stream": True, "stream_timeout": STREAM_TIMEOUT, "timeout": GENERIC_TIMEOUT}},
+    {"router_timeout": ROUTER_SECONDS},
+    {"kwargs": {"timeout": STRING_TIMEOUT}},
+    {"litellm_params": {"timeout": TIMEOUT_SECONDS}},
+    {"litellm_params": {"request_timeout": STRING_TIMEOUT}},
+    {"kwargs": {"stream": True}, "litellm_params": {"stream_timeout": STREAM_TIMEOUT}},
+    {
+        "kwargs": {"stream": True, "timeout": GENERIC_TIMEOUT},
+        "router_stream_timeout": ROUTER_SECONDS,
+    },
+    {"kwargs": {"request_timeout": TIMEOUT_SECONDS}},
+    {"kwargs": {"timeout": GENERIC_TIMEOUT}, "litellm_params": {"timeout": "later"}},
+)
+
+
+@pytest.mark.parametrize("case", TIMEOUT_CASES)
+def test_calls_timeouts_match(case: TimeoutCase) -> None:
+    reference = REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(**case)
+    assert resolve_llm_passthrough_timeout(**case) == float_of(reference)
+
+
+def test_calls_timeouts_refuse() -> None:
     with pytest.raises(ValueError, match="soon"):
-        resolve_llm_passthrough_timeout({"timeout": "soon"})
+        resolve_llm_passthrough_timeout(kwargs={"timeout": "soon"})
     with pytest.raises(ValueError, match="soon"):
         REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout(kwargs={"timeout": "soon"})
-    relative = BasePassthroughUtils.get_merged_query_parameters(
-        httpx.URL("/v1/chat?from_url=url"), MERGE_QUERY, MERGE_DEFAULTS
-    )
-    reference_relative = QUERY_VIEW.validate_python(
-        REFERENCE_UTILS.BasePassthroughUtils.get_merged_query_parameters(
-            existing_url=httpx.URL("/v1/chat?from_url=url"),
-            request_query_params=MERGE_QUERY,
-            default_query_params=MERGE_DEFAULTS,
-        )
-    )
-    assert relative == reference_relative
-    with pytest.raises(ValueError, match="not a URL"):
-        BasePassthroughUtils.get_merged_query_parameters(
-            "http://", MERGE_QUERY, MERGE_DEFAULTS
-        )
 
 
-def test_error_upstream() -> None:
-    with PassthroughServer() as server:
-        with pytest.raises(APIError) as ours_error:
-            llm_passthrough_route(
-                method="POST",
-                endpoint=AUTH_ENDPOINT,
-                model=MODEL,
-                custom_llm_provider=PROVIDER,
-                api_base=server.base,
-                json=dict(INPUT_BODY),
-            )
-        with pytest.raises(Exception, match=REFERENCE_ERROR_TEXT) as reference_error:
-            REFERENCES.llm_passthrough_route(
-                method="POST",
-                endpoint=AUTH_ENDPOINT,
-                model=MODEL,
-                custom_llm_provider=PROVIDER,
-                api_base=server.base,
-                json=dict(INPUT_BODY),
-            )
-    ours = ours_error.value
-    assert ours.status_code == UNAUTHORIZED
-    assert ours.message == f"litellm.APIError: {ERROR_TEXT}"
-    assert ours.body == ERROR_BODY
-    match ours.__cause__:
-        case NativeError():
-            pass
-        case object():
-            raise AssertionError("the raised error carries no native cause")
-    reference = reference_error.value
+def test_error_upstream(server: PassthroughServer) -> None:
+    asked = call_for(INPUT_BODY, server.base, endpoint=AUTH_ENDPOINT)
+    ours, reference = both_raise(asked, APIError, REFERENCE_ERROR_TEXT)
+    expected = (UNAUTHORIZED, f"litellm.APIError: {ERROR_TEXT}", ERROR_BODY)
+    assert (ours.status_code, ours.message, ours.body) == expected
+    native_cause(ours)
     assert ERROR_TEXT in str(reference)
     assert status_of(reference) == UNAUTHORIZED
 
 
-def test_error_stream_truncated() -> None:
-    with PassthroughServer() as server:
-        response = llm_passthrough_route(
-            method="POST",
-            endpoint=TRUNCATED_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=server.base,
-            json=dict(STREAM_BODY),
-        )
-        match response:
-            case StreamView() as stream:
-                handed_out: bytes | None = None
-                failure: APIError | None = None
-                try:
-                    for chunk in stream:
-                        if handed_out is None:
-                            handed_out = chunk
-                except APIError as caught:
-                    failure = caught
-                assert failure is not None
-                assert failure.status_code == SERVER_ERROR
-                assert handed_out is not None
-                assert TRUNCATED_FRAME.startswith(handed_out)
-                with pytest.raises(StopIteration):
-                    next(iter(stream))
-            case object():
-                raise AssertionError("the truncated call answered with no stream")
+def test_error_stream_truncated(server: PassthroughServer) -> None:
+    asked = llm_passthrough_route(**call_for(STREAM_BODY, server.base, TRUNCATED_ENDPOINT))
+    first, failure = first_then_failure(stream_of(asked))
+    assert TRUNCATED_FRAME.startswith(first)
+    assert failure.status_code == SERVER_ERROR
 
 
-def test_error_stream_truncated_async() -> None:
-    with PassthroughServer() as server:
-        asyncio.run(truncated_async(server.base))
+async def test_error_truncated_async(server: PassthroughServer) -> None:
+    arguments = call_for(STREAM_BODY, server.base, endpoint=TRUNCATED_ENDPOINT)
+    asked = await allm_passthrough_route(**arguments)
+    first, failure = await afirst_then_failure(astream_of(asked))
+    assert TRUNCATED_FRAME.startswith(first)
+    assert failure.status_code == SERVER_ERROR
 
 
 def test_error_provider_missing() -> None:
-    with pytest.raises(Exception, match=PROVIDER_ERROR_TEXT) as ours_error:
-        llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=OPENAI_MODEL,
-            custom_llm_provider=OPENAI_PROVIDER,
-            api_base=DEAD_BASE,
-            json=dict(INPUT_BODY),
-        )
-    with pytest.raises(Exception, match=PROVIDER_ERROR_TEXT) as reference_error:
-        REFERENCES.llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=OPENAI_MODEL,
-            custom_llm_provider=OPENAI_PROVIDER,
-            api_base=DEAD_BASE,
-            json=dict(INPUT_BODY),
-        )
-    ours = ours_error.value
-    assert type(ours).__name__ == "Exception"
-    assert str(ours) == PROVIDER_ERROR_TEXT
-    assert type(reference_error.value).__name__ == "Exception"
-    match ours.__cause__:
-        case NativeError():
-            pass
-        case object():
-            raise AssertionError("the raised error carries no native cause")
+    asked = call_for(INPUT_BODY, DEAD_BASE, model=OPENAI_MODEL, provider=OPENAI_PROVIDER)
+    ours, reference = both_raise(asked, Exception, PROVIDER_ERROR_TEXT)
+    assert (type(ours).__name__, str(ours)) == ("Exception", PROVIDER_ERROR_TEXT)
+    assert type(reference).__name__ == "Exception"
+    native_cause(ours)
 
 
 def test_unsupported_argument() -> None:
     with pytest.raises(UnsupportedCallArgument) as client_error:
-        llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=DEAD_BASE,
-            client=object(),
-        )
-    assert client_error.value.argument == "client"
+        llm_passthrough_route(**call_for(INPUT_BODY, DEAD_BASE), client=object())
     with pytest.raises(UnsupportedCallArgument) as session_error:
-        llm_passthrough_route(
-            method="POST",
-            endpoint=CHAT_ENDPOINT,
-            model=MODEL,
-            custom_llm_provider=PROVIDER,
-            api_base=DEAD_BASE,
-            shared_session=object(),
-        )
-    assert session_error.value.argument == "shared_session"
+        llm_passthrough_route(**call_for(INPUT_BODY, DEAD_BASE), shared_session=object())
+    assert (client_error.value.argument, session_error.value.argument) == (
+        "client",
+        "shared_session",
+    )
