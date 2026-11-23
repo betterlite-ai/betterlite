@@ -38,7 +38,7 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 Provider: TypeAlias = Literal["openai", "azure", "azure_text"]
 
 
-# the call as the session takes it: the operation, the arguments and the module settings behind them
+# the call as the session takes it: its operation, the arguments set and the module settings
 def call_payload(operation: str, values: Mapping[str, CallValue]) -> CallPayload:
     if values.get(REFUSED) is not None:
         raise UnsupportedCallArgument(REFUSED)
@@ -89,55 +89,44 @@ def created(answer: JsonValue) -> ContainerObject:
 
 
 def create_from_values(values: Mapping[str, CallValue]) -> ContainerObject:
-    answer = call_native(
+    return created(call_native(
         NativeContainerSession("{}").call, call_payload(CREATE, values), NativeContainerError
-    )
-    return created(answer)
+    ))
 
 
 async def acreate_from_values(values: Mapping[str, CallValue]) -> ContainerObject:
-    answer = await acall_native(
+    return created(await acall_native(
         NativeContainerSession("{}").acall, call_payload(CREATE, values),
         NativeContainerError,
-    )
-    return created(answer)
+    ))
 
 
 def list_from_values(values: Mapping[str, CallValue]) -> ContainerListResponse:
-    answer = call_native(
+    return ContainerListResponse.model_validate(call_native(
         NativeContainerSession("{}").call, call_payload(LIST, values), NativeContainerError
-    )
-    return ContainerListResponse.model_validate(answer)
+    ))
 
 
 async def alist_from_values(values: Mapping[str, CallValue]) -> ContainerListResponse:
-    answer = await acall_native(
+    return ContainerListResponse.model_validate(await acall_native(
         NativeContainerSession("{}").acall, call_payload(LIST, values), NativeContainerError
-    )
-    return ContainerListResponse.model_validate(answer)
+    ))
 
 
 async def aretrieve_from_values(values: Mapping[str, CallValue]) -> ContainerObject:
-    answer = await acall_native(
+    return ContainerObject.model_validate(await acall_native(
         NativeContainerSession("{}").acall, call_payload(RETRIEVE, values),
         NativeContainerError,
-    )
-    return ContainerObject.model_validate(answer)
+    ))
 
 
 def create_container(
-    name: str,
-    expires_after: dict[str, JsonValue] | None = None,
-    file_ids: list[str] | None = None,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    api_key: str | None = None,
-    api_base: str | None = None,
-    api_version: str | None = None,
-    custom_llm_provider: Provider = "openai",
-    extra_headers: dict[str, JsonValue] | None = None,
+    name: str, expires_after: dict[str, JsonValue] | None = None,
+    file_ids: list[str] | None = None, timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
+    api_key: str | None = None, api_base: str | None = None, api_version: str | None = None,
+    custom_llm_provider: Provider = "openai", extra_headers: dict[str, JsonValue] | None = None,
     extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    **kwargs: CallValue,
+    extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerObject:
     named: dict[str, CallValue] = {
         "name": name, "expires_after": expires_after, "file_ids": JSON.validate_python(file_ids),
@@ -149,15 +138,11 @@ def create_container(
 
 
 async def acreate_container(
-    name: str,
-    expires_after: dict[str, JsonValue] | None = None,
-    file_ids: list[str] | None = None,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    custom_llm_provider: Provider = "openai",
-    extra_headers: dict[str, JsonValue] | None = None,
+    name: str, expires_after: dict[str, JsonValue] | None = None,
+    file_ids: list[str] | None = None, timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
+    custom_llm_provider: Provider = "openai", extra_headers: dict[str, JsonValue] | None = None,
     extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    **kwargs: CallValue,
+    extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerObject:
     return await acreate_from_values(merged(kwargs, {
         "name": name, "expires_after": expires_after, "file_ids": JSON.validate_python(file_ids),
@@ -167,18 +152,12 @@ async def acreate_container(
 
 
 def list_containers(
-    after: str | None = None,
-    limit: int | None = None,
-    order: str | None = None,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    api_key: str | None = None,
-    api_base: str | None = None,
-    api_version: str | None = None,
-    custom_llm_provider: Provider = "openai",
-    extra_headers: dict[str, JsonValue] | None = None,
+    after: str | None = None, limit: int | None = None, order: str | None = None,
+    timeout: float | TimeoutValues = DEFAULT_TIMEOUT, api_key: str | None = None,
+    api_base: str | None = None, api_version: str | None = None,
+    custom_llm_provider: Provider = "openai", extra_headers: dict[str, JsonValue] | None = None,
     extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    **kwargs: CallValue,
+    extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerListResponse:
     query: dict[str, CallValue] = {"after": after, "limit": limit, "order": order}
     connection: dict[str, CallValue] = {
@@ -190,14 +169,10 @@ def list_containers(
 
 
 async def alist_containers(
-    after: str | None = None,
-    limit: int | None = None,
-    order: str | None = None,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    custom_llm_provider: Provider = "openai",
+    after: str | None = None, limit: int | None = None, order: str | None = None,
+    timeout: float | TimeoutValues = DEFAULT_TIMEOUT, custom_llm_provider: Provider = "openai",
     extra_headers: dict[str, JsonValue] | None = None,
-    extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
+    extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None,
     **kwargs: CallValue,
 ) -> ContainerListResponse:
     values = {
@@ -212,20 +187,15 @@ async def alist_containers(
 
 
 def retrieve_container(
-    container_id: str,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    api_key: str | None = None,
-    api_base: str | None = None,
-    api_version: str | None = None,
-    custom_llm_provider: Provider = "openai",
-    extra_headers: dict[str, JsonValue] | None = None,
+    container_id: str, timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
+    api_key: str | None = None, api_base: str | None = None, api_version: str | None = None,
+    custom_llm_provider: Provider = "openai", extra_headers: dict[str, JsonValue] | None = None,
     extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    **kwargs: CallValue,
+    extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerObject:
     values = operation_values(
-        kwargs, container_id, timeout, api_key, api_base, api_version,
-        custom_llm_provider, extra_headers, extra_query, extra_body,
+        kwargs, container_id, timeout, api_key, api_base, api_version, custom_llm_provider,
+        extra_headers, extra_query, extra_body,
     )
     answer = call_native(
         NativeContainerSession("{}").call, call_payload(RETRIEVE, values), NativeContainerError
@@ -234,38 +204,30 @@ def retrieve_container(
 
 
 async def aretrieve_container(
-    container_id: str,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    custom_llm_provider: Provider = "openai",
-    extra_headers: dict[str, JsonValue] | None = None,
+    container_id: str, timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
+    custom_llm_provider: Provider = "openai", extra_headers: dict[str, JsonValue] | None = None,
     extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    **kwargs: CallValue,
+    extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerObject:
     return await aretrieve_from_values(
         operation_values(
-            kwargs, container_id, timeout, None, None, None,
-            custom_llm_provider, extra_headers, extra_query, extra_body,
+            kwargs, container_id, timeout, None, None, None, custom_llm_provider,
+            extra_headers, extra_query, extra_body,
         )
     )
 
 
 def delete_container(
-    container_id: str,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    api_key: str | None = None,
-    api_base: str | None = None,
-    api_version: str | None = None,
-    custom_llm_provider: Provider = "openai",
-    extra_headers: dict[str, JsonValue] | None = None,
+    container_id: str, timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
+    api_key: str | None = None, api_base: str | None = None, api_version: str | None = None,
+    custom_llm_provider: Provider = "openai", extra_headers: dict[str, JsonValue] | None = None,
     extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    **kwargs: CallValue,
+    extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> DeleteContainerResult:
     session = NativeContainerSession("{}")
     values = operation_values(
-        kwargs, container_id, timeout, api_key, api_base, api_version,
-        custom_llm_provider, extra_headers, extra_query, extra_body,
+        kwargs, container_id, timeout, api_key, api_base, api_version, custom_llm_provider,
+        extra_headers, extra_query, extra_body,
     )
     return DeleteContainerResult.model_validate(
         call_native(session.call, call_payload(DELETE, values), NativeContainerError)
@@ -273,13 +235,10 @@ def delete_container(
 
 
 async def adelete_container(
-    container_id: str,
-    timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
-    custom_llm_provider: Provider = "openai",
-    extra_headers: dict[str, JsonValue] | None = None,
+    container_id: str, timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
+    custom_llm_provider: Provider = "openai", extra_headers: dict[str, JsonValue] | None = None,
     extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    **kwargs: CallValue,
+    extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> DeleteContainerResult:
     values = {
         **kwargs,
