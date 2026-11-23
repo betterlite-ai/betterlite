@@ -16,7 +16,7 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[test]
 fn setup_explicit_ssl_verify_beats_the_environment() {
     let policy = tls_policy(
-        Some(VerifySetting::Bool(true)),
+        Some(&VerifySetting::Bool(true)),
         &environment(&[("SSL_VERIFY", "false")]),
     )
     .unwrap();
@@ -31,14 +31,14 @@ fn setup_environment_ssl_verify_is_used_without_an_explicit_one() {
 
 #[test]
 fn setup_explicit_false_disables_verification() {
-    let policy = tls_policy(Some(VerifySetting::Bool(false)), &BTreeMap::new()).unwrap();
+    let policy = tls_policy(Some(&VerifySetting::Bool(false)), &BTreeMap::new()).unwrap();
     assert_eq!(policy.verification, Verification::Disabled);
 }
 
 #[test]
 fn setup_ca_file_path_verifies_against_it() {
     let policy = tls_policy(
-        Some(VerifySetting::Path("/etc/ca.pem".to_owned())),
+        Some(&VerifySetting::Path("/etc/ca.pem".to_owned())),
         &BTreeMap::new(),
     )
     .unwrap();
