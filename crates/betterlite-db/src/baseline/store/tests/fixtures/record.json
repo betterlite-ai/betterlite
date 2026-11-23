@@ -1,0 +1,63 @@
+{
+  "scope": "autorouter-baseline:v3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "api_key": "key",
+  "session_id": "session",
+  "router_name": "router",
+  "baseline_model": "claude-sonnet-4-20250514",
+  "observation": {
+    "request_id": "req-1",
+    "started_at": 2.0,
+    "available_at": 2.0,
+    "outcome": "complete",
+    "baseline_equivalent": true,
+    "usage": {
+      "prompt_tokens": 10,
+      "completion_tokens": 5,
+      "total_tokens": 15,
+      "prompt_tokens_details": {
+        "text_tokens": 5,
+        "cached_tokens": 2,
+        "cache_creation_tokens": 3,
+        "cache_write_tokens": 3,
+        "cache_creation_token_details": {
+          "ephemeral_5m_input_tokens": 1,
+          "ephemeral_1h_input_tokens": 2
+        }
+      },
+      "cache_read_input_tokens": 2,
+      "cache_creation_input_tokens": 3
+    },
+    "plan": null,
+    "minimum_cache_tokens": 0,
+    "reason": null
+  },
+  "pricing": {
+    "model": "claude-sonnet-4-20250514",
+    "provider": "anthropic",
+    "prices": null,
+    "basis": [null, null, null],
+    "actual_spend": 0.2,
+    "actual_token_cost": null,
+    "classifier_cost": 0.05
+  },
+  "turn": {
+    "api_key": "key",
+    "session_id": "session",
+    "router_name": "router",
+    "router_type": "simple-shuffle",
+    "model": "model",
+    "turn_at": "2026-01-01T00:00:00+00:00",
+    "total_tokens": 15,
+    "spend": 0.25,
+    "saved_spend": 0.0,
+    "classifier_cost": 0.05,
+    "covered": false,
+    "cache_hit": false,
+    "cache_ttl_seconds": null,
+    "cache_touched": false,
+    "tier": null,
+    "baseline_model": "claude-sonnet-4-20250514",
+    "user_id": "user-1"
+  },
+  "daily": null
+}
