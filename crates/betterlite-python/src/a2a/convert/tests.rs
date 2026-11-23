@@ -369,18 +369,19 @@ fn error_agent_card_keeps_its_status_code(#[case] status: u16) {
     );
 }
 
+fn probe(path: &str, status: u16) -> ProbeFailure {
+    ProbeFailure {
+        path: String::from(path),
+        reason: CardFetchError::Status { status },
+    }
+}
+
 fn two_probe_error() -> A2AError {
     A2AError::agent_card_discovery(
         String::from("http://agent.example"),
         vec![
-            ProbeFailure {
-                path: String::from("/.well-known/agent-card.json"),
-                reason: CardFetchError::Status { status: 404 },
-            },
-            ProbeFailure {
-                path: String::from("/.well-known/agent.json"),
-                reason: CardFetchError::Status { status: 502 },
-            },
+            probe("/.well-known/agent-card.json", 404_u16),
+            probe("/.well-known/agent.json", 502_u16),
         ],
     )
 }
@@ -432,10 +433,7 @@ fn error_discovery_reports_each_probe_failure() {
 fn error_discovery_with_only_missing_paths_reports_404() {
     let error = A2AError::agent_card_discovery(
         String::from("http://agent.example"),
-        vec![ProbeFailure {
-            path: String::from("/.well-known/agent-card.json"),
-            reason: CardFetchError::Status { status: 404 },
-        }],
+        vec![probe("/.well-known/agent-card.json", 404_u16)],
     );
     let json = written(&ErrorPayload::from_a2a(&error));
     assert_eq!(number_field(&json, "status_code"), Some(404));

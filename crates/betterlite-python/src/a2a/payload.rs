@@ -81,8 +81,8 @@ impl ErrorPayload {
     }
 
     // LiteLLM's A2AError keeps its message, model, debug info and retry counts.
-    fn base_details(
-        message: &str,
+    fn detailed(
+        payload: Self,
         model: &Option<String>,
         debug_info: &Option<String>,
         retries: &RetryCounts,
@@ -92,23 +92,7 @@ impl ErrorPayload {
             litellm_debug_info: debug_info.clone(),
             max_retries: retries.max,
             num_retries: retries.retried,
-            ..Self::base(message.to_owned())
-        }
-    }
-
-    fn connection_details(
-        message: &str,
-        url: Option<String>,
-        model: &Option<String>,
-        debug_info: &Option<String>,
-        retries: &RetryCounts,
-    ) -> Self {
-        Self {
-            model: model.clone(),
-            litellm_debug_info: debug_info.clone(),
-            max_retries: retries.max,
-            num_retries: retries.retried,
-            ..Self::connection(message.to_owned(), url)
+            ..payload
         }
     }
 
@@ -180,14 +164,19 @@ impl ErrorPayload {
                 model,
                 debug_info,
                 retries,
-            } => Self::base_details(message, model, debug_info, retries),
+            } => Self::detailed(Self::base(message.to_owned()), model, debug_info, retries),
             A2AError::Connection {
                 message,
                 model,
                 debug_info,
                 retries,
                 ..
-            } => Self::connection_details(message, url, model, debug_info, retries),
+            } => Self::detailed(
+                Self::connection(message.to_owned(), url),
+                model,
+                debug_info,
+                retries,
+            ),
             A2AError::AgentCard {
                 message,
                 status_code,
