@@ -70,7 +70,7 @@ pub fn native_callbacks(configured: &str) -> Vec<String> {
 pub fn parse_redirect_uri(redirect_uri: &str) -> Result<Parsed, RedirectUriRejected> {
     urlparse(redirect_uri, "")
         .ok()
-        .ok_or(RedirectUriRejected {
+        .ok_or_else(|| RedirectUriRejected {
             description: "redirect_uri is not a valid URL.".to_owned(),
             hint: Some(
                 "Use a full absolute URL for redirect_uri (e.g. https://your-host/ui/mcp/oauth/callback)."
@@ -118,10 +118,7 @@ pub fn validate_redirect_uri_shape(
             redirect_uri: None,
         });
     }
-    match web_redirect_uri_rejection(parsed) {
-        Some(rejected) => Err(rejected),
-        None => Ok(RedirectShape::NeedsTrustPolicy),
-    }
+    web_redirect_uri_rejection(parsed).map_or(Ok(RedirectShape::NeedsTrustPolicy), Err)
 }
 
 fn web_redirect_uri_rejection(parsed: &Parsed) -> Option<RedirectUriRejected> {
@@ -167,12 +164,12 @@ fn matches_native_callback(parsed: &Parsed, native_callbacks: &[String]) -> bool
         return false;
     }
     let normalized = normalize_native_redirect_uri(parsed);
-    native_callbacks
-        .iter()
-        .any(|entry| match entry.strip_suffix('*') {
-            Some(prefix) => native_wildcard_prefix_matches(&normalized, prefix),
-            None => normalized == *entry,
-        })
+    native_callbacks.iter().any(|entry| {
+        entry.strip_suffix('*').map_or_else(
+            || normalized == *entry,
+            |prefix| native_wildcard_prefix_matches(&normalized, prefix),
+        )
+    })
 }
 
 fn normalize_native_redirect_uri(parsed: &Parsed) -> String {

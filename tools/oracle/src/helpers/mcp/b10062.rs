@@ -41,10 +41,10 @@ fn answer(uri: &str, callbacks: &[String]) -> serde_json::Value {
                 "status": RedirectUriRejected::STATUS.as_u16(),
                 "detail_error": detail.error,
             });
-            return match loopback {
-                Some(host_is_loopback) => json!({"loopback": host_is_loopback, "refusal": refusal}),
-                None => json!({"refusal": refusal}),
-            };
+            return loopback.map_or_else(
+                || json!({"refusal": refusal}),
+                |host_is_loopback| json!({"loopback": host_is_loopback, "refusal": refusal}),
+            );
         }
     };
     match shape {
