@@ -52,7 +52,8 @@ def build_headers(call: BuildCall) -> JsonValue:
 
 def apply_headers(call: ApplyCall) -> JsonValue:
     # LiteLLM merges into a dict[str, object]; the values stay JSON
-    additional_headers: dict[str, object] = {**call["headers"]}  # ast-grep-ignore: no-loose-types
+    additional_headers: dict[str, object] = {}  # ast-grep-ignore: no-loose-types
+    additional_headers.update(call["headers"])
     apply_remaining_usage_headers(additional_headers, call["remaining"])
     return _JSON.validate_python(additional_headers)
 

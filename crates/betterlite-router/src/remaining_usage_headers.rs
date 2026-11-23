@@ -12,6 +12,7 @@ pub type RemainingUsage = IndexMap<String, i64>;
 
 // the reset is read once before either side is looked at, so a minute edge cannot split the two headers
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn build_io_token_rate_limit_headers(
     limits: IoLimits,
     current_itpm: Option<i64>,
