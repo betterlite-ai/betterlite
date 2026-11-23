@@ -360,6 +360,12 @@ def test_ocr_document_type_error() -> None:
     assert error_fields(theirs.value).status_code == ours.value.status_code
 
 
+def test_ocr_flag_unsupported() -> None:
+    with pytest.raises(UnsupportedCallArgument) as error:
+        ocr(model=OCR_MODEL, document=OCR_DOCUMENT, aocr=True)
+    assert error.value.argument == "aocr"
+
+
 @pytest.mark.parametrize("name", ["client", "shared_session"])
 def test_search_unsupported(name: str) -> None:
     blocked: dict[str, JsonValue] = {name: "an object Rust cannot take"}
