@@ -34,7 +34,9 @@ use std::sync::Arc;
 const SMALL: &str = "text-embedding-3-small";
 const ADA: &str = "text-embedding-ada-002";
 const EMBEDDING_BODY: &str = r#"{"object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}], "model": "text-embedding-3-small", "usage": {"prompt_tokens": 2, "total_tokens": 2}}"#;
-const UNAUTHORIZED_BODY: &str = r#"{"error": {"message": "Invalid API key provided: bad-key", "type": "invalid_request_error", "param": null, "code": "invalid_api_key"}}"#;
+const EMBEDDING_RECORD: &str = r#"{"object":"embedding","index":0,"embedding":[0.1,0.2]}"#;
+// OpenAI's own 401 body: LiteLLM reads "Incorrect API key provided" as an authentication failure
+const UNAUTHORIZED_BODY: &str = r#"{"error": {"message": "Incorrect API key provided: bad-key", "type": "invalid_request_error", "param": null, "code": "invalid_api_key"}}"#;
 // every named argument EmbeddingArguments reads, plus the price and switch keys
 const NAMED_ARGUMENTS_TEXT: &str = r#"{"model": "m", "input": "hi", "dimensions": 3,
     "encoding_format": "base64", "timeout": 12.5, "user": "alice", "api_base": "http://base",

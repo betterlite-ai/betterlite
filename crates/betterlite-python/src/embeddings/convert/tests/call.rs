@@ -1,6 +1,6 @@
 use super::{
-    EMBEDDING_BODY, SMALL, UNAUTHORIZED_BODY, arguments, facts, mock_answer_of, parse, payload_of,
-    session, session_from, text_of,
+    EMBEDDING_BODY, EMBEDDING_RECORD, SMALL, UNAUTHORIZED_BODY, arguments, facts, mock_answer_of,
+    parse, payload_of, session, session_from, text_of,
 };
 use crate::completion::setup::global_credentials;
 use crate::embeddings::call::{Entry, call};
@@ -80,7 +80,7 @@ fn error_a_provider_401_is_the_authentication_class() {
     assert_eq!(payload.kind, "AuthenticationError");
     assert_eq!(payload.status_code, Some(401_u16));
     assert!(
-        payload.message.contains("Invalid API key provided"),
+        payload.message.contains("Incorrect API key provided"),
         "{}",
         payload.message
     );
@@ -180,34 +180,20 @@ fn request_the_caller_model_and_model_info_reach_a_mock_answer() {
     );
 }
 #[test]
-fn request_a_provider_answer_sends_the_call_and_keeps_the_headers() {
+fn request_a_provider_answer_carries_its_request_headers_and_hidden_params() {
     let (sent, outcome) = served_call("200 OK", EMBEDDING_BODY, "sk-test");
     let answer = outcome.unwrap();
     assert!(sent.starts_with("POST /v1/embeddings "), "{sent}");
     assert!(sent.contains("x-custom: one"), "{sent}");
-    assert!(
-        sent.to_lowercase()
-            .contains("authorization: bearer sk-test"),
-        "{sent}"
-    );
+    let lowered = sent.to_lowercase();
+    assert!(lowered.contains("authorization: bearer sk-test"), "{sent}");
     assert!(sent.contains(r#""input":"hi""#), "{sent}");
     assert_eq!(answer.model, SMALL);
-    assert_eq!(
-        answer.data.iter().map(text_of).collect::<Vec<String>>(),
-        [r#"{"object":"embedding","index":0,"embedding":[0.1,0.2]}"#]
-    );
-    assert_eq!(
-        answer
-            .response_headers
-            .get("x-ratelimit-remaining-requests")
-            .map(String::as_str),
-        Some("9")
-    );
-}
-#[test]
-fn request_a_provider_answer_carries_the_hidden_params() {
-    let (_sent, outcome) = served_call("200 OK", EMBEDDING_BODY, "sk-test");
-    let answer = outcome.unwrap();
+    let records: Vec<String> = answer.data.iter().map(text_of).collect();
+    assert_eq!(records, [EMBEDDING_RECORD]);
+    let headers = &answer.response_headers;
+    let remaining = headers.get("x-ratelimit-remaining-requests");
+    assert_eq!(remaining.map(String::as_str), Some("9"));
     let hidden = &answer.hidden_params;
     assert_eq!(
         hidden.get("custom_llm_provider"),
