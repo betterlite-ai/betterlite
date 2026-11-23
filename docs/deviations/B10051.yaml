@@ -1,0 +1,13 @@
+task: B10051
+deviations:
+  - what: >-
+      A user row whose models column is not a whole list of strings is read as an empty allowlist, so
+      that user may call every model. LiteLLM tests the raw column instead: [7] reaches its wildcard
+      check and fails there with a TypeError, a 500, while ["no-default-models", 7] raises the
+      no-default-models denial.
+    why: >-
+      The task reads the column through B871's user_models, the projection LiteLLM's own grants resolver
+      uses, which empties the column when any item is not a string. betterlite keeps that one reading of
+      the column for both the sentinel test and the grant instead of decoding the raw list a second way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5278
+kept_bugs: []

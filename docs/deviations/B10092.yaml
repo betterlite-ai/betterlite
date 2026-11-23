@@ -1,0 +1,6 @@
+task: B10092
+deviations:
+  - what: A 500 from a failed insert carries the Postgres driver's error text, not Prisma's.
+    why: betterlite talks to Postgres without Prisma, so Prisma's message does not exist. Status and the error key stay as LiteLLM has them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/user_invitation.py#L41-L49
+kept_bugs: []
