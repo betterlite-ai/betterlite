@@ -1,0 +1,13 @@
+kind: helper
+name: read-naive-expiry
+call:
+  b10064:
+    database: true
+    rows:
+      - {user_id: alice, assertion_b64: 'MFMhXmDKsP0s1Y_7aWs_8ji3vqs76pRVDtHBzRp3x-vWKXz6a5RTxZW4WWLHOppWHVv_4Tg-rmshMnG-BRSE1XwTbYd-459Kfwm7_Ti8swoX1UdahUv9QedaMDyLsm0jJElq7Gm4Air35UarJb64jcuNJ8AAZDeUU56asbICspvJ'}
+    failure: null
+    steps:
+      - {step: fetch, user_id: alice}
+      - {step: fetch_uncached, user_id: alice}
+env: {}
+compare: {ignore: []}

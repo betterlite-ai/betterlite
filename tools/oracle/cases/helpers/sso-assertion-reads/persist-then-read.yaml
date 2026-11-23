@@ -1,0 +1,14 @@
+kind: helper
+name: persist-then-read
+call:
+  b10064:
+    database: true
+    rows: []
+    failure: null
+    steps:
+      - {step: persist, user_id: alice, assertion: {id_token: litellm-id-token, refresh_token: litellm-refresh-token, issuer: 'https://idp.example', expires_at: '2031-02-03T04:05:06+00:00'}}
+      - {step: fetch, user_id: alice}
+      - {step: fetch_uncached, user_id: alice}
+      - {step: fetch, user_id: alice}
+env: {}
+compare: {ignore: []}

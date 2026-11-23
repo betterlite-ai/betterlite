@@ -1,0 +1,7 @@
+kind: helper
+name: bundled-catalog
+call:
+  b10087:
+    function: catalog
+env: {}
+compare: {ignore: []}

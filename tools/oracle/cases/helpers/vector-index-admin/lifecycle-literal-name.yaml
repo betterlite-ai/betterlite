@@ -1,0 +1,13 @@
+kind: helper
+name: vector-index-admin-lifecycle-literal-name
+call:
+  b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes/axb", index_name: "a.b"}
+calls:
+  - b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes/a.b", index_name: "a.b"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes/name2", index_name: "name"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes/name2/indexes/name", index_name: "name"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes/name/indexes/name2", index_name: "name"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes/name/", index_name: "name"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/indexes/name/x/indexes/name", index_name: "name"}
+env: {}
+compare: {ignore: []}
