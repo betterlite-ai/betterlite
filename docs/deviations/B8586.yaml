@@ -9,7 +9,7 @@ deviations:
   - what: The pod's last beta headers reload time is a typed DateTime in PeriodicReloads, so the status route always formats it and never takes a branch for a value that does not parse.
     why: LiteLLM keeps the time as an ISO string in a module global and parses it in the status route, warning and leaving next_run null when the parse fails; betterlite's B10055 state stores DateTime<Utc>, and no request can put anything else there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19835-L19844
-  - what: A cost map schedule interval above u32::MAX answers 500 "Failed to schedule model cost map reload: the interval {hours} hours does not fit the stored schedule", and an hours value above i64::MAX answers the 422 int_parsing error.
+  - what: A cost map schedule interval above u32::MAX answers a 500 whose detail is the wrapped schedule failure naming the interval in hours, and an hours value above i64::MAX answers the 422 int_parsing error.
     why: LiteLLM accepts any Python int for hours and stores it in the config row; betterlite's B4145 schedule stores a u32 and reads the query parameter as an i64, and no working setup schedules a reload billions of hours out.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19426-L19434
   - what: Cancelling the beta headers reload answers the success body when no config row exists.
