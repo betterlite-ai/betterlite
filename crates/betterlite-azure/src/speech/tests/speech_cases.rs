@@ -139,8 +139,9 @@ fn speech_response_bytes() {
     let Err(failed) = finish_audio_speech(support::response(400, &[], b"bad input")) else {
         panic!("a non-2xx reply is the status error");
     };
-    assert_eq!(failed.class(), "APIStatusError");
-    assert_eq!(failed.status(), Some(400));
+    let (class, status) = failed.kind();
+    assert_eq!(class, "APIStatusError");
+    assert_eq!(status, Some(400));
 }
 
 fn v1_audio_speech() {
@@ -323,7 +324,8 @@ async fn voice_rules(
     let mut spec = CallSpec::new(&speech_environment, optional);
     spec.voice = Some(&wrong);
     let error = failure(spec).await;
-    assert_eq!(error.class(), "Exception");
+    let (class, _status) = error.kind();
+    assert_eq!(class, "Exception");
 }
 
 async fn voice_values(environment: &SpeechEnvironment<'_>, optional: &IndexMap<String, Json>) {
@@ -442,7 +444,8 @@ fn duplicate_option() {
     );
     let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
         .expect_err("a reserved option is a duplicate argument");
-    assert_eq!(error.class(), "TypeError");
+    let (class, _status) = error.kind();
+    assert_eq!(class, "TypeError");
 }
 
 fn azure_speech_supported_params() {
@@ -518,11 +521,13 @@ fn probe_rate_limit_headers() {
     assert_eq!(found.len(), 3);
     assert_eq!(found.get("x-ms-region").map(String::as_str), Some("eastus"));
     let missing = finish_probe(None).expect_err("a missing completion fails");
-    assert_eq!(missing.class(), "Exception");
+    let (missing_class, _missing_status) = missing.kind();
+    assert_eq!(missing_class, "Exception");
     let failed = finish_probe(Some(support::response(429, &[], b"slow down")))
         .expect_err("the status propagates");
-    assert_eq!(failed.class(), "APIStatusError");
-    assert_eq!(failed.status(), Some(429));
+    let (failed_class, failed_status) = failed.kind();
+    assert_eq!(failed_class, "APIStatusError");
+    assert_eq!(failed_status, Some(429));
 }
 
 fn azure_probe_cloudflare() {
@@ -587,8 +592,9 @@ fn cloudflare_unnamed() {
         messages: None,
     };
     let error = probe_request(&unnamed_azure).expect_err("a chat probe needs a model");
-    assert_eq!(error.class(), "Exception");
-    assert_eq!(error.status(), None);
+    let (class, status) = error.kind();
+    assert_eq!(class, "Exception");
+    assert_eq!(status, None);
 }
 
 fn probe_requires_options() {
@@ -616,7 +622,8 @@ fn probe_requires_options() {
         messages: None,
     };
     let base_error = probe_request(&absent).expect_err("a probe needs an api_base");
-    assert_eq!(base_error.class(), "Exception");
+    let (base_class, _base_status) = base_error.kind();
+    assert_eq!(base_class, "Exception");
     let empty = ProbeCall {
         model: Some("gpt-4o"),
         api_key: "",
@@ -627,17 +634,18 @@ fn probe_requires_options() {
         messages: None,
     };
     let key_error = probe_request(&empty).expect_err("an empty key cannot authenticate");
-    assert_eq!(key_error.class(), "ValueError");
+    let (key_class, _key_status) = key_error.kind();
+    assert_eq!(key_class, "ValueError");
 }
 
-// the caller's authorization header stands in for the SDK's key, and a call with neither fails as ValueError
+// an explicitly empty SDK key leaves auth to the caller headers; no key at all fails before the pre-call
 fn credential_paths() {
     let auth_headers = support::pairs(&[(
         "extra_headers",
         json(r#"{"authorization":"Bearer caller"}"#),
     )]);
     let mut call = support::call("tts", "hello", "alloy", auth_headers);
-    call.api_key = None;
+    call.api_key = Some(SecretString::from(""));
     let request = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
         .expect("the caller's authorization authenticates the call");
     assert_eq!(
@@ -682,10 +690,14 @@ fn caller_auth_headers() {
 fn missing_key() {
     let mut call = support::call("tts", "hello", "alloy", IndexMap::new());
     call.api_key = None;
-    let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
-        .expect_err("a keyless azure call cannot authenticate");
-    assert_eq!(error.class(), "ValueError");
-    assert_eq!(error.status(), None);
+    let mut logger = Recorder::default();
+    let error = support::start(&mut Inputs::default(), &call, &mut logger)
+        .expect_err("a keyless azure call cannot build a client");
+    let (class, status) = error.kind();
+    assert_eq!(class, "OpenAIError");
+    assert_eq!(status, None);
+    assert!(error.to_string().contains("api_key client option"));
+    assert!(logger.pre.is_none());
 }
 
 fn empty_key() {
@@ -693,7 +705,8 @@ fn empty_key() {
     call.api_key = Some(SecretString::from(""));
     let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
         .expect_err("an empty key cannot authenticate");
-    assert_eq!(error.class(), "ValueError");
+    let (class, _status) = error.kind();
+    assert_eq!(class, "ValueError");
 }
 
 // an azure_ad_token_provider answers with the bearer token, and anything but a non-empty string fails
@@ -724,7 +737,8 @@ fn assert_token_failure(reply: TokenReply, returned: &str) {
     call.provider = Some(support::provider(reply));
     let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
         .expect_err("a token the SDK cannot use fails the call");
-    assert_eq!(error.class(), "ValueError");
+    let (class, _status) = error.kind();
+    assert_eq!(class, "ValueError");
     assert_eq!(
         error.to_string(),
         format!(
@@ -744,7 +758,8 @@ fn unusable_headers() {
         );
         let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
             .expect_err("an unusable header cannot be sent");
-        assert_eq!(error.class(), "Exception");
+        let (class, _status) = error.kind();
+        assert_eq!(class, "Exception");
     }
 }
 
@@ -772,7 +787,8 @@ fn wrong_controls() {
     let body_call = support::call("tts", "hello", "alloy", body);
     let body_error = support::start(&mut Inputs::default(), &body_call, &mut Recorder::default())
         .expect_err("a text extra_body cannot merge");
-    assert_eq!(body_error.class(), "RuntimeError");
+    let (body_class, _body_status) = body_error.kind();
+    assert_eq!(body_class, "RuntimeError");
     assert!(
         body_error
             .to_string()

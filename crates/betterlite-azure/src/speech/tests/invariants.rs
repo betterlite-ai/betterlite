@@ -66,12 +66,14 @@ fn azure_speech_secret_safe_failure() {
     call.api_key = Some(SecretString::from(SECRET));
     let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
         .expect_err("an invalid header value fails the request");
-    assert_eq!(error.class(), "Exception");
+    let (class, _status) = error.kind();
+    assert_eq!(class, "Exception");
     assert!(!format!("{error:?} {error}").contains(SECRET));
     let Err(failed) = finish_audio_speech(support::response(401, &[], b"denied")) else {
         panic!("the status fails the call");
     };
-    assert_eq!(failed.class(), "APIStatusError");
+    let (failed_class, _failed_status) = failed.kind();
+    assert_eq!(failed_class, "APIStatusError");
     let shown = format!("{failed:?} {failed}");
     assert!(!shown.contains(SECRET));
     assert!(shown.contains("denied"));
