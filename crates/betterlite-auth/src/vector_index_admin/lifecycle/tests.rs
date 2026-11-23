@@ -94,23 +94,10 @@ fn only_a_post_creates_an_index_at_the_service_level(#[case] method: &str, #[cas
 #[case::first_name_wins("DELETE", "/azure_ai/indexes/name/indexes/name2", "name", false)]
 #[case::first_inside_prefix("DELETE", "/indexes/name/indexes/name", "name", false)]
 #[case::query_before_later_name("DELETE", "/indexes/name?x=1/indexes/name", "name", true)]
-fn the_index_name_is_a_literal_with_a_lookahead(
-    #[case] method: &str,
-    #[case] path: &str,
-    #[case] index_name: &str,
-    #[case] expected: bool,
-) {
-    assert_eq!(
-        is_index_lifecycle_request(method, path, index_name),
-        expected
-    );
-}
-
-#[rstest]
 #[case::overlapping_occurrence("DELETE", "/indexes/indexes/index", "index", true)]
 #[case::overlapping_followed_by_another_char("DELETE", "/indexes/indexes/index2", "index", false)]
 #[case::overlapping_before_the_query("DELETE", "/indexes/indexes/index?x=1", "index", true)]
-fn an_occurrence_overlapping_a_rejected_start_is_still_found(
+fn the_index_name_is_a_literal_found_like_the_litellm_search(
     #[case] method: &str,
     #[case] path: &str,
     #[case] index_name: &str,
