@@ -2,7 +2,6 @@ use super::*;
 use betterlite_error::error::class_message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
-use rstest::rstest;
 
 use crate::skill_calls::error::{NO_DATABASE, NativeErrorPayload, no_database_failure};
 
@@ -181,14 +180,29 @@ fn request_timeout_is_seconds() {
     assert_eq!(parsed.params.timeout, Some(Duration::from_millis(500)));
 }
 
-#[rstest]
-#[case::text("\"5\"")]
-#[case::negative("-1")]
-#[case::flag("true")]
-fn request_timeout_rejects_a_value_of_the_wrong_type(#[case] bad: &str) {
-    let text = format!(r#"{{"skill_id": "s1", "timeout": {bad}}}"#);
-    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(&text)) else {
-        panic!("a timeout of {bad} is a field error");
+#[test]
+fn request_timeout_rejects_text() {
+    let text = r#"{"skill_id": "s1", "timeout": "5"}"#;
+    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(text)) else {
+        panic!("a timeout that is text is a field error");
+    };
+    assert_eq!(name, "timeout");
+}
+
+#[test]
+fn request_timeout_rejects_a_negative_number() {
+    let text = r#"{"skill_id": "s1", "timeout": -1}"#;
+    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(text)) else {
+        panic!("a negative timeout is a field error");
+    };
+    assert_eq!(name, "timeout");
+}
+
+#[test]
+fn request_timeout_rejects_a_flag() {
+    let text = r#"{"skill_id": "s1", "timeout": true}"#;
+    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(text)) else {
+        panic!("a timeout that is a flag is a field error");
     };
     assert_eq!(name, "timeout");
 }
@@ -216,6 +230,16 @@ fn request_files_reject_plain_values() {
     let mut blobs = Vec::new();
     let Err(RequestError::FieldType { name, .. }) = files("anthropic", &items, &mut blobs) else {
         panic!("a file that is not a $file marker is a field error");
+    };
+    assert_eq!(name, "files");
+}
+
+#[test]
+fn request_files_reject_objects_without_a_marker() {
+    let items: Vec<Json> = serde_json::from_str(r#"[{"name": "a.txt"}]"#).unwrap();
+    let mut blobs = Vec::new();
+    let Err(RequestError::FieldType { name, .. }) = files("anthropic", &items, &mut blobs) else {
+        panic!("an object without $file is a field error, not an ignored entry");
     };
     assert_eq!(name, "files");
 }
