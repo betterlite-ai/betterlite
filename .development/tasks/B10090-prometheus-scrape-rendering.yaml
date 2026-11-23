@@ -1,16 +1,22 @@
 id: B10090
 title: Prometheus scrape rendering
 description: >-
-  Two servers answer a Prometheus scrape with the same app: B3886's /metrics router on the main port, behind its auth middleware, and B3887's dedicated metrics listener, with no auth at all. This task builds that shared app, LiteLLM's prometheus_metrics_endpoint.py, so B3887 waits only on the rendering and not on B3886's middleware and its key auth. LiteLLM leans on prometheus_client 0.20.0 for the two text encoders, and betterlite's registry is its own type (B3875's CollectorRegistry), so the encoders are ported here too.
+  Two servers answer a Prometheus scrape with the same app: B3886's /metrics router on the main port, behind its auth middleware, and B3887's dedicated metrics listener, with no auth at all. This task builds that shared app, LiteLLM's prometheus_metrics_endpoint.py, so B3887 waits only on the rendering and not on B3886's middleware and its key auth. LiteLLM leans on prometheus_client 0.20.0 for the two text encoders, and betterlite's registry is its own type (B3875's CollectorRegistry), so the encoders are ported here too, and the scrape body must read the same as prometheus_client's, `_created` samples and series order included.
 
 
-  Layout. Module scrape_endpoint in betterlite-prometheus: crates/betterlite-prometheus/src/scrape_endpoint.rs is on main as a stub that declares `mod tests;`, and scrape_endpoint/tests.rs holds the tests (split it into files under scrape_endpoint/tests/ if it grows). Add submodules under scrape_endpoint/ as you need. betterlite-prometheus depends on no betterlite crate and must stay that way. Add axum and tokio from the workspace and flate2 at the 1.1 line Cargo.lock already carries for betterlite-server; add futures-util only if you use its Shared future.
+  Layout. Module scrape_endpoint in betterlite-prometheus: crates/betterlite-prometheus/src/scrape_endpoint.rs is on main as a stub that declares `mod tests;`, and scrape_endpoint/tests.rs holds the tests (split it into files under scrape_endpoint/tests/ if it grows). Add submodules under scrape_endpoint/ as you need. betterlite-prometheus depends on no betterlite crate and must stay that way. Add axum and tokio from the workspace, flate2 at the 1.1 line and indexmap at the 2.14.2 that Cargo.lock already carries; add futures-util only if you use its Shared future. Two files of B3875's registry change too, collector_registry/metric.rs and collector_registry/metric/sample.rs, for the creation times and the series order below; leave collector_registry.rs and its tests.rs as they are.
+
+
+  Creation times. prometheus_client stamps every counter and histogram series with time.time() when the series is created and writes it as a `_created` sample; B3875's registry already claims the `_created` names (`PrometheusMetric::sample_names`) but stores no time. Add `created: SystemTime` to PrometheusMetric, taken in `new` and copied into every handle `labels` returns, and `created: SystemTime` to Sample, set when `update` inserts the series: SystemTime::now() for a metric with label names, and the metric's own `created` for a metric without them, since prometheus_client builds that single series in the constructor. A series removed with MetricUpdate::Remove and updated again gets a new time, as a new child does. Gauges have no `_created`.
+
+
+  Series order. B3875 keeps a metric's series in a BTreeMap, so they come out sorted by label values, while prometheus_client writes them in the order they were first used (its dict). Make `samples` an `IndexMap<Vec<String>, Sample>` and remove with `shift_remove`, so the scrape keeps first-use order and a removed series that comes back is written last. Nothing outside metric.rs reads the field.
 
 
   The request. `Encoder` is an enum with Text and OpenMetrics. `ScrapeRequest { encoder: Encoder, content_type: &'static str, gzipped: bool, metric_names: Vec<String> }` derives Clone, Eq and Hash, so two scrapes that ask for the same output compare equal and share one render. `parse_scrape_request(accept: &str, accept_encoding: &str, metric_names: Vec<String>) -> ScrapeRequest` follows prometheus_client's choose_encoder and gzip_accepted. Split Accept on commas, take each part up to its first semicolon and trim it; the first part equal to `application/openmetrics-text` picks OpenMetrics with content type `application/openmetrics-text; version=1.0.0; charset=utf-8`, and otherwise Text with `text/plain; version=0.0.4; charset=utf-8`. Accept-Encoding is split the same way, lowercased, and gzip is on when a part equals `gzip`. metric_names stay in query order with duplicates kept.
 
 
-  The text encoders. `render_scrape(registry: &CollectorRegistry, request: &ScrapeRequest) -> Vec<u8>` walks `registry.metrics()` in registration order and writes each collector the way prometheus_client's generate_latest does. Text format: a counter registered as `x` is written as `# HELP x_total <help>`, `# TYPE x_total counter` and its `x_total` samples; a gauge as `# TYPE x gauge` with `x` samples; a histogram as `# TYPE x histogram` with, per label set, one `x_bucket` line per bound (le written with the Go float text, `+Inf` last), then `x_count`, then `x_sum` (only when the first bound is 0 or more). HELP text escapes backslash and newline. Label pairs are sorted by name with le sorted among them, and values escape backslash, newline and double quote. OpenMetrics: HELP and TYPE use the registered name (`# TYPE x counter`), HELP also escapes the double quote, the samples are the same, and the body ends with `# EOF\n`. Values use prometheus_client's floatToGoString: `+Inf`, `-Inf`, `NaN`, otherwise Python's repr of the float (1.0 is `1.0`, 1e-05 is `1e-05`), except that a positive value whose repr has more than six digits before the dot switches to Go's exponent form (1234567.0 is `1.234567e+06`). B3874's MetricValue holds a Decimal or one of the three specials; convert the Decimal to f64 once before formatting.
+  The text encoders. `render_scrape(registry: &CollectorRegistry, request: &ScrapeRequest) -> Vec<u8>` walks `registry.metrics()` in registration order and writes each collector the way prometheus_client's generate_latest does. Text format: a counter registered as `x` is written as `# HELP x_total <help>`, `# TYPE x_total counter` and one `x_total` sample per series, then a separate block `# HELP x_created <help>`, `# TYPE x_created gauge` with one `x_created` sample per series; a gauge as `# TYPE x gauge` with `x` samples; a histogram as `# TYPE x histogram` with, per series, one `x_bucket` line per bound (le written with the Go float text, `+Inf` last), then `x_count`, then `x_sum` (only when the first bound is 0 or more), and after all series the `x_created` gauge block. HELP text escapes backslash and newline. Label pairs are sorted by name with le sorted among them, and values escape backslash, newline and double quote. OpenMetrics: HELP and TYPE use the registered name (`# TYPE x counter`), HELP also escapes the double quote, each series writes its `x_created` line right after its own samples instead of in a separate block, and the body ends with `# EOF\n`. Values use prometheus_client's floatToGoString: `+Inf`, `-Inf`, `NaN`, otherwise Python's repr of the float (1.0 is `1.0`, 1e-05 is `1e-05`), except that a positive value whose repr has more than six digits before the dot switches to Go's exponent form (1234567.0 is `1.234567e+06`). B3874's MetricValue holds a Decimal or one of the three specials; convert the Decimal to f64 once before formatting. A `_created` value is the series' SystemTime as seconds since the Unix epoch in f64, through the same formatter. A metric without label names writes its one series from the start, zero valued and with the metric's created time, before its first update.
 
 
   Restriction. With metric_names empty the whole registry is written. Otherwise this is prometheus_client's restricted_registry: a collector takes part when one of its sample names (B3875's `PrometheusMetric::sample_names`) is in the set, only its samples whose full name is in the set are written, and a collector left with no samples is dropped with its HELP and TYPE lines. Asking for a counter by its registered name `x` therefore writes nothing; `x_total` writes the counter. When gzipped is set the rendered bytes are gzip-compressed with flate2, otherwise returned as they are.
@@ -22,44 +28,66 @@ description: >-
   The app. `make_metrics_app(registry: Arc<CollectorRegistry>) -> axum::Router` is LiteLLM's make_metrics_asgi_app. It owns one CoalescedScrapeRenderer and answers every method and every path through a fallback handler, so a caller that nests it at /metrics serves /metrics and every path under it the way Starlette's mount does. The handler reads the accept and accept-encoding headers (missing is ""), the repeated `name[]` query parameters in order, renders, and streams the body in 64 KiB chunks (RESPONSE_CHUNK_SIZE_BYTES = 65536) with content-type set to the request's content type and `content-encoding: gzip` only when gzipped. It sets no content-length, since LiteLLM's StreamingResponse sends a chunked body. A ScrapeRenderError answers 500. B3886's metrics_router and B3887's build_metrics_app each nest this router; neither is built here, and this task mounts nothing.
 
 
-  Tests in scrape_endpoint/tests.rs, run with tower's oneshot for the app. Build registries through B3874's and B3875's public constructors, the way collector_registry's own tests do. Test names start with request_ (Accept and Accept-Encoding spellings, q-values, case, name order), text_ and openmetrics_ (a counter, a gauge and a histogram with labels, escaping, the float spellings, an unlabelled metric, the EOF line), restricted_ (empty names, a counter by its _total name, a counter by its registered name, a histogram bucket name, an unknown name), coalesced_ (two concurrent equal scrapes run one render, different requests run two, a dropped waiter does not cancel, a finished render is forgotten) and app_ (headers, gzip round trip, a body over 64 KiB arriving in several frames, no content-length, any method and a sub path).
+  Oracle. The b10090 helper runs parse_scrape_request and render_scrape on a registry the case describes: metrics (kind counter, gauge or histogram, name, help, label names, and buckets for a histogram), then updates in order (metric index, label values, and inc, set or observe with a number), then accept, accept_encoding and names. The Python side builds a fresh prometheus_client CollectorRegistry with Counter, Gauge and Histogram objects registered into it and calls LiteLLM's parse_scrape_request and render_scrape; the Rust side builds B3875's registry through PrometheusMetric::new, register, labels and update and calls this task's functions. Add betterlite-prometheus and flate2 to tools/oracle/src/helpers/prometheus/Cargo.toml. Both sides answer content_type, gzipped and the body as lines, gunzipped first when gzipped (gzip writes the wall-clock mtime into its header): a comment line as `{comment}` and a sample line split at its last space into `{series, value}`. A `_created` value is the wall clock at series creation, so a case lists one compare.ignore entry per `_created` line, `{pointer: /value/lines/<n>/value, why: "_created is the wall-clock time the series was created"}`, the way the guardrail cases ignore start_time; the series name and labels on that line are still compared. Keep one call per case so each pointer names one line. Add helper_case corpus seeds named prometheus-scrape-*.
+
+
+  Tests in scrape_endpoint/tests.rs, run with tower's oneshot for the app. Build registries through B3874's and B3875's public constructors, the way collector_registry's own tests do. Test names start with request_ (Accept and Accept-Encoding spellings, q-values, case, name order), text_ and openmetrics_ (a counter, a gauge and a histogram with labels, escaping, the float spellings, an unlabelled metric, the EOF line), created_ (a series' `_created` lies between SystemTime readings taken before and after its first update, an unlabelled metric carries its construction time before any update, a removed and re-added series gets a later time, a gauge has none, and the text block versus OpenMetrics inline placement), series_order_ (first-use order, and a removed series written last after it returns), restricted_ (empty names, a counter by its _total name, a counter by its registered name, `x_created` alone, a histogram bucket name, an unknown name), coalesced_ (two concurrent equal scrapes run one render, different requests run two, a dropped waiter does not cancel, a finished render is forgotten) and app_ (headers, gzip round trip, a body over 64 KiB arriving in several frames, no content-length, any method and a sub path).
 scope:
   paths:
     - crates/betterlite-prometheus/src/scrape_endpoint.rs
     - crates/betterlite-prometheus/src/scrape_endpoint/**
+    - crates/betterlite-prometheus/src/collector_registry/metric.rs
+    - crates/betterlite-prometheus/src/collector_registry/metric/sample.rs
     - crates/betterlite-prometheus/Cargo.toml
     - Cargo.lock
+    - tools/oracle/cases/helpers/prometheus-scrape/**
+    - tools/oracle/fuzz/corpus/helper_case/prometheus-scrape-*
+    - tools/oracle/helpers/b10090.py
+    - tools/oracle/helpers/b10090/**
+    - tools/oracle/src/helpers/prometheus/b10090.rs
+    - tools/oracle/src/helpers/prometheus/b10090/**
+    - tools/oracle/src/helpers/prometheus/Cargo.toml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L25-L100
     why: Owned. The chunk size, ScrapeRequest, parse_scrape_request, render_scrape, CoalescedScrapeRenderer, _chunks and make_metrics_asgi_app.
   - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/exposition.py#L235-L311
-    why: The text encoder generate_latest with its counter and info renaming, choose_encoder and gzip_accepted.
+    why: The text encoder generate_latest with its counter renaming and the trailing `_created` gauge block, choose_encoder and gzip_accepted.
   - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/openmetrics/exposition.py#L18-L72
-    why: The OpenMetrics encoder, its HELP escaping and the EOF line.
+    why: The OpenMetrics encoder, its HELP escaping, inline `_created` samples and the EOF line.
   - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/utils.py#L8-L24
     why: floatToGoString, the value and le spelling both encoders use.
   - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/registry.py#L145-L165
     why: RestrictedRegistry, which picks collectors by any of their sample names and drops a metric with no matching sample.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L244-L250
+    why: _multi_samples walks the children dict, so series come out in first-use order.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L334-L341
+    why: Counter samples, `_total` then `_created` with the child's creation time.
   - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L666-L677
-    why: Histogram samples per label set, cumulative buckets, then count, then sum only for a non-negative first bound.
+    why: Histogram samples per series, cumulative buckets, then count, sum only for a non-negative first bound, then `_created`.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4565-L4592
     why: Call site. _mount_metrics_endpoint mounts the app at /metrics on the main port (B3886 builds the router, B8680 mounts it).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L75-L85
     why: Call site. build_metrics_app mounts the app on the dedicated listener (B3887).
 dod:
   - text: parse_scrape_request picks OpenMetrics only for an exact `application/openmetrics-text` part, otherwise the text format, with the two exact content types, turns gzip on for any case of `gzip`, and keeps name[] values in order with duplicates.
-    proof: [request-tests]
+    proof: [request-tests, oracle]
   - text: The text encoder writes counters as `_total` families, gauges and histograms with cumulative buckets, count and the conditional sum, sorted and escaped labels, escaped HELP and Go float spellings, in registration order.
-    proof: [text-encoder-tests]
+    proof: [text-encoder-tests, oracle]
   - text: The OpenMetrics encoder writes the registered family names, escapes quotes in HELP and ends with `# EOF`.
-    proof: [openmetrics-encoder-tests]
+    proof: [openmetrics-encoder-tests, oracle]
+  - text: Every counter and histogram series records the wall-clock time it was created, an unlabelled metric's series the time the metric was built, and the scrape writes it as `x_created` in a trailing gauge block for the text format and inline for OpenMetrics; gauges have none, and B3875's registry tests still pass.
+    proof: [created-series-tests, oracle]
+  - text: Series are written in first-use order, and a removed series that comes back is written last.
+    proof: [series-order-tests, oracle]
   - text: name[] restricts the scrape to samples whose full name is listed, drops a family left with no sample, and an empty list writes the whole registry.
-    proof: [restriction-tests]
+    proof: [restriction-tests, oracle]
   - text: Concurrent equal scrapes share one render on the blocking pool, a dropped waiter does not cancel it, and a finished render is forgotten so the next scrape renders again.
     proof: [coalesced-render-tests]
   - text: make_metrics_app answers every method and sub path with the negotiated content type, gzip only when asked, a chunked body in 64 KiB frames and no content-length.
     proof: [metrics-app-tests]
+  - text: The b10090 adapters lint and type-check, and new prometheus-scrape seeds replay through the shared helper case parser.
+    proof: [helper-python, helper-case-corpus]
 checks:
   optional: []
   commands:
@@ -72,6 +100,14 @@ checks:
     - id: openmetrics-encoder-tests
       why: The OpenMetrics names, HELP escaping or the EOF line differ from prometheus_client.
       run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?openmetrics_/)'
+    - id: created-series-tests
+      why: A series has no creation time, the wrong one, or the scrape places `_created` where prometheus_client does not; or the registry change broke B3875's tests.
+      run: >-
+        cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?created_/)' &&
+        cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^collector_registry::/)'
+    - id: series-order-tests
+      why: Series come out sorted by label values instead of in first-use order.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?series_order_/)'
     - id: restriction-tests
       why: name[] keeps a family it should drop or drops samples it should keep.
       run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?restricted_/)'
@@ -81,28 +117,46 @@ checks:
     - id: metrics-app-tests
       why: The app's headers, gzip, chunking or method and path handling differ from LiteLLM's.
       run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?app_/)'
-oracle_cases: []
-deviations:
-  - what: Counters and histograms have no `_created` samples, so a scrape shows what LiteLLM shows with PROMETHEUS_DISABLE_CREATED_SERIES=true.
-    why: B3875's stored samples carry no creation time, and adding one changes the registry, not the rendering. The value is a per-process timestamp no client can compare across runs.
-    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L334-L341
-  - what: Within one family, label sets are written in order of their label values, not in the order they were first used.
-    why: B3875 stores the series of a collector in a BTreeMap keyed by label values. Prometheus parses each line on its own, so the order changes nothing a scraper reads.
-    link: null
+    - id: helper-python
+      why: The b10090 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10090.py tools/oracle/helpers/b10090)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10090 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus-scrape-*")" &&
+        grep -lE '^[[:space:]]+b10090:' tools/oracle/fuzz/corpus/helper_case/prometheus-scrape-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-prometheus --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/prometheus-scrape/text-families.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/openmetrics-families.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/unlabelled-series.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/first-use-order.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/escaping-and-floats.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/restricted-total-and-bucket.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/restricted-created.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/restricted-base-and-unknown.yaml
+  - tools/oracle/cases/helpers/prometheus-scrape/accept-negotiation.yaml
+deviations: []
 out_of_scope:
   - "PrometheusAuthMiddleware, _is_metrics_route, metrics_router and its PROMETHEUS_MULTIPROC_DIR registry choice: B3886, which nests make_metrics_app."
   - "The dedicated listener, its x-litellm-metrics-pid header, /health, the multiprocess registry it renders and the worker cleanup: B3887, which nests make_metrics_app."
-  - "Mounting /metrics on the main app and its HTTP oracle cases: B8680. No route reaches this code before then, and the body is proven by native tests, as B111's scrape case compares headers and status only."
-  - "Collector registration, label children and sample storage: B3875. Collector factories and MetricValue: B3874."
+  - "Mounting /metrics on the main app and its HTTP oracle cases: B8680. No route reaches this code before then, so the body is proven by native tests and this task's helper cases; B111's scrape case compares headers and status only."
+  - "Collector registration, label handles and sample arithmetic: B3875, apart from the creation time and series order this task adds. Collector factories and MetricValue: B3874."
 pitfalls:
   - "choose_encoder compares the media type case-sensitively and ignores q-values, so `Application/OpenMetrics-Text` and `application/openmetrics-text;q=0` still differ: the first is text, the second is OpenMetrics."
   - "gzip_accepted lowercases before comparing, so `GZip` turns gzip on, and `gzip;q=0` turns it on too."
   - "A counter's sample is `x_total`, so name[]=x matches the collector but none of its samples and the family vanishes; only name[]=x_total writes it."
+  - "In the text format name[]=x_created still writes the counter's `# HELP x_total` and `# TYPE x_total counter` lines, then the x_created block, because generate_latest writes the family header before it sets the `_created` samples aside."
   - "An unknown name[] gives an empty text body, and for OpenMetrics a body of only `# EOF`; no HELP or TYPE lines appear for it."
   - "The text format sorts labels by name, so a histogram line is `x_bucket{api_key=\"k\",le=\"0.5\",model=\"m\"}`, with le between the other labels, not last."
-  - "A metric with no label names has one series from the start in prometheus_client, so it writes a zero sample before its first update; a labelled metric writes only HELP and TYPE until a series exists."
+  - "An unlabelled counter's `_created` is the time the metric was built, not its first increment; taking SystemTime::now() at the first update gives the wrong value even though both look plausible."
+  - "Sample derives Eq, so store the creation time as SystemTime, not f64; convert to epoch seconds only when rendering."
   - "Python's float repr is not Rust's Display: 1.0 must stay `1.0`, 1e16 is `1e+16` and 0.0001 is `0.0001`, while `+Inf` carries its plus sign."
-  - "floatToGoString writes the exponent as `e+0` followed by the digit count minus one, so 1e15 (repr `1000000000000000.0`) becomes `1e+015`; keep that spelling rather than Go's real one."
+  - "floatToGoString writes the exponent as `e+0` followed by the digit count minus one, so 1e15 (repr `1000000000000000.0`) becomes `1e+015` and a 2026 epoch time becomes `1.7...e+09`; keep that spelling rather than Go's real one."
+  - "Never compare gzip bytes in a case: Python's gzip.compress stamps the current time into the header. Compare the gunzipped lines and the gzipped flag."
   - "Body::from on the whole Vec sets content-length; stream the chunks so the response stays chunked like LiteLLM's."
   - "Hold the in-flight map lock only to look up or insert, never across the render's await, and remove an entry only when it still holds the finished task."
 review_level: standard
