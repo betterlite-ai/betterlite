@@ -1,0 +1,79 @@
+task: B3630
+deviations:
+  - what: >-
+      log_batch_registration_result takes the join result of the spawned task, so a task that
+      panicked counts as a failed write and its join error is the error text, where Python saw a
+      task exception or a cancel.
+    why: >-
+      asyncio.Task has no Rust twin; the join result carries the same information, and a panic
+      must still reach the log line instead of disappearing with the task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L50-L79
+  - what: >-
+      The debug log of the standard logging object is serialized with serde_json's pretty
+      printer, not Python's json.dumps(indent=4).
+    why: >-
+      Python's dumps formatting is runtime behavior (docs/compatibility.md); the line is a debug
+      log and no client reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L87-L158
+  - what: >-
+      A cost or payload step that fails is caught as a typed error. LiteLLM's blanket
+      `except Exception` also catches Python bugs such as a missing attribute or a wrong type,
+      and the steps after the failure do not run.
+    why: >-
+      Rust has no runtime attribute errors and the no-panics rule bans the rest, so the typed
+      error is the only failure left; each step keeps its effect and the later steps are skipped,
+      which is what the Python except leaves behind when a step raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L87-L158
+  - what: >-
+      A message_start whose `message` is a truthy non-object (a list, a string, a number) gives
+      no value and the scan continues; LiteLLM raises AttributeError out of the reader, because
+      only the json.loads call sits inside the try.
+    why: >-
+      A malformed upstream stream must not turn into an exception in the logging path; the scan
+      treats it like any other event without the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L296-L328
+  - what: >-
+      A `data:` line whose JSON Python would accept but serde_json rejects (NaN, Infinity, a
+      lone surrogate escape) is skipped as unparseable.
+    why: >-
+      Output is standard JSON (docs/compatibility.md); a stream carrying those tokens is not
+      JSON, and skipping the line is what any other bad line already does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L296-L328
+  - what: >-
+      resolve_logged_model reads the call log's `model` only when it is a JSON string; LiteLLM
+      runs it through str(), so 7 becomes "7" and True becomes "True".
+    why: >-
+      A value of the wrong type is not coerced here; the field is declared as a string in the
+      logging types and docs/compatibility.md keeps Python's str() out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L154-L167
+  - what: >-
+      resolve_costing_model accepts a model_group only when it is a JSON string; a truthy
+      non-string would be returned by LiteLLM and then fail on .removeprefix.
+    why: >-
+      A non-string model group falls through to the model the caller gave, so the function
+      returns a string for every input, which its signature promises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L139-L151
+kept_bugs:
+  - what: >-
+      A cancelled batch-registration task logs the error text "None", because LiteLLM formats
+      the missing exception with %s; the line hides that the write was cancelled rather than
+      failed.
+    why: >-
+      The task reproduces the pinned line and the batch tests pin the exact text; a log consumer
+      that watches for the failure line sees the same string it sees from LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L50-L70
+  - what: >-
+      An empty string tag survives the sanitizer, so a request that sent [""] (or a tag that was
+      only NUL bytes) counts as having request tags and keeps the key's tags out of the spend
+      row.
+    why: >-
+      Only non-strings and NUL bytes are dropped at the pin, and a one-element tuple of "" is
+      truthy; the spend row shows exactly what LiteLLM writes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L26-L47
+  - what: >-
+      The message_start scan splits each chunk on its own, so an event whose "data:" line is cut
+      across two network reads is never parsed.
+    why: >-
+      LiteLLM calls splitlines() per chunk; betterlite keeps the same per-chunk scan so the
+      logged model and id match the pinned behavior, and a split event simply yields none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L296-L328
