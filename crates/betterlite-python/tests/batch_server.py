@@ -3,7 +3,8 @@ import inspect
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Protocol, Self
+from types import TracebackType
+from typing import ClassVar, Final, Literal, Protocol, Self
 
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict, override
@@ -19,8 +20,8 @@ BATCH_ID = "batch_abc123"
 MISSING_ID = "batch_missing"
 INPUT_FILE_ID = "file-abc123"
 BATCH_PATH = "/v1/batches"
-WINDOW = "24h"
-ENDPOINT = "/v1/chat/completions"
+WINDOW: Final[Literal["24h"]] = "24h"
+ENDPOINT: Final[Literal["/v1/chat/completions"]] = "/v1/chat/completions"
 MODEL = "gpt-4o"
 DEPLOYMENT_ID = "deployment-abc"
 MODEL_INFO: dict[str, JsonValue] = {"id": DEPLOYMENT_ID}
@@ -76,7 +77,12 @@ class BatchServer(ThreadingHTTPServer):
         return self
 
     @override
-    def __exit__(self, *_exc_info: object) -> None:
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
         self.shutdown()
         self.server_close()
         self.thread.join()

@@ -34,6 +34,9 @@ from betterlite.batches._create_retrieve import (
 from betterlite.exceptions import NotFoundError
 from betterlite.types.utils.base import InitValue
 
+# the reference call and ours, one each, per comparison
+CALLS_PER_COMPARISON = 2
+
 
 def made_batch(result: LiteLLMBatch | Awaitable[LiteLLMBatch]) -> LiteLLMBatch:
     match result:
@@ -110,7 +113,7 @@ def test_create_matches_litellm() -> None:
                 api_key=GOOD_KEY,
             )
         )
-        assert len(server.calls) == 2
+        assert len(server.calls) == CALLS_PER_COMPARISON
         reference_call, ours_call = server.calls
     assert made.model_dump() == reference.model_dump()
     assert made.created_at == CREATED_AT
@@ -138,7 +141,7 @@ def test_retrieve_matches_litellm() -> None:
                 batch_id=BATCH_ID, metadata=METADATA, api_base=server.url, api_key=GOOD_KEY
             )
         )
-        assert len(server.calls) == 2
+        assert len(server.calls) == CALLS_PER_COMPARISON
         reference_call, ours_call = server.calls
     assert found.model_dump() == reference.model_dump()
     assert found.status == "in_progress"
@@ -192,9 +195,8 @@ def test_retrieve_coroutines() -> None:
 
 
 def test_error_classes() -> None:
-    with BatchServer() as server:
-        with pytest.raises(NotFoundError) as caught:
-            retrieve_batch(batch_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
+    with BatchServer() as server, pytest.raises(NotFoundError) as caught:
+        retrieve_batch(batch_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
     cause = native_cause(caught.value)
     assert cause is caught.value.__cause__
     assert caught.value.status_code == NOT_FOUND

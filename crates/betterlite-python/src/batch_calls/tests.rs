@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -265,7 +267,7 @@ fn transport_refuses_an_unwired_create_provider() {
 
 #[test]
 fn transport_reports_a_bad_openai_body() {
-    let outcome = transport().openai_create(&openai_call());
+    let outcome = transport().create(&BatchProviderCreateCall::OpenAiCompatible(openai_call()));
     assert!(matches!(
         outcome,
         Err(BatchProviderCreateError::Provider { status: 400 })
@@ -276,7 +278,7 @@ fn transport_reports_a_bad_openai_body() {
 fn transport_reports_a_bad_xai_timeout() {
     let mut call = openai_call();
     call.timeout = -1.0;
-    let outcome = transport().xai_create(&call);
+    let outcome = transport().create(&BatchProviderCreateCall::Xai(call));
     assert!(matches!(
         outcome,
         Err(BatchProviderCreateError::Provider { status: 400 })

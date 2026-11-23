@@ -1,13 +1,12 @@
 import json
 from collections.abc import Awaitable, Mapping
-from dataclasses import dataclass
 from typing import Final, Literal, TypeAlias
 
 from pydantic import JsonValue, PrivateAttr, TypeAdapter
 from typing_extensions import TypedDict, override
 
-from betterlite._endpoints.payload import CallValue, to_call_payload
-from betterlite._endpoints.runner import acall_native, call_native
+from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
+from betterlite._endpoints.runner import AsyncNativeCall, NativeCall, acall_native, call_native
 from betterlite._endpoints.settings import read_settings
 from betterlite._native import NativeBatchError, NativeBatchSession, NativeError
 from betterlite.types.utils.base import ResponseObject
@@ -64,27 +63,6 @@ MODEL_INFO: Final[TypeAdapter[BatchModelInfo | None]] = TypeAdapter(BatchModelIn
 BATCH_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
-@dataclass(frozen=True, slots=True)
-class CreateArguments:
-    completion_window: Literal["24h"]
-    endpoint: BatchPath
-    input_file_id: str
-    custom_llm_provider: CreateProvider
-    metadata: dict[str, str] | None
-    extra_headers: dict[str, str] | None
-    extra_body: dict[str, str] | None
-    output_expires_after: dict[str, JsonValue] | None
-
-
-@dataclass(frozen=True, slots=True)
-class RetrieveArguments:
-    batch_id: str
-    custom_llm_provider: ReadProvider
-    metadata: dict[str, str] | None
-    extra_headers: dict[str, str] | None
-    extra_body: dict[str, str] | None
-
-
 class LiteLLMBatch(ResponseObject):
     id: str
     completion_window: Literal["24h"]
@@ -131,8 +109,8 @@ def param_value(kwargs: Mapping[str, CallValue], name: str) -> CallValue:
 
 
 def batch_session() -> NativeBatchSession:
-    settings = json.dumps({"settings": read_settings(SETTING_NAMES)})
-    return NativeBatchSession(settings)
+    settings: dict[str, JsonValue] = {"settings": read_settings(SETTING_NAMES)}
+    return NativeBatchSession(json.dumps(settings))
 
 
 def forwarded_values(
@@ -147,38 +125,14 @@ def forwarded_values(
     }
 
 
-def create_values(
-    arguments: CreateArguments, kwargs: Mapping[str, CallValue]
-) -> dict[str, CallValue]:
-    values = forwarded_values(kwargs, CREATE_OPTIONAL)
-    values.update(
-        {
-            "completion_window": arguments.completion_window,
-            "endpoint": arguments.endpoint,
-            "input_file_id": arguments.input_file_id,
-            "custom_llm_provider": arguments.custom_llm_provider,
-            "metadata": arguments.metadata,
-            "extra_headers": arguments.extra_headers,
-            "extra_body": arguments.extra_body,
-            "output_expires_after": arguments.output_expires_after,
-        }
-    )
-    return values
-
-
-def retrieve_values(
-    arguments: RetrieveArguments, kwargs: Mapping[str, CallValue]
-) -> dict[str, CallValue]:
-    values = forwarded_values(kwargs, READ_OPTIONAL)
-    values.update(
-        {
-            "batch_id": arguments.batch_id,
-            "provider": arguments.custom_llm_provider,
-            "extra_headers": arguments.extra_headers,
-            "extra_body": arguments.extra_body,
-        }
-    )
-    return values
+def call_values(
+    kwargs: Mapping[str, CallValue],
+    names: tuple[str, ...],
+    given: Mapping[str, CallValue],
+) -> CallPayload:
+    values = forwarded_values(kwargs, names)
+    values.update(given)
+    return to_call_payload(values)
 
 
 def batch_from(answer: JsonValue, kwargs: Mapping[str, CallValue]) -> LiteLLMBatch:
@@ -188,6 +142,20 @@ def batch_from(answer: JsonValue, kwargs: Mapping[str, CallValue]) -> LiteLLMBat
     hidden["model_id"] = None if info is None else info.get("id")
     values["_hidden_params"] = hidden
     return LiteLLMBatch(**values)
+
+
+def sync_answer(
+    method: NativeCall, payload: CallPayload, kwargs: Mapping[str, CallValue]
+) -> LiteLLMBatch:
+    answer = call_native(method, payload, NativeBatchError)
+    return batch_from(answer, kwargs)
+
+
+async def async_answer(
+    method: AsyncNativeCall, payload: CallPayload, kwargs: Mapping[str, CallValue]
+) -> LiteLLMBatch:
+    answer = await acall_native(method, payload, NativeBatchError)
+    return batch_from(answer, kwargs)
 
 
 def create_batch(
@@ -206,20 +174,19 @@ def create_batch(
             completion_window, endpoint, input_file_id, custom_llm_provider,
             metadata, extra_headers, extra_body, output_expires_after, **kwargs,
         )
-    arguments = CreateArguments(
-        completion_window=completion_window,
-        endpoint=endpoint,
-        input_file_id=input_file_id,
-        custom_llm_provider=custom_llm_provider,
-        metadata=metadata,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-        output_expires_after=output_expires_after,
+    values: dict[str, CallValue] = {
+        "completion_window": completion_window,
+        "endpoint": endpoint,
+        "input_file_id": input_file_id,
+        "custom_llm_provider": custom_llm_provider,
+        "metadata": metadata,
+        "extra_headers": extra_headers,
+        "extra_body": extra_body,
+        "output_expires_after": output_expires_after,
+    }
+    return sync_answer(
+        batch_session().create, call_values(kwargs, CREATE_OPTIONAL, values), kwargs
     )
-    payload = to_call_payload(create_values(arguments, kwargs))
-    session = batch_session()
-    answer = call_native(session.create, payload, NativeBatchError)
-    return batch_from(answer, kwargs)
 
 
 async def acreate_batch(
@@ -233,20 +200,35 @@ async def acreate_batch(
     output_expires_after: dict[str, JsonValue] | None = None,
     **kwargs: CallValue,
 ) -> LiteLLMBatch:
-    arguments = CreateArguments(
-        completion_window=completion_window,
-        endpoint=endpoint,
-        input_file_id=input_file_id,
-        custom_llm_provider=custom_llm_provider,
-        metadata=metadata,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-        output_expires_after=output_expires_after,
+    values: dict[str, CallValue] = {
+        "completion_window": completion_window,
+        "endpoint": endpoint,
+        "input_file_id": input_file_id,
+        "custom_llm_provider": custom_llm_provider,
+        "metadata": metadata,
+        "extra_headers": extra_headers,
+        "extra_body": extra_body,
+        "output_expires_after": output_expires_after,
+    }
+    return await async_answer(
+        batch_session().acreate, call_values(kwargs, CREATE_OPTIONAL, values), kwargs
     )
-    payload = to_call_payload(create_values(arguments, kwargs))
-    session = batch_session()
-    answer = await acall_native(session.acreate, payload, NativeBatchError)
-    return batch_from(answer, kwargs)
+
+
+def retrieve_values(
+    batch_id: str,
+    custom_llm_provider: ReadProvider,
+    extra_headers: dict[str, str] | None,
+    extra_body: dict[str, str] | None,
+    kwargs: Mapping[str, CallValue],
+) -> CallPayload:
+    values: dict[str, CallValue] = {
+        "batch_id": batch_id,
+        "provider": custom_llm_provider,
+        "extra_headers": extra_headers,
+        "extra_body": extra_body,
+    }
+    return call_values(kwargs, READ_OPTIONAL, values)
 
 
 def retrieve_batch(
@@ -261,17 +243,11 @@ def retrieve_batch(
         return aretrieve_batch(
             batch_id, custom_llm_provider, metadata, extra_headers, extra_body, **kwargs
         )
-    arguments = RetrieveArguments(
-        batch_id=batch_id,
-        custom_llm_provider=custom_llm_provider,
-        metadata=metadata,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
+    return sync_answer(
+        batch_session().retrieve,
+        retrieve_values(batch_id, custom_llm_provider, extra_headers, extra_body, kwargs),
+        kwargs,
     )
-    payload = to_call_payload(retrieve_values(arguments, kwargs))
-    session = batch_session()
-    answer = call_native(session.retrieve, payload, NativeBatchError)
-    return batch_from(answer, kwargs)
 
 
 async def aretrieve_batch(
@@ -282,14 +258,5 @@ async def aretrieve_batch(
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> LiteLLMBatch:
-    arguments = RetrieveArguments(
-        batch_id=batch_id,
-        custom_llm_provider=custom_llm_provider,
-        metadata=metadata,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
-    payload = to_call_payload(retrieve_values(arguments, kwargs))
-    session = batch_session()
-    answer = await acall_native(session.aretrieve, payload, NativeBatchError)
-    return batch_from(answer, kwargs)
+    payload = retrieve_values(batch_id, custom_llm_provider, extra_headers, extra_body, kwargs)
+    return await async_answer(batch_session().aretrieve, payload, kwargs)

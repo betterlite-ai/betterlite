@@ -2,7 +2,6 @@ mod convert;
 mod error;
 mod payload;
 mod session;
-#[cfg(test)]
 mod tests;
 mod transport;
 

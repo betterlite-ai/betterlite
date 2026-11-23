@@ -14,16 +14,23 @@ pub(crate) enum BodyError {
 }
 
 pub(crate) fn batch_create(body: &CreateBatchRequest) -> Result<BatchCreate, BodyError> {
-    Ok(BatchCreate {
-        completion_window: body.completion_window.ok_or(BodyError::Missing {
+    let Some(completion_window) = body.completion_window else {
+        return Err(BodyError::Missing {
             field: "completion_window",
-        })?,
-        endpoint: body
-            .endpoint
-            .ok_or(BodyError::Missing { field: "endpoint" })?,
-        input_file_id: body.input_file_id.clone().ok_or(BodyError::Missing {
+        });
+    };
+    let Some(endpoint) = body.endpoint else {
+        return Err(BodyError::Missing { field: "endpoint" });
+    };
+    let Some(input_file_id) = body.input_file_id.clone() else {
+        return Err(BodyError::Missing {
             field: "input_file_id",
-        })?,
+        });
+    };
+    Ok(BatchCreate {
+        completion_window,
+        endpoint,
+        input_file_id,
         metadata: body.metadata.clone(),
         output_expires_after: body.output_expires_after,
         extra_headers: body.extra_headers.clone(),
@@ -33,15 +40,15 @@ pub(crate) fn batch_create(body: &CreateBatchRequest) -> Result<BatchCreate, Bod
 }
 
 pub(crate) fn batch_query(request: &RetrieveBatchRequest) -> Result<BatchQuery, BodyError> {
-    Ok(BatchQuery {
-        batch_id: request
-            .batch_id
-            .clone()
-            .ok_or(BodyError::Missing { field: "batch_id" })?,
-        extra_headers: request.extra_headers.clone(),
-        extra_body: request.extra_body.clone(),
-        timeout: request.timeout,
-    })
+    let batch_id = request.batch_id.clone();
+    batch_id
+        .map(|given| BatchQuery {
+            batch_id: given,
+            extra_headers: request.extra_headers.clone(),
+            extra_body: request.extra_body.clone(),
+            timeout: request.timeout,
+        })
+        .ok_or(BodyError::Missing { field: "batch_id" })
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]

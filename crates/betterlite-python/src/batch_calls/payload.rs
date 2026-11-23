@@ -28,27 +28,44 @@ pub(crate) const fn class_for_status(status: u16) -> &'static str {
     }
 }
 
+fn error_payload(
+    error_type: &'static str,
+    status_code: Option<u16>,
+    message: String,
+    provider: &str,
+    model: Option<&str>,
+) -> ErrorPayload {
+    ErrorPayload {
+        error_type,
+        message,
+        status_code,
+        llm_provider: provider.to_owned(),
+        model: model.map(str::to_owned),
+    }
+}
+
 pub(crate) fn create_error_payload(
     error: &BatchProviderCreateError,
     provider: &str,
     model: Option<&str>,
 ) -> ErrorPayload {
     let status = error.status_code();
-    let (llm_provider, model) = match error {
+    // LiteLLM names the provider the request asked for, or n/a when this build has no call for it
+    let (target_provider, target_model) = match error {
         BatchProviderCreateError::UnsupportedProvider {
             provider: unsupported,
-        } => (unsupported.as_str().to_owned(), Some("n/a".to_owned())),
+        } => (unsupported.as_str(), Some("n/a")),
         BatchProviderCreateError::Provider { .. } | BatchProviderCreateError::Limit(_) => {
-            (provider.to_owned(), model.map(str::to_owned))
+            (provider, model)
         }
     };
-    ErrorPayload {
-        error_type: class_for_status(status),
-        message: error.to_string(),
-        status_code: Some(status),
-        llm_provider,
-        model,
-    }
+    error_payload(
+        class_for_status(status),
+        Some(status),
+        error.to_string(),
+        target_provider,
+        target_model,
+    )
 }
 
 pub(crate) fn read_error_payload(
@@ -56,24 +73,30 @@ pub(crate) fn read_error_payload(
     provider: &str,
     model: Option<&str>,
 ) -> ErrorPayload {
-    let (error_type, status_code, message) = match error {
+    match error {
+        BatchProviderReadError::Dispatch(failure) => {
+            let (error_type, status_code, message) = dispatch_fields(failure);
+            error_payload(error_type, status_code, message, provider, model)
+        }
         BatchProviderReadError::Limits(limit) => {
             let status = limit.fields().status;
-            (class_for_status(status), Some(status), error.to_string())
+            error_payload(
+                class_for_status(status),
+                Some(status),
+                error.to_string(),
+                provider,
+                model,
+            )
         }
         BatchProviderReadError::Timeout(_)
         | BatchProviderReadError::InvalidVertexCredentials
-        | BatchProviderReadError::Unsupported { .. } => {
-            (class_for_status(400), Some(400), error.to_string())
-        }
-        BatchProviderReadError::Dispatch(failure) => dispatch_fields(failure),
-    };
-    ErrorPayload {
-        error_type,
-        message,
-        status_code,
-        llm_provider: provider.to_owned(),
-        model: model.map(str::to_owned),
+        | BatchProviderReadError::Unsupported { .. } => error_payload(
+            class_for_status(400),
+            Some(400),
+            error.to_string(),
+            provider,
+            model,
+        ),
     }
 }
 

@@ -85,8 +85,7 @@ pub(crate) fn payload_for(
     }
 }
 
-// Every failure crosses to Python as this family's NativeBatchError naming its LiteLLM class, except a
-// failure to write the answer, which is a runtime error of the session rather than a provider answer.
+// Every failure crosses to Python as NativeBatchError naming its LiteLLM class, except a write failure, which is a runtime error of the session.
 pub(crate) fn batch_error(error: &BatchError, provider: &str, model: Option<&str>) -> PyErr {
     let Some(payload) = payload_for(error, provider, model) else {
         return PyRuntimeError::new_err(error.to_string());

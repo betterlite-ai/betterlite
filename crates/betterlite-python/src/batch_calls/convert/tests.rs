@@ -1,6 +1,9 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_config::sections::{batch_provider_create, batch_provider_read, xai_identity};
 use betterlite_core::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
 use betterlite_core::api::batch_provider_create::error::BatchProviderCreateError;
 use betterlite_core::api::batch_provider_create::timeout::{HttpTimeout, RequestTimeout};
@@ -27,9 +30,8 @@ use serde::Deserialize;
 
 use super::request::{BodyError, DurationError, batch_create, batch_query, duration_of};
 use super::{
-    BatchAnswer, CallMode, ModuleSettings, SessionWire, create_call_base, create_hidden,
-    create_input, create_settings, parse, read_call_base, read_hidden, read_input, read_settings,
-    xai_settings,
+    BatchAnswer, CallMode, FinishedCall, HiddenParams, ModuleSettings, SessionWire, create_input,
+    parse, read_input, section_settings,
 };
 use crate::batch_calls::error::DispatchFailure;
 use crate::batch_calls::payload::{
@@ -277,7 +279,7 @@ fn request_create_settings_resolve_the_environment() {
         ("OPENAI_BASE_URL".to_owned(), "http://env/v1".to_owned()),
         ("OPENAI_ORGANIZATION".to_owned(), "env-org".to_owned()),
     ]);
-    let settings = create_settings(&module, &environment).unwrap();
+    let settings = section_settings::<batch_provider_create::Raw>(&module, &environment).unwrap();
     assert_eq!(settings.api_base, None);
     assert_eq!(settings.openai_base_url.as_deref(), Some("http://env/v1"));
     assert_eq!(settings.openai_api_base, None);
@@ -301,7 +303,7 @@ fn request_read_settings_read_the_anthropic_environment() {
         ("ANTHROPIC_BASE_URL".to_owned(), "http://b".to_owned()),
         ("ANTHROPIC_API_KEY".to_owned(), "key".to_owned()),
     ]);
-    let settings = read_settings(&module, &environment).unwrap();
+    let settings = section_settings::<batch_provider_read::Raw>(&module, &environment).unwrap();
     assert_eq!(settings.anthropic_base(), Some("http://a"));
     assert_eq!(
         settings.anthropic_api_key.as_ref().unwrap().expose_secret(),
@@ -311,9 +313,9 @@ fn request_read_settings_read_the_anthropic_environment() {
         ("ANTHROPIC_API_BASE".to_owned(), String::new()),
         ("ANTHROPIC_BASE_URL".to_owned(), "http://b".to_owned()),
     ]);
-    let empty = read_settings(&module, &fallback).unwrap();
+    let empty = section_settings::<batch_provider_read::Raw>(&module, &fallback).unwrap();
     assert_eq!(empty.anthropic_base(), Some("http://b"));
-    let none = read_settings(&module, &BTreeMap::new()).unwrap();
+    let none = section_settings::<batch_provider_read::Raw>(&module, &BTreeMap::new()).unwrap();
     assert_eq!(none.anthropic_base(), None);
 }
 
@@ -324,7 +326,7 @@ fn request_xai_settings_read_the_xai_environment() {
         ("XAI_API_KEY".to_owned(), "xai-env".to_owned()),
         ("XAI_API_BASE".to_owned(), "http://xai".to_owned()),
     ]);
-    let settings = xai_settings(&module, &environment).unwrap();
+    let settings = section_settings::<xai_identity::Raw>(&module, &environment).unwrap();
     assert_eq!(
         settings.generic_api_key.as_ref().unwrap().expose_secret(),
         "generic"
@@ -375,7 +377,13 @@ fn request_create_body_names_the_missing_field() {
     );
     let no_endpoint = CreateBatchRequest {
         completion_window: Some(CompletionWindow::Day),
-        ..CreateBatchRequest::default()
+        endpoint: None,
+        input_file_id: None,
+        metadata: None,
+        output_expires_after: None,
+        extra_headers: None,
+        extra_body: None,
+        timeout: None,
     };
     assert_eq!(
         batch_create(&no_endpoint).unwrap_err(),
@@ -384,7 +392,12 @@ fn request_create_body_names_the_missing_field() {
     let no_file = CreateBatchRequest {
         completion_window: Some(CompletionWindow::Day),
         endpoint: Some(BatchEndpoint::Embeddings),
-        ..CreateBatchRequest::default()
+        input_file_id: None,
+        metadata: None,
+        output_expires_after: None,
+        extra_headers: None,
+        extra_body: None,
+        timeout: None,
     };
     assert_eq!(
         batch_create(&no_file).unwrap_err(),
@@ -460,12 +473,19 @@ fn request_duration_follows_the_timeout_pieces() {
 fn request_create_hidden_params_name_the_provider() {
     let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
     let call = BatchProviderCreateCall::OpenAiCompatible(openai_call(Some("http://local/v1")));
-    let hidden = create_hidden(&input, &call);
+    let hidden = HiddenParams::new(
+        input.custom_llm_provider.as_str(),
+        input.model.as_deref(),
+        FinishedCall::Create(&call),
+    );
     assert_eq!(hidden.llm_provider, "openai");
     assert_eq!(hidden.model_id, None);
     assert_eq!(hidden.litellm_model_name.as_deref(), Some("gpt-4o"));
     assert_eq!(hidden.api_base.as_deref(), Some("http://local/v1"));
-    assert_eq!(create_call_base(&call).as_deref(), Some("http://local/v1"));
+    assert_eq!(
+        FinishedCall::Create(&call).api_base().as_deref(),
+        Some("http://local/v1")
+    );
 }
 
 #[test]
@@ -481,7 +501,11 @@ fn request_create_hidden_params_follow_a_provider_config() {
         timeout: 600.0,
         is_async: false,
     });
-    let hidden = create_hidden(&input, &call);
+    let hidden = HiddenParams::new(
+        input.custom_llm_provider.as_str(),
+        input.model.as_deref(),
+        FinishedCall::Create(&call),
+    );
     assert_eq!(hidden.llm_provider, "openai");
     assert_eq!(hidden.api_base.as_deref(), Some("http://aws"));
 }
@@ -498,12 +522,19 @@ fn request_read_hidden_params_follow_each_call() {
         max_retries: None,
         is_async: false,
     }));
-    let hidden = read_hidden(&input, &openai);
+    let hidden = HiddenParams::new(
+        input.provider.name(),
+        input.model.as_deref(),
+        FinishedCall::Read(&openai),
+    );
     assert_eq!(hidden.llm_provider, "openai");
     assert_eq!(hidden.model_id, None);
     assert_eq!(hidden.litellm_model_name.as_deref(), Some("gpt-4o"));
     assert_eq!(hidden.api_base.as_deref(), Some("http://local/v1"));
-    assert_eq!(read_call_base(&openai).as_deref(), Some("http://local/v1"));
+    assert_eq!(
+        FinishedCall::Read(&openai).api_base().as_deref(),
+        Some("http://local/v1")
+    );
 
     let xai = BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
         batch_id: "b".to_owned(),
@@ -512,7 +543,10 @@ fn request_read_hidden_params_follow_each_call() {
         timeout: Timeout::Seconds(1.0),
         is_async: false,
     }));
-    assert_eq!(read_call_base(&xai).as_deref(), Some("http://xai"));
+    assert_eq!(
+        FinishedCall::Read(&xai).api_base().as_deref(),
+        Some("http://xai")
+    );
     let xai_absent = BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
         batch_id: "b".to_owned(),
         api_base: None,
@@ -520,7 +554,7 @@ fn request_read_hidden_params_follow_each_call() {
         timeout: Timeout::Seconds(1.0),
         is_async: false,
     }));
-    assert_eq!(read_call_base(&xai_absent), None);
+    assert_eq!(FinishedCall::Read(&xai_absent).api_base(), None);
 
     let azure = BatchProviderReadCall::Azure(Box::new(AzureBatchReadCall {
         request: BatchIdRequest::default(),
@@ -532,7 +566,10 @@ fn request_read_hidden_params_follow_each_call() {
         litellm_params: AzureReadParams::default(),
         is_async: false,
     }));
-    assert_eq!(read_call_base(&azure).as_deref(), Some("http://azure"));
+    assert_eq!(
+        FinishedCall::Read(&azure).api_base().as_deref(),
+        Some("http://azure")
+    );
 
     let vertex = BatchProviderReadCall::VertexAi(Box::new(VertexBatchReadCall {
         batch_id: "b".to_owned(),
@@ -544,7 +581,10 @@ fn request_read_hidden_params_follow_each_call() {
         max_retries: None,
         is_async: false,
     }));
-    assert_eq!(read_call_base(&vertex).as_deref(), Some("http://vertex"));
+    assert_eq!(
+        FinishedCall::Read(&vertex).api_base().as_deref(),
+        Some("http://vertex")
+    );
 
     let anthropic = BatchProviderReadCall::Anthropic(Box::new(AnthropicBatchReadCall {
         batch_id: "b".to_owned(),
@@ -555,7 +595,7 @@ fn request_read_hidden_params_follow_each_call() {
         is_async: false,
     }));
     assert_eq!(
-        read_call_base(&anthropic).as_deref(),
+        FinishedCall::Read(&anthropic).api_base().as_deref(),
         Some("http://anthropic")
     );
 
@@ -563,13 +603,13 @@ fn request_read_hidden_params_follow_each_call() {
         batch_id: "arn".to_owned(),
         aws: AwsCredentials::default(),
     }));
-    assert_eq!(read_call_base(&bedrock), None);
+    assert_eq!(FinishedCall::Read(&bedrock).api_base(), None);
     let bedrock_job =
         BatchProviderReadCall::BedrockModelInvocationJob(Box::new(BedrockJobReadCall {
             batch_id: "arn".to_owned(),
             aws: AwsCredentials::default(),
         }));
-    assert_eq!(read_call_base(&bedrock_job), None);
+    assert_eq!(FinishedCall::Read(&bedrock_job).api_base(), None);
 
     let config = BatchProviderReadCall::ProviderConfig(Box::new(ProviderConfigReadCall {
         provider: BatchReadProvider::Bedrock,
@@ -582,7 +622,10 @@ fn request_read_hidden_params_follow_each_call() {
         timeout: Timeout::Seconds(1.0),
         is_async: false,
     }));
-    assert_eq!(read_call_base(&config).as_deref(), Some("http://cfg"));
+    assert_eq!(
+        FinishedCall::Read(&config).api_base().as_deref(),
+        Some("http://cfg")
+    );
 }
 
 #[test]
@@ -592,7 +635,11 @@ fn request_answer_flattens_the_batch_and_hidden_params() {
     let call = BatchProviderCreateCall::OpenAiCompatible(openai_call(Some("http://local/v1")));
     let text = serde_json::to_string(&BatchAnswer {
         batch: &batch,
-        hidden_params: create_hidden(&input, &call),
+        hidden_params: HiddenParams::new(
+            input.custom_llm_provider.as_str(),
+            input.model.as_deref(),
+            FinishedCall::Create(&call),
+        ),
     })
     .unwrap();
     let view: AnswerView = parse(&text).unwrap();
