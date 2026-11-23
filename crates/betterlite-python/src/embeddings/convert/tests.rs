@@ -17,6 +17,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_openai::embedding::{
     EmbeddingInput, EmbeddingRecord, EmbeddingRequest, EmbeddingVector, EncodingFormat,
 };
@@ -829,4 +830,36 @@ fn error_a_served_401_raises_the_authentication_class() {
     assert_eq!(payload.status_code, Some(401_u16));
     assert_eq!(payload.model.as_deref(), Some(SMALL));
     assert_eq!(payload.llm_provider.as_deref(), Some("openai"));
+}
+#[rstest]
+#[case::azure_flag(r#"{"model": "text-embedding-3-small", "azure": true}"#, "azure")]
+#[case::azure_flag_beats_the_provider(
+    r#"{"model": "text-embedding-3-small", "azure": true, "custom_llm_provider": "openai"}"#,
+    "azure"
+)]
+#[case::azure_false_keeps_the_provider(
+    r#"{"model": "text-embedding-3-small", "azure": false, "custom_llm_provider": "azure"}"#,
+    "azure"
+)]
+#[case::no_flag_infers_openai(r#"{"model": "text-embedding-3-small"}"#, "openai")]
+#[case::azure_false_infers_openai(
+    r#"{"model": "text-embedding-3-small", "azure": false}"#,
+    "openai"
+)]
+fn request_the_azure_flag_routes_resolution(#[case] text: &str, #[case] provider: &str) {
+    let resolved = session()
+        .resolve(&arguments(text), None, &GlobalCredentials::default())
+        .unwrap();
+    assert_eq!(resolved.provider.slug(), provider);
+}
+#[test]
+fn request_an_empty_api_base_counts_as_unset() {
+    let resolved = session()
+        .resolve(
+            &arguments(r#"{"model": "text-embedding-3-small", "api_base": ""}"#),
+            None,
+            &GlobalCredentials::default(),
+        )
+        .unwrap();
+    assert_eq!(resolved.api_base, None);
 }

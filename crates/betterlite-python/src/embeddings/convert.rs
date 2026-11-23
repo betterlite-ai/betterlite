@@ -29,6 +29,8 @@ pub(crate) struct EmbeddingArguments {
     pub(crate) api_version: Option<String>,
     pub(crate) api_key: Option<SecretString>,
     pub(crate) custom_llm_provider: Option<String>,
+    // main.py's `azure is True` routes the call to the azure branch whatever the provider says
+    pub(crate) azure: Option<bool>,
     pub(crate) litellm_call_id: Option<String>,
     pub(crate) headers: Option<Headers>,
     pub(crate) mock_response: Option<Json>,

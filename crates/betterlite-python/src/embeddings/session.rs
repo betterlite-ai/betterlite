@@ -1,5 +1,5 @@
 use super::convert::{ConvertError, EmbeddingArguments, EmbeddingSettingsWire, SessionWire};
-use super::error::{CallFacts, CallFailure, Raised, SessionError, raised};
+use super::error::{CallFacts, CallFailure, Raised, SessionError, raised, resolution_failure};
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
@@ -11,9 +11,7 @@ use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::{
-    ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel, resolve,
-};
+use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, ResolvedModel, resolve};
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers};
 use betterlite_openai::text_completion_execution::catalog::CompletionCatalog;
@@ -65,24 +63,29 @@ impl EmbeddingSession {
             redactor,
         })
     }
-    // get_llm_provider, run over the snapshot this session holds
+    // get_llm_provider, run over the snapshot this session holds; an empty base counts as unset
     pub(crate) fn resolve(
         &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-        api_base: Option<&str>,
+        arguments: &EmbeddingArguments,
         api_key: Option<&SecretString>,
         globals: &GlobalCredentials,
-    ) -> Result<ResolvedModel, ResolutionError> {
-        resolve(
-            &ResolutionRequest {
-                model,
-                custom_llm_provider,
-                api_base,
-                api_key,
-            },
-            &self.context(globals),
-        )
+    ) -> Result<ResolvedModel, CallFailure> {
+        let custom_llm_provider = if arguments.azure == Some(true) {
+            Some("azure")
+        } else {
+            arguments.custom_llm_provider.as_deref()
+        };
+        let request = ResolutionRequest {
+            model: &arguments.model,
+            custom_llm_provider,
+            api_base: arguments
+                .api_base
+                .as_deref()
+                .filter(|text| !text.is_empty()),
+            api_key,
+        };
+        resolve(&request, &self.context(globals))
+            .map_err(|error| resolution_failure(&error, &arguments.model))
     }
     pub(crate) fn context(&self, globals: &GlobalCredentials) -> ResolutionContext<'_> {
         ResolutionContext {
@@ -136,27 +139,46 @@ pub(crate) struct DeploymentInputs<'call> {
 // get_llm_provider's inputs, turned into the deployment the shared provider pipeline prepares
 pub(crate) fn deployment(
     session: &EmbeddingSession,
-    inputs: DeploymentInputs<'_>,
+    inputs: &DeploymentInputs<'_>,
 ) -> Result<ChatDeployment, CallFailure> {
-    let DeploymentInputs {
-        resolved,
-        facts,
-        api_key,
-        arguments,
-        globals,
-    } = inputs;
-    let declared = ModelDeployment {
-        model_name: resolved.model.clone(),
+    ChatDeployment::resolve_with(
+        &declared(inputs),
+        &session.defaults,
+        None,
+        &session.context(inputs.globals),
+    )
+    .map_err(|error| {
+        raised(
+            Raised::BadRequest,
+            error.to_string(),
+            Some(inputs.facts.model.to_owned()),
+            Some(inputs.facts.provider.to_owned()),
+        )
+    })
+}
+// the deployment a router entry would declare for this call's resolved model, key and version
+fn declared(inputs: &DeploymentInputs<'_>) -> ModelDeployment {
+    ModelDeployment {
+        model_name: inputs.resolved.model.clone(),
         litellm_params: LiteLlmParams {
             ssl_verify: None,
-            model: Some(format!("{}/{}", facts.provider, facts.model)),
-            api_base: resolved.api_base.clone().filter(|text| !text.is_empty()),
-            api_key: resolved.api_key.clone().or(api_key),
-            api_version: arguments
+            model: Some(format!("{}/{}", inputs.facts.provider, inputs.facts.model)),
+            api_base: inputs
+                .resolved
+                .api_base
+                .clone()
+                .filter(|text| !text.is_empty()),
+            api_key: inputs
+                .resolved
+                .api_key
+                .clone()
+                .or_else(|| inputs.api_key.clone()),
+            api_version: inputs
+                .arguments
                 .api_version
                 .clone()
                 .filter(|text| !text.is_empty()),
-            timeout: arguments.timeout,
+            timeout: inputs.arguments.timeout,
             stream_timeout: None,
             max_retries: None,
             rpm: None,
@@ -165,23 +187,9 @@ pub(crate) fn deployment(
         },
         // the dispatch looks a deployment up by its model id, which LiteLLM's model_info.id pins
         model_info: ModelInfo {
-            id: Some(resolved.model.clone()),
+            id: Some(inputs.resolved.model.clone()),
         },
-    };
-    ChatDeployment::resolve_with(
-        &declared,
-        &session.defaults,
-        None,
-        &session.context(globals),
-    )
-    .map_err(|error| {
-        raised(
-            Raised::BadRequest,
-            error.to_string(),
-            Some(facts.model.to_owned()),
-            Some(facts.provider.to_owned()),
-        )
-    })
+    }
 }
 // LiteLLM's client puts the caller's headers on the request after its own, so they win a shared name
 pub(crate) fn with_headers(

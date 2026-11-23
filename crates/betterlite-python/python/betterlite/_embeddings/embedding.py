@@ -26,19 +26,18 @@ MISSING_MODEL: Final = (
 SETTINGS: Final[tuple[str, ...]] = ("api_base", "api_key", "drop_params", "openai_key")
 # every argument embedding names itself: these never travel as an unknown provider parameter
 NAMED_ARGUMENTS: Final[tuple[str, ...]] = (
-    "api_base", "api_type", "api_version", "caching", "custom_llm_provider", "dimensions",
-    "encoding_format", "extra_headers", "headers", "input", "litellm_call_id", "logger_fn",
-    "model", "timeout", "user",
+    "api_base", "api_key", "api_type", "api_version", "caching", "custom_llm_provider",
+    "dimensions", "encoding_format", "extra_headers", "headers", "input", "litellm_call_id",
+    "logger_fn", "model", "timeout", "user",
 )
-# the arguments main.py hands to get_optional_params_embeddings as its own parameters
+# the named arguments Rust reads; a None one stays out so its default applies there
 OPTIONAL_ARGUMENTS: Final[tuple[str, ...]] = (
     "dimensions", "encoding_format", "user", "api_base", "api_version", "api_key",
     "custom_llm_provider",
 )
 # LiteLLM's own bookkeeping and the clients Rust cannot use; the payload drops or refuses them
 SKIPPED_KWARGS: Final[tuple[str, ...]] = (
-    "aembedding", "azure", "azure_ad_token_provider", "client", "litellm_logging_obj",
-    "shared_session",
+    "aembedding", "azure_ad_token_provider", "client", "litellm_logging_obj", "shared_session",
 )
 # aembedding's positional arguments, in embedding's own order
 POSITIONAL_ARGUMENTS: Final[tuple[str, ...]] = (

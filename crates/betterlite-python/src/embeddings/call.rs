@@ -1,5 +1,5 @@
 use super::convert::{EmbeddingArguments, EmbeddingCallWire, EmbeddingSettingsWire};
-use super::error::{CallFacts, CallFailure, Raised, operation_failure, raised, resolution_failure};
+use super::error::{CallFacts, CallFailure, Raised, operation_failure, raised};
 use super::request;
 use super::response::{
     EmbeddingAnswer, HiddenFacts, hidden_params, mock_usage, record_json, response_cost,
@@ -9,7 +9,7 @@ use super::session::{
     secret_text, with_headers,
 };
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::chat::deployment::ChatDeployment;
@@ -57,21 +57,7 @@ pub(crate) async fn call(
     let api_key = secret_text(arguments.api_key.as_ref())
         .or_else(|| secret_text(settings.api_key.as_ref()))
         .or_else(|| secret_text(settings.openai_key.as_ref()));
-    let resolved = session
-        .resolve(
-            &arguments.model,
-            arguments
-                .custom_llm_provider
-                .as_deref()
-                .filter(|text| !text.is_empty()),
-            arguments
-                .api_base
-                .as_deref()
-                .filter(|text| !text.is_empty()),
-            api_key.as_ref(),
-            &globals,
-        )
-        .map_err(|error| resolution_failure(&error, &arguments.model))?;
+    let resolved = session.resolve(&arguments, api_key.as_ref(), &globals)?;
     let provider = resolved.provider.slug().to_owned();
     let model = resolved
         .model
@@ -115,7 +101,7 @@ async fn answer(
         arguments: context.arguments,
         globals: context.globals,
     };
-    let resolved_deployment = deployment(context.session, inputs)?;
+    let resolved_deployment = deployment(context.session, &inputs)?;
     provider_answer(context, &resolved_deployment, request).await
 }
 // prepare, send and decode through the adapter the resolved deployment names
@@ -159,12 +145,24 @@ fn mock_answer(context: &CallContext<'_>, mock: &Json) -> Result<EmbeddingAnswer
     if matches!(mock, Json::Text(text) if text == "error") {
         return Err(raised(Raised::Plain, String::from(MOCK_ERROR), None, None));
     }
-    let facts = &context.facts;
     let response_ms = context
         .started
         .elapsed()
         .as_secs_f64()
         .mul_add(1000.0_f64, 0.0_f64);
+    Ok(EmbeddingAnswer {
+        object: String::from("list"),
+        model: String::from(context.facts.model),
+        data: vec![mock_record(mock)],
+        usage: mock_usage(),
+        hidden_params: mock_hidden(context, response_ms),
+        response_headers: BTreeMap::new(),
+        response_ms,
+    })
+}
+// the logging object's values for a mock answer: the configured base, the mock's ten prompt tokens priced
+fn mock_hidden(context: &CallContext<'_>, response_ms: f64) -> HiddenParams {
+    let facts = &context.facts;
     let api_base = mock_api_base(
         context.arguments,
         context.settings,
@@ -183,22 +181,13 @@ fn mock_answer(context: &CallContext<'_>, mock: &Json) -> Result<EmbeddingAnswer
         litellm_model: facts.model,
         provider: (context.entry == Entry::Async).then_some(facts.provider),
     };
-    let hidden = hidden_params(
+    hidden_params(
         &hidden_facts,
         cost,
         AdditionalHeaders::new(),
         response_ms,
         None,
-    );
-    Ok(EmbeddingAnswer {
-        object: String::from("list"),
-        model: String::from(facts.model),
-        data: vec![mock_record(mock)],
-        usage: mock_usage(),
-        hidden_params: hidden,
-        response_headers: BTreeMap::new(),
-        response_ms,
-    })
+    )
 }
 fn mock_record(mock: &Json) -> Json {
     let mut record = IndexMap::new();

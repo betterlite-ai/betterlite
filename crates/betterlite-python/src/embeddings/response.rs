@@ -36,34 +36,29 @@ pub(crate) fn hidden_params(
     response_ms: f64,
     overhead_ms: Option<f64>,
 ) -> HiddenParams {
-    let mut hidden = HiddenParams::new();
-    hidden.insert(
-        String::from("_response_ms"),
-        Number::from_f64(response_ms).map_or(Json::Null, Json::Number),
-    );
-    hidden.insert(
-        String::from("callback_duration_ms"),
-        Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number),
-    );
-    hidden.insert(
-        String::from("litellm_call_id"),
-        Json::Text(facts.call_id.to_owned()),
-    );
-    hidden.insert(
-        String::from("api_base"),
-        Json::Text(facts.api_base.to_owned()),
-    );
-    // the OpenAI handler's deployment carries no model_info, so LiteLLM logs a null model id
-    hidden.insert(String::from("model_id"), Json::Null);
-    hidden.insert(String::from("response_cost"), cost);
-    hidden.insert(
-        String::from("additional_headers"),
-        Json::Object(additional_headers),
-    );
-    hidden.insert(
-        String::from("litellm_model_name"),
-        Json::Text(facts.litellm_model.to_owned()),
-    );
+    let mut hidden: HiddenParams = [
+        (
+            "_response_ms",
+            Number::from_f64(response_ms).map_or(Json::Null, Json::Number),
+        ),
+        (
+            "callback_duration_ms",
+            Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number),
+        ),
+        ("litellm_call_id", Json::Text(facts.call_id.to_owned())),
+        ("api_base", Json::Text(facts.api_base.to_owned())),
+        // the OpenAI handler's deployment carries no model_info, so LiteLLM logs a null model id
+        ("model_id", Json::Null),
+        ("response_cost", cost),
+        ("additional_headers", Json::Object(additional_headers)),
+        (
+            "litellm_model_name",
+            Json::Text(facts.litellm_model.to_owned()),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, value)| (String::from(name), value))
+    .collect();
     if let Some(overhead) = overhead_ms.and_then(Number::from_f64) {
         hidden.insert(
             String::from("litellm_overhead_time_ms"),
