@@ -8,7 +8,8 @@ from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.azure.azure import AzureChatCompletion
 from litellm.llms.azure.text_to_speech.transformation import AzureAVATextToSpeechConfig
-from litellm.llms.custom_httpx.http_handler import BaseLLMHTTPHandler, HTTPHandler
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
+from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
