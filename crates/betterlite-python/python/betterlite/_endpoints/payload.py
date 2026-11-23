@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Final, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypeIs
 
 from betterlite._completion.arguments import SessionLike, TimeoutValues
 from betterlite._completion.errors import UnsupportedCallArgument
@@ -57,6 +58,24 @@ CallValue: TypeAlias = (
     | list["CallValue"]
     | dict[str, "CallValue"]
 )
+JsonContainer: TypeAlias = dict[str, CallValue] | list[CallValue]
+
+
+# TypeIs names the container exactly, where a class pattern over CallValue types its items Unknown
+def is_json_container(value: CallValue) -> TypeIs[JsonContainer]:
+    match value:
+        case dict() | list():
+            return True
+        case object():
+            return False
+
+
+def is_file_tuple(value: CallValue) -> TypeIs[tuple[CallValue, ...]]:
+    match value:
+        case tuple():
+            return True
+        case object():
+            return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,27 +105,33 @@ def is_dropped(name: str, value: CallValue) -> bool:
 
 
 def plain_value(key: str, value: CallValue, blobs: list[bytes]) -> JsonValue:
+    if is_json_container(value):
+        return container_value(key, value, blobs)
     match value:
         case bool() | str() | int() | float() | None:
             return JSON.validate_python(value)
-        case dict():
-            return {name: plain_value(name, item, blobs) for name, item in value.items()}
-        case list():
-            return [plain_value(key, item, blobs) for item in value]
         case TimeoutValues():
             return JSON.validate_python(timeout_seconds(value))
         case object():
             return file_value(key, value, blobs)
 
 
+def container_value(key: str, value: JsonContainer, blobs: list[bytes]) -> JsonValue:
+    match value:
+        case dict():
+            return {name: plain_value(name, item, blobs) for name, item in value.items()}
+        case list():
+            return [plain_value(key, item, blobs) for item in value]
+
+
 def file_value(key: str, value: CallValue, blobs: list[bytes]) -> JsonValue:
+    if is_file_tuple(value):
+        return tuple_file(key, value, blobs)
     match value:
         case bytes() as data:
             return file_marker(DEFAULT_NAME, None, data, blobs)
         case bytearray() as data:
             return file_marker(DEFAULT_NAME, None, bytes(data), blobs)
-        case tuple():
-            return tuple_file(key, value, blobs)
         case PathValue() as path:
             return file_marker(path_name(path), None, content_bytes(key, path), blobs)
         case Readable() as stream:
@@ -169,7 +194,8 @@ def path_name(path: PathValue) -> str:
     return last_part(decoded)
 
 
-def stream_name(stream: Readable) -> str:
+# the caller passes a Readable; Named joins the union so the match can see the name attribute
+def stream_name(stream: Readable | Named) -> str:
     match stream:
         case Named() as named:
             return last_part(named.name)
