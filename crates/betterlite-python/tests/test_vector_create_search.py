@@ -90,7 +90,7 @@ class DefaultView(Protocol):
 
 
 class HandleStub:
-    def read(self) -> bytes: ...
+    ...
 
 
 LITELLM: VectorStores = importlib.import_module("litellm.vector_stores")
