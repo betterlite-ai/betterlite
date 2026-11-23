@@ -9,7 +9,6 @@ from typing import Final, Protocol, TypeAlias, TypedDict, Unpack
 
 from pydantic import JsonValue, TypeAdapter
 
-from betterlite import _native
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._model_info.catalog import _CATALOG
 
@@ -45,17 +44,11 @@ class CostMapSourceInfo(CostMapProvenance):
     loaded_at: str | None
 
 
-class _StatusPayload(TypedDict):
+class _ReloadPayload(TypedDict, total=False):
     status: str
-
-
-class _ReloadedPayload(TypedDict):
     model_cost_map: dict[str, JsonValue]
     revision: str | None
     etag: str | None
-
-
-class _UnavailablePayload(TypedDict):
     reason: str
 
 
@@ -65,9 +58,7 @@ class _ReloadRequest(TypedDict):
     max_attempts: int
 
 
-_STATUS: Final[TypeAdapter[_StatusPayload]] = TypeAdapter(_StatusPayload)
-_RELOADED: Final[TypeAdapter[_ReloadedPayload]] = TypeAdapter(_ReloadedPayload)
-_UNAVAILABLE: Final[TypeAdapter[_UnavailablePayload]] = TypeAdapter(_UnavailablePayload)
+_RELOAD: Final[TypeAdapter[_ReloadPayload]] = TypeAdapter(_ReloadPayload)
 _SOURCE_INFO: Final[TypeAdapter[CostMapSourceInfo]] = TypeAdapter(CostMapSourceInfo)
 
 
@@ -90,11 +81,9 @@ def _reject_injected_options(
     options: CostMapOptions,
     default_sleep: Callable[[float], None] | Callable[[float], Awaitable[None]],
 ) -> None:
-    client = options.get("client")
-    if client is not None:
+    if options.get("client") is not None:
         raise UnsupportedCallArgument("client")
-    rng = options.get("rng")
-    if rng is not None:
+    if options.get("rng") is not None:
         raise UnsupportedCallArgument("rng")
     sleep = options.get("sleep")
     if sleep is not None and sleep is not default_sleep:
@@ -111,18 +100,18 @@ def _reload_request(url: str, timeout: float, max_attempts: int) -> str:
 
 
 def _reload_result(text: str) -> ModelCostMapReloadResult:
-    status = _STATUS.validate_json(text)["status"]
-    match status:
+    payload = _RELOAD.validate_json(text)
+    match payload["status"]:
         case "reloaded":
-            loaded = _RELOADED.validate_json(text)
             return ModelCostMapReloaded(
-                model_cost_map=loaded["model_cost_map"],
-                revision=loaded["revision"],
-                etag=loaded["etag"],
+                model_cost_map=payload["model_cost_map"],
+                revision=payload["revision"],
+                etag=payload["etag"],
             )
         case "unavailable":
-            return ModelCostMapReloadUnavailable(reason=_UNAVAILABLE.validate_json(text)["reason"])
-    raise ValueError(f"the native reload returned an unknown status {status}")
+            return ModelCostMapReloadUnavailable(reason=payload["reason"])
+        case _:
+            raise ValueError(f"the native reload returned an unknown status {payload['status']}")
 
 
 def get_model_cost_map(
@@ -133,7 +122,7 @@ def get_model_cost_map(
 ) -> dict[str, JsonValue]:
     _reject_injected_options(options, time.sleep)
     text = _CATALOG.native.reload_blocking(_reload_request(url, float(timeout), max_attempts))
-    return _RELOADED.validate_json(text)["model_cost_map"]
+    return _RELOAD.validate_json(text)["model_cost_map"]
 
 
 async def refetch_model_cost_map(
@@ -154,6 +143,7 @@ def get_model_cost_map_provenance() -> CostMapProvenance:
     return CostMapProvenance(source_revision=info["source_revision"], etag=info["etag"])
 
 
+# ast-grep-ignore: no-one-line-functions
 def get_model_cost_map_source_info() -> CostMapSourceInfo:
     return _SOURCE_INFO.validate_json(_CATALOG.native.source_info())
 

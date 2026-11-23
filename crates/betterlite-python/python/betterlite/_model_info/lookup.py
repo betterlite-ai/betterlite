@@ -2,6 +2,7 @@ import json
 from typing import Final, NamedTuple, Protocol, TypeAlias, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 from betterlite import _native
 from betterlite._model_info.catalog import _CATALOG
@@ -64,9 +65,11 @@ class _CachedModelInfo(_CacheAccess):
             raise ModelNotMappedError(str(error)) from error
         return _MODEL_INFO.validate_json(text)
 
+    @override
     def cache_clear(self) -> None:
         self._lookups = 0
 
+    @override
     def cache_info(self) -> _CacheInfo:
         return _CacheInfo(
             hits=0,
