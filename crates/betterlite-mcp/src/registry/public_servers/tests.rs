@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use super::PublicServers as _;
 use crate::registry::servers::{RegistrySettings, ServerRegistry};
 use crate::server_record::MCPServer;
 

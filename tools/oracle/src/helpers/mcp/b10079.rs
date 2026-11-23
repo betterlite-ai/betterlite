@@ -1,3 +1,4 @@
+use betterlite_mcp::registry::public_servers::PublicServers as _;
 use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry};
 use betterlite_mcp::server_record::MCPServer;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};

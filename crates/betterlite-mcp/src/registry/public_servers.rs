@@ -1,9 +1,16 @@
 use crate::registry::servers::ServerRegistry;
 use crate::server_record::MCPServer;
 
-impl ServerRegistry {
+pub trait PublicServers {
     #[must_use]
-    pub fn is_server_public(&self, server_id: &str, public_ids: Option<&[String]>) -> bool {
+    fn is_server_public(&self, server_id: &str, public_ids: Option<&[String]>) -> bool;
+
+    #[must_use]
+    fn public_servers(&self) -> Vec<&MCPServer>;
+}
+
+impl PublicServers for ServerRegistry {
+    fn is_server_public(&self, server_id: &str, public_ids: Option<&[String]>) -> bool {
         let Some(record) = self
             .db_servers
             .get(server_id)
@@ -18,8 +25,7 @@ impl ServerRegistry {
             || (!self.settings.public_hub_strict && record.fields.available_on_public_internet)
     }
 
-    #[must_use]
-    pub fn public_servers(&self) -> Vec<&MCPServer> {
+    fn public_servers(&self) -> Vec<&MCPServer> {
         let public_ids = self.settings.public_mcp_servers.as_slice();
         self.get_registry()
             .into_iter()
