@@ -13,7 +13,8 @@ pub enum BackendError<Source> {
         #[source]
         source: Source,
     },
-    #[error(transparent)]
+    // transparent duplicates the Error bound thiserror infers for Source, which the lint lane denies
+    #[error("{source}")]
     Failed {
         #[from]
         source: Source,
