@@ -85,10 +85,10 @@ class RatesWire(TypedDict):
     input_cost_per_token: float
     output_cost_per_token: float
     cache_read_input_token_cost: float
-    cache_read_input_audio_token_cost: float
-    cache_creation_input_token_cost: float
-    cache_creation_input_token_cost_above_1hr: float
-    output_cost_per_reasoning_token: float
+    cache_read_input_audio_token_cost: float  # ast-grep-ignore: no-long-names
+    cache_creation_input_token_cost: float  # ast-grep-ignore: no-long-names
+    cache_creation_input_token_cost_above_1hr: float  # ast-grep-ignore: no-long-names
+    output_cost_per_reasoning_token: float  # ast-grep-ignore: no-long-names
 
 class CostAnswerWire(TypedDict, total=False):
     cost: float

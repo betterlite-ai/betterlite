@@ -15,10 +15,10 @@ class BilledTokenRates:
     input_cost_per_token: float
     output_cost_per_token: float
     cache_read_input_token_cost: float
-    cache_read_input_audio_token_cost: float
-    cache_creation_input_token_cost: float
-    cache_creation_input_token_cost_above_1hr: float
-    output_cost_per_reasoning_token: float
+    cache_read_input_audio_token_cost: float  # ast-grep-ignore: no-long-names
+    cache_creation_input_token_cost: float  # ast-grep-ignore: no-long-names
+    cache_creation_input_token_cost_above_1hr: float  # ast-grep-ignore: no-long-names
+    output_cost_per_reasoning_token: float  # ast-grep-ignore: no-long-names
 
 
 # What completion_cost reads off litellm_logging_obj; the object itself stays in Python.
@@ -49,7 +49,7 @@ def billed_rates(rates: RatesWire) -> BilledTokenRates:
     )
 
 
-# _store_cost_breakdown_in_logging_obj: the fields LiteLLM passes; a broken logger never fails the charge.
+# What _store_cost_breakdown_in_logging_obj passes; a broken logger never fails the charge.
 def store_breakdown(logging_obj: CostLogging | None, answer: CostAnswerWire) -> None:
     if logging_obj is None:
         return

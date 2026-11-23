@@ -86,7 +86,7 @@ fn cost_breakdown_keeps_a_positive_cache_and_reasoning_cost() {
 }
 
 #[test]
-fn cost_breakdown_drops_a_zero_cache_cost_and_an_empty_additional_map() {
+fn cost_breakdown_keeps_a_zero_cache_cost_and_drops_an_empty_map() {
     let mut charged = input();
     charged.cache_read_cost = Some(Decimal::ZERO);
     charged.cache_creation_cost = Some(Decimal::ZERO);
@@ -98,9 +98,9 @@ fn cost_breakdown_drops_a_zero_cache_cost_and_an_empty_additional_map() {
         .set_cost_breakdown(&charged)
         .expect("the capture cannot fail");
     let breakdown = capture.breakdown.expect("the breakdown is recorded");
-    assert!(breakdown.cache_read_cost.is_none());
-    assert!(breakdown.cache_creation_cost.is_none());
-    assert!(breakdown.reasoning_cost.is_none());
+    assert_eq!(breakdown.cache_read_cost, Some(Decimal::ZERO));
+    assert_eq!(breakdown.cache_creation_cost, Some(Decimal::ZERO));
+    assert_eq!(breakdown.reasoning_cost, Some(Decimal::ZERO));
     assert!(breakdown.additional_costs.is_none());
     assert!(capture.rates.is_none());
 }

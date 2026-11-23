@@ -34,15 +34,13 @@ impl NativeCost {
     // LiteLLM's pair of floats, in the order cost_per_token returns them.
     fn cost_per_token(&self, py: Python<'_>, request: &str) -> PyResult<String> {
         let wire: CallRequest = parse(request)?;
-        let priced = self.engine.cost_per_token(&wire).map_err(|error| {
-            priced_error(
-                py,
-                &error,
-                wire.model.as_deref().unwrap_or_default(),
-                wire.custom_llm_provider.as_deref(),
-            )
-        })?;
-        encode(&[Amount(priced.0), Amount(priced.1)]).map_err(PyErr::from)
+        let model = wire.model.as_deref().unwrap_or_default();
+        let provider = wire.custom_llm_provider.as_deref();
+        let (prompt, completion) = self
+            .engine
+            .cost_per_token(&wire)
+            .map_err(|error| priced_error(py, &error, model, provider))?;
+        encode(&[Amount(prompt), Amount(completion)]).map_err(PyErr::from)
     }
 
     // ast-grep-ignore: no-one-line-functions
@@ -55,21 +53,18 @@ impl NativeCost {
         priced_response(py, &self.engine, request)
     }
 
-    // ast-grep-ignore: no-one-line-functions
+    // LiteLLM's response mapping for get_usage_object: the usage, or JSON null when it carries none.
     fn usage_object(&self, py: Python<'_>, request: &str) -> PyResult<String> {
-        usage_answer(py, &self.engine, request)
+        let wire: UsageRequest = parse(request)?;
+        let usage = self
+            .engine
+            .usage_object(&wire)
+            .map_err(|error| native_error(py, payload(error.to_string())))?;
+        encode(&UsageAnswer {
+            usage: usage.as_ref().map(UsageRecord::from),
+        })
+        .map_err(PyErr::from)
     }
-}
-
-fn usage_answer(py: Python<'_>, engine: &Engine, request: &str) -> PyResult<String> {
-    let wire: UsageRequest = parse(request)?;
-    let usage = engine
-        .usage_object(&wire)
-        .map_err(|error| native_error(py, payload(error.to_string())))?;
-    encode(&UsageAnswer {
-        usage: usage.as_ref().map(UsageRecord::from),
-    })
-    .map_err(PyErr::from)
 }
 
 // One charge on the shared runtime with the GIL released, then the answer with its breakdown.
