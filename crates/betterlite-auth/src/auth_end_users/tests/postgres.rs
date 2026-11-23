@@ -29,6 +29,7 @@ use crate::spend_reads::batch::NoSpendBatch;
 use crate::spend_reseed::cache::ReseedCache as _;
 use crate::spend_reseed::sql::SqlSpendCounterRows;
 
+// LiteLLM_EndUserTable's budget_id foreign key admits no dangling id, so a live row always carries its relation
 const SEED: &str = r#"
 INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by)
     VALUES ('budget-1', 100.0, 'tester', 'tester');
@@ -36,8 +37,6 @@ INSERT INTO "LiteLLM_ObjectPermissionTable" (object_permission_id)
     VALUES ('permission-1');
 INSERT INTO "LiteLLM_EndUserTable" (user_id, spend, budget_id)
     VALUES ('with-budget', 5.0, 'budget-1');
-INSERT INTO "LiteLLM_EndUserTable" (user_id, budget_id)
-    VALUES ('dangling', 'missing');
 INSERT INTO "LiteLLM_EndUserTable" (user_id, spend)
     VALUES ('plain', 7.0);
 INSERT INTO "LiteLLM_EndUserTable" (user_id, object_permission_id)
@@ -223,13 +222,6 @@ async fn database_rows_and_conflicting_spend() {
     let plain = resolved(&objects, "plain").await;
     assert!(plain.budget_id.is_none());
     assert_eq!(relation_budget_id(&plain), Some("budget-1"));
-    let dangling = resolved(&objects, "dangling").await;
-    assert_eq!(dangling.budget_id.as_deref(), Some("missing"));
-    assert_eq!(relation_budget_id(&dangling), Some("budget-1"));
-    assert_eq!(
-        stored_budget_id(&pool, "dangling").await.as_deref(),
-        Some("missing")
-    );
     assert!(stored_budget_id(&pool, "plain").await.is_none());
     let with_budget = resolved(&objects, "with-budget").await;
     let cost = check_with_cached_spend(&store, &with_budget, Some(money("150")))

@@ -71,7 +71,7 @@ async fn absent_budget_skips_spend() {
 #[tokio::test]
 async fn authoritative_end_user_counter() {
     let rig = rig(Some(money("10")));
-    let rows = ScriptedSpendRows::new(None);
+    let rows = ScriptedSpendRows::new(Some(money("200")));
     let reseed = reseed_over(Some(rows));
     let spend = CurrentSpend {
         cache: &rig.cache,
@@ -79,13 +79,20 @@ async fn authoritative_end_user_counter() {
         reseed: &reseed,
         fail_closed_budget_enforcement: false,
     };
-    // the row's own spend alone would deny the request, so only the counter can allow it
+    // the cached counter is stale-low, so the end-user row it guards is the authoritative spend
     let end_user = limited("100", "200");
-    check_end_user_budget(&end_user, CHAT_ROUTE, &spend)
+    let error = check_end_user_budget(&end_user, CHAT_ROUTE, &spend)
         .await
-        .expect("the authoritative counter wins over the row spend");
+        .expect_err("the authoritative row spend decides over the stale counter");
+    let EndUserBudgetError::Exceeded(exceeded) = error else {
+        panic!("an overrun is a budget rejection");
+    };
+    assert_eq!(exceeded.details.current_cost, money("200"));
     assert_eq!(rig.batch.reads(), vec!["spend:end_user:alice".to_owned()]);
-    assert!(reseed.rows.as_ref().expect("the rows").lookups().is_empty());
+    assert_eq!(
+        reseed.rows.as_ref().expect("the rows").lookups(),
+        vec![r#"EndUser("alice")"#.to_owned()]
+    );
 }
 
 #[tokio::test]

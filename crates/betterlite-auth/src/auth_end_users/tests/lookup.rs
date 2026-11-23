@@ -377,7 +377,11 @@ async fn cached_default_resolved_again() {
         .expect("the row exists");
     assert_eq!(found.litellm_budget_table, Some(key));
     assert!(rows.queries().is_empty());
-    assert!(cache.writes().is_empty());
+    // the key's budget lands under its own cache key, never on the cached end-user row
+    assert_eq!(
+        cache.writes(),
+        vec!["budget:default_end_user_budget:key:45".to_owned()]
+    );
     assert_eq!(
         cache.reads(),
         vec![
