@@ -14,6 +14,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
 use std::collections::BTreeMap;
+use std::str;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -391,10 +392,15 @@ async fn provider(listener: TcpListener) -> String {
     while !received.ends_with(b"\r\n\r\n") {
         received.push(stream.read_u8().await.unwrap());
     }
-    let mut body = vec![0_u8; 4096];
-    let read = stream.read(&mut body).await.unwrap();
-    body.truncate(read);
-    received.extend(body);
+    let length: usize = str::from_utf8(&received)
+        .unwrap()
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(0);
+    let mut body = vec![0_u8; length];
+    stream.read_exact(&mut body).await.unwrap();
+    received.extend_from_slice(&body);
     let head = format!(
         "HTTP/1.1 200 X\r\ncontent-length: {}\r\n\r\n",
         EMBEDDING_ANSWER.len()
