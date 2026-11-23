@@ -491,10 +491,13 @@ async fn edit_bad_headers() {
 }
 
 fn speech_operation() -> OpenAiSpeechOperation {
+    let model = String::from("tts");
+    let input = String::from("hello");
+    let voice = String::from("alloy");
     OpenAiSpeechOperation {
-        model: String::from("tts"),
-        input: String::from("hello"),
-        voice: String::from("alloy"),
+        model,
+        input,
+        voice,
         optional_params: IndexMap::new(),
         aspeech: false,
         api_key: Some(key()),
@@ -579,15 +582,16 @@ async fn speech_request() {
 }
 
 async fn speech_failure() {
-    let outcome = exchange(
-        AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation())),
-        vec![Reply::json(500, "boom")],
-    )
-    .await;
-    let error = error_of(&outcome);
-    assert_eq!(error.status(), Some(500));
+    let operation = AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation()));
+    let outcome = exchange(operation, vec![Reply::json(500, "boom")]).await;
+    speech_error(&outcome, 500, "boom");
+}
+
+fn speech_error(outcome: &Outcome, status: u16, text: &str) {
+    let error = error_of(outcome);
+    assert_eq!(error.status(), Some(status));
     assert!(matches!(error, AzureMediaError::Speech(_)));
-    assert!(error.to_string().contains("boom"));
+    assert!(error.to_string().contains(text));
 }
 
 async fn native_ssml() {
@@ -633,15 +637,9 @@ async fn ssml_request() {
 }
 
 async fn ssml_failure() {
-    let outcome = exchange(
-        AzureMediaOperation::NativeSsml(Box::new(ssml_operation())),
-        vec![Reply::json(400, "bad ssml")],
-    )
-    .await;
-    let error = error_of(&outcome);
-    assert_eq!(error.status(), Some(400));
-    assert!(matches!(error, AzureMediaError::Speech(_)));
-    assert!(error.to_string().contains("bad ssml"));
+    let operation = AzureMediaOperation::NativeSsml(Box::new(ssml_operation()));
+    let outcome = exchange(operation, vec![Reply::json(400, "bad ssml")]).await;
+    speech_error(&outcome, 400, "bad ssml");
 }
 
 #[test]
