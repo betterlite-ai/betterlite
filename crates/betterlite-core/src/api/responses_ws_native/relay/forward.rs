@@ -90,6 +90,7 @@ where
                     let masked = mask_response_completed(&policy, &request_data, &unmasked)
                         .await
                         .map_err(BackendEnd::failed)?;
+                    drop(request_data);
                     self.wrap_response_event(&masked)
                         .map_err(BackendEnd::failed)?
                 };
@@ -212,11 +213,14 @@ where
     }
 
     async fn masked_client_frame(&self, message: &str) -> Result<String, ClientRelayError> {
-        let mut request_data = self.request_data.lock().await;
-        let masked = mask_response_create(&self.policy(), &mut request_data, message)
-            .await
-            .map_err(|error| ClientRelayError::Frame(error.to_string()))?;
-        Ok(masked.into_owned())
+        let masked = {
+            let mut request_data = self.request_data.lock().await;
+            mask_response_create(&self.policy(), &mut request_data, message)
+                .await
+                .map_err(|error| ClientRelayError::Frame(error.to_string()))?
+                .into_owned()
+        };
+        Ok(masked)
     }
 }
 

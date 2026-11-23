@@ -1,14 +1,11 @@
-use std::error::Error;
 use std::future::Future;
 
 use betterlite_openai::api::responses_shapes::websocket::ResponsesWebSocketMessage;
 use thiserror::Error;
 
+// thiserror infers the Error and 'static bounds on the generated impls from the source fields
 #[derive(Debug, Error)]
-pub enum BackendError<Source>
-where
-    Source: Error + 'static,
-{
+pub enum BackendError<Source> {
     #[error("the backend does not accept the decode argument")]
     UnsupportedDecode,
     #[error("the backend connection closed: {source}")]

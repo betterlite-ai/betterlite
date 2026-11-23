@@ -72,14 +72,19 @@ where
     }
 
     async fn failure_exception(&self) -> Option<ErrorClass> {
-        let messages = self.messages.lock().await;
-        let failed = messages.iter().find(|event| {
-            matches!(
-                event.get("type"),
-                Some(Json::Text(kind)) if FAILURE_EVENT_TYPES.contains(&kind.as_str())
-            )
-        })?;
-        let object = match ws_event_error(failed) {
+        let failed = {
+            let messages = self.messages.lock().await;
+            messages
+                .iter()
+                .find(|event| {
+                    matches!(
+                        event.get("type"),
+                        Some(Json::Text(kind)) if FAILURE_EVENT_TYPES.contains(&kind.as_str())
+                    )
+                })
+                .cloned()?
+        };
+        let object = match ws_event_error(&failed) {
             Some(Json::Object(fields)) => StreamErrorObject::Mapping(fields),
             Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
             | None => StreamErrorObject::Attributes(StreamErrorAttributes::<'_>::default()),
@@ -111,10 +116,10 @@ where
         if !item_event {
             return Ok(response_str.to_owned());
         }
-        match wrap_item_encrypted_content(&event, &self.litellm_metadata) {
-            Some(wrapped) => Ok(serde_json::to_string(&Json::Object(wrapped)).unwrap_or_default()),
-            None => Ok(response_str.to_owned()),
-        }
+        wrap_item_encrypted_content(&event, &self.litellm_metadata).map_or_else(
+            || Ok(response_str.to_owned()),
+            |wrapped| Ok(serde_json::to_string(&Json::Object(wrapped)).unwrap_or_default()),
+        )
     }
 
     async fn log_messages(&self) -> Result<(), RealtimeCostError> {

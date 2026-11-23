@@ -117,8 +117,8 @@ fn resolve_config(
     provider: Option<&str>,
     api_base: Option<&str>,
 ) -> Option<ResponsesApiConfig> {
-    provider
-        .and_then(|name| resolve_provider_config(configs, model, name, &JsonValue::Null, api_base))
+    let name = provider?;
+    resolve_provider_config(configs, model, name, &JsonValue::Null, api_base)
 }
 
 fn litellm_params_for_ws(

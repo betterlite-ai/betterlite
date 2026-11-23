@@ -55,7 +55,7 @@ enum SlotError {
 
 fn mapping_slot(
     value: Option<&Json>,
-    error: SlotError,
+    error: &SlotError,
 ) -> Result<Option<&IndexMap<String, Json>>, WsNativeError> {
     match value {
         None | Some(Json::Null) => Ok(None),
@@ -74,15 +74,15 @@ fn mapping_slot(
 pub fn build_litellm_metadata_for_ws(
     kwargs: &IndexMap<String, Json>,
 ) -> Result<IndexMap<String, Json>, WsNativeError> {
-    let mut metadata = mapping_slot(kwargs.get("litellm_metadata"), SlotError::TypeError)?
+    let mut metadata = mapping_slot(kwargs.get("litellm_metadata"), &SlotError::TypeError)?
         .cloned()
         .unwrap_or_default();
-    let caller_metadata = mapping_slot(kwargs.get("metadata"), SlotError::AttributeError)?;
-    let guardrails = caller_metadata
+    let caller_metadata = mapping_slot(kwargs.get("metadata"), &SlotError::AttributeError)?;
+    let selected_guardrails = caller_metadata
         .and_then(|fields| fields.get("guardrails"))
         .filter(|value| is_supplied(value))
         .or_else(|| kwargs.get("guardrails").filter(|value| is_supplied(value)));
-    if let Some(guardrails) = guardrails {
+    if let Some(guardrails) = selected_guardrails {
         metadata.insert(String::from("guardrails"), guardrails.clone());
     }
     Ok(metadata)
@@ -145,7 +145,7 @@ pub fn routed_first_frame(first_message: &str, routed_input: Option<&Json>) -> S
     if frame.get("input") == Some(routed) {
         return first_message.to_owned();
     }
-    let mut updated = frame.clone();
+    let mut updated = frame;
     updated.insert(String::from("input"), routed.clone());
     serde_json::to_string(&Json::Object(updated)).unwrap_or_default()
 }

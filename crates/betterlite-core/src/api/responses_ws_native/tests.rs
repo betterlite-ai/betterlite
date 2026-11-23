@@ -91,7 +91,7 @@ async fn run_entry(fixture: &ForwardingFixture) -> Option<ErrorClass> {
         websocket: &fixture.client,
         api_base: None,
         api_key: None,
-        timeout: Some(7.0),
+        timeout: Some(7.0_f64),
         user_api_key_dict: None,
         kwargs: &fixture.kwargs,
     };
@@ -103,7 +103,7 @@ fn assert_forwarded_call(fixture: &ForwardingFixture) {
     assert_eq!(request.model, "gpt-4o");
     assert_eq!(request.api_key.as_deref(), Some("sk-env"));
     assert_eq!(request.api_base, None);
-    assert_eq!(request.timeout, Some(7.0));
+    assert_eq!(request.timeout, Some(7.0_f64));
     assert_eq!(request.first_message.as_deref(), Some(FIRST_FRAME));
     assert_eq!(request.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(fixture.backend.sent(), texts(&[FIRST_FRAME]));
@@ -571,8 +571,8 @@ async fn recv_fallback_and_connection_closed() {
         )));
         script.push_back(Err(BackendError::Closed {
             source: TestError(String::from("the backend connection closed")),
-        }));
-    }
+        }))
+    };
     let logging = RecordingLogging::default();
     let redactor = redactor();
     let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();

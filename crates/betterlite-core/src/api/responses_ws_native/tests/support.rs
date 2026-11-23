@@ -103,14 +103,15 @@ pub(super) struct TestClient {
 
 impl TestClient {
     pub(super) fn new(frames: Vec<&str>) -> Self {
-        let mut client = Self::default();
-        client.incoming = Mutex::new(
-            frames
-                .into_iter()
-                .map(|frame| Ok(frame.to_owned()))
-                .collect(),
-        );
-        client
+        Self {
+            incoming: Mutex::new(
+                frames
+                    .into_iter()
+                    .map(|frame| Ok(frame.to_owned()))
+                    .collect(),
+            ),
+            ..Self::default()
+        }
     }
 
     pub(super) fn sent(&self) -> Vec<String> {
@@ -133,15 +134,13 @@ impl ResponsesClientWebSocket for TestClient {
         })
     }
 
-    fn receive_text(&self) -> impl Future<Output = Result<String, TestError>> + Send + '_ {
-        async move {
-            if self.yield_first {
-                yield_now().await;
-            }
-            lock(&self.incoming)
-                .pop_front()
-                .unwrap_or_else(|| Err(TestError(String::from("the client socket is closed"))))
+    async fn receive_text(&self) -> Result<String, TestError> {
+        if self.yield_first {
+            yield_now().await;
         }
+        lock(&self.incoming)
+            .pop_front()
+            .unwrap_or_else(|| Err(TestError(String::from("the client socket is closed"))))
     }
 }
 
@@ -412,14 +411,9 @@ impl NativeWsResolution for FakeResolution {
     }
 }
 
+#[derive(Default)]
 pub(super) struct FakeConfigs {
     pub(super) native: bool,
-}
-
-impl Default for FakeConfigs {
-    fn default() -> Self {
-        Self { native: false }
-    }
 }
 
 impl ConfigLookup for FakeConfigs {
@@ -618,9 +612,9 @@ impl Captured {
 }
 
 impl io::Write for Captured {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        lock(&self.0).extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        lock(&self.0).extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
