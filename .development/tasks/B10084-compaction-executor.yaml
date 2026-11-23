@@ -1,0 +1,114 @@
+id: B10084
+title: Compaction executor trait and child-call scope
+description: >-
+  When context compaction needs a summary on the gateway, LiteLLM does not call the compactor model directly: it
+  hands the summary request to a CompactionExecutor, and the proxy's executor sends it to itself as a child
+  request (native_compaction.py). Both sides also mark that child call, so the router does not compact or
+  auto-route it again and the child's model check can fall back to the parent's model. Those few names sit in
+  context_compaction.py next to B336's 800-line compaction service, but B8291's loopback executor needs only them.
+  This task builds them in betterlite-router, so B8291 can implement the trait and hold the scope without waiting
+  on B336, and B336 calls them from here.
+
+
+  Layout. Module compaction_executor in crates/betterlite-router/src/compaction_executor.rs, with its tests in
+  compaction_executor/tests.rs. The skeleton declares it in lib.rs. Payloads and the protocol are B3545's types
+  in betterlite-anthropic's native_compaction::protocol (`Mapping`, an IndexMap<String, Json>, and
+  `CompactionProtocol` with Chat and Messages); add betterlite-anthropic to betterlite-router's Cargo.toml for
+  them. B336 needs that dependency for B3545's dispatch anyway, and betterlite-anthropic depends on no router or
+  server crate.
+
+
+  The trait. `CompactionExecutor` is LiteLLM's protocol of L50-L53 as an #[async_trait] trait with `Send + Sync`
+  (the crate already uses async-trait), because B336's compact_to_fit takes it as `Option<&dyn
+  CompactionExecutor>`. Its one method is `execute(&self, protocol: CompactionProtocol, payload: &Mapping,
+  parent_model: Option<&str>, logging_disabled: bool) -> Result<Mapping, CompactionExecutorError>`. The fourth
+  argument is the message logging privacy flag that LiteLLM's executor reads from an inherited context variable
+  (native_compaction.py L42); B336 decides it over the parent payload and passes it. `CompactionExecutorError`
+  keeps whatever the executor failed with as a #[source] Box<dyn std::error::Error + Send + Sync>, and its Display
+  is that source's text, nothing added. Every failure LiteLLM's executor raises is a BadRequestError (model
+  "context_compaction", provider ""), so B336 answers it as one; B8291 puts its LoopbackError inside.
+
+
+  The child-call scope. LiteLLM keeps two context variables, `_native_child` (default False) and
+  `_native_parent` (default None), L46-L47. Here they become one tokio task-local that holds the parent pair, set
+  only through `native_compaction_call`. Being inside the scope at all is the child flag.
+  `native_compaction_call(parent_model: Option<&str>, compactor: Option<&str>, call: F) -> F::Output`, an async fn
+  over any future F, runs `call` inside the scope (L79-L86). The parent pair is (parent_model, compactor) only when
+  both are given and neither is empty, as LiteLLM's `parent_model and compactor` decides; otherwise the scope
+  holds no pair. A nested call replaces the pair for its own future and the outer one comes back after it, as the
+  context variable reset does. `native_compaction_parent(model: &str) -> Option<String>` (L89-L91) is the parent
+  model when the current task is inside a scope whose pair has `model` as its compactor, else None.
+  `is_native_compaction_call() -> bool` (L153-L154) says whether the current task is inside any scope. Callers:
+  B336's summary call runs inside `native_compaction_call(None, None, ...)` (L326) and its fit check and
+  reject_recursive_compactor read is_native_compaction_call; B8291 enters the scope with the parent and the
+  compactor inside the task that runs the child request; the router's session resolver (router.py L13760) reads
+  is_native_compaction_call; and the server code that builds betterlite-auth's CompactionContext for
+  can_object_call_model (auth_checks.py L4465-L4467) reads native_compaction_parent.
+
+
+  tokio's task_local! macro keeps its slot in a thread-local RefCell, which the workspace's disallowed_types
+  denies, so the module carries one module-level #[expect(clippy::disallowed_types, reason = ...)] as
+  betterlite-redis's request_batch::scope does; that is the one expect this task's budget allows.
+
+
+  Tests in compaction_executor::tests: outside any scope is_native_compaction_call is false and
+  native_compaction_parent is None; inside native_compaction_call(None, None) the flag is true and there is no
+  parent; inside ("gpt-parent", "claude-compactor") native_compaction_parent("claude-compactor") is
+  Some("gpt-parent") and native_compaction_parent("other") is None; an empty parent or compactor sets no pair; an
+  inner scope with no pair hides the outer pair and the outer pair is back after it; a task spawned inside a scope
+  does not see it, and a scope entered inside the spawned task does; a fake executor held as `&dyn
+  CompactionExecutor` receives the protocol, payload, parent model and flag it was called with; and a
+  CompactionExecutorError's Display equals its source's text and source() returns it. There is no oracle case:
+  the scope only means something inside a running request, so nothing here is a pure function a helper could
+  compare, and B336's router probes and B8291's executor tests run it in context.
+scope:
+  paths:
+    - crates/betterlite-router/Cargo.toml
+    - crates/betterlite-router/src/compaction_executor.rs
+    - crates/betterlite-router/src/compaction_executor/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L46-L56
+    why: The two context variables and the CompactionExecutor protocol. The compaction_executor variable at L56 is B336's per-call argument instead.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L78-L91
+    why: native_compaction_call and native_compaction_parent, built here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L153-L154
+    why: is_native_compaction_call, built here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L317-L336
+    why: B336's _generate_summary, the caller that enters the scope with no pair and awaits the executor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L38-L84
+    why: The proxy executor B8291 ports, which enters the scope with the parent and the compactor inside a fresh task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4465-L4467
+    why: The child's model access check reads native_compaction_parent.
+dod:
+  - text: CompactionExecutor is object safe with the four-argument execute over B3545's protocol and Mapping, and CompactionExecutorError shows only its source's text and returns that source.
+    proof: [executor-scope-tests]
+  - text: native_compaction_call sets the child flag for its future and the parent pair only when both names are non-empty, nested scopes restore the outer pair, and a spawned task does not inherit the scope.
+    proof: [executor-scope-tests]
+  - text: native_compaction_parent answers the parent only for the matching compactor inside a scope, and is_native_compaction_call only inside one.
+    proof: [executor-scope-tests]
+  - text: Mutants in the new router module are caught.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: executor-scope-tests
+      why: the executor trait, its error, or the child-call scope and its two readers are missing or wrong
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^compaction_executor::tests::/)'
+oracle_cases: []
+deviations:
+  - what: CompactionExecutor's execute takes logging_disabled as a fourth argument; LiteLLM's executor reads turn_off_message_logging from the privacy context variable the summary call inherits.
+    why: Rust has no inherited context variables, and the value depends on the parent payload, so the summary caller passes it on each call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L39-L42
+out_of_scope:
+  - "litellm/router_strategy/complexity_router/context_compaction.py: B336 owns surface_for_call (L68-L69), initialize_compaction_state (L94-L96), arm_compaction (L99-L123), _has_compactor (L126-L138), _client_managed (L141-L150), reject_recursive_compactor (L157-L159), compaction_pending (L162-L164), _reject (L167-L170), _generate_summary (L317-L336), compact_to_fit (L360-L371), _check_client_managed_admission (L374-L387) and _compact_to_fit (L416-L515), and passes the executor per call in place of the compaction_executor variable (L56)."
+  - "litellm/router_strategy/complexity_router/context_compaction.py: B385 owns _unavailable (L173-L176), _blocks (L179-L181), _tool_ids (L184-L202), _history (L205-L232), _count (L235-L241), _budget (L244-L263), _compactor_model (L266-L297), _native_prefix (L300-L314), _compactor_input (L339-L357) and _portable_history (L390-L413)."
+  - "The loopback executor that implements the trait: B8291. Building it per request: B100. Passing it to compact_to_fit on the gateway routes: B9810."
+pitfalls:
+  - A tokio task-local is not inherited by tokio::spawn, unlike a Python context variable copied into asyncio.create_task, so the scope covers only the future given to native_compaction_call; code that reads it from a spawned task must enter the scope there.
+  - "LiteLLM sets the parent pair only when `parent_model and compactor` holds, so Some(\"\") for either name leaves the pair empty while the child flag is still set."
+  - The trait cannot carry a generic method or an associated error type, or `&dyn CompactionExecutor` stops compiling in B336's compact_to_fit.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

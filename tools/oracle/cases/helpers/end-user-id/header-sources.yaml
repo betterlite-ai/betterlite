@@ -1,0 +1,53 @@
+kind: helper
+name: end-user-id-header-sources
+call:
+  b10050:
+    user_header_mappings:
+      - {header_name: x-team-id, litellm_user_role: customer}
+      - {header_name: X-Org-Id, litellm_user_role: customer}
+      - {header_name: x-internal, litellm_user_role: internal_user}
+    user_header_name: x-legacy-user
+    validate_end_user_id_in_db: false
+    requests:
+      - body: {}
+        headers:
+          - [x-litellm-end-user-id, end-user]
+          - [x-team-id, team]
+          - [x-legacy-user, legacy]
+      - body: {}
+        headers:
+          - [X-LITELLM-CUSTOMER-ID, customer]
+          - [x-litellm-end-user-id, end-user]
+      - body: {}
+        headers:
+          - [x-litellm-customer-id, "  "]
+          - [x-litellm-end-user-id, end-user]
+      - body: {}
+        headers:
+          - [x-litellm-customer-id, ""]
+          - [x-litellm-end-user-id, end-user]
+      - body: {}
+        headers:
+          - [x-org-id, org]
+          - [x-team-id, team]
+      - body: {}
+        headers:
+          - [x-org-id, org]
+      - body: {}
+        headers:
+          - [x-legacy-user, legacy]
+      - body: {}
+        headers:
+          - [x-team-id, "   "]
+          - [x-org-id, org]
+      - body: {user: body}
+        headers: null
+      - body: {user: body}
+        headers:
+          - [x-litellm-customer-id, " "]
+      - body: {}
+        headers:
+          - [x-internal, internal]
+env: {}
+compare:
+  ignore: []

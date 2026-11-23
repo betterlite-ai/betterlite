@@ -1,0 +1,16 @@
+kind: helper
+name: key-info-access-owner-equality
+call:
+  b10068:
+    calls:
+      - caller: {user_role: internal_user, api_key: sk-other, user_id: owner-1}
+        key: null
+        key_row: {user_id: owner-1, team_id: null}
+      - caller: {user_role: internal_user, api_key: sk-other, user_id: null}
+        key: null
+        key_row: {user_id: null, team_id: null}
+      - caller: {user_role: internal_user, api_key: sk-other, user_id: outsider}
+        key: null
+        key_row: {user_id: owner-1, team_id: null}
+env: {}
+compare: {ignore: []}

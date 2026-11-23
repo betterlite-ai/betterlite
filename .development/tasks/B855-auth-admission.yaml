@@ -23,9 +23,10 @@ description: >-
   callback transformation remain B757; test delegation rather than copying that mapper.
 
   Managed implementations belong to B8544's port over B4781 and B4773, and telemetry implementations to
-  B8870 over B8910's live OTel runtime. Define the required ManagedAdmission and TenantDestinations ports
-  here, with methods matching these calls and typed outcomes; those higher services install concrete
-  implementations. No direct dependency on B8544/B124 (which depend on B052 and this stage) and no
+  B8870 over B8910's live OTel runtime. Call them through B10083's ManagedAdmission (admit and prepare,
+  with B4781's AdmissionError) and TenantDestinations (seed, with DestinationSeedError) in
+  auth_admission::ports; do not redefine or extend those traits here. Those higher services install
+  concrete implementations. No direct dependency on B8544/B124 (which depend on B052 and this stage) and no
   allow-all/no-op stub for a configured capability. B732 server construction rejects a configured
   capability without its port. B855 owns only ordering and exception boundaries, not agent policy,
   registry lookups, pricing or exporter construction; use injected failure/results for native tests.
@@ -93,8 +94,8 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Four functions contain 108 nonblank noncomment lines excluding docstrings. Allow 180 composition/
-  ports, 340 ordered and HTTP tests and 65 server wiring lines, 585 within 650.
+  Four functions contain 108 nonblank noncomment lines excluding docstrings. Allow 180 composition,
+  340 ordered and HTTP tests and 65 server wiring lines, 585 within 650.
 
 
   Server wiring tests live under betterlite-server::auth::auth_admission::tests: stage_is_registered and
@@ -171,7 +172,7 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-admission/telemetry-failure-still-reaches-route.yaml
 deviations: []
 out_of_scope:
-  - B8544 owns the concrete managed-agent policy/store adapter; B8870 (under B124) owns the concrete tenant destination adapter over B8910's live OTel runtime, behind this task's ports.
+  - B10083 owns the ManagedAdmission and TenantDestinations port traits and DestinationSeedError in auth_admission/ports.rs. B8544 owns the concrete managed-agent policy/store adapter; B8870 (under B124) owns the concrete tenant destination adapter over B8910's live OTel runtime, behind those ports.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -193,10 +194,11 @@ out_of_scope:
     (L733-L757), get_global_proxy_spend (L760-L790).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B755 owns validate_resolved_virtual_key (L2211-L2622).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B756 owns _normalize_public_auth_route (L160-L163), _route_requires_auth_despite_public
-    (L166-L171), _get_bearer_token_or_received_api_key (L491-L511), _routing_selector_matches_claim (L514-L552),
-    _matches_routing_override (L555-L565), _should_route_jwt_to_oauth2_override (L568-L582), _get_bearer_token
-    (L585-L610), get_rbac_role (L793-L798), get_api_key (L801-L858), check_api_key_for_custom_headers_or_pass_through_endpoints
-    (L861-L905), get_api_key_from_custom_header (L3580-L3612), is_no_auth_dev_mode (L2747-L2751).'
+    (L166-L171), _routing_selector_matches_claim (L514-L552), _matches_routing_override (L555-L565),
+    _should_route_jwt_to_oauth2_override (L568-L582), get_rbac_role (L793-L798), get_api_key (L801-L858),
+    check_api_key_for_custom_headers_or_pass_through_endpoints (L861-L905), get_api_key_from_custom_header (L3580-L3612);
+    B10086 owns _get_bearer_token_or_received_api_key (L491-L511), _get_bearer_token (L585-L610) and is_no_auth_dev_mode
+    (L2747-L2751).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B757 owns _ensure_litellm_received_at_on_request_state (L1310-L1327),
     _ensure_parent_otel_span_on_request_state (L1330-L1359), _read_request_body_deferring_parse_failure
     (L1362-L1381), _record_unparsable_body_failure (L1384-L1406).'

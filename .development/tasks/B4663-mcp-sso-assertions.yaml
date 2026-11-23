@@ -9,7 +9,9 @@ description: >-
 
   Ports. trait TokenExchangeInputs has fn prerequisites(&self) -> TokenExchangePrerequisites, read on every exchange because LiteLLM reads its globals on every exchange. trait AuthorizeSubjectToken has type Context and async fn authorize(&self, subject_token: &str, context: &Self::Context) -> Result<AuthorizedSubject, SubjectTokenDenial>. AuthorizedSubject { user_id, team_id, agent_id }, each Option<String>, is the part of JWTAuthBuilderResult this code reads. SubjectTokenDenial { source: DenialSource, reason: String, database_cause: Option<DbError> } uses betterlite_db::database_faults::DbError, and DenialSource::Http { status: u16 }, Proxy { code: String } and Plain stand for LiteLLM's HTTPException, ProxyException and any other exception. IdpTokenExchange<I, A> { inputs: I, authorizer: A } implements B10063's ExchangeSubjectToken<A::Context> through identity_from_subject_token.
 
-  identity_from_subject_token runs in this order: the prerequisites' refusal; betterlite_auth::resolved_key::credential::is_jwt false gives invalid_request "subject_token is not a JWT"; authorize, with a denial going to refusal_for; agent_id present gives invalid_request "Agent tokens require direct JWT authentication; this exchange supports users only"; user_id None gives invalid_request "subject_token names no user the gateway knows"; otherwise SubjectIdentity { user_id, team_id }, team_id None included. refusal_for first runs B1217's chain finder (LiteLLM's find_database_service_unavailable_error_in_chain, in betterlite_db::database_availability; read its Rust name there) on database_cause. A fault it finds is Faulted when is_permanent_database_fault is true and Retryable otherwise. With no fault, Http status 500 or more and a Proxy code of digits only with a value of 500 or more are Retryable. No outage logs the warning "token exchange refused a subject_token: %s" and answers invalid_request with the rejected text. An outage logs at error "token exchange could not verify a subject_token, %s: %s" with retryable or faulted and answers temporarily_unavailable with the matching text.
+  identity_from_subject_token runs in this order: the prerequisites' refusal; betterlite_auth::resolved_key::credential::is_jwt false gives invalid_request "subject_token is not a JWT"; authorize, with a denial going to refusal_for; agent_id present gives invalid_request "Agent tokens require direct JWT authentication; this exchange supports users only"; user_id None or empty gives invalid_request "subject_token names no user the gateway knows"; otherwise SubjectIdentity { user_id, team_id }, team_id None included. refusal_for first runs B1217's chain finder (LiteLLM's find_database_service_unavailable_error_in_chain, in betterlite_db::database_availability; read its Rust name there) on database_cause. A fault it finds is Faulted when is_permanent_database_fault is true and Retryable otherwise. With no fault, Http status 500 or more and a Proxy code of digits only with a value of 500 or more are Retryable. No outage logs the warning "token exchange refused a subject_token: %s" and answers invalid_request with the rejected text. An outage logs at error "token exchange could not verify a subject_token, %s: %s" with retryable or faulted and answers temporarily_unavailable with the matching text.
+
+  Empty user_id. When the authorizer answers with user_id set to empty text, LiteLLM builds SubjectIdentity(user_id="") and pydantic's Field(min_length=1) raises ValidationError. Nothing between that line and the /token route catches it, so the proxy's catch-all handler answers 500 {"error": {"message": "Internal server error", "type": "internal_server_error"}}. betterlite answers it like a token with no user, invalid_request "subject_token names no user the gateway knows", so the grant replies 400. rules.yaml's owned-behavior-is-built names this case as a fix: a 500 from an unhandled exception on input LiteLLM already fails, where a 4xx belongs. B10063's ExchangeSubjectToken has no arm for a 500 either. The test idp_token_exchange::tests::empty_user_id_is_no_user feeds an authorizer answer with user_id "" and expects that refusal. Write the row under deviations below into docs/deviations/B4663.yaml next to the license row.
 
   This task parses no outside bytes of its own: the subject token only meets B2314's is_jwt shape test and the injected authorizer.
 
@@ -44,6 +46,12 @@ references:
     why: The chain finder B1217 builds; it picks the first permanent fault, else the first outage.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2073
     why: Call site. /token passes exchange_idp_subject_token into the grant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L178-L181
+    why: Owned. Only None is refused; empty text reaches SubjectIdentity, which raises (see deviations).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L216-L219
+    why: SubjectIdentity's user_id is Field(min_length=1), so empty text fails pydantic validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2080
+    why: The catch-all handler that turns the uncaught ValidationError into LiteLLM's 500 internal_server_error body.
   - url: https://www.rfc-editor.org/rfc/rfc8693.html#section-2.2.2
     why: The token exchange error response; invalid_request is the code for an unacceptable subject token.
 dod:
@@ -53,6 +61,8 @@ dod:
     proof: [exchange-tests, oracle, helper-python]
   - text: A token with a user returns SubjectIdentity with its team_id or None, and an agent token or a token with no user is invalid_request with its own description.
     proof: [exchange-tests, oracle, helper-python]
+  - text: An authorizer answer whose user_id is empty text gets the same invalid_request "subject_token names no user the gateway knows" as one with no user_id, never a SubjectIdentity with an empty user_id.
+    proof: [exchange-tests, empty-user-test]
   - text: A plain denial, a 4xx HTTP denial and a Proxy denial with a low or non-numeric code answer invalid_request with the rejected text.
     proof: [exchange-tests, oracle, helper-python]
   - text: A 5xx HTTP denial and a Proxy denial with a digits-only code of 500 or more answer temporarily_unavailable with the retry text.
@@ -71,6 +81,9 @@ checks:
     - id: exchange-tests
       why: The prerequisite, order or denial classification tests are missing or fail.
       run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^idp_token_exchange::tests::/)'
+    - id: empty-user-test
+      why: An empty user_id from the authorizer is not refused like a missing one, or the test that pins it is missing.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^idp_token_exchange::tests::(.*::)?empty_user_id_is_no_user$/)'
     - id: helper-python
       why: The b4663 adapter is missing or fails the strict Python checks.
       run: >-
@@ -95,6 +108,10 @@ deviations:
   - what: The license gate is not built. TokenExchangePrerequisites has no licensed field, so a gateway with JWT auth and a database exchanges tokens and advertises the grant, where LiteLLM without a license answers unsupported_grant_type with "JWT auth is an enterprise only feature; no license is set".
     why: betterlite has no paid tier and every feature is on. B053 records the same difference for JWT auth itself.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L52-L73
+  - what: >-
+      A subject token whose JWT auth answer has user_id set to empty text is refused with 400 invalid_request "subject_token names no user the gateway knows", as a token with no user is. LiteLLM builds SubjectIdentity(user_id="") from it, pydantic's Field(min_length=1) raises ValidationError, nothing catches it before the /token route, and the proxy's catch-all handler answers 500 {"error": {"message": "Internal server error", "type": "internal_server_error"}}.
+    why: rules.yaml's owned-behavior-is-built fixes a 500 from an unhandled exception on input LiteLLM already fails, where a 4xx belongs, and no working setup relies on that 500. B10063's ExchangeSubjectToken answers an identity or a refusal and carries no 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L216-L219
 out_of_scope:
   - "The production AuthorizeSubjectToken over JWTAuthManager.auth_builder (B053) with route EXCHANGE_ROUTE, method POST and empty request data, the production TokenExchangeInputs over general_settings.enable_jwt_auth, the database handle and is_virtual_key_mapping_configured (B869): the composition that wires POST /token, B136 for discoverable_endpoints.py. These are LiteLLM's read_token_exchange_prerequisites, _maps_jwts_to_virtual_keys and the closure in exchange_idp_subject_token."
   - "SubjectIdentity, SubjectTokenRefusal, RefusalCode and the ExchangeSubjectToken trait: B10063. The refusing default and supported_grant_types: B4674. The /token grant that consumes the answer: B4676."
@@ -107,6 +124,7 @@ pitfalls:
   - "A Proxy code such as \"abc\" or \"429\" is no outage, and only digits count, so \"5xx\" is invalid_request; don't parse with a fallback to 500."
   - "The agent check runs before the user check, so a token with both agent_id and user_id set is refused."
   - "A prerequisites refusal comes before the shape test, so a gateway without JWT auth answers unsupported_grant_type even for the subject token \"garbage\"."
+  - "Don't give a helper case an authorizer result with user_id \"\": the pinned side raises pydantic's ValidationError there by design and the adapter has no answer to compare, so the empty-user refusal is proven by exchange-tests alone."
 review_level: security
 budget:
   max_changed_lines: 1500

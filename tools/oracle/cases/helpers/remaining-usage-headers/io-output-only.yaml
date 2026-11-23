@@ -1,0 +1,12 @@
+kind: helper
+name: io-output-only
+call:
+  b10046:
+    function: build
+    itpm: null
+    otpm: 30
+    current_itpm: null
+    current_otpm: 7
+    now: 65
+env: {}
+compare: {ignore: []}
