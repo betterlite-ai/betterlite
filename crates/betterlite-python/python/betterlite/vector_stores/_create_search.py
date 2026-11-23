@@ -1,7 +1,7 @@
 import builtins
 import json
 from collections.abc import Awaitable
-from typing import Final, Protocol, TypeAlias, overload
+from typing import Final, Protocol, TypeAlias
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -47,14 +47,6 @@ class UnsupportedHandle(Protocol):
 
 
 # A call answers at once or with a coroutine under its flag, so awaiting either gives the answer
-@overload
-async def settled(
-    pending: VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse],
-) -> VectorStoreCreateResponse: ...
-@overload
-async def settled(
-    pending: VectorStoreSearchResponse | Awaitable[VectorStoreSearchResponse],
-) -> VectorStoreSearchResponse: ...
 async def settled(pending: Stored | Awaitable[Stored]) -> Stored:
     match pending:
         case Awaitable():
@@ -258,7 +250,7 @@ async def acreate(
         extra_body=extra_body, timeout=timeout,
         custom_llm_provider=custom_llm_provider, acreate=True, **kwargs,
     )
-    return await settled(pending)
+    return CREATE_RESPONSE.validate_python(await settled(pending))
 
 
 async def asearch(
@@ -283,4 +275,4 @@ async def asearch(
         custom_llm_provider=custom_llm_provider, router=router,
         asearch=True, **kwargs,
     )
-    return await settled(pending)
+    return SEARCH_RESPONSE.validate_python(await settled(pending))

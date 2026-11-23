@@ -26,6 +26,7 @@ from betterlite.types.vector_stores import (
     VectorStoreSearchResult,
 )
 from betterlite.vector_stores._create_search import (
+    Stored,
     acreate,
     asearch,
     create,
@@ -110,7 +111,7 @@ def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
 async def settled_flags(
     flagged_create: VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse],
     flagged_search: VectorStoreSearchResponse | Awaitable[VectorStoreSearchResponse],
-) -> tuple[VectorStoreCreateResponse, VectorStoreSearchResponse]:
+) -> tuple[Stored, Stored]:
     created = await settled(flagged_create)
     searched = await settled(flagged_search)
     return (created, searched)
