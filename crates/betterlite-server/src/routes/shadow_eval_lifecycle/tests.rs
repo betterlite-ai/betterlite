@@ -25,8 +25,8 @@ use rust_decimal::Decimal;
 use secrecy::ExposeSecret;
 
 use super::{
-    LifecycleState, UnbuiltJudgeSdk, identity_of_caller, lifecycle_response, lifecycle_state,
-    start_deps, start_route, stop_route, store_from_state,
+    LifecycleState, UnbuiltJudgeSdk, identity_of_caller, lifecycle_response, start_deps,
+    start_route, stop_route, store_from_state,
 };
 use crate::auth::auth_identity::AuthContext;
 use crate::judge_targets::call::JudgeCall;
@@ -191,7 +191,20 @@ async fn store_from_state_builds_a_store_from_the_configured_url() {
 fn the_route_hands_the_configured_anthropic_key_to_start_validation() {
     let lookup = BTreeMap::from([("ANTHROPIC_API_KEY".to_owned(), "sk-ant-env-key".to_owned())]);
     let config = configured_config(lookup);
-    let state = lifecycle_state(&state_for(&config));
+    let credentials = &config.sections.anthropic_credentials;
+    let anthropic = AnthropicSettings {
+        api_key: credentials.api_key.clone(),
+        auth_token: credentials.auth_token.clone(),
+        api_base: credentials.api_base.clone(),
+        use_bearer_for_custom_base: credentials.use_bearer_for_custom_base,
+        anthropic_version: AnthropicSettings::default().anthropic_version,
+    };
+    let state = LifecycleState {
+        store: None,
+        api_key: None,
+        api_base: None,
+        anthropic,
+    };
     let mut bundled = BundledCatalog::default();
     let catalog = bundled.get();
     let no_names = BTreeSet::new();

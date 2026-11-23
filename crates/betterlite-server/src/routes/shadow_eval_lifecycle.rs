@@ -12,7 +12,6 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_config::loader::startup::process_environment;
-use betterlite_config::types::Config;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json as JsonValue;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -69,30 +68,21 @@ impl JudgeSdk for UnbuiltJudgeSdk {
     }
 }
 
-fn lifecycle_state(state: &Arc<ServerState>) -> LifecycleState {
-    LifecycleState {
+#[cfg_attr(test, mutants::skip)]
+pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
+    let credentials = &state.config.sections.anthropic_credentials;
+    let lifecycle = Arc::new(LifecycleState {
         store: store_from_state(state).map(Arc::new),
         api_key: state.config.sections.resource_sdk_settings.api_key.clone(),
         api_base: state.config.sections.resource_sdk_settings.api_base.clone(),
-        anthropic: anthropic_settings(&state.config),
-    }
-}
-
-// the config loader resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and the base url into its section
-fn anthropic_settings(config: &Config) -> AnthropicSettings {
-    let credentials = &config.sections.anthropic_credentials;
-    AnthropicSettings {
-        api_key: credentials.api_key.clone(),
-        auth_token: credentials.auth_token.clone(),
-        api_base: credentials.api_base.clone(),
-        use_bearer_for_custom_base: credentials.use_bearer_for_custom_base,
-        anthropic_version: AnthropicSettings::default().anthropic_version,
-    }
-}
-
-#[cfg_attr(test, mutants::skip)]
-pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
-    let lifecycle = Arc::new(lifecycle_state(state));
+        anthropic: AnthropicSettings {
+            api_key: credentials.api_key.clone(),
+            auth_token: credentials.auth_token.clone(),
+            api_base: credentials.api_base.clone(),
+            use_bearer_for_custom_base: credentials.use_bearer_for_custom_base,
+            anthropic_version: AnthropicSettings::default().anthropic_version,
+        },
+    });
     Router::new()
         .route("/auto_router/shadow_eval/start", post(start_route))
         .route("/auto_router/shadow_eval/{job_id}/stop", post(stop_route))
