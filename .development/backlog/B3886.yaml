@@ -2,7 +2,7 @@ id: B3886
 milestone: M7 observability
 title: Prometheus metrics router and authentication
 status: todo
-depends_on: [B3874, B052, B003, B002, B3875, B10090]
+depends_on: [B3874, B052, B003, B002, B3875, B10090, B10095]
 file: tasks/B3886-prometheus-scrape-endpoint.yaml
 covers:
   - "litellm/integrations/prometheus.py"

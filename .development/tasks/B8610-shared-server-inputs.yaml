@@ -103,6 +103,8 @@ description: >-
   health::HealthSlot`, built with `HealthSlot::new(&config, &shared)` like every B1100 slot. This task writes
   state/health.rs with an empty HealthSlot and that constructor, since Shared comes from this task. B8540 fills it. The in-flight
   layer B022 installs counts with `startup.in_flight`, the source ShutdownState reads, never a fresh one.
+  AdmissionControl::from_settings takes `Arc::clone(&shared.prometheus_registry)` (B10097), in place of the registry
+  application() makes for the two layers today, so the admission and in-flight metrics land in the registry /metrics renders.
 
   The health area. B003's three handlers (GET /health/liveliness, /health/liveness and /health/readiness) move out of
   routes.rs into the mount_public stub B10082 put in app/health.rs, with the same bodies (liveliness and liveness 200 "I'm alive!",
