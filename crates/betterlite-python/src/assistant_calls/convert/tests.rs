@@ -65,6 +65,13 @@ fn request_create_keeps_a_zero_temperature_and_the_tools() {
 }
 
 #[test]
+fn request_create_refuses_a_missing_model() {
+    let text = r#"{"provider":"openai","name":"helper"}"#;
+    let error = read::<AssistantCreateInput>("assistant create request", text).unwrap_err();
+    assert!(error.to_string().contains("missing field `model`"));
+}
+
+#[test]
 fn request_thread_keeps_messages_metadata_and_kwargs() {
     let text = r#"{"custom_llm_provider":"openai","thread_id":null,
         "messages":[{"role":"user","content":"hi"}],"metadata":{"a":"b"},

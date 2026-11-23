@@ -279,6 +279,8 @@ def test_error_class_and_client() -> None:
         assert ours_unsupported.value.status_code == BAD_REQUEST_STATUS
         with pytest.raises(UnsupportedCallArgumentError, match="client"):
             _records.get_assistants("openai", client=FAKE_CLIENT, **good)
+        with pytest.raises(UnsupportedCallArgumentError, match="api_version"):
+            _records.get_assistants("openai", api_version=1, **good)
         with pytest.raises(ValueError, match="async_create_assistants"):
             _records.create_assistants("openai", "gpt-4o-mini", async_create_assistants=1)
         with pytest.raises(ValueError, match="async_delete_assistants"):
