@@ -27,9 +27,10 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::Utc;
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use serde::Deserialize;
 use uuid::Uuid;
+
+use crate::completion::setup::openai_defaults;
 
 use super::convert::{CreateWire, SearchWire, create_call, parse, search_call};
 use super::error::SessionError;
@@ -85,10 +86,7 @@ impl SessionCore {
             ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment)
                 .map_err(|source| SessionError::Proxy { source })?,
         );
-        let env_api_key = environment
-            .get("OPENAI_API_KEY")
-            .filter(|value| !value.is_empty())
-            .map(|value| SecretString::from(value.clone()));
+        let env_api_key = openai_defaults(&environment).api_keys.first().cloned();
         let globals = LiteLlmGlobals {
             api_base: wire.api_base,
             api_key: wire.api_key,

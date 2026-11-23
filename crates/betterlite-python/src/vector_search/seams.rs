@@ -25,6 +25,8 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::embedding::EmbeddingResponse;
 use secrecy::SecretString;
 
+mod tests;
+
 // VectorStoreCreateOptionalRequestParams: the only keys a create body may carry
 const CREATE_FIELDS: [&str; 5] = [
     "name",
