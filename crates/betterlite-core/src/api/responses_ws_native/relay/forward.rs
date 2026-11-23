@@ -66,8 +66,6 @@ pub(super) trait ForwardSteps {
     async fn forward_client_frames(&self) -> Result<(), ClientRelayError>;
 
     async fn relay_client_frame(&self, message: &str) -> Result<(), ClientRelayError>;
-
-    async fn masked_client_frame(&self, message: &str) -> Result<String, ClientRelayError>;
 }
 
 #[async_trait]
@@ -202,7 +200,11 @@ where
     }
 
     async fn relay_client_frame(&self, message: &str) -> Result<(), ClientRelayError> {
-        let masked = self.masked_client_frame(message).await?;
+        let mut request_data = self.request_data.lock().await;
+        let masked = mask_response_create(&self.policy(), &mut request_data, message)
+            .await
+            .map_err(|error| ClientRelayError::Frame(error.to_string()))?;
+        drop(request_data);
         self.store_input(&masked).await;
         self.store_event(&masked).await?;
         self.setup
@@ -210,15 +212,6 @@ where
             .send(&masked)
             .await
             .map_err(|error| ClientRelayError::Send(error.to_string()))
-    }
-
-    async fn masked_client_frame(&self, message: &str) -> Result<String, ClientRelayError> {
-        let mut request_data = self.request_data.lock().await;
-        let masked = mask_response_create(&self.policy(), &mut request_data, message)
-            .await
-            .map_err(|error| ClientRelayError::Frame(error.to_string()))?;
-        drop(request_data);
-        Ok(masked.into_owned())
     }
 }
 
