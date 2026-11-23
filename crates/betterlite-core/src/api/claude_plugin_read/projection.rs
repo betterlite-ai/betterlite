@@ -1,3 +1,5 @@
+mod tests;
+
 use betterlite_db::search_tools::convert::isoformat;
 use betterlite_models::decisions::Json;
 
