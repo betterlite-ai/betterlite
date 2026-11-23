@@ -117,6 +117,8 @@ async fn one_date_alone_lists_rows_and_ignores_summarize() {
     for uri in [
         "/spend/logs?start_date=2024-01-02",
         "/spend/logs?end_date=2024-01-03&summarize=true",
+        // one date is never parsed, so a malformed one cannot fail the request
+        "/spend/logs?start_date=2024-13-01",
     ] {
         let fake = Fake::default();
         let events = fake.events.clone();
@@ -182,6 +184,18 @@ async fn an_empty_summary_result_is_not_padded() {
 #[tokio::test]
 async fn no_database_answers_the_exact_error() {
     let reply = call(state(None), "/spend/logs", Some(&internal("alice"))).await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(reply.json(), json(NO_DATABASE_BODY));
+}
+
+#[tokio::test]
+async fn no_database_wins_over_a_bad_date() {
+    let reply = call(
+        state(None),
+        "/spend/logs?start_date=2024-13-01&end_date=2024-01-02",
+        Some(&internal("alice")),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(reply.json(), json(NO_DATABASE_BODY));
 }
@@ -290,6 +304,10 @@ async fn an_unparseable_summarize_answers_the_framework_422() {
             r#"{"detail":[{"type":"bool_parsing","loc":["query","summarize"],"msg":"Input should be a valid boolean, unable to interpret input"}]}"#
         )
     );
+    // the query is validated before the endpoint checks for a database
+    let without_database = call(state(None), "/spend/logs?summarize=maybe", Some(&admin())).await;
+    assert_eq!(without_database.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(without_database.json(), reply.json());
 }
 
 #[tokio::test]
