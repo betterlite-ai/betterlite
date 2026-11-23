@@ -28,7 +28,7 @@ pub fn drop_request_only_fields(fields: &mut Row) {
 
 pub(crate) const fn string_of(value: &JsonData) -> Option<&str> {
     match value {
-        JsonData::String(text) => Some(text),
+        JsonData::String(text) => Some(text.as_str()),
         JsonData::Null
         | JsonData::Bool(_)
         | JsonData::Number(_)
