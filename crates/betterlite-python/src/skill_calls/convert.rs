@@ -55,7 +55,6 @@ impl RequestError {
     }
 }
 
-// one skill file resolved from its $file marker, ready to become a multipart part
 pub(super) struct SkillFile {
     pub(super) name: String,
     pub(super) content_type: Option<String>,
@@ -119,11 +118,14 @@ impl Field for f64 {
     }
 }
 
-fn field<T: Field>(
+fn field<T>(
     provider: &str,
     value: Option<Json>,
     name: &'static str,
-) -> Result<Option<T>, RequestError> {
+) -> Result<Option<T>, RequestError>
+where
+    T: Field,
+{
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(json) => T::take(json)
@@ -165,7 +167,7 @@ pub(super) fn files(
 
 // LiteLLM defaults an absent provider to anthropic; a provider of the wrong type is a field error.
 fn provider(arguments: &mut IndexMap<String, Json>) -> Result<String, RequestError> {
-    match arguments.remove("custom_llm_provider") {
+    match arguments.shift_remove("custom_llm_provider") {
         None | Some(Json::Null) => Ok(DEFAULT_SKILLS_PROVIDER.to_owned()),
         Some(Json::Text(name)) => Ok(name),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => Err(
@@ -182,15 +184,15 @@ fn common(
     let api_key = field::<String>(provider, arguments.get("api_key").cloned(), "api_key")?
         .map(SecretString::from);
     let api_base = field::<String>(provider, arguments.get("api_base").cloned(), "api_base")?;
-    let extra_headers = headers(provider, arguments.remove("extra_headers"))?;
-    let extra_query =
-        field::<IndexMap<String, Json>>(provider, arguments.remove("extra_query"), "extra_query")?;
-    let timeout = timeout(provider, arguments.remove("timeout"))?;
-    let litellm_call_id = field::<String>(
+    let extra_headers = headers(provider, arguments.shift_remove("extra_headers"))?;
+    let extra_query = field::<IndexMap<String, Json>>(
         provider,
-        arguments.get("litellm_call_id").cloned(),
-        "litellm_call_id",
+        arguments.shift_remove("extra_query"),
+        "extra_query",
     )?;
+    let timeout = timeout(provider, arguments.shift_remove("timeout"))?;
+    let call_id = arguments.get("litellm_call_id").cloned();
+    let litellm_call_id = field::<String>(provider, call_id, "litellm_call_id")?;
     let params = SkillsCallParams {
         api_key,
         api_base,

@@ -49,8 +49,7 @@ fn request_skill_arguments_default_provider_is_anthropic() {
 
 #[test]
 fn request_skill_arguments_require_a_skill_id() {
-    let Err(RequestError::FieldType { provider, name }) = skill::arguments(arguments(r#"{}"#))
-    else {
+    let Err(RequestError::FieldType { provider, name }) = skill::arguments(arguments("{}")) else {
         panic!("a missing skill_id is a field error");
     };
     assert_eq!(provider, "anthropic");

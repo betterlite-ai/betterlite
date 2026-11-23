@@ -8,7 +8,7 @@ pub(in crate::skill_calls) fn arguments(
 ) -> Result<ListArguments, RequestError> {
     let provider_name = provider(&mut arguments)?;
     let (params, litellm_call_id) = common(&provider_name, &mut arguments)?;
-    let limit = match arguments.remove("limit") {
+    let limit = match arguments.shift_remove("limit") {
         None | Some(Json::Null) => None,
         Some(Json::Number(number)) => Some(
             number
@@ -19,8 +19,8 @@ pub(in crate::skill_calls) fn arguments(
             return Err(RequestError::field(&provider_name, "limit"));
         }
     };
-    let page = field::<String>(&provider_name, arguments.remove("page"), "page")?;
-    let source = field::<String>(&provider_name, arguments.remove("source"), "source")?;
+    let page = field::<String>(&provider_name, arguments.shift_remove("page"), "page")?;
+    let source = field::<String>(&provider_name, arguments.shift_remove("source"), "source")?;
     Ok(ListArguments {
         params,
         limit,

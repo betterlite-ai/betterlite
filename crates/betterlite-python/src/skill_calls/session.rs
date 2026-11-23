@@ -72,7 +72,10 @@ struct SessionWire {
 }
 
 // A settings error the session cannot start with; Python sees the message, never the source type.
-fn setup<E: Display>(error: E) -> SessionError {
+fn setup<E>(error: E) -> SessionError
+where
+    E: Display,
+{
     SessionError::Setup {
         message: error.to_string(),
     }
@@ -199,7 +202,6 @@ impl SkillCore {
         })
     }
 
-    // One Python call dispatched to the operation its session method names.
     pub(super) async fn execute(&self, mode: Mode, call: Call) -> Answer {
         let (args, blobs) = call;
         match mode {

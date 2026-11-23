@@ -39,7 +39,7 @@ struct Call<'request> {
 
 impl<'request> Call<'request> {
     // A get or delete call: the skill request's parts under the verb and deadline given, with no body.
-    const fn new(
+    fn new(
         request: SkillHttpRequest<'request>,
         method: Method,
         after: Duration,
@@ -58,8 +58,7 @@ impl<'request> Call<'request> {
     }
 }
 
-// A list call: the list request's own query under the cached client's 600 second total, with no body.
-const fn list_call(request: ListSkillsHttpRequest<'_>) -> Call<'_> {
+fn list_call(request: ListSkillsHttpRequest<'_>) -> Call<'_> {
     Call {
         method: Method::GET,
         url: request.url,
@@ -180,7 +179,7 @@ fn transport_failure(
             );
             provider_failure(status, message, false)
         }
-        Some(_status) | None => provider_failure(500, error.to_string(), true),
+        Some(_) | None => provider_failure(500, error.to_string(), true),
     }
 }
 
