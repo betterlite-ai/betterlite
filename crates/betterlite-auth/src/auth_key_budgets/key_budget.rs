@@ -18,8 +18,7 @@ pub const BUDGET_EXCEEDED_STATUS: u16 = 422;
 const MASKED_KEY_PREFIX: &str = "sk-...";
 const MASKED_KEY_SUFFIX_CHARS: usize = 4;
 
-// the maximum and soft budget a request enforces: read from the token, or handed in for a value
-// the token's Decimal fields cannot hold, such as the nonfinite tests and a temporary increase
+// the budgets a request enforces: the token's values, or the nonfinite ones its Decimal fields cannot hold
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct KeyBudgets {
     pub max_budget: Option<Money>,
@@ -33,11 +32,6 @@ impl KeyBudgets {
             max_budget: auth.view.token.max_budget.map(Money::Finite),
             soft_budget: auth.view.soft_budget.map(Money::Finite),
         }
-    }
-
-    #[must_use]
-    pub fn with_max_budget(self, max_budget: Option<Money>) -> Self {
-        Self { max_budget, ..self }
     }
 }
 
@@ -60,9 +54,7 @@ pub fn token_text(auth: &UserAPIKeyAuth) -> String {
     )
 }
 
-// _virtual_key_max_budget_check: no configured maximum makes no read and schedules no alert; a
-// maximum the token can enforce is compared against the cross-pod spend, with the alert scheduled
-// before the denial test
+// _virtual_key_max_budget_check: no maximum skips the read and alert; the cross-pod spend is compared and the alert scheduled before the denial
 pub async fn virtual_key_max_budget_check(
     auth: &mut UserAPIKeyAuth,
     budgets: &KeyBudgets,
@@ -105,13 +97,12 @@ pub async fn virtual_key_max_budget_check(
         if apply_budget_exceeded_throttle(auth, throttle_pct) {
             return Ok(());
         }
-        return Err(denial(auth, spend, maximum).into());
+        return Err(KeyBudgetError::Denied(denial(auth, spend, maximum)));
     }
     Ok(())
 }
 
-// _apply_budget_exceeded_throttle: the request-local percentage is recorded and the request is
-// allowed; the token's configured TPM/RPM limits stay untouched
+// _apply_budget_exceeded_throttle: records the request-local percentage and allows; the token's TPM/RPM limits stay untouched
 pub fn apply_budget_exceeded_throttle(auth: &mut UserAPIKeyAuth, configured: Option<f64>) -> bool {
     let Some(value) = percentage(configured) else {
         return false;
@@ -140,8 +131,7 @@ fn denial(auth: &UserAPIKeyAuth, spend: Decimal, max_budget: Decimal) -> Denial 
     }
 }
 
-// the caller-facing key name: the alias, or "key", with a still-masked key_name added only when it
-// fullmatches the abbreviation shape, so a raw key_name never leaves the proxy
+// the caller-facing key name: the alias or "key", with a still-masked key_name appended so a raw one never leaves
 fn key_descriptor(auth: &UserAPIKeyAuth) -> String {
     let token = &auth.view.token;
     let label = token

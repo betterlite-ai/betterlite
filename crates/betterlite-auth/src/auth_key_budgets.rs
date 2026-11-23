@@ -25,7 +25,7 @@ use self::expiry::TempBudgetError;
 use self::key_budget::{Denial, KeyBudgets, virtual_key_max_budget_check};
 use self::money::Money;
 use self::spend::{SpendReadError, SpendReader};
-use self::temp::update_key_budget_with_temp_budget_increase;
+use self::temp::apply_temp_budget_increase;
 use self::windows::{WindowError, virtual_key_multi_budget_check};
 
 #[derive(Debug, Error)]
@@ -36,12 +36,9 @@ pub enum KeyBudgetError {
     Spend(#[from] SpendReadError),
     #[error(transparent)]
     Window(#[from] WindowError),
-    #[error(transparent)]
-    Temp(#[from] TempBudgetError),
 }
 
-// everything the checks need from the surrounding request: the reader and sink the proxy wired,
-// the settings B002 resolved once, and the request clock
+// everything the checks need from the request: the reader and sink the proxy wired, the resolved settings, and the clock
 pub struct Admission<'request> {
     pub reader: &'request dyn SpendReader,
     pub alerts: Option<&'request dyn BudgetAlertSink>,
@@ -58,18 +55,20 @@ pub fn effective_budgets(
     auth: &UserAPIKeyAuth,
     now: DateTime<Utc>,
 ) -> Result<KeyBudgets, TempBudgetError> {
-    let update = update_key_budget_with_temp_budget_increase(auth, now)?;
-    Ok(KeyBudgets::from_auth(auth).with_max_budget(update.max_budget))
+    let update = apply_temp_budget_increase(auth, now)?;
+    Ok(KeyBudgets {
+        max_budget: update.max_budget,
+        soft_budget: KeyBudgets::from_auth(auth).soft_budget,
+    })
 }
 
-// the builder's check order: the maximum alert, then the hard check, then the soft check, then the
-// multi-window check; the hard denial stops the later checks
+// the check order: the maximum alert, the hard check, the soft check, then the windows; a hard denial stops the rest
 pub async fn admit(
     auth: &mut UserAPIKeyAuth,
     budgets: &KeyBudgets,
     admission: &Admission<'_>,
 ) -> Result<(), KeyBudgetError> {
-    max_alert::virtual_key_max_budget_alert_check(
+    max_alert::max_budget_alert_check(
         auth,
         budgets,
         admission.user_email,

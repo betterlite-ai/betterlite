@@ -21,8 +21,7 @@ pub enum BudgetAlertKind {
     MaxBudgetAlert,
 }
 
-// the CallInfo LiteLLM builds for a budget alert; a nonfinite budget stays nonfinite instead of
-// being rounded into a value that would change the alert's meaning
+// the CallInfo LiteLLM builds for a budget alert; a nonfinite budget stays nonfinite instead of being rounded
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BudgetAlert {
     pub kind: BudgetAlertKind,

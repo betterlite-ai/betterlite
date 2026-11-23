@@ -12,18 +12,17 @@ use crate::sections::Section;
 const ALERT_FRACTION_VARIABLE: &str = "EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE";
 const DEFAULT_ALERT_FRACTION: f64 = 0.8;
 
-// litellm.default_key_max_budget_alert_emails keeps whatever mapping the config declares, since the
-// auth checks normalize each threshold's recipients themselves
+// litellm.default_key_max_budget_alert_emails keeps whatever mapping the config declares; the auth checks normalize it
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
-    pub default_key_max_budget_alert_emails: Option<BTreeMap<String, JsonData>>,
+    pub default_alert_emails: Option<BTreeMap<String, JsonData>>,
     pub alert_fraction: f64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            default_key_max_budget_alert_emails: None,
+            default_alert_emails: None,
             alert_fraction: DEFAULT_ALERT_FRACTION,
         }
     }
@@ -37,7 +36,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawLiteLlm {
-    default_key_max_budget_alert_emails: Option<BTreeMap<String, JsonData>>,
+    #[serde(rename = "default_key_max_budget_alert_emails", default)]
+    default_alert_emails: Option<BTreeMap<String, JsonData>>,
 }
 
 impl Section for Raw {
@@ -48,9 +48,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            default_key_max_budget_alert_emails: self
-                .litellm_settings
-                .default_key_max_budget_alert_emails,
+            default_alert_emails: self.litellm_settings.default_alert_emails,
             alert_fraction: alert_fraction(lookup)?,
         })
     }

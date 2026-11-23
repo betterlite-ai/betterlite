@@ -4,8 +4,7 @@ use thiserror::Error;
 
 use crate::current_spend::{CurrentSpendError, SpendQuery};
 
-// the cross-pod read the hard and window checks perform; the server plugs B2321's CurrentSpend
-// behind this port, and a read that cannot be verified keeps the 503 the reader raises
+// the cross-pod read the hard and window checks perform; a read that cannot be verified keeps the 503 the reader raises
 pub type SpendReadError = CurrentSpendError<SpendReadFailure>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

@@ -7,14 +7,12 @@ use tracing::debug;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::alerts::{BudgetAlertKind, BudgetAlertSink, KeyAlertFields, schedule};
-use super::email::{merge_budget_alert_email_configs, min_digit_threshold};
+use super::email::{merge_alert_email_configs, min_digit_threshold};
 use super::key_budget::KeyBudgets;
 use super::money::Money;
 
-// _virtual_key_max_budget_alert_check: a merged threshold map alerts at its lowest digit-only
-// percentage, even past the maximum; without a map the legacy fraction alerts only strictly below
-// the maximum, and only that branch logs the threshold
-pub fn virtual_key_max_budget_alert_check(
+// _virtual_key_max_budget_alert_check: a merged map alerts at its lowest digit threshold even past the maximum; otherwise the legacy fraction alerts only strictly below it
+pub fn max_budget_alert_check(
     auth: &UserAPIKeyAuth,
     budgets: &KeyBudgets,
     user_email: Option<&str>,
@@ -47,7 +45,7 @@ pub fn virtual_key_max_budget_alert_check(
         user_email,
         team_alias: auth.view.team_alias.as_deref(),
     };
-    if let Some(config) = merge_budget_alert_email_configs(global_config, per_key_config) {
+    if let Some(config) = merge_alert_email_configs(global_config, per_key_config) {
         let Some(min_pct) = min_digit_threshold(&config) else {
             return;
         };

@@ -9,8 +9,7 @@ use crate::state::shared::Shared;
 // the section default, for a request that reaches the stage without a loaded config
 const DEFAULT_ALERT_FRACTION: f64 = 0.8;
 
-// The two pinned settings the key budget stage reads: the global threshold map and the legacy
-// alert fraction. The fraction keeps whatever float the environment declared.
+// the two pinned settings the key budget stage reads: the global threshold map and the legacy alert fraction
 #[derive(Debug)]
 pub struct KeyBudgetSettings {
     pub global_alert_emails: Option<BTreeMap<String, JsonData>>,
@@ -27,7 +26,7 @@ impl Default for KeyBudgetSettings {
 }
 
 pub struct Slot {
-    settings: Arc<KeyBudgetSettings>,
+    pub settings: Arc<KeyBudgetSettings>,
 }
 
 impl Slot {
@@ -36,14 +35,9 @@ impl Slot {
         let section = &config.sections.auth_key_budgets;
         Self {
             settings: Arc::new(KeyBudgetSettings {
-                global_alert_emails: section.default_key_max_budget_alert_emails.clone(),
+                global_alert_emails: section.default_alert_emails.clone(),
                 alert_fraction: section.alert_fraction,
             }),
         }
-    }
-
-    #[must_use]
-    pub fn settings(&self) -> Arc<KeyBudgetSettings> {
-        Arc::clone(&self.settings)
     }
 }

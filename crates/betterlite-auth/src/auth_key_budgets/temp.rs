@@ -6,8 +6,7 @@ use crate::resolved_key::auth::UserAPIKeyAuth;
 use super::expiry::{TempBudgetError, parse_temp_budget_expiry};
 use super::money::Money;
 
-// the copy _update_key_budget_with_temp_budget_increase returns: max_budget is the request's
-// effective maximum, and applied records whether the metadata increase produced it
+// the copy _update_key_budget_with_temp_budget_increase returns: the request's effective maximum, and whether the increase produced it
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TempBudgetUpdate {
     pub max_budget: Option<Money>,
@@ -36,9 +35,8 @@ pub fn get_temp_budget_increase(
     Ok(None)
 }
 
-// _update_key_budget_with_temp_budget_increase: no configured maximum skips the parse entirely,
-// and a falsey increase leaves the original maximum in place
-pub fn update_key_budget_with_temp_budget_increase(
+// _update_key_budget_with_temp_budget_increase: no maximum skips the parse, and a zero increase leaves the original maximum
+pub fn apply_temp_budget_increase(
     auth: &UserAPIKeyAuth,
     now: DateTime<Utc>,
 ) -> Result<TempBudgetUpdate, TempBudgetError> {
@@ -48,18 +46,17 @@ pub fn update_key_budget_with_temp_budget_increase(
             applied: false,
         });
     };
-    let original = TempBudgetUpdate {
-        max_budget: Some(Money::Finite(max_budget)),
-        applied: false,
-    };
-    let Some(increase) = get_temp_budget_increase(auth, now)? else {
-        return Ok(original);
-    };
-    if !increase.truthy() {
-        return Ok(original);
+    let original = Some(Money::Finite(max_budget));
+    match get_temp_budget_increase(auth, now)? {
+        Some(increase) if !matches!(increase, Money::Finite(value) if value.is_zero()) => {
+            Ok(TempBudgetUpdate {
+                max_budget: Some(Money::Finite(max_budget).add(increase)),
+                applied: true,
+            })
+        }
+        Some(_) | None => Ok(TempBudgetUpdate {
+            max_budget: original,
+            applied: false,
+        }),
     }
-    Ok(TempBudgetUpdate {
-        max_budget: Some(Money::Finite(max_budget).add(increase)),
-        applied: true,
-    })
 }

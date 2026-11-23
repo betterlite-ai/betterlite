@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use chrono::{DateTime, FixedOffset, TimeZone as _, Utc};
+use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio::sync::oneshot;
 use tokio_util::task::TaskTracker;
@@ -141,7 +142,10 @@ struct ScriptedReader {
 }
 
 impl ScriptedReader {
-    fn new(spends: impl IntoIterator<Item = Decimal>) -> Self {
+    fn new<I>(spends: I) -> Self
+    where
+        I: IntoIterator<Item = Decimal>,
+    {
         Self {
             spends: Mutex::new(spends.into_iter().collect()),
             queries: Mutex::new(Vec::new()),
@@ -300,17 +304,20 @@ async fn equal_max_denied() {
     );
 }
 
+#[rstest]
+#[case::nan(Money::Nan)]
+#[case::positive_infinity(Money::PositiveInfinity)]
+#[case::negative_infinity(Money::NegativeInfinity)]
 #[tokio::test]
-async fn nonfinite_max_not_denied() {
-    for maximum in [Money::Nan, Money::PositiveInfinity, Money::NegativeInfinity] {
-        let mut auth = key(r#"{"token":"sk-nonfinite","spend":0}"#);
-        let budgets = KeyBudgets::from_auth(&auth).with_max_budget(Some(maximum));
-        let reader = ScriptedReader::new([dec(10)]);
-        admit(&mut auth, &budgets, &admission(&reader, None))
-            .await
-            .unwrap();
-        assert_eq!(reader.queries()[0].max_budget, None);
-    }
+async fn nonfinite_max_not_denied(#[case] maximum: Money) {
+    let mut auth = key(r#"{"token":"sk-nonfinite","spend":0}"#);
+    let mut budgets = KeyBudgets::from_auth(&auth);
+    budgets.max_budget = Some(maximum);
+    let reader = ScriptedReader::new([dec(10)]);
+    admit(&mut auth, &budgets, &admission(&reader, None))
+        .await
+        .unwrap();
+    assert_eq!(reader.queries()[0].max_budget, None);
 }
 
 #[tokio::test]
@@ -321,9 +328,9 @@ async fn throttle_request_only() {
         r#"{"token":"sk-throttle","spend":0,"max_budget":5,"metadata":{"throttle_on_budget_exceeded":true},"tpm_limit":10}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    let mut admission = admission(&reader, Some(&sink));
-    admission.throttle_pct = Some(0.5_f64);
-    admit(&mut auth, &budgets, &admission).await.unwrap();
+    let mut call = admission(&reader, Some(&sink));
+    call.throttle_pct = Some(0.5_f64);
+    admit(&mut auth, &budgets, &call).await.unwrap();
     assert_eq!(auth.extra.budget_throttle_pct, Some(dec_text("0.5")));
     assert_eq!(auth.view.token.tpm_limit, Some(10_i64));
     assert_eq!(auth.view.token.rpm_limit, None);
@@ -350,40 +357,38 @@ async fn unmasked_name_not_echoed() {
     assert!(!denial.message.contains("sk-actualsecret"));
 }
 
+#[rstest]
+#[case::four_chars(
+    "sk-...abcd",
+    "Budget has been exceeded! Key=alias (sk-...abcd) Current cost: 5, Max budget: 5"
+)]
+#[case::bare_prefix(
+    "sk-...",
+    "Budget has been exceeded! Key=alias (sk-...) Current cost: 5, Max budget: 5"
+)]
+#[case::five_chars(
+    "sk-...abcde",
+    "Budget has been exceeded! Key=alias Current cost: 5, Max budget: 5"
+)]
+#[case::space_in_suffix(
+    "sk-...ab d",
+    "Budget has been exceeded! Key=alias Current cost: 5, Max budget: 5"
+)]
 #[tokio::test]
-async fn masked_name_regex() {
-    for (key_name, expected) in [
-        (
-            "sk-...abcd",
-            "Budget has been exceeded! Key=alias (sk-...abcd) Current cost: 5, Max budget: 5",
-        ),
-        (
-            "sk-...",
-            "Budget has been exceeded! Key=alias (sk-...) Current cost: 5, Max budget: 5",
-        ),
-        (
-            "sk-...abcde",
-            "Budget has been exceeded! Key=alias Current cost: 5, Max budget: 5",
-        ),
-        (
-            "sk-...ab d",
-            "Budget has been exceeded! Key=alias Current cost: 5, Max budget: 5",
-        ),
-    ] {
-        let fields = format!(
-            r#"{{"token":"sk-mask","spend":0,"max_budget":5,"key_alias":"alias","key_name":"{key_name}"}}"#
-        );
-        let mut auth = key(&fields);
-        let budgets = effective_budgets(&auth, now()).unwrap();
-        let reader = ScriptedReader::new([dec(5)]);
-        let error = admit(&mut auth, &budgets, &admission(&reader, None))
-            .await
-            .unwrap_err();
-        let KeyBudgetError::Denied(denial) = error else {
-            panic!("the request must be denied");
-        };
-        assert_eq!(denial.message, expected);
-    }
+async fn masked_name_regex(#[case] key_name: &str, #[case] expected: &str) {
+    let fields = format!(
+        r#"{{"token":"sk-mask","spend":0,"max_budget":5,"key_alias":"alias","key_name":"{key_name}"}}"#
+    );
+    let mut auth = key(&fields);
+    let budgets = effective_budgets(&auth, now()).unwrap();
+    let reader = ScriptedReader::new([dec(5)]);
+    let error = admit(&mut auth, &budgets, &admission(&reader, None))
+        .await
+        .unwrap_err();
+    let KeyBudgetError::Denied(denial) = error else {
+        panic!("the request must be denied");
+    };
+    assert_eq!(denial.message, expected);
 }
 
 #[tokio::test]
@@ -394,9 +399,9 @@ async fn each_call_info_field() {
         r#"{"token":"sk-info","spend":1,"max_budget":10,"soft_budget":4,"key_alias":"alias","key_name":"sk-...wxyz","user_id":"user-1","team_id":"team-1","org_id":"org-1","team_alias":"team-alias"}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    let mut admission = admission(&reader, Some(&sink));
-    admission.user_email = Some("owner@example.com");
-    admit(&mut auth, &budgets, &admission).await.unwrap();
+    let mut call = admission(&reader, Some(&sink));
+    call.user_email = Some("owner@example.com");
+    admit(&mut auth, &budgets, &call).await.unwrap();
     let alerts = sink.take();
     assert_eq!(alerts.len(), 1);
     let alert = &alerts[0];
@@ -415,8 +420,16 @@ async fn each_call_info_field() {
     assert_eq!(alert.max_budget_alert_emails, None);
 }
 
+#[rstest]
+#[case::minutes(0_usize, "spend:key:sk-win:window:1m", 5_i64, "1m")]
+#[case::hours(1_usize, "spend:key:sk-win:window:2h", 50_i64, "2h")]
 #[tokio::test]
-async fn window_duration_counter() {
+async fn window_duration_counter(
+    #[case] index: usize,
+    #[case] counter_key: &str,
+    #[case] limit: i64,
+    #[case] duration: &str,
+) {
     let mut auth = key(
         r#"{"token":"sk-win","spend":0,"budget_limits":[{"budget_duration":"1m","max_budget":5},{"budget_duration":"2h","max_budget":50}]}"#,
     );
@@ -426,41 +439,40 @@ async fn window_duration_counter() {
         .await
         .unwrap();
     let queries = reader.queries();
-    let expected = [
-        ("spend:key:sk-win:window:1m", Some(dec(5)), "1m"),
-        ("spend:key:sk-win:window:2h", Some(dec(50)), "2h"),
-    ];
-    assert_eq!(queries.len(), expected.len());
-    for (query, (counter_key, max_budget, duration)) in queries.iter().zip(expected) {
-        assert_eq!(query.counter_key, counter_key);
-        assert_eq!(query.fallback_spend, Decimal::ZERO);
-        assert_eq!(query.max_budget, max_budget);
-        assert_eq!(query.entity_type.as_deref(), Some("key"));
-        assert_eq!(query.entity_id.as_deref(), Some("sk-win"));
-        assert_eq!(query.duration.as_deref(), Some(duration));
-        assert!(query.start.is_none());
-        assert!(!query.fallback_authoritative);
-    }
+    assert_eq!(queries.len(), 2);
+    let query = &queries[index];
+    assert_eq!(query.counter_key, counter_key);
+    assert_eq!(query.fallback_spend, Decimal::ZERO);
+    assert_eq!(query.max_budget, Some(dec(limit)));
+    assert_eq!(query.entity_type.as_deref(), Some("key"));
+    assert_eq!(query.entity_id.as_deref(), Some("sk-win"));
+    assert_eq!(query.duration.as_deref(), Some(duration));
+    assert!(query.start.is_none());
+    assert!(!query.fallback_authoritative);
 
     let empty = ScriptedReader::new(Vec::new());
     let mut no_duration = key(r#"{"token":"sk-win","budget_limits":[{"max_budget":5}]}"#);
-    let budgets = effective_budgets(&no_duration, now()).unwrap();
-    let error = admit(&mut no_duration, &budgets, &admission(&empty, None))
-        .await
-        .unwrap_err();
+    let no_duration_budgets = effective_budgets(&no_duration, now()).unwrap();
+    let duration_error = admit(
+        &mut no_duration,
+        &no_duration_budgets,
+        &admission(&empty, None),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
-        error,
+        duration_error,
         KeyBudgetError::Window(WindowError::Duration { index: 0 })
     ));
     assert!(empty.queries().is_empty());
 
     let mut no_max = key(r#"{"token":"sk-win","budget_limits":[{"budget_duration":"1m"}]}"#);
-    let budgets = effective_budgets(&no_max, now()).unwrap();
-    let error = admit(&mut no_max, &budgets, &admission(&empty, None))
+    let no_max_budgets = effective_budgets(&no_max, now()).unwrap();
+    let max_error = admit(&mut no_max, &no_max_budgets, &admission(&empty, None))
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        max_error,
         KeyBudgetError::Window(WindowError::MaxBudget { index: 0 })
     ));
 }
@@ -472,9 +484,9 @@ async fn window_start_forwarded() {
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
     let reader = ScriptedReader::new([dec(1)]);
-    let mut admission = admission(&reader, None);
-    admission.now = instant("2026-06-01T12:00:00Z").with_timezone(&Utc);
-    admit(&mut auth, &budgets, &admission).await.unwrap();
+    let mut call = admission(&reader, None);
+    call.now = instant("2026-06-01T12:00:00Z").with_timezone(&Utc);
+    admit(&mut auth, &budgets, &call).await.unwrap();
     assert_eq!(
         reader.queries()[0].start,
         Some(Timestamp::Aware(instant("2026-05-31T23:00:00+00:00")))
@@ -511,26 +523,27 @@ async fn multi_window_no_throttle() {
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
     let reader = ScriptedReader::new([dec(6)]);
-    let mut admission = admission(&reader, None);
-    admission.throttle_pct = Some(0.5_f64);
-    let error = admit(&mut auth, &budgets, &admission).await.unwrap_err();
+    let mut call = admission(&reader, None);
+    call.throttle_pct = Some(0.5_f64);
+    let error = admit(&mut auth, &budgets, &call).await.unwrap_err();
     assert!(matches!(error, KeyBudgetError::Denied(_)));
     assert_eq!(auth.extra.budget_throttle_pct, None);
 }
 
+#[rstest]
+#[case::zero_spend(0_i64)]
+#[case::at_soft_budget(5_i64)]
 #[tokio::test]
-async fn zero_soft_budget_skips() {
-    for spend in [0_i64, 5_i64] {
-        let sink = RecordingSink::default();
-        let reader = ScriptedReader::new(Vec::new());
-        let fields = format!(r#"{{"token":"sk-zero-soft","spend":{spend},"soft_budget":0}}"#);
-        let mut auth = key(&fields);
-        let budgets = effective_budgets(&auth, now()).unwrap();
-        admit(&mut auth, &budgets, &admission(&reader, Some(&sink)))
-            .await
-            .unwrap();
-        assert!(sink.take().is_empty());
-    }
+async fn zero_soft_budget_skips(#[case] spend: i64) {
+    let sink = RecordingSink::default();
+    let reader = ScriptedReader::new(Vec::new());
+    let fields = format!(r#"{{"token":"sk-zero-soft","spend":{spend},"soft_budget":0}}"#);
+    let mut auth = key(&fields);
+    let budgets = effective_budgets(&auth, now()).unwrap();
+    admit(&mut auth, &budgets, &admission(&reader, Some(&sink)))
+        .await
+        .unwrap();
+    assert!(sink.take().is_empty());
 }
 
 #[tokio::test]

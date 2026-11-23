@@ -9,71 +9,58 @@ use crate::auth_key_budgets::expiry::{
 use crate::auth_key_budgets::key_budget::KeyBudgets;
 use crate::auth_key_budgets::money::Money;
 use crate::auth_key_budgets::temp::{
-    TempBudgetUpdate, get_temp_budget_increase, update_key_budget_with_temp_budget_increase,
+    TempBudgetUpdate, apply_temp_budget_increase, get_temp_budget_increase,
 };
 
 use super::{dec, effective_budgets, key, money, now};
 
-#[test]
-fn both_fields_required() {
-    for metadata in [
-        r#"{"temp_budget_increase":50}"#,
-        r#"{"temp_budget_expiry":"2027-01-01T00:00:00Z"}"#,
-        r#"{}"#,
-    ] {
-        let fields = format!(r#"{{"token":"sk-temp","max_budget":100,"metadata":{metadata}}}"#);
-        let auth = key(&fields);
-        assert_eq!(get_temp_budget_increase(&auth, now()).unwrap(), None);
-        assert_eq!(
-            update_key_budget_with_temp_budget_increase(&auth, now()).unwrap(),
-            TempBudgetUpdate {
-                max_budget: Some(money(100)),
-                applied: false,
-            }
-        );
-    }
+fn temp_max(token: &str, expiry: &str) -> Option<Money> {
+    let fields = format!(
+        r#"{{"token":"{token}","max_budget":100,"metadata":{{"temp_budget_increase":30,"temp_budget_expiry":"{expiry}"}}}}"#
+    );
+    let auth = key(&fields);
+    apply_temp_budget_increase(&auth, now()).unwrap().max_budget
 }
 
-#[test]
-fn naive_expiry_utc() {
-    for (expiry, expected) in [
-        ("2026-01-15T12:30:00", Some(money(130))),
-        ("2026-01-15T11:30:00", Some(money(100))),
-    ] {
-        let fields = format!(
-            r#"{{"token":"sk-naive","max_budget":100,"metadata":{{"temp_budget_increase":30,"temp_budget_expiry":"{expiry}"}}}}"#
-        );
-        let auth = key(&fields);
-        assert_eq!(
-            update_key_budget_with_temp_budget_increase(&auth, now())
-                .unwrap()
-                .max_budget,
-            expected,
-            "{expiry}"
-        );
-    }
+#[rstest]
+#[case::increase_only(r#"{"temp_budget_increase":50}"#)]
+#[case::expiry_only(r#"{"temp_budget_expiry":"2027-01-01T00:00:00Z"}"#)]
+#[case::empty("{}")]
+fn both_fields_required(#[case] metadata: &str) {
+    let fields = format!(r#"{{"token":"sk-temp","max_budget":100,"metadata":{metadata}}}"#);
+    let auth = key(&fields);
+    assert_eq!(get_temp_budget_increase(&auth, now()).unwrap(), None);
+    assert_eq!(
+        apply_temp_budget_increase(&auth, now()).unwrap(),
+        TempBudgetUpdate {
+            max_budget: Some(money(100)),
+            applied: false,
+        }
+    );
 }
 
-#[test]
-fn offset_expiry() {
-    for (expiry, expected) in [
-        ("2026-01-15T14:30:00+02:00", money(130)),
-        ("2026-01-15T07:00:00-05:00", money(100)),
-        ("2026-01-15T07:00:01-05:00", money(130)),
-        ("2026-01-15T12:30:00Z", money(130)),
-    ] {
-        let fields = format!(
-            r#"{{"token":"sk-offset","max_budget":100,"metadata":{{"temp_budget_increase":30,"temp_budget_expiry":"{expiry}"}}}}"#
-        );
-        let auth = key(&fields);
-        assert_eq!(
-            update_key_budget_with_temp_budget_increase(&auth, now())
-                .unwrap()
-                .max_budget,
-            Some(expected),
-            "{expiry}"
-        );
-    }
+#[rstest]
+#[case::before_now("2026-01-15T12:30:00", 130_i64)]
+#[case::after_now("2026-01-15T11:30:00", 100_i64)]
+fn naive_expiry_utc(#[case] expiry: &str, #[case] expected: i64) {
+    assert_eq!(
+        temp_max("sk-naive", expiry),
+        Some(money(expected)),
+        "{expiry}"
+    );
+}
+
+#[rstest]
+#[case::plus_two("2026-01-15T14:30:00+02:00", 130_i64)]
+#[case::minus_five_at("2026-01-15T07:00:00-05:00", 100_i64)]
+#[case::minus_five_after("2026-01-15T07:00:01-05:00", 130_i64)]
+#[case::zulu("2026-01-15T12:30:00Z", 130_i64)]
+fn offset_expiry(#[case] expiry: &str, #[case] expected: i64) {
+    assert_eq!(
+        temp_max("sk-offset", expiry),
+        Some(money(expected)),
+        "{expiry}"
+    );
 }
 
 #[test]
@@ -83,7 +70,7 @@ fn expiry_equal_inactive() {
     );
     assert_eq!(get_temp_budget_increase(&auth, now()).unwrap(), None);
     assert_eq!(
-        update_key_budget_with_temp_budget_increase(&auth, now()).unwrap(),
+        apply_temp_budget_increase(&auth, now()).unwrap(),
         TempBudgetUpdate {
             max_budget: Some(money(100)),
             applied: false,
@@ -91,37 +78,31 @@ fn expiry_equal_inactive() {
     );
 }
 
-#[test]
-fn invalid_expiry_propagates() {
-    for (expiry, increase, error) in [
-        ("\"not-a-date\"", "5", TempBudgetError::ExpiryInvalid),
-        ("5", "5", TempBudgetError::ExpiryInvalid),
-        (
-            "\"2027-01-01T00:00:00Z\"",
-            "\"abc\"",
-            TempBudgetError::IncreaseInvalid,
-        ),
-        (
-            "\"2027-01-01T00:00:00Z\"",
-            "true",
-            TempBudgetError::IncreaseInvalid,
-        ),
-    ] {
-        let fields = format!(
-            r#"{{"token":"sk-invalid","max_budget":100,"metadata":{{"temp_budget_increase":{increase},"temp_budget_expiry":{expiry}}}}}"#
-        );
-        let auth = key(&fields);
-        assert_eq!(
-            get_temp_budget_increase(&auth, now()).unwrap_err(),
-            error,
-            "{expiry} {increase}"
-        );
-        assert_eq!(
-            update_key_budget_with_temp_budget_increase(&auth, now()).unwrap_err(),
-            error
-        );
-        assert_eq!(effective_budgets(&auth, now()).unwrap_err(), error);
-    }
+#[rstest]
+#[case::bad_date("\"not-a-date\"", "5", TempBudgetError::ExpiryInvalid)]
+#[case::number_expiry("5", "5", TempBudgetError::ExpiryInvalid)]
+#[case::bad_increase(
+    "\"2027-01-01T00:00:00Z\"",
+    "\"abc\"",
+    TempBudgetError::IncreaseInvalid
+)]
+#[case::bool_increase("\"2027-01-01T00:00:00Z\"", "true", TempBudgetError::IncreaseInvalid)]
+fn invalid_expiry_propagates(
+    #[case] expiry: &str,
+    #[case] increase: &str,
+    #[case] error: TempBudgetError,
+) {
+    let fields = format!(
+        r#"{{"token":"sk-invalid","max_budget":100,"metadata":{{"temp_budget_increase":{increase},"temp_budget_expiry":{expiry}}}}}"#
+    );
+    let auth = key(&fields);
+    assert_eq!(
+        get_temp_budget_increase(&auth, now()).unwrap_err(),
+        error,
+        "{expiry} {increase}"
+    );
+    assert_eq!(apply_temp_budget_increase(&auth, now()).unwrap_err(), error);
+    assert_eq!(effective_budgets(&auth, now()).unwrap_err(), error);
 
     let expired = key(
         r#"{"token":"sk-expired-bad-increase","max_budget":100,"metadata":{"temp_budget_increase":"abc","temp_budget_expiry":"2026-01-15T11:00:00Z"}}"#,
@@ -139,7 +120,7 @@ fn no_max_skips_parse() {
         r#"{"token":"sk-no-max-temp","metadata":{"temp_budget_increase":10,"temp_budget_expiry":"garbage"}}"#,
     );
     assert_eq!(
-        update_key_budget_with_temp_budget_increase(&auth, now()).unwrap(),
+        apply_temp_budget_increase(&auth, now()).unwrap(),
         TempBudgetUpdate {
             max_budget: None,
             applied: false,
@@ -152,26 +133,27 @@ fn no_max_skips_parse() {
     assert_eq!(effective_budgets(&auth, now()).unwrap().max_budget, None);
 }
 
-#[test]
-fn zero_increase_same_token() {
-    for increase in ["0", "0.0", "-0"] {
-        let fields = format!(
-            r#"{{"token":"sk-zero-increase","max_budget":100,"metadata":{{"temp_budget_increase":{increase},"temp_budget_expiry":"2027-01-01T00:00:00Z"}}}}"#
-        );
-        let auth = key(&fields);
-        assert_eq!(
-            get_temp_budget_increase(&auth, now()).unwrap(),
-            Some(money(0)),
-            "{increase}"
-        );
-        assert_eq!(
-            update_key_budget_with_temp_budget_increase(&auth, now()).unwrap(),
-            TempBudgetUpdate {
-                max_budget: Some(money(100)),
-                applied: false,
-            }
-        );
-    }
+#[rstest]
+#[case::zero("0")]
+#[case::zero_float("0.0")]
+#[case::negative_zero("-0")]
+fn zero_increase_same_token(#[case] increase: &str) {
+    let fields = format!(
+        r#"{{"token":"sk-zero-increase","max_budget":100,"metadata":{{"temp_budget_increase":{increase},"temp_budget_expiry":"2027-01-01T00:00:00Z"}}}}"#
+    );
+    let auth = key(&fields);
+    assert_eq!(
+        get_temp_budget_increase(&auth, now()).unwrap(),
+        Some(money(0)),
+        "{increase}"
+    );
+    assert_eq!(
+        apply_temp_budget_increase(&auth, now()).unwrap(),
+        TempBudgetUpdate {
+            max_budget: Some(money(100)),
+            applied: false,
+        }
+    );
 }
 
 #[test]
@@ -180,7 +162,7 @@ fn negative_increase_applies() {
         r#"{"token":"sk-negative","max_budget":100,"metadata":{"temp_budget_increase":-30,"temp_budget_expiry":"2027-01-01T00:00:00Z"}}"#,
     );
     assert_eq!(
-        update_key_budget_with_temp_budget_increase(&auth, now()).unwrap(),
+        apply_temp_budget_increase(&auth, now()).unwrap(),
         TempBudgetUpdate {
             max_budget: Some(money(70)),
             applied: true,
@@ -190,7 +172,7 @@ fn negative_increase_applies() {
         r#"{"token":"sk-negative-more","max_budget":10,"metadata":{"temp_budget_increase":-30.5,"temp_budget_expiry":"2027-01-01T00:00:00Z"}}"#,
     );
     assert_eq!(
-        update_key_budget_with_temp_budget_increase(&below, now())
+        apply_temp_budget_increase(&below, now())
             .unwrap()
             .max_budget,
         Some(Money::Finite(super::dec_text("-20.5")))
@@ -202,7 +184,7 @@ fn increase_copies_token() {
     let auth = key(
         r#"{"token":"sk-copy","max_budget":100,"spend":3,"metadata":{"temp_budget_increase":30,"temp_budget_expiry":"2027-01-01T00:00:00Z"}}"#,
     );
-    let update = update_key_budget_with_temp_budget_increase(&auth, now()).unwrap();
+    let update = apply_temp_budget_increase(&auth, now()).unwrap();
     assert!(update.applied);
     assert_eq!(
         effective_budgets(&auth, now()).unwrap(),
@@ -214,9 +196,7 @@ fn increase_copies_token() {
     assert_eq!(auth.view.token.max_budget, Some(dec(100)));
     assert_eq!(auth.view.token.spend, dec(3));
     assert_eq!(
-        update_key_budget_with_temp_budget_increase(&auth, now())
-            .unwrap()
-            .max_budget,
+        apply_temp_budget_increase(&auth, now()).unwrap().max_budget,
         Some(money(130)),
         "the update is computed again without mutating the token"
     );
@@ -236,29 +216,24 @@ fn expiry_input_limit() {
     );
 }
 
-#[test]
-fn basic_iso_expiry_forms() {
-    for expiry in [
-        "20260116",
-        "20260116T130000",
-        "20260116T1300",
-        "20260116T13",
-        "2026-01-16T130000",
-        "20260116T130000+0200",
-        "2026-01-16T130000.5",
-    ] {
-        let fields = format!(
-            r#"{{"token":"sk-basic","max_budget":100,"metadata":{{"temp_budget_increase":10,"temp_budget_expiry":"{expiry}"}}}}"#
-        );
-        let auth = key(&fields);
-        assert_eq!(
-            update_key_budget_with_temp_budget_increase(&auth, now())
-                .unwrap()
-                .max_budget,
-            Some(money(110)),
-            "{expiry}"
-        );
-    }
+#[rstest]
+#[case::date("20260116")]
+#[case::concatenated("20260116T130000")]
+#[case::minutes("20260116T1300")]
+#[case::hours("20260116T13")]
+#[case::dashed_date("2026-01-16T130000")]
+#[case::offset("20260116T130000+0200")]
+#[case::fraction("2026-01-16T130000.5")]
+fn basic_iso_expiry_forms(#[case] expiry: &str) {
+    let fields = format!(
+        r#"{{"token":"sk-basic","max_budget":100,"metadata":{{"temp_budget_increase":10,"temp_budget_expiry":"{expiry}"}}}}"#
+    );
+    let auth = key(&fields);
+    assert_eq!(
+        apply_temp_budget_increase(&auth, now()).unwrap().max_budget,
+        Some(money(110)),
+        "{expiry}"
+    );
     assert_eq!(
         parse_temp_budget_expiry("2026-01-16T13:00:00Z").unwrap(),
         super::instant("2026-01-16T13:00:00+00:00")

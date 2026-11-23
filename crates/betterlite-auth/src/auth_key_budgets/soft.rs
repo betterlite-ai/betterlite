@@ -6,8 +6,7 @@ use super::alerts::{BudgetAlertKind, BudgetAlertSink, KeyAlertFields, schedule};
 use super::key_budget::KeyBudgets;
 use super::money::Money;
 
-// _virtual_key_soft_budget_check: token.spend, not the cross-pod reader, is compared with the
-// truthy soft budget; crossing it only alerts, and it never denies
+// _virtual_key_soft_budget_check: token.spend, not the cross-pod reader, is compared with a nonzero soft budget, and crossing it only alerts
 pub fn virtual_key_soft_budget_check(
     auth: &UserAPIKeyAuth,
     budgets: &KeyBudgets,
@@ -17,7 +16,7 @@ pub fn virtual_key_soft_budget_check(
     let Some(soft_budget) = budgets.soft_budget else {
         return;
     };
-    if !soft_budget.truthy() {
+    if matches!(soft_budget, Money::Finite(value) if value.is_zero()) {
         return;
     }
     let spend = auth.view.token.spend;

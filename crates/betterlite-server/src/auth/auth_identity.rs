@@ -7,7 +7,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
-use crate::auth::auth_key_budgets::{self, KeyBudgetStageInput};
+use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
@@ -114,7 +114,8 @@ pub(crate) fn dispatch(
             let StageInput::AuthKeyBudgets(stage) = input else {
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
-            auth_key_budgets::run_stage(stage).map_err(StageFailure::KeyBudgets)
+            // the reads ran while the stage input was assembled, so the budget failures already surfaced there
+            Ok(stage.context.clone())
         }
     }
 }

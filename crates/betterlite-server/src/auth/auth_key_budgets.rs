@@ -7,7 +7,6 @@ use axum::body::Body;
 use axum::http::Request;
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_key_budgets::alerts::BudgetAlertSink;
-use betterlite_auth::auth_key_budgets::expiry::TempBudgetError;
 use betterlite_auth::auth_key_budgets::key_budget::Denial;
 use betterlite_auth::auth_key_budgets::money::Money;
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
@@ -27,8 +26,7 @@ use crate::state::auth_key_budgets::KeyBudgetSettings;
 
 mod tests;
 
-// What the auth service resolved before this stage runs: the caller's key, the collaborators the
-// budget checks read through, and the request clock. A request with no key leaves the stage inert.
+// what the auth service resolved before this stage: the caller's key, the collaborators the checks read, and the clock
 #[derive(Default)]
 pub struct KeyBudgetRule {
     pub auth: Option<UserAPIKeyAuth>,
@@ -38,7 +36,7 @@ pub struct KeyBudgetRule {
     pub durations: Option<Arc<dyn DurationParser>>,
     pub throttle_pct: Option<f64>,
     pub now: Option<DateTime<Utc>>,
-    applied: Mutex<Option<UserAPIKeyAuth>>,
+    pub applied: Mutex<Option<UserAPIKeyAuth>>,
 }
 
 impl fmt::Debug for KeyBudgetRule {
@@ -65,10 +63,6 @@ impl KeyBudgetRule {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-
-    fn record_applied(&self, auth: UserAPIKeyAuth) {
-        *self.applied.lock().unwrap_or_else(PoisonError::into_inner) = Some(auth);
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -78,8 +72,7 @@ pub struct KeyBudgetStageInput {
     pub settings: Arc<KeyBudgetSettings>,
 }
 
-// The rule is inserted by the authentication service once it resolved the caller's key; without one
-// the stage has nothing to check.
+// the authentication service inserts the rule once it resolved the caller's key; without one the stage is inert
 pub(crate) fn rule_for_request(request: &Request<Body>) -> Arc<KeyBudgetRule> {
     request
         .extensions()
@@ -90,7 +83,7 @@ pub(crate) fn rule_for_request(request: &Request<Body>) -> Arc<KeyBudgetRule> {
 fn settings_for_request(request: &Request<Body>) -> Arc<KeyBudgetSettings> {
     request.extensions().get::<Arc<ServerState>>().map_or_else(
         || Arc::new(KeyBudgetSettings::default()),
-        |state| state.auth_key_budgets.settings(),
+        |state| Arc::clone(&state.auth_key_budgets.settings),
     )
 }
 
@@ -108,14 +101,14 @@ pub(crate) fn stage_input(
     })
 }
 
-// The builder runs the alert, hard, soft and window checks in order; the hard denial and a spend read
-// that cannot be verified are the two failures the stage reports as themselves.
+// the builder runs the alert, hard, soft and window checks in order; a hard denial and an unverifiable read are the failures it reports
 pub(crate) async fn prefetch(stage: &KeyBudgetStageInput) -> Result<(), Box<ProxyException>> {
     let Some(auth) = stage.rule.auth.as_ref() else {
         return Ok(());
     };
     let now = stage.rule.now.unwrap_or_else(Utc::now);
-    let budgets = effective_budgets(auth, now).map_err(|error| Box::new(temp_exception(&error)))?;
+    let budgets = effective_budgets(auth, now)
+        .map_err(|error| Box::new(authentication_exception(&error.to_string())))?;
     let mut checked = auth.clone();
     let unconfigured = UnconfiguredReader;
     let no_durations = NoDurations;
@@ -134,13 +127,12 @@ pub(crate) async fn prefetch(stage: &KeyBudgetStageInput) -> Result<(), Box<Prox
     admit(&mut checked, &budgets, &admission)
         .await
         .map_err(|error| Box::new(key_budget_exception(&error)))?;
-    stage.rule.record_applied(checked);
+    *stage
+        .rule
+        .applied
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(checked);
     Ok(())
-}
-
-// every read a rule with budgets needs went through the prefetch, so the dispatch only carries the identity on
-pub(crate) fn run_stage(stage: &KeyBudgetStageInput) -> Result<AuthContext, Box<ProxyException>> {
-    Ok(stage.context.clone())
 }
 
 fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
@@ -148,7 +140,6 @@ fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
         KeyBudgetError::Denied(denial) => budget_exceeded_exception(denial),
         KeyBudgetError::Spend(error) => spend_failure_exception(error),
         KeyBudgetError::Window(error) => authentication_exception(&error.to_string()),
-        KeyBudgetError::Temp(error) => temp_exception(error),
     }
 }
 
@@ -160,11 +151,6 @@ fn budget_exceeded_exception(denial: &Denial) -> ProxyException {
         llm_provider: String::new(),
     };
     as_proxy_exception(&failure).exception().clone()
-}
-
-// a raise during auth that LiteLLM has no handler for becomes auth_error with param "None" and status 401
-fn temp_exception(error: &TempBudgetError) -> ProxyException {
-    authentication_exception(&error.to_string())
 }
 
 fn authentication_exception(message: &str) -> ProxyException {
@@ -179,8 +165,7 @@ fn authentication_exception(message: &str) -> ProxyException {
     })
 }
 
-// A rule that names budgets but no reader cannot verify spend, which is the 503 a failed verification
-// raises; a rule with no budgets never reads through it.
+// a rule with budgets but no reader cannot verify spend, which raises the 503; a rule with no budgets never reads
 struct UnconfiguredReader;
 
 #[async_trait]

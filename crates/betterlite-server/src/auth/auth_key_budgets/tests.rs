@@ -66,8 +66,13 @@ fn now() -> DateTime<Utc> {
 fn rule(fields: &str) -> KeyBudgetRule {
     KeyBudgetRule {
         auth: Some(key(fields)),
+        user_email: None,
+        reader: None,
+        alerts: None,
+        durations: None,
+        throttle_pct: None,
         now: Some(now()),
-        ..KeyBudgetRule::default()
+        applied: Mutex::new(None),
     }
 }
 
@@ -161,7 +166,8 @@ fn stage_is_registered() {
         &[(ALERT_FRACTION_VARIABLE, "0.5")],
         "general_settings:\n  master_key: secret-master-key\nlitellm_settings:\n  default_key_max_budget_alert_emails:\n    \"80\":\n      - owner@example.com\n",
     );
-    let settings = state_for(&with_settings).auth_key_budgets.settings();
+    let state = state_for(&with_settings);
+    let settings = Arc::clone(&state.auth_key_budgets.settings);
     assert_eq!(settings.alert_fraction.to_bits(), 0.5_f64.to_bits());
     assert_eq!(
         settings
@@ -348,7 +354,7 @@ async fn soft_alert_passes_without_denial() {
 #[tokio::test]
 async fn prefetch_records_the_checked_key() {
     let master_key = SecretString::from(MASTER_KEY.to_owned());
-    let rule = Arc::new(KeyBudgetRule {
+    let budget_rule = Arc::new(KeyBudgetRule {
         throttle_pct: Some(0.5_f64),
         reader: Some(ScriptedReader::new(vec![Decimal::from(6_i64)])),
         ..rule(
@@ -357,12 +363,14 @@ async fn prefetch_records_the_checked_key() {
     });
     let stage = KeyBudgetStageInput {
         context: master_context(&master_key),
-        rule: Arc::clone(&rule),
+        rule: Arc::clone(&budget_rule),
         settings: Arc::new(KeyBudgetSettings::default()),
     };
     prefetch(&stage)
         .await
         .expect("the throttle permits the request");
-    let applied = rule.applied().expect("the stage records the checked key");
+    let applied = budget_rule
+        .applied()
+        .expect("the stage records the checked key");
     assert_eq!(applied.request_quota_view().throttle_pct, Some(0.5_f64));
 }

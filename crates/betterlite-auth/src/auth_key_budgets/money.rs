@@ -4,8 +4,7 @@ use rust_decimal::prelude::FromPrimitive as _;
 
 use crate::budget_counter::coercion::FloatInput as _;
 
-// LiteLLM compares Python floats and trusts only math.isfinite values for enforcement; a JSON number
-// cannot carry a nonfinite value, so a parser that needs one reads the Python-repr spelling.
+// LiteLLM enforces only math.isfinite values; a parser that needs a nonfinite one reads the Python-repr spelling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Money {
     Finite(Decimal),
@@ -26,8 +25,7 @@ impl Money {
         Decimal::from_f64(value).map_or_else(|| Self::infinity(value < 0.0_f64), Self::Finite)
     }
 
-    // a JSON number, or one of the Python spellings for the nonfinite floats JSON cannot carry;
-    // a numeric string is not the field's declared type
+    // a JSON number or a Python nonfinite spelling; a numeric string is not the declared type
     #[must_use]
     pub fn from_json(value: &JsonData) -> Option<Self> {
         match value {
@@ -53,12 +51,6 @@ impl Money {
         }
     }
 
-    // Python truthiness of the float: NaN and both infinities are true, signed zero is false
-    #[must_use]
-    pub fn truthy(self) -> bool {
-        !matches!(self, Self::Finite(value) if value.is_zero())
-    }
-
     // Python's >= where the left side is the finite spend a counter returned
     #[must_use]
     pub fn spend_at_least(spend: Decimal, budget: Self) -> bool {
@@ -81,16 +73,26 @@ impl Money {
 
     #[must_use]
     pub fn add(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Finite(left), Self::Finite(right)) => left
+        if let (Self::Finite(left), Self::Finite(right)) = (self, other) {
+            return left
                 .checked_add(right)
-                .map_or_else(|| Self::infinity(left.is_sign_negative()), Self::Finite),
-            (Self::Nan, _) | (_, Self::Nan) => Self::Nan,
-            (Self::PositiveInfinity, Self::NegativeInfinity)
-            | (Self::NegativeInfinity, Self::PositiveInfinity) => Self::Nan,
-            (Self::PositiveInfinity, _) | (_, Self::PositiveInfinity) => Self::PositiveInfinity,
-            (Self::NegativeInfinity, _) | (_, Self::NegativeInfinity) => Self::NegativeInfinity,
+                .map_or_else(|| Self::infinity(left.is_sign_negative()), Self::Finite);
         }
+        if self == Self::Nan || other == Self::Nan {
+            return Self::Nan;
+        }
+        if self == other {
+            return self;
+        }
+        if (self == Self::PositiveInfinity || other == Self::PositiveInfinity)
+            && (self == Self::NegativeInfinity || other == Self::NegativeInfinity)
+        {
+            return Self::Nan;
+        }
+        if self == Self::PositiveInfinity || other == Self::PositiveInfinity {
+            return Self::PositiveInfinity;
+        }
+        Self::NegativeInfinity
     }
 
     #[must_use]

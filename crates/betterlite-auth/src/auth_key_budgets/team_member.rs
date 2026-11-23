@@ -7,11 +7,10 @@ use super::alerts::{BudgetAlert, BudgetAlertKind, BudgetAlertSink, EventGroup, s
 use super::email::{dedup_recipients, valid_alert_threshold_config};
 use super::money::Money;
 
-pub const TEAM_MEMBER_MAX_BUDGET_ALERT_EMAILS_KEY: &str = "team_member_max_budget_alert_emails";
+pub const TEAM_MEMBER_ALERT_KEY: &str = "team_member_max_budget_alert_emails";
 
-// _team_member_max_budget_alert_check: the team's own threshold map applies with no global merge;
-// a positive spend at or above the lowest threshold alerts, the hard limit included
-pub fn team_member_max_budget_alert_check(
+// _team_member_max_budget_alert_check: the team's own map applies with no global merge; a positive spend at or above its lowest threshold alerts
+pub fn team_member_alert_check(
     team_id: &str,
     team_alias: Option<&str>,
     team_metadata: Option<&BTreeMap<String, JsonData>>,
@@ -22,8 +21,7 @@ pub fn team_member_max_budget_alert_check(
     max_budget: Money,
     alerts: Option<&dyn BudgetAlertSink>,
 ) {
-    let raw_config =
-        team_metadata.and_then(|metadata| metadata.get(TEAM_MEMBER_MAX_BUDGET_ALERT_EMAILS_KEY));
+    let raw_config = team_metadata.and_then(|metadata| metadata.get(TEAM_MEMBER_ALERT_KEY));
     let Some(config) = valid_alert_threshold_config(raw_config) else {
         return;
     };

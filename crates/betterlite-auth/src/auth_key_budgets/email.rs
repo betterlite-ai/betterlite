@@ -2,8 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_db::budget_permission_rows::JsonData;
 
-// _parse_email_list: a list keeps its trimmed nonempty string entries, a string splits on commas,
-// and every other value (a tuple, a mapping, a number) yields no recipients
+// _parse_email_list: a list keeps its trimmed nonempty strings, a string splits on commas and every other value yields none
 #[must_use]
 pub fn parse_email_list(raw: &JsonData) -> Vec<String> {
     match raw {
@@ -40,10 +39,9 @@ pub fn normalize_alert_emails(
         .collect()
 }
 
-// _merge_budget_alert_email_configs: thresholds are unioned and each keeps its global recipients
-// first, then the per-key ones, deduplicated; two empty mappings merge to None
+// _merge_budget_alert_email_configs: thresholds are unioned, global recipients first then per-key ones deduplicated; two empty maps merge to None
 #[must_use]
-pub fn merge_budget_alert_email_configs(
+pub fn merge_alert_email_configs(
     global_config: Option<&BTreeMap<String, JsonData>>,
     per_key_config: Option<&BTreeMap<String, JsonData>>,
 ) -> Option<BTreeMap<String, Vec<String>>> {
@@ -79,8 +77,7 @@ pub fn dedup_recipients(recipients: &[String]) -> Vec<String> {
     unique
 }
 
-// _is_valid_alert_threshold_pct: at most three digits naming 1..=100. LiteLLM's str.isdigit also
-// accepts non-ASCII digits, which betterlite rejects rather than coercing them through int().
+// _is_valid_alert_threshold_pct: at most three digits naming 1..=100; betterlite rejects the non-ASCII digits str.isdigit accepts
 #[must_use]
 pub fn is_valid_alert_threshold_pct(pct: &str) -> bool {
     if pct.is_empty() || pct.len() > 3 || !pct.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -99,8 +96,7 @@ pub fn alert_recipients(raw: &JsonData) -> Option<Vec<String>> {
     }
 }
 
-// _valid_alert_threshold_config: a non-mapping is discarded, and invalid thresholds are dropped
-// silently; a threshold whose recipients are unsupported keeps its place with no recipients
+// _valid_alert_threshold_config: a non-mapping is discarded and invalid thresholds dropped; an unsupported recipient list stays empty
 #[must_use]
 pub fn valid_alert_threshold_config(
     raw: Option<&JsonData>,

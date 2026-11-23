@@ -22,8 +22,7 @@ pub enum WindowError {
     MaxBudget { index: usize },
 }
 
-// _virtual_key_multi_budget_check: one counter per window keyed by its budget_duration; the first
-// window at or over its finite maximum denies, and no window throttles
+// _virtual_key_multi_budget_check: one counter per budget_duration, and the first window at or over its finite maximum denies
 pub async fn virtual_key_multi_budget_check(
     auth: &UserAPIKeyAuth,
     reader: &dyn SpendReader,
@@ -56,7 +55,7 @@ pub async fn virtual_key_multi_budget_check(
         if let Some(maximum) = max_budget.finite_value()
             && spend >= maximum
         {
-            return Err(Denial {
+            return Err(KeyBudgetError::Denied(Denial {
                 current_cost: spend,
                 max_budget: maximum,
                 entity_type: "key".to_owned(),
@@ -67,8 +66,7 @@ pub async fn virtual_key_multi_budget_check(
                     format_scale(maximum, 2)
                 ),
                 status_code: BUDGET_EXCEEDED_STATUS,
-            }
-            .into());
+            }));
         }
     }
     Ok(())
