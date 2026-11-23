@@ -53,7 +53,15 @@ const OTHER_TABLES: &str = r#"CREATE TABLE "LiteLLM_SpendLogToolIndex" ("request
 CREATE TABLE "LiteLLM_AutoRouterSession" ("api_key" TEXT NOT NULL, "session_id" TEXT NOT NULL, "router_name" TEXT NOT NULL, "last_turn_at" TIMESTAMPTZ NOT NULL);
 CREATE TABLE "LiteLLM_AutoRouterUserSession" ("user_id" TEXT NOT NULL, "api_key" TEXT NOT NULL, "session_id" TEXT NOT NULL, "router_name" TEXT NOT NULL, "last_turn_at" TIMESTAMPTZ NOT NULL);
 CREATE TABLE "LiteLLM_HealthCheckTable" ("health_check_id" TEXT NOT NULL, "checked_at" TIMESTAMPTZ NOT NULL);
-CREATE TABLE "LiteLLM_DailyTagSpend" ("id" TEXT NOT NULL, "date" TEXT NOT NULL);"#;
+CREATE TABLE "LiteLLM_DailyTagSpend" ("id" TEXT NOT NULL, "date" TEXT NOT NULL);
+CREATE TABLE "LiteLLM_AutoRouterBaselineComparison" ("scope" TEXT PRIMARY KEY, "retired" BOOLEAN NOT NULL DEFAULT FALSE, "history" TEXT, "updated_at" TIMESTAMP(3) NOT NULL);
+CREATE TABLE "LiteLLM_AutoRouterBaselineObservation" ("request_id" TEXT PRIMARY KEY, "scope" TEXT NOT NULL);"#;
+
+pub(crate) const BASELINE_ROWS: &str = r#"INSERT INTO "LiteLLM_AutoRouterBaselineComparison" (scope, history, updated_at) VALUES ('old-scope', '{}', '2024-12-01'), ('fresh-scope', '{}', '2025-01-28');
+INSERT INTO "LiteLLM_AutoRouterBaselineObservation" VALUES ('old-request', 'old-scope'), ('fresh-request', 'fresh-scope')"#;
+pub(crate) const BASELINE_STATE: &str = r#"SELECT string_agg(scope || ':' || retired || ':' || (history IS NULL), ',' ORDER BY scope) FROM "LiteLLM_AutoRouterBaselineComparison""#;
+pub(crate) const BASELINE_REQUESTS: &str =
+    r#"SELECT request_id FROM "LiteLLM_AutoRouterBaselineObservation" ORDER BY request_id"#;
 
 const MANY_SPEND_LOGS: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, "startTime", "endTime")
 SELECT 'row-' || g, 'completion', 'sk-fixture', $1, $1 FROM generate_series(1, $2::bigint) AS g"#;
