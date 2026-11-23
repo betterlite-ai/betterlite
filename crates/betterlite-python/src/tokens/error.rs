@@ -3,6 +3,8 @@ use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::engine::error::EngineError;
+use betterlite_tokenizer::engine::fetch::FetchError;
+use betterlite_tokenizer::engine::hub::HubError;
 use betterlite_tokenizer::engine::selection::SelectionError;
 use betterlite_tokenizer::image::error::ImageError;
 use pyo3::PyErr;
@@ -33,7 +35,9 @@ pub(crate) enum TokensError {
     #[error(transparent)]
     Count(CountError),
     #[error(transparent)]
-    Selection(#[from] SelectionError),
+    Hub(HubError),
+    #[error(transparent)]
+    Fetch(FetchError),
     #[error(transparent)]
     Engine(#[from] EngineError),
     #[error(transparent)]
@@ -66,7 +70,27 @@ impl From<CountError> for TokensError {
             CountError::TextAndMessages => Self::TextAndMessages,
             CountError::MissingInput => Self::MissingInput,
             CountError::ToolsWithText => Self::ToolsWithText,
-            other => Self::Count(other),
+            other @ (CountError::UnsupportedContent { .. }
+            | CountError::ContentField { .. }
+            | CountError::Selection(_)
+            | CountError::Fetch(_)
+            | CountError::Engine(_)
+            | CountError::Tools(_)
+            | CountError::Json { .. }
+            | CountError::Overflow
+            | CountError::Boundary
+            | CountError::LimitsOverflow) => Self::Count(other),
+        }
+    }
+}
+
+// LiteLLM's huggingface_hub errors name the repository, and the selector's own text does not, so the cause keeps its own message
+impl From<SelectionError> for TokensError {
+    fn from(error: SelectionError) -> Self {
+        match error {
+            SelectionError::Hub(hub) => Self::Hub(hub),
+            SelectionError::Fetch(fetch) => Self::Fetch(fetch),
+            SelectionError::Engine(engine) => Self::Engine(engine),
         }
     }
 }
@@ -85,7 +109,8 @@ impl From<TokensError> for PyErr {
             ) => PyValueError::new_err(error.to_string()),
             TokensError::Count(_)
             | TokensError::SkipSpecialTokens
-            | TokensError::Selection(_)
+            | TokensError::Hub(_)
+            | TokensError::Fetch(_)
             | TokensError::Engine(_)
             | TokensError::Image(_)
             | TokensError::StoreLocked
