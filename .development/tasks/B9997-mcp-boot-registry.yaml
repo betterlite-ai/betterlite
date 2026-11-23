@@ -59,7 +59,7 @@ description: >-
   "litellm.proxy.proxy_server.py::ProxyConfig:_init_mcp_servers_in_db issuer stamp backfill - {error}", then the
   mutator's reload_servers_from_database (B6765) with its error logged as
   "litellm.proxy.proxy_server.py::ProxyConfig:_init_mcp_servers_in_db - {error}".
-  sync_non_llm_objects runs it at the mcp position, after vector_store_indexes and before agents, when B8380's
+  sync_non_llm_objects runs it at the mcp position, after vector_store_indexes and before agents, when B10054's
   should_load_db_object allows mcp. B8384's `init_mcp_servers_from_db` and `reload_mcp_servers_from_db` keep their
   names and signatures, since B8372's jobs call both; replace their stub bodies: init_mcp_servers_from_db gates on mcp
   and calls init_mcp_servers, and reload_mcp_servers_from_db gates on mcp and runs only the reload, no backfills

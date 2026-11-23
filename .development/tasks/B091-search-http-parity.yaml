@@ -167,7 +167,7 @@ description: >-
   are GET /search_tools/list and POST /search_tools/test_connection; their seven-path
   registration, /search_tools/ui/available_providers, no-database and invalid-body
   cases remain with B3275/B8673. supported-db-objects excludes search_tools using
-  B8380's general_settings.supported_db_objects: a successful write still appears
+  B10054's general_settings.supported_db_objects: a successful write still appears
   in management reads but leaves the existing config router list and subsequent
   search unchanged. Preserve commit-then-refresh order; no encompassing transaction.
 
@@ -355,11 +355,11 @@ oracle_cases:
   - tools/oracle/cases/search-parity/database/supported-db-objects.yaml
 deviations: []
 out_of_scope:
-  - "The only functions in endpoints.py, search and list_search_tools, and their route registration are B8275. B8634 supplies their state and mount; B8610 owns the root aggregator. B3275/B8673 own all seven management routes. B8626/B8701/B8728 mount MCP, not Search."
+  - "The only functions in endpoints.py, search and list_search_tools, and their route registration are B8275. B8634 supplies their state and mount; B10082 owns the root aggregator. B3275/B8673 own all seven management routes. B8626/B8701/B8728 mount MCP, not Search."
   - "search/__init__.py defines no functions: B7887 exports search, asearch and search_provider_cost_per_query over B3272/B3274. B161 is the Python surface umbrella. No export is reimplemented here."
   - "B3270 implements BaseSearchConfig, SearchResult, SearchResponse and server credential trust; B3272 implements _build_search_optional_params, search and asearch. B3276 implements BaseLLMHTTPHandler.search/async_search. All other llm_http_handler.py methods retain the API owners listed by B3276."
   - "All SearchAPIRouter functions are B3273; retry/fallback traversal is B310/B017. B8354 owns the call-type table and B8631 its production branch adapters. Router construction and the shared SearchToolList attachment are B8611/B8613, with exact task corrections in the planner report."
-  - "B3271 owns every live SearchToolRegistry operation; get_search_tool_by_name_from_db has no caller at the pin. B3275 owns its management helpers and models. B8384 owns parse_search_tools, load/merge/reload; B8372 schedules reloads and B8380 supplies supported_db_objects."
+  - "B3271 owns every live SearchToolRegistry operation; get_search_tool_by_name_from_db has no caller at the pin. B3275 owns its management helpers and models. B8384 owns parse_search_tools, load/merge/reload; B8372 schedules reloads and B10054 supplies supported_db_objects."
   - "B749 owns the search grant functions in auth_checks.py and B737 the team lookup; B3684 supplies masking. Fixtures exercise these implementations rather than implementing access checks."
   - "B1552/B1553/B1554/B1555 implement APISerpent, Brave, DataForSEO and DuckDuckGo. B5834 implements Perplexity; B8020 through B8025 implement Exa, Serper, Tavily, You.com, fastCRW, Firecrawl, Linkup, SearXNG, Google PSE, SearchAPI, Nimble and Parallel AI. B048 implements TinyFish and the native registry; B5360 owns get_provider_search_config's selector tags. Every provider function stays with its existing owner."
   - "B048 explicitly leaves agentcore and bing_grounding without executable SearchProvider adapters; B659/B2212/B546 own their leaf logic. Closing that existing registry deviation needs the separate architect decision recorded in notes, not a second registry or a false parity claim."

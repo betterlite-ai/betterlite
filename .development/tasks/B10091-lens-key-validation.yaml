@@ -1,0 +1,60 @@
+id: B10091
+title: Lens billing key validation
+description: >-
+  Two Lens tasks check a billing key before they use it. B4503's worker register and billing-key routes refuse a key that is blocked or is a CLI session token, and B4504's analyze runs the same check before it spends anything and then reads the key's team. Both call LiteLLM's validate_key in litellm/proxy/lens/billing.py. This task builds that check and its port, so B4503 waits on these few lines instead of on B4504's chat run, internal authorizer, reservation release and cost code.
+
+
+  Layout. Module lens_billing::key_validation in betterlite-server: crates/betterlite-server/src/lens_billing/key_validation.rs is an empty stub that lens_billing.rs (B4504's module file) already declares, with your tests in key_validation/tests.rs. Do not edit lens_billing.rs or anything else under lens_billing/; B4504 builds the rest of that module after this task.
+
+
+  The port. `#[async_trait] pub trait KeyResolver: Send + Sync { async fn resolve(&self, hashed_token: &str) -> Result<LensKey, AuthError>; }`, with AuthError being B732's betterlite_auth::auth_identity::errors::AuthError, the failures LiteLLM's IdentityStore.resolve raises (no database, cache-only miss, key not found, principal without a source key). Keep the trait object safe: B4503's route state and B4504's analyze bundle hold it as `Arc<dyn KeyResolver>`. `LensKey { blocked: bool, is_session_token: bool, team_id: Option<String> }` is the part of the resolved UserAPIKeyAuth the Lens code reads: B4503 reads only the two flags, B4504 reads team_id for its model lookup and its request metadata. It is a plain public record with public fields and no constructor logic. betterlite-auth's UserAPIKeyAuth keeps those fields crate-private, so the production adapter (B8682, over B870's IdentityStore.resolve and key_from_principal) fills LensKey on its side; tests use a fake resolver.
+
+
+  The check. `pub async fn validate_key(resolver: &dyn KeyResolver, key_id: Option<&str>) -> Result<Option<LensKey>, KeyValidationError>`. None returns Ok(None) without calling the resolver. Otherwise call resolve with key_id exactly as given: it is already the stored hashed token, so never hash it again and never trim or lowercase it. A key with blocked true or is_session_token true fails with KeyValidationError::Inactive; anything else returns Ok(Some(key)). A resolver failure is KeyValidationError::Resolve(AuthError), returned unchanged, so a route can still read AuthError::http_mapping and answer a missing key with LiteLLM's 401 token_not_found_in_db.
+
+
+  The error. KeyValidationError (thiserror) with Inactive and Resolve(#[from] AuthError) has `status()` and `detail()`: Inactive is 400 with detail "Choose an active virtual key for Lens analysis", the text LiteLLM's HTTPException puts in {"detail": ...}. For Resolve, status() is AuthError::http_mapping's status when it has one and 500 otherwise, and detail() is the resolver error's text. The error never carries the key id in its text.
+
+
+  Tests in key_validation/tests.rs, names starting with validate_key_: no key returns None and makes no resolver call, a blocked key, a session key and a key that is both are 400 with the exact detail, an active key comes back with its team_id and with team_id None, the fake records the token it got and it equals the input byte for byte (use a mixed-case value to prove nothing normalizes it), and KeyNotFound and NoDatabaseConnection pass through as Resolve with 401 and 500 from status().
+scope:
+  paths:
+    - crates/betterlite-server/src/lens_billing/key_validation.rs
+    - crates/betterlite-server/src/lens_billing/key_validation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L19-L31
+    why: Owned. validate_key, the None short cut, resolve by hashed token and the 400 for blocked and session keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L74-L120
+    why: IdentityStore.resolve and key_from_principal, what the KeyResolver port stands for, and the errors they raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L297-L346
+    why: Call sites. Worker register and billing-key validate the analysis_key_id before they store it (B4503).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L89-L154
+    why: Call site. analyze validates the worker's key and takes its team_id (B4504).
+dod:
+  - text: validate_key returns None for no key without a resolver call, and passes a present key id to the resolver unchanged.
+    proof: [key-validation-tests]
+  - text: A blocked key or a session key fails with 400 and the detail "Choose an active virtual key for Lens analysis", and an active key comes back with its team_id.
+    proof: [key-validation-tests]
+  - text: A resolver error comes back unchanged, keeps the 401 of a missing key and is 500 otherwise.
+    proof: [key-validation-tests]
+checks:
+  optional: []
+  commands:
+    - id: key-validation-tests
+      why: validate_key skips a check, alters the key id, loses the resolver error or answers the wrong status or detail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_billing::key_validation::tests::(.*::)?validate_key_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "litellm/proxy/lens/billing.py: complete (L34-L98), the in-process request, the reservation release and the cost header read: B4504, which calls validate_key from analyze."
+  - "IdentityStore.resolve and key_from_principal: B870. The production KeyResolver adapter that fills LensKey: B8682."
+  - "HTTP cases for an inactive or unknown billing key: B8682, which mounts B4503's routes. validate_key reads the database through IdentityStore, so it has no helper case."
+pitfalls:
+  - "The key id is the stored SHA-256 hex of the key, not a bearer value; hashing it again, or passing it through the sk- key hasher, resolves nothing."
+  - "Inactive is either flag: a key with blocked false but is_session_token true still fails, and so does a blocked key with no team."
+  - "AuthError is an error to pass on, not to rewrite: mapping KeyNotFound to the 400 inactive text hides LiteLLM's 401 for an unknown key."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

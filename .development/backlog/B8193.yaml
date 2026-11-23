@@ -2,7 +2,7 @@ id: B8193
 milestone: M9 agents and mcp
 title: MCP sampling model access, budgets and completion
 status: blocked
-depends_on: [B8190, B8192, B886, B887, B754, B736, B737, B879]
+depends_on: [B8190, B8192, B886, B10051, B887, B754, B736, B737, B879]
 file: tasks/B8193-mcp-sampling-handler.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/sampling_handler.py"

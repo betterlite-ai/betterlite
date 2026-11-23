@@ -1,11 +1,14 @@
 id: B1060
-title: Managed vector-store grants and index lifecycle policy
+title: Managed vector-store grants
 description: >-
-  Implement all thirteen complete functions at proxy/vector_store_endpoints/utils.py:25-257 in
-  core::api::vector_store_access. This layer normalizes stored parameters, checks admin/index lifecycle,
-  builds effective auth contexts and applies key/team grants. B732 supplies auth records, B735 object
-  permission lookup, B737 team lookup, and B4672 UI-session identification/team membership through injected
-  runtime seams; never import proxy_server globals into native policy code. Route owners apply the resulting
+  Implement the nine functions at proxy/vector_store_endpoints/utils.py:25-37 and 102-257 in
+  core::api::vector_store_access. This layer normalizes stored parameters, builds effective auth contexts
+  and applies key/team grants. The admin predicate, the index admin gate and the lifecycle check at L40-L99
+  are B10071's (betterlite_auth::vector_index_admin); call its auth_is_proxy_admin for both admin short
+  circuits and do not compare the role here. B732 supplies auth records, B735 object permission lookup,
+  B737 team lookup, and B10070 UI-session identification and team membership (betterlite_auth::ui_session_identity:
+  is_ui_session_credential, and resolve_ui_session_team_ids over its UiSessionTeams port, taken as a generic
+  parameter); never import proxy_server globals into native policy code. Route owners apply the resulting
   errors to HTTP and retain their own error envelopes.
 
   Direct access permits proxy_admin, then any store with team_id=null, then a key grant, team grant or
@@ -18,8 +21,7 @@ description: >-
   decode_vector_store_access(bytes,limits) parses a string-valued litellm_params JSON into an object,
   returning {} for malformed JSON or a non-object. It is shared with the vector_store_access fuzz target
   and replays_corpus. Non-string fields bypass normalization. Add B171 VectorStoreAccess for deterministic
-  typed policy inputs and scripted auth lookups. The source has 190 nonblank/non-comment lines; budget
-  195 code, 190 tests, 95 adapters, 120 fixtures, 60 fuzz/replay and 35 wiring, 695 within 740.
+  typed policy inputs and scripted auth lookups. The source left here has 143 nonblank, non-comment lines.
 scope:
   paths:
   - crates/betterlite-core/src/api/vector_store_access.rs
@@ -36,7 +38,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L25-L257
-  why: Whole normalization, lifecycle and grant functions distinguish individual access from list visibility and session-team contexts.
+  why: The normalization and grant functions distinguish individual access from list visibility and session-team contexts; L40-L99 inside this range are B10071's.
 dod:
 - text: >-
     parameter_string_normalization takes {litellm_params:'{"api_key":"k"}',vector_store_id:vs_a} and
@@ -44,15 +46,6 @@ dod:
     {}; an existing object,null or absent field stays unchanged without parsing. Native decoder replay
     covers malformed bytes and its size limit; credential values never appear in Debug output.
   proof: [access-tests, oracle, helper-python, parser-corpus]
-- text: >-
-    admin_and_lifecycle accepts only role proxy_admin, including the equivalent enum value. proxy_admin_viewer
-    and internal_user get HTTPException status=403,detail="Only proxy admins can create vector store indexes. Contact your LiteLLM administrator."
-    for default operation=create; delete/update/list substitute those literals. Helper error type,param,code
-    are absent because this is HTTPException, not ProxyException. Lifecycle detects POST/PUT/DELETE/PATCH
-    on /indexes/name and /indexes/name?x=1; GET is false. /indexes/name/docs/search and /docsanything are
-    false; /indexes/name/ with trailing slash is false. POST /indexes or /indexes/?x=1 is true. Name
-    "a.b" is regex-escaped and does not match axb; /indexes/name2 does not match name.
-  proof: [access-tests, oracle, helper-python]
 - text: >-
     store_grant_precedence uses store vs_a,team_id=t. Key object_permission.vector_stores=[vs_a] grants
     before any team read. Otherwise team allowlist grants; otherwise auth team_id=t grants; team=u denies.
@@ -65,7 +58,8 @@ dod:
     teamless_access_is_not_listing permits direct access when team_id is missing/null even without grants,
     but excludes that store from a non-admin list unless explicitly allowlisted. team_id="" is not the
     null exemption. Admin list preserves all stores and order without auth-context lookups; ordinary list
-    returns only granted entries in original order. Direct admin access short-circuits before team checks.
+    returns only granted entries in original order. Direct admin access short-circuits before team checks,
+    and both admin checks go through B10071's auth_is_proxy_admin (proxy_admin_viewer is not an admin here).
   proof: [access-tests, oracle, helper-python]
 - text: >-
     dashboard_effective_teams supplies a UI-session auth record with synthetic team=s, key grant vs_key,
@@ -81,7 +75,7 @@ checks:
   optional: []
   commands:
   - id: access-tests
-    why: grant precedence, lifecycle classification or session context handling loses an access boundary
+    why: grant precedence, the admin short circuit or session context handling loses an access boundary
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_access::tests::/) - test(/::replays_corpus$/)'
   - id: helper-python
     why: managed-store policies lack a checked pinned comparison
@@ -94,19 +88,17 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_access-*)" && grep -qE '^[[:space:]]+vector_store_access:' tools/oracle/fuzz/corpus/helper_case/vector_store_access-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/vector-store-access/parameter-string-normalization.yaml
-- tools/oracle/cases/helpers/vector-store-access/admin-and-lifecycle.yaml
 - tools/oracle/cases/helpers/vector-store-access/store-grant-precedence.yaml
 - tools/oracle/cases/helpers/vector-store-access/teamless-access-is-not-listing.yaml
 - tools/oracle/cases/helpers/vector-store-access/dashboard-effective-teams.yaml
 deviations: []
 out_of_scope:
-- B10014 owns utils.py:260-353 managed-id resolution and the ownership assertions, and B1061 owns utils.py:354-559 endpoint allowlist checks; route tasks own their final HTTP responses.
-- B735/B737 own permission/team cache and database lookups. B4672 owns UI-session identification (is_ui_session_credential) and team membership (resolve_ui_session_team_ids); native policy receives those results through an injected seam.
+- B10071 owns utils.py:40-99, _is_proxy_admin, assert_proxy_admin_for_vector_store_index_management, _suffix_after_index_name and _is_vector_store_index_lifecycle_request; this task calls its auth_is_proxy_admin. B10014 owns utils.py:260-353 managed-id resolution and the ownership assertions, and B1061 owns utils.py:354-559 endpoint allowlist checks; route tasks own their final HTTP responses.
+- B735/B737 own permission/team cache and database lookups. B10070 owns UI-session identification (is_ui_session_credential) and team membership (resolve_ui_session_team_ids over its UiSessionTeams port); native policy receives the port as a generic parameter.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as vector_store_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_store_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_store_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A teamless store is directly accessible but hidden from ordinary listing without an explicit grant.
 - Inline empty permission objects prevent id-based permission reload; absence and emptiness are different.
-- The lifecycle matcher accepts the exact index path or query suffix, but not an otherwise similar trailing slash.
 review_level: security
 budget:
   max_changed_lines: 1500

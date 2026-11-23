@@ -1,12 +1,12 @@
 mod calls;
 mod convert;
 mod deployments;
-mod error;
+pub(crate) mod error;
 mod facts;
 mod native;
 mod ports;
 mod session;
-mod setup;
+pub(crate) mod setup;
 mod stream;
 mod targets;
 use self::error::NativeError;
