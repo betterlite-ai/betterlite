@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 use std::str::from_utf8;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use axum::Router;
@@ -12,6 +13,8 @@ use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_db::mcp_user_credentials::store::get_user_oauth_credential;
 use betterlite_db::mcp_user_credentials::store_user_oauth_credential;
 use betterlite_db::mcp_user_credentials::types::StoreOAuthCredential;
+use betterlite_db::oauth_token_resolution::ports::TokenResponse;
+use betterlite_db::oauth_token_resolution::{EnforceRequest, OauthBindingPort};
 use betterlite_http::proxy::outbound::RequestBody;
 use chrono::TimeDelta;
 use http::Method;
@@ -21,13 +24,14 @@ use secrecy::SecretString;
 use tokio::task::JoinSet;
 
 use super::adapters::{DbCredentialPersist, DbCredentialReader, PooledTokenPost, refresh_request};
+use super::chain::SharedBinding;
 use crate::mcp::outbound_credentials::v2_store::{CredentialPayload, CredentialValue};
 use crate::mcp::outbound_credentials::{PER_USER_TOKEN_KEY_PREFIX, iso_to_epoch};
 use support::{
-    DEADLINE, FakeRows, FixedWallClock, answer_with_array, answer_with_object,
-    answer_with_server_error, base_time, chain_fixture, expired_credential, exposed, grant,
-    lazy_fixture, lazy_token, oauth_server, pooled_client, reader_fixture, sealed_byok,
-    serving_token_endpoint, test_cipher,
+    DEADLINE, FailingRows, FakeRows, FixedWallClock, RecordingBinding, answer_with_array,
+    answer_with_object, answer_with_server_error, base_time, chain_fixture, expired_credential,
+    exposed, grant, lazy_fixture, lazy_token, oauth_server, pooled_client, reader_fixture,
+    sealed_byok, serving_token_endpoint, test_cipher,
 };
 
 mod support;
@@ -231,6 +235,19 @@ async fn adapter_reader_maps_a_stored_row_into_the_chain_payload() {
 }
 
 #[tokio::test]
+async fn adapter_reader_reports_a_table_error_with_its_message() {
+    let credential_reader = DbCredentialReader {
+        database: Some(FailingRows),
+        cipher: test_cipher(),
+    };
+    let error = credential_reader
+        .read_credential("user", "srv")
+        .await
+        .unwrap_err();
+    assert_eq!(error.detail, "the stored MCP server row has no server_id");
+}
+
+#[tokio::test]
 async fn adapter_persist_skips_when_no_database_is_connected() {
     let credential_persist = DbCredentialPersist::<FakeRows> {
         database: None,
@@ -294,6 +311,10 @@ async fn store_bound_read_hides_a_mismatched_credential_for_an_enforce_server() 
     let credential = fixture.reader.read_credential("user", "srv").await.unwrap();
     assert!(credential.is_none());
     assert_eq!(fixture.binding.checks.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        fixture.binding.proofs.lock().unwrap().clone(),
+        vec![Some("other-user".to_owned())]
+    );
 }
 
 #[tokio::test]
@@ -314,6 +335,10 @@ async fn store_bound_read_returns_a_matching_credential_for_an_enforce_server() 
         CredentialValue::Text("user-proof".to_owned())
     );
     assert_eq!(fixture.binding.checks.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        fixture.binding.proofs.lock().unwrap().clone(),
+        vec![Some("user-proof".to_owned())]
+    );
 }
 
 #[rstest]
@@ -381,6 +406,43 @@ async fn store_chain_with_redis_uses_the_runtime_coordinator_and_default_ttl() {
     let cached = built.store.fetch("user", "srv").await.unwrap().unwrap();
     assert_eq!(cached.access_token, "fresh");
     assert_eq!(fixture.post.calls.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn store_shared_binding_delegates_enforce_and_the_proof_check() {
+    let server = oauth_server(None);
+    let response = TokenResponse::new();
+    let request = EnforceRequest {
+        server: server.as_ref(),
+        token_response: &response,
+        user_id: Some("user"),
+        grant_type: "refresh_token",
+        ownership: None,
+    };
+    let accepting = Arc::new(RecordingBinding {
+        matches: true,
+        checks: AtomicUsize::new(0),
+        proof: Some("bound".to_owned()),
+        proofs: Mutex::new(Vec::new()),
+    });
+    let shared = SharedBinding(Arc::clone(&accepting));
+    assert_eq!(
+        shared.enforce(&request).await.unwrap(),
+        Some("bound".to_owned())
+    );
+    assert!(
+        shared
+            .proof_matches(server.as_ref(), "user", Some("stored"))
+            .await
+    );
+    let rejecting = Arc::new(RecordingBinding {
+        matches: false,
+        checks: AtomicUsize::new(0),
+        proof: None,
+        proofs: Mutex::new(Vec::new()),
+    });
+    let shared = SharedBinding(rejecting);
+    assert!(!shared.proof_matches(server.as_ref(), "user", None).await);
 }
 
 #[tokio::test]
@@ -463,6 +525,29 @@ async fn store_lazy_invalidate_builds_a_chain_when_none_exists() {
     fixture.store.invalidate("user", "srv").await;
     assert_eq!(fixture.builds.load(Ordering::Relaxed), 1);
     assert_eq!(fixture.chain.invalidations.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn store_lazy_invalidate_releases_its_local_fetch() {
+    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    fixture.store.invalidate("user", "srv").await;
+    fixture.redis.store(true, Ordering::Relaxed);
+    fixture.builder_redis.store(true, Ordering::Relaxed);
+    let fetched = tokio::time::timeout(DEADLINE, fixture.store.fetch("user", "srv"))
+        .await
+        .expect("an invalidate releases its local fetch")
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.access_token, "fresh");
+    assert_eq!(fixture.builds.load(Ordering::Relaxed), 2);
+}
+
+#[tokio::test]
+async fn store_lazy_exposes_the_redis_chain_once_built() {
+    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, true);
+    assert!(fixture.store.redis_store().await.is_none());
+    drop(fixture.store.fetch("user", "srv").await.unwrap());
+    assert!(fixture.store.redis_store().await.is_some());
 }
 
 #[tokio::test]

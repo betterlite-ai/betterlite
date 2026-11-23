@@ -416,6 +416,27 @@ fn a_client_auth_body_key_wins_over_the_grant_keys() {
 }
 
 #[tokio::test]
+async fn the_configured_client_secret_basic_becomes_an_authorization_header() {
+    let server = oauth_server_making(
+        Some("https://idp.test/token"),
+        Some("client_secret_basic"),
+        None,
+        Some("secret"),
+    );
+    let harness = fixture(Some(server), Some(grant_answer()), vec![Ok(None)]);
+    let outcome = refresh(&harness, &stored_token(Some("stored"), &[])).await;
+    assert!(outcome.unwrap().is_some());
+    let calls = harness.post.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].headers.get("Authorization").map(String::as_str),
+        Some("Basic Y2xpZW50OnNlY3JldA==")
+    );
+    assert!(!calls[0].form.contains_key("client_id"));
+    assert!(!calls[0].form.contains_key("client_secret"));
+}
+
+#[tokio::test]
 async fn a_missing_answer_returns_none_and_persists_nothing() {
     let harness = fixture(
         Some(oauth_server(Some("https://idp.test/token"), None)),
@@ -717,6 +738,30 @@ fn read_grant_body_reads_the_grant_fields() {
         Some(vec!["read".to_owned(), "write".to_owned()])
     );
     assert!(read_grant_body(&answer(&[("refresh_token", text("x"))])).is_none());
+}
+
+#[test]
+fn grant_body_debug_masks_the_access_token() {
+    let grant = read_grant_body(&answer(&[("access_token", text("fresh"))])).unwrap();
+    let debug = format!("{grant:?}");
+    assert!(debug.contains("access_token: \"***\""));
+    assert!(!debug.contains("fresh"));
+}
+
+#[test]
+fn persist_request_debug_masks_the_access_token() {
+    let request = PersistRequest {
+        user_id: "user",
+        server_id: "srv",
+        access_token: "fresh",
+        refresh_token: Some("rotated"),
+        expires_in: Some(60),
+        scopes: None,
+        identity_binding_proof: Some("proof"),
+    };
+    let debug = format!("{request:?}");
+    assert!(debug.contains("access_token: \"***\""));
+    assert!(!debug.contains("fresh"));
 }
 
 #[test]

@@ -145,7 +145,7 @@ where
         result
     }
 
-    async fn redis_store(&self) -> Option<Arc<dyn InvalidatableOAuthTokenStore>> {
+    pub(super) async fn redis_store(&self) -> Option<Arc<dyn InvalidatableOAuthTokenStore>> {
         let state = self.state.lock().await;
         if state.uses_redis {
             state.store.clone()
