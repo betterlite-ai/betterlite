@@ -158,7 +158,7 @@ async def async_answer(
     return batch_from(answer, kwargs)
 
 
-def create_batch(
+def create_batch(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L172
     completion_window: Literal["24h"],
     endpoint: BatchPath,
     input_file_id: str,
@@ -189,7 +189,7 @@ def create_batch(
     )
 
 
-async def acreate_batch(
+async def acreate_batch(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L108
     completion_window: Literal["24h"],
     endpoint: BatchPath,
     input_file_id: str,
@@ -253,7 +253,7 @@ def retrieve_batch(
 async def aretrieve_batch(
     batch_id: str,
     custom_llm_provider: ReadProvider = "openai",
-    metadata: dict[str, str] | None = None,
+    metadata: dict[str, str] | None = None,  # noqa: ARG001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L384
     extra_headers: dict[str, str] | None = None,
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
