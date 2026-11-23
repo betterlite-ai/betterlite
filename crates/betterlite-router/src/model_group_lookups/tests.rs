@@ -656,6 +656,19 @@ fn group_info_invalidation_clears_only_model_metadata() {
     assert_eq!(scenario.calls(), 2);
 }
 
+#[test]
+fn group_info_keeps_each_cache_instance_apart() {
+    let first = Scenario::new(64, &[plain_row("g", "a")]);
+    let second = Scenario::new(64, &[plain_row("g", "a")]);
+    assert!(first.read("g").expect("the first read").is_some());
+    assert!(second.read("g").expect("the other read").is_some());
+    first.cache.clear();
+    assert!(first.read("g").expect("the first recompute").is_some());
+    assert_eq!(first.calls(), 2);
+    assert!(second.read("g").expect("the other hit").is_some());
+    assert_eq!(second.calls(), 1);
+}
+
 #[tokio::test]
 async fn group_info_a_clear_during_a_read_keeps_the_older_answer_out() {
     let scenario = Scenario::gated(&[plain_row("g", "a")]);
