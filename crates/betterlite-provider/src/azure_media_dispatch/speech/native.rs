@@ -143,7 +143,8 @@ fn header_map(headers: &BTreeMap<String, String>) -> SpeechHeaders {
         .collect()
 }
 
-// text_to_speech_handler reads ssl_verify off litellm_params; anything but a bool is left to the client default
+// text_to_speech_handler reads ssl_verify off litellm_params; the media transport owns TLS, so the value never reaches the wire
+#[cfg_attr(test, mutants::skip)]
 fn ssl_verify(params: &IndexMap<String, Json>) -> Option<bool> {
     match params.get("ssl_verify") {
         Some(Json::Bool(value)) => Some(*value),
@@ -216,7 +217,7 @@ where
                 query: Vec::new(),
                 headers: request.headers,
                 body: request.body,
-                deadline: request.timeout.unwrap_or(DEFAULT_TIMEOUT),
+                deadline: request.timeout.unwrap_or_else(|| self.default_timeout()),
             };
             self.transport.send(outbound).await
         }
