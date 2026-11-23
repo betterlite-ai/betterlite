@@ -21,6 +21,8 @@ description: >-
 
   Owned ranges are prometheus_cleanup.py (cleanup utilities), prometheus_metrics_server.py
   (app builder, subprocess launcher and CLI), tested by cleanup-tests and listener-tests cargo tests.
+  The /metrics app the listener mounts is B10090's make_metrics_app in betterlite-prometheus (scrape_endpoint,
+  LiteLLM's make_metrics_asgi_app); nest it under the pid header layer and do not render scrapes here.
 
 scope:
   paths:
@@ -74,7 +76,7 @@ dod:
     proof: [cleanup-tests]
   - text: _is_running returns true only when os.kill(pid, 0) succeeds or raises PermissionError, and false on ProcessLookupError.
     proof: [cleanup-tests]
-  - text: build_metrics_app mounts make_metrics_asgi_app at /metrics with a MultiProcessCollector reading the multiproc_dir, and adds a GET /health endpoint that returns status and multiproc_dir.
+  - text: build_metrics_app mounts B10090's make_metrics_app at /metrics with a MultiProcessCollector reading the multiproc_dir, and adds a GET /health endpoint that returns status and multiproc_dir.
     proof: [listener-tests]
   - text: _add_pid_header adds x-litellm-metrics-pid set to the current process ID on http.response.start messages.
     proof: [listener-tests]

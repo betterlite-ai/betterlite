@@ -1,12 +1,12 @@
 id: B8610
-title: Shared state, server inputs, the area mount aggregator and the WebSocket auth pass
+title: Shared state, server inputs, the health area and the WebSocket auth pass
 description: >-
   On main, server::run(config, chat, host, port) gets only the Config and the chat executor, so nothing the lifespan
   builds (database, Redis, caches, guardrails, plugins, router, registries) reaches a route. B1100 declares an empty
   `Shared` in crates/betterlite-server/src/state/shared.rs that application() builds once and puts into ServerState as
   `shared: Arc<Shared>`, so every Slot::new(config, shared) and every handler can read it. This task fills Shared,
-  widens the server inputs to carry what the lifespan made (B8613's Started), adds the area mount aggregator with its
-  startup step, and lets WebSocket upgrades reach their own auth. Area wiring parts read `state.shared.<field>` or
+  widens the server inputs to carry what the lifespan made (B8613's Started), runs B10082's area startup step before
+  the server listens, and lets WebSocket upgrades reach their own auth. Area wiring parts read `state.shared.<field>` or
   `shared.<field>` and never edit these files.
 
 
@@ -88,7 +88,7 @@ description: >-
   Arc<ShutdownState>` and `in_flight` (B022's in-flight source that ShutdownState reads), and `ServerInputs { config, chat, host, port, startup: StartupOutputs }`. `server::run(inputs:
   ServerInputs)` replaces the four-argument run. `application(config, chat, startup)` builds Shared once, puts it into
   ServerState as B1100 does, keeps the RootPaths wrap (and B100's native_compaction::install after it as the last call, when
-  B100 has landed) and returns the router and the Arc<ServerState>. run then awaits `app::start(&state)` once, before it binds the listener,
+  B100 has landed) and returns the router and the Arc<ServerState>. run then awaits B10082's `app::start(&state)` once, before it binds the listener,
   so no request arrives before every area finished its startup work. In crates/betterlite/src/lifespan.rs, run_proxy
   turns B8613's `Started` into StartupOutputs (cloning the Arcs, so stop still holds its own) and calls the new run. If
   main.rs still calls server::run itself, change that call too. B4471's gateway and backend binaries call server::run
@@ -105,32 +105,20 @@ description: >-
   layer B022 installs counts with `startup.in_flight`, the source ShutdownState reads, never a fresh one.
 
   The health area. B003's three handlers (GET /health/liveliness, /health/liveness and /health/readiness) move out of
-  routes.rs into the app/health.rs stub's mount_public, with the same bodies (liveliness and liveness 200 "I'm alive!",
+  routes.rs into the mount_public stub B10082 put in app/health.rs, with the same bodies (liveliness and liveness 200 "I'm alive!",
   readiness 200 {"status": "healthy"}, all three 503 {"status": "shutting_down"} once shutdown started), now reading
   `state.shutdown.is_shutting_down()`. They keep answering
   without a key until B8540 replaces the stub, and routes.rs registers none of them, so no health path is registered
   twice.
 
 
-  Area aggregator. crates/betterlite-server/src/app.rs declares `pub mod <area>;` (pub, not pub(crate), so a part whose
-  ports nothing calls yet passes its own dead_code lint) for mcp, inference, pass_through, agents, cache_secrets,
-  callbacks, spend, guardrails, management, admin, health and edge, in that order. The skeleton leaves each app/<area>.rs empty, since ServerState comes from B1100, and this task stubs each with
-  `mount(router, state)`, `mount_public(router, state)` and `async fn start(state)`, all returning at once or the router
-  unchanged, and app/edge.rs also with `wrap(router, state)`. app.rs has four functions, each calling every area once
-  in that order: `pub fn mount(router: Router, state: &Arc<ServerState>) -> Router` (routes that need a key),
-  `pub fn mount_public(router: Router, state: &Arc<ServerState>) -> Router` (routes LiteLLM serves with no key check),
-  `pub fn wrap(router: Router, state: &Arc<ServerState>) -> Router`, which calls only edge::wrap, and `pub async fn
-  start(state: &Arc<ServerState>)`.
-
-  routes.rs router() changes in three places. It calls app::mount after it merges chat, embeddings and B1100's route
-  modules and before the two auth layers, so area routes pass the same auth stages as every other route. After the auth
-  layers it merges app::mount_public, so public routes skip them. Then it calls app::wrap as the last step of router(), so
-  edge's outer layers (CORS preflight, the outer 500 handler of B789 and B8591) sit outside every route and auth layer.
-  application() still wraps router() in request_stack, admission and RootPaths, and B100's native_compaction::install is
-  the last call of application(), outside all of them. Fallback: axum keeps one fallback,
-  and Router::merge panics when both routers carry one. routes.rs keeps setting its Not Found fallback before app::mount,
-  the pass-through area's mount replaces it with B8643's configured_fallback (same 404 body when nothing matches), and
-  nothing after app::mount sets a fallback: mount_public and wrap must merge only routers without one.
+  Area aggregator. B10082 builds it: the mount, mount_public, start and edge wrap stubs in each app/<area>.rs, the four
+  functions in app.rs, and router() calling app::mount before the auth layers, app::mount_public after them and
+  app::wrap last, with no fallback set after app::mount. This task calls it and changes none of it: run awaits
+  app::start as above, health's mount_public gets the health routes, and the auth layers router() puts around the
+  keyed routes become the WebSocket pass and with_key_auth below. application() still wraps router() in
+  request_stack, admission and RootPaths, and B100's native_compaction::install is the last call of application(),
+  outside all of them.
 
 
   WebSocket auth. LiteLLM's WebSocket routes authenticate with user_api_key_auth_websocket (user_api_key_auth.py L644,
@@ -171,19 +159,7 @@ scope:
     - crates/betterlite-server/src/server/inputs.rs
     - crates/betterlite-server/src/server/inputs/**
     - crates/betterlite-server/src/server/tests.rs
-    - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/health.rs
-    - crates/betterlite-server/src/app/mcp.rs
-    - crates/betterlite-server/src/app/inference.rs
-    - crates/betterlite-server/src/app/pass_through.rs
-    - crates/betterlite-server/src/app/agents.rs
-    - crates/betterlite-server/src/app/cache_secrets.rs
-    - crates/betterlite-server/src/app/callbacks.rs
-    - crates/betterlite-server/src/app/spend.rs
-    - crates/betterlite-server/src/app/guardrails.rs
-    - crates/betterlite-server/src/app/management.rs
-    - crates/betterlite-server/src/app/admin.rs
-    - crates/betterlite-server/src/app/edge.rs
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/state/model_read_through.rs
     - crates/betterlite-server/src/state/health.rs
@@ -217,10 +193,8 @@ dod:
     proof: [shared-tests]
   - text: server::run takes ServerInputs, awaits app::start before it listens, drains the chat client at shutdown, the lifespan hands over its values without building a second copy, and the health routes and fallback still answer.
     proof: [inputs-tests, server-regression]
-  - text: app.rs declares every area as pub mod and calls each area's mount, mount_public and start once, and edge's wrap once; router() calls app::mount inside the auth layers, app::mount_public outside them and app::wrap last, and sets no fallback after app::mount.
-    proof: [app-mount, inputs-tests]
   - text: ServerState holds the ShutdownState from StartupOutputs and the HealthSlot, the signal calls start_shutdown while the accept loop still stops only on the signal, and the three health routes answer from app::health mount_public, read ShutdownState and are not registered in routes.rs.
-    proof: [inputs-tests, app-mount]
+    proof: [inputs-tests, health-mount]
   - text: A WebSocket upgrade GET on a LiteLLM WebSocket path skips the HTTP master key stage, any other request, an upgrade on another path included, still needs a key, and with_key_auth gives a public router the same key check on the paths an area chooses.
     proof: [inputs-tests]
   - text: The gateway and backend binaries run the same lifespan as betterlite, B051's database startup included, so a database startup failure makes each exit with status 2.
@@ -234,19 +208,12 @@ checks:
     - id: inputs-tests
       why: the server ignores its startup inputs, skips app::start, puts a public route behind auth or a keyed route outside it, or lets an upgrade header skip auth on a path that is not a WebSocket route
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::tests::inputs_/)'
-    - id: app-mount
-      why: an area is not declared or not called exactly once in one of the aggregator functions, or router() calls an aggregator twice
+    - id: health-mount
+      why: routes.rs still registers a health route, or the health area's mount_public serves none
       run: |-
-        for call in 'app::mount(' 'app::mount_public(' 'app::wrap('; do
-          test "$(grep -cF "$call" crates/betterlite-server/src/routes.rs)" = 1 || { echo "routes.rs must call $call once"; exit 1; }
-        done
-        test "$(grep -cF 'edge::wrap(' crates/betterlite-server/src/app.rs)" = 1 || exit 1
         if grep -qF '.route("/health/' crates/betterlite-server/src/routes.rs; then echo "routes.rs still registers a health route"; exit 1; fi
-        for area in mcp inference pass_through agents cache_secrets callbacks spend guardrails management admin health edge; do
-          grep -qE "^pub mod $area;" crates/betterlite-server/src/app.rs || { echo "area $area is not declared pub"; exit 1; }
-          for f in mount mount_public start; do
-            test "$(grep -cF "$area::$f(" crates/betterlite-server/src/app.rs)" = 1 || { echo "area $area $f is not called once"; exit 1; }
-          done
+        for path in /health/liveliness /health/liveness /health/readiness; do
+          grep -qF "\"$path\"" crates/betterlite-server/src/app/health.rs || { echo "app/health.rs does not serve $path"; exit 1; }
         done
     - id: server-regression
       why: the wider inputs broke the existing server, route or lifespan tests
@@ -258,7 +225,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "The router, router views, shared port and registry types: B8611, B8612 and B8614. The mcp_registry and vector_stores fields: B9997 and B9998. The values made during startup: B8613."
-  - "Each area's mount, mount_public, start and edge's wrap: the area wiring parts, in app/<area>.rs and app/<area>/**."
+  - "The area aggregator: the four functions in app.rs, every area's mount, mount_public and start stubs, edge's wrap stub and their calls in routes.rs router(): B10082. What each area fills into them: the area wiring parts, in app/<area>.rs and app/<area>/**."
   - "The route and state registry, ServerState and the stub modules: B1100. user_api_key_auth_websocket: B052."
   - "HealthSlot's contents and the five health routers: B8540. ShutdownState and its drain: B4448. The in-flight counter and the admission layer: B022."
   - "A router embedder field: not in Shared; the router's embedding call is built by the inference part from ServerState (see the report notes)."

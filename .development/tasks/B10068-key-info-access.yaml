@@ -1,0 +1,92 @@
+id: B10068
+title: Key info access check
+description: >-
+  LiteLLM's _can_user_query_key_info (key_management_endpoints.py L7606-L7627) decides whether a caller may read one key's row. Three places call it: B778's GET /key/info and POST /v2/key/info, and B781's validate_key_list_check for a key_hash filter. B781 needs nothing else from B778, so this task builds the check on its own and both of them call it.
+
+
+  Layout. Module access under B778's key_info in betterlite-server: crates/betterlite-server/src/key_info/access.rs, with its tests in key_info/access/tests.rs. The file is an empty stub that key_info.rs declares with `pub mod access;`. Leave key_info.rs as it is; B778 fills it later with the routes and usage projections.
+
+
+  The check. `pub async fn can_user_query_key_info(caller: &UserAPIKeyAuth, key: Option<&str>, key_row: &LiteLLMVerificationToken, teams: &TeamLookup) -> Result<bool, TeamAccessError>`, with UserAPIKeyAuth from betterlite_auth::resolved_key::auth, LiteLLMVerificationToken from betterlite_db::identity_rows::key, and TeamLookup and TeamAccessError as B800's team_access code uses them. It answers true at the first of these that holds, in this order, and false when none does. (1) B2314's user_api_key_has_admin_view(caller): proxy_admin or proxy_admin_viewer. (2) The caller's api_key equals key, compared as two Options, so a caller with no api_key and a key of None also passes. (3) key_row.user_id equals the caller's user_id, again as two Options, so an ownerless key matches a caller with no user_id. (4) B800's user_belongs_to_keys_team(&TeamCaller::try_from(caller)?, key_row.team_id.as_deref(), teams): false at once for a key with no team_id, otherwise a fresh database read of the team and a check that the caller has a role in it. Steps 1 to 3 are plain comparisons, so a team read only happens when all three fail. An error from TeamCaller::try_from or from the team read is returned as it is, since LiteLLM lets get_team_object raise; never turn it into false. The callers own what a false means: B778 answers 403 on GET and drops the row on POST /v2/key/info, and B781 raises its 403 with the role in the detail.
+
+
+  Reading the caller. UserAPIKeyAuth keeps api_key pub(crate) in betterlite-auth, and that crate is not this task's. Read it once from the caller's serde form into a private struct holding `api_key: Option<SecretString>`, the same way team_access::caller builds TeamCaller, and take user_id from the TeamCaller you build for step 4 or from the same struct. The api_key in a UserAPIKeyAuth is already the hash UserAPIKeyAuth::construct stored (LiteLLM's check_api_key hashes an sk- key with SHA-256), so compare the text exactly, with no hashing or trimming here. Never put the key in a log line or an error.
+
+
+  Tests in key_info::access::tests, with fake TeamCache and TeamStore implementations written in the test module (B800's team_access/tests/support.rs shows the shape, but its items are pub(super), so do not import them): admin_and_viewer_pass (both roles pass on a foreign key with no team read), same_api_key (the hashed caller key equal to key passes; the raw sk- key does not), both_keys_absent, owner_match, ownerless_key_and_caller (None equals None), member_of_key_team (passes, and the team was read from the store, not the cache), not_in_key_team, personal_key_no_lookup (team_id None answers false with no team read), short_circuit_skips_team_read (an admin, a key match and an owner match never read the team) and team_read_error_propagates.
+
+
+  Oracle. Helper cases on the b10068 operation, a list of calls, each with a caller (user_role, api_key, user_id), a key and a key row (user_id and team_id), answering one bool per call. Every case keeps team_id null, so neither side reads a team: LiteLLM returns false from user_belongs_to_keys_team before it calls get_team_object, and the Rust adapter passes a TeamLookup over in-memory fakes with no database. The Python side builds litellm.proxy._types.UserAPIKeyAuth and LiteLLM_VerificationToken and awaits _can_user_query_key_info with asyncio.run. It is private, and no public name reaches it outside the routes, so its import line carries `# pyright: ignore[reportPrivateUsage]` with a link to L7606 at the pinned commit. The Rust side builds the caller with UserAPIKeyAuth::construct(AuthInput::Dict(...)) from the same fields, so both hash an sk- api_key the same way. For a matching key, the case writes the SHA-256 hex of the raw key. The team branch stays in the Rust tests, since a LiteLLM team read needs a database. Add a key-info-access-* seed to the helper_case corpus.
+scope:
+  paths:
+    - crates/betterlite-server/src/key_info/access.rs
+    - crates/betterlite-server/src/key_info/access/**
+    - tools/oracle/cases/helpers/key-info-access/**
+    - tools/oracle/fuzz/corpus/helper_case/key-info-access-*
+    - tools/oracle/helpers/b10068.py
+    - tools/oracle/helpers/b10068/**
+    - tools/oracle/src/helpers/server/b10068.rs
+    - tools/oracle/src/helpers/server/b10068/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7606-L7627
+    why: Owned. _can_user_query_key_info and the order of its four checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_member_permission_checks.py#L203-L227
+    why: user_belongs_to_keys_team, B800's code on main; it returns false for a key with no team_id before any read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3445-L3492
+    why: check_api_key hashes an sk- api_key, so the caller's api_key is the hash the check compares.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4308-L4314
+    why: Call site in B778's POST /v2/key/info, which drops a row the caller may not read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4441-L4453
+    why: Call site in B778's GET /key/info, which answers 403.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6366-L6375
+    why: Call site in B781's validate_key_list_check, with the key_hash as the key.
+dod:
+  - text: A proxy_admin or proxy_admin_viewer caller passes on any key without a team read, and every other role goes on to the next check.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: The caller's hashed api_key equal to key passes, a raw sk- key does not, and a caller with no api_key passes for a key of None.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: A key row whose user_id equals the caller's passes, None equal to None included.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: A member of the key's team passes after a fresh team read, a non-member and a key with no team_id fail, the read happens only when the first three checks fail, and a read error is returned instead of false.
+    proof: [behavior-tests]
+  - text: The new helper seed replays through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The key info access check skips a branch, reorders them, reads the team too early or hides a team read error.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_info::access::tests::/)'
+    - id: helper-python
+      why: The b10068 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10068.py tools/oracle/helpers/b10068)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10068 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-info-access-*")" &&
+        grep -lE 'b10068"?:' tools/oracle/fuzz/corpus/helper_case/key-info-access-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-info-access/admin-and-viewer.yaml
+  - tools/oracle/cases/helpers/key-info-access/same-key-hash.yaml
+  - tools/oracle/cases/helpers/key-info-access/owner-equality.yaml
+  - tools/oracle/cases/helpers/key-info-access/unrelated-personal-key.yaml
+deviations: []
+out_of_scope:
+  - "info_key_fn, info_key_fn_v2, _find_deleted_key_info, the budget usage projections and the 403 and row filtering around this check: B778."
+  - "validate_key_list_check and its 403 with the caller's role: B781."
+  - "TeamMemberPermissionChecks.user_belongs_to_keys_team, _get_caller_team_role and TeamCaller: B800, on main. user_api_key_has_admin_view and UserAPIKeyAuth: B2314, on main."
+  - "Every other function in key_management_endpoints.py: the owners B778's and B781's out_of_scope lists name."
+pitfalls:
+  - "user_id equality is LiteLLM's plain ==, so an ownerless key (user_id None) is readable by any caller whose user_id is also None; adding a non-null guard changes who can read ownerless keys."
+  - "The api_key comparison is Option against Option as well, so a caller with no api_key passes when the key argument is None; B778 passes the caller's own key when the query has none."
+  - "The caller's api_key is the hash, while B778's GET passes the key as the request sent it, so a caller that sends its own raw sk- key fails this step and can pass only on the owner or team check; do not hash key here."
+  - "user_belongs_to_keys_team reads the team with check_db_only, so the team cache is never trusted here; a test that only fills the cache must see false."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

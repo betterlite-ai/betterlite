@@ -7,12 +7,9 @@ description: >-
   duplicated-header precedence and mode overrides through typed selectors.
 
 
-  Both bearer helpers recognize only Bearer, bearer and Basic followed by a space and remove all
-  occurrences of that exact prefix after the starts-with check; they neither trim nor decode Basic.
-  AWS4-HMAC-SHA256 uses Credential=Bearer followed by whitespace first, then plain Credential=,
-  stopping at slash, whitespace or comma. The permissive helper preserves unmatched input; the strict
-  helper returns an empty string, including malformed AWS credentials. Unknown case BEARER is not
-  recognized. get_api_key chooses custom-header string even empty, then nonempty Authorization,
+  B10086 owns both bearer helpers as betterlite-auth bearer_credentials::get_bearer_token, which
+  answers None for an unrecognized value: the strict uses here take None as an empty key and the
+  custom-key-header use keeps the value it passed. Call it; do not parse a scheme here. get_api_key chooses custom-header string even empty, then nonempty Authorization,
   then Azure, Anthropic, Google and APIM header strings even empty, then a truthy generateContent
   query key, finally exact configured pass-through paths. It returns the original passed_in_key too;
   multiple matching pass-through declarations overwrite in list order. B003 owns duplicate wire headers.
@@ -31,8 +28,9 @@ description: >-
   and returns empty. Do not reproduce the source DEBUG dump of all request headers: the native logger
   records names only. Public-route normalization strips trailing slashes except root; metrics always
   requires auth unless litellm.require_auth_for_metrics_endpoint is exactly false, regardless of
-  general_settings. Development no-auth mode requires master_key is null (empty does not count) and
-  all enable_jwt_auth/enable_oauth2_auth/enable_oauth2_proxy_auth flags falsey; custom auth is not a flag.
+  general_settings. The no-auth development check is B10086's dev_auth_mode::is_no_auth_dev_mode; this
+  task's config section loads enable_jwt_auth, enable_oauth2_auth and enable_oauth2_proxy_auth as bools, and
+  the betterlite-auth side builds B10086's AuthModeFlags from them (betterlite-config cannot name that type).
 
 
   A null routing selector matches anything. Otherwise stringify scalar/list selectors and claims;
@@ -52,12 +50,12 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/user_api_key_auth.py:
   _normalize_public_auth_route (L160-L163; 4 source lines), _route_requires_auth_despite_public (L166-L171;
-  5 source lines), _get_bearer_token_or_received_api_key (L491-L511; 16 source lines), _routing_selector_matches_claim
+  5 source lines), _routing_selector_matches_claim
   (L514-L552; 26 source lines), _matches_routing_override (L555-L565; 11 source lines), _should_route_jwt_to_oauth2_override
-  (L568-L582; 12 source lines), _get_bearer_token (L585-L610; 22 source lines), get_rbac_role (L793-L798;
+  (L568-L582; 12 source lines), get_rbac_role (L793-L798;
   6 source lines), get_api_key (L801-L858; 57 source lines), check_api_key_for_custom_headers_or_pass_through_endpoints
-  (L861-L905; 34 source lines), get_api_key_from_custom_header (L3580-L3612; 30 source lines), is_no_auth_dev_mode
-  (L2747-L2751; 5 source lines).
+  (L861-L905; 34 source lines), get_api_key_from_custom_header (L3580-L3612; 30 source lines). B10086 owns
+  _get_bearer_token_or_received_api_key (L491-L511), _get_bearer_token (L585-L610) and is_no_auth_dev_mode (L2747-L2751).
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.require_auth_for_metrics_endpoint=True.
@@ -156,7 +154,7 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L160-L171
     why: Pinned implementation and exact ownership boundary for auth_headers.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L491-L610
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L514-L582
     why: Pinned implementation and exact ownership boundary for auth_headers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L793-L905
     why: Pinned implementation and exact ownership boundary for auth_headers.
@@ -166,16 +164,12 @@ references:
     why: Own _normalize_public_auth_route; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L166-L171
     why: Own _route_requires_auth_despite_public; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L491-L511
-    why: Own _get_bearer_token_or_received_api_key; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L514-L552
     why: Own _routing_selector_matches_claim; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L555-L565
     why: Own _matches_routing_override; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L568-L582
     why: Own _should_route_jwt_to_oauth2_override; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L585-L610
-    why: Own _get_bearer_token; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L793-L798
     why: Own get_rbac_role; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L801-L858
@@ -183,8 +177,6 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L861-L905
     why: Own check_api_key_for_custom_headers_or_pass_through_endpoints; preserve caller-visible values
       and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2747-L2751
-    why: Own is_no_auth_dev_mode; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L191-L196
     why: litellm_settings.require_auth_for_metrics_endpoint default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L568-L582
@@ -192,13 +184,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Named cases: strict_and_permissive_prefix_table, repeated_prefixes_not_trimmed,
-      aws_bearer_plain_and_missing_credential, header_precedence_including_empty_strings,
+  - text: 'Named cases: header_precedence_including_empty_strings,
       passed_in_key_keeps_original, generate_content_query_only, duplicate_endpoint_last_match,
       mapped_prefix_root_and_empty_override, passthrough_auth_exact_true_default,
       langfuse_base64_colons_padding_and_invalid_utf8, normal_headers_skip_dict_only_branch,
       custom_header_casefold_missing_empty_and_strict_parse, metrics_trailing_slashes_exact_false,
-      dev_mode_null_master_and_all_three_flags, selector_null_missing_empty_and_stringification,
+      selector_null_missing_empty_and_stringification,
       scope_space_not_tab_splitting, wildcard_case_whitespace_and_bracket_rules,
       selectors_and_values_cross_product, only_oauth2_override_debug_no_identity,
       invalid_unverified_claims_no_override, admin_scope_role_mapping.'
@@ -301,6 +292,8 @@ deviations:
 out_of_scope:
   - B003 owns duplicate wire-header selection. B760 decodes unverified JWT claims; B762/B053 verify
     and authenticate after mode selection. No credentials are stored here.
+  - "litellm/proxy/auth/user_api_key_auth.py: B10086 owns _get_bearer_token (L585-L610), _get_bearer_token_or_received_api_key
+    (L491-L511) and is_no_auth_dev_mode (L2747-L2751) as get_bearer_token, AuthModeFlags and is_no_auth_dev_mode; this task calls them."
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model

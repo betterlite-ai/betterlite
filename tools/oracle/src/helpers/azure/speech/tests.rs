@@ -1,0 +1,59 @@
+#![cfg(test)]
+
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::Path;
+
+use betterlite_oracle_runner::case::helper::parse_helper_case;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
+
+const VARIANTS: [&str; 4] = [
+    "audio_speech",
+    "native_speech_selection",
+    "probe",
+    "supported_params",
+];
+
+#[test]
+fn helper_seeds_select_azure_speech() {
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
+    let seeds: Vec<(String, String)> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap()
+                .to_owned();
+            (name, fs::read_to_string(path).unwrap())
+        })
+        .filter(|(name, _source)| name.starts_with("azure_speech"))
+        .collect();
+    assert!(!seeds.is_empty(), "no azure_speech seeds");
+    let expected: BTreeSet<String> = VARIANTS.iter().copied().map(str::to_owned).collect();
+    assert_eq!(seed_variants(&seeds), expected);
+}
+
+fn seed_variants(seeds: &[(String, String)]) -> BTreeSet<String> {
+    let mut seen = BTreeSet::new();
+    for (name, source) in seeds {
+        let case = parse_helper_case(Path::new(name), source).unwrap();
+        assert_eq!(case.call.operation, "azure_speech");
+        let variant = case
+            .call
+            .input
+            .as_object()
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+        assert!(
+            VARIANTS.contains(&variant.as_str()),
+            "{name} names {variant}"
+        );
+        seen.insert(variant);
+    }
+    seen
+}
