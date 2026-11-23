@@ -49,48 +49,6 @@ CALL: Final[TypeAdapter[JsonRpcCall]] = TypeAdapter(JsonRpcCall)
 BODY: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
-def lowered(names: dict[str, str]) -> dict[str, str]:
-    return {name.lower(): value for name, value in names.items()}
-
-
-def header_of(call_record: RecordedCall, name: str) -> str | None:
-    return call_record["headers"].get(name.lower())
-
-
-def call_of(call_record: RecordedCall) -> JsonRpcCall:
-    return CALL.validate_python(call_record["body"])
-
-
-def message_result(text: str) -> dict[str, JsonValue]:
-    return {"message": {"role": "ROLE_AGENT", "parts": [{"text": text}], "messageId": MESSAGE_ID}}
-
-
-def status_result() -> dict[str, JsonValue]:
-    return {
-        "statusUpdate": {
-            "taskId": TASK_ID,
-            "contextId": CONTEXT_ID,
-            "status": {"state": STATUS_STATE},
-        }
-    }
-
-
-def artifact_result() -> dict[str, JsonValue]:
-    return {
-        "artifactUpdate": {
-            "taskId": TASK_ID,
-            "contextId": CONTEXT_ID,
-            "artifact": {"artifactId": ARTIFACT_ID, "parts": [{"text": ARTIFACT_TEXT}]},
-            "append": False,
-            "lastChunk": True,
-        }
-    }
-
-
-def answer_of(call: JsonRpcCall, result: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    return {"jsonrpc": "2.0", "id": call.get("id"), "result": result}
-
-
 def error_of(call: JsonRpcCall, method: str | None) -> dict[str, JsonValue]:
     name = "unknown" if method is None else method
     return {
@@ -114,9 +72,6 @@ class Recorder:
         self.interfaces = interfaces
         self.streaming = streaming
         self.calls: list[RecordedCall] = []
-
-    def record(self, call: RecordedCall) -> None:
-        self.calls.append(call)
 
 
 class AgentServer(ThreadingHTTPServer):
@@ -177,11 +132,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         owner = self.owner
-        owner.recorder.record(
+        owner.recorder.calls.append(
             {
                 "method": "GET",
                 "path": self.path,
-                "headers": lowered(dict(self.headers.items())),
+                "headers": {name.lower(): value for name, value in self.headers.items()},
                 "body": None,
             }
         )
@@ -198,11 +153,11 @@ class _Handler(BaseHTTPRequestHandler):
         owner = self.owner
         declared = self.headers.get("Content-Length")
         raw = b"{}" if declared is None else self.rfile.read(int(declared))
-        owner.recorder.record(
+        owner.recorder.calls.append(
             {
                 "method": "POST",
                 "path": self.path,
-                "headers": lowered(dict(self.headers.items())),
+                "headers": {name.lower(): value for name, value in self.headers.items()},
                 "body": BODY.validate_json(raw),
             }
         )
@@ -212,7 +167,19 @@ class _Handler(BaseHTTPRequestHandler):
         call = CALL.validate_json(raw)
         method = call.get("method")
         if method in SEND_METHODS:
-            self.reply(OK, answer_of(call, message_result(REPLY_TEXT)))
+            message: dict[str, JsonValue] = {
+                "message": {
+                    "role": "ROLE_AGENT",
+                    "parts": [{"text": REPLY_TEXT}],
+                    "messageId": MESSAGE_ID,
+                }
+            }
+            answer: dict[str, JsonValue] = {
+                "jsonrpc": "2.0",
+                "id": call.get("id"),
+                "result": message,
+            }
+            self.reply(OK, answer)
         elif method in STREAM_METHODS:
             self.stream(call)
         else:
@@ -230,7 +197,34 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(OK)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
-        for result in (status_result(), artifact_result(), message_result(REPLY_TEXT)):
-            frame = answer_of(call, result)
+        status: dict[str, JsonValue] = {
+            "statusUpdate": {
+                "taskId": TASK_ID,
+                "contextId": CONTEXT_ID,
+                "status": {"state": STATUS_STATE},
+            }
+        }
+        artifact: dict[str, JsonValue] = {
+            "artifactUpdate": {
+                "taskId": TASK_ID,
+                "contextId": CONTEXT_ID,
+                "artifact": {"artifactId": ARTIFACT_ID, "parts": [{"text": ARTIFACT_TEXT}]},
+                "append": False,
+                "lastChunk": True,
+            }
+        }
+        message: dict[str, JsonValue] = {
+            "message": {
+                "role": "ROLE_AGENT",
+                "parts": [{"text": REPLY_TEXT}],
+                "messageId": MESSAGE_ID,
+            }
+        }
+        for result in (status, artifact, message):
+            frame: dict[str, JsonValue] = {
+                "jsonrpc": "2.0",
+                "id": call.get("id"),
+                "result": result,
+            }
             self.wfile.write(f"data: {json.dumps(frame)}\n\n".encode())
             self.wfile.flush()

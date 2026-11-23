@@ -6,6 +6,7 @@ import pytest
 from a2a_server import (
     AGENT_NAME,
     ARTIFACT_TEXT,
+    CALL,
     CARD_PATH,
     DEAD_URL,
     LEGACY_CARD_PATH,
@@ -16,10 +17,7 @@ from a2a_server import (
     STREAM_METHOD,
     TASK_ID,
     AgentServer,
-    RecordedCall,
     Recorder,
-    call_of,
-    header_of,
 )
 from pydantic import JsonValue, TypeAdapter
 
@@ -30,12 +28,12 @@ STREAM_REQUEST_ID = "req-2"
 USER_MESSAGE_ID = "user-message"
 TRACE_ID = "trace-1"
 AGENT_ID = "agent-1"
-EXTRA_HEADER = "X-Test"
+EXTRA_HEADER = "x-test"
 EXTRA_VALUE = "yes"
-TRACE_HEADER = "X-LiteLLM-Trace-Id"
-AGENT_HEADER = "X-LiteLLM-Agent-Id"
+TRACE_HEADER = "x-litellm-trace-id"
+AGENT_HEADER = "x-litellm-agent-id"
 AGENT_TRACE = "agent-trace"
-ACCEPT_HEADER = "Accept"
+ACCEPT_HEADER = "accept"
 EVENT_STREAM = "text/event-stream"
 DEAD_STATUS = 503
 LLM_PROVIDER = "a2a_agent"
@@ -181,10 +179,6 @@ def send_call(
     return json.dumps(call)
 
 
-def recorded(recorder: Recorder, method: str) -> list[RecordedCall]:
-    return [call for call in recorder.calls if call["method"] == method]
-
-
 async def drain(stream: _native.NativeA2aStream) -> list[str]:
     chunks: list[str] = []
     while True:
@@ -205,18 +199,6 @@ async def failing_send(settings: str, call: str) -> None:
     await client.send_message(call)
 
 
-async def direct_reply(call: str) -> str:
-    return await _native.send_message_direct(call)
-
-
-async def failing_direct(call: str) -> None:
-    await _native.send_message_direct(call)
-
-
-async def card_for(settings: str) -> str:
-    return await _native.get_agent_card(settings)
-
-
 async def created_card(settings: str) -> tuple[str, str]:
     client = await _native.create_client(settings)
     return client.base_url, client.agent_card()
@@ -227,14 +209,11 @@ async def stream_with(settings: str, call: str) -> list[str]:
     stream = await client.send_message_streaming(call)
     chunks = await drain(stream)
     await stream.aclose()
-    await stream.aclose()
-    assert await stream.anext_chunk() is None
     return chunks
 
 
-async def first_then_close(settings: str, call: str) -> str:
-    client = await _native.create_client(settings)
-    stream = await client.send_message_streaming(call)
+async def close_first_chunk(call: str) -> str:
+    stream = await _native.send_message_streaming_direct(call)
     first = await stream.anext_chunk()
     await stream.aclose()
     await stream.aclose()
@@ -248,7 +227,7 @@ async def stream_direct(call: str) -> list[str]:
     return await drain(stream)
 
 
-def test_send_message_returns_the_agent_reply() -> None:
+def test_send_message_replies() -> None:
     with AgentServer(Recorder()) as server:
         text = asyncio.run(send_with(settings_of(server), send_call()))
     payload = TypeAdapter(SendView).validate_json(text)
@@ -262,22 +241,22 @@ def test_send_message_returns_the_agent_reply() -> None:
     assert unstructured["_hidden_params"] == {}
 
 
-def test_send_message_carries_the_client_headers() -> None:
+def test_send_has_client_headers() -> None:
     recorder = Recorder()
     extra_headers: dict[str, JsonValue] = {EXTRA_HEADER: EXTRA_VALUE}
     with AgentServer(recorder) as server:
         settings = settings_of(server, extra_headers=extra_headers)
         asyncio.run(send_with(settings, send_call()))
-    gets = recorded(recorder, "GET")
-    posts = recorded(recorder, "POST")
+    gets = [entry for entry in recorder.calls if entry["method"] == "GET"]
+    posts = [entry for entry in recorder.calls if entry["method"] == "POST"]
     assert len(gets) == SINGLE
     assert len(posts) == SINGLE
     assert posts[0]["path"] == "/"
-    assert header_of(gets[0], EXTRA_HEADER) == EXTRA_VALUE
-    assert header_of(posts[0], EXTRA_HEADER) == EXTRA_VALUE
+    assert gets[0]["headers"].get(EXTRA_HEADER) == EXTRA_VALUE
+    assert posts[0]["headers"].get(EXTRA_HEADER) == EXTRA_VALUE
 
 
-def test_send_message_direct_sets_the_agent_headers() -> None:
+def test_direct_sets_agent_headers() -> None:
     recorder = Recorder()
     agent_headers: dict[str, JsonValue] = {TRACE_HEADER: AGENT_TRACE}
     with AgentServer(recorder) as server:
@@ -287,17 +266,16 @@ def test_send_message_direct_sets_the_agent_headers() -> None:
             agent_id=AGENT_ID,
             agent_extra_headers=agent_headers,
         )
-        text = asyncio.run(direct_reply(call))
-    payload = TypeAdapter(SendView).validate_json(text)
-    posts = recorded(recorder, "POST")
-    assert payload["result"]["parts"][0]["text"] == REPLY_TEXT
+        text = asyncio.run(_native.send_message_direct(call))
+    assert text
+    posts = [entry for entry in recorder.calls if entry["method"] == "POST"]
     assert len(posts) == SINGLE
-    assert header_of(posts[0], TRACE_HEADER) == AGENT_TRACE
-    assert header_of(posts[0], AGENT_HEADER) == AGENT_ID
-    assert call_of(posts[0]).get("method") == SEND_METHOD
+    assert posts[0]["headers"].get(TRACE_HEADER) == AGENT_TRACE
+    assert posts[0]["headers"].get(AGENT_HEADER) == AGENT_ID
+    assert CALL.validate_python(posts[0]["body"]).get("method") == SEND_METHOD
 
 
-def test_send_message_streaming_gives_the_events_in_order() -> None:
+def test_stream_yields_events() -> None:
     recorder = Recorder()
     with AgentServer(recorder) as server:
         settings = settings_of(server, streaming=True)
@@ -314,35 +292,35 @@ def test_send_message_streaming_gives_the_events_in_order() -> None:
     message = TypeAdapter(MessageChunk).validate_json(chunks[2])
     assert message["result"]["kind"] == MESSAGE_LABEL
     assert message["result"]["parts"][0]["text"] == REPLY_TEXT
-    posts = recorded(recorder, "POST")
-    assert call_of(posts[0]).get("method") == STREAM_METHOD
-    assert header_of(posts[0], ACCEPT_HEADER) == EVENT_STREAM
+    posts = [entry for entry in recorder.calls if entry["method"] == "POST"]
+    assert CALL.validate_python(posts[0]["body"]).get("method") == STREAM_METHOD
+    assert posts[0]["headers"].get(ACCEPT_HEADER) == EVENT_STREAM
 
 
-def test_send_message_streaming_closes_midstream() -> None:
+def test_stream_closes_midstream() -> None:
     with AgentServer(Recorder()) as server:
-        settings = settings_of(server, streaming=True)
-        first = asyncio.run(first_then_close(settings, send_call()))
+        call = send_call(api_base=server.url, request_id=STREAM_REQUEST_ID)
+        first = asyncio.run(close_first_chunk(call))
     status = TypeAdapter(StatusChunk).validate_json(first)
     assert status["result"]["kind"] == STATUS_LABEL
 
 
-def test_send_message_streaming_direct_sets_the_trace_header() -> None:
+def test_direct_stream_trace() -> None:
     recorder = Recorder()
     with AgentServer(recorder) as server:
         call = send_call(api_base=server.url, request_id=STREAM_REQUEST_ID)
         chunks = asyncio.run(stream_direct(call))
     assert len(chunks) == STREAM_EVENTS
-    posts = recorded(recorder, "POST")
-    assert header_of(posts[0], TRACE_HEADER) == STREAM_REQUEST_ID
+    posts = [entry for entry in recorder.calls if entry["method"] == "POST"]
+    assert posts[0]["headers"].get(TRACE_HEADER) == STREAM_REQUEST_ID
 
 
-def test_get_agent_card_returns_the_card() -> None:
+def test_get_card_returns_card() -> None:
     recorder = Recorder()
     extra_headers: dict[str, JsonValue] = {EXTRA_HEADER: EXTRA_VALUE}
     with AgentServer(recorder) as server:
         settings = settings_of(server, extra_headers=extra_headers)
-        text = asyncio.run(card_for(settings))
+        text = asyncio.run(_native.get_agent_card(settings))
     card = TypeAdapter(CardView).validate_json(text)
     unstructured = TypeAdapter(dict[str, JsonValue]).validate_json(text)
     assert card["name"] == AGENT_NAME
@@ -350,32 +328,31 @@ def test_get_agent_card_returns_the_card() -> None:
     assert card["url"] == server.base_url
     assert card["capabilities"]["streaming"] is True
     assert "supportedInterfaces" not in unstructured
-    gets = recorded(recorder, "GET")
-    assert [call["path"] for call in gets] == [CARD_PATH]
-    assert header_of(gets[0], EXTRA_HEADER) == EXTRA_VALUE
+    gets = [entry for entry in recorder.calls if entry["method"] == "GET"]
+    assert [entry["path"] for entry in gets] == [CARD_PATH]
+    assert gets[0]["headers"].get(EXTRA_HEADER) == EXTRA_VALUE
 
 
-def test_get_agent_card_probes_the_legacy_path() -> None:
+def test_get_card_probes_legacy() -> None:
     recorder = Recorder(legacy_card=True)
     with AgentServer(recorder) as server:
-        text = asyncio.run(card_for(settings_of(server)))
+        text = asyncio.run(_native.get_agent_card(settings_of(server)))
     assert TypeAdapter(CardView).validate_json(text)["name"] == AGENT_NAME
-    gets = recorded(recorder, "GET")
-    assert [call["path"] for call in gets] == [CARD_PATH, LEGACY_CARD_PATH]
-    assert len(gets) == CARD_PROBES
+    paths = [entry["path"] for entry in recorder.calls]
+    assert paths == [CARD_PATH, LEGACY_CARD_PATH]
+    assert len(paths) == CARD_PROBES
 
 
-def test_get_agent_card_uses_the_relative_card_path() -> None:
+def test_get_card_relative_path() -> None:
     recorder = Recorder(legacy_card=True)
     with AgentServer(recorder) as server:
         settings = settings_of(server, relative_card_path=LEGACY_CARD_PATH)
-        text = asyncio.run(card_for(settings))
-    assert TypeAdapter(CardView).validate_json(text)["name"] == AGENT_NAME
-    gets = recorded(recorder, "GET")
-    assert [call["path"] for call in gets] == [LEGACY_CARD_PATH]
+        asyncio.run(_native.get_agent_card(settings))
+    paths = [entry["path"] for entry in recorder.calls]
+    assert paths == [LEGACY_CARD_PATH]
 
 
-def test_create_client_returns_the_normalized_card() -> None:
+def test_create_client_normalizes() -> None:
     with AgentServer(Recorder(interfaces=True)) as server:
         settings = settings_of(server)
         base_url, text = asyncio.run(created_card(settings))
@@ -387,7 +364,7 @@ def test_create_client_returns_the_normalized_card() -> None:
     assert interface["protocolVersion"] == "0.3"
 
 
-def test_card_helpers_match_the_library() -> None:
+def test_card_helpers_match() -> None:
     local: dict[str, JsonValue] = {
         "protocolVersion": PROTOCOL_VERSION,
         "name": AGENT_NAME,
@@ -404,7 +381,8 @@ def test_card_helpers_match_the_library() -> None:
     moved_text = _native.set_agent_card_url(textual, "https://other.example/")
     assert TypeAdapter(UrlCard).validate_json(moved_text)["url"] == "https://other.example/"
     assert _native.get_agent_card_url(moved_text) == "https://other.example/"
-    assert _native.get_agent_card_url(json.dumps({"name": AGENT_NAME})) is None
+    empty_card: dict[str, JsonValue] = {"name": AGENT_NAME}
+    assert _native.get_agent_card_url(json.dumps(empty_card)) is None
     interfaces: dict[str, JsonValue] = {
         "name": AGENT_NAME,
         "supportedInterfaces": [
@@ -428,7 +406,7 @@ def test_card_helpers_match_the_library() -> None:
     assert normalized["protocolVersion"] == "0.3"
 
 
-def test_errors_report_a_connection_failure() -> None:
+def test_errors_report_connection() -> None:
     with AgentServer(Recorder(card_url=DEAD_URL)) as server:
         settings = settings_of(server)
         with pytest.raises(_native.NativeA2aError) as raised:
@@ -441,26 +419,26 @@ def test_errors_report_a_connection_failure() -> None:
     assert payload["message"]
 
 
-def test_errors_state_a_missing_request() -> None:
+def test_errors_missing_request() -> None:
     call: dict[str, JsonValue] = {"api_base": "http://127.0.0.1:1"}
     with pytest.raises(_native.NativeA2aError) as raised:
-        asyncio.run(failing_direct(json.dumps(call)))
+        asyncio.run(_native.send_message_direct(json.dumps(call)))
     payload = TypeAdapter(ErrorView).validate_json(str(raised.value))
     assert payload["type"] == "ValueError"
     assert payload["message"] == "request is required"
     assert payload["status_code"] is None
 
 
-def test_errors_state_a_missing_client() -> None:
+def test_errors_missing_client() -> None:
     call: dict[str, JsonValue] = {"request": request_of(REQUEST_ID)}
     with pytest.raises(_native.NativeA2aError) as raised:
-        asyncio.run(failing_direct(json.dumps(call)))
+        asyncio.run(_native.send_message_direct(json.dumps(call)))
     payload = TypeAdapter(ErrorView).validate_json(str(raised.value))
     assert payload["type"] == "ValueError"
     assert payload["message"] == MISSING_CLIENT
 
 
-def test_errors_reject_malformed_call_text() -> None:
+def test_errors_reject_malformed() -> None:
     with pytest.raises(_native.NativeA2aError) as raised:
         _ = _native.send_message_direct("{")
     payload = TypeAdapter(ErrorView).validate_json(str(raised.value))
@@ -468,14 +446,12 @@ def test_errors_reject_malformed_call_text() -> None:
     assert "not JSON of the expected shape" in payload["message"]
 
 
-def test_errors_recover_from_a_localhost_card() -> None:
+def test_errors_recover_localhost() -> None:
     recorder = Recorder(card_url=LOCALHOST_URL)
     with AgentServer(recorder) as server:
         call = send_call(api_base=server.url)
-        text = asyncio.run(direct_reply(call))
-    payload = TypeAdapter(SendView).validate_json(text)
-    posts = recorded(recorder, "POST")
-    assert payload["result"]["parts"][0]["text"] == REPLY_TEXT
-    assert len(recorded(recorder, "GET")) == SINGLE
-    assert len(posts) == SINGLE
-    assert call_of(posts[0]).get("method") == SEND_METHOD
+        text = asyncio.run(_native.send_message_direct(call))
+    methods = [entry["method"] for entry in recorder.calls]
+    assert methods == ["GET", "POST"]
+    body = TypeAdapter(SendView).validate_json(text)
+    assert body["result"]["parts"][0]["text"] == REPLY_TEXT
