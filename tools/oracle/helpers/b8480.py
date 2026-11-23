@@ -49,12 +49,11 @@ class Input(TypedDict):
 
 
 class CountingError(Exception):
-    """LiteLLM asked the reservation for input token counts."""
+    pass
 
 
+# raises on the call only a billed route reaches, so the case observes whether token counting ran
 class CountingTokens:
-    """Raises on the call that only a billed route reaches; the cases observe that, not the counts."""
-
     async def __call__(
         self,
         request_body: dict[str, JsonValue],
