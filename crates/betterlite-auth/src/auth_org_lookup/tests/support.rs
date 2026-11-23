@@ -34,6 +34,15 @@ pub(crate) struct State {
     pub(crate) failing: BTreeSet<String>,
 }
 
+// the cache trait's fallible write answer, so each impl names it once
+type CacheWrite = Result<(), AuthCacheError>;
+
+// the two management objects the cache writes, so one helper carries the write order and failure
+enum Entry<'a> {
+    Org(&'a OrganizationTable),
+    Project(&'a CachedProject),
+}
+
 // the cache and the repository over one recorded state, so a test reads the whole call order
 pub(crate) struct World {
     state: Mutex<State>,
@@ -109,6 +118,32 @@ impl World {
             return Some(Box::new(AuthReadError::Repository(DbError::CreateNull)));
         }
         None
+    }
+
+    fn begin_read(&self, name: &str, event: String) -> Result<(), StoreFailure> {
+        match self.store_fault(name) {
+            Some(fault) => Err(fault),
+            None => {
+                self.record(event);
+                Ok(())
+            }
+        }
+    }
+
+    fn accept_write(&self, key: &str, entry: Entry<'_>, ttl: f64) -> CacheWrite {
+        if self.fails(&format!("write {key}")) {
+            return Err(cache_failure());
+        }
+        self.record(format!("write {key} ttl={ttl}"));
+        match entry {
+            Entry::Org(org) => {
+                self.lock().orgs.insert(key.to_owned(), org.clone());
+            }
+            Entry::Project(project) => {
+                self.lock().projects.insert(key.to_owned(), project.clone());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -226,18 +261,8 @@ impl OrgCache for World {
         Ok(self.lock().orgs.get(key).cloned())
     }
 
-    async fn write_org(
-        &self,
-        key: &str,
-        org: &OrganizationTable,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        if self.fails(&format!("write {key}")) {
-            return Err(cache_failure());
-        }
-        self.record(format!("write {key} ttl={ttl}"));
-        self.lock().orgs.insert(key.to_owned(), org.clone());
-        Ok(())
+    async fn write_org(&self, key: &str, org: &OrganizationTable, ttl: f64) -> CacheWrite {
+        self.accept_write(key, Entry::Org(org), ttl)
     }
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
@@ -248,18 +273,8 @@ impl OrgCache for World {
         Ok(self.lock().projects.get(key).cloned())
     }
 
-    async fn write_project(
-        &self,
-        key: &str,
-        project: &CachedProject,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        if self.fails(&format!("write {key}")) {
-            return Err(cache_failure());
-        }
-        self.record(format!("write {key} ttl={ttl}"));
-        self.lock().projects.insert(key.to_owned(), project.clone());
-        Ok(())
+    async fn write_project(&self, key: &str, project: &CachedProject, ttl: f64) -> CacheWrite {
+        self.accept_write(key, Entry::Project(project), ttl)
     }
 
     fn management_ttl(&self) -> f64 {
@@ -270,10 +285,7 @@ impl OrgCache for World {
 #[async_trait]
 impl OrgStore for World {
     async fn find_org(&self, org_id: &str, include_budget: bool) -> StoreAnswer<Option<String>> {
-        if let Some(fault) = self.store_fault("org") {
-            return Err(fault);
-        }
-        self.record(format!("org {org_id} budget={include_budget}"));
+        self.begin_read("org", format!("org {org_id} budget={include_budget}"))?;
         let found = self
             .lock()
             .org_rows
@@ -284,33 +296,20 @@ impl OrgStore for World {
     }
 
     async fn find_by_alias(&self, org_alias: &str) -> StoreAnswer<Vec<String>> {
-        if let Some(fault) = self.store_fault("alias") {
-            return Err(fault);
-        }
-        self.record(format!("alias {org_alias}"));
-        let rows: Vec<OrganizationTable> = self
+        self.begin_read("alias", format!("alias {org_alias}"))?;
+        Ok(self
             .lock()
             .org_rows
             .iter()
             .filter(|row| row.organization_alias.as_deref() == Some(org_alias))
-            .cloned()
-            .collect();
-        Ok(rows.iter().map(|org| row_text(org, false)).collect())
+            .map(|row| row_text(row, false))
+            .collect())
     }
 
     async fn find_project(&self, project_id: &str) -> StoreAnswer<Option<String>> {
-        if let Some(fault) = self.store_fault("project") {
-            return Err(fault);
-        }
-        self.record(format!("project {project_id}"));
+        self.begin_read("project", format!("project {project_id}"))?;
         let found = self.lock().project_rows.get(project_id).cloned();
-        Ok(found.map(|project| {
-            serde_json::to_string(&CachedProject {
-                project,
-                last_refreshed_at: None,
-            })
-            .unwrap()
-        }))
+        Ok(found.map(|project| serde_json::to_string(&cached_project(project)).unwrap()))
     }
 }
 

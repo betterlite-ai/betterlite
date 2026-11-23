@@ -95,7 +95,15 @@ pub fn as_auth_failure(error: &OrgLookupError) -> AuthFailure {
     }
     if is_outage(error) {
         return AuthFailure::Proxy {
-            exception: outage_exception(outage_message(error)),
+            exception: ProxyException::new(ProxyExceptionInit {
+                message: outage_message(error),
+                error_type: ProxyErrorTypes::NoDbConnection.to_string(),
+                param: Some("None".to_owned()),
+                code: ExceptionCode::Status(i64::from(SERVICE_UNAVAILABLE_STATUS)),
+                headers: BTreeMap::new(),
+                openai_code: None,
+                provider_specific_fields: BTreeMap::new(),
+            }),
             invalid_virtual_key: false,
         };
     }
@@ -112,8 +120,7 @@ pub fn proxy_exception(error: &OrgLookupError) -> ProxyException {
         .clone()
 }
 
-// PrismaDBExceptionHandler.is_database_service_unavailable_error_in_chain: the alias catch relabels an
-// outage to its 500, so the status check above answers first and this only reads the wrapper's failures
+// is_database_service_unavailable_error_in_chain: the alias catch relabels an outage, so the status check above answers first
 #[must_use]
 pub fn is_outage(error: &OrgLookupError) -> bool {
     match error {
@@ -178,8 +185,7 @@ fn driver_database_error(fault: &NativeDbError<Infallible>) -> Option<&DriverDbE
     }
 }
 
-// database_unavailable_message: the retry wording for a transient outage, the deployment wording
-// for a permanent engine fault. Only a prisma-shaped failure carries a chain; the rest are native
+// database_unavailable_message picks the retry wording for a transient outage and the deployment wording for a fault
 fn outage_message(error: &OrgLookupError) -> String {
     if let OrgLookupError::Failure(OrgFailure::Store(read)) = error
         && let AuthReadError::Lookup(DbLookupError::Database(fault)) = read.as_ref()
@@ -187,18 +193,4 @@ fn outage_message(error: &OrgLookupError) -> String {
         return service_unavailable_error(&Chain::from_error(fault)).message;
     }
     TRANSIENT_MESSAGE.to_owned()
-}
-
-// B1217's 503 envelope; service_unavailable_error needs a chain of prisma faults, which a native
-// pool or driver fault is not, so the projection's constants are used directly
-fn outage_exception(message: String) -> ProxyException {
-    ProxyException::new(ProxyExceptionInit {
-        message,
-        error_type: ProxyErrorTypes::NoDbConnection.to_string(),
-        param: Some("None".to_owned()),
-        code: ExceptionCode::Status(i64::from(SERVICE_UNAVAILABLE_STATUS)),
-        headers: BTreeMap::new(),
-        openai_code: None,
-        provider_specific_fields: BTreeMap::new(),
-    })
 }

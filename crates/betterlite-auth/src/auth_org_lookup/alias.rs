@@ -81,16 +81,14 @@ async fn cache_alias(
     alias_key: &str,
     org: &OrganizationTable,
 ) -> Result<(), AliasError> {
-    lookup
-        .cache
-        .write_org(alias_key, org, lookup.in_memory_ttl)
-        .await
-        .map_err(|error| AliasError::Failed(OrgFailure::Cache(Box::new(error))))?;
     let org_id = org.organization_id.as_deref().unwrap_or("None");
     let id_key = format!("org_id:{org_id}");
-    lookup
-        .cache
-        .write_org(&id_key, org, lookup.in_memory_ttl)
-        .await
-        .map_err(|error| AliasError::Failed(OrgFailure::Cache(Box::new(error))))
+    for key in [alias_key, id_key.as_str()] {
+        lookup
+            .cache
+            .write_org(key, org, lookup.in_memory_ttl)
+            .await
+            .map_err(|error| AliasError::Failed(OrgFailure::Cache(Box::new(error))))?;
+    }
+    Ok(())
 }

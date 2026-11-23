@@ -20,8 +20,7 @@ use crate::auth_prefetch::rows::CachedProject;
 
 const SEED: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, allowed_models, created_by, updated_by) VALUES ('b1', 10.5, ARRAY['gpt-4o']::TEXT[], 'a', 'a'); INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, organization_alias, budget_id, created_by, updated_by) VALUES ('o1', 'acme', 'b1', 'a', 'a'), ('o2', 'shared', 'b1', 'a', 'a'), ('o3', 'shared', 'b1', 'a', 'a'); INSERT INTO \"LiteLLM_ProjectTable\" (project_id, project_alias, budget_id, created_by, updated_by) VALUES ('p1', 'proj', 'b1', 'a', 'a')";
 
-// Postgres has no SELECT trigger, so the org table becomes a view whose predicate raises the server's
-// stale-plan message, the one driver error that only the message tells apart from an ordinary fault
+// Postgres has no SELECT trigger, so the org table becomes a view whose predicate raises the stale-plan message
 const STALE_PLAN_SETUP: &str = "
 ALTER TABLE \"LiteLLM_OrganizationTable\" RENAME TO \"LiteLLM_OrganizationTable_base\";
 CREATE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$

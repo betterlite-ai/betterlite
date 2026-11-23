@@ -281,6 +281,9 @@ async fn failure_stops_downstream() {
     assert!(!failure_reached);
 }
 
+// the cache trait's fallible answer, so each NoCache signature stays one line
+type CacheAnswer<T> = Result<T, AuthCacheError>;
+
 // the cache the real lookup is built with when a test only needs the domain answer
 struct NoCache;
 
@@ -290,20 +293,15 @@ impl OrgCache for NoCache {
         &self,
         _key: &str,
         _local_only: bool,
-    ) -> Result<Option<OrganizationTable>, AuthCacheError> {
+    ) -> CacheAnswer<Option<OrganizationTable>> {
         Ok(None)
     }
 
-    async fn write_org(
-        &self,
-        _key: &str,
-        _org: &OrganizationTable,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    async fn write_org(&self, _key: &str, _org: &OrganizationTable, _ttl: f64) -> CacheAnswer<()> {
         Ok(())
     }
 
-    async fn read_project(&self, _key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
+    async fn read_project(&self, _key: &str) -> CacheAnswer<Option<CachedProject>> {
         Ok(None)
     }
 
@@ -312,7 +310,7 @@ impl OrgCache for NoCache {
         _key: &str,
         _project: &CachedProject,
         _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    ) -> CacheAnswer<()> {
         Ok(())
     }
 
@@ -340,7 +338,7 @@ async fn the_trait_runs_the_production_lookup() {
 fn rule_debug_shows_the_org_id() {
     let rule = OrgRule {
         org_id: Some("o1".to_owned()),
-        ..OrgRule::default()
+        lookup: None,
     };
     let rendered = format!("{rule:?}");
     assert!(rendered.starts_with("OrgRule"), "{rendered}");

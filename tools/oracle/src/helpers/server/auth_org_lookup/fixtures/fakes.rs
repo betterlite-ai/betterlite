@@ -17,6 +17,15 @@ use super::input::{Function, Input, Step};
 // the management-object ttl both sides write: the cache fixture and LiteLLM's UserApiKeyCache share it
 const MANAGEMENT_TTL_SECONDS: f64 = 60.0;
 
+// the cache trait's fallible write answer, so each impl names it once
+type CacheWrite = Result<(), AuthCacheError>;
+
+// the two management objects the cache writes, so one helper carries the write order and failure
+enum Entry<'a> {
+    Org(&'a OrganizationTable),
+    Project(&'a CachedProject),
+}
+
 #[derive(Default)]
 pub(crate) struct Board {
     pub(crate) events: Vec<String>,
@@ -93,6 +102,32 @@ impl Script {
             return Some(Box::new(AuthReadError::Repository(DbError::CreateNull)));
         }
         None
+    }
+
+    fn begin_read(&self, event: String) -> Result<(), StoreFailure> {
+        match self.store_failure() {
+            Some(fault) => Err(fault),
+            None => {
+                self.record(event);
+                Ok(())
+            }
+        }
+    }
+
+    fn accept_write(&self, key: &str, entry: Entry<'_>, ttl: f64) -> CacheWrite {
+        if self.fails(&format!("write {key}")) {
+            return Err(cache_failure());
+        }
+        self.record(format!("write {key} ttl={ttl}"));
+        match entry {
+            Entry::Org(org) => {
+                self.values().insert(key.to_owned(), org.clone());
+            }
+            Entry::Project(project) => {
+                self.projects().insert(key.to_owned(), project.clone());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -188,18 +223,8 @@ impl OrgCache for Script {
         Ok(cached)
     }
 
-    async fn write_org(
-        &self,
-        key: &str,
-        org: &OrganizationTable,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        if self.fails(&format!("write {key}")) {
-            return Err(cache_failure());
-        }
-        self.record(format!("write {key} ttl={ttl}"));
-        let _previous = self.values().insert(key.to_owned(), org.clone());
-        Ok(())
+    async fn write_org(&self, key: &str, org: &OrganizationTable, ttl: f64) -> CacheWrite {
+        self.accept_write(key, Entry::Org(org), ttl)
     }
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
@@ -208,18 +233,8 @@ impl OrgCache for Script {
         Ok(cached)
     }
 
-    async fn write_project(
-        &self,
-        key: &str,
-        project: &CachedProject,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        if self.fails(&format!("write {key}")) {
-            return Err(cache_failure());
-        }
-        self.record(format!("write {key} ttl={ttl}"));
-        let _previous = self.projects().insert(key.to_owned(), project.clone());
-        Ok(())
+    async fn write_project(&self, key: &str, project: &CachedProject, ttl: f64) -> CacheWrite {
+        self.accept_write(key, Entry::Project(project), ttl)
     }
 
     fn management_ttl(&self) -> f64 {
@@ -230,12 +245,9 @@ impl OrgCache for Script {
 #[async_trait]
 impl OrgStore for Script {
     async fn find_org(&self, org_id: &str, include_budget: bool) -> StoreAnswer<Option<String>> {
-        if let Some(fault) = self.store_failure() {
-            return Err(fault);
-        }
-        self.record(format!(
+        self.begin_read(format!(
             "find_unique organization {org_id} include={include_budget}"
-        ));
+        ))?;
         let found = self
             .org_rows
             .iter()
@@ -245,10 +257,7 @@ impl OrgStore for Script {
     }
 
     async fn find_by_alias(&self, org_alias: &str) -> StoreAnswer<Vec<String>> {
-        if let Some(fault) = self.store_failure() {
-            return Err(fault);
-        }
-        self.record(format!("find_many organization {org_alias}"));
+        self.begin_read(format!("find_many organization {org_alias}"))?;
         Ok(self
             .org_rows
             .iter()
@@ -258,15 +267,11 @@ impl OrgStore for Script {
     }
 
     async fn find_project(&self, project_id: &str) -> StoreAnswer<Option<String>> {
-        if let Some(fault) = self.store_failure() {
-            return Err(fault);
-        }
-        self.record(format!("find_unique project {project_id} include=true"));
-        let found = self
+        self.begin_read(format!("find_unique project {project_id} include=true"))?;
+        let row = self
             .project_row
             .as_ref()
-            .filter(|row| row.project_id == project_id)
-            .cloned();
-        Ok(found.map(project_text))
+            .filter(|row| row.project_id == project_id);
+        Ok(row.map(|project| project_text(project.clone())))
     }
 }

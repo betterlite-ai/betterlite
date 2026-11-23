@@ -16,8 +16,7 @@ use crate::auth_read::table::{
     Update,
 };
 
-// OrganizationTable keeps its scalar columns in the row; the two Prisma relations the lookups ask for
-// are joined in, and a null list column reads as [] the way Prisma decodes an empty relation
+// the row joins its Prisma relations and reads a null model list as the [] Prisma decodes for an empty relation
 const ORG_BY_ID_SQL: &str = r#"SELECT (to_jsonb(o) || jsonb_build_object('models', COALESCE(to_jsonb(o.models), '[]'::jsonb)))::text FROM "LiteLLM_OrganizationTable" o WHERE o.organization_id = $1"#;
 const ORG_BY_ID_WITH_BUDGET_SQL: &str = r#"SELECT (to_jsonb(o) || jsonb_build_object('models', COALESCE(to_jsonb(o.models), '[]'::jsonb), 'litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object('allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = o.budget_id)))::text FROM "LiteLLM_OrganizationTable" o WHERE o.organization_id = $1"#;
 const ORG_BY_ALIAS_SQL: &str = r#"SELECT (to_jsonb(o) || jsonb_build_object('models', COALESCE(to_jsonb(o.models), '[]'::jsonb)))::text FROM "LiteLLM_OrganizationTable" o WHERE o.organization_alias = $1"#;
@@ -64,8 +63,7 @@ impl AuthTable for ReadTable {
     type Data = ();
     type Failure = Infallible;
 
-    // the org and project lookups read every matching row through find_many, never a unique or first
-    // match, a write or a create, so a mutant of these bodies never runs
+    // find_many is the one action this table is read through, so a mutant of the other bodies never runs
     #[cfg_attr(test, mutants::skip)]
     async fn find_unique(
         &self,
@@ -141,22 +139,16 @@ impl DatabaseOrgStore {
         };
         bounded.find_many(request).await.map_err(Box::from)
     }
-
-    async fn read_one(
-        &self,
-        sql: &'static str,
-        value: &str,
-        label: &str,
-    ) -> StoreAnswer<Option<String>> {
-        Ok(self.read(sql, value, label).await?.into_iter().next())
-    }
 }
 
 #[async_trait]
 impl OrgStore for DatabaseOrgStore {
     async fn find_org(&self, org_id: &str, include_budget: bool) -> StoreAnswer<Option<String>> {
-        self.read_one(org_sql(include_budget), org_id, "organization")
-            .await
+        Ok(self
+            .read(org_sql(include_budget), org_id, "organization")
+            .await?
+            .into_iter()
+            .next())
     }
 
     async fn find_by_alias(&self, org_alias: &str) -> StoreAnswer<Vec<String>> {
@@ -164,8 +156,9 @@ impl OrgStore for DatabaseOrgStore {
     }
 
     async fn find_project(&self, project_id: &str) -> StoreAnswer<Option<String>> {
-        self.read_one(PROJECT_BY_ID_SQL, project_id, "project")
+        self.read(PROJECT_BY_ID_SQL, project_id, "project")
             .await
+            .map(|rows| rows.into_iter().next())
     }
 }
 
