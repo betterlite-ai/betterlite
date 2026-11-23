@@ -9,7 +9,7 @@ use crate::key_user_writes::retry::WriteClock;
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::{DbSession, PostgresStore};
 use crate::spend_commit::tables::SpendTable;
-use crate::spend_commit::transaction::SpendDeadline;
+use crate::spend_commit::transaction::{SpendDeadline, SpendTransactionError};
 
 // update_many with an increment: a missing user, team, org, project, tag, access group or agent row is left missing.
 pub const USER_SPEND_SQL: &str = r#"UPDATE "LiteLLM_UserTable" SET spend = spend + $2::numeric::double precision WHERE user_id = $1"#;
@@ -71,16 +71,24 @@ impl PostgresEntityTables<'_> {
             SpendTable::AgentList => TableWrite::Rows(AGENT_SPEND_SQL, increments),
         };
         let committing = AtomicBool::new(false);
-        let outcome = self
-            .deadline
-            .run(self.commit_table(write, &committing))
-            .await;
-        let committed = committing.load(Ordering::SeqCst);
-        outcome.map_err(|failure| EntityTableError::from_transaction(table, failure, committed))
+        match self.deadline.run(self.run_table(write, &committing)).await {
+            Ok(()) => Ok(()),
+            Err(SpendTransactionError::Work(source)) => {
+                Err(EntityTableError::Statement { table, source })
+            }
+            // a deadline that fires after COMMIT was sent may have applied, so that table is not requeue-safe
+            Err(SpendTransactionError::Timeout { seconds }) => {
+                if committing.load(Ordering::SeqCst) {
+                    Err(EntityTableError::CommitTimeout { table, seconds })
+                } else {
+                    Err(EntityTableError::Timeout { table, seconds })
+                }
+            }
+        }
     }
 
     // The session, the table's statements, the mark and the COMMIT itself.
-    async fn commit_table(
+    async fn run_table(
         &self,
         write: TableWrite<'_>,
         committing: &AtomicBool,

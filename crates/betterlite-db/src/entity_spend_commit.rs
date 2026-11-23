@@ -15,7 +15,6 @@ use self::membership::MemberKeyError;
 use crate::postgres_store::errors::DbError;
 use crate::spend_commit::policy::{SpendFailure, SpendUpdateFailure, classify_spend_failure};
 use crate::spend_commit::tables::SpendTable;
-use crate::spend_commit::transaction::SpendTransactionError;
 
 pub type TableFuture<'writer, Failure> =
     Pin<Box<dyn Future<Output = Result<(), Failure>> + Send + 'writer>>;
@@ -49,24 +48,6 @@ pub enum EntityTableError {
     Timeout { table: SpendTable, seconds: u64 },
     #[error("the {} spend commit timed out after {seconds}s and may have applied", .table.name())]
     CommitTimeout { table: SpendTable, seconds: u64 },
-}
-
-impl EntityTableError {
-    // One deadline's outcome for one table: a timeout after COMMIT was sent may already be applied.
-    #[must_use]
-    pub fn from_transaction(
-        table: SpendTable,
-        failure: SpendTransactionError<DbError>,
-        committed: bool,
-    ) -> Self {
-        match failure {
-            SpendTransactionError::Work(source) => Self::Statement { table, source },
-            SpendTransactionError::Timeout { seconds } if committed => {
-                Self::CommitTimeout { table, seconds }
-            }
-            SpendTransactionError::Timeout { seconds } => Self::Timeout { table, seconds },
-        }
-    }
 }
 
 impl SpendUpdateFailure for EntityTableError {
