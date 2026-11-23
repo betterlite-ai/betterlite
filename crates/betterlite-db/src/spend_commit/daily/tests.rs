@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
+use std::slice::from_ref;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -14,6 +15,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::oneshot;
+use tokio::time::timeout;
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
@@ -102,13 +104,12 @@ enum Step {
 
 fn error_for(step: Step) -> ScriptedFailure {
     match step {
-        Step::Ok => ScriptedFailure::new(SpendFailure::Other),
+        Step::Ok | Step::Other => ScriptedFailure::new(SpendFailure::Other),
         Step::Cancelled => ScriptedFailure::cancelled(),
         Step::CancelledRetryable => ScriptedFailure::cancelled_retryable(),
         Step::ConnectError => ScriptedFailure::new(SpendFailure::NotSent),
         Step::Rejected => ScriptedFailure::new(SpendFailure::Rejected),
         Step::Deadlock => ScriptedFailure::new(SpendFailure::Deadlock),
-        Step::Other => ScriptedFailure::new(SpendFailure::Other),
     }
 }
 
@@ -170,7 +171,11 @@ impl DailyChunkWriter for ScriptedWriter {
                     }
                     Err(_cancelled) => Err(ScriptedFailure::cancelled()),
                 },
-                step => Err(error_for(step)),
+                step @ Step::CancelledRetryable
+                | step @ Step::ConnectError
+                | step @ Step::Rejected
+                | step @ Step::Deadlock
+                | step @ Step::Other => Err(error_for(step)),
             }
         })
     }
@@ -615,11 +620,9 @@ async fn shutdown_waits_for_a_commit_that_entered_its_phase() {
     entered_wait.await.unwrap();
     assert_eq!(phase.state(), CommitPhaseState::Committing);
     let mut settlement = Box::pin(started.settle_for_shutdown());
-    assert!(
-        tokio::time::timeout(Duration::from_millis(10), settlement.as_mut())
-            .await
-            .is_err()
-    );
+    let _still_pending = timeout(Duration::from_millis(10), settlement.as_mut())
+        .await
+        .unwrap_err();
     release.send(()).unwrap();
     let value = settlement.await;
     assert!(matches!(value, DailyCommitSettlement::Settled(Ok(7))));
@@ -675,7 +678,7 @@ async fn postgres_chunks_apply_and_clear_the_phase() {
     let phase = CommitPhase::new();
     let row = daily_row("2026-01-02", "user_id", "user-a", 1);
     writer
-        .commit_transaction(DailySpendEntity::User, std::slice::from_ref(&row), &phase)
+        .commit_transaction(DailySpendEntity::User, from_ref(&row), &phase)
         .await
         .unwrap();
     assert_eq!(phase.state(), CommitPhaseState::Waiting);

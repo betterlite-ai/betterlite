@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::future::Future;
+use std::future::{Future, pending, ready};
 use std::pin::Pin;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -91,7 +91,7 @@ impl RetryPause for RecordingPause {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(delay);
-        Box::pin(std::future::ready(()))
+        Box::pin(ready(()))
     }
 }
 
@@ -345,8 +345,8 @@ async fn deadline_reports_a_timeout() {
     let deadline = SpendDeadline {
         duration: Duration::from_millis(5),
     };
-    let pending = std::future::pending::<Result<(), Infallible>>();
-    let outcome = deadline.run(pending).await;
+    let never = pending::<Result<(), Infallible>>();
+    let outcome = deadline.run(never).await;
     let SpendTransactionError::Timeout { seconds } = outcome.unwrap_err();
     assert_eq!(seconds, 0);
 }
@@ -372,7 +372,9 @@ fn increments(rows: &[(&str, i64)]) -> BTreeMap<String, Decimal> {
         .collect()
 }
 
-fn table_map(tables: &[(SpendTable, Option<&[(&str, i64)]>)]) -> SpendTableTransactions {
+type TableIncrements<'rows> = (SpendTable, Option<&'rows [(&'rows str, i64)]>);
+
+fn table_map(tables: &[TableIncrements<'_>]) -> SpendTableTransactions {
     tables
         .iter()
         .map(|(table, rows)| {

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -136,10 +136,7 @@ impl TurnWriter for ScriptedWriter {
                     took_at: turn_micros(turn.turn_at),
                     user_scoped,
                 });
-            match self.next_failure() {
-                Some(error) => Err(error),
-                None => Ok(()),
-            }
+            self.next_failure().map_or_else(|| Ok(()), Err)
         })
     }
 }
@@ -177,7 +174,7 @@ impl RetryPause for RecordingPause {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(delay);
-        Box::pin(std::future::ready(()))
+        Box::pin(ready(()))
     }
 }
 
