@@ -159,9 +159,8 @@ class _Handler(BaseHTTPRequestHandler):
         return {}
 
     def _initialize(self, params: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        requested = params["protocolVersion"]
         return {
-            "protocolVersion": requested,
+            "protocolVersion": params["protocolVersion"],
             "capabilities": {"prompts": {}, "resources": {}},
             "serverInfo": {"name": "fake-mcp", "version": "1.0"},
             "instructions": INSTRUCTIONS,

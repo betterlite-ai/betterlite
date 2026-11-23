@@ -184,8 +184,7 @@ async def load_both(server: Server) -> tuple[str, str]:
 
 async def open_a_session(server: Server) -> _native.NativeMcpSession:
     client = client_for(server)
-    session = await client.open_session()
-    return session
+    return await client.open_session()
 
 
 def test_client_calls_pages() -> None:

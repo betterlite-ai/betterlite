@@ -87,16 +87,17 @@ fn sdk_payload(error: &SdkError) -> NativeMcpErrorPayload {
     }
 }
 fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
-    match error {
+    let (kind, message) = match error {
         McpHttpError::Status(head) => {
             let preview = head.capture.as_ref().map(|record| record.preview.as_str());
-            status_payload(head.status, preview)
+            return status_payload(head.status, preview);
         }
         McpHttpError::Timeout(_) | McpHttpError::HeadTimeout(_) | McpHttpError::BodyTimeout(_) => {
-            NativeMcpErrorPayload::plain(McpErrorKind::TimeoutError, error.to_string())
+            (McpErrorKind::TimeoutError, error.to_string())
         }
-        other => NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, other.to_string()),
-    }
+        other => (McpErrorKind::RuntimeError, other.to_string()),
+    };
+    NativeMcpErrorPayload::plain(kind, message)
 }
 // The status and the masked body preview are all Python gets about an HTTP failure that carried no JSON-RPC error
 pub(crate) fn status_payload(status: u16, preview: Option<&str>) -> NativeMcpErrorPayload {
