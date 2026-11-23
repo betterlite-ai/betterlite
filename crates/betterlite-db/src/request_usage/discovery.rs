@@ -6,6 +6,10 @@ use crate::tool_discovery::{ToolDiscoveryItem, ToolDiscoveryQueue};
 
 use super::payload::DiscoveryKwargs;
 
+mod mcp;
+
+use self::mcp::mcp_call_metadata;
+
 const USER_DEFINED: &str = "user_defined";
 
 #[derive(Debug, thiserror::Error)]
@@ -168,33 +172,7 @@ async fn enqueue_mcp_tool(
     kwargs: &DiscoveryKwargs,
     fields: &DiscoveryFields<'_>,
 ) -> Result<(), DiscoveryError> {
-    let sl_object = match kwargs.standard_logging_object.as_ref() {
-        None | Some(Json::Null) => return Ok(()),
-        Some(Json::Object(object)) => object,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(DiscoveryError::NotAnObject {
-                field: "standard_logging_object",
-            });
-        }
-    };
-    let Some(metadata) = sl_object
-        .get("metadata")
-        .filter(|value| counts_as_present(value))
-    else {
-        return Ok(());
-    };
-    let Json::Object(metadata) = metadata else {
-        return Err(DiscoveryError::NotAnObject {
-            field: "standard_logging_object.metadata",
-        });
-    };
-    let Some(mcp) = metadata
-        .get("mcp_tool_call_metadata")
-        .filter(|value| counts_as_present(value))
-    else {
-        return Ok(());
-    };
-    let Json::Object(mcp) = mcp else {
+    let Some(mcp) = mcp_call_metadata(kwargs)? else {
         return Ok(());
     };
     let tool_name = match present_text(

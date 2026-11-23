@@ -155,55 +155,75 @@ impl Harness {
 
     pub(super) fn job(&self) -> HarnessJob<'_> {
         SpendLogsJob {
-            queues: RequestUsageQueues {
-                logs: &self.logs,
-                tool_usage: &self.tool_usage,
-                model_usage: &self.model_usage,
-                turns: &self.turns_queue,
-                baseline: &self.baseline,
-                funnel: &self.funnel,
-            },
-            logs: SpendLogFlush {
-                writer: &self.log_writer,
-                external: None,
-                queue: &self.logs,
-                redis: &self.redis,
-                failures: &self.failures,
-                pause: &self.pause,
-                clock: &self.clock,
-                policy: FlushPolicy {
-                    retries: 0,
-                    limits: LIMITS,
-                    spend_logs_url: None,
-                },
-            },
-            guardrails: GuardrailStage {
-                pending: &self.pending,
-                sink: &self.guardrail_sink,
-                limits: LIMITS,
-                pause: &self.pause,
-            },
-            tools: ToolUsageDrain {
-                writer: &self.tool_writer,
-                policy: ToolFlushPolicy {
-                    limits: LIMITS,
-                    retries: 0,
-                },
-                jitter: &self.jitter,
-                pause: &self.pause,
-            },
-            models: ModelUsageDrain {
-                writer: &self.model_writer,
-                retries: 0,
-                jitter: &self.jitter,
-                pause: &self.pause,
-            },
+            queues: self.queues(),
+            logs: self.log_flush(),
+            guardrails: self.guardrails(),
+            tools: self.tools(),
+            models: self.models(),
             turns: AutoRouterDrain::new(&self.turn_writer, &self.jitter, &self.pause),
             accounting: &self.accounting,
             notifier: &self.notifier,
             shadows: &self.shadows,
             write_lock: &self.write_lock,
             shutdown: &self.shutdown,
+        }
+    }
+
+    fn queues(&self) -> RequestUsageQueues<'_> {
+        RequestUsageQueues {
+            logs: &self.logs,
+            tool_usage: &self.tool_usage,
+            model_usage: &self.model_usage,
+            turns: &self.turns_queue,
+            baseline: &self.baseline,
+            funnel: &self.funnel,
+        }
+    }
+
+    fn log_flush(&self) -> SpendLogFlush<'_, FakeLogWriter, NoClient, NoSpendLogFailureSink> {
+        SpendLogFlush {
+            writer: &self.log_writer,
+            external: None,
+            queue: &self.logs,
+            redis: &self.redis,
+            failures: &self.failures,
+            pause: &self.pause,
+            clock: &self.clock,
+            policy: FlushPolicy {
+                retries: 0,
+                limits: LIMITS,
+                spend_logs_url: None,
+            },
+        }
+    }
+
+    fn guardrails(&self) -> GuardrailStage<'_, FakeGuardrailSink> {
+        GuardrailStage {
+            pending: &self.pending,
+            sink: &self.guardrail_sink,
+            limits: LIMITS,
+            pause: &self.pause,
+        }
+    }
+
+    fn tools(&self) -> ToolUsageDrain<'_, FakeToolWriter> {
+        ToolUsageDrain {
+            writer: &self.tool_writer,
+            policy: ToolFlushPolicy {
+                limits: LIMITS,
+                retries: 0,
+            },
+            jitter: &self.jitter,
+            pause: &self.pause,
+        }
+    }
+
+    fn models(&self) -> ModelUsageDrain<'_, FakeModelWriter> {
+        ModelUsageDrain {
+            writer: &self.model_writer,
+            retries: 0,
+            jitter: &self.jitter,
+            pause: &self.pause,
         }
     }
 }
