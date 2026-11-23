@@ -114,12 +114,7 @@ impl ShadowLifecycleStore for ProbeStore {
     }
 
     async fn legs(&self, group_id: &str) -> Result<Vec<LegRow>, Self::Error> {
-        let legs = self.legs.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(legs
-            .iter()
-            .filter(|leg| leg.group_id == group_id)
-            .cloned()
-            .collect())
+        Ok(self.legs_of(group_id))
     }
 
     async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptStats>, Self::Error> {

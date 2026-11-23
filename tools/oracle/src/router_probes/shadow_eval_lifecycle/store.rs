@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-use super::forms::{Input, JobState};
+use super::forms::{Input, leg_state};
 use super::{invalid, timestamp};
 use crate::router_probes::error::OperationError;
 
@@ -111,13 +111,19 @@ impl ProbeStore {
         })
     }
 
-    pub(super) fn states(&self) -> Vec<JobState> {
-        let mut states: Vec<JobState> = {
+    pub(super) fn states(&self) -> Vec<String> {
+        let mut states: Vec<String> = {
             let legs = self.legs.lock().unwrap_or_else(PoisonError::into_inner);
-            legs.iter().map(JobState::of).collect()
+            legs.iter().map(leg_state).collect()
         };
         states.sort();
         states
+    }
+
+    fn legs_of(&self, group_id: &str) -> Vec<LegRow> {
+        let legs = self.legs.lock().unwrap_or_else(PoisonError::into_inner);
+        let matching = legs.iter().filter(|leg| leg.group_id == group_id);
+        matching.cloned().collect()
     }
 
     fn attempt_count(&self, leg: &LegRow) -> i64 {
@@ -137,14 +143,18 @@ impl ProbeStore {
     }
 
     fn budget_open(&self, leg: &LegRow) -> bool {
-        leg.max_budget
-            .is_none_or(|budget| self.attempt_spend(leg) < budget)
+        match leg.max_budget {
+            Some(budget) => self.attempt_spend(leg) < budget,
+            None => true,
+        }
     }
 }
 
 fn within(attempt: &ProbeAttempt, leg: &LegRow) -> bool {
-    leg.stopped_at
-        .is_none_or(|stamp| attempt.created_at <= stamp)
+    match leg.stopped_at {
+        Some(stamp) => attempt.created_at <= stamp,
+        None => true,
+    }
 }
 
 fn parse_budget(seed: Option<&str>) -> Result<Option<Decimal>, OperationError> {

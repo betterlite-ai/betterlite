@@ -1,4 +1,4 @@
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -284,10 +284,18 @@ async fn stops_every_leg_and_reports_its_counts_and_labels() {
         store.recorded(),
         vec!["stop:job-1", "legs", "stats", "load"]
     );
-    for stored in store.stored_legs() {
-        assert_eq!(stored.stopped_by.as_deref(), Some("admin-user"));
-        assert_eq!(stored.stopped_at, Some(now()));
-    }
+    let restamped: Vec<(Option<String>, Option<DateTime<Utc>>)> = store
+        .stored_legs()
+        .iter()
+        .map(|stored| (stored.stopped_by.clone(), stored.stopped_at))
+        .collect();
+    assert_eq!(
+        restamped,
+        vec![
+            (Some("admin-user".to_owned()), Some(now())),
+            (Some("admin-user".to_owned()), Some(now())),
+        ]
+    );
 }
 
 #[tokio::test]

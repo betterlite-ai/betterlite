@@ -156,6 +156,14 @@ pub(super) struct FakeError {
     pub(super) message: String,
 }
 
+impl FakeError {
+    fn new(message: &str) -> Self {
+        Self {
+            message: message.to_owned(),
+        }
+    }
+}
+
 // an in-memory LiteLLM_ShadowEvalJob table running the same sweep, claim, insert and stop statements
 pub(super) struct FakeStore {
     pub(super) targets: TargetRows,
@@ -201,6 +209,10 @@ impl FakeStore {
 
     pub(super) fn recorded(&self) -> Vec<String> {
         self.calls.lock().unwrap().clone()
+    }
+
+    fn record(&self, call: String) {
+        self.calls.lock().unwrap().push(call);
     }
 }
 
@@ -306,14 +318,9 @@ impl ShadowLifecycleStore for FakeStore {
     }
 
     async fn seed_funnel(&self, job_ids: &[String]) -> Result<(), Self::Error> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(format!("seed:{}", job_ids.len()));
+        self.record(format!("seed:{}", job_ids.len()));
         if self.seeds_fail {
-            return Err(FakeError {
-                message: "the funnel table is unavailable".to_owned(),
-            });
+            return Err(FakeError::new("the funnel table is unavailable"));
         }
         Ok(())
     }
@@ -337,7 +344,10 @@ impl ShadowLifecycleStore for FakeStore {
             .filter(|leg| job_ids.contains(&leg.id))
             .filter_map(|leg| {
                 let count = attempt_count(&attempts, leg);
-                (count > 0).then(|| LegAttemptStats {
+                if count == 0 {
+                    return None;
+                }
+                Some(LegAttemptStats {
                     job_id: leg.id.clone(),
                     attempt_count: count,
                     spend: attempt_spend(&attempts, leg),

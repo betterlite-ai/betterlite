@@ -192,10 +192,8 @@ impl ShadowLifecycleStore for PostgresShadowLifecycleStore {
     async fn seed_funnel(&self, job_ids: &[String]) -> Result<(), Self::Error> {
         let client = self.store.session().await?;
         let ids = job_ids.to_vec();
-        client
-            .execute(SEED_FUNNEL_SQL, &[&ids])
-            .await
-            .map_err(backend)?;
+        let executed = client.execute(SEED_FUNNEL_SQL, &[&ids]).await;
+        executed.map_err(backend)?;
         Ok(())
     }
 

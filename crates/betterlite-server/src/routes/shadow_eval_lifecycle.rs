@@ -84,13 +84,14 @@ async fn start_route(
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Response {
-    let identity = match identity_of_caller(caller.as_ref()) {
-        Ok(identity) => identity,
+    let (store, identity) = match gate(
+        &state,
+        caller.as_ref(),
+        "start a shadow eval",
+        StatusCode::CREATED,
+    ) {
+        Ok(gated) => gated,
         Err(response) => return response,
-    };
-    let store = match require_writer(&identity, "start a shadow eval", state.store.as_deref()) {
-        Ok(store) => store,
-        Err(error) => return lifecycle_response(Err(error), StatusCode::CREATED),
     };
     let request = match decode_shadow_body(&body) {
         Ok(request) => request,
@@ -107,17 +108,31 @@ async fn stop_route(
     Path(job_id): Path<String>,
     caller: Option<Extension<AuthContext>>,
 ) -> Response {
-    let identity = match identity_of_caller(caller.as_ref()) {
-        Ok(identity) => identity,
-        Err(response) => return response,
-    };
-    let store = match require_writer(&identity, "stop a shadow eval", state.store.as_deref()) {
-        Ok(store) => store,
-        Err(error) => return lifecycle_response(Err(error), StatusCode::OK),
-    };
-    let result =
-        stop_shadow_eval_job(store, &job_id, identity.user_id.as_deref(), Utc::now()).await;
-    lifecycle_response(result, StatusCode::OK)
+    match gate(
+        &state,
+        caller.as_ref(),
+        "stop a shadow eval",
+        StatusCode::OK,
+    ) {
+        Ok((store, identity)) => {
+            let operator = identity.user_id.as_deref();
+            let result = stop_shadow_eval_job(store, &job_id, operator, Utc::now()).await;
+            lifecycle_response(result, StatusCode::OK)
+        }
+        Err(response) => response,
+    }
+}
+
+fn gate<'state>(
+    state: &'state LifecycleState,
+    caller: Option<&Extension<AuthContext>>,
+    action: &str,
+    success: StatusCode,
+) -> Result<(&'state PostgresShadowLifecycleStore, Identity), Response> {
+    let identity = identity_of_caller(caller)?;
+    let store = require_writer(&identity, action, state.store.as_deref())
+        .map_err(|error| lifecycle_response(Err(error), success))?;
+    Ok((store, identity))
 }
 
 fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, Response> {

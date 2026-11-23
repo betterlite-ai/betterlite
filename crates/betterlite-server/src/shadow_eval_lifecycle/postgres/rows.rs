@@ -65,10 +65,12 @@ pub(super) fn user_row(row: &Row) -> Result<TargetUserRow, PostgresLifecycleErro
 
 pub(super) fn claimed_row(row: &Row) -> Result<ClaimedTarget, PostgresLifecycleError> {
     let kind: String = row.try_get("target_type").map_err(backend)?;
+    let group_id: String = row.try_get("group_id").map_err(backend)?;
+    let target_id: String = row.try_get("target_id").map_err(backend)?;
     Ok(ClaimedTarget {
-        group_id: row.try_get("group_id").map_err(backend)?,
+        group_id,
         target_type: parse_target_type(&kind)?,
-        target_id: row.try_get("target_id").map_err(backend)?,
+        target_id,
     })
 }
 

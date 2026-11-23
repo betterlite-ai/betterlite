@@ -5,7 +5,8 @@ use betterlite_server::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use betterlite_server::shadow_eval_models::ShadowEvalTargetType;
 use serde::{Deserialize, Serialize};
 
-pub use self::output::{JobState, JobView, Output, StepOutcome, TargetView};
+pub(super) use self::output::leg_state;
+pub use self::output::{JobView, Output, StepOutcome, TargetView};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

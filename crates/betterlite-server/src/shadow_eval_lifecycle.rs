@@ -7,5 +7,4 @@ pub mod start;
 pub mod stop;
 pub mod store;
 
-#[cfg(test)]
 mod tests;
