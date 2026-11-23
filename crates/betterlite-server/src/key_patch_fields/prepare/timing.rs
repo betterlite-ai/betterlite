@@ -7,8 +7,8 @@ use crate::key_policy_fields::{
     ClockError, KeyClock, microsecond_precision, shifted_by, zulu_datetime,
 };
 
-use super::super::Row;
 use super::super::error::KeyPatchError;
+use super::super::{Row, string_of};
 
 // duration and budget_duration feed expires and budget_reset_at; null clears them, "" leaves the stored column alone.
 pub(super) fn apply_request_times(
@@ -43,26 +43,22 @@ pub(super) fn apply_request_times(
 
 // "-1" and null clear expires, any other nonempty spec sets it, and "" or a non-string leaves the column alone.
 fn apply_duration(values: &mut Row, clock: KeyClock<'_>) -> Result<(), KeyPatchError> {
-    match values.remove("duration") {
-        Some(JsonData::String(text)) if text == "-1" => {
-            values.insert(String::from("expires"), JsonData::Null);
-        }
-        Some(JsonData::String(text)) if !text.is_empty() => {
-            let expires = zulu_datetime(shifted_by(clock.now, &text, clock)?);
-            values.insert(String::from("expires"), JsonData::String(expires));
-        }
-        Some(JsonData::Null) => {
-            values.insert(String::from("expires"), JsonData::Null);
-        }
-        Some(
-            JsonData::String(_)
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::Array(_)
-            | JsonData::Object(_),
-        )
-        | None => {}
+    let Some(specified) = values.remove("duration") else {
+        return Ok(());
+    };
+    if let JsonData::Null = specified {
+        values.insert(String::from("expires"), JsonData::Null);
+        return Ok(());
     }
+    let Some(text) = string_of(&specified) else {
+        return Ok(());
+    };
+    let expires = match text {
+        "-1" => JsonData::Null,
+        "" => return Ok(()),
+        other => JsonData::String(zulu_datetime(shifted_by(clock.now, other, clock)?)),
+    };
+    values.insert(String::from("expires"), expires);
     Ok(())
 }
 
