@@ -17,6 +17,10 @@ pub(crate) struct Input {
     pub(crate) options: IndexMap<String, Json>,
     #[serde(default)]
     pub(crate) reply: Value,
+    #[serde(default)]
+    pub(crate) input: String,
+    #[serde(default)]
+    pub(crate) voice: Option<Json>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -24,5 +28,8 @@ pub(crate) struct Input {
 pub(crate) enum Kind {
     ImageGeneration,
     ImageEdit,
+    #[serde(rename = "openai_speech")]
+    OpenAiSpeech,
+    NativeSsml,
     Transcription,
 }

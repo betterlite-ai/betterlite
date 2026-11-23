@@ -18,6 +18,7 @@ use crate::openai_media_dispatch::{OTHER_OUTCOME, failure};
 mod case;
 mod edit;
 mod generation;
+mod speech;
 mod tests;
 mod transcription;
 
@@ -46,6 +47,8 @@ async fn dispatch_input(input: &Input) -> HelperResult {
     match input.case {
         Kind::ImageGeneration => generation::image_generation(input).await,
         Kind::ImageEdit => edit::image_edit(input).await,
+        Kind::OpenAiSpeech => speech::openai_speech(input).await,
+        Kind::NativeSsml => speech::native_ssml(input).await,
         Kind::Transcription => transcription::transcription(input).await,
     }
 }
