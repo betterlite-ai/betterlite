@@ -23,7 +23,7 @@ impl RejectionCode {
     }
 }
 
-// LiteLLM's RefreshOwnership alias: Proven is its own sealed envelope unwrapped, Presented is the caller's token, and its None case stays Option::None.
+// LiteLLM's RefreshOwnership alias: Proven says the gateway unwrapped its own sealed envelope, Presented carries the caller's refresh token, and None is Option::None.
 #[derive(Clone, Debug)]
 pub enum RefreshOwnership {
     Proven,
