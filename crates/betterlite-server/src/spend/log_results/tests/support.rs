@@ -156,13 +156,8 @@ impl SessionAggregateReader for Fake {
     }
 }
 
-pub(super) fn state(store: Option<Fake>) -> LogResultsState {
-    LogResultsState {
-        store: store.map(|store| {
-            let shared: Arc<dyn LogResultsStore> = Arc::new(store);
-            shared
-        }),
-    }
+pub(super) fn state(store: Option<Arc<dyn LogResultsStore>>) -> LogResultsState {
+    LogResultsState { store }
 }
 
 pub(super) async fn call(state: LogResultsState, uri: &str, caller: Option<&Principal>) -> Reply {

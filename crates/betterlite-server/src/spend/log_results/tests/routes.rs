@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -39,7 +40,7 @@ async fn an_internal_user_reads_only_their_own_rows() {
     };
     let events = fake.events.clone();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?user_id=root&api_key=sk-live&request_id=r1&start_date=2024-01-02&end_date=2024-01-03&summarize=false",
         Some(&internal("alice")),
     )
@@ -67,7 +68,7 @@ async fn an_admin_keeps_the_requested_user() {
     let fake = Fake::default();
     let events = fake.events.clone();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?user_id=bob&summarize=false",
         Some(&admin()),
     )
@@ -85,7 +86,7 @@ async fn a_viewer_keeps_the_requested_user() {
     let fake = Fake::default();
     let events = fake.events.clone();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?user_id=bob&summarize=false",
         Some(&viewer()),
     )
@@ -101,7 +102,7 @@ async fn an_api_key_that_is_not_sk_is_read_as_is() {
     let fake = Fake::default();
     let events = fake.events.clone();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?api_key=raw-key&summarize=false",
         Some(&admin()),
     )
@@ -122,7 +123,7 @@ async fn one_date_alone_lists_rows_and_ignores_summarize() {
     ] {
         let fake = Fake::default();
         let events = fake.events.clone();
-        let reply = call(state(Some(fake)), uri, Some(&admin())).await;
+        let reply = call(state(Some(Arc::new(fake))), uri, Some(&admin())).await;
         assert_eq!(reply.status, StatusCode::OK);
         let recorded = seen(&events);
         assert_eq!(recorded.len(), 1);
@@ -145,7 +146,7 @@ async fn a_summary_pads_only_after_the_last_day_through_end_date() {
     };
     let events = fake.events.clone();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?api_key=sk-live&request_id=r1&start_date=2024-01-02&end_date=2024-01-04",
         Some(&internal("alice")),
     )
@@ -172,7 +173,7 @@ async fn a_summary_pads_only_after_the_last_day_through_end_date() {
 async fn an_empty_summary_result_is_not_padded() {
     let fake = Fake::default();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?start_date=2024-01-02&end_date=2024-01-04",
         Some(&internal("alice")),
     )
@@ -194,7 +195,7 @@ async fn a_signed_year_is_forwarded_instead_of_refused() {
     let fake = Fake::default();
     let events = fake.events.clone();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?start_date=-100-01-01&end_date=2024-01-01&summarize=false",
         Some(&admin()),
     )
@@ -222,7 +223,7 @@ async fn a_bad_date_answers_the_parse_error() {
     let fake = Fake::default();
     let events = fake.events.clone();
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?start_date=2024-13-01&end_date=2024-01-02",
         Some(&admin()),
     )
@@ -238,7 +239,7 @@ async fn exactly_ten_thousand_rows_set_the_truncation_header() {
         rows: many_rows(10_000),
         ..Fake::default()
     };
-    let reply = call(state(Some(fake)), "/spend/logs", Some(&admin())).await;
+    let reply = call(state(Some(Arc::new(fake))), "/spend/logs", Some(&admin())).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.header(TRUNCATION_HEADER), Some(String::from("true")));
 }
@@ -249,7 +250,7 @@ async fn nine_thousand_nine_hundred_ninety_nine_rows_do_not() {
         rows: many_rows(9_999),
         ..Fake::default()
     };
-    let reply = call(state(Some(fake)), "/spend/logs", Some(&admin())).await;
+    let reply = call(state(Some(Arc::new(fake))), "/spend/logs", Some(&admin())).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.header(TRUNCATION_HEADER), None);
 }
@@ -285,7 +286,7 @@ async fn a_store_failure_answers_with_litellm_status_and_body(
         row_failure: Some(failure),
         ..Fake::default()
     };
-    let reply = call(state(Some(fake)), "/spend/logs", Some(&admin())).await;
+    let reply = call(state(Some(Arc::new(fake))), "/spend/logs", Some(&admin())).await;
     assert_eq!(reply.status, status);
     assert_eq!(reply.json(), json(body));
 }
@@ -297,7 +298,7 @@ async fn a_summary_failure_wraps_into_the_internal_error() {
         ..Fake::default()
     };
     let reply = call(
-        state(Some(fake)),
+        state(Some(Arc::new(fake))),
         "/spend/logs?start_date=2024-01-02&end_date=2024-01-03",
         Some(&admin()),
     )
@@ -309,7 +310,7 @@ async fn a_summary_failure_wraps_into_the_internal_error() {
 #[tokio::test]
 async fn an_unparseable_summarize_answers_the_framework_422() {
     let reply = call(
-        state(Some(Fake::default())),
+        state(Some(Arc::new(Fake::default()))),
         "/spend/logs?summarize=maybe",
         Some(&admin()),
     )
@@ -329,7 +330,7 @@ async fn an_unparseable_summarize_answers_the_framework_422() {
 
 #[tokio::test]
 async fn no_identity_answers_unauthorized() {
-    let reply = call(state(Some(Fake::default())), "/spend/logs", None).await;
+    let reply = call(state(Some(Arc::new(Fake::default()))), "/spend/logs", None).await;
     assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
     assert_eq!(
         reply.json(),
