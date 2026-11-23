@@ -160,14 +160,8 @@ fn mapped_fields(mapped: &MappedParams) -> IndexMap<String, String> {
 fn prompt_voice(voice: &SpeechVoice) -> Option<PromptJson> {
     match voice {
         SpeechVoice::Name(name) => Some(PromptJson::Text(name.clone())),
-        SpeechVoice::Options(fields) => prompt_json(fields),
-    }
-}
-
-fn prompt_json(fields: &Object) -> Option<PromptJson> {
-    match serde_json::to_value(fields) {
-        Ok(value) => serde_json::from_value(value).ok(),
-        Err(_error) => None,
+        // LiteLLM maps only a string voice; the native map reads no name off a dict, so it sees none
+        SpeechVoice::Options(_) => None,
     }
 }
 
