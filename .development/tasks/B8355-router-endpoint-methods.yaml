@@ -64,11 +64,13 @@ out_of_scope:
   - "B8352, B8353 and B8354 own the routing logic; B014 owns the provider dispatch behind each executor."
   - "B8356 builds the Router class that mixes this in."
 pitfalls:
+  - "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
   - "`aanthropic_messages` and `anthropic_messages` are both async in LiteLLM and B6022 already exposes them, so leave them out of this table."
   - "LiteLLM assigns `responses`, `generate_content`, `ocr`, `search` and the blocking video and container names as sync functions; keep them sync here."
   - "A descriptor that returns a new bound object on each access must keep `inspect.iscoroutinefunction` true for async names, or async callers break."
   - "`_arealtime` and `_aresponses_websocket` start with an underscore in LiteLLM and are still set; keep the names."
+  - "Ruff flags LiteLLM's own signatures here (FBT001, FBT002, A002, ARG002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 18

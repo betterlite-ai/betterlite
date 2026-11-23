@@ -66,7 +66,8 @@ pitfalls:
 - "`arealtime_calls` sends `sdp_body` as bytes with content type `application/sdp`, never as JSON."
 - "`client_secret` and `transcription` calls default the model to `gpt-4o-realtime-preview`, decided in Rust."
 - "Cancelling the Python task has to stop the Rust relay and close the socket."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, ASYNC109). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 5
