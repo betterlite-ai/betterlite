@@ -14,6 +14,7 @@ use betterlite_core::api::image_generation_plan::{
     AimageGenerationPlan, PlanEntry, aimage_generation,
 };
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -39,6 +40,14 @@ pub(super) async fn execute(
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
     let world = World::new(call, api_base, env)?;
+    let outcome = generate(&world, call, api_base).await?;
+    Ok(SdkResult::ImageGenerationPlan {
+        value: Box::new(outcome),
+    })
+}
+
+// both entries share one plan and one outcome encoding, so the mode only picks which entry runs
+async fn generate(world: &World, call: &Call, api_base: &str) -> Result<Outcome, SdkHttpError> {
     let resolution = world.resolution();
     let identity = CatalogIdentity {
         context: &resolution,
@@ -58,40 +67,46 @@ pub(super) async fn execute(
         drop_params: false,
         redactor: &world.redactor,
     };
-    let entry = PlanEntry { plan: &plan };
-    let facade = AimageGenerationPlan {
-        entry: &entry,
-        resolution: &resolution,
-        redactor: &world.redactor,
-    };
     let mut state = logging_state(&world.redactor)?;
-    let outcome = match call.sync_mode {
-        // image_generation answers the answer type; the wrapper above it keeps only the response
-        SyncMode::Sync => projected(
-            image_generation(&plan, core_call(&call.call, api_base), &mut state)
-                .await
-                .map(|answer| answer.response)
-                .map_err(|failure| match failure {
-                    ImageGenerationException::Mapped { class, message } => {
-                        AimageGenerationError::Raised { class, message }
-                    }
-                    ImageGenerationException::UnknownProvider { message } => {
-                        AimageGenerationError::UnknownProvider { message }
-                    }
-                }),
-        )?,
-        SyncMode::Asynchronous => projected(
-            aimage_generation(
-                &facade,
-                keyword_invocation(&call.call, api_base),
-                &mut state,
+    match call.sync_mode {
+        SyncMode::Sync => projected(generate_sync(&plan, &call.call, api_base, &mut state).await),
+        SyncMode::Asynchronous => {
+            let entry = PlanEntry { plan: &plan };
+            let facade = AimageGenerationPlan {
+                entry: &entry,
+                resolution: &resolution,
+                redactor: &world.redactor,
+            };
+            projected(
+                aimage_generation(
+                    &facade,
+                    keyword_invocation(&call.call, api_base),
+                    &mut state,
+                )
+                .await,
             )
-            .await,
-        )?,
-    };
-    Ok(SdkResult::ImageGenerationPlan {
-        value: Box::new(outcome),
-    })
+        }
+    }
+}
+
+// image_generation answers the answer type; the wrapper above it keeps only the response
+async fn generate_sync(
+    plan: &ImageGenerationPlan<'_, CatalogIdentity<'_, '_>, Operations<'_>>,
+    call: &ImageCall,
+    api_base: &str,
+    state: &mut LoggingState,
+) -> Result<ImageResponse, AimageGenerationError> {
+    image_generation(plan, core_call(call, api_base), state)
+        .await
+        .map(|answer| answer.response)
+        .map_err(|failure| match failure {
+            ImageGenerationException::Mapped { class, message } => {
+                AimageGenerationError::Raised { class, message }
+            }
+            ImageGenerationException::UnknownProvider { message } => {
+                AimageGenerationError::UnknownProvider { message }
+            }
+        })
 }
 
 // the case's environment and litellm module globals, read through the sections the proxy loads
