@@ -31,6 +31,13 @@ deviations:
       helper typed as a mapping.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L759
   - what: >-
+      `get_replicate_completion_pricing` prices a GPU-second at a fixed 0.001400 and does not read
+      `DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND` from the environment, so an operator who overrides
+      that variable is still priced at LiteLLM's default rate.
+    why: The Python cost package reads no environment; every setting betterlite honors arrives
+      through Rust's settings, and no task owns this constant there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L602
+  - what: >-
       `litellm_logging_obj` is read through a runtime Protocol that declares only `model` and
       `set_cost_breakdown`; any other logging-object member LiteLLM's cost body would touch is not
       read, and the object itself never crosses into the JSON.
