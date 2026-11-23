@@ -1,4 +1,4 @@
-use super::convert::{ConvertError, parse, serialize};
+use super::convert::{ConvertError, encode, parse};
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn as runtime_arn;
 use betterlite_models::passthrough_policies::generic_timeout::{
@@ -51,7 +51,9 @@ pub(crate) fn merge_query_parameters(
         Some(text) => Some(parse(text)?),
         None => None,
     };
-    serialize(&merge_query(&url, &request, defaults.as_ref())).map_err(HelperError::from)
+    let merged = merge_query(&url, &request, defaults.as_ref());
+    let answer = encode(&merged)?;
+    Ok(answer)
 }
 
 // BasePassthroughUtils.forward_headers_from_request, with B3571's protected header list.
@@ -63,7 +65,9 @@ pub(crate) fn forward_headers_from_request(
 ) -> Result<String, HelperError> {
     let request: IndexMap<String, String> = parse(request_headers)?;
     let provided: IndexMap<String, String> = parse(headers)?;
-    serialize(&forward_from(&request, provided, forward_headers)).map_err(HelperError::from)
+    let forwarded = forward_from(&request, provided, forward_headers);
+    let answer = encode(&forwarded)?;
+    Ok(answer)
 }
 
 // CommonUtils.encode_bedrock_runtime_modelid_arn, which encodes the resource separator in a model ARN.

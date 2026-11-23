@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use super::{
     API_ERROR, BAD_REQUEST, BAD_REQUEST_STATUS, ConvertError, ErrorPayload, SYNTHESIZED_STATUS,
-    call_args, serialize,
+    call_args, encode,
 };
 
 const FULL_REQUEST: &str = r#"{
@@ -37,7 +37,7 @@ fn full_blobs() -> Vec<Vec<u8>> {
 #[test]
 fn an_answer_that_cannot_be_written_as_json_is_an_encode_error() {
     let value = BTreeMap::from([(vec![1_u8], "value")]);
-    let error = serialize(&value).unwrap_err();
+    let error = encode(&value).unwrap_err();
     assert!(matches!(error, ConvertError::Encode { .. }));
 }
 
