@@ -1,4 +1,5 @@
 use std::sync::{Arc, PoisonError};
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -13,6 +14,7 @@ use super::support::{
     Recorder, ScriptedTokens, TestConfig, call, params, run, secret, settings, text,
 };
 use crate::api::realtime_contracts::error::HeaderMap;
+use crate::api::vertex_chirp::target::AccessTokenError;
 
 pub(super) async fn openai_credentials(
     dispatch: &Recorder,
@@ -61,31 +63,28 @@ pub(super) async fn openai_generic_base_and_global_key_win() {
     connection_settings.api_key = Some(secret("sk-global"));
     connection_settings.openai_key = Some(secret("sk-openai-global"));
     connection_settings.openai_api_key = Some(secret("openai-key"));
-    let mut connect = params();
-    connect.generic_api_base = Some(String::from("https://generic.example"));
     let litellm_params = IndexMap::new();
-    let request = call(
-        "openai/gpt-realtime",
-        &connect,
-        None,
-        &litellm_params,
-        false,
-    );
-    let (_, result) = run(&dispatch, &connection_settings, &request).await;
-    let connection = result.unwrap();
-    assert!(matches!(connection.branch, Branch::OpenAi));
-    assert_eq!(
-        connection.args.api_base.as_deref(),
-        Some("https://generic.example")
-    );
-    assert_eq!(
-        connection
-            .args
-            .api_key
-            .as_ref()
-            .map(secrecy::ExposeSecret::expose_secret),
-        Some("sk-global")
-    );
+    let mut generic = params();
+    generic.generic_api_base = Some(String::from("https://generic.example"));
+    let bare = params();
+    for (connect, expected) in [
+        (&generic, "https://generic.example"),
+        (&bare, "https://global.example"),
+    ] {
+        let request = call("openai/gpt-realtime", connect, None, &litellm_params, false);
+        let (_, result) = run(&dispatch, &connection_settings, &request).await;
+        let connection = result.unwrap();
+        assert!(matches!(connection.branch, Branch::OpenAi));
+        assert_eq!(connection.args.api_base.as_deref(), Some(expected));
+        assert_eq!(
+            connection
+                .args
+                .api_key
+                .as_ref()
+                .map(secrecy::ExposeSecret::expose_secret),
+            Some("sk-global")
+        );
+    }
 }
 
 // get_llm_provider always fills the xai base, so the generic and environment slots are pinned here
@@ -205,4 +204,34 @@ pub(super) async fn vertex_zero_credential_timeout_expires_without_resolving() {
             .unwrap_or_else(PoisonError::into_inner)
             .is_empty()
     );
+}
+
+// the refresh callback keeps the configured credential timeout, not the default the constant reads
+#[tokio::test(start_paused = true)]
+async fn vertex_refresh_keeps_the_configured_credential_timeout() {
+    let tokens = ScriptedTokens::with_pending_tail(vec![Ok((
+        secret("token"),
+        String::from("resolved-project"),
+    ))]);
+    let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
+    let mut connection_settings = settings();
+    connection_settings.credential_timeout_seconds = 5.0_f64;
+    let connect = params();
+    let litellm_params = IndexMap::new();
+    let request = call(
+        "vertex_ai/gemini-live",
+        &connect,
+        None,
+        &litellm_params,
+        false,
+    );
+    let (_, result) = run(&dispatch, &connection_settings, &request).await;
+    let Branch::Vertex { refresh, .. } = result.unwrap().branch else {
+        panic!("expected a Vertex connection");
+    };
+    let mut refresh_future = refresh.resolve_access_token();
+    let inside = tokio::time::timeout(Duration::from_secs(4), &mut refresh_future).await;
+    assert!(inside.is_err(), "the refresh must stay pending at 4s");
+    let after = tokio::time::timeout(Duration::from_secs(2), &mut refresh_future).await;
+    assert!(matches!(after, Ok(Err(AccessTokenError))));
 }

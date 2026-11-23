@@ -100,7 +100,12 @@ impl BaseRealtimeConfig for TestConfig {
     }
 }
 
-type TokenAnswer = Result<(SecretString, String), VertexTokenError>;
+type TokenResult = Result<(SecretString, String), VertexTokenError>;
+
+enum TokenAnswer {
+    Ready(TokenResult),
+    Pending,
+}
 
 #[derive(Default)]
 pub(super) struct ScriptedTokens {
@@ -109,12 +114,24 @@ pub(super) struct ScriptedTokens {
 }
 
 impl ScriptedTokens {
-    pub(super) fn with(answers: Vec<TokenAnswer>) -> Arc<Self> {
+    pub(super) fn with(answers: Vec<TokenResult>) -> Arc<Self> {
+        Self::queued(answers.into_iter().map(TokenAnswer::Ready).collect())
+    }
+
+    // the answer after the scripted ones never settles, so only a caller-side bound ends the wait
+    pub(super) fn with_pending_tail(answers: Vec<TokenResult>) -> Arc<Self> {
+        let mut queue: VecDeque<TokenAnswer> =
+            answers.into_iter().map(TokenAnswer::Ready).collect();
+        queue.push_back(TokenAnswer::Pending);
+        Self::queued(queue)
+    }
+
+    fn queued(answers: VecDeque<TokenAnswer>) -> Arc<Self> {
         let tokens = Self::default();
         *tokens
             .answers
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = VecDeque::from(answers);
+            .unwrap_or_else(PoisonError::into_inner) = answers;
         Arc::new(tokens)
     }
 }
@@ -127,20 +144,23 @@ impl VertexAccessTokenSource for ScriptedTokens {
         credentials: Option<&'source Json>,
         project_id: Option<&'source str>,
     ) -> VertexTokenFuture<'source> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((credentials.cloned(), project_id.map(str::to_owned)));
+        let answer = self
+            .answers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
         Box::pin(async move {
-            self.calls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((credentials.cloned(), project_id.map(str::to_owned)));
-            self.answers
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .pop_front()
-                .unwrap_or_else(|| {
-                    Err(VertexTokenError {
-                        message: String::from("no answer"),
-                    })
-                })
+            match answer {
+                Some(TokenAnswer::Ready(result)) => result,
+                Some(TokenAnswer::Pending) => std::future::pending().await,
+                None => Err(VertexTokenError {
+                    message: String::from("no answer"),
+                }),
+            }
         })
     }
 }
