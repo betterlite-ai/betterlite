@@ -6,7 +6,8 @@ use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 // The three JSON enums share one shape, so a single template writes each direction of the bridge
 macro_rules! convert_json {
     ($name:ident, $source:ident, $target:ident, $source_list:ident, $target_list:ident) => {
-        pub(super) fn $name(value: &$source) -> $target {
+        #[must_use]
+        pub fn $name(value: &$source) -> $target {
             match value {
                 $source::Null => $target::Null,
                 $source::Bool(flag) => $target::Bool(*flag),
@@ -31,8 +32,19 @@ convert_json!(json_value, Json, JsonValue, List, Array);
 convert_json!(prompt_decision, PromptJson, Json, List, List);
 convert_json!(prompt_value, JsonValue, PromptJson, Array, List);
 convert_json!(decision_prompt, Json, PromptJson, List, List);
+convert_json!(value_from_prompt, PromptJson, JsonValue, List, Array);
 
-pub(super) fn object_from_params(params: &Params) -> Object {
+#[must_use]
+pub fn object_value(body: &Object) -> JsonValue {
+    JsonValue::Object(
+        body.iter()
+            .map(|(name, value)| (name.clone(), value_from_prompt(value)))
+            .collect(),
+    )
+}
+
+#[must_use]
+pub fn object_from_params(params: &Params) -> Object {
     params
         .iter()
         .map(|(name, value)| (name.clone(), prompt_value(value)))

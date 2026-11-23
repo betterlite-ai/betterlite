@@ -31,9 +31,7 @@ use crate::operation::{
     ChatCompletion, ChatOperation, EmbeddingOperation, OperationError, OperationRequest,
     OperationResult,
 };
-use crate::prepared::PreparedRequest;
-use crate::prepared::Upstream;
-use crate::prepared::deployment::Deployment;
+use crate::prepared::{PreparedRequest, Upstream, deployment::Deployment};
 use crate::provider::Adapter as _;
 
 fn catalog() -> CatalogCapabilities {
@@ -55,6 +53,7 @@ fn deployment(model: &str, api_base: &str, api_key: Option<&str>) -> Deployment 
         timeout: Duration::from_secs(30),
         max_retries: None,
         drop_params: None,
+        additional_drop_params: Vec::new(),
         global_drop_params: false,
         provider_affinity_header: None,
         anthropic: None,

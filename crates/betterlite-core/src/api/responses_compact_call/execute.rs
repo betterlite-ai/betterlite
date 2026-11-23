@@ -7,17 +7,16 @@ use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_events::ResponsesReply;
-use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
 use betterlite_prompts::arguments::json::Object;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use crate::api::response_id_traversal::record::Record;
-use crate::api::response_id_traversal::restore::restore_encrypted_item_ids;
+use crate::api::response_id_traversal::restore::restore_input_item_ids;
 use crate::api::responses_compact_http::config::{CompactConfig, CompactParams};
 use crate::api::responses_compact_http::service::{
     ClientKind, ClientSource, CompactCall, CompactDeps, LogContext, prepare, send,
 };
+use crate::api::responses_json::{json_value, object_from_params};
 use crate::api::responses_parameters::optional::optional_params_responses;
 use crate::api::responses_parameters::provider::{DropPolicy, ResponsesParamProvider};
 use crate::api::responses_parameters::requested::requested_optional_params;
@@ -28,7 +27,6 @@ use crate::api::responses_provider_selection::provider_config::{
 use crate::api::responses_provider_selection::resolution::{ModelResolver, resolve_model_provider};
 
 use super::call::{CompactResponsesCall, resolution_params};
-use super::convert::{decision_prompt, json_value, object_from_params, prompt_decision};
 use super::deps::{CompactConfigFactory, CompactResponsesDeps, ConfigRequest};
 use super::encode::encode_response;
 use super::error::{CompactParamError, CompactResponsesError};
@@ -238,29 +236,6 @@ fn timeout_duration(
         .map_err(|_error| CompactResponsesError::InvalidTimeout { seconds })
 }
 
-// B904 decodes the litellm-encoded item IDs and wrapped content before the request reaches the provider
-fn restored(input: &ResponsesInput) -> ResponsesInput {
-    let ResponsesInput::Items(items) = input else {
-        return input.clone();
-    };
-    let mut record = Record::List(
-        items
-            .iter()
-            .map(|item| Record::from_json(prompt_decision(&item.0)))
-            .collect(),
-    );
-    restore_encrypted_item_ids(&mut record);
-    let Json::List(entries) = record.into_json() else {
-        return input.clone();
-    };
-    ResponsesInput::Items(
-        entries
-            .into_iter()
-            .map(|item| ResponsesItem(decision_prompt(&item)))
-            .collect(),
-    )
-}
-
 async fn execute<S, P>(
     source: &S,
     pending: &Pending<'_, P>,
@@ -275,7 +250,7 @@ where
         source,
         supplied: None,
     };
-    let input = restored(&pending.call.input);
+    let input = restore_input_item_ids(&pending.call.input);
     let compact = CompactCall {
         model: &pending.resolved.model,
         input: &input,

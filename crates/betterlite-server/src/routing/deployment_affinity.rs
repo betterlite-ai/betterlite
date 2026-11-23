@@ -17,7 +17,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::routing_value_store::StoreSettings;
 
 use crate::cost_estimate_route::deployments::routing_groups;
-use crate::routing::least_busy::{shared_store, wall_clock};
+use crate::routing::routing_value_store::{shared_store, wall_clock};
 
 mod tests;
 
@@ -101,7 +101,11 @@ fn claims(config: &Config) -> Option<AffinityClaims> {
     };
     Some(AffinityClaims {
         local,
-        shared: shared_store(config),
+        shared: shared_store(
+            config,
+            "the deployment affinity shared pin settings are unreadable",
+            "the deployment affinity shared pin store cannot be built",
+        ),
     })
 }
 

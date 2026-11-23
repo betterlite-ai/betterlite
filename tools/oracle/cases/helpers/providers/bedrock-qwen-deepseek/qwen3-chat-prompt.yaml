@@ -1,0 +1,110 @@
+kind: helper
+name: qwen3-chat-prompt
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply: []
+    qwen_request:
+    - model: qwen.qwen3-32b-v1:0
+      messages: []
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: system
+        content: S
+      - role: user
+        content: U
+      - role: assistant
+        content: A
+      - role: tool
+        content: T
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: developer
+        content: dropped
+      - content: missing role
+      - role: null
+        content: null role
+      - role: 5
+        content: numeric role
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: system
+      - role: user
+        content: null
+      - role: tool
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: user
+        content:
+        - type: text
+          text: a
+        - type: text
+        - type: image_url
+          image_url:
+            url: https://example.invalid/cat.png
+        - type: audio
+          audio:
+            data: ignored
+        - type: text
+          text: b
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: system
+        content:
+        - x
+        - 1
+      - role: tool
+        content:
+        - true
+        - null
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - 5
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: user
+        content:
+        - 5
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: user
+        content:
+        - type: text
+          text: 5
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: x
+        tool_calls:
+        - 5
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: x
+        tool_calls:
+        - function: null
+      non_default_params: {}
+      optional_params: {}
+    deepseek_reply: []
+env: {}
+compare:
+  ignore: []

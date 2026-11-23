@@ -1,0 +1,57 @@
+kind: helper
+name: qwen3-options
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply: []
+    qwen_request:
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: user
+        content: hi
+      non_default_params: {}
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages: []
+      non_default_params:
+        max_tokens: 64
+        temperature: 0.5
+        top_p: 0.9
+        top_k: 40
+        stop:
+        - END
+        stream: true
+        top_logprobs: 2
+        custom_key: custom
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: user
+        content: hi
+      non_default_params:
+        temperature: 0.9
+        top_k: 5
+      optional_params:
+        seed: 7
+        temperature: 0.1
+    - model: qwen.qwen3-32b-v1:0
+      messages: []
+      non_default_params:
+        max_tokens: null
+        stop: null
+      optional_params: {}
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: system
+        content: S
+      - role: user
+        content: U
+      non_default_params:
+        max_tokens: 128
+        stop:
+        - STOP
+        - HALT
+      optional_params: {}
+    deepseek_reply: []
+env: {}
+compare:
+  ignore: []

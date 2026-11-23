@@ -18,6 +18,7 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::aiohttp_openai_dispatch::{DEFAULT_AIOHTTP_BASE, complete_url};
 use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicBases;
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::legacy_dispatch::Legacy;
 use betterlite_provider::provider::Provider;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -31,6 +32,8 @@ use url::Url;
 use anthropic_defaults::apply_anthropic_defaults;
 use mock::mock_settings;
 use uuid::Uuid;
+
+use crate::state::azure_runtime;
 
 // the error lives in server/error.rs to keep this file under the line limit; the re-export keeps the name here
 pub(crate) use crate::server::error::ChatSetupError;
@@ -54,7 +57,8 @@ pub fn chat_executor(
         &known_names,
         &custom_providers,
     );
-    let mut deployments = chat_deployments(config, &defaults, &resolution)?;
+    let azure = Arc::new(azure_runtime::build(config));
+    let mut deployments = chat_deployments(config, &defaults, &resolution, &azure)?;
     let mock = mock_settings(config, &mut deployments);
     Ok(ChatExecutor {
         client: outbound_client(config, environment, &deployments)?,
@@ -127,6 +131,7 @@ fn chat_deployments(
     config: &Config,
     defaults: &OpenAiDefaults,
     resolution: &ResolutionContext<'_>,
+    azure: &Arc<Composition>,
 ) -> Result<Vec<ChatDeployment>, ChatSetupError> {
     let identity = &config.sections.provider_resolution;
     let bases = AnthropicBases::new(config);
@@ -135,8 +140,16 @@ fn chat_deployments(
         let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
         let mut chat =
             ChatDeployment::resolve_with(deployment, defaults, custom_llm_provider, resolution)?;
+        chat.drop_policy = config
+            .sections
+            .drop_params
+            .policy
+            .deployments
+            .get(index)
+            .cloned()
+            .unwrap_or_default();
         prefix_provider(&mut chat, custom_llm_provider);
-        let provider = Provider::from_deployment(&chat);
+        let provider = Provider::from_deployment(&chat, azure);
         if let Ok(Provider::Legacy(legacy)) = &provider {
             refuse_unbuilt_chain(&chat, deployment, *legacy)?;
         }

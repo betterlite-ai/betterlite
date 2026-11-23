@@ -1,0 +1,2 @@
+litellm_settings:
+  max_end_user_budget_id: budget-global

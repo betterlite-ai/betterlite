@@ -1,0 +1,5 @@
+kind: websocket
+path: /v1/realtime
+expected_http_status: 101
+negotiated_subprotocol: null
+frames: []
