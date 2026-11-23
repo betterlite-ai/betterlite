@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use crate::native_api::bundled_model_cost_json;
-
 use super::NativeCatalog;
+
+use crate::native_api::bundled_model_cost_json;
 
 #[test]
 fn model_info_native_generation_moves_with_each_adopt() {
