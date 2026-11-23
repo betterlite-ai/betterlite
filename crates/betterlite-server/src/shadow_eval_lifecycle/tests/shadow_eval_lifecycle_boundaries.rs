@@ -37,7 +37,7 @@ fn only_a_proxy_admin_may_start(#[case] role: Option<&str>, #[case] expected: Op
             assert_eq!(error.status_code(), 403);
         }
         None => {
-            drop(chosen.unwrap());
+            let _store = chosen.unwrap();
         }
     }
 }
@@ -75,18 +75,15 @@ fn padded(length: usize) -> Vec<u8> {
 #[case(SHADOW_BODY_MAX_BYTES + 1, false)]
 fn the_shadow_body_bound_is_exactly_one_mebibyte(#[case] length: usize, #[case] accepted: bool) {
     let decoded = decode_shadow_body(&padded(length));
-    match accepted {
-        true => {
-            let parsed = decoded.unwrap();
-            assert_eq!(parsed.api_key_ids, vec!["key-1".to_owned()]);
-        }
-        false => {
-            let ShadowBodyError::TooLarge { bytes, limit } = decoded.err().unwrap() else {
-                panic!("expected the size gate to answer first");
-            };
-            assert_eq!(bytes, SHADOW_BODY_MAX_BYTES + 1);
-            assert_eq!(limit, SHADOW_BODY_MAX_BYTES);
-        }
+    if accepted {
+        let parsed = decoded.unwrap();
+        assert_eq!(parsed.api_key_ids, vec!["key-1".to_owned()]);
+    } else {
+        let ShadowBodyError::TooLarge { bytes, limit } = decoded.err().unwrap() else {
+            panic!("expected the size gate to answer first");
+        };
+        assert_eq!(bytes, SHADOW_BODY_MAX_BYTES + 1);
+        assert_eq!(limit, SHADOW_BODY_MAX_BYTES);
     }
 }
 
@@ -109,7 +106,10 @@ async fn a_jobs_window_runs_the_whole_declared_duration(#[case] days: u32, #[cas
     let response = start(&store, &request(&body), None, now(), &mut minted(2))
         .await
         .unwrap();
-    assert_eq!(response.job.ends_at, now() + Duration::days(span));
+    assert_eq!(
+        response.job.ends_at,
+        now().checked_add_signed(Duration::days(span)).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -119,8 +119,7 @@ async fn a_leg_whose_window_closed_this_instant_cannot_be_stopped() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now(),
+        (now() - Duration::days(1), now()),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())
@@ -137,8 +136,7 @@ async fn a_leg_one_second_inside_its_window_can_be_stopped() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::seconds(1),
+        (now() - Duration::days(1), now() + Duration::seconds(1)),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())
@@ -162,12 +160,14 @@ async fn a_leg_that_reached_its_budget_exactly_reads_completed(
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
+        (
+            now().checked_sub_signed(Duration::days(1)).unwrap(),
+            now().checked_add_signed(Duration::days(6)).unwrap(),
+        ),
     );
     let attempts = vec![FakeAttempt {
         job_id: running.id.clone(),
-        created_at: now() - Duration::hours(1),
+        created_at: now().checked_sub_signed(Duration::hours(1)).unwrap(),
         spend,
     }];
     let store = FakeStore::new(now())
@@ -198,14 +198,16 @@ async fn a_leg_that_reached_its_turn_valve_exactly_reads_completed(
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
+        (
+            now().checked_sub_signed(Duration::days(1)).unwrap(),
+            now().checked_add_signed(Duration::days(6)).unwrap(),
+        ),
     );
     running.max_turns = 2;
-    let attempts: Vec<FakeAttempt> = (0..attempts_made)
+    let attempts: Vec<FakeAttempt> = (1..=attempts_made)
         .map(|hour| FakeAttempt {
             job_id: running.id.clone(),
-            created_at: now() - Duration::hours(hour + 1),
+            created_at: now().checked_sub_signed(Duration::hours(hour)).unwrap(),
             spend: Decimal::ZERO,
         })
         .collect();
@@ -232,8 +234,7 @@ async fn a_stamp_freezes_the_attempts_counted_against_it() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
+        (now() - Duration::days(1), now() + Duration::days(6)),
     );
     spent.stopped_at = Some(stamp);
     let active = leg(
@@ -241,8 +242,7 @@ async fn a_stamp_freezes_the_attempts_counted_against_it() {
         ShadowEvalTargetType::Team,
         "team-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
+        (now() - Duration::days(1), now() + Duration::days(6)),
     );
     let attempts = vec![
         FakeAttempt {
@@ -281,8 +281,7 @@ async fn a_slot_matches_only_its_own_target_kind(
         kind,
         target_id,
         JobDirection::Forward,
-        now(),
-        now() + Duration::days(1),
+        (now(), now().checked_add_signed(Duration::days(1)).unwrap()),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())

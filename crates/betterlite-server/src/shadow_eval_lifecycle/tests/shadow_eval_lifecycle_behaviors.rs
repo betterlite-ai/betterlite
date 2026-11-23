@@ -3,8 +3,8 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::support::{
-    ALL_TARGETS, BASELINE, FakeAttempt, FakeStore, JUDGE, KEY_ONLY, REVERSE_KEY, ROUTER, error_of,
-    leg, minted, now, request, start, targets,
+    ALL_TARGETS, BASELINE, FakeStore, JUDGE, KEY_ONLY, REVERSE_KEY, ROUTER, error_of, leg, minted,
+    now, request, start, stopping, targets,
 };
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection as JobDirection;
 use crate::shadow_eval_lifecycle::stop::stop_shadow_eval_job;
@@ -14,20 +14,75 @@ use crate::shadow_eval_models::{ShadowEvalStatus, ShadowEvalTargetType};
 #[tokio::test]
 async fn starts_one_job_with_a_leg_per_target_and_the_shared_config() {
     let store = FakeStore::new(now()).with_targets(targets());
-    let parsed = request(ALL_TARGETS);
-    let response = start(&store, &parsed, Some("admin-user"), now(), &mut minted(4))
-        .await
-        .unwrap();
+    let response = start(
+        &store,
+        &request(ALL_TARGETS),
+        Some("admin-user"),
+        now(),
+        &mut minted(4),
+    )
+    .await
+    .unwrap();
     assert_eq!(response.status, ShadowEvalStatus::Running);
     assert_eq!(response.router_name, ROUTER);
     assert_eq!(response.job.job_id, Uuid::from_u128(1).to_string());
     assert_eq!(response.job.router_names, vec![ROUTER.to_owned()]);
     assert_eq!(response.job.direction, JobDirection::Forward);
     assert_eq!(response.job.judge_model, JUDGE);
-    assert_eq!(response.job.shadow_percentage, 10.0_f64);
+    assert!((response.job.shadow_percentage - 10.0_f64).abs() < f64::EPSILON);
     assert_eq!(response.job.created_at, now());
     assert_eq!(response.job.ends_at, now() + Duration::days(7));
     assert_eq!(response.job.stopped_by, None);
+    assert_eq!(
+        store.recorded(),
+        vec![
+            "load",
+            "sweep:key",
+            "sweep:team",
+            "sweep:user",
+            "claim",
+            "create:3",
+            "seed:3"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn writes_one_leg_per_target_with_the_minted_ids() {
+    let store = FakeStore::new(now()).with_targets(targets());
+    start(
+        &store,
+        &request(ALL_TARGETS),
+        Some("admin-user"),
+        now(),
+        &mut minted(4),
+    )
+    .await
+    .unwrap();
+    let stored = store.stored_legs();
+    assert_eq!(stored.len(), 3);
+    assert_eq!(
+        stored.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+        vec![
+            &Uuid::from_u128(2).to_string(),
+            &Uuid::from_u128(3).to_string(),
+            &Uuid::from_u128(4).to_string()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn labels_every_target_kind_and_writes_one_leg_per_target() {
+    let store = FakeStore::new(now()).with_targets(targets());
+    let response = start(
+        &store,
+        &request(ALL_TARGETS),
+        Some("admin-user"),
+        now(),
+        &mut minted(4),
+    )
+    .await
+    .unwrap();
     let kinds: Vec<ShadowEvalTargetType> = response
         .job
         .targets
@@ -56,28 +111,6 @@ async fn starts_one_job_with_a_leg_per_target_and_the_shared_config() {
     assert_eq!(team.key_name, None);
     let user = &response.job.targets[2];
     assert_eq!(user.target_alias.as_deref(), Some("user@example.com"));
-    assert_eq!(
-        store.recorded(),
-        vec![
-            "load",
-            "sweep:key",
-            "sweep:team",
-            "sweep:user",
-            "claim",
-            "create:3",
-            "seed:3"
-        ]
-    );
-    let stored = store.stored_legs();
-    assert_eq!(stored.len(), 3);
-    assert_eq!(
-        stored.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
-        vec![
-            &Uuid::from_u128(2).to_string(),
-            &Uuid::from_u128(3).to_string(),
-            &Uuid::from_u128(4).to_string()
-        ]
-    );
 }
 
 #[tokio::test]
@@ -87,8 +120,7 @@ async fn sweeps_a_finished_leg_free_before_it_claims_the_slot() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(7),
-        now(),
+        (now() - Duration::days(7), now()),
     );
     finished.stopped_at = None;
     let store = FakeStore::new(now())
@@ -111,8 +143,7 @@ async fn refuses_a_target_claimed_in_the_same_direction() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now(),
-        now() + Duration::days(1),
+        (now(), now() + Duration::days(1)),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())
@@ -138,16 +169,14 @@ async fn sorts_every_claimed_target_into_the_conflict_message() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now(),
-        now() + Duration::days(1),
+        (now(), now() + Duration::days(1)),
     );
     let team = leg(
         "b-job",
         ShadowEvalTargetType::Team,
         "team-1",
         JobDirection::Forward,
-        now(),
-        now() + Duration::days(1),
+        (now(), now() + Duration::days(1)),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())
@@ -166,8 +195,7 @@ async fn a_reverse_job_runs_beside_a_forward_job_on_the_same_target() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now(),
-        now() + Duration::days(1),
+        (now(), now() + Duration::days(1)),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())
@@ -230,43 +258,7 @@ async fn rejects_an_unknown_target_before_any_slot_read() {
 
 #[tokio::test]
 async fn stops_every_leg_and_reports_its_counts_and_labels() {
-    let key = leg(
-        "job-1",
-        ShadowEvalTargetType::Key,
-        "key-1",
-        JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
-    );
-    let team = leg(
-        "job-1",
-        ShadowEvalTargetType::Team,
-        "team-1",
-        JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
-    );
-    let attempts = vec![
-        FakeAttempt {
-            job_id: key.id.clone(),
-            created_at: now() - Duration::hours(2),
-            spend: Decimal::new(100, 2),
-        },
-        FakeAttempt {
-            job_id: key.id.clone(),
-            created_at: now() - Duration::hours(1),
-            spend: Decimal::new(50, 2),
-        },
-        FakeAttempt {
-            job_id: team.id.clone(),
-            created_at: now() - Duration::hours(1),
-            spend: Decimal::new(25, 2),
-        },
-    ];
-    let store = FakeStore::new(now())
-        .with_targets(targets())
-        .with_legs(vec![key, team])
-        .with_attempts(attempts);
+    let store = stopping();
     let response = stop_shadow_eval_job(&store, "job-1", Some("admin-user"), now())
         .await
         .unwrap();
@@ -280,6 +272,14 @@ async fn stops_every_leg_and_reports_its_counts_and_labels() {
     assert_eq!(key_target.target_alias.as_deref(), Some("prod-key"));
     assert_eq!(response.job.targets[1].attempt_count, Some(1));
     assert_eq!(response.job.targets[1].spend, Some(Decimal::new(25, 2)));
+}
+
+#[tokio::test]
+async fn a_stop_restamps_every_leg_and_records_its_reads() {
+    let store = stopping();
+    stop_shadow_eval_job(&store, "job-1", Some("admin-user"), now())
+        .await
+        .unwrap();
     assert_eq!(
         store.recorded(),
         vec!["stop:job-1", "legs", "stats", "load"]
@@ -305,8 +305,7 @@ async fn a_stop_without_a_caller_is_recorded_as_operator() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now(),
-        now() + Duration::days(6),
+        (now(), now() + Duration::days(6)),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())
@@ -325,8 +324,7 @@ async fn a_leg_that_ended_on_its_own_keeps_its_stamp_and_gains_the_operator() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
+        (now() - Duration::days(1), now() + Duration::days(6)),
     );
     spent.stopped_at = Some(earlier);
     let active = leg(
@@ -334,8 +332,7 @@ async fn a_leg_that_ended_on_its_own_keeps_its_stamp_and_gains_the_operator() {
         ShadowEvalTargetType::Team,
         "team-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
+        (now() - Duration::days(1), now() + Duration::days(6)),
     );
     let store = FakeStore::new(now())
         .with_targets(targets())
@@ -364,8 +361,7 @@ async fn reports_400_with_the_derived_status_when_nothing_is_still_sampling() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now() - Duration::days(1),
-        now() + Duration::days(6),
+        (now() - Duration::days(1), now() + Duration::days(6)),
     );
     spent.stopped_at = Some(now() - Duration::hours(1));
     let store = FakeStore::new(now())
@@ -386,8 +382,7 @@ async fn resolves_a_deleted_target_to_no_label_at_stop_time() {
         ShadowEvalTargetType::Key,
         "key-1",
         JobDirection::Forward,
-        now(),
-        now() + Duration::days(6),
+        (now(), now() + Duration::days(6)),
     );
     let mut rows = targets();
     rows.keys.clear();
@@ -411,7 +406,7 @@ async fn reports_the_start_clock_the_window_and_the_router_arm() {
         .await
         .unwrap();
     assert_eq!(response.job.ends_at, now() + Duration::days(30));
-    assert_eq!(response.job.shadow_percentage, 25.5_f64);
+    assert!((response.job.shadow_percentage - 25.5_f64).abs() < f64::EPSILON);
     assert_eq!(response.job.targets[0].max_budget, Some(Decimal::new(1, 2)));
     assert_eq!(response.status, ShadowEvalStatus::Running);
     assert_eq!(store.stored_legs()[0].router_names, vec![ROUTER.to_owned()]);

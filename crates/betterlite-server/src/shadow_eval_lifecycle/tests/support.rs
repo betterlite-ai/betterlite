@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
+use std::vec::IntoIter;
 
 use async_trait::async_trait;
 use betterlite_anthropic::credentials::AnthropicSettings;
@@ -11,9 +12,12 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::model_catalog_lookup::alias::AliasMap;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_secret_managers::secret_helpers::SecretManagerReadState;
 use betterlite_secret_managers::secret_types::SecretAccessMode;
-use chrono::{DateTime, TimeZone as _, Utc};
+use chrono::{DateTime, Duration, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 use thiserror::Error;
 use uuid::Uuid;
@@ -26,7 +30,7 @@ use crate::plugin_routes::routes::Identity;
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_lifecycle::body::decode_shadow_body;
 use crate::shadow_eval_lifecycle::error::LifecycleError;
-use crate::shadow_eval_lifecycle::start::{StartDeps, start_shadow_eval};
+use crate::shadow_eval_lifecycle::start::{StartCall, StartDeps, start_shadow_eval};
 use crate::shadow_eval_lifecycle::store::{
     ClaimedTarget, InsertRejection, NewLeg, ShadowLifecycleStore, TargetKeyRow, TargetRows,
     TargetTeamRow, TargetUserRow,
@@ -59,7 +63,7 @@ pub(super) fn request(body: &str) -> StartShadowEvalRequest {
     decode_shadow_body(body.as_bytes()).unwrap()
 }
 
-pub(super) fn minted(count: u128) -> std::vec::IntoIter<Uuid> {
+pub(super) fn minted(count: u128) -> IntoIter<Uuid> {
     (1..=count)
         .map(Uuid::from_u128)
         .collect::<Vec<Uuid>>()
@@ -92,15 +96,15 @@ pub(super) fn targets() -> TargetRows {
     }
 }
 
-// one leg of a job started earlier, its window open unless a test closes it
+// one leg of a job started earlier, its (created_at, ends_at) window open unless a test closes it
 pub(super) fn leg(
     group_id: &str,
     target_type: ShadowEvalTargetType,
     target_id: &str,
     direction: ShadowEvalDirection,
-    created_at: DateTime<Utc>,
-    ends_at: DateTime<Utc>,
+    window: (DateTime<Utc>, DateTime<Utc>),
 ) -> LegRow {
+    let (created_at, ends_at) = window;
     LegRow {
         id: format!("{group_id}-{target_id}"),
         group_id: group_id.to_owned(),
@@ -146,6 +150,47 @@ pub(super) fn attempt_spend(attempts: &[FakeAttempt], leg: &LegRow) -> Decimal {
         .filter(|attempt| attempt.job_id == leg.id && within(attempt, leg))
         .map(|attempt| attempt.spend)
         .sum()
+}
+
+// job-1's key and team legs, two attempts on the key and one on the team, the fixture the stop tests read
+pub(super) fn stopping() -> FakeStore {
+    let opened = now().checked_sub_signed(Duration::days(1)).unwrap();
+    let closed = now().checked_add_signed(Duration::days(6)).unwrap();
+    let key = leg(
+        "job-1",
+        ShadowEvalTargetType::Key,
+        "key-1",
+        ShadowEvalDirection::Forward,
+        (opened, closed),
+    );
+    let team = leg(
+        "job-1",
+        ShadowEvalTargetType::Team,
+        "team-1",
+        ShadowEvalDirection::Forward,
+        (opened, closed),
+    );
+    let attempts = vec![
+        FakeAttempt {
+            job_id: key.id.clone(),
+            created_at: opened,
+            spend: Decimal::new(100, 2),
+        },
+        FakeAttempt {
+            job_id: key.id.clone(),
+            created_at: now(),
+            spend: Decimal::new(50, 2),
+        },
+        FakeAttempt {
+            job_id: team.id.clone(),
+            created_at: now(),
+            spend: Decimal::new(25, 2),
+        },
+    ];
+    FakeStore::new(now())
+        .with_targets(targets())
+        .with_legs(vec![key, team])
+        .with_attempts(attempts)
 }
 
 fn budget_open(leg: &LegRow, attempts: &[FakeAttempt]) -> bool {
@@ -280,6 +325,8 @@ impl ShadowLifecycleStore for FakeStore {
                 leg.stopped_at = Some(self.now);
             }
         }
+        drop(legs);
+        drop(attempts);
         Ok(())
     }
 
@@ -396,6 +443,8 @@ impl ShadowLifecycleStore for FakeStore {
                 }
             }
         }
+        drop(legs);
+        drop(attempts);
         Ok(1)
     }
 }
@@ -454,17 +503,26 @@ fn snapshot() -> Snapshot {
     Snapshot::build(&rows, &JsonObject::new()).unwrap()
 }
 
+// the router parts the start fixture validates against, its unused provider box dropped so the start future stays Send
+fn router_parts() -> (DeploymentCatalog, AliasMap, RoutingGroupIndex) {
+    let Snapshot {
+        catalog,
+        aliases,
+        groups,
+        provider,
+    } = snapshot();
+    drop(provider);
+    (catalog, aliases, groups)
+}
+
 // the production entry the start route calls, with the live router fixture it validates against
-pub(super) async fn start<Ids>(
+pub(super) async fn start(
     store: &FakeStore,
     request: &StartShadowEvalRequest,
     caller: Option<&str>,
     now: DateTime<Utc>,
-    ids: &mut Ids,
-) -> Result<ShadowJobResponse, LifecycleError>
-where
-    Ids: Iterator<Item = Uuid>,
-{
+    ids: &mut IntoIter<Uuid>,
+) -> Result<ShadowJobResponse, LifecycleError> {
     let mut bundled = BundledCatalog::default();
     let catalog = bundled.get();
     let no_names = BTreeSet::new();
@@ -480,7 +538,7 @@ where
     };
     let cache = ProviderCache::default();
     let settings = AnthropicSettings::default();
-    let fixture = snapshot();
+    let (router_catalog, router_aliases, router_groups) = router_parts();
     let provider = |_model: &str| -> Option<String> { None };
     let credentials = AnthropicCredentials {
         anthropic_key: None,
@@ -490,9 +548,9 @@ where
     };
     let deps = StartDeps {
         router: Some(ShadowEvalRouter {
-            catalog: &fixture.catalog,
-            model_group_alias: &fixture.aliases,
-            routing_groups: &fixture.groups,
+            catalog: &router_catalog,
+            model_group_alias: &router_aliases,
+            routing_groups: &router_groups,
             inferred_provider: &provider,
         }),
         sdk: &NoSdk,
@@ -500,7 +558,8 @@ where
         resolution: &resolution,
         credentials,
     };
-    start_shadow_eval(store, deps, request, caller, now, ids).await
+    let mut call = StartCall { caller, now, ids };
+    start_shadow_eval(store, deps, request, &mut call).await
 }
 
 pub(super) fn error_of(result: Result<ShadowJobResponse, LifecycleError>) -> LifecycleError {

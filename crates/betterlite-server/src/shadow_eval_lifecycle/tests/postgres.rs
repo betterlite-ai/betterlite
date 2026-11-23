@@ -342,35 +342,18 @@ async fn claimed_targets_reports_the_kind_direction_and_group() {
 }
 
 #[tokio::test]
-async fn create_legs_writes_every_column_and_rejects_a_second_claim() {
+async fn create_legs_writes_every_key_column() {
     let (fixture, pool) = database().await;
     let mut key = leg("leg-a", KeyTarget, "k1");
     key.direction = ShadowEvalDirection::Reverse;
     key.baseline_model = Some("baseline-model".to_owned());
-    let mut team = leg("leg-b", TeamTarget, "t1");
-    team.router_name = "legacy-router".to_owned();
-    team.router_names = Vec::new();
-    team.models = Vec::new();
-    team.created_by = None;
-    team.shadow_percentage = 12.5;
-    team.max_turns = 3;
-    team.max_budget = Decimal::new(2, 0);
-    let user = leg("leg-c", UserTarget, "u1");
     let store = lifecycle(&pool);
-    inserted(store.create_legs(&[key, team, user]).await);
-    let mut read = store.legs("job-1").await.unwrap();
-    read.sort_by(|left, right| left.id.cmp(&right.id));
-    let mut duplicate = leg("leg-dup", KeyTarget, "k1");
-    duplicate.direction = ShadowEvalDirection::Reverse;
-    let rejected = store.create_legs(&[duplicate]).await;
-    let after = store.legs("job-1").await.unwrap();
+    inserted(store.create_legs(&[key]).await);
+    let read = store.legs("job-1").await.unwrap();
     let written_by = created_by_of(&pool, "leg-a").await;
-    let team_by = created_by_of(&pool, "leg-b").await;
     pool.close();
     fixture.close_async().await.unwrap();
-    let ids: Vec<&str> = read.iter().map(|row| row.id.as_str()).collect();
-    assert_eq!(ids, ["leg-a", "leg-b", "leg-c"]);
-    let written = read.first().unwrap();
+    let written = &read[0];
     assert_eq!(written.group_id, "job-1");
     assert_eq!(written.target_type, KeyTarget);
     assert_eq!(written.target_id, "k1");
@@ -383,7 +366,7 @@ async fn create_legs_writes_every_column_and_rejects_a_second_claim() {
     assert_eq!(written.direction, ShadowEvalDirection::Reverse);
     assert_eq!(written.baseline_model.as_deref(), Some("baseline-model"));
     assert_eq!(written.judge_model, "judge-model");
-    assert_eq!(written.shadow_percentage, 25.0_f64);
+    assert!((written.shadow_percentage - 25.0_f64).abs() < f64::EPSILON);
     assert_eq!(written.max_turns, 10_000);
     assert_eq!(written.max_budget, Some(Decimal::new(15, 1)));
     assert_eq!(written_by.as_deref(), Some("admin-user"));
@@ -391,10 +374,33 @@ async fn create_legs_writes_every_column_and_rejects_a_second_claim() {
     assert_eq!(written.ends_at, at(2026, 12, 23, 12));
     assert_eq!(written.stopped_at, None);
     assert_eq!(written.stopped_by, None);
-    let written_team = read.get(1).unwrap();
+}
+
+#[tokio::test]
+async fn create_legs_keeps_the_router_name_beside_an_empty_router_list() {
+    let (fixture, pool) = database().await;
+    let mut team = leg("leg-b", TeamTarget, "t1");
+    team.router_name = "legacy-router".to_owned();
+    team.router_names = Vec::new();
+    team.models = Vec::new();
+    team.created_by = None;
+    team.shadow_percentage = 12.5_f64;
+    team.max_turns = 3;
+    team.max_budget = Decimal::new(2, 0);
+    let user = leg("leg-c", UserTarget, "u1");
+    let store = lifecycle(&pool);
+    inserted(store.create_legs(&[team, user]).await);
+    let mut read = store.legs("job-1").await.unwrap();
+    read.sort_by(|left, right| left.id.cmp(&right.id));
+    let team_by = created_by_of(&pool, "leg-b").await;
+    pool.close();
+    fixture.close_async().await.unwrap();
+    let ids: Vec<&str> = read.iter().map(|row| row.id.as_str()).collect();
+    assert_eq!(ids, ["leg-b", "leg-c"]);
+    let written_team = &read[0];
     assert_eq!(written_team.target_type, TeamTarget);
     assert_eq!(written_team.direction, ShadowEvalDirection::Forward);
-    assert_eq!(written_team.shadow_percentage, 12.5_f64);
+    assert!((written_team.shadow_percentage - 12.5_f64).abs() < f64::EPSILON);
     assert_eq!(written_team.max_turns, 3);
     assert_eq!(written_team.max_budget, Some(Decimal::new(2, 0)));
     assert!(written_team.router_names.is_empty());
@@ -403,13 +409,28 @@ async fn create_legs_writes_every_column_and_rejects_a_second_claim() {
         vec!["legacy-router".to_owned()]
     );
     assert_eq!(team_by, None);
+}
+
+#[tokio::test]
+async fn create_legs_rejects_a_second_active_claim() {
+    let (fixture, pool) = database().await;
+    let mut key = leg("leg-a", KeyTarget, "k1");
+    key.direction = ShadowEvalDirection::Reverse;
+    let store = lifecycle(&pool);
+    inserted(store.create_legs(&[key]).await);
+    let mut duplicate = leg("leg-dup", KeyTarget, "k1");
+    duplicate.direction = ShadowEvalDirection::Reverse;
+    let rejected = store.create_legs(&[duplicate]).await;
+    let after = store.legs("job-1").await.unwrap();
+    pool.close();
+    fixture.close_async().await.unwrap();
     rejected.unwrap_or_else(|rejection| match rejection {
         InsertRejection::UniqueViolation => {}
         InsertRejection::Database(error) => {
             panic!("the duplicate must lose the unique index, not fail: {error}")
         }
     });
-    assert_eq!(after.len(), 3);
+    assert_eq!(after.len(), 1);
 }
 
 #[tokio::test]
@@ -446,20 +467,19 @@ async fn attempt_stats_count_only_attempts_before_the_stamp() {
     assert_eq!(stopped.job_id, "leg-a");
     assert_eq!(stopped.attempt_count, 2);
     assert_eq!(stopped.spend, Decimal::new(75, 2));
-    let open = stats.get(1).unwrap();
+    let open = &stats[1];
     assert_eq!(open.job_id, "leg-b");
     assert_eq!(open.attempt_count, 2);
     assert_eq!(open.spend, Decimal::new(875, 3));
 }
 
 #[tokio::test]
-async fn stop_job_claims_only_a_leg_still_sampling_inside_its_window() {
+async fn stop_job_claims_a_leg_still_sampling_inside_its_window() {
     let (fixture, pool) = database().await;
     execute(&pool, STOP_SEED).await;
     let store = lifecycle(&pool);
     let sampling_stamp = at(2026, 11, 24, 9);
     let later_stamp = at(2026, 11, 25, 9);
-    let earned_stamp = at(2026, 11, 24, 10);
     let first = store
         .stop_job("g-sampling", "admin-user", sampling_stamp)
         .await
@@ -468,12 +488,24 @@ async fn stop_job_claims_only_a_leg_still_sampling_inside_its_window() {
         .stop_job("g-sampling", "admin-user", later_stamp)
         .await
         .unwrap();
+    let sampling = store.legs("g-sampling").await.unwrap();
+    pool.close();
+    fixture.close_async().await.unwrap();
+    assert_eq!(first, 1);
+    assert_eq!(second, 0);
+    let stamped = sampling.first().unwrap();
+    assert_eq!(stamped.stopped_at, Some(sampling_stamp));
+    assert_eq!(stamped.stopped_by.as_deref(), Some("admin-user"));
+}
+
+#[tokio::test]
+async fn stop_job_refuses_closed_spent_even_and_partly_earned_groups() {
+    let (fixture, pool) = database().await;
+    execute(&pool, STOP_SEED).await;
+    let store = lifecycle(&pool);
+    let earned_stamp = at(2026, 11, 24, 10);
     let closed = store
         .stop_job("g-closed", "admin-user", earned_stamp)
-        .await
-        .unwrap();
-    let turned = store
-        .stop_job("g-turned", "admin-user", earned_stamp)
         .await
         .unwrap();
     let spent = store
@@ -488,26 +520,38 @@ async fn stop_job_claims_only_a_leg_still_sampling_inside_its_window() {
         .stop_job("g-earned", "admin-user", earned_stamp)
         .await
         .unwrap();
-    let sampling = store.legs("g-sampling").await.unwrap();
+    pool.close();
+    fixture.close_async().await.unwrap();
+    assert_eq!(closed, 0);
+    assert_eq!(spent, 0);
+    assert_eq!(even, 0);
+    assert_eq!(earned, 2);
+}
+
+#[tokio::test]
+async fn stop_job_keeps_an_earned_stamp_and_leaves_an_exhausted_leg_open() {
+    let (fixture, pool) = database().await;
+    execute(&pool, STOP_SEED).await;
+    let store = lifecycle(&pool);
+    let earned_stamp = at(2026, 11, 24, 10);
+    let turned = store
+        .stop_job("g-turned", "admin-user", earned_stamp)
+        .await
+        .unwrap();
+    store
+        .stop_job("g-earned", "admin-user", earned_stamp)
+        .await
+        .unwrap();
     let mut group = store.legs("g-earned").await.unwrap();
     group.sort_by(|left, right| left.id.cmp(&right.id));
     let turned_legs = store.legs("g-turned").await.unwrap();
     pool.close();
     fixture.close_async().await.unwrap();
-    assert_eq!(first, 1);
-    assert_eq!(second, 0);
-    assert_eq!(closed, 0);
     assert_eq!(turned, 0);
-    assert_eq!(spent, 0);
-    assert_eq!(even, 0);
-    assert_eq!(earned, 2);
-    let stamped = sampling.first().unwrap();
-    assert_eq!(stamped.stopped_at, Some(sampling_stamp));
-    assert_eq!(stamped.stopped_by.as_deref(), Some("admin-user"));
     let swept = group.first().unwrap();
     assert_eq!(swept.stopped_at, Some(at(2026, 1, 1, 0)));
     assert_eq!(swept.stopped_by.as_deref(), Some("admin-user"));
-    let fresh = group.get(1).unwrap();
+    let fresh = &group[1];
     assert_eq!(fresh.stopped_at, Some(earned_stamp));
     assert_eq!(fresh.stopped_by.as_deref(), Some("admin-user"));
     let left_alone = turned_legs.first().unwrap();

@@ -58,10 +58,10 @@ fn principal(user_id: &str, roles: &[Role]) -> Principal {
     }
 }
 
-fn caller(user_id: &str, roles: &[Role]) -> Option<Extension<AuthContext>> {
-    Some(Extension(AuthContext {
+fn caller(user_id: &str, roles: &[Role]) -> Extension<AuthContext> {
+    Extension(AuthContext {
         principal: principal(user_id, roles),
-    }))
+    })
 }
 
 fn state() -> Arc<LifecycleState> {
@@ -103,7 +103,7 @@ async fn a_non_admin_stop_answers_403() {
     let response = stop_route(
         State(state()),
         Path("job-1".to_owned()),
-        caller("user-1", &[]),
+        Some(caller("user-1", &[])),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
@@ -113,7 +113,7 @@ async fn a_non_admin_stop_answers_403() {
 async fn an_admin_start_without_a_database_answers_500() {
     let response = start_route(
         State(state()),
-        caller("admin-1", &[Role::PlatformAdmin]),
+        Some(caller("admin-1", &[Role::PlatformAdmin])),
         Bytes::new(),
     )
     .await;
@@ -129,7 +129,7 @@ async fn identity_of_caller_refuses_a_request_without_a_principal() {
 #[tokio::test]
 async fn identity_of_caller_reads_the_principal_the_auth_layer_published() {
     let published = caller("admin-1", &[Role::PlatformAdmin]);
-    let identity = identity_of_caller(published.as_ref()).unwrap();
+    let identity = identity_of_caller(Some(&published)).unwrap();
     assert_eq!(identity.user_id.as_deref(), Some("admin-1"));
     assert_eq!(identity.user_role.as_deref(), Some("proxy_admin"));
 }
