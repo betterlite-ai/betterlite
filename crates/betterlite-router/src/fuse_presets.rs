@@ -1,6 +1,6 @@
 pub mod error;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
 
@@ -138,10 +138,7 @@ pub enum PresetKind {
 
 pub fn get_fuse_presets() -> Result<Arc<FusePresetCatalog>, FusePresetsError> {
     // a poisoned lock only guarded the one Option assignment below, so the shared catalog is still whole
-    let mut stored = match CATALOG.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut stored = CATALOG.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(shared) = stored.as_ref() {
         return Ok(Arc::clone(shared));
     }
