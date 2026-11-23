@@ -1,0 +1,87 @@
+use std::time::SystemTime;
+
+use pyo3::prelude::*;
+use pyo3_async_runtimes::tokio::get_runtime;
+
+use crate::cost::billing::{CallRequest, CompletionRequest};
+use crate::cost::breakdown::Capture;
+use crate::cost::convert::{
+    Amount, CostAnswer, RatesView, UsageAnswer, UsageRecord, UsageRequest, encode, parse,
+};
+use crate::cost::engine::Engine;
+use crate::cost::error::{call_error, charge_error, usage_error};
+use crate::cost::settings::{Settings, SettingsWire};
+
+mod tests;
+
+// The cost family's one entry point: the settings text builds the engine, and every method takes one
+// request object as JSON.
+#[pyclass(module = "betterlite._native")]
+pub(crate) struct NativeCost {
+    engine: Engine,
+}
+
+#[pymethods]
+impl NativeCost {
+    #[new]
+    fn new(settings: &str) -> PyResult<Self> {
+        let wire: SettingsWire = parse(settings)?;
+        let settings = Settings::build(wire)?;
+        Ok(Self {
+            engine: Engine { settings },
+        })
+    }
+
+    // LiteLLM's pair of floats, in the order cost_per_token returns them.
+    fn cost_per_token(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+        let wire: CallRequest = parse(request)?;
+        let priced = self
+            .engine
+            .cost_per_token(&wire)
+            .map_err(|error| call_error(py, &error, &wire))?;
+        encode(&[Amount(priced.0), Amount(priced.1)]).map_err(PyErr::from)
+    }
+
+    fn completion_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+        priced_response(py, &self.engine, request)
+    }
+
+    fn response_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+        priced_response(py, &self.engine, request)
+    }
+
+    // get_usage_object's conversion, so the Python helper and completion_cost read one implementation.
+    fn usage_object(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+        usage_answer(py, &self.engine, request)
+    }
+}
+
+fn usage_answer(py: Python<'_>, engine: &Engine, request: &str) -> PyResult<String> {
+    let wire: UsageRequest = parse(request)?;
+    let usage = engine
+        .usage_object(&wire)
+        .map_err(|error| usage_error(py, &error))?;
+    encode(&UsageAnswer {
+        usage: usage.as_ref().map(UsageRecord::from),
+    })
+    .map_err(PyErr::from)
+}
+
+// One charge on the shared runtime with the GIL released, then the answer with its breakdown.
+fn priced_response(py: Python<'_>, engine: &Engine, request: &str) -> PyResult<String> {
+    let wire: CompletionRequest = parse(request)?;
+    let answered = py.detach(|| {
+        let mut clock = SystemTime::now;
+        let mut capture = Capture::default();
+        get_runtime()
+            .block_on(engine.charge(&wire, &mut clock, Some(&mut capture)))
+            .map(|cost| (cost, capture))
+    });
+    let (cost, capture) = answered.map_err(|error| charge_error(py, &error, &wire))?;
+    let answer = CostAnswer {
+        cost: Amount(cost),
+        breakdown: capture.breakdown.as_ref(),
+        billed_token_rates: capture.rates.map(RatesView::from),
+    };
+    encode(&answer).map_err(PyErr::from)
+}

@@ -1,0 +1,11 @@
+extend = "../../../ruff.toml"
+
+[lint.per-file-ignores]
+"*.py" = [
+  "ARG001", # LiteLLM's cost signatures carry parameters the Rust calculator reads elsewhere
+  "B006", # completion_cost's messages: list = [] default stays as LiteLLM declares it
+  "FBT001", "FBT002", # cache_hit is a positional boolean in response_cost_calculator
+  "PLR0911", # one match arm per response class, each returning its own kind
+  "PLR0913", "PLR0917", # LiteLLM's 23 and 24 parameter cost signatures stay as they are
+]
+"logging.py" = ["BLE001"] # a broken logging object must not fail the charge, as in LiteLLM

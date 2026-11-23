@@ -1,0 +1,40 @@
+task: B8063
+deviations:
+  - what: >-
+      `cost_per_token`, `completion_cost` and `response_cost_calculator` return a Python float made
+      from Rust's exact Decimal result, so a last-digit difference from LiteLLM's float arithmetic
+      is possible; the tests allow a relative difference of 1e-12 and the cached, cache-creation,
+      tiered and per-second cases are the ones where LiteLLM's own sums carry a rounding tail.
+    why: B068 computes with exact money types, so the value crosses into Python once, as a float.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L401
+  - what: >-
+      When a response carries no usage and no custom token counts, LiteLLM tokenizes the prompt,
+      messages and completion to price the call. betterlite's Python cost helpers have no
+      tokenizer, so that call raises betterlite's NativeError Exception explaining that the
+      response needs usage or explicit token counts, instead of counting.
+    why: Token counting belongs to the completion family, and this package's cost path prices a
+      response's usage only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1740
+  - what: >-
+      `completion_cost` passes the `total_time` argument through and does not read
+      `completion_response._response_ms` or `litellm_logging_obj.get_response_ms()`, so a
+      per-second model whose response time arrives only through those two is priced from
+      `total_time` (0.0 by default).
+    why: LiteLLM's `_response_time_ms_for_cost` sits in L1059-L1331, which the task marks private
+      to the Rust calculator, and the native request carries no field for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1316
+  - what: >-
+      `get_replicate_completion_pricing` reads `created` and `ended` from the response's dumped
+      mapping. An `ended` attribute that the response class keeps out of `model_dump()` is not
+      read, where LiteLLM's `getattr(completion_response, "ended", ...)` would see it.
+    why: Every betterlite response carries `ended` in its dump, and reading it there keeps the
+      helper typed as a mapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L759
+  - what: >-
+      `litellm_logging_obj` is read through a runtime Protocol that declares only `model` and
+      `set_cost_breakdown`; any other logging-object member LiteLLM's cost body would touch is not
+      read, and the object itself never crosses into the JSON.
+    why: The price rules are Rust, and the two members are the ones completion_cost's public
+      behavior reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1221
+kept_bugs: []
