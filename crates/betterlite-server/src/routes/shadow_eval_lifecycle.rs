@@ -70,11 +70,21 @@ impl JudgeSdk for UnbuiltJudgeSdk {
 
 #[cfg_attr(test, mutants::skip)]
 pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
+    let lifecycle = Arc::new(lifecycle_state(state));
+    Router::new()
+        .route("/auto_router/shadow_eval/start", post(start_route))
+        .route("/auto_router/shadow_eval/{job_id}/stop", post(stop_route))
+        .with_state(lifecycle)
+}
+
+// the route's own state construction, which the test drives so a field mapped to its default fails it
+fn lifecycle_state(state: &Arc<ServerState>) -> LifecycleState {
     let credentials = &state.config.sections.anthropic_credentials;
-    let lifecycle = Arc::new(LifecycleState {
+    let sdk = &state.config.sections.resource_sdk_settings;
+    LifecycleState {
         store: store_from_state(state).map(Arc::new),
-        api_key: state.config.sections.resource_sdk_settings.api_key.clone(),
-        api_base: state.config.sections.resource_sdk_settings.api_base.clone(),
+        api_key: sdk.api_key.clone(),
+        api_base: sdk.api_base.clone(),
         anthropic: AnthropicSettings {
             api_key: credentials.api_key.clone(),
             auth_token: credentials.auth_token.clone(),
@@ -82,11 +92,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
             use_bearer_for_custom_base: credentials.use_bearer_for_custom_base,
             anthropic_version: AnthropicSettings::default().anthropic_version,
         },
-    });
-    Router::new()
-        .route("/auto_router/shadow_eval/start", post(start_route))
-        .route("/auto_router/shadow_eval/{job_id}/stop", post(stop_route))
-        .with_state(lifecycle)
+    }
 }
 
 async fn start_route(

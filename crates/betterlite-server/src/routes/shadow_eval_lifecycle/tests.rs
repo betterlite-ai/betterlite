@@ -21,12 +21,13 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use chrono::{Duration, Utc};
 use indexmap::IndexMap;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret;
 
 use super::{
-    LifecycleState, UnbuiltJudgeSdk, identity_of_caller, lifecycle_response, start_deps,
-    start_route, stop_route, store_from_state,
+    LifecycleState, UnbuiltJudgeSdk, identity_of_caller, lifecycle_response, lifecycle_state,
+    start_deps, start_route, stop_route, store_from_state,
 };
 use crate::auth::auth_identity::AuthContext;
 use crate::judge_targets::call::JudgeCall;
@@ -93,7 +94,7 @@ fn judge_call() -> JudgeCall {
 }
 
 fn configured_config(lookup: BTreeMap<String, String>) -> Config {
-    let yaml = "general_settings:\n  database_url: postgresql://betterlite:betterlite@localhost:5432/betterlite\n";
+    let yaml = "general_settings:\n  database_url: postgresql://betterlite:betterlite@localhost:5432/betterlite\nlitellm_settings:\n  api_key: sk-resource-key\n  api_base: https://resource.example\n  use_bearer_for_custom_base: true\n";
     ConfigLoader { lookup }.load(yaml).unwrap()
 }
 
@@ -187,24 +188,45 @@ async fn store_from_state_builds_a_store_from_the_configured_url() {
     assert!(store_from_state(&state).is_some());
 }
 
+#[rstest]
+#[case::api_key("ANTHROPIC_API_KEY", "sk-ant-key", Some("sk-ant-key"), None)]
+#[case::auth_token("ANTHROPIC_AUTH_TOKEN", "sk-ant-token", None, Some("sk-ant-token"))]
 #[test]
-fn the_route_hands_the_configured_anthropic_key_to_start_validation() {
-    let lookup = BTreeMap::from([("ANTHROPIC_API_KEY".to_owned(), "sk-ant-env-key".to_owned())]);
-    let config = configured_config(lookup);
-    let credentials = &config.sections.anthropic_credentials;
-    let anthropic = AnthropicSettings {
-        api_key: credentials.api_key.clone(),
-        auth_token: credentials.auth_token.clone(),
-        api_base: credentials.api_base.clone(),
-        use_bearer_for_custom_base: credentials.use_bearer_for_custom_base,
-        anthropic_version: AnthropicSettings::default().anthropic_version,
-    };
-    let state = LifecycleState {
-        store: None,
-        api_key: None,
-        api_base: None,
-        anthropic,
-    };
+fn lifecycle_state_carries_the_configured_credentials_into_start_validation(
+    #[case] variable: &str,
+    #[case] value: &str,
+    #[case] want_key: Option<&str>,
+    #[case] want_token: Option<&str>,
+) {
+    let lookup = BTreeMap::from([
+        (variable.to_owned(), value.to_owned()),
+        (
+            "ANTHROPIC_API_BASE".to_owned(),
+            "https://anthropic.example".to_owned(),
+        ),
+    ]);
+    let state = lifecycle_state(&state_for(&configured_config(lookup)));
+    let settings = &state.anthropic;
+    assert_eq!(
+        settings.api_key.as_ref().map(ExposeSecret::expose_secret),
+        want_key
+    );
+    assert_eq!(
+        settings
+            .auth_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        want_token
+    );
+    assert_eq!(settings.api_base, "https://anthropic.example");
+    assert!(settings.use_bearer_for_custom_base);
+    assert_eq!(settings.anthropic_version, ANTHROPIC_VERSION);
+    assert!(state.store.is_some());
+    assert_eq!(
+        state.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-resource-key")
+    );
+    assert_eq!(state.api_base.as_deref(), Some("https://resource.example"));
     let mut bundled = BundledCatalog::default();
     let catalog = bundled.get();
     let no_names = BTreeSet::new();
@@ -221,12 +243,15 @@ fn the_route_hands_the_configured_anthropic_key_to_start_validation() {
     let cache = ProviderCache::default();
     let sdk = UnbuiltJudgeSdk;
     let deps = start_deps(&state, &sdk, &resolution, &cache);
-    let settings = deps.credentials.settings;
+    let carried = deps.credentials.settings;
     assert_eq!(
-        settings.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("sk-ant-env-key")
+        carried.api_key.as_ref().map(ExposeSecret::expose_secret),
+        want_key
     );
-    assert_eq!(settings.anthropic_version, ANTHROPIC_VERSION);
+    assert_eq!(
+        carried.auth_token.as_ref().map(ExposeSecret::expose_secret),
+        want_token
+    );
 }
 
 #[test]
