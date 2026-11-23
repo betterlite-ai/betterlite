@@ -51,9 +51,11 @@ def configured_params(
     kwargs: dict[str, JsonValue], names: tuple[str, ...]
 ) -> dict[str, JsonValue]:
     # a caller's client or shared session is refused here, the rule every endpoint family shares
+    kept: dict[str, JsonValue] = {}
     for name, value in kwargs.items():
-        is_dropped(name, value)
-    return {name: kwargs[name] for name in names if name in kwargs}
+        if not is_dropped(name, value) and name in names:
+            kept[name] = value
+    return kept
 
 
 # Every request is the operation's call record beside the module settings that record reads.
