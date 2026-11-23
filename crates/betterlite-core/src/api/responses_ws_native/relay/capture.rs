@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::usage_sum;
@@ -25,13 +26,28 @@ use crate::cost::realtime::RealtimeBilling;
 use crate::cost::realtime::error::RealtimeCostError;
 use crate::cost::realtime::responses_ws::{collect_usage, partition_by_service_tier};
 
-impl<'call, Guard, Client, Backend> ResponsesWsRelay<'call, Guard, Client, Backend>
+// multiple_inherent_impl leaves relay.rs the type's one inherent impl, so storage and logging are a trait
+#[async_trait]
+pub trait CaptureRelay {
+    async fn store_event(&self, message: &str) -> Result<(), WsNativeError>;
+
+    async fn store_input(&self, message: &str);
+
+    async fn failure_exception(&self) -> Option<ErrorClass>;
+
+    fn wrap_response_event(&self, response_str: &str) -> Result<String, WsNativeError>;
+
+    async fn log_messages(&self) -> Result<(), RealtimeCostError>;
+}
+
+#[async_trait]
+impl<Guard, Client, Backend> CaptureRelay for ResponsesWsRelay<'_, Guard, Client, Backend>
 where
-    Guard: PresidioGuardrailCallback,
+    Guard: PresidioGuardrailCallback + Sync,
     Client: ResponsesClientWebSocket + Sync,
     Backend: NativeWsBackend,
 {
-    pub async fn store_event(&self, message: &str) -> Result<(), WsNativeError> {
+    async fn store_event(&self, message: &str) -> Result<(), WsNativeError> {
         let Some(parsed) = json_object(message)? else {
             return Ok(());
         };
@@ -45,7 +61,7 @@ where
         Ok(())
     }
 
-    pub async fn store_input(&self, message: &str) {
+    async fn store_input(&self, message: &str) {
         let collected = collect_input(message);
         if !collected.is_empty() {
             self.input_messages.lock().await.extend(collected);
@@ -55,7 +71,7 @@ where
         }
     }
 
-    pub async fn failure_exception(&self) -> Option<ErrorClass> {
+    async fn failure_exception(&self) -> Option<ErrorClass> {
         let messages = self.messages.lock().await;
         let failed = messages.iter().find(|event| {
             matches!(
@@ -76,7 +92,7 @@ where
         ))
     }
 
-    pub fn wrap_response_event(&self, response_str: &str) -> Result<String, WsNativeError> {
+    fn wrap_response_event(&self, response_str: &str) -> Result<String, WsNativeError> {
         let Some(mut event) = json_object(response_str)? else {
             return Ok(response_str.to_owned());
         };
@@ -101,7 +117,7 @@ where
         }
     }
 
-    pub async fn log_messages(&self) -> Result<(), RealtimeCostError> {
+    async fn log_messages(&self) -> Result<(), RealtimeCostError> {
         let Some(logging) = self.setup.logging else {
             return Ok(());
         };

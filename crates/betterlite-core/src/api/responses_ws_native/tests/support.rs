@@ -11,7 +11,7 @@ use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::decisions::Json;
-use betterlite_models::resolution::ResolutionError;
+use betterlite_models::resolution::{ResolutionError, ResolutionRequest};
 use betterlite_models::usage_sum::Usage;
 use betterlite_openai::api::responses_shapes::websocket::{
     PresidioGuardrailCallback, ResponsesClientWebSocket, ResponsesWebSocketMessage,
@@ -40,6 +40,7 @@ use crate::api::responses_ws_native::logging::{WsCallUpdate, WsNativeLogging};
 use crate::api::responses_ws_native::relay::RelaySetup;
 use crate::api::responses_ws_native::relay::ResponsesWsRelay;
 use crate::api::responses_ws_native::relay::backend::{BackendError, NativeWsBackend};
+use crate::api::responses_ws_native::relay::forward::ForwardRelay as _;
 use crate::cost::realtime::RealtimeBilling;
 
 pub(super) type Event = IndexMap<String, Json>;
@@ -293,7 +294,7 @@ impl ProjectQuotaCallback for RejectFirstQuota {
         _estimated_output_tokens: i64,
     ) -> Result<(), ErrorClass> {
         let mut calls = lock(&self.calls);
-        *calls += 1;
+        *calls = calls.saturating_add(1);
         if *calls == 1 {
             Err(rate_limited(&self.message))
         } else {
@@ -387,20 +388,16 @@ pub(super) struct FakeResolution {
 
 impl FakeResolution {
     pub(super) fn openai() -> Self {
-        let mut resolution = Self::default();
-        resolution.model = String::from("gpt-4o");
-        resolution.provider = Some(String::from("openai"));
-        resolution
+        Self {
+            model: String::from("gpt-4o"),
+            provider: Some(String::from("openai")),
+            ..Self::default()
+        }
     }
 }
 
 impl NativeWsResolution for FakeResolution {
-    fn resolve(
-        &self,
-        _model: &str,
-        _api_base: Option<&str>,
-        _api_key: Option<&SecretString>,
-    ) -> Result<WsResolved, ResolutionError> {
+    fn resolve(&self, _request: &ResolutionRequest<'_>) -> Result<WsResolved, ResolutionError> {
         Ok(WsResolved {
             model: self.model.clone(),
             provider: self.provider.clone(),
@@ -511,37 +508,35 @@ fn record_request(request: &ProviderWsRequest<'_, TestClient>) -> RecordedReques
 impl NativeWsProviderHandler<TestClient> for RecordingHandler {
     type Error = TestError;
 
-    fn responses_websocket(
-        &self,
-        request: ProviderWsRequest<'_, TestClient>,
-    ) -> impl Future<Output = Result<Option<ErrorClass>, TestError>> + Send + '_ {
-        async move {
-            lock(&self.requests).push(record_request(&request));
-            if !self.forward {
-                return Ok(None);
-            }
-            let logging: &dyn WsNativeLogging = &*self.logging;
-            let relay = ResponsesWsRelay::new(RelaySetup {
-                websocket: request.websocket,
-                backend: self.backend.as_ref(),
-                logging: Some(logging),
-                user_api_key_dict: request.user_api_key_dict,
-                request_data: self.request_data.clone(),
-                first_message: request.first_message.clone(),
-                guardrail_callbacks: None,
-                output_guardrail_callbacks: if self.outputs.is_empty() {
-                    None
-                } else {
-                    Some(self.outputs.as_slice())
-                },
-                quota_callbacks: self.quota.as_ref().map(from_ref),
-                authorized_model: self.authorized_model.as_deref(),
-                custom_llm_provider: request.custom_llm_provider,
-                request_defaults: Some(&request.request_defaults),
-                redactor: &self.redactor,
-            });
-            Ok(relay.bidirectional_forward().await)
+    async fn responses_websocket<'call>(
+        &'call self,
+        request: ProviderWsRequest<'call, TestClient>,
+    ) -> Result<Option<ErrorClass>, TestError> {
+        lock(&self.requests).push(record_request(&request));
+        if !self.forward {
+            return Ok(None);
         }
+        let logging: &dyn WsNativeLogging = &*self.logging;
+        let relay = ResponsesWsRelay::new(RelaySetup {
+            websocket: request.websocket,
+            backend: self.backend.as_ref(),
+            logging: Some(logging),
+            user_api_key_dict: request.user_api_key_dict,
+            request_data: self.request_data.clone(),
+            first_message: request.first_message.clone(),
+            guardrail_callbacks: None,
+            output_guardrail_callbacks: if self.outputs.is_empty() {
+                None
+            } else {
+                Some(self.outputs.as_slice())
+            },
+            quota_callbacks: self.quota.as_ref().map(from_ref),
+            authorized_model: self.authorized_model.as_deref(),
+            custom_llm_provider: request.custom_llm_provider,
+            request_defaults: Some(&request.request_defaults),
+            redactor: &self.redactor,
+        });
+        Ok(relay.bidirectional_forward().await)
     }
 }
 
@@ -561,10 +556,11 @@ pub(super) struct Entry {
 
 impl Entry {
     pub(super) fn new() -> Self {
-        let mut entry = Self::default();
-        entry.model = String::from("gpt-4o");
-        entry.resolution = FakeResolution::openai();
-        entry
+        Self {
+            model: String::from("gpt-4o"),
+            resolution: FakeResolution::openai(),
+            ..Self::default()
+        }
     }
 
     pub(super) async fn request(&self) -> RecordedRequest {

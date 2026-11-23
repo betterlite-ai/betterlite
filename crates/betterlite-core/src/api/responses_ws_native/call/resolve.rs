@@ -3,6 +3,7 @@ use std::error::Error;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolutionRequest;
 use betterlite_openai::credentials::{DataResidency, infer_openai_data_residency};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -31,12 +32,15 @@ pub(super) fn resolve_call<Client, Handler, HandlerError>(
 where
     HandlerError: Error + 'static,
 {
-    let resolved = deps
-        .resolution
-        .resolve(call.model, call.api_base, call.api_key)?;
+    let resolved = deps.resolution.resolve(&ResolutionRequest {
+        model: call.model,
+        custom_llm_provider: None,
+        api_base: call.api_base,
+        api_key: call.api_key,
+    })?;
     let model = strip_responses_routing_prefix(&resolved.model);
     let provider = resolved.provider.as_deref();
-    let api_base = first_present(&[
+    let api_base = first_text([
         resolved.api_base.as_deref(),
         call.kwargs
             .get("api_base")
@@ -47,7 +51,7 @@ where
     let litellm_params = litellm_params_for_ws(call.kwargs, residency);
     record_update(deps, call, &model, provider, &litellm_params)?;
     let kwargs_key = kwarg_secret(call.kwargs);
-    let api_key = first_secret(&[
+    let api_key = first_secret([
         resolved.api_key.as_ref(),
         kwargs_key.as_ref(),
         deps.globals.api_key.as_ref(),
@@ -58,10 +62,26 @@ where
     Ok(ResolvedCall {
         model,
         provider: resolved.provider,
-        api_base: api_base.map(str::to_owned),
-        api_key: api_key.cloned(),
+        api_base,
+        api_key,
         provider_config,
     })
+}
+
+fn first_text<const N: usize>(candidates: [Option<&str>; N]) -> Option<String> {
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn first_secret<const N: usize>(candidates: [Option<&SecretString>; N]) -> Option<SecretString> {
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|value| !value.expose_secret().is_empty())
+        .cloned()
 }
 
 fn record_update<Client, Handler>(
@@ -78,24 +98,6 @@ fn record_update<Client, Handler>(
         litellm_params,
         custom_llm_provider: provider,
     })
-}
-
-fn first_present<'value>(values: &[Option<&'value str>]) -> Option<&'value str> {
-    values
-        .iter()
-        .copied()
-        .flatten()
-        .find(|text| !text.is_empty())
-}
-
-fn first_secret<'secret>(
-    values: &[Option<&'secret SecretString>],
-) -> Option<&'secret SecretString> {
-    values
-        .iter()
-        .copied()
-        .flatten()
-        .find(|secret| !secret.expose_secret().is_empty())
 }
 
 #[cfg_attr(test, mutants::skip)]
@@ -140,12 +142,12 @@ fn resolved_metadata(kwargs: &IndexMap<String, Json>) -> Json {
     if let Some(value) = kwargs.get("metadata").filter(|value| is_supplied(value)) {
         return value.clone();
     }
-    match kwargs.get("litellm_metadata") {
-        Some(litellm @ Json::Object(_)) if is_supplied(litellm) => litellm.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | Some(Json::Object(_))
-        | None => kwargs.get("metadata").cloned().unwrap_or(Json::Null),
+    if let Some(litellm @ Json::Object(_)) = kwargs.get("litellm_metadata")
+        && is_supplied(litellm)
+    {
+        return litellm.clone();
     }
+    kwargs.get("metadata").cloned().unwrap_or(Json::Null)
 }
 
 fn residency_json(residency: Option<DataResidency>) -> Json {

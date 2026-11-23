@@ -45,30 +45,15 @@ pub struct WsResolved {
 }
 
 pub trait NativeWsResolution: Send + Sync {
-    fn resolve(
-        &self,
-        model: &str,
-        api_base: Option<&str>,
-        api_key: Option<&SecretString>,
-    ) -> Result<WsResolved, ResolutionError>;
+    fn resolve(&self, request: &ResolutionRequest<'_>) -> Result<WsResolved, ResolutionError>;
 }
 
 impl<T> NativeWsResolution for T
 where
     T: ModelResolver + Send + Sync,
 {
-    fn resolve(
-        &self,
-        model: &str,
-        api_base: Option<&str>,
-        api_key: Option<&SecretString>,
-    ) -> Result<WsResolved, ResolutionError> {
-        let outcome = self.resolve_model(&ResolutionRequest {
-            model,
-            custom_llm_provider: None,
-            api_base,
-            api_key,
-        })?;
+    fn resolve(&self, request: &ResolutionRequest<'_>) -> Result<WsResolved, ResolutionError> {
+        let outcome = self.resolve_model(request)?;
         Ok(WsResolved {
             model: outcome.model,
             provider: Some(outcome.provider.slug().to_owned()),
@@ -116,10 +101,10 @@ pub struct ProviderWsRequest<'request, Client> {
 
 pub trait NativeWsProviderHandler<Client>: Send + Sync {
     type Error: Error + Send + Sync + 'static;
-    fn responses_websocket(
-        &self,
-        request: ProviderWsRequest<'_, Client>,
-    ) -> impl Future<Output = Result<Option<ErrorClass>, Self::Error>> + Send + '_;
+    fn responses_websocket<'call>(
+        &'call self,
+        request: ProviderWsRequest<'call, Client>,
+    ) -> impl Future<Output = Result<Option<ErrorClass>, Self::Error>> + Send + 'call;
 }
 
 #[derive(Debug, Error)]
@@ -134,7 +119,7 @@ where
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
     #[error(transparent)]
-    Handler(#[from] HandlerError),
+    Handler(HandlerError),
 }
 
 pub async fn responses_websocket<Client, Handler>(

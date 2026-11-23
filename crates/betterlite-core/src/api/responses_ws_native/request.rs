@@ -53,10 +53,10 @@ enum SlotError {
     AttributeError,
 }
 
-fn mapping_slot<'value>(
-    value: Option<&'value Json>,
+fn mapping_slot(
+    value: Option<&Json>,
     error: SlotError,
-) -> Result<Option<&'value IndexMap<String, Json>>, WsNativeError> {
+) -> Result<Option<&IndexMap<String, Json>>, WsNativeError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(fields)) => Ok(Some(fields)),
@@ -136,30 +136,18 @@ pub fn routed_first_frame(first_message: &str, routed_input: Option<&Json>) -> S
         if current == routed {
             return first_message.to_owned();
         }
-        return rewrite_nested(&frame, nested, routed);
+        let mut updated_nested = nested.clone();
+        updated_nested.insert(String::from("input"), routed.clone());
+        let mut updated = frame.clone();
+        updated.insert(String::from("response"), Json::Object(updated_nested));
+        return serde_json::to_string(&Json::Object(updated)).unwrap_or_default();
     }
     if frame.get("input") == Some(routed) {
         return first_message.to_owned();
     }
-    rewrite_flat(&frame, routed)
-}
-
-fn rewrite_nested(
-    frame: &IndexMap<String, Json>,
-    nested: &IndexMap<String, Json>,
-    routed: &Json,
-) -> String {
-    let mut updated_nested = nested.clone();
-    updated_nested.insert(String::from("input"), routed.clone());
-    let mut updated_frame = frame.clone();
-    updated_frame.insert(String::from("response"), Json::Object(updated_nested));
-    serde_json::to_string(&Json::Object(updated_frame)).unwrap_or_default()
-}
-
-fn rewrite_flat(frame: &IndexMap<String, Json>, routed: &Json) -> String {
-    let mut updated_frame = frame.clone();
-    updated_frame.insert(String::from("input"), routed.clone());
-    serde_json::to_string(&Json::Object(updated_frame)).unwrap_or_default()
+    let mut updated = frame.clone();
+    updated.insert(String::from("input"), routed.clone());
+    serde_json::to_string(&Json::Object(updated)).unwrap_or_default()
 }
 
 pub fn ws_request_defaults(

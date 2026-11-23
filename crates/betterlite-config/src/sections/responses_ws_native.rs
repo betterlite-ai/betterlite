@@ -35,7 +35,11 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            api_base: optional_string(self.settings.api_base, "litellm_settings.api_base", lookup)?,
+            api_base: self
+                .settings
+                .api_base
+                .map(|text| resolve_string(text, "litellm_settings.api_base", lookup))
+                .transpose()?,
             api_key: resolve_secret(self.settings.api_key, "litellm_settings.api_key", lookup)?,
             openai_key: resolve_secret(
                 self.settings.openai_key,
@@ -47,19 +51,5 @@ impl Section for Raw {
                 .filter(|value| !value.is_empty())
                 .map(SecretString::from),
         })
-    }
-}
-
-fn optional_string<L>(
-    value: Option<String>,
-    path: &str,
-    lookup: &L,
-) -> Result<Option<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match value {
-        Some(text) => Ok(Some(resolve_string(text, path, lookup)?)),
-        None => Ok(None),
     }
 }

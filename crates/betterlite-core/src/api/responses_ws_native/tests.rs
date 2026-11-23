@@ -22,6 +22,8 @@ use crate::api::responses_ws_native::error::WsNativeError;
 use crate::api::responses_ws_native::logging::traceback_text;
 use crate::api::responses_ws_native::relay::ResponsesWsRelay;
 use crate::api::responses_ws_native::relay::backend::BackendError;
+use crate::api::responses_ws_native::relay::capture::CaptureRelay as _;
+use crate::api::responses_ws_native::relay::forward::ForwardRelay as _;
 use crate::api::responses_ws_native::request::{
     build_litellm_metadata_for_ws, deployment_reasoning_default, routed_first_frame,
     ws_request_defaults,
@@ -474,7 +476,10 @@ fn wrapped_item(frame: &str, relay_metadata: Event) -> String {
     let logging = RecordingLogging::default();
     let redactor = redactor();
     let mut request_data = Event::new();
-    request_data.insert(String::from("litellm_metadata"), relay_metadata);
+    request_data.insert(
+        String::from("litellm_metadata"),
+        Json::Object(relay_metadata),
+    );
     let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
     parts.request_data = Some(request_data);
     let relay = parts.relay();
@@ -674,8 +679,10 @@ async fn client_termination_closes_backend() {
     relay.messages.lock().await.push(object(
         r#"{"type":"response.failed","response":{"error":{"type":"server_error","message":"upstream broke","code":"E_UP"}}}"#,
     ));
-    let failure = relay.bidirectional_forward().await;
-    let failure = failure.expect("the stored failure comes back");
+    let failure = relay
+        .bidirectional_forward()
+        .await
+        .expect("the stored failure comes back");
     assert_eq!(failure.metadata().status_code, 500);
     assert!(logging.effects().contains(&String::from("failure")));
 }
@@ -794,7 +801,7 @@ fn assert_failure_usage(logging: &RecordingLogging) {
     assert_eq!(partial[0].0.prompt_tokens, 3);
     assert_eq!(partial[0].0.completion_tokens, 4);
     assert_eq!(partial[0].0.total_tokens, 7);
-    assert_eq!(partial[0].1, 0.0);
+    assert_eq!(partial[0].1.to_bits(), 0.0_f64.to_bits());
     assert_eq!(
         lock(&logging.charged).clone(),
         vec![(Some(String::from("flex")), None)]
