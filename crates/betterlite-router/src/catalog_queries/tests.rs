@@ -502,6 +502,29 @@ fn order_levels_skip_deployments_without_an_order() {
 }
 
 #[test]
+fn order_levels_skip_a_non_integer_order() {
+    let world = World::new(&[
+        deployment(
+            "gpt-4",
+            object(vec![("model", text("openai/m")), ("order", text("first"))]),
+            object(vec![("id", text("dep-a"))]),
+        ),
+        deployment(
+            "gpt-4",
+            object(vec![("model", text("openai/m"))]),
+            object(vec![("id", text("dep-b")), ("order", text("second"))]),
+        ),
+        params_ordered("gpt-4", "dep-c", 2),
+    ]);
+    let call = Call::default();
+    let levels = world
+        .queries()
+        .messages_order_levels("gpt-4", &call.request())
+        .unwrap();
+    assert_eq!(levels, [2]);
+}
+
+#[test]
 fn order_levels_are_sorted_and_distinct() {
     let world = World::new(&[
         params_ordered("gpt-4", "dep-a", 3),
