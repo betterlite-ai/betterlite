@@ -107,13 +107,13 @@ where
 
 // litellm.headers is a mapping of strings, so each value resolves its own os.environ reference
 fn resolve_headers<L>(
-    headers: Option<BTreeMap<String, String>>,
+    given: Option<BTreeMap<String, String>>,
     lookup: &L,
 ) -> Result<Option<BTreeMap<String, String>>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let Some(headers) = headers else {
+    let Some(headers) = given else {
         return Ok(None);
     };
     let mut resolved = BTreeMap::new();
