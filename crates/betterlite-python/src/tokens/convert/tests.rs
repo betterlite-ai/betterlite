@@ -2,6 +2,7 @@
 
 use betterlite_tokenizer::count::request::ToolChoice;
 use betterlite_tokenizer::image::tokens::Mode;
+use secrecy::ExposeSecret;
 
 use super::{
     BoundRequest, DecodeRequest, DimensionsRequest, EncodeRequest, ImageTokensRequest, LoadRequest,
@@ -96,7 +97,7 @@ fn tokens_request_load_reads_a_pretrained_identifier() {
     };
     assert_eq!(identifier, "Xenova/x");
     assert_eq!(revision, "main");
-    assert_eq!(auth_token.as_deref(), Some("token"));
+    assert_eq!(auth_token.unwrap().expose_secret(), "token");
 }
 
 #[test]
@@ -131,17 +132,17 @@ fn tokens_request_load_refuses_another_kind() {
 }
 
 #[test]
-fn tokens_request_image_tokens_reads_the_mode_and_defaults() {
+fn tokens_request_image_tokens_reads_the_mode_and_base() {
     let request: ImageTokensRequest = read(
         r#"{"data":"data:image/png;base64,AA==","mode":"high","base_tokens":50,"use_default_image_token_count":true}"#,
     )
     .unwrap();
     assert_eq!(request.mode, Mode::High);
-    assert_eq!(request.base_tokens(), 50);
+    assert_eq!(request.base_tokens, Some(50));
     assert!(request.use_default_image_token_count);
     let empty: ImageTokensRequest = read("{}").unwrap();
     assert_eq!(empty.mode, Mode::Auto);
-    assert_eq!(empty.base_tokens(), 85);
+    assert_eq!(empty.base_tokens, None);
     assert!(!empty.use_default_image_token_count);
 }
 
@@ -169,11 +170,11 @@ fn tokens_request_resize_reads_both_sides() {
 }
 
 #[test]
-fn tokens_request_bound_defaults_to_the_openai_base() {
+fn tokens_request_bound_reads_an_optional_base() {
     let request: BoundRequest = read("{}").unwrap();
-    assert_eq!(request.base_tokens(), 85);
+    assert_eq!(request.base_tokens, None);
     let custom: BoundRequest = read(r#"{"base_tokens":100}"#).unwrap();
-    assert_eq!(custom.base_tokens(), 100);
+    assert_eq!(custom.base_tokens, Some(100));
 }
 
 #[test]

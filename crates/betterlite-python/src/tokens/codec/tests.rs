@@ -2,6 +2,7 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use secrecy::SecretString;
 
 use super::{decode_tokens, encode_text, free_tokenizer, load_tokenizer, pretrained};
 use crate::tokens::error::NativeTokensError;
@@ -76,7 +77,7 @@ fn tokens_codec_rejects_keeping_special_tokens_on_a_hugging_face_tokenizer() {
 
 #[test]
 fn tokens_codec_keeps_the_pretrained_identifier_revision_and_token() {
-    let custom = pretrained("Xenova/x", "v1", Some("secret"));
+    let custom = pretrained("Xenova/x", "v1", Some(SecretString::from("secret")));
     assert_eq!(custom.identifier, "Xenova/x");
     assert_eq!(custom.revision, "v1");
     assert!(custom.auth_token.is_some());

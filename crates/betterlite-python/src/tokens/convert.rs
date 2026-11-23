@@ -1,8 +1,9 @@
 use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::request::{Message, TokenRequest, ToolChoice};
 use betterlite_tokenizer::image::settings::Settings as ImageSettings;
-use betterlite_tokenizer::image::tokens::{DEFAULT_BASE_TOKENS, Mode};
+use betterlite_tokenizer::image::tokens::Mode;
 use betterlite_tokenizer::limits::Settings as LimitSettings;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -59,11 +60,11 @@ pub(crate) struct DecodeRequest {
     #[serde(default)]
     pub(crate) custom_tokenizer: Option<u64>,
     // LiteLLM's decode drops special tokens unless the caller asks to keep them
-    #[serde(default = "keep_default_skip")]
+    #[serde(default = "default_skip_special_tokens")]
     pub(crate) skip_special_tokens: bool,
 }
 
-const fn keep_default_skip() -> bool {
+const fn default_skip_special_tokens() -> bool {
     true
 }
 
@@ -71,14 +72,14 @@ impl Wire for DecodeRequest {
     const FIELD: &'static str = "decode request";
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum LoadRequest {
     Pretrained {
         identifier: String,
         #[serde(default = "default_revision")]
         revision: String,
-        auth_token: Option<String>,
+        auth_token: Option<SecretString>,
     },
     Json {
         json: String,
@@ -100,12 +101,6 @@ pub(crate) struct ImageTokensRequest {
     pub(crate) mode: Mode,
     pub(crate) base_tokens: Option<u64>,
     pub(crate) use_default_image_token_count: bool,
-}
-
-impl ImageTokensRequest {
-    pub(crate) fn base_tokens(&self) -> u64 {
-        self.base_tokens.unwrap_or(DEFAULT_BASE_TOKENS)
-    }
 }
 
 impl Wire for ImageTokensRequest {
@@ -161,12 +156,6 @@ impl Wire for ResizeRequest {
 #[serde(default)]
 pub(crate) struct BoundRequest {
     pub(crate) base_tokens: Option<u64>,
-}
-
-impl BoundRequest {
-    pub(crate) fn base_tokens(&self) -> u64 {
-        self.base_tokens.unwrap_or(DEFAULT_BASE_TOKENS)
-    }
 }
 
 impl Wire for BoundRequest {

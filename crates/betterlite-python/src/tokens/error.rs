@@ -66,16 +66,7 @@ impl From<CountError> for TokensError {
             CountError::TextAndMessages => Self::TextAndMessages,
             CountError::MissingInput => Self::MissingInput,
             CountError::ToolsWithText => Self::ToolsWithText,
-            other @ (CountError::UnsupportedContent { .. }
-            | CountError::ContentField { .. }
-            | CountError::Selection(_)
-            | CountError::Fetch(_)
-            | CountError::Engine(_)
-            | CountError::Tools(_)
-            | CountError::Json { .. }
-            | CountError::Overflow
-            | CountError::Boundary
-            | CountError::LimitsOverflow) => Self::Count(other),
+            other => Self::Count(other),
         }
     }
 }

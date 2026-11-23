@@ -24,8 +24,11 @@ pub(crate) fn insert(engine: Engine) -> Result<u64, TokensError> {
 }
 
 pub(crate) fn engine(tokenizer: u64) -> Result<Engine, TokensError> {
-    let found = lock()?.get(&tokenizer).cloned();
-    found.ok_or(TokensError::UnknownTokenizer { tokenizer })
+    let store = lock()?;
+    store
+        .get(&tokenizer)
+        .cloned()
+        .ok_or(TokensError::UnknownTokenizer { tokenizer })
 }
 
 pub(crate) fn remove(tokenizer: u64) -> Result<(), TokensError> {
