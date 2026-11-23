@@ -99,7 +99,9 @@ fn parses_the_presented_key(
 ) {
     let token = get_bearer_token(value);
     let strict_result = token.as_ref().map(ExposeSecret::expose_secret);
-    // assert_eq! prints both values on failure, and one of them is the presented key
-    assert!(strict_result == strict);
-    assert!(strict_result.unwrap_or(value) == permissive);
+    // assert_eq! prints the presented key on failure, so compare into bools first
+    let strict_matches = strict_result == strict;
+    let fallback_matches = strict_result.unwrap_or(value) == permissive;
+    assert!(strict_matches);
+    assert!(fallback_matches);
 }
