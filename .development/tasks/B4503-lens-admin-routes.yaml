@@ -3,7 +3,7 @@ title: Lens administration routes and access checks
 description: >-
   Build the 16 administrator-facing Lens routes of litellm/proxy/lens/endpoints.py and the access helpers that the worker routes share.
   Two modules in betterlite-server, each a file plus a folder of submodules with adjacent tests.rs files: lens_access (the shared helpers)
-  and lens_admin_routes (the handlers and the router). Add betterlite-lens and betterlite-db to the server's Cargo.toml if B4504 has not already (no cycle, the server is the top crate).
+  and lens_admin_routes (the handlers and the router). Add betterlite-lens and betterlite-db to the server's Cargo.toml if they are not there yet (no cycle, the server is the top crate).
   The worker routes (everything under /lens/worker/...), worker_auth, assigned, claim_candidate, validate_finding and merge_results belong to B4505,
   which imports lens_access from this task. This task registers its 16 routes in one function `lens_admin_routes::router(state)` and B8682 mounts it, so nothing is registered twice.
   Every route sits behind the existing auth layer (the B003 middleware), exactly like the routes of B3125. Every error body is {"detail": "<text>"} with the status below.
@@ -11,7 +11,7 @@ description: >-
   Outside services come through a state struct `LensRoutesState` (`crate::lens_access::state::LensRoutesState`, with the `Clock` and `IdSource` traits beside it in the same file, all `pub(crate)`), built once by the caller and passed to the router: the Lens repository (B4501 LensRepository, absent when the server has no Postgres),
   the trace storage (Option of the B4502 Storage port; the owner of the ClickHouse implementation and of provide_storage is B3867 and the later storage task, this task only reads what the state holds),
   ModelNames (a trait with get_model_names(team_id: Option<&str>) -> Vec<String>, backed by B844 get_model_names on the router, absent when no router is configured),
-  KeyResolver (the B4504 port that validate_key takes), a Clock (now in UTC) and an IdSource (new uuid v4 text, and the random bytes for the worker token). Tests use fakes for all of them.
+  KeyResolver (B10091's port in lens_billing::key_validation, held as `Arc<dyn KeyResolver>`, the one validate_key takes), a Clock (now in UTC) and an IdSource (new uuid v4 text, and the random bytes for the worker token). Tests use fakes for all of them.
   For the repository in tests, use B4501's fake Database if it exports one; otherwise write a small one in tests.rs that answers by SQL text.
 
   lens_access::scope: user_scope(auth, write) -> Result<Scope, LensAccessError>. The caller type is B2314's resolved key (UserAPIKeyAuth) and its user_role is the LitellmUserRoles value.
@@ -52,7 +52,7 @@ description: >-
   user_scope(read); then reader.sample(scope, settings, start_ms, end_ms, offset, preview = true) with start_ms = (now - lookback_hours hours) in milliseconds and end_ms = (now - 2 minutes) in milliseconds. Return the Sample.
 
   workers: bodies WorkerBilling { analysis_key_id: 64 lowercase hex characters, exactly the pattern ^[a-f0-9]{64}$ } and WorkerName (the same field plus name, 1 to 100 characters counted as characters, default "Lens worker"); both reject unknown fields.
-  POST /lens/workers/register: user_scope(write), validate_key(analysis_key_id) from B4504, then token = "lens-" + the URL-safe base64 text, without padding, of 40 random bytes from IdSource. Worker { id = new uuid, name, scope, analysis_key_id, last_seen = 1970-01-01T00:00:00Z, revoked false }.
+  POST /lens/workers/register: user_scope(write), B10091's validate_key(analysis_key_id), then token = "lens-" + the URL-safe base64 text, without padding, of 40 random bytes from IdSource. Worker { id = new uuid, name, scope, analysis_key_id, last_seen = 1970-01-01T00:00:00Z, revoked false }.
   repo.save_worker(worker, lowercase hex SHA-256 of the token's UTF-8 bytes). Response WorkerCreated { worker, token }. The token is shown once and never stored in plain.
   PUT /lens/workers/{worker_id}/billing-key with WorkerBilling: user_scope(write); find the worker in repo.workers() by id; missing or not can_access: 404 "Worker not found"; revoked: 409 "Register a new worker instead of updating revoked access";
   validate_key; repo.set_worker_billing(worker id, key id), None is 409 "Worker access was revoked"; return the updated Worker.
@@ -69,7 +69,7 @@ description: >-
   DELETE /lens/workers/{worker_id}, GET /lens/{lens_id}/executions/{execution_id}. Static segments (agents, activity, preview, workers) must win over {lens_id}, as they do in LiteLLM where they are declared first.
   No /v1 or provider-prefixed alias exists for these routes at the pin.
 
-  Errors: lens_access owns LensAccessError (one variant per status and detail above, with status() and detail()), lens_admin_routes owns LensRouteError that wraps LensAccessError, the B4504 key-validation error, the repository error and the B4502 source error.
+  Errors: lens_access owns LensAccessError (one variant per status and detail above, with status() and detail()), lens_admin_routes owns LensRouteError that wraps LensAccessError, B10091's KeyValidationError (status() and detail() give its 400, and an unknown key keeps the resolver's 401), the repository error and the B4502 source error.
   A repository or storage error that is not one of the listed details is a 500 and is not hidden.
 scope:
   paths:
@@ -99,7 +99,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L557-L584
     why: GET /lens/{lens_id}/executions/{execution_id} and the Execution it builds.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L19-L31
-    why: validate_key, the call the two worker billing routes make (owned by B4504).
+    why: validate_key, the call the two worker billing routes make (owned by B10091).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L9-L46
     why: can_access and queue_job as the handlers use them (owned by B4500).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L74-L83
@@ -180,7 +180,7 @@ deviations:
 out_of_scope:
   - "B4505 owns the worker routes under /lens/worker (claim, progress, sample, content, model, result, heartbeat), worker_auth, assigned, claim_candidate, validate_finding and merge_results of endpoints.py. It imports get_lens, required and source_reader from this task's lens_access module."
   - "The cases need no database and no tracing store, so rows, paging, 403 for non-admin callers and the success bodies of the database routes are covered by native tests only. The oracle worker sandbox has no Postgres for either gateway."
-  - "B4501 owns LensRepository and its SQL, B4500 the records, can_access, queue_job, current_job and replace_job, B4502 the SourceReader, Storage port and parse_execution, B4504 validate_key."
+  - "B4501 owns LensRepository and its SQL, B4500 the records, can_access, queue_job, current_job and replace_job, B4502 the SourceReader, Storage port and parse_execution, B10091 validate_key."
   - "The ClickHouse implementation of the lens_* storage queries and provide_storage are owned by B3867 and the later storage task, not here. No task owns the Lens storage queries yet; the architect names the owner. B9030 owns Postgres administration and credential HTTP behavior, and B132 owns worker execution and billing."
   - "B844 owns get_model_names. The route-group task that owns _types.py litellm_native_routes decides which lens paths a non-admin key can reach before user_scope runs."
   - "B8682 mounts lens_admin_routes::router through app::edge::mount and B4505's router through mount_public; this task never mounts itself."

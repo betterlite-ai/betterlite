@@ -428,6 +428,7 @@ pub mod user_contracts;
 pub mod user_delete;
 pub mod user_fields;
 pub mod user_info;
+pub mod user_invitation;
 pub mod user_list;
 pub mod user_management;
 pub mod user_search_scope;

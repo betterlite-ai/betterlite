@@ -1,0 +1,111 @@
+id: B10090
+title: Prometheus scrape rendering
+description: >-
+  Two servers answer a Prometheus scrape with the same app: B3886's /metrics router on the main port, behind its auth middleware, and B3887's dedicated metrics listener, with no auth at all. This task builds that shared app, LiteLLM's prometheus_metrics_endpoint.py, so B3887 waits only on the rendering and not on B3886's middleware and its key auth. LiteLLM leans on prometheus_client 0.20.0 for the two text encoders, and betterlite's registry is its own type (B3875's CollectorRegistry), so the encoders are ported here too.
+
+
+  Layout. Module scrape_endpoint in betterlite-prometheus: crates/betterlite-prometheus/src/scrape_endpoint.rs is on main as a stub that declares `mod tests;`, and scrape_endpoint/tests.rs holds the tests (split it into files under scrape_endpoint/tests/ if it grows). Add submodules under scrape_endpoint/ as you need. betterlite-prometheus depends on no betterlite crate and must stay that way. Add axum and tokio from the workspace and flate2 at the 1.1 line Cargo.lock already carries for betterlite-server; add futures-util only if you use its Shared future.
+
+
+  The request. `Encoder` is an enum with Text and OpenMetrics. `ScrapeRequest { encoder: Encoder, content_type: &'static str, gzipped: bool, metric_names: Vec<String> }` derives Clone, Eq and Hash, so two scrapes that ask for the same output compare equal and share one render. `parse_scrape_request(accept: &str, accept_encoding: &str, metric_names: Vec<String>) -> ScrapeRequest` follows prometheus_client's choose_encoder and gzip_accepted. Split Accept on commas, take each part up to its first semicolon and trim it; the first part equal to `application/openmetrics-text` picks OpenMetrics with content type `application/openmetrics-text; version=1.0.0; charset=utf-8`, and otherwise Text with `text/plain; version=0.0.4; charset=utf-8`. Accept-Encoding is split the same way, lowercased, and gzip is on when a part equals `gzip`. metric_names stay in query order with duplicates kept.
+
+
+  The text encoders. `render_scrape(registry: &CollectorRegistry, request: &ScrapeRequest) -> Vec<u8>` walks `registry.metrics()` in registration order and writes each collector the way prometheus_client's generate_latest does. Text format: a counter registered as `x` is written as `# HELP x_total <help>`, `# TYPE x_total counter` and its `x_total` samples; a gauge as `# TYPE x gauge` with `x` samples; a histogram as `# TYPE x histogram` with, per label set, one `x_bucket` line per bound (le written with the Go float text, `+Inf` last), then `x_count`, then `x_sum` (only when the first bound is 0 or more). HELP text escapes backslash and newline. Label pairs are sorted by name with le sorted among them, and values escape backslash, newline and double quote. OpenMetrics: HELP and TYPE use the registered name (`# TYPE x counter`), HELP also escapes the double quote, the samples are the same, and the body ends with `# EOF\n`. Values use prometheus_client's floatToGoString: `+Inf`, `-Inf`, `NaN`, otherwise Python's repr of the float (1.0 is `1.0`, 1e-05 is `1e-05`), except that a positive value whose repr has more than six digits before the dot switches to Go's exponent form (1234567.0 is `1.234567e+06`). B3874's MetricValue holds a Decimal or one of the three specials; convert the Decimal to f64 once before formatting.
+
+
+  Restriction. With metric_names empty the whole registry is written. Otherwise this is prometheus_client's restricted_registry: a collector takes part when one of its sample names (B3875's `PrometheusMetric::sample_names`) is in the set, only its samples whose full name is in the set are written, and a collector left with no samples is dropped with its HELP and TYPE lines. Asking for a counter by its registered name `x` therefore writes nothing; `x_total` writes the counter. When gzipped is set the rendered bytes are gzip-compressed with flate2, otherwise returned as they are.
+
+
+  Coalescing. `CoalescedScrapeRenderer::new(registry: Arc<CollectorRegistry>)` and `async fn render(&self, request: ScrapeRequest) -> Result<Bytes, ScrapeRenderError>`. A render that is already running for an equal request is shared: the caller waits for its bytes instead of starting another. Otherwise start render_scrape on tokio's blocking pool as a spawned task, store it under the request, and remove the entry when it finishes, only if the entry still holds that same task. A caller that goes away (its future dropped) must not cancel the render for the others, as LiteLLM's asyncio.shield ensures. A render task that fails is ScrapeRenderError, and every waiter gets it.
+
+
+  The app. `make_metrics_app(registry: Arc<CollectorRegistry>) -> axum::Router` is LiteLLM's make_metrics_asgi_app. It owns one CoalescedScrapeRenderer and answers every method and every path through a fallback handler, so a caller that nests it at /metrics serves /metrics and every path under it the way Starlette's mount does. The handler reads the accept and accept-encoding headers (missing is ""), the repeated `name[]` query parameters in order, renders, and streams the body in 64 KiB chunks (RESPONSE_CHUNK_SIZE_BYTES = 65536) with content-type set to the request's content type and `content-encoding: gzip` only when gzipped. It sets no content-length, since LiteLLM's StreamingResponse sends a chunked body. A ScrapeRenderError answers 500. B3886's metrics_router and B3887's build_metrics_app each nest this router; neither is built here, and this task mounts nothing.
+
+
+  Tests in scrape_endpoint/tests.rs, run with tower's oneshot for the app. Build registries through B3874's and B3875's public constructors, the way collector_registry's own tests do. Test names start with request_ (Accept and Accept-Encoding spellings, q-values, case, name order), text_ and openmetrics_ (a counter, a gauge and a histogram with labels, escaping, the float spellings, an unlabelled metric, the EOF line), restricted_ (empty names, a counter by its _total name, a counter by its registered name, a histogram bucket name, an unknown name), coalesced_ (two concurrent equal scrapes run one render, different requests run two, a dropped waiter does not cancel, a finished render is forgotten) and app_ (headers, gzip round trip, a body over 64 KiB arriving in several frames, no content-length, any method and a sub path).
+scope:
+  paths:
+    - crates/betterlite-prometheus/src/scrape_endpoint.rs
+    - crates/betterlite-prometheus/src/scrape_endpoint/**
+    - crates/betterlite-prometheus/Cargo.toml
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L25-L100
+    why: Owned. The chunk size, ScrapeRequest, parse_scrape_request, render_scrape, CoalescedScrapeRenderer, _chunks and make_metrics_asgi_app.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/exposition.py#L235-L311
+    why: The text encoder generate_latest with its counter and info renaming, choose_encoder and gzip_accepted.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/openmetrics/exposition.py#L18-L72
+    why: The OpenMetrics encoder, its HELP escaping and the EOF line.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/utils.py#L8-L24
+    why: floatToGoString, the value and le spelling both encoders use.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/registry.py#L145-L165
+    why: RestrictedRegistry, which picks collectors by any of their sample names and drops a metric with no matching sample.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L666-L677
+    why: Histogram samples per label set, cumulative buckets, then count, then sum only for a non-negative first bound.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4565-L4592
+    why: Call site. _mount_metrics_endpoint mounts the app at /metrics on the main port (B3886 builds the router, B8680 mounts it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L75-L85
+    why: Call site. build_metrics_app mounts the app on the dedicated listener (B3887).
+dod:
+  - text: parse_scrape_request picks OpenMetrics only for an exact `application/openmetrics-text` part, otherwise the text format, with the two exact content types, turns gzip on for any case of `gzip`, and keeps name[] values in order with duplicates.
+    proof: [request-tests]
+  - text: The text encoder writes counters as `_total` families, gauges and histograms with cumulative buckets, count and the conditional sum, sorted and escaped labels, escaped HELP and Go float spellings, in registration order.
+    proof: [text-encoder-tests]
+  - text: The OpenMetrics encoder writes the registered family names, escapes quotes in HELP and ends with `# EOF`.
+    proof: [openmetrics-encoder-tests]
+  - text: name[] restricts the scrape to samples whose full name is listed, drops a family left with no sample, and an empty list writes the whole registry.
+    proof: [restriction-tests]
+  - text: Concurrent equal scrapes share one render on the blocking pool, a dropped waiter does not cancel it, and a finished render is forgotten so the next scrape renders again.
+    proof: [coalesced-render-tests]
+  - text: make_metrics_app answers every method and sub path with the negotiated content type, gzip only when asked, a chunked body in 64 KiB frames and no content-length.
+    proof: [metrics-app-tests]
+checks:
+  optional: []
+  commands:
+    - id: request-tests
+      why: Accept or Accept-Encoding negotiation or the name[] list differs from prometheus_client.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?request_/)'
+    - id: text-encoder-tests
+      why: The text format family names, sample order, escaping or float text differ from generate_latest.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?text_/)'
+    - id: openmetrics-encoder-tests
+      why: The OpenMetrics names, HELP escaping or the EOF line differ from prometheus_client.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?openmetrics_/)'
+    - id: restriction-tests
+      why: name[] keeps a family it should drop or drops samples it should keep.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?restricted_/)'
+    - id: coalesced-render-tests
+      why: Equal scrapes render twice, a dropped waiter cancels the render, or a finished render is served forever.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?coalesced_/)'
+    - id: metrics-app-tests
+      why: The app's headers, gzip, chunking or method and path handling differ from LiteLLM's.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?app_/)'
+oracle_cases: []
+deviations:
+  - what: Counters and histograms have no `_created` samples, so a scrape shows what LiteLLM shows with PROMETHEUS_DISABLE_CREATED_SERIES=true.
+    why: B3875's stored samples carry no creation time, and adding one changes the registry, not the rendering. The value is a per-process timestamp no client can compare across runs.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L334-L341
+  - what: Within one family, label sets are written in order of their label values, not in the order they were first used.
+    why: B3875 stores the series of a collector in a BTreeMap keyed by label values. Prometheus parses each line on its own, so the order changes nothing a scraper reads.
+    link: null
+out_of_scope:
+  - "PrometheusAuthMiddleware, _is_metrics_route, metrics_router and its PROMETHEUS_MULTIPROC_DIR registry choice: B3886, which nests make_metrics_app."
+  - "The dedicated listener, its x-litellm-metrics-pid header, /health, the multiprocess registry it renders and the worker cleanup: B3887, which nests make_metrics_app."
+  - "Mounting /metrics on the main app and its HTTP oracle cases: B8680. No route reaches this code before then, and the body is proven by native tests, as B111's scrape case compares headers and status only."
+  - "Collector registration, label children and sample storage: B3875. Collector factories and MetricValue: B3874."
+pitfalls:
+  - "choose_encoder compares the media type case-sensitively and ignores q-values, so `Application/OpenMetrics-Text` and `application/openmetrics-text;q=0` still differ: the first is text, the second is OpenMetrics."
+  - "gzip_accepted lowercases before comparing, so `GZip` turns gzip on, and `gzip;q=0` turns it on too."
+  - "A counter's sample is `x_total`, so name[]=x matches the collector but none of its samples and the family vanishes; only name[]=x_total writes it."
+  - "An unknown name[] gives an empty text body, and for OpenMetrics a body of only `# EOF`; no HELP or TYPE lines appear for it."
+  - "The text format sorts labels by name, so a histogram line is `x_bucket{api_key=\"k\",le=\"0.5\",model=\"m\"}`, with le between the other labels, not last."
+  - "A metric with no label names has one series from the start in prometheus_client, so it writes a zero sample before its first update; a labelled metric writes only HELP and TYPE until a series exists."
+  - "Python's float repr is not Rust's Display: 1.0 must stay `1.0`, 1e16 is `1e+16` and 0.0001 is `0.0001`, while `+Inf` carries its plus sign."
+  - "floatToGoString writes the exponent as `e+0` followed by the digit count minus one, so 1e15 (repr `1000000000000000.0`) becomes `1e+015`; keep that spelling rather than Go's real one."
+  - "Body::from on the whole Vec sets content-length; stream the chunks so the response stays chunked like LiteLLM's."
+  - "Hold the in-flight map lock only to look up or insert, never across the render's await, and remove an entry only when it still holds the finished task."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
