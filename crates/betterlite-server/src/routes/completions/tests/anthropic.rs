@@ -91,6 +91,26 @@ struct StreamedUsage {
     prompt_tokens_details: TextPromptDetails,
 }
 
+// the Messages request the adapter sent upstream, read as fields so key order and spacing never matter
+#[derive(Deserialize)]
+struct SentPrompt {
+    messages: Vec<SentMessage>,
+    stream: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct SentMessage {
+    role: String,
+    content: Vec<SentPart>,
+}
+
+#[derive(Deserialize)]
+struct SentPart {
+    #[serde(rename = "type")]
+    kind: String,
+    text: String,
+}
+
 fn local_environment() -> BTreeMap<String, String> {
     BTreeMap::from([(
         String::from("LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS"),
@@ -146,6 +166,12 @@ fn closing_usage(raw: &str) -> StreamedUsage {
         .expect("the closing usage frame")
 }
 
+// the JSON body of the request the adapter sent, after its headers
+fn sent_prompt(sent: &str) -> SentPrompt {
+    let body = sent.split_once("\r\n\r\n").expect("the request body").1;
+    serde_json::from_str(body).expect("the sent Messages request")
+}
+
 async fn buffered_text() {
     let answered = exchange(BUFFERED, (200, REPLY)).await;
     assert_eq!(answered.status, StatusCode::OK);
@@ -168,7 +194,8 @@ async fn buffered_text() {
 }
 
 fn assert_reply(reply: &TextReply) {
-    assert_eq!(reply.id, "msg_bridge");
+    // the chat reply already carries the adapter's generated chatcmpl id, which the text conversion keeps
+    assert!(reply.id.starts_with("chatcmpl-"), "{}", reply.id);
     assert_eq!(reply.object, "text_completion");
     assert_eq!(reply.model, "chat-model");
     assert_eq!(
@@ -194,10 +221,14 @@ fn assert_reply(reply: &TextReply) {
 
 fn assert_prompt(sent: &str) {
     assert!(sent.starts_with("POST /v1/messages"), "{}", sent);
-    let prompted =
-        r#""messages":[{"role":"user","content":[{"type":"text","text":"Once upon a time"}]}]"#;
-    assert!(sent.contains(prompted), "{}", sent);
-    assert!(!sent.contains(r#""stream""#), "{}", sent);
+    let prompt = sent_prompt(sent);
+    // a buffered text call reaches the Messages endpoint without a stream flag
+    assert!(prompt.stream.is_none(), "{:?}", prompt.stream);
+    let message = prompt.messages.first().expect("the user message");
+    assert_eq!(message.role, "user");
+    let part = message.content.first().expect("the text part");
+    assert_eq!(part.kind, "text");
+    assert_eq!(part.text, "Once upon a time");
 }
 
 async fn stream_text() {
@@ -211,11 +242,7 @@ async fn stream_text() {
             .and_then(|value| value.to_str().ok()),
         Some("text/event-stream; charset=utf-8")
     );
-    assert!(
-        answered.sent.contains(r#""stream":true"#),
-        "{}",
-        answered.sent
-    );
+    assert_eq!(sent_prompt(&answered.sent).stream, Some(true));
     assert!(
         answered.raw.contains(r#""object":"text_completion""#),
         "{}",
@@ -238,11 +265,7 @@ async fn usage_stream_text() {
     let events = stream_events(&CACHED_EVENTS);
     let answered = exchange(USAGE_STREAMED, (200, &events)).await;
     assert_eq!(answered.status, StatusCode::OK);
-    assert!(
-        answered.sent.contains(r#""stream":true"#),
-        "{}",
-        answered.sent
-    );
+    assert_eq!(sent_prompt(&answered.sent).stream, Some(true));
     assert!(
         answered.raw.contains(r#""model":"chat-model""#),
         "{}",
@@ -254,9 +277,10 @@ async fn usage_stream_text() {
         answered.raw
     );
     let usage = closing_usage(&answered.raw);
-    assert_eq!(usage.prompt_tokens, 10);
+    // the adapter adds message_start's cache_creation_input_tokens to input_tokens, so 10 input + 8 cache make 18 prompt
+    assert_eq!(usage.prompt_tokens, 18);
     assert_eq!(usage.completion_tokens, 2);
-    assert_eq!(usage.total_tokens, 12);
+    assert_eq!(usage.total_tokens, 20);
     let details = usage
         .prompt_tokens_details
         .cache_creation_token_details
