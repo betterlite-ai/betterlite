@@ -59,7 +59,7 @@ fn exact_native_callbacks_are_accepted(#[case] uri: &str, #[case] configured: &s
 #[case::star_takes_the_bare_prefix("myapp://host/cb", "myapp://host/cb*")]
 #[case::star_takes_a_trailing_slash("myapp://host/cb/", "myapp://host/cb*")]
 #[case::star_takes_a_deeper_path("myapp://host/cb/x", "myapp://host/cb*")]
-#[case::slash_prefix_takes_any_suffix("myapp://host/cb-2", "myapp://host/cb/*")]
+#[case::slash_prefix_takes_any_suffix("myapp://host/cb/-2", "myapp://host/cb/*")]
 #[case::slash_prefix_takes_an_empty_suffix("myapp://host/oauth/", "myapp://host/oauth/*")]
 fn wildcard_native_callbacks_take_deeper_paths(#[case] uri: &str, #[case] configured: &str) {
     let parsed = parse_redirect_uri(uri).unwrap();
@@ -90,7 +90,7 @@ fn wildcard_native_callbacks_take_deeper_paths(#[case] uri: &str, #[case] config
 #[case::scheme_with_a_fragment("ftp://host/cb#x", "", "ftp")]
 #[case::builtin_with_a_query("cursor://anysphere.cursor-mcp/oauth/callback?x=1", "", "cursor")]
 #[case::builtin_with_a_fragment("cursor://anysphere.cursor-mcp/oauth/callback#frag", "", "cursor")]
-#[case::builtin_with_a_nonempty_fragment(
+#[case::builtin_with_a_query_and_empty_fragment(
     "cursor://anysphere.cursor-mcp/oauth/callback?x=1#",
     "",
     "cursor"
