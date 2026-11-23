@@ -27,6 +27,7 @@ use uuid::Uuid;
 use crate::skill_calls::convert;
 
 mod multipart;
+mod tests;
 
 // LiteLLM's get and list go through the cached httpx client, whose 600 second total applies whatever REQUEST_TIMEOUT says
 const GET_SKILLS_TIMEOUT: Duration = Duration::from_secs(600);

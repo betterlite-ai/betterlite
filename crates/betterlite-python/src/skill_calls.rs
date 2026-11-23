@@ -3,6 +3,7 @@ mod error;
 mod hosted;
 mod native;
 mod session;
+mod tests;
 mod transport;
 use self::error::NativeSkillError;
 use self::native::NativeSkillSession;
