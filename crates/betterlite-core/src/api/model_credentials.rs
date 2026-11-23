@@ -79,10 +79,10 @@ pub fn get_credentials_for_model<Source>(
 where
     Source: CredentialSource,
 {
-    let Some(source) = source else {
+    let Some(router) = source else {
         return Err(CredentialLookupError::RouterMissing);
     };
-    let found = source
+    let found = router
         .credentials_with_provider(model_id, None)
         .map_err(|failure| CredentialLookupError::Source {
             model_id: model_id.to_owned(),
@@ -113,8 +113,8 @@ pub fn prepare_data_with_credentials(
         data.shift_remove(TRUSTED_CREDENTIALS_KEY);
     }
     data.shift_remove("custom_llm_provider");
-    if let Some(file_id) = file_id {
-        data.insert("file_id".to_owned(), Json::Text(file_id.to_owned()));
+    if let Some(id) = file_id {
+        data.insert("file_id".to_owned(), Json::Text(id.to_owned()));
     }
     snapshot
 }

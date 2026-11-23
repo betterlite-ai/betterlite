@@ -122,7 +122,7 @@ fn snapshot_view(snapshot: &TrustedCredentials) -> Value {
     let texts = snapshot
         .values
         .iter()
-        .map(|(name, secret)| (name.as_str(), secret.expose_secret().as_str()))
+        .map(|(name, secret)| (name.as_str(), secret.expose_secret()))
         .collect::<BTreeMap<_, _>>();
     json!(texts)
 }

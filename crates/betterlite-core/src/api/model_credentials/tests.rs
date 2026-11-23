@@ -142,11 +142,15 @@ fn lookup_keeps_a_port_failure_apart_and_as_the_source() {
     );
     let carried = Error::source(&error).map(ToString::to_string);
     assert_eq!(carried.as_deref(), Some("the router is down"));
-    let CredentialLookupError::Source { model_id, source } = error else {
+    let CredentialLookupError::Source {
+        model_id,
+        source: cause,
+    } = error
+    else {
         panic!("a port failure keeps its own variant");
     };
     assert_eq!(model_id, "m");
-    assert_eq!(source.to_string(), "the router is down");
+    assert_eq!(cause.to_string(), "the router is down");
 }
 
 #[test]
@@ -204,10 +208,7 @@ fn merge_returns_the_snapshot_when_it_takes_one() {
     let mut data = object(&[("x", Json::Number(Number::from(1_u8)))]);
     let credentials = object(&[("api_key", Json::Text("server".to_owned()))]);
     let snapshot = prepare_data_with_credentials(&mut data, &credentials, None, true).unwrap();
-    assert_eq!(
-        snapshot.values["api_key"].expose_secret().as_str(),
-        "server"
-    );
+    assert_eq!(snapshot.values["api_key"].expose_secret(), "server");
     assert!(!data.contains_key(TRUSTED_CREDENTIALS_KEY));
 }
 
@@ -220,10 +221,7 @@ fn merge_drops_the_callers_snapshot_key_when_it_takes_one() {
     let credentials = object(&[("api_key", Json::Text("server".to_owned()))]);
     let snapshot = prepare_data_with_credentials(&mut data, &credentials, None, true).unwrap();
     assert!(!data.contains_key(TRUSTED_CREDENTIALS_KEY));
-    assert_eq!(
-        snapshot.values["api_key"].expose_secret().as_str(),
-        "server"
-    );
+    assert_eq!(snapshot.values["api_key"].expose_secret(), "server");
 }
 
 #[test]
@@ -255,10 +253,7 @@ fn snapshot_keeps_text_credentials_and_skips_objects_lists_and_numbers() {
     let snapshot = trusted_snapshot(&credentials);
     let names: Vec<&str> = snapshot.values.keys().map(String::as_str).collect();
     assert_eq!(names, ["api_key", "custom_llm_provider", "model", "region"]);
-    assert_eq!(
-        snapshot.values["model"].expose_secret().as_str(),
-        "resolved"
-    );
+    assert_eq!(snapshot.values["model"].expose_secret(), "resolved");
 }
 
 #[test]
@@ -271,9 +266,7 @@ fn snapshot_keeps_the_provider_that_the_merge_removes_from_data() {
     let snapshot = prepare_data_with_credentials(&mut data, &credentials, None, true).unwrap();
     assert!(!data.contains_key("custom_llm_provider"));
     assert_eq!(
-        snapshot.values["custom_llm_provider"]
-            .expose_secret()
-            .as_str(),
+        snapshot.values["custom_llm_provider"].expose_secret(),
         "openai"
     );
 }
@@ -285,8 +278,5 @@ fn snapshot_does_not_follow_later_changes_to_credentials_or_data() {
     let snapshot = prepare_data_with_credentials(&mut data, &credentials, None, true).unwrap();
     credentials.insert("api_key".to_owned(), Json::Text("changed".to_owned()));
     data.insert("api_key".to_owned(), Json::Text("changed".to_owned()));
-    assert_eq!(
-        snapshot.values["api_key"].expose_secret().as_str(),
-        "server"
-    );
+    assert_eq!(snapshot.values["api_key"].expose_secret(), "server");
 }
