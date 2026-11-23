@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, ready};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -303,32 +304,49 @@ impl FakeRows {
 impl ReloadConfigRows for FakeRows {
     type Error = FakeRowsError;
 
-    async fn read_schedule(&self) -> Result<Option<ReloadSchedule>, FakeRowsError> {
-        let state = self.decide("read_schedule")?;
-        Ok(state.schedule.clone())
+    fn read_schedule(
+        &self,
+    ) -> impl Future<Output = Result<Option<ReloadSchedule>, FakeRowsError>> + Send {
+        let schedule = self
+            .decide("read_schedule")
+            .map(|state| state.schedule.clone());
+        ready(schedule)
     }
 
-    async fn record_run(&self, ran_at: DateTime<Utc>) -> Result<(), FakeRowsError> {
-        let mut state = self.decide("record_run")?;
-        state.recorded.push(ran_at);
-        Ok(())
+    fn record_run(
+        &self,
+        ran_at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<(), FakeRowsError>> + Send {
+        let recorded = self
+            .decide("record_run")
+            .map(|mut state| state.recorded.push(ran_at));
+        ready(recorded)
     }
 
-    async fn read_beta_headers(&self) -> Result<Option<ConfigParamRow>, FakeRowsError> {
-        let state = self.decide("read_beta_headers")?;
-        Ok(state.beta_row.clone())
+    fn read_beta_headers(
+        &self,
+    ) -> impl Future<Output = Result<Option<ConfigParamRow>, FakeRowsError>> + Send {
+        let row = self
+            .decide("read_beta_headers")
+            .map(|state| state.beta_row.clone());
+        ready(row)
     }
 
-    async fn write_beta_headers(&self, value: JsonData) -> Result<(), FakeRowsError> {
-        let mut state = self.decide("write_beta_headers")?;
-        state.writes.push(value);
-        Ok(())
+    fn write_beta_headers(
+        &self,
+        value: JsonData,
+    ) -> impl Future<Output = Result<(), FakeRowsError>> + Send {
+        let written = self
+            .decide("write_beta_headers")
+            .map(|mut state| state.writes.push(value));
+        ready(written)
     }
 
-    async fn evict_beta_headers(&self) -> Result<(), FakeRowsError> {
-        let state = self.decide("evict_beta_headers")?;
-        state.evictions.fetch_add(1, Ordering::SeqCst);
-        Ok(())
+    fn evict_beta_headers(&self) -> impl Future<Output = Result<(), FakeRowsError>> + Send {
+        let evicted = self.decide("evict_beta_headers").map(|state| {
+            state.evictions.fetch_add(1, Ordering::SeqCst);
+        });
+        ready(evicted)
     }
 }
 
@@ -378,12 +396,12 @@ impl LogBuffer {
 }
 
 impl io::Write for LogBuffer {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

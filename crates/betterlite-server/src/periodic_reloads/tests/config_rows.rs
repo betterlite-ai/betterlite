@@ -36,7 +36,7 @@ use tokio_postgres::NoTls;
 use crate::config_param_cache::CONFIG_CACHE_PREFIX;
 use crate::config_param_cache::ConfigParamCache;
 use crate::config_param_cache::store::TableConfigParamStore;
-use crate::periodic_reloads::config_rows::{DatabaseReloadConfigRows, ReloadConfigRows};
+use crate::periodic_reloads::config_rows::{DatabaseReloadConfigRows, ReloadConfigRows as _};
 
 use super::support::moment;
 
