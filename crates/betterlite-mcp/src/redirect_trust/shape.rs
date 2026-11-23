@@ -88,9 +88,13 @@ pub fn is_loopback_redirect_host(parsed: &Parsed) -> bool {
     if host == "localhost" {
         return true;
     }
-    host.parse::<Ipv4Addr>().is_ok_and(Ipv4Addr::is_loopback)
+    host.parse::<Ipv4Addr>()
+        .is_ok_and(|address| address.is_loopback())
         || parse_ipv6(&host).is_some_and(|address| {
-            address.is_loopback() || address.to_ipv4_mapped().is_some_and(Ipv4Addr::is_loopback)
+            address.is_loopback()
+                || address
+                    .to_ipv4_mapped()
+                    .is_some_and(|mapped| mapped.is_loopback())
         })
 }
 
@@ -102,9 +106,10 @@ pub fn validate_redirect_uri_shape(
         if matches_trusted_native_redirect_uri(parsed, native_callbacks) {
             return Ok(RedirectShape::NativeCallback);
         }
+        let scheme = parsed.scheme.as_str();
         return Err(RedirectUriRejected {
             description: format!(
-                "redirect_uri scheme '{parsed.scheme}' is not allowed; use http/https or a registered native callback (e.g. cursor://)."
+                "redirect_uri scheme '{scheme}' is not allowed; use http/https or a registered native callback (e.g. cursor://)."
             ),
             hint: Some(
                 "Add the full URI to MCP_TRUSTED_NATIVE_REDIRECT_URIS for custom native clients."
