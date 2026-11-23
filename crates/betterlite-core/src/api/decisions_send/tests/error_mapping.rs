@@ -16,7 +16,7 @@ use url::Url;
 
 use super::support::*;
 use crate::api::decisions_send::clients::{
-    DecisionsAsyncClient, DecisionsClients, DecisionsRequest, DecisionsSyncClient,
+    DecisionsAsyncTransport, DecisionsRequest, DecisionsSyncTransport,
 };
 use crate::api::decisions_send::error::{DecisionsSendError, provider_error, send_failure};
 use crate::api::vector_store_http_write::error::BaseLlmException;
@@ -47,10 +47,8 @@ fn slow_request() -> (Serving, DecisionsRequest) {
 fn timeout_failure() -> RequestFailure {
     let (serving, request) = slow_request();
     let mut clients = real_clients();
-    let client = DecisionsClients::select_sync(&mut clients, &Params::new())
-        .expect("the blocking client builds");
-    let failure = client
-        .send_blocking(request)
+    let failure = DecisionsSyncTransport::send_sync(&mut clients, request)
+        .expect("the blocking client builds")
         .expect_err("the deadline ends the send");
     drop(serving.finish());
     failure
@@ -62,8 +60,6 @@ fn connection_failure() -> RequestFailure {
     let port = listener.local_addr().expect("the port is known").port();
     drop(listener);
     let mut clients = real_clients();
-    let client = DecisionsClients::select_sync(&mut clients, &Params::new())
-        .expect("the blocking client builds");
     let request = DecisionsRequest {
         url: Url::parse(&format!("http://127.0.0.1:{port}/v1/systemone"))
             .expect("the fixture url parses"),
@@ -71,8 +67,8 @@ fn connection_failure() -> RequestFailure {
         body: Vec::new(),
         timeout: Some(Duration::from_millis(500)),
     };
-    client
-        .send_blocking(request)
+    DecisionsSyncTransport::send_sync(&mut clients, request)
+        .expect("the blocking client builds")
         .expect_err("nothing listens on the closed port")
 }
 
@@ -196,10 +192,8 @@ fn error_mapping_sync_timeout_keeps_the_handler_message() {
 async fn error_mapping_async_timeout_keeps_the_handler_message() {
     let (serving, request) = slow_request();
     let mut clients = real_clients();
-    let client = DecisionsClients::select_async(&mut clients, &Params::new())
-        .expect("the async client builds");
-    let failure = client
-        .send(request)
+    let failure = DecisionsAsyncTransport::send_async(&mut clients, &Params::new(), request)
+        .expect("the async client builds")
         .await
         .expect_err("the deadline ends the send");
     drop(serving.finish());

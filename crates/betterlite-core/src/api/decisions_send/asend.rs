@@ -6,14 +6,14 @@ use betterlite_openai::decisions::call::DecisionsCall;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
 use betterlite_openai::openai_base_config::Headers;
 
-use super::clients::{DecisionsAsyncClient, DecisionsClients};
+use super::clients::DecisionsAsyncTransport;
 use super::error::{DecisionsSendError, send_failure};
 use super::format::DecisionsOutput;
 use super::request;
 use super::send::{DecisionsSender, finish, plain, signing_context};
 use crate::api::vector_store_http_write::service::ClientKind;
 
-impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
+impl<'env, Clients: DecisionsAsyncTransport> DecisionsSender<'env, Clients> {
     // adecisions(): signing off the request task only for AWS, then the provider's async client
     pub(crate) async fn asend_with<T: DecisionsProviderConfig + Sync>(
         &mut self,
@@ -32,22 +32,23 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
             JsonValue::Text(call.custom_llm_provider.clone()),
         ))
         .collect();
-        let client = self
-            .clients
-            .select_async(&params)
-            .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?;
         let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
         let started = Instant::now();
-        let reply = client.send(wire).await.map_err(|error| {
-            send_failure(
-                config,
-                call,
-                self.env.redactor,
-                error,
-                ClientKind::Asynchronous,
-                started.elapsed(),
-            )
-        })?;
+        let reply = self
+            .clients
+            .send_async(&params, wire)
+            .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?
+            .await
+            .map_err(|error| {
+                send_failure(
+                    config,
+                    call,
+                    self.env.redactor,
+                    error,
+                    ClientKind::Asynchronous,
+                    started.elapsed(),
+                )
+            })?;
         finish(config, call, self.env.redactor, &reply)
     }
 }

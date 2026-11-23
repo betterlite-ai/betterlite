@@ -2,7 +2,6 @@ use std::error::Error;
 use std::time::Instant;
 
 use betterlite_error::dispatch::{DispatchInput, dispatch};
-use betterlite_http::interactions::base::Params;
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -13,14 +12,14 @@ use betterlite_openai::decisions::transformation::provider_config::{
 };
 use betterlite_redact::secret::Redactor;
 
-use super::clients::{DecisionsClients, DecisionsSyncClient};
+use super::clients::{DecisionsAsyncTransport, DecisionsSyncTransport};
 use super::error::{DecisionsSendError, mapped, mapped_failure, raw_exception, send_failure};
 use super::format::{DecisionsOutput, format_response};
 use super::request::{self, Prepared};
 use crate::api::vector_store_http_write::error::status_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
 
-pub struct DecisionsSender<'env, Clients: DecisionsClients = HttpClients> {
+pub struct DecisionsSender<'env, Clients = HttpClients> {
     pub(super) clients: &'env mut Clients,
     pub(super) env: &'env PrePostEnv<'env>,
 }
@@ -41,7 +40,9 @@ macro_rules! with_config {
     };
 }
 
-impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
+impl<'env, Clients: DecisionsSyncTransport + DecisionsAsyncTransport>
+    DecisionsSender<'env, Clients>
+{
     // ast-grep-ignore: no-one-line-functions - callers hand in the pool and the environment, and the fields stay private
     pub fn new(clients: &'env mut Clients, env: &'env PrePostEnv<'env>) -> Self {
         Self { clients, env }
@@ -74,22 +75,22 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
             prepared.outbound_headers.clone(),
             signing_context(call, &prepared),
         );
-        let client = self
-            .clients
-            .select_sync(&Params::new())
-            .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?;
         let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
         let started = Instant::now();
-        let reply = client.send_blocking(wire).map_err(|error| {
-            send_failure(
-                config,
-                call,
-                self.env.redactor,
-                error,
-                ClientKind::Sync,
-                started.elapsed(),
-            )
-        })?;
+        let reply = self
+            .clients
+            .send_sync(wire)
+            .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?
+            .map_err(|error| {
+                send_failure(
+                    config,
+                    call,
+                    self.env.redactor,
+                    error,
+                    ClientKind::Sync,
+                    started.elapsed(),
+                )
+            })?;
         finish(config, call, self.env.redactor, &reply)
     }
 }

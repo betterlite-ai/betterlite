@@ -43,7 +43,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde_json::Number;
 
 use super::super::clients::{
-    DecisionsAsyncClient, DecisionsClients, DecisionsRequest, DecisionsSyncClient,
+    Answer, DecisionsAsyncTransport, DecisionsRequest, DecisionsSyncTransport,
 };
 use super::super::error::DecisionsSendError;
 use super::super::format::DecisionsOutput;
@@ -464,21 +464,6 @@ impl FakeWire {
     }
 }
 
-impl DecisionsSyncClient for FakeWire {
-    fn send_blocking(&self, request: DecisionsRequest) -> Result<UpstreamResponse, RequestFailure> {
-        self.record(request)
-    }
-}
-
-impl DecisionsAsyncClient for FakeWire {
-    fn send(
-        &self,
-        request: DecisionsRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, RequestFailure>> + Send {
-        ready(self.record(request))
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Mode {
     Sync,
@@ -534,16 +519,21 @@ impl FakeClients {
     }
 }
 
-impl DecisionsClients for FakeClients {
-    type AsyncClient = FakeWire;
-    type SyncClient = FakeWire;
-
-    fn select_sync(&mut self, params: &Params) -> Result<FakeWire, ClientError> {
-        self.selected(Mode::Sync, params)
+impl DecisionsSyncTransport for FakeClients {
+    fn send_sync(&mut self, request: DecisionsRequest) -> Result<Answer, ClientError> {
+        let wire = self.selected(Mode::Sync, &Params::new())?;
+        Ok(wire.record(request))
     }
+}
 
-    fn select_async(&mut self, params: &Params) -> Result<FakeWire, ClientError> {
-        self.selected(Mode::Asynchronous, params)
+impl DecisionsAsyncTransport for FakeClients {
+    fn send_async(
+        &mut self,
+        params: &Params,
+        request: DecisionsRequest,
+    ) -> Result<impl Future<Output = Answer> + Send, ClientError> {
+        let wire = self.selected(Mode::Asynchronous, params)?;
+        Ok(ready(wire.record(request)))
     }
 }
 
