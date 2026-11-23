@@ -54,11 +54,10 @@ pub(crate) async fn bridge_selection() {
 
     flagged_bridges(&nothing, &gateway, &mut harness).await;
     absent_config_bridges(&nothing, &gateway, &mut harness).await;
-    passing_without_tools(&nothing, &mut harness).await;
-    passing_with_tools(&nothing, &mut harness).await;
+    passing_with_and_without_tools(&nothing, &mut harness).await;
 }
 
-async fn passing_without_tools(nothing: &Nothing, harness: &mut Harness) {
+async fn passing_with_and_without_tools(nothing: &Nothing, harness: &mut Harness) {
     let rig = Rig::new();
     let gateway = Gateway::passing(&rig.events);
     let bridge = RecordingBridge::new(&rig.events);
@@ -71,23 +70,15 @@ async fn passing_without_tools(nothing: &Nothing, harness: &mut Harness) {
     assert!(gateway.file_search_record().is_none());
     assert_eq!(bridge.calls().len(), 1);
     assert!(rig.wire.requests().is_empty());
-}
 
-async fn passing_with_tools(nothing: &Nothing, harness: &mut Harness) {
-    let rig = Rig::new();
-    let gateway = Gateway::passing(&rig.events);
-    let bridge = RecordingBridge::new(&rig.events);
-    let seams = Seams::new(&rig, nothing, &gateway, &bridge);
-    let mut search = call("openai/gpt-4o");
-    search.kwargs = kwargs(r#"{"use_chat_completions_api":true}"#);
-    search.tools = Some(tools(
+    plain.tools = Some(tools(
         r#"[{"type":"file_search","file_search":{"vector_store_ids":["vs"]}}]"#,
     ));
-    run_create(&seams.deps(), &search, harness)
+    run_create(&seams.deps(), &plain, harness)
         .await
         .expect("the bridged file search dispatches the emulation first");
     assert!(gateway.file_search_record().is_some());
-    assert_eq!(bridge.calls().len(), 1);
+    assert_eq!(bridge.calls().len(), 2);
     assert!(rig.wire.requests().is_empty());
 }
 
