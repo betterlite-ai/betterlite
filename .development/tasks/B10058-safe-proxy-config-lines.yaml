@@ -1,0 +1,135 @@
+id: B10058
+title: Safe proxy config lines for bug reports
+description: >-
+  LiteLLM puts a few config lines into every proxy bug report and into the answer of GET /debug/report: keys LiteLLM itself defines, with values that are booleans or names LiteLLM itself defines, so nothing an operator typed (a key, a URL, a host) can reach a public GitHub issue link. litellm/proxy/bug_report_config.py builds them. Three tasks need them: B2400's exception conversion logs build_proxy_bug_report for an unexpected error, B8591's app exception handlers do the same, and B4171's GET /debug/report returns build_proxy_environment_report. Build the whole file here as module safe_proxy_config in betterlite-reporting (crates/betterlite-reporting/src/safe_proxy_config.rs, the empty stub lib.rs already declares, with tests in safe_proxy_config/tests.rs). It registers no route and needs no auth; B4171 keeps the route.
+
+
+  Inputs. LiteLLM reads proxy_server.proxy_config.config (the loaded config.yaml) and the general_settings global. Here the caller passes both in a `ProxyConfigSnapshot { config: serde_json::Map<String, Value>, general_settings: serde_json::Map<String, Value> }` that the server builds once from the config it loaded. Move serde_json from betterlite-reporting's dev-dependencies to its dependencies; the crate gains no betterlite crate dependency.
+
+
+  safe_config_lines(config, general_settings) returns the lines of six sections in this order, with nothing between them: general_settings.<key> over the general_settings argument (not config["general_settings"]); litellm_settings.<key> over config["litellm_settings"]; litellm_settings.cache_params.<key> over that map's "cache_params"; router_settings.<key> over config["router_settings"]; guardrails[<i>].litellm_params.<key> over the litellm_params of entry i of config["guardrails"]; then model_list[*].provider. A section value that is not an object (for guardrails and model_list, not an array) counts as empty, like LiteLLM's _object_map and _object_list. Every guardrails entry takes an index, an entry that is not an object included. A line is `<section>.<key> = <rendered>`, kept only when the key is in that section's known-key table and the value renders. Inside a section, lines follow the map's key order.
+
+
+  Rendering, as _render_json does it. true and false render as `true` and `false` under any key. A string renders as itself only when it is in the known-value table and the key is not credential-like. An array renders each item with the same key, drops the items that do not render and gives `[a, b]` joined with ", ", or nothing when no item renders; a nested array renders as one bracketed item. Numbers, null and objects never render. A key is credential-like when any part of the lowercased key split on "_" is one of key, keys, secret, secrets, token, password, passwd, credential, credentials, url, uri, dsn, host, hosts, base, endpoint, cert, pem or salt, except the exact key key_management_system.
+
+
+  model_list. For each deployment, litellm_params.model names a provider only when it is a string with a "/" and the part before the first "/" is in B4170's KNOWN_PROVIDERS (LiteLLM's allowlisted). The distinct providers, sorted, give one line `model_list[*].provider = [a, b]`, or no line at all.
+
+
+  Name tables. LiteLLM computes its tables from its own code at runtime; here they are static data read from the pinned sources. The known-key tables are ConfigGeneralSettings's fields for general_settings; the module-level names of litellm/__init__.py for litellm_settings (targets of plain and annotated assignments to a bare name and the names an import-from binds, top level only, so a name bound inside an if or try block or by a plain `import x` does not count); Cache.__init__'s parameters for cache_params and Router.__init__'s for router_settings, both without self; and the guardrail LitellmParams model fields, every mixin's fields included, for guardrails. The known-value table joins VALID_ROUTING_STRATEGIES, KNOWN_PROVIDERS, litellm._known_custom_logger_compatible_callbacks, the keys of CustomLoggerRegistry.CALLBACK_CLASS_STR_TO_CLASS_TYPE and the values of LiteLLMCacheType, KeyManagementSystem, SupportedGuardrailIntegrations and GuardrailEventHooks. The tables come to about 1,300 names, so store each as one whitespace-separated &str in the style of KNOWN_PROVIDERS, in a submodule, and keep every source file under 300 lines. Read KNOWN_PROVIDERS from bug_report::providers instead of copying it; the skeleton made that module pub(crate) in bug_report.rs for this.
+
+
+  Reports. build_proxy_environment_report(snapshot, host) calls B4170's build_environment_report with Surface::Proxy and the snapshot's safe_config_lines. build_proxy_bug_report(exception, location, call fields, snapshot, host) calls B4170's build_bug_report with a CallContext of Surface::Proxy, the call_type, custom_llm_provider and stream the caller gives (None by default in LiteLLM) and the same lines; the location is the &Location B9979 made build_bug_report take, captured by the caller where the error was created.
+
+
+  Oracle. Helper cases on the b10058 operation compare safe_config_lines only: the input is {config, general_settings} and the answer is the list of lines. The Python adapter calls the pinned safe_config_lines with the two mappings. The two report builders read proxy_server globals in LiteLLM, so native tests cover them. The helper runner hands both sides serde_json values, so case files list keys in sorted order inside each section. No byte parser is added, so there is no fuzz target. Budget from about 170 owned LiteLLM lines plus the tables: about 260 production lines, 200 table lines, 120 adapter lines and 300 test lines.
+scope:
+  paths:
+    - crates/betterlite-reporting/Cargo.toml
+    - crates/betterlite-reporting/src/safe_proxy_config.rs
+    - crates/betterlite-reporting/src/safe_proxy_config/**
+    - tools/oracle/src/helpers/reporting/Cargo.toml
+    - tools/oracle/src/helpers/reporting/b10058.rs
+    - tools/oracle/src/helpers/reporting/b10058/**
+    - tools/oracle/helpers/b10058.py
+    - tools/oracle/helpers/b10058/**
+    - tools/oracle/cases/helpers/safe-proxy-config/**
+    - tools/oracle/fuzz/corpus/helper_case/safe-proxy-config-*
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L1-L228
+    why: Owned. The credential parts, the tables, rendering, the six sections and the two report builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L74-L75
+    why: allowlisted, the provider prefix filter over KNOWN_PROVIDERS that B4170 already ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2698-L3240
+    why: ConfigGeneralSettings, the general_settings key table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L772-L838
+    why: Router.__init__, the router_settings key table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L132
+    why: Cache.__init__, the cache_params key table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192-L1290
+    why: LitellmParams and its mixins, the guardrail key table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L121-L180
+    why: The custom logger callback literal and _known_custom_logger_compatible_callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/custom_logger_registry.py#L65-L146
+    why: CALLBACK_CLASS_STR_TO_CLASS_TYPE and the enterprise names it gains only when litellm_enterprise imports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_groups.py#L20
+    why: VALID_ROUTING_STRATEGIES.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L92-L154
+    why: SupportedGuardrailIntegrations values. GuardrailEventHooks is at L1305-L1315 of the same file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L9-L20
+    why: LiteLLMCacheType values. KeyManagementSystem is litellm/types/secret_managers/main.py L7-L18.
+dod:
+  - text: >-
+      A key is credential-like when a part of the lowercased key split on "_" is one of the nineteen parts: api_base, redis_host and User_Password_hash are, key-name, apikey and passwords are not, and key_management_system is not although it holds key.
+    proof: [credential-keys, oracle, helper-python]
+  - text: >-
+      true and false render under any key; a known string renders only under a key that is not credential-like; an array renders its rendering items as [a, b] or nothing; numbers, null and objects never render.
+    proof: [value-rendering, oracle, helper-python]
+  - text: >-
+      safe_config_lines returns general_settings, litellm_settings, litellm_settings.cache_params, router_settings, guardrails[i].litellm_params and model_list lines in that order; a section that is not an object gives no lines, an entry of guardrails that is not an object keeps its index, and model_list gives one line of sorted distinct known providers or none.
+    proof: [section-lines, oracle, helper-python]
+  - text: >-
+      Every name of the five known-key tables and of the known-value table matches LiteLLM at the pin, and the enterprise-only callback names are absent.
+    proof: [name-tables, oracle, helper-python]
+  - text: >-
+      build_proxy_environment_report and build_proxy_bug_report pass Surface::Proxy and the snapshot's safe_config_lines to B4170's builders; the bug report keeps the exception type, the frame of the given location and the three call fields.
+    proof: [report-builders]
+  - text: A new b10058 seed reaches the shared helper case parser.
+    proof: [helper-case-corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: credential-keys
+      why: the credential-like key test is missing or lets a credential key through
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::(.*::)?credential_key_/)'
+    - id: value-rendering
+      why: value rendering tests are missing or render a value LiteLLM drops
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::(.*::)?render_/)'
+    - id: section-lines
+      why: section order, the non-object fallbacks, guardrail indexes or the provider line are untested or wrong
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::(.*::)?section_/)'
+    - id: name-tables
+      why: the name tables are missing a LiteLLM name or hold one LiteLLM does not have
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::(.*::)?table_/)'
+    - id: report-builders
+      why: a report builder skips the proxy surface or the safe config lines
+      run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::(.*::)?report_/)'
+    - id: helper-python
+      why: the b10058 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10058.py tools/oracle/helpers/b10058)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10058 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/safe-proxy-config-*")" &&
+        grep -lE 'b10058"?:' tools/oracle/fuzz/corpus/helper_case/safe-proxy-config-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-reporting --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/safe-proxy-config/credential-keys.yaml
+  - tools/oracle/cases/helpers/safe-proxy-config/value-rendering.yaml
+  - tools/oracle/cases/helpers/safe-proxy-config/section-shapes.yaml
+  - tools/oracle/cases/helpers/safe-proxy-config/known-key-tables.yaml
+  - tools/oracle/cases/helpers/safe-proxy-config/known-value-tables.yaml
+deviations:
+  - what: Lines inside one section come in sorted key order, not in the order the config file lists the keys.
+    why: The snapshot holds serde_json objects, and this workspace builds serde_json without preserve_order, so object keys are sorted; turning that feature on would reorder every JSON map in the server build. Which lines appear and their text stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L145-L150
+out_of_scope:
+  - "GET /debug/report (debug_utils.py L789-L805), its proxy admin check and its auth: B4171."
+  - "_proxy_config_lines (L201-L207) reads proxy_server globals; the caller's ProxyConfigSnapshot replaces it. Building that snapshot from the loaded config and handing it to the route and the exception paths: the server callers, B4171 for the route, B2400's diagnostic service and B8591's handlers."
+  - "build_bug_report, build_environment_report, KNOWN_PROVIDERS, the provider filter and the report records: B4170. should_report_bug, bug_report_notice and strip_bug_report_notice: B4170, called by B2400 and B8591."
+pitfalls:
+  - The key is split on "_" only, so key-name and apiKey are not credential-like, while user_password_hash is, through its password part.
+  - A boolean renders under a credential-like key (redis_host true gives a line), but a string never does there, even a known one such as a provider name.
+  - The provider prefix must be in KNOWN_PROVIDERS, so GPT-4/claude gives no provider, and a model without "/" gives none either.
+  - CALLBACK_CLASS_STR_TO_CLASS_TYPE gains pagerduty, generic_api, resend_email, sendgrid_email and smtp_email only when litellm_enterprise imports, so they stay out unless another source of the known-value table names them.
+  - litellm/__init__.py binds many names inside if and try blocks; _module_level_names reads only the module's top-level statements, so those names are not litellm_settings keys.
+  - general_settings comes from the second argument, so a general_settings key inside config is never read.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
