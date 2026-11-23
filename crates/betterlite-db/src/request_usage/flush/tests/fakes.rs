@@ -359,6 +359,7 @@ impl FakeToolWriter {
         self.check()?;
         let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
         writes.index_rows = writes.index_rows.saturating_add(rows.len());
+        drop(writes);
         Ok(())
     }
 
@@ -366,6 +367,7 @@ impl FakeToolWriter {
         self.check()?;
         let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
         writes.rollups.extend_from_slice(rollups);
+        drop(writes);
         Ok(())
     }
 }
