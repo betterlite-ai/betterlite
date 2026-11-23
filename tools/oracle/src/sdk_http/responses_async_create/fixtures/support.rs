@@ -116,7 +116,7 @@ impl ModelResolver for ScriptedResolver {
         })
     }
 }
-// get_llm_provider reads the caller's prefix even when the prefix names the provider, and none means unresolved
+// The caller's declared provider wins over the model prefix; a model with neither leaves the provider empty
 pub(super) fn scripted(model: &str, custom_llm_provider: Option<&str>) -> (String, String) {
     if let Some(given) = custom_llm_provider {
         let resolved = match model.split_once('/') {
