@@ -1,7 +1,7 @@
 id: B739
 milestone: M4 keys, spend and management
 title: End-user identity and default budgets
-status: todo
+status: done
 depends_on: [B001, B002, B003, B171, B720, B725, B726, B732, B733, B757, B856, B860, B882, B1218, B2315, B2321]
 file: tasks/B739-auth-end-users.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/auth/auth_utils.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3014
