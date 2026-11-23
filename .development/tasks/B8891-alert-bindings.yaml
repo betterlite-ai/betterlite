@@ -48,7 +48,7 @@ description: >-
 
   LegacyEmailDelivery implements B8890's LegacyEmailPort over B4022 and B4023. It reads the live
   alerting destinations, takes the injected environment reader and database handle, and passes
-  B797's InvitationCreator implementation into B4023. Without a database, pass None so B4023
+  B10092's InvitationCreator implementation into B4023. Without a database, pass None so B4023
   keeps its base-url fallback. Do not recreate the invitation query or seven-day expiry logic.
   Do not hold an Arc cycle back to the runtime: use a Weak runtime handle for settings snapshots.
   B4022/B4023 continue to read SMTP_SENDER_LOGO, EMAIL_LOGO_URL, EMAIL_SUPPORT_CONTACT and
@@ -94,7 +94,7 @@ dod:
     proof: [binding-tests]
   - text: Registration through ProxyLogging uses one pair of handles across installation and reload, leaves stream methods empty and introduces no strong ownership cycle.
     proof: [binding-tests]
-  - text: Legacy email uses the actual SMTP sender and B797 invitation port, preserving missing-configuration errors, swallowed transport errors and the no-database fallback.
+  - text: Legacy email uses the actual SMTP sender and B10092 invitation port, preserving missing-configuration errors, swallowed transport errors and the no-database fallback.
     proof: [binding-tests]
   - text: Mail secrets reach only the configured SMTP destination and never adapter diagnostics.
     proof: [binding-tests]

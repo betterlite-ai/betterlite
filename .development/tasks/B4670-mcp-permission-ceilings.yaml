@@ -10,14 +10,14 @@ description: >-
   `team_id`, `object_permission`, `requires_fresh_policy`, `mcp_explicit_grants_only`, `mcp_admitted_user_subject`, `agent_caller`,
   `user_role`, and its `user_api_key_has_admin_view` predicate), B4668's `ObjectPermission` row (`mcp_servers`, `mcp_access_groups`,
   `mcp_tool_permissions`, `mcp_toolsets`), `UnloadableEntitlementError`, its object permission getters, `toolset_tool_permissions`,
-  `toolset_tools_for_server` and `union_tool_grants`, and B4669's `team_servers` and `servers_from_access_groups`.
+  `toolset_tools_for_server` and `union_tool_grants`, B4669's `team_servers` and B10078's `servers_from_access_groups`.
 
   Everything outside this module goes through one trait, `CeilingReads`, received by the constructor of `Ceilings<R: CeilingReads>`
   (generic, no trait object, no global). All methods are async and return `Result<_, CeilingReadError>`, an enum with
   `Unloadable(UnloadableEntitlementError)` and `Failed(String)`: `has_database() -> bool` (sync); `org_object_permission(auth) -> Option<ObjectPermission>`,
   `end_user_object_permission(auth)`, `user_object_permission(auth)`, `agent_object_permission(auth)` and `team_object_permission(auth)`
   (B4668's getters, each already applying its own rules for absent rows, unreadable rows and the database being down);
-  `servers_from_access_groups(groups, fresh) -> Vec<String>` and `team_servers(auth) -> Vec<String>` (B4669);
+  `servers_from_access_groups(groups, fresh) -> Vec<String>` (B10078) and `team_servers(auth) -> Vec<String>` (B4669);
   `toolset_tool_permissions(permission, fresh) -> Map<server_id, Vec<tool>>` and `toolset_tools_for_server(permission, server_id, fresh) -> Option<Vec<String>>`
   (B4668, which return `Unloadable` when declared toolsets resolve to nothing); `expand_permission_list(names) -> Vec<String>` and
   `expand_tool_permissions(map) -> Map<server_id, Vec<tool>>` (the server manager's registry expansion, sync, no owner at the pin, see notes);
@@ -201,7 +201,7 @@ out_of_scope:
   - "get_mcp_server_access, get_allowed_mcp_servers, the key/team intersection, require_end_user_mcp_access_defined and the order of the ceilings: B4671."
   - "get_allowed_tools_for_server, tool_is_granted, is_tool_allowed_for_server, is_tool_allowed and the admitted subject tool paths: B4672."
   - "_get_org_object_permission, _get_end_user_object_permission, _get_user_object_permission, _user_object_permission_id, _agent_object_permission_id, _get_agent_object_permission, _load_named_object_permission, _toolset_tool_permissions, _toolset_tools_for_server, _union_tool_grants, _get_team_object_permission and _key_object_permission_hydrated: B4668. This task calls them."
-  - "_get_allowed_mcp_servers_for_key, _get_allowed_mcp_servers_for_team and servers from access groups: B4669."
+  - "_get_allowed_mcp_servers_for_key and _get_allowed_mcp_servers_for_team: B4669. Servers from access groups: B10078."
   - "agent_caller_auth and resolve_agent_access_group_ceiling: B4778. managed_agent_policy: B4772. This task calls them through CeilingReads."
   - "managed_agent_access.py, the other caller of apply_agent_caller_ceiling and get_agent_tool_permissions_for_server: the managed agent tasks."
   - "_is_mcp_admitted_user_subject: one field read (mcp_admitted_user_subject == true) done inline in admin_view_unscoped."

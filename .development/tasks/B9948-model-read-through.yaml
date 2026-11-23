@@ -31,7 +31,7 @@ description: >-
 
 
   `ModelsReadThrough` is the type alias RegistryReadThrough<ModelResync<DeploymentModelSync, ProxyDbObjects>>. B8612's
-  `ProxyDbObjects` is the DbObjects: it is enabled only with a database store, store_model_in_db exactly true and B8380's
+  `ProxyDbObjects` is the DbObjects: it is enabled only with a database store, store_model_in_db exactly true and B10054's
   should_load_db_object allowing models, as _db_backed_registries_enabled reads them (L99-L104). Build it the way
   B8612's SharedAgents::new does. B8613 builds one ModelsReadThrough with RegistryReadThrough::new (B8231's default
   miss TTL and window) when it builds DeploymentSync, and B8610 hands it to the routes.
