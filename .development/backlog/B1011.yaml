@@ -1,14 +1,14 @@
 id: B1011
 milestone: M5 api families
 title: Realtime connect
-status: todo
+status: done
 depends_on: [B002, B1402, B1405, B174, B176, B528, B529, B545, B666, B901, B1004, B1303, B1365, B1378, B1382, B2457, B5360, B247]
 file: tasks/B1011-realtime-connect.yaml
 covers:
   - "litellm/realtime_api/main.py"
 parent: B084
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3009

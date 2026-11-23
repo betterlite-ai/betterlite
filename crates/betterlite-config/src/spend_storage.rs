@@ -1,3 +1,4 @@
+mod cold_storage;
 mod partition_switch;
 mod queue;
 pub mod retention;
@@ -41,6 +42,7 @@ pub struct LiteLlmSettings {
     disable_end_user_cost_tracking: JsonValue,
     #[serde(rename = "enable_end_user_cost_tracking_prometheus_only")]
     enable_prometheus_only: JsonValue,
+    cold_storage_custom_logger: JsonValue,
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -80,6 +82,8 @@ pub struct Settings {
     pub spend_log_queue_max_bytes: usize,
     pub spend_logs_url: Option<String>,
     pub retention: CleanupSettings,
+    // the callback name ColdStorageHandler reads stored request bodies through; None reads none
+    pub cold_storage_custom_logger: Option<String>,
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -123,6 +127,9 @@ impl Section for Raw {
             spend_log_queue_max_bytes: max_bytes(lookup)?,
             spend_logs_url: logs_url(lookup),
             retention: retention::cleanup_settings(general.retention, lookup)?,
+            cold_storage_custom_logger: cold_storage::custom_logger(
+                &litellm.cold_storage_custom_logger,
+            )?,
         })
     }
 }
