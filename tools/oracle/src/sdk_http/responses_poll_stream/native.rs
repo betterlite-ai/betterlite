@@ -26,19 +26,6 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let (capture, store) = seeded_store(call)?;
-    let processor = ProviderProcessor::new(outbound_client(env)?, api_base)?;
-    let clock = ScriptedClock::new(&call.clock_millis);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
-    run(call, &store, &processor, &clock, &redactor).await?;
-    Ok(SdkResult::ResponsesPollStream {
-        value: Box::new(Outcome {
-            writes: capture.writes()?,
-        }),
-    })
-}
-
-fn seeded_store(call: &Call) -> Result<(Arc<CaptureCache>, ResponsePollingStore), SdkHttpError> {
     let capture = Arc::new(CaptureCache::new(
         get_cache_key(&call.polling_id),
         &call.seed,
@@ -50,16 +37,9 @@ fn seeded_store(call: &Call) -> Result<(Arc<CaptureCache>, ResponsePollingStore)
         ttl: DEFAULT_TTL,
         limits: ApiLimits::default(),
     };
-    Ok((capture, store))
-}
-
-async fn run(
-    call: &Call,
-    store: &ResponsePollingStore,
-    processor: &ProviderProcessor,
-    clock: &ScriptedClock,
-    redactor: &Redactor,
-) -> Result<(), SdkHttpError> {
+    let processor = ProviderProcessor::new(outbound_client(env)?, api_base)?;
+    let clock = ScriptedClock::new(&call.clock_millis);
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
     let request = PollRequest {
         scope: scope(call)?,
         inbound: Box::new(Paused),
@@ -68,13 +48,18 @@ async fn run(
         polling_id: &call.polling_id,
         data: call.data.clone(),
         request,
-        store,
-        processor,
-        clock,
-        redactor,
+        store: &store,
+        processor: &processor,
+        clock: &clock,
+        redactor: &redactor,
         limits: ApiLimits::default(),
     }
     .run()
     .await
-    .map_err(|error| SdkHttpError::Invalid(format!("the poll stream worker failed: {error}")))
+    .map_err(|error| SdkHttpError::Invalid(format!("the poll stream worker failed: {error}")))?;
+    Ok(SdkResult::ResponsesPollStream {
+        value: Box::new(Outcome {
+            writes: capture.writes(),
+        }),
+    })
 }

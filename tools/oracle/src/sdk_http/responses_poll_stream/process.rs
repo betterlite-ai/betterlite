@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -6,8 +7,8 @@ use betterlite_core::api::responses_poll_stream::ports::{
     PollChunkSource, PollProcessCall, PollProcessed, PollProcessorError, PollRequestProcessor,
 };
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::{ProxiedClient, StreamResponse};
 use betterlite_models::decisions::Json;
 use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
@@ -19,6 +20,19 @@ use url::Url;
 use crate::sdk_http::error::SdkHttpError;
 
 const PROVIDER_TIMEOUT: Duration = Duration::from_secs(120);
+
+// every provider-side failure reaches the worker as the message its Display names
+trait ProcessorFailure<T> {
+    fn processor_failure(self) -> Result<T, PollProcessorError>;
+}
+
+impl<T, E: Display> ProcessorFailure<T> for Result<T, E> {
+    fn processor_failure(self) -> Result<T, PollProcessorError> {
+        self.map_err(|error| PollProcessorError {
+            message: error.to_string(),
+        })
+    }
+}
 
 // the provider call the worker makes: one POST to the routed deployment, its body framed for its iterator
 pub(super) struct ProviderProcessor {
@@ -40,11 +54,7 @@ impl PollRequestProcessor for ProviderProcessor {
         &self,
         call: PollProcessCall<'_>,
     ) -> Result<PollProcessed, PollProcessorError> {
-        let body = serde_json::to_vec(&Json::Object(call.data.clone())).map_err(|error| {
-            PollProcessorError {
-                message: error.to_string(),
-            }
-        })?;
+        let body = serde_json::to_vec(&Json::Object(call.data.clone())).processor_failure()?;
         let headers = request_headers(call.request.scope.headers.as_slice())?;
         let response = self
             .client
@@ -57,18 +67,19 @@ impl PollRequestProcessor for ProviderProcessor {
                 deadline: PROVIDER_TIMEOUT,
             })
             .await
-            .map_err(|error| PollProcessorError {
-                message: error.to_string(),
-            })?;
+            .processor_failure()?;
         let status = response.response.status().as_u16();
         if !(200..300).contains(&status) {
             return Err(PollProcessorError {
                 message: format!("the provider answered with status {status}"),
             });
         }
-        Ok(PollProcessed::Streaming(Box::new(ProviderChunks::start(
-            response,
-        ))))
+        Ok(PollProcessed::Streaming(Box::new(ProviderChunks {
+            body: response.body_stream(),
+            parser: SseParser::default(),
+            pending: VecDeque::new(),
+            finished: false,
+        })))
     }
 }
 
@@ -76,13 +87,8 @@ impl PollRequestProcessor for ProviderProcessor {
 fn request_headers(headers: &[(String, String)]) -> Result<HeaderMap, PollProcessorError> {
     let mut map = HeaderMap::with_capacity(headers.len());
     for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|error| PollProcessorError {
-            message: error.to_string(),
-        })?;
-        let value =
-            HeaderValue::from_bytes(value.as_bytes()).map_err(|error| PollProcessorError {
-                message: error.to_string(),
-            })?;
+        let name = HeaderName::from_bytes(name.as_bytes()).processor_failure()?;
+        let value = HeaderValue::from_bytes(value.as_bytes()).processor_failure()?;
         map.insert(name, value);
     }
     Ok(map)
@@ -96,23 +102,16 @@ struct ProviderChunks {
     finished: bool,
 }
 
-impl ProviderChunks {
-    fn start(response: StreamResponse) -> Self {
-        Self {
-            body: response.body_stream(),
-            parser: SseParser::default(),
-            pending: VecDeque::new(),
-            finished: false,
-        }
-    }
-}
-
 #[async_trait]
 impl PollChunkSource for ProviderChunks {
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, PollProcessorError> {
         loop {
             if let Some(payload) = self.pending.pop_front() {
-                return Ok(Some(reframe(payload)));
+                let mut frame = Vec::with_capacity(payload.len().saturating_add(8));
+                frame.extend_from_slice(b"data: ");
+                frame.extend_from_slice(&payload);
+                frame.extend_from_slice(b"\n\n");
+                return Ok(Some(frame));
             }
             if self.finished {
                 return Ok(None);
@@ -128,24 +127,10 @@ impl PollChunkSource for ProviderChunks {
                     });
                 }
                 Some(Ok(bytes)) => {
-                    let payloads =
-                        self.parser
-                            .push(&bytes)
-                            .map_err(|error| PollProcessorError {
-                                message: error.to_string(),
-                            })?;
+                    let payloads = self.parser.push(&bytes).processor_failure()?;
                     self.pending.extend(payloads);
                 }
             }
         }
     }
-}
-
-// the worker selects one "data: " line per chunk, so each provider payload is framed on its own
-fn reframe(payload: Vec<u8>) -> Vec<u8> {
-    let mut frame = Vec::with_capacity(payload.len().saturating_add(8));
-    frame.extend_from_slice(b"data: ");
-    frame.extend_from_slice(&payload);
-    frame.extend_from_slice(b"\n\n");
-    frame
 }

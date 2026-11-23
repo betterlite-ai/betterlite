@@ -10,6 +10,6 @@ mod tests;
 // the route the detached provider call runs as
 pub const ROUTE_TYPE: &str = "aresponses";
 // background_streaming.py's UPDATE_INTERVAL, in the milliseconds the clock reports
-pub const UPDATE_INTERVAL_MILLIS: u64 = 150;
+pub const UPDATE_INTERVAL: u64 = 150;
 pub const ERROR_TYPE: &str = "internal_error";
 pub const ERROR_CODE: &str = "background_streaming_error";

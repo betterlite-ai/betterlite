@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
 use std::future::poll_fn;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::Poll;
 use std::vec::IntoIter;
 
@@ -34,7 +34,7 @@ pub(super) const REQUEST_BODY: &str =
     r#"{"background":true,"input":"Hello","model":"b936-test-model","stream":false}"#;
 const SEED: &str = r#"{"created_at":100,"id":"litellm_poll_b936","object":"response","output":[],"status":"queued"}"#;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(super) enum Answer {
     Streaming(Vec<AnswerStep>),
     NonStreaming,
@@ -176,20 +176,21 @@ impl RecordingCache {
         cache
     }
 
+    fn entries(&self) -> MutexGuard<'_, BTreeMap<String, String>> {
+        self.entries.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn written(&self) -> MutexGuard<'_, Vec<String>> {
+        self.written.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     fn seed(&self, source: &str) {
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+        self.entries()
             .insert(get_cache_key(POLLING_ID), source.to_owned());
     }
 
     pub(super) fn writes(&self) -> Vec<Json> {
-        let written = self
-            .written
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        written.into_iter().map(|text| json(&text)).collect()
+        self.written().iter().map(|text| json(text)).collect()
     }
 
     pub(super) fn fail_writes_from(&self, position: usize) {
@@ -201,45 +202,23 @@ impl RecordingCache {
 impl PollingCache for RecordingCache {
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, PollingCacheError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        let stored = self
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .cloned();
-        Ok(stored.map(String::into_bytes))
+        Ok(self.entries().get(key).cloned().map(String::into_bytes))
     }
 
     async fn write(&self, key: &str, value: &str, _ttl: i64) -> Result<(), PollingCacheError> {
-        let position = self
-            .written
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len();
+        let position = self.written().len();
         if position >= self.failing_from.load(Ordering::SeqCst) {
             return Err(PollingCacheError::Write(String::from(
                 "scripted write failure",
             )));
         }
-        self.written
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(value.to_owned());
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), value.to_owned());
+        self.written().push(value.to_owned());
+        self.entries().insert(key.to_owned(), value.to_owned());
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<i64, PollingCacheError> {
-        let removed = self
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(key)
-            .is_some();
-        Ok(i64::from(removed))
+        Ok(i64::from(self.entries().remove(key).is_some()))
     }
 }
 

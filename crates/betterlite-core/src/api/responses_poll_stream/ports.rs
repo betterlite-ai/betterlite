@@ -31,15 +31,7 @@ pub struct PollRequest {
     pub inbound: Box<dyn ClientInbound>,
 }
 
-impl PollRequest {
-    // background_streaming.py's detach_request_from_client: the scope stays, the hangup never arrives
-    #[must_use]
-    pub fn detach(&self) -> DetachedRequest<'_> {
-        DetachedRequest { scope: &self.scope }
-    }
-}
-
-// the same scope the processor would see, with a receive that never reports http.disconnect
+// background_streaming.py's detach_request_from_client: the scope stays, the hangup never arrives
 pub struct DetachedRequest<'request> {
     pub scope: &'request PollScope,
 }

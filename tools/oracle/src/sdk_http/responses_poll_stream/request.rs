@@ -22,19 +22,17 @@ impl ClientInbound for Paused {
 pub(super) fn scope(call: &Call) -> Result<PollScope, SdkHttpError> {
     let body =
         serde_json::to_vec(&Json::Object(call.data.clone())).map_err(SdkHttpError::Serialize)?;
+    let headers = vec![
+        (
+            "authorization".to_owned(),
+            format!("Bearer {}", call.api_key),
+        ),
+        ("content-type".to_owned(), String::from("application/json")),
+    ];
     Ok(PollScope {
         method: String::from("POST"),
         path: String::from("/v1/responses"),
-        headers: vec![
-            (
-                String::from("authorization"),
-                format!("Bearer {}", call.api_key),
-            ),
-            (
-                String::from("content-type"),
-                String::from("application/json"),
-            ),
-        ],
+        headers,
         body,
     })
 }

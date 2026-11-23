@@ -35,42 +35,30 @@ pub fn decode_poll_stream_frame(
 }
 
 // CPython's _PyUnicode_IsWhitespace table; char::is_whitespace() misses U+001C-U+001F
-const PYTHON_WHITESPACE: [char; 29] = [
-    '\t', '\n', '\u{b}', '\u{c}', '\r', '\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', ' ', '\u{85}',
-    '\u{a0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}', '\u{2005}',
-    '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}', '\u{2028}', '\u{2029}', '\u{202f}',
-    '\u{205f}', '\u{3000}',
-];
+const PYTHON_WHITESPACE: &str = "\t\n\u{b}\u{c}\r\u{1c}\u{1d}\u{1e}\u{1f} \u{85}\u{a0}\u{1680}\
+    \u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}\
+    \u{2028}\u{2029}\u{202f}\u{205f}\u{3000}";
 
-const LINE_BREAKS: [char; 10] = [
-    '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
-];
+const LINE_BREAKS: &str = "\n\r\u{b}\u{c}\u{1c}\u{1d}\u{1e}\u{85}\u{2028}\u{2029}";
 
 fn select_frame_data(frame: &str) -> PollFrame {
     let mut remainder = frame;
-    // every line takes at least one byte, so this bound only stops a broken splitter
-    for _ in 0..=frame.len() {
+    while !remainder.is_empty() {
         let (line, rest) = next_line(remainder);
-        if let Some(payload) = line
-            .strip_prefix("data: ")
-            .map(|payload| payload.trim_matches(|character| PYTHON_WHITESPACE.contains(&character)))
-        {
+        if let Some(raw) = line.strip_prefix("data: ") {
+            let payload = raw.trim_matches(|character| PYTHON_WHITESPACE.contains(character));
             return classify_payload(payload);
-        }
-        if rest.is_empty() {
-            return PollFrame::NoData;
         }
         remainder = rest;
     }
     PollFrame::NoData
 }
 
-// python's str.splitlines reads a break as the end of a line; a "\r\n" pair leaves one empty line
-// more, and an empty line never selects a payload either way
+// python's str.splitlines ends a line at a break; a "\r\n" pair leaves one empty line more, which never selects a payload
 fn next_line(text: &str) -> (&str, &str) {
     let Some((offset, character)) = text
         .char_indices()
-        .find(|(_, character)| LINE_BREAKS.contains(character))
+        .find(|(_, character)| LINE_BREAKS.contains(*character))
     else {
         return (text, "");
     };

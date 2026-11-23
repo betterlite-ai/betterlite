@@ -372,17 +372,13 @@ fn terminal_fields_reach_patch() {
     );
 }
 
-#[test]
-fn in_progress_and_unknown_events_do_not_dirty() {
+#[rstest]
+#[case::in_progress(r#"{"response":{"status":"in_progress"},"type":"response.in_progress"}"#)]
+#[case::unknown(r#"{"type":"response.something_else"}"#)]
+fn in_progress_and_unknown_events_do_not_dirty(#[case] source: &str) {
     let clock = support::clock(&[0]);
     let mut accumulator = OutputAccumulator::started(&clock);
-    let sources = [
-        r#"{"response":{"status":"in_progress"},"type":"response.in_progress"}"#,
-        r#"{"type":"response.something_else"}"#,
-    ];
-    for source in sources {
-        accumulator.apply(event(source)).expect("the event applies");
-    }
+    accumulator.apply(event(source)).expect("the event applies");
     assert!(accumulator.flush_forced(&clock).is_none());
 }
 

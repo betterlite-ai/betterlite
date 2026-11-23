@@ -18,8 +18,8 @@ use super::clock::PollClock;
 use super::event::{PollEvent, PollEventError};
 use super::frame::{PollFrame, PollFrameError, decode_poll_stream_frame};
 use super::ports::{
-    PollChunkSource, PollProcessCall, PollProcessed, PollProcessorError, PollRequest,
-    PollRequestProcessor,
+    DetachedRequest, PollChunkSource, PollProcessCall, PollProcessed, PollProcessorError,
+    PollRequest, PollRequestProcessor,
 };
 
 const STATUS_IN_PROGRESS: &str = "in_progress";
@@ -53,24 +53,36 @@ pub enum PollStreamError {
 impl BackgroundStreaming<'_> {
     // the source catches every failure once, records it and returns; only that record can fail again
     pub async fn run(self) -> Result<(), PollStreamError> {
-        match self.stream().await {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                tracing::error!(
-                    "Error in background streaming task for {}: {}",
-                    self.polling_id,
-                    error
-                );
-                self.record_failure(&error).await
-            }
-        }
+        let Err(error) = self.stream().await else {
+            return Ok(());
+        };
+        tracing::error!(
+            "Error in background streaming task for {}: {}",
+            self.polling_id,
+            error
+        );
+        let message = bounded_text(&self.redactor.redact_internal_details(&error.to_string()));
+        self.write_patch(&failure_patch(&message))
+            .await
+            .map_err(PollStreamError::from)
     }
 
     async fn stream(&self) -> Result<(), PollStreamError> {
         tracing::info!("Starting background streaming for {}", self.polling_id);
         self.write_patch(&status_patch(STATUS_IN_PROGRESS)).await?;
-        let data = forced_stream_data(&self.data);
-        let processed = self.process(&data).await?;
+        let mut data = self.data.clone();
+        data.insert(String::from("stream"), Json::Bool(true));
+        data.shift_remove("background");
+        let call = PollProcessCall {
+            route_type: ROUTE_TYPE,
+            model: None,
+            skip_pre_call_logic: true,
+            data: &data,
+            request: DetachedRequest {
+                scope: &self.request.scope,
+            },
+        };
+        let processed = self.processor.process(call).await?;
         let mut state = OutputAccumulator::started(self.clock);
         let PollProcessed::Streaming(mut chunks) = processed else {
             tracing::warn!(
@@ -86,20 +98,6 @@ impl BackgroundStreaming<'_> {
         self.finish(&state).await
     }
 
-    async fn process(
-        &self,
-        data: &IndexMap<String, Json>,
-    ) -> Result<PollProcessed, PollStreamError> {
-        let call = PollProcessCall {
-            route_type: ROUTE_TYPE,
-            model: None,
-            skip_pre_call_logic: true,
-            data,
-            request: self.request.detach(),
-        };
-        Ok(self.processor.process(call).await?)
-    }
-
     async fn consume(
         &self,
         chunks: &mut dyn PollChunkSource,
@@ -110,9 +108,7 @@ impl BackgroundStreaming<'_> {
                 PollFrame::NoData => {}
                 PollFrame::Done => break,
                 PollFrame::Malformed => {
-                    tracing::warn!(
-                        "Failed to parse streaming chunk: the frame payload is not JSON"
-                    );
+                    tracing::warn!("Failed to parse streaming chunk: the payload is not JSON");
                 }
                 PollFrame::Event(value) => {
                     let event = PollEvent::decode(&value)?;
@@ -139,32 +135,14 @@ impl BackgroundStreaming<'_> {
         Ok(())
     }
 
-    async fn record_failure(&self, error: &PollStreamError) -> Result<(), PollStreamError> {
-        let message = bounded_text(&self.redactor.redact_internal_details(&error.to_string()));
-        self.write_patch(&failure_patch(&message)).await?;
-        Ok(())
-    }
-
     async fn write_patch(&self, patch: &PollPatch) -> Result<(), PollingError> {
         let update = self
             .store
             .update_state(self.polling_id, PollAccess::AuthDisabled, patch)
             .await?;
-        tracing::debug!(
-            "Updated polling state for {}: {:?}",
-            self.polling_id,
-            update
-        );
+        tracing::debug!("Polling state for {}: {:?}", self.polling_id, update);
         Ok(())
     }
-}
-
-// the source forces streaming and drops the background flag before the provider call
-fn forced_stream_data(data: &IndexMap<String, Json>) -> IndexMap<String, Json> {
-    let mut forced = data.clone();
-    forced.insert(String::from("stream"), Json::Bool(true));
-    forced.shift_remove("background");
-    forced
 }
 
 fn status_patch(status: &str) -> PollPatch {
@@ -175,7 +153,9 @@ fn status_patch(status: &str) -> PollPatch {
 }
 
 fn output_patch(output: Json) -> PollPatch {
-    PollPatch(IndexMap::from([(String::from("output"), output)]))
+    let mut fields = IndexMap::with_capacity(1);
+    fields.insert(String::from("output"), output);
+    PollPatch(fields)
 }
 
 // the source's failed record: type, message and code, and no param

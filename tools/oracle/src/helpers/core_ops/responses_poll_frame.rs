@@ -17,10 +17,11 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let mut results = Vec::with_capacity(input.frames.len());
-        for frame in &input.frames {
-            results.push(frame_result(frame)?);
-        }
+        let results = input
+            .frames
+            .iter()
+            .map(|frame| frame_result(frame))
+            .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
         Ok(json!({ "results": results }))
     }
 }
