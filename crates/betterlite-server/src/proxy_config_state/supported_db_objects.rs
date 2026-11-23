@@ -24,7 +24,7 @@ pub fn should_load_db_object(general_settings: &SettingsStore, object_type: &str
 }
 
 // LiteLLM writes Python's class repr here; betterlite names the JSON type instead
-fn json_type_name(value: &JsonValue) -> &'static str {
+const fn json_type_name(value: &JsonValue) -> &'static str {
     match value {
         JsonValue::Null => "null",
         JsonValue::Bool(_) => "a boolean",
