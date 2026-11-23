@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use betterlite_db::spend_flush::monitor::{DEFAULT_POLL_INTERVAL, DEFAULT_QUEUE_SIZE_THRESHOLD};
 use betterlite_db::spend_partitions::calendar::PartitionInterval;
 use betterlite_db::spend_retention::batches::settings::{
     CleanupBounds, DurationParser, Retention, SettingValue,
@@ -19,6 +20,7 @@ use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
+use super::monitor::{ENV_QUEUE_POLL_INTERVAL, ENV_QUEUE_SIZE_THRESHOLD};
 use super::queue::{DEFAULT_QUEUE_MAX_BYTES, ENV_SPEND_LOG_QUEUE_MAX_BYTES, ENV_SPEND_LOGS_URL};
 use super::retention::{
     ENV_BATCH_SIZE, ENV_BATCH_TIMEOUT, ENV_COUNT_CAP, ENV_FAILURE_BACKOFF, ENV_MAX_FAILURES,
@@ -814,4 +816,84 @@ fn loads_spend_cold_storage_from_a_stored_policy_row() {
         decoded.cold_storage_custom_logger.as_deref(),
         Some("gcs_bucket")
     );
+}
+
+#[test]
+fn loads_spend_monitor_settings() {
+    let defaults = load("general_settings: {}\n", &[]);
+    assert_eq!(
+        defaults.spend_log_monitor.queue_size_threshold,
+        DEFAULT_QUEUE_SIZE_THRESHOLD
+    );
+    assert_eq!(
+        defaults.spend_log_monitor.base_interval,
+        DEFAULT_POLL_INTERVAL
+    );
+
+    let configured = load(
+        "general_settings: {}\n",
+        &[
+            (ENV_QUEUE_SIZE_THRESHOLD, "250"),
+            (ENV_QUEUE_POLL_INTERVAL, "0.5"),
+        ],
+    );
+    assert_eq!(configured.spend_log_monitor.queue_size_threshold, 250);
+    assert_eq!(
+        configured.spend_log_monitor.base_interval,
+        Duration::from_millis(500)
+    );
+}
+
+#[test]
+fn an_empty_spend_monitor_value_counts_as_unset() {
+    let settings = load(
+        "general_settings: {}\n",
+        &[
+            (ENV_QUEUE_SIZE_THRESHOLD, ""),
+            (ENV_QUEUE_POLL_INTERVAL, ""),
+        ],
+    );
+    assert_eq!(
+        settings.spend_log_monitor.queue_size_threshold,
+        DEFAULT_QUEUE_SIZE_THRESHOLD
+    );
+    assert_eq!(
+        settings.spend_log_monitor.base_interval,
+        DEFAULT_POLL_INTERVAL
+    );
+}
+
+#[rstest]
+#[case::zero("0")]
+#[case::fractional_zero("0.0")]
+#[case::negative("-3")]
+fn a_nonpositive_spend_log_poll_interval_polls_at_once(#[case] value: &str) {
+    let settings = load(
+        "general_settings: {}\n",
+        &[(ENV_QUEUE_POLL_INTERVAL, value)],
+    );
+    assert_eq!(settings.spend_log_monitor.base_interval, Duration::ZERO);
+}
+
+#[rstest]
+#[case::infinite_overflow("1e999")]
+#[case::not_a_number("nan")]
+#[case::infinity("inf")]
+fn a_nonfinite_spend_log_poll_interval_fails_loading(#[case] value: &str) {
+    let error = load_spend_storage_policy(
+        "general_settings: {}\n",
+        &environment(&[(ENV_QUEUE_POLL_INTERVAL, value)]),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains(ENV_QUEUE_POLL_INTERVAL));
+}
+
+#[test]
+fn a_malformed_spend_log_queue_threshold_fails_loading() {
+    let error = load_spend_storage_policy(
+        "general_settings: {}\n",
+        &environment(&[(ENV_QUEUE_SIZE_THRESHOLD, "many")]),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains(ENV_QUEUE_SIZE_THRESHOLD));
 }
