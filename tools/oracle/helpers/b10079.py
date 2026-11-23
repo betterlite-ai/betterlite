@@ -29,7 +29,7 @@ Input = ListCall | IsPublicCall
 def servers_by_id(records: list[dict[str, JsonValue]]) -> dict[str, MCPServer]:
     servers: dict[str, MCPServer] = {}
     for record in records:
-        server = MCPServer.model_validate(record)
+        server = MCPServer.model_validate(record)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L88
         servers[server.server_id] = server
     return servers
 
