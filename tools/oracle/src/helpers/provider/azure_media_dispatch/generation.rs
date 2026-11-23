@@ -3,10 +3,10 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::azure_media_dispatch::call::{
     AzureMediaOperation, ImageGenerationOperation,
 };
-use betterlite_provider::azure_media_dispatch::test_support::exchange;
 use secrecy::SecretString;
 
 use super::case::Input;
+use super::exchange;
 use super::{NOW, generation_result, json_reply};
 
 pub(super) async fn image_generation(input: &Input) -> HelperResult {
@@ -31,6 +31,6 @@ pub(super) async fn image_generation(input: &Input) -> HelperResult {
         AzureMediaOperation::ImageGeneration(Box::new(call)),
         vec![reply],
     )
-    .await;
+    .await?;
     generation_result(&outcome)
 }

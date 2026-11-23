@@ -13,11 +13,11 @@ description: >-
   Cases info_default_key, info_empty_key, info_prefix_normalization, info_latest_archive,
   info_live_precedes_archive, info_status_and_permission and info_request_key_echo pin the projection.
 
-  Authorization short-circuits for proxy admin/viewer, exact caller.api_key == queried key,
-  caller.user_id == row.user_id, or B800 user_belongs_to_keys_team. The user comparison does not
-  require non-null IDs: null equals null. Cases info_admin_viewer, info_exact_key,
-  info_same_owner, info_null_owner_equality, info_team_member and info_unrelated_denied preserve
-  that behavior. Missing keys raise ProxyException 404 not_found_error, param key, code 404.
+  Authorization calls B10068's can_user_query_key_info (key_info::access, on main), which
+  short-circuits for proxy admin/viewer, exact caller.api_key == queried key, caller.user_id ==
+  row.user_id with null equal to null, or B800 user_belongs_to_keys_team. Cases info_admin_viewer,
+  info_exact_key, info_same_owner, info_null_owner_equality, info_team_member and info_unrelated_denied
+  prove both routes apply it. Missing keys raise ProxyException 404 not_found_error, param key, code 404.
   Denial is HTTPException 403 passed through this route's handle_exception_on_proxy call, yielding
   internal_server_error with openai_error_param and code 403. Ordinary failures including missing
   DB yield 500 internal_server_error. Cases info_missing_error_shape and info_database_error_shape
@@ -51,7 +51,7 @@ description: >-
 
 
   Build the production key_info module in betterlite-server; reuse the typed dependencies listed in the
-  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  backlog. key_info.rs already declares B10068's access submodule; keep that line. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
   tests.rs files.
 
 
@@ -59,8 +59,8 @@ description: >-
   _build_model_max_budget_usage (L4178-L4188; 11 source lines), _window_max_budget (L4191-L4199; 9 source
   lines), _budget_window_usage (L4202-L4228; 25 source lines), _build_budget_limits_usage (L4231-L4245;
   15 source lines), info_key_fn_v2 (L4254-L4343; 80 source lines), info_key_fn (L4348-L4479; 122 source
-  lines), _find_deleted_key_info (L4482-L4491; 10 source lines), _can_user_query_key_info (L7606-L7627;
-  22 source lines).
+  lines), _find_deleted_key_info (L4482-L4491; 10 source lines). B10068 owns _can_user_query_key_info
+  (L7606-L7627), and both routes call it.
 
 
   Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
@@ -115,7 +115,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4178-L4491
     why: Pinned implementation and exact ownership boundary for key_info.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7606-L7627
-    why: Own _can_user_query_key_info; preserve caller-visible values and failure ordering.
+    why: B10068 owns _can_user_query_key_info; both routes call it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1512-L1521
     why: KeyRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4178-L4188
@@ -164,6 +164,7 @@ oracle_cases:
   - tools/oracle/cases/management/key-info/other-user-denied.yaml
 deviations: []
 out_of_scope:
+  - "_can_user_query_key_info: B10068, in key_info::access. Both routes call it and own only the 403 or the dropped row that follows a false."
   - B3005 owns model usage and B2325 budget-window start calculations; B2321 owns get_current_spend,
     get_data, KeyRequest and exception projection. B770 owns stored-window decoding and prefix
     hashing; B2314 owns its hash implementation. This task never reconstructs a stored secret.
@@ -261,7 +262,6 @@ out_of_scope:
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - A successful aliases-only v2 response has key null, not the resolved token list.
-  - Adding a non-null guard to the user_id equality check changes source authorization for ownerless keys.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

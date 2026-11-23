@@ -18,7 +18,8 @@ description: >-
 
   A truthy key_hash is queried exactly, without normalization. Query errors and missing rows both
   become 403 bad_request_error, param key_hash, code 403, with a key-not-found message. Existing
-  rows pass B778 _can_user_query_key_info; a false result instead raises HTTPException 403 with
+  rows pass B10068's can_user_query_key_info (key_info::access, on main) with the key_hash as the key;
+  a false result instead raises HTTPException 403 with
   a role-specific denial detail. Return the typed complete user row on success. Cases
   scope_hash_exact, scope_hash_database_error_hidden, scope_hash_missing, scope_hash_forbidden
   and scope_returns_user distinguish all exception types and ordering. B782 owns HTTP translation.
@@ -143,7 +144,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B2314 owns _user_has_admin_view; B722 owns repository adapters, B723/B724 user/team repositories,
-    B778 key-info access and B800 team role/permission checks. B897 owns query plans, not these helpers.
+    B10068 key-info access and B800 team role/permission checks. B897 owns query plans, not these helpers.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -181,8 +182,9 @@ out_of_scope:
     (L5171-L5188), delete_key_aliases (L5191-L5208).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B778 owns _build_model_max_budget_usage
     (L4178-L4188), _window_max_budget (L4191-L4199), _budget_window_usage (L4202-L4228), _build_budget_limits_usage
-    (L4231-L4245), info_key_fn_v2 (L4254-L4343), info_key_fn (L4348-L4479), _find_deleted_key_info (L4482-L4491),
-    _can_user_query_key_info (L7606-L7627).'
+    (L4231-L4245), info_key_fn_v2 (L4254-L4343), info_key_fn (L4348-L4479), _find_deleted_key_info (L4482-L4491).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B10068 owns _can_user_query_key_info
+    (L7606-L7627).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B780 owns _check_proxy_or_team_admin_for_key
     (L5989-L6015), _validate_reset_spend_value (L6018-L6053), _set_spend_counter_with_floor_and_broadcast
     (L6056-L6087), _budget_limit_windows (L6090-L6104), _advance_one_key_budget_window (L6107-L6131),

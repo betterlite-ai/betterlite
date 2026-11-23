@@ -1,0 +1,10 @@
+kind: helper
+name: supported-db-objects-empty-list-loads-no-kind
+call:
+  b10054:
+    general_settings:
+      supported_db_objects: []
+    object_type: models
+env: {}
+compare:
+  ignore: []

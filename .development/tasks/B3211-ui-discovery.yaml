@@ -15,7 +15,7 @@ description: >-
 
   Config section `ui_discovery` in betterlite-config (crates/betterlite-config/src/sections/ui_discovery.rs). `Settings { auto_redirect_ui_login_to_sso: bool, admin_ui_disabled: bool, mcp_stdio_enabled: bool }`, each false when nothing is set. Read the three env variables through the same `EnvironmentLookup` the section `request_root_paths` uses, and general_settings.auto_redirect_ui_login_to_sso as an optional bool. The env booleans use the config crate's shared env bool parser (docs/compatibility.md: true, false, 1, 0, yes, no, on, off in any case, spaces trimmed, empty means unset, anything else is a load error naming the variable); find it in the neighbor sections and do not add a second parser. When both the env variable and the key are present for auto_redirect_ui_login_to_sso, the result is true if either is true. Register the section the way `request_root_paths` is registered; the skeleton creates the stub and the sections.rs lines.
 
-  The same section module also holds two pure items from stdio_gate.py that nothing else owns: `pub const MCP_STDIO_ENABLED_ENV_VAR: &str = "LITELLM_ENABLE_MCP_STDIO"` and `pub fn is_mcp_stdio_flag_key(name: &str) -> bool` (true when the name uppercased equals that constant, L18-L19). The loaders for config `environment_variables` and for the stored environment variables call it to skip and warn about that key; they are not built here.
+  Read LITELLM_ENABLE_MCP_STDIO through B10075's `MCP_STDIO_ENABLED_ENV_VAR` in betterlite_config::sections::mcp_env_values, and do not spell the name again in this section. B10075 also owns `is_mcp_stdio_flag_key`, which the environment loaders use; this task does not need it.
 
   Module `ui_discovery` in betterlite-server (crates/betterlite-server/src/ui_discovery.rs). Public items:
 
@@ -24,7 +24,7 @@ description: >-
   3. `UiDiscovery::new(inputs: UiDiscoveryInputs) -> UiDiscovery` and `UiDiscovery::response(&self) -> UiDiscoveryResponse`, which applies rules 4, 5, 6 and 7 above.
   4. `routes(discovery: Arc<UiDiscovery>) -> axum::Router`, with `get` on both paths returning 200 and the JSON with content-type application/json. The router has no auth layer. B8670 merges it into the app once, outside the auth layers; this task does not touch routes.rs, server.rs or state.rs.
 
-  The functions cannot fail, so the module has no error enum. Tests under `ui_discovery::tests` cover: defaults (all false, "" root, null base, empty workers), proxy_base_url "" kept, auto redirect needing sso_configured, each of the two sources of auto redirect, admin_ui_disabled, mcp_stdio_enabled, a non-empty registry giving is_control_plane true with the three worker fields, an empty registry giving false and an empty list, field order in the JSON text, and both paths returning identical bodies with no Authorization header. Config tests under `sections::ui_discovery::` cover each env variable set to true, false and unset, the general_settings key as true, false and absent, either-source-true for auto redirect, an invalid bool failing with the variable name, and `is_mcp_stdio_flag_key` for "LITELLM_ENABLE_MCP_STDIO", "litellm_enable_mcp_stdio" and an unrelated name.
+  The functions cannot fail, so the module has no error enum. Tests under `ui_discovery::tests` cover: defaults (all false, "" root, null base, empty workers), proxy_base_url "" kept, auto redirect needing sso_configured, each of the two sources of auto redirect, admin_ui_disabled, mcp_stdio_enabled, a non-empty registry giving is_control_plane true with the three worker fields, an empty registry giving false and an empty list, field order in the JSON text, and both paths returning identical bodies with no Authorization header. Config tests under `sections::ui_discovery::` cover each env variable set to true, false and unset, the general_settings key as true, false and absent, either-source-true for auto redirect, and an invalid bool failing with the variable name.
 
   The oracle cases are helper cases (no route reaches this code until B8670 mounts it, and B8670 adds the HTTP cases). The Python adapter sets the env, builds the document from LiteLLM's own `has_user_setup_sso`, `should_hide_default_credentials_hint`, `is_mcp_stdio_enabled`, `get_proxy_base_url`, `get_server_root_path` and `UiDiscoveryEndpoints`, and returns the model's JSON.
 scope:
@@ -45,8 +45,8 @@ references:
     why: Both route decorators and the handler that builds every field.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/discovery_endpoints/ui_discovery_endpoints.py#L6-L15
     why: The response model, its field order and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L7-L19
-    why: The stdio env var name, is_mcp_stdio_enabled and is_mcp_stdio_flag_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L14-L15
+    why: is_mcp_stdio_enabled, which mcp_stdio_enabled reports. The variable name it reads is B10075's constant.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/control_plane_endpoints.py#L1-L14
     why: WorkerRegistryEntry, the shape of each item in workers. B4470 owns the type.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7092-L7098
@@ -67,8 +67,6 @@ dod:
     proof: [discovery-tests, oracle]
   - text: A non-empty worker registry gives is_control_plane true and lists each worker; an empty one gives false and an empty list.
     proof: [discovery-tests]
-  - text: is_mcp_stdio_flag_key matches LITELLM_ENABLE_MCP_STDIO in any case and nothing else.
-    proof: [config-tests]
 
 checks:
   optional: []
@@ -77,7 +75,7 @@ checks:
       why: the response model, the field rules or the two routes are missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_discovery::/)'
     - id: config-tests
-      why: the ui_discovery section does not load its env variables and key, or the flag key check is wrong
+      why: the ui_discovery section does not load its env variables and key
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::ui_discovery::/)'
 
 oracle_cases:
@@ -101,6 +99,7 @@ out_of_scope:
   - "get_proxy_base_url, get_custom_url and join_paths in proxy/utils.py: B7323. The discovery document returns the raw variable."
   - "has_user_setup_sso: B881. should_hide_default_credentials_hint: B799."
   - "is_mcp_stdio_blocked, warn_if_mcp_stdio_blocked and MCP_STDIO_DISABLED_MESSAGE in stdio_gate.py: B4716 builds them next to its StdioPolicy (B136 covers the file)."
+  - "MCP_STDIO_ENABLED_ENV_VAR and is_mcp_stdio_flag_key in stdio_gate.py (L7, L18-L19): B10075, in betterlite-config's mcp_env_values section. This task imports the constant."
   - "WorkerRegistryEntry (control_plane_endpoints.py): B4470."
   - "Every other function in proxy/utils.py: B124 and the tasks split from it."
   - "The worker_registry config loader and its premium gate (proxy_server.py L7092-L7098): B8590, which refuses the key without a license as open-source LiteLLM does, so workers stays empty."

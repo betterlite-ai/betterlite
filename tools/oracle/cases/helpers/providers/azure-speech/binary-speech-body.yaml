@@ -1,0 +1,26 @@
+kind: helper
+name: azure-binary-speech-body
+call:
+  azure_speech:
+    audio_speech:
+      model: tts
+      input: hello
+      voice: alloy
+      api_base: https://example.openai.azure.com
+      api_version: "2024-06-01"
+      api_key: sk-azure-fixture
+      aspeech: true
+      optional_params:
+        max_retries: 4
+        extra_headers: {x-extra: "yes"}
+        extra_query: {api-version: "2024-07-01", trace: abc}
+        extra_body: {instructions: hi}
+        timeout: 3.5
+        response_format: mp3
+        speed: 1.5
+      reply:
+        status: 200
+        headers: {content-type: audio/mpeg}
+        body: ID3
+env: {}
+compare: {ignore: []}
