@@ -4221,6 +4221,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
@@ -4228,8 +4229,11 @@ dependencies = [
  "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-tokenizer",
+ "bytes",
  "chrono",
  "http 1.5.0",
+ "indexmap 2.14.2",
+ "mutants",
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
@@ -4241,6 +4245,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "url",
  "uuid",
 ]
 
