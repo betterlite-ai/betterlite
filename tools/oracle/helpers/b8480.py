@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
-from typing import Final, Protocol, TypedDict, runtime_checkable
+from collections.abc import Awaitable, Callable
+from typing import Final, Never, Protocol, TypedDict, runtime_checkable
 
 from litellm.proxy import proxy_server
 from litellm.proxy._types import LiteLLM_TeamTable, LiteLLM_UserTable, UserAPIKeyAuth
@@ -57,11 +57,12 @@ class CountingTokens:
 
     async def __call__(
         self,
-        _body: Mapping[str, JsonValue],
-        _route: str,
-        _router: Router | None,
-        _raw: bytes | None = None,
-    ) -> Mapping[str, int]:
+        request_body: dict[str, JsonValue],
+        route: str,
+        llm_router: Router | None,
+        raw_body: bytes | None = None,
+    ) -> Never:
+        del request_body, route, llm_router, raw_body
         raise CountingError
 
 
