@@ -9,7 +9,7 @@ description: >-
 
   Code goes in crates/betterlite-server/src/app/mcp/oauth_flows.rs and app/mcp/oauth_flows/ (cipher.rs, upstream.rs,
   users.rs, gateway.rs, store.rs, a tests.rs beside each). `McpOauth::build(core: &McpCore, identity: &McpIdentity,
-  tokens: &McpTokens, shared: &Shared) -> McpOauth`, Arc fields, no global; this task adds it as the field `oauth` of B8620's McpState and one
+  tokens: &McpTokens, config: &Config, shared: &Shared) -> McpOauth`, Arc fields, no global; this task adds it as the field `oauth` of B8620's McpState and one
   line in McpState::build (app/mcp/state.rs). It reads `shared.http`, `shared.db`,
   `shared.redis`, `shared.cache` and `shared.jwt_signer`.
 
@@ -60,11 +60,22 @@ description: >-
   OauthFlows port is kept in McpOauth so B8624 can hand it to B4719's OauthRoutes.
 
 
+  Redirect allowlists. B4655's validate_trusted_redirect_uri takes a `&RedirectAllowlists`, and B7531's DcrFlows and
+  B7532's AuthFlows call it. Build the one value here with a struct literal from B10094's
+  config.sections.mcp_redirect_trust: origins is B4655's parse_trusted_redirect_origins(&trusted_origins) and
+  native_callbacks is B10062's native_callbacks(&native_redirect_uris). Keep it in McpOauth as
+  `redirect_allowlists: Arc<RedirectAllowlists>` and hand the same Arc to DcrFlows and AuthFlows when you build them;
+  B8702 takes it from McpState for B7971's RedirectTrust and register path. Nothing here reads
+  MCP_TRUSTED_REDIRECT_ORIGINS or MCP_TRUSTED_NATIVE_REDIRECT_URIS.
+
+
   Tests in app::mcp::oauth_flows:: : SealCipher round-trips and returns None for a tampered value; UpstreamHttp and
   UpstreamForm against a local axum test server send the expected headers and map a refused connection to a
   TransportFailure; the guard is Local without Redis and a second claim of the same key is replayed; JwtSigner reports no
   signer on an empty slot and the signer's JWKS after one is set; ClientStore answers the no-database failure; and
-  McpOauth builds from McpCore, McpIdentity and McpTokens built from config only.
+  McpOauth builds from McpCore, McpIdentity and McpTokens built from config only; and a config whose
+  mcp_redirect_trust section lists an origin and a native callback gives DcrFlows, AuthFlows and McpOauth one
+  RedirectAllowlists (Arc::ptr_eq) holding both, lowercased, after the built-in cursor callback.
 scope:
   paths:
     - crates/betterlite-server/src/app/mcp/state.rs
@@ -72,16 +83,20 @@ scope:
     - crates/betterlite-server/src/app/mcp/oauth_flows/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L4656-L4962
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1926-L2379
     why: The authorize, token, revoke, introspect and CLI discovery routes whose globals become the ports here.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L5603-L5662
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2873-L2930
     why: openid_configuration and jwks_json, which read get_mcp_jwt_signer on every request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L385
+    why: _parse_trusted_redirect_origins and _parse_trusted_native_redirect_uris, the two allowlists, which LiteLLM parses from the environment on every call and betterlite builds once here.
 dod:
   - text: SealCipher, UpstreamHttp, UpstreamForm, FaultRenderer, UserAccess, BridgeMint, IdentityBinding, UserTokenStore, ClientStore, DiscoveryJoin and Decryptor have production implementations.
     proof: [oauth-flow-tests]
   - text: The single-use guard is Shared over Redis when a client exists and Local otherwise, chosen once.
     proof: [oauth-flow-tests]
   - text: OauthRoot reads the JWT signer from the shared slot on every request.
+    proof: [oauth-flow-tests]
+  - text: McpOauth, DcrFlows and AuthFlows share one RedirectAllowlists built from config.sections.mcp_redirect_trust, and nothing in the wiring reads the two variables.
     proof: [oauth-flow-tests]
 checks:
   optional: []

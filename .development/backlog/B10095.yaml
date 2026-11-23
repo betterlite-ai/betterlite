@@ -1,0 +1,13 @@
+id: B10095
+milestone: M7 observability
+title: Prometheus multiprocess collector
+status: todo
+depends_on: [B10090, B3875]
+file: tasks/B10095-prometheus-multiprocess-collector.yaml
+covers: []
+parent: B111
+split_from: B3886
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

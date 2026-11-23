@@ -102,7 +102,8 @@ pitfalls:
 - "`create_file` defaults `custom_llm_provider` to None, while `acreate_file` defaults it to \"openai\"."
 - "A file object read by `to_call_payload` must be put back at its start position, since the caller may read it again."
 - "`afile_list` and `file_list` have no return annotation at the pin, so the result type must come from the data and not the signature."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, ARG001). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 5
