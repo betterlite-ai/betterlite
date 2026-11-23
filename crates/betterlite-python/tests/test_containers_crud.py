@@ -7,11 +7,11 @@ from collections.abc import Coroutine
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol
-from typing_extensions import TypedDict
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite.containers._crud import (
@@ -237,8 +237,8 @@ def rows_of(signature: inspect.Signature) -> list[tuple[str, str, str]]:
 def dumped_of(
     response: ContainerObject | ContainerListResponse | DeleteContainerResult,
 ) -> dict[str, JsonValue]:
-    dumped = response.model_dump()
-    return DUMP.validate_python(dumped)
+    encoded = response.model_dump_json()
+    return DUMP.validate_json(encoded)
 
 
 def hidden_of(container: ContainerObject) -> dict[str, JsonValue]:
