@@ -174,6 +174,7 @@ pub(super) async fn deployment_additional_drop_params() {
     assert!(body.get("additional_drop_params").is_none());
     request_list_replaces_the_deployment_list().await;
     provider_name_dropped().await;
+    standard_parameter_nested_paths().await;
     nested_path_dropped().await;
 }
 
@@ -218,7 +219,7 @@ async fn provider_name_dropped() {
     );
 }
 
-async fn nested_path_dropped() {
+async fn standard_parameter_nested_paths() {
     // utils.py L5035-L5041: a dotted additional_drop_params entry deletes the nested key and the call goes out
     let nested = format!(
         r#"{{"model":"{MODEL}","messages":{MESSAGES},"logit_bias":{{"1":2,"2":3}},"additional_drop_params":["logit_bias.1"]}}"#
@@ -238,6 +239,9 @@ async fn nested_path_dropped() {
         served.get("metadata").is_none(),
         "a nested path under metadata still serves the call"
     );
+}
+
+async fn nested_path_dropped() {
     // LiteLLM moves a provider-specific param under extra_body before the delete, so a bare name finds nothing
     let forwarded = format!(
         r#"{{"model":"{MODEL}","messages":{MESSAGES},"x_custom":{{"keep":1,"drop":2}},"additional_drop_params":["x_custom.drop"]}}"#
