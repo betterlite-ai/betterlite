@@ -1,0 +1,6 @@
+task: B10084
+deviations:
+  - what: CompactionExecutor's execute takes logging_disabled as a fourth argument; LiteLLM's executor reads turn_off_message_logging from the privacy context variable the summary call inherits.
+    why: Rust has no inherited context variables, and the value depends on the parent payload, so the summary caller passes it on each call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L39-L42
+kept_bugs: []
