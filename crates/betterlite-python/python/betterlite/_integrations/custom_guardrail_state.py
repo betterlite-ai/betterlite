@@ -33,22 +33,6 @@ from betterlite.types.guardrails.params import GuardrailEventHooks, Mode
 
 
 class GuardrailState(CustomLogger):
-    guardrail_name: str | None
-    supported_event_hooks: list[GuardrailEventHooks] | None
-    event_hook: GuardrailEventHooks | list[GuardrailEventHooks] | Mode | None
-    default_on: bool
-    mask_request_content: bool
-    mask_response_content: bool
-    violation_message_template: str | None
-    end_session_after_n_fails: int | None
-    on_violation: str | None
-    realtime_violation_message: str | None
-    on_sensitive_data: str | None
-    sensitive_data_route_to_model: str | None
-    sticky_session_routing: bool
-    run_in_parallel: bool
-    scan_raw_request: bool
-    only_scan_new_messages: bool
     timeout: float | None = None
     use_native_during_call_hook: bool = False
     use_native_lifecycle_hooks: bool = False
@@ -182,8 +166,7 @@ class GuardrailState(CustomLogger):
         )
 
     def _get_session_id_from_request_data(self, request_data: dict[str, JsonValue]) -> str | None:
-        found = session_id_from_request_data(request_data)
-        return found
+        return session_id_from_request_data(request_data)
 
     @staticmethod
     def _scanned_text_hash(text: str) -> str:
