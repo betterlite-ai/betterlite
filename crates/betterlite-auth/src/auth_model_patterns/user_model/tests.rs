@@ -217,6 +217,24 @@ fn sentinel_message_joins_list_models() {
     );
 }
 
+// an empty request has no name to join, so the sentinel message ends at the sentence's space
+#[test]
+fn sentinel_message_for_no_models_is_empty() {
+    let row = user(&["no-default-models"]);
+    let aliases = empty_aliases();
+    let provider = UnresolvedProviderInference;
+    let ctx = context(&aliases, &provider);
+
+    let decision = can_user_call_model(&RequestedModels::None, Some(&row), &empty_aliases(), &ctx);
+
+    let denial = denial_of(decision);
+    assert_eq!(
+        denial.sanitized_internal_message(),
+        "User not allowed to access model. No default model access, only team models allowed. \
+         Tried to access "
+    );
+}
+
 // docs/deviations/B10051.yaml: B871's projection empties the column on one non-string item, even around the sentinel
 #[test]
 fn invalid_model_column_treated_as_empty() {
