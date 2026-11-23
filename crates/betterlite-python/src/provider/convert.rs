@@ -70,8 +70,5 @@ pub(crate) fn encode<T>(value: &T) -> Result<String, ProviderError>
 where
     T: Serialize + ?Sized,
 {
-    match serde_json::to_string(value) {
-        Ok(text) => Ok(text),
-        Err(source) => Err(ProviderError::Encode { source }),
-    }
+    serde_json::to_string(value).map_err(|source| ProviderError::Encode { source })
 }

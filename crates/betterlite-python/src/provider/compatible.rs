@@ -24,10 +24,27 @@ pub(crate) fn openai_compatible_info(
         return Err(wrap(&format!("{text} has no provider prefix"), text));
     };
     if let Ok(provider) = prefix.parse::<ProviderId>() {
-        known(snapshot, provider, rest, request)
-    } else {
-        unlisted(snapshot, prefix, rest, request)
+        return known(snapshot, provider, rest, request);
     }
+    // Only api_base inference can name anyscale, since LiteLLM's provider list has no member for it.
+    if prefix == "anyscale" {
+        let context = snapshot.context();
+        let first = RequestA {
+            provider: DefaultsProvider::Anyscale,
+            model: rest.to_owned(),
+            api_base: request.api_base.clone(),
+            api_key: request.api_key.clone(),
+        };
+        return resolve_a(
+            first,
+            context.environment,
+            &context.registry,
+            &context.policies,
+        )
+        .map(from_a)
+        .map_err(|source| wrap(&source, &request.model));
+    }
+    Ok(kept(prefix, rest, request))
 }
 
 fn known(
@@ -49,27 +66,18 @@ fn known(
         &context.registry,
         &context.policies,
     ) {
-        Ok(resolved) => Ok(from_a(resolved)),
-        Err(DefaultsAError::UnknownProvider { .. }) => second(snapshot, provider, model, request),
-        Err(source) => Err(wrap(&source, &request.model)),
+        Ok(resolved) => return Ok(from_a(resolved)),
+        Err(DefaultsAError::UnknownProvider { .. }) => {}
+        Err(source) => return Err(wrap(&source, &request.model)),
     }
-}
-
-fn second(
-    snapshot: &ProviderSnapshot,
-    provider: ProviderId,
-    model: &str,
-    request: &CompatibleRequest,
-) -> Result<LookupResult, ProviderError> {
-    let context = snapshot.context();
     let fallback = kept(<&'static str>::from(provider), model, request);
-    let request_b = RequestB {
+    let second = RequestB {
         provider,
         model: model.to_owned(),
         api_base: request.api_base.clone(),
         api_key: request.api_key.clone(),
     };
-    match resolve_b(request_b, &context.globals, context.environment) {
+    match resolve_b(second, &context.globals, context.environment) {
         Ok(resolved) => Ok(LookupResult {
             model: resolved.model,
             provider: <&'static str>::from(provider).to_owned(),
@@ -79,33 +87,6 @@ fn second(
         Err(DefaultsBError::UnknownProvider { .. }) => Ok(fallback),
         Err(source) => Err(wrap(&source, &request.model)),
     }
-}
-
-// Only api_base inference can name anyscale, since LiteLLM's provider list has no member for it.
-fn unlisted(
-    snapshot: &ProviderSnapshot,
-    prefix: &str,
-    model: &str,
-    request: &CompatibleRequest,
-) -> Result<LookupResult, ProviderError> {
-    if prefix == "anyscale" {
-        let context = snapshot.context();
-        let first = RequestA {
-            provider: DefaultsProvider::Anyscale,
-            model: model.to_owned(),
-            api_base: request.api_base.clone(),
-            api_key: request.api_key.clone(),
-        };
-        return resolve_a(
-            first,
-            context.environment,
-            &context.registry,
-            &context.policies,
-        )
-        .map(from_a)
-        .map_err(|source| wrap(&source, &request.model));
-    }
-    Ok(kept(prefix, model, request))
 }
 
 // A provider no table answers for keeps the caller's base and key, the dynamic key winning when it is set.
