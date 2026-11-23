@@ -47,7 +47,9 @@ impl TextToSpeechConfig for AvaSpeechConfig {
         let voice = options.voice.as_ref().and_then(prompt_voice);
         let optional = SpeechOptionalParams {
             response_format: text(&optional_params, "response_format"),
-            speed: number(&optional_params, "speed"),
+            speed: optional_params
+                .get("speed")
+                .and_then(|value| value.as_f64()),
         };
         let kwargs = SpeechKwargs {
             style: text(&options.kwargs, "style"),
@@ -173,9 +175,4 @@ fn text(params: &Object, name: &str) -> Option<String> {
         .get(name)
         .and_then(|value| value.as_str())
         .map(str::to_owned)
-}
-
-fn number(params: &Object, name: &str) -> Option<f64> {
-    let value = params.get(name)?;
-    value.as_f64()
 }

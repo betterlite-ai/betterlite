@@ -213,13 +213,29 @@ fn probe_call(scenario: &ProbeScenario) -> ProbeCall<'_> {
 }
 
 fn request_view(request: &OutboundRequest) -> HelperResult {
+    let api_key = request
+        .headers
+        .get("api-key")
+        .and_then(|value| value.to_str().ok());
+    let authorization = request
+        .headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    let accept = request
+        .headers
+        .get("accept")
+        .and_then(|value| value.to_str().ok());
+    let x_extra = request
+        .headers
+        .get("x-extra")
+        .and_then(|value| value.to_str().ok());
     Ok(json!({
         "method": request.method.as_str(),
         "url": request.url.as_str(),
-        "api_key": header(request, "api-key"),
-        "authorization": header(request, "authorization"),
-        "accept": header(request, "accept"),
-        "x_extra": header(request, "x-extra"),
+        "api_key": api_key,
+        "authorization": authorization,
+        "accept": accept,
+        "x_extra": x_extra,
         "body": request_body(&request.body)?,
     }))
 }
@@ -235,11 +251,6 @@ fn request_body(body: &RequestBody) -> Result<Value, Box<HelperError>> {
         RequestBody::Empty => Ok(Value::Null),
         RequestBody::Multipart { .. } => Err(fixture_failure("a speech request is not multipart")),
     }
-}
-
-fn header<'request>(request: &'request OutboundRequest, name: &str) -> Option<&'request str> {
-    let value = request.headers.get(name)?;
-    value.to_str().ok()
 }
 
 // A status failure is compared as the SDK's status code; any other failure as its class and message.
