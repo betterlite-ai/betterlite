@@ -510,3 +510,10 @@ path = "fuzz_targets/log_metadata.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "claude_plugin_read"
+path = "fuzz_targets/claude_plugin_read.rs"
+test = false
+doc = false
+bench = false
