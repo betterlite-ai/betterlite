@@ -52,7 +52,7 @@ pub enum MemberBudgetError {
     #[error("the stored budget row is not readable")]
     Decode(#[source] Box<AuthReadError<TableError>>),
     #[error("the budget cache failed")]
-    Cache(#[source] AuthCacheError),
+    Cache(#[from] AuthCacheError),
 }
 
 impl From<PayloadError> for MemberBudgetError {
