@@ -18,7 +18,7 @@ pub(super) async fn failure_attribution() {
 
 async fn null_completed() {
     let error = failure(Outcome::Completed(None)).await;
-    assert!(matches!(error.cause, AsyncCreateCause::NullResponse));
+    assert!(matches!(*error.cause, AsyncCreateCause::NullResponse));
     assert_eq!(error.cause.to_string(), NULL);
     assert_eq!(error.provider, "openai");
     assert_eq!(error.model, "openai/gpt-4o");
@@ -44,7 +44,7 @@ async fn null_pending() {
         Err(error) => error,
     };
     assert_eq!(handoff.polls(), 2);
-    assert!(matches!(error.cause, AsyncCreateCause::NullResponse));
+    assert!(matches!(*error.cause, AsyncCreateCause::NullResponse));
     let mapped = support::failure(&error);
     assert_eq!(mapped.class, "APIConnectionError");
     assert_eq!(mapped.status, 500);

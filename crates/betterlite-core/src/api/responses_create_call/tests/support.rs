@@ -1,7 +1,7 @@
 use std::future::{self, Future};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context as TaskContext, Poll};
 use std::time::Duration;
 
@@ -21,11 +21,12 @@ use betterlite_models::resolution::{
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
+use serde_json::value::RawValue;
 
 use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_create::bridge::{Created, StampedResponse};
 use crate::api::responses_create::call::ResponsesCreateCall;
-use crate::api::responses_create::error::CreateError;
+use crate::api::responses_create::error::{CreateError, CreateFailure};
 use crate::api::responses_create::execute::mock_responses_api_response;
 use crate::api::responses_create_http::service::{
     CreateLive, CreateSynthetic, LogContext, StreamSetup,
@@ -70,10 +71,7 @@ pub(super) fn stamped(id: &str) -> Created<Token> {
 }
 
 pub(super) fn raw(text: &str) -> Created<Token> {
-    Created::Raw(
-        serde_json::value::RawValue::from_string(String::from(text))
-            .expect("the test raw value parses"),
-    )
+    Created::Raw(RawValue::from_string(String::from(text)).expect("the test raw value parses"))
 }
 
 fn stream_setup() -> StreamSetup {
@@ -182,19 +180,18 @@ impl ModelResolver for ScriptedResolver {
             custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
             api_base: request.api_base.map(str::to_owned),
         };
-        let mut requests = self.requests.lock().expect("the resolver lock is free");
+        let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
         requests.push(seen);
         drop(requests);
-        let (provider, model) = match request.custom_llm_provider {
-            Some(given) => (given.to_owned(), strip(given, request.model).to_owned()),
-            None => {
-                let Some((prefix, rest)) = request.model.split_once('/') else {
-                    return Err(ResolutionError::MissingProvider {
-                        model: request.model.to_owned(),
-                    });
-                };
-                (prefix.to_owned(), rest.to_owned())
-            }
+        let (provider, model) = if let Some(given) = request.custom_llm_provider {
+            (given.to_owned(), strip(given, request.model).to_owned())
+        } else {
+            let Some((prefix, rest)) = request.model.split_once('/') else {
+                return Err(ResolutionError::MissingProvider {
+                    model: request.model.to_owned(),
+                });
+            };
+            (prefix.to_owned(), rest.to_owned())
         };
         Ok(ResolvedModel {
             model,
@@ -472,9 +469,7 @@ pub(super) fn input_json(call: &ResponsesCreateCall) -> Json {
     transcode(&call.input).expect("the handed-off input converts")
 }
 
-pub(super) fn failure(
-    error: &AsyncCreateError,
-) -> crate::api::responses_create::error::CreateFailure {
+pub(super) fn failure(error: &AsyncCreateError) -> CreateFailure {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
     error.sdk_failure(&redactor)
 }

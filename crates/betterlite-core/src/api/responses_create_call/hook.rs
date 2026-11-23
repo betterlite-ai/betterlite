@@ -65,7 +65,7 @@ pub(super) async fn prompted(
         call,
         provider,
         kwargs,
-        answer,
+        merged: answer,
     };
     let input = state.input()?;
     let final_provider = state.provider(deps.resolver)?;
@@ -169,21 +169,21 @@ struct Answer<'call> {
     call: &'call ResponsesCreateCall,
     provider: String,
     kwargs: ParameterMap,
-    answer: MergeAnswer,
+    merged: MergeAnswer,
 }
 
 impl Answer<'_> {
     fn input(&self) -> Result<ResponsesInput, AsyncCreateError> {
         let original = transcode(&self.call.input).map_err(|error| {
-            AsyncCreateError::create(CreateError::from(error), &self.provider, &self.answer.model)
+            AsyncCreateError::create(CreateError::from(error), &self.provider, &self.merged.model)
         })?;
-        let merged = match merge_prompt_management_input(&original, &self.answer.messages) {
+        let merged = match merge_prompt_management_input(&original, &self.merged.messages) {
             Ok(outcome) => outcome.input,
             Err(error) => {
                 return Err(AsyncCreateError::create(
                     CreateError::Prompt(PromptError::Merge(error)),
                     &self.provider,
-                    &self.answer.model,
+                    &self.merged.model,
                 ));
             }
         };
@@ -191,20 +191,20 @@ impl Answer<'_> {
             AsyncCreateError::create(
                 CreateError::Rewrite(error),
                 &self.provider,
-                &self.answer.model,
+                &self.merged.model,
             )
         })
     }
 
     fn provider(&self, resolver: &dyn ModelResolver) -> Result<String, AsyncCreateError> {
-        if self.answer.model == self.call.model {
+        if self.merged.model == self.call.model {
             return Ok(self.provider.clone());
         }
         swapped_provider(
             resolver,
             self.call,
             &self.provider,
-            &self.answer.model,
+            &self.merged.model,
             &self.kwargs,
         )
     }
@@ -224,20 +224,20 @@ impl Answer<'_> {
         let mut outcome = IndexMap::new();
         outcome.insert(
             String::from("merged_optional_params"),
-            JsonValue::Object(self.answer.optional_params),
+            JsonValue::Object(self.merged.optional_params),
         );
         outcome.insert(
             String::from("deployment_model_info"),
             deployment.unwrap_or(JsonValue::Null),
         );
-        let model = self.answer.model;
+        let model = self.merged.model;
         converted.kwargs.shift_remove("prompt_id");
         converted.kwargs.insert(
             String::from(ASYNC_PROMPT_MERGED_PARAMS),
             JsonValue::Object(outcome),
         );
         converted.input = input;
-        converted.model = model.clone();
+        converted.model.clone_from(&model);
         converted.custom_llm_provider = Some(final_provider.clone());
         PreparedCall {
             call: converted,

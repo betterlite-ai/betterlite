@@ -67,17 +67,23 @@ async fn encoded_untouched() {
 async fn untyped_passthrough() {
     match run(Outcome::Completed(Some(support::raw(r#"{"id":"resp_a"}"#)))).await {
         Created::Raw(value) => assert_eq!(value.get(), r#"{"id":"resp_a"}"#),
-        _ => panic!("the raw body stays raw"),
+        Created::Responses(_) | Created::Live(_) | Created::Synthetic(_) | Created::Chat(_) => {
+            panic!("the raw body stays raw")
+        }
     }
     match run(Outcome::Completed(Some(support::live()))).await {
         Created::Live(live) => assert_eq!(live.setup.model, "openai/gpt-4o"),
-        _ => panic!("the live stream stays live"),
+        Created::Responses(_) | Created::Raw(_) | Created::Synthetic(_) | Created::Chat(_) => {
+            panic!("the live stream stays live")
+        }
     }
     match run(Outcome::Completed(Some(support::synthetic()))).await {
         Created::Synthetic(synthetic) => {
             assert_eq!(synthetic.setup.custom_llm_provider, "openai");
         }
-        _ => panic!("the synthetic stream stays synthetic"),
+        Created::Responses(_) | Created::Raw(_) | Created::Live(_) | Created::Chat(_) => {
+            panic!("the synthetic stream stays synthetic")
+        }
     }
 }
 

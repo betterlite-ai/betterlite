@@ -160,7 +160,7 @@ async fn credential_boundary() {
         Err(error) => error,
     };
     assert!(matches!(
-        error.cause,
+        *error.cause,
         AsyncCreateCause::CredentialBoundary(_)
     ));
     assert_eq!(error.provider, "anthropic");

@@ -78,6 +78,12 @@ fn supplied(call: &ResponsesCreateCall) {
 
 // text_format becomes text, the sync entry gets the trusted async flag, and the options nobody set stay absent
 fn omitted(call: &ResponsesCreateCall) {
+    converted(call);
+    absent_requests(call);
+    absent_transport(call);
+}
+
+fn converted(call: &ResponsesCreateCall) {
     assert_eq!(call.text_format, None);
     assert_eq!(
         call.text,
@@ -86,6 +92,9 @@ fn omitted(call: &ResponsesCreateCall) {
     assert_eq!(call.kwargs.len(), 1);
     assert_eq!(call.kwargs.get("aresponses"), Some(&JsonValue::Bool(true)));
     assert_eq!(support::input_json(call), support::json("\"hello\""));
+}
+
+fn absent_requests(call: &ResponsesCreateCall) {
     assert_eq!(call.include, None);
     assert_eq!(call.max_output_tokens, None);
     assert_eq!(call.prompt, None);
@@ -93,13 +102,12 @@ fn omitted(call: &ResponsesCreateCall) {
     assert_eq!(call.previous_response_id, None);
     assert_eq!(call.reasoning, None);
     assert_eq!(call.stream, None);
-    assert_eq!(
-        call.text,
-        Some(support::json(r#"{"format":{"type":"json_object"}}"#))
-    );
     assert_eq!(call.tool_choice, None);
     assert_eq!(call.tools, None);
     assert_eq!(call.top_p, None);
+}
+
+fn absent_transport(call: &ResponsesCreateCall) {
     assert_eq!(call.truncation, None);
     assert_eq!(call.user, None);
     assert_eq!(call.extra_query, None);

@@ -23,7 +23,7 @@ pub enum AsyncCreateCause {
 #[derive(Debug, Error)]
 #[error("{cause}")]
 pub struct AsyncCreateError {
-    pub cause: AsyncCreateCause,
+    pub cause: Box<AsyncCreateCause>,
     pub provider: String,
     pub model: String,
 }
@@ -31,7 +31,7 @@ pub struct AsyncCreateError {
 impl AsyncCreateError {
     pub(super) fn create(error: CreateError, provider: &str, model: &str) -> Self {
         Self {
-            cause: AsyncCreateCause::Create(error),
+            cause: Box::new(AsyncCreateCause::Create(error)),
             provider: provider.to_owned(),
             model: model.to_owned(),
         }
@@ -39,16 +39,18 @@ impl AsyncCreateError {
 
     // LiteLLM raises BadRequestError(model=swapped, llm_provider=swapped) and exception_type hands it back unchanged
     pub(super) fn boundary(error: CredentialBoundaryError) -> Self {
+        let provider = error.provider.clone();
+        let model = error.model.clone();
         Self {
-            provider: error.provider.clone(),
-            model: error.model.clone(),
-            cause: AsyncCreateCause::CredentialBoundary(error),
+            cause: Box::new(AsyncCreateCause::CredentialBoundary(error)),
+            provider,
+            model,
         }
     }
 
     pub(super) fn null_response(provider: String, model: String) -> Self {
         Self {
-            cause: AsyncCreateCause::NullResponse,
+            cause: Box::new(AsyncCreateCause::NullResponse),
             provider,
             model,
         }
@@ -56,7 +58,7 @@ impl AsyncCreateError {
 
     #[must_use]
     pub fn sdk_failure(&self, redactor: &Redactor) -> CreateFailure {
-        match &self.cause {
+        match self.cause.as_ref() {
             AsyncCreateCause::Create(error) => {
                 error.sdk_failure(&self.provider, &self.model, redactor)
             }
