@@ -3,8 +3,9 @@ mod impls;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_server::shadow_eval_lifecycle::store::{
-    LegRow, TargetKeyRow, TargetRows, TargetTeamRow, TargetUserRow,
+    TargetKeyRow, TargetRows, TargetTeamRow, TargetUserRow,
 };
+use betterlite_server::shadow_result_aggregation::legs::LegRow;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use thiserror::Error;

@@ -1,8 +1,9 @@
 use betterlite_server::shadow_eval_job_loading::jobs::ShadowEvalDirection;
-use betterlite_server::shadow_eval_lifecycle::store::{LegRow, target_type_text};
 use betterlite_server::shadow_eval_models::ShadowEvalStatus;
 use betterlite_server::shadow_eval_models::ShadowEvalTargetType;
 use betterlite_server::shadow_eval_models::job::{ShadowJobResponse, ShadowLeg};
+use betterlite_server::shadow_result_aggregation::legs::LegRow;
+use betterlite_server::shadow_result_aggregation::targets::target_type_name;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,7 +106,7 @@ pub(super) fn leg_state(leg: &LegRow) -> String {
         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{:.2}|{}|{}",
         leg.id,
         leg.group_id,
-        target_type_text(leg.target_type),
+        target_type_name(leg.target_type),
         leg.target_id,
         leg.router_names.join(","),
         leg.models.join(","),

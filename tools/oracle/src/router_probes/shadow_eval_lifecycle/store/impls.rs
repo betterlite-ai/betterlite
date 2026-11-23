@@ -3,10 +3,11 @@ use std::sync::PoisonError;
 use async_trait::async_trait;
 use betterlite_server::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use betterlite_server::shadow_eval_lifecycle::store::{
-    ClaimedTarget, InsertRejection, LegAttemptStats, LegRow, NewLeg, ShadowLifecycleStore,
-    TargetRows,
+    ClaimedTarget, InsertRejection, NewLeg, ShadowLifecycleStore, TargetRows,
 };
 use betterlite_server::shadow_eval_models::ShadowEvalTargetType;
+use betterlite_server::shadow_result_aggregation::legs::LegRow;
+use betterlite_server::shadow_result_aggregation::responses::LegAttemptCount;
 use chrono::{DateTime, Utc};
 
 use super::{ProbeStore, ProbeStoreError};
@@ -117,7 +118,7 @@ impl ShadowLifecycleStore for ProbeStore {
         Ok(self.legs_of(group_id))
     }
 
-    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptStats>, Self::Error> {
+    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptCount>, Self::Error> {
         let legs = self.legs.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(legs
             .iter()
@@ -127,7 +128,7 @@ impl ShadowLifecycleStore for ProbeStore {
                 if count == 0 {
                     return None;
                 }
-                Some(LegAttemptStats {
+                Some(LegAttemptCount {
                     job_id: leg.id.clone(),
                     attempt_count: count,
                     spend: self.attempt_spend(leg),
