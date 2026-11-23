@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::{completion, container_calls};
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::Raw;
 use betterlite_core::api::container_file_endpoints::handler::{
@@ -260,8 +261,8 @@ fn register_adds_the_container_classes() {
     Python::initialize();
     Python::attach(|py| {
         let module = PyModule::new(py, "probe").unwrap();
-        crate::completion::register(&module).unwrap();
-        crate::container_calls::register(&module).unwrap();
+        completion::register(&module).unwrap();
+        container_calls::register(&module).unwrap();
         assert!(module.hasattr("NativeContainerSession").unwrap());
         assert!(module.hasattr("NativeContainerError").unwrap());
     });

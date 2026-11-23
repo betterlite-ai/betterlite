@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::time::Duration;
 
 use betterlite_core::api::container_collection_http::{
@@ -88,7 +88,7 @@ impl CollectionTransport for BlockingTransport {
             Ok(outbound) => get_runtime().block_on(execute(&self.client, outbound)),
             Err(error) => Err(error),
         };
-        std::future::ready(reply)
+        ready(reply)
     }
 }
 
