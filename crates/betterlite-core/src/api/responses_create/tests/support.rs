@@ -28,11 +28,9 @@ use betterlite_openai::response_events::{
 use betterlite_openai::response_input::{ResponsesInput, transform_responses_request};
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use betterlite_prompts::file_ids::mapping::FileIdMapping;
-use betterlite_provider::api::responses_provider_contract::records::{
-    Params as ContractParams, normalize_responses_request,
-};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -44,6 +42,7 @@ use crate::api::responses_agentic_execution::executor::{
 use crate::api::responses_compact_http::error::ConfigFailure;
 use crate::api::responses_compact_http::service::SharedSession;
 use crate::api::responses_create::bridge::{BridgeCall, ChatBridge, Created, StampedResponse};
+use crate::api::responses_create::convert::reencode;
 use crate::api::responses_create::deps::{
     ConfigRequest, CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps,
 };
@@ -368,8 +367,7 @@ impl CreateConfig for TestConfig {
     }
 
     fn normalize_request(&self, data: Object) -> Result<Object, ConfigFailure> {
-        let params: ContractParams = round_trip(&data)?;
-        round_trip(&normalize_responses_request(&params))
+        Ok(data)
     }
 
     fn sign_request(&self, request: &CreateSignRequest<'_>) -> Result<Signed, ConfigFailure> {
@@ -544,6 +542,8 @@ impl ConfigLookup for Registry {
 #[derive(Default)]
 pub(crate) struct ModelNames {
     seen: Mutex<Vec<String>>,
+    pub(crate) deployment_api_key: Option<SecretString>,
+    pub(crate) deployment_api_base: Option<String>,
 }
 
 impl ModelNames {
@@ -578,11 +578,21 @@ impl ModelResolver for ModelNames {
             };
             (rest.to_owned(), prefix.to_owned())
         };
+        let api_key = if request.api_key.is_none() {
+            self.deployment_api_key.clone()
+        } else {
+            None
+        };
+        let api_base = if request.api_base.is_none() {
+            self.deployment_api_base.clone()
+        } else {
+            None
+        };
         Ok(ResolvedModel {
             model,
             provider: ProviderIdentity::Custom(provider),
-            api_base: None,
-            api_key: None,
+            api_base,
+            api_key,
         })
     }
 }
@@ -599,9 +609,9 @@ impl DeploymentHookDispatcher for Nothing {
 
     async fn pre_call_deployment_hook(
         &self,
-        _request: Params,
+        _request: IndexMap<String, Json>,
         _call_type: &str,
-    ) -> Result<Option<Params>, Self::Error> {
+    ) -> Result<Option<IndexMap<String, Json>>, Self::Error> {
         Ok(None)
     }
 }
@@ -647,6 +657,7 @@ impl CreateInterception<()> for NoInterception {
 
 #[derive(Debug, Clone)]
 pub(crate) struct DispatchRecord {
+    pub(crate) input: Json,
     pub(crate) reasoning: Option<Json>,
     pub(crate) tools: Option<Vec<JsonValue>>,
     pub(crate) kwargs: ParameterMap,
@@ -661,6 +672,7 @@ pub(crate) struct DispatchRecord {
 impl From<&DispatchArgs<'_>> for DispatchRecord {
     fn from(args: &DispatchArgs<'_>) -> Self {
         Self {
+            input: reencode(args.input).expect("the dispatch input converts"),
             reasoning: args.reasoning.cloned(),
             tools: args.tools.map(<[JsonValue]>::to_vec),
             kwargs: args.kwargs.clone(),
@@ -749,12 +761,12 @@ impl Gateway {
 
     fn record_mcp(&self, args: &DispatchArgs<'_>) {
         self.events.push("mcp");
-        record_into(&self.mcp, McpRecord::from(args));
+        record_into(&self.mcp, DispatchRecord::from(args));
     }
 
     fn record_file_search(&self, args: &FileSearchArgs<'_>) {
         self.events.push("file_search");
-        record_into(&self.file_search, FileSearchRecord::from(args));
+        record_into(&self.file_search, DispatchRecord::from(args));
     }
 }
 

@@ -4,8 +4,8 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::response_input::ResponsesInput;
 
 use super::support::{
-    Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, body_json, call,
-    field, json, kwargs, number_is, object, run_create, text, value_number,
+    Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, body_json,
+    call, field, json, kwargs, number_is, object, run_create, text, value_number, values,
 };
 
 pub(crate) async fn bridge_selection() {
@@ -21,6 +21,7 @@ pub(crate) async fn bridge_selection() {
         String::from("custom_option"),
         String::from("client_metadata"),
     ]);
+    prefixed.extra_body = Some(object(&json(r#"{"x":1}"#)));
     let mut harness = Harness::new();
     run_create(&seams.deps(), &prefixed, &mut harness)
         .await
@@ -46,9 +47,29 @@ pub(crate) async fn bridge_selection() {
     assert!(!record.kwargs.contains_key("use_chat_completions_api"));
     assert_eq!(record.input, ResponsesInput::Text(String::from("hello")));
     assert!(record.extra_headers.is_none());
+    assert_eq!(
+        record.kwargs.get("extra_body"),
+        values(r#"[{"x":1}]"#).first()
+    );
 
     flagged_bridges(&nothing, &gateway, &mut harness).await;
     absent_config_bridges(&nothing, &gateway, &mut harness).await;
+    passing_without_tools(&nothing, &mut harness).await;
+}
+
+async fn passing_without_tools(nothing: &Nothing, harness: &mut Harness) {
+    let rig = Rig::new();
+    let gateway = Gateway::passing(&rig.events);
+    let bridge = RecordingBridge::new(&rig.events);
+    let seams = Seams::new(&rig, nothing, &gateway, &bridge);
+    let mut plain = call("openai/gpt-4o");
+    plain.kwargs = kwargs(r#"{"use_chat_completions_api":true}"#);
+    run_create(&seams.deps(), &plain, harness)
+        .await
+        .expect("a bridged call without tools passes the file search by");
+    assert!(gateway.file_search_record().is_none());
+    assert_eq!(bridge.calls().len(), 1);
+    assert!(rig.wire.requests().is_empty());
 }
 
 async fn flagged_bridges(nothing: &Nothing, gateway: &NoInterception, harness: &mut Harness) {
@@ -187,7 +208,7 @@ async fn injected_and_bridged(nothing: &Nothing, gateway: &NoInterception, harne
 }
 
 pub(crate) async fn allowed_and_dropped() {
-    let rig = Rig::new();
+    let mut rig = Rig::new();
     rig.configs.supported = Some(vec![String::from("temperature")]);
     rig.wire.queue(200, OK_RESPONSE);
     let gateway = NoInterception;

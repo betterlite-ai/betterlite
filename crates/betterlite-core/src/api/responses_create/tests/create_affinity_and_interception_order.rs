@@ -17,6 +17,7 @@ pub(crate) async fn affinity_headers() {
     let rig = Rig::new();
     rig.wire.queue(200, OK_RESPONSE);
     rig.wire.queue(200, OK_RESPONSE);
+    rig.wire.queue(200, OK_RESPONSE);
     let gateway = NoInterception;
     let bridge = RecordingBridge::new(&rig.events);
     let nothing = Nothing;
@@ -36,6 +37,12 @@ pub(crate) async fn affinity_headers() {
     run_create(&seams.deps(), &existing, &mut harness)
         .await
         .expect("the existing header wins");
+    let mut from_metadata = call("openai/gpt-4o");
+    from_metadata.kwargs = kwargs(r#"{"provider_affinity_header":"X-Session"}"#);
+    from_metadata.metadata = Some(json(r#"{"session_id":"meta-s"}"#));
+    run_create(&seams.deps(), &from_metadata, &mut harness)
+        .await
+        .expect("the metadata session answers");
     let requests = rig.wire.requests();
     assert_eq!(
         header_values(&requests[0], "x-session"),
@@ -44,6 +51,10 @@ pub(crate) async fn affinity_headers() {
     assert_eq!(
         header_values(&requests[1], "x-session"),
         vec![String::from("existing")]
+    );
+    assert_eq!(
+        header_values(&requests[2], "x-session"),
+        vec![String::from("meta-s")]
     );
 }
 
@@ -62,7 +73,8 @@ pub(crate) async fn affinity_control_characters() {
     let mut harness = Harness::new();
     let error = run_create(&seams.deps(), &failing, &mut harness)
         .await
-        .expect_err("the control characters fail the call");
+        .err()
+        .expect("the control characters fail the call");
     assert!(matches!(error, CreateError::Affinity(_)));
     let failure = failure(&error);
     assert_eq!(failure.class, "BadRequestError");
@@ -113,6 +125,7 @@ pub(crate) async fn mcp_first_and_mapped() {
         text(&body, "id"),
         "resp_67ccd2bed1ec8190b14f964abc0542670bb6a6b452d3795b"
     );
+    skip_mcp_truthiness(&nothing, &mut harness).await;
 }
 
 fn assert_mcp_dispatch(gateway: &Gateway, rig: &Rig) {
@@ -122,6 +135,7 @@ fn assert_mcp_dispatch(gateway: &Gateway, rig: &Rig) {
     );
     assert!(rig.wire.requests().is_empty());
     let record = gateway.mcp_record().expect("the MCP dispatch ran");
+    assert_eq!(record.input, json(r#""hello""#));
     assert!(record.reasoning.is_none());
     assert!(
         record
@@ -144,9 +158,47 @@ fn assert_mcp_dispatch(gateway: &Gateway, rig: &Rig) {
         vec![PromptJson::Text(String::from("provider-file-xyz"))]
     );
 }
+async fn skip_mcp_truthiness(nothing: &Nothing, harness: &mut Harness) {
+    let skipping = Rig::new();
+    skipping.wire.queue(200, OK_RESPONSE);
+    let skipping_gateway = Gateway::requesting(&skipping.events);
+    let skipping_bridge = RecordingBridge::new(&skipping.events);
+    let skipping_seams = Seams::new(&skipping, nothing, &skipping_gateway, &skipping_bridge);
+    let mut skipped = call("openai/gpt-4o");
+    skipped.kwargs = kwargs(r#"{"_skip_mcp_handler":true}"#);
+    run_create(&skipping_seams.deps(), &skipped, harness)
+        .await
+        .expect("a skipped MCP call reaches the provider");
+    assert!(skipping_gateway.mcp_record().is_none());
+    assert_eq!(skipping.wire.requests().len(), 1);
+
+    for falsy in [
+        r#"{"_skip_mcp_handler":0}"#,
+        r#"{"_skip_mcp_handler":""}"#,
+        r#"{"_skip_mcp_handler":[]}"#,
+        r#"{"_skip_mcp_handler":{}}"#,
+    ] {
+        let dispatching = Rig::new();
+        let dispatching_gateway = Gateway::requesting(&dispatching.events);
+        let dispatching_bridge = RecordingBridge::new(&dispatching.events);
+        let dispatching_seams = Seams::new(
+            &dispatching,
+            nothing,
+            &dispatching_gateway,
+            &dispatching_bridge,
+        );
+        let mut falsy_call = call("openai/gpt-4o");
+        falsy_call.kwargs = kwargs(falsy);
+        run_create(&dispatching_seams.deps(), &falsy_call, harness)
+            .await
+            .expect("a falsy skip flag dispatches MCP");
+        assert!(dispatching_gateway.mcp_record().is_some(), "{falsy}");
+        assert!(dispatching.wire.requests().is_empty());
+    }
+}
 
 pub(crate) async fn file_search_extras() {
-    let rig = Rig::new();
+    let mut rig = Rig::new();
     rig.configs.native_file_search = false;
     let gateway = Gateway::passing(&rig.events);
     let bridge = RecordingBridge::new(&rig.events);
@@ -187,6 +239,7 @@ fn assert_file_search_dispatch(gateway: &Gateway, rig: &Rig) {
     let record = gateway
         .file_search_record()
         .expect("the file-search dispatch ran");
+    assert_eq!(record.input, json(r#""hello""#));
     assert_eq!(record.reasoning, Some(json(r#"{"effort":"low"}"#)));
     assert_eq!(record.service_tier.as_deref(), Some("flex"));
     assert_eq!(record.safety_identifier.as_deref(), Some("user-a"));
@@ -214,7 +267,8 @@ pub(crate) async fn encrypted_support() {
     let mut harness = Harness::new();
     let error = run_create(&seams.deps(), &first, &mut harness)
         .await
-        .expect_err("an incapable target rejects the demand");
+        .err()
+        .expect("an incapable target rejects the demand");
     assert!(matches!(
         error,
         CreateError::Compatibility(CompatibilityFailure::EncryptedTaskUnsupported)
@@ -246,7 +300,8 @@ async fn bridged_encrypted(
         kwargs(r#"{"_require_encrypted_task_support":true,"use_chat_completions_api":true}"#);
     let bridged_error = run_create(&bridged_seams.deps(), &chat, harness)
         .await
-        .expect_err("a bridged target rejects the demand");
+        .err()
+        .expect("a bridged target rejects the demand");
     assert!(matches!(
         bridged_error,
         CreateError::Compatibility(CompatibilityFailure::EncryptedTaskUnsupported)
@@ -261,7 +316,7 @@ async fn encrypted_case(
     demand: &str,
     lookup_encrypted: bool,
 ) {
-    let capable = Rig::new();
+    let mut capable = Rig::new();
     capable.lookup.encrypted = lookup_encrypted;
     capable.wire.queue(200, OK_RESPONSE);
     let capable_bridge = RecordingBridge::new(&capable.events);

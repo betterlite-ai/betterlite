@@ -188,7 +188,7 @@ pub(crate) async fn stamped_and_synthetic() {
 async fn synthetic_answer(seams: &Seams<'_>, rig: &Rig, harness: &mut Harness) {
     let mut synthetic = call("openai/fake-stream");
     synthetic.stream = Some(true);
-    let synthetic_created = run_create(&seams.deps(), &synthetic, &mut harness)
+    let synthetic_created = run_create(&seams.deps(), &synthetic, harness)
         .await
         .expect("the fake stream answers");
     let Created::Synthetic(answer) = &synthetic_created else {
@@ -217,7 +217,8 @@ pub(crate) async fn provider_failure() {
     let mut harness = Harness::new();
     let error = run_create(&seams.deps(), &call("openai/gpt-4o"), &mut harness)
         .await
-        .expect_err("the provider failure is reported");
+        .err()
+        .expect("the provider failure is reported");
     assert!(matches!(error, CreateError::Request(_)));
     let failure = failure(&error);
     assert_eq!(failure.class, "AuthenticationError");

@@ -1,17 +1,20 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Json as PromptJson;
+use secrecy::SecretString;
 
 use super::support::{
     Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, body_json, call,
     field, header_values, item_input, json, kwargs, number_is, object, response_json, run_create,
-    text,
+    text, values,
 };
 use crate::api::response_id_codecs::encrypted::build_encrypted_item_id;
 use crate::api::response_id_codecs::response::build_response_id;
 use crate::api::responses_create::bridge::Created;
+use crate::api::responses_create::call::input_value;
 
 pub(crate) async fn options_and_ids() {
     let rig = Rig::new();
@@ -23,6 +26,10 @@ pub(crate) async fn options_and_ids() {
     let created = first_request(&seams).await;
     assert_options(&rig);
     assert_ids(&rig, &created);
+    text_forms(&rig, &seams).await;
+    client_header_only(&rig, &seams).await;
+    credential_precedence().await;
+    input_values();
 }
 
 async fn first_request(seams: &Seams<'_>) -> Created<()> {
@@ -119,4 +126,93 @@ pub(crate) async fn encrypted_item_ids() {
     };
     assert_eq!(text(&object(&items[0].0), "id"), "msg_orig");
     assert_eq!(rig.wire.requests().len(), 1);
+}
+async fn text_forms(rig: &Rig, seams: &Seams<'_>) {
+    rig.wire.queue(200, OK_RESPONSE);
+    let mut schema = call("openai/gpt-4o");
+    schema.text_format = Some(json(
+        r#"{"type":"json_schema","json_schema":{"name":"answer","schema":{"type":"object"},"strict":true}}"#,
+    ));
+    let mut harness = Harness::new();
+    run_create(&seams.deps(), &schema, &mut harness)
+        .await
+        .expect("the json schema format answers");
+    let schema_requests = rig.wire.requests();
+    let schema_body = body_json(&schema_requests[1]);
+    let schema_fields = object(&schema_body);
+    let schema_text = object(field(&schema_fields, "text"));
+    let format = object(field(&schema_text, "format"));
+    assert_eq!(text(&format, "type"), "json_schema");
+    assert_eq!(text(&format, "name"), "answer");
+    assert_eq!(field(&format, "strict"), &PromptJson::Bool(true));
+    assert_eq!(text(&object(field(&format, "schema")), "type"), "object");
+    assert!(format.get("json_schema").is_none());
+
+    rig.wire.queue(200, OK_RESPONSE);
+    let mut given = call("openai/gpt-4o");
+    given.text = Some(json(r#"{"format":{"type":"text"}}"#));
+    given.text_format = Some(json(
+        r#"{"type":"json_schema","json_schema":{"name":"answer","schema":{"type":"object"},"strict":true}}"#,
+    ));
+    run_create(&seams.deps(), &given, &mut harness)
+        .await
+        .expect("the given text wins over the format");
+    let given_requests = rig.wire.requests();
+    let given_body = body_json(&given_requests[2]);
+    let given_fields = object(&given_body);
+    let given_text = object(field(&given_fields, "text"));
+    let given_format = object(field(&given_text, "format"));
+    assert_eq!(text(&given_format, "type"), "text");
+    assert!(given_format.get("name").is_none());
+}
+async fn client_header_only(rig: &Rig, seams: &Seams<'_>) {
+    rig.wire.queue(200, OK_RESPONSE);
+    let mut headers = call("openai/gpt-4o");
+    headers.kwargs = kwargs(r#"{"headers":{"X-Trace":"a"}}"#);
+    let mut harness = Harness::new();
+    run_create(&seams.deps(), &headers, &mut harness)
+        .await
+        .expect("the client headers reach the request");
+    let header_requests = rig.wire.requests();
+    let request = &header_requests[3];
+    assert_eq!(header_values(request, "x-trace"), vec![String::from("a")]);
+    assert!(header_values(request, "xyzzy").is_empty());
+    assert!(header_values(request, "").is_empty());
+}
+async fn credential_precedence() {
+    let mut rig = Rig::new();
+    rig.resolver.deployment_api_key = Some(SecretString::from("sk-deployment"));
+    rig.resolver.deployment_api_base = Some(String::from("http://deployment.test/v1"));
+    rig.wire.queue(200, OK_RESPONSE);
+    let gateway = NoInterception;
+    let bridge = RecordingBridge::new(&rig.events);
+    let nothing = Nothing;
+    let seams = Seams::new(&rig, &nothing, &gateway, &bridge);
+    let mut request = call("openai/gpt-4o");
+    request.api_key = Some(SecretString::from("sk-call"));
+    request.api_base = Some(String::from("http://call.test/v1"));
+    let mut harness = Harness::new();
+    run_create(&seams.deps(), &request, &mut harness)
+        .await
+        .expect("the caller's endpoint answers");
+    let credential_requests = rig.wire.requests();
+    assert_eq!(
+        credential_requests[0].url.as_str(),
+        "http://call.test/v1/responses"
+    );
+    assert_eq!(
+        header_values(&credential_requests[0], "authorization"),
+        vec![String::from("Bearer sk-call")]
+    );
+}
+fn input_values() {
+    assert_eq!(
+        input_value(&ResponsesInput::Text(String::from("hello"))),
+        JsonValue::Text(String::from("hello"))
+    );
+    let listed = item_input(r#"[{"role":"user","content":"hi"}]"#);
+    assert_eq!(
+        input_value(&listed),
+        JsonValue::Array(values(r#"[{"role":"user","content":"hi"}]"#))
+    );
 }
