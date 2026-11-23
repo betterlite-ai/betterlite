@@ -41,6 +41,8 @@ pub(super) fn native_mode() {
     assert!(!selection_enabled(true, "gpt-4o", &native, None));
     assert!(selection_enabled(true, "gpt-5", &native, None));
     assert!(selection_enabled(true, "openai/gpt-4o", &native, None));
+    let disabled = settings(PollingSelector::Disabled, &["gpt-4o"]);
+    assert!(!selection_enabled(true, "gpt-4o", &disabled, None));
 }
 
 pub(super) fn prefixed_models() {

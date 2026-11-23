@@ -63,19 +63,20 @@ impl PollingCache for ScriptedCache {
     async fn delete(&self, key: &str) -> Result<i64, PollingCacheError> {
         self.record(json!({"op": "delete", "key": key, "ttl": null, "value": null}));
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(i64::from(entries.shift_remove(key).is_some()))
+        Ok(i64::from(entries.remove(key).is_some()))
     }
 }
 
 // the owner rides in betterlite's private envelope; the helper compares only the response
 fn public_projection(value: Value) -> Value {
-    let Value::Object(mut fields) = value else {
+    let is_envelope = value.as_object().is_some_and(|fields| {
+        fields.len() == 2 && fields.contains_key("owner") && fields.contains_key("response")
+    });
+    if !is_envelope {
         return value;
-    };
-    let envelope =
-        fields.len() == 2 && fields.contains_key("owner") && fields.contains_key("response");
-    if envelope {
-        return fields.remove("response").unwrap_or(Value::Null);
     }
-    Value::Object(fields)
+    let Value::Object(mut fields) = value else {
+        return Value::Null;
+    };
+    fields.remove("response").unwrap_or(Value::Null)
 }

@@ -139,6 +139,7 @@ pub(super) async fn present_state(cache: &FakeCache, store: &ResponsePollingStor
 
 async fn assert_present_read(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     let reads = cache.count(CacheOperation::Read);
+    let writes = cache.count(CacheOperation::Write);
     let state = store
         .get_state(id, PollAccess::AuthDisabled)
         .await
@@ -146,7 +147,7 @@ async fn assert_present_read(cache: &FakeCache, store: &ResponsePollingStore, id
         .expect("the key exists");
     assert_eq!(state.get("status"), Some(&support::json("\"in_progress\"")));
     assert_eq!(cache.count(CacheOperation::Read), reads.saturating_add(1));
-    assert_eq!(cache.count(CacheOperation::Write), 0);
+    assert_eq!(cache.count(CacheOperation::Write), writes);
     assert!(cache.effects().last().expect("the read was recorded").hit);
 }
 

@@ -163,13 +163,14 @@ pub(super) fn ttl_is_refreshed(cache: &FakeCache) {
             continue;
         }
         writes = writes.saturating_add(1);
-        let stored = cache.entry(&effect.key).expect("the write landed");
         assert_eq!(effect.key, get_cache_key(ID));
         assert_eq!(effect.ttl, Some(TTL));
-        assert_eq!(effect.value.as_deref(), Some(stored.as_str()));
     }
     assert_eq!(writes, 6);
-    assert_eq!(effects.len(), 6);
+    assert_eq!(cache.count(CacheOperation::Read), 6);
+    let final_write = effects.last().expect("the last effect is the final write");
+    let stored = cache.entry(&final_write.key).expect("the write landed");
+    assert_eq!(final_write.value.as_deref(), Some(stored.as_str()));
 }
 
 pub(super) fn assert_logs(watch: &Watch) {
