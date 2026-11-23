@@ -8,6 +8,7 @@ use super::support::{
 };
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection as JobDirection;
 use crate::shadow_eval_lifecycle::stop::stop_shadow_eval_job;
+use crate::shadow_eval_lifecycle::store::{TargetKeyRow, TargetRows, TargetTeamRow, TargetUserRow};
 use crate::shadow_eval_models::{ShadowEvalStatus, ShadowEvalTargetType};
 
 #[tokio::test]
@@ -416,4 +417,36 @@ async fn reports_the_start_clock_the_window_and_the_router_arm() {
     assert_eq!(response.status, ShadowEvalStatus::Running);
     assert_eq!(store.stored_legs()[0].router_names, vec![ROUTER.to_owned()]);
     assert_eq!(response.job.models, Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn orders_targets_by_kind_before_target_id_not_by_id_alone() {
+    let rows = TargetRows {
+        keys: vec![TargetKeyRow {
+            token: "z-key".to_owned(),
+            key_alias: None,
+            key_name: None,
+            team_id: None,
+        }],
+        teams: vec![TargetTeamRow {
+            team_id: "a-team".to_owned(),
+            team_alias: None,
+        }],
+        users: vec![TargetUserRow {
+            user_id: "m-user".to_owned(),
+            user_email: None,
+        }],
+    };
+    let store = FakeStore::new(now()).with_targets(rows);
+    let body = r#"{"router_names": ["shadow-router"], "api_key_ids": ["z-key"], "team_ids": ["a-team"], "user_ids": ["m-user"], "judge_model": "judge-model", "shadow_percentage": 10, "max_budget": 10}"#;
+    let response = start(&store, &request(body), None, now(), &mut minted(4))
+        .await
+        .unwrap();
+    let ids: Vec<&str> = response
+        .job
+        .targets
+        .iter()
+        .map(|target| target.target_id.as_str())
+        .collect();
+    assert_eq!(ids, ["z-key", "a-team", "m-user"]);
 }
