@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::time::Duration;
 
 use betterlite_azure::speech::dispatch::{
@@ -34,7 +33,10 @@ pub(crate) async fn native<C, K, T, L>(
     runtime: &mut MediaRuntime<'_, C, K, T, L>,
 ) -> Result<SpeechBinaryResponse, AzureMediaError>
 where
+    C: Sync,
+    K: Sync,
     T: TranscriptionTransport,
+    L: Send,
 {
     // the caller resolves the module globals; only the call's own params and the environment stay in play
     let globals = SpeechGlobals::default();
@@ -83,48 +85,46 @@ where
 {
     type Output = SpeechBinaryResponse;
 
-    fn text_to_speech(
+    async fn text_to_speech(
         &mut self,
         request: HandlerRequest<'_>,
-    ) -> impl Future<Output = Result<Self::Output, HandlerFailure>> + Send {
-        async move {
-            let optional_json = serde_json::to_value(request.optional_params)
-                .map_err(|error| encode_failure(error.to_string()))?;
-            let optional_params = serde_json::from_value(optional_json)
-                .map_err(|error| encode_failure(error.to_string()))?;
-            let litellm_json = serde_json::to_value(request.litellm_params)
-                .map_err(|error| encode_failure(error.to_string()))?;
-            let litellm_params = serde_json::from_value(litellm_json)
-                .map_err(|error| encode_failure(error.to_string()))?;
-            let params = SpeechParams {
-                api_key: request.api_key.map(SecretString::from),
-                api_base: request.api_base.map(str::to_owned),
-                ssl_verify: ssl_verify(request.litellm_params),
-            };
-            let extra_headers = request.extra_headers.map(header_map);
-            let call = SpeechCall {
-                model: request.model,
-                input: request.input,
-                voice: request.voice,
-                optional_params: &optional_params,
-                litellm_params: &litellm_params,
-                extra_headers: extra_headers.as_ref(),
-                params: &params,
-                timeout: request.timeout,
-            };
-            let deps = SpeechDeps {
-                config: &self.config,
-                source: self.source,
-                supplied: None,
-            };
-            let answered = if request.is_async {
-                deps.async_text_to_speech_handler(&call, &mut *self.log)
-                    .await
-            } else {
-                deps.text_to_speech_handler(&call, &mut *self.log).await
-            };
-            answered.map_err(speech_failure)
-        }
+    ) -> Result<Self::Output, HandlerFailure> {
+        let optional_json = serde_json::to_value(request.optional_params)
+            .map_err(|error| encode_failure(error.to_string()))?;
+        let optional_params = serde_json::from_value(optional_json)
+            .map_err(|error| encode_failure(error.to_string()))?;
+        let litellm_json = serde_json::to_value(request.litellm_params)
+            .map_err(|error| encode_failure(error.to_string()))?;
+        let litellm_params = serde_json::from_value(litellm_json)
+            .map_err(|error| encode_failure(error.to_string()))?;
+        let params = SpeechParams {
+            api_key: request.api_key.map(SecretString::from),
+            api_base: request.api_base.map(str::to_owned),
+            ssl_verify: ssl_verify(request.litellm_params),
+        };
+        let extra_headers = request.extra_headers.map(header_map);
+        let call = SpeechCall {
+            model: request.model,
+            input: request.input,
+            voice: request.voice,
+            optional_params: &optional_params,
+            litellm_params: &litellm_params,
+            extra_headers: extra_headers.as_ref(),
+            params: &params,
+            timeout: request.timeout,
+        };
+        let deps = SpeechDeps {
+            config: &self.config,
+            source: self.source,
+            supplied: None,
+        };
+        let answered = if request.is_async {
+            deps.async_text_to_speech_handler(&call, &mut *self.log)
+                .await
+        } else {
+            deps.text_to_speech_handler(&call, &mut *self.log).await
+        };
+        answered.map_err(speech_failure)
     }
 }
 
@@ -206,20 +206,15 @@ where
         DEFAULT_TIMEOUT
     }
 
-    fn send(
-        &self,
-        request: SpeechWireRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        async move {
-            let outbound = OutboundRequest {
-                method: request.method,
-                url: request.url,
-                query: Vec::new(),
-                headers: request.headers,
-                body: request.body,
-                deadline: request.timeout.unwrap_or_else(|| self.default_timeout()),
-            };
-            self.transport.send(outbound).await
-        }
+    async fn send(&self, request: SpeechWireRequest) -> Result<UpstreamResponse, TransportError> {
+        let outbound = OutboundRequest {
+            method: request.method,
+            url: request.url,
+            query: Vec::new(),
+            headers: request.headers,
+            body: request.body,
+            deadline: request.timeout.unwrap_or_else(|| self.default_timeout()),
+        };
+        self.transport.send(outbound).await
     }
 }

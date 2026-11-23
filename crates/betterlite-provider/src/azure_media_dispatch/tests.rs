@@ -36,7 +36,7 @@ use super::speech::config::AvaSpeechConfig;
 use super::test_support::{Cache, Clock, Outcome, Reply};
 use super::{AzureMediaRequest, AzureMediaResult, ImageEditOutcome};
 use crate::api::speech_http::SpeechBinaryResponse;
-use crate::api::speech_provider_contract::{SpeechMappingOptions, TextToSpeechConfig};
+use crate::api::speech_provider_contract::{SpeechMappingOptions, TextToSpeechConfig as _};
 use crate::openai_media_dispatch::OpenAiMediaRequest;
 use crate::operation::{OperationRequest, OperationResult};
 

@@ -16,7 +16,10 @@ pub(crate) async fn openai<C, K, T, L>(
     runtime: &mut MediaRuntime<'_, C, K, T, L>,
 ) -> Result<HttpxBinaryResponseContent, AzureMediaError>
 where
+    C: Sync,
+    K: Sync,
     T: TranscriptionTransport,
+    L: Send,
 {
     let call = AudioSpeechCall {
         model: &operation.model,
@@ -33,9 +36,9 @@ where
         session: operation.session,
         refresh_enabled: operation.refresh_enabled,
     };
-    // the refresh cache holds credential sources the future cannot carry across the send
-    let mut refresh = RefreshProviderCache::new(runtime.sources);
     let outbound = {
+        // the refresh cache holds credential sources the future cannot carry across the send
+        let mut refresh = RefreshProviderCache::new(runtime.sources);
         let mut wiring = ClientWiring {
             settings: runtime.endpoints,
             environment: runtime.environment,
