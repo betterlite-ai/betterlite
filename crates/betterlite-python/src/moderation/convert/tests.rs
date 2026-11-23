@@ -115,6 +115,12 @@ fn request_num_retries_wins_over_max_retries() {
 }
 
 #[test]
+fn request_max_retries_alone_is_kept() {
+    let call = arguments(r#"{"prompt": "hello", "max_retries": 3}"#);
+    assert!(encoded(&body(&call).unwrap()).contains(r#""max_retries":3"#));
+}
+
+#[test]
 fn request_moderation_model_defaults_and_strips_the_openai_prefix_async() {
     let call: ModerationArguments = serde_json::from_str(r#"{"input": "hello"}"#).unwrap();
     assert_eq!(

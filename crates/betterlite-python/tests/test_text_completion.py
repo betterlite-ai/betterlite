@@ -496,6 +496,17 @@ def test_prompts_parameters_reach() -> None:
     assert answer_of(outcome).model_dump()["object"] == "text_completion"
 
 
+def test_prompts_engine_alias() -> None:
+    with closing(TextServer()) as server:
+        outcome = text_completion(
+            engine=TEXT_MODEL, prompt="hi", api_base=server.url, api_key=GOOD_KEY,
+        )
+        call = server.calls[-1]
+    assert call["path"] == TEXT_PATH
+    assert call["body"]["model"] == TEXT_MODEL
+    assert first_choice(view_of(answer_of(outcome)))["text"] == "done hi"
+
+
 def test_prompts_text_endpoint() -> None:
     views, call = requested("hi", CHAT_MODEL, TEXT_PROVIDER)
     assert call["path"] == TEXT_PATH
