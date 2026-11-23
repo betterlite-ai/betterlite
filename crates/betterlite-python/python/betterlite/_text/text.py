@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Mapping
-from typing import Final, NotRequired, TypedDict
+from typing import Annotated, Final, Literal, NotRequired, TypeAlias, TypedDict
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from betterlite._completion import CustomStreamWrapper
 from betterlite._completion.completion import completion_from_arguments, settle_outcome
@@ -22,14 +22,12 @@ from betterlite.types.utils import ModelResponse, TextChoices, TextCompletionRes
 from betterlite.types.utils.text_completion import HiddenParams
 
 SETTINGS: Final[tuple[str, ...]] = ("api_base", "api_key", "openai_key")
-# text_completion's own parameters, in the order atext_completion's positional arguments take them
 NAMED_ARGUMENTS: Final[tuple[str, ...]] = (
     "prompt", "model", "best_of", "echo", "frequency_penalty", "logit_bias", "logprobs",
     "max_tokens", "n", "presence_penalty", "stop", "stream", "stream_options", "suffix",
     "temperature", "top_p", "user", "api_base", "api_version", "api_key", "model_list",
     "custom_llm_provider",
 )
-# names the payload or the chat fallback owns: they never travel as provider parameters
 SKIPPED_KWARGS: Final[tuple[str, ...]] = (
     "acompletion",
     "client",
@@ -40,13 +38,9 @@ SKIPPED_KWARGS: Final[tuple[str, ...]] = (
     "shared_session",
     "text_completion",
 )
-UNKNOWN_ANSWER: Final = "the native text answer names no known kind"
 CHAT_AWAITABLE: Final = "the chat fallback answered an awaitable to a synchronous call"
 
 TEXT: Final[TypeAdapter[str | None]] = TypeAdapter(str | None)
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-MESSAGES: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
-CHUNKS: Final[TypeAdapter[list[str]]] = TypeAdapter(list[str])
 OPTIONS: Final[TypeAdapter[dict[str, JsonValue] | None]] = TypeAdapter(dict[str, JsonValue] | None)
 
 
@@ -65,7 +59,23 @@ class TextResponseWire(TypedDict):
     usage: NotRequired[WireUsage | None]
 
 
-RESPONSE: Final[TypeAdapter[TextResponseWire]] = TypeAdapter(TextResponseWire)
+class TextWire(BaseModel):
+    kind: Literal["text"]
+    response: TextResponseWire
+
+
+class ChatWire(BaseModel):
+    kind: Literal["chat"]
+    messages: list[JsonValue]
+
+
+class ChunksWire(BaseModel):
+    kind: Literal["chunks"]
+    chunks: list[str]
+
+
+AnswerKind: TypeAlias = Annotated[TextWire | ChatWire | ChunksWire, Field(discriminator="kind")]
+ANSWER: Final[TypeAdapter[AnswerKind]] = TypeAdapter(AnswerKind)
 
 
 def text_completion(
@@ -112,7 +122,11 @@ def text_completion(
     }
     # main.py hands its own *args to completion; betterlite has none left for them
     _ = args
-    return text_from_values({**kwargs, **named})
+    values: dict[str, CallValue] = {**kwargs, **named}
+    answer = call_native(
+        NativeTextSession("{}").text_completion, text_payload(values), NativeTextError
+    )
+    return sync_answer(answer, values)
 
 
 async def atext_completion(
@@ -121,21 +135,7 @@ async def atext_completion(
     # main.py reads the model before it awaits, so a call with no model raises at the call
     _ = model_from_arguments(args, kwargs)
     positional = dict(zip(NAMED_ARGUMENTS, args, strict=False))
-    return await text_from_values_async({**kwargs, **positional})
-
-
-def text_from_values(
-    values: Mapping[str, CallValue],
-) -> TextCompletionResponse | TextCompletionStreamWrapper:
-    answer = call_native(
-        NativeTextSession("{}").text_completion, text_payload(values), NativeTextError
-    )
-    return sync_answer(answer, values)
-
-
-async def text_from_values_async(
-    values: Mapping[str, CallValue],
-) -> TextCompletionResponse | TextCompletionStreamWrapper:
+    values: dict[str, CallValue] = {**kwargs, **positional}
     answer = await acall_native(
         NativeTextSession("{}").atext_completion, text_payload(values), NativeTextError
     )
@@ -162,7 +162,6 @@ def passing_arguments(values: Mapping[str, CallValue]) -> dict[str, CallValue]:
     }
 
 
-# main.py builds the chat call's messages without the prompt or the parameters it owns
 def chat_arguments(
     values: Mapping[str, CallValue], messages: list[JsonValue]
 ) -> dict[str, CallValue]:
@@ -174,39 +173,29 @@ def chat_arguments(
 def sync_answer(
     answer: JsonValue, values: Mapping[str, CallValue]
 ) -> TextCompletionResponse | TextCompletionStreamWrapper:
-    match JSON.validate_python(answer):
-        case {"kind": "chat", "messages": messages}:
-            outcome = completion_from_arguments(
-                chat_arguments(values, MESSAGES.validate_python(messages))
-            )
+    match ANSWER.validate_python(answer):
+        case ChatWire(messages=messages):
+            outcome = completion_from_arguments(chat_arguments(values, messages))
             return sync_outcome(outcome, values)
-        case {"kind": "text", "response": response}:
-            return buffered_text(RESPONSE.validate_python(response))
-        case {"kind": "chunks", "chunks": chunks}:
-            return text_stream(
-                CustomStreamWrapper(ChunkList(CHUNKS.validate_python(chunks))), values
-            )
-        case object():
-            raise ValueError(UNKNOWN_ANSWER)
+        case TextWire(response=response):
+            return buffered_text(response)
+        case ChunksWire(chunks=chunks):
+            return text_stream(CustomStreamWrapper(ChunkList(chunks)), values)
 
 
 async def async_answer(
     answer: JsonValue, values: Mapping[str, CallValue]
 ) -> TextCompletionResponse | TextCompletionStreamWrapper:
-    match JSON.validate_python(answer):
-        case {"kind": "chat", "messages": messages}:
-            arguments = chat_arguments(values, MESSAGES.validate_python(messages))
+    match ANSWER.validate_python(answer):
+        case ChatWire(messages=messages):
+            arguments = chat_arguments(values, messages)
             arguments["acompletion"] = True
             settled = await settle_outcome(completion_from_arguments(arguments))
-            return settled_answer(settled, values)
-        case {"kind": "text", "response": response}:
-            return buffered_text(RESPONSE.validate_python(response))
-        case {"kind": "chunks", "chunks": chunks}:
-            return text_stream(
-                CustomStreamWrapper(ChunkList(CHUNKS.validate_python(chunks))), values
-            )
-        case object():
-            raise ValueError(UNKNOWN_ANSWER)
+            return sync_outcome(settled, values)
+        case TextWire(response=response):
+            return buffered_text(response)
+        case ChunksWire(chunks=chunks):
+            return text_stream(CustomStreamWrapper(ChunkList(chunks)), values)
 
 
 def sync_outcome(
@@ -220,16 +209,6 @@ def sync_outcome(
             return text_stream(outcome, values)
         case Awaitable():
             raise ValueError(CHAT_AWAITABLE)
-
-
-def settled_answer(
-    outcome: CompletionOutcome, values: Mapping[str, CallValue]
-) -> TextCompletionResponse | TextCompletionStreamWrapper:
-    match outcome:
-        case ModelResponse():
-            return text_from_chat(outcome)
-        case CustomStreamWrapper():
-            return text_stream(outcome, values)
 
 
 def text_stream(

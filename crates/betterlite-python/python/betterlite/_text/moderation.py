@@ -13,14 +13,6 @@ from betterlite._native import NativeTextError, NativeTextSession
 from betterlite.types.llms.openai import OpenAIModerationResponse
 
 SETTINGS: Final[tuple[str, ...]] = ("api_key", "openai_key")
-# main.py's moderation reads these off the call; every other kwarg is logging or its client
-FORWARDED_ARGUMENTS: Final[tuple[str, ...]] = (
-    "api_base",
-    "api_key",
-    "custom_llm_provider",
-    "input",
-    "model",
-)
 
 
 def moderation(
@@ -31,7 +23,10 @@ def moderation(
 ) -> OpenAIModerationResponse:
     values = dict(kwargs)
     values |= {"input": input, "model": model, "api_key": api_key}
-    return moderation_sync(values)
+    answer = call_native(
+        NativeTextSession("{}").moderation, moderation_payload(values), NativeTextError
+    )
+    return OpenAIModerationResponse.model_validate(answer)
 
 
 async def amoderation(
@@ -49,17 +44,6 @@ async def amoderation(
         "api_key": api_key,
         "custom_llm_provider": custom_llm_provider,
     }
-    return await moderation_async(values)
-
-
-def moderation_sync(values: Mapping[str, CallValue]) -> OpenAIModerationResponse:
-    answer = call_native(
-        NativeTextSession("{}").moderation, moderation_payload(values), NativeTextError
-    )
-    return OpenAIModerationResponse.model_validate(answer)
-
-
-async def moderation_async(values: Mapping[str, CallValue]) -> OpenAIModerationResponse:
     answer = await acall_native(
         NativeTextSession("{}").amoderation, moderation_payload(values), NativeTextError
     )
@@ -67,20 +51,20 @@ async def moderation_async(values: Mapping[str, CallValue]) -> OpenAIModerationR
 
 
 def moderation_payload(values: Mapping[str, CallValue]) -> CallPayload:
+    # the top-level names are the payload's own: it drops the logger, refuses a client and warns
     payload: dict[str, CallValue] = {
         "arguments": forwarded_arguments(values),
         "settings": read_settings(SETTINGS),
+        "client": values.get("client"),
+        "logger_fn": values.get("logger_fn"),
+        "shared_session": values.get("shared_session"),
     }
-    # the top-level names are the payload's own: it drops the logger, refuses a client and warns
-    payload["client"] = values.get("client")
-    payload["logger_fn"] = values.get("logger_fn")
-    payload["shared_session"] = values.get("shared_session")
     return to_call_payload(payload)
 
 
 def forwarded_arguments(values: Mapping[str, CallValue]) -> dict[str, CallValue]:
     forwarded: dict[str, CallValue] = {}
-    for name in FORWARDED_ARGUMENTS:
+    for name in ("api_base", "api_key", "custom_llm_provider", "input", "model"):
         value = values.get(name)
         if value is not None:
             forwarded[name] = value
