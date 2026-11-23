@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::pin::Pin;
 use std::str::FromStr as _;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -45,9 +46,31 @@ impl WriteClock for FixedClock {
 
 // The last_active every key written through FixedClock carries.
 pub(crate) fn flush_moment() -> NaiveDateTime {
-    DateTime::<Utc>::from_timestamp(1_767_225_600, 123_000_000)
+    flush_moment_tick(0)
+}
+
+// What a clock that reads a millisecond later each time returns on its tick-th read.
+pub(crate) fn flush_moment_tick(tick: u32) -> NaiveDateTime {
+    let nanos = 123_000_000_u32.saturating_add(tick.saturating_mul(1_000_000));
+    DateTime::<Utc>::from_timestamp(1_767_225_600, nanos)
         .unwrap()
         .naive_utc()
+}
+
+// A clock whose every read is one millisecond later than the last, so a stamp read once per table is distinguishable from one read per row.
+pub(crate) struct TickingClock {
+    pub(crate) reads: AtomicU32,
+}
+
+impl WriteClock for TickingClock {
+    fn now(&self) -> DateTime<Utc> {
+        let tick = self.reads.fetch_add(1, Ordering::SeqCst);
+        flush_moment_tick(tick).and_utc()
+    }
+
+    fn instant(&self) -> Instant {
+        Instant::now()
+    }
 }
 
 pub(crate) struct NoJitter;

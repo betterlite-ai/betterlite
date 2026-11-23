@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 
 use super::membership::{MemberSpendWrite, org_member_rows, team_member_rows, write_member_spend};
@@ -117,29 +116,24 @@ async fn execute_table(
     match write {
         TableWrite::Rows(sql, rows) => increment_rows(transaction, sql, rows, None).await,
         TableWrite::Keys(rows) => {
-            increment_rows(
-                transaction,
-                KEY_SPEND_SQL,
-                rows,
-                Some(clock.now().naive_utc()),
-            )
-            .await
+            increment_rows(transaction, KEY_SPEND_SQL, rows, Some(clock)).await
         }
         TableWrite::Members(members) => write_member_spend(transaction, members).await,
     }
 }
 
-// One prepared statement per sorted id; the key table also stamps its own last_active on each row.
+// One prepared statement per sorted id; the key table also reads its last_active from the clock on each row.
 async fn increment_rows(
     transaction: &DbSession<'_>,
     sql: &str,
     increments: &BTreeMap<String, Decimal>,
-    last_active: Option<NaiveDateTime>,
+    clock: Option<&dyn WriteClock>,
 ) -> Result<(), tokio_postgres::Error> {
     let statement = transaction.prepare(sql).await?;
     for (entity_id, cost) in increments {
-        match last_active {
-            Some(at) => {
+        match clock {
+            Some(stamping) => {
+                let at = stamping.now().naive_utc();
                 transaction
                     .execute(&statement, &[entity_id, cost, &at])
                     .await?;

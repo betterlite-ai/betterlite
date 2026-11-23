@@ -1,15 +1,17 @@
 #![cfg(test)]
 
+use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 
 use chrono::NaiveDateTime;
 use rstest::rstest;
+use tokio_postgres::Client;
 
 use crate::entity_spend_commit::balances::PostgresEntityTables;
 use crate::entity_spend_commit::progress::EntityCommitError;
 use crate::entity_spend_commit::tests::support::{
-    Database, MEMBER_SPEND, MEMBER_TOTAL_SPEND, Ports, SEED_SQL, amount, commit_through,
-    flush_moment, increments, transactions,
+    Database, MEMBER_SPEND, MEMBER_TOTAL_SPEND, Ports, SEED_SQL, TickingClock, amount,
+    commit_through, flush_moment, flush_moment_tick, increments, transactions,
 };
 use crate::entity_spend_commit::{EntityTableError, EntityTableWriter as _};
 use crate::postgres_store::session::PostgresStore;
@@ -132,17 +134,48 @@ async fn keys_advance_spend_total_spend_and_last_active() {
         .unwrap();
     assert_eq!(database.spend(KEY_SPEND, "k1").await, amount("1.5"));
     assert_eq!(database.spend(KEY_TOTAL_SPEND, "k1").await, amount("3.5"));
-    let last_active: NaiveDateTime = database
-        .client
+    assert_eq!(last_active(&database.client, "k1").await, flush_moment());
+    database.close().await;
+}
+
+// The source stamps last_active from a fresh datetime.now inside its per-token loop, so each key row reads the clock again.
+#[tokio::test]
+async fn each_key_row_stamps_its_own_last_active() {
+    let database = Database::open(1).await;
+    database.seed(SEED_SQL).await;
+    database
+        .seed(r#"INSERT INTO "LiteLLM_VerificationToken" (token, spend, total_spend) VALUES ('k2', 1, 3)"#)
+        .await;
+    let ticking = TickingClock {
+        reads: AtomicU32::new(0),
+    };
+    let writer = PostgresEntityTables {
+        store: database.store.clone(),
+        clock: &ticking,
+        deadline: SpendDeadline::SOURCE,
+    };
+    let rows = increments(&[("k1", "0.5"), ("k2", "0.5")]);
+    writer
+        .write_table(SpendTable::KeyList, &rows)
+        .await
+        .unwrap();
+    assert_eq!(last_active(&database.client, "k1").await, flush_moment());
+    assert_eq!(
+        last_active(&database.client, "k2").await,
+        flush_moment_tick(1)
+    );
+    database.close().await;
+}
+
+async fn last_active(client: &Client, token: &str) -> NaiveDateTime {
+    client
         .query_one(
-            r#"SELECT last_active FROM "LiteLLM_VerificationToken" WHERE token = 'k1'"#,
-            &[],
+            r#"SELECT last_active FROM "LiteLLM_VerificationToken" WHERE token = $1"#,
+            &[&token],
         )
         .await
         .unwrap()
-        .get(0);
-    assert_eq!(last_active, flush_moment());
-    database.close().await;
+        .get(0)
 }
 
 #[tokio::test]
