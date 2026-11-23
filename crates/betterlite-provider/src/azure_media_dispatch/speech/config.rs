@@ -17,6 +17,7 @@ use betterlite_openai::openai_base_config::Object;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde_json::Number;
 
 use crate::api::speech_provider_contract::error::SpeechContractError;
 use crate::api::speech_provider_contract::{
@@ -49,7 +50,8 @@ impl TextToSpeechConfig for AvaSpeechConfig {
             response_format: text(&optional_params, "response_format"),
             speed: optional_params
                 .get("speed")
-                .and_then(|value| value.as_f64()),
+                .and_then(|value| value.as_number())
+                .and_then(Number::as_f64),
         };
         let kwargs = SpeechKwargs {
             style: text(&options.kwargs, "style"),
