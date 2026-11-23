@@ -85,6 +85,29 @@ fn unlisted_native_callbacks_are_refused(#[case] uri: &str, #[case] configured: 
     assert_eq!(rejected.redirect_uri, None);
 }
 
+// the native match refuses these before comparing, so an entry equal to the URI does not help
+#[rstest]
+#[case::fragment("myapp://host/cb#frag", "myapp://host/cb", "myapp")]
+#[case::query("myapp://host/cb?x=1", "myapp://host/cb", "myapp")]
+#[case::userinfo("myapp://user:pass@host/cb", "myapp://user:pass@host/cb", "myapp")]
+#[case::empty_netloc("mailto:user@example.com", "mailto:user@example.com", "mailto")]
+fn an_allowlisted_entry_does_not_excuse_a_fragment_query_userinfo_or_no_host(
+    #[case] uri: &str,
+    #[case] configured: &str,
+    #[case] scheme: &str,
+) {
+    let parsed = parse_redirect_uri(uri).unwrap();
+    let rejected = validate_redirect_uri_shape(&parsed, &native_callbacks(configured)).unwrap_err();
+    assert_eq!(
+        rejected.description,
+        format!(
+            "redirect_uri scheme '{scheme}' is not allowed; use http/https or a registered native callback (e.g. cursor://)."
+        )
+    );
+    assert_eq!(rejected.hint.as_deref(), Some(SCHEME_HINT));
+    assert_eq!(rejected.redirect_uri, None);
+}
+
 #[rstest]
 #[case::custom_scheme("myapp://host/cb", "myapp")]
 #[case::scheme_with_a_fragment("ftp://host/cb#x", "ftp")]
