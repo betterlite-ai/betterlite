@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone, tzinfo
+from datetime import UTC, datetime, tzinfo
 from types import ModuleType
 from typing import Final, Literal
 from uuid import UUID
@@ -32,7 +32,7 @@ Direction = Literal["forward", "reverse"]
 TargetType = Literal["key", "team", "user"]
 StatusText = Literal["running", "completed", "stopped"]
 
-_NOW: datetime = datetime(2023, 11, 14, tzinfo=timezone.utc)
+_NOW: list[datetime] = [datetime(2023, 11, 14, tzinfo=UTC)]
 _MINTED: list[UUID] = []
 
 
@@ -41,7 +41,7 @@ class FixedInstant(datetime):
     @override
     def now(cls, tz: tzinfo | None = None) -> "FixedInstant":
         _ = tz
-        return cls.fromtimestamp(_NOW.timestamp(), timezone.utc)
+        return cls.fromtimestamp(_NOW[0].timestamp(), UTC)
 
 
 def _mint() -> UUID:
@@ -51,11 +51,11 @@ def _mint() -> UUID:
 
 
 def _instant(millis: int) -> datetime:
-    return datetime.fromtimestamp(millis / 1000, timezone.utc)
+    return datetime.fromtimestamp(millis / 1000, UTC)
 
 
 def _millis(stamp: datetime) -> int:
-    aware = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=timezone.utc)
+    aware = stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
     return round(aware.timestamp() * 1000)
 
 
@@ -114,7 +114,7 @@ class AttemptSeed(Strict):
 
 
 class Body(Strict):
-    text: str
+    text: str = ""
     pad_to: int | None = None
 
 
@@ -424,7 +424,7 @@ class FakeStore:
                 self.rows[index] = row.model_copy(update={"stopped_at": self.now})
 
     def stop(self, job_id: str, operator: str, stamp_iso: str) -> int:
-        stamp = datetime.fromisoformat(stamp_iso).replace(tzinfo=timezone.utc)
+        stamp = datetime.fromisoformat(stamp_iso).replace(tzinfo=UTC)
         group = [index for index, row in enumerate(self.rows) if row.group_id == job_id]
         if not group:
             return 0
@@ -678,18 +678,15 @@ class ShadowEvalLifecycle(Operation):
 
     @override
     def run(self) -> Strict:
-        global _NOW
-        _NOW = _instant(self.now_millis)
+        _NOW[0] = _instant(self.now_millis)
         _MINTED[:] = [UUID(text) for text in self.minted]
         endpoints.uuid4 = _mint
         endpoints.datetime = FixedInstant
         response_types.datetime = FixedInstant
         unconfigured()
         router = router_of(self.router, self.model_group_alias)
-        store = FakeStore.build(self.jobs, self.attempts, _NOW)
+        store = FakeStore.build(self.jobs, self.attempts, _NOW[0])
         store.seeds_fail = self.seeds_fail
         store.create_conflict = self.create_conflict
-        steps: list[StepOutcome] = []
-        for step in self.steps:
-            steps.append(asyncio.run(outcome(store, self.rows, router, step)))
+        steps: list[StepOutcome] = [asyncio.run(outcome(store, self.rows, router, step)) for step in self.steps]
         return Output(steps=steps, jobs=store.states())
