@@ -127,16 +127,9 @@ impl From<ConvertError> for PyErr {
 
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
-        match &error {
-            SessionError::Json(inner) => PyValueError::new_err(inner.to_string()),
-            SessionError::Proxy { .. }
-            | SessionError::Client { .. }
-            | SessionError::Settings { .. }
-            | SessionError::Timeout { .. }
-            | SessionError::Catalog { .. }
-            | SessionError::Lookup { .. }
-            | SessionError::Redact { .. }
-            | SessionError::Logging { .. } => PyRuntimeError::new_err(error.to_string()),
+        if let SessionError::Json(inner) = &error {
+            return PyValueError::new_err(inner.to_string());
         }
+        PyRuntimeError::new_err(error.to_string())
     }
 }

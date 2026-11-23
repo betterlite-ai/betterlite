@@ -12,7 +12,9 @@ use betterlite_core::api::container_file_endpoints::handler::{
     ContainerConfigLookup, ContainerIdDecoder, DecodedContainerCall,
 };
 use betterlite_core::containers::container_request_parameters::{
-    ContainerFieldTypeError, decode_managed_container_id_for_request,
+    ContainerFieldTypeError,
+    // ast-grep-ignore: no-long-names
+    decode_managed_container_id_for_request,
 };
 use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
 use betterlite_http::proxy::ProxiedClient;
@@ -147,6 +149,7 @@ impl ContainerIdDecoder for Decoder {
         let encoded = serde_json::to_value(params).map_err(|_error| params_field())?;
         let values: IndexMap<String, JsonValue> =
             serde_json::from_value(encoded).map_err(|_error| params_field())?;
+        // ast-grep-ignore: no-long-names
         let decoded = decode_managed_container_id_for_request(container_id, provider, &values)?;
         let object =
             serde_json::to_value(&decoded.litellm_params).map_err(|_error| params_field())?;

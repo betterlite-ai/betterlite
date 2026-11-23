@@ -7,8 +7,7 @@ use betterlite_config::sections::Section;
 use betterlite_config::sections::openai_credentials::{Raw, Settings};
 use betterlite_core::api::container_create_list::handler::GenericCollectionHandler;
 use betterlite_core::api::container_create_list::{
-    ContainerCallDeps, ContainerCreateCall, ContainerListCall, acreate_container, alist_containers,
-    create_container, list_containers,
+    ContainerCallDeps, ContainerCreateCall, ContainerListCall, create_container, list_containers,
 };
 use betterlite_core::api::container_resource_ops::ContainerOperationRequest;
 use betterlite_core::api::container_resource_ops::ContainerOperations;
@@ -26,6 +25,8 @@ use super::super::convert::{CallWire, ConvertError, CreatedAnswer, SessionWire, 
 use super::super::error::{SessionError, SessionFailure};
 use super::super::stack;
 use super::super::transport::Source;
+
+mod asynchronous;
 
 const CREATE_CALL_TYPE: &str = "create_container";
 const LIST_CALL_TYPE: &str = "list_containers";
@@ -102,35 +103,6 @@ impl SessionCore {
         encode_created(&created)
     }
 
-    // LiteLLM's acreate_container: the same steps through the async handler
-    pub(crate) async fn acreate(
-        &self,
-        wire: &CallWire,
-        call: &ContainerCreateCall,
-    ) -> Result<String, SessionFailure> {
-        let configs = self.configs(wire);
-        let logging = stack::logging_state(
-            CREATE_CALL_TYPE,
-            call.litellm_call_id.as_deref(),
-            &self.redactor,
-        )?;
-        let source = Source {
-            client: self.client.clone(),
-            deadline: self.deadline(call.timeout)?,
-        };
-        let handler = GenericCollectionHandler {
-            source,
-            hook: stack::NoPreCall,
-        };
-        let deps = ContainerCallDeps {
-            logging: &logging,
-            redactor: &self.redactor,
-            request_timeout_seconds: self.request_timeout_seconds,
-        };
-        let created = acreate_container(&handler, &configs, deps, call).await?;
-        encode_created(&created)
-    }
-
     // LiteLLM's list_containers: the query carries only the values the caller set
     pub(crate) fn list(
         &self,
@@ -160,35 +132,6 @@ impl SessionCore {
         encode(&reply)
     }
 
-    // LiteLLM's alist_containers: the same steps through the async handler
-    pub(crate) async fn alist(
-        &self,
-        wire: &CallWire,
-        call: &ContainerListCall,
-    ) -> Result<String, SessionFailure> {
-        let configs = self.configs(wire);
-        let logging = stack::logging_state(
-            LIST_CALL_TYPE,
-            call.litellm_call_id.as_deref(),
-            &self.redactor,
-        )?;
-        let source = Source {
-            client: self.client.clone(),
-            deadline: self.deadline(call.timeout)?,
-        };
-        let handler = GenericCollectionHandler {
-            source,
-            hook: stack::NoPreCall,
-        };
-        let deps = ContainerCallDeps {
-            logging: &logging,
-            redactor: &self.redactor,
-            request_timeout_seconds: self.request_timeout_seconds,
-        };
-        let reply = alist_containers(&handler, &configs, deps, call).await?;
-        encode(&reply)
-    }
-
     // LiteLLM's retrieve_container: the managed id decodes to its provider, then the GET reads the record back
     pub(crate) fn retrieve(
         &self,
@@ -202,19 +145,6 @@ impl SessionCore {
         encode(&reply)
     }
 
-    // LiteLLM's aretrieve_container: the async handler keeps the provider's own id
-    pub(crate) async fn aretrieve(
-        &self,
-        wire: &CallWire,
-        request: &ContainerOperationRequest<'_>,
-    ) -> Result<String, SessionFailure> {
-        let (configs, logging, handler) =
-            self.operation_stack(wire, request, RETRIEVE_CALL_TYPE)?;
-        let operations = self.operations(&handler, &configs, &logging);
-        let reply = operations.aretrieve_container(request).await?;
-        encode(&reply)
-    }
-
     pub(crate) fn delete(
         &self,
         wire: &CallWire,
@@ -223,17 +153,6 @@ impl SessionCore {
         let (configs, logging, handler) = self.operation_stack(wire, request, DELETE_CALL_TYPE)?;
         let operations = self.operations(&handler, &configs, &logging);
         let reply = operations.delete_container(request)?;
-        encode(&reply)
-    }
-
-    pub(crate) async fn adelete(
-        &self,
-        wire: &CallWire,
-        request: &ContainerOperationRequest<'_>,
-    ) -> Result<String, SessionFailure> {
-        let (configs, logging, handler) = self.operation_stack(wire, request, DELETE_CALL_TYPE)?;
-        let operations = self.operations(&handler, &configs, &logging);
-        let reply = operations.adelete_container(request).await?;
         encode(&reply)
     }
 
