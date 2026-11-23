@@ -68,7 +68,7 @@ pub fn requested_end_user_budget_id(request: &KeyRequestBase) -> Option<String> 
     if let Some(Some(budget_id)) = &request.key_fields.end_user_budget_id {
         return Some(budget_id.clone());
     }
-    let Some(Some(metadata)) = &request.base.base.metadata else {
+    let Some(Some(metadata)) = &request.base.metadata else {
         return None;
     };
     let supplied = metadata.0.get("end_user_budget_id").and_then(string_of);
