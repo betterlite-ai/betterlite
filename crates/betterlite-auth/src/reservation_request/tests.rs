@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_redis::request_batch::lock;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio::task::yield_now;
 use tokio::time::advance;
@@ -29,71 +30,56 @@ const TTL: i64 = 60;
 const INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
 
-#[test]
-fn route_the_six_unbilled_routes_are_skipped() {
-    for route in [
-        "/models",
-        "/v1/models",
-        "/utils/token_counter",
-        "/responses/input_tokens",
-        "/v1/responses/input_tokens",
-        "/openai/v1/responses/input_tokens",
-    ] {
-        assert!(is_unbilled_route(route), "{route}");
-    }
+#[rstest]
+#[case::models("/models")]
+#[case::v1_models("/v1/models")]
+#[case::utils_token_counter("/utils/token_counter")]
+#[case::responses_input_tokens("/responses/input_tokens")]
+#[case::v1_responses_input_tokens("/v1/responses/input_tokens")]
+#[case::openai_v1_responses_input_tokens("/openai/v1/responses/input_tokens")]
+fn route_the_six_unbilled_routes_are_skipped(#[case] route: &str) {
+    assert!(is_unbilled_route(route), "{route}");
 }
 
-#[test]
-fn route_unbilled_matches_are_exact() {
-    for route in [
-        "/v1/models/gpt-4o",
-        "/models/gpt-4o",
-        "/V1/models",
-        "/v1/models/",
-        "/utils/token_counter/extra",
-        "/v1/responses/input_tokens/extra",
-        "/openai/v1/responses/input_tokens/x",
-        "",
-    ] {
-        assert!(!is_unbilled_route(route), "{route}");
-    }
+#[rstest]
+#[case::model_name("/v1/models/gpt-4o")]
+#[case::models_prefix("/models/gpt-4o")]
+#[case::uppercase("/V1/models")]
+#[case::trailing_slash("/v1/models/")]
+#[case::utils_extra("/utils/token_counter/extra")]
+#[case::responses_extra("/v1/responses/input_tokens/extra")]
+#[case::openai_extra("/openai/v1/responses/input_tokens/x")]
+#[case::empty("")]
+fn route_unbilled_matches_are_exact(#[case] route: &str) {
+    assert!(!is_unbilled_route(route), "{route}");
 }
 
-#[test]
-fn route_count_tokens_segments_are_skipped() {
-    for route in [
-        "/v1/messages/count_tokens",
-        "/count_tokens",
-        "count_tokens",
-        "/a/b/count-tokens",
-        "/v1/models/count_tokens:extra",
-    ] {
-        assert!(is_token_counting_route(route), "{route}");
-    }
+#[rstest]
+#[case::messages("/v1/messages/count_tokens")]
+#[case::leading_slash("/count_tokens")]
+#[case::bare("count_tokens")]
+#[case::hyphenated("/a/b/count-tokens")]
+#[case::with_action("/v1/models/count_tokens:extra")]
+fn route_count_tokens_segments_are_skipped(#[case] route: &str) {
+    assert!(is_token_counting_route(route), "{route}");
 }
 
-#[test]
-fn route_count_tokens_action_is_skipped() {
-    for route in [
-        "/v1beta/models/gemini-pro:countTokens",
-        "/models/x:countTokens",
-        "/v1beta/models/a/b:countTokens",
-    ] {
-        assert!(is_token_counting_route(route), "{route}");
-    }
+#[rstest]
+#[case::gemini("/v1beta/models/gemini-pro:countTokens")]
+#[case::short_model("/models/x:countTokens")]
+#[case::nested_segment("/v1beta/models/a/b:countTokens")]
+fn route_count_tokens_action_is_skipped(#[case] route: &str) {
+    assert!(is_token_counting_route(route), "{route}");
 }
 
-#[test]
-fn route_count_tokens_near_misses_are_billed() {
-    for route in [
-        "/v1beta/models/gemini-pro:countTokensX",
-        "/v1/messages/count_tokens/extra",
-        "/v1/messages/CountTokens",
-        "/v1/messages/countTokens",
-        "/v1beta/models/x:countTokens:extra",
-    ] {
-        assert!(!is_token_counting_route(route), "{route}");
-    }
+#[rstest]
+#[case::action_suffix("/v1beta/models/gemini-pro:countTokensX")]
+#[case::segment_extra("/v1/messages/count_tokens/extra")]
+#[case::capitalized_segment("/v1/messages/CountTokens")]
+#[case::camel_segment("/v1/messages/countTokens")]
+#[case::second_colon("/v1beta/models/x:countTokens:extra")]
+fn route_count_tokens_near_misses_are_billed(#[case] route: &str) {
+    assert!(!is_token_counting_route(route), "{route}");
 }
 
 #[test]
@@ -181,23 +167,24 @@ async fn request_missing_estimate_returns_none() {
     );
 }
 
+#[rstest]
+#[case::zero(Decimal::ZERO)]
+#[case::negative(Decimal::NEGATIVE_ONE)]
 #[tokio::test]
-async fn request_non_positive_estimate_returns_none() {
-    for estimate in [Decimal::ZERO, Decimal::NEGATIVE_ONE] {
-        let mut world = World::new();
-        world.costs.max_cost = Some(estimate);
-        let body = support::body();
-        let request = RequestFixture::new(&body, ROUTE, &world).build();
-        let outcome = reserve_budget_for_request(&request, &world.services(None))
-            .await
-            .expect("the reservation finishes");
-        assert!(outcome.is_none(), "{estimate}");
-        assert_eq!(
-            world.calls.names(),
-            vec!["counters", "input_tokens", "max_cost"],
-            "{estimate}"
-        );
-    }
+async fn request_non_positive_estimate_returns_none(#[case] estimate: Decimal) {
+    let mut world = World::new();
+    world.costs.max_cost = Some(estimate);
+    let body = support::body();
+    let request = RequestFixture::new(&body, ROUTE, &world).build();
+    let outcome = reserve_budget_for_request(&request, &world.services(None))
+        .await
+        .expect("the reservation finishes");
+    assert!(outcome.is_none(), "{estimate}");
+    assert_eq!(
+        world.calls.names(),
+        vec!["counters", "input_tokens", "max_cost"],
+        "{estimate}"
+    );
 }
 
 #[tokio::test]
@@ -566,10 +553,12 @@ async fn lease_stops_at_the_request_timeout() {
         get_reserved_counter_keys(&handle),
     );
     yield_now().await;
-    for _ in 0..3 {
-        advance(INTERVAL).await;
-        yield_now().await;
-    }
+    advance(INTERVAL).await;
+    yield_now().await;
+    advance(INTERVAL).await;
+    yield_now().await;
+    advance(INTERVAL).await;
+    yield_now().await;
     assert_eq!(
         harness.refreshed(),
         vec![KEY.to_owned(), KEY.to_owned(), KEY.to_owned()]

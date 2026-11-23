@@ -1,4 +1,3 @@
-// _UNBILLED_ROUTES: the routes that never take a reservation, whatever the token's budget
 const UNBILLED_ROUTES: [&str; 6] = [
     "/models",
     "/v1/models",

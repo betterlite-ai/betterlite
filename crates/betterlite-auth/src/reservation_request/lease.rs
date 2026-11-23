@@ -27,7 +27,9 @@ pub fn start(
     let Some(interval) = renewal_interval(renewal.redis_default_ttl) else {
         return;
     };
-    let deadline = renewal_deadline(renewal.request_timeout);
+    // litellm.request_timeout from the monotonic clock; a timeout too large to place ends the renewal at once
+    let now = Instant::now();
+    let deadline = now.checked_add(renewal.request_timeout).unwrap_or(now);
     let leases = Arc::clone(&renewal.leases);
     let _task = renewal.tasks.spawn(async move {
         renew(state, counter_keys, interval, deadline, leases).await;
@@ -43,12 +45,6 @@ pub fn renewal_interval(default_ttl: i64) -> Option<Duration> {
     }
     let half_millis = ttl.checked_mul(500)?;
     Some(Duration::from_millis(half_millis))
-}
-
-// litellm.request_timeout from the monotonic clock; a timeout too large to place ends the renewal at once
-fn renewal_deadline(request_timeout: Duration) -> Instant {
-    let now = Instant::now();
-    now.checked_add(request_timeout).unwrap_or(now)
 }
 
 // _renew_reservation_lease: sleep first and check after, so a request shorter than half the TTL never refreshes
