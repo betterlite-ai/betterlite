@@ -67,6 +67,7 @@ impl ShadowLifecycleStore for ProbeStore {
                 leg.stopped_at = Some(self.now);
             }
         }
+        drop(legs);
         Ok(())
     }
 
@@ -178,6 +179,7 @@ impl ShadowLifecycleStore for ProbeStore {
                 }
             }
         }
+        drop(legs);
         Ok(1)
     }
 }

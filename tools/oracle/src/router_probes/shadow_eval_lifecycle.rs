@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 use self::forms::{Body, Payload, Role, role_name};
 use self::output::{OutputFields, StepOutcome};
-use self::probe::Probe;
+use self::probe::{Fixture, Probe};
 use self::store::ProbeStore;
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
@@ -77,12 +77,23 @@ async fn scenario(input: &Input) -> Result<Output, OperationError> {
     let cache = ProviderCache::default();
     let settings = AnthropicSettings::default();
     let info = Json::Object(JsonObject::new());
-    let fixture = Snapshot::build(&probe_rows(payload, &info), &payload.model_group_alias)
+    let Snapshot {
+        catalog: fixture_catalog,
+        aliases: fixture_aliases,
+        groups: fixture_groups,
+        provider: fixture_provider,
+    } = Snapshot::build(&probe_rows(payload, &info), &payload.model_group_alias)
         .map_err(invalid)?;
+    // the boxed closure is neither Send nor Sync, and no lifecycle step reads it
+    drop(fixture_provider);
     let store = ProbeStore::build(payload)?;
     let mut probe = Probe {
         store: &store,
-        fixture: &fixture,
+        fixture: Fixture {
+            catalog: fixture_catalog,
+            aliases: fixture_aliases,
+            groups: fixture_groups,
+        },
         settings: &settings,
         cache: &cache,
         resolution: &resolution,

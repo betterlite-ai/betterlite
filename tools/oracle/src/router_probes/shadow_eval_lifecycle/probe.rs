@@ -5,10 +5,12 @@ use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_models::decisions::Json;
 use betterlite_models::judge_primitives::provider_qualified::ProviderCache;
 use betterlite_models::resolution::ResolutionContext;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::model_catalog_lookup::alias::AliasMap;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_server::judge_targets::call::JudgeCall;
 use betterlite_server::judge_targets::error::JudgeDispatchError;
 use betterlite_server::judge_targets::sdk::JudgeSdk;
-use betterlite_server::model_visibility::testing::Snapshot;
 use betterlite_server::plugin_routes::routes::Identity;
 use betterlite_server::shadow_eval_lifecycle::access::require_writer;
 use betterlite_server::shadow_eval_lifecycle::body::decode_shadow_body;
@@ -28,9 +30,16 @@ use super::store::ProbeStore;
 use super::{body_bytes, failed, identity_of, parse_outcome, unconsulted};
 use crate::router_probes::error::OperationError;
 
+// the snapshot's three router pieces without its boxed provider closure, which no probe step reads
+pub(super) struct Fixture {
+    pub(super) catalog: DeploymentCatalog,
+    pub(super) aliases: AliasMap,
+    pub(super) groups: RoutingGroupIndex,
+}
+
 pub(super) struct Probe<'probe> {
     pub(super) store: &'probe ProbeStore,
-    pub(super) fixture: &'probe Snapshot,
+    pub(super) fixture: Fixture,
     pub(super) settings: &'probe AnthropicSettings,
     pub(super) cache: &'probe ProviderCache,
     pub(super) resolution: &'probe ResolutionContext<'probe>,

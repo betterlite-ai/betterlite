@@ -59,9 +59,13 @@ impl ProbeStore {
     }
 
     fn legs_of(&self, group_id: &str) -> Vec<LegRow> {
-        let legs = self.legs.lock().unwrap_or_else(PoisonError::into_inner);
-        let matching = legs.iter().filter(|leg| leg.group_id == group_id);
-        matching.cloned().collect()
+        self.legs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|leg| leg.group_id == group_id)
+            .cloned()
+            .collect()
     }
 
     fn attempt_count(&self, leg: &LegRow) -> i64 {
