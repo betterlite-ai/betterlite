@@ -12,4 +12,4 @@ call:
     options: {}
 env: {}
 compare:
-  ignore: [{pointer: /accept, why: "httpx adds its own accept default to the SSML post, which the AVA handler never sets"}]
+  ignore: [{pointer: /value/accept, why: "httpx adds its own accept default to the SSML post, which the AVA handler never sets"}]
