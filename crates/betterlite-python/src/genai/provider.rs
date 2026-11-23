@@ -14,14 +14,14 @@ use betterlite_core::genai_setup::config::{
     GenerateContentProviderConfig, GenerateContentRequest as SetupRequest,
 };
 use betterlite_core::genai_setup::params::VertexCredentials;
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_vertex::aws_federation::AwsCredentialsResolver;
 use betterlite_vertex::credential_sources::files::StdFiles;
 use betterlite_vertex::credential_sources::getters::VertexParams;
 use betterlite_vertex::credential_sources::handles::{LoadDeps, load_auth};
-use betterlite_vertex::credential_sources::sdk::{CredentialClock, GoogleAuth, TokenSource as _};
+use betterlite_vertex::credential_sources::sdk::{CredentialClock, GoogleAuth, HttpPolicy};
 use betterlite_vertex::genai::genai_contract::config::TOP_LEVEL_FIELDS;
 use betterlite_vertex::google_native_content::auth::{
     AuthTarget as VertexTarget, NativeAuth, auth_token_and_url as vertex_auth,
@@ -41,6 +41,7 @@ use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::probe::AccessToken;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::future::ready;
 use std::sync::Arc;
@@ -133,13 +134,25 @@ impl NativeContentConfig {
         configured: Option<&ConfiguredCredentials>,
     ) -> Result<AuthTarget, GenaiConfigError> {
         let auth = self.native_auth(call, configured);
-        let target = vertex_auth(self.catalog.as_ref(), &auth, |credentials, project| {
-            self.lookup(credentials, project)
-        })
-        .await?;
+        let vertex = self.vertex.clone();
+        let client = self.google.client.clone();
+        let policy = self.google.policy.clone();
+        let clock = Arc::clone(&self.clock);
+        let resolver = move |credentials: Option<&ConfiguredCredentials>, project: Option<&str>| {
+            lookup(
+                vertex,
+                client,
+                policy,
+                clock,
+                credentials.cloned(),
+                project.map(str::to_owned),
+            )
+        };
+        let target = vertex_auth(self.catalog.as_ref(), &auth, resolver).await?;
+        let VertexTarget { url, headers } = target;
         Ok(AuthTarget {
-            url: target.url,
-            headers: exposed_headers(target),
+            url,
+            headers: exposed_headers(headers),
         })
     }
     // LiteLLM's _get_common_auth_components with the per-deployment params it hands the Vertex getters
@@ -169,36 +182,38 @@ impl NativeContentConfig {
             },
         }
     }
-    // VertexBase.load_auth: the fresh handle, then the token and the project it resolved
-    fn lookup(
-        &self,
-        credentials: Option<&ConfiguredCredentials>,
-        project: Option<&str>,
-    ) -> impl Future<Output = Result<AccessToken, CredentialCacheError>> + Send + '_ {
-        let owned = credentials.cloned();
-        let owned_project = project.map(str::to_owned);
-        async move {
-            let files = StdFiles;
-            let deps = LoadDeps {
-                environment: &self.vertex.adc,
-                files: &files,
-                http: &self.google,
-                aws: Arc::new(UnavailableAws),
-                clock: Arc::clone(&self.clock),
-            };
-            let loaded = load_auth(owned.as_ref(), owned_project.as_deref(), &deps)
-                .await
-                .map_err(CredentialCacheError::Load)?;
-            let token = loaded
-                .handle
-                .access_token()
-                .await
-                .map_err(CredentialCacheError::Load)?;
-            Ok(AccessToken {
-                token,
-                project: loaded.project,
-            })
-        }
+}
+// VertexBase.load_auth: the fresh handle, then the token and the project it resolved
+fn lookup(
+    vertex: VertexSettings,
+    client: ProxiedClient,
+    policy: HttpPolicy,
+    clock: Arc<dyn CredentialClock>,
+    credentials: Option<ConfiguredCredentials>,
+    project: Option<String>,
+) -> impl Future<Output = Result<AccessToken, CredentialCacheError>> + Send {
+    async move {
+        let google = GoogleAuth { client, policy };
+        let files = StdFiles;
+        let deps = LoadDeps {
+            environment: &vertex.adc,
+            files: &files,
+            http: &google,
+            aws: Arc::new(UnavailableAws),
+            clock,
+        };
+        let loaded = load_auth(credentials.as_ref(), project.as_deref(), &deps)
+            .await
+            .map_err(CredentialCacheError::Load)?;
+        let token = loaded
+            .handle
+            .access_token()
+            .await
+            .map_err(CredentialCacheError::Load)?;
+        Ok(AccessToken {
+            token,
+            project: loaded.project,
+        })
     }
 }
 fn native_request(request: &SetupRequest<'_>) -> VertexRequest {
@@ -214,11 +229,7 @@ fn native_request(request: &SetupRequest<'_>) -> VertexRequest {
 fn gemini_key(extra: &Object) -> Option<AuthValue> {
     match extra.get("gemini_api_key") {
         Some(Json::Text(key)) => Some(AuthValue::Key(SecretString::from(key.clone()))),
-        Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::Number(_))
-        | Some(Json::List(_))
-        | Some(Json::Object(_))
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
 }
@@ -236,9 +247,8 @@ fn configured_credentials(
         .map_err(|source| GenaiConfigError::Credentials { source })
 }
 // the provider answers secrets; the wire takes text
-fn exposed_headers(target: VertexTarget) -> IndexMap<String, String> {
-    target
-        .headers
+fn exposed_headers(headers: BTreeMap<String, SecretString>) -> IndexMap<String, String> {
+    headers
         .into_iter()
         .map(|(name, value)| (name, value.expose_secret().to_owned()))
         .collect()

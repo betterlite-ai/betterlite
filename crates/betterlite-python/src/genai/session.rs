@@ -14,10 +14,13 @@ use betterlite_config::sections::vertex_credential_sources::Raw as VertexRaw;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_schema_shaping::Raw as SchemaRaw;
 use betterlite_config::sections::vertex_schema_shaping::Settings as SchemaSettings;
+use betterlite_core::api::genai::generate_content::async_stream::agenerate_content_stream;
+use betterlite_core::api::genai::generate_content::async_unary::agenerate_content;
 use betterlite_core::api::genai::generate_content::error::GenerateContentFailure;
+use betterlite_core::api::genai::generate_content::stream::generate_content_stream;
+use betterlite_core::api::genai::generate_content::unary::generate_content;
 use betterlite_core::api::genai::generate_content::{
-    GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest, agenerate_content,
-    agenerate_content_stream, generate_content, generate_content_stream,
+    GenerateContentAnswer, GenerateContentDeps, GenerateContentRequest,
 };
 use betterlite_core::api::genai_http::stream::StreamSettings;
 use betterlite_core::api::vector_store_http_write::service::LogContext;

@@ -5,7 +5,7 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::C
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use betterlite_logging::logging_state::LoggingStateError;
-use betterlite_redact::secret::RedactionError;
+use betterlite_redact::error::RedactionError;
 use betterlite_vertex::google_native_content::error::NativeContentError;
 use pyo3::PyErr;
 use pyo3::create_exception;
