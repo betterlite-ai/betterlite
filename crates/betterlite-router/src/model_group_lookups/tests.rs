@@ -47,55 +47,38 @@ fn generated_id() -> String {
     "generated".to_owned()
 }
 
-fn plain_row(name: &str, id: &str) -> DeploymentSpec {
+fn row(name: &str, model_info: JsonObject) -> DeploymentSpec {
     DeploymentSpec::new(
         name.to_owned(),
         object(vec![("model", text("openai/m"))]),
-        object(vec![("id", text(id))]),
+        model_info,
         JsonObject::new(),
         generated_id,
     )
     .expect("the fixture deployment is invalid")
+}
+
+fn plain_row(name: &str, id: &str) -> DeploymentSpec {
+    row(name, object(vec![("id", text(id))]))
 }
 
 fn group_row(name: &str, id: &str, groups: &[&str]) -> DeploymentSpec {
+    row(name, group_info(id, groups))
+}
+
+fn group_info(id: &str, groups: &[&str]) -> JsonObject {
     let listed: Vec<Json> = groups.iter().map(|group| text(group)).collect();
-    DeploymentSpec::new(
-        name.to_owned(),
-        object(vec![("model", text("openai/m"))]),
-        object(vec![
-            ("id", text(id)),
-            ("access_groups", Json::List(listed)),
-        ]),
-        JsonObject::new(),
-        generated_id,
-    )
-    .expect("the fixture deployment is invalid")
+    object(vec![
+        ("id", text(id)),
+        ("access_groups", Json::List(listed)),
+    ])
 }
 
-fn team_row(name: &str, id: &str, team: &str, public: &str) -> DeploymentSpec {
-    DeploymentSpec::new(
-        name.to_owned(),
-        object(vec![("model", text("openai/m"))]),
-        object(vec![
-            ("id", text(id)),
-            ("team_id", text(team)),
-            ("team_public_model_name", text(public)),
-            ("access_groups", Json::List(vec![text("beta")])),
-        ]),
-        JsonObject::new(),
-        generated_id,
-    )
-    .expect("the fixture deployment is invalid")
-}
-
-fn raw_row(name: &str, info: &str) -> DeploymentSpec {
-    DeploymentSpec {
-        model_name: name.to_owned(),
-        litellm_params: object(vec![("model", text("openai/m"))]),
-        model_info: serde_json::from_str(info).expect("model_info"),
-        extra: JsonObject::new(),
-    }
+fn team_info(id: &str, team: &str, public: &str) -> JsonObject {
+    let mut info = group_info(id, &["beta"]);
+    info.insert("team_id".to_owned(), text(team));
+    info.insert("team_public_model_name".to_owned(), text(public));
+    info
 }
 
 fn expected(entries: &[(&str, &[&str])]) -> AccessGroupMap {
@@ -218,8 +201,8 @@ fn access_groups_narrows_by_model_name() {
 #[test]
 fn access_groups_narrows_by_team() {
     let world = World::new(&[
-        team_row("team-shared", "a", "team-1", "team-model"),
-        team_row("team-other", "b", "team-2", "team-model"),
+        row("team-shared", team_info("a", "team-1", "team-model")),
+        row("team-other", team_info("b", "team-2", "team-model")),
         group_row("gpt-4o", "c", &["beta"]),
     ]);
     let cache = AccessGroups::default();
@@ -253,9 +236,15 @@ fn access_groups_skips_empty_info_and_null_groups() {
         model_info: JsonObject::new(),
         extra: JsonObject::new(),
     };
+    let null_groups = DeploymentSpec {
+        model_name: "null-groups".to_owned(),
+        litellm_params: object(vec![("model", text("openai/m"))]),
+        model_info: serde_json::from_str(r#"{"access_groups":null}"#).expect("model_info"),
+        extra: JsonObject::new(),
+    };
     let world = World::new(&[
         empty,
-        raw_row("null-groups", r#"{"access_groups":null}"#),
+        null_groups,
         plain_row("plain", "c"),
         group_row("gpt-4o", "a", &["beta"]),
     ]);
@@ -269,7 +258,13 @@ fn access_groups_skips_empty_info_and_null_groups() {
 #[case::object(r#"{"access_groups":{"beta":true}}"#)]
 #[case::entry(r#"{"access_groups":["beta",2]}"#)]
 fn access_groups_rejects_a_value_outside_the_list(#[case] info: &str) {
-    let world = World::new(&[raw_row("bad-row", info)]);
+    let bad_row = DeploymentSpec {
+        model_name: "bad-row".to_owned(),
+        litellm_params: object(vec![("model", text("openai/m"))]),
+        model_info: serde_json::from_str(info).expect("model_info"),
+        extra: JsonObject::new(),
+    };
+    let world = World::new(&[bad_row]);
     let cache = AccessGroups::default();
     let error =
         all_groups(&world, &cache).expect_err("the access_groups value is not a list of strings");
