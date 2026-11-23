@@ -84,7 +84,7 @@ fn assert_generic_arguments(
     assert_eq!(
         args.api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-named")
     );
     assert_eq!(
@@ -161,7 +161,9 @@ async fn realtime_generic_dispatch_rejects_an_unsupported_model() {
     let litellm_params = IndexMap::new();
     let call = call("anthropic/claude-x", &connect, None, &litellm_params, false);
     let (_, result) = run(&dispatch, &settings(), &call).await;
-    let error = result.unwrap_err();
+    let Err(error) = result else {
+        panic!("an unsupported model must fail");
+    };
     assert_eq!(error.to_string(), "Unsupported model: claude-x");
     assert!(dispatch.tags().is_empty());
 }
@@ -248,12 +250,12 @@ fn assert_azure_global_arguments(connection: &RealtimeConnection<TestConfig>) {
             .args
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-global")
     );
     assert_eq!(api_version, "2024-10-01-preview");
     assert_eq!(protocol, "GA");
-    assert_eq!(*azure_ad_token, None);
+    assert!(azure_ad_token.is_none());
     let ConnectionQuery::Connector(Some(query)) = &connection.args.query_params else {
         panic!("the azure branch carries the connector query");
     };
@@ -286,11 +288,11 @@ async fn azure_ad_token_fallback(litellm_params: &IndexMap<String, Json>) {
         connection.args.api_base.as_deref(),
         Some("https://azure.example")
     );
-    assert_eq!(connection.args.api_key, None);
+    assert!(connection.args.api_key.is_none());
     assert_eq!(
         azure_ad_token
             .as_ref()
-            .map(|token| token.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("resolved-ad")
     );
     assert_azure_ad_request(&dispatch);
@@ -327,7 +329,7 @@ async fn openai_credentials(dispatch: &Recorder, litellm_params: &IndexMap<Strin
             .args
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-openai-global")
     );
 }
@@ -418,7 +420,7 @@ async fn bedrock_full_arguments(dispatch: &Recorder, litellm_params: &IndexMap<S
             .args
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("bedrock-key")
     );
     assert_eq!(connection.args.timeout, Some(30.0_f64));
@@ -437,19 +439,19 @@ fn assert_bedrock_aws_arguments(args: &RealtimeConnectParams) {
     assert_eq!(
         args.aws_access_key_id
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("access")
     );
     assert_eq!(
         args.aws_secret_access_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("secret-access")
     );
     assert_eq!(
         args.aws_session_token
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("session")
     );
     assert_eq!(args.aws_role_name.as_deref(), Some("role"));
@@ -458,7 +460,7 @@ fn assert_bedrock_aws_arguments(args: &RealtimeConnectParams) {
     assert_eq!(
         args.aws_web_identity_token
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("web-identity")
     );
     assert_eq!(
@@ -492,7 +494,7 @@ async fn bedrock_ignores_generic_and_global(
     let (_, result) = run(dispatch, &globals, &call).await;
     let connection = result.unwrap();
     assert_eq!(connection.args.api_base, None);
-    assert_eq!(connection.args.api_key, None);
+    assert!(connection.args.api_key.is_none());
 }
 
 async fn xai_arguments(dispatch: &Recorder, litellm_params: &IndexMap<String, Json>) {
@@ -524,7 +526,7 @@ async fn xai_named_arguments(
             .args
             .api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("xai-key")
     );
 }
@@ -664,7 +666,7 @@ async fn assert_vertex_connection(
     assert_eq!(project, "resolved-project");
     assert_eq!(location.as_deref(), Some("ai-location"));
     assert_eq!(connection.args.api_base, None);
-    assert_eq!(connection.args.api_key, None);
+    assert!(connection.args.api_key.is_none());
     assert_eq!(connection.args.timeout, Some(4.0_f64));
     let ConnectionQuery::Transport(Some(query)) = &connection.args.query_params else {
         panic!("the vertex transport carries the query");

@@ -164,13 +164,13 @@ pub(crate) fn logging_state() -> Result<LoggingState, Box<HelperError>> {
 
 pub(crate) fn scripted_tokens(setup: Option<&TokenSetup>) -> Arc<ScriptedTokens> {
     let tokens = ScriptedTokens::default();
-    if let Some(setup) = setup {
+    if let Some(scripted) = setup {
         let mut answers = tokens
             .answers
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        for (index, token) in setup.tokens.iter().enumerate() {
-            let project = setup
+        for (index, token) in scripted.tokens.iter().enumerate() {
+            let project = scripted
                 .projects
                 .get(index)
                 .cloned()

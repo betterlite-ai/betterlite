@@ -151,7 +151,7 @@ where
         String::from("custom_llm_provider"),
         Json::Text(resolved.provider.slug().to_owned()),
     );
-    Ok(update_from_kwargs(
+    update_from_kwargs(
         logging,
         &kwargs,
         Some(&litellm_params),
@@ -161,7 +161,8 @@ where
             optional_params: IndexMap::new(),
             additional_params,
         },
-    )?)
+    )?;
+    Ok(())
 }
 
 #[must_use]
@@ -171,12 +172,12 @@ pub fn build_litellm_metadata(
     guardrails: Option<&Json>,
 ) -> IndexMap<String, Json> {
     let mut built = litellm_metadata.cloned().unwrap_or_default();
-    let from_metadata = metadata.and_then(|metadata| metadata.get(GUARDRAILS_KEY));
+    let from_metadata = metadata.and_then(|values| values.get(GUARDRAILS_KEY));
     let selected = from_metadata
         .filter(|value| !empty_json(value))
         .or_else(|| guardrails.filter(|value| !empty_json(value)));
-    if let Some(guardrails) = selected {
-        built.insert(String::from(GUARDRAILS_KEY), guardrails.clone());
+    if let Some(chosen) = selected {
+        built.insert(String::from(GUARDRAILS_KEY), chosen.clone());
     }
     built
 }
@@ -223,8 +224,9 @@ where
         ProviderIdentity::Known(ProviderId::VertexAi) => {
             branches::vertex::vertex_connection(settings, dispatch, call, prepared).await
         }
-        ProviderIdentity::Known(_unsupported) => Err(unsupported(prepared)),
-        ProviderIdentity::Anyscale | ProviderIdentity::Custom(_slug) => Err(unsupported(prepared)),
+        ProviderIdentity::Known(_) | ProviderIdentity::Anyscale | ProviderIdentity::Custom(_) => {
+            Err(unsupported(prepared))
+        }
     }
 }
 
@@ -276,8 +278,8 @@ pub(super) fn connection_args(
 }
 
 pub(super) fn connector_query(query: Option<&IndexMap<String, String>>) -> Option<QueryParams> {
-    query.map(|query| {
-        query
+    query.map(|pairs| {
+        pairs
             .iter()
             .map(|(name, value)| (name.clone(), Some(value.clone())))
             .collect()

@@ -182,7 +182,7 @@ where
     )]
     VertexTokenTimeout { timeout_seconds: f64 },
     #[error(transparent)]
-    Token(OperationError),
+    Token(token::VertexTokenError),
     #[error(transparent)]
     Dispatch(OperationError),
     #[error(transparent)]

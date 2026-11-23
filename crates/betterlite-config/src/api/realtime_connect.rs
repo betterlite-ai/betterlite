@@ -6,6 +6,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
+use crate::sections::resource_sdk_settings::Settings as ResourceSettings;
+use crate::sections::xai_identity::Settings as XaiSettings;
 
 pub const CREDENTIAL_TIMEOUT_VARIABLE: &str = "REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS";
 pub const AZURE_PROTOCOL_VARIABLE: &str = "LITELLM_AZURE_REALTIME_PROTOCOL";
@@ -71,9 +73,21 @@ where
         .filter(|value| !value.is_empty());
     let credential_timeout_seconds = credential_timeout(&lookup)?;
     let config = ConfigLoader { lookup }.load(source)?;
-    let resource = &config.sections.resource_sdk_settings;
-    let xai = &config.sections.xai_identity;
-    Ok(RealtimeConnectionSettings {
+    Ok(settings_from_sections(
+        &config.sections.resource_sdk_settings,
+        &config.sections.xai_identity,
+        azure_realtime_protocol,
+        credential_timeout_seconds,
+    ))
+}
+
+fn settings_from_sections(
+    resource: &ResourceSettings,
+    xai: &XaiSettings,
+    azure_realtime_protocol: Option<String>,
+    credential_timeout_seconds: f64,
+) -> RealtimeConnectionSettings {
+    RealtimeConnectionSettings {
         api_base: resource.api_base.clone(),
         api_key: resource.api_key.clone(),
         openai_key: resource.openai_key.clone(),
@@ -103,7 +117,7 @@ where
             .filter(|value| !value.is_empty()),
         azure_realtime_protocol,
         credential_timeout_seconds,
-    })
+    }
 }
 
 // the constants module parses float(os.getenv(name, "20.0")), so an empty value is the default
@@ -117,8 +131,8 @@ where
     Ok(number::<f64>(CREDENTIAL_TIMEOUT_VARIABLE, &text)?.unwrap_or(DEFAULT_TIMEOUT_SECONDS))
 }
 
-fn non_empty_secret(value: Option<&SecretString>) -> Option<SecretString> {
-    value
+fn non_empty_secret(secret: Option<&SecretString>) -> Option<SecretString> {
+    secret
         .filter(|value| !value.expose_secret().is_empty())
         .cloned()
 }

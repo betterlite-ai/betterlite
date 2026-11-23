@@ -95,7 +95,7 @@ fn query_pairs(query: &ConnectionQuery) -> Value {
 }
 
 fn header_pairs(headers: Option<&HeaderMap>) -> Value {
-    let pairs: Option<Vec<(&String, &Json)>> = headers.map(|headers| headers.iter().collect());
+    let pairs: Option<Vec<(&String, &Json)>> = headers.map(|values| values.iter().collect());
     json!(pairs)
 }
 

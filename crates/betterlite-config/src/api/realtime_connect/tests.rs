@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use betterlite_env::EnvError;
 use betterlite_models::decisions::Json;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::loader::ConfigError;
 
@@ -13,9 +13,9 @@ use super::{
 };
 
 const DEFAULTS: &str =
-    include_str!("../../../../fuzz/corpus/config_yaml/realtime-connect-default.yaml");
+    include_str!("../../../fuzz/corpus/config_yaml/realtime-connect-default.yaml");
 const CONFIGURED: &str =
-    include_str!("../../../../fuzz/corpus/config_yaml/realtime-connect-configured.yaml");
+    include_str!("../../../fuzz/corpus/config_yaml/realtime-connect-configured.yaml");
 
 fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -24,24 +24,24 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn exposed(value: &Option<secrecy::SecretString>) -> Option<&str> {
-    value.as_ref().map(|value| value.expose_secret().as_str())
+fn exposed(value: Option<&SecretString>) -> Option<&str> {
+    value.map(ExposeSecret::expose_secret)
 }
 
 #[test]
 fn loads_realtime_connection_settings() {
     let defaults = load_settings(DEFAULTS, lookup(&[])).unwrap();
     assert_eq!(defaults.api_base, None);
-    assert_eq!(exposed(&defaults.api_key), None);
-    assert_eq!(exposed(&defaults.openai_key), None);
-    assert_eq!(exposed(&defaults.xai_key), None);
+    assert_eq!(exposed(defaults.api_key.as_ref()), None);
+    assert_eq!(exposed(defaults.openai_key.as_ref()), None);
+    assert_eq!(exposed(defaults.xai_key.as_ref()), None);
     assert_eq!(defaults.vertex_project, None);
     assert_eq!(defaults.vertex_location, None);
     assert_eq!(defaults.azure_api_base, None);
-    assert_eq!(exposed(&defaults.azure_api_key), None);
-    assert_eq!(exposed(&defaults.openai_api_key), None);
+    assert_eq!(exposed(defaults.azure_api_key.as_ref()), None);
+    assert_eq!(exposed(defaults.openai_api_key.as_ref()), None);
     assert_eq!(defaults.xai_api_base, None);
-    assert_eq!(exposed(&defaults.xai_api_key), None);
+    assert_eq!(exposed(defaults.xai_api_key.as_ref()), None);
     assert_eq!(defaults.vertexai_credentials, None);
     assert_eq!(defaults.vertexai_project, None);
     assert_eq!(defaults.vertexai_location, None);
@@ -80,9 +80,15 @@ fn assert_configured_file_values(configured: &RealtimeConnectionSettings) {
         configured.api_base.as_deref(),
         Some("https://global.example/v1")
     );
-    assert_eq!(exposed(&configured.api_key), Some("sk-global-realtime"));
-    assert_eq!(exposed(&configured.openai_key), Some("sk-openai-global"));
-    assert_eq!(exposed(&configured.xai_key), Some("sk-xai-global"));
+    assert_eq!(
+        exposed(configured.api_key.as_ref()),
+        Some("sk-global-realtime")
+    );
+    assert_eq!(
+        exposed(configured.openai_key.as_ref()),
+        Some("sk-openai-global")
+    );
+    assert_eq!(exposed(configured.xai_key.as_ref()), Some("sk-xai-global"));
     assert_eq!(
         configured.vertex_project.as_deref(),
         Some("global-vertex-project")
@@ -98,13 +104,19 @@ fn assert_configured_environment_values(configured: &RealtimeConnectionSettings)
         configured.azure_api_base.as_deref(),
         Some("https://azure.example")
     );
-    assert_eq!(exposed(&configured.azure_api_key), Some("azure-key"));
-    assert_eq!(exposed(&configured.openai_api_key), Some("openai-key"));
+    assert_eq!(
+        exposed(configured.azure_api_key.as_ref()),
+        Some("azure-key")
+    );
+    assert_eq!(
+        exposed(configured.openai_api_key.as_ref()),
+        Some("openai-key")
+    );
     assert_eq!(
         configured.xai_api_base.as_deref(),
         Some("https://xai.example/v1")
     );
-    assert_eq!(exposed(&configured.xai_api_key), Some("xai-key"));
+    assert_eq!(exposed(configured.xai_api_key.as_ref()), Some("xai-key"));
     assert_eq!(
         configured.vertexai_credentials,
         Some(Json::Text(String::from("{\"type\":\"service_account\"}")))
@@ -134,10 +146,10 @@ fn loads_realtime_connection_settings_treats_empty_environment_values_as_unset()
     )
     .unwrap();
     assert_eq!(empty.azure_api_base, None);
-    assert_eq!(exposed(&empty.azure_api_key), None);
-    assert_eq!(exposed(&empty.openai_api_key), None);
+    assert_eq!(exposed(empty.azure_api_key.as_ref()), None);
+    assert_eq!(exposed(empty.openai_api_key.as_ref()), None);
     assert_eq!(empty.xai_api_base, None);
-    assert_eq!(exposed(&empty.xai_api_key), None);
+    assert_eq!(exposed(empty.xai_api_key.as_ref()), None);
     assert_eq!(empty.vertexai_credentials, None);
     assert_eq!(empty.vertexai_project, None);
     assert_eq!(empty.vertexai_location, None);
