@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::Error as IoError;
 use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
@@ -95,9 +96,7 @@ impl Fixture {
 }
 
 fn decode_failure() -> BudgetFetchError {
-    let source = TableError::Row(serde_json::Error::io(std::io::Error::other(
-        "unreadable row",
-    )));
+    let source = TableError::Row(serde_json::Error::io(IoError::other("unreadable row")));
     BudgetFetchError::Decode(Box::new(AuthReadError::Repository(
         DbError::InvalidRecord { source },
     )))
