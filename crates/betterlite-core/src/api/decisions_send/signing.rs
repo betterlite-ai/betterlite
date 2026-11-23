@@ -14,7 +14,7 @@ pub(super) trait SigningSeam: Send + Sync {
     fn sign<'seam>(&'seam self, off_loop: bool, sign: SignTask<'seam>) -> SignFuture<'seam>;
 }
 
-// The production seam: block_in_place runs the closure on the blocking pool, off the worker polling the request
+// The production seam: block_in_place tells the runtime this worker is about to block, so it moves the worker's other tasks to another thread
 pub(super) struct BlockingSigning;
 
 impl SigningSeam for BlockingSigning {

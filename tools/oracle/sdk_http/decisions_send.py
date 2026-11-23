@@ -2,7 +2,8 @@ import asyncio
 from typing import Final, TypeAlias
 
 import litellm
-from litellm.types.decisions import DecisionsResponse, OpenAIDecisionResponse
+from litellm.decisions.call import OpenAIDecisionQuestions, SystemOneQuestions
+from litellm.types.decisions import DecisionsResponse, OpenAIDecisionInput, OpenAIDecisionResponse
 from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
@@ -22,8 +23,8 @@ class Run(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str
-    input: JsonValue = None
-    questions: JsonValue = None
+    input: OpenAIDecisionInput | None = None
+    questions: OpenAIDecisionQuestions | SystemOneQuestions | None = None
     safety_identifier: str | None = None
     custom_llm_provider: str | None = None
     api_key: str | None = None

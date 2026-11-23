@@ -1,4 +1,5 @@
 use std::future::ready;
+use std::thread;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
@@ -34,10 +35,9 @@ fn signing_sync_signs_inline_even_for_aws() {
     let mut fixture = Fixture::new();
     fixture.config.aws = true;
     let decisions = systemone_call("strands_decider", None);
+    let caller = thread::current().id();
     fixture.send(&decisions).expect("the call answers");
-    let events = fixture.recording.events.recorded();
-    assert!(events.contains(&String::from("sign")));
-    assert!(!events.contains(&String::from("off-loop")));
+    assert_eq!(fixture.recording.seen_signs()[0].thread, caller);
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn signing_blocking_seam_stays_inline_on_a_current_thread_runtime() {
     assert_eq!(signed, (Headers::new(), None));
 }
 
-// Handle::block_on is allowed only inside block_in_place's blocking region, so the closure proves where it ran
+// Handle::block_on panics on a runtime worker unless block_in_place marked the thread as blocking, so the closure proves where it ran
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn signing_blocking_seam_signs_inside_the_blocking_region() {
     let sign = || {

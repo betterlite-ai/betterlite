@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread::{self, ThreadId};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -173,6 +174,7 @@ pub(super) struct SignSeen {
     pub(super) api_base: String,
     pub(super) api_key: Option<String>,
     pub(super) params: Extra,
+    pub(super) thread: ThreadId,
 }
 
 #[derive(Default)]
@@ -301,6 +303,7 @@ impl DecisionsProviderConfig for TestConfig {
                 api_base: context.api_base.to_owned(),
                 api_key: context.api_key.map(|key| key.expose_secret().to_owned()),
                 params: context.litellm_params.clone(),
+                thread: thread::current().id(),
             });
         if let Some(signature) = &self.signature {
             headers.insert("X-Signature".to_owned(), signature.clone());
