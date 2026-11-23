@@ -62,7 +62,7 @@ pub fn document_router(openapi_url: Option<&str>, server_root_path: &str, title:
         return Router::new();
     };
     let document = match document_bytes(server_root_path, title) {
-        Ok(document) => document,
+        Ok(bytes) => bytes,
         Err(error) => {
             tracing::error!(%error, "the OpenAPI document cannot be served");
             return Router::new();
@@ -71,9 +71,9 @@ pub fn document_router(openapi_url: Option<&str>, server_root_path: &str, title:
     Router::new().route(
         path,
         get(move || {
-            let document = document.clone();
+            let body = document.clone();
             async move {
-                let mut response = Response::new(Body::from(document));
+                let mut response = Response::new(Body::from(body));
                 response.headers_mut().insert(
                     header::CONTENT_TYPE,
                     HeaderValue::from_static("application/json"),
