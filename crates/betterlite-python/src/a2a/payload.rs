@@ -43,7 +43,7 @@ pub(crate) struct FailurePayload {
 }
 
 impl ErrorPayload {
-    fn empty(kind: &'static str, message: String) -> Self {
+    pub(crate) fn empty(kind: &'static str, message: String) -> Self {
         Self {
             kind,
             message,
@@ -59,14 +59,6 @@ impl ErrorPayload {
             failures: None,
             original_error: None,
         }
-    }
-
-    pub(crate) fn value_error(message: String) -> Self {
-        Self::empty("ValueError", message)
-    }
-
-    pub(crate) fn runtime_error(message: String) -> Self {
-        Self::empty("RuntimeError", message)
     }
 
     pub(crate) fn base(message: String) -> Self {
@@ -191,7 +183,7 @@ impl ErrorPayload {
 pub(crate) fn send_payload(error: SendCallError, streaming: bool) -> ErrorPayload {
     let message = error.to_string();
     match error {
-        SendCallError::MissingClient => ErrorPayload::value_error(message),
+        SendCallError::MissingClient => ErrorPayload::empty("ValueError", message),
         SendCallError::Client(source) => ErrorPayload::from_a2a(&source),
         SendCallError::Send(source) => send_failure(source, streaming),
         SendCallError::NotText { .. }
@@ -209,12 +201,15 @@ fn send_failure(error: SendError, streaming: bool) -> ErrorPayload {
         SendError::Client(source) => {
             ErrorPayload::connection(source.to_string(), client_url(&source))
         }
-        SendError::Recovery(source) => ErrorPayload::runtime_error(source.to_string()),
-        SendError::NoResponse => ErrorPayload::runtime_error(String::from(if streaming {
-            STREAM_NO_RESPONSE
-        } else {
-            SEND_NO_RESPONSE
-        })),
+        SendError::Recovery(source) => ErrorPayload::empty("RuntimeError", source.to_string()),
+        SendError::NoResponse => ErrorPayload::empty(
+            "RuntimeError",
+            String::from(if streaming {
+                STREAM_NO_RESPONSE
+            } else {
+                SEND_NO_RESPONSE
+            }),
+        ),
     }
 }
 
@@ -249,7 +244,7 @@ where
     match error {
         SendEntryError::Call(source) => send_payload(source, streaming).into_exception(),
         SendEntryError::Bridge(source) => {
-            ErrorPayload::runtime_error(source.to_string()).into_exception()
+            ErrorPayload::empty("RuntimeError", source.to_string()).into_exception()
         }
     }
 }

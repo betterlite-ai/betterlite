@@ -17,8 +17,9 @@ use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::{JsonRpcId, LiteLLMSendMessageResponse};
 use pyo3::prelude::*;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
-use super::{Call, Settings, chunk_text, parse, response_text};
+use super::{Call, Settings, parse, response_text};
 use crate::a2a::error::A2aCallError;
 use crate::a2a::payload::{ErrorPayload, entry_error, send_payload};
 use crate::a2a::ports::Unavailable;
@@ -76,6 +77,13 @@ fn request_settings_take_every_given_key() {
     assert!(built.streaming);
     assert_eq!(built.relative_card_path.as_deref(), Some("agentCard/v1.0"));
     assert_eq!(built.extra_headers.len(), 1);
+    assert_eq!(
+        built
+            .extra_headers
+            .get("X-Test")
+            .map(|value| value.expose_secret()),
+        Some("1")
+    );
 }
 
 #[test]
@@ -137,56 +145,43 @@ fn request_settings_resolve_the_timeout_seconds(
 }
 
 #[test]
-fn request_call_turns_into_a_send() {
-    let input = parse::<Call>(SEND_CALL).unwrap().into_send(None).unwrap();
-    assert!(input.call.a2a_client.is_none());
+fn request_call_resolves_every_send_field() {
+    let resolved = parse::<Call>(SEND_CALL).unwrap().resolve(None).unwrap();
+    assert!(resolved.client.is_none());
     assert_eq!(
-        input.call.request.id,
+        resolved.request.id,
         JsonRpcId::String(String::from("req-1"))
     );
-    assert_eq!(input.call.request.params.message.role, Role::User);
-    assert_eq!(input.call.request.params.message.parts.len(), 1);
-    assert_eq!(input.call.api_base.as_deref(), Some("http://agent.example"));
+    assert_eq!(resolved.request.params.message.role, Role::User);
+    assert_eq!(resolved.request.params.message.parts.len(), 1);
+    assert_eq!(resolved.api_base.as_deref(), Some("http://agent.example"));
     assert_eq!(
-        input
-            .call
+        resolved
             .litellm_params
             .get("model")
             .and_then(AgentJson::as_str),
         Some("agent")
     );
-    assert_eq!(input.call.agent_id.as_deref(), Some("agent-7"));
-    assert_eq!(input.trace_id.as_deref(), Some("trace-1"));
+    assert_eq!(resolved.agent_id.as_deref(), Some("agent-7"));
+    assert_eq!(resolved.trace_id.as_deref(), Some("trace-1"));
     assert_eq!(
-        header(&input.call.agent_extra_headers, "X-Agent").as_deref(),
+        header(&resolved.agent_extra_headers, "X-Agent").as_deref(),
         Some("a")
     );
-}
-
-#[test]
-fn request_call_turns_into_a_stream_with_metadata() {
-    let input = parse::<Call>(SEND_CALL).unwrap().into_stream(None).unwrap();
-    assert!(input.call.a2a_client.is_none());
-    assert_eq!(
-        input.call.request.id,
-        JsonRpcId::String(String::from("req-1"))
-    );
-    assert!(input.call.metadata.is_some());
-    assert!(input.call.proxy_server_request.is_none());
-    assert_eq!(input.trace_id.as_deref(), Some("trace-1"));
-    assert_eq!(input.call.agent_id.as_deref(), Some("agent-7"));
+    assert!(resolved.metadata.is_some());
 }
 
 #[test]
 fn request_call_defaults_the_optional_keys() {
     let text = r#"{"request":{"id":7,"params":{"message":{"role":"user","parts":[]}}}}"#;
-    let input = parse::<Call>(text).unwrap().into_send(None).unwrap();
-    assert_eq!(serde_json::to_string(&input.call.request.id).unwrap(), "7");
-    assert!(input.call.api_base.is_none());
-    assert!(input.call.litellm_params.is_empty());
-    assert!(input.call.agent_id.is_none());
-    assert!(input.call.agent_extra_headers.is_none());
-    assert!(input.trace_id.is_none());
+    let resolved = parse::<Call>(text).unwrap().resolve(None).unwrap();
+    assert_eq!(serde_json::to_string(&resolved.request.id).unwrap(), "7");
+    assert!(resolved.api_base.is_none());
+    assert!(resolved.litellm_params.is_empty());
+    assert!(resolved.agent_id.is_none());
+    assert!(resolved.agent_extra_headers.is_none());
+    assert!(resolved.trace_id.is_none());
+    assert!(resolved.metadata.is_none());
 }
 
 #[rstest]
@@ -208,18 +203,12 @@ fn request_call_defaults_the_optional_keys() {
     "request is required"
 )]
 fn request_call_states_a_missing_request_like_litellm(#[case] text: &str, #[case] message: &str) {
-    let sent = match parse::<Call>(text).unwrap().into_send(None) {
+    let sent = match parse::<Call>(text).unwrap().resolve(None) {
         Ok(_call) => panic!("a request-less call was sent"),
         Err(error) => error.payload(),
     };
     assert_eq!(sent.kind, "ValueError");
     assert_eq!(sent.message, message);
-    let streamed = match parse::<Call>(text).unwrap().into_stream(None) {
-        Ok(_call) => panic!("a request-less stream was started"),
-        Err(error) => error.payload(),
-    };
-    assert_eq!(streamed.kind, "ValueError");
-    assert_eq!(streamed.message, message);
 }
 
 #[test]
@@ -300,21 +289,6 @@ fn result_response_text_keeps_a_json_rpc_error() {
         Some("boom")
     );
     assert!(json.get("result").is_some_and(AgentJson::is_null));
-}
-
-#[test]
-fn result_chunk_text_keeps_the_wire_shape() {
-    let source = r#"{"jsonrpc":"2.0","id":"req-1","result":{"kind":"status-update","status":{"state":"working"},"final":false,"taskId":"t-1","contextId":"c-1"}}"#;
-    let chunk: AgentJson = serde_json::from_str(source).unwrap();
-    let text = chunk_text(&chunk).unwrap();
-    let read: AgentJson = serde_json::from_str(&text).unwrap();
-    assert_eq!(read, chunk);
-    assert_eq!(
-        read.get("result")
-            .and_then(|result| result.get("final"))
-            .and_then(AgentJson::as_bool),
-        Some(false)
-    );
 }
 
 #[test]

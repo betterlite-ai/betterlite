@@ -4,15 +4,14 @@ use std::time::Duration;
 use betterlite_a2a::client::A2AClient;
 use betterlite_a2a::client::A2AClientSettings;
 use betterlite_a2a::client::records::compat::SendMessageRequest;
-use betterlite_a2a::send::call::{SendCall, StreamCall};
 use betterlite_config::tls::TlsPolicy;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::LiteLLMSendMessageResponse;
 use betterlite_models::decisions::Json;
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use super::error::A2aCallError;
-use super::setup;
 
 // The settings JSON create_client and get_agent_card stand for, one key per LiteLLM argument.
 #[derive(Debug, Default, Deserialize)]
@@ -38,14 +37,16 @@ pub(crate) struct Call {
     pub(crate) metadata: Option<Json>,
 }
 
-pub(crate) struct SendInput {
+// The call's fields once the request is known to be there, before either send shapes them its own way.
+pub(crate) struct Resolved {
     pub(crate) trace_id: Option<String>,
-    pub(crate) call: SendCall,
-}
-
-pub(crate) struct StreamInput {
-    pub(crate) trace_id: Option<String>,
-    pub(crate) call: StreamCall,
+    pub(crate) client: Option<A2AClient>,
+    pub(crate) request: SendMessageRequest,
+    pub(crate) api_base: Option<String>,
+    pub(crate) litellm_params: BTreeMap<String, AgentJson>,
+    pub(crate) agent_id: Option<String>,
+    pub(crate) agent_extra_headers: Option<BTreeMap<String, String>>,
+    pub(crate) metadata: Option<Json>,
 }
 
 impl Settings {
@@ -61,7 +62,12 @@ impl Settings {
             base_url: self.base_url,
             timeout,
             tls,
-            extra_headers: setup::secret_headers(self.extra_headers.as_ref()),
+            extra_headers: self
+                .extra_headers
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(name, value)| (name, SecretString::from(value.as_str())))
+                .collect(),
             streaming: self.streaming.unwrap_or(false),
             relative_card_path: self.relative_card_path,
         })
@@ -81,46 +87,20 @@ impl Call {
         A2aCallError::MissingRequest
     }
 
-    pub(crate) fn into_send(self, client: Option<A2AClient>) -> Result<SendInput, A2aCallError> {
+    pub(crate) fn resolve(self, client: Option<A2AClient>) -> Result<Resolved, A2aCallError> {
         let litellm_params = self.litellm_params.unwrap_or_default();
         let Some(request) = self.request else {
             return Err(Self::missing_request(&litellm_params));
         };
-        let call = SendCall {
-            a2a_client: client,
+        Ok(Resolved {
+            trace_id: self.litellm_trace_id,
+            client,
             request,
             api_base: self.api_base,
             litellm_params,
             agent_id: self.agent_id,
             agent_extra_headers: self.agent_extra_headers,
-        };
-        Ok(SendInput {
-            trace_id: self.litellm_trace_id,
-            call,
-        })
-    }
-
-    pub(crate) fn into_stream(
-        self,
-        client: Option<A2AClient>,
-    ) -> Result<StreamInput, A2aCallError> {
-        let litellm_params = self.litellm_params.unwrap_or_default();
-        let Some(request) = self.request else {
-            return Err(Self::missing_request(&litellm_params));
-        };
-        let call = StreamCall {
-            a2a_client: client,
-            request,
-            api_base: self.api_base,
-            litellm_params,
-            agent_id: self.agent_id,
             metadata: self.metadata,
-            proxy_server_request: None,
-            agent_extra_headers: self.agent_extra_headers,
-        };
-        Ok(StreamInput {
-            trace_id: self.litellm_trace_id,
-            call,
         })
     }
 }
@@ -146,10 +126,6 @@ pub(crate) fn response_text(response: &LiteLLMSendMessageResponse) -> Result<Str
         object.insert(String::from("_hidden_params"), hidden);
     }
     serde_json::to_string(&value).map_err(|source| A2aCallError::Encode { source })
-}
-
-pub(crate) fn chunk_text(chunk: &AgentJson) -> Result<String, A2aCallError> {
-    serde_json::to_string(chunk).map_err(|source| A2aCallError::Encode { source })
 }
 
 mod tests;

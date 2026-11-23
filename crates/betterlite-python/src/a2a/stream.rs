@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use betterlite_a2a::client::A2AClient;
 use betterlite_a2a::send::asend_message_streaming;
+use betterlite_a2a::send::call::StreamCall;
 use betterlite_a2a::send::deps::{BridgeDeps, StreamingDeps};
 use betterlite_a2a::send::error::SendEntryError;
 use betterlite_a2a::streaming_iterator::DEFAULT_MAX_RETAINED_BYTES;
@@ -19,7 +20,7 @@ use pyo3_async_runtimes::tokio::future_into_py;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Mutex, Notify, mpsc};
 
-use super::convert::{Call, StreamInput, chunk_text};
+use super::convert::Call;
 use super::error::A2aCallError;
 use super::payload::{entry_error, send_payload};
 use super::ports::{NoCompletion, NoDispatch, NoProviders, SystemSource, Unavailable};
@@ -73,6 +74,15 @@ impl NativeA2aStream {
             closed: Arc::new(AtomicBool::new(false)),
         }
     }
+
+    // aclose and a dropped handle both stop the producer through this one path.
+    fn stop(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.cancel.notify_one();
+        if let Ok(mut locked) = self.feed.try_lock() {
+            locked.driver = None;
+        }
+    }
 }
 
 // The wait races the close signal, so aclose never queues behind a chunk that has not arrived.
@@ -116,19 +126,14 @@ impl NativeA2aStream {
     }
 
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        self.closed.store(true, Ordering::SeqCst);
-        self.cancel.notify_one();
-        if let Ok(mut locked) = self.feed.try_lock() {
-            locked.driver = None;
-        }
+        self.stop();
         future_into_py(py, async { Ok::<(), PyErr>(()) })
     }
 }
 
 impl Drop for NativeA2aStream {
     fn drop(&mut self) {
-        self.closed.store(true, Ordering::SeqCst);
-        self.cancel.notify_one();
+        self.stop();
         if let Some(feed) = Arc::get_mut(&mut self.feed) {
             feed.get_mut().driver = None;
         }
@@ -139,15 +144,29 @@ pub(crate) fn start(
     client: Option<A2AClient>,
     call: Call,
 ) -> Result<NativeA2aStream, A2aCallError> {
-    let input = call.into_stream(client)?;
+    let resolved = call.resolve(client)?;
+    let wire = StreamCall {
+        a2a_client: resolved.client,
+        request: resolved.request,
+        api_base: resolved.api_base,
+        litellm_params: resolved.litellm_params,
+        agent_id: resolved.agent_id,
+        metadata: resolved.metadata,
+        proxy_server_request: None,
+        agent_extra_headers: resolved.agent_extra_headers,
+    };
     let (sender, receiver) = mpsc::channel(CHUNK_QUEUE);
-    let driver: Driver = Box::pin(produce(input, sender));
+    let driver: Driver = Box::pin(produce(resolved.trace_id, wire, sender));
     Ok(NativeA2aStream::new(receiver, driver))
 }
 
 // The failure is queued after the chunks the agent already produced, and a closed consumer simply stops reading it.
-async fn produce(input: StreamInput, sender: mpsc::Sender<Chunk>) -> Delivery {
-    let failure = match run(input, &sender).await {
+async fn produce(
+    trace_id: Option<String>,
+    call: StreamCall,
+    sender: mpsc::Sender<Chunk>,
+) -> Delivery {
+    let failure = match run(trace_id, call, &sender).await {
         Ok(()) => return Ok(()),
         Err(error) => error,
     };
@@ -155,9 +174,13 @@ async fn produce(input: StreamInput, sender: mpsc::Sender<Chunk>) -> Delivery {
 }
 
 // B4814's streaming entry runs here, one chunk at a time, until the agent's stream ends or fails.
-async fn run(input: StreamInput, sender: &mpsc::Sender<Chunk>) -> Result<(), PyErr> {
+async fn run(
+    trace_id: Option<String>,
+    call: StreamCall,
+    sender: &mpsc::Sender<Chunk>,
+) -> Result<(), PyErr> {
     let runtime = Runtime::build()?;
-    let trace = trace_ids(input.trace_id);
+    let trace = trace_ids(trace_id);
     let start = Instant::now();
     let mut tick = move || start.elapsed();
     let mut correlation = CorrelationContext::default();
@@ -181,7 +204,7 @@ async fn run(input: StreamInput, sender: &mpsc::Sender<Chunk>) -> Result<(), PyE
         dispatch: NoDispatch,
         max_retained_bytes: DEFAULT_MAX_RETAINED_BYTES,
     };
-    let mut events = asend_message_streaming(input.call, None, deps, &mut bridge)
+    let mut events = asend_message_streaming(call, None, deps, &mut bridge)
         .await
         .map_err(|error| send_payload(error, true).into_exception())?;
     while let Some(item) = events.next().await {
@@ -195,10 +218,8 @@ async fn run(input: StreamInput, sender: &mpsc::Sender<Chunk>) -> Result<(), PyE
 
 fn chunk_of(item: Result<AgentJson, EntryError>) -> Result<String, PyErr> {
     match item {
-        Ok(value) => match chunk_text(&value) {
-            Ok(text) => Ok(text),
-            Err(error) => Err(PyErr::from(error)),
-        },
+        Ok(value) => serde_json::to_string(&value)
+            .map_err(|source| PyErr::from(A2aCallError::Encode { source })),
         Err(error) => Err(entry_error(error, true)),
     }
 }

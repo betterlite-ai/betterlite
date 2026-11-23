@@ -100,7 +100,7 @@ impl A2aCallError {
             | Self::MissingBridgeRequest
             | Self::Timeout { .. }
             | Self::HeaderName { .. }
-            | Self::HeaderValue { .. } => ErrorPayload::value_error(self.to_string()),
+            | Self::HeaderValue { .. } => ErrorPayload::empty("ValueError", self.to_string()),
             Self::Encode { .. }
             | Self::Proxy { .. }
             | Self::Config { .. }
@@ -108,7 +108,7 @@ impl A2aCallError {
             | Self::Policy { .. }
             | Self::Tls { .. }
             | Self::Tokenizer { .. }
-            | Self::Redactor { .. } => ErrorPayload::runtime_error(self.to_string()),
+            | Self::Redactor { .. } => ErrorPayload::empty("RuntimeError", self.to_string()),
         }
     }
 }

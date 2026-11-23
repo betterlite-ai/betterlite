@@ -13,9 +13,8 @@ use super::stream;
 #[pyfunction]
 pub(crate) fn create_client<'py>(py: Python<'py>, settings: &str) -> PyResult<Bound<'py, PyAny>> {
     let wire: Settings = parse(settings)?;
-    let creating = client::create(wire);
     future_into_py(py, async move {
-        let created = creating.await?;
+        let created = client::create(wire).await?;
         Python::attach(|attached| Py::new(attached, created))
     })
 }

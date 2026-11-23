@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::error::A2aCallError;
 use betterlite_a2a::client::{A2A_TIMEOUT_ENV, DEFAULT_A2A_AGENT_TIMEOUT};
 use betterlite_a2a::errors::A2AError;
 use betterlite_a2a::errors::retries::RetryCounts;
@@ -19,9 +20,6 @@ use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::runtime::runtime_counter;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
-use secrecy::{ExposeSecret as _, SecretString};
-
-use super::error::A2aCallError;
 
 // The process values every A2A call reads: the environment snapshot, the pool and the TLS policy resolved from it.
 pub(crate) struct Setup {
@@ -152,34 +150,27 @@ fn invalid_timeout(raw: &str) -> A2AError {
     }
 }
 
-pub(crate) fn secret_headers(
-    extra: Option<&BTreeMap<String, String>>,
-) -> BTreeMap<String, SecretString> {
-    let mut headers = BTreeMap::new();
-    for (name, value) in extra.into_iter().flatten() {
-        headers.insert(name.clone(), SecretString::from(value.as_str()));
-    }
-    headers
-}
-
 pub(crate) fn card_headers(
     extra: Option<&BTreeMap<String, String>>,
 ) -> Result<HeaderMap, A2aCallError> {
-    let mut headers = HeaderMap::new();
-    for (name, value) in extra.into_iter().flatten() {
-        let header_name =
-            HeaderName::try_from(name.as_str()).map_err(|source| A2aCallError::HeaderName {
-                name: name.clone(),
-                source,
+    extra
+        .into_iter()
+        .flatten()
+        .map(|(name, value)| {
+            let header_name =
+                HeaderName::try_from(name.as_str()).map_err(|source| A2aCallError::HeaderName {
+                    name: name.clone(),
+                    source,
+                })?;
+            let header_value = HeaderValue::try_from(value.as_str()).map_err(|source| {
+                A2aCallError::HeaderValue {
+                    name: name.clone(),
+                    source,
+                }
             })?;
-        let header_value =
-            HeaderValue::try_from(value.as_str()).map_err(|source| A2aCallError::HeaderValue {
-                name: name.clone(),
-                source,
-            })?;
-        headers.append(header_name, header_value);
-    }
-    Ok(headers)
+            Ok((header_name, header_value))
+        })
+        .collect()
 }
 
 pub(crate) fn trace_ids(trace_id: Option<String>) -> impl Fn() -> String + Sync {
