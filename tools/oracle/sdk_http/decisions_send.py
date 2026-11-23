@@ -77,10 +77,6 @@ def substituted_kwargs(kwargs: dict[str, JsonValue], api_base: str) -> dict[str,
     return KWARGS.validate_json(document)
 
 
-def substituted_api_base(api_base: str | None, mock: str) -> str | None:
-    return None if api_base is None else api_base.replace(MOCK, mock)
-
-
 def failure_of(error: APIError, status: int | None) -> Failure:
     return Failure(
         class_name=type(error).__name__,
@@ -124,7 +120,7 @@ async def answered(run: Run, kwargs: dict[str, JsonValue], api_base: str | None)
 
 async def run_outcome(run: Run, api_base: str) -> RunOutcome:
     kwargs = substituted_kwargs(run.kwargs, api_base)
-    base = substituted_api_base(run.api_base, api_base)
+    base = None if run.api_base is None else run.api_base.replace(MOCK, api_base)
     try:
         result = await answered(run, kwargs, base)
     except APIStatusError as error:

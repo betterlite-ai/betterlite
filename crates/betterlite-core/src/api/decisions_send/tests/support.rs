@@ -513,6 +513,16 @@ impl FakeClients {
             .take()
             .map_or_else(|| Ok(self.wire.clone()), Err)
     }
+
+    fn deliver(
+        &mut self,
+        mode: Mode,
+        params: &Params,
+        request: DecisionsRequest,
+    ) -> Result<Answer, ClientError> {
+        let wire = self.selected(mode, params)?;
+        Ok(wire.record(request))
+    }
 }
 
 impl DecisionsSyncTransport for FakeClients {
@@ -521,8 +531,7 @@ impl DecisionsSyncTransport for FakeClients {
         params: &Params,
         request: DecisionsRequest,
     ) -> Result<Answer, ClientError> {
-        let wire = self.selected(Mode::Sync, params)?;
-        Ok(wire.record(request))
+        self.deliver(Mode::Sync, params, request)
     }
 }
 
@@ -546,8 +555,7 @@ impl DecisionsAsyncTransport for FakeClients {
         params: &Params,
         request: DecisionsRequest,
     ) -> Result<impl Future<Output = Answer> + Send, ClientError> {
-        let wire = self.selected(Mode::Asynchronous, params)?;
-        Ok(ready(wire.record(request)))
+        self.deliver(Mode::Asynchronous, params, request).map(ready)
     }
 }
 
