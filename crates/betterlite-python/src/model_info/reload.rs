@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::sleep;
 // ast-grep-ignore: no-padded-one-line-functions - the environment must be read off the caller's process
 pub(crate) async fn reload_blocking(
     runtime: &Runtime,
@@ -62,20 +63,14 @@ where
             format!("Remote fetch failed: {}", unavailable.reason),
         ),
         AttemptOutcome::Reloaded(fetched) => {
-            if validate_model_cost_map(
-                &fetched.models,
-                runtime.bundled.count,
-                IntegrityPolicy::default(),
-            )
-            .is_err()
-            {
+            if !map_is_valid(runtime, &fetched) {
                 return fallback(
                     runtime,
                     loaded_at,
                     "Remote data failed integrity validation".to_owned(),
                 );
             }
-            install_fetched(runtime, query, loaded_at, fetched)
+            install_fetched(runtime, query, loaded_at, &fetched)
         }
     }
 }
@@ -129,19 +124,21 @@ where
         FetchResult::Reloaded(fetched) => fetched,
     };
     let loaded_at = Utc::now();
-    if validate_model_cost_map(
-        &fetched.models,
-        runtime.bundled.count,
-        IntegrityPolicy::default(),
-    )
-    .is_err()
-    {
+    if !map_is_valid(runtime, &fetched) {
         return unavailable_answer(&format!(
             "model cost map from {} failed integrity validation",
             request.url
         ));
     }
-    install_fetched(runtime, query, loaded_at, fetched)
+    install_fetched(runtime, query, loaded_at, &fetched)
+}
+fn map_is_valid(runtime: &Runtime, fetched: &FetchedCatalog) -> bool {
+    validate_model_cost_map(
+        &fetched.models,
+        runtime.bundled.count,
+        IntegrityPolicy::default(),
+    )
+    .is_ok()
 }
 // the local flag answers the bundled map before any fetch is tried.
 fn local_answer(
@@ -166,7 +163,7 @@ fn install_fetched(
     runtime: &Runtime,
     query: &ReloadQuery,
     loaded_at: DateTime<Utc>,
-    fetched: FetchedCatalog,
+    fetched: &FetchedCatalog,
 ) -> Result<String, ModelInfoError> {
     let map = ModelCostMap::parse(&fetched.body)?.entries;
     let finalized = finalize(map)?;
@@ -216,7 +213,7 @@ fn fallback(
     reason: String,
 ) -> Result<String, ModelInfoError> {
     let mut provenance = local_provenance(runtime.bundled.revision.clone(), false, loaded_at);
-    provenance.url = runtime.state().provenance.url.clone();
+    provenance.url.clone_from(&runtime.state().provenance.url);
     provenance.fallback_reason = Some(reason);
     bundled_answer(runtime, provenance)
 }
@@ -225,7 +222,7 @@ impl CatalogSleeper for TokioSleep {
     fn sleep(&self, seconds: Decimal) -> impl Future<Output = ()> + Send {
         let delay = Duration::try_from_secs_f64(seconds.to_f64().unwrap_or_default())
             .unwrap_or(Duration::ZERO);
-        tokio::time::sleep(delay)
+        sleep(delay)
     }
 }
 struct NoJitter;

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use indexmap::IndexMap;
+use secrecy::ExposeSecret;
 use serde_json::value::RawValue;
 
 use super::{
@@ -17,7 +18,10 @@ fn model_info_request_parses_every_field() {
     assert_eq!(query.model, "gpt-4");
     assert_eq!(query.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(query.api_base.as_deref(), Some("https://example.test"));
-    assert_eq!(query.api_key.as_deref(), Some("sk-test"));
+    assert_eq!(
+        query.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-test")
+    );
 }
 
 #[test]

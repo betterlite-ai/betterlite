@@ -36,13 +36,13 @@ pub(crate) fn finalize(
         let text = serde_json::to_string(&fields).map_err(ModelInfoError::Result)?;
         *entry = RawValue::from_string(text).map_err(ModelInfoError::Result)?;
         for alias in aliases {
-            let Json::Text(alias) = alias else {
+            let Json::Text(name) = alias else {
                 continue;
             };
-            if canonical.contains(&alias) || !claimed.insert(alias.clone()) {
+            if canonical.contains(&name) || !claimed.insert(name.clone()) {
                 continue;
             }
-            claims.push((alias, entry.clone()));
+            claims.push((name, entry.clone()));
         }
     }
     for (alias, entry) in claims {

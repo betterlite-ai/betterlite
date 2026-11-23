@@ -7,10 +7,10 @@ use serde_json::value::RawValue;
 use std::time::Duration;
 pub(crate) const DEFAULT_TIMEOUT_SECONDS: f64 = 5.0;
 pub(crate) const DEFAULT_MAX_ATTEMPTS: u32 = 3;
-fn default_timeout() -> f64 {
+const fn default_timeout() -> f64 {
     DEFAULT_TIMEOUT_SECONDS
 }
-fn default_max_attempts() -> u32 {
+const fn default_max_attempts() -> u32 {
     DEFAULT_MAX_ATTEMPTS
 }
 // get_model_info's four arguments, as the Python layer sends them.
@@ -48,7 +48,7 @@ pub(crate) struct ReloadQuery {
 }
 impl ReloadQuery {
     pub(crate) fn timeout(&self) -> Result<Duration, ModelInfoError> {
-        Duration::try_from_secs_f64(self.timeout).map_err(|_| {
+        Duration::try_from_secs_f64(self.timeout).map_err(|_error| {
             ModelInfoError::Value(format!("timeout {} is not a duration", self.timeout))
         })
     }

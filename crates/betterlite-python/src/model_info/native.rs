@@ -3,7 +3,7 @@ use super::error::ModelInfoError;
 use super::state::Runtime;
 use super::{lookup, reload};
 use pyo3::prelude::*;
-use pyo3_async_runtimes::tokio::future_into_py;
+use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use std::future::Future;
 use std::sync::Arc;
 #[pyclass(module = "betterlite._native")]
@@ -25,12 +25,9 @@ impl NativeCatalog {
         detach_block(py, || lookup::model_info(&self.runtime, &query))
     }
     fn max_tokens(&self, py: Python<'_>, model: &str) -> PyResult<Option<i64>> {
-        let model = model.to_owned();
-        py.detach(|| {
-            pyo3_async_runtimes::tokio::get_runtime()
-                .block_on(lookup::max_tokens(&self.runtime, &model))
-        })
-        .map_err(PyErr::from)
+        let owned_model = model.to_owned();
+        py.detach(|| get_runtime().block_on(lookup::max_tokens(&self.runtime, &owned_model)))
+            .map_err(PyErr::from)
     }
     // ast-grep-ignore: no-padded-one-line-functions - a pymethod is a boundary Python calls by name
     fn provider_info(&self, request: &str) -> PyResult<Option<String>> {
@@ -76,6 +73,7 @@ where
     Task: Future<Output = Result<T, ModelInfoError>>,
     T: Send,
 {
-    py.detach(|| pyo3_async_runtimes::tokio::get_runtime().block_on(start()))
+    py.detach(|| get_runtime().block_on(start()))
         .map_err(PyErr::from)
 }
+mod tests;

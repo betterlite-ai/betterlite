@@ -1,5 +1,6 @@
 use super::convert::{ModelQuery, ProviderQuery};
 use super::error::ModelInfoError;
+use super::fetch::HttpFetch;
 use super::state::{Runtime, State, normalizers};
 use betterlite_models::decisions::Json;
 use betterlite_models::entry::ModelFields;
@@ -50,13 +51,7 @@ pub(crate) async fn model_info(
         resolution: &resolution,
         normalizers: normalizers(),
     };
-    let hf = HfConfigClient {
-        client: runtime.fetch.clone(),
-        base_url: HF_CONFIG_BASE_URL.to_owned(),
-    };
-    let mut keys = ModelCostKeys::default();
-    let metadata =
-        get_model_info_helper(&request, &environment, &mut keys, &NoDynamicMetadata, &hf).await?;
+    let metadata = metadata_text(&request, &environment, &runtime.fetch).await?;
     let mut fields: IndexMap<String, Json> =
         serde_json::from_str(metadata.get()).map_err(ModelInfoError::Request)?;
     if let Some(overlay) =
@@ -65,9 +60,7 @@ pub(crate) async fn model_info(
         let text = serde_json::to_string(&overlay).map_err(ModelInfoError::Result)?;
         let overlay_fields: IndexMap<String, Json> =
             serde_json::from_str(&text).map_err(ModelInfoError::Request)?;
-        for (name, value) in overlay_fields {
-            drop(fields.insert(name, value));
-        }
+        fields.extend(overlay_fields);
     }
     let supported = parameters.map_or(Json::Null, |names| {
         Json::List(names.into_iter().map(Json::Text).collect())
@@ -75,13 +68,27 @@ pub(crate) async fn model_info(
     drop(fields.insert("supported_openai_params".to_owned(), supported));
     serde_json::to_string(&fields).map_err(ModelInfoError::Result)
 }
+async fn metadata_text(
+    request: &MetadataRequest<'_>,
+    environment: &MetadataEnvironment<'_>,
+    fetch: &HttpFetch,
+) -> Result<Box<RawValue>, ModelInfoError> {
+    let hf = HfConfigClient {
+        client: fetch.clone(),
+        base_url: HF_CONFIG_BASE_URL.to_owned(),
+    };
+    let mut keys = ModelCostKeys::default();
+    get_model_info_helper(request, environment, &mut keys, &NoDynamicMetadata, &hf)
+        .await
+        .map_err(ModelInfoError::from)
+}
 // get_max_tokens: an exact model_cost key first, then the resolved name, with the unmapped error LiteLLM raises.
 pub(crate) async fn max_tokens(
     runtime: &Runtime,
     model: &str,
 ) -> Result<Option<i64>, ModelInfoError> {
     let state = runtime.state();
-    if let Some(found) = exact_max_tokens(&state.entries, model)? {
+    if let ExactMaxTokens::Value(found) = exact_max_tokens(&state.entries, model)? {
         return Ok(found);
     }
     let resolution = runtime.resolution(&state);
@@ -94,7 +101,7 @@ pub(crate) async fn max_tokens(
         },
         &resolution,
     )
-    .map_err(|_| ModelInfoError::MaxTokens {
+    .map_err(|_error| ModelInfoError::MaxTokens {
         model: model.to_owned(),
     })?;
     if resolved.provider == ProviderIdentity::Known(ProviderId::Huggingface) {
@@ -105,31 +112,35 @@ pub(crate) async fn max_tokens(
         return Ok(hf.max_position_embeddings(&resolved.model).await);
     }
     match exact_max_tokens(&state.entries, &resolved.model)? {
-        Some(found) => Ok(found),
-        None if state.entries.contains_key(&resolved.model) => Ok(None),
-        None => Err(ModelInfoError::MaxTokens {
+        ExactMaxTokens::Value(found) => Ok(found),
+        ExactMaxTokens::Absent if state.entries.contains_key(&resolved.model) => Ok(None),
+        ExactMaxTokens::Absent => Err(ModelInfoError::MaxTokens {
             model: resolved.model,
         }),
     }
 }
-// None means no key is present, so the caller carries on to the resolved name, as LiteLLM's first check falls through.
+enum ExactMaxTokens {
+    Absent,
+    Value(Option<i64>),
+}
+// Absent means no key is present, so the caller carries on to the resolved name, as LiteLLM's first check falls through.
 fn exact_max_tokens(
     entries: &IndexMap<String, Box<RawValue>>,
     model: &str,
-) -> Result<Option<Option<i64>>, ModelInfoError> {
+) -> Result<ExactMaxTokens, ModelInfoError> {
     let Some(entry) = entries.get(model) else {
-        return Ok(None);
+        return Ok(ExactMaxTokens::Absent);
     };
     let fields: BTreeMap<String, Box<RawValue>> =
         serde_json::from_str(entry.get()).map_err(ModelInfoError::Request)?;
     for name in ["max_output_tokens", "max_tokens"] {
         if let Some(value) = fields.get(name) {
             return serde_json::from_str(value.get())
-                .map(Some)
+                .map(ExactMaxTokens::Value)
                 .map_err(ModelInfoError::Request);
         }
     }
-    Ok(None)
+    Ok(ExactMaxTokens::Absent)
 }
 pub(crate) fn provider_info(
     runtime: &Runtime,

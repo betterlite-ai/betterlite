@@ -161,7 +161,7 @@ fn initial_state(bundled: &Bundled, provenance: CatalogProvenance) -> State {
         generation: 0,
     }
 }
-pub(crate) fn local_provenance(
+pub(crate) const fn local_provenance(
     revision: Option<String>,
     is_env_forced: bool,
     loaded_at: DateTime<Utc>,

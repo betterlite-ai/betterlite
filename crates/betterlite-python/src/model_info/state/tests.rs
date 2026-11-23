@@ -14,7 +14,6 @@ use crate::model_info::convert::{self, RuntimeEntries};
 use crate::model_info::fetch::header_pairs;
 use crate::model_info::git_blob_id as native_git_blob_id;
 use crate::model_info::map::finalize;
-use crate::model_info::native::NativeCatalog;
 use crate::native_api::bundled_model_cost_json;
 
 fn runtime() -> Runtime {
@@ -197,16 +196,6 @@ fn model_info_fetch_header_pairs_keeps_the_text_headers() {
             ("location".to_owned(), "elsewhere".to_owned()),
         ]
     );
-}
-
-#[test]
-fn model_info_native_generation_moves_with_each_adopt() {
-    let text = bundled_model_cost_json().unwrap();
-    let catalog = NativeCatalog::new(&text).unwrap();
-    assert_eq!(catalog.generation(), 0);
-    catalog.adopt("{}").unwrap();
-    catalog.adopt("{}").unwrap();
-    assert_eq!(catalog.generation(), 2);
 }
 
 #[test]
