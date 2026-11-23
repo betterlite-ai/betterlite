@@ -55,35 +55,30 @@ impl DecisionsSendError {
 #[must_use]
 pub fn visible_message(class: &ErrorClass) -> String {
     let body = class_message(class);
-    match class {
-        ErrorClass::Authentication(_) => format!("litellm.AuthenticationError: {body}"),
-        ErrorClass::NotFound(_) => format!("litellm.NotFoundError: {body}"),
-        ErrorClass::PermissionDenied(_) => format!("litellm.PermissionDeniedError: {body}"),
-        ErrorClass::BadRequest(_) => format!("litellm.BadRequestError: {body}"),
-        ErrorClass::UnprocessableEntity(_) => format!("litellm.UnprocessableEntityError: {body}"),
-        ErrorClass::Timeout(_) => format!("{TIMEOUT_PREFIX}{body}"),
-        ErrorClass::RateLimit(_) => format!("litellm.RateLimitError: {body}"),
-        ErrorClass::ServiceUnavailable(_) => format!("litellm.ServiceUnavailableError: {body}"),
-        ErrorClass::BadGateway(_) => format!("litellm.BadGatewayError: {body}"),
-        ErrorClass::InternalServer(_) => format!("litellm.InternalServerError: {body}"),
-        ErrorClass::Api(_) => format!("litellm.APIError: {body}"),
-        ErrorClass::ApiConnection(_) => format!("litellm.APIConnectionError: {body}"),
-        ErrorClass::ApiResponseValidation(_) => {
-            format!("litellm.APIResponseValidationError: {body}")
-        }
-        ErrorClass::ContextWindowExceeded(_) => {
-            format!("litellm.ContextWindowExceededError: {body}")
-        }
-        ErrorClass::ContentPolicyViolation(_) => {
-            format!("litellm.ContentPolicyViolationError: {body}")
-        }
-        ErrorClass::UnsupportedParams(_) => format!("litellm.UnsupportedParamsError: {body}"),
-        ErrorClass::MidStreamFallback(_) => format!("litellm.MidStreamFallbackError: {body}"),
+    let prefix = match class {
+        ErrorClass::Authentication(_) => "litellm.AuthenticationError: ",
+        ErrorClass::NotFound(_) => "litellm.NotFoundError: ",
+        ErrorClass::PermissionDenied(_) => "litellm.PermissionDeniedError: ",
+        ErrorClass::BadRequest(_) => "litellm.BadRequestError: ",
+        ErrorClass::UnprocessableEntity(_) => "litellm.UnprocessableEntityError: ",
+        ErrorClass::Timeout(_) => TIMEOUT_PREFIX,
+        ErrorClass::RateLimit(_) => "litellm.RateLimitError: ",
+        ErrorClass::ServiceUnavailable(_) => "litellm.ServiceUnavailableError: ",
+        ErrorClass::BadGateway(_) => "litellm.BadGatewayError: ",
+        ErrorClass::InternalServer(_) => "litellm.InternalServerError: ",
+        ErrorClass::Api(_) => "litellm.APIError: ",
+        ErrorClass::ApiConnection(_) => "litellm.APIConnectionError: ",
+        ErrorClass::ApiResponseValidation(_) => "litellm.APIResponseValidationError: ",
+        ErrorClass::ContextWindowExceeded(_) => "litellm.ContextWindowExceededError: ",
+        ErrorClass::ContentPolicyViolation(_) => "litellm.ContentPolicyViolationError: ",
+        ErrorClass::UnsupportedParams(_) => "litellm.UnsupportedParamsError: ",
+        ErrorClass::MidStreamFallback(_) => "litellm.MidStreamFallbackError: ",
         ErrorClass::BudgetExceeded(_)
         | ErrorClass::JsonSchemaValidation(_)
         | ErrorClass::GuardrailRaised(_)
-        | ErrorClass::Unclassified(_) => body,
-    }
+        | ErrorClass::Unclassified(_) => "",
+    };
+    format!("{prefix}{body}")
 }
 
 // Every entry into exception_type names the model, the provider and the error the same way
@@ -91,7 +86,6 @@ pub(super) fn raw_exception(
     call: &DecisionsCall<'_>,
     error_str: String,
     status_code: Option<u16>,
-    synthesized: bool,
     message: Option<String>,
     exception_type: &str,
 ) -> RawException {
@@ -100,7 +94,7 @@ pub(super) fn raw_exception(
         custom_llm_provider: call.custom_llm_provider.clone(),
         error_str,
         status_code,
-        status_code_is_synthesized: synthesized,
+        status_code_is_synthesized: false,
         message,
         body: None,
         exception_type: exception_type.to_owned(),
@@ -121,7 +115,6 @@ pub(crate) fn provider_error(
         call,
         message.clone(),
         Some(error.status_code),
-        false,
         Some(message),
         "BaseLLMException",
     );
@@ -140,12 +133,18 @@ pub(crate) fn transform_error(
             provider_error(call, redactor, base_exception(*provider, false))
         }
         ParseResponseError::Malformed(source) => {
-            let text = source.to_string();
-            let raw = raw_exception(call, text, None, false, None, "ValidationError");
+            let raw = raw_exception(call, source.to_string(), None, None, "ValidationError");
             let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
             mapped(class, Box::new(ParseResponseError::Malformed(source)))
         }
     }
+}
+
+// What a failed send was: the client kind that raised the error and how long that attempt ran
+#[derive(Clone, Copy)]
+pub(crate) struct Attempt {
+    pub(crate) mode: ClientKind,
+    pub(crate) elapsed: Duration,
 }
 
 // A failed send: a deadline is already litellm.Timeout from the client, and every other httpx.HTTPError goes through _handle_error
@@ -154,8 +153,7 @@ pub(crate) fn send_failure<T>(
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
     error: RequestFailure,
-    mode: ClientKind,
-    elapsed: Duration,
+    attempt: Attempt,
 ) -> DecisionsSendError
 where
     T: DecisionsProviderConfig,
@@ -163,7 +161,7 @@ where
     if let RequestFailure::Transport(source) = &error
         && source.is_timeout()
     {
-        return handler_timeout(call.timeout, mode, elapsed, error);
+        return handler_timeout(call.timeout, attempt.mode, attempt.elapsed, error);
     }
     mapped_failure(config, call, redactor, &display_facts(error.to_string()))
 }
@@ -197,7 +195,7 @@ fn provider_headers(headers: &JsonHeaders) -> Headers {
         .iter()
         .filter_map(|(name, value)| match value {
             Json::Text(text) => Some((name.clone(), text.clone())),
-            _ => None,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         })
         .collect()
 }

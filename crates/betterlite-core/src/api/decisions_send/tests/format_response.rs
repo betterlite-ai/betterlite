@@ -10,7 +10,12 @@ use crate::helpers::RESPONSE_COST_HEADER;
 fn answer_count(error: ResponseConversionError) -> (usize, usize) {
     match error {
         ResponseConversionError::AnswerCount { answers, questions } => (answers, questions),
-        other => panic!("expected an answer count error, got {other}"),
+        other @ (ResponseConversionError::LevelIndex
+        | ResponseConversionError::Probability
+        | ResponseConversionError::TokenCount
+        | ResponseConversionError::Text(_)) => {
+            panic!("expected an answer count error, got {other}")
+        }
     }
 }
 
@@ -144,11 +149,13 @@ fn format_response_hidden_params_with_cost() {
         Json::Object(entries) => {
             assert_eq!(entries.len(), 1);
             match entries.get(RESPONSE_COST_HEADER) {
-                Some(Json::Number(cost)) => assert_eq!(cost.as_f64(), Some(0.0025)),
+                Some(Json::Number(cost)) => assert_eq!(cost.as_f64(), Some(0.002_5_f64)),
                 other => panic!("the cost header holds a number, got {other:?}"),
             }
         }
-        _ => panic!("additional_headers is a map"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("additional_headers is a map")
+        }
     }
     let serialized = serde_json::to_string(&response).expect("the response serializes");
     assert!(!serialized.contains("additional_headers"));

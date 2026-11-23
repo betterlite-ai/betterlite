@@ -13,7 +13,9 @@ use betterlite_openai::decisions::transformation::provider_config::{
 use betterlite_redact::secret::Redactor;
 
 use super::clients::{DecisionsAsyncTransport, DecisionsSyncTransport};
-use super::error::{DecisionsSendError, mapped, mapped_failure, raw_exception, send_failure};
+use super::error::{
+    Attempt, DecisionsSendError, mapped, mapped_failure, raw_exception, send_failure,
+};
 use super::format::{DecisionsOutput, format_response};
 use super::request::{self, Prepared};
 use crate::api::vector_store_http_write::error::status_facts;
@@ -44,7 +46,7 @@ impl<'env, Clients: DecisionsSyncTransport + DecisionsAsyncTransport>
     DecisionsSender<'env, Clients>
 {
     // ast-grep-ignore: no-one-line-functions - callers hand in the pool and the environment, and the fields stay private
-    pub fn new(clients: &'env mut Clients, env: &'env PrePostEnv<'env>) -> Self {
+    pub const fn new(clients: &'env mut Clients, env: &'env PrePostEnv<'env>) -> Self {
         Self { clients, env }
     }
 
@@ -85,14 +87,11 @@ impl<'env, Clients: DecisionsSyncTransport + DecisionsAsyncTransport>
             .send_sync(wire)
             .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?
             .map_err(|error| {
-                send_failure(
-                    config,
-                    call,
-                    self.env.redactor,
-                    error,
-                    ClientKind::Sync,
-                    started.elapsed(),
-                )
+                let attempt = Attempt {
+                    mode: ClientKind::Sync,
+                    elapsed: started.elapsed(),
+                };
+                send_failure(config, call, self.env.redactor, error, attempt)
             })?;
         finish(config, call, self.env.redactor, &reply)
     }
@@ -104,7 +103,7 @@ pub(super) fn plain(
     redactor: &Redactor,
     error: Box<dyn Error + Send + Sync>,
 ) -> DecisionsSendError {
-    let raw = raw_exception(call, error.to_string(), None, false, None, "");
+    let raw = raw_exception(call, error.to_string(), None, None, "");
     let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
     mapped(class, error)
 }

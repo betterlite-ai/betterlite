@@ -82,8 +82,13 @@ fn request_prep_logs_the_unsigned_headers_and_body_copy() {
     let body: Json =
         serde_json::from_str(&serde_json::to_string(&decisions.body).expect("the wire serializes"))
             .expect("the body is JSON");
-    let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
-    let Some(Json::Object(recorded)) = state.model_call_details.get("additional_args") else {
+    let additional = logging
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .model_call_details
+        .get("additional_args")
+        .cloned();
+    let Some(Json::Object(recorded)) = additional else {
         panic!("pre_call recorded its additional args");
     };
     let Some(Json::Object(headers)) = recorded.get("headers") else {

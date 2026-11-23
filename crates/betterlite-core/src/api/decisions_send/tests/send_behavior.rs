@@ -1,21 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_http::interactions::base::{MAX_RESPONSE_BYTES, RequestFailure};
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
-use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::controls::json_value::JsonValue;
-use betterlite_models::decisions::{Extra, Json};
-use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::credentials::LiteLlmGlobals;
-use betterlite_openai::decisions::call::azure::AzureAiConfig;
-use betterlite_openai::decisions::call::fields::{RequestFields, SystemOneRequestFields};
-use betterlite_openai::decisions::call::{PrepareCall, prepare_call};
 use http::header::{HeaderMap, HeaderValue};
 use secrecy::SecretString;
 use serde_json::Number;
@@ -32,51 +21,10 @@ fn send_behavior_posts_transformed_body_with_bearer_headers() {
     let serving = serve(reply("200 OK", &[], SYSTEMONE_ANSWER), Duration::default())
         .expect("the mock server starts");
     let api_base = format!("http://{}", serving.address);
-    let catalog = ModelCatalog::default();
-    let known = BTreeSet::new();
-    let custom = BTreeSet::new();
-    let environment = BTreeMap::new();
-    let resolution = ResolutionContext {
-        catalog: &catalog,
-        known_model_names: &known,
-        custom_providers: &custom,
-        environment: &environment,
-        registry: JSONProviderRegistry::default(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
+    let environment = Environment::new();
     let key = SecretString::from("test-key".to_owned());
     let logging = Mutex::new(logging_state());
-    let questions =
-        serde_json::from_str(r#"{"first":{"type":"noul","instructions":"Is it true?"}}"#)
-            .expect("the questions parse");
-    let decisions = prepare_call(PrepareCall {
-        model: "model-1",
-        fields: RequestFields::SystemOne(SystemOneRequestFields {
-            state: Some(Json::Text(String::from("state"))),
-            questions: Some(questions),
-        }),
-        safety_identifier: None,
-        api_key: Some(&key),
-        api_base: Some(&api_base),
-        timeout: None,
-        custom_llm_provider: Some("typesafe"),
-        extra_headers: None,
-        kwargs: Extra::new(),
-        global_drop_params: false,
-        globals: LiteLlmGlobals {
-            api_base: None,
-            api_key: None,
-            openai_key: None,
-            organization: None,
-        },
-        azure_ai: AzureAiConfig {
-            complete_url: Box::new(|api_base: &str, _model: &str| api_base.to_owned()),
-        },
-        resolution: &resolution,
-        logging_obj: Some(&logging),
-    })
-    .expect("the call prepares");
+    let decisions = typesafe_call(&api_base, &key, &logging, &environment);
     let expected_body = serde_json::to_string(&decisions.body).expect("the wire serializes");
     let mut clients = real_clients();
     let log = LogEnv::for_events(&Events::new());
@@ -95,18 +43,9 @@ fn send_behavior_posts_transformed_body_with_bearer_headers() {
     }
     let request = serving.finish().expect("the server saw the request");
     assert_eq!(request.line, "POST /v1/systemone HTTP/1.1");
-    assert!(
-        request
-            .head
-            .to_lowercase()
-            .contains("authorization: bearer test-key")
-    );
-    assert!(
-        request
-            .head
-            .to_lowercase()
-            .contains("content-type: application/json")
-    );
+    let head = request.head.to_lowercase();
+    assert!(head.contains("authorization: bearer test-key"));
+    assert!(head.contains("content-type: application/json"));
     assert_eq!(request.body, expected_body);
 }
 
@@ -153,11 +92,11 @@ fn send_behavior_passes_the_timeout_and_posts_once() {
 fn send_behavior_blocking_client_accepts_the_body_cap() {
     let at_cap = vec![b'a'; MAX_RESPONSE_BYTES];
     let answer =
-        finish_blocking(&at_cap[..], 200, HeaderMap::new()).expect("a body at the cap reads");
+        finish_blocking(at_cap.as_slice(), 200, HeaderMap::new()).expect("a body at the cap reads");
     assert_eq!(answer.body.len(), MAX_RESPONSE_BYTES);
     let over_cap = vec![b'a'; MAX_RESPONSE_BYTES + 1];
     assert!(matches!(
-        finish_blocking(&over_cap[..], 200, HeaderMap::new()),
+        finish_blocking(over_cap.as_slice(), 200, HeaderMap::new()),
         Err(RequestFailure::BodyTooLarge { limit }) if limit == MAX_RESPONSE_BYTES
     ));
 }

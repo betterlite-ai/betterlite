@@ -1,3 +1,6 @@
+use std::iter::once;
+use std::panic::resume_unwind;
+use std::thread::scope;
 use std::time::Instant;
 
 use betterlite_http::interactions::base::Params;
@@ -7,7 +10,7 @@ use betterlite_openai::decisions::transformation::provider_config::DecisionsProv
 use betterlite_openai::openai_base_config::Headers;
 
 use super::clients::DecisionsAsyncTransport;
-use super::error::{DecisionsSendError, send_failure};
+use super::error::{Attempt, DecisionsSendError, send_failure};
 use super::format::DecisionsOutput;
 use super::request;
 use super::send::{DecisionsSender, finish, plain, signing_context};
@@ -30,7 +33,7 @@ impl<Clients: DecisionsAsyncTransport> DecisionsSender<'_, Clients> {
         } else {
             config.sign_request(prepared.outbound_headers.clone(), context)
         };
-        let params: Params = std::iter::once((
+        let params: Params = once((
             String::from("custom_llm_provider"),
             JsonValue::Text(call.custom_llm_provider.clone()),
         ))
@@ -43,14 +46,11 @@ impl<Clients: DecisionsAsyncTransport> DecisionsSender<'_, Clients> {
             .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?
             .await
             .map_err(|error| {
-                send_failure(
-                    config,
-                    call,
-                    self.env.redactor,
-                    error,
-                    ClientKind::Asynchronous,
-                    started.elapsed(),
-                )
+                let attempt = Attempt {
+                    mode: ClientKind::Asynchronous,
+                    elapsed: started.elapsed(),
+                };
+                send_failure(config, call, self.env.redactor, error, attempt)
             })?;
         finish(config, call, self.env.redactor, &reply)
     }
@@ -61,8 +61,8 @@ fn signed_off_task<F>(sign: F) -> (Headers, Option<Vec<u8>>)
 where
     F: FnOnce() -> (Headers, Option<Vec<u8>>) + Send,
 {
-    std::thread::scope(|scope| match scope.spawn(sign).join() {
+    scope(|threads| match threads.spawn(sign).join() {
         Ok(signed) => signed,
-        Err(payload) => std::panic::resume_unwind(payload),
+        Err(payload) => resume_unwind(payload),
     })
 }

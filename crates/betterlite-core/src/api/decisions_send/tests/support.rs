@@ -21,9 +21,14 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::systemone;
 use betterlite_models::decisions::{DecisionsJson, Extra, Json, TokenCount, ir, openai};
+use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::decisions::call::DecisionsCall;
-use betterlite_openai::decisions::call::fields::RequestFormat;
+use betterlite_openai::decisions::call::azure::AzureAiConfig;
+use betterlite_openai::decisions::call::fields::{
+    RequestFields, RequestFormat, SystemOneRequestFields,
+};
 use betterlite_openai::decisions::call::provider::ProviderConfig;
+use betterlite_openai::decisions::call::{PrepareCall, prepare_call};
 use betterlite_openai::decisions::openai::request::wire::{
     InputWire, QuestionWire, RequestWire as OpenAiRequestWire,
 };
@@ -39,7 +44,7 @@ use betterlite_openai::providers::typesafe::decisions::TypeSafeDecisionsConfig;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use super::super::clients::{
@@ -84,7 +89,7 @@ impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-type CallLogger = Box<dyn Fn(&Json) -> Result<(), PrePostError> + Sync>;
+type CallLogger = Box<dyn Fn(&Json) -> Result<(), PrePostError> + Send + Sync>;
 
 // The logging environment a pre_call needs, with a logger fn that records what it was handed
 pub(super) struct LogEnv {
@@ -213,7 +218,7 @@ impl Recording {
 }
 
 pub(super) enum Transform {
-    Answer(ir::DecisionResponse),
+    Answer(Box<ir::DecisionResponse>),
     Invalid(String),
     Malformed,
 }
@@ -231,8 +236,8 @@ pub(super) struct TestConfig {
 impl TestConfig {
     pub(super) fn new(recording: &Arc<Recording>) -> Self {
         Self {
-            recording: recording.clone(),
-            transform: Mutex::new(Transform::Answer(ir_response(Some("model-1")))),
+            recording: Arc::clone(recording),
+            transform: Mutex::new(Transform::Answer(Box::new(ir_response(Some("model-1"))))),
             cost: None,
             aws: false,
             signature: None,
@@ -315,17 +320,16 @@ impl DecisionsProviderConfig for TestConfig {
         &self,
         _model: &str,
         _custom_llm_provider: &str,
-        raw_response: &[u8],
+        _raw_response: &[u8],
         _request: &ir::DecisionRequest,
     ) -> Result<ir::DecisionResponse, ParseResponseError> {
         self.recording.events.push("transform");
-        let _ = raw_response;
         match &*self
             .transform
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
         {
-            Transform::Answer(response) => Ok(response.clone()),
+            Transform::Answer(response) => Ok(response.as_ref().clone()),
             Transform::Invalid(message) => Err(ParseResponseError::Invalid(Box::new(
                 provider_error_of(message, &Headers::new()),
             ))),
@@ -480,7 +484,7 @@ pub(super) struct FakeClients {
 impl FakeClients {
     fn from_wire(recording: &Arc<Recording>, wire: FakeWire) -> Self {
         Self {
-            recording: recording.clone(),
+            recording: Arc::clone(recording),
             wire,
             failure: None,
             selections: Mutex::default(),
@@ -671,6 +675,7 @@ fn openai_body() -> ProviderRequestWire {
 }
 
 // The two envelopes a Decisions call can carry, each with the provider wire its request serializes to
+#[derive(Clone, Copy)]
 enum Shape {
     SystemOne,
     OpenAi,
@@ -720,6 +725,77 @@ pub(super) fn openai_call<'logging>(
     logging: Option<&'logging Mutex<LoggingState>>,
 ) -> DecisionsCall<'logging> {
     shaped_call(provider, Shape::OpenAi, logging)
+}
+
+// The resolution inputs a real prepare_call reads, so a test only names the call it builds
+pub(super) struct Environment {
+    catalog: ModelCatalog,
+    known: BTreeSet<String>,
+    custom: BTreeSet<String>,
+    variables: BTreeMap<String, String>,
+}
+
+impl Environment {
+    pub(super) fn new() -> Self {
+        Self {
+            catalog: ModelCatalog::default(),
+            known: BTreeSet::new(),
+            custom: BTreeSet::new(),
+            variables: BTreeMap::new(),
+        }
+    }
+
+    fn context(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.catalog,
+            known_model_names: &self.known,
+            custom_providers: &self.custom,
+            environment: &self.variables,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        }
+    }
+}
+
+// The full prepare_call path through B3511's TypeSafe config, which the provider wire is built from
+pub(super) fn typesafe_call<'call>(
+    api_base: &'call str,
+    key: &'call SecretString,
+    logging: &'call Mutex<LoggingState>,
+    environment: &'call Environment,
+) -> DecisionsCall<'call> {
+    let questions =
+        serde_json::from_str(r#"{"first":{"type":"noul","instructions":"Is it true?"}}"#)
+            .expect("the questions parse");
+    let resolution = environment.context();
+    prepare_call(PrepareCall {
+        model: "model-1",
+        fields: RequestFields::SystemOne(SystemOneRequestFields {
+            state: Some(Json::Text(String::from("state"))),
+            questions: Some(questions),
+        }),
+        safety_identifier: None,
+        api_key: Some(key),
+        api_base: Some(api_base),
+        timeout: None,
+        custom_llm_provider: Some("typesafe"),
+        extra_headers: None,
+        kwargs: Extra::new(),
+        global_drop_params: false,
+        globals: LiteLlmGlobals {
+            api_base: None,
+            api_key: None,
+            openai_key: None,
+            organization: None,
+        },
+        azure_ai: AzureAiConfig {
+            complete_url: Box::new(|base: &str, _model: &str| base.to_owned()),
+        },
+        resolution: &resolution,
+        logging_obj: Some(logging),
+    })
+    .expect("the call prepares")
 }
 
 pub(super) fn real_clients() -> HttpClients {

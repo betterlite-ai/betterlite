@@ -29,7 +29,14 @@ where
     let cost = config.provider_reported_cost(response);
     let output = match &call.request {
         RequestFormat::SystemOne(_) => {
-            check_answers(response, call)?;
+            // ir_to_systemone_response zips without strict=True, while LiteLLM raises when the counts differ
+            let questions = call.ir_request.questions.len();
+            if response.answers.len() != questions {
+                return Err(ResponseConversionError::AnswerCount {
+                    answers: response.answers.len(),
+                    questions,
+                });
+            }
             let mut converted = ir_to_systemone_response(response, &call.ir_request);
             hidden_params(&mut converted.hidden_params, call, cost);
             DecisionsOutput::SystemOne(converted)
@@ -42,21 +49,6 @@ where
         }
     };
     Ok(output)
-}
-
-// ir_to_systemone_response zips without strict=True, while LiteLLM raises when the counts differ
-fn check_answers(
-    response: &ir::DecisionResponse,
-    call: &DecisionsCall<'_>,
-) -> Result<(), ResponseConversionError> {
-    let questions = call.ir_request.questions.len();
-    if response.answers.len() == questions {
-        return Ok(());
-    }
-    Err(ResponseConversionError::AnswerCount {
-        answers: response.answers.len(),
-        questions,
-    })
 }
 
 // set_hidden_params merges these into the result; additional_headers is absent unless the config reports a cost

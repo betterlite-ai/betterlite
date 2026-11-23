@@ -139,8 +139,8 @@ fn fields(headers: &Headers) -> IndexMap<String, Json> {
 
 // The data is a copy of the transformed body, so the logging record and the sent JSON are the same map
 fn raw_body(data: &Json) -> Result<RawBody, JsonError> {
-    match data {
-        Json::Object(entries) => Ok(RawBody::Object(entries.clone())),
-        other => Ok(RawBody::Text(serde_json::to_string(other)?)),
+    if let Json::Object(entries) = data {
+        return Ok(RawBody::Object(entries.clone()));
     }
+    Ok(RawBody::Text(serde_json::to_string(data)?))
 }

@@ -18,7 +18,9 @@ use super::support::*;
 use crate::api::decisions_send::clients::{
     DecisionsAsyncTransport, DecisionsRequest, DecisionsSyncTransport,
 };
-use crate::api::decisions_send::error::{DecisionsSendError, provider_error, send_failure};
+use crate::api::decisions_send::error::{
+    Attempt, DecisionsSendError, provider_error, send_failure,
+};
 use crate::api::vector_store_http_write::error::BaseLlmException;
 use crate::api::vector_store_http_write::service::ClientKind;
 
@@ -128,8 +130,10 @@ fn error_mapping_synthesized_connection_failure_is_an_api_connection_error() {
         &call,
         &fixture.log.redactor,
         failure,
-        ClientKind::Sync,
-        Duration::default(),
+        Attempt {
+            mode: ClientKind::Sync,
+            elapsed: Duration::default(),
+        },
     );
     assert!(matches!(class_of(&error), ErrorClass::ApiConnection(_)));
     assert_eq!(
