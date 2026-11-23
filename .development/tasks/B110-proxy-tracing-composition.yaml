@@ -27,7 +27,7 @@ description: >-
   /v1/traces/query/help, GET /v1/traces/{trace_id}, GET
   /v1/traces/{trace_id}/spans/{span_id}, and GET
   /v1/traces/{trace_id}/spans/{span_id}/error; there are no /traces, /openai/v1/traces or
-  provider-prefixed aliases. B8610's aggregator and B8680's wrap keep their existing order.
+  provider-prefixed aliases. B10082's aggregator and B8680's wrap keep their existing order.
   The MCP mounts B8626, B8701 and B8728 are unrelated and must not be merged again.
 
   Auth adapters supply B052/B757's existing hooks with the registered legacy or V2 logger.

@@ -8,10 +8,10 @@ publish.workspace = true
 [dependencies]
 percent-encoding = "2.3.2"
 serde.workspace = true
+serde_json = "1.0.154"
 
 [dev-dependencies]
 rstest = "=0.27.0"
-serde_json = "1.0.154"
 
 [lints]
 workspace = true

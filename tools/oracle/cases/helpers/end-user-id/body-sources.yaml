@@ -1,0 +1,72 @@
+kind: helper
+name: end-user-id-body-sources
+call:
+  b10050:
+    user_header_mappings: []
+    user_header_name: null
+    validate_end_user_id_in_db: false
+    requests:
+      - body:
+          user: top
+          litellm_metadata: {user: lm}
+          metadata: {user_id: md}
+          safety_identifier: sid
+        headers: null
+      - body:
+          litellm_metadata: {user: lm}
+          metadata: {user_id: md}
+          safety_identifier: sid
+        headers: null
+      - body:
+          metadata: {user_id: md}
+          safety_identifier: sid
+        headers: null
+      - body: {safety_identifier: sid}
+        headers: null
+      - body: {}
+        headers: null
+      - body:
+          user: true
+          litellm_metadata: {user: lm}
+        headers: null
+      - body: {user: 7}
+        headers: null
+      - body: {user: 1.5}
+        headers: null
+      - body: {user: 1e3}
+        headers: null
+      - body: {user: -0.0}
+        headers: null
+      - body: {user: " x "}
+        headers: null
+      - body: {user: "   "}
+        headers: null
+      - body: {user: [a]}
+        headers: null
+      - body: {user: {a: 1}}
+        headers: null
+      - body: {user: null}
+        headers: null
+      - body:
+          user: ""
+          litellm_metadata: {user: lm}
+        headers: null
+      - body: {litellm_metadata: '{"user": "parsed"}'}
+        headers: null
+      - body: {metadata: '{"user_id": "parsed"}'}
+        headers: null
+      - body:
+          litellm_metadata: '{"user": '
+          safety_identifier: sid
+        headers: null
+      - body:
+          metadata: '["md"]'
+          safety_identifier: sid
+        headers: null
+      - body:
+          metadata: '"md"'
+          safety_identifier: sid
+        headers: null
+env: {}
+compare:
+  ignore: []

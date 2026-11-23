@@ -1,0 +1,27 @@
+kind: helper
+name: model-access-groups-team-lookup
+call:
+  b10047:
+    model_list:
+      - model_name: team-shared
+        litellm_params:
+          model: openai/shared
+        model_info:
+          id: a
+          team_id: team-1
+          team_public_model_name: team-model
+          access_groups: [beta]
+      - model_name: team-other
+        litellm_params:
+          model: openai/other
+        model_info:
+          id: b
+          team_id: team-2
+          team_public_model_name: team-model
+          access_groups: [beta]
+    model_group_alias: {}
+    arguments:
+      model_name: team-model
+      team_id: team-1
+env: {}
+compare: {ignore: []}

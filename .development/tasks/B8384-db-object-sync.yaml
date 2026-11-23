@@ -8,7 +8,7 @@ description: >-
   `DbObjectSync`. Each loader logs its own error with LiteLLM's message and returns, so one broken table never stops
   the rest; nothing here returns an error.
 
-  `sync_non_llm_objects(db)` runs these in this order, each only when B8380's should_load_db_object allows its kind:
+  `sync_non_llm_objects(db)` runs these in this order, each only when B10054's should_load_db_object allows its kind:
   guardrails (B3683's poll_database), policies (B3243: sync policies, then attachments), then the vector_stores,
   vector_store_indexes and mcp positions, which stay empty here: MCP and vector stores are deferred until the core is
   done (Max, 11-19), and B9998 and B9997 add those three loaders at these positions when they build the registries.
