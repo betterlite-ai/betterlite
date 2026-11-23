@@ -93,7 +93,7 @@ where
             .await)
     }
 
-    fn defaults(&self) -> DefaultBudgetLookup<'_, Budgets, Cache> {
+    const fn defaults(&self) -> DefaultBudgetLookup<'_, Budgets, Cache> {
         DefaultBudgetLookup {
             rows: self.budgets,
             cache: self.cache,

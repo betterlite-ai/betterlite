@@ -72,10 +72,10 @@ impl EndUserRowTable {
             .query_opt(END_USER_ONE_SQL, &[&user_id])
             .await
             .map_err(|source| AuthReadError::Repository(backend(source)))?;
-        let Some(row) = row else {
+        let Some(stored) = row else {
             return Ok(None);
         };
-        decode(&row)
+        decode(&stored)
     }
 }
 

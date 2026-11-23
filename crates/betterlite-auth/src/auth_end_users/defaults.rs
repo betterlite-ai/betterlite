@@ -106,17 +106,15 @@ where
                 return Ok(None);
             }
         };
-        match self
+        if let Err(error) = self
             .cache
             .write_row(&cache_key, &fetched, self.cache.management_ttl())
             .await
         {
-            Ok(()) => Ok(Some(fetched)),
-            Err(error) => {
-                tracing::error!(error = %error, "Error fetching default end user budget");
-                Ok(None)
-            }
+            tracing::error!(error = %error, "Error fetching default end user budget");
+            return Ok(None);
         }
+        Ok(Some(fetched))
     }
 
     // LiteLLM's get_team_member_default_budget: only the query is caught, the write escapes

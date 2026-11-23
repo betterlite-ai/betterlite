@@ -98,6 +98,14 @@ async fn close(fixture: PostgresFixture, pool: Pool) {
     fixture.close_async().await.expect("the fixture teardown");
 }
 
+fn request(end_user_id: &str) -> EndUserRequest<'_> {
+    EndUserRequest {
+        end_user_id: Some(end_user_id),
+        key_end_user_budget_id: None,
+        token_end_user_max_budget: None,
+    }
+}
+
 async fn stored_budget_id(pool: &Pool, user_id: &str) -> Option<String> {
     let client = pool.get().await.expect("the database connection");
     let row = client
@@ -178,11 +186,6 @@ async fn database_rows_and_conflicting_spend() {
         registry: &registry,
         store: &store,
         max_end_user_budget_id: Some("budget-1"),
-    };
-    let request = |end_user_id: &str| EndUserRequest {
-        end_user_id: Some(end_user_id),
-        key_end_user_budget_id: None,
-        token_end_user_max_budget: None,
     };
     let plain = objects
         .get_end_user_object(&request("plain"))

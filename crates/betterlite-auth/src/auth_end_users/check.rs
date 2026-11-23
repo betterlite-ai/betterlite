@@ -2,6 +2,7 @@ use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
 use betterlite_db::spend_rows::key::END_USER_COUNTER_PREFIX;
 use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use betterlite_error::error::details::BudgetExceededDetails;
+use rust_decimal::Decimal;
 
 use crate::auxiliary_routes::INFO_ROUTES;
 use crate::current_spend::{CurrentSpend, CurrentSpendError, SpendQuery, WindowDescriptors};
@@ -15,7 +16,7 @@ pub const BUDGET_EXCEEDED_STATUS: u16 = 422;
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("{}", .details.message.as_deref().unwrap_or("end-user budget exceeded"))]
 pub struct EndUserBudgetExceeded {
-    pub details: BudgetExceededDetails,
+    pub details: Box<BudgetExceededDetails>,
 }
 
 // The spend failure keeps its own cause so the stage can answer 401 with LiteLLM's exception text
@@ -67,8 +68,19 @@ where
     if current <= max_budget {
         return Ok(());
     }
-    Err(EndUserBudgetError::from(EndUserBudgetExceeded {
-        details: BudgetExceededDetails {
+    Err(EndUserBudgetError::Exceeded(over_budget(
+        end_user, current, max_budget,
+    )))
+}
+
+// LiteLLM's BudgetExceededError('ExceededBudget', ...): the entity and the costs it read
+fn over_budget(
+    end_user: &LiteLLMEndUserTable,
+    current: Decimal,
+    max_budget: Decimal,
+) -> EndUserBudgetExceeded {
+    EndUserBudgetExceeded {
+        details: Box::new(BudgetExceededDetails {
             current_cost: current,
             max_budget,
             message: Some(format!(
@@ -79,6 +91,6 @@ where
             entity_type: Some("end_user".to_owned()),
             entity_id: Some(end_user.user_id.clone()),
             status_code: BUDGET_EXCEEDED_STATUS,
-        },
-    }))
+        }),
+    }
 }

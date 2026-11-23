@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::str::FromStr as _;
@@ -19,6 +20,7 @@ use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_failures::gate::{
     DbLookupStallTracker, LoopBoundSemaphore, SystemClock,
 };
+use betterlite_db::database_faults::{DbError as FaultDbError, ErrorType};
 use betterlite_db::identity_rows::PydanticBool;
 use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
 use betterlite_db::postgres_store::errors::DbError;
@@ -128,8 +130,18 @@ fn cache_error() -> AuthCacheError {
     AuthCacheError::from(failure)
 }
 
-fn query_failure() -> AuthReadError<TableError> {
-    AuthReadError::Lookup(DbLookupError::Database(DbError::NoDbConnected))
+fn query_failure<Failure>() -> AuthReadError<Failure>
+where
+    Failure: Error + 'static,
+{
+    AuthReadError::Lookup(DbLookupError::Database(FaultDbError {
+        error_type: ErrorType::Read,
+        message: "the lookup failed".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    }))
 }
 
 fn decode_failure() -> AuthReadError<TableError> {
@@ -190,12 +202,16 @@ impl ScriptedCache {
         let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
         budgets.insert(
             cache_key.to_owned(),
-            serde_json::to_value(budget).expect("the budget fixture serializes"),
+            serde_json::to_value(budget)
+                .and_then(serde_json::from_value)
+                .expect("the budget fixture serializes"),
         );
     }
 
     pub(super) fn put_end_user(&self, cache_key: &str, end_user: LiteLLMEndUserTable) {
-        let encoded = serde_json::to_value(end_user).expect("the end-user fixture serializes");
+        let encoded = serde_json::to_value(end_user)
+            .and_then(serde_json::from_value)
+            .expect("the end-user fixture serializes");
         let seeded = self
             .end_users
             .lock()
@@ -216,7 +232,11 @@ impl ScriptedCache {
             .unwrap_or_else(PoisonError::into_inner)
             .get(cache_key)
             .cloned();
-        stored.map(|row| serde_json::from_value(row).expect("the stored end-user row decodes"))
+        stored.map(|cached| {
+            serde_json::to_value(cached)
+                .and_then(serde_json::from_value)
+                .expect("the stored end-user row decodes")
+        })
     }
 
     pub(super) fn reads(&self) -> Vec<String> {
@@ -283,9 +303,12 @@ impl EndUserCache for ScriptedCache {
             return Err(payload_error());
         }
         stored
-            .map(serde_json::from_value)
+            .map(|cached| {
+                serde_json::to_value(cached)
+                    .and_then(serde_json::from_value::<Row>)
+                    .map_err(PayloadError::Json)
+            })
             .transpose()
-            .map_err(PayloadError::Json)
     }
 
     async fn write_row<Row>(
@@ -298,6 +321,7 @@ impl EndUserCache for ScriptedCache {
         Row: Serialize + Sync,
     {
         let encoded = serde_json::to_value(row)
+            .and_then(serde_json::from_value)
             .map_err(|source| AuthCacheError::from(PayloadError::Json(source)))?;
         let budget = cache_key.starts_with(DEFAULT_END_USER_BUDGET_PREFIX)
             || cache_key.starts_with(TEAM_MEMBER_BUDGET_PREFIX);
