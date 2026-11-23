@@ -18,7 +18,7 @@ description: >-
   Owner (an error from record_owner, with its status and detail), Query (a bad `limit`, see list) and Processing (the mapped error that `handle_exception` returns). Each variant keeps its source by `#[from]`.
 
   Provider pick. For list, retrieve and delete the provider is B3371's `pick_provider` (custom-llm-provider header, then the custom_llm_provider query value, then "openai"; an empty value falls through).
-  Create has one more source between the query value and the default: the `custom_llm_provider` key of the JSON body (B2400's body accessor). So create takes the header, then the query value, then the body
+  Create has one more source between the query value and the default: the `custom_llm_provider` key of the JSON body (B10059's body accessor). So create takes the header, then the query value, then the body
   value, then "openai", each only when non-empty. Build create's pick from the two `ProviderHints` fields and the body value in this module; do not change pick_provider.
 
   Create (endpoints.py L29-L158). (1) Read the JSON body into the data map with B1100's body reader; a body failure is B1100's error and never reaches `handle_exception`. (2) Pick the provider as above
@@ -165,7 +165,7 @@ out_of_scope:
   - "The ownership service (record_container_owner, assert_user_can_access_container, get_container_forwarding_params, list_owned_containers and the 100-item, five-page filter): B3362. This task calls it through the ContainerOwners and ContainerAccess traits."
   - "pick_provider, ContainerAccess, RequestProcessing and ProviderHints: B3371. The five container file routes, their JSON processor and the register_container_file_endpoints call at endpoints.py L478-L483: B3372."
   - "The mapping from the four container route types to the SDK calls (route choice, router wrappers, direct calls): B7430. The SDK create, list, retrieve and delete calls: B3369 and B3370."
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004. Request body decoding: B1100. The provider accessors: B2400. Authentication: B756 and B732. is_proxy_admin: B1018."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004. Request body decoding: B1100. The provider accessors: B10059. Authentication: B756 and B732. is_proxy_admin: B1018."
 pitfalls:
   - "The direct container call is required and the router one optional, so a proxy with a router that has no deployments still serves /v1/containers. With no router at all (route_llm_request.py L491-L496 and L717), the direct call runs only when the request data carries an explicit api_key or api_base, or the CLI user_model is set (L717); otherwise the route answers ProxyModelNotFoundError."
   - "Create is the only route that reads the body and the only one whose provider chain has a body step (header, query, body, default); list, retrieve and delete stop at the query value."

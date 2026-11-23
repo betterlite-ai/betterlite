@@ -7,6 +7,7 @@ pub mod label_names_catalog;
 pub mod label_sanitization;
 pub mod label_value_record;
 pub mod metric_catalog;
+pub mod multiprocess;
 pub mod no_op_metric;
 pub mod scrape_endpoint;
 pub mod validation;
