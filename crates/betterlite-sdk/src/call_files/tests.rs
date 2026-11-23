@@ -202,6 +202,22 @@ fn call_files_refuse_a_file_with_no_blob() {
 }
 
 #[test]
+fn call_files_refuse_a_null_blob() {
+    let request = payload(vec![(
+        "image",
+        object(vec![(
+            FILE_KEY,
+            object(vec![(BLOB_KEY, Json::Null), (NAME_KEY, text("cat.png"))]),
+        )]),
+    )]);
+    let mut blobs = vec![b"cat".to_vec()];
+
+    let error = files_from_payload(&request, &mut blobs).unwrap_err();
+
+    assert!(matches!(error, CallFilesError::MissingBlob { key } if key == "image"));
+}
+
+#[test]
 fn call_files_refuse_a_blob_index_that_is_not_a_number() {
     let request = payload(vec![(
         "image",
