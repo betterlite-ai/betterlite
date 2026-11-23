@@ -7,6 +7,7 @@ from litellm.router_utils.pre_call_checks.deployment_affinity_check import (
     DeploymentAffinityCheck,
 )
 from litellm.types.llms.openai import AllMessageValues
+from litellm.types.utils import CallTypes
 from pydantic import Field, JsonValue
 from typing_extensions import override
 
@@ -41,7 +42,8 @@ class Output(Strict):
     steps: list[Observation]
 
 
-class FilterCheck(Protocol):
+# LiteLLM types both methods with a bare dict, so the calls go through this protocol
+class Check(Protocol):
     async def async_filter_deployments(
         self,
         model: str,
@@ -49,6 +51,10 @@ class FilterCheck(Protocol):
         messages: list[AllMessageValues] | None,
         request_kwargs: dict[str, JsonValue] | None = None,
     ) -> list[dict[str, JsonValue]]: ...
+
+    async def async_pre_call_deployment_hook(
+        self, kwargs: dict[str, JsonValue], call_type: CallTypes | None
+    ) -> object: ...
 
 
 def deployment_dict(deployment: Deployment, model_group: str) -> dict[str, JsonValue]:
@@ -90,7 +96,7 @@ class DeploymentAffinity(Operation):
                 observations.append(await self.apply_step(check, step))
         return Output(steps=observations)
 
-    async def apply_step(self, check: DeploymentAffinityCheck, step: Step) -> Observation:
+    async def apply_step(self, check: Check, step: Step) -> Observation:
         kwargs: Final[dict[str, JsonValue]] = self.request_kwargs(step)
         if step.kind == "hook":
             if step.model_info is not None:
@@ -106,8 +112,11 @@ class DeploymentAffinity(Operation):
             deployment_dict(deployment, self.model) for deployment in pool_deployments
         ]
         model: Final = self.model if step.model is None else step.model
-        chosen: Final[list[dict[str, JsonValue]]] = await self.filtered_pool(
-            check, model, pool, kwargs
+        chosen: Final[list[dict[str, JsonValue]]] = await check.async_filter_deployments(
+            model=model,
+            healthy_deployments=pool,
+            messages=None,
+            request_kwargs=kwargs,
         )
         return Observation(
             action="filter",
@@ -116,21 +125,6 @@ class DeploymentAffinity(Operation):
                 for position, deployment in enumerate(pool_deployments)
                 if any(pool[position] is kept for kept in chosen)
             ],
-        )
-
-    # LiteLLM types the method as list[dict], so the call goes through the protocol parameter
-    async def filtered_pool(
-        self,
-        check: FilterCheck,
-        model: str,
-        pool: list[dict[str, JsonValue]],
-        kwargs: dict[str, JsonValue],
-    ) -> list[dict[str, JsonValue]]:
-        return await check.async_filter_deployments(
-            model=model,
-            healthy_deployments=pool,
-            messages=None,
-            request_kwargs=kwargs,
         )
 
     def request_kwargs(self, step: Step) -> dict[str, JsonValue]:
