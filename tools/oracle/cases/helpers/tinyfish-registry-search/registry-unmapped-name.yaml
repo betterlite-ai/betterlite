@@ -1,0 +1,27 @@
+kind: helper
+name: registry-unmapped-name
+call:
+  b048:
+    op: registry
+    providers:
+      - search_api
+      - TinyFish
+      - ""
+      - " tinyfish"
+      - "tinyfish "
+      - bing
+      - apiserpent_search
+      - perplexity-ai
+    environment: {}
+calls:
+  - b048:
+      op: registry
+      providers:
+        - tinyfish
+        - search_api
+        - brave
+        - ""
+        - serper
+      environment: {}
+env: {}
+compare: {ignore: []}

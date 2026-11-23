@@ -1,0 +1,72 @@
+kind: helper
+name: tinyfish-null-field-defaults
+call:
+  b048:
+    op: request
+    query: "q"
+    optional_params: {}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply:
+      status: 200
+      body: '{"results":[{"title":null,"url":7,"snippet":null,"date":"2024-01-01","last_updated":null,"position":3,"site_name":"Example"}],"query":"x","total_results":1}'
+calls:
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{}]}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[],"object":"custom","page":2}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":"t","url":"u","snippet":"s","date":"d","last_updated":"l","extra_a":1,"extra_b":{"nested":true}}],"meta":{"k":[1,2]},"object":"search"}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":["a"],"url":false,"snippet":{},"position":"first"}]}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{"results":[{"title":"t","url":"u","snippet":"s"}],"parameter_warnings":[{"type":"unsupported","parameter":"foo","message":"ignored"},{"type":"","parameter":"bar","message":"skipped"},{"bad":1}]}'
+env: {}
+compare: {ignore: []}
