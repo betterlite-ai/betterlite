@@ -295,14 +295,14 @@ async fn the_queue_needs_a_capacity_and_wakes_waiting_producers_when_closed() {
         BaselineQueue::new(usize::MAX).err(),
         Some(QueueError::CapacityTooLarge)
     ));
-    let queue = queue_of(1, 1).await;
-    let mut waiting = Box::pin(queue.push(record("req-1", 1.0_f64)));
+    let queue = queue_of(2, 2).await;
+    let mut waiting = Box::pin(queue.push(record("req-2", 2.0_f64)));
     timeout(Duration::from_millis(10), &mut waiting)
         .await
         .unwrap_err();
-    assert_eq!(queue.close(), 1);
+    assert_eq!(queue.close(), 2);
     assert!(matches!(waiting.await, Err(QueueError::Closed)));
-    assert_eq!(queued(&queue), ["req-0"]);
+    assert_eq!(queued(&queue), ["req-0", "req-1"]);
 }
 
 #[tokio::test]

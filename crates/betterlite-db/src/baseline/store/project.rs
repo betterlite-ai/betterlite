@@ -71,10 +71,12 @@ where
         entries: Vec::new(),
         blocked_until: 0.0_f64,
     };
-    let checkpoint = match &state.history {
-        Some(text) => serde_json::from_str(text)?,
-        None => initial.clone(),
-    };
+    let checkpoint = state
+        .history
+        .as_deref()
+        .map(serde_json::from_str::<BaselineHistory>)
+        .transpose()?
+        .unwrap_or_else(|| initial.clone());
     let late = transaction
         .query_opt(
             CHANGED_BEFORE,

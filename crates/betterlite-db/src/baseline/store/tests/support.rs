@@ -120,10 +120,6 @@ pub(crate) fn record(request_id: &str, started_at: f64) -> BaselineAccountingRec
 }
 
 impl Harness {
-    pub(crate) async fn client(&self) -> Client {
-        self.pool.get().await.unwrap()
-    }
-
     pub(crate) async fn close(self) {
         self.pool.close();
         self.fixture.close_async().await.unwrap();
@@ -175,8 +171,4 @@ pub(crate) async fn reason(client: &Client, request_id: &str) -> String {
 pub(crate) async fn session(client: &Client) -> (i64, String, i64) {
     let row = client.query_one(SESSION, &[]).await.unwrap();
     (row.get(0), row.get(1), row.get(2))
-}
-
-pub(crate) async fn execute(client: &Client, sql: &str) {
-    client.batch_execute(sql).await.unwrap();
 }
