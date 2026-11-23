@@ -1,0 +1,16 @@
+kind: helper
+name: key-info-access-unrelated-personal-key
+call:
+  b10068:
+    calls:
+      - caller: {user_role: internal_user, api_key: sk-nope, user_id: outsider}
+        key: null
+        key_row: {user_id: owner-1, team_id: null}
+      - caller: {user_role: internal_user, api_key: null, user_id: outsider}
+        key: "d9f67e2fb9b948d72abfe390ff532c6783aa99926d24b984ace1ce037e0830db"
+        key_row: {user_id: owner-1, team_id: null}
+      - caller: {user_role: org_admin, api_key: sk-nope, user_id: outsider}
+        key: null
+        key_row: {user_id: owner-1, team_id: null}
+env: {}
+compare: {ignore: []}
