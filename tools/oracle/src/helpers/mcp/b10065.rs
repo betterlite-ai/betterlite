@@ -53,7 +53,7 @@ fn auth_mode(raw: &str) -> Result<McpAuthType, String> {
     }
 }
 
-fn error_tag(error: &CredError) -> &'static str {
+const fn error_tag(error: &CredError) -> &'static str {
     match error {
         CredError::Unauthorized(_) => "unauthorized",
         CredError::Misconfigured(_) => "misconfigured",

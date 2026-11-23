@@ -1,6 +1,6 @@
 mod tests;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use base64::Engine as _;
 use base64::alphabet;
@@ -48,8 +48,8 @@ pub fn validate_static_credential(
         }
     }
     for (name, value) in headers {
-        let slot = name.to_lowercase();
-        if slots.contains(&slot) && usable_credential_value(auth_type, &slot, value.trim()) {
+        let lowered = name.to_lowercase();
+        if slots.contains(&lowered) && usable_credential_value(auth_type, &lowered, value.trim()) {
             return Ok(());
         }
     }
@@ -103,13 +103,13 @@ fn has_credential_after(value: &str, scheme: &str) -> bool {
 }
 
 fn basic_carries_credentials(value: &str) -> bool {
-    let Some((scheme, encoded)) = value.split_once(char::is_whitespace) else {
+    let Some((scheme, payload)) = value.split_once(char::is_whitespace) else {
         return false;
     };
     if !scheme.eq_ignore_ascii_case("basic") {
         return false;
     }
-    let Ok(decoded) = BASE64.decode(encoded.trim()) else {
+    let Ok(decoded) = BASE64.decode(payload.trim()) else {
         return false;
     };
     decoded.trim_ascii().contains(&b':')
