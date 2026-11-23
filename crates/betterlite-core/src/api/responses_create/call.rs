@@ -1,13 +1,15 @@
-use super::convert::{json_value, reencode, value_from_prompt};
+use super::convert::{json_value, value_from_prompt};
 use super::error::CreateError;
+use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_compact_http::service::SharedSession;
 use crate::api::responses_create_http::config::Headers;
 use crate::api::responses_provider_selection::ParameterMap;
 use betterlite_context::non_default_params::Params;
 use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::controls::optional_params::OptionalParams;
 use betterlite_models::decisions::Json;
-use betterlite_models::headers::affinity::SessionMetadata;
+use betterlite_models::headers::affinity::{AffinityParams, SessionMetadata};
 use betterlite_openai::response_input::{ResponsesInput, ResponsesTool};
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
@@ -54,11 +56,22 @@ pub struct ResponsesCreateCall {
 }
 #[must_use]
 pub fn resolution_params(call: &ResponsesCreateCall) -> CallParams {
-    let defaults = CallParams::default();
+    // The resolution seeds the caller's key and base; every other field keeps its default
     CallParams {
+        model: None,
         api_key: call.api_key.clone(),
         api_base: call.api_base.clone(),
-        ..defaults
+        custom_llm_provider: None,
+        metadata: None,
+        litellm_metadata: None,
+        litellm_session_id: None,
+        litellm_trace_id: None,
+        no_log: None,
+        drop_params: None,
+        control: None,
+        credentials: None,
+        optional: OptionalParams::default(),
+        affinity: AffinityParams::default(),
     }
 }
 macro_rules! named {
@@ -113,7 +126,7 @@ pub(super) fn session_metadata(
 ) -> Result<Option<SessionMetadata>, CreateError> {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => reencode(fields).map(Some).map_err(CreateError::Encode),
+        Some(Json::Object(fields)) => transcode(fields).map(Some).map_err(CreateError::from),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             Err(CreateError::Field {
                 field,
