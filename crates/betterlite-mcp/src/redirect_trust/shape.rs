@@ -118,15 +118,22 @@ pub fn validate_redirect_uri_shape(
             redirect_uri: None,
         });
     }
+    match web_redirect_uri_rejection(parsed) {
+        Some(rejected) => Err(rejected),
+        None => Ok(RedirectShape::NeedsTrustPolicy),
+    }
+}
+
+fn web_redirect_uri_rejection(parsed: &Parsed) -> Option<RedirectUriRejected> {
     if !parsed.fragment.is_empty() {
-        return Err(RedirectUriRejected {
+        return Some(RedirectUriRejected {
             description: "redirect_uri must not contain a URL fragment (#...).".to_owned(),
             hint: None,
             redirect_uri: None,
         });
     }
     if parsed.netloc.is_empty() {
-        return Err(RedirectUriRejected {
+        return Some(RedirectUriRejected {
             description: "redirect_uri must include a host (e.g. https://your-host/path)."
                 .to_owned(),
             hint: None,
@@ -134,20 +141,20 @@ pub fn validate_redirect_uri_shape(
         });
     }
     if parsed.netloc.contains('@') {
-        return Err(RedirectUriRejected {
+        return Some(RedirectUriRejected {
             description: "redirect_uri must not contain userinfo (user:pass@host).".to_owned(),
             hint: None,
             redirect_uri: None,
         });
     }
     if parsed.netloc.contains('\\') {
-        return Err(RedirectUriRejected {
+        return Some(RedirectUriRejected {
             description: "redirect_uri host must not contain backslashes.".to_owned(),
             hint: None,
             redirect_uri: None,
         });
     }
-    Ok(RedirectShape::NeedsTrustPolicy)
+    None
 }
 
 fn matches_trusted_native_redirect_uri(parsed: &Parsed, native_callbacks: &[String]) -> bool {
