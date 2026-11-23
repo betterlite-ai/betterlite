@@ -1,6 +1,7 @@
 pub mod budget;
 pub mod finops;
 
+use std::future::{Ready, ready};
 use std::sync::Arc;
 
 use axum::Router;
@@ -25,6 +26,18 @@ pub(crate) fn mount(router: Router, state: &Arc<ServerState>) -> Router {
         }
         None => router.merge(cache_activity_routes::routes(None)),
     }
+}
+
+#[cfg_attr(test, mutants::skip)]
+pub fn mount_public(router: Router, _state: &Arc<ServerState>) -> Router {
+    // the area owner adds its public routes
+    router.merge(Router::new())
+}
+
+#[cfg_attr(test, mutants::skip)]
+pub fn start(_state: &Arc<ServerState>) -> Ready<()> {
+    // the area owner fills this startup step
+    ready(())
 }
 
 // The proxy reads the URL the CLI wrote before Prisma starts: general_settings.database_url, else DATABASE_URL, else the DATABASE_* parts.

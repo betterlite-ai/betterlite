@@ -94,7 +94,8 @@ pitfalls:
 - "`arun_thread_stream` is a plain function (not `async def`) that returns the manager, so `inspect.iscoroutinefunction` is false for it."
 - "`run_thread` with `stream=True` and an `event_handler` passes the handler through the stream manager, never into the JSON."
 - "`get_optional_params_image_gen` is unrelated to assistants by name but sits in this package, so keep it importable from `betterlite.assistants.utils` as well as `_utils`."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 7

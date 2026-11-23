@@ -132,7 +132,7 @@ out_of_scope:
   - "create_pass_through_route and its handler: B3615. get_credentials: B3602. provider_target_url, uses_router_model, is_streaming_body, models_served_by_group, RelayRejection and relay_router_model: B3618."
   - "open_sse_before_first_byte: B7324. get_request_body: B1101. is_json_content_type and the parsed-body setter: B1100. get_secret_str: B8500."
   - "is_azure_body_model_inference_endpoint, azure_router_model_in_endpoint (no caller in these routes), foreign_azure_deployment and the Azure native pass-through config: B548."
-  - "assert_proxy_admin_for_vector_store_index_management: B1060. assert_user_can_access_vector_store: B10014. is_allowed_to_call_vector_store_endpoint: B1061. The index and store registries: B1062 and B1063."
+  - "assert_proxy_admin_for_vector_store_index_management: B10071. assert_user_can_access_vector_store: B10014. is_allowed_to_call_vector_store_endpoint: B1061. The index and store registries: B1062 and B1063."
   - "AzureAIVectorStoreConfig: B558. MilvusVectorStoreConfig and ProviderConfigManager.get_provider_vector_stores_config for Milvus: B7892 implements them and B9998 wires them into VectorProviderPort; see the notes."
   - "The vector store index and store management routes: B1068 and B1076 and the other vector store route tasks."
   - "The production adapters for the three ports: B8641, with the real vector ones from B9998. The router trait: see B8640."

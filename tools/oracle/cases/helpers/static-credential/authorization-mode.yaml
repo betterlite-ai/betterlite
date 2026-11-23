@@ -1,0 +1,71 @@
+kind: helper
+name: static-credential-authorization-mode
+call:
+  b10065:
+    auth_type: authorization
+    headers: {Authorization: opaque-secret-value}
+    upstream_token_header: null
+    static_header_names: []
+calls:
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: "Bearer xyz"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: "Basic dXNlcjpwYXNz"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: "Custom Custom"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: Bearer}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: Basic}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: token}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: apikey}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {Authorization: ""}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {X-API-Key: key}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {X-Custom: opaque}
+      upstream_token_header: X-Custom
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {X-Custom: Bearer}
+      upstream_token_header: X-Custom
+      static_header_names: []
+  - b10065:
+      auth_type: authorization
+      headers: {AUTHORIZATION: opaque}
+      upstream_token_header: X-Tenant
+      static_header_names: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,24 @@
+kind: helper
+name: user-model-access-user-grant-matrix
+call:
+  b10051:
+    checks:
+      - {model: gpt-4o, user: null, key_aliases: {}}
+      - {model: o3, user: {user_id: listed, models: [gpt-4o, o3]}, key_aliases: {}}
+      - {model: o3, user: {user_id: unlisted, models: [gpt-4o]}, key_aliases: {}}
+      - {model: private-model, user: {user_id: empty-list, models: []}, key_aliases: {}}
+      - {model: private-model, user: {user_id: null-column, models: null}, key_aliases: {}}
+      - {model: private-model, user: {user_id: absent-column}, key_aliases: {}}
+      - {model: gpt-4o-mini, user: {user_id: star, models: ["*"]}, key_aliases: {}}
+      - {model: gpt-4o-mini, user: {user_id: prefix, models: ["gpt-*"]}, key_aliases: {}}
+      - {model: claude-x, user: {user_id: prefix, models: ["gpt-*"]}, key_aliases: {}}
+      - {model: any-model, user: {user_id: proxy-models, models: [all-proxy-models]}, key_aliases: {}}
+      - {model: gpt-4o, user: {user_id: provider-prefix, models: ["openai/*"]}, key_aliases: {}}
+      - {model: fast, user: {user_id: alias-target, models: [gpt-4o]}, key_aliases: {fast: gpt-4o}}
+      - {model: fast, user: {user_id: alias-name-only, models: [fast]}, key_aliases: {fast: gpt-4o}}
+      - {model: [gpt-4o, o3], user: {user_id: list-allowed, models: [gpt-4o, o3]}, key_aliases: {}}
+      - {model: [o3, gpt-4o], user: {user_id: list-first-denied, models: [gpt-4o]}, key_aliases: {}}
+      - {model: [gpt-4o, o3], user: {user_id: list-second-denied, models: [gpt-4o]}, key_aliases: {}}
+      - {model: gpt-4o, user: {user_id: team-sentinel, models: [all-team-models]}, key_aliases: {}}
+env: {}
+compare: {ignore: []}

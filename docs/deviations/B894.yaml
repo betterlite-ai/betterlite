@@ -1,0 +1,6 @@
+task: B894
+deviations:
+  - what: Truthy premium-labelled metadata is projected without a license; LiteLLM's paid check raises there, so its projection loop aborts and leaves that request's later metadata fields unprojected.
+    why: betterlite has no paid gating, so the helper projects every premium field. native_metadata_projection_without_license covers all nine fields, and non-license partial-loop failures stay in equality cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2355-L2372
+kept_bugs: []
