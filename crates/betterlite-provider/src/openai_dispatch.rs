@@ -135,7 +135,12 @@ fn chat_request(
     catalog: &CatalogCapabilities,
     stream: bool,
 ) -> Result<PreparedRequest, OperationError> {
-    let body = encode(chat_fields(&chat.request, &chat.model, catalog)?)?;
+    let body = encode(chat_fields(
+        &chat.request,
+        &chat.model,
+        catalog,
+        deployment,
+    )?)?;
     let http = PreparedHttp {
         method: Method::POST,
         url: deployment.endpoint.clone(),

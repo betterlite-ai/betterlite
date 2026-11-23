@@ -77,6 +77,11 @@ description: >-
   deployment's true answers OperationError::Parameters with ParameterError::Unsupported) to anthropic_dispatch_cases.
 scope:
   paths:
+  - "crates/betterlite-provider/src/openai_dispatch/recovery/tests.rs"
+  - "crates/betterlite-provider/src/legacy_dispatch/tests.rs"
+  - "crates/betterlite-provider/src/hosted_platform_dispatch/perplexity/tests.rs"
+  - "crates/betterlite-provider/src/anthropic_dispatch/tests/gateway/support.rs"
+  - "crates/betterlite-provider/src/anthropic_dispatch/gateway/call.rs"
   - crates/betterlite-openai/src/chat/deployment.rs
   - crates/betterlite-openai/src/completion_chat_bridge/tests.rs
   - crates/betterlite-openai/src/text_completion_execution/tests.rs
@@ -102,7 +107,6 @@ scope:
   - crates/betterlite-provider/src/anthropic_dispatch/tests.rs
   - crates/betterlite-provider/src/anthropic_dispatch/tests/gateway.rs
   - crates/betterlite-provider/src/operation/tests.rs
-  - crates/betterlite-provider/src/provider/tests.rs
   - crates/betterlite-provider/src/provider/tests/openai.rs
   - crates/betterlite-provider/src/embedding_rerank_providers/tests.rs
   - crates/betterlite-provider/src/vertex_embedding_binding/calls/tests.rs

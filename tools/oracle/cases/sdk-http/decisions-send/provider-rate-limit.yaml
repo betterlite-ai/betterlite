@@ -1,0 +1,22 @@
+kind: sdk_http
+name: decisions-send-provider-rate-limit
+env: {}
+call:
+  decisions_send:
+    runs:
+      - model: model-1
+        questions: {first: {type: noul, instructions: "Is it true?"}}
+        custom_llm_provider: typesafe
+        api_key: sk-call
+        api_base: "{mock}"
+        asynchronous: true
+        kwargs: {state: "The order shipped on Tuesday."}
+upstream:
+  - status: 429
+    headers: {content-type: application/json, retry-after: "2"}
+    body: {error: {message: "rate limited, slow down"}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

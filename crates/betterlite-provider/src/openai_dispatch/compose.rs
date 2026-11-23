@@ -61,7 +61,7 @@ pub fn chat_plan(
 ) -> Result<ChatPlan, OpenAiProviderError> {
     let credentials = resolve(composition, &call.credentials);
     let deployment = chat_deployment(composition, call, &credentials)?;
-    let body = chat_body(composition, call)?;
+    let body = chat_body(composition, call, &deployment)?;
     // completion() hands this branch the caller's headers already merged with its extra headers
     let headers = resolved_headers(
         composition,
@@ -103,8 +103,12 @@ fn chat_deployment(
 }
 
 // extra_headers travel as HTTP headers; the normal branch hands them to the SDK through optional_params
-fn chat_body(composition: &Composition, call: &ChatCall) -> Result<Vec<u8>, OpenAiProviderError> {
-    let mut body = chat_fields(&call.request, &call.model, &composition.catalog)?;
+fn chat_body(
+    composition: &Composition,
+    call: &ChatCall,
+    deployment: &Deployment,
+) -> Result<Vec<u8>, OpenAiProviderError> {
+    let mut body = chat_fields(&call.request, &call.model, &composition.catalog, deployment)?;
     body.shift_remove("extra_headers");
     if composition.provider.enable_preview_features
         && let Some(metadata) = call.metadata.as_ref().and_then(requester_metadata)

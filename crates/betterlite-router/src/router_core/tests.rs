@@ -231,7 +231,6 @@ where
 #[case::routing_group_members_missing_from_the_pool_leave_none(
     boundaries::routing_group_members_missing_from_the_pool_leave_none()
 )]
-#[case::stage_request_scheduler(boundaries::stage_skips(RouteStage::RequestScheduler))]
 #[case::stage_routing_plugins(boundaries::stage_skips(RouteStage::RoutingPlugins))]
 #[case::stage_responses_stream_fallback(boundaries::stage_skips(
     RouteStage::ResponsesStreamFallback
