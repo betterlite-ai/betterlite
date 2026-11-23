@@ -15,7 +15,9 @@ use betterlite_azure::native_speech::response::HttpxBinaryResponseContent;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
+use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::image_edits::file::ImageEditFile;
+use betterlite_openai::openai_base_config::Object;
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -29,9 +31,11 @@ use super::call::{
 };
 use super::error::AzureMediaError;
 use super::parts::{form_parts, header_map};
+use super::speech::config::AvaSpeechConfig;
 use super::test_support::{Cache, Clock, Outcome, Reply};
 use super::{AzureMediaResult, ImageEditOutcome};
 use crate::api::speech_http::SpeechBinaryResponse;
+use crate::api::speech_provider_contract::{SpeechMappingOptions, TextToSpeechConfig};
 use crate::openai_media_dispatch::OpenAiMediaRequest;
 use crate::operation::{OperationRequest, OperationResult};
 
@@ -521,7 +525,10 @@ fn ssml_operation() -> NativeSsmlOperation {
         api_key: Some(key()),
         api_base: Some(String::from("https://westus.api.cognitive.microsoft.com")),
         timeout: None,
-        extra_headers: None,
+        extra_headers: Some(BTreeMap::from([(
+            String::from("x-call"),
+            String::from("1"),
+        )])),
         aspeech: false,
     }
 }
@@ -628,6 +635,8 @@ async fn ssml_request() {
         header(&sent.headers, "content-type"),
         Some("application/ssml+xml")
     );
+    assert_eq!(header(&sent.headers, "x-call"), Some("1"));
+    assert_eq!(sent.deadline, Duration::from_secs(600));
     let RequestBody::Bytes { data, .. } = &sent.body else {
         panic!("the ssml request body is bytes");
     };
@@ -640,6 +649,52 @@ async fn ssml_failure() {
     let operation = AzureMediaOperation::NativeSsml(Box::new(ssml_operation()));
     let outcome = exchange(operation, vec![Reply::json(400, "bad ssml")]).await;
     speech_error(&outcome, 400, "bad ssml");
+}
+
+// AVA maps the OpenAI speech params onto Azure SSML fields: the voice table, mp3 to its output format, speed to a
+// prosody rate and the SSML kwargs through unchanged; a dict voice has no name to map
+#[test]
+fn ava_speech_maps_openai_params() {
+    let config = AvaSpeechConfig;
+    assert_eq!(
+        config.supported_openai_params("tts"),
+        vec![
+            String::from("voice"),
+            String::from("response_format"),
+            String::from("speed"),
+        ]
+    );
+    let optional = object(r#"{"response_format":"mp3","speed":1.5}"#);
+    let options = SpeechMappingOptions {
+        voice: Some(SpeechVoice::Name(String::from("alloy"))),
+        drop_params: false,
+        kwargs: object(r#"{"style":"cheerful","styledegree":"1.5","role":"Girl","lang":"en-US"}"#),
+    };
+    let (voice, mapped) = config.map_openai_params("tts", optional, &options);
+    assert_eq!(voice.as_deref(), Some("en-US-JennyNeural"));
+    assert_eq!(
+        mapped,
+        object(
+            r#"{"output_format":"audio-24khz-48kbitrate-mono-mp3","rate":"+50%","style":"cheerful","styledegree":"1.5","role":"Girl","lang":"en-US"}"#
+        )
+    );
+    let dict_voice = SpeechMappingOptions {
+        voice: Some(SpeechVoice::Options(object(r#"{"name":"alloy"}"#))),
+        ..SpeechMappingOptions::default()
+    };
+    let (dict_mapped, dict_params) = config.map_openai_params("tts", Object::new(), &dict_voice);
+    assert_eq!(dict_mapped, None);
+    assert_eq!(
+        dict_params,
+        object(r#"{"output_format":"audio-24khz-48kbitrate-mono-mp3"}"#)
+    );
+}
+
+fn object(text: &str) -> Object {
+    match serde_json::from_str(text) {
+        Ok(fields) => fields,
+        Err(error) => panic!("the expected object parses: {error}"),
+    }
 }
 
 #[test]
