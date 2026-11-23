@@ -39,15 +39,6 @@ pub(super) struct Requested {
     pub(super) api_key: Option<String>,
 }
 
-impl ScriptedResolver {
-    pub(super) const fn new(answer: Option<Resolution>) -> Self {
-        Self {
-            answer,
-            requested: Mutex::new(None),
-        }
-    }
-}
-
 impl ProviderResolver for ScriptedResolver {
     fn resolve(&self, request: &ResolutionRequest<'_>) -> Result<ResolvedModel, ResolutionError> {
         let requested = Requested {
@@ -78,14 +69,6 @@ pub(super) struct ScriptedCatalog {
     modes: BTreeMap<String, Option<String>>,
 }
 
-impl ScriptedCatalog {
-    pub(super) fn new(modes: &BTreeMap<String, Option<String>>) -> Self {
-        Self {
-            modes: modes.clone(),
-        }
-    }
-}
-
 impl CatalogModes for ScriptedCatalog {
     fn catalog_mode(&self, model: &str) -> CatalogMode {
         match self.modes.get(model) {
@@ -99,12 +82,16 @@ impl CatalogModes for ScriptedCatalog {
 pub(super) async fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
     let entries: IndexMap<String, Value> = step.params.clone().into_iter().collect();
     let params = HealthProbeParams::from_map(entries).or_value_error()?;
-    let recorder = Arc::new(ProbeRecorder::new(
-        step.headers.clone(),
-        step.failure.clone(),
-        step.raw_request.clone(),
-    ));
-    let resolver = Arc::new(ScriptedResolver::new(step.resolution.clone()));
+    let recorder = Arc::new(ProbeRecorder {
+        headers: step.headers.clone(),
+        failure: step.failure.clone(),
+        raw_request: step.raw_request.clone(),
+        call: Mutex::new(None),
+    });
+    let resolver = Arc::new(ScriptedResolver {
+        answer: step.resolution.clone(),
+        requested: Mutex::new(None),
+    });
     let entry = HealthCheckEntry {
         backend: Arc::<ProbeRecorder>::clone(&recorder),
         cheapest: Arc::new(ScriptedCheapest {
@@ -112,7 +99,9 @@ pub(super) async fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
         }),
         documents: Arc::new(HealthCheckDocuments),
         resolver: Arc::<ScriptedResolver>::clone(&resolver),
-        catalog: Arc::new(ScriptedCatalog::new(&step.catalog)),
+        catalog: Arc::new(ScriptedCatalog {
+            modes: step.catalog.clone(),
+        }),
         redactor: Arc::new(Redactor::new(16).or_config_error()?),
         redact_secrets: true,
         clock: || {

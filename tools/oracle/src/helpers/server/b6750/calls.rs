@@ -39,19 +39,6 @@ pub(super) struct ProbeRecorder {
 }
 
 impl ProbeRecorder {
-    pub(super) const fn new(
-        headers: Option<BTreeMap<String, String>>,
-        failure: Option<String>,
-        raw_request: Option<RawRequest>,
-    ) -> Self {
-        Self {
-            headers,
-            failure,
-            raw_request,
-            call: Mutex::new(None),
-        }
-    }
-
     fn note<T>(
         &self,
         name: &'static str,
@@ -201,8 +188,8 @@ impl OcrHealthDocuments for HealthCheckDocuments {
     }
 }
 
-fn error_context(message: &str) -> ErrorContext {
-    ErrorContext {
+fn backend_error(message: &str) -> HealthProbeError {
+    let context = ErrorContext {
         message: message.to_owned(),
         model: None,
         provider: None,
@@ -211,11 +198,7 @@ fn error_context(message: &str) -> ErrorContext {
         body_type: None,
         body_param: None,
         body_code: None,
-    }
-}
-
-fn backend_error(message: &str) -> HealthProbeError {
-    let context = error_context(message);
+    };
     HealthProbeError::Backend {
         class: ErrorClass::Unclassified(Box::new(context)),
         message: message.to_owned(),
