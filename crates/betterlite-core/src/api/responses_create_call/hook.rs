@@ -12,6 +12,7 @@ use crate::api::responses_parameters::prompt_merge::{
     ClientMessage, input_to_chat_messages, merge_prompt_management_input,
 };
 use crate::api::responses_provider_selection::ParameterMap;
+use crate::api::responses_provider_selection::prefixes::pop_use_chat_completions_api;
 use crate::api::responses_provider_selection::prompting::swap::{
     PromptSwapError, SwapRequest, model_info_after_swap, resolve_swapped_provider,
 };
@@ -90,36 +91,21 @@ fn connection_kwargs(call: &ResponsesCreateCall) -> ParameterMap {
     kwargs
 }
 
-// LiteLLM reads bool(kwargs.get("use_chat_completions_api")); the sync call still pops it for itself
-fn use_chat_completions_api(kwargs: &ParameterMap) -> bool {
-    match kwargs.get("use_chat_completions_api") {
-        Some(JsonValue::Bool(flag)) => *flag,
-        Some(JsonValue::Number(number)) => {
-            number.as_f64().is_some_and(|float| float.abs() > 0.0_f64)
-        }
-        Some(JsonValue::Text(text)) => !text.is_empty(),
-        Some(JsonValue::Array(items)) => !items.is_empty(),
-        Some(JsonValue::Object(fields)) => !fields.is_empty(),
-        Some(JsonValue::Null) | None => false,
-    }
-}
-
+// LiteLLM reads the flag without consuming it, and the sync call still pops it for itself
 fn bridges(
     lookup: &dyn ConfigLookup,
     call: &ResponsesCreateCall,
     provider: &str,
     kwargs: &ParameterMap,
 ) -> bool {
-    let info = kwargs
-        .get("model_info")
-        .filter(|value| **value != JsonValue::Null);
+    let mut probe = kwargs.clone();
     will_use_chat_bridge(
         lookup,
         &ProvisionalBridge {
             model: &call.model,
             custom_llm_provider: Some(provider),
-            use_chat_completions_api: use_chat_completions_api(kwargs),
-            model_info: info.unwrap_or(&JsonValue::Null),
+            use_chat_completions_api: pop_use_chat_completions_api(&mut probe),
+            model_info: kwargs.get("model_info").unwrap_or(&JsonValue::Null),
             api_base: api_base_kwarg(kwargs),
         },
     )

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 mod config;
+#[path = "responses_async_create/fixtures/support.rs"]
 mod fixtures;
 mod native;
 
