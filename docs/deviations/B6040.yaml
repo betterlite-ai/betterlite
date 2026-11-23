@@ -5,13 +5,13 @@ deviations:
     link: ""
   - what: A timeout object with connect, read, write and pool phases becomes the largest of the four before it reaches Rust, where LiteLLM hands the object to its HTTP client and each phase keeps its own limit.
     why: The Rust transport enforces one deadline per call, as B5659's deviations record, and the task text asks for the largest phase.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5149
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L814-L827
   - what: "`client` and `shared_session` raise `UnsupportedCallArgument` where LiteLLM hands them to its provider call."
     why: A Python HTTP client cannot drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5145-L5205
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6355-L6356
   - what: "`logger_fn` is accepted and never called, and a warning is logged once per call."
     why: The endpoint call runs in Rust and has no point to call back into Python at each step.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5350-L5360
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1400-L1408
   - what: "`RerankResponse` takes its item access from the shared `ResponseObject`: a missing key raises `AttributeError` where LiteLLM's `self.__dict__[key]` raises `KeyError`, and the `_hidden_params` private attribute is reachable through item access where LiteLLM's `__dict__` lookup misses it."
     why: Every ported model under betterlite.types uses ResponseObject, the base B5657 and B5658 ported, and B5657 records the same base behavior; the declared fields, defaults and dumps match LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L88-L95
