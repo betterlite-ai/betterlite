@@ -9,7 +9,6 @@ use super::super::grouped::{
 use super::super::params::SessionParam;
 use super::super::ports::{SessionGroupRow, SessionsStore, SessionsStoreError};
 use crate::spend::log_results::projection::SpendLogListRow;
-use crate::spend::log_results::session::SessionAggregateReader;
 use crate::spend::sessions::tests::support::{
     Aggregates, Events, Failure, Fake, aggregate, as_json, group, json, kinds, representative, seen,
 };
@@ -303,7 +302,7 @@ async fn representatives_are_hydrated_and_enriched() {
     let store: Arc<dyn SessionsStore> = Arc::new(fake);
     let page = ui_session_grouped_spend_logs(
         store.as_ref(),
-        Some(&aggregates as &dyn SessionAggregateReader),
+        Some(&aggregates),
         &request(&[], Vec::new(), 1, 50, None),
     )
     .await

@@ -58,8 +58,7 @@ pub async fn ui_session_grouped_spend_logs(
         .take(usize::try_from(window.limit).unwrap_or(0))
         .collect();
     let next_session_cursor = next_cursor(&visible, window.has_more);
-    let (total, total_is_capped) =
-        total_records(store, request, cursor.as_ref(), &window, &visible).await?;
+    let (total, total_is_capped) = total_records(store, request, cursor.as_ref(), &window).await?;
     let data = representatives(store, request, &visible).await?;
     let page = build_page(enricher, request, data, total, total_is_capped).await?;
     Ok(SessionLogsPage {
@@ -139,7 +138,6 @@ async fn total_records(
     request: &GroupedSessionRequest<'_>,
     cursor: Option<&SessionCursor>,
     window: &PageWindow,
-    visible: &[SessionGroupRow],
 ) -> Result<(i64, bool), SessionsStoreError> {
     let starts_inside = window.offset == 0 || window.fetched > 0;
     let ends_the_list =
