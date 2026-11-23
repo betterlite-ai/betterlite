@@ -82,16 +82,16 @@ pub fn select_client<'data>(
         return Err(AzureSpeechError::UnsupportedClient);
     }
     let v1 = matches!(kind, ClientKind::OpenAi | ClientKind::AsyncOpenAi);
-    match inputs {
-        Some(inputs) => selected_from_inputs(inputs),
-        None => {
+    inputs.map_or_else(
+        || {
             if v1 {
                 v1_fallback(connection)
             } else {
                 azure_fallback(connection, custom_query.as_ref(), wiring)
             }
-        }
-    }
+        },
+        selected_from_inputs,
+    )
 }
 
 fn selected_from_inputs(inputs: ClientInputs<'_>) -> Result<Selected<'_>, AzureSpeechError> {

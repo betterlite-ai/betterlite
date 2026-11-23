@@ -107,14 +107,13 @@ fn audio_call(case: &AudioSpeech) -> AudioSpeechCall<'_> {
 }
 
 fn pre_call_view(logger: &Recorder) -> Value {
-    match &logger.pre {
-        Some(record) => json!({
+    logger.pre.as_ref().map_or(Value::Null, |record| {
+        json!({
             "input": record.input,
             "api_base": record.api_base,
             "data": record.data,
-        }),
-        None => Value::Null,
-    }
+        })
+    })
 }
 
 // The token the dispatch hands the text-to-speech handler: what it resolved and how it resolved it.
@@ -239,18 +238,16 @@ fn request_body(body: &RequestBody) -> Result<Value, Box<HelperError>> {
 }
 
 fn header<'request>(request: &'request OutboundRequest, name: &str) -> Option<&'request str> {
-    request
-        .headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+    let value = request.headers.get(name)?;
+    value.to_str().ok()
 }
 
 // A status failure is compared as the SDK's status code; any other failure as its class and message.
 fn error_view(error: &AzureSpeechError) -> Value {
-    match error.status() {
-        Some(status) => json!({"status": status}),
-        None => json!({"class": error.class(), "message": error.to_string()}),
-    }
+    error.status().map_or_else(
+        || json!({"class": error.class(), "message": error.to_string()}),
+        |status| json!({"status": status}),
+    )
 }
 
 fn blocking_runtime() -> Result<Runtime, Box<HelperError>> {

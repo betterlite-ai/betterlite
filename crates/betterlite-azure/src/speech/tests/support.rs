@@ -226,10 +226,8 @@ pub(crate) fn header<'request>(
     request: &'request OutboundRequest,
     name: &str,
 ) -> Option<&'request str> {
-    request
-        .headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
+    let value = request.headers.get(name)?;
+    value.to_str().ok()
 }
 
 pub(crate) fn body(request: &OutboundRequest) -> Json {

@@ -55,13 +55,8 @@ impl TextToSpeechConfig for AvaSpeechConfig {
             role: text(&options.kwargs, "role"),
             lang: text(&options.kwargs, "lang"),
         };
-        let (mapped_voice, mapped) =
-            match map_native_openai_params(voice.as_ref(), &optional, &kwargs) {
-                Ok(pair) => pair,
-                Err(
-                    NativeSpeechError::SpeedOutOfRange { .. } | NativeSpeechError::MissingApiBase,
-                ) => (None, MappedParams::default()),
-            };
+        let (mapped_voice, mapped) = map_native_openai_params(voice.as_ref(), &optional, &kwargs)
+            .unwrap_or_else(|_| (None, MappedParams::default()));
         (mapped_voice, strings_object(&mapped_fields(&mapped)))
     }
 
@@ -181,8 +176,6 @@ fn text(params: &Object, name: &str) -> Option<String> {
 }
 
 fn number(params: &Object, name: &str) -> Option<f64> {
-    match params.get(name) {
-        Some(value) => value.as_f64(),
-        None => None,
-    }
+    let value = params.get(name)?;
+    value.as_f64()
 }
