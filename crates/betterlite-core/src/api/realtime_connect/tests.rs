@@ -263,6 +263,8 @@ fn assert_azure_global_arguments(connection: &RealtimeConnection<TestConfig>) {
         query.get("intent"),
         Some(&Some(String::from("transcription")))
     );
+    // a transcription-only query stays model-free
+    assert!(query.get("model").is_none());
 }
 
 async fn azure_ad_token_fallback(litellm_params: &IndexMap<String, Json>) {
