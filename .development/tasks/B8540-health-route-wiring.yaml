@@ -49,7 +49,7 @@ description: >-
   and live_worker_count is B731's count_live_proxy_workers (its None stays None). `ReadinessSources`: success_callback_names from
   B189 through B4448's callback_name, cache_report from the server's response cache (None without one, its type string, or for a
   Redis or Valkey semantic cache B8651's `SemanticBackend::index_info`, over B4382 and B8296), redis_configured true when the coordination cache or the router's
-  own Redis exists, log_level from the active tracing level name, and version from the crate version.
+  own Redis exists, sso_provider_ready from B881's is_sso_provider_fully_configured, log_level from the active tracing level name, and version from the crate version.
 
   Tests in `app::health::tests` and `state::health::tests`: building the routers succeeds (a duplicate path would panic), every path and alias from the
   five parts answers something other than 404, liveliness and liveness answer without a key and flip to 503 after ShutdownState::start_shutdown, and each

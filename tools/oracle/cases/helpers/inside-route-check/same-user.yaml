@@ -1,0 +1,21 @@
+kind: helper
+name: same-user
+call:
+  b10052:
+    rows:
+      - {user_role: internal_user, user_id: user-1, requested_user_id: user-1}
+      - {user_role: org_admin, user_id: user-1, requested_user_id: user-1}
+      - {user_role: internal_user_viewer, user_id: user-1, requested_user_id: user-1}
+      - {user_role: team, user_id: team-1, requested_user_id: team-1}
+      - {user_role: customer, user_id: customer-1, requested_user_id: customer-1}
+      - {user_role: internal_user, user_id: "", requested_user_id: ""}
+      - {user_role: internal_user, user_id: user-1, requested_user_id: user-2}
+      - {user_role: internal_user, user_id: user-1, requested_user_id: null}
+      - {user_role: internal_user, user_id: null, requested_user_id: user-1}
+      - {user_role: internal_user, user_id: null, requested_user_id: null}
+      - {user_role: null, user_id: user-1, requested_user_id: user-1}
+      - {user_role: null, user_id: user-1, requested_user_id: user-2}
+      - {user_role: internal_user, user_id: user-1, requested_user_id: " user-1"}
+env: {}
+compare:
+  ignore: []

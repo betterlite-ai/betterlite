@@ -1,7 +1,7 @@
 id: B353
-title: Two-solver forecasts and Fuse profile presets
+title: Two-solver llm_v2 forecasts
 description: 'Add classifier_type llm_v2 to B331''s classifier transport and B330''s context builder.
-  Parse the strict two-solver verdict, resolve the pinned bundled model/harness profiles, and produce
+  Parse the strict two-solver verdict, resolve the model and harness profiles through B10087''s fuse_presets, and produce
   a typed efficient-versus-capable decision with provenance. Use f64 ln/exp calibration with the pinned
   clipping and epsilon; no hand-written transcendental approximation. Keep all prompt/verdict bodies out
   of telemetry. Nonmonetary statistical arithmetic uses f64 only in solver_math; put one module-level
@@ -14,10 +14,9 @@ description: 'Add classifier_type llm_v2 to B331''s classifier transport and B33
   B301 registers ProbeOperation::TwoSolverClassifier and its Python entry as stubs, so fill only tools/oracle/src/router_probes/two_solver_classifier.rs and tools/oracle/litellm/probes/two_solver_classifier.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
-  of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/fuse_presets.py:
-  get_fuse_presets (L38-L41), resolve_fuse_profile (L44-L52). Implement these behaviors through the typed
-  Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
-  separate ports. Function coverage in litellm/router_strategy/complexity_router/llm_v2.py: LLMV2ProbabilityCalibration.calibrate
+  of copying their algorithms. B10087 owns fuse_presets.py and the bundled fuse_presets.json in
+  betterlite-router::fuse_presets: take its ProfileText for the three profile fields and call its resolve_fuse_profile
+  from _profile_texts; do not load the catalog here. Function coverage in litellm/router_strategy/complexity_router/llm_v2.py: LLMV2ProbabilityCalibration.calibrate
   (L120-L126), LLMV2Config.validate_profiles (L155-L157), LLMV2Config._profile_texts (L159-L169), LLMV2Config.system_prompt
   (L171-L184), LLMV2Config.classify (L186-L195), LLMV2Decision.use_efficient (L207-L208), LLMV2Decision.signals
   (L211-L224), llm_v2_response_format (L227-L231). Implement these behaviors through the typed Rust services
@@ -55,10 +54,8 @@ scope:
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L21-L231
   why: Prompt version, strict forecasts, quality gap and independent calibration.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.py#L9-L52
-  why: Bounded profile schemas and preset resolution.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.json#L1-L121
-  why: Pinned model and harness descriptions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.py#L44-L52
+  why: Called. resolve_fuse_profile, which B10087 builds; _profile_texts calls it once per profile.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2571-L2626
   why: Two-solver forecast call, fallback and tier decision.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1707-L1740
@@ -148,9 +145,11 @@ deviations:
 out_of_scope:
 - Training/calibrating forecasts, fetching changing profile presets or changing the pinned classifier
   prompt.
+- "ProfileText, the Fuse preset types, get_fuse_presets, resolve_fuse_profile and the bundled fuse_presets.json:
+  B10087. This task calls resolve_fuse_profile and keeps the _profile_texts errors."
 pitfalls:
 - Treat caller instructions as quoted evidence in the classifier prompt.
-- No public preset HTTP endpoint is added here; the public-endpoint task consumes this catalog.
+- No public preset HTTP endpoint is added here; B3192 serves B10087's catalog.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules

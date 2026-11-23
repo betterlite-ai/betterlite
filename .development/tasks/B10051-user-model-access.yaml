@@ -1,0 +1,77 @@
+id: B10051
+title: User model grant check
+description: >-
+  B826's organization creation checks every requested model against the caller's own user row with LiteLLM's can_user_call_model, and that is all it needs from B886. B886 owns the key, team, org and project model checks and waits on B879 and B887 for them. This task builds the user check alone so B826 can start now; B886 depends on it and calls it, and its other callers at the pin (B754's common checks, B748's agent caller check, B969's compaction editor and B8193's sampling handler) still reach it through B886.
+
+
+  Layout. Module user_model under betterlite-auth's auth_model_patterns: crates/betterlite-auth/src/auth_model_patterns/user_model.rs, with tests in auth_model_patterns/user_model/tests.rs. The file is an empty stub that auth_model_patterns.rs (B747's module, merged) declares; it stays out of B886's entity_model_access folder so the two tasks never share a file, and nothing else in auth_model_patterns changes.
+
+
+  The check. `can_user_call_model(model: &RequestedModels, user: Option<&LiteLLMUserTable>, key_model_aliases: &BTreeMap<String, String>, context: &ModelAccessContext<'_>) -> ModelAccessDecision` follows auth_checks.py L5269-L5297. With no user row it allows at once. Otherwise it reads the user's model names with B871's `identity_grants::resolver::user_models`. When they hold B759's `NO_DEFAULT_MODELS` ("no-default-models"), it denies with a `ModelAccessDeniedProxyException`: client message from B747's `model_denied_client_message(model)`, internal message "User not allowed to access model. No default model access, only team models allowed. Tried to access {model}", type key_model_access_denied, param "model", code 403. LiteLLM uses the key type there on purpose, so it is not user_model_access_denied. Otherwise it returns B747's `can_object_call_model(model, &grant, ModelAccessObject::User, context, 0)` unchanged, where the grant is a `ModelGrantPattern` with the user's models, the key aliases given, no team aliases and no team id; that path denies with user_model_access_denied, 403, param "model". The router's access groups and the global aliases come in through the context (B747's ModelAccessView and global_model_aliases), so llm_router None is a context without a view. LiteLLM's function is async but awaits nothing, so this one is a plain function.
+
+
+  For a list of models the no-default-models message names them joined with commas, as can_object_call_model's depth message does; Python prints the list itself, and docs/compatibility.md leaves that text out of the contract.
+
+
+  Oracle. Helper cases on the b10051 operation, each a list of checks: the requested model or list, the user row (user_id and models) or null, and the key aliases. The Python side builds LiteLLM_UserTable, runs can_user_call_model with llm_router None and answers allowed, or the exception's type, param and code. The Rust side builds the same row and a context with no view and empty global aliases.
+
+
+  Tests in auth_model_patterns/user_model/tests.rs: absent_user_allows, no_default_models_uses_key_type, listed_model_allowed, unlisted_model_uses_user_type, empty_user_list_allows_all, key_alias_target_checked and list_stops_at_first_denial.
+scope:
+  paths:
+    - crates/betterlite-auth/src/auth_model_patterns/user_model.rs
+    - crates/betterlite-auth/src/auth_model_patterns/user_model/**
+    - tools/oracle/cases/helpers/user-model-access/**
+    - tools/oracle/fuzz/corpus/helper_case/user-model-access-*
+    - tools/oracle/helpers/b10051.py
+    - tools/oracle/helpers/b10051/**
+    - tools/oracle/src/helpers/auth/b10051.rs
+    - tools/oracle/src/helpers/auth/b10051/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5269-L5297
+    why: Owned. can_user_call_model, the no-default-models branch and the call into _can_object_call_model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4423-L4516
+    why: _can_object_call_model, built by B747 as can_object_call_model; called with object_type "user".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L530
+    why: Call site in B826's organization creation, one model at a time with the fetched user row.
+dod:
+  - text: A missing user row allows, and a user whose models hold no-default-models is refused with 403 key_model_access_denied and param model.
+    proof: [user-model-tests, oracle, helper-python]
+  - text: Every other user goes through can_object_call_model with object type user, so a listed or wildcard-matched model passes, an empty list allows all, and an unlisted one is refused with 403 user_model_access_denied.
+    proof: [user-model-tests, oracle, helper-python, helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: user-model-tests
+      why: The user model check skips the no-default-models branch, uses the wrong error type or does not reach the shared object check.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_model_patterns::user_model::/)'
+    - id: helper-python
+      why: The b10051 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10051.py tools/oracle/helpers/b10051)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10051 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/user-model-access-*")" &&
+        grep -lE 'b10051"?:' tools/oracle/fuzz/corpus/helper_case/user-model-access-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/user-model-access/no-default-models.yaml
+  - tools/oracle/cases/helpers/user-model-access/user-grant-matrix.yaml
+deviations: []
+out_of_scope:
+  - "can_key_call_model, can_key_call_resolved_model, can_org_access_model, can_team_access_model, get_authorized_resources_from_key_access_groups, _key_access_group_grants_model and can_project_access_model (auth_checks.py L4957-L5266): B886, which calls this check from its auth stage."
+  - "_can_object_call_model and the model pattern and alias matching under it: B747. The user row lookup: B736. The sentinel constant: B759."
+  - "Every other function in auth_checks.py: the owners B886's out_of_scope list names."
+pitfalls:
+  - "The no-default-models branch raises key_model_access_denied, not user_model_access_denied, even though the object is a user; a test that only checks the 403 misses it."
+  - "The sentinel test is an exact list membership on the user's models before any alias or pattern runs, so a user with both no-default-models and the requested model is still refused."
+  - "llm_router is None in every case, so the router's access groups never grant here; do not build a fake router view to make a case pass."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
