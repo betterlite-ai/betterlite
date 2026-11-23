@@ -27,7 +27,7 @@ pub(super) fn compose_url(
     };
     let composed_text = format!("{}{prefix}{path}", parsed.href());
     let mut composed =
-        HttpxUrl::parse(&composed_text).map_err(|source| AzureSpeechError::RequestUrl {
+        HttpxUrl::parse(&composed_text).map_err(|source| AzureSpeechError::ComposedUrl {
             url: composed_text.clone(),
             source,
         })?;

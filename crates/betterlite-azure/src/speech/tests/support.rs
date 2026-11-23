@@ -170,8 +170,8 @@ impl Default for Inputs {
     }
 }
 
-pub(crate) fn start<'call>(
-    inputs: &'call mut Inputs,
+pub(crate) fn start(
+    inputs: &mut Inputs,
     call: &AudioSpeechCall<'_>,
     logger: &mut Recorder,
 ) -> Result<OutboundRequest, AzureSpeechError> {

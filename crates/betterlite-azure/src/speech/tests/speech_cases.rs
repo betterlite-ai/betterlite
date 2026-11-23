@@ -112,7 +112,10 @@ fn openai_audio_speech_path() {
     let pre = logger.pre.expect("the pre-call runs");
     assert_eq!(pre.input, "hello");
     assert_eq!(pre.api_base, "https://example.openai.azure.com/openai/");
-    assert_eq!(pre.data, json(r#"{"model":"tts","voice":"alloy"}"#));
+    assert_eq!(
+        Json::Object(pre.data),
+        json(r#"{"model":"tts","voice":"alloy"}"#)
+    );
     assert_eq!(inputs.cache.entries.len(), 1);
     speech_response_bytes();
 }
@@ -130,8 +133,9 @@ fn speech_response_bytes() {
         content.headers.get("content-type").map(String::as_str),
         Some("audio/mpeg")
     );
-    let failed = finish_audio_speech(support::response(400, &[], b"bad input"))
-        .expect_err("a non-2xx reply is the status error");
+    let Err(failed) = finish_audio_speech(support::response(400, &[], b"bad input")) else {
+        panic!("a non-2xx reply is the status error");
+    };
     assert_eq!(failed.class(), "APIStatusError");
     assert_eq!(failed.status(), Some(400));
 }
@@ -397,7 +401,7 @@ fn binary_speech_body() {
 fn logged_speech_options(logger: Recorder) {
     let pre = logger.pre.expect("the pre-call runs");
     assert_eq!(
-        pre.data,
+        Json::Object(pre.data),
         json(
             r#"{"model":"tts","voice":"alloy","extra_query":{"trace":"abc"},"extra_body":{"instructions":"hi"},"timeout":5,"response_format":"mp3","speed":1.5}"#
         )

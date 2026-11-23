@@ -25,6 +25,12 @@ pub enum AzureSpeechError {
         #[source]
         source: url::ParseError,
     },
+    #[error("the speech request URL `{url}` is not a URL")]
+    ComposedUrl {
+        url: String,
+        #[source]
+        source: InvalidUrl,
+    },
     #[error("the {name} header name is not valid")]
     HeaderName {
         name: String,
@@ -99,6 +105,7 @@ impl AzureSpeechError {
             | Self::Logging(_)
             | Self::BaseUrl(_)
             | Self::RequestUrl { .. }
+            | Self::ComposedUrl { .. }
             | Self::HeaderName { .. }
             | Self::HeaderValue { .. }
             | Self::Option { .. }

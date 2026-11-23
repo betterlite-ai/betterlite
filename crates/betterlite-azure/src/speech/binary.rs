@@ -53,7 +53,7 @@ pub fn audio_speech(
 ) -> Result<OutboundRequest, AzureSpeechError> {
     let mut options = call.optional_params.clone();
     options.shift_remove("max_retries");
-    let logged = logged_body(call.model, call.voice, &options);
+    let complete_input = logged_body(call.model, call.voice, &options);
     let controls = Controls::take(&mut options)?;
     let connection = SpeechConnection {
         model: call.model.to_owned(),
@@ -71,7 +71,7 @@ pub fn audio_speech(
     logger.pre_call(SpeechPreCall {
         input: call.input,
         api_base: &selected.base_url,
-        data: logged,
+        data: complete_input,
     })?;
     let caller_auth = controls.headers.iter().any(|(name, _)| {
         name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("api-key")

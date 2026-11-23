@@ -68,8 +68,9 @@ fn azure_speech_secret_safe_failure() {
         .expect_err("an invalid header value fails the request");
     assert_eq!(error.class(), "Exception");
     assert!(!format!("{error:?} {error}").contains(SECRET));
-    let failed = finish_audio_speech(support::response(401, &[], b"denied"))
-        .expect_err("the status fails the call");
+    let Err(failed) = finish_audio_speech(support::response(401, &[], b"denied")) else {
+        panic!("the status fails the call");
+    };
     assert_eq!(failed.class(), "APIStatusError");
     let shown = format!("{failed:?} {failed}");
     assert!(!shown.contains(SECRET));

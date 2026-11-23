@@ -66,7 +66,9 @@ pub fn finish_probe(
 }
 
 // The gateway needs the model in the path and model=None in the body; every other base prefixes the deployment.
-fn probe_target(call: &ProbeCall<'_>) -> Result<(String, Option<&str>), AzureSpeechError> {
+fn probe_target<'data>(
+    call: &ProbeCall<'data>,
+) -> Result<(String, Option<&'data str>), AzureSpeechError> {
     let Some(api_base) = call.api_base else {
         return Err(AzureSpeechError::MissingBase);
     };
