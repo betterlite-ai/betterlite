@@ -1,6 +1,7 @@
 pub mod error;
 
 mod projection;
+mod tests;
 
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
