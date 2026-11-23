@@ -114,7 +114,7 @@ fn assert_forwarded_call(fixture: &ForwardingFixture) {
     );
     assert_eq!(
         fixture.logging.effects(),
-        texts(&["update", "pre_call", "success"])
+        texts(&["update", "pre_call", "input_messages", "success"])
     );
     let updates = lock(&fixture.logging.updates).clone();
     assert_eq!(updates[0].model, "gpt-4o");
