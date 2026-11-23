@@ -101,12 +101,14 @@ async fn expansion_page(
             hydrate_log_metadata(metadata);
         }
     }
+    let padded = total.checked_add(query.page_size.saturating_sub(1));
+    let divided = padded.and_then(|sum| sum.checked_div(query.page_size));
     Ok(SessionExpansionPage {
         data,
         total,
         page: query.page,
         page_size: query.page_size,
-        total_pages: total.div_ceil(query.page_size),
+        total_pages: divided.unwrap_or(i64::MAX),
     })
 }
 

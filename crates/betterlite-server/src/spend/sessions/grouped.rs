@@ -163,12 +163,14 @@ async fn build_page(
     total: i64,
     total_is_capped: bool,
 ) -> Result<SpendLogsPage, SessionsStoreError> {
+    let padded = total.checked_add(request.page_size.saturating_sub(1));
+    let divided = padded.and_then(|sum| sum.checked_div(request.page_size));
     let page = SpendLogsPage {
         data,
         total,
         page: request.page,
         page_size: request.page_size,
-        total_pages: total.div_ceil(request.page_size),
+        total_pages: divided.unwrap_or(i64::MAX),
         total_is_capped,
     };
     build_ui_spend_logs_response(enricher, page, true)
