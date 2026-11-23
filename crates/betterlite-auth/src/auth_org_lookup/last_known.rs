@@ -75,5 +75,6 @@ async fn keep_last_known_org(
         .cache
         .write_org(last_known_key, org, ttl)
         .await
-        .map_err(|error| OrgFailure::Cache(Box::new(error)))
+        .map_err(|error| OrgFailure::Cache(Box::new(error)))?;
+    Ok(())
 }

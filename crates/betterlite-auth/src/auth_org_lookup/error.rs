@@ -63,8 +63,9 @@ pub enum OrgFailure {
     Row(#[source] Box<serde_json::Error>),
     #[error("the organization cache failed")]
     Cache(#[source] Box<AuthCacheError>),
-    #[error("allow_requests_on_db_unavailable is neither a boolean nor a string")]
-    Policy(#[source] PolicyError),
+    // the policy error names the setting, and that wording is what the 401 carries
+    #[error(transparent)]
+    Policy(#[from] PolicyError),
 }
 
 impl OrgLookupError {
@@ -124,13 +125,13 @@ pub fn proxy_exception(error: &OrgLookupError) -> ProxyException {
 #[must_use]
 pub fn is_outage(error: &OrgLookupError) -> bool {
     match error {
-        Self::Failure(failure) => failure_is_outage(failure),
-        Self::AliasFailure { cause, .. } => failure_is_outage(cause),
-        Self::NoDatabase
-        | Self::CacheRead(_)
-        | Self::NotFound { .. }
-        | Self::AliasNotFound { .. }
-        | Self::AliasAmbiguous { .. } => false,
+        OrgLookupError::Failure(failure) => failure_is_outage(failure),
+        OrgLookupError::AliasFailure { cause, .. } => failure_is_outage(cause),
+        OrgLookupError::NoDatabase
+        | OrgLookupError::CacheRead(_)
+        | OrgLookupError::NotFound { .. }
+        | OrgLookupError::AliasNotFound { .. }
+        | OrgLookupError::AliasAmbiguous { .. } => false,
     }
 }
 

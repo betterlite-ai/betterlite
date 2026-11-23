@@ -38,9 +38,9 @@ pub(crate) struct State {
 type CacheWrite = Result<(), AuthCacheError>;
 
 // the two management objects the cache writes, so one helper carries the write order and failure
-enum Entry<'a> {
-    Org(&'a OrganizationTable),
-    Project(&'a CachedProject),
+enum Entry<'object> {
+    Org(&'object OrganizationTable),
+    Project(&'object CachedProject),
 }
 
 // the cache and the repository over one recorded state, so a test reads the whole call order
@@ -205,7 +205,10 @@ pub(crate) fn row_text(org: &OrganizationTable, include_budget: bool) -> String 
     serde_json::to_string(&row).unwrap()
 }
 
-fn decode<T: DeserializeOwned>(text: &str) -> T {
+fn decode<T>(text: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text).unwrap()
 }
 

@@ -21,9 +21,9 @@ const MANAGEMENT_TTL_SECONDS: f64 = 60.0;
 type CacheWrite = Result<(), AuthCacheError>;
 
 // the two management objects the cache writes, so one helper carries the write order and failure
-enum Entry<'a> {
-    Org(&'a OrganizationTable),
-    Project(&'a CachedProject),
+enum Entry<'object> {
+    Org(&'object OrganizationTable),
+    Project(&'object CachedProject),
 }
 
 #[derive(Default)]
@@ -91,7 +91,10 @@ impl Script {
     }
 
     // both cache reads record the key on the board and then clone the stored object
-    fn read_map<V: Clone>(&self, map: &Mutex<BTreeMap<String, V>>, key: &str) -> Option<V> {
+    fn read_map<V>(&self, map: &Mutex<BTreeMap<String, V>>, key: &str) -> Option<V>
+    where
+        V: Clone,
+    {
         self.board
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -116,11 +119,11 @@ impl Script {
         }
         match entry {
             Entry::Org(org) => {
-                let values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+                let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
                 let _previous = values.insert(key.to_owned(), org.clone());
             }
             Entry::Project(project) => {
-                let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+                let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
                 let _previous = projects.insert(key.to_owned(), project.clone());
             }
         }

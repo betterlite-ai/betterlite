@@ -170,10 +170,9 @@ async fn alias_cache_write_order() {
             "write org_id:o1 ttl=5",
         ],
     );
-    assert_eq!(
-        world.cached_org("org_alias:acme"),
-        world.cached_org("org_id:o1")
-    );
+    let aliased = serde_json::to_value(world.cached_org("org_alias:acme").unwrap()).unwrap();
+    let by_id = serde_json::to_value(world.cached_org("org_id:o1").unwrap()).unwrap();
+    assert_eq!(aliased, by_id);
 }
 
 #[tokio::test]
@@ -265,6 +264,7 @@ async fn budget_cache_partition() {
             "write org_id:o1 ttl=5",
         ],
     );
+    world.clear_events();
     let again = get_org_object(&lookup, org_id("o1"), true)
         .await
         .unwrap()
@@ -273,7 +273,7 @@ async fn budget_cache_partition() {
         again.litellm_budget_table.is_some(),
         "the budget hit is kept"
     );
-    assert_eq!(world.events().len(), 6);
+    assert_events(&world, &["read org_id:o1:with_budget local=false"]);
 }
 
 #[tokio::test]

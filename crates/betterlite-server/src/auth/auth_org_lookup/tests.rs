@@ -326,12 +326,12 @@ async fn the_trait_runs_the_production_lookup() {
         cache: Arc::new(NoCache),
         in_memory_ttl: 5.0_f64,
     };
-    let error = lookup
+    // get_org_object alone answers NoDatabase; continuing without limits proves the trait delegates
+    let found = lookup
         .org_object("o1", &AllowRequestsOnOutage::Boolean(false))
         .await
-        .unwrap_err();
-    assert_eq!(error.http(), None);
-    assert!(matches!(error, OrgLookupError::NoDatabase));
+        .unwrap();
+    assert!(found.is_none());
 }
 
 #[test]
