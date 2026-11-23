@@ -617,7 +617,7 @@ enum Boundary {
         target_id: Option<&'static str>,
     },
     MissingJob {
-        store: FakeStore,
+        store: Box<FakeStore>,
         job_id: &'static str,
     },
     EmptyList,
@@ -680,7 +680,7 @@ fn padded(bytes: usize) -> Vec<u8> {
 #[case::query_rejects_one_byte_past_the_bound(Boundary::QueryError { raw: padded(MAX_SHADOW_QUERY_BYTES + 1), error: ShadowQueryError::TooLarge { bytes: MAX_SHADOW_QUERY_BYTES + 1, limit: MAX_SHADOW_QUERY_BYTES } })]
 #[case::list_rejects_a_type_without_an_id(Boundary::Pair { target_type: Some(Key), target_id: None })]
 #[case::list_rejects_an_id_without_a_type(Boundary::Pair { target_type: None, target_id: Some("k1") })]
-#[case::detail_answers_404_for_an_unknown_job(Boundary::MissingJob { store: FakeStore::default(), job_id: "job-none" })]
+#[case::detail_answers_404_for_an_unknown_job(Boundary::MissingJob { store: Box::default(), job_id: "job-none" })]
 #[case::list_answers_empty_for_an_empty_store(Boundary::EmptyList)]
 #[tokio::test]
 async fn shadow_eval_results_boundaries(#[case] boundary: Boundary) {

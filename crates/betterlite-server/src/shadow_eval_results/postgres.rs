@@ -42,31 +42,34 @@ impl ShadowLegReads for PgShadowResults {
         match target {
             Some(filter) => {
                 let kind = target_type_name(filter.target_type);
-                self.leg_rows(LIST_LEGS_BY_TARGET_SQL, &[&limit, &kind, &filter.target_id])
-                    .await
+                leg_rows(
+                    self,
+                    LIST_LEGS_BY_TARGET_SQL,
+                    &[&limit, &kind, &filter.target_id],
+                )
+                .await
             }
-            None => self.leg_rows(LIST_LEGS_SQL, &[&limit]).await,
+            None => leg_rows(self, LIST_LEGS_SQL, &[&limit]).await,
         }
     }
 
     async fn legs_of_group(&self, job_id: &str) -> RepositoryResult<Vec<LegRow>> {
-        self.leg_rows(LEGS_OF_GROUP_SQL, &[&job_id]).await
+        leg_rows(self, LEGS_OF_GROUP_SQL, &[&job_id]).await
     }
 }
 
-impl PgShadowResults {
-    async fn leg_rows(
-        &self,
-        sql: &str,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> RepositoryResult<Vec<LegRow>> {
-        let client = self.store.session().await?;
-        let rows = client
-            .query(sql, params)
-            .await
-            .map_err(|source| ShadowResultsError::Database(backend(source)))?;
-        rows.iter().map(leg_row).collect()
-    }
+// a free function keeps PgShadowResults at one inherent impl, which the lint table allows
+async fn leg_rows(
+    results: &PgShadowResults,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> RepositoryResult<Vec<LegRow>> {
+    let client = results.store.session().await?;
+    let rows = client
+        .query(sql, params)
+        .await
+        .map_err(|source| ShadowResultsError::Database(backend(source)))?;
+    rows.iter().map(leg_row).collect()
 }
 
 // the route reads through the proxy's writer pool, the one the cache activity routes already open

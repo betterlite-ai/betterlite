@@ -38,54 +38,78 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         store: store_from_state(state).map(Arc::new),
     });
     Router::new()
-        .route("/auto_router/shadow_eval", get(list_route))
-        .route("/auto_router/shadow_eval/{job_id}", get(detail_route))
+        .route("/auto_router/shadow_eval", get(shadow_eval_read))
+        .route("/auto_router/shadow_eval/{job_id}", get(shadow_eval_read))
         .with_state(results)
 }
 
-// FastAPI checks the auth (401) before it validates the query (422); the endpoint checks the role (403)
-async fn list_route(
-    State(state): State<Arc<ResultsState>>,
-    caller: Option<Extension<AuthContext>>,
-    RawQuery(raw_query): RawQuery,
-) -> Result<Response, Response> {
-    let identity = identity_of_caller(caller.as_ref())?;
-    let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
-        .map_err(|error| failure(&ShadowResultsRouteError::from(error)))?;
-    let store = require_viewer(&identity, VIEW_ACTION, state.store.as_deref())
-        .map_err(|error| failure(&error))?;
-    let jobs = list_shadow_eval_jobs(store, &query, Utc::now())
-        .await
-        .map_err(|error| failure(&error))?;
-    Ok(Json(jobs).into_response())
-}
+// the handlers' failure path; the box keeps their Err small enough for the lint table
+struct RouteFailure(Box<Response>);
 
-async fn detail_route(
-    State(state): State<Arc<ResultsState>>,
-    Path(job_id): Path<String>,
-    caller: Option<Extension<AuthContext>>,
-) -> Result<Response, Response> {
-    let identity = identity_of_caller(caller.as_ref())?;
-    let store = require_viewer(&identity, VIEW_ACTION, state.store.as_deref())
-        .map_err(|error| failure(&error))?;
-    match get_shadow_eval_job(store, &job_id, Utc::now()).await {
-        Ok(job) => Ok(Json(job).into_response()),
-        Err(error) => Err(failure(&error)),
+impl From<Response> for RouteFailure {
+    fn from(response: Response) -> Self {
+        Self(Box::new(response))
     }
 }
 
-fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, Response> {
+impl IntoResponse for RouteFailure {
+    fn into_response(self) -> Response {
+        *self.0
+    }
+}
+
+// FastAPI checks the auth (401) before it validates the query (422), then the endpoint checks the role (403)
+async fn shadow_eval_read(
+    State(state): State<Arc<ResultsState>>,
+    job_id: Option<Path<String>>,
+    caller: Option<Extension<AuthContext>>,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Response, RouteFailure> {
+    let identity = identity_of_caller(caller.as_ref())?;
+    if let Some(Path(job_id)) = job_id {
+        let store = viewer_store(&state, &identity)?;
+        answered(get_shadow_eval_job(store, &job_id, Utc::now()).await)
+    } else {
+        let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
+            .map_err(|error| RouteFailure::from(failure(&ShadowResultsRouteError::from(error))))?;
+        let store = viewer_store(&state, &identity)?;
+        answered(list_shadow_eval_jobs(store, &query, Utc::now()).await)
+    }
+}
+
+fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, RouteFailure> {
     let Some(extension) = caller else {
-        return Err(unauthenticated());
+        return Err(RouteFailure::from(unauthenticated()));
     };
     caller_identity(&extension.principal).map_err(|error| {
         let detail = format!("the caller's identity could not be read: {error}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(DetailBody { detail }),
+        RouteFailure::from(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(DetailBody { detail }),
+            )
+                .into_response(),
         )
-            .into_response()
     })
+}
+
+// the one read each route serves, answered with the shared failure body
+fn answered<T: Serialize>(
+    read: Result<T, ShadowResultsRouteError>,
+) -> Result<Response, RouteFailure> {
+    match read {
+        Ok(value) => Ok(Json(value).into_response()),
+        Err(error) => Err(RouteFailure::from(failure(&error))),
+    }
+}
+
+// the viewer role every read checks, after the caller's identity
+fn viewer_store<'state>(
+    state: &'state ResultsState,
+    identity: &Identity,
+) -> Result<&'state PgShadowResults, RouteFailure> {
+    require_viewer(identity, VIEW_ACTION, state.store.as_deref())
+        .map_err(|error| RouteFailure::from(failure(&error)))
 }
 
 fn failure(error: &ShadowResultsRouteError) -> Response {

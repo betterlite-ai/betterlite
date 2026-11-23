@@ -8,7 +8,7 @@ use tokio_postgres::NoTls;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 
-use super::super::store::{ShadowLegReads, ShadowTargetFilter};
+use super::super::store::{ShadowLegReads as _, ShadowTargetFilter};
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_models::ShadowEvalTargetType::{Key, Team};
 use crate::shadow_result_aggregation::legs::LegRow;
@@ -110,17 +110,17 @@ async fn list_legs_takes_the_newest_jobs_and_every_leg_of_each() {
 async fn list_legs_filters_jobs_by_target_and_keeps_their_other_legs() {
     let (fixture, pool) = database().await;
     let results = store(pool);
-    let filter = ShadowTargetFilter {
+    let team_filter = ShadowTargetFilter {
         target_type: Team,
         target_id: "t2".to_owned(),
     };
-    let by_team = results.list_legs(50, Some(filter)).await.unwrap();
+    let by_team = results.list_legs(50, Some(team_filter)).await.unwrap();
     assert_eq!(ids(&by_team), vec!["leg-c1"]);
-    let filter = ShadowTargetFilter {
+    let key_filter = ShadowTargetFilter {
         target_type: Key,
         target_id: "k1".to_owned(),
     };
-    let by_key = results.list_legs(50, Some(filter)).await.unwrap();
+    let by_key = results.list_legs(50, Some(key_filter)).await.unwrap();
     assert_eq!(ids(&by_key), vec!["leg-a1", "leg-a2"]);
     close(fixture, results).await;
 }
@@ -133,7 +133,7 @@ async fn legs_of_group_decode_every_column_of_one_job() {
     assert_eq!(ids(&legs), vec!["leg-a1", "leg-a2"]);
     let key_leg = legs.iter().find(|leg| leg.id == "leg-a2").unwrap();
     assert_eq!(key_leg.direction, ShadowEvalDirection::Reverse);
-    assert_eq!(key_leg.shadow_percentage, 25.5_f64);
+    assert!((key_leg.shadow_percentage - 25.5_f64).abs() < 1e-9_f64);
     assert_eq!(key_leg.max_turns, 50);
     assert_eq!(key_leg.max_budget, None);
     assert_eq!(key_leg.stopped_by.as_deref(), Some("alice"));

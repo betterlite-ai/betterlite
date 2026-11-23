@@ -13,8 +13,9 @@ fn replays_the_shadow_q_corpus(#[files("fuzz/corpus/shadow_q/*")] path: PathBuf)
     let parsed = decode_shadow_query(&bytes);
     let name = path.file_name().and_then(|name| name.to_str()).unwrap();
     if name.starts_with("shadow-eval-results-valid") {
-        drop(parsed.unwrap());
+        let _query = parsed.unwrap();
     } else {
-        drop(parsed.unwrap_err());
+        // a bind keeps the error value without a mem::drop over a type that needs none
+        let _error = parsed.unwrap_err();
     }
 }

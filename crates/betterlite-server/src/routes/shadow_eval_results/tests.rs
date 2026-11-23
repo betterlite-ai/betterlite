@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use axum::extract::{Path, RawQuery, State};
 use axum::http::StatusCode;
+use axum::response::IntoResponse as _;
 use rstest::rstest;
 
-use super::{ResultsState, detail_route, failure, list_route};
+use super::{ResultsState, failure, shadow_eval_read};
 use crate::shadow_eval_results::error::ShadowResultsRouteError;
 use crate::shadow_eval_results::query::ShadowQueryError;
 use crate::shadow_eval_validation::error::AccessError;
@@ -18,18 +19,23 @@ fn state() -> Arc<ResultsState> {
 // the middleware answers an absent caller, so neither handler may run its own read first
 #[tokio::test]
 async fn an_unauthenticated_list_answers_401() {
-    let response = list_route(State(state()), None, RawQuery(None))
+    let error = shadow_eval_read(State(state()), None, None, RawQuery(None))
         .await
         .unwrap_err();
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
 async fn an_unauthenticated_detail_answers_401() {
-    let response = detail_route(State(state()), Path("job-1".to_owned()), None)
-        .await
-        .unwrap_err();
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let error = shadow_eval_read(
+        State(state()),
+        Some(Path("job-1".to_owned())),
+        None,
+        RawQuery(None),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
 }
 
 // LiteLLM answers each management failure with its own status, and the body names the reason
