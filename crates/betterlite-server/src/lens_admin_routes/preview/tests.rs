@@ -97,6 +97,24 @@ async fn the_window_runs_from_the_clock() {
 }
 
 #[tokio::test]
+async fn the_default_lookback_is_a_day() {
+    let harness = Harness::new();
+    let body = r#"{"settings":{"name":"Nightly","model":"gpt-4o"}}"#;
+    let reply = call(
+        harness.app(),
+        request("POST", "/lens/preview/sample", Some(&admin()), Some(body)),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let storage = harness.storage.as_ref().expect("the storage exists");
+    let samples = storage.samples();
+    let [parameters] = samples.as_slice() else {
+        panic!("one sample query");
+    };
+    assert_eq!(parameters.start, millis(minutes_after(now(), -1440)));
+}
+
+#[tokio::test]
 async fn an_earlier_as_of_moves_the_window() {
     let harness = Harness::new();
     let body = as_of_body("2026-05-01T10:00:00+00:00");

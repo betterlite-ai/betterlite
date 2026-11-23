@@ -234,6 +234,30 @@ async fn billing_updates_the_worker() {
 }
 
 #[tokio::test]
+async fn billing_updates_only_the_named_worker() {
+    let harness = Harness::new();
+    harness.database.seed_worker(worker("w1"));
+    harness.database.seed_worker(worker("w2"));
+    let body = format!(r#"{{"analysis_key_id":"{}"}}"#, other_key());
+    let reply = call(
+        harness.app(),
+        request(
+            "PUT",
+            "/lens/workers/w2/billing-key",
+            Some(&admin()),
+            Some(&body),
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        harness.database.worker("w2").analysis_key_id.as_deref(),
+        Some(other_key().as_str())
+    );
+    assert!(harness.database.worker("w1").analysis_key_id.is_none());
+}
+
+#[tokio::test]
 async fn billing_for_a_missing_worker_is_404() {
     let harness = Harness::new();
     let body = format!(r#"{{"analysis_key_id":"{}"}}"#, other_key());
@@ -295,8 +319,12 @@ async fn revoke_refuses_while_a_job_runs() {
 async fn a_queued_job_does_not_block_a_revoke() {
     let harness = Harness::new();
     harness.database.seed_worker(worker("w1"));
+    let mut finished = job("j2", JobStatus::Completed);
+    finished.worker_id = Some("w1".to_owned());
+    let mut elsewhere = job("j3", JobStatus::Running);
+    elsewhere.worker_id = Some("w2".to_owned());
     let mut stored = lens("l1");
-    stored.jobs = vec![job("j1", JobStatus::Queued)];
+    stored.jobs = vec![job("j1", JobStatus::Queued), finished, elsewhere];
     harness.database.seed_lens(stored);
     let reply = call(
         harness.app(),
@@ -312,6 +340,7 @@ async fn a_queued_job_does_not_block_a_revoke() {
 #[tokio::test]
 async fn revoking_a_missing_worker_is_404() {
     let harness = Harness::new();
+    harness.database.seed_worker(worker("w1"));
     let reply = call(
         harness.app(),
         request("DELETE", "/lens/workers/missing", Some(&admin()), None),

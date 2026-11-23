@@ -149,7 +149,13 @@ async fn list_runs_passes_the_offset() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(harness.database.job_offsets(), [7]);
+    let zero = call(
+        harness.app(),
+        request("GET", "/lens/l1/runs?offset=0", Some(&admin()), None),
+    )
+    .await;
+    assert_eq!(zero.status, StatusCode::OK);
+    assert_eq!(harness.database.job_offsets(), [7, 0]);
 }
 
 #[tokio::test]
