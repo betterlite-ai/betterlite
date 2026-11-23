@@ -8,7 +8,9 @@ use tokio::task::{JoinSet, yield_now};
 use tokio::time::advance;
 use tokio_util::sync::CancellationToken;
 
-use super::{SpendMonitorSettings, monitor_spend_logs_queue, wait_for_flush_request};
+use super::{
+    SpendMonitorSettings, monitor_spend_logs_queue, process_queue, wait_for_flush_request,
+};
 use crate::spend_flush::fakes::tests::{Events, FakeService};
 use crate::spend_log_storage::rows::SpendLogQueue;
 
@@ -119,6 +121,38 @@ async fn a_below_threshold_queue_grows_the_wait_by_half_up_to_the_cap() {
     let expected = [12, 18, 27, 30, 30].map(Duration::from_secs);
     assert_eq!(monitor.gaps(), expected);
     assert_eq!(monitor.update_count(), 6);
+}
+
+// The pass itself sets the next wait, so one call pins the growth without depending on how the runtime shares its turns.
+#[tokio::test]
+async fn a_below_threshold_pass_grows_the_interval_by_half_up_to_the_cap() {
+    let service = FakeService::new(Arc::new(Events::default()), vec![1]);
+    let mut interval = Duration::from_secs(8);
+    process_queue(
+        &service,
+        settings(100, Duration::from_secs(8)),
+        &mut interval,
+    )
+    .await
+    .unwrap();
+    assert_eq!(interval, Duration::from_secs(12));
+    process_queue(
+        &service,
+        settings(100, Duration::from_secs(8)),
+        &mut interval,
+    )
+    .await
+    .unwrap();
+    assert_eq!(interval, Duration::from_secs(18));
+    interval = Duration::from_secs(30);
+    process_queue(
+        &service,
+        settings(100, Duration::from_secs(8)),
+        &mut interval,
+    )
+    .await
+    .unwrap();
+    assert_eq!(interval, Duration::from_secs(30));
 }
 
 #[tokio::test(start_paused = true)]
