@@ -13,7 +13,8 @@ use betterlite_secrets::secret_codec::{
     Algorithm, CipherSettings, NonceSource, StoredCipher, decrypt_if_encrypted_with,
 };
 
-use super::{EnvValueCodecError, decrypt_env, encrypt_env, encrypt_env_for_db};
+use super::for_db::encrypt_env_for_db;
+use super::{EnvValueCodecError, decrypt_env, encrypt_env};
 
 // LiteLLM's own vectors, salt "salt-one" and nonce bytes 0, 1, 2, ...
 const SALT_KEY: &str = "salt-one";

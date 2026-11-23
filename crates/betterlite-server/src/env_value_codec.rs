@@ -7,6 +7,8 @@ use betterlite_secrets::secret_codec::{
 };
 use secrecy::{ExposeSecret as _, SecretString};
 
+pub mod for_db;
+
 mod tests;
 
 // decrypt_value_helper's default "error" mode with return_original_value=True: only the debug line, the stored value stays.
@@ -56,19 +58,6 @@ where
         .collect()
 }
 
-// The Admin UI posts stored ciphertext back, so the decrypt pass runs first and the write seals each value once.
-pub fn encrypt_env_for_db<N: NonceSource, D: SecretDiagnostics>(
-    values: &JsonMap,
-    cipher: &StoredCipher<N, D>,
-    new_key: Option<&SecretString>,
-) -> Result<JsonMap, EnvValueCodecError> {
-    let mut opened = decrypt_env(values, cipher);
-    for (key, value) in &mut opened {
-        *value = encrypt_entry(key, value.clone(), cipher, new_key)?;
-    }
-    Ok(opened)
-}
-
 fn encrypt_entry<N, D>(
     key: &str,
     value: JsonValue,
@@ -93,10 +82,9 @@ where
     D: SecretDiagnostics,
 {
     let stored = stored_value(value.clone());
-    match cipher.decrypt_value(stored, key, KEEP_ORIGINAL) {
-        Some(opened) => plain_value(opened),
-        None => value,
-    }
+    cipher
+        .decrypt_value(stored, key, KEEP_ORIGINAL)
+        .map_or(value, plain_value)
 }
 
 fn stored_value(value: JsonValue) -> StoredValue<JsonValue> {
