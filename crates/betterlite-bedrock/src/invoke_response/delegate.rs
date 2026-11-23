@@ -38,7 +38,7 @@ where
             .map_err(|_error| InvokeReplyError::InvalidHeader { name: name.clone() })?;
         let header_value = HeaderValue::from_str(value)
             .map_err(|_error| InvokeReplyError::InvalidHeader { name: name.clone() })?;
-        headers.insert(header_name, header_value);
+        headers.append(header_name, header_value);
     }
     let request = ResponseRequest {
         messages: message_slice(call.messages),

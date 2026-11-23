@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
+
 use crate::invoke_response::error::InvokeReplyError;
 use crate::invoke_response::tests::support::{decode, fixture, headers, json};
 
@@ -30,6 +32,7 @@ pub(in crate::invoke_response::tests) fn family_reply_delegation() {
     delegated_errors_become_processing_errors();
     request_messages_feed_the_prefix_prompt();
     invalid_response_header_names_are_rejected();
+    repeated_response_headers_stay_duplicate();
 }
 
 fn anthropic_reply() {
@@ -130,4 +133,23 @@ fn invalid_response_header_names_are_rejected() {
         run.failure(),
         InvokeReplyError::InvalidHeader { name } if name == "bad header"
     ));
+}
+
+// httpx keeps a repeated response header as two values, and the Anthropic header reader joins them
+fn repeated_response_headers_stay_duplicate() {
+    let mut case = fixture();
+    case.model = CLAUDE_MODEL.to_owned();
+    case.headers = vec![
+        (String::from("x-amzn-requestid"), String::from("first")),
+        (String::from("x-amzn-requestid"), String::from("second")),
+    ];
+    let run = decode(&case, CLAUDE_REPLY);
+    let Some(Json::Object(additional)) = run.envelope().hidden_params.get("additional_headers")
+    else {
+        panic!("the additional headers are an object");
+    };
+    assert_eq!(
+        additional.get("llm_provider-x-amzn-requestid"),
+        Some(&Json::Text(String::from("first, second")))
+    );
 }
