@@ -1,0 +1,27 @@
+task: B8586
+deviations:
+  - what: The beta headers reload and status routes read the anthropic_beta_headers_reload_config row through B725's config repository, which decodes a param_value held as a JSON string, and treat a missing row or a null value as no config.
+    why: LiteLLM reads the raw Prisma row and calls .get on param_value, which works only when the driver hands back the decoded object; every writer of this row stores safe_dumps output, and a reader that gets the string back answers 500. betterlite's repository reads both forms, so the schedule the route wrote reads back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19626-L19631
+  - what: A non-integer interval_hours in the beta config row reads as absent, so the status route answers not scheduled and a reload writes the value back as null.
+    why: LiteLLM passes the raw value through; the status route reports it as the interval and, once the pod has a last reload time, fails comparing it to an hours value, and a reload writes it back unchanged. Every LiteLLM writer stores an integer or null, so only a hand-edited row reaches this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19817-L19822
+  - what: The pod's last beta headers reload time is a typed DateTime in PeriodicReloads, so the status route always formats it and never takes a branch for a value that does not parse.
+    why: LiteLLM keeps the time as an ISO string in a module global and parses it in the status route, warning and leaving next_run null when the parse fails; betterlite's B10055 state stores DateTime<Utc>, and no request can put anything else there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19835-L19844
+  - what: A cost map schedule interval above u32::MAX answers 500 "Failed to schedule model cost map reload: the interval {hours} hours does not fit the stored schedule", and an hours value above i64::MAX answers the 422 int_parsing error.
+    why: LiteLLM accepts any Python int for hours and stores it in the config row; betterlite's B4145 schedule stores a u32 and reads the query parameter as an i64, and no working setup schedules a reload billions of hours out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19426-L19434
+  - what: Cancelling the beta headers reload answers the success body when no config row exists.
+    why: LiteLLM's Prisma delete raises for a missing row and the handler's catch turns it into a 500, so a second cancel fails; betterlite's delete is idempotent, and a cancel must not depend on a row still being there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19747-L19749
+  - what: Cost map timestamps and the source route's loaded_at trim trailing zeros in the fractional seconds; Python's isoformat prints six digits whenever the microsecond is not zero.
+    why: chrono's RFC 3339 formatter prints the shortest exact fraction, so a time whose microseconds end in zeros prints fewer digits than LiteLLM; the instant is the same and the task keeps clock values out of the oracle comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19389-L19394
+kept_bugs:
+  - what: A cost map reload whose revision record fails answers 500 after the reloaded map is already adopted in this pod.
+    why: LiteLLM swaps the map in and records the revision after it; the task keeps that order so the applied revision is set last, and the pod serves the new map even though the response reports failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19376-L19385
+  - what: A beta headers reload that fails after reloading the config answers 500 with the pod's last reload time already advanced, so the status route reports last_run for the failed attempt.
+    why: LiteLLM sets the pod time before it reads and writes the config row, and the task keeps that order, so a failed row write cannot roll the reload time back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19620-L19631
