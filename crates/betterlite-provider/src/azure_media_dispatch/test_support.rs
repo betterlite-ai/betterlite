@@ -236,10 +236,22 @@ pub async fn exchange(
     operation: AzureMediaOperation,
     replies: Vec<Reply>,
 ) -> Result<Outcome, FixtureError> {
-    exchange_request(
+    exchange_with_logging(operation, replies, |_logging| {}).await
+}
+
+pub async fn exchange_with_logging<F>(
+    operation: AzureMediaOperation,
+    replies: Vec<Reply>,
+    configure: F,
+) -> Result<Outcome, FixtureError>
+where
+    F: FnOnce(&mut SpeechLogging),
+{
+    exchange_request_with(
         OperationRequest::AzureMedia(AzureMediaRequest),
         operation,
         replies,
+        configure,
     )
     .await
 }
@@ -249,6 +261,18 @@ pub async fn exchange_request(
     operation: AzureMediaOperation,
     replies: Vec<Reply>,
 ) -> Result<Outcome, FixtureError> {
+    exchange_request_with(request, operation, replies, |_logging| {}).await
+}
+
+pub async fn exchange_request_with<F>(
+    request: OperationRequest,
+    operation: AzureMediaOperation,
+    replies: Vec<Reply>,
+    configure: F,
+) -> Result<Outcome, FixtureError>
+where
+    F: FnOnce(&mut SpeechLogging),
+{
     let fixture = Fixture::new(replies);
     let clock = Clock;
     let sources = NoSources;
@@ -258,6 +282,7 @@ pub async fn exchange_request(
     let mut cache = Cache::default();
     let mut logger = Recorder::default();
     let mut speech = speech_logging()?;
+    configure(&mut speech);
     let result = {
         let env = PrePostEnv {
             debug: DebugSettings::default(),

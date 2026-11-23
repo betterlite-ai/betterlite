@@ -12,6 +12,7 @@ use betterlite_azure::image_transport::ImageClock as _;
 use betterlite_azure::image_transport::request::TimeoutPhases;
 use betterlite_azure::images::generation::GeneratedImage;
 use betterlite_azure::native_speech::response::HttpxBinaryResponseContent;
+use betterlite_azure::speech::error::AzureSpeechError;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
@@ -559,6 +560,7 @@ fn sent_json_body(sent: &OutboundRequest) -> Json {
 async fn openai_speech() {
     speech_request().await;
     speech_failure().await;
+    logging_failure().await;
 }
 
 // the binary leaf posts the deployment-scoped speech body with the SDK's auth and accept headers
@@ -599,6 +601,22 @@ fn speech_error(outcome: &Outcome, status: u16, text: &str) {
     assert_eq!(error.status(), Some(status));
     assert!(matches!(error, AzureMediaError::Speech(_)));
     assert!(error.to_string().contains(text));
+}
+
+// a pre-call the logging hooks refuse stops the arm before any request leaves
+async fn logging_failure() {
+    let operation = AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation()));
+    let outcome = super::test_support::exchange_with_logging(operation, Vec::new(), |logging| {
+        logging.state.request_logging.raw_request_only = true
+    })
+    .await
+    .expect("the logging fixture builds");
+    let error = error_of(&outcome);
+    assert!(matches!(
+        error,
+        AzureMediaError::Speech(AzureSpeechError::Logging(_))
+    ));
+    assert!(outcome.fixture.outbound().is_empty());
 }
 
 async fn native_ssml() {

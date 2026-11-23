@@ -276,20 +276,17 @@ fn provider_token(provider: &TokenProvider<'_>) -> Result<SecretString, AzureSpe
             status: None,
             message: failure.message,
         })?;
-    match token {
-        TokenReply::Text(text) if !text.expose_secret().is_empty() => Ok(text),
-        TokenReply::Text(_) => Err(token_not_string("")),
-        TokenReply::NonText { type_name } => Err(token_not_string(&type_name)),
-    }
-}
-
-// The SDK names the reply it could not use; a text reply is never printed, since it can hold a credential
-fn token_not_string(returned: &str) -> AzureSpeechError {
-    AzureSpeechError::Handler {
+    let returned = match token {
+        TokenReply::Text(text) if !text.expose_secret().is_empty() => return Ok(text),
+        TokenReply::Text(_) => String::new(),
+        TokenReply::NonText { type_name } => type_name,
+    };
+    // the SDK names the reply it could not use; an empty text reply prints nothing, since it can hold a credential
+    Err(AzureSpeechError::Handler {
         class: String::from("ValueError"),
         status: None,
         message: format!(
             "Expected `azure_ad_token_provider` argument to return a string but it returned {returned}"
         ),
-    }
+    })
 }

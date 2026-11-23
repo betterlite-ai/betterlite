@@ -288,6 +288,18 @@ async fn resolve_env_chains(
     };
     let from_azure_key = CallSpec::new(&azure_key_environment, optional);
     assert_chain(from_azure_key, "https://env.example", "sk-azure-env").await;
+    // an empty variable counts as unset, so neither slot resolves
+    let empty = BTreeMap::from([
+        (String::from("AZURE_API_BASE"), String::new()),
+        (String::from("AZURE_OPENAI_API_KEY"), String::new()),
+    ]);
+    let empty_environment = SpeechEnvironment {
+        globals: &no_globals,
+        environment: &empty,
+    };
+    let request = resolved(CallSpec::new(&empty_environment, optional)).await;
+    assert_eq!(request.api_base, None);
+    assert_eq!(request.api_key, None);
 }
 
 async fn assert_chain(spec: CallSpec<'_>, expected_base: &str, expected_key: &str) {
@@ -636,6 +648,35 @@ fn credential_paths() {
     missing_key();
     empty_key();
     provider_tokens();
+    caller_auth_headers();
+}
+
+// a caller header for an auth name wins over the credential the SDK would add for that name
+fn caller_auth_headers() {
+    let key_headers = support::pairs(&[("extra_headers", json(r#"{"api-key":"caller-key"}"#))]);
+    let key_call = support::call("tts", "hello", "alloy", key_headers);
+    let key_request = support::start(&mut Inputs::default(), &key_call, &mut Recorder::default())
+        .expect("the caller's api-key authenticates the call");
+    assert_eq!(support::header(&key_request, "api-key"), Some("caller-key"));
+    let token_headers = support::pairs(&[(
+        "extra_headers",
+        json(r#"{"authorization":"Bearer caller"}"#),
+    )]);
+    let mut token_call = support::call("tts", "hello", "alloy", token_headers);
+    token_call.api_key = None;
+    token_call.provider = Some(support::provider(TokenReply::Text(SecretString::from(
+        "ad-token",
+    ))));
+    let request = support::start(
+        &mut Inputs::default(),
+        &token_call,
+        &mut Recorder::default(),
+    )
+    .expect("the caller's authorization stands over the token");
+    assert_eq!(
+        support::header(&request, "authorization"),
+        Some("Bearer caller")
+    );
 }
 
 fn missing_key() {
