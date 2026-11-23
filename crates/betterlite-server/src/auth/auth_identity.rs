@@ -7,6 +7,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::auth::auth_key_budgets::{self, KeyBudgetStageInput};
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
@@ -24,6 +25,7 @@ pub enum AuthBackend {
     AuthModelPatterns,
     AuthResourceGrants,
     AuthTagBudgets,
+    AuthKeyBudgets,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
@@ -35,6 +37,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthModelPatterns,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
+    AuthBackend::AuthKeyBudgets,
 ];
 
 #[derive(Clone, Debug)]
@@ -46,6 +49,7 @@ pub enum StageInput {
     AuthModelPatterns(Box<ModelPatternStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
+    AuthKeyBudgets(Box<KeyBudgetStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +80,7 @@ pub(crate) enum StageFailure {
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
+    KeyBudgets(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -104,6 +109,12 @@ pub(crate) fn dispatch(
             };
             // the batch reads ran while this stage's input was assembled, so only the identity is left
             Ok(stage.context.clone())
+        }
+        AuthBackend::AuthKeyBudgets => {
+            let StageInput::AuthKeyBudgets(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            auth_key_budgets::run_stage(stage).map_err(StageFailure::KeyBudgets)
         }
     }
 }

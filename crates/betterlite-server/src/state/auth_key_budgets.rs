@@ -1,12 +1,49 @@
-use crate::state::shared::Shared;
-use betterlite_config::types::Config;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 
-pub struct Slot;
+use betterlite_config::types::Config;
+use betterlite_db::budget_permission_rows::JsonData;
+
+use crate::state::shared::Shared;
+
+// the section default, for a request that reaches the stage without a loaded config
+const DEFAULT_ALERT_FRACTION: f64 = 0.8;
+
+// The two pinned settings the key budget stage reads: the global threshold map and the legacy
+// alert fraction. The fraction keeps whatever float the environment declared.
+#[derive(Debug)]
+pub struct KeyBudgetSettings {
+    pub global_alert_emails: Option<BTreeMap<String, JsonData>>,
+    pub alert_fraction: f64,
+}
+
+impl Default for KeyBudgetSettings {
+    fn default() -> Self {
+        Self {
+            global_alert_emails: None,
+            alert_fraction: DEFAULT_ALERT_FRACTION,
+        }
+    }
+}
+
+pub struct Slot {
+    settings: Arc<KeyBudgetSettings>,
+}
 
 impl Slot {
     #[must_use]
-    pub const fn new(_config: &Config, _shared: &Shared) -> Self {
-        // the state owner fills this slot
-        Self
+    pub fn new(config: &Config, _shared: &Shared) -> Self {
+        let section = &config.sections.auth_key_budgets;
+        Self {
+            settings: Arc::new(KeyBudgetSettings {
+                global_alert_emails: section.default_key_max_budget_alert_emails.clone(),
+                alert_fraction: section.alert_fraction,
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn settings(&self) -> Arc<KeyBudgetSettings> {
+        Arc::clone(&self.settings)
     }
 }

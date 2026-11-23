@@ -17,7 +17,8 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
-        | StageFailure::RequestBodySafety(exception) => denial_response(exception),
+        | StageFailure::RequestBodySafety(exception)
+        | StageFailure::KeyBudgets(exception) => denial_response(exception),
     }
 }
 

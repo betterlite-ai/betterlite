@@ -123,6 +123,9 @@ fn stage_input(
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
+            auth_key_budgets::stage_input(request, authenticated)?,
+        ))),
     }
 }
 
@@ -191,13 +194,19 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the prefetch on the owned stage
-async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFailure> {
+async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthTagBudgets(stage) => {
             auth_tag_budgets::prefetch(&stage)
                 .await
                 .map_err(StageFailure::TagBudgets)?;
             Ok(StageInput::AuthTagBudgets(stage))
+        }
+        StageInput::AuthKeyBudgets(stage) => {
+            auth_key_budgets::prefetch(&stage)
+                .await
+                .map_err(StageFailure::KeyBudgets)?;
+            Ok(StageInput::AuthKeyBudgets(stage))
         }
         other @ (StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)
