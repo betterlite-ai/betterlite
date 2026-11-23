@@ -15,7 +15,7 @@ use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-mod request;
+pub(crate) mod request;
 #[cfg(test)]
 mod tests;
 

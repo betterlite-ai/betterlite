@@ -21,11 +21,13 @@ use betterlite_openai::batches::error::{BatchesError, SdkError};
 use betterlite_openai::batches::records::BatchObject;
 use betterlite_openai::batches::sdk::Timeout;
 use betterlite_openai::xai_batches::error::XaiBatchesError;
+use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
 use serde::Deserialize;
 
 use super::convert::{CallMode, HiddenParams, parse};
 use super::error::{DispatchFailure, payload_for};
+use super::register;
 use super::session::BatchCore;
 use super::transport::{BatchDispatch, BatchTransport, create_status, sdk_status, xai_status};
 
@@ -314,6 +316,17 @@ fn transport_statuses_follow_the_sdk_classes() {
     assert_eq!(create_status(&BatchesError::NotAsync), 500);
     assert_eq!(xai_status(&XaiBatchesError::MissingApiKey), 401);
     assert_eq!(xai_status(&XaiBatchesError::InputFileRequired), 400);
+}
+
+#[test]
+fn register_adds_the_batch_classes() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        assert!(module.hasattr("NativeBatchSession").unwrap());
+        assert!(module.hasattr("NativeBatchError").unwrap());
+    });
 }
 
 #[test]
