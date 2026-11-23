@@ -18,24 +18,26 @@ pub(super) fn leg_parameters<'legs>(
     kinds: &'legs [&'legs str],
     headings: &'legs [&'legs str],
 ) -> Vec<&'legs (dyn ToSql + Sync)> {
-    let mut parameters: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(legs.len() * LEG_COLUMNS);
-    for (index, leg) in legs.iter().enumerate() {
+    let mut parameters: Vec<&(dyn ToSql + Sync)> =
+        Vec::with_capacity(legs.len().saturating_mul(LEG_COLUMNS));
+    let rows = legs.iter().zip(kinds).zip(headings).zip(created).zip(ends);
+    for ((((leg, kind), heading), created_at), ends_at) in rows {
         parameters.push(&leg.id);
         parameters.push(&leg.group_id);
-        parameters.push(&kinds[index]);
+        parameters.push(*kind);
         parameters.push(&leg.target_id);
         parameters.push(&leg.router_name);
         parameters.push(&leg.router_names);
         parameters.push(&leg.models);
-        parameters.push(&headings[index]);
+        parameters.push(*heading);
         parameters.push(&leg.baseline_model);
         parameters.push(&leg.judge_model);
         parameters.push(&leg.shadow_percentage);
         parameters.push(&leg.max_turns);
         parameters.push(&leg.max_budget);
         parameters.push(&leg.created_by);
-        parameters.push(&created[index]);
-        parameters.push(&ends[index]);
+        parameters.push(created_at);
+        parameters.push(ends_at);
     }
     parameters
 }

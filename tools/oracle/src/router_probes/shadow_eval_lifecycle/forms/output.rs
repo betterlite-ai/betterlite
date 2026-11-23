@@ -51,7 +51,7 @@ pub struct TargetView {
     pub key_name: Option<String>,
 }
 
-fn status_text(status: ShadowEvalStatus) -> &'static str {
+const fn status_text(status: ShadowEvalStatus) -> &'static str {
     match status {
         ShadowEvalStatus::Running => "running",
         ShadowEvalStatus::Completed => "completed",

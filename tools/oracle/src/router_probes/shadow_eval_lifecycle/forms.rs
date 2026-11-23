@@ -100,9 +100,10 @@ pub struct Body {
     pub pad_to: Option<usize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
+    #[default]
     Absent,
     ProxyAdmin,
     ProxyAdminViewer,
@@ -136,7 +137,7 @@ pub enum Step {
     Stop(StopStep),
 }
 
-pub(super) fn role_name(role: Role) -> Option<&'static str> {
+pub(super) const fn role_name(role: Role) -> Option<&'static str> {
     match role {
         Role::Absent => None,
         Role::ProxyAdmin => Some("proxy_admin"),

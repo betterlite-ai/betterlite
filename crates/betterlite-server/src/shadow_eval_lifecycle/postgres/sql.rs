@@ -77,6 +77,7 @@ WHERE group_id = $1 AND stopped_by IS NULL
 #[must_use]
 pub fn insert_legs(count: usize) -> String {
     let mut statement = String::from(INSERT_LEGS_HEAD);
+    let mut parameter = 0_usize;
     for row in 0..count {
         if row > 0 {
             statement.push_str(", ");
@@ -86,7 +87,7 @@ pub fn insert_legs(count: usize) -> String {
             if column > 0 {
                 statement.push_str(", ");
             }
-            let parameter = row * LEG_COLUMNS + column + 1;
+            parameter = parameter.saturating_add(1);
             if column == MAX_BUDGET_SLOT {
                 let _written = write!(statement, "${parameter}::numeric::float8");
             } else {
