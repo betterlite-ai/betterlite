@@ -35,3 +35,5 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(fix_agent_card_url, module)?)?;
     Ok(())
 }
+
+mod tests;
