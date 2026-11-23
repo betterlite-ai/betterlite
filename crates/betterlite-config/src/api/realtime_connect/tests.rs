@@ -16,6 +16,9 @@ const DEFAULTS: &str =
     include_str!("../../../fuzz/corpus/config_yaml/realtime-connect-default.yaml");
 const CONFIGURED: &str =
     include_str!("../../../fuzz/corpus/config_yaml/realtime-connect-configured.yaml");
+// the vertex credential section validates VERTEXAI_CREDENTIALS, so it must decode as a service account
+const SERVICE_ACCOUNT: &str =
+    r#"{"type":"service_account","private_key":"KEYMATERIAL","client_email":"sa@example.com"}"#;
 
 fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -84,7 +87,7 @@ fn configured_settings() -> RealtimeConnectionSettings {
             ("OPENAI_API_KEY", "openai-key"),
             ("XAI_API_BASE", "https://xai.example/v1"),
             ("XAI_API_KEY", "xai-key"),
-            ("VERTEXAI_CREDENTIALS", "{\"type\":\"service_account\"}"),
+            ("VERTEXAI_CREDENTIALS", SERVICE_ACCOUNT),
             ("VERTEXAI_PROJECT", "env-project"),
             ("VERTEXAI_LOCATION", "env-region"),
             (AZURE_PROTOCOL_VARIABLE, "GA"),
@@ -138,7 +141,7 @@ fn assert_configured_environment_values(configured: &RealtimeConnectionSettings)
     assert_eq!(exposed(configured.xai_api_key.as_ref()), Some("xai-key"));
     assert_eq!(
         configured.vertexai_credentials,
-        Some(Json::Text(String::from("{\"type\":\"service_account\"}")))
+        Some(Json::Text(String::from(SERVICE_ACCOUNT)))
     );
     assert_eq!(configured.vertexai_project.as_deref(), Some("env-project"));
     assert_eq!(configured.vertexai_location.as_deref(), Some("env-region"));

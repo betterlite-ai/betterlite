@@ -4,6 +4,7 @@ mod forwarding;
 mod guardrails;
 mod support;
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_config::api::realtime_connect::RealtimeConnectionSettings;
@@ -22,7 +23,8 @@ use super::{
     RealtimeConnectError, RealtimeConnectParams, RealtimeConnection,
 };
 use support::{
-    BareDispatch, Recorder, ScriptedTokens, TestConfig, call, params, run, secret, settings, text,
+    BareDispatch, Recorder, ScriptedTokens, TestConfig, call, params, run, run_with_environment,
+    secret, settings, text,
 };
 
 #[tokio::test]
@@ -522,7 +524,7 @@ async fn realtime_bedrock_and_xai_arguments() {
     bedrock_ignores_generic_and_global(&dispatch, &litellm_params).await;
     xai_arguments(&dispatch, &litellm_params).await;
     xai_key_fallbacks(&dispatch).await;
-    credentials::xai_generic_base_wins_over_the_environment().await;
+    credentials::xai_branch_base_chain_without_a_dynamic_base();
 }
 
 fn bedrock_params() -> RealtimeConnectParams {
@@ -650,10 +652,9 @@ async fn xai_arguments(dispatch: &Recorder, litellm_params: &IndexMap<String, Js
     xai.api_base = Some(String::from("https://global.example"));
     xai.api_key = Some(secret("sk-global"));
     xai.xai_key = Some(secret("xai-key"));
-    xai.xai_api_base = Some(String::from("https://xai-env.example"));
     xai.xai_api_key = Some(secret("xai-env-key"));
     xai_named_arguments(dispatch, &xai, litellm_params).await;
-    xai_base_fallbacks(dispatch, &xai, litellm_params).await;
+    xai_base_fallbacks(dispatch, litellm_params).await;
 }
 
 async fn xai_named_arguments(
@@ -663,6 +664,7 @@ async fn xai_named_arguments(
 ) {
     let mut connect = params();
     connect.api_base = Some(String::from("https://named.example"));
+    connect.generic_api_base = Some(String::from("https://generic.example"));
     let connection = xai_connection(dispatch, xai, &connect, litellm_params).await;
     assert!(matches!(connection.branch, Branch::Xai));
     assert_eq!(
@@ -679,25 +681,23 @@ async fn xai_named_arguments(
     );
 }
 
-async fn xai_base_fallbacks(
-    dispatch: &Recorder,
-    xai: &RealtimeConnectionSettings,
-    litellm_params: &IndexMap<String, Json>,
-) {
-    let from_environment = xai_connection(dispatch, xai, &params(), litellm_params).await;
+// get_llm_provider resolves XAI_API_BASE into the dynamic base, so it arrives through the resolution environment
+async fn xai_base_fallbacks(dispatch: &Recorder, litellm_params: &IndexMap<String, Json>) {
+    let mut environment = BTreeMap::new();
+    environment.insert(
+        String::from("XAI_API_BASE"),
+        String::from("https://xai-env.example"),
+    );
+    let mut globals = settings();
+    globals.api_base = Some(String::from("https://global.example"));
+    let bare = params();
+    let request = call("xai/grok-4", &bare, None, litellm_params, false);
+    let (_, result) = run_with_environment(dispatch, &globals, &request, &environment).await;
     assert_eq!(
-        from_environment.args.api_base.as_deref(),
+        result.unwrap().args.api_base.as_deref(),
         Some("https://xai-env.example")
     );
-    let mut without_environment_base = xai.clone();
-    without_environment_base.xai_api_base = None;
-    let from_default = xai_connection(
-        dispatch,
-        &without_environment_base,
-        &params(),
-        litellm_params,
-    )
-    .await;
+    let from_default = xai_connection(dispatch, &globals, &params(), litellm_params).await;
     assert_eq!(
         from_default.args.api_base.as_deref(),
         Some("https://api.x.ai/v1")

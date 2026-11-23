@@ -1,11 +1,18 @@
 use std::sync::{Arc, PoisonError};
 
 use betterlite_models::decisions::Json;
+use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::resolution::ProviderIdentity;
 use indexmap::IndexMap;
 
-use super::super::{Branch, RealtimeConnectError};
+use super::super::branches::{DirectProvider, direct_connection};
+use super::super::dispatch::Prepared;
+use super::super::{Branch, RealtimeConnectError, RealtimeConnection};
 use super::assert_api_key;
-use super::support::{Recorder, ScriptedTokens, call, params, run, secret, settings, text};
+use super::support::{
+    Recorder, ScriptedTokens, TestConfig, call, params, run, secret, settings, text,
+};
+use crate::api::realtime_contracts::error::HeaderMap;
 
 pub(super) async fn openai_credentials(
     dispatch: &Recorder,
@@ -81,20 +88,54 @@ pub(super) async fn openai_generic_base_and_global_key_win() {
     );
 }
 
-pub(super) async fn xai_generic_base_wins_over_the_environment() {
-    let dispatch = Recorder::default();
-    let mut connection_settings = settings();
-    connection_settings.xai_api_base = Some(String::from("https://xai-env.example"));
+// get_llm_provider always fills the xai base, so the generic and environment slots are pinned here
+pub(super) fn xai_branch_base_chain_without_a_dynamic_base() {
+    let prepared = Prepared {
+        model: String::from("grok-4"),
+        provider: ProviderIdentity::Known(ProviderId::Xai),
+        dynamic_api_base: None,
+        dynamic_api_key: None,
+        headers: HeaderMap::default(),
+        query_params: None,
+        metadata: IndexMap::new(),
+    };
+    let litellm_params = IndexMap::new();
+    let mut environment = settings();
+    environment.xai_api_base = Some(String::from("https://xai-env.example"));
     let mut connect = params();
     connect.generic_api_base = Some(String::from("https://xai-generic.example"));
-    let litellm_params = IndexMap::new();
-    let request = call("xai/grok-4", &connect, None, &litellm_params, false);
-    let (_, result) = run(&dispatch, &connection_settings, &request).await;
-    let connection = result.unwrap();
-    assert!(matches!(connection.branch, Branch::Xai));
+    let generic_request = call("xai/grok-4", &connect, None, &litellm_params, false);
+    let generic: RealtimeConnection<TestConfig> = direct_connection(
+        DirectProvider::Xai,
+        &environment,
+        &generic_request,
+        &prepared,
+    );
     assert_eq!(
-        connection.args.api_base.as_deref(),
+        generic.args.api_base.as_deref(),
         Some("https://xai-generic.example")
+    );
+    let bare = params();
+    let environment_request = call("xai/grok-4", &bare, None, &litellm_params, false);
+    let from_environment: RealtimeConnection<TestConfig> = direct_connection(
+        DirectProvider::Xai,
+        &environment,
+        &environment_request,
+        &prepared,
+    );
+    assert_eq!(
+        from_environment.args.api_base.as_deref(),
+        Some("https://xai-env.example")
+    );
+    let from_default: RealtimeConnection<TestConfig> = direct_connection(
+        DirectProvider::Xai,
+        &settings(),
+        &environment_request,
+        &prepared,
+    );
+    assert_eq!(
+        from_default.args.api_base.as_deref(),
+        Some("https://api.x.ai/v1")
     );
 }
 

@@ -293,14 +293,28 @@ pub(super) async fn run<Dispatch>(
 where
     Dispatch: RealtimeConnectDispatch,
 {
+    run_with_environment(dispatch, settings, call, &BTreeMap::new()).await
+}
+
+pub(super) async fn run_with_environment<Dispatch>(
+    dispatch: &Dispatch,
+    settings: &RealtimeConnectionSettings,
+    call: &RealtimeConnectCall<'_>,
+    environment: &BTreeMap<String, String>,
+) -> (
+    LoggingState,
+    Result<RealtimeConnection<Dispatch::ProviderConfig>, RealtimeConnectError<Dispatch::Error>>,
+)
+where
+    Dispatch: RealtimeConnectDispatch,
+{
     let catalog = ModelCatalog::default();
     let names = BTreeSet::new();
-    let environment = BTreeMap::new();
     let resolution = ResolutionContext {
         catalog: &catalog,
         known_model_names: &names,
         custom_providers: &names,
-        environment: &environment,
+        environment,
         registry: JSONProviderRegistry::default(),
         policies: ProviderPolicies::default(),
         globals: GlobalCredentials::default(),
