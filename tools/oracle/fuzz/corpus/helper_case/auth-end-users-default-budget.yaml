@@ -1,0 +1,11 @@
+kind: helper
+name: auth-end-users-default-budget
+call:
+  auth_end_users:
+    function: default_budget
+    database: true
+    validate_in_db: false
+    budget_id: b-key
+    cached_budget: {budget_id: b-key, max_budget: 100.0}
+env: {}
+compare: {ignore: []}

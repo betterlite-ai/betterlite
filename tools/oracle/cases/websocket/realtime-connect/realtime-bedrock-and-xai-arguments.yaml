@@ -1,0 +1,37 @@
+kind: helper
+name: realtime-bedrock-and-xai-arguments
+call:
+  realtime_connect_websocket:
+    scenarios:
+      - model: bedrock/amazon.nova-sonic-v1:0
+        params:
+          api_base: https://bedrock.example
+          api_key: sk-bedrock
+          timeout: 30.0
+          headers: {x: dropped}
+          metadata: {guardrails: [dropped]}
+          user_api_key_dict: {key: dropped}
+          aws_region_name: us-east-1
+          aws_access_key_id: AWSACCESSKEY
+          aws_secret_access_key: aws-secret
+          aws_session_token: session-token
+          aws_role_name: role
+          aws_session_name: session
+          aws_profile_name: profile
+          aws_web_identity_token: web-identity
+          aws_sts_endpoint: https://sts.example
+          aws_bedrock_runtime_endpoint: https://runtime.example
+          aws_external_id: external
+          aws_session_tags: [{key: team, value: rt}]
+        settings:
+          api_base: https://global.example
+          api_key: sk-global
+      - model: xai/grok-4
+        settings:
+          xai_key: sk-xai-global
+      - model: xai/grok-4
+        params:
+          api_base: https://xai.example
+          api_key: sk-named
+env: {}
+compare: {ignore: []}
