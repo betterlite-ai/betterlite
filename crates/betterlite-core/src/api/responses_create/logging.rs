@@ -54,7 +54,7 @@ fn litellm_params(
         all.get("metadata")
     };
     let mut params = json_map(filtered.iter());
-    params.insert(String::from("aresponses"), Json::Bool(prep.is_async));
+    params.insert(String::from("aresponses"), Json::Bool(prep.is_async.0));
     params.insert(
         String::from("litellm_call_id"),
         all.get("litellm_call_id").map_or(Json::Null, decision_json),

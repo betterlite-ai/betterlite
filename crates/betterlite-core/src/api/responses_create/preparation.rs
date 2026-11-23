@@ -2,6 +2,7 @@ use super::call::{
     ResponsesCreateCall, input_value, named_locals, resolution_params, session_metadata, text_param,
 };
 use super::convert::{decision_json, json_value, reencode};
+use super::deps::PromptSource;
 use super::error::CreateError;
 use crate::api::responses_create_http::config::Headers;
 use crate::api::responses_parameters::forwarded_headers::merge_forwarded_headers;
@@ -23,6 +24,9 @@ use betterlite_openai::response_input::ResponsesInput;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::BTreeMap;
+// A bool in the create state; the newtype keeps struct_excessive_bools off the records that declare four
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CreateFlag(pub bool);
 pub struct Prepared<'call> {
     pub call: &'call ResponsesCreateCall,
     pub kwargs: ParameterMap,
@@ -30,12 +34,12 @@ pub struct Prepared<'call> {
     pub input: ResponsesInput,
     pub model: String,
     pub provider: Option<String>,
-    pub use_chat: bool,
+    pub use_chat: CreateFlag,
     pub extra_headers: Option<Headers>,
     pub text: Option<Json>,
-    pub is_async: bool,
-    pub skip_mcp: bool,
-    pub require_encrypted: bool,
+    pub is_async: CreateFlag,
+    pub skip_mcp: CreateFlag,
+    pub require_encrypted: CreateFlag,
     pub deployment_model_info: Option<Json>,
 }
 pub struct Resolved {
@@ -46,23 +50,27 @@ pub struct Resolved {
     pub deployment_model_info: Json,
 }
 struct Flags {
-    is_async: bool,
-    skip_mcp: bool,
-    require_encrypted: bool,
-    use_chat: bool,
+    is_async: CreateFlag,
+    skip_mcp: CreateFlag,
+    require_encrypted: CreateFlag,
+    use_chat: CreateFlag,
 }
 pub fn begin<'call>(
     call: &'call ResponsesCreateCall,
     resolver: &dyn ModelResolver,
     lookup: &dyn ConfigLookup,
-    prompts: Option<&dyn PromptManager>,
+    prompts: Option<&dyn PromptSource>,
 ) -> Result<Prepared<'call>, CreateError> {
     let mut kwargs = connection_kwargs(call);
     let flags = request_flags(&mut kwargs);
     let extra_headers = merged_headers(call, &kwargs)?;
     let text = response_text(call)?;
-    let (model, provider, use_chat) = resolved_names(call, resolver, flags.use_chat)?;
+    let (model, provider, use_chat) = resolved_names(call, resolver, flags.use_chat.0)?;
     let mut local_vars: ParameterMap = named_locals(call, text.as_ref()).into_iter().collect();
+    let manager: Option<&dyn PromptManager> = match prompts {
+        Some(source) => Some(source),
+        None => None,
+    };
     let outcome = apply_prompt_management(
         PromptRequest {
             input: input_value(&call.input),
@@ -72,7 +80,7 @@ pub fn begin<'call>(
             kwargs: &mut kwargs,
             local_vars: &mut local_vars,
         },
-        prompts,
+        manager,
         lookup,
         resolver,
     )?;
@@ -84,7 +92,7 @@ pub fn begin<'call>(
         input,
         model: outcome.model,
         provider: outcome.custom_llm_provider,
-        use_chat,
+        use_chat: CreateFlag(use_chat),
         extra_headers,
         text,
         is_async: flags.is_async,
@@ -109,10 +117,10 @@ fn request_flags(kwargs: &mut ParameterMap) -> Flags {
         kwargs.shift_remove("_require_encrypted_task_support") == Some(JsonValue::Bool(true));
     let use_chat = pop_use_chat_completions_api(kwargs);
     Flags {
-        is_async,
-        skip_mcp,
-        require_encrypted,
-        use_chat,
+        is_async: CreateFlag(is_async),
+        skip_mcp: CreateFlag(skip_mcp),
+        require_encrypted: CreateFlag(require_encrypted),
+        use_chat: CreateFlag(use_chat),
     }
 }
 fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError> {
@@ -174,7 +182,7 @@ pub fn resolve(
     if provider.is_empty() {
         return Err(CreateError::MissingProvider);
     }
-    prep.model = model.clone();
+    prep.model.clone_from(&model);
     prep.provider = Some(provider.clone());
     Ok(Resolved {
         model,

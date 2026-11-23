@@ -94,6 +94,6 @@ pub(super) fn dispatch_args<'call>(
         timeout: call.timeout,
         custom_llm_provider: prep.provider.as_deref(),
         kwargs,
-        is_async: prep.is_async,
+        is_async: prep.is_async.0,
     }
 }

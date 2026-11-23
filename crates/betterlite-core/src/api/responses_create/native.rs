@@ -69,7 +69,7 @@ where
     let filtered = filtered_params(deps, prep, resolved, provider_config, &mut requested)?;
     logging::log_call(log, prep, resolved, &filtered)?;
     let parts = request_parts(prep, resolved, provider_config, &filtered, timeout)?;
-    let mode = if prep.is_async {
+    let mode = if prep.is_async.0 {
         ClientKind::Asynchronous
     } else {
         ClientKind::Sync
@@ -201,7 +201,7 @@ where
         input: &prep.input,
         request: &request,
         custom_llm_provider: prep.provider.as_deref(),
-        is_async: prep.is_async,
+        is_async: prep.is_async.0,
         stream: prep.call.stream,
         extra_headers: prep.extra_headers.as_ref(),
         kwargs: &kwargs,
@@ -219,7 +219,7 @@ fn finish<Context>(
                 return Ok(Created::Raw(raw));
             };
             let affinity: AffinityMetadata =
-                metadata.map_or(Ok(AffinityMetadata::default()), reencode)?;
+                metadata.map_or_else(|| Ok(AffinityMetadata::default()), reencode)?;
             rewrite_typed_response(&mut response, Some(&resolved.provider), &affinity)?;
             let mut hidden = HiddenParams::new();
             hidden.insert(

@@ -32,6 +32,8 @@ pub trait CreateConfigFactory: Send + Sync {
         + CreateCapabilities;
     fn create_config(&self, request: &ConfigRequest<'_>) -> Option<Self::Provider>;
 }
+// The prompt manager enters behind a Send + Sync port so the create future stays Send for the gateway
+pub trait PromptSource: PromptManager + Send + Sync {}
 pub struct ResponsesCreateDeps<'deps, S: ClientSource, F, D: ?Sized, E: ?Sized, Context: Send> {
     pub resolver: &'deps (dyn ModelResolver + Send + Sync),
     pub lookup: &'deps (dyn ConfigLookup + Send + Sync),
@@ -39,7 +41,7 @@ pub struct ResponsesCreateDeps<'deps, S: ClientSource, F, D: ?Sized, E: ?Sized, 
     pub source: &'deps S,
     pub supplied: Option<SuppliedClient<'deps, S::Client>>,
     pub environment: &'deps dyn EnvironmentLookup,
-    pub prompts: Option<&'deps dyn PromptManager>,
+    pub prompts: Option<&'deps dyn PromptSource>,
     pub file_mapping: Option<&'deps FileIdMapping>,
     pub hooks: CreateHooks<'deps, D, E>,
     pub interception: &'deps dyn CreateInterception<Context>,

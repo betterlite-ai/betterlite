@@ -58,7 +58,7 @@ where
         }
     }
     let supported = setup.supported.as_ref();
-    if bridges_to_chat_completions(supported, prep.use_chat) {
+    if bridges_to_chat_completions(supported, prep.use_chat.0) {
         return bridge(deps, &prep, supported, &setup.requested, context).await;
     }
     let Some(provider) = setup.provider else {
@@ -109,7 +109,7 @@ where
         tools: Option<&[JsonValue]>,
         context: Context,
     ) -> Result<Interception<Context>, CreateError> {
-        if prep.skip_mcp || !self.interception.mcp_requested(tools) {
+        if prep.skip_mcp.0 || !self.interception.mcp_requested(tools) {
             return Ok(Interception::Continue(context));
         }
         let args = dispatch_args(prep, prep.call.reasoning.as_ref(), tools, &prep.kwargs);
@@ -129,16 +129,16 @@ where
         kwargs.shift_remove("litellm_call_id");
         let mapped = (!matches!(reasoning, JsonValue::Null)).then(|| decision_json(reasoning));
         let call = dispatch_args(prep, mapped.as_ref(), tools, &kwargs);
-        let args = FileSearchArgs {
+        let search = FileSearchArgs {
             call,
             service_tier: prep.call.service_tier.as_deref(),
             safety_identifier: prep.call.safety_identifier.as_deref(),
             text_format: prep.call.text_format.as_ref(),
             allowed_openai_params: prep.call.allowed_openai_params.as_deref(),
-            use_chat_completions_api: prep.use_chat,
+            use_chat_completions_api: prep.use_chat.0,
         };
         self.interception
-            .file_search(&args, context)
+            .file_search(&search, context)
             .await
             .map_err(CreateError::from)
     }
@@ -162,8 +162,9 @@ where
             api_base: resolved.api_base.as_deref(),
             model_info: &model_info,
         });
-        if prep.require_encrypted
-            && let Some(failure) = encrypted_task_support_failure(supported.as_ref(), prep.use_chat)
+        if prep.require_encrypted.0
+            && let Some(failure) =
+                encrypted_task_support_failure(supported.as_ref(), prep.use_chat.0)
         {
             return Err(CreateError::Compatibility(failure));
         }
@@ -171,8 +172,8 @@ where
         let native_search = provider
             .as_ref()
             .is_some_and(CreateCapabilities::supports_native_file_search);
-        let emulated =
-            has_file_search_tool(tools) && (supported.is_none() || prep.use_chat || !native_search);
+        let emulated = has_file_search_tool(tools)
+            && (supported.is_none() || prep.use_chat.0 || !native_search);
         Ok(Setup {
             supported,
             provider,
@@ -208,7 +209,7 @@ fn mapped_tools(
     outcome
         .tools
         .as_ref()
-        .map(|tools| tools.iter().map(|tool| reencode(tool)).collect())
+        .map(|entries| entries.iter().map(reencode).collect())
         .transpose()
         .map_err(CreateError::from)
 }
