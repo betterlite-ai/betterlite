@@ -39,6 +39,9 @@ description: >-
   accept it, and Rust handles that.
 scope:
   paths:
+  - "crates/betterlite-python/src/completion/setup.rs"
+  - "crates/betterlite-python/src/completion.rs"
+  - "crates/betterlite-python/src/completion/**"
   - crates/betterlite-python/src/embeddings.rs
   - crates/betterlite-python/src/embeddings/**
   - crates/betterlite-python/python/betterlite/_native_embeddings.pyi
