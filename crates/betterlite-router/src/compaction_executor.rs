@@ -42,8 +42,8 @@ where
 {
     let pair = parent_model
         .zip(compactor)
-        .filter(|(parent, compactor)| !parent.is_empty() && !compactor.is_empty())
-        .map(|(parent, compactor)| (parent.to_owned(), compactor.to_owned()));
+        .filter(|(parent, compactor_model)| !parent.is_empty() && !compactor_model.is_empty())
+        .map(|(parent, compactor_model)| (parent.to_owned(), compactor_model.to_owned()));
     NATIVE_COMPACTION_PARENT.scope(pair, call).await
 }
 
