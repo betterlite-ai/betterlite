@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::error::Error;
-use std::fmt;
 use std::sync::Mutex;
 
 use betterlite_error::proxy_model_not_found::ProxyModelNotFoundError;
@@ -17,16 +16,9 @@ use super::{
     prepare_data_with_credentials, trusted_snapshot,
 };
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
 struct FakeFailure(String);
-
-impl fmt::Display for FakeFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Error for FakeFailure {}
 
 struct FakeSource {
     answer: Result<Option<JsonObject>, FakeFailure>,
