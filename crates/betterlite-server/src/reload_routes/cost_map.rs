@@ -31,7 +31,6 @@ pub(super) async fn reload_model_cost_map(
     let Some(store) = state.config.as_deref() else {
         return Err(ReloadError::MissingDatabase);
     };
-    let now = (state.clock)();
     let snapshot = match state.catalog.reload().await {
         ReloadOutcome::Reloaded(snapshot) => snapshot,
         ReloadOutcome::Unavailable(unavailable) => {
@@ -40,6 +39,8 @@ pub(super) async fn reload_model_cost_map(
             });
         }
     };
+    // LiteLLM reads the clock after the fetch, so the timestamp is the moment the map is adopted
+    let now = (state.clock)();
     let models_count = state.reloads.swap_in_model_cost_map(&snapshot, now);
     let revision = store
         .record_manual_reload(now)
