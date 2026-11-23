@@ -102,7 +102,6 @@ scope:
   - crates/betterlite-provider/src/anthropic_dispatch/tests.rs
   - crates/betterlite-provider/src/anthropic_dispatch/tests/gateway.rs
   - crates/betterlite-provider/src/operation/tests.rs
-  - crates/betterlite-provider/src/provider/tests.rs
   - crates/betterlite-provider/src/provider/tests/openai.rs
   - crates/betterlite-provider/src/embedding_rerank_providers/tests.rs
   - crates/betterlite-provider/src/vertex_embedding_binding/calls/tests.rs
