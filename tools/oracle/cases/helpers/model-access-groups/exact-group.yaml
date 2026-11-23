@@ -1,0 +1,22 @@
+kind: helper
+name: model-access-groups-exact-group
+call:
+  b10047:
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          access_groups: [beta]
+      - model_name: claude
+        litellm_params:
+          model: anthropic/claude
+        model_info:
+          id: b
+          access_groups: [beta-2]
+    model_group_alias: {}
+    arguments:
+      model_access_group: beta
+env: {}
+compare: {ignore: []}

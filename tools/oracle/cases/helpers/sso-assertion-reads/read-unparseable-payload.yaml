@@ -1,0 +1,27 @@
+kind: helper
+name: read-unparseable-payload
+call:
+  b10064:
+    database: true
+    rows:
+      - {user_id: alice, assertion_b64: 'uXiGVd1XTYx1Hz-o1-ZUUpWhcbbeKefelyLy7YDtpDHVAvx-wJgzerUS9MFjbH_7xWOh7HAPE43cBT29w-zTCMjva_Cq1RuNR3ZaG5pAS78='}
+      - {user_id: bravo, assertion_b64: 'CfLCT1asExWQHDb5bTcKtO4sa-xWDYUw72HIZcFXp7gPfhlBzImVxtFzYNKVIsRUJMn3Rl4POM1PQm1Y4qSmBqPnUG7RXvNYpOAKvvxuyftKmKIwKeghtYV1YH_Wuj8='}
+      - {user_id: charlie, assertion_b64: 'Z6o0cmFy_uoDlY8QBrNHXg5EMyxEKt5L1ObLVhLy7TgbRNAKUhZBR7bD6h8iEc5IB1Nwys6DDQ=='}
+    failure: null
+    steps:
+      - {step: fetch_uncached, user_id: alice}
+      - {step: fetch_uncached, user_id: bravo}
+      - {step: fetch_uncached, user_id: charlie}
+      - {step: fetch, user_id: alice}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10064:
+      database: true
+      rows:
+        - {user_id: alice, assertion_b64: 'v2:gcm:7nAhZN8xx_EBy94AvclYsZAZEbhZ2Hr4sj4wLA7ZGqEJxd6VWxiXzFkqyoHFWofCJF4gjtdo2Q_A2Yd6RPrMN-NtfDs='}
+        - {user_id: bravo, assertion_b64: 'v2:gcm:NUDqaIDIeDnYe1UJNeJ53daWoL9MuZrMhOWjYd5mYk5bTckuI6B2caRJxg=='}
+      failure: null
+      steps:
+        - {step: fetch_uncached, user_id: alice}
+        - {step: fetch_uncached, user_id: bravo}

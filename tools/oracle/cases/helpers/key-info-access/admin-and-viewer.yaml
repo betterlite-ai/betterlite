@@ -1,0 +1,16 @@
+kind: helper
+name: key-info-access-admin-and-viewer
+call:
+  b10068:
+    calls:
+      - caller: {user_role: proxy_admin, api_key: sk-outsider, user_id: outsider}
+        key: null
+        key_row: {user_id: owner-1, team_id: null}
+      - caller: {user_role: proxy_admin_viewer, api_key: sk-outsider, user_id: outsider}
+        key: null
+        key_row: {user_id: owner-1, team_id: null}
+      - caller: {user_role: internal_user, api_key: sk-outsider, user_id: outsider}
+        key: null
+        key_row: {user_id: owner-1, team_id: null}
+env: {}
+compare: {ignore: []}

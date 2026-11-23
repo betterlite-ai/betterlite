@@ -226,7 +226,7 @@ out_of_scope:
     (L2166-L2172), get_model_access_group_budgets_batch (L2176-L2204), _fetch_uncached_tags (L2207-L2243),
     get_tag_objects_batch (L2247-L2287).'
   - 'litellm/proxy/auth/auth_checks.py: B742 owns _is_api_route_allowed (L1313-L1337), _allowed_routes_check
-    (L1350-L1369), allowed_routes_check (L1372-L1401), allowed_route_check_inside_route (L1404-L1417).'
+    (L1350-L1369), allowed_routes_check (L1372-L1401); B10052 owns allowed_route_check_inside_route (L1404-L1417).'
   - 'litellm/proxy/auth/auth_checks.py: B747 owns _get_resources_from_access_groups (L4237-L4297), _get_models_from_access_groups
     (L4300-L4316), _get_mcp_server_ids_from_access_groups (L4319-L4337), _get_agent_ids_from_access_groups
     (L4340-L4358), _resolve_all_team_model_sentinel_for_auth_check (L4361-L4372), _check_model_access_helper
@@ -271,7 +271,7 @@ out_of_scope:
     stamp_matched_model_access_groups (L4917-L4954).'
   - 'litellm/proxy/auth/auth_checks.py: B886 owns can_key_call_model (L4957-L5005), can_key_call_resolved_model
     (L5008-L5100), can_org_access_model (L5103-L5119), can_team_access_model (L5122-L5164), get_authorized_resources_from_key_access_groups
-    (L5167-L5212), _key_access_group_grants_model (L5215-L5246), can_project_access_model (L5249-L5266),
+    (L5167-L5212), _key_access_group_grants_model (L5215-L5246), can_project_access_model (L5249-L5266); B10051 owns
     can_user_call_model (L5269-L5297).'
   - 'litellm/proxy/auth/auth_checks.py: B888 owns _guardrail_modification_check (L793-L844), check_tools_allowlist
     (L847-L885).'
