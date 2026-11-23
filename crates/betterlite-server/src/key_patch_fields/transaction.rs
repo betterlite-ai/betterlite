@@ -136,7 +136,7 @@ async fn write_key_row(
 }
 
 // The row type is the column list: jsonb_populate_record casts each JSON value to its column's type.
-fn update_statement(fields: &Row) -> Result<String, KeyPatchError> {
+pub(crate) fn update_statement(fields: &Row) -> Result<String, KeyPatchError> {
     let mut assignments = Vec::with_capacity(fields.len());
     for name in fields.keys() {
         if !is_column_name(name) {

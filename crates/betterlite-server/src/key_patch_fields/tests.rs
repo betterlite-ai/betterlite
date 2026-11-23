@@ -15,11 +15,12 @@ use super::accessors::{
 use super::drop_request_only_fields;
 use super::error::KeyPatchError;
 use super::metadata::PatchWarning;
+use super::prepare::metadata_request_fields;
 use super::soft_budget::{
     apply_soft_budget_update, update_key_soft_budget, validate_max_budget,
     validate_soft_budget_value,
 };
-use super::transaction::{KeyPatchWrite, update_key_row_with_soft_budget};
+use super::transaction::{KeyPatchWrite, update_key_row_with_soft_budget, update_statement};
 
 mod support;
 
@@ -87,6 +88,11 @@ async fn all_metadata_field_names_and_datetime() {
         fields.get("temp_budget_expiry"),
         Some(&json_text("2026-05-02T10:00:00.500000+02:00"))
     );
+    let request_fields = metadata_request_fields(&request).expect("the request's metadata fields");
+    assert_eq!(
+        request_fields.get("temp_budget_expiry"),
+        Some(&json_text("2026-05-02T10:00:00.500000+02:00"))
+    );
 }
 
 #[tokio::test]
@@ -112,6 +118,13 @@ async fn metadata_partial_loop_error_logged() {
     let values = result.expect("the request is kept");
     assert_eq!(values.get("metadata"), Some(&JsonData::Null));
     assert_eq!(warnings, vec![PatchWarning::MetadataNotAnObject]);
+    assert_eq!(
+        warnings
+            .iter()
+            .map(|warning| warning.subject())
+            .collect::<Vec<_>>(),
+        vec!["metadata"]
+    );
     assert!(!values.contains_key("end_user_budget_id"));
     assert!(!values.contains_key("enable_prompt_caching"));
     let premium_only = r#"{"key": "tok", "metadata": null, "tags": ["a"]}"#;
@@ -279,6 +292,8 @@ async fn router_revalidation_presence_matrix() {
     let suppressed = update_request(r#"{"key": "tok", "team_id": "t2", "router_settings": null}"#);
     prepared_row(&fixture, &weighted, &suppressed).await;
     prepared_row(&fixture, &plain, &team_change).await;
+    let same_team = update_request(r#"{"key": "tok", "team_id": "t1"}"#);
+    prepared_row(&fixture, &weighted, &same_team).await;
     let no_weights =
         update_request(r#"{"key": "tok", "router_settings": {"allow_retries": true}}"#);
     let values = prepared_row(&fixture, &plain, &no_weights).await;
@@ -528,6 +543,39 @@ fn general_settings_mapping_validation(#[case] document: &str, #[case] mapping: 
     assert!(matches!(outcome, Err(KeyPatchError::GeneralSettings)));
 }
 
+// the statement names only the patch's own keys, and only while they are column names
+#[test]
+fn statement_column_guard() {
+    let statement = update_statement(&object(r#"{"key_alias": "a"}"#)).expect("a statement");
+    assert!(statement.contains("\"key_alias\" = r.\"key_alias\""));
+    let digits = update_statement(&object(r#"{"col1": "a"}"#)).expect("a statement");
+    assert!(digits.contains("\"col1\" = r.\"col1\""));
+    let mut empty = Row::new();
+    empty.insert(String::new(), JsonData::Null);
+    assert!(matches!(
+        update_statement(&empty),
+        Err(KeyPatchError::UnknownColumn { .. })
+    ));
+    let mut spaced = Row::new();
+    spaced.insert(String::from("key alias"), JsonData::Null);
+    assert!(matches!(
+        update_statement(&spaced),
+        Err(KeyPatchError::UnknownColumn { .. })
+    ));
+    let mut upper = Row::new();
+    upper.insert(String::from("Key"), JsonData::Null);
+    assert!(matches!(
+        update_statement(&upper),
+        Err(KeyPatchError::UnknownColumn { .. })
+    ));
+    let mut long = Row::new();
+    long.insert("x".repeat(65), JsonData::Null);
+    assert!(matches!(
+        update_statement(&long),
+        Err(KeyPatchError::UnknownColumn { .. })
+    ));
+}
+
 #[tokio::test]
 async fn soft_transaction_budget_then_key() {
     let database = TestDatabase::start().await;
@@ -588,6 +636,7 @@ async fn object_permission_absent_or_updated() {
 async fn postgres_pinned_rows() {
     let database = TestDatabase::start().await;
     database.seed_budget("budget-1", Some(1.0)).await;
+    database.seed_permission("perm-1").await;
     database
         .seed_key(
             "token-1",
@@ -600,7 +649,10 @@ async fn postgres_pinned_rows() {
     let write = KeyPatchWrite {
         key: "token-1",
         soft_budget: Some(Amount::Finite(Decimal::new(7, 1))),
-        values: object(r#"{"key_alias": "renamed", "metadata": {"team": "t1", "owner": "ops"}}"#),
+        values: object(
+            r#"{"key_alias": "renamed", "object_permission_id": "perm-1",
+                "metadata": {"team": "t1", "owner": "ops"}}"#,
+        ),
         existing_budget_id: Some("budget-1"),
         changed_by: "admin",
         now: instant("2026-05-01T10:00:00.123456Z"),

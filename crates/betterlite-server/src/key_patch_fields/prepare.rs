@@ -149,8 +149,8 @@ async fn validate_router_settings(
         return Ok(());
     }
     let effective = match router_settings {
-        Some(value) if !matches!(value, JsonData::Null) => as_router_settings(value)?,
-        Some(_) | None => stored_router_settings(context.existing)?,
+        Some(JsonData::Null) | None => stored_router_settings(context.existing)?,
+        Some(value) => Some(serde_json::from_value(serde_json::to_value(value)?)?),
     };
     let team_id = if supplied.contains_key("team_id") {
         supplied_team(supplied)
@@ -176,13 +176,6 @@ fn stored_router_settings(
     };
     let value = serde_json::to_value(settings)?;
     Ok(Some(serde_json::from_value(value)?))
-}
-
-fn as_router_settings(value: &JsonData) -> Result<Option<Json>, KeyPatchError> {
-    if matches!(value, JsonData::Null) {
-        return Ok(None);
-    }
-    Ok(Some(serde_json::from_value(serde_json::to_value(value)?)?))
 }
 
 fn validate_model_budget(values: &Row) -> Result<(), KeyPatchError> {

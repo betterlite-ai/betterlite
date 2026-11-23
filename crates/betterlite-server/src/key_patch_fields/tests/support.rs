@@ -325,6 +325,10 @@ pub(super) async fn assert_pinned_rows(database: &TestDatabase, outcome: &KeyPat
     assert_eq!(outcome.token, "token-1");
     assert_eq!(outcome.data.get("key_alias"), Some(&json_text("renamed")));
     assert_eq!(outcome.data.get("budget_id"), Some(&json_text("budget-1")));
+    assert!(matches!(
+        outcome.data.get("object_permission"),
+        Some(JsonData::Object(_))
+    ));
     let budget = database
         .budget_row("budget-1")
         .await

@@ -74,12 +74,11 @@ pub fn requested_end_user_budget_id(request: &KeyRequestBase) -> Option<String> 
         return None;
     };
     match metadata.0.get("end_user_budget_id") {
-        Some(JsonData::String(text)) if !text.is_empty() => Some(text.clone()),
+        Some(JsonData::String(text)) => Some(text.clone()),
         Some(
             JsonData::Null
             | JsonData::Bool(_)
             | JsonData::Number(_)
-            | JsonData::String(_)
             | JsonData::Array(_)
             | JsonData::Object(_),
         )
