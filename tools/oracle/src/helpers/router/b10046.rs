@@ -81,7 +81,10 @@ fn instant(now: u64) -> Result<SystemTime, Box<HelperError>> {
         })
 }
 
-fn to_json<T: Serialize>(value: T) -> HelperResult {
+fn to_json<T>(value: T) -> HelperResult
+where
+    T: Serialize,
+{
     serde_json::to_value(value).map_err(|error| {
         Box::new(HelperError {
             class: "SerializationError".to_owned(),
