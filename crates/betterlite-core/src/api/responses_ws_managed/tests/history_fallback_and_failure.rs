@@ -24,6 +24,7 @@ async fn an_unknown_previous_response_id_is_handed_to_the_provider_without_a_wri
     outcome.unwrap();
     let recorded = support::calls(&shared);
     assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].kwargs.get("stream"), Some(&support::json("true")));
     assert_eq!(
         recorded[0].kwargs.get("previous_response_id"),
         Some(&support::json(r#""missing""#))
