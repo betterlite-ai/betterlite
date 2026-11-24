@@ -226,7 +226,7 @@ class FakeStore:
         self.funnel: dict[str, JsonValue] | None = payload.funnel
         self.rows: Rows = payload.rows
 
-    def list_rows(self, filtered: bool, args: Sequence[object]) -> Sequence[Mapping[str, object]]:
+    def list_rows(self, args: Sequence[object], *, filtered: bool) -> Sequence[Mapping[str, object]]:
         limit = _INT.validate_python(args[0])
         target: tuple[TargetType, str] | None = None
         if filtered:
@@ -287,7 +287,7 @@ class FakeDb:
 
     async def query_raw(self, query: str, *args: object) -> Sequence[Mapping[str, object]]:
         if "ORDER BY MAX(created_at) DESC LIMIT $1::int" in query:
-            return self.store.list_rows("target_type = $2" in query, args)
+            return self.store.list_rows(args, filtered="target_type = $2" in query)
         rows = self.store.static_rows(query, args)
         if rows is None:
             raise ProbeError("invalid_request", "the fake database cannot run this statement")
@@ -381,10 +381,7 @@ async def outcome(store: FakeStore, step: Step) -> StepOutcome:
 
 
 async def scenario(store: FakeStore, steps: Sequence[Step]) -> Output:
-    outcomes: list[StepOutcome] = []
-    for step in steps:
-        outcomes.append(await outcome(store, step))
-    return Output(steps=outcomes)
+    return Output(steps=[await outcome(store, step) for step in steps])
 
 
 class ShadowEvalResults(Operation):

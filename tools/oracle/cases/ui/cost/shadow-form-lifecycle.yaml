@@ -188,6 +188,9 @@ steps:
         - {pointer: /1/job_id, why: each proxy mints its own job id}
         - {pointer: /1/created_at, why: each proxy stamps its own creation time}
         - {pointer: /1/ends_at, why: ends_at follows each proxy's creation time}
+        - {pointer: /1/targets/0/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /1/targets/1/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /1/targets/2/stopped_at, why: each proxy stamps its own stop time}
   - request:
       method: POST
       path: /auto_router/shadow_eval/start
