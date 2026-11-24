@@ -1,0 +1,35 @@
+kind: helper
+name: speed-non-string-is-none
+call:
+  b3630:
+    routes: []
+    tags: []
+    models: []
+    ids: []
+    costing: []
+    speeds:
+      - request_body: null
+      - request_body: {}
+      - request_body:
+          speed: "fast"
+      - request_body:
+          speed: ""
+      - request_body:
+          speed: "  "
+      - request_body:
+          speed: 1
+      - request_body:
+          speed: true
+      - request_body:
+          speed: null
+      - request_body:
+          speed:
+            - "fast"
+      - request_body:
+          speed:
+            value: "fast"
+      - request_body:
+          model: "m"
+env: {}
+compare:
+  ignore: []

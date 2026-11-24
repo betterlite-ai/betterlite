@@ -1,0 +1,48 @@
+kind: helper
+name: existing-rate-headers-win
+call:
+  model_group_usage:
+    {
+      "function": "response",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/gpt-4o"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group": "g",
+      "now": 3660,
+      "group_info": {
+        "tpm": null,
+        "rpm": 100,
+        "itpm": null,
+        "otpm": null
+      },
+      "cache": {
+        "mode": "values",
+        "values": [
+          0,
+          3
+        ]
+      },
+      "response": {
+        "id": "r",
+        "_hidden_params": {
+          "additional_headers": {
+            "x-ratelimit-remaining-requests": "keep"
+          }
+        }
+      },
+      "request_kwargs": null,
+      "metadata": null,
+      "litellm_metadata": null,
+      "team_id": null,
+      "candidates": null
+    }
+env: {}
+compare: {ignore: []}
