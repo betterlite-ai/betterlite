@@ -37,8 +37,7 @@ class ContainerConfig(Protocol):
     def get_supported_openai_params(self) -> list[str]: ...
 
     def map_openai_params(
-        self, container_create_optional_params: Mapping[str, JsonValue],  # ast-grep-ignore: no-long-names
-        *, drop_params: bool,
+        self, params: Mapping[str, JsonValue], *, drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
 
@@ -62,7 +61,7 @@ def segment(value: str) -> str | None:
     return value
 
 
-# ResponsesAPIRequestUtils._decode_container_id: a plain id answers itself, an unreadable one keeps it
+# ResponsesAPIRequestUtils._decode_container_id: a plain id answers itself; a bad one keeps it
 def decode_container_id(container_id: str) -> DecodedResponseId:
     if not container_id.startswith(PREFIX):
         return id_parts(None, None, container_id)
@@ -136,14 +135,13 @@ def get_optional_params_container_create(  # ast-grep-ignore: no-long-names
     container_create_optional_params: CreateParams,  # ast-grep-ignore: no-long-names
 ) -> dict[str, JsonValue]:
     supported = container_provider_config.get_supported_openai_params()
+    params = container_create_optional_params  # ast-grep-ignore: no-long-names
     filtered = {
         name: JSON.validate_python(value)
-        for name, value in container_create_optional_params.items()  # ast-grep-ignore: no-long-names
+        for name, value in params.items()
         if name in supported
     }
-    return container_provider_config.map_openai_params(
-        container_create_optional_params=filtered, drop_params=False,
-    )
+    return container_provider_config.map_openai_params(filtered, drop_params=False)
 
 
 def model_id_of(metadata: Mapping[str, JsonValue]) -> str | None:
