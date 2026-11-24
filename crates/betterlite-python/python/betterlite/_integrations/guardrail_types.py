@@ -183,6 +183,5 @@ OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonVal
 SETTINGS: Final[TypeAdapter[SettingsJson]] = TypeAdapter(SettingsJson)
 LOG_TARGET: Final[TypeAdapter[LogTarget | None]] = TypeAdapter(LogTarget | None)
 REQUEST: Final[TypeAdapter[RequestData]] = TypeAdapter(RequestData)
-ADMIN: Final[TypeAdapter[AdminMetadata]] = TypeAdapter(AdminMetadata)
 BUCKET: Final[TypeAdapter[dict[str, JsonValue] | None]] = TypeAdapter(dict[str, JsonValue] | None)
 LISTS: Final[TypeAdapter[list[JsonValue] | None]] = TypeAdapter(list[JsonValue] | None)

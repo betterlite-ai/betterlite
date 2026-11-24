@@ -44,7 +44,10 @@ class GuardrailSelection(GuardrailState):
         return admin_metadata(data)
 
     def get_disable_global_guardrail(self, data: dict[str, JsonValue]) -> bool | None:
-        return self._get_admin_metadata(data).get("disable_global_guardrails", False)
+        admin = self._get_admin_metadata(data)
+        if "disable_global_guardrails" not in admin:
+            return False
+        return admin.get("disable_global_guardrails")
 
     # ast-grep-ignore: no-long-names
     def get_opted_out_global_guardrails_from_metadata(
@@ -99,7 +102,8 @@ class GuardrailSelection(GuardrailState):
             bucket = BUCKET.validate_python(data.get(bucket_name))
             if bucket is None:
                 continue
-            executed = LISTS.validate_python(bucket.get(bucket_key)) or []
+            existing = LISTS.validate_python(bucket.get(bucket_key))
+            executed: list[JsonValue] = [] if existing is None else existing
             if marker not in executed:
                 executed.append(marker)
             bucket[bucket_key] = executed

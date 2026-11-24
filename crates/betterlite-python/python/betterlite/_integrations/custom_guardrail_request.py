@@ -10,7 +10,6 @@ from betterlite._integrations.custom_guardrail_support import (
 )
 from betterlite._integrations.custom_logger_types import LiteLLMLoggingObj
 from betterlite._integrations.guardrail_types import (
-    ADMIN,
     BUCKET,
     OBJECT,
     REQUEST,
@@ -25,34 +24,36 @@ from betterlite.exceptions._process import (
 )
 
 
-def project_mapping(mapping: dict[str, JsonValue] | None) -> dict[str, JsonValue] | None:
-    if mapping is None:
-        return None
-    return {name: json_projection(item) for name, item in mapping.items()}
+def project_mapping(value: JsonValue) -> dict[str, JsonValue] | None:
+    match value:
+        case dict():
+            return {name: json_projection(item) for name, item in value.items()}
+        case str() | bool() | int() | float() | list() | None:
+            return None
+
+
+def live_views(logging_obj: LiteLLMLoggingObj) -> tuple[JsonValue, JsonValue]:
+    # ast-grep-ignore: no-reflection
+    live: JsonValue = getattr(logging_obj, "litellm_params", None)
+    # ast-grep-ignore: no-reflection
+    details: dict[str, JsonValue] | None = getattr(logging_obj, "model_call_details", None)
+    return live, None if details is None else details.get("litellm_params")
 
 
 def log_target_json(logging_obj: LiteLLMLoggingObj | None) -> LogTarget | None:
     if logging_obj is None:
         return None
-    # ast-grep-ignore: no-reflection
-    params: dict[str, JsonValue] | None = getattr(logging_obj, "litellm_params", None)
-    # ast-grep-ignore: no-reflection
-    call: dict[str, JsonValue] | None = getattr(logging_obj, "model_call_details", None)
-    nested = None if call is None else call.get("litellm_params")
+    live, nested = live_views(logging_obj)
     return LogTarget(
-        litellm_params=project_mapping(params),
-        model_call_params=project_mapping(BUCKET.validate_python(nested)),
+        litellm_params=project_mapping(live),
+        model_call_params=project_mapping(nested),
     )
 
 
 def apply_log_target(logging_obj: LiteLLMLoggingObj | None, target: LogTarget | None) -> None:
     if logging_obj is None or target is None:
         return
-    # ast-grep-ignore: no-reflection
-    live: JsonValue = getattr(logging_obj, "litellm_params", None)
-    # ast-grep-ignore: no-reflection
-    details: dict[str, JsonValue] | None = getattr(logging_obj, "model_call_details", None)
-    nested = None if details is None else details.get("litellm_params")
+    live, nested = live_views(logging_obj)
     for view, params in ((live, target["litellm_params"]), (nested, target["model_call_params"])):
         metadata = None if params is None else params.get("metadata")
         if metadata is None:
@@ -106,7 +107,10 @@ def admin_metadata(data: Mapping[str, JsonValue]) -> AdminMetadata:
             continue
         team = bucket.get("user_api_key_team_metadata") or team
         key = bucket.get("user_api_key_metadata") or key
-    return ADMIN.validate_python({**team, **key})
+    merged: AdminMetadata = {}
+    merged.update(team)
+    merged.update(key)
+    return merged
 
 
 def is_guardrail_intervention(e: Exception) -> bool:
