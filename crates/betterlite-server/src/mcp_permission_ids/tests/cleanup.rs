@@ -59,17 +59,19 @@ fn sentinel_survives_without_resolving() {
 #[test]
 fn non_string_server_entries_error() {
     let mut first = json(r#"{"mcp_servers": [7, "ok"]}"#);
-    let error = drop_stale_object_permission_mcp_identifiers(&mut first, &identifier_sets(&[]))
-        .expect_err("a number is not a server identifier");
+    let number_error =
+        drop_stale_object_permission_mcp_identifiers(&mut first, &identifier_sets(&[]))
+            .expect_err("a number is not a server identifier");
     assert!(matches!(
-        error,
+        number_error,
         GrantCleanupError::ServerIdentifier { index: 0 }
     ));
     let mut second = json(r#"{"mcp_servers": ["ok", null]}"#);
-    let error = drop_stale_object_permission_mcp_identifiers(&mut second, &identifier_sets(&[]))
-        .expect_err("null is not a server identifier");
+    let null_error =
+        drop_stale_object_permission_mcp_identifiers(&mut second, &identifier_sets(&[]))
+            .expect_err("null is not a server identifier");
     assert!(matches!(
-        error,
+        null_error,
         GrantCleanupError::ServerIdentifier { index: 1 }
     ));
 }

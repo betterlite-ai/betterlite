@@ -75,20 +75,20 @@ fn mcp_tool_json_limits() {
     assert_eq!(grants.len(), 1_usize);
     let mut over_limit = at_limit.into_bytes();
     over_limit.push(b'}');
-    let refused =
+    let too_large =
         decode_mcp_tool_grants_json(&over_limit).expect_err("a byte over the limit is refused");
     assert!(matches!(
-        refused,
+        too_large,
         McpToolGrantsJsonError::Bounded(PrivateJsonError::TooLarge(len, MAX_JSON_BYTES))
             if len == over_limit.len()
     ));
     let at_depth = nested_array_grant(MAX_JSON_DEPTH.saturating_sub(1));
     drop(decode_mcp_tool_grants_json(at_depth.as_bytes()).expect("the depth limit is inclusive"));
     let too_deep = nested_array_grant(MAX_JSON_DEPTH);
-    let refused = decode_mcp_tool_grants_json(too_deep.as_bytes())
+    let too_deep_error = decode_mcp_tool_grants_json(too_deep.as_bytes())
         .expect_err("a level over the depth limit is refused");
     assert!(matches!(
-        refused,
+        too_deep_error,
         McpToolGrantsJsonError::Bounded(PrivateJsonError::TooDeep(MAX_JSON_DEPTH))
     ));
 }
