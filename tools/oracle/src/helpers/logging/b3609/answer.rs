@@ -30,6 +30,26 @@ pub(super) fn answer(
     let (route_calls, route_bytes) = route_summary(recorder);
     let result = outcome(driven);
     let completion = completion_start(logging_obj);
+    let failures: Vec<Value> = recorder
+        .failures
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(|failure| {
+            json!({
+                "class": failure.class,
+                "message": failure.message,
+                "traceback_tail": failure.traceback.lines().last().unwrap_or_default(),
+            })
+        })
+        .collect();
+    let started: Vec<Value> = recorder
+        .started
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(|(run_id, at)| json!([run_id, at.to_rfc3339()]))
+        .collect();
     json!({
         "yielded": driven.yielded,
         "outcome": result,
@@ -39,9 +59,9 @@ pub(super) fn answer(
         "route_raw_bytes": route_bytes,
         "queued_jobs": driven.queued_jobs,
         "deferred_jobs": driven.deferred_jobs,
-        "failures": failures(recorder),
+        "failures": failures,
         "partial_usage": partial_usage(&details),
-        "tinyfish_started": tinyfish_started(recorder),
+        "tinyfish_started": started,
         "tinyfish_scans": *recorder
             .scans
             .lock()
@@ -79,32 +99,6 @@ fn route_summary(recorder: &Recorder) -> (usize, Option<Vec<Vec<u8>>>) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     (routes.len(), routes.first().cloned())
-}
-
-fn failures(recorder: &Recorder) -> Vec<Value> {
-    recorder
-        .failures
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .map(|failure| {
-            json!({
-                "class": failure.class,
-                "message": failure.message,
-                "traceback_tail": failure.traceback.lines().last().unwrap_or_default(),
-            })
-        })
-        .collect()
-}
-
-fn tinyfish_started(recorder: &Recorder) -> Vec<Value> {
-    recorder
-        .started
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .map(|(run_id, at)| json!([run_id, at.to_rfc3339()]))
-        .collect()
 }
 
 fn partial_usage(details: &IndexMap<String, Json>) -> Option<Value> {
