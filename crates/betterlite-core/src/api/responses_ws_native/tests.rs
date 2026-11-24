@@ -364,8 +364,17 @@ async fn assert_logged_metadata() {
         litellm_metadata.get("metadata"),
         Some(&Json::Object(object(r#"{"trace":"t1"}"#)))
     );
+    assert_eq!(
+        litellm_metadata.get("litellm_metadata"),
+        Some(&Json::Object(object(r#"{"trace":"t1"}"#)))
+    );
     let empty_litellm_metadata = logged_params(r#"{"litellm_metadata":{}}"#).await;
     assert_eq!(empty_litellm_metadata.get("metadata"), Some(&Json::Null));
+    let absent_litellm_metadata = logged_params("{}").await;
+    assert_eq!(
+        absent_litellm_metadata.get("litellm_metadata"),
+        Some(&Json::Null)
+    );
     let mut residency = Entry::new();
     residency.resolution.api_base = Some(String::from("https://eu.api.openai.com/v1"));
     residency.request().await;
@@ -417,6 +426,13 @@ async fn credential_fallbacks() -> Vec<Option<String>> {
         env.api_key,
         none.api_key,
     ]
+}
+
+async fn recorded_user() -> Option<String> {
+    let mut entry = Entry::new();
+    entry.kwargs = object(r#"{"user":"alice"}"#);
+    entry.request().await;
+    lock(&entry.logging.updates)[0].user.clone()
 }
 
 async fn routing_prefix_is_stripped() -> (String, String) {
@@ -483,6 +499,7 @@ async fn metadata_and_credentials() {
     let (forwarded_model, logged_model) = routing_prefix_is_stripped().await;
     assert_eq!(forwarded_model, "gpt-4o");
     assert_eq!(logged_model, "gpt-4o");
+    assert_eq!(recorded_user().await.as_deref(), Some("alice"));
     assert_eq!(
         api_base_precedence().await,
         vec![
