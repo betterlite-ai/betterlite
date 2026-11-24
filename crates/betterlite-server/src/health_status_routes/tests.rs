@@ -36,7 +36,9 @@ fn convert_returns_the_twelve_keys_in_litellm_order() {
     );
     assert_eq!(
         converted.get("response_time_ms"),
-        Some(&Json::Number(Number::from(12.5_f64)))
+        Some(&Json::Number(
+            Number::from_f64(12.5_f64).expect("a finite float")
+        ))
     );
     assert_eq!(
         converted.get("health_check_id"),
