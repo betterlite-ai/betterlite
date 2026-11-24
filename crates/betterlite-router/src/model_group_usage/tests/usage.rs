@@ -253,6 +253,22 @@ fn null_model_list_skips_the_cache() {
     assert!(cache.batches().is_empty());
 }
 
+#[test]
+fn a_missing_batch_answer_gives_no_usage() {
+    let rows = [deployment("group", "a", "openai/gpt-4o")];
+    let cache = FakeCache::answering(None);
+    let usage = runtime()
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
+        .expect("the usage read");
+    assert_eq!(usage, (None, None));
+    assert_eq!(cache.batches().len(), 1);
+}
+
 #[rstest]
 #[case::shorter_than_the_first_side(vec![Some(number(5))], (Some(5), None))]
 #[case::split_across_a_short_answer(

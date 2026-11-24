@@ -1,5 +1,6 @@
 use rstest::rstest;
 
+use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_group_lookups::access_groups::AccessGroups;
 use crate::model_group_lookups::error::AccessGroupError;
 use crate::model_group_usage::access_filter::filter_by_access_groups;
@@ -112,6 +113,21 @@ fn direct_and_wildcard_grants_bypass_the_filter(#[case] models: &[&str]) {
         filtered_ids(request, &AccessGroups::default(), &world),
         ["a", "b"]
     );
+}
+
+#[test]
+fn no_candidates_come_back_untouched() {
+    let candidates: [DeploymentSpec; 0] = [];
+    let world = World::new(&candidates);
+    let principal = grants(&["beta"], &[]);
+    let request = AccessFilterRequest {
+        model: "group",
+        deployments: &candidates,
+        metadata: Some(&principal),
+        litellm_metadata: None,
+        team_id: None,
+    };
+    assert!(filtered_ids(request, &AccessGroups::default(), &world).is_empty());
 }
 
 #[rstest]
