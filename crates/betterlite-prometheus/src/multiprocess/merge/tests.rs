@@ -465,8 +465,8 @@ fn fails_on_a_bucket_bound_that_is_not_a_float() {
     );
     let error = merge(&[path]).unwrap_err();
     assert!(matches!(
-        error,
-        MultiprocessError::InvalidBucketBound { ref bound } if bound == "abc"
+        &error,
+        MultiprocessError::InvalidBucketBound { bound } if bound == "abc"
     ));
     assert_eq!(error.to_string(), "the bucket bound abc is not a float");
 }
@@ -489,8 +489,8 @@ fn fails_on_an_unknown_metric_type() {
     );
     let error = merge(&[path]).unwrap_err();
     assert!(matches!(
-        error,
-        MultiprocessError::InvalidType { ref kind } if kind == "info"
+        &error,
+        MultiprocessError::InvalidType { kind } if kind == "info"
     ));
     assert_eq!(error.to_string(), "Invalid metric type: info");
 }
@@ -505,8 +505,8 @@ fn fails_on_a_metric_name_that_is_not_an_identifier() {
     );
     let error = merge(&[path]).unwrap_err();
     assert!(matches!(
-        error,
-        MultiprocessError::InvalidName { ref name } if name == "1bad"
+        &error,
+        MultiprocessError::InvalidName { name } if name == "1bad"
     ));
     assert_eq!(error.to_string(), "Invalid metric name: 1bad");
 }
