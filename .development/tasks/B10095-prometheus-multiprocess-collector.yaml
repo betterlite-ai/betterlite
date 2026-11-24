@@ -31,6 +31,7 @@ description: >-
   Oracle. Helper cases on the b10095 operation; no route reaches this code yet. A case lists files in order, each a name such as counter_1001.db or gauge_livesum_1002.db with its entries (metric name, sample name, labels, help, value, timestamp), and a call: merge, or scrape with an accept header. The Python side writes each file into a fresh temporary folder with prometheus_client.mmap_dict.MmapedDict and mmap_key, then answers merge with MultiProcessCollector.merge over the files' paths, and scrape with LiteLLM's render_scrape over a CollectorRegistry() holding a MultiProcessCollector and parse_scrape_request(accept, "", []). The Rust side writes the same files with encode_db_file into its own folder and runs this task's code. Both answer the used part of each file as hex. Directory order differs between two folders, so both sort the families by name and the samples inside each family by name and labels, and a scrape answer is split into family blocks at each `# HELP` line, sorted by name, with the sample lines of each block sorted. Add tempfile to tools/oracle/src/helpers/prometheus/Cargo.toml and helper_case corpus seeds named prometheus-multiprocess-*.
 scope:
   paths:
+    - "tools/oracle/helpers/typos.toml"
     - crates/betterlite-prometheus/src/multiprocess.rs
     - crates/betterlite-prometheus/src/multiprocess/**
     - crates/betterlite-prometheus/src/scrape_endpoint.rs
