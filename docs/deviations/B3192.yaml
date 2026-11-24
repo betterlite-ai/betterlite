@@ -32,6 +32,14 @@ deviations:
       and every fetch failure still takes the bundled fallback.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L505-L515
   - what: >-
+      A null litellm_settings.autorouter_presets_url counts as absent, so the environment URL or the built-in default
+      applies, where LiteLLM's settings loop assigns None to litellm.autorouter_presets_url and the fetch then fails
+      into the bundled catalog.
+    why: >-
+      docs/compatibility.md makes an absent or null config value take the default, and betterlite's other public URL
+      sections read a null key the same way. Only a config that spells the key with no value sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6303
+  - what: >-
       When the bundled catalog cannot be decoded, the endpoint answers 500 with betterlite's JSON error envelope where
       LiteLLM's unhandled exception leaves Starlette's plain-text "Internal Server Error".
     why: >-
