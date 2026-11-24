@@ -12,7 +12,7 @@ use betterlite_server::model_info_scope::teams::TeamScope;
 use super::records::Input;
 
 #[derive(Default)]
-struct CaseReads {
+pub(super) struct CaseReads {
     creators: BTreeMap<String, Option<String>>,
     user_id: Option<String>,
     user: Option<UserScope>,
