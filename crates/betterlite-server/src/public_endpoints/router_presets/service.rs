@@ -26,6 +26,7 @@ impl<Client> AutorouterPresetService<Client>
 where
     Client: Transport,
 {
+    #[must_use]
     pub fn new(client: Client, settings: Settings) -> Self {
         Self {
             client,
@@ -44,8 +45,8 @@ where
         }
         // one resolution per process: a later caller waits here and takes the first answer instead of fetching too
         let _fetching = self.fetch_lock.lock().await;
-        let cached = self.cache.lock().await.clone();
-        if let Some(presets) = cached {
+        let filled = self.cache.lock().await.clone();
+        if let Some(presets) = filled {
             return Ok(presets);
         }
         let catalog = Arc::new(self.resolve().await?);

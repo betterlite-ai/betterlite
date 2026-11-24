@@ -13,7 +13,7 @@ pub struct ComplexityScorerDefaults {
     pub dimension_weights: BTreeMap<String, f64>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TokenThresholds {
     pub simple: i64,
     pub complex: i64,

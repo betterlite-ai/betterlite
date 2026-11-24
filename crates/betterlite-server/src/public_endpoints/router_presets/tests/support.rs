@@ -104,8 +104,8 @@ impl Transport for Script {
 
 pub(super) fn settings(url: &str, local_only: bool) -> Settings {
     Settings {
-        url: url.to_owned(),
         local_only,
+        url: url.to_owned(),
     }
 }
 

@@ -6,7 +6,7 @@ use betterlite_config::sections::public_router_presets::Settings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_router::fuse_presets::get_fuse_presets;
 use betterlite_server::public_endpoints::router_presets::catalog::PresetCatalog;
@@ -79,8 +79,8 @@ fn autorouter_answer(
 ) -> HelperResult {
     let script = Script::new(responses);
     let settings = Settings {
-        url: url.to_owned(),
         local_only,
+        url: url.to_owned(),
     };
     let service = AutorouterPresetService::new(script.clone(), settings);
     let runtime = Builder::new_current_thread().build()?;
