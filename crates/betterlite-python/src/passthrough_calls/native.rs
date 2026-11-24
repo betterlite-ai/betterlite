@@ -33,7 +33,7 @@ impl NativePassthroughSession {
         let args = call_args(request, &mut blobs).map_err(PyErr::from)?;
         let reply = py
             .detach(|| get_runtime().block_on(self.core.call(args)))
-            .map_err(native_error)?;
+            .map_err(|error| native_error(*error))?;
         answer(py, reply)
     }
 
@@ -47,7 +47,10 @@ impl NativePassthroughSession {
         let args = call_args(request, &mut blobs).map_err(PyErr::from)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let reply = core.call(args).await.map_err(native_error)?;
+            let reply = core
+                .call(args)
+                .await
+                .map_err(|error| native_error(*error))?;
             Python::attach(|attached| answer(attached, reply))
         })
     }

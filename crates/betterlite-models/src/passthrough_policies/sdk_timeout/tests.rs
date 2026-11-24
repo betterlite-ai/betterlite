@@ -70,8 +70,8 @@ fn an_absent_or_null_timeout_level_is_unset() {
 
 #[test]
 fn a_number_timeout_level_keeps_its_seconds() {
-    let fraction = timeout_value(Some(&json!(12.5)));
-    let whole = timeout_value(Some(&json!(30)));
+    let fraction = timeout_value(Some(&json!(12.5_f64)));
+    let whole = timeout_value(Some(&json!(30_i32)));
     assert_eq!(fraction, Some(number(12.5_f64)));
     assert_eq!(whole, Some(number(30.0_f64)));
 }
@@ -92,8 +92,8 @@ fn a_text_timeout_level_keeps_its_text() {
 
 #[test]
 fn a_list_or_object_timeout_level_stays_its_json_text() {
-    let list = timeout_value(Some(&json!([1, 2])));
-    let object = timeout_value(Some(&json!({"a": 1})));
+    let list = timeout_value(Some(&json!([1_i32, 2_i32])));
+    let object = timeout_value(Some(&serde_json::from_str(r#"{"a": 1}"#).unwrap()));
     assert_eq!(list, Some(text("[1,2]")));
     assert_eq!(object, Some(text(r#"{"a":1}"#)));
 }

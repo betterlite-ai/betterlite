@@ -81,7 +81,7 @@ pub(crate) fn encode_arn(endpoint: &str) -> String {
 // resolve_pass_through_request_timeout: the endpoint's own timeout, else the 600 second default.
 #[pyfunction]
 // ast-grep-ignore: no-one-line-functions - a pyfunction's only call site is Python, which cannot call the policy
-pub(crate) fn resolve_passthrough_timeout(endpoint_timeout: Option<f64>) -> f64 {
+pub(crate) const fn resolve_passthrough_timeout(endpoint_timeout: Option<f64>) -> f64 {
     resolve_generic(endpoint_timeout, DEFAULT_TIMEOUT_SECONDS)
 }
 

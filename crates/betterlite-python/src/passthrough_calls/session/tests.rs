@@ -33,7 +33,7 @@ fn call_once(core: &SessionCore, request: &str) -> Result<PassthroughReplyWire, 
             headers: reply.headers,
             body: reply.body,
         }),
-        Err(error) => Err(error),
+        Err(error) => Err(*error),
     }
 }
 
@@ -77,7 +77,9 @@ fn call_reports_an_upstream_error_with_its_status_and_body() {
     let answer = reply("404 Not Found", &[], r#"{"error": "missing"}"#);
     let serving = serve(answer, Duration::ZERO).unwrap();
     let core = SessionCore::build(ENVIRONMENT).unwrap();
-    let error = call_once(&core, &vllm_request(&serving.address, false)).unwrap_err();
+    let error = call_once(&core, &vllm_request(&serving.address, false))
+        .err()
+        .unwrap();
     assert_eq!(error.kind, "APIError");
     assert_eq!(error.status_code, Some(404));
     assert_eq!(error.message, r#"{"error": "missing"}"#);
@@ -88,7 +90,7 @@ fn call_reports_an_upstream_error_with_its_status_and_body() {
 fn call_refuses_a_model_no_provider_serves() {
     let request = r#"{"method": "GET", "endpoint": "models", "model": "unknown-model"}"#;
     let core = SessionCore::build(ENVIRONMENT).unwrap();
-    let error = call_once(&core, request).unwrap_err();
+    let error = call_once(&core, request).err().unwrap();
     assert_eq!(error.kind, "BadRequestError");
     assert_eq!(error.status_code, Some(400));
 }
@@ -101,7 +103,7 @@ fn build_reads_the_session_environment() {
 
 #[test]
 fn build_refuses_a_text_that_is_not_a_session() {
-    let error = SessionCore::build("not a session").unwrap_err();
+    let error = SessionCore::build("not a session").err().unwrap();
     assert!(matches!(error, SessionError::Json(_)));
 }
 

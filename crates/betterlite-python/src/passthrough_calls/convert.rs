@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::api::passthrough_call::{PassthroughCallArgs, PassthroughUpload};
 use betterlite_models::decisions::Json;
@@ -248,7 +250,7 @@ fn pairs(headers: &[(String, String)]) -> IndexMap<String, String> {
 
 // the class keeps the upstream body as text; bytes that are not UTF-8 have no text form
 fn body_text(body: &[u8]) -> String {
-    match std::str::from_utf8(body) {
+    match from_utf8(body) {
         Ok(text) => text.to_owned(),
         Err(_invalid) => format!(
             "the upstream answered with {} bytes of non-UTF-8 body",

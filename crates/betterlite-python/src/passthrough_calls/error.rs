@@ -45,7 +45,7 @@ impl From<HelperError> for PyErr {
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         if let SessionError::Json(wire) = error {
-            return PyErr::from(wire);
+            return Self::from(wire);
         }
         PyRuntimeError::new_err(error.to_string())
     }

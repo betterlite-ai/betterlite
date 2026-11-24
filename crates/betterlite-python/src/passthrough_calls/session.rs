@@ -77,13 +77,13 @@ impl SessionCore {
     pub(crate) async fn call(
         &self,
         args: PassthroughCallArgs,
-    ) -> Result<PassthroughReply, ErrorPayload> {
+    ) -> Result<PassthroughReply, Box<ErrorPayload>> {
         let model = args.model.clone();
         let provider = args.custom_llm_provider.clone().unwrap_or_default();
         let mut logging = logging_state(&model)?;
         allm_passthrough_route(args, &mut logging, &self.client)
             .await
-            .map_err(|error| failure(&error, &provider, &model))
+            .map_err(|error| Box::new(failure(&error, &provider, &model)))
     }
 }
 
@@ -96,12 +96,12 @@ fn failure(error: &PassthroughCallError, provider: &str, model: &str) -> ErrorPa
             body,
         } => ErrorPayload::upstream(*status, headers, body),
         PassthroughCallError::ProviderNotFound(name) => ErrorPayload::provider_not_found(name),
-        PassthroughCallError::Resolution(error) => {
-            ErrorPayload::failed(BAD_REQUEST, Some(BAD_REQUEST_STATUS), error.to_string())
+        PassthroughCallError::Resolution(reason) => {
+            ErrorPayload::failed(BAD_REQUEST, Some(BAD_REQUEST_STATUS), reason.to_string())
         }
-        PassthroughCallError::Mapped(error) => ErrorPayload::provider(error, provider, model),
-        PassthroughCallError::Transport(error) => {
-            ErrorPayload::failed(API_ERROR, Some(SYNTHESIZED_STATUS), error.to_string())
+        PassthroughCallError::Mapped(mapped) => ErrorPayload::provider(mapped, provider, model),
+        PassthroughCallError::Transport(transport) => {
+            ErrorPayload::failed(API_ERROR, Some(SYNTHESIZED_STATUS), transport.to_string())
         }
         PassthroughCallError::Routing { status, message } => {
             ErrorPayload::routing(*status, message)
@@ -110,9 +110,13 @@ fn failure(error: &PassthroughCallError, provider: &str, model: &str) -> ErrorPa
 }
 
 // the logging state the proxy hands the route in kwargs, built here from the call alone
-pub(crate) fn logging_state(model: &str) -> Result<LoggingState, ErrorPayload> {
+pub(crate) fn logging_state(model: &str) -> Result<LoggingState, Box<ErrorPayload>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
-        ErrorPayload::failed(API_ERROR, Some(SYNTHESIZED_STATUS), error.to_string())
+        Box::new(ErrorPayload::failed(
+            API_ERROR,
+            Some(SYNTHESIZED_STATUS),
+            error.to_string(),
+        ))
     })?;
     let mut context = CorrelationContext::default();
     let setup = CorrelationSetup {
@@ -128,7 +132,13 @@ pub(crate) fn logging_state(model: &str) -> Result<LoggingState, ErrorPayload> {
         || Uuid::new_v4().to_string(),
         clock,
     )
-    .map_err(|error| ErrorPayload::failed(API_ERROR, Some(SYNTHESIZED_STATUS), error.to_string()))
+    .map_err(|error| {
+        Box::new(ErrorPayload::failed(
+            API_ERROR,
+            Some(SYNTHESIZED_STATUS),
+            error.to_string(),
+        ))
+    })
 }
 
 fn logging_init(model: &str) -> LoggingInit {
