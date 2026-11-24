@@ -223,10 +223,11 @@ async fn the_database_store_creates_and_updates_the_cyberark_row() {
         value(r#"{"cyberark_account": "first"}"#)
     );
     let client = pool.get().await.unwrap();
-    client
+    let seeded = client
         .execute(SEED_UPDATED_AT_SQL, &[&"cyberark"])
         .await
         .unwrap();
+    assert_eq!(seeded, 1);
     drop(client);
     store
         .upsert_config_override("cyberark", r#"{"cyberark_account": "second"}"#)
