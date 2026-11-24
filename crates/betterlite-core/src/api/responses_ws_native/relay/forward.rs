@@ -22,7 +22,15 @@ use crate::api::responses_ws_native::error::WsNativeError;
 use crate::api::responses_ws_native::request::json_object;
 use crate::cost::realtime::error::RealtimeCostError;
 
-pub(super) type BackendEnd = String;
+#[derive(Debug, Error)]
+pub(super) enum BackendEnd {
+    #[error(transparent)]
+    Event(WsNativeError),
+    #[error("{0}")]
+    Text(String),
+    #[error("the backend does not accept the decode argument")]
+    UnsupportedDecode,
+}
 
 #[derive(Debug, Error)]
 pub(super) enum ClientRelayError {
@@ -70,22 +78,22 @@ where
                 let wrapped = {
                     let request_data = self.request_data.lock().await;
                     let unmasked = unmask_response_event(&policy, &request_data, &text)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| BackendEnd::Text(error.to_string()))?;
                     let masked = mask_response_completed(&policy, &request_data, &unmasked)
                         .await
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| BackendEnd::Text(error.to_string()))?;
                     drop(request_data);
                     self.wrap_response_event(&masked)
-                        .map_err(|error| error.to_string())?
+                        .map_err(BackendEnd::Event)?
                 };
                 self.store_event(&wrapped)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(BackendEnd::Event)?;
                 self.setup
                     .websocket
                     .send_text(&wrapped)
                     .await
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| BackendEnd::Text(error.to_string()))?;
             }
             Ok(())
         }
@@ -149,7 +157,7 @@ where
                 ResponsesWebSocketMessage::Text(text) => text,
                 ResponsesWebSocketMessage::Bytes(bytes) => match String::from_utf8(bytes) {
                     Ok(text) => text,
-                    Err(error) => return Err(error.to_string()),
+                    Err(error) => return Err(BackendEnd::Text(error.to_string())),
                 },
             };
             let guarded = !self
@@ -157,7 +165,7 @@ where
                 .output_guardrail_callbacks
                 .unwrap_or_default()
                 .is_empty();
-            if !guarded || !output_dropped(&text).map_err(|error| error.to_string())? {
+            if !guarded || !output_dropped(&text).map_err(BackendEnd::Event)? {
                 return Ok(Some(text));
             }
         }
@@ -206,10 +214,10 @@ where
     Source: Error + 'static,
 {
     match error {
-        BackendError::UnsupportedDecode => {
-            String::from("the backend does not accept the decode argument")
+        BackendError::UnsupportedDecode => BackendEnd::UnsupportedDecode,
+        BackendError::Closed(source) | BackendError::Failed(source) => {
+            BackendEnd::Text(source.to_string())
         }
-        BackendError::Closed(source) | BackendError::Failed(source) => source.to_string(),
     }
 }
 
