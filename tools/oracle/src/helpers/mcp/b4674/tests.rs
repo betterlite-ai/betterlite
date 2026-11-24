@@ -42,22 +42,22 @@ fn seed_name(path: &Path) -> bool {
 fn every_oracle_case_decodes_into_the_helper_input() {
     let cases = cases("cases/helpers/mcp-gateway-dcr");
     assert_eq!(cases.len(), 15);
-    cases.into_iter().for_each(|(path, case)| {
+    for (path, case) in cases {
         validate_helper(&path, &case).unwrap();
         assert_eq!(case.call.operation, "b4674");
         check_helper_calls(&path, &case, &[crate::GROUP]).unwrap();
-    });
+    }
 }
 
 #[test]
 fn every_helper_seed_decodes_into_the_helper_input() {
     let seeds = seed_cases();
     assert!(!seeds.is_empty());
-    seeds.into_iter().for_each(|(path, case)| {
+    for (path, case) in seeds {
         validate_helper(&path, &case).unwrap();
         assert_eq!(case.call.operation, "b4674");
         check_helper_calls(&path, &case, &[crate::GROUP]).unwrap();
-    });
+    }
 }
 
 fn scenario(name: &str, wrap: Wrap) -> OpenScenario {
@@ -99,8 +99,8 @@ fn a_moved_or_damaged_seal_does_not_open() {
         },
     ];
     let report = open::reports(&scenarios, &cipher()).unwrap();
-    report.iter().for_each(|entry| {
+    for entry in &report {
         assert_eq!(entry["opened"], json!(false));
         assert_eq!(entry["redirect_uris"], json!(null));
-    });
+    }
 }

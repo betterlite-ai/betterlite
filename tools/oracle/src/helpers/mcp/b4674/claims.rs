@@ -53,7 +53,9 @@ impl ClaimBackend for Backend {
             let mut counts = self.counts.lock().unwrap_or_else(PoisonError::into_inner);
             let count = counts.entry(key.to_owned()).or_insert(0);
             *count = count.saturating_add(1);
-            return ready(Ok(*count));
+            let total = *count;
+            drop(counts);
+            return ready(Ok(total));
         };
         ready(Ok(fixed))
     }
