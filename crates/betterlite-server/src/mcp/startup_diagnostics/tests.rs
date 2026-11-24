@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::io;
-use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tracing::Level;
