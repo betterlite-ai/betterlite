@@ -1,7 +1,7 @@
 import asyncio
 import datetime as dt
 from collections.abc import AsyncIterator, Iterator
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, Protocol, TypedDict, Unpack
 
 from litellm.files.streaming import FileContentStreamingResponse
 from litellm.files.types import FileContentStreamingResult
@@ -41,15 +41,18 @@ class FileStreamLoggingEnvelope(BaseModel):
     file_stream_logging: dict[str, Outcome]
 
 
+class RetrieveKwargs(TypedDict):
+    file_content_request: FileContentRequest
+    provider_config: BaseFilesConfig
+    litellm_params: dict[str, JsonValue]
+    headers: dict[str, str]
+    logging_obj: Logging
+    chunk_size: int
+
+
 class FilesHandler(Protocol):
     async def async_retrieve_file_content_streaming(  # ast-grep-ignore: no-long-names
-        self,
-        file_content_request: FileContentRequest,
-        provider_config: BaseFilesConfig,
-        litellm_params: dict[str, JsonValue],
-        headers: dict[str, str],
-        logging_obj: Logging,
-        chunk_size: int,
+        self, **kwargs: Unpack[RetrieveKwargs]
     ) -> FileContentStreamingResult: ...
 
 
@@ -61,30 +64,17 @@ class Capture(CustomLogger):
     failure: list[dict[str, JsonValue]]
 
     def __init__(self) -> None:
-        super().__init__()
         self.success = []
         self.failure = []
 
     @override
-    async def async_log_success_event(
-        self,
-        kwargs: dict[str, JsonValue],
-        response_obj: JsonValue,
-        start_time: dt.datetime | None,
-        end_time: dt.datetime | None,
-    ) -> None:
-        del response_obj, start_time, end_time
+    async def async_log_success_event(self, *args: JsonValue, **kwargs: JsonValue) -> None:
+        del args
         self.success.append(kwargs)
 
     @override
-    async def async_log_failure_event(
-        self,
-        kwargs: dict[str, JsonValue],
-        response_obj: JsonValue,
-        start_time: dt.datetime | None,
-        end_time: dt.datetime | None,
-    ) -> None:
-        del response_obj, start_time, end_time
+    async def async_log_failure_event(self, *args: JsonValue, **kwargs: JsonValue) -> None:
+        del args
         self.failure.append(kwargs)
 
 
@@ -113,7 +103,7 @@ def provider_config() -> BaseFilesConfig:
 
 
 def logging_fixture(capture: Capture) -> Logging:
-    return Logging(
+    logging_obj = Logging(
         model="base",
         messages=None,
         stream=False,
@@ -121,9 +111,9 @@ def logging_fixture(capture: Capture) -> Logging:
         start_time=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
         litellm_call_id="file-stream-logging",
         function_id="file-stream-logging",
-        dynamic_async_success_callbacks=[capture],
-        dynamic_async_failure_callbacks=[capture],
     )
+    logging_obj.add_dynamic_callback(capture)
+    return logging_obj
 
 
 def async_stream(stream: Iterator[bytes] | AsyncIterator[bytes]) -> AsyncIterator[bytes]:
@@ -137,7 +127,7 @@ def async_stream(stream: Iterator[bytes] | AsyncIterator[bytes]) -> AsyncIterato
 async def run_case(call: FileStreamLoggingCall, api_base: str) -> Outcome:
     capture = Capture()
     logging_obj = logging_fixture(capture)
-    result = await HANDLER.async_retrieve_file_content_streaming(
+    request = RetrieveKwargs(
         file_content_request=FileContentRequest(file_id=call.file_id),
         provider_config=provider_config(),
         litellm_params={"api_base": api_base},
@@ -145,6 +135,7 @@ async def run_case(call: FileStreamLoggingCall, api_base: str) -> Outcome:
         logging_obj=logging_obj,
         chunk_size=call.chunk_size,
     )
+    result = await HANDLER.async_retrieve_file_content_streaming(**request)
     fail_after = FAIL_AFTER if call.scenario == "fail" else None
     response = FileContentStreamingResponse(
         FaultyStream(async_stream(result.stream_iterator), fail_after),

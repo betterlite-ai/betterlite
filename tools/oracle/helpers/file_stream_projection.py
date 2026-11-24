@@ -1,6 +1,6 @@
 import datetime as dt
 from collections.abc import Mapping
-from typing import Final, Literal, NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 from litellm.files.streaming import FileContentStreamingResponse
 from litellm.integrations.custom_logger import CustomLogger
@@ -63,7 +63,6 @@ class Capture(CustomLogger):
     calls: list[dict[str, JsonValue]]
 
     def __init__(self) -> None:
-        super().__init__()
         self.calls = []
 
     @override
@@ -76,6 +75,17 @@ class Capture(CustomLogger):
     ) -> None:
         del response_obj, start_time, end_time
         self.calls.append(kwargs)
+
+
+class CommonUtils(Protocol):
+    def prepare_data_with_credentials(
+        self,
+        data: dict[str, JsonValue],
+        credentials: dict[str, JsonValue],
+        *,
+        file_id: str | None = ...,
+        include_internal_credentials: bool = ...,
+    ) -> None: ...
 
 
 def text_field(value: JsonValue) -> str | None:
@@ -108,38 +118,48 @@ def predicates(call: ProjectionCall) -> list[bool]:
     return [predicate(provider) for provider in inputs]
 
 
+def routed_answer(
+    call: ProjectionCall,
+    credentials: dict[str, JsonValue],
+    utils: CommonUtils = common_utils,
+) -> JsonValue:
+    data = dict(call["data"])
+    utils.prepare_data_with_credentials(
+        data,
+        credentials,
+        file_id=call.get("original_file_id"),
+        include_internal_credentials=True,
+    )
+    snapshot = text_fields(SNAPSHOT.validate_python(data.pop(SNAPSHOT_KEY)))
+    data.pop("model", None)
+    answer: JsonValue = {
+        "function": "streaming_projection",
+        "provider": credentials["custom_llm_provider"],
+        "file_id": data.get("file_id"),
+        "data": data,
+        "trusted": snapshot,
+        "predicates": predicates(call),
+    }
+    return JSON.validate_python(answer)
+
+
+def unrouted_answer(call: ProjectionCall) -> JsonValue:
+    answer: JsonValue = {
+        "function": "streaming_projection",
+        "provider": call["custom_llm_provider"],
+        "file_id": call["file_id"],
+        "data": call["data"],
+        "trusted": None,
+        "predicates": predicates(call),
+    }
+    return JSON.validate_python(answer)
+
+
 def projection_answer(call: ProjectionCall) -> JsonValue:
     credentials = call.get("credentials")
     if call["should_route"] and credentials is not None:
-        data = dict(call["data"])
-        common_utils.prepare_data_with_credentials(
-            data,
-            credentials,
-            file_id=call.get("original_file_id"),
-            include_internal_credentials=True,
-        )
-        snapshot = text_fields(SNAPSHOT.validate_python(data.pop(SNAPSHOT_KEY)))
-        data.pop("model", None)
-        return JSON.validate_python(
-            {
-                "function": "streaming_projection",
-                "provider": credentials["custom_llm_provider"],
-                "file_id": data.get("file_id"),
-                "data": data,
-                "trusted": snapshot,
-                "predicates": predicates(call),
-            }
-        )
-    return JSON.validate_python(
-        {
-            "function": "streaming_projection",
-            "provider": call["custom_llm_provider"],
-            "file_id": call["file_id"],
-            "data": call["data"],
-            "trusted": None,
-            "predicates": predicates(call),
-        }
-    )
+        return routed_answer(call, credentials)
+    return unrouted_answer(call)
 
 
 def payload_view(value: JsonValue) -> JsonValue:
@@ -147,21 +167,20 @@ def payload_view(value: JsonValue) -> JsonValue:
         return None
     payload = PAYLOAD.validate_python(value)
     hidden = payload["hidden_params"]
-    return JSON.validate_python(
-        {
-            "id": payload["id"],
-            "model": payload["model"],
-            "api_base": payload["api_base"],
-            "custom_llm_provider": payload["custom_llm_provider"],
-            "status": payload["status"],
-            "hidden": {
-                "api_base": hidden["api_base"],
-                "litellm_model_name": hidden["litellm_model_name"],
-                "response_cost": hidden["response_cost"],
-            },
-            "response": payload["response"],
-        }
-    )
+    answer: JsonValue = {
+        "id": payload["id"],
+        "model": payload["model"],
+        "api_base": payload["api_base"],
+        "custom_llm_provider": payload["custom_llm_provider"],
+        "status": payload["status"],
+        "hidden": {
+            "api_base": hidden["api_base"],
+            "litellm_model_name": hidden["litellm_model_name"],
+            "response_cost": hidden["response_cost"],
+        },
+        "response": payload["response"],
+    }
+    return JSON.validate_python(answer)
 
 
 def hidden_answer(call: HiddenCall) -> JsonValue:
@@ -179,9 +198,9 @@ def hidden_answer(call: HiddenCall) -> JsonValue:
         start_time=FIXED_TIME,
         litellm_call_id="call-1",
         function_id="fn-1",
-        dynamic_success_callbacks=[capture],
         kwargs=kwargs,
     )
+    logging_obj.add_dynamic_callback(capture)
     response = FileContentStreamingResponse(
         iter([b"ab"]),
         call["file_id"],
@@ -195,9 +214,8 @@ def hidden_answer(call: HiddenCall) -> JsonValue:
         view = payload_view(recorded.get("standard_logging_object"))
         if view is not None:
             payload = view
-    return JSON.validate_python(
-        {"function": "hidden_stream_metadata", "payload": payload}
-    )
+    answer: JsonValue = {"function": "hidden_stream_metadata", "payload": payload}
+    return JSON.validate_python(answer)
 
 
 def answer(call: ProjectionCall | HiddenCall) -> JsonValue:
