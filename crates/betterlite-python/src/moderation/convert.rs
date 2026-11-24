@@ -139,12 +139,6 @@ impl NativeTextErrorPayload {
     }
 }
 
-#[must_use]
-pub(crate) fn prompt(arguments: &TextArguments) -> CompletionPrompt {
-    let value = arguments.prompt.clone().unwrap_or(Json::Null);
-    CompletionPrompt::from(serde_json::to_value(value).unwrap_or_default())
-}
-
 pub(crate) fn body(arguments: &TextArguments) -> Result<IndexMap<String, Json>, ConvertError> {
     let mut body = IndexMap::new();
     let prompt_value = arguments.prompt.clone().unwrap_or(Json::Null);
@@ -190,7 +184,8 @@ pub(crate) fn chat_messages(
     mock: bool,
     provider: &str,
 ) -> Result<Vec<Json>, ConvertError> {
-    let prompt = prompt(arguments);
+    let prompt =
+        CompletionPrompt::from(serde_json::to_value(&arguments.prompt).unwrap_or_default());
     let takes_tokens = ["openai", "azure", "azure_text"].contains(&provider)
         || ["text-completion-openai", "text-completion-codestral"].contains(&provider);
     // main.py's token-prompt branch names these five providers, and a mock answer does not widen it

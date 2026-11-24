@@ -2,7 +2,7 @@
 
 use super::{
     CompletionPrompt, ConvertError, ModerationArguments, TextArguments, TextCallWire, body,
-    chat_messages, completion_request, moderation_model, prompt,
+    chat_messages, completion_request, moderation_model,
 };
 use crate::moderation::error::{CallFacts, CallFailure, convert_failure};
 use crate::moderation::session::Entry;
@@ -10,6 +10,7 @@ use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_openai::moderation_request::ModerationInput;
 use betterlite_openai::text_completion_request::PromptRefusal;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use rstest::rstest;
 
 fn arguments(text: &str) -> TextArguments {
     let wire: TextCallWire = serde_json::from_str(&format!(r#"{{"arguments":{text}}}"#)).unwrap();
@@ -21,6 +22,10 @@ where
     T: serde::Serialize,
 {
     serde_json::to_string(value).unwrap()
+}
+
+fn completion_prompt(arguments: &TextArguments) -> CompletionPrompt {
+    CompletionPrompt::from(serde_json::to_value(&arguments.prompt).unwrap())
 }
 
 #[test]
@@ -50,27 +55,36 @@ fn request_token_prompt_is_refused_for_a_chat_provider() {
     // the mock answers on a text provider, and the chat entry reads the token prompt as its JSON text
     let mocked = chat_messages(&call, true, "text-completion-openai").unwrap();
     assert_eq!(encoded(&mocked), r#"[{"content":"[1,2]","role":"user"}]"#);
-    assert!(matches!(prompt(&call), CompletionPrompt::Tokens(_)));
+    assert!(matches!(
+        completion_prompt(&call),
+        CompletionPrompt::Tokens(_)
+    ));
 }
 
-#[test]
-fn request_token_prompt_provider_covers_the_five_litellm_providers() {
+#[rstest]
+#[case::openai("openai")]
+#[case::azure("azure")]
+#[case::azure_text("azure_text")]
+#[case::text_completion_codestral("text-completion-codestral")]
+#[case::text_completion_openai("text-completion-openai")]
+fn request_token_prompt_provider_covers_the_five_litellm_providers(#[case] provider: &str) {
     let call = arguments(r#"{"prompt": [1, 2]}"#);
-    for provider in ["openai", "azure", "azure_text"] {
-        chat_messages(&call, true, provider).unwrap();
-    }
-    for provider in ["text-completion-openai", "text-completion-codestral"] {
-        chat_messages(&call, true, provider).unwrap();
-    }
-    for provider in ["anthropic", "groq", "text-completion-inception"] {
-        assert!(
-            matches!(
-                chat_messages(&call, true, provider),
-                Err(ConvertError::Prompt)
-            ),
-            "{provider}"
-        );
-    }
+    chat_messages(&call, true, provider).unwrap();
+}
+
+#[rstest]
+#[case::anthropic("anthropic")]
+#[case::groq("groq")]
+#[case::text_completion_inception("text-completion-inception")]
+fn request_token_prompt_refuses_another_provider(#[case] provider: &str) {
+    let call = arguments(r#"{"prompt": [1, 2]}"#);
+    assert!(
+        matches!(
+            chat_messages(&call, true, provider),
+            Err(ConvertError::Prompt)
+        ),
+        "{provider}"
+    );
 }
 
 #[test]
@@ -84,22 +98,22 @@ fn request_token_prompt_stays_tokens_for_the_text_endpoint() {
 fn request_unmapped_prompt_is_refused() {
     let unmapped = arguments(r#"{"prompt": 7}"#);
     assert!(matches!(
-        prompt(&unmapped).refusal(),
+        completion_prompt(&unmapped).refusal(),
         Some(PromptRefusal::Unmapped)
     ));
     let empty = arguments(r#"{"prompt": []}"#);
     assert!(matches!(
-        prompt(&empty).refusal(),
+        completion_prompt(&empty).refusal(),
         Some(PromptRefusal::Unmapped)
     ));
     let one_string = arguments(r#"{"prompt": ["only"]}"#);
     assert!(!matches!(
-        prompt(&one_string).refusal(),
+        completion_prompt(&one_string).refusal(),
         Some(PromptRefusal::Unmapped)
     ));
     let tokens = arguments(r#"{"prompt": [1, 2]}"#);
     assert!(!matches!(
-        prompt(&tokens).refusal(),
+        completion_prompt(&tokens).refusal(),
         Some(PromptRefusal::Unmapped)
     ));
 }

@@ -1,5 +1,5 @@
 use super::convert::{
-    ConvertError, TextArguments, TextCallWire, chat_messages, completion_request, prompt,
+    ConvertError, TextArguments, TextCallWire, chat_messages, completion_request,
 };
 use super::error::{
     CallFacts, CallFailure, Raised, RawSource, convert_failure, provider_failure, raised,
@@ -13,7 +13,9 @@ use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{
     CompletionCallAnswer, CompletionExecutor, CompletionSend,
 };
-use betterlite_openai::text_completion_request::{CompletionRequest, PromptRefusal};
+use betterlite_openai::text_completion_request::{
+    CompletionPrompt, CompletionRequest, PromptRefusal,
+};
 use betterlite_openai::text_completion_response::CompletionResponse;
 use betterlite_openai::text_completion_stream::shaped_chunk;
 use betterlite_openai::text_completion_transport::call::TextCompletionRequest as TransportRequest;
@@ -55,7 +57,9 @@ pub(crate) async fn call(
         provider: &provider,
     };
     // main.py's prompt dispatch refuses a value it cannot read as one user message before any provider runs
-    if matches!(prompt(&arguments).refusal(), Some(PromptRefusal::Unmapped)) {
+    let completion =
+        CompletionPrompt::from(serde_json::to_value(&arguments.prompt).unwrap_or_default());
+    if matches!(completion.refusal(), Some(PromptRefusal::Unmapped)) {
         return Err(convert_failure(&ConvertError::Prompt, &facts));
     }
     let declared_facts = DeploymentFacts {
