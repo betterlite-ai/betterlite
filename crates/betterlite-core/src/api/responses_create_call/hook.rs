@@ -47,19 +47,7 @@ pub(super) async fn prompted(
             model: call.model.clone(),
         });
     }
-    let original = transcode(&call.input).map_err(|error| AsyncCreateError {
-        cause: Box::new(AsyncCreateCause::Create(CreateError::from(error))),
-        provider: provider.clone(),
-        model: call.model.clone(),
-    })?;
-    let client_input =
-        input_to_chat_messages(Some(&original)).map_err(|error| AsyncCreateError {
-            cause: Box::new(AsyncCreateCause::Create(CreateError::Prompt(
-                PromptError::Merge(error),
-            ))),
-            provider: provider.clone(),
-            model: call.model.clone(),
-        })?;
+    let client_input = client_messages(call, &provider)?;
     let bridged = bridges(deps.lookup, call, &provider, &kwargs);
     let answer = match run_hook(port, call, &mut kwargs, &client_input, bridged).await {
         Ok(answer) => answer,
@@ -82,6 +70,25 @@ pub(super) async fn prompted(
     let input = state.input()?;
     let final_provider = state.provider(deps.resolver)?;
     Ok(state.outcome(input, final_provider, converted))
+}
+
+// The client's input as chat messages, read the way the sync entry reads it before the hook replaces it
+fn client_messages(
+    call: &ResponsesCreateCall,
+    provider: &str,
+) -> Result<Vec<ClientMessage>, AsyncCreateError> {
+    let original = transcode(&call.input).map_err(|error| AsyncCreateError {
+        cause: Box::new(AsyncCreateCause::Create(CreateError::from(error))),
+        provider: provider.to_owned(),
+        model: call.model.clone(),
+    })?;
+    input_to_chat_messages(Some(&original)).map_err(|error| AsyncCreateError {
+        cause: Box::new(AsyncCreateCause::Create(CreateError::Prompt(
+            PromptError::Merge(error),
+        ))),
+        provider: provider.to_owned(),
+        model: call.model.clone(),
+    })
 }
 
 // LiteLLM's kwargs at the hook: the caller's extras plus the base and key the call carries as named arguments
