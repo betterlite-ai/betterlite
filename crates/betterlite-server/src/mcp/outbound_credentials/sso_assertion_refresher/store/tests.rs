@@ -382,6 +382,15 @@ async fn a_loser_whose_reread_finds_the_row_current_returns_it() {
     assert!(fixture.transport.sent().is_empty());
 }
 
+async fn fetch_once(fixture: &StoreFixture) {
+    fixture
+        .store
+        .fetch("user-1")
+        .await
+        .expect("the fetch succeeds")
+        .expect("the row exists");
+}
+
 #[tokio::test]
 async fn keeps_the_distributed_coordinator_once_the_factory_yields_one() {
     let runs = Arc::new(AtomicUsize::new(0));
@@ -402,14 +411,10 @@ async fn keeps_the_distributed_coordinator_once_the_factory_yields_one() {
         factory(vec![None, None, Some(recording)]),
         NOW_MS,
     );
-    for _round in 0..4 {
-        fixture
-            .store
-            .fetch("user-1")
-            .await
-            .expect("the fetch succeeds")
-            .expect("the row exists");
-    }
+    fetch_once(&fixture).await;
+    fetch_once(&fixture).await;
+    fetch_once(&fixture).await;
+    fetch_once(&fixture).await;
     assert_eq!(fixture.factory.asked.load(Ordering::Relaxed), 3);
     assert_eq!(runs.load(Ordering::Relaxed), 2);
     assert_eq!(fixture.transport.sent().len(), 4);

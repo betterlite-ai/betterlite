@@ -220,16 +220,16 @@ def answered(
 ) -> JsonValue:
     calls = transport.calls
     first = calls[0] if calls else None
-    return {
-        "result": result_text,
-        "detail": detail,
-        "assertion": assertion,
-        "posts": len(calls),
-        "writes": [{"user_id": user_id, "assertion": shown} for user_id, shown in writes],
-        "url": None if first is None else first[0],
-        "form": [] if first is None else [[name, value] for name, value in first[1]],
-        "headers": [] if first is None else [[name, value] for name, value in first[2]],
-    }
+    answer: dict[str, JsonValue] = {}
+    answer["result"] = result_text
+    answer["detail"] = detail
+    answer["assertion"] = assertion
+    answer["posts"] = len(calls)
+    answer["writes"] = [{"user_id": user_id, "assertion": shown} for user_id, shown in writes]
+    answer["url"] = None if first is None else first[0]
+    answer["form"] = [] if first is None else [[name, value] for name, value in first[1]]
+    answer["headers"] = [] if first is None else [[name, value] for name, value in first[2]]
+    return answer
 
 
 async def refresh_view(input_value: RefreshInput) -> JsonValue:
