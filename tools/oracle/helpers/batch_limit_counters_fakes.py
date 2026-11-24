@@ -33,9 +33,9 @@ from batch_limit_counters_records import (
     LimiterCallView,
     LimiterScript,
     ReplySpec,
-    ScopeView,
     StoreCallView,
     descriptor_view,
+    scopes_of,
 )
 
 
@@ -87,10 +87,7 @@ class ScriptedStore:
         litellm_parent_otel_span: Span | None = None,
     ) -> BatchEnqueuedTokenOutcome:
         del litellm_parent_otel_span
-        scopes_view: list[ScopeView] = [
-            {"key": scope.key, "value": scope.value, "limit": scope.limit} for scope in scopes
-        ]
-        self._trace.store_calls.append({"tokens": tokens, "scopes": scopes_view})
+        self._trace.store_calls.append({"tokens": tokens, "scopes": scopes_of(scopes)})
         if not self._replies:
             return BatchEnqueuedTokenReservation(tokens=tokens, scopes=scopes)
         reply = self._replies.pop(0)
@@ -132,7 +129,7 @@ class ScriptedLimiter(ParallelLimiter):
         self._responses = responses
 
     @override
-    async def atomic_check_and_increment_by_n(
+    async def atomic_check_and_increment_by_n(  # ast-grep-ignore: no-long-names
         self,
         descriptors: list[RateLimitDescriptor],
         increments: list[IncrementAmounts],
@@ -169,7 +166,7 @@ class ScriptedHook(BatchRateLimiter):
         self._trace = trace
 
     @override
-    def _create_batch_rate_limit_descriptors(
+    def _create_batch_rate_limit_descriptors(  # ast-grep-ignore: no-long-names
         self,
         user_api_key_dict: UserAPIKeyAuth,
         data: dict[str, JsonValue],
@@ -179,7 +176,7 @@ class ScriptedHook(BatchRateLimiter):
         return self._script["base"]
 
     @override
-    def _create_project_io_descriptors_for_models(
+    def _create_project_io_descriptors_for_models(  # ast-grep-ignore: no-long-names
         self,
         user_api_key_dict: UserAPIKeyAuth,
         per_model_usage: Mapping[str, Mapping[str, int]],
@@ -190,5 +187,5 @@ class ScriptedHook(BatchRateLimiter):
         return project["descriptors"], project["increments"]
 
 
-def no_model_group(_model: str) -> str | None:
+def no_model_group(_model: str) -> str | None:  # ast-grep-ignore: no-one-line-functions
     return None

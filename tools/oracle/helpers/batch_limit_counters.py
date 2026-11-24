@@ -23,7 +23,6 @@ from batch_limit_counters_fakes import (
 from batch_limit_counters_records import (
     BATCH_USAGE,
     JSON,
-    Backend,
     Call,
     Effects,
     ErrorView,
@@ -31,12 +30,12 @@ from batch_limit_counters_records import (
     LimiterScript,
     OperationView,
     StoreScript,
-    WindowSpec,
     error_view,
     operation_view,
     reservation_view,
     response_of,
     status_of,
+    windows_of,
 )
 
 
@@ -134,15 +133,10 @@ async def invoke(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> Answer
         )
         return {"function": function, "window_start": window_start}
     else:
-        held = call.get("reservation_windows")
-        listed: list[WindowSpec] = [] if held is None else held
-        windows: frozenset[tuple[str, str, Backend]] = frozenset(
-            (item["counter_key"], item["window_start"], item["backend"]) for item in listed
-        )
         operations = hook._build_tpd_refund_ops(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L806
             call["descriptors"],
             call["tokens"],
-            windows,
+            windows_of(call.get("reservation_windows")),
         )
         return {"function": function, "operations": [operation_view(op) for op in operations]}
     raise AssertionError("a batch rejection callable returned instead of raising")

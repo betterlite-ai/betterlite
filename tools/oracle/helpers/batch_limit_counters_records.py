@@ -1,7 +1,10 @@
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 from litellm.proxy.common_utils.proxy_rate_limit_error import ProxyRateLimitError
-from litellm.proxy.hooks.batch_enqueued_tokens import BatchEnqueuedTokenReservation
+from litellm.proxy.hooks.batch_enqueued_tokens import (
+    BatchEnqueuedTokenReservation,
+    BatchEnqueuedTokenScope,
+)
 from litellm.proxy.hooks.batch_rate_limiter import BatchFileUsage
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
@@ -198,17 +201,18 @@ def status_of(raw: StatusSpec) -> RateLimitStatus:
     return STATUS.validate_python(fields)
 
 
+def windows_of(held: list[WindowSpec] | None) -> frozenset[tuple[str, str, Backend]]:
+    listed: list[WindowSpec] = [] if held is None else held
+    return frozenset(
+        (item["counter_key"], item["window_start"], item["backend"]) for item in listed
+    )
+
+
 def response_of(raw: ResponseSpec) -> RateLimitResponse:
-    windows: list[tuple[str, str, Backend]] = []
-    held = raw.get("reservation_windows")
-    if held is not None:
-        windows = [
-            (window["counter_key"], window["window_start"], window["backend"]) for window in held
-        ]
     return {
         "overall_code": raw["overall_code"],
         "statuses": [status_of(status) for status in raw["statuses"]],
-        "reservation_windows": frozenset(windows),
+        "reservation_windows": windows_of(raw.get("reservation_windows")),
     }
 
 
@@ -239,14 +243,16 @@ def operation_view(operation: RefundOperation) -> OperationView:
     }
 
 
-def reservation_view(reservation: BatchEnqueuedTokenReservation) -> ReservationView:
-    scopes: list[ScopeView] = [
-        {"key": scope.key, "value": scope.value, "limit": scope.limit}
-        for scope in reservation.scopes
+def scopes_of(scopes: tuple[BatchEnqueuedTokenScope, ...]) -> list[ScopeView]:
+    return [
+        {"key": scope.key, "value": scope.value, "limit": scope.limit} for scope in scopes
     ]
+
+
+def reservation_view(reservation: BatchEnqueuedTokenReservation) -> ReservationView:
     return {
         "tokens": reservation.tokens,
-        "scopes": scopes,
+        "scopes": scopes_of(reservation.scopes),
         "backend": reservation.backend,
         "owner": reservation.owner,
     }
