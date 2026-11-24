@@ -17,6 +17,7 @@ use betterlite_auth::ui_session_identity::{UI_SESSION_TOKEN_TEAM_ID, UiSessionTe
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use serde::de::DeserializeOwned;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -25,7 +26,7 @@ use super::VectorStoreAccess;
 use super::auth::{AuthContext, ObjectPermissionLookup};
 use super::decode::decode_vector_store_access;
 use super::error::VectorStoreAccessError;
-use super::store::{ManagedVectorStore, normalize_litellm_params};
+use super::store::normalize_litellm_params;
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 
 #[derive(Default)]
@@ -137,7 +138,7 @@ fn policy(world: &World) -> VectorStoreAccess<'_, World, World, World> {
 
 async fn granted(
     access: &VectorStoreAccess<'_, World, World, World>,
-    vector_store: &ManagedVectorStore,
+    vector_store: &LiteLlmManagedVectorStore,
     caller: &UserAPIKeyAuth,
 ) -> bool {
     access
@@ -148,7 +149,7 @@ async fn granted(
 
 async fn listable(
     access: &VectorStoreAccess<'_, World, World, World>,
-    vector_stores: &[ManagedVectorStore],
+    vector_stores: &[LiteLlmManagedVectorStore],
     caller: &UserAPIKeyAuth,
 ) -> Vec<String> {
     let list = access
@@ -156,7 +157,7 @@ async fn listable(
         .await
         .unwrap();
     list.iter()
-        .map(|vector_store| vector_store.grant_id().to_owned())
+        .map(|vector_store| vector_store.vector_store_id.clone().unwrap_or_default())
         .collect()
 }
 
@@ -210,13 +211,8 @@ fn object(fields: &[(&str, Json)]) -> Json {
     )
 }
 
-fn store(fields: &[(&str, Json)]) -> ManagedVectorStore {
-    ManagedVectorStore(
-        fields
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), value.clone()))
-            .collect(),
-    )
+fn store(fields: &[(&str, Json)]) -> LiteLlmManagedVectorStore {
+    wire(&object(fields))
 }
 
 fn data_text(value: &str) -> JsonData {
@@ -278,7 +274,7 @@ fn session_caller() -> UserAPIKeyAuth {
 fn assert_params_read_as_empty(raw: &str) {
     let encoded = store(&[("litellm_params", text(raw))]);
     assert_eq!(
-        normalize_litellm_params(&encoded),
+        normalize_litellm_params(&encoded).unwrap(),
         store(&[("litellm_params", object(&[]))])
     );
     assert_eq!(
@@ -328,30 +324,38 @@ fn parameter_string_normalization() {
         ("litellm_params", text(r#"{"api_key":"sk-secret"}"#)),
     ]);
     assert_eq!(
-        normalize_litellm_params(&original),
+        normalize_litellm_params(&original).unwrap(),
         store(&[
             ("vector_store_id", text("vs_a")),
             ("litellm_params", object(&[("api_key", text("sk-secret"))])),
         ])
     );
-    assert!(!format!("{original:?}").contains("sk-secret"));
-    assert!(!format!("{original:?}").contains("api_key"));
-    assert!(format!("{original:?}").contains("litellm_params: \"text\""));
     assert_params_read_as_empty("[]");
     assert_params_read_as_empty("null");
     assert_params_read_as_empty("1");
     assert_params_read_as_empty("broken");
     let parsed = store(&[("litellm_params", object(&[("api_key", text("k"))]))]);
-    assert_eq!(normalize_litellm_params(&parsed), parsed);
-    assert!(format!("{parsed:?}").contains("litellm_params: \"object\""));
+    assert_eq!(normalize_litellm_params(&parsed).unwrap(), parsed);
     let null_params = store(&[("litellm_params", Json::Null)]);
-    assert_eq!(normalize_litellm_params(&null_params), null_params);
-    assert!(format!("{null_params:?}").contains("litellm_params: \"other\""));
+    assert_eq!(normalize_litellm_params(&null_params).unwrap(), null_params);
     let absent = store(&[("vector_store_id", text("vs_a"))]);
-    assert_eq!(normalize_litellm_params(&absent), absent);
-    assert!(format!("{absent:?}").contains("litellm_params: \"absent\""));
+    assert_eq!(normalize_litellm_params(&absent).unwrap(), absent);
     let flagged = store(&[("litellm_params", Json::Bool(true))]);
-    assert_eq!(normalize_litellm_params(&flagged), flagged);
+    assert_eq!(normalize_litellm_params(&flagged).unwrap(), flagged);
+}
+
+#[test]
+fn nesting_past_the_json_limit_normalizes_to_an_empty_object() {
+    let deep = format!("{}1{}", "{\"a\":".repeat(127), "}".repeat(127));
+    let encoded = store(&[("litellm_params", text(&deep))]);
+    let normalized = normalize_litellm_params(&encoded).unwrap();
+    assert!(
+        normalized
+            .litellm_params
+            .as_ref()
+            .is_some_and(|params| params.get("a").is_some())
+    );
+    assert_params_read_as_empty(&format!("{}1{}", "{\"a\":".repeat(129), "}".repeat(129)));
 }
 
 #[test]
@@ -544,11 +548,18 @@ async fn teamless_access_is_not_listing() {
     let null_team = store(&[("vector_store_id", text("vs_b")), ("team_id", Json::Null)]);
     let empty_team = store(&[("vector_store_id", text("vs_c")), ("team_id", text(""))]);
     let owned = store(&[("vector_store_id", text("vs_d")), ("team_id", text("t"))]);
+    let numeric_team = store(&[
+        ("vector_store_id", text("vs_e")),
+        ("team_id", Json::Number(serde_json::Number::from(5_i32))),
+    ]);
     let caller = auth(&[("team_id", data_text("u"))]);
     assert!(granted(&access, &teamless, &caller).await);
     assert!(granted(&access, &null_team, &caller).await);
     assert!(!granted(&access, &empty_team, &caller).await);
     assert!(!granted(&access, &owned, &caller).await);
+    assert!(!granted(&access, &numeric_team, &caller).await);
+    let numeric_caller = auth(&[("team_id", data_text("5"))]);
+    assert!(!granted(&access, &numeric_team, &numeric_caller).await);
     let stores = [teamless, null_team, empty_team, owned];
     assert!(listable(&access, &stores, &caller).await.is_empty());
     let empty_team_caller = auth(&[("team_id", data_text(""))]);
@@ -647,26 +658,24 @@ async fn dashboard_contexts_clear_and_replace_team_fields() {
         contexts[2].team_object_permission_id.as_deref(),
         Some("p_b")
     );
-    assert_eq!(contexts[1].fields.get("team_id"), Some(&data_text("a")));
     assert_eq!(
-        contexts[1].fields.get("team_object_permission_id"),
-        Some(&JsonData::Null)
+        contexts[1]
+            .team_object_permission
+            .as_ref()
+            .unwrap()
+            .object_permission_id,
+        "a_perm"
     );
-    assert_eq!(
-        contexts[2].fields.get("team_object_permission_id"),
-        Some(&data_text("p_b"))
-    );
-    let span = data_object(&[("span_id", data_text("s1"))]);
-    assert!(
-        contexts
-            .iter()
-            .all(|context| context.fields.get("parent_otel_span") == Some(&span))
-    );
-    assert!(
-        contexts
-            .iter()
-            .all(|context| context.fields.get("user_id") == Some(&data_text("u1")))
-    );
+    assert_eq!(contexts[2].team_object_permission, None);
+    assert!(contexts.iter().all(|context| {
+        context
+            .object_permission
+            .as_ref()
+            .is_some_and(|permission| permission.object_permission_id == "p_key")
+    }));
+    let carried = format!("{:?}", contexts[2].credential);
+    assert!(carried.contains("s1"));
+    assert!(carried.contains("u1"));
 }
 
 #[tokio::test]
@@ -728,20 +737,32 @@ async fn non_session_credentials_keep_their_context() {
     let contexts = access.vector_store_auth_contexts(&caller).await.unwrap();
     assert_eq!(contexts.len(), 1);
     assert_eq!(contexts[0].team_id.as_deref(), Some("t"));
-    assert_eq!(contexts[0].fields.get("user_id"), Some(&data_text("u1")));
+    assert!(format!("{:?}", contexts[0].credential).contains("u1"));
 }
 
 #[test]
-fn auth_context_debug_names_fields_without_values() {
-    let caller = auth(&[
+fn auth_context_keeps_credential_secrets_out_of_its_fields() {
+    let secret = "plain-secret-value";
+    let first = auth(&[
+        ("api_key", data_text(secret)),
         ("team_id", data_text("t")),
         ("user_id", data_text("u1")),
-        ("object_permission", data_permission("p_key", &["vs_a"])),
     ]);
-    let context = AuthContext::from_auth(&caller).unwrap();
+    let second = auth(&[
+        ("api_key", data_text("other-secret")),
+        ("team_id", data_text("t")),
+        ("user_id", data_text("u1")),
+    ]);
+    let context = AuthContext::from_auth(&first).unwrap();
     let rendered = format!("{context:?}");
+    assert!(!rendered.contains(secret));
     assert_eq!(context.team_id.as_deref(), Some("t"));
-    assert!(rendered.contains("field_count:"));
-    assert!(!rendered.contains("u1"));
-    assert!(!rendered.contains("api_key"));
+    assert_eq!(context.object_permission, None);
+    assert_eq!(context.object_permission_id, None);
+    assert_eq!(context.team_object_permission, None);
+    assert_eq!(context.team_object_permission_id, None);
+    assert_eq!(
+        format!("{:?}", AuthContext::from_auth(&second).unwrap()),
+        rendered
+    );
 }
