@@ -566,7 +566,7 @@ def drain_chunks(stream: PassthroughStreamingResponse) -> None:
 
 
 # ast-grep-ignore: no-long-names
-async def adrain_chunks(stream: AsyncPassthroughStreamingResponse) -> None:
+async def drain_chunks_async(stream: AsyncPassthroughStreamingResponse) -> None:
     async for _chunk in stream:
         pass
 
@@ -584,7 +584,7 @@ def chunks_then_failure(stream: PassthroughStreamingResponse) -> tuple[bytes, AP
 async def achunks_then_failure(stream: AsyncPassthroughStreamingResponse) -> tuple[bytes, APIError]:
     first = await anext(stream)
     with pytest.raises(APIError) as failure:
-        await adrain_chunks(stream)
+        await drain_chunks_async(stream)
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     return first, failure.value
