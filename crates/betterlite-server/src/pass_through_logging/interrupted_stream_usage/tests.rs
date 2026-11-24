@@ -9,6 +9,7 @@ use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_logging::logging_failure::partial_usage::record_partial_usage_for_failure as record_logged_usage;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -709,6 +710,21 @@ fn interrupted_usage_copies_every_detail_count_into_the_recorded_usage() {
             .server_tool_use
             .expect("the server tool use is recorded"),
     );
+}
+
+#[test]
+fn interrupted_record_keeps_the_cache_counts_geo_and_speed_in_the_usage_object() {
+    let mut call_log = logging_state(&[], &[]);
+    let usage = usage_of(&detail_counts_response());
+    record_logged_usage(&mut call_log, &usage, Decimal::ZERO);
+    let recorded = recorded_usage(&call_log);
+    assert_count(recorded, "cache_read_input_tokens", 3);
+    assert_count(recorded, "cache_creation_input_tokens", 2);
+    assert_eq!(
+        recorded.get("inference_geo"),
+        Some(&Json::Text("us".to_owned()))
+    );
+    assert_eq!(recorded.get("speed"), Some(&Json::Text("fast".to_owned())));
 }
 
 fn assert_count(fields: &IndexMap<String, Json>, name: &str, expected: i64) {

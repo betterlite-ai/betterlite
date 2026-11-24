@@ -28,6 +28,26 @@ pub(super) fn usage_of(response: &Response) -> LoggingUsage {
 }
 
 fn logging_usage(usage: &Usage) -> LoggingUsage {
+    let mut extras = IndexMap::new();
+    for (name, count) in [
+        ("cache_read_input_tokens", usage.cache_read_input_tokens),
+        (
+            "cache_creation_input_tokens",
+            usage.cache_creation_input_tokens,
+        ),
+    ] {
+        if let Some(count) = count {
+            extras.insert(name.to_owned(), Json::Number(Number::from(count)));
+        }
+    }
+    for (name, text) in [
+        ("inference_geo", usage.inference_geo.as_deref()),
+        ("speed", usage.speed.as_deref()),
+    ] {
+        if let Some(text) = text {
+            extras.insert(name.to_owned(), Json::Text(text.to_owned()));
+        }
+    }
     LoggingUsage {
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,
@@ -36,7 +56,7 @@ fn logging_usage(usage: &Usage) -> LoggingUsage {
         completion_tokens_details: completion_details(usage),
         server_tool_use: usage.server_tool_use.as_ref().map(server_details),
         cost: usage.cost,
-        extras: IndexMap::new(),
+        extras,
     }
 }
 
