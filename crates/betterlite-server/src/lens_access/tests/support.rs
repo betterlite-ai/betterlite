@@ -345,6 +345,28 @@ pub(crate) struct FakeDatabase {
     pub(crate) corrupt: Arc<Mutex<bool>>,
 }
 
+type QueryAnswer = fn(&FakeDatabase, &[SqlBind]) -> Vec<Row>;
+
+// each fake query answers by the SQL fragment it carries, in the order the repository issues them
+const QUERY_ANSWERS: &[(&str, QueryAnswer)] = &[
+    ("WITH previous", FakeDatabase::updated),
+    ("AS job", FakeDatabase::one_job),
+    ("LIMIT 50 OFFSET", FakeDatabase::jobs),
+    ("VALUES ($1,0,$2::jsonb)", FakeDatabase::created),
+    ("'{analysis_key_id}'", FakeDatabase::billing),
+    ("'{revoked}'", FakeDatabase::revoked),
+    ("token_hash=$1", FakeDatabase::by_token),
+    (
+        "INSERT INTO \"LiteLLM_LensWorker\"",
+        FakeDatabase::inserted_worker,
+    ),
+    (
+        "UPDATE \"LiteLLM_LensWorker\"",
+        FakeDatabase::replaced_worker,
+    ),
+    ("WHERE id=$1", FakeDatabase::one_lens),
+];
+
 impl FakeDatabase {
     pub(crate) fn job_offsets(&self) -> Vec<i64> {
         self.job_offsets.lock().expect("the offset lock").clone()
@@ -403,35 +425,10 @@ impl FakeDatabase {
                 data: "not a record".to_owned(),
             }];
         }
-        if query.contains("WITH previous") {
-            return self.updated(args);
-        }
-        if query.contains("AS job") {
-            return self.one_job(args);
-        }
-        if query.contains("LIMIT 50 OFFSET") {
-            return self.jobs(args);
-        }
-        if query.contains("VALUES ($1,0,$2::jsonb)") {
-            return self.created(args);
-        }
-        if query.contains("'{analysis_key_id}'") {
-            return self.billing(args);
-        }
-        if query.contains("'{revoked}'") {
-            return self.revoked(args);
-        }
-        if query.contains("token_hash=$1") {
-            return self.by_token(args);
-        }
-        if query.contains("INSERT INTO \"LiteLLM_LensWorker\"") {
-            return self.inserted_worker(args);
-        }
-        if query.contains("UPDATE \"LiteLLM_LensWorker\"") {
-            return self.replaced_worker(args);
-        }
-        if query.contains("WHERE id=$1") {
-            return self.one_lens(args);
+        for &(needle, answer_query) in QUERY_ANSWERS {
+            if query.contains(needle) {
+                return answer_query(self, args);
+            }
         }
         if query.contains("ORDER BY id") {
             return self.all_lenses();
