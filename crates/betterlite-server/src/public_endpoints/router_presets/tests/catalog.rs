@@ -82,7 +82,10 @@ fn keeps_extra_fields_on_records_and_configs() {
 #[case::not_json("not a catalog")]
 #[case::trailing_characters("{} {}")]
 fn rejects_catalogs_that_do_not_match_the_wire_shape(#[case] text: &str) {
-    assert!(decode_catalog(text.as_bytes()).is_err());
+    assert!(matches!(
+        decode_catalog(text.as_bytes()),
+        Err(RouterPresetsError::Decode { .. })
+    ));
 }
 
 #[test]
