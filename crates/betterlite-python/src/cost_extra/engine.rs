@@ -30,7 +30,6 @@ use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::usage_sum::{PromptTokensDetails, Usage, UsageSumError, usage_sum};
 use betterlite_openai::api::rerank_contracts::records::RerankBilledUnits;
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use crate::cost_extra::convert::{
@@ -276,7 +275,7 @@ impl Engine {
                 data_residency: request.data_residency.as_deref(),
                 custom_pricing_model: request.custom_pricing_model.as_deref(),
                 base_pricing_model: request.base_pricing_model.as_deref(),
-                moment: now()?,
+                moment: reading(&mut SystemTime::now)?,
             },
             &self.settings.lookup,
             &self.settings.database,
@@ -304,7 +303,11 @@ impl Engine {
 
 // combine_usage_objects: every counter and detail summed, an empty list giving LiteLLM's default usage.
 pub(crate) fn combine_usage(request: &CombineUsageRequest) -> Result<Usage, UsageSumError> {
-    let usages: Vec<Usage> = request.usages.iter().map(UsageWire::usage).collect();
+    let usages = request
+        .usages
+        .iter()
+        .map(UsageWire::usage)
+        .collect::<Vec<Usage>>();
     usage_sum(&usages)
 }
 
@@ -324,11 +327,6 @@ pub(crate) fn partition_usage(
     Ok(responses_ws::partition_by_service_tier(&request.results)?
         .into_iter()
         .collect())
-}
-
-fn now() -> Result<DateTime<Utc>, RealtimeFailure> {
-    let mut clock = SystemTime::now;
-    Ok(reading(&mut clock)?)
 }
 
 // Ports jina's and voyage's rerank override; every other provider bills the query units.

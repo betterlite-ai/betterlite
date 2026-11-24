@@ -7,12 +7,12 @@ from betterlite._cost.cost_logging import CostLogging, store_breakdown
 from betterlite._cost.engine import native_call
 from betterlite._cost.wire import CostAnswerWire
 from betterlite._cost_extra.wire import (
+    COST,
     ENGINE,
     REALTIME_COST,
     JsonObject,
     RealtimeRequestWire,
-    RealtimeTranscriptionRequestWire,
-    cost,
+    RealtimeTranscribeWire,
     usage_wire,
 )
 from betterlite.types.utils.usage import Usage
@@ -57,10 +57,13 @@ def handle_realtime_transcription_cost_calculation(  # ast-grep-ignore: no-long-
     litellm_model_name: str,
     custom_pricing_model: str | None = None,
 ) -> float:
-    request = RealtimeTranscriptionRequestWire(
+    request = RealtimeTranscribeWire(
         results=[JsonObject(result) for result in results],
         custom_llm_provider=custom_llm_provider,
         litellm_model_name=litellm_model_name,
         custom_pricing_model=custom_pricing_model,
     )
-    return cost(ENGINE.realtime_transcription_cost, json.dumps(request))
+    answer = COST.validate_json(
+        native_call(ENGINE.realtime_transcription_cost, json.dumps(request))
+    )
+    return answer["cost"]

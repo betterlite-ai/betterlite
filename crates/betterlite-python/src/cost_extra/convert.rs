@@ -28,11 +28,6 @@ pub(crate) const fn money(value: Option<Amount>) -> Option<Decimal> {
     }
 }
 
-// cost_per_token's shape and every specialised calculator's: LiteLLM returns (prompt, completion).
-pub(crate) fn encode_pair(prompt: Decimal, completion: Decimal) -> Result<String, ConvertError> {
-    encode(&[Amount(prompt), Amount(completion)])
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OcrCostRequest {
@@ -170,8 +165,7 @@ impl UsageWire {
     }
 }
 
-// Every prompt counter LiteLLM's PromptTokensDetailsWrapper declares, in the wrapper's own names;
-// the wrapper allows extras, so an undeclared key is ignored rather than refused.
+// Every counter LiteLLM's prompt wrapper declares; the wrapper allows extras, so unknown keys are ignored.
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct PromptDetailsWire {
     pub(crate) text_tokens: Option<i64>,
@@ -179,7 +173,6 @@ pub(crate) struct PromptDetailsWire {
     pub(crate) image_tokens: Option<i64>,
     pub(crate) video_tokens: Option<i64>,
     pub(crate) web_search_requests: Option<i64>,
-    // ast-grep-ignore: no-long-names
     pub(crate) google_maps_grounding_requests: Option<i64>,
     pub(crate) tool_use_tokens: Option<i64>,
     pub(crate) character_count: Option<i64>,

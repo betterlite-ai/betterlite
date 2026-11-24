@@ -113,7 +113,7 @@ class RealtimeRequestWire(TypedDict):
     base_pricing_model: str | None
 
 
-class RealtimeTranscriptionRequestWire(TypedDict):
+class RealtimeTranscribeWire(TypedDict):
     results: list[JsonObject]
     custom_llm_provider: str
     litellm_model_name: str
@@ -162,10 +162,6 @@ def pair(method: Callable[[str], str], text: str) -> tuple[float, float]:
     return (answer[0], answer[1])
 
 
-def cost(method: Callable[[str], str], text: str) -> float:
-    return COST.validate_json(native_call(method, text))["cost"]
-
-
 def usage_answer(method: Callable[[str], str], text: str) -> Usage:
     answer = USAGE.validate_json(native_call(method, text))
     return Usage.model_validate(answer["usage"])
@@ -176,12 +172,13 @@ def usages_answer(method: Callable[[str], str], text: str) -> list[Usage]:
     return [Usage.model_validate(usage) for usage in answer["usages"]]
 
 
-# LiteLLM sums every numeric attribute of a Usage besides its counters, so the extras go to Rust flat.
+# LiteLLM sums every numeric Usage attribute besides its counters, so the extras go flat to Rust.
 def numeric_extras(usage: Usage) -> dict[str, int | float]:
     return {
         name: value
         for name, value in usage.model_dump().items()
-        if name not in COUNTERS and isinstance(value, int | float)  # ast-grep-ignore: no-isinstance
+        # ast-grep-ignore: no-isinstance
+        if name not in COUNTERS and isinstance(value, int | float)
     }
 
 

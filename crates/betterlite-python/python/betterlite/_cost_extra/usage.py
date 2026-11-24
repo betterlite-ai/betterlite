@@ -57,13 +57,15 @@ class RealtimeAPITokenUsageProcessor(BaseTokenUsageProcessor):
     def create_logging_realtime_object(
         usage: Usage,
         results: Sequence[Mapping[str, JsonValue]],
-    ) -> LiteLLMRealtimeStreamLoggingObject:
+    ) -> LiteLLMRealtimeStreamLoggingObject:  # ast-grep-ignore: no-long-names
         return LiteLLMRealtimeStreamLoggingObject(
             usage=usage, results=[JsonObject(result) for result in results]
         )
 
 
-class ResponsesWebSocketTokenUsageProcessor(BaseTokenUsageProcessor):
+class ResponsesWebSocketTokenUsageProcessor(  # ast-grep-ignore: no-long-names
+    BaseTokenUsageProcessor
+):
     @staticmethod
     def collect_usage_from_responses_ws_results(  # ast-grep-ignore: no-long-names
         results: Sequence[Mapping[str, JsonValue]],
@@ -96,10 +98,12 @@ class ResponsesWebSocketTokenUsageProcessor(BaseTokenUsageProcessor):
         results: Sequence[Mapping[str, JsonValue]],
     ) -> Usage:
         collected = (
+            # ast-grep-ignore: no-long-names
             ResponsesWebSocketTokenUsageProcessor.collect_usage_from_responses_ws_results(
                 results
             )
         )
+        # ast-grep-ignore: no-long-names
         return ResponsesWebSocketTokenUsageProcessor.combine_usage_objects(
             list(collected)
         )

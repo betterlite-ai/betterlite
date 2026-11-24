@@ -3,7 +3,9 @@ from collections.abc import Mapping
 
 from pydantic import JsonValue
 
+from betterlite._cost.engine import native_call
 from betterlite._cost_extra.wire import (
+    COST,
     ENGINE,
     BatchRequestWire,
     ImageRequestWire,
@@ -14,7 +16,6 @@ from betterlite._cost_extra.wire import (
     TranscriptionRequestWire,
     VectorStoreRequestWire,
     VideoRequestWire,
-    cost,
     pair,
     usage_wire,
 )
@@ -116,7 +117,8 @@ def default_image_cost_calculator(  # noqa: PLR0913, PLR0917  # https://github.c
         size=size,
         model_info=model_info,
     )
-    return cost(ENGINE.image_cost, json.dumps(request))
+    answer = COST.validate_json(native_call(ENGINE.image_cost, json.dumps(request)))
+    return answer["cost"]
 
 
 def default_video_cost_calculator(
@@ -133,7 +135,8 @@ def default_video_cost_calculator(
         model_info=model_info,
         video_resolution=video_resolution,
     )
-    return cost(ENGINE.video_cost, json.dumps(request))
+    answer = COST.validate_json(native_call(ENGINE.video_cost, json.dumps(request)))
+    return answer["cost"]
 
 
 def batch_cost_calculator(

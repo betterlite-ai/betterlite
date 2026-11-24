@@ -1,12 +1,9 @@
-use std::fmt::Display;
-
 use betterlite_core::cost::batch::error::BatchCostError;
 use betterlite_core::cost::completion::error::ChargeInputError;
 use betterlite_core::cost::realtime::error::RealtimeCostError;
 use betterlite_models::duration_cost::error::DurationCostError;
 use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::model_metadata_resolution::error::model_not_mapped_message;
-use betterlite_models::ocr_pricing::OcrCostError;
 use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use betterlite_models::resolution::ResolutionError;
 use pyo3::PyErr;
@@ -50,7 +47,6 @@ pub(crate) struct CostExtraPayload {
     pub(crate) message: String,
 }
 
-// ast-grep-ignore: no-one-line-functions
 pub(crate) fn payload(message: String) -> CostExtraPayload {
     CostExtraPayload {
         kind: "Exception",
@@ -72,11 +68,6 @@ pub(crate) fn native_error(py: Python<'_>, payload: CostExtraPayload) -> PyErr {
         Ok(value) => PyErr::from_value(value),
         Err(failure) => failure,
     }
-}
-
-// LiteLLM's bare Exception, with betterlite's own message, for every failure it does not name a class for.
-pub(crate) fn generic_error(py: Python<'_>, error: &dyn Display) -> PyErr {
-    native_error(py, payload(error.to_string()))
 }
 
 // LiteLLM's own exception class, built with the message and, for BadRequestError, the model.
@@ -124,12 +115,6 @@ pub(crate) fn resolution_error(py: Python<'_>, error: &ResolutionError, model: &
     }
 }
 
-// ocr_cost raises ValueError for a missing response, usage or page count; every OCR failure lands there.
-// ast-grep-ignore: no-one-line-functions
-pub(crate) fn ocr_error(error: &OcrCostError) -> PyErr {
-    PyValueError::new_err(error.to_string())
-}
-
 // The image calculator's only ValueError is a size that does not split into two integers.
 pub(crate) fn image_error(py: Python<'_>, error: &ImageCostError) -> PyErr {
     match error {
@@ -143,21 +128,21 @@ pub(crate) fn image_error(py: Python<'_>, error: &ImageCostError) -> PyErr {
         | ImageCostError::Overflow
         | ImageCostError::Rate(_)
         | ImageCostError::Tier(_)
-        | ImageCostError::TokenCost(_) => generic_error(py, error),
+        | ImageCostError::TokenCost(_) => native_error(py, payload(error.to_string())),
     }
 }
 
 // The video calculator raises a bare Exception naming the model it could not price.
 pub(crate) fn video_error(py: Python<'_>, error: &DurationCostError) -> PyErr {
     match error {
-        DurationCostError::UnknownModel { model } => generic_error(
+        DurationCostError::UnknownModel { model } => native_error(
             py,
-            &format!("Model not found in cost map for model={model}"),
+            payload(format!("Model not found in cost map for model={model}")),
         ),
         DurationCostError::NoCharacterOrTokenPricing { .. }
         | DurationCostError::Overflow
         | DurationCostError::Price(_)
-        | DurationCostError::TokenCost(_) => generic_error(py, error),
+        | DurationCostError::TokenCost(_) => native_error(py, payload(error.to_string())),
     }
 }
 
@@ -178,31 +163,31 @@ pub(crate) fn transcription_error(
         DurationCostError::NoCharacterOrTokenPricing { .. }
         | DurationCostError::Overflow
         | DurationCostError::Price(_)
-        | DurationCostError::TokenCost(_) => generic_error(py, error),
+        | DurationCostError::TokenCost(_) => native_error(py, payload(error.to_string())),
     }
 }
 
 pub(crate) fn batch_error(py: Python<'_>, error: &BatchCostError, model: &str) -> PyErr {
     match error {
         BatchCostError::Resolution { source } => resolution_error(py, source, model),
-        BatchCostError::Rate(source) => generic_error(py, source),
-        BatchCostError::Modality(source) => generic_error(py, source),
-        BatchCostError::Overflow => generic_error(py, error),
+        BatchCostError::Rate(source) => native_error(py, payload(source.to_string())),
+        BatchCostError::Modality(source) => native_error(py, payload(source.to_string())),
+        BatchCostError::Overflow => native_error(py, payload(error.to_string())),
     }
 }
 
 pub(crate) fn rerank_error(py: Python<'_>, error: &RerankFailure, model: &str) -> PyErr {
     match error {
         RerankFailure::Resolution { source } => resolution_error(py, source, model),
-        RerankFailure::Rate(source) => generic_error(py, source),
-        RerankFailure::Overflow => generic_error(py, error),
+        RerankFailure::Rate(source) => native_error(py, payload(source.to_string())),
+        RerankFailure::Overflow => native_error(py, payload(error.to_string())),
     }
 }
 
 pub(crate) fn realtime_error(py: Python<'_>, error: &RealtimeFailure) -> PyErr {
     match error {
-        RealtimeFailure::Cost(source) => generic_error(py, source),
-        RealtimeFailure::Clock(source) => generic_error(py, source),
+        RealtimeFailure::Cost(source) => native_error(py, payload(source.to_string())),
+        RealtimeFailure::Clock(source) => native_error(py, payload(source.to_string())),
     }
 }
 

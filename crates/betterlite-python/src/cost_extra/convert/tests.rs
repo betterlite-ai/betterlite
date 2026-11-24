@@ -11,8 +11,7 @@ use super::{
     Amount, CollectUsageRequest, CombineUsageRequest, ConvertError, CostAnswer, ImageRequest,
     OcrBatchRequest, OcrCostRequest, OcrUsageWire, PartitionAnswer, RealtimeCostWire,
     RealtimeTranscriptionWire, RerankRequest, ServiceTierGroup, TranscriptionRequest, UsageAnswer,
-    UsageNumberView, UsageView, UsageWire, VectorStoreRequest, VideoRequest, encode, encode_pair,
-    parse,
+    UsageNumberView, UsageView, UsageWire, VectorStoreRequest, VideoRequest, encode, parse,
 };
 
 fn dec(text: &str) -> Decimal {
@@ -159,7 +158,8 @@ fn cost_extra_request_usage_keeps_details_and_numeric_extras() {
 
 #[test]
 fn cost_extra_result_pair_keeps_both_slots_as_numbers() {
-    let encoded = encode_pair(dec("0.00025"), Decimal::ZERO).expect("the pair encodes");
+    let encoded =
+        encode(&[Amount(dec("0.00025")), Amount(Decimal::ZERO)]).expect("the pair encodes");
     let decoded: Vec<Amount> = parse(&encoded).expect("the pair parses back");
     assert_eq!(decoded[0].0, dec("0.00025"));
     assert_eq!(decoded[1].0, Decimal::ZERO);

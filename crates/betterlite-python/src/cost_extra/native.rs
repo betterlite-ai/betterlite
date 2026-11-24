@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
@@ -6,12 +7,12 @@ use crate::cost_extra::convert::{
     OcrBatchRequest, OcrCostRequest, PartitionAnswer, PartitionUsageRequest, RealtimeCostAnswer,
     RealtimeCostWire, RealtimeTranscriptionWire, RerankRequest, ServiceTierGroup,
     TranscriptionRequest, UsageAnswer, UsageView, UsagesAnswer, VectorStoreRequest, VideoRequest,
-    encode, encode_pair, parse,
+    encode, parse,
 };
 use crate::cost_extra::engine::{Engine, collect_usage, combine_usage, partition_usage};
 use crate::cost_extra::error::{
-    batch_error, generic_error, image_error, realtime_error, rerank_error, resolution_error,
-    transcription_error, video_error,
+    batch_error, image_error, native_error, payload, realtime_error, rerank_error,
+    resolution_error, transcription_error, video_error,
 };
 use crate::cost_extra::settings::{Settings, SettingsWire};
 
@@ -39,8 +40,8 @@ impl NativeCostExtra {
         let cost = self
             .engine
             .ocr_cost(&wire)
-            .map_err(|error| ocr_error(&error))?;
-        encode_pair(cost, Decimal::ZERO).map_err(PyErr::from)
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        encode(&[Amount(cost), Amount(Decimal::ZERO)]).map_err(PyErr::from)
     }
 
     fn ocr_batch_cost(&self, request: &str) -> PyResult<String> {
@@ -48,8 +49,8 @@ impl NativeCostExtra {
         let cost = self
             .engine
             .ocr_batch_cost(&wire)
-            .map_err(|error| ocr_error(&error))?;
-        encode_pair(cost, Decimal::ZERO).map_err(PyErr::from)
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
+        encode(&[Amount(cost), Amount(Decimal::ZERO)]).map_err(PyErr::from)
     }
 
     fn vector_store_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
@@ -57,7 +58,7 @@ impl NativeCostExtra {
         let (prompt, completion) = self.engine.vector_store_cost(&wire).map_err(|error| {
             resolution_error(py, &error, wire.model.as_deref().unwrap_or_default())
         })?;
-        encode_pair(prompt, completion).map_err(PyErr::from)
+        encode(&[Amount(prompt), Amount(completion)]).map_err(PyErr::from)
     }
 
     fn rerank_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
@@ -66,7 +67,7 @@ impl NativeCostExtra {
             .engine
             .rerank_cost(&wire)
             .map_err(|error| rerank_error(py, &error, &wire.model))?;
-        encode_pair(prompt, completion).map_err(PyErr::from)
+        encode(&[Amount(prompt), Amount(completion)]).map_err(PyErr::from)
     }
 
     fn transcription_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
@@ -74,7 +75,7 @@ impl NativeCostExtra {
         let (prompt, completion) = self.engine.transcription_cost(&wire).map_err(|error| {
             transcription_error(py, &error, &wire.model, wire.custom_llm_provider.as_deref())
         })?;
-        encode_pair(prompt, completion).map_err(PyErr::from)
+        encode(&[Amount(prompt), Amount(completion)]).map_err(PyErr::from)
     }
 
     fn image_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
@@ -101,13 +102,14 @@ impl NativeCostExtra {
             .engine
             .batch_cost(&wire)
             .map_err(|error| batch_error(py, &error, &wire.model))?;
-        encode_pair(prompt, completion).map_err(PyErr::from)
+        encode(&[Amount(prompt), Amount(completion)]).map_err(PyErr::from)
     }
 
     #[staticmethod]
     fn combine_usage(py: Python<'_>, request: &str) -> PyResult<String> {
         let wire: CombineUsageRequest = parse(request)?;
-        let usage = combine_usage(&wire).map_err(|error| generic_error(py, &error))?;
+        let usage =
+            combine_usage(&wire).map_err(|error| native_error(py, payload(error.to_string())))?;
         encode(&UsageAnswer {
             usage: UsageView::from(&usage),
         })
@@ -117,7 +119,8 @@ impl NativeCostExtra {
     #[staticmethod]
     fn collect_usage(py: Python<'_>, request: &str) -> PyResult<String> {
         let wire: CollectUsageRequest = parse(request)?;
-        let usages = collect_usage(&wire).map_err(|error| generic_error(py, &error))?;
+        let usages =
+            collect_usage(&wire).map_err(|error| native_error(py, payload(error.to_string())))?;
         let views = usages.iter().map(UsageView::from).collect();
         encode(&UsagesAnswer { usages: views }).map_err(PyErr::from)
     }
@@ -125,7 +128,8 @@ impl NativeCostExtra {
     #[staticmethod]
     fn partition_usage(py: Python<'_>, request: &str) -> PyResult<String> {
         let wire: PartitionUsageRequest = parse(request)?;
-        let partition = partition_usage(&wire).map_err(|error| generic_error(py, &error))?;
+        let partition =
+            partition_usage(&wire).map_err(|error| native_error(py, payload(error.to_string())))?;
         let tiers = partition
             .into_iter()
             .map(|(service_tier, events)| ServiceTierGroup {
@@ -154,7 +158,7 @@ impl NativeCostExtra {
         let cost = self
             .engine
             .realtime_transcription_cost(&wire)
-            .map_err(|error| generic_error(py, &error))?;
+            .map_err(|error| native_error(py, payload(error.to_string())))?;
         encode(&CostAnswer { cost: Amount(cost) }).map_err(PyErr::from)
     }
 }

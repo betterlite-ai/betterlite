@@ -1,0 +1,632 @@
+import importlib
+import inspect
+from collections.abc import Callable, Mapping
+from inspect import Signature
+from typing import Final, Protocol, TypeAlias
+
+import pytest
+from litellm.types.utils import Usage as ReferenceUsage
+from pydantic import JsonValue, TypeAdapter
+from typing_extensions import NotRequired, TypedDict
+
+from betterlite import completion_cost
+from betterlite._cost_extra import (
+    BaseTokenUsageProcessor,
+    RealtimeAPITokenUsageProcessor,
+    ResponsesWebSocketTokenUsageProcessor as WsUsageProcessor,
+    batch_cost_calculator,
+    default_image_cost_calculator,
+    default_video_cost_calculator,
+    handle_realtime_stream_cost_calculation as realtime_stream_cost,
+    handle_realtime_transcription_cost_calculation,
+    ocr_batch_cost,
+    ocr_cost,
+    rerank_cost,
+    transcription_cost,
+    vector_store_search_cost,
+)
+from betterlite.cost_calculator import batch_cost_calculator as module_batch_cost_calculator
+from betterlite.cost_calculator import completion_cost as module_completion_cost
+from betterlite.cost_calculator import ocr_cost as module_ocr_cost
+from betterlite.ocr import OCRPage, OCRResponse, OCRUsageInfo
+from betterlite.types.rerank import RerankBilledUnits
+from betterlite.types.utils import Usage
+from betterlite.types.vector_stores import VectorStoreSearchResponse
+
+OCR_MODEL: Final = "mistral/mistral-ocr-latest"
+OCR_PAGES: Final = 3
+OCR_BATCH_PAGES: Final = 4
+OCR_ANNOTATION_PAGES: Final = 1
+VECTOR_MODEL: Final = "vertex_ai/search_api"
+RERANK_MODEL: Final = "rerank-v3.5"
+COHERE: Final = "cohere"
+RERANK_UNITS_COUNT: Final = 2
+TRANSCRIPTION_MODEL: Final = "whisper-1"
+TRANSCRIPTION_SECONDS: Final = 2.5
+IMAGE_MODEL: Final = "gpt-image-1"
+SIZED_IMAGE_MODEL: Final = "gpt-image-1.5"
+DALL_E_MODEL: Final = "dall-e-3"
+DALL_E_PRICE: Final = 0.04
+DALL_E_IMAGES: Final = 2
+IMAGE_QUALITY: Final = "high"
+IMAGE_SIZE: Final = "1024x1024"
+IMAGE_WIDE_SIZE: Final = "1024x1536"
+VIDEO_MODEL: Final = "veo-3.1-generate-001"
+VERTEX: Final = "vertex_ai"
+VIDEO_SECONDS: Final = 8.0
+VIDEO_RESOLUTION: Final = "720p"
+BATCH_MODEL: Final = "gpt-5.5"
+OPENAI: Final = "openai"
+EU_RESIDENCY: Final = "eu"
+BATCH_PROMPT_TOKENS: Final = 1000
+BATCH_COMPLETION_TOKENS: Final = 500
+CACHED_TOKENS_PER_CALL: Final = 50
+REALTIME_MODEL: Final = "gpt-realtime"
+REALTIME_PROMPT_TOKENS: Final = 100
+REALTIME_COMPLETION_TOKENS: Final = 20
+REALTIME_CACHED_TOKENS: Final = 50
+REALTIME_AUDIO_TOKENS: Final = 50
+REALTIME_OUTPUT_AUDIO_TOKENS: Final = 10
+WS_FIRST_PROMPT: Final = 10
+WS_FIRST_COMPLETION: Final = 2
+WS_SECOND_PROMPT: Final = 5
+WS_SECOND_COMPLETION: Final = 1
+WS_THIRD_PROMPT: Final = 3
+WS_THIRD_COMPLETION: Final = 1
+RELATIVE: Final = 1e-12
+ZERO: Final = 0.0
+
+PAIR: Final[TypeAdapter[tuple[float, float]]] = TypeAdapter(tuple[float, float])
+FLOAT: Final[TypeAdapter[float]] = TypeAdapter(float)
+
+
+class CountsView(TypedDict):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cached_tokens: int
+    prompt_audio_tokens: int
+    completion_audio_tokens: int
+
+
+class DetailsView(TypedDict, total=False):
+    cached_tokens: int
+    audio_tokens: int
+    text_tokens: int
+
+
+class DumpView(TypedDict):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    prompt_tokens_details: NotRequired[DetailsView | None]
+    completion_tokens_details: NotRequired[DetailsView | None]
+
+
+DUMP: Final[TypeAdapter[DumpView]] = TypeAdapter(DumpView)
+
+
+# LiteLLM's namespace modules carry no stubs, so its calls come back as JSON and are validated here.
+ReferenceValue: TypeAlias = JsonValue | ReferenceUsage | list[dict[str, JsonValue]]
+SignatureTarget: TypeAlias = Callable[..., ReferenceValue | tuple[float, float]]
+
+
+class ReferenceCall(Protocol):
+    def __call__(self, *args: ReferenceValue, **kwargs: ReferenceValue) -> JsonValue: ...
+
+
+class ReferenceModule(Protocol):
+    def __getattr__(self, name: str) -> ReferenceCall: ...
+
+
+class ReferenceProcessor(Protocol):
+    def combine_usage_objects(
+        self, usage_objects: list[ReferenceUsage]
+    ) -> ReferenceUsage: ...
+
+    def collect_usage_from_realtime_stream_results(  # ast-grep-ignore: no-long-names
+        self, results: list[dict[str, JsonValue]]
+    ) -> list[ReferenceUsage]: ...
+
+    def collect_and_combine_usage_from_realtime_stream_results(  # ast-grep-ignore: no-long-names
+        self, results: list[dict[str, JsonValue]]
+    ) -> ReferenceUsage: ...
+
+    def collect_usage_from_responses_ws_results(  # ast-grep-ignore: no-long-names
+        self, results: list[dict[str, JsonValue]]
+    ) -> tuple[ReferenceUsage, ...]: ...
+
+    def partition_results_by_service_tier(  # ast-grep-ignore: no-long-names
+        self, results: list[dict[str, JsonValue]]
+    ) -> Mapping[str | None, tuple[dict[str, JsonValue], ...]]: ...
+
+    def collect_and_combine_usage_from_responses_ws_results(  # ast-grep-ignore: no-long-names
+        self, results: list[dict[str, JsonValue]]
+    ) -> ReferenceUsage: ...
+
+
+class ReferenceProcessors(Protocol):
+    BaseTokenUsageProcessor: ReferenceProcessor
+    RealtimeAPITokenUsageProcessor: ReferenceProcessor
+    ResponsesWebSocketTokenUsageProcessor: ReferenceProcessor  # ast-grep-ignore: no-long-names
+
+
+REFERENCE: ReferenceModule = importlib.import_module("litellm.cost_calculator")
+REFERENCE_OCR: ReferenceModule = importlib.import_module(
+    "litellm.llms.base_llm.ocr.transformation"
+)
+REFERENCE_PROCESSORS: ReferenceProcessors = importlib.import_module("litellm.cost_calculator")
+
+RERANK_UNITS: Final[RerankBilledUnits] = {"search_units": RERANK_UNITS_COUNT}
+REFERENCE_RERANK_UNITS: Final[dict[str, JsonValue]] = {"search_units": RERANK_UNITS_COUNT}
+VECTOR_RESPONSE: Final[VectorStoreSearchResponse] = {
+    "object": "vector_store.search_results.page",
+    "search_query": "query",
+    "data": [],
+}
+REFERENCE_VECTOR_RESPONSE: Final[dict[str, JsonValue]] = {
+    "object": "vector_store.search_results.page",
+    "search_query": "query",
+    "data": [],
+}
+DALL_E_INFO: Final[dict[str, JsonValue]] = {"input_cost_per_image": DALL_E_PRICE}
+PAGES: Final[list[OCRPage]] = []
+REFERENCE_PAGES: Final[list[JsonValue]] = []
+REALTIME_USAGE: Final[dict[str, JsonValue]] = {
+    "type": "response.done",
+    "response": {
+        "usage": {
+            "input_tokens": REALTIME_PROMPT_TOKENS,
+            "output_tokens": REALTIME_COMPLETION_TOKENS,
+            "total_tokens": REALTIME_PROMPT_TOKENS + REALTIME_COMPLETION_TOKENS,
+            "input_token_details": {
+                "cached_tokens": REALTIME_CACHED_TOKENS,
+                "audio_tokens": REALTIME_AUDIO_TOKENS,
+                "text_tokens": REALTIME_AUDIO_TOKENS,
+            },
+            "output_token_details": {
+                "audio_tokens": REALTIME_OUTPUT_AUDIO_TOKENS,
+                "text_tokens": REALTIME_OUTPUT_AUDIO_TOKENS,
+            },
+        }
+    },
+}
+REALTIME_EVENTS: Final[list[dict[str, JsonValue]]] = [
+    {"type": "session.created", "session": {"model": REALTIME_MODEL}},
+    REALTIME_USAGE,
+    {"type": "response.done", "response": {}},
+]
+WS_EVENTS: Final[list[dict[str, JsonValue]]] = [
+    {
+        "type": "response.completed",
+        "response": {
+            "service_tier": "default",
+            "usage": {
+                "input_tokens": WS_FIRST_PROMPT,
+                "output_tokens": WS_FIRST_COMPLETION,
+                "total_tokens": WS_FIRST_PROMPT + WS_FIRST_COMPLETION,
+            },
+        },
+    },
+    {
+        "type": "response.completed",
+        "response": {
+            "service_tier": "flex",
+            "usage": {
+                "input_tokens": WS_SECOND_PROMPT,
+                "output_tokens": WS_SECOND_COMPLETION,
+                "total_tokens": WS_SECOND_PROMPT + WS_SECOND_COMPLETION,
+            },
+        },
+    },
+    {
+        "type": "response.incomplete",
+        "response": {
+            "usage": {
+                "input_tokens": WS_THIRD_PROMPT,
+                "output_tokens": WS_THIRD_COMPLETION,
+                "total_tokens": WS_THIRD_PROMPT + WS_THIRD_COMPLETION,
+            },
+        },
+    },
+    {
+        "type": "response.created",
+        "response": {
+            "usage": {
+                "input_tokens": REALTIME_PROMPT_TOKENS,
+                "output_tokens": REALTIME_COMPLETION_TOKENS,
+                "total_tokens": REALTIME_PROMPT_TOKENS + REALTIME_COMPLETION_TOKENS,
+            },
+        },
+    },
+    {"type": "response.completed", "response": {"service_tier": "default"}},
+]
+TRANSCRIPTION_EVENTS: Final[list[dict[str, JsonValue]]] = [
+    {
+        "type": "conversation.item.input_audio_transcription.completed",
+        "usage": {"type": "duration", "seconds": TRANSCRIPTION_SECONDS},
+    }
+]
+
+
+class ParameterView(Protocol):
+    @property
+    def default(self) -> JsonValue: ...
+
+
+def signature_rows(signature: Signature) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    for parameter in signature.parameters.values():
+        view: ParameterView = parameter
+        rows.append((parameter.name, parameter.kind.name, repr(view.default)))
+    return rows
+
+
+def assert_pair_matches(ours: tuple[float, float], reference: tuple[float, float]) -> None:
+    assert ours[0] == pytest.approx(reference[0], rel=RELATIVE)
+    assert ours[1] == pytest.approx(reference[1], rel=RELATIVE)
+
+
+def our_ocr(pages: int) -> OCRResponse:
+    return OCRResponse(
+        pages=PAGES, model=OCR_MODEL, usage_info=OCRUsageInfo(pages_processed=pages)
+    )
+
+
+def reference_ocr(pages: int) -> JsonValue:
+    return REFERENCE_OCR.OCRResponse(
+        pages=REFERENCE_PAGES,
+        model=OCR_MODEL,
+        usage_info=REFERENCE_OCR.OCRUsageInfo(pages_processed=pages),
+    )
+
+
+def our_usage(prompt: int, completion: int, cached: int) -> Usage:
+    return Usage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=prompt + completion,
+        cache_read_input_tokens=cached,
+    )
+
+
+def reference_usage(prompt: int, completion: int, cached: int) -> ReferenceUsage:
+    return ReferenceUsage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=prompt + completion,
+        cache_read_input_tokens=cached,
+    )
+
+
+def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
+    dump = DUMP.validate_python(usage.model_dump())
+    prompt = dump["prompt_tokens_details"] if "prompt_tokens_details" in dump else None
+    completion = (
+        dump["completion_tokens_details"] if "completion_tokens_details" in dump else None
+    )
+    cached = prompt["cached_tokens"] if prompt is not None and "cached_tokens" in prompt else 0
+    prompt_audio = prompt["audio_tokens"] if prompt is not None and "audio_tokens" in prompt else 0
+    completion_audio = (
+        completion["audio_tokens"]
+        if completion is not None and "audio_tokens" in completion
+        else 0
+    )
+    return CountsView(
+        prompt_tokens=dump["prompt_tokens"],
+        completion_tokens=dump["completion_tokens"],
+        total_tokens=dump["total_tokens"],
+        cached_tokens=cached,
+        prompt_audio_tokens=prompt_audio,
+        completion_audio_tokens=completion_audio,
+    )
+
+
+def test_cost_extra_signatures() -> None:
+    pairs: list[tuple[SignatureTarget, ReferenceCall]] = [
+        (ocr_cost, REFERENCE.ocr_cost),
+        (ocr_batch_cost, REFERENCE.ocr_batch_cost),
+        (vector_store_search_cost, REFERENCE.vector_store_search_cost),
+        (rerank_cost, REFERENCE.rerank_cost),
+        (transcription_cost, REFERENCE.transcription_cost),
+        (default_image_cost_calculator, REFERENCE.default_image_cost_calculator),
+        (default_video_cost_calculator, REFERENCE.default_video_cost_calculator),
+        (batch_cost_calculator, REFERENCE.batch_cost_calculator),
+        (realtime_stream_cost, REFERENCE.handle_realtime_stream_cost_calculation),
+    ]
+    for ours, reference in pairs:
+        assert signature_rows(inspect.signature(ours)) == signature_rows(
+            inspect.signature(reference)
+        )
+
+
+def test_ocr_cost_pages() -> None:
+    ours = ocr_cost(OCR_MODEL, None, our_ocr(OCR_PAGES))
+    reference = PAIR.validate_python(
+        REFERENCE.ocr_cost(
+            model=OCR_MODEL, custom_llm_provider=None, response=reference_ocr(OCR_PAGES)
+        )
+    )
+    assert_pair_matches(ours, reference)
+
+
+def test_ocr_batch_cost_pages() -> None:
+    usage = OCRUsageInfo(
+        pages_processed=OCR_BATCH_PAGES, pages_processed_annotation=OCR_ANNOTATION_PAGES
+    )
+    ours = ocr_batch_cost(OCR_MODEL, None, usage)
+    reference = PAIR.validate_python(
+        REFERENCE.ocr_batch_cost(
+            model=OCR_MODEL,
+            custom_llm_provider=None,
+            usage_info=REFERENCE_OCR.OCRUsageInfo(
+                pages_processed=OCR_BATCH_PAGES,
+                pages_processed_annotation=OCR_ANNOTATION_PAGES,
+            ),
+        )
+    )
+    assert_pair_matches(ours, reference)
+
+
+def test_vector_store_cost_vertex() -> None:
+    ours = vector_store_search_cost(VECTOR_MODEL, VERTEX, VECTOR_RESPONSE)
+    reference = PAIR.validate_python(
+        REFERENCE.vector_store_search_cost(
+            model=VECTOR_MODEL,
+            custom_llm_provider=VERTEX,
+            response=REFERENCE_VECTOR_RESPONSE,
+        )
+    )
+    assert_pair_matches(ours, reference)
+    assert ours[0] > ZERO
+
+
+def test_rerank_cost_units() -> None:
+    ours = rerank_cost(RERANK_MODEL, COHERE, RERANK_UNITS)
+    reference = PAIR.validate_python(
+        REFERENCE.rerank_cost(
+            model=RERANK_MODEL,
+            custom_llm_provider=COHERE,
+            billed_units=REFERENCE_RERANK_UNITS,
+        )
+    )
+    assert_pair_matches(ours, reference)
+    assert ours[0] > ZERO
+
+
+def test_transcription_duration() -> None:
+    ours = transcription_cost(TRANSCRIPTION_MODEL, None, TRANSCRIPTION_SECONDS)
+    reference = PAIR.validate_python(
+        REFERENCE.transcription_cost(
+            model=TRANSCRIPTION_MODEL,
+            custom_llm_provider=None,
+            duration=TRANSCRIPTION_SECONDS,
+        )
+    )
+    assert_pair_matches(ours, reference)
+    assert ours[1] > ZERO
+
+
+def test_image_cost_defaults() -> None:
+    ours = default_image_cost_calculator(model=IMAGE_MODEL)
+    reference = FLOAT.validate_python(
+        REFERENCE.default_image_cost_calculator(model=IMAGE_MODEL)
+    )
+    assert ours == pytest.approx(reference, rel=RELATIVE)
+
+
+def test_image_cost_quality_size() -> None:
+    ours = default_image_cost_calculator(
+        model=SIZED_IMAGE_MODEL, quality=IMAGE_QUALITY, size=IMAGE_WIDE_SIZE
+    )
+    reference = FLOAT.validate_python(
+        REFERENCE.default_image_cost_calculator(
+            model=SIZED_IMAGE_MODEL, quality=IMAGE_QUALITY, size=IMAGE_WIDE_SIZE
+        )
+    )
+    assert ours == pytest.approx(reference, rel=RELATIVE)
+
+
+def test_image_cost_model_info() -> None:
+    ours = default_image_cost_calculator(
+        model=DALL_E_MODEL,
+        quality="standard",
+        n=DALL_E_IMAGES,
+        size=IMAGE_SIZE,
+        model_info=DALL_E_INFO,
+    )
+    reference = FLOAT.validate_python(
+        REFERENCE.default_image_cost_calculator(
+            model=DALL_E_MODEL,
+            quality="standard",
+            n=DALL_E_IMAGES,
+            size=IMAGE_SIZE,
+            model_info=DALL_E_INFO,
+        )
+    )
+    assert ours == pytest.approx(reference, rel=RELATIVE)
+
+
+def test_video_cost_duration() -> None:
+    ours = default_video_cost_calculator(
+        model=VIDEO_MODEL, duration_seconds=VIDEO_SECONDS, custom_llm_provider=VERTEX
+    )
+    reference = FLOAT.validate_python(
+        REFERENCE.default_video_cost_calculator(
+            model=VIDEO_MODEL, duration_seconds=VIDEO_SECONDS, custom_llm_provider=VERTEX
+        )
+    )
+    assert ours == pytest.approx(reference, rel=RELATIVE)
+    assert ours > ZERO
+
+
+def test_video_cost_resolution() -> None:
+    ours = default_video_cost_calculator(
+        model=VIDEO_MODEL,
+        duration_seconds=VIDEO_SECONDS,
+        custom_llm_provider=VERTEX,
+        video_resolution=VIDEO_RESOLUTION,
+    )
+    reference = FLOAT.validate_python(
+        REFERENCE.default_video_cost_calculator(
+            model=VIDEO_MODEL,
+            duration_seconds=VIDEO_SECONDS,
+            custom_llm_provider=VERTEX,
+            video_resolution=VIDEO_RESOLUTION,
+        )
+    )
+    assert ours == pytest.approx(reference, rel=RELATIVE)
+
+
+def test_batch_cost_eu_residency() -> None:
+    ours = batch_cost_calculator(
+        our_usage(BATCH_PROMPT_TOKENS, BATCH_COMPLETION_TOKENS, 0),
+        BATCH_MODEL,
+        custom_llm_provider=OPENAI,
+        data_residency=EU_RESIDENCY,
+    )
+    reference = PAIR.validate_python(
+        REFERENCE.batch_cost_calculator(
+            usage=REFERENCE_TYPES.Usage(
+                prompt_tokens=BATCH_PROMPT_TOKENS,
+                completion_tokens=BATCH_COMPLETION_TOKENS,
+                total_tokens=BATCH_PROMPT_TOKENS + BATCH_COMPLETION_TOKENS,
+            ),
+            model=BATCH_MODEL,
+            custom_llm_provider=OPENAI,
+            data_residency=EU_RESIDENCY,
+        )
+    )
+    assert_pair_matches(ours, reference)
+    assert ours[0] > ZERO
+
+
+def test_processor_combines() -> None:
+    ours = BaseTokenUsageProcessor.combine_usage_objects(
+        [
+            our_usage(REALTIME_PROMPT_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL),
+            our_usage(
+                REALTIME_COMPLETION_TOKENS,
+                REALTIME_COMPLETION_TOKENS,
+                CACHED_TOKENS_PER_CALL,
+            ),
+        ]
+    )
+    reference = REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects(
+        [
+            reference_usage(
+                REALTIME_PROMPT_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL
+            ),
+            reference_usage(
+                REALTIME_COMPLETION_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL
+            ),
+        ]
+    )
+    assert usage_counts(ours) == usage_counts(reference)
+    assert usage_counts(ours)["prompt_tokens"] == (
+        REALTIME_PROMPT_TOKENS + REALTIME_COMPLETION_TOKENS
+    )
+
+
+def test_processor_empty() -> None:
+    ours = BaseTokenUsageProcessor.combine_usage_objects([])
+    reference = REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects([])
+    assert usage_counts(ours) == usage_counts(reference)
+
+
+def test_processor_realtime() -> None:
+    ours = RealtimeAPITokenUsageProcessor.collect_usage_from_realtime_stream_results(
+        [REALTIME_USAGE]
+    )
+    reference = (
+        REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
+        .collect_usage_from_realtime_stream_results([REALTIME_USAGE])
+    )
+    assert len(ours) == len(reference)
+    assert usage_counts(ours[0]) == usage_counts(reference[0])
+    assert usage_counts(ours[0])["cached_tokens"] == REALTIME_CACHED_TOKENS
+    assert usage_counts(ours[0])["prompt_audio_tokens"] == REALTIME_AUDIO_TOKENS
+
+
+def test_processor_ws_collects() -> None:
+    ours = WsUsageProcessor.collect_usage_from_responses_ws_results(
+        WS_EVENTS
+    )
+    reference = (
+        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+        .collect_usage_from_responses_ws_results(WS_EVENTS)
+    )
+    assert len(ours) == len(reference)
+    assert [usage_counts(usage) for usage in ours] == [
+        usage_counts(usage) for usage in reference
+    ]
+
+
+def test_processor_ws_combines() -> None:
+    ours = (
+        WsUsageProcessor.collect_and_combine_usage_from_responses_ws_results(WS_EVENTS)
+    )
+    reference = (
+        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+        .collect_and_combine_usage_from_responses_ws_results(WS_EVENTS)
+    )
+    assert usage_counts(ours) == usage_counts(reference)
+
+
+def test_processor_ws_partitions() -> None:
+    ours = WsUsageProcessor.partition_results_by_service_tier(WS_EVENTS)
+    reference = (
+        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+        .partition_results_by_service_tier(WS_EVENTS)
+    )
+    assert set(ours) == set(reference)
+    for tier, events in ours.items():
+        assert list(events) == list(reference[tier])
+
+
+def test_realtime_cost_audio() -> None:
+    combined = (
+        RealtimeAPITokenUsageProcessor
+        .collect_and_combine_usage_from_realtime_stream_results(REALTIME_EVENTS)
+    )
+    ours = realtime_stream_cost(
+        results=REALTIME_EVENTS,
+        combined_usage_object=combined,
+        custom_llm_provider=OPENAI,
+        litellm_model_name=REALTIME_MODEL,
+    )
+    reference_combined = (
+        REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
+        .collect_and_combine_usage_from_realtime_stream_results(REALTIME_EVENTS)
+    )
+    reference = FLOAT.validate_python(
+        REFERENCE.handle_realtime_stream_cost_calculation(
+            results=REALTIME_EVENTS,
+            combined_usage_object=reference_combined,
+            custom_llm_provider=OPENAI,
+            litellm_model_name=REALTIME_MODEL,
+        )
+    )
+    assert ours == pytest.approx(reference, rel=RELATIVE)
+    assert ours > ZERO
+
+
+def test_realtime_transcription() -> None:
+    ours = handle_realtime_transcription_cost_calculation(
+        TRANSCRIPTION_EVENTS, OPENAI, TRANSCRIPTION_MODEL
+    )
+    reference = FLOAT.validate_python(
+        REFERENCE.handle_realtime_transcription_cost_calculation(
+            results=TRANSCRIPTION_EVENTS,
+            custom_llm_provider=OPENAI,
+            litellm_model_name=TRANSCRIPTION_MODEL,
+        )
+    )
+    assert ours == pytest.approx(reference, rel=RELATIVE)
+    assert ours > ZERO
+
+
+def test_cost_module_reexports() -> None:
+    assert module_ocr_cost is ocr_cost
+    assert module_batch_cost_calculator is batch_cost_calculator
+    assert module_completion_cost is completion_cost

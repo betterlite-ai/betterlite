@@ -1,0 +1,30 @@
+task: B8064
+deviations:
+  - what: >-
+      The specialised cost functions return a Python float made from Rust's exact Decimal result, so
+      a last-digit difference from LiteLLM's float arithmetic is possible; the tests compare with a
+      relative difference of 1e-12.
+    why: The native engine computes money as Decimal, so the value crosses into Python once, as a float.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2496
+  - what: >-
+      A model the image calculator cannot price raises the same bare Exception class as LiteLLM but
+      with a shorter message: betterlite names the model ("model X has no cost map entry" or "no
+      pricing information found for model X"), where LiteLLM lists every candidate name it tried.
+    why: The Rust calculator's error names its own cause, and the candidate list lives only in the
+      Python lookup loop it ports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2475
+  - what: >-
+      ocr_cost on a model with a per-page rate whose usage reports no pages_processed raises
+      ValueError with a message naming the model and provider ("OCR response pages_processed is
+      missing for model=... custom_llm_provider=..."), where LiteLLM's message is the fixed "OCR
+      response pages_processed is None".
+    why: The Rust OCR calculator's error carries the model it read, so the failure names what was
+      priced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2233
+  - what: >-
+      A realtime result with no type key, or a response.done event with no response object, raises
+      a native Exception naming the missing field or shape; LiteLLM indexes result["type"] and
+      result["response"] directly and lets Python's KeyError escape.
+    why: The event list arrives as data, so the failure names the field instead of a bare KeyError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2828
+kept_bugs: []
