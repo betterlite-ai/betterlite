@@ -1,0 +1,10 @@
+kind: helper
+name: session-cursor-empty-key-seed
+call:
+  session_cursor:
+    cursor: "|hashed-key|session-1"
+calls:
+  - session_cursor:
+      cursor: "2026-02-28 12:00:00||session-1"
+env: {}
+compare: {ignore: []}

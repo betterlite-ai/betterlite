@@ -1,0 +1,13 @@
+kind: helper
+name: prometheus-scrape-corpus-openmetrics-gzip
+call:
+  b10090:
+    metrics:
+      - {kind: histogram, name: corpus_latency, help: latency, labels: [], buckets: [1.0]}
+    updates:
+      - {metric: 0, labels: [], action: observe, value: 0.5}
+    accept: application/openmetrics-text
+    accept_encoding: gzip
+    names: []
+env: {}
+compare: {ignore: []}
