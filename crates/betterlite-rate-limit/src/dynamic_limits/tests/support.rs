@@ -84,29 +84,27 @@ impl RecordingCache {
         cache
     }
 
-    fn configured(gate: Option<Arc<Notify>>, read_fails: bool, write_fails: bool) -> Self {
-        Self {
-            sets: Arc::default(),
-            reads: Arc::default(),
-            writes: Arc::default(),
-            gate,
-            read_fails,
-            write_fails,
-        }
-    }
-
     pub(crate) fn failing_reads() -> Self {
-        Self::configured(None, true, false)
+        Self {
+            read_fails: true,
+            ..Self::default()
+        }
     }
 
     // a cache whose set add waits for release, so a hook that awaited the write could never return
     pub(crate) fn gated() -> Self {
-        Self::configured(Some(Arc::default()), false, false)
+        Self {
+            gate: Some(Arc::default()),
+            ..Self::default()
+        }
     }
 
     // a cache whose set add always fails, still recording the attempt so the test can see the task ran
     pub(crate) fn failing_writes() -> Self {
-        Self::configured(None, false, true)
+        Self {
+            write_fails: true,
+            ..Self::default()
+        }
     }
 
     pub(crate) fn release(&self) {
@@ -177,9 +175,10 @@ impl MinuteSetCache for RecordingCache {
         if self.write_fails {
             return Err(CacheWriteError);
         }
-        let mut sets = self.lock_sets();
-        let stored = sets.entry(key.to_owned()).or_default();
-        stored.extend(values.iter().cloned());
+        self.lock_sets()
+            .entry(key.to_owned())
+            .or_default()
+            .extend(values.iter().cloned());
         Ok(())
     }
 }
@@ -292,8 +291,8 @@ pub(crate) fn default_policy() -> PriorityPolicy {
     }
 }
 
-pub(crate) fn prod_reservation(value: PriorityValue) -> Option<BTreeMap<String, PriorityValue>> {
-    Some(BTreeMap::from([(String::from("prod"), value)]))
+pub(crate) fn prod_reservation(value: PriorityValue) -> BTreeMap<String, PriorityValue> {
+    BTreeMap::from([(String::from("prod"), value)])
 }
 
 pub(crate) fn cache_holding(values: &[&str]) -> Arc<RecordingCache> {
@@ -341,11 +340,9 @@ pub(crate) struct Harness {
 impl Harness {
     pub(crate) fn handler(&self) -> DynamicRateLimitHandler {
         let cache: Arc<dyn MinuteSetCache> = Arc::<RecordingCache>::clone(&self.cache);
-        let llm_router: Option<Arc<dyn DynamicLimitRouter>> = if self.with_router {
-            Some(Arc::new(self.router.clone()))
-        } else {
-            None
-        };
+        let llm_router = self
+            .with_router
+            .then(|| -> Arc<dyn DynamicLimitRouter> { Arc::new(self.router.clone()) });
         handler_over(cache, llm_router, self.policy())
     }
 
@@ -421,7 +418,7 @@ pub(crate) fn failing_harness(failure: Failure) -> Harness {
         Failure::NoActiveProjects => cache = cache_holding(&[]),
         Failure::InfiniteWeight => {
             cache = cache_holding(&[KEY_HASH]);
-            reservation = prod_reservation(PriorityValue::Percent(f64::INFINITY));
+            reservation = Some(prod_reservation(PriorityValue::Percent(f64::INFINITY)));
         }
     }
     Harness {

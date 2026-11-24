@@ -18,6 +18,7 @@ use betterlite_rate_limit::provider_attribution::{
 };
 use betterlite_redact::structured::Payload;
 use rstest::rstest;
+use tokio::time::timeout;
 
 use crate::support::{
     FIXED_MINUTE, Failure, FakeRouter, KEY_HASH, KEYLESS_FIXTURE, MINUTE_KEY, MODEL, NEXT_MINUTE,
@@ -132,7 +133,7 @@ async fn clamping() {
     let harness = harness_with(
         FakeRouter::answering((Some(100), Some(100)), (Some(140), Some(140))),
         Arc::default(),
-        prod_reservation(PriorityValue::Percent(1.0)),
+        Some(prod_reservation(PriorityValue::Percent(1.0))),
     );
     let usage = harness
         .handler()
@@ -145,8 +146,8 @@ async fn clamping() {
 
 // an exact spend and a negative weight also clamp to zero
 #[rstest]
-#[case::spent(100, 100, 1.0, 0)]
-#[case::negative_weight(100, 0, -1.0, 100)]
+#[case::spent(100, 100, 1.0_f64, 0)]
+#[case::negative_weight(100, 0, -1.0_f64, 100)]
 #[tokio::test]
 async fn clamping_shapes(
     #[case] total: i64,
@@ -157,7 +158,7 @@ async fn clamping_shapes(
     let harness = harness_with(
         FakeRouter::answering((Some(total), Some(total)), (Some(used), Some(used))),
         Arc::default(),
-        prod_reservation(PriorityValue::Percent(weight)),
+        Some(prod_reservation(PriorityValue::Percent(weight))),
     );
     let usage = harness
         .handler()
@@ -188,7 +189,7 @@ async fn overflow_saturates() {
     let harness = harness_with(
         FakeRouter::answering((Some(i64::MAX), Some(i64::MAX)), (Some(0), Some(0))),
         Arc::default(),
-        prod_reservation(PriorityValue::Percent(2.0)),
+        Some(prod_reservation(PriorityValue::Percent(2.0))),
     );
     let usage = harness
         .handler()
@@ -204,7 +205,7 @@ async fn negative_overflow_clamps_to_zero() {
     let harness = harness_with(
         FakeRouter::answering((Some(i64::MIN), Some(i64::MIN)), (Some(0), Some(0))),
         Arc::default(),
-        prod_reservation(PriorityValue::Percent(2.0)),
+        Some(prod_reservation(PriorityValue::Percent(2.0))),
     );
     let usage = harness
         .handler()
@@ -426,7 +427,7 @@ async fn pre_call_returns_without_waiting_for_the_set_write() {
     let handler = handler_over(port, llm_router, default_policy());
     let key = principal(PLAIN_KEY_FIXTURE);
     let call = request(Some(MODEL), &key);
-    tokio::time::timeout(Duration::from_secs(5), handler.async_pre_call_hook(&call))
+    timeout(Duration::from_secs(5), handler.async_pre_call_hook(&call))
         .await
         .expect("the hook returns without the set write")
         .expect("the request passes");
@@ -544,7 +545,7 @@ async fn weight_is_one_for_an_unknown_priority() {
     let harness = harness_with(
         FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0))),
         cache_counting(Some(1)),
-        prod_reservation(PriorityValue::Percent(0.5)),
+        Some(prod_reservation(PriorityValue::Percent(0.5))),
     );
     let usage = harness
         .handler()
@@ -558,25 +559,24 @@ async fn weight_is_one_without_a_priority() {
     let harness = harness_with(
         FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0))),
         cache_counting(Some(1)),
-        prod_reservation(PriorityValue::Percent(0.5)),
+        Some(prod_reservation(PriorityValue::Percent(0.5))),
     );
     let usage = harness.handler().check_available_usage(MODEL, None).await;
     assert_eq!(usage.available_tpm, Some(100));
 }
 
 #[rstest]
-#[case::percent_share(PriorityKind::Percent, 0.5)]
-#[case::rpm_share(PriorityKind::Rpm, 50.0)]
-#[case::tpm_share(PriorityKind::Tpm, 50.0)]
+#[case::percent_share(PriorityKind::Percent, 0.5_f64)]
+#[case::rpm_share(PriorityKind::Rpm, 50.0_f64)]
+#[case::tpm_share(PriorityKind::Tpm, 50.0_f64)]
 #[tokio::test]
 async fn weight_uses_the_reserved_share(#[case] kind: PriorityKind, #[case] value: f64) {
     let harness = harness_with(
         FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0))),
         cache_counting(Some(1)),
-        prod_reservation(PriorityValue::Reservation(PriorityReservation {
-            kind,
-            value,
-        })),
+        Some(prod_reservation(PriorityValue::Reservation(
+            PriorityReservation { kind, value },
+        ))),
     );
     let usage = harness
         .handler()
@@ -590,7 +590,7 @@ async fn pre_call_reads_the_priority_from_key_metadata() {
     let harness = harness_with(
         FakeRouter::answering((Some(1), Some(100)), (Some(0), Some(0))),
         cache_counting(Some(1)),
-        prod_reservation(PriorityValue::Percent(0.5)),
+        Some(prod_reservation(PriorityValue::Percent(0.5))),
     );
     let handler = harness.handler();
     let reserved = principal(PROD_KEY_FIXTURE);
@@ -615,7 +615,7 @@ async fn a_non_text_priority_keeps_the_default_weight() {
     let harness = harness_with(
         FakeRouter::answering((Some(1), Some(100)), (Some(0), Some(0))),
         cache_counting(Some(1)),
-        prod_reservation(PriorityValue::Percent(0.5)),
+        Some(prod_reservation(PriorityValue::Percent(0.5))),
     );
     let key = principal(NUMBER_KEY_FIXTURE);
     harness
@@ -650,6 +650,6 @@ async fn update_variables_sets_the_router() {
 fn rejection(error: DynamicLimitError) -> Box<ProxyRateLimitError> {
     match error {
         DynamicLimitError::Rejected(rate_limit) => rate_limit,
-        DynamicLimitError::Header(error) => panic!("unexpected header failure: {error}"),
+        DynamicLimitError::Header(source) => panic!("unexpected header failure: {source}"),
     }
 }
