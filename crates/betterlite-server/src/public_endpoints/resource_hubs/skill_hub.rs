@@ -4,6 +4,8 @@ use axum::Json;
 use axum::extract::State;
 use betterlite_core::api::claude_plugin_policy::{ClaudePluginPolicyError, DB_NOT_CONNECTED};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde_json::value::RawValue;
 
 use super::ResourceHubsState;
 use super::error::ResourceHubsError;
@@ -11,25 +13,16 @@ use super::plugin_table::{PluginRow, PluginTable};
 use super::plugin_types::{ListPluginsResponse, PluginAuthor, PluginListItem};
 use super::timestamps::utc_timestamp_text;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct Manifest {
-    #[serde(default)]
     source: SourceField,
-    #[serde(default)]
     version: Option<String>,
-    #[serde(default)]
     description: Option<String>,
-    #[serde(default)]
     author: Option<PluginAuthor>,
-    #[serde(default)]
     homepage: Option<String>,
-    #[serde(default)]
     keywords: Option<Vec<String>>,
-    #[serde(default)]
     category: Option<String>,
-    #[serde(default)]
     domain: Option<String>,
-    #[serde(default)]
     namespace: Option<String>,
 }
 
@@ -107,9 +100,41 @@ fn plugin_item(row: &PluginRow) -> Result<PluginListItem, ResourceHubsError> {
     })
 }
 
+// LiteLLM calls .get on the parsed manifest, so anything but a JSON object fails the request
 fn manifest_of(raw: Option<&str>) -> Result<Manifest, ResourceHubsError> {
     let Some(text) = raw.filter(|text| !text.is_empty()) else {
         return Ok(Manifest::default());
     };
-    serde_json::from_str(text).map_err(ResourceHubsError::Manifest)
+    let entries: BTreeMap<String, Box<RawValue>> =
+        serde_json::from_str(text).map_err(ResourceHubsError::Manifest)?;
+    let source = match entries.get("source") {
+        Some(encoded) => {
+            serde_json::from_str(encoded.get()).map_err(ResourceHubsError::Manifest)?
+        }
+        None => SourceField::default(),
+    };
+    Ok(Manifest {
+        source,
+        version: manifest_field(&entries, "version")?,
+        description: manifest_field(&entries, "description")?,
+        author: manifest_field(&entries, "author")?,
+        homepage: manifest_field(&entries, "homepage")?,
+        keywords: manifest_field(&entries, "keywords")?,
+        category: manifest_field(&entries, "category")?,
+        domain: manifest_field(&entries, "domain")?,
+        namespace: manifest_field(&entries, "namespace")?,
+    })
+}
+
+fn manifest_field<T>(
+    entries: &BTreeMap<String, Box<RawValue>>,
+    key: &str,
+) -> Result<Option<T>, ResourceHubsError>
+where
+    T: DeserializeOwned,
+{
+    let Some(raw) = entries.get(key) else {
+        return Ok(None);
+    };
+    serde_json::from_str::<Option<T>>(raw.get()).map_err(ResourceHubsError::Manifest)
 }

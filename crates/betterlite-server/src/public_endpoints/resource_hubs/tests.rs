@@ -109,7 +109,10 @@ fn agent_hub_returns_no_agents_when_allowlist_is_none() {
 
 #[test]
 fn agent_hub_filters_agents_by_allowlist_membership() {
-    let registry = registry_with(vec![agent("alpha", full_card()), agent("beta", "{}")]);
+    let registry = registry_with(vec![
+        agent("alpha", full_card()),
+        agent("beta", r#"{"name":"beta"}"#),
+    ]);
     let groups = vec![String::from("beta")];
     let cards = public_agent_cards(
         &registry,

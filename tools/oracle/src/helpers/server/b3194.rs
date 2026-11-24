@@ -13,6 +13,7 @@ use betterlite_server::public_endpoints::resource_hubs::mcp_hub::public_mcp_serv
 use betterlite_server::public_endpoints::resource_hubs::plugin_table::{PluginRow, PluginTable};
 use betterlite_server::public_endpoints::resource_hubs::skill_hub::plugin_response;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use tokio::runtime::Builder;
 
 mod tests;
@@ -24,7 +25,7 @@ pub(crate) struct Op;
 pub(crate) enum Input {
     #[serde(rename = "agent_hub")]
     Agent {
-        agents: Vec<AgentResponse>,
+        agents: Vec<serde_json::Value>,
         #[serde(default)]
         public_agent_groups: Option<Vec<String>>,
         request_base_url: String,
@@ -34,15 +35,15 @@ pub(crate) enum Input {
     },
     #[serde(rename = "mcp_hub")]
     Mcp {
-        config_servers: Vec<MCPServer>,
-        db_servers: Vec<MCPServer>,
+        config_servers: Vec<serde_json::Value>,
+        db_servers: Vec<serde_json::Value>,
         #[serde(default)]
         public_mcp_servers: Option<Vec<String>>,
         public_hub_strict: bool,
     },
     #[serde(rename = "skill_hub")]
     Skill {
-        plugins: Vec<PluginRow>,
+        plugins: Vec<serde_json::Value>,
         #[serde(default)]
         table_error: bool,
     },
@@ -60,7 +61,7 @@ impl Helper for Op {
                 root_path,
                 proxy_base_url,
             } => agent_hub_answer(
-                agents,
+                &records::<AgentResponse>(agents)?,
                 public_agent_groups.as_deref(),
                 request_base_url,
                 root_path,
@@ -72,17 +73,30 @@ impl Helper for Op {
                 public_mcp_servers,
                 public_hub_strict,
             } => mcp_hub_answer(
-                config_servers,
-                db_servers,
+                &records::<MCPServer>(config_servers)?,
+                &records::<MCPServer>(db_servers)?,
                 public_mcp_servers.as_deref(),
                 *public_hub_strict,
             ),
             Input::Skill {
                 plugins,
                 table_error,
-            } => skill_hub_answer(plugins, *table_error),
+            } => skill_hub_answer(&records::<PluginRow>(plugins)?, *table_error),
         }
     }
+}
+
+// the agent card's RawValue fields decode only from JSON text, so each record goes through text
+fn records<T>(values: &[serde_json::Value]) -> Result<Vec<T>, Box<HelperError>>
+where
+    T: DeserializeOwned,
+{
+    let mut decoded = Vec::new();
+    for value in values {
+        let text = serde_json::to_string(value)?;
+        decoded.push(serde_json::from_str(&text)?);
+    }
+    Ok(decoded)
 }
 
 fn agent_hub_answer(
