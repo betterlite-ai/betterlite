@@ -28,7 +28,7 @@ pub(crate) struct ErrorBody {
 
 impl ErrorBody {
     // a status whose error object names none of the three fields has no body to hand on
-    pub(crate) const fn from_fields(
+    pub(crate) fn from_fields(
         error_type: Option<String>,
         param: Option<String>,
         code: Option<String>,

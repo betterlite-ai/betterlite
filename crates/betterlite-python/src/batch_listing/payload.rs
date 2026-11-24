@@ -65,9 +65,9 @@ pub(crate) fn error_payload(
 
 // the provider error a list or cancel call answered with, in the entry's own type
 #[derive(Clone, Copy)]
-pub(crate) enum ProviderError<'a> {
-    List(&'a BatchProviderListError),
-    Cancel(&'a BatchProviderCancelError<DispatchFailure>),
+pub(crate) enum ProviderError<'error> {
+    List(&'error BatchProviderListError),
+    Cancel(&'error BatchProviderCancelError<DispatchFailure>),
 }
 
 // LiteLLM names the provider the request asked for and model n/a when its branch table has no entry
@@ -108,10 +108,10 @@ pub(crate) fn provider_error_payload(
 }
 
 // the provider and model a list error names: the unsupported one and n/a, or the caller's and none
-const fn list_target<'a>(
-    error: &'a BatchProviderListError,
-    provider: &'a str,
-) -> (&'a str, Option<&'a str>) {
+const fn list_target<'error>(
+    error: &'error BatchProviderListError,
+    provider: &'error str,
+) -> (&'error str, Option<&'error str>) {
     match error {
         BatchProviderListError::UnsupportedProvider {
             provider: unsupported,

@@ -210,9 +210,9 @@ async fn xai_cancel(
 
 // the SDK error a provider call answered with, in its executor's own type
 #[derive(Clone, Copy)]
-pub(crate) enum ProviderFailure<'a> {
-    OpenAi(&'a BatchesError),
-    Xai(&'a XaiBatchesError),
+pub(crate) enum ProviderFailure<'error> {
+    OpenAi(&'error BatchesError),
+    Xai(&'error XaiBatchesError),
 }
 
 // one shape for both executors: a provider status keeps its own message, anything else is a connection failure
