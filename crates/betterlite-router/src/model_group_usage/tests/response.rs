@@ -152,6 +152,61 @@ fn existing_rate_limit_headers_win_over_the_remaining_usage() {
 }
 
 #[test]
+fn a_parsed_response_gets_the_headers_on_its_hidden_params() {
+    let rows = [deployment("group", "a", "openai/gpt-4o")];
+    let cache = FakeCache::answering(answered(vec![number(3), Json::Null]));
+    let metadata = FakeMetadata {
+        answer: Some(group_info(None, Some(10), None, None)),
+    };
+    let kwargs = object(vec![("metadata", bucket("a"))]);
+    let hidden = object(vec![(
+        "additional_headers",
+        Json::Object(object(vec![("x-existing", text("kept"))])),
+    )]);
+    let returned = runtime()
+        .block_on(set_response_headers(ResponseHeadersRequest {
+            response: Response::Attributed(hidden),
+            model_group: Some("group"),
+            request_kwargs: Some(&kwargs),
+            model_list: Some(&rows),
+            metadata: &metadata,
+            cache: &cache,
+            now: now(),
+        }))
+        .expect("the parsed response");
+    let Response::Attributed(hidden) = returned else {
+        panic!("the parsed response is no longer attributed");
+    };
+    assert_eq!(hidden.get("model_id"), Some(&text("a")));
+    let headers = object_field(&hidden, "additional_headers");
+    assert_eq!(headers.get("x-existing"), Some(&text("kept")));
+    assert_eq!(headers.get("x-litellm-model-group"), Some(&text("group")));
+    assert_eq!(headers.get("x-ratelimit-limit-requests"), Some(&number(10)));
+}
+
+#[test]
+fn the_stream_wrapper_comes_back_without_consuming_events() {
+    let rows = [deployment("group", "a", "openai/gpt-4o")];
+    let cache = FakeCache::answering(answered(vec![number(3), Json::Null]));
+    let metadata = FakeMetadata {
+        answer: Some(group_info(None, Some(10), None, None)),
+    };
+    let returned = runtime()
+        .block_on(set_response_headers(ResponseHeadersRequest {
+            response: Response::Stream,
+            model_group: Some("group"),
+            request_kwargs: None,
+            model_list: Some(&rows),
+            metadata: &metadata,
+            cache: &cache,
+            now: now(),
+        }))
+        .expect("the wrapped stream");
+    assert_eq!(returned, Response::Stream);
+    assert_eq!(cache.batches().len(), 1);
+}
+
+#[test]
 fn decision_headers_carry_the_quality_and_complexity_decisions() {
     let kwargs = object(vec![
         (
