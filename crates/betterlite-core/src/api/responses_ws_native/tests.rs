@@ -129,12 +129,46 @@ fn assert_forwarded_call(fixture: &ForwardingFixture) {
     assert!(updates[0].kwargs.contains_key("first_message"));
 }
 
+async fn forwarding_failure_is_returned() {
+    let backend = Arc::new(ScriptedBackend::new());
+    backend
+        .text(
+            r#"{"type":"response.failed","response":{"error":{"type":"server_error","message":"upstream broke"}}}"#,
+        )
+        .closing();
+    let mut client = TestClient::new(Vec::new());
+    client.yield_first = true;
+    let logging = Arc::new(RecordingLogging::default());
+    let handler = RecordingHandler::forwarding(Arc::clone(&backend), Arc::clone(&logging));
+    let mut kwargs = Event::new();
+    kwargs.insert(
+        String::from("first_message"),
+        Json::Text(FIRST_FRAME.to_owned()),
+    );
+    let fixture = ForwardingFixture {
+        backend,
+        client,
+        logging,
+        handler,
+        kwargs,
+    };
+    let outcome = run_entry(&fixture).await;
+    assert_eq!(
+        outcome
+            .expect("the stored failure comes back")
+            .metadata()
+            .status_code,
+        500
+    );
+}
+
 #[tokio::test]
 async fn native_ws_response_create() {
     let fixture = forwarding_fixture();
     let outcome = run_entry(&fixture).await;
     assert!(outcome.is_none());
     assert_forwarded_call(&fixture);
+    forwarding_failure_is_returned().await;
 }
 
 fn assert_frame_rewrites() {
@@ -385,6 +419,14 @@ async fn credential_fallbacks() -> Vec<Option<String>> {
     ]
 }
 
+async fn routing_prefix_is_stripped() -> (String, String) {
+    let mut entry = Entry::new();
+    entry.resolution.model = String::from("responses/gpt-4o");
+    let request = entry.request().await;
+    let logged = lock(&entry.logging.updates)[0].model.clone();
+    (request.model, logged)
+}
+
 async fn call_credentials_reach_resolution() -> (String, Option<String>, Option<String>) {
     let mut entry = Entry::new();
     entry.resolution.echo_request = true;
@@ -438,6 +480,9 @@ async fn metadata_and_credentials() {
     assert_eq!(model, "gpt-4o");
     assert_eq!(base.as_deref(), Some("wss://caller.test"));
     assert_eq!(key.as_deref(), Some("sk-call"));
+    let (forwarded_model, logged_model) = routing_prefix_is_stripped().await;
+    assert_eq!(forwarded_model, "gpt-4o");
+    assert_eq!(logged_model, "gpt-4o");
     assert_eq!(
         api_base_precedence().await,
         vec![
