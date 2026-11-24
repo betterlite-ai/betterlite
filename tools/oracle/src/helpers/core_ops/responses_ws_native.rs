@@ -32,7 +32,7 @@ impl Helper for Op {
 }
 
 #[derive(Deserialize)]
-struct Scenario {
+pub(crate) struct Scenario {
     first_message: Option<String>,
     client_frames: Vec<String>,
     backend_frames: Vec<String>,
@@ -72,37 +72,25 @@ impl FakeSocket {
 impl ResponsesClientWebSocket for FakeSocket {
     type Error = IoError;
 
-    fn send_text<'call>(
-        &'call self,
-        data: &'call str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
-        async move {
-            yield_now().await;
-            self.record(data);
-            Ok(())
-        }
+    async fn send_text(&self, data: &str) -> Result<(), Self::Error> {
+        yield_now().await;
+        self.record(data);
+        Ok(())
     }
 
-    fn receive_text(&self) -> impl Future<Output = Result<String, Self::Error>> + Send + '_ {
-        async move {
-            yield_now().await;
-            self.pop_frame()
-        }
+    async fn receive_text(&self) -> Result<String, Self::Error> {
+        yield_now().await;
+        self.pop_frame()
     }
 }
 
 impl NativeWsBackend for FakeSocket {
     type Error = IoError;
 
-    fn recv_raw(
-        &self,
-    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<Self::Error>>> + Send + '_
-    {
-        async move {
-            yield_now().await;
-            let frame = self.pop_frame().map_err(BackendError::<IoError>::Closed)?;
-            Ok(ResponsesWebSocketMessage::Text(frame))
-        }
+    async fn recv_raw(&self) -> Result<ResponsesWebSocketMessage, BackendError<Self::Error>> {
+        yield_now().await;
+        let frame = self.pop_frame().map_err(BackendError::<IoError>::Closed)?;
+        Ok(ResponsesWebSocketMessage::Text(frame))
     }
 
     fn recv(
@@ -119,11 +107,9 @@ impl NativeWsBackend for FakeSocket {
         self.send_text(message)
     }
 
-    fn close(&self) -> impl Future<Output = Result<(), Self::Error>> + Send + '_ {
-        async move {
-            yield_now().await;
-            Ok(())
-        }
+    async fn close(&self) -> Result<(), Self::Error> {
+        yield_now().await;
+        Ok(())
     }
 }
 
