@@ -19,9 +19,8 @@ pub(crate) async fn moderate(
         .or_else(|| secret_text(settings.api_key.as_ref()))
         .or_else(|| secret_text(settings.openai_key.as_ref()));
     let model = moderation_model(&arguments, entry);
-    let api_base = arguments.api_base.clone();
     let input = arguments.input;
-    let deployment = session.moderation_deployment(&model, api_key, api_base)?;
+    let deployment = session.moderation_deployment(&model, api_key, arguments.api_base.clone())?;
     let executor = session.chat_executor(&deployment)?;
     let request = ModerationRequest {
         model: Some(model.clone()),

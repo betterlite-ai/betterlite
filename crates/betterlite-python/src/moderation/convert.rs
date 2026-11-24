@@ -142,16 +142,13 @@ impl NativeTextErrorPayload {
 #[must_use]
 pub(crate) fn prompt(arguments: &TextArguments) -> CompletionPrompt {
     let value = arguments.prompt.clone().unwrap_or(Json::Null);
-    let plain = serde_json::to_value(value).unwrap_or_default();
-    CompletionPrompt::from(plain)
+    CompletionPrompt::from(serde_json::to_value(value).unwrap_or_default())
 }
 
 pub(crate) fn body(arguments: &TextArguments) -> Result<IndexMap<String, Json>, ConvertError> {
     let mut body = IndexMap::new();
-    body.insert(
-        String::from("prompt"),
-        arguments.prompt.clone().unwrap_or(Json::Null),
-    );
+    let prompt_value = arguments.prompt.clone().unwrap_or(Json::Null);
+    body.insert(String::from("prompt"), prompt_value);
     if let Some(stream) = arguments.stream {
         body.insert(String::from("stream"), Json::Bool(stream));
     }
@@ -191,23 +188,29 @@ pub(crate) fn completion_request(
 pub(crate) fn chat_messages(
     arguments: &TextArguments,
     mock: bool,
+    provider: &str,
 ) -> Result<Vec<Json>, ConvertError> {
     let prompt = prompt(arguments);
-    // a mock answer builds the user message from a token prompt, where a chat request refuses it
-    if !mock
-        && !matches!(
-            &prompt,
-            CompletionPrompt::Text(_) | CompletionPrompt::Texts(_)
-        )
-    {
+    let takes_tokens = ["openai", "azure", "azure_text"].contains(&provider)
+        || ["text-completion-openai", "text-completion-codestral"].contains(&provider);
+    // main.py's token-prompt branch names these five providers, and a mock answer does not widen it
+    let tokens = matches!(
+        &prompt,
+        CompletionPrompt::Tokens(_) | CompletionPrompt::TokenLists(_)
+    );
+    if tokens && !(mock && takes_tokens) {
         return Err(ConvertError::Prompt);
     }
-    let Some(messages) = prompt.messages() else {
-        return Err(ConvertError::Prompt);
-    };
+    let messages = prompt.messages().ok_or(ConvertError::Prompt)?;
     messages
         .into_iter()
-        .map(|message| {
+        .map(|mut message| {
+            // the chat entry reads a content only as text or parts, and a mock answers without it
+            if let Some(content) = message.get_mut("content")
+                && content.is_array()
+            {
+                *content = serde_json::json!(content.to_string());
+            }
             serde_json::from_value(message).map_err(|source| ConvertError::Body { source })
         })
         .collect()

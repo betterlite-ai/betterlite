@@ -88,7 +88,7 @@ async fn answer_for(
         .filter_map(|name| arguments.extra.get(*name))
         .any(|value| !matches!(value, Json::Null));
     if answered || session.executor.endpoint(deployment).await == CompletionEndpoint::Chat {
-        return chat_messages(arguments, answered)
+        return chat_messages(arguments, answered, facts.provider)
             .map(|messages| TextAnswer::Chat { messages })
             .map_err(|error| convert_failure(&error, facts));
     }
@@ -149,13 +149,12 @@ fn forward_parameters(request: &CompletionRequest, transport: &mut TransportRequ
 
 // The provider's stream, read to its end: a trailing usage-only chunk moves its usage onto the last chunk LiteLLM can convert.
 async fn collect_stream(
-    stream: CompletionStream,
+    mut stream: CompletionStream,
     facts: &CallFacts<'_>,
     redactor: &Redactor,
 ) -> Result<Vec<String>, CallFailure> {
-    let mut remaining = stream;
     let mut kept: Vec<StreamChunk> = Vec::new();
-    while let Some(item) = remaining.next().await {
+    while let Some(item) = stream.next().await {
         let chunk =
             item.map_err(|error| provider_failure(&RawSource::Stream(&error), facts, redactor))?;
         if !chunk.choices.is_empty() {

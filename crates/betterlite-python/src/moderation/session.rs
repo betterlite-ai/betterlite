@@ -188,17 +188,15 @@ pub(crate) struct DeploymentFacts<'call> {
 }
 
 pub(crate) fn declared(facts: &DeploymentFacts<'_>) -> ModelDeployment {
-    let resolved_base = &facts.resolved.api_base;
-    let api_base = resolved_base.clone().filter(|text| !text.is_empty());
-    let resolved_key = &facts.resolved.api_key;
-    let api_key = resolved_key.clone().or_else(|| facts.api_key.clone());
+    let api_base = facts.resolved.api_base.clone();
+    let api_key = facts.resolved.api_key.clone();
     ModelDeployment {
         model_name: facts.model.to_owned(),
         litellm_params: LiteLlmParams {
             ssl_verify: None,
             model: Some(format!("{}/{}", facts.provider, facts.model)),
-            api_base,
-            api_key,
+            api_base: api_base.filter(|text| !text.is_empty()),
+            api_key: api_key.or_else(|| facts.api_key.clone()),
             api_version: facts.arguments.api_version.clone(),
             timeout: facts.arguments.timeout,
             stream_timeout: None,

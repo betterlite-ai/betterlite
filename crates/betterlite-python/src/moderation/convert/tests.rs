@@ -26,14 +26,14 @@ where
 #[test]
 fn request_string_prompt_is_one_user_message() {
     let call = arguments(r#"{"prompt": "hello"}"#);
-    let messages = chat_messages(&call, false).unwrap();
+    let messages = chat_messages(&call, false, "openai").unwrap();
     assert_eq!(encoded(&messages), r#"[{"content":"hello","role":"user"}]"#);
 }
 
 #[test]
 fn request_string_list_prompt_is_one_message_per_string() {
     let call = arguments(r#"{"prompt": ["first", "second"]}"#);
-    let messages = chat_messages(&call, false).unwrap();
+    let messages = chat_messages(&call, false, "openai").unwrap();
     assert_eq!(
         encoded(&messages),
         r#"[{"content":"first","role":"user"},{"content":"second","role":"user"}]"#
@@ -44,13 +44,33 @@ fn request_string_list_prompt_is_one_message_per_string() {
 fn request_token_prompt_is_refused_for_a_chat_provider() {
     let call = arguments(r#"{"prompt": [1, 2]}"#);
     assert!(matches!(
-        chat_messages(&call, false),
+        chat_messages(&call, false, "text-completion-openai"),
         Err(ConvertError::Prompt)
     ));
-    // a mock answer builds the user message from the token prompt before any endpoint is chosen
-    let mocked = chat_messages(&call, true).unwrap();
-    assert_eq!(encoded(&mocked), r#"[{"content":[1,2],"role":"user"}]"#);
+    // the mock answers on a text provider, and the chat entry reads the token prompt as its JSON text
+    let mocked = chat_messages(&call, true, "text-completion-openai").unwrap();
+    assert_eq!(encoded(&mocked), r#"[{"content":"[1,2]","role":"user"}]"#);
     assert!(matches!(prompt(&call), CompletionPrompt::Tokens(_)));
+}
+
+#[test]
+fn request_token_prompt_provider_covers_the_five_litellm_providers() {
+    let call = arguments(r#"{"prompt": [1, 2]}"#);
+    for provider in ["openai", "azure", "azure_text"] {
+        chat_messages(&call, true, provider).unwrap();
+    }
+    for provider in ["text-completion-openai", "text-completion-codestral"] {
+        chat_messages(&call, true, provider).unwrap();
+    }
+    for provider in ["anthropic", "groq", "text-completion-inception"] {
+        assert!(
+            matches!(
+                chat_messages(&call, true, provider),
+                Err(ConvertError::Prompt)
+            ),
+            "{provider}"
+        );
+    }
 }
 
 #[test]

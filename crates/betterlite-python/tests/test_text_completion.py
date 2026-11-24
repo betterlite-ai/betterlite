@@ -590,14 +590,20 @@ def test_prompts_mock_answer() -> None:
     assert first_choice(view_of(answer_of(tool_outcome)))["text"] == MOCK_DEFAULT
 
 
-# a mock answers a token prompt where the same prompt sent to a chat provider is refused
+# a mock answers a token prompt on a text provider, where a chat provider refuses it first
 def test_prompts_mock_token_prompt() -> None:
     with closing(TextServer()) as server:
         outcome = text_completion(
             model=TEXT_MODEL, prompt=[1, 2], mock_response=MOCK_TEXT, api_base=server.url,
             api_key=GOOD_KEY,
         )
+        with pytest.raises(Exception, match="Unmapped prompt format") as caught:
+            text_completion(
+                model="claude-3-haiku-20240307", custom_llm_provider="anthropic",
+                prompt=[1, 2], mock_response=MOCK_TEXT, api_base=server.url, api_key=GOOD_KEY,
+            )
         assert server.calls == []
+    assert caught.value.__class__ is Exception
     assert first_choice(view_of(answer_of(outcome)))["text"] == MOCK_TEXT
 
 
@@ -667,7 +673,7 @@ def test_chat_client_is_refused() -> None:
 def test_stream_text_chunks() -> None:
     views, call = requested("hi", stream=True)
     assert call["body"]["stream"] is True
-    assert [first_choice(view).get("text") for view in views] == ["hi a", "hi b", "hi c", ""]
+    assert [first_choice(view).get("text") for view in views] == ["hi a", "hi b", "hi c", None]
     assert [first_choice(view).get("finish_reason") for view in views] == [
         None, None, None, FINISH_REASON,
     ]
@@ -693,7 +699,7 @@ def test_stream_without_usage() -> None:
 
 def test_stream_async_text_chunks() -> None:
     views = asyncio.run(async_requested("hi"))
-    assert [first_choice(view).get("text") for view in views] == ["hi a", "hi b", "hi c", ""]
+    assert [first_choice(view).get("text") for view in views] == ["hi a", "hi b", "hi c", None]
 
 
 def test_stream_chat_chunks() -> None:
