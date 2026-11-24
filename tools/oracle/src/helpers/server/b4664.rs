@@ -32,8 +32,7 @@ impl Helper for Op {
 }
 
 fn client_config_answer(input: &support::ClientConfigInput) -> Value {
-    let config = sso_client_config(&input.vars);
-    let rendered = config.as_ref().map(|resolved| {
+    let rendered = sso_client_config(&input.vars).map(|resolved| {
         json!({
             "token_endpoint": resolved.token_endpoint,
             "client_id": resolved.client_id,

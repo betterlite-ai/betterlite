@@ -46,7 +46,6 @@ pub(crate) struct RecordedCall {
     pub(crate) headers: BTreeMap<String, String>,
 }
 
-// One set of doubles behind every trait the refresher and the store take, since the case only scripts rows, env and one answer.
 #[derive(Clone)]
 pub(crate) struct Harness {
     pub(crate) inner: Arc<Mutex<BTreeMap<String, SsoIdentityAssertion>>>,
@@ -66,13 +65,12 @@ impl Harness {
         vars: &BTreeMap<String, String>,
         outcome: &OutcomeSpec,
     ) -> Result<Self, Box<HelperError>> {
-        let outcomes = VecDeque::from([scripted(outcome)?]);
         Ok(Self {
             inner: Arc::new(Mutex::new(inner)),
             fresh: Arc::new(Mutex::new(fresh)),
             writes: Arc::new(Mutex::new(Vec::new())),
             vars: vars.clone(),
-            outcomes: Arc::new(Mutex::new(outcomes)),
+            outcomes: Arc::new(Mutex::new(VecDeque::from([scripted(outcome)?]))),
             calls: Arc::new(Mutex::new(Vec::new())),
             failure,
         })
@@ -112,9 +110,7 @@ impl SsoAssertionStore for Harness {
     ) -> impl Future<Output = Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>> + Send
     {
         let stored = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = stored.get(user_id).cloned();
-        drop(stored);
-        ready(Ok(found))
+        ready(Ok(stored.get(user_id).cloned()))
     }
 }
 
