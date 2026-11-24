@@ -125,7 +125,17 @@ impl Hop {
             next_headers.remove(TRANSFER_ENCODING);
             self.body = None;
         }
-        self.headers = from_header_map(&next_headers)?;
+        let mut headers = BTreeMap::new();
+        for (name, value) in &next_headers {
+            let text = value
+                .to_str()
+                .map_err(|source| OpenApiTransportError::HeaderText {
+                    name: name.as_str().to_owned(),
+                    source,
+                })?;
+            headers.insert(name.as_str().to_owned(), text.to_owned());
+        }
+        self.headers = headers;
         self.method = next_method;
         self.current = next;
         Ok(())
@@ -204,20 +214,6 @@ fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, OpenApiTr
         map.insert(header_name, header_value);
     }
     Ok(map)
-}
-
-fn from_header_map(map: &HeaderMap) -> Result<BTreeMap<String, String>, OpenApiTransportError> {
-    map.iter()
-        .map(|(name, value)| {
-            value
-                .to_str()
-                .map(|text| (name.as_str().to_owned(), text.to_owned()))
-                .map_err(|source| OpenApiTransportError::HeaderText {
-                    name: name.as_str().to_owned(),
-                    source,
-                })
-        })
-        .collect()
 }
 
 // httpx Client._redirect_method
