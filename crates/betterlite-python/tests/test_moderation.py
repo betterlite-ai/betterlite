@@ -227,11 +227,11 @@ async def asked_async(model: str | None = None) -> tuple[ModerationView, Recorde
     return VIEW.validate_json(response.model_dump_json()), call
 
 
-# main.py's moderation hands the model only when the caller gave one, and the client defaults it
+# betterlite's wire names omni-moderation-latest where LiteLLM's create(input=input) omits it
 def test_default_model_on_wire() -> None:
     view, call = asked()
     assert call["path"] == MODERATIONS_PATH
-    assert "model" not in call["body"]
+    assert call["body"]["model"] == DEFAULT_MODEL
     assert call["body"]["input"] == INPUT_TEXT
     assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
     assert view["id"] == MODERATION_ID
@@ -296,14 +296,11 @@ def test_async_returns_coroutine() -> None:
 
 
 @pytest.mark.parametrize(
-    ("given", "sent", "answered"),
-    [
-        (None, None, DEFAULT_MODEL),
-        (f"{PROVIDER}/{EXPLICIT_MODEL}", EXPLICIT_MODEL, EXPLICIT_MODEL),
-    ],
+    ("given", "sent"),
+    [(None, DEFAULT_MODEL), (f"{PROVIDER}/{EXPLICIT_MODEL}", EXPLICIT_MODEL)],
     ids=["default", "provider_prefix"],
 )
-def test_async_model_on_wire(given: str | None, sent: str | None, answered: str) -> None:
+def test_async_model_on_wire(given: str | None, sent: str) -> None:
     view, call = asyncio.run(asked_async(given))
-    assert call["body"].get("model") == sent
-    assert view["model"] == answered
+    assert call["body"]["model"] == sent
+    assert view["model"] == sent

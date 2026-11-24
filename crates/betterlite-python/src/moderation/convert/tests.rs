@@ -130,19 +130,22 @@ fn request_max_retries_alone_is_kept() {
 }
 
 #[test]
-fn request_moderation_model_is_none_unless_given_and_strips_the_async_prefix() {
+fn request_moderation_model_defaults_and_strips_the_openai_prefix_async() {
     let call: ModerationArguments = serde_json::from_str(r#"{"input": "hello"}"#).unwrap();
-    assert_eq!(moderation_model(&call, Entry::Sync), None);
+    assert_eq!(
+        moderation_model(&call, Entry::Sync),
+        "omni-moderation-latest"
+    );
     let prefixed: ModerationArguments =
         serde_json::from_str(r#"{"input": "hello", "model": "openai/omni-moderation-latest"}"#)
             .unwrap();
     assert_eq!(
-        moderation_model(&prefixed, Entry::Sync).as_deref(),
-        Some("openai/omni-moderation-latest")
+        moderation_model(&prefixed, Entry::Sync),
+        "openai/omni-moderation-latest"
     );
     assert_eq!(
-        moderation_model(&prefixed, Entry::Async).as_deref(),
-        Some("omni-moderation-latest")
+        moderation_model(&prefixed, Entry::Async),
+        "omni-moderation-latest"
     );
 }
 
