@@ -1,0 +1,15 @@
+kind: helper
+name: fuse-presets-profile-text
+call:
+  b10087:
+    function: profile_text
+    text: "  a profile with surrounding whitespace  "
+calls:
+  - b10087:
+      function: profile_text
+      text: "   "
+  - b10087:
+      function: profile_text
+      text: "a profile"
+env: {}
+compare: {ignore: []}
