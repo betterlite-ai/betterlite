@@ -88,78 +88,60 @@ class CommonUtils(Protocol):
     ) -> None: ...
 
 
-def text_field(value: JsonValue) -> str | None:
-    match value:
-        case str():
-            return value
-        case None | bool() | int() | float() | list() | dict():
-            return None
+UTILS: Final[CommonUtils] = common_utils
 
 
-def text_fields(snapshot: Mapping[str, JsonValue]) -> dict[str, str]:
-    texts: dict[str, str] = {}
+def text_fields(snapshot: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    texts: dict[str, JsonValue] = {}
     for name, value in snapshot.items():
-        text = text_field(value)
-        if text is not None:
-            texts[name] = text
+        match value:
+            case str():
+                texts[name] = value
+            case None | bool() | int() | float() | list() | dict():
+                continue
     return texts
 
 
-def predicate(provider: str | None) -> bool:
-    if provider is None:
-        return False
-    return FileContentStreamingHandler.should_stream_file_content(custom_llm_provider=provider)
-
-
-def predicates(call: ProjectionCall) -> list[bool]:
+def predicates(call: ProjectionCall) -> JsonValue:
     inputs = call.get("predicates")
     if inputs is None:
         return []
-    return [predicate(provider) for provider in inputs]
-
-
-def routed_answer(
-    call: ProjectionCall,
-    credentials: dict[str, JsonValue],
-    utils: CommonUtils = common_utils,
-) -> JsonValue:
-    data = dict(call["data"])
-    utils.prepare_data_with_credentials(
-        data,
-        credentials,
-        file_id=call.get("original_file_id"),
-        include_internal_credentials=True,
+    return JSON.validate_python(
+        [
+            name is not None
+            and FileContentStreamingHandler.should_stream_file_content(custom_llm_provider=name)
+            for name in inputs
+        ]
     )
-    snapshot = text_fields(SNAPSHOT.validate_python(data.pop(SNAPSHOT_KEY)))
-    data.pop("model", None)
-    answer: JsonValue = {
-        "function": "streaming_projection",
-        "provider": credentials["custom_llm_provider"],
-        "file_id": data.get("file_id"),
-        "data": data,
-        "trusted": snapshot,
-        "predicates": predicates(call),
-    }
-    return JSON.validate_python(answer)
-
-
-def unrouted_answer(call: ProjectionCall) -> JsonValue:
-    answer: JsonValue = {
-        "function": "streaming_projection",
-        "provider": call["custom_llm_provider"],
-        "file_id": call["file_id"],
-        "data": call["data"],
-        "trusted": None,
-        "predicates": predicates(call),
-    }
-    return JSON.validate_python(answer)
 
 
 def projection_answer(call: ProjectionCall) -> JsonValue:
     credentials = call.get("credentials")
+    data = call["data"]
+    file_id: JsonValue = call["file_id"]
+    provider: JsonValue = call["custom_llm_provider"]
+    trusted: dict[str, JsonValue] | None = None
     if call["should_route"] and credentials is not None:
-        return routed_answer(call, credentials)
-    return unrouted_answer(call)
+        data = dict(data)
+        UTILS.prepare_data_with_credentials(
+            data,
+            credentials,
+            file_id=call.get("original_file_id"),
+            include_internal_credentials=True,
+        )
+        trusted = text_fields(SNAPSHOT.validate_python(data.pop(SNAPSHOT_KEY)))
+        data.pop("model", None)
+        file_id = data.get("file_id")
+        provider = credentials["custom_llm_provider"]
+    answer: JsonValue = {
+        "function": "streaming_projection",
+        "provider": provider,
+        "file_id": file_id,
+        "data": data,
+        "trusted": trusted,
+        "predicates": predicates(call),
+    }
+    return JSON.validate_python(answer)
 
 
 def payload_view(value: JsonValue) -> JsonValue:

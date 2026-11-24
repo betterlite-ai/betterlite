@@ -29,6 +29,8 @@ use fixtures::support::{FakeLogger, FaultyStream, WallClock};
 
 mod fixtures;
 
+const CHUNK_ERROR: &str = "the file stream needs a chunk_size of at least 1";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Scenario {
@@ -60,9 +62,7 @@ pub struct Outcome {
 impl CallKind for Call {
     fn validate(&self, _limits: &OracleLimits) -> Result<(), SdkHttpError> {
         if self.chunk_size == 0 {
-            return Err(SdkHttpError::Invalid(String::from(
-                "the file stream needs a chunk_size of at least 1",
-            )));
+            return Err(SdkHttpError::Invalid(String::from(CHUNK_ERROR)));
         }
         Ok(())
     }
@@ -127,13 +127,15 @@ async fn start_stream(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<FileContentStreamingResult, SdkHttpError> {
-    let size = NonZeroUsize::new(call.chunk_size).ok_or_else(|| {
-        SdkHttpError::Invalid(String::from(
-            "the file stream needs a chunk_size of at least 1",
-        ))
-    })?;
+    let size = NonZeroUsize::new(call.chunk_size)
+        .ok_or_else(|| SdkHttpError::Invalid(String::from(CHUNK_ERROR)))?;
     let client = files_client(api_base)?;
-    let request = content_request(call);
+    let request = FileContentRequest {
+        file_id: call.file_id.clone(),
+        extra_headers: IndexMap::new(),
+        extra_body: IndexMap::new(),
+        timeout: None,
+    };
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );
@@ -159,15 +161,6 @@ fn files_client(api_base: &str) -> Result<FilesClient, SdkHttpError> {
     let kind = get_openai_client(args, None, true)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     select_client(kind, true).map_err(|error| SdkHttpError::Invalid(error.to_string()))
-}
-
-fn content_request(call: &Call) -> FileContentRequest {
-    FileContentRequest {
-        file_id: call.file_id.clone(),
-        extra_headers: IndexMap::new(),
-        extra_body: IndexMap::new(),
-        timeout: None,
-    }
 }
 
 async fn drain(

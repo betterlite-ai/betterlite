@@ -278,16 +278,10 @@ impl StreamLogging {
     }
 
     fn finish_sync(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
-        match self.log_success_sync() {
-            Ok(()) => None,
-            Err(failure) => Some(Err(failure)),
-        }
+        self.log_success_sync().err().map(Err)
     }
 
     async fn finish_async(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
-        match self.log_success_async().await {
-            Ok(()) => None,
-            Err(failure) => Some(Err(failure)),
-        }
+        self.log_success_async().await.err().map(Err)
     }
 }
