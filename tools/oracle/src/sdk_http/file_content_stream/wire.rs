@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,7 +15,7 @@ use betterlite_core::api::file_http_content::error::ContentError;
 use betterlite_core::api::file_http_content::service::buffered::retrieve_file_content;
 use betterlite_core::api::file_http_content::service::streaming::retrieve_content_streaming;
 use betterlite_core::api::file_http_content::service::{
-    ClientSource, ContentDeps, LogContext, RetrieveCall, prepare,
+    ContentDeps, LogContext, RetrieveCall, prepare,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
@@ -86,25 +87,33 @@ impl FileContentDispatch for ContentDispatch {
         Arc::new(RecordingLogging::default())
     }
 
-    async fn content(
+    fn content(
         &self,
         target: Target<'_>,
         operation: ContentOperation<'_>,
-    ) -> Result<ContentReply, Self::Error> {
-        match target {
-            ContentTarget::Compatible(content) => {
-                compatible_answer(&self.openai, &content, operation).await
-            }
-            ContentTarget::Azure(azure) => {
-                azure_answer(&self.client, &self.environment, &azure, operation).await
-            }
-            ContentTarget::Generic(generic) => {
-                generic_answer(*generic, operation, &self.anthropic, &self.client).await
-            }
-            ContentTarget::XaiBatch(_) => Err(ContentWireError::Unbuilt {
-                config: "xai batch results",
-            }),
+    ) -> impl Future<Output = Result<ContentReply, Self::Error>> + Send {
+        answer(self, target, operation)
+    }
+}
+
+async fn answer(
+    dispatch: &ContentDispatch,
+    target: Target<'_>,
+    operation: ContentOperation<'_>,
+) -> Result<ContentReply, ContentWireError> {
+    match target {
+        ContentTarget::Compatible(content) => {
+            compatible_answer(&dispatch.openai, &content, operation).await
         }
+        ContentTarget::Azure(azure) => {
+            azure_answer(&dispatch.client, &dispatch.environment, &azure, operation).await
+        }
+        ContentTarget::Generic(generic) => {
+            generic_answer(*generic, operation, &dispatch.anthropic, &dispatch.client).await
+        }
+        ContentTarget::XaiBatch(_) => Err(ContentWireError::Unbuilt {
+            config: "xai batch results",
+        }),
     }
 }
 

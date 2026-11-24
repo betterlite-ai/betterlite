@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
@@ -120,58 +121,66 @@ impl CallKind for Call {
         Ok(())
     }
 
-    async fn send(
+    fn send(
         &self,
         api_base: &str,
         env: &BTreeMap<String, String>,
-    ) -> Result<SdkResult, SdkHttpError> {
-        let config = ConfigLoader {
-            lookup: env.clone(),
-        }
-        .load("model_list: []")
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-        let policy = Arc::new(
-            ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
-        );
-        let client = ProxiedClient::outbound(&policy)
-            .map_err(|error| SdkHttpError::Client(Box::new(error)))?;
-        let catalog = ModelCatalog::default();
-        let names = BTreeSet::new();
-        let resolution = ResolutionContext {
-            catalog: &catalog,
-            known_model_names: &names,
-            custom_providers: &names,
-            environment: env,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        };
-        let content = FileContentStream {
-            dispatch: ContentDispatch {
-                openai: FilesApi {
-                    transport: client.clone(),
-                    boundaries: Uuid::new_v4,
-                },
-                client,
-                anthropic: anthropic_settings(&config.sections.anthropic_credentials),
-                environment: env.clone(),
-            },
-            settings: config.sections.resource_sdk_settings,
-            resolution: &resolution,
-            clock: || Utc::now().fixed_offset(),
-            call_ids: Uuid::new_v4,
-        };
-        let handler = Handler {
-            headers: BTreeMap::from([(HANDLER_HEADER.0.to_owned(), HANDLER_HEADER.1.to_owned())]),
-        };
-        let mut steps = Vec::with_capacity(self.steps.len());
-        for step in &self.steps {
-            steps.push(run_step(&content, step, api_base, &handler).await?);
-        }
-        Ok(SdkResult::FileContentStream {
-            value: Box::new(Outcome { steps }),
-        })
+    ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
+        send_steps(self, api_base, env)
     }
+}
+
+async fn send_steps(
+    call: &Call,
+    api_base: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<SdkResult, SdkHttpError> {
+    let config = ConfigLoader {
+        lookup: env.clone(),
+    }
+    .load("model_list: []")
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
+    );
+    let client =
+        ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
+    let catalog = ModelCatalog::default();
+    let names = BTreeSet::new();
+    let resolution = ResolutionContext {
+        catalog: &catalog,
+        known_model_names: &names,
+        custom_providers: &names,
+        environment: env,
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let content = FileContentStream {
+        dispatch: ContentDispatch {
+            openai: FilesApi {
+                transport: client.clone(),
+                boundaries: Uuid::new_v4,
+            },
+            client,
+            anthropic: anthropic_settings(&config.sections.anthropic_credentials),
+            environment: env.clone(),
+        },
+        settings: config.sections.resource_sdk_settings,
+        resolution: &resolution,
+        clock: || Utc::now().fixed_offset(),
+        call_ids: Uuid::new_v4,
+    };
+    let handler = Handler {
+        headers: BTreeMap::from([(HANDLER_HEADER.0.to_owned(), HANDLER_HEADER.1.to_owned())]),
+    };
+    let mut steps = Vec::with_capacity(call.steps.len());
+    for step in &call.steps {
+        steps.push(run_step(&content, step, api_base, &handler).await?);
+    }
+    Ok(SdkResult::FileContentStream {
+        value: Box::new(Outcome { steps }),
+    })
 }
 
 fn content_kwargs(step: &Step, api_base: &str) -> ContentKwargs {
