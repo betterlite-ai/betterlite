@@ -80,6 +80,19 @@ async fn a_non_http_location_is_read_as_a_file() {
 }
 
 #[tokio::test]
+async fn a_local_path_that_is_a_directory_is_a_read_error() {
+    let client = client(TransportLimits::DEFAULT);
+    let error = load_openapi_spec_async(&fetcher(), &client, CORPUS, None)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, OpenApiError::SpecRead { .. }));
+    assert_eq!(
+        error.to_string(),
+        format!("reading the OpenAPI spec at {CORPUS} failed")
+    );
+}
+
+#[tokio::test]
 async fn invalid_local_json_is_a_json_error() {
     let client = client(TransportLimits::DEFAULT);
     let error = load_openapi_spec_async(&fetcher(), &client, &corpus("invalid.json"), None)
