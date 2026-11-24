@@ -1,0 +1,30 @@
+kind: helper
+name: prometheus-scrape-escaping-and-floats
+call:
+  b10090:
+    metrics:
+      - {kind: gauge, name: path_gauge, help: "say \"hi\" back\\slash\nnext line", labels: [path], buckets: []}
+    updates:
+      - {metric: 0, labels: ["a\\b"], action: set, value: 1.0e-5}
+      - {metric: 0, labels: ["c\"d"], action: set, value: 1234567.0}
+      - {metric: 0, labels: ["e\nf"], action: set, value: 1.0e16}
+      - {metric: 0, labels: [plain], action: set, value: 0.0001}
+      - {metric: 0, labels: [one], action: set, value: 1.0}
+    accept: ""
+    accept_encoding: ""
+    names: []
+calls:
+  - b10090:
+      metrics:
+        - {kind: gauge, name: path_gauge, help: "say \"hi\" back\\slash\nnext line", labels: [path], buckets: []}
+      updates:
+        - {metric: 0, labels: ["a\\b"], action: set, value: 1.0e-5}
+        - {metric: 0, labels: ["c\"d"], action: set, value: 1234567.0}
+        - {metric: 0, labels: ["e\nf"], action: set, value: 1.0e16}
+        - {metric: 0, labels: [plain], action: set, value: 0.0001}
+        - {metric: 0, labels: [one], action: set, value: 1.0}
+      accept: application/openmetrics-text
+      accept_encoding: ""
+      names: []
+env: {}
+compare: {ignore: []}

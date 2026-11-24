@@ -1,0 +1,16 @@
+kind: helper
+name: prometheus-scrape-unlabelled-series
+call:
+  b10090:
+    metrics:
+      - {kind: counter, name: requests, help: requests, labels: [], buckets: []}
+      - {kind: gauge, name: workers, help: workers, labels: [], buckets: []}
+    updates: []
+    accept: ""
+    accept_encoding: ""
+    names: []
+env: {}
+compare:
+  ignore:
+    - pointer: /value/lines/5/value
+      why: _created is the wall-clock time the series was created
