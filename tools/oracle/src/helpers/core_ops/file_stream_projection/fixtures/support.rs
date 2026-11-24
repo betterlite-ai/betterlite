@@ -1,3 +1,5 @@
+use std::sync::{Mutex, PoisonError};
+
 use async_trait::async_trait;
 use betterlite_core::api::file_stream_logging::logging::{
     CallbackFailure, FailureCall, FileStreamLogger, SuccessCall,
@@ -11,6 +13,7 @@ use serde_json::json;
 pub(crate) struct CaptureLogger {
     pub(crate) api_base: Option<String>,
     pub(crate) payload: Option<StandardLoggingPayload>,
+    pub(crate) recorded: Mutex<Option<StandardLoggingPayload>>,
 }
 
 #[async_trait]
@@ -32,7 +35,9 @@ impl FileStreamLogger for CaptureLogger {
         self.payload.clone()
     }
 
-    fn success_handler(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
+    fn success_handler(&self, call: SuccessCall) -> Result<(), CallbackFailure> {
+        *self.recorded.lock().unwrap_or_else(PoisonError::into_inner) =
+            call.standard_logging_object;
         Ok(())
     }
 

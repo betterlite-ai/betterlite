@@ -1,11 +1,9 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
-// ast-grep-ignore: no-long-names
 use betterlite_core::api::file_stream_logging::handler::{
-    StreamingParamsCall, resolve_streaming_request_params, should_stream_file_content,
+    StreamingParamsCall, resolve_streaming_params, should_stream_file_content,
 };
-use betterlite_core::api::file_stream_logging::logging::FileStreamLogger;
 use betterlite_core::api::file_stream_logging::source::{EmptySource, StreamSource};
 use betterlite_core::api::file_stream_logging::{FileContentStreamingResponse, FileStreamSetup};
 use betterlite_logging::fields::payload::StandardLoggingPayload;
@@ -75,36 +73,17 @@ fn answer(call: &Call) -> Value {
             original_file_id,
             credentials,
             predicates,
-        } => {
-            let predicates = predicates
-                .iter()
-                .map(|provider| should_stream_file_content(provider.as_deref()))
-                .collect::<Vec<_>>();
-            // ast-grep-ignore: no-long-names
-            let resolved = resolve_streaming_request_params(StreamingParamsCall {
+        } => projection_answer(
+            StreamingParamsCall {
                 custom_llm_provider,
                 file_id,
                 data,
                 should_route: *should_route,
                 original_file_id: original_file_id.as_deref(),
                 credentials: credentials.as_ref(),
-            });
-            match resolved {
-                Ok(resolved) => json!({
-                    "function": "streaming_projection",
-                    "provider": resolved.provider,
-                    "file_id": resolved.file_id,
-                    "data": resolved.data,
-                    "trusted": resolved.trusted_credentials.as_ref().map(snapshot_view),
-                    "predicates": predicates,
-                }),
-                Err(error) => json!({
-                    "function": "streaming_projection",
-                    "error": error.to_string(),
-                    "predicates": predicates,
-                }),
-            }
-        }
+            },
+            predicates,
+        ),
         Call::HiddenStreamMetadata {
             file_id,
             model,
@@ -114,19 +93,42 @@ fn answer(call: &Call) -> Value {
     }
 }
 
+fn projection_answer(params: StreamingParamsCall<'_>, predicates: &[Option<String>]) -> Value {
+    let predicates = predicates
+        .iter()
+        .map(|provider| should_stream_file_content(provider.as_deref()))
+        .collect::<Vec<_>>();
+    match resolve_streaming_params(params) {
+        Ok(resolved) => json!({
+            "function": "streaming_projection",
+            "provider": resolved.provider,
+            "file_id": resolved.file_id,
+            "data": resolved.data,
+            "trusted": resolved.trusted_credentials.as_ref().map(snapshot_view),
+            "predicates": predicates,
+        }),
+        Err(error) => json!({
+            "function": "streaming_projection",
+            "error": error.to_string(),
+            "predicates": predicates,
+        }),
+    }
+}
+
 fn hidden_answer(
     file_id: &str,
     model: &Option<String>,
     custom_llm_provider: &Option<String>,
     details: &Details,
 ) -> Value {
-    let logger: Arc<dyn FileStreamLogger> = Arc::new(CaptureLogger {
+    let logger = Arc::new(CaptureLogger {
         api_base: details.api_base.clone(),
         payload: payload_fixture(
             file_id,
             &details.model,
             details.api_base.as_deref().unwrap_or(""),
         ),
+        recorded: Mutex::new(None),
     });
     let mut stream = FileContentStreamingResponse::new(
         FileStreamSetup {
@@ -134,16 +136,21 @@ fn hidden_answer(
             file_id: file_id.to_owned(),
             model: model.clone(),
             custom_llm_provider: custom_llm_provider.clone(),
-            logger: Some(logger),
+            logger: Some(Arc::clone(&logger)),
         },
         Arc::new(WallClock),
     );
     if let Ok(mut chunks) = stream.sync_iter() {
         while chunks.next_chunk().is_some() {}
     }
+    let payload = logger
+        .recorded
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     json!({
         "function": "hidden_stream_metadata",
-        "payload": stream.standard_logging_object().map(payload_view),
+        "payload": payload.as_ref().map(payload_view),
     })
 }
 
