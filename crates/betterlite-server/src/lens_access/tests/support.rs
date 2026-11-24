@@ -503,22 +503,24 @@ impl FakeDatabase {
                 .expect("the offset lock")
                 .push(*offset);
         }
+        let mut rows = Vec::new();
         let lenses = self.lenses.lock().expect("the lens lock");
-        let own = lenses
-            .iter()
-            .filter(|lens| lens.id == id)
-            .flat_map(|lens| lens.jobs.iter())
-            .map(encoded)
-            .collect::<Vec<_>>();
+        rows.extend(
+            lenses
+                .iter()
+                .filter(|lens| lens.id == id)
+                .flat_map(|lens| lens.jobs.iter())
+                .map(encoded),
+        );
         drop(lenses);
-        let archived = self
-            .archived
-            .lock()
-            .expect("the job lock")
-            .iter()
-            .map(encoded)
-            .collect::<Vec<_>>();
-        own.into_iter().chain(archived).collect()
+        rows.extend(
+            self.archived
+                .lock()
+                .expect("the job lock")
+                .iter()
+                .map(encoded),
+        );
+        rows
     }
 
     fn one_job(&self, args: &[SqlBind]) -> Vec<Row> {
