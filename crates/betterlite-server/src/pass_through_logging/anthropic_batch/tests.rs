@@ -20,9 +20,9 @@ use self::support::{
     BATCH_ID, COLLECTION_ROUTE, CountingIds, Creation, ID_SCOPED_ROUTE, MODEL, RESPONSE_ID,
     assert_registrant_defaults, assert_registrant_identity, batch_body, batch_object, capture_logs,
     field, handler, handler_with_ids, message, metadata, provider_fields, registry_port, router,
-    router_port, run, start_time, text,
+    router_port, router_port_of, run, start_time, text,
 };
-use super::{BatchJobState, RegistryError, RouterModelIds, unified_object_id};
+use super::{BatchJobState, RegistryError, unified_object_id};
 
 const SONNET_UNIFIED: &str = "bGl0ZWxsbV9wcm94eTttb2RlbF9pZDphbnRocm9waWMvY2xhdWRlLXNvbm5ldC00LTU7bGxtX2JhdGNoX2lkOm1zZ2JhdGNoXzE";
 
@@ -204,10 +204,7 @@ fn batch_success_unknown_model_string_uses_nested() {
 #[test]
 fn batch_success_router_id_replaces_model_in_unified_id() {
     let recording = router(&["litellm-deployment"]);
-    let logging = handler(
-        Some(Arc::clone(&recording) as Arc<dyn RouterModelIds>),
-        None,
-    );
+    let logging = handler(router_port_of(&recording), None);
     let (logged, _call_log) = run(&logging, &Creation::success(MODEL));
     assert_eq!(logged.result.model, MODEL);
     assert_eq!(
@@ -251,10 +248,7 @@ fn batch_success_router_empty_warns_and_prefixes() {
 fn batch_success_router_found_logs_info_and_uses_first_id() {
     let recording = router(&["deployment-1", "deployment-2"]);
     let (capture, _lines, _guard) = capture_logs("");
-    let logging = handler(
-        Some(Arc::clone(&recording) as Arc<dyn RouterModelIds>),
-        None,
-    );
+    let logging = handler(router_port_of(&recording), None);
     let (logged, _call_log) = run(&logging, &Creation::success(MODEL));
     assert_eq!(
         text(provider_fields(&logged), "unified_object_id"),
@@ -279,10 +273,7 @@ fn batch_success_already_prefixed_model_keeps_one_prefix() {
         unified_object_id("anthropic/claude-opus-4", BATCH_ID)
     );
     let recording = router(&["anthropic/claude-opus-4"]);
-    let logging = handler(
-        Some(Arc::clone(&recording) as Arc<dyn RouterModelIds>),
-        None,
-    );
+    let logging = handler(router_port_of(&recording), None);
     let (routed, _call_log) = run(&logging, &Creation::success("anthropic/claude-opus-4"));
     assert_eq!(
         text(provider_fields(&routed), "unified_object_id"),
@@ -333,7 +324,7 @@ fn batch_non_200_gives_failed_record() {
     assert_eq!(call_log.model_call_details.get("batch_id"), None);
     assert_eq!(call_log.model_call_details.get("response_cost"), None);
     assert!(call_log.model_call_details.contains_key("litellm_params"));
-    assert_eq!(received.try_recv(), Err(TryRecvError::Empty));
+    assert!(matches!(received.try_recv(), Err(TryRecvError::Empty)));
 }
 
 #[test]
@@ -412,7 +403,7 @@ fn batch_200_array_body_uses_membership() {
     let with_id = Creation::new(200, br#"["id"]"#.to_vec(), ID_SCOPED_ROUTE);
     let (logged, _call_log) = run(&handler(None, None), &with_id);
     assert!(text(provider_fields(&logged), "error").contains("the body must be a JSON object"));
-    let without_id = Creation::new(200, br#"[1,2]"#.to_vec(), ID_SCOPED_ROUTE);
+    let without_id = Creation::new(200, b"[1,2]".to_vec(), ID_SCOPED_ROUTE);
     let (failed, _call_log) = run(&handler(None, None), &without_id);
     assert_eq!(
         message(&failed).content,
@@ -517,7 +508,7 @@ async fn batch_id_scoped_route_skips_registration() {
     let other_route = Creation::new(200, batch_body(BATCH_ID), "/v1/messages");
     let _ = run(&logging, &other_route);
     yield_now().await;
-    assert_eq!(received.try_recv(), Err(TryRecvError::Empty));
+    assert!(matches!(received.try_recv(), Err(TryRecvError::Empty)));
 }
 
 #[tokio::test]

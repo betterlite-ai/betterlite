@@ -31,7 +31,7 @@ pub(super) fn success_logged(
 }
 
 fn write_call_log(call_log: &mut LoggingState, fields: &SuccessFields<'_>) {
-    call_log.model = fields.model_name.to_owned();
+    fields.model_name.clone_into(&mut call_log.model);
     call_log
         .model_call_details
         .insert("model".to_owned(), Json::Text(fields.model_name.to_owned()));

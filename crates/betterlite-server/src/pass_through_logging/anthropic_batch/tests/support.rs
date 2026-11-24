@@ -43,6 +43,7 @@ pub(crate) const ID_SCOPED_ROUTE: &str = "/v1/messages/batches/msgbatch_1";
 pub(crate) const COLLECTION_ROUTE: &str = "/v1/messages/batches";
 const START: &str = "2026-01-01T00:00:00Z";
 
+#[derive(Clone)]
 pub(crate) struct LogCapture {
     bytes: Arc<Mutex<Vec<u8>>>,
     line: mpsc::Sender<()>,
@@ -224,6 +225,11 @@ pub(crate) fn router(ids: &[&str]) -> Arc<RecordingRouter> {
 
 pub(crate) fn router_port(ids: &[&str]) -> Option<Arc<dyn RouterModelIds>> {
     Some(Arc::new(RecordingRouter::new(ids)))
+}
+
+pub(crate) fn router_port_of(recording: &Arc<RecordingRouter>) -> Option<Arc<dyn RouterModelIds>> {
+    let port: Arc<dyn RouterModelIds> = Arc::clone(recording);
+    Some(port)
 }
 
 pub(crate) struct RecordingRegistry {

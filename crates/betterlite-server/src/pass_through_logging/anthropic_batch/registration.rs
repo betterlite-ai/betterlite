@@ -13,27 +13,7 @@ use crate::pass_through_logging::batch_attribution::{
     log_batch_registration_result, optional_str, request_tags_from_metadata,
 };
 
-impl AnthropicBatchLogging {
-    pub fn store_batch_managed_object(
-        &self,
-        unified_object_id: &str,
-        batch_object: BatchObject,
-        model_object_id: &str,
-        request_metadata: &JsonObject,
-    ) {
-        if let Err(error) = store(
-            self,
-            unified_object_id,
-            batch_object,
-            model_object_id,
-            request_metadata,
-        ) {
-            tracing::error!("Error storing Anthropic batch managed object: {error}");
-        }
-    }
-}
-
-fn store(
+pub(super) fn store(
     logging: &AnthropicBatchLogging,
     unified_object_id: &str,
     batch_object: BatchObject,
@@ -99,8 +79,8 @@ fn registrant(request_metadata: &JsonObject) -> BatchRegistrant {
 }
 
 fn user_id_from(request_metadata: &JsonObject) -> Option<String> {
-    match request_metadata.get("user_api_key_user_id") {
-        None => Some(DEFAULT_USER_ID.to_owned()),
-        Some(value) => optional_str(value).map(str::to_owned),
-    }
+    request_metadata.get("user_api_key_user_id").map_or_else(
+        || Some(DEFAULT_USER_ID.to_owned()),
+        |value| optional_str(value).map(str::to_owned),
+    )
 }

@@ -105,10 +105,7 @@ fn request_model(request_body: Option<&Json>) -> String {
     {
         return model.to_owned();
     }
-    match nested_model(body) {
-        Some(model) => model.to_owned(),
-        None => UNKNOWN_MODEL.to_owned(),
-    }
+    nested_model(body).map_or_else(|| UNKNOWN_MODEL.to_owned(), str::to_owned)
 }
 
 fn nested_model(body: &IndexMap<String, Json>) -> Option<&str> {

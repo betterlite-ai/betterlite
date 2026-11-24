@@ -60,6 +60,7 @@ pub struct AnthropicBatchLogging {
     ids: Arc<dyn ResponseIds>,
 }
 
+#[derive(Clone, Copy)]
 pub struct BatchCreationInput<'input> {
     pub status_code: u16,
     pub body: &'input [u8],
@@ -69,13 +70,13 @@ pub struct BatchCreationInput<'input> {
     pub request_metadata: &'input JsonObject,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BatchCreationLogged {
     pub result: BatchLoggingResponse,
     pub kwargs: BatchLoggingKwargs,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct BatchLoggingResponse {
     pub id: String,
     pub model: String,
@@ -84,14 +85,14 @@ pub struct BatchLoggingResponse {
     pub choices: Vec<BatchLoggingChoice>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct BatchLoggingChoice {
     pub finish_reason: String,
     pub index: u32,
     pub message: BatchLoggingMessage,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct BatchLoggingMessage {
     pub role: String,
     pub content: String,
@@ -100,7 +101,7 @@ pub struct BatchLoggingMessage {
     pub provider_specific_fields: IndexMap<String, Json>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BatchLoggingKwargs {
     pub response_cost: Decimal,
     pub model: String,
@@ -192,6 +193,24 @@ impl AnthropicBatchLogging {
                     records::CreationFailure::Error(error.to_string()),
                 )
             }
+        }
+    }
+
+    pub fn store_batch_managed_object(
+        &self,
+        unified_object_id: &str,
+        batch_object: BatchObject,
+        model_object_id: &str,
+        request_metadata: &JsonObject,
+    ) {
+        if let Err(error) = registration::store(
+            self,
+            unified_object_id,
+            batch_object,
+            model_object_id,
+            request_metadata,
+        ) {
+            tracing::error!("Error storing Anthropic batch managed object: {error}");
         }
     }
 
