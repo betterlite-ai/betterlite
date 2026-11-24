@@ -127,12 +127,12 @@ fn key_descriptor(auth: &UserAPIKeyAuth) -> String {
         .as_deref()
         .filter(|alias| !alias.is_empty())
         .unwrap_or("key");
-    match token.key_name.as_deref() {
-        Some(name) if is_masked_key_name(name) => format!("{label} ({name})"),
-        Some(_) | None => label.to_owned(),
+    let masked_name = token
+        .key_name
+        .as_deref()
+        .filter(|name| Regex::new(MASKED_KEY_NAME).is_ok_and(|pattern| pattern.is_match(name)));
+    match masked_name {
+        Some(name) => format!("{label} ({name})"),
+        None => label.to_owned(),
     }
-}
-
-fn is_masked_key_name(name: &str) -> bool {
-    Regex::new(MASKED_KEY_NAME).is_ok_and(|pattern| pattern.is_match(name))
 }
