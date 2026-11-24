@@ -74,7 +74,7 @@ fn answer(call: &Call) -> Value {
             credentials,
             predicates,
         } => projection_answer(
-            StreamingParamsCall {
+            &StreamingParamsCall {
                 custom_llm_provider,
                 file_id,
                 data,
@@ -93,8 +93,8 @@ fn answer(call: &Call) -> Value {
     }
 }
 
-fn projection_answer(params: StreamingParamsCall<'_>, predicates: &[Option<String>]) -> Value {
-    let predicates = predicates
+fn projection_answer(params: &StreamingParamsCall<'_>, predicates: &[Option<String>]) -> Value {
+    let accepted = predicates
         .iter()
         .map(|provider| should_stream_file_content(provider.as_deref()))
         .collect::<Vec<_>>();
@@ -105,12 +105,12 @@ fn projection_answer(params: StreamingParamsCall<'_>, predicates: &[Option<Strin
             "file_id": resolved.file_id,
             "data": resolved.data,
             "trusted": resolved.trusted_credentials.as_ref().map(snapshot_view),
-            "predicates": predicates,
+            "predicates": accepted,
         }),
         Err(error) => json!({
             "function": "streaming_projection",
             "error": error.to_string(),
-            "predicates": predicates,
+            "predicates": accepted,
         }),
     }
 }
@@ -136,7 +136,7 @@ fn hidden_answer(
             file_id: file_id.to_owned(),
             model: model.clone(),
             custom_llm_provider: custom_llm_provider.clone(),
-            logger: Some(Arc::clone(&logger)),
+            logger: Some(Arc::<CaptureLogger>::clone(&logger)),
         },
         Arc::new(WallClock),
     );

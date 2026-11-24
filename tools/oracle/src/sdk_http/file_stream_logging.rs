@@ -82,7 +82,7 @@ async fn execute(
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
     let logger = Arc::new(FakeLogger::default());
-    let mut stream = opened_stream(call, api_base, env, Arc::clone(&logger)).await?;
+    let mut stream = opened_stream(call, api_base, env, Arc::<FakeLogger>::clone(&logger)).await?;
     let mut outcome = Outcome::default();
     match call.scenario {
         Scenario::Drain | Scenario::Fail => drain(&mut stream, &mut outcome).await?,
