@@ -63,7 +63,7 @@ impl NativeSearchSession {
         let call: OcrCall =
             serde_json::from_str(request).map_err(|source| ConvertError::Json { source })?;
         let core = Arc::clone(&self.core);
-        awaited(py, move || async move { core.ocr(call, &blobs).await })
+        awaited(py, move || async move { core.ocr(call, blobs).await })
     }
 }
 
