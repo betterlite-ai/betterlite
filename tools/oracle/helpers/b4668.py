@@ -1,6 +1,5 @@
 import asyncio
 from typing import Literal, NotRequired, TypedDict
-from unittest import mock
 
 from fastapi import HTTPException
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
@@ -89,6 +88,14 @@ class ScriptedRead:
 
 
 def run(input_value: Input) -> Outcome:
+    try:
+        value = dispatch(input_value)
+    except UnloadableEntitlementError as raised:
+        return unloadable_outcome(raised)
+    return {"value": value, "raised": None, "caused": False}
+
+
+def dispatch(input_value: Input) -> AnswerValue:
     match input_value["function"]:
         case "load_named":
             return load_named(input_value)
@@ -98,48 +105,37 @@ def run(input_value: Input) -> Outcome:
             return union(input_value)
 
 
-def load_named(call: LoadNamedCall) -> Outcome:
+def load_named(call: LoadNamedCall) -> RowView:
     token = UserAPIKeyAuth(requires_fresh_policy=call["requires_fresh_policy"])
-    scripted = ScriptedRead(call["read"], call["row"])
-    # the loader imports this name when it runs, so the patch has to be in place around the call
-    with mock.patch.object(auth_checks, "get_object_permission", scripted):
-        try:
-            loaded = asyncio.run(
-                MCPRequestHandler._load_named_object_permission(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2796
-                    call["principal"], call["object_permission_id"], StubClient(), token
-                )
-            )
-        except UnloadableEntitlementError as raised:
-            return unloadable_outcome(raised)
-    return {"value": row_view(loaded), "raised": None, "caused": False}
+    # the loader imports get_object_permission when it runs, so the stub is in place before the call
+    auth_checks.get_object_permission = ScriptedRead(call["read"], call["row"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3982
+    loaded = asyncio.run(
+        MCPRequestHandler._load_named_object_permission(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2796
+            call["principal"], call["object_permission_id"], StubClient(), token
+        )
+    )
+    return row_view(loaded)
 
 
-async def toolset(call: ToolsetCall) -> Outcome:
+async def toolset(call: ToolsetCall) -> AnswerValue:
     row = row_of(call["row"])
-    value: AnswerValue = None
-    try:
-        server_id = call.get("server_id")
-        if server_id is None:
-            grants = await MCPRequestHandler._toolset_tool_permissions(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2153
-                row, requires_fresh_policy=call["requires_fresh_policy"]
-            )
-            value = {server: sorted(tools) for server, tools in sorted(grants.items())}
-        else:
-            tools = await MCPRequestHandler._toolset_tools_for_server(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2183
-                row, server_id, requires_fresh_policy=call["requires_fresh_policy"]
-            )
-            value = None if tools is None else sorted(tools)
-    except UnloadableEntitlementError as raised:
-        return unloadable_outcome(raised)
-    return {"value": value, "raised": None, "caused": False}
+    server_id = call.get("server_id")
+    if server_id is None:
+        grants = await MCPRequestHandler._toolset_tool_permissions(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2153
+            row, requires_fresh_policy=call["requires_fresh_policy"]
+        )
+        return {server: sorted(tools) for server, tools in sorted(grants.items())}
+    tools = await MCPRequestHandler._toolset_tools_for_server(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2183
+        row, server_id, requires_fresh_policy=call["requires_fresh_policy"]
+    )
+    return None if tools is None else sorted(tools)
 
 
-def union(call: UnionCall) -> Outcome:
+def union(call: UnionCall) -> AnswerValue:
     grants = MCPRequestHandler._union_tool_grants(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2197
         call["direct"], call["via_toolsets"]
     )
-    value: AnswerValue = None if grants is None else sorted(grants)
-    return {"value": value, "raised": None, "caused": False}
+    return None if grants is None else sorted(grants)
 
 
 def unloadable_outcome(raised: UnloadableEntitlementError) -> Outcome:
