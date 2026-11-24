@@ -203,10 +203,10 @@ fn openapi_document_attaches_the_error_responses_to_the_deployments_route(#[case
     let Some(JsonTree::Object(operation)) = deployments.get("post") else {
         panic!("the deployments chat path has a post operation");
     };
-    let Some(JsonTree::Object(responses)) = operation.get("responses") else {
+    let Some(JsonTree::Object(entries)) = operation.get("responses") else {
         panic!("the deployments operation has responses");
     };
-    let Some(JsonTree::Object(response)) = responses.get(status) else {
+    let Some(JsonTree::Object(response)) = entries.get(status) else {
         panic!("the deployments route has the {status} response");
     };
     let Some(JsonTree::Object(content)) = response.get("content") else {
@@ -237,23 +237,23 @@ fn openapi_document_keeps_the_error_component_off_the_other_routes() {
     else {
         panic!("the document has the deployments chat path");
     };
-    let Some(JsonTree::Object(decorated)) = deployments.get("post") else {
+    let Some(JsonTree::Object(with_errors)) = deployments.get("post") else {
         panic!("the deployments chat path has a post operation");
     };
-    let Some(JsonTree::Object(decorated_responses)) = decorated.get("responses") else {
+    let Some(JsonTree::Object(all_responses)) = with_errors.get("responses") else {
         panic!("the deployments operation has responses");
     };
-    assert_eq!(decorated_responses.len(), 10);
+    assert_eq!(all_responses.len(), 10);
     let Some(JsonTree::Object(chat)) = paths.get("/v1/chat/completions") else {
         panic!("the document has the plain chat path");
     };
-    let Some(JsonTree::Object(plain)) = chat.get("post") else {
+    let Some(JsonTree::Object(bare)) = chat.get("post") else {
         panic!("the plain chat path has a post operation");
     };
-    let Some(JsonTree::Object(plain_responses)) = plain.get("responses") else {
+    let Some(JsonTree::Object(success_only)) = bare.get("responses") else {
         panic!("the plain operation has responses");
     };
-    assert_eq!(plain_responses.len(), 1);
+    assert_eq!(success_only.len(), 1);
     let Some(JsonTree::Object(components)) = document.get("components") else {
         panic!("the document has components");
     };
