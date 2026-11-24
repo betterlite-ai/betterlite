@@ -114,7 +114,7 @@ async fn sent_text(
     let mut transport = executor
         .text_transport(deployment, &request, streamed)
         .await
-        .map_err(|failure| provider_failure(RawSource::Completion(&failure), facts, redactor))?;
+        .map_err(|failure| provider_failure(&RawSource::Completion(&failure), facts, redactor))?;
     forward_parameters(&request, &mut transport);
     let mut logger = TracingCompletionLog;
     let answer = executor
@@ -126,13 +126,13 @@ async fn sent_text(
             logger: &mut logger,
         })
         .await
-        .map_err(|failure| provider_failure(RawSource::Completion(&failure), facts, redactor))?;
+        .map_err(|failure| provider_failure(&RawSource::Completion(&failure), facts, redactor))?;
     match answer {
         CompletionCallAnswer::Buffered(buffered) => Ok(TextAnswer::Text {
             response: buffered.response,
         }),
-        CompletionCallAnswer::Streamed(streamed) => Ok(TextAnswer::Chunks {
-            chunks: collect_stream(streamed.stream, facts, redactor).await?,
+        CompletionCallAnswer::Streamed(chunked) => Ok(TextAnswer::Chunks {
+            chunks: collect_stream(chunked.stream, facts, redactor).await?,
         }),
     }
 }
@@ -157,7 +157,7 @@ async fn collect_stream(
     let mut kept: Vec<StreamChunk> = Vec::new();
     while let Some(item) = remaining.next().await {
         let chunk =
-            item.map_err(|error| provider_failure(RawSource::Stream(&error), facts, redactor))?;
+            item.map_err(|error| provider_failure(&RawSource::Stream(&error), facts, redactor))?;
         if !chunk.choices.is_empty() {
             kept.push(chunk);
             continue;

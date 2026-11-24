@@ -210,11 +210,11 @@ pub(crate) fn chat_messages(arguments: &TextArguments) -> Result<Vec<Json>, Conv
 // amoderation runs get_llm_provider before the call and sends its model, while moderation sends the value as given
 #[must_use]
 pub(crate) fn moderation_model(arguments: &ModerationArguments, entry: Entry) -> String {
-    match &arguments.model {
-        Some(model) => match entry {
+    arguments.model.as_ref().map_or_else(
+        || String::from(DEFAULT_MODERATION_MODEL),
+        |model| match entry {
             Entry::Async => model.strip_prefix("openai/").unwrap_or(model).to_owned(),
             Entry::Sync => model.clone(),
         },
-        None => String::from(DEFAULT_MODERATION_MODEL),
-    }
+    )
 }

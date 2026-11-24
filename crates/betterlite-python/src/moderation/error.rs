@@ -137,7 +137,7 @@ pub(crate) enum RawSource<'failure> {
 }
 
 pub(crate) fn provider_failure(
-    source: RawSource<'_>,
+    source: &RawSource<'_>,
     facts: &CallFacts<'_>,
     redactor: &Redactor,
 ) -> CallFailure {
@@ -158,7 +158,7 @@ pub(crate) fn provider_failure(
     )))
 }
 
-fn fields(source: RawSource<'_>, redactor: &Redactor) -> (String, Option<u16>, RawExceptionBody) {
+fn fields(source: &RawSource<'_>, redactor: &Redactor) -> (String, Option<u16>, RawExceptionBody) {
     match source {
         RawSource::Completion(error) => (
             error.message.clone(),
@@ -203,10 +203,10 @@ pub(crate) fn moderation_failure(
         let failure = route_error(error, redactor);
         return refused(Raised::Plain, failure.message, facts);
     }
-    provider_failure(RawSource::Moderation(error), facts, redactor)
+    provider_failure(&RawSource::Moderation(error), facts, redactor)
 }
 
-fn stream_status(error: &TextCompletionError) -> Option<u16> {
+const fn stream_status(error: &TextCompletionError) -> Option<u16> {
     match &error.status {
         ErrorStatus::Missing | ErrorStatus::Null => None,
         ErrorStatus::Code(code) => Some(*code),
