@@ -96,10 +96,6 @@ class PluginListJson(TypedDict):
     count: int
 
 
-class AgentHubRoute(Protocol):
-    async def __call__(self, request: Request) -> Sequence[Mapping[str, JsonValue]]: ...
-
-
 class McpHubRoute(Protocol):
     async def __call__(self) -> list[MCPPublicServer]: ...
 
@@ -108,7 +104,6 @@ class SkillHubRoute(Protocol):
     async def __call__(self) -> ListPluginsResponse: ...
 
 
-AGENT_HUB: Final[AgentHubRoute] = get_agents
 MCP_HUB: Final[McpHubRoute] = get_mcp_servers
 SKILL_HUB: Final[SkillHubRoute] = public_skill_hub
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -211,44 +206,56 @@ def build_request(base_url: str, root_path: str) -> Request:
     return Request(scope)
 
 
-async def agent_hub_answer(call: AgentHubCall) -> JsonValue:
-    saved_agents = global_agent_registry.agent_list
+async def agent_hub_cards(call: AgentHubCall) -> Sequence[Mapping[str, JsonValue]]:
+    # LiteLLM infers a partial type for get_agents, so the route contract pins what callers may read
+    request = build_request(call["request_base_url"], call["root_path"])
+    return await get_agents(request)
+
+
+def apply_agent_hub(call: AgentHubCall) -> None:
     global_agent_registry.agent_list = [
         AGENT_RESPONSE.validate_python(record) for record in call["agents"]
     ]
-    saved_groups = litellm.public_agent_groups
-    saved_proxy = os.environ.get(PROXY_BASE_URL_ENV)
-    saved_root = os.environ.get(ROOT_PATH_ENV)
     litellm.public_agent_groups = call["public_agent_groups"]
     apply_env(PROXY_BASE_URL_ENV, call["proxy_base_url"])
     os.environ[ROOT_PATH_ENV] = call["root_path"]
-    try:
-        cards = await AGENT_HUB(build_request(call["request_base_url"], call["root_path"]))
-    finally:
-        global_agent_registry.agent_list = saved_agents
-        litellm.public_agent_groups = saved_groups
-        apply_env(PROXY_BASE_URL_ENV, saved_proxy)
-        apply_env(ROOT_PATH_ENV, saved_root)
-    return JSON.validate_python(AGENT_CARDS.validate_python(cards))
 
 
-async def mcp_hub_answer(call: McpHubCall) -> JsonValue:
-    saved_config = global_mcp_server_manager.config_mcp_servers
-    saved_registry = global_mcp_server_manager.registry
-    saved_servers = litellm.public_mcp_servers
-    saved_strict = litellm.public_mcp_hub_strict_whitelist
+def apply_mcp_hub(call: McpHubCall) -> None:
     global_mcp_server_manager.config_mcp_servers = servers_by_id(call["config_servers"])
     global_mcp_server_manager.registry = servers_by_id(call["db_servers"])
     litellm.public_mcp_servers = call["public_mcp_servers"]
     litellm.public_mcp_hub_strict_whitelist = call["public_hub_strict"]
+
+
+async def hub_answer(call: AgentHubCall | McpHubCall) -> JsonValue:
+    saved_agents = global_agent_registry.agent_list
+    saved_groups = litellm.public_agent_groups
+    saved_config = global_mcp_server_manager.config_mcp_servers
+    saved_registry = global_mcp_server_manager.registry
+    saved_servers = litellm.public_mcp_servers
+    saved_strict = litellm.public_mcp_hub_strict_whitelist
+    saved_proxy = os.environ.get(PROXY_BASE_URL_ENV)
+    saved_root = os.environ.get(ROOT_PATH_ENV)
     try:
-        servers = await MCP_HUB()
+        match call["function"]:
+            case "agent_hub":
+                apply_agent_hub(call)
+                cards = await agent_hub_cards(call)
+                return JSON.validate_python(AGENT_CARDS.validate_python(cards))
+            case "mcp_hub":
+                apply_mcp_hub(call)
+                servers = await MCP_HUB()
+                return JSON.validate_json(MCP_PUBLIC_SERVERS.dump_json(servers))
     finally:
+        global_agent_registry.agent_list = saved_agents
+        litellm.public_agent_groups = saved_groups
         global_mcp_server_manager.config_mcp_servers = saved_config
         global_mcp_server_manager.registry = saved_registry
         litellm.public_mcp_servers = saved_servers
         litellm.public_mcp_hub_strict_whitelist = saved_strict
-    return JSON.validate_json(MCP_PUBLIC_SERVERS.dump_json(servers))
+        apply_env(PROXY_BASE_URL_ENV, saved_proxy)
+        apply_env(ROOT_PATH_ENV, saved_root)
 
 
 async def skill_hub_answer(call: SkillHubCall) -> JsonValue:
@@ -270,8 +277,8 @@ async def skill_hub_answer(call: SkillHubCall) -> JsonValue:
 def run(input_value: Call) -> JsonValue:
     match input_value["function"]:
         case "agent_hub":
-            return asyncio.run(agent_hub_answer(input_value))
+            return asyncio.run(hub_answer(input_value))
         case "mcp_hub":
-            return asyncio.run(mcp_hub_answer(input_value))
+            return asyncio.run(hub_answer(input_value))
         case "skill_hub":
             return asyncio.run(skill_hub_answer(input_value))
