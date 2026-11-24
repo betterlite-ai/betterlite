@@ -1,0 +1,8 @@
+general_settings:
+  key_management_system: hashicorp_vault
+  key_management_settings:
+    host: https://vault.example.com:8200
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini
