@@ -71,9 +71,7 @@ async fn shielded_cleanup(source: Box<dyn AsyncByteSource>) -> Result<(), Stream
     match task.await {
         Ok(Ok(())) => Ok(()),
         Ok(Err(failure)) => Err(StreamError::Cleanup { failure }),
-        Err(error) => Err(StreamError::CleanupAborted {
-            message: error.to_string(),
-        }),
+        Err(error) => Err(StreamError::CleanupAborted { source: error }),
     }
 }
 

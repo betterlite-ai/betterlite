@@ -4,6 +4,7 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use betterlite_error::error::ErrorClass;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use super::logging::CallbackFailure;
 
@@ -16,7 +17,7 @@ pub enum SourceFailure {
     Cancellation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 pub enum StreamError {
     #[error("File content stream does not support sync iteration")]
     UnsupportedSync,
@@ -30,8 +31,11 @@ pub enum StreamError {
     Callback { failure: CallbackFailure },
     #[error("the file content stream could not be closed")]
     Cleanup { failure: ErrorClass },
-    #[error("the file content stream close task did not finish: {message}")]
-    CleanupAborted { message: String },
+    #[error("the file content stream close task did not finish")]
+    CleanupAborted {
+        #[source]
+        source: JoinError,
+    },
 }
 
 impl StreamError {
