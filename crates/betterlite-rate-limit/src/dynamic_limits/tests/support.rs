@@ -84,8 +84,10 @@ impl RecordingCache {
 
     pub(crate) fn failing_reads() -> Self {
         Self {
+            sets: Arc::default(),
+            reads: Arc::default(),
+            writes: Arc::default(),
             read_fails: true,
-            ..Self::default()
         }
     }
 

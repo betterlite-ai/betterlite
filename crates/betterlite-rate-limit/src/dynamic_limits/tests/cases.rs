@@ -85,69 +85,102 @@ async fn set_add_writes_the_minute_set_with_sixty_seconds() {
     );
 }
 
-// two projects split the remaining capacity, one or no count keeps it, and int() truncates toward zero
+// two projects split the remaining capacity between them
 #[tokio::test]
 async fn division() {
-    let cases: [(i64, Option<i64>, Option<usize>, Option<i64>, Option<i64>); 5] = [
-        (100, Some(40), Some(2), Some(30), Some(60)),
-        (100, Some(40), Some(1), Some(60), Some(60)),
-        (100, Some(40), None, Some(60), Some(60)),
-        (100, None, Some(4), Some(25), Some(100)),
-        (99, Some(0), Some(2), Some(49), Some(99)),
-    ];
-    for (total, used, active, available, remaining) in cases {
-        let harness = harness_with(
-            FakeRouter::answering((Some(total), Some(total)), (used, used)),
-            cache_counting(active),
-            None,
-        );
-        let usage = harness.handler().check_available_usage(MODEL, None).await;
-        assert_eq!(usage.available_tpm, available);
-        assert_eq!(usage.available_rpm, available);
-        assert_eq!(usage.model_tpm, remaining);
-        assert_eq!(usage.model_rpm, remaining);
-    }
+    let harness = harness_with(
+        FakeRouter::answering((Some(100), Some(100)), (Some(40), Some(40))),
+        cache_counting(Some(2)),
+        None,
+    );
+    let usage = harness.handler().check_available_usage(MODEL, None).await;
+    assert_eq!(usage.available_tpm, Some(30));
+    assert_eq!(usage.available_rpm, Some(30));
+    assert_eq!(usage.model_tpm, Some(60));
+    assert_eq!(usage.model_rpm, Some(60));
 }
 
-// a spent share, a negative share and a negative weight all clamp to zero, and the model total stays as it was
+// one project or no count keeps the remaining capacity, an unknown usage leaves the total, and int() truncates
+#[rstest]
+#[case::one_project(100, Some(40), Some(1), Some(60), Some(60))]
+#[case::no_count(100, Some(40), None, Some(60), Some(60))]
+#[case::unknown_usage(100, None, Some(4), Some(25), Some(100))]
+#[case::truncation(99, Some(0), Some(2), Some(49), Some(99))]
+#[case::zero_share(100, Some(100), Some(5), Some(0), Some(0))]
+#[tokio::test]
+async fn share_shapes(
+    #[case] total: i64,
+    #[case] used: Option<i64>,
+    #[case] active: Option<usize>,
+    #[case] available: Option<i64>,
+    #[case] remaining: Option<i64>,
+) {
+    let harness = harness_with(
+        FakeRouter::answering((Some(total), Some(total)), (used, used)),
+        cache_counting(active),
+        None,
+    );
+    let usage = harness.handler().check_available_usage(MODEL, None).await;
+    assert_eq!(usage.available_tpm, available);
+    assert_eq!(usage.available_rpm, available);
+    assert_eq!(usage.model_tpm, remaining);
+    assert_eq!(usage.model_rpm, remaining);
+}
+
+// a share spent past the limit clamps to zero and the model total stays as it was
 #[tokio::test]
 async fn clamping() {
-    let cases: [(i64, i64, f64, i64); 3] = [
-        (100, 140, 1.0, -40),
-        (100, 100, 1.0, 0),
-        (100, 0, -1.0, 100),
-    ];
-    for (total, used, weight, remaining) in cases {
-        let harness = harness_with(
-            FakeRouter::answering((Some(total), Some(total)), (Some(used), Some(used))),
-            Arc::default(),
-            prod_reservation(PriorityValue::Percent(weight)),
-        );
-        let usage = harness
-            .handler()
-            .check_available_usage(MODEL, Some("prod"))
-            .await;
-        assert_eq!(usage.available_tpm, Some(0));
-        assert_eq!(usage.available_rpm, Some(0));
-        assert_eq!(usage.model_tpm, Some(remaining));
-    }
+    let harness = harness_with(
+        FakeRouter::answering((Some(100), Some(100)), (Some(140), Some(140))),
+        Arc::default(),
+        prod_reservation(PriorityValue::Percent(1.0)),
+    );
+    let usage = harness
+        .handler()
+        .check_available_usage(MODEL, Some("prod"))
+        .await;
+    assert_eq!(usage.available_tpm, Some(0));
+    assert_eq!(usage.available_rpm, Some(0));
+    assert_eq!(usage.model_tpm, Some(-40));
 }
 
-// a negative share truncates toward zero and a zero share stays zero, so both clamp to zero
+// an exact spend and a negative weight also clamp to zero
+#[rstest]
+#[case::spent(100, 100, 1.0, 0)]
+#[case::negative_weight(100, 0, -1.0, 100)]
+#[tokio::test]
+async fn clamping_shapes(
+    #[case] total: i64,
+    #[case] used: i64,
+    #[case] weight: f64,
+    #[case] remaining: i64,
+) {
+    let harness = harness_with(
+        FakeRouter::answering((Some(total), Some(total)), (Some(used), Some(used))),
+        Arc::default(),
+        prod_reservation(PriorityValue::Percent(weight)),
+    );
+    let usage = harness
+        .handler()
+        .check_available_usage(MODEL, Some("prod"))
+        .await;
+    assert_eq!(usage.available_tpm, Some(0));
+    assert_eq!(usage.available_rpm, Some(0));
+    assert_eq!(usage.model_tpm, Some(remaining));
+}
+
+// a negative share truncates toward zero, so the clamp turns it into zero
 #[tokio::test]
 async fn zero_floor() {
-    let cases: [(i64, i64, usize, i64); 2] = [(99, 100, 3, -1), (100, 100, 5, 0)];
-    for (total, used, active, remaining) in cases {
-        let harness = harness_with(
-            FakeRouter::answering((Some(total), Some(total)), (Some(used), Some(used))),
-            cache_counting(Some(active)),
-            None,
-        );
-        let usage = harness.handler().check_available_usage(MODEL, None).await;
-        assert_eq!(usage.available_tpm, Some(0));
-        assert_eq!(usage.available_rpm, Some(0));
-        assert_eq!(usage.model_tpm, Some(remaining));
-    }
+    let harness = harness_with(
+        FakeRouter::answering((Some(99), Some(99)), (Some(100), Some(100))),
+        cache_counting(Some(3)),
+        None,
+    );
+    let usage = harness.handler().check_available_usage(MODEL, None).await;
+    assert_eq!(usage.available_tpm, Some(0));
+    assert_eq!(usage.available_rpm, Some(0));
+    assert_eq!(usage.model_tpm, Some(-1));
 }
 
 // int() has no bound in Python and i64 does: a share past the bound stops at it instead of failing open
@@ -183,24 +216,33 @@ async fn negative_overflow_clamps_to_zero() {
     assert_eq!(usage.model_tpm, Some(i64::MIN));
 }
 
-// every read failure, a missing router, a zero count and a non-finite share fail open to five Nones
+// a failed step answers five Nones instead of failing the request
 #[tokio::test]
 async fn exception_returns_nones() {
-    for failure in [
-        Failure::InfoRead,
-        Failure::UsageRead,
-        Failure::MissingRouter,
-        Failure::CacheRead,
-        Failure::NoActiveProjects,
-        Failure::InfiniteWeight,
-    ] {
-        let harness = failing_harness(failure);
-        let usage = harness
-            .handler()
-            .check_available_usage(MODEL, Some("prod"))
-            .await;
-        assert_eq!(usage, AvailableUsage::default());
-    }
+    let harness = failing_harness(Failure::InfoRead);
+    let usage = harness
+        .handler()
+        .check_available_usage(MODEL, Some("prod"))
+        .await;
+    assert_eq!(usage, AvailableUsage::default());
+}
+
+// every read failure, a missing router, a zero count and a non-finite share fail open to five Nones
+#[rstest]
+#[case::info_read(Failure::InfoRead)]
+#[case::usage_read(Failure::UsageRead)]
+#[case::missing_router(Failure::MissingRouter)]
+#[case::cache_read(Failure::CacheRead)]
+#[case::no_active_projects(Failure::NoActiveProjects)]
+#[case::infinite_weight(Failure::InfiniteWeight)]
+#[tokio::test]
+async fn every_failed_step_returns_nones(#[case] failure: Failure) {
+    let harness = failing_harness(failure);
+    let usage = harness
+        .handler()
+        .check_available_usage(MODEL, Some("prod"))
+        .await;
+    assert_eq!(usage, AvailableUsage::default());
 }
 
 #[tokio::test]

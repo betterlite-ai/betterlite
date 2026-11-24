@@ -84,15 +84,17 @@ pub fn dynamic_rate_limit_error(
 fn detail(check: &LimitCheck<'_>, exceeded: ExceededLimit) -> String {
     let api_key = check.api_key.unwrap_or(NONE_TEXT);
     let label = exceeded.label();
-    let quota = optional_limit(check.quota);
-    let model_limit = optional_limit(check.model_limit);
-    let active_projects = optional_limit(check.active_projects);
+    // a Python int writes its digits into the text and a None writes None
+    let quota = check
+        .quota
+        .map_or_else(|| String::from(NONE_TEXT), |limit| limit.to_string());
+    let model_limit = check
+        .model_limit
+        .map_or_else(|| String::from(NONE_TEXT), |limit| limit.to_string());
+    let active_projects = check
+        .active_projects
+        .map_or_else(|| String::from(NONE_TEXT), |limit| limit.to_string());
     format!(
         "Key={api_key} over available {label}={quota}. Model {label}={model_limit}, Active keys={active_projects}"
     )
-}
-
-// a Python int writes its digits into the text and a None writes None
-fn optional_limit(value: Option<i64>) -> String {
-    value.map_or_else(|| String::from(NONE_TEXT), |limit| limit.to_string())
 }
