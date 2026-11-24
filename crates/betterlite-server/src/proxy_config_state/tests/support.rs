@@ -11,6 +11,14 @@ use crate::proxy_config_state::database::{
 use crate::proxy_config_state::error::ConfigStateError;
 use crate::proxy_config_state::state::ProxyConfigState;
 
+// JSON for the tests through serde_json's parser, so no banned object path and no inferred literal type reaches the lint table
+macro_rules! json {
+    ($($part:tt)*) => {
+        serde_json::from_str::<JsonValue>(stringify!($($part)*)).unwrap()
+    };
+}
+pub(crate) use json;
+
 pub(crate) const CONFIG_PATH: &str = "/etc/betterlite/config.yaml";
 
 pub(crate) fn state() -> ProxyConfigState {

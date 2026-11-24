@@ -1,19 +1,20 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::settings::JsonValue;
-use serde_json::json;
 
-use super::support;
+use super::support::{self, json};
 use crate::proxy_config_state::error::ConfigStateError;
 use crate::proxy_config_state::state::ProxyConfigState;
 use crate::proxy_config_state::team;
 
 fn state_with_teams(teams: JsonValue) -> ProxyConfigState {
     let mut state = support::state();
-    state.replace_snapshot(&support::values(&[(
-        "litellm_settings",
-        json!({"default_team_settings": teams}),
-    )]));
+    let settings = JsonValue::Object(
+        support::values(&[("default_team_settings", teams)])
+            .into_iter()
+            .collect(),
+    );
+    state.replace_snapshot(&support::values(&[("litellm_settings", settings)]));
     state
 }
 

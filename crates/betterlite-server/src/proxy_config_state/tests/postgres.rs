@@ -15,11 +15,10 @@ use betterlite_secrets::secret_codec::{
 use clap::Parser as _;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 use tokio::time::sleep;
 use tokio_postgres::NoTls;
 
-use super::support;
+use super::support::{self, json};
 use crate::proxy_config_state::database::postgres::{
     CONFIG_SECTION_LOCK_SQL, READ_CONFIG_SQL, UPSERT_CONFIG_SQL, decode_section_values,
     encode_config_value,
@@ -166,6 +165,24 @@ fn decrypt_policy() -> DecryptPolicy {
     }
 }
 
+fn decrypted_plaintext(database: &Database, sealed: &BTreeMap<String, JsonValue>) -> String {
+    let Some(JsonValue::String(text)) = sealed.get("OPENAI_API_KEY") else {
+        panic!("the sealed key stays a string");
+    };
+    let opened = database
+        .cipher
+        .decrypt_value(
+            StoredValue::<()>::Text(SecretString::from(text.clone())),
+            "OPENAI_API_KEY",
+            decrypt_policy(),
+        )
+        .expect("the sealed value decrypts");
+    let StoredValue::Text(plaintext) = opened else {
+        panic!("the sealed value stays text");
+    };
+    plaintext.expose_secret().to_owned()
+}
+
 async fn wait_for_an_advisory_waiter(client: &Client) {
     for _poll in 0_u32..400 {
         let waiting: i64 = client
@@ -212,21 +229,7 @@ async fn database_seal_environment_encrypts_every_value() {
         values.get("OTHER_KEY"),
         "OTHER_KEY stays plaintext"
     );
-    let Some(JsonValue::String(text)) = sealed.get("OPENAI_API_KEY") else {
-        panic!("the sealed key stays a string");
-    };
-    let opened = database
-        .cipher
-        .decrypt_value(
-            StoredValue::<()>::Text(SecretString::from(text.clone())),
-            "OPENAI_API_KEY",
-            decrypt_policy(),
-        )
-        .expect("the sealed value decrypts");
-    let StoredValue::Text(plaintext) = opened else {
-        panic!("the sealed value stays text");
-    };
-    assert_eq!(plaintext.expose_secret(), "sk-plain");
+    assert_eq!(decrypted_plaintext(&database, &sealed), "sk-plain");
     database.close().await;
 }
 
@@ -322,7 +325,7 @@ async fn database_merge_environment_variables_keeps_unnamed_keys() {
         invalidator: &invalidator,
     };
     let sealed = support::values(&[("keep", json!("new")), ("add", json!("sealed:y"))]);
-    let deleted: BTreeSet<String> = ["drop".to_owned()].into_iter().collect();
+    let deleted = BTreeSet::from(["drop".to_owned()]);
     state
         .merge_environment_variables(&sealed, &deleted)
         .await

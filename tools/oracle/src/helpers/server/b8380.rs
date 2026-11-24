@@ -59,7 +59,7 @@ fn answer(input: &Input) -> Result<Value, Failure> {
     match state.reject_config_owned_writes(section, &input.changed_keys) {
         Ok(()) => Ok(json!({"status_code": null, "detail": null})),
         Err(ConfigStateError::ConfigOwned(detail)) => Ok(json!({
-            "status_code": 400,
+            "status_code": 400_u16,
             "detail": detail,
         })),
         Err(other) => Err(Failure::Config(other)),

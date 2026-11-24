@@ -1,7 +1,6 @@
 use betterlite_config::sections::settings::{JsonValue, Section};
-use serde_json::json;
 
-use super::support;
+use super::support::{self, json};
 use crate::proxy_config_state::error::ConfigStateError;
 use crate::proxy_config_state::snapshot::ConfigWithBaseline;
 
@@ -21,6 +20,10 @@ fn a_snapshot_is_a_deep_copy() {
 
     let mut taken = state.snapshot();
     taken.insert("general_settings".to_owned(), json!({"nested": {"a": 3}}));
+    assert_eq!(
+        taken.get("general_settings"),
+        Some(&json!({"nested": {"a": 3}}))
+    );
     assert_eq!(
         state.snapshot().get("general_settings"),
         Some(&json!({"nested": {"a": 1}}))

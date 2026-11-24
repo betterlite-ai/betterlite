@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::settings::{JsonValue, Section};
-use serde_json::json;
 
-use super::support;
+use super::support::{self, json};
 use crate::proxy_config_state::database::merge_section_values;
 use crate::proxy_config_state::database::postgres;
 use crate::proxy_config_state::error::ConfigStateError;

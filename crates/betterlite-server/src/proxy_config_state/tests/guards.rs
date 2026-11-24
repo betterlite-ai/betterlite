@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::settings::{DbRow, JsonValue, Section};
-use serde_json::json;
 
-use super::support;
+use super::support::{self, json};
 use crate::proxy_config_state::error::{ConfigOwnedDetail, ConfigStateError};
 use crate::proxy_config_state::state::ProxyConfigState;
 

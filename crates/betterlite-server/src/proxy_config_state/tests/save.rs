@@ -1,8 +1,7 @@
 use betterlite_config::sections::settings::{JsonValue, Section};
-use serde_json::json;
 use tokio::fs;
 
-use super::support;
+use super::support::{self, json};
 use crate::proxy_config_state::error::ConfigStateError;
 use crate::proxy_config_state::save;
 use crate::proxy_config_state::snapshot::ConfigWithBaseline;
