@@ -22,7 +22,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rmcp::service::ServiceError;
 use rmcp::transport::DynamicTransportError;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use tokio::time::timeout;
 
 use super::payload::{McpErrorKind, NativeMcpErrorPayload, status_payload};

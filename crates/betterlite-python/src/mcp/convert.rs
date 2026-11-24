@@ -199,15 +199,16 @@ fn aws_settings(value: Option<&AuthValue>) -> Result<McpSigV4Settings, NativeMcp
         }
         None => return Ok(McpSigV4Settings::default()),
     };
+    let secret = |name: &str| headers.get(name).cloned();
     let text = |name: &str| {
         headers
             .get(name)
-            .map(|secret| secret.expose_secret().to_owned())
+            .map(|found| found.expose_secret().to_owned())
     };
     Ok(McpSigV4Settings {
-        aws_access_key_id: text("aws_access_key_id").map(SecretString::from),
-        aws_secret_access_key: text("aws_secret_access_key").map(SecretString::from),
-        aws_session_token: text("aws_session_token").map(SecretString::from),
+        aws_access_key_id: secret("aws_access_key_id"),
+        aws_secret_access_key: secret("aws_secret_access_key"),
+        aws_session_token: secret("aws_session_token"),
         aws_region_name: text("aws_region_name"),
         aws_service_name: text("aws_service_name"),
         aws_role_name: text("aws_role_name"),
