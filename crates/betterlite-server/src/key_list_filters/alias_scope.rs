@@ -28,7 +28,7 @@ pub async fn apply_non_admin_alias_scope(
     if !teams.is_empty() {
         let offset = query_params.len();
         let placeholders: Vec<String> = (1..=teams.len())
-            .map(|position| format!("${}", offset + position))
+            .map(|position| format!("${}", offset.saturating_add(position)))
             .collect();
         query_params.extend(teams.into_iter().map(JsonData::String));
         conditions.push(format!("team_id IN ({})", placeholders.join(", ")));
