@@ -421,14 +421,27 @@ async fn each_call_info_field() {
 }
 
 #[rstest]
-#[case::minutes(0_usize, "spend:key:sk-win:window:1m", 5_i64, "1m")]
-#[case::hours(1_usize, "spend:key:sk-win:window:2h", 50_i64, "2h")]
+#[case::minutes(
+    0_usize,
+    "spend:key:sk-win:window:1m",
+    5_i64,
+    "1m",
+    "2026-01-15T11:59:00+00:00"
+)]
+#[case::hours(
+    1_usize,
+    "spend:key:sk-win:window:2h",
+    50_i64,
+    "2h",
+    "2026-01-15T10:00:00+00:00"
+)]
 #[tokio::test]
 async fn window_duration_counter(
     #[case] index: usize,
     #[case] counter_key: &str,
     #[case] limit: i64,
     #[case] duration: &str,
+    #[case] start: &str,
 ) {
     let mut auth = key(
         r#"{"token":"sk-win","spend":0,"budget_limits":[{"budget_duration":"1m","max_budget":5},{"budget_duration":"2h","max_budget":50}]}"#,
@@ -447,7 +460,7 @@ async fn window_duration_counter(
     assert_eq!(query.entity_type.as_deref(), Some("key"));
     assert_eq!(query.entity_id.as_deref(), Some("sk-win"));
     assert_eq!(query.duration.as_deref(), Some(duration));
-    assert!(query.start.is_none());
+    assert_eq!(query.start, Some(Timestamp::Aware(instant(start))));
     assert!(!query.fallback_authoritative);
 
     let empty = ScriptedReader::new(Vec::new());

@@ -9,9 +9,14 @@ use crate::auth_key_budgets::email::{
 use crate::auth_key_budgets::key_budget::KeyBudgets;
 use crate::auth_key_budgets::max_alert::max_budget_alert_check;
 use crate::auth_key_budgets::money::Money;
-use crate::auth_key_budgets::team_member::{TEAM_MEMBER_ALERT_KEY, team_member_alert_check};
+use crate::auth_key_budgets::team_member::{
+    TEAM_MEMBER_ALERT_KEY, TeamMemberAlert, team_member_alert_check,
+};
 
-use super::{EventGroup, RecordingSink, dec, effective_budgets, emails, key, money, now};
+use super::{
+    EventGroup, RecordingSink, ScriptedReader, admission, dec, dec_text, effective_budgets, emails,
+    key, money, now,
+};
 
 #[test]
 fn list_and_csv_trim() {
@@ -85,19 +90,13 @@ fn empty_merge_none() {
 
 #[test]
 fn key_map_min_digit_threshold() {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let auth = key(
         r#"{"token":"sk-map","spend":50,"max_budget":100,"metadata":{"max_budget_alert_emails":{"90":["high@x"],"50":["low@x"]}}}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(
-        &auth,
-        &budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
     let alerts = sink.take();
     assert_eq!(alerts.len(), 1);
     let config = alerts[0].max_budget_alert_emails.as_ref().unwrap();
@@ -108,50 +107,31 @@ fn key_map_min_digit_threshold() {
         r#"{"token":"sk-map","spend":49,"max_budget":100,"metadata":{"max_budget_alert_emails":{"90":["high@x"],"50":["low@x"]}}}"#,
     );
     let below_budgets = effective_budgets(&below, now()).unwrap();
-    max_budget_alert_check(
-        &below,
-        &below_budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&below, &below_budgets, &admission(&reader, Some(&sink)));
     assert!(sink.take().is_empty());
 }
 
 #[test]
 fn invalid_key_threshold_no_alert() {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let auth = key(
         r#"{"token":"sk-nodigit","spend":99,"max_budget":100,"metadata":{"max_budget_alert_emails":{"abc":["a@x"],"eighty":["b@x"]}}}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(
-        &auth,
-        &budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
     assert!(sink.take().is_empty());
 }
 
 #[test]
 fn key_threshold_outside_range_kept() {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let auth = key(
         r#"{"token":"sk-big","spend":160,"max_budget":100,"metadata":{"max_budget_alert_emails":{"150":["a@x"]}}}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(
-        &auth,
-        &budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
     let alerts = sink.take();
     assert_eq!(alerts.len(), 1);
     assert_eq!(
@@ -163,14 +143,7 @@ fn key_threshold_outside_range_kept() {
         r#"{"token":"sk-zero-pct","spend":1,"max_budget":100,"metadata":{"max_budget_alert_emails":{"0":["a@x"]}}}"#,
     );
     let zero_budgets = effective_budgets(&zero, now()).unwrap();
-    max_budget_alert_check(
-        &zero,
-        &zero_budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&zero, &zero_budgets, &admission(&reader, Some(&sink)));
     assert_eq!(sink.take().len(), 1);
 
     let huge = "9".repeat(400);
@@ -179,14 +152,7 @@ fn key_threshold_outside_range_kept() {
     );
     let huge_auth = key(&fields);
     let huge_budgets = effective_budgets(&huge_auth, now()).unwrap();
-    max_budget_alert_check(
-        &huge_auth,
-        &huge_budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&huge_auth, &huge_budgets, &admission(&reader, Some(&sink)));
     assert!(sink.take().is_empty());
 }
 
@@ -195,20 +161,14 @@ fn key_threshold_outside_range_kept() {
 #[case::at_max(100_i64)]
 #[case::over_max(120_i64)]
 fn mapped_alert_at_or_over_max(#[case] spend: i64) {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let fields = format!(
         r#"{{"token":"sk-at-max","spend":{spend},"max_budget":100,"metadata":{{"max_budget_alert_emails":{{"100":["a@x"]}}}}}}"#
     );
     let auth = key(&fields);
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(
-        &auth,
-        &budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
     let alerts = sink.take();
     assert_eq!(alerts.is_empty(), spend < 100_i64);
     if spend >= 100_i64 {
@@ -222,20 +182,14 @@ fn mapped_alert_at_or_over_max(#[case] spend: i64) {
 #[case::positive_infinity(Money::PositiveInfinity, 0_usize)]
 #[case::negative_infinity(Money::NegativeInfinity, 1_usize)]
 fn max_alert_nonfinite_budget(#[case] maximum: Money, #[case] mapped_alerts: usize) {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let auth = key(
         r#"{"token":"sk-nonfinite-alert","spend":100,"metadata":{"max_budget_alert_emails":{"100":["a@x"]}}}"#,
     );
     let mut budgets = KeyBudgets::from_auth(&auth);
     budgets.max_budget = Some(maximum);
-    max_budget_alert_check(
-        &auth,
-        &budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
     assert_eq!(sink.take().len(), mapped_alerts);
 
     let zero_pct = key(
@@ -243,27 +197,13 @@ fn max_alert_nonfinite_budget(#[case] maximum: Money, #[case] mapped_alerts: usi
     );
     let mut zero_budgets = KeyBudgets::from_auth(&zero_pct);
     zero_budgets.max_budget = Some(Money::NegativeInfinity);
-    max_budget_alert_check(
-        &zero_pct,
-        &zero_budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&zero_pct, &zero_budgets, &admission(&reader, Some(&sink)));
     assert_eq!(sink.take().len(), 1);
 
     let legacy = key(r#"{"token":"sk-legacy-inf","spend":100}"#);
     let mut legacy_budgets = KeyBudgets::from_auth(&legacy);
     legacy_budgets.max_budget = Some(maximum);
-    max_budget_alert_check(
-        &legacy,
-        &legacy_budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&legacy, &legacy_budgets, &admission(&reader, Some(&sink)));
     assert!(sink.take().is_empty());
 }
 
@@ -272,18 +212,12 @@ fn max_alert_nonfinite_budget(#[case] maximum: Money, #[case] mapped_alerts: usi
 #[case::at_threshold(80_i64, 1_usize)]
 #[case::below_max(99_i64, 1_usize)]
 fn legacy_fraction_boundary(#[case] spend: i64, #[case] expected: usize) {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let fields = format!(r#"{{"token":"sk-legacy","spend":{spend},"max_budget":100}}"#);
     let auth = key(&fields);
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(
-        &auth,
-        &budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
     assert_eq!(sink.take().len(), expected);
 }
 
@@ -291,16 +225,91 @@ fn legacy_fraction_boundary(#[case] spend: i64, #[case] expected: usize) {
 #[case::at_max(100_i64)]
 #[case::over_max(120_i64)]
 fn legacy_max_excluded(#[case] spend: i64) {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let fields = format!(r#"{{"token":"sk-legacy-max","spend":{spend},"max_budget":100}}"#);
     let auth = key(&fields);
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(
-        &auth,
-        &budgets,
-        None,
-        None,
-        Money::from_f64(0.8_f64),
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    assert!(sink.take().is_empty());
+}
+
+#[test]
+fn mapped_threshold_exact_decimal() {
+    let reader = ScriptedReader::new(Vec::new());
+    let sink = RecordingSink::default();
+    let auth = key(
+        r#"{"token":"sk-tenth","spend":0.08,"max_budget":0.1,"metadata":{"max_budget_alert_emails":{"80":["a@x"]}}}"#,
+    );
+    let budgets = effective_budgets(&auth, now()).unwrap();
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    assert_eq!(
+        sink.take().len(),
+        1,
+        "0.08 is exactly 80% of 0.1, where LiteLLM's 0.1 * 0.8 falls short"
+    );
+
+    let legacy = key(r#"{"token":"sk-tenth-legacy","spend":0.08,"max_budget":0.1}"#);
+    let legacy_budgets = effective_budgets(&legacy, now()).unwrap();
+    max_budget_alert_check(&legacy, &legacy_budgets, &admission(&reader, Some(&sink)));
+    assert_eq!(
+        sink.take().len(),
+        1,
+        "the legacy fraction scales the same maximum by the same exact 0.8"
+    );
+
+    let metadata = emails(r#"{"team_member_max_budget_alert_emails":{"80":["a@x"]}}"#);
+    team_member_alert_check(
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec_text("0.08"),
+            max_budget: Money::Finite(dec_text("0.1")),
+        },
+        Some(&sink),
+    );
+    assert_eq!(
+        sink.take().len(),
+        1,
+        "the team threshold scales the same maximum by the same exact 0.8"
+    );
+}
+
+#[test]
+fn non_ascii_digit_thresholds_dropped() {
+    let reader = ScriptedReader::new(Vec::new());
+    let sink = RecordingSink::default();
+    // U+0665 U+0660 spell the Arabic-Indic 50, which Python's str.isdigit reads
+    let threshold = String::from_utf8(vec![0xD9_u8, 0xA5, 0xD9, 0xA0]).unwrap();
+    let fields = format!(
+        r#"{{"token":"sk-unicode","spend":99,"max_budget":100,"metadata":{{"max_budget_alert_emails":{{"{threshold}":["a@x"]}}}}}}"#
+    );
+    let auth = key(&fields);
+    let budgets = effective_budgets(&auth, now()).unwrap();
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    assert!(
+        sink.take().is_empty(),
+        "Arabic-Indic digits are not the ASCII digits a threshold key uses"
+    );
+
+    let metadata = emails(&format!(
+        r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"{threshold}":["a@x"]}}}}"#
+    ));
+    team_member_alert_check(
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(100),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     assert!(sink.take().is_empty());
@@ -315,14 +324,16 @@ fn member_invalid_map_silent(#[case] config: &str) {
     let sink = RecordingSink::default();
     let metadata = emails(&format!(r#"{{"{TEAM_MEMBER_ALERT_KEY}":{config}}}"#));
     team_member_alert_check(
-        "team-1",
-        None,
-        Some(&metadata),
-        None,
-        "user-1",
-        None,
-        dec(100),
-        money(100),
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(100),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     assert!(sink.take().is_empty());
@@ -335,14 +346,16 @@ fn member_threshold_bounds_length() {
         r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"0":["zero@x"],"101":["over@x"],"1000":["long@x"],"50":["half@x"],"100":["max@x"]}}}}"#
     ));
     team_member_alert_check(
-        "team-1",
-        None,
-        Some(&metadata),
-        None,
-        "user-1",
-        None,
-        dec(50),
-        money(100),
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(50),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     let alerts = sink.take();
@@ -356,14 +369,16 @@ fn member_threshold_bounds_length() {
         r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"101":["over@x"]}}}}"#
     ));
     team_member_alert_check(
-        "team-1",
-        None,
-        Some(&only_invalid),
-        None,
-        "user-1",
-        None,
-        dec(100),
-        money(100),
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&only_invalid),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(100),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     assert!(sink.take().is_empty());
@@ -376,14 +391,16 @@ fn member_recipients_coercion() {
         r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"50":"a@x, b@y","70":[" a@x ","a@x","b@y",7]}}}}"#
     ));
     team_member_alert_check(
-        "team-1",
-        None,
-        Some(&metadata),
-        None,
-        "user-1",
-        None,
-        dec(60),
-        money(100),
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(60),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     let alerts = sink.take();
@@ -398,14 +415,16 @@ fn member_unsupported_recipients_keep_threshold() {
     let sink = RecordingSink::default();
     let metadata = emails(&format!(r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"50":5}}}}"#));
     team_member_alert_check(
-        "team-1",
-        None,
-        Some(&metadata),
-        None,
-        "user-1",
-        None,
-        dec(60),
-        money(100),
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(60),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     let alerts = sink.take();
@@ -415,19 +434,15 @@ fn member_unsupported_recipients_keep_threshold() {
 
 #[test]
 fn member_no_global_merge() {
+    let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let global = emails(r#"{"50":["global@x"]}"#);
     let team_config = emails(r#"{"50":["team@x"]}"#);
     let key_auth = key(r#"{"token":"sk-team","spend":60,"max_budget":100}"#);
     let budgets = effective_budgets(&key_auth, now()).unwrap();
-    max_budget_alert_check(
-        &key_auth,
-        &budgets,
-        None,
-        Some(&global),
-        Money::from_f64(0.8_f64),
-        Some(&sink),
-    );
+    let mut inputs = admission(&reader, Some(&sink));
+    inputs.global_alert_emails = Some(&global);
+    max_budget_alert_check(&key_auth, &budgets, &inputs);
     let key_alerts = sink.take();
     assert_eq!(key_alerts.len(), 1);
     assert_eq!(
@@ -441,14 +456,16 @@ fn member_no_global_merge() {
         r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"50":["team@x"]}}}}"#
     ));
     team_member_alert_check(
-        "team-1",
-        Some("team-a"),
-        Some(&metadata),
-        Some("org-1"),
-        "user-1",
-        Some("owner@x"),
-        dec(60),
-        money(100),
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: Some("team-a"),
+            team_metadata: Some(&metadata),
+            organization_id: Some("org-1"),
+            user_id: "user-1",
+            user_email: Some("owner@x"),
+            spend: dec(60),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     let member_alerts = sink.take();
@@ -479,14 +496,16 @@ fn member_positive_spend_threshold(#[case] spend: i64, #[case] expected: bool) {
         r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"50":["a@x"]}}}}"#
     ));
     team_member_alert_check(
-        "team-1",
-        None,
-        Some(&metadata),
-        None,
-        "user-1",
-        None,
-        dec(spend),
-        money(100),
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(spend),
+            max_budget: money(100),
+        },
         Some(&sink),
     );
     assert_eq!(!sink.take().is_empty(), expected);

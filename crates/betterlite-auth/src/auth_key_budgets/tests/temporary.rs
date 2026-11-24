@@ -12,7 +12,10 @@ use crate::auth_key_budgets::temp::{
     TempBudgetUpdate, apply_temp_budget_increase, get_temp_budget_increase,
 };
 
-use super::{dec, effective_budgets, key, money, now};
+use super::{
+    KeyBudgetError, ScriptedReader, admission, admit, dec, dec_text, effective_budgets, key, money,
+    now,
+};
 
 fn temp_max(token: &str, expiry: &str) -> Option<Money> {
     let fields = format!(
@@ -257,6 +260,41 @@ fn basic_iso_expiry_forms(#[case] expiry: &str) {
     assert_eq!(
         parse_temp_budget_expiry("2026-01-16T13:00:00Z").unwrap(),
         super::instant("2026-01-16T13:00:00+00:00")
+    );
+}
+
+#[tokio::test]
+async fn increase_adds_exactly() {
+    let mut auth = key(
+        r#"{"token":"sk-tenth-increase","max_budget":0.1,"metadata":{"temp_budget_increase":0.2,"temp_budget_expiry":"2027-01-01T00:00:00Z"}}"#,
+    );
+    let budgets = effective_budgets(&auth, now()).unwrap();
+    assert_eq!(
+        budgets.max_budget,
+        Some(Money::Finite(dec_text("0.3"))),
+        "0.1 + 0.2 is 0.3 exactly, where LiteLLM's doubles give 0.30000000000000004"
+    );
+    let reader = ScriptedReader::new([dec_text("0.3")]);
+    let error = admit(&mut auth, &budgets, &admission(&reader, None))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, KeyBudgetError::Denied(_)),
+        "a spend equal to the exact increased maximum is denied"
+    );
+}
+
+#[test]
+fn expiry_timestamp_forms() {
+    assert_eq!(
+        parse_temp_budget_expiry("2026-W03-4").unwrap_err(),
+        TempBudgetError::ExpiryInvalid,
+        "fromisoformat reads a week date; the shared speedate parser does not"
+    );
+    assert_eq!(
+        parse_temp_budget_expiry("2026-01-15T12:30:00z").unwrap(),
+        super::instant("2026-01-15T12:30:00+00:00"),
+        "the shared parser reads a lowercase z where fromisoformat rejects it"
     );
 }
 

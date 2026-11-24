@@ -72,7 +72,7 @@ impl Money {
     }
 
     #[must_use]
-    pub fn add(self, other: Self) -> Self {
+    pub fn plus(self, other: Self) -> Self {
         if let (Self::Finite(left), Self::Finite(right)) = (self, other) {
             return left
                 .checked_add(right)
@@ -96,7 +96,7 @@ impl Money {
     }
 
     #[must_use]
-    pub fn mul(self, other: Self) -> Self {
+    pub fn times(self, other: Self) -> Self {
         match (self, other) {
             (Self::Finite(left), Self::Finite(right)) => left.checked_mul(right).map_or_else(
                 || Self::infinity(left.is_sign_negative() != right.is_sign_negative()),
@@ -119,18 +119,18 @@ impl Money {
     pub fn mul_percent(self, percent: i64) -> Self {
         Decimal::from(percent)
             .checked_div(Decimal::ONE_HUNDRED)
-            .map_or(Self::Nan, |ratio| self.mul(Self::Finite(ratio)))
+            .map_or(Self::Nan, |ratio| self.times(Self::Finite(ratio)))
     }
 
     // the same scaling for a threshold read from a digit-only map key
     #[must_use]
     pub fn mul_decimal_percent(self, percent: f64) -> Self {
         Decimal::from_f64(percent).map_or_else(
-            || self.mul(Self::from_f64(percent)),
+            || self.times(Self::from_f64(percent)),
             |value| {
                 value
                     .checked_div(Decimal::ONE_HUNDRED)
-                    .map_or(Self::Nan, |ratio| self.mul(Self::Finite(ratio)))
+                    .map_or(Self::Nan, |ratio| self.times(Self::Finite(ratio)))
             },
         )
     }

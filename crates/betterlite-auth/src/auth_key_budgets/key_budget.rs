@@ -6,10 +6,9 @@ use crate::budget_primitives::throttle::{percentage, should_throttle};
 use crate::current_spend::{SpendQuery, WindowDescriptors};
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
-use super::KeyBudgetError;
-use super::alerts::{BudgetAlertKind, BudgetAlertSink, KeyAlertFields, schedule};
+use super::alerts::{BudgetAlertKind, KeyAlertFields, schedule};
 use super::money::Money;
-use super::spend::SpendReader;
+use super::{Admission, KeyBudgetError};
 
 // litellm.budget_exceeded_status_code's default; B757 owns the configurable envelope
 pub const BUDGET_EXCEEDED_STATUS: u16 = 422;
@@ -47,6 +46,7 @@ pub struct Denial {
     pub status_code: u16,
 }
 
+#[must_use]
 pub fn token_text(auth: &UserAPIKeyAuth) -> String {
     auth.view.token.token.as_ref().map_or_else(
         || "None".to_owned(),
@@ -58,10 +58,7 @@ pub fn token_text(auth: &UserAPIKeyAuth) -> String {
 pub async fn virtual_key_max_budget_check(
     auth: &mut UserAPIKeyAuth,
     budgets: &KeyBudgets,
-    user_email: Option<&str>,
-    throttle_pct: Option<f64>,
-    reader: &dyn SpendReader,
-    alerts: Option<&dyn BudgetAlertSink>,
+    admission: &Admission<'_>,
 ) -> Result<(), KeyBudgetError> {
     let Some(max_budget) = budgets.max_budget else {
         return Ok(());
@@ -79,22 +76,22 @@ pub async fn virtual_key_max_budget_check(
         },
         fallback_authoritative: false,
     };
-    let spend = reader.read_spend(&query).await?;
+    let spend = admission.reader.read_spend(&query).await?;
     let fields = KeyAlertFields {
         auth,
         max_budget: budgets.max_budget,
         soft_budget: budgets.soft_budget,
-        user_email,
+        user_email: admission.user_email,
         team_alias: None,
     };
     schedule(
-        alerts,
+        admission.alerts,
         fields.build(BudgetAlertKind::TokenBudget, spend, None),
     );
     if let Some(maximum) = max_budget.finite_value()
         && spend >= maximum
     {
-        if apply_budget_exceeded_throttle(auth, throttle_pct) {
+        if apply_budget_exceeded_throttle(auth, admission.throttle_pct) {
             return Ok(());
         }
         return Err(KeyBudgetError::Denied(denial(auth, spend, maximum)));
@@ -103,6 +100,7 @@ pub async fn virtual_key_max_budget_check(
 }
 
 // _apply_budget_exceeded_throttle: records the request-local percentage and allows; the token's TPM/RPM limits stay untouched
+#[must_use]
 pub fn apply_budget_exceeded_throttle(auth: &mut UserAPIKeyAuth, configured: Option<f64>) -> bool {
     let Some(value) = percentage(configured) else {
         return false;

@@ -68,23 +68,8 @@ pub async fn admit(
     budgets: &KeyBudgets,
     admission: &Admission<'_>,
 ) -> Result<(), KeyBudgetError> {
-    max_alert::max_budget_alert_check(
-        auth,
-        budgets,
-        admission.user_email,
-        admission.global_alert_emails,
-        admission.alert_fraction,
-        admission.alerts,
-    );
-    virtual_key_max_budget_check(
-        auth,
-        budgets,
-        admission.user_email,
-        admission.throttle_pct,
-        admission.reader,
-        admission.alerts,
-    )
-    .await?;
+    max_alert::max_budget_alert_check(auth, budgets, admission);
+    virtual_key_max_budget_check(auth, budgets, admission).await?;
     soft::virtual_key_soft_budget_check(auth, budgets, admission.user_email, admission.alerts);
     virtual_key_multi_budget_check(auth, admission.reader, admission.durations, admission.now).await
 }

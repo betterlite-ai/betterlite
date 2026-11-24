@@ -55,21 +55,27 @@ pub async fn virtual_key_multi_budget_check(
         if let Some(maximum) = max_budget.finite_value()
             && spend >= maximum
         {
-            return Err(KeyBudgetError::Denied(Denial {
-                current_cost: spend,
-                max_budget: maximum,
-                entity_type: "key".to_owned(),
-                entity_id: token,
-                message: format!(
-                    "ExceededBudget: Key over {duration} budget. Spend=${}, Limit=${}",
-                    format_scale(spend, 4),
-                    format_scale(maximum, 2)
-                ),
-                status_code: BUDGET_EXCEEDED_STATUS,
-            }));
+            return Err(KeyBudgetError::Denied(window_denial(
+                &token, &duration, spend, maximum,
+            )));
         }
     }
     Ok(())
+}
+
+fn window_denial(token: &str, duration: &str, spend: Decimal, maximum: Decimal) -> Denial {
+    Denial {
+        current_cost: spend,
+        max_budget: maximum,
+        entity_type: "key".to_owned(),
+        entity_id: token.to_owned(),
+        message: format!(
+            "ExceededBudget: Key over {duration} budget. Spend=${}, Limit=${}",
+            format_scale(spend, 4),
+            format_scale(maximum, 2)
+        ),
+        status_code: BUDGET_EXCEEDED_STATUS,
+    }
 }
 
 fn window_duration(window: &BudgetWindow, index: usize) -> Result<String, WindowError> {

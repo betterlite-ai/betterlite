@@ -83,7 +83,7 @@ fn money_add_follows_float_semantics(
     #[case] right: Money,
     #[case] sum: Money,
 ) {
-    assert_eq!(left.add(right), sum);
+    assert_eq!(left.plus(right), sum);
 }
 
 #[rstest]
@@ -143,5 +143,5 @@ fn money_mul_follows_float_semantics(
     #[case] right: Money,
     #[case] product: Money,
 ) {
-    assert_eq!(left.mul(right), product);
+    assert_eq!(left.times(right), product);
 }

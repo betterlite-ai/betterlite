@@ -59,7 +59,7 @@ pub fn apply_temp_budget_increase(
     match get_temp_budget_increase(auth, now)? {
         Some(increase) if !matches!(increase, Money::Finite(value) if value.is_zero()) => {
             Ok(TempBudgetUpdate {
-                max_budget: Some(Money::Finite(max_budget).add(increase)),
+                max_budget: Some(Money::Finite(max_budget).plus(increase)),
                 applied: true,
             })
         }
