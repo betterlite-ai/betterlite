@@ -34,7 +34,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L296-L328
   - what: >-
       A `data:` line whose JSON Python would accept but serde_json rejects (NaN, Infinity, a
-      lone surrogate escape) is skipped as unparseable.
+      lone surrogate escape) is skipped as unparsable.
     why: >-
       Output is standard JSON (docs/compatibility.md); a stream carrying those tokens is not
       JSON, and skipping the line is what any other bad line already does.

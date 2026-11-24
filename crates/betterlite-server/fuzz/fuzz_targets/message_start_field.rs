@@ -1,8 +1,6 @@
 #![no_main]
 
-use betterlite_server::pass_through_logging::stream_fields::{
-    Chunk, extract_message_start_field,
-};
+use betterlite_server::pass_through_logging::stream_fields::{Chunk, extract_message_start_field};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

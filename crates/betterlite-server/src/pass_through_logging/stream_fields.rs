@@ -104,19 +104,12 @@ fn logged_model_from_details(call_log: &LoggingState) -> String {
 }
 
 // CPython's str.splitlines boundaries, which are more than Rust's lines() breaks on
-const fn is_line_boundary(character: char) -> bool {
-    matches!(
-        character,
-        '\n' | '\r'
-            | '\u{0b}'
-            | '\u{0c}'
-            | '\u{1c}'
-            | '\u{1d}'
-            | '\u{1e}'
-            | '\u{85}'
-            | '\u{2028}'
-            | '\u{2029}'
-    )
+const LINE_BOUNDARIES: [char; 10] = [
+    '\n', '\r', '\u{0b}', '\u{0c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
+];
+
+fn is_line_boundary(character: char) -> bool {
+    LINE_BOUNDARIES.contains(&character)
 }
 
 // str.strip whitespace at the pin, which char::is_whitespace does not match for \x1c to \x1f
