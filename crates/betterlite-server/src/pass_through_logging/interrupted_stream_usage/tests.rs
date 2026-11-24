@@ -18,10 +18,17 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_redact::secret::Redactor;
+use betterlite_streaming::stream_chunk_shaping::records::{
+    JsonObject as ShapedObject, JsonValue as ShapedValue,
+};
 use betterlite_streaming::stream_tool_assembly::records::{FunctionOutput, ToolOutput};
 use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
+use betterlite_streaming::stream_usage_assembly::wire::{
+    CacheCreationTokenDetails, CompletionTokensDetails, PromptTokensDetails, ServerToolUse,
+    Usage as WireUsage,
+};
 use betterlite_streaming::streamed_response_assembly::response::{
-    Response, TextResponse, TextUsage,
+    ChatChoice, ChatMessage, ChatResponse, Response, TextResponse, TextUsage,
 };
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message as CountMessage;
@@ -29,18 +36,21 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::Number;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
+use super::lines::split_lines;
 use super::testing::{
     ChatSpec, chat_response, clear_placeholder_cost as clear_cost_for_testing,
     recover_with_fixed_count, stream_was_interrupted as stream_was_interrupted_bytes,
     usage_summary,
 };
+use super::usage::usage_of;
 use super::{
     InterruptedStreamServices, InterruptedStreamUsageError, assemble_streaming_response,
     build_streaming_response_for_logging, clear_placeholder_cost, record_partial_usage_for_failure,
-    recover_interrupted_stream_output_tokens, stream_was_interrupted,
+    recover_interrupted_stream_output_tokens, stream_was_interrupted, usage_only_response_or_none,
 };
 use crate::pass_through_logging::response_costing::{ResponseCostRequest, ResponseCostService};
 use crate::pass_through_logging::stream_fields::Chunk;
@@ -167,6 +177,27 @@ fn interrupted_tail_skips_events_without_a_string_type() {
 }
 
 #[rstest]
+#[case(TEXT_DELTA)]
+#[case(CONTENT_STOP)]
+#[case(START)]
+fn interrupted_tail_block_event_after_message_delta_is_interrupted(#[case] event: &str) {
+    let stream = vec![chunk(DELTA), chunk(event)];
+    assert!(stream_was_interrupted(&stream).expect("valid chunks"));
+}
+
+#[test]
+fn interrupted_tail_line_without_a_trailing_newline_decides() {
+    let stream = vec![chunk("data: {\"type\":\"message_delta\"}")];
+    assert!(!stream_was_interrupted(&stream).expect("valid chunks"));
+}
+
+#[test]
+fn interrupted_split_lines_follows_python_on_crlf_and_repeats() {
+    assert_eq!(split_lines("a\r\nb\n\nc"), vec!["a", "b", "", "c"]);
+    assert_eq!(split_lines("a\rb\r\nc"), vec!["a", "b", "c"]);
+}
+
+#[rstest]
 #[case("\n")]
 #[case("\r")]
 #[case("\r\n")]
@@ -206,6 +237,12 @@ fn interrupted_tail_invalid_utf8_is_a_typed_error() {
     let stream = vec![Chunk::Bytes(vec![0xff, 0xfe])];
     let error = stream_was_interrupted(&stream).expect_err("invalid UTF-8");
     assert!(matches!(error, InterruptedStreamUsageError::Utf8(_)));
+}
+
+#[test]
+fn interrupted_testing_wrapper_decides_cut_and_completed_streams() {
+    assert!(stream_was_interrupted_bytes(&[cut_stream_bytes()]).expect("valid chunks"));
+    assert!(!stream_was_interrupted_bytes(&[completed_stream_bytes()]).expect("valid chunks"));
 }
 
 #[test]
@@ -447,6 +484,22 @@ fn interrupted_assemble_none_falls_back_silently() {
 }
 
 #[test]
+fn interrupted_usage_only_builds_the_response_from_message_start_usage() {
+    let response = usage_only_response_or_none(&[chunk(START)], "claude-test", None)
+        .expect("message_start carries usage");
+    let summary = usage_summary(&response);
+    assert_eq!(summary.prompt_tokens, 10);
+    assert_eq!(summary.completion_tokens, 1);
+    let Response::Chat(chat) = &response else {
+        panic!("the usage-only builder returns a chat response");
+    };
+    assert!(
+        chat.created >= 1_700_000_000,
+        "the usage-only response is stamped now"
+    );
+}
+
+#[test]
 fn interrupted_build_clears_only_after_a_recovery() {
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let counter = FixedCount(5);
@@ -461,6 +514,13 @@ fn interrupted_build_clears_only_after_a_recovery() {
         build_streaming_response_for_logging(&call_log, &body, &chunks, "claude-test", &services)
             .expect("a valid build")
             .expect("an assembled response");
+    let Response::Chat(chat) = &response else {
+        panic!("the stream assembles a chat response");
+    };
+    assert!(
+        chat.created >= 1_700_000_000,
+        "the chunk carries the wall-clock creation stamp"
+    );
     let summary = usage_summary(&response);
     assert_eq!(
         summary.completion_tokens, 5,
@@ -496,6 +556,58 @@ fn interrupted_build_keeps_the_cost_of_a_completed_stream() {
         "a completed stream keeps its cost"
     );
     assert_eq!(summary.hidden_response_cost, Some(0.25));
+}
+
+#[test]
+fn interrupted_build_passes_the_request_speed_to_the_usage() {
+    let cost = FakeCost::priced(Decimal::new(25, 2));
+    let counter = FixedCount(5);
+    let services = InterruptedStreamServices {
+        costs: &cost,
+        counter: &counter,
+    };
+    let call_log = logging_state(&[], &[]);
+    let mut body = request_body("claude-test");
+    body.insert("speed".to_owned(), Json::Text("fast".to_owned()));
+    let chunks = cut_stream();
+    let response =
+        build_streaming_response_for_logging(&call_log, &body, &chunks, "claude-test", &services)
+            .expect("a valid build")
+            .expect("an assembled response");
+    let Response::Chat(chat) = &response else {
+        panic!("the stream assembles a chat response");
+    };
+    assert_eq!(chat.usage.speed.as_deref(), Some("fast"));
+}
+
+#[test]
+fn interrupted_build_skips_the_hidden_cost_for_an_xai_provider() {
+    let cost = FakeCost::priced(Decimal::new(25, 2));
+    let counter = FixedCount(5);
+    let services = InterruptedStreamServices {
+        costs: &cost,
+        counter: &counter,
+    };
+    let call_log = logging_state(
+        &[("custom_llm_provider", Json::Text("xai".to_owned()))],
+        &[],
+    );
+    let body = request_body("claude-test");
+    let chunks = completed_stream();
+    let response =
+        build_streaming_response_for_logging(&call_log, &body, &chunks, "claude-test", &services)
+            .expect("a valid build")
+            .expect("an assembled response");
+    let summary = usage_summary(&response);
+    assert_eq!(
+        summary.cost,
+        Some(0.25),
+        "the xai stream keeps its usage cost"
+    );
+    assert_eq!(
+        summary.hidden_response_cost, None,
+        "xai prices the reported cost itself"
+    );
 }
 
 #[test]
@@ -574,6 +686,154 @@ fn interrupted_record_bills_the_partial_stream_cost() {
     assert_eq!(number(recorded.get("prompt_tokens")), Some(10));
     assert_eq!(number(recorded.get("completion_tokens")), Some(5));
     assert_eq!(recorded_cost(&call_log), Some(0.25));
+}
+
+#[test]
+fn interrupted_usage_copies_every_detail_count_into_the_recorded_usage() {
+    let mut prompt_extra = ShapedObject::new();
+    prompt_extra.insert(
+        "custom_prompt".to_owned(),
+        ShapedValue::Number(Number::from(9_i64)),
+    );
+    let mut completion_extra = ShapedObject::new();
+    completion_extra.insert("custom_completion".to_owned(), ShapedValue::Bool(true));
+    let response = Response::Chat(Box::new(ChatResponse {
+        id: "chatcmpl-b3632".to_owned(),
+        object: "chat.completion".to_owned(),
+        created: 1_700_000_000,
+        model: "claude-test".to_owned(),
+        system_fingerprint: None,
+        service_tier: None,
+        choices: vec![ChatChoice {
+            index: 0,
+            message: ChatMessage {
+                content: Some("hello".to_owned()),
+                role: "assistant".to_owned(),
+                tool_calls: None,
+                function_call: None,
+                provider_specific_fields: None,
+                reasoning_content: None,
+                thinking_blocks: None,
+                annotations: None,
+                audio: None,
+                images: None,
+            },
+            finish_reason: "stop".to_owned(),
+            provider_specific_fields: None,
+        }],
+        usage: WireUsage {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+            cache_creation_input_tokens: Some(2),
+            cache_read_input_tokens: Some(3),
+            completion_tokens_details: Some(CompletionTokensDetails {
+                reasoning_tokens: Some(1),
+                text_tokens: Some(4),
+                image_tokens: Some(0),
+                audio_tokens: None,
+                extra: completion_extra,
+            }),
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: Some(7),
+                web_search_requests: Some(1),
+                google_maps_grounding_requests: Some(2),
+                cache_write_tokens: Some(3),
+                cache_creation_tokens: Some(4),
+                cache_creation_token_details: Some(CacheCreationTokenDetails {
+                    ephemeral_5m_input_tokens: Some(5),
+                    ephemeral_1h_input_tokens: Some(6),
+                }),
+                extra: prompt_extra,
+            }),
+            server_tool_use: Some(ServerToolUse {
+                web_search_requests: Some(1),
+                tool_search_requests: Some(2),
+                browser_open_requests: Some(3),
+            }),
+            cost: Some(Decimal::new(25, 2)),
+            inference_geo: Some("us".to_owned()),
+            speed: Some("fast".to_owned()),
+        },
+        hidden_params: ShapedObject::new(),
+    }));
+    let recorded = usage_of(&response);
+    assert_eq!(recorded.prompt_tokens, 10);
+    assert_eq!(recorded.completion_tokens, 5);
+    assert_eq!(recorded.total_tokens, 15);
+    assert_eq!(recorded.cost, Some(Decimal::new(25, 2)));
+    let prompt = recorded
+        .prompt_tokens_details
+        .expect("the prompt details are recorded");
+    assert_eq!(
+        prompt.get("cached_tokens"),
+        Some(&Json::Number(Number::from(7_i64)))
+    );
+    assert_eq!(
+        prompt.get("web_search_requests"),
+        Some(&Json::Number(Number::from(1_i64)))
+    );
+    assert_eq!(
+        prompt.get("google_maps_grounding_requests"),
+        Some(&Json::Number(Number::from(2_i64)))
+    );
+    assert_eq!(
+        prompt.get("cache_write_tokens"),
+        Some(&Json::Number(Number::from(3_i64)))
+    );
+    assert_eq!(
+        prompt.get("cache_creation_tokens"),
+        Some(&Json::Number(Number::from(4_i64)))
+    );
+    let mut nested = IndexMap::new();
+    nested.insert(
+        "ephemeral_5m_input_tokens".to_owned(),
+        Json::Number(Number::from(5_i64)),
+    );
+    nested.insert(
+        "ephemeral_1h_input_tokens".to_owned(),
+        Json::Number(Number::from(6_i64)),
+    );
+    assert_eq!(
+        prompt.get("cache_creation_token_details"),
+        Some(&Json::Object(nested))
+    );
+    assert_eq!(
+        prompt.get("custom_prompt"),
+        Some(&Json::Number(Number::from(9_i64)))
+    );
+    let completion = recorded
+        .completion_tokens_details
+        .expect("the completion details are recorded");
+    assert_eq!(
+        completion.get("reasoning_tokens"),
+        Some(&Json::Number(Number::from(1_i64)))
+    );
+    assert_eq!(
+        completion.get("text_tokens"),
+        Some(&Json::Number(Number::from(4_i64)))
+    );
+    assert_eq!(
+        completion.get("image_tokens"),
+        Some(&Json::Number(Number::from(0_i64)))
+    );
+    assert!(completion.get("audio_tokens").is_none());
+    assert_eq!(completion.get("custom_completion"), Some(&Json::Bool(true)));
+    let server = recorded
+        .server_tool_use
+        .expect("the server tool use is recorded");
+    assert_eq!(
+        server.get("web_search_requests"),
+        Some(&Json::Number(Number::from(1_i64)))
+    );
+    assert_eq!(
+        server.get("tool_search_requests"),
+        Some(&Json::Number(Number::from(2_i64)))
+    );
+    assert_eq!(
+        server.get("browser_open_requests"),
+        Some(&Json::Number(Number::from(3_i64)))
+    );
 }
 
 #[test]

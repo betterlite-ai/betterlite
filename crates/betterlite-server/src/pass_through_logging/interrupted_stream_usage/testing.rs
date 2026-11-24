@@ -205,10 +205,13 @@ impl UsageTokenCounter for FixedCount {
         Ok(self.0)
     }
 
+    // The recovery only asks for the response-text count; these two keep the trait whole.
+    #[cfg_attr(test, mutants::skip)]
     async fn count_text(&self, _text: &str) -> Result<i64, CountError> {
         Ok(self.0)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn count_messages(
         &self,
         _model: &str,
