@@ -8,7 +8,7 @@ use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::model_group_lookups::access_groups::{AccessGroupMap, AccessGroups};
 use serde::Deserialize;
 
-use super::annotate::{filter_models_to_user_accessible, populate_team_access};
+use super::annotate::{populate_team_access, visible_models};
 use super::error::ScopeError;
 use super::grants::{direct_access_models, non_team_model_ids, text_models};
 use super::teams::{
@@ -140,7 +140,7 @@ pub async fn get_all_team_models(
     let group_ids = access_group_ids_for_teams(&teams);
     if !group_ids.is_empty() {
         let group_models = reads.access_group_models(&group_ids).await?;
-        add_access_group_models(&teams, lookup, &group_models, &mut team_models)?;
+        add_access_group_models(lookup, &teams, &group_models, &mut team_models)?;
     }
     let returned: TeamModelLists = team_models
         .into_iter()
@@ -148,21 +148,16 @@ pub async fn get_all_team_models(
         .collect();
     Ok(returned)
 }
-async fn caller_access(
+async fn annotate_user(
+    annotated: &mut [DeploymentSpec],
+    user_id: &str,
     caller: &ScopeCaller,
     reads: &dyn ScopeReads,
     lookup: &CatalogLookup<'_>,
     access_groups: &AccessGroups,
-) -> Result<(Option<TeamModelLists>, Vec<String>), ScopeError> {
-    if caller.admin_view {
-        let teams = get_all_team_models(&TeamSelection::All, reads, lookup, access_groups).await?;
-        return Ok((Some(teams), non_team_model_ids(lookup)));
-    }
-    let Some(user_id) = caller.user_id.as_deref() else {
-        return Ok((None, Vec::new()));
-    };
+) -> Result<(), ScopeError> {
     let Some(user) = reads.user_scope(user_id).await? else {
-        return Ok((None, Vec::new()));
+        return Ok(());
     };
     let user_models = text_models(&user.models, "user models")?;
     let direct = direct_access_models(&user_models, &caller.key_models, lookup, access_groups)?;
@@ -173,29 +168,35 @@ async fn caller_access(
         access_groups,
     )
     .await?;
-    Ok((Some(teams), direct))
-}
-pub async fn populate_team_access_on_models(
-    all_models: Vec<DeploymentSpec>,
-    caller: &ScopeCaller,
-    reads: &dyn ScopeReads,
-    lookup: &CatalogLookup<'_>,
-    access_groups: &AccessGroups,
-) -> Result<Vec<DeploymentSpec>, ScopeError> {
-    let (team_models, direct_ids) = caller_access(caller, reads, lookup, access_groups).await?;
-    let mut annotated = all_models;
-    populate_team_access(&mut annotated, team_models.as_ref(), &direct_ids);
-    Ok(annotated)
+    populate_team_access(annotated, Some(&teams), &direct);
+    Ok(())
 }
 
-pub async fn get_all_team_and_direct_access_models(
+pub async fn accessible_models(
     all_models: Vec<DeploymentSpec>,
+    visible_only: bool,
     caller: &ScopeCaller,
     reads: &dyn ScopeReads,
     lookup: &CatalogLookup<'_>,
     access_groups: &AccessGroups,
 ) -> Result<Vec<DeploymentSpec>, ScopeError> {
-    let annotated =
-        populate_team_access_on_models(all_models, caller, reads, lookup, access_groups).await?;
-    Ok(filter_models_to_user_accessible(annotated))
+    let mut annotated = all_models;
+    if caller.admin_view {
+        let teams = get_all_team_models(&TeamSelection::All, reads, lookup, access_groups).await?;
+        populate_team_access(&mut annotated, Some(&teams), &non_team_model_ids(lookup));
+    } else if let Some(user_id) = caller.user_id.as_deref() {
+        annotate_user(
+            &mut annotated,
+            user_id,
+            caller,
+            reads,
+            lookup,
+            access_groups,
+        )
+        .await?;
+    }
+    if visible_only {
+        return Ok(visible_models(annotated));
+    }
+    Ok(annotated)
 }

@@ -12,6 +12,14 @@ call:
         model_info: {id: team-1, team_id: team-alpha, team_public_model_name: team-gpt}
     model_group_alias: {}
     grant: []
+    all_models: []
+    key_models: []
+    user: null
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
 calls:
   - model_info_scope:
       function: grant_resolution
@@ -24,6 +32,14 @@ calls:
           model_info: {id: team-1, team_id: team-alpha, team_public_model_name: team-gpt}
       model_group_alias: {}
       grant: []
+      all_models: []
+      key_models: []
+      user: null
+      creators: {}
+      teams: []
+      user_teams: null
+      access_groups: []
+      caller: null
   - model_info_scope:
       function: grant_resolution
       model_list:
@@ -35,5 +51,13 @@ calls:
           model_info: {id: team-1, team_id: team-alpha, team_public_model_name: team-gpt}
       model_group_alias: {}
       grant: [all-proxy-models]
+      all_models: []
+      key_models: []
+      user: null
+      creators: {}
+      teams: []
+      user_teams: null
+      access_groups: []
+      caller: null
 env: {}
 compare: {ignore: []}

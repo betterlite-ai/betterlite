@@ -39,7 +39,7 @@ fn granted_ids(name: &str, lookup: &CatalogLookup<'_>) -> Result<Vec<String>, Sc
         .collect())
 }
 
-pub fn resolve_model_grant_to_deployment_ids(
+pub fn grant_deployment_ids(
     grant: &[String],
     lookup: &CatalogLookup<'_>,
     access_groups: &AccessGroups,
@@ -64,14 +64,13 @@ pub fn direct_access_models(
     lookup: &CatalogLookup<'_>,
     access_groups: &AccessGroups,
 ) -> Result<Vec<String>, ScopeError> {
-    let user_ids = resolve_model_grant_to_deployment_ids(user_models, lookup, access_groups)?;
+    let user_ids = grant_deployment_ids(user_models, lookup, access_groups)?;
     if key_models.is_empty() || key_models.iter().any(|model| model == ALL_PROXY_MODELS) {
         return Ok(user_ids);
     }
-    let key_ids: BTreeSet<String> =
-        resolve_model_grant_to_deployment_ids(key_models, lookup, access_groups)?
-            .into_iter()
-            .collect();
+    let key_ids: BTreeSet<String> = grant_deployment_ids(key_models, lookup, access_groups)?
+        .into_iter()
+        .collect();
     Ok(user_ids
         .into_iter()
         .filter(|model_id| key_ids.contains(model_id))

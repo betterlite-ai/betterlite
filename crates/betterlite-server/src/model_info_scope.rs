@@ -5,7 +5,6 @@ pub mod grants;
 pub mod postgres;
 pub mod teams;
 
-#[cfg(test)]
 mod tests;
 
 use betterlite_models::decisions::Json;

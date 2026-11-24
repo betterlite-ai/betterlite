@@ -16,5 +16,12 @@ call:
     model_group_alias: {}
     key_models: []
     user: {user_id: alice, teams: [], models: [shared, ag-1]}
+    all_models: []
+    grant: []
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
 env: {}
 compare: {ignore: []}

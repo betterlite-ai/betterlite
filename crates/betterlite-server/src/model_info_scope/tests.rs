@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
@@ -7,10 +9,10 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_group_lookups::access_groups::{AccessGroupMap, AccessGroups};
 
-use super::annotate::{filter_models_to_user_accessible, populate_team_access};
+use super::annotate::{populate_team_access, visible_models};
 use super::compose::{
     ModelCreator, ScopeCaller, ScopeFuture, ScopeReads, TeamSelection, UserScope,
-    get_all_team_and_direct_access_models, non_admin_all_models, populate_team_access_on_models,
+    accessible_models, non_admin_all_models,
 };
 use super::error::ScopeError;
 use super::teams::{TeamModelLists, TeamScope};
@@ -59,15 +61,6 @@ fn team_row(name: &str, id: &str, team: &str) -> DeploymentSpec {
     )
 }
 
-fn unnumbered(name: &str, info: Vec<(&str, Json)>) -> DeploymentSpec {
-    DeploymentSpec {
-        model_name: name.to_owned(),
-        litellm_params: object(vec![("model", Json::Text("openai/gpt-4o".to_owned()))]),
-        model_info: object(info),
-        extra: JsonObject::new(),
-    }
-}
-
 fn snapshot(rows: &[DeploymentSpec]) -> Snapshot {
     let parts: Vec<(String, JsonObject, Json)> = rows
         .iter()
@@ -90,6 +83,13 @@ fn snapshot(rows: &[DeploymentSpec]) -> Snapshot {
     Snapshot::build(&declared, &JsonObject::new()).unwrap()
 }
 
+fn selection_label(selection: &TeamSelection) -> String {
+    match selection {
+        TeamSelection::All => "teams:*".to_owned(),
+        TeamSelection::Ids(ids) => format!("teams:{}", ids.join(",")),
+    }
+}
+
 #[derive(Default)]
 struct StubReads {
     creators: BTreeMap<String, Option<String>>,
@@ -102,67 +102,75 @@ struct StubReads {
     calls: Mutex<Vec<String>>,
 }
 
+impl StubReads {
+    fn note(&self, label: String) {
+        let mut calls = self.calls.lock().unwrap();
+        calls.push(label);
+    }
+
+    fn creator(&self, model_id: &str) -> Result<Option<ModelCreator>, ScopeError> {
+        self.note(format!("model:{model_id}"));
+        let creator = self.creators.get(model_id).map(|created_by| ModelCreator {
+            created_by: created_by.clone(),
+        });
+        Ok(creator)
+    }
+
+    fn user_row(&self, user_id: &str) -> Result<Option<UserScope>, ScopeError> {
+        self.note(format!("user:{user_id}"));
+        if !self.user_fails {
+            return Ok(self.user.clone());
+        }
+        let failure = std::io::Error::other("user read failed");
+        Err(ScopeError::UserRead(Box::new(failure)))
+    }
+
+    fn team_rows(&self, selection: &TeamSelection) -> Result<Vec<TeamScope>, ScopeError> {
+        self.note(selection_label(selection));
+        if !self.teams_fail {
+            return Ok(self.teams.clone());
+        }
+        let failure = std::io::Error::other("team read failed");
+        Err(ScopeError::TeamRead(Box::new(failure)))
+    }
+
+    fn group_rows(&self, access_group_ids: &[String]) -> Result<AccessGroupMap, ScopeError> {
+        self.note(format!("groups:{}", access_group_ids.join(",")));
+        if !self.groups_fail {
+            return Ok(self.groups.clone());
+        }
+        let failure = std::io::Error::other("access group read failed");
+        Err(ScopeError::AccessGroupRead(Box::new(failure)))
+    }
+}
+
 impl ScopeReads for StubReads {
     fn model_creator<'a>(
         &'a self,
         model_id: &'a str,
     ) -> ScopeFuture<'a, Result<Option<ModelCreator>, ScopeError>> {
-        Box::pin(async move {
-            self.calls.lock().unwrap().push(format!("model:{model_id}"));
-            let creator = self.creators.get(model_id).map(|created_by| ModelCreator {
-                created_by: created_by.clone(),
-            });
-            Ok(creator)
-        })
+        Box::pin(async move { self.creator(model_id) })
     }
 
     fn user_scope<'a>(
         &'a self,
         user_id: &'a str,
     ) -> ScopeFuture<'a, Result<Option<UserScope>, ScopeError>> {
-        Box::pin(async move {
-            self.calls.lock().unwrap().push(format!("user:{user_id}"));
-            if self.user_fails {
-                let failure = std::io::Error::other("user read failed");
-                return Err(ScopeError::UserRead(Box::new(failure)));
-            }
-            Ok(self.user.clone())
-        })
+        Box::pin(async move { self.user_row(user_id) })
     }
 
     fn team_scopes<'a>(
         &'a self,
         selection: &'a TeamSelection,
     ) -> ScopeFuture<'a, Result<Vec<TeamScope>, ScopeError>> {
-        Box::pin(async move {
-            let label = match selection {
-                TeamSelection::All => "teams:*".to_owned(),
-                TeamSelection::Ids(ids) => format!("teams:{}", ids.join(",")),
-            };
-            self.calls.lock().unwrap().push(label);
-            if self.teams_fail {
-                let failure = std::io::Error::other("team read failed");
-                return Err(ScopeError::TeamRead(Box::new(failure)));
-            }
-            Ok(self.teams.clone())
-        })
+        Box::pin(async move { self.team_rows(selection) })
     }
 
     fn access_group_models<'a>(
         &'a self,
         access_group_ids: &'a [String],
     ) -> ScopeFuture<'a, Result<AccessGroupMap, ScopeError>> {
-        Box::pin(async move {
-            self.calls
-                .lock()
-                .unwrap()
-                .push(format!("groups:{}", access_group_ids.join(",")));
-            if self.groups_fail {
-                let failure = std::io::Error::other("access group read failed");
-                return Err(ScopeError::AccessGroupRead(Box::new(failure)));
-            }
-            Ok(self.groups.clone())
-        })
+        Box::pin(async move { self.group_rows(access_group_ids) })
     }
 }
 
@@ -220,10 +228,9 @@ async fn admin_annotations() {
         admin_view: true,
         ..caller(Some("admin"), &[])
     };
-    let annotated =
-        get_all_team_and_direct_access_models(rows, &admin, &store, &snapshot.lookup(), &groups)
-            .await
-            .unwrap();
+    let annotated = accessible_models(rows, true, &admin, &store, &snapshot.lookup(), &groups)
+        .await
+        .unwrap();
     assert_eq!(ids(&annotated), vec![Some("global-1"), Some("team-1")]);
     assert_annotations(&annotated[0], true, Some(&["team-alpha"]));
     assert_annotations(&annotated[1], false, Some(&["team-alpha"]));
@@ -245,8 +252,9 @@ async fn missing_user_annotations() {
     let snapshot = snapshot(&rows);
     let store = StubReads::default();
     let groups = AccessGroups::default();
-    let annotated = populate_team_access_on_models(
+    let annotated = accessible_models(
         rows,
+        false,
         &caller(Some("ghost"), &[]),
         &store,
         &snapshot.lookup(),
@@ -257,21 +265,23 @@ async fn missing_user_annotations() {
     assert_eq!(annotated.len(), 2);
     assert_annotations(&annotated[0], false, Some(&["team-old"]));
     assert_annotations(&annotated[1], false, None);
-    let visible = filter_models_to_user_accessible(annotated);
+    let visible = visible_models(annotated);
     assert_eq!(ids(&visible), vec![Some("g1")]);
     assert_calls(&store, &["user:ghost"]);
 }
 
 #[test]
 fn missing_id_preserves_fields() {
-    let mut rows = vec![unnumbered(
-        "gpt-4o",
-        vec![
+    let mut rows = vec![DeploymentSpec {
+        model_name: "gpt-4o".to_owned(),
+        litellm_params: object(vec![("model", Json::Text("openai/gpt-4o".to_owned()))]),
+        model_info: object(vec![
             ("team_id", Json::Text("team-alpha".to_owned())),
             ("access_via_team_ids", team_ids(&["kept-team"])),
             ("custom", Json::Text("kept".to_owned())),
-        ],
-    )];
+        ]),
+        extra: JsonObject::new(),
+    }];
     let mut team_models = TeamModelLists::new();
     team_models.insert("some-id".to_owned(), team_list(&["team-alpha"]));
     populate_team_access(&mut rows, Some(&team_models), &["some-id".to_owned()]);
@@ -284,7 +294,7 @@ fn missing_id_preserves_fields() {
         rows[0].model_info.get("custom"),
         Some(&Json::Text("kept".to_owned()))
     );
-    assert_eq!(filter_models_to_user_accessible(rows).len(), 1);
+    assert_eq!(visible_models(rows).len(), 1);
 }
 
 #[test]
@@ -312,9 +322,9 @@ fn exact_team_annotation_gate() {
         identified("global-gpt", "d"),
     ];
     let mut team_models = TeamModelLists::new();
-    for model_id in ["a", "b", "c"] {
-        team_models.insert(model_id.to_owned(), team_list(&["team-alpha"]));
-    }
+    team_models.insert("a".to_owned(), team_list(&["team-alpha"]));
+    team_models.insert("b".to_owned(), team_list(&["team-alpha"]));
+    team_models.insert("c".to_owned(), team_list(&["team-alpha"]));
     populate_team_access(&mut rows, Some(&team_models), &[]);
     assert_annotations(&rows[0], false, Some(&["team-alpha"]));
     assert_annotations(&rows[1], false, None);
@@ -346,8 +356,9 @@ async fn annotation_team_read_failure() {
         models: Vec::new(),
     });
     store.teams_fail = true;
-    let error = populate_team_access_on_models(
+    let error = accessible_models(
         rows,
+        false,
         &caller(Some("alice"), &[]),
         &store,
         &snapshot.lookup(),
@@ -371,8 +382,9 @@ async fn annotation_group_read_failure() {
     });
     store.teams = vec![restricted("team-alpha", &["gpt-4o"], &["ag-1"])];
     store.groups_fail = true;
-    let error = populate_team_access_on_models(
+    let error = accessible_models(
         rows,
+        false,
         &caller(Some("alice"), &[]),
         &store,
         &snapshot.lookup(),

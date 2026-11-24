@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use axum::http::StatusCode;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
@@ -15,8 +17,8 @@ use tokio_postgres::types::ToSql;
 
 use super::{caller, identified, ids, snapshot, team_list, team_row};
 use crate::model_info_scope::compose::{
-    TeamSelection, check_if_model_is_user_added, get_all_team_models, non_admin_all_models,
-    populate_team_access_on_models,
+    TeamSelection, accessible_models, check_if_model_is_user_added, get_all_team_models,
+    non_admin_all_models,
 };
 use crate::model_info_scope::error::{ScopeDetail, ScopeError, USER_NOT_FOUND};
 use crate::model_info_scope::postgres::PostgresScopeReads;
@@ -412,8 +414,9 @@ async fn annotation_read_failure() {
     db.batch(DROP_USER_SQL).await;
     let rows = vec![identified("gpt-4o", "g1")];
     let lookup = snapshot(&rows);
-    let error = populate_team_access_on_models(
+    let error = accessible_models(
         rows,
+        false,
         &caller(Some("alice"), &[]),
         &db.reads(),
         &lookup.lookup(),
@@ -439,8 +442,9 @@ async fn stored_roster_annotates_models() {
         identified("other", "d3"),
     ];
     let lookup = snapshot(&rows);
-    let annotated = populate_team_access_on_models(
+    let annotated = accessible_models(
         rows,
+        false,
         &caller(Some("alice"), &[]),
         &db.reads(),
         &lookup.lookup(),

@@ -1,19 +1,13 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Final, NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict, cast
 
 import litellm
-from litellm.proxy._types import LiteLLM_UserTable, UserAPIKeyAuth
-from litellm.proxy.proxy_server import (  # noqa: PLC2701  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14161-L14537
-    _filter_models_to_user_accessible,
-    _populate_team_access_on_models,
-    _resolve_model_grant_to_deployment_ids,
-    get_all_team_and_direct_access_models,
-    get_all_team_models,
-    get_direct_access_models,
-    non_admin_all_models,
-)
+from litellm.proxy import proxy_server
+from litellm.proxy._types import LiteLLM_UserTable, LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy.utils import PrismaClient
 from litellm.router import Router
+from litellm.types.router import RouterModelGroupAliasItem
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -35,27 +29,28 @@ class AccessGroupRecord(TypedDict):
 
 
 class CallerRecord(TypedDict):
-    user_id: NotRequired[str | None]
-    admin_view: NotRequired[bool]
-    models: NotRequired[list[str]]
+    user_id: str | None
+    admin_view: bool
+    models: list[str]
 
 
 class Input(TypedDict):
     function: str
-    model_list: NotRequired[list[dict[str, JsonValue]]]
-    model_group_alias: NotRequired[dict[str, str]]
-    all_models: NotRequired[list[dict[str, JsonValue]]]
-    grant: NotRequired[list[str]]
-    key_models: NotRequired[list[str]]
-    user: NotRequired[UserRecord | None]
-    creators: NotRequired[dict[str, str | None]]
-    teams: NotRequired[list[TeamRecord]]
-    user_teams: NotRequired[str | list[str]]
-    access_groups: NotRequired[list[AccessGroupRecord]]
-    caller: NotRequired[CallerRecord]
+    model_list: list[dict[str, JsonValue]]
+    model_group_alias: dict[str, str]
+    all_models: list[dict[str, JsonValue]]
+    grant: list[str]
+    key_models: list[str]
+    user: UserRecord | None
+    creators: dict[str, str | None]
+    teams: list[TeamRecord]
+    user_teams: Literal["*"] | list[str] | None
+    access_groups: list[AccessGroupRecord]
+    caller: CallerRecord | None
 
 
 INFO: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+ROWS: Final[TypeAdapter[list[dict[str, JsonValue]]]] = TypeAdapter(list[dict[str, JsonValue]])
 
 
 @dataclass
@@ -77,11 +72,11 @@ class TeamRow:
     access_group_ids: list[str] | None
 
     def model_dump(self) -> dict[str, JsonValue]:
-        return {
-            "team_id": self.team_id,
-            "models": list(self.models),
-            "access_group_ids": list(self.access_group_ids or []),
-        }
+        models: list[JsonValue] = [*self.models]
+        ids: list[JsonValue] = (
+            [] if self.access_group_ids is None else [*self.access_group_ids]
+        )
+        return {"team_id": self.team_id, "models": models, "access_group_ids": ids}
 
 
 @dataclass
@@ -92,7 +87,7 @@ class AccessGroupRow:
 
 class ProxyModelTable:
     def __init__(self, rows: dict[str, ProxyModelRow]) -> None:
-        self.rows = rows
+        self.rows: dict[str, ProxyModelRow] = rows
 
     async def find_unique(self, where: dict[str, str]) -> ProxyModelRow | None:
         await asyncio.sleep(0)
@@ -101,7 +96,7 @@ class ProxyModelTable:
 
 class UserTable:
     def __init__(self, rows: dict[str, UserRow]) -> None:
-        self.rows = rows
+        self.rows: dict[str, UserRow] = rows
 
     async def find_unique(self, where: dict[str, str]) -> UserRow | None:
         await asyncio.sleep(0)
@@ -110,7 +105,7 @@ class UserTable:
 
 class TeamTable:
     def __init__(self, rows: list[TeamRow]) -> None:
-        self.rows = rows
+        self.rows: list[TeamRow] = rows
 
     async def find_many(
         self, where: dict[str, dict[str, list[str]]] | None = None
@@ -124,11 +119,9 @@ class TeamTable:
 
 class AccessGroupTable:
     def __init__(self, rows: list[AccessGroupRow]) -> None:
-        self.rows = rows
+        self.rows: list[AccessGroupRow] = rows
 
-    async def find_many(
-        self, where: dict[str, dict[str, list[str]]]
-    ) -> list[AccessGroupRow]:
+    async def find_many(self, where: dict[str, dict[str, list[str]]]) -> list[AccessGroupRow]:
         await asyncio.sleep(0)
         wanted = set(where["access_group_id"]["in"])
         return [row for row in self.rows if row.access_group_id in wanted]
@@ -148,20 +141,19 @@ class FakePrisma:
 
 
 def build_router(input_value: Input) -> Router:
-    return Router(
-        model_list=input_value["model_list"],
-        model_group_alias=input_value["model_group_alias"],
-    )
+    aliases: dict[str, str | RouterModelGroupAliasItem] = {
+        alias: target for alias, target in input_value["model_group_alias"].items()
+    }
+    return Router(model_list=input_value["model_list"], model_group_alias=aliases)
 
 
 def build_prisma(input_value: Input) -> FakePrisma:
     user = input_value["user"]
     users: dict[str, UserRow] = {}
     if user is not None:
-        row = UserRow(
+        users[user["user_id"]] = UserRow(
             user_id=user["user_id"], teams=list(user["teams"]), models=list(user["models"])
         )
-        users[row.user_id] = row
     teams = [
         TeamRow(
             team_id=record["team_id"],
@@ -194,93 +186,79 @@ def build_prisma(input_value: Input) -> FakePrisma:
 
 def build_caller(input_value: Input) -> UserAPIKeyAuth:
     record = input_value["caller"]
-    declared = record.get("models")
-    role = "PROXY_ADMIN" if record.get("admin_view") else None
+    if record is None:
+        raise ValueError("this operation needs a caller record")
+    role = LitellmUserRoles.PROXY_ADMIN if record["admin_view"] else None
     return UserAPIKeyAuth(
-        user_id=record.get("user_id"),
-        user_role=role,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2994
-        models=[] if declared is None else declared,
+        user_id=record["user_id"],
+        user_role=role,
+        models=record["models"],
     )
 
 
-def ids_of(value: object) -> list[JsonValue]:
-    ids: list[JsonValue] = []
-    for row in TypeAdapter(list[dict[str, JsonValue]]).validate_python(value):
-        ids.append(INFO.validate_python(row.get("model_info", {})).get("id"))
-    return ids
+def row_ids(value: JsonValue) -> list[JsonValue]:
+    return [
+        INFO.validate_python(row["model_info"]).get("id") if "model_info" in row else None
+        for row in ROWS.validate_python(value)
+    ]
 
 
 def grant_answer(input_value: Input) -> JsonValue:
-    router = build_router(input_value)
-    ids = _resolve_model_grant_to_deployment_ids(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14407-L14430
-        models=input_value["grant"], llm_router=router
+    found = proxy_server._resolve_model_grant_to_deployment_ids(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14407-L14430
+        models=input_value["grant"], llm_router=build_router(input_value)
     )
-    return {"ids": list(ids)}
+    ids: list[JsonValue] = [*found]
+    return {"ids": ids}
 
 
 def direct_answer(input_value: Input) -> JsonValue:
     user = input_value["user"]
     if user is None:
         raise ValueError("the direct_access function needs a user row")
-    router = build_router(input_value)
     user_object = LiteLLM_UserTable(
         user_id=user["user_id"], teams=list(user["teams"]), models=list(user["models"])
     )
-    ids = get_direct_access_models(
+    found = proxy_server.get_direct_access_models(
         user_db_object=user_object,
-        llm_router=router,
+        llm_router=build_router(input_value),
         key_models=input_value["key_models"],
     )
-    return {"ids": list(ids)}
+    ids: list[JsonValue] = [*found]
+    return {"ids": ids}
 
 
 async def team_answer(input_value: Input) -> JsonValue:
-    router = build_router(input_value)
-    prisma = build_prisma(input_value)
-    found = await get_all_team_models(
-        user_teams=input_value["user_teams"],  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14359-L14404
-        prisma_client=prisma,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14359-L14404
-        llm_router=router,
+    user_teams = input_value["user_teams"]
+    if user_teams is None:
+        raise ValueError("the team_models function needs user_teams")
+    found = await proxy_server.get_all_team_models(
+        user_teams=user_teams,
+        prisma_client=cast(PrismaClient, build_prisma(input_value)),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14359-L14404
+        llm_router=build_router(input_value),
     )
-    return {"team_models": {model_id: sorted(found[model_id]) for model_id in sorted(found)}}
+    teams: dict[str, JsonValue] = {}
+    for model_id in sorted(found):
+        names: list[JsonValue] = [*sorted(found[model_id])]
+        teams[model_id] = names
+    return {"team_models": teams}
 
 
 async def non_admin_answer(input_value: Input) -> JsonValue:
-    router = build_router(input_value)
-    prisma = build_prisma(input_value)
-    models = await non_admin_all_models(
-        all_models=input_value["all_models"],
-        llm_router=router,
-        user_api_key_dict=build_caller(input_value),
-        prisma_client=prisma,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14208-L14251
-    )
-    return {"ids": ids_of(models)}
-
-
-async def populate_answer(input_value: Input, filter_rows: bool) -> JsonValue:
-    router = build_router(input_value)
-    prisma = build_prisma(input_value)
-    caller = build_caller(input_value)
-    if filter_rows:
-        models = await get_all_team_and_direct_access_models(
-            user_api_key_dict=caller,
-            prisma_client=prisma,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14522-L14537
-            llm_router=router,
+    models = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14208-L14251
+        JsonValue,
+        await proxy_server.non_admin_all_models(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14208-L14251
             all_models=input_value["all_models"],
-        )
-        return {"ids": ids_of(models)}
-    models = await _populate_team_access_on_models(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14466-L14519
-        user_api_key_dict=caller,
-        prisma_client=prisma,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14466-L14519
-        llm_router=router,
-        all_models=input_value["all_models"],
+            llm_router=build_router(input_value),
+            user_api_key_dict=build_caller(input_value),
+            prisma_client=cast(PrismaClient, build_prisma(input_value)),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14208-L14251
+        ),
     )
-    return {"ids": ids_of(models)}
+    return {"ids": row_ids(models)}
 
 
 def filter_answer(input_value: Input) -> JsonValue:
-    kept = _filter_models_to_user_accessible(input_value["all_models"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14456-L14463
-    return {"ids": ids_of(kept)}
+    kept = cast(JsonValue, proxy_server._filter_models_to_user_accessible(input_value["all_models"]))  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14456-L14463
+    return {"ids": row_ids(kept)}
 
 
 async def answer(input_value: Input) -> JsonValue:
@@ -293,15 +271,11 @@ async def answer(input_value: Input) -> JsonValue:
         return await team_answer(input_value)
     if function == "non_admin":
         return await non_admin_answer(input_value)
-    if function == "populate":
-        return await populate_answer(input_value, filter_rows=False)
-    if function == "team_and_direct":
-        return await populate_answer(input_value, filter_rows=True)
     if function == "filter":
         return filter_answer(input_value)
     raise ValueError(f"unsupported model_info_scope function {function}")
 
 
-def run(input_value: Input) -> JsonValue:
+def run(input_value: dict[str, JsonValue]) -> JsonValue:
     litellm.suppress_debug_info = True
-    return asyncio.run(answer(input_value))
+    return asyncio.run(answer(TypeAdapter(Input).validate_python(input_value)))

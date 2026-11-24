@@ -41,19 +41,14 @@ fn read_store(client: PrismaClient<'_>) -> &PostgresStore {
     client.reader
 }
 
-fn model_read_error(model_id: &str, source: impl StdError + Send + Sync + 'static) -> ScopeError {
+fn model_read_error<E>(model_id: &str, source: E) -> ScopeError
+where
+    E: StdError + Send + Sync + 'static,
+{
     ScopeError::ModelRead {
         model_id: model_id.to_owned(),
         source: Box::new(source),
     }
-}
-
-fn team_read_error(source: impl StdError + Send + Sync + 'static) -> ScopeError {
-    ScopeError::TeamRead(Box::new(source))
-}
-
-fn access_group_read_error(source: impl StdError + Send + Sync + 'static) -> ScopeError {
-    ScopeError::AccessGroupRead(Box::new(source))
 }
 
 fn model_creator_row(
@@ -68,6 +63,26 @@ fn model_creator_row(
     Ok(Some(ModelCreator {
         created_by: model.fields.created_by,
     }))
+}
+
+async fn fetch_creator(
+    client: PrismaClient<'_>,
+    model_id: &str,
+) -> Result<Option<ModelCreator>, ScopeError> {
+    let repository = PrismaTableRepository::new(
+        Some(client),
+        redis_config_change_publisher(None),
+        ProxyModelBinding,
+    );
+    let actions: ConfigSyncTableActions<ResourceActions<'_, ProxyModelBinding>> = repository
+        .table(ResourceActions::new)
+        .map_err(|source| model_read_error(model_id, source))?;
+    let rows = actions
+        .as_ref()
+        .find::<JsonData>(KeyFilter::Equal(model_id))
+        .await
+        .map_err(|source| model_read_error(model_id, source))?;
+    model_creator_row(rows, model_id)
 }
 
 async fn read_user(store: &PostgresStore, user_id: &str) -> Result<Option<UserScope>, ScopeError> {
@@ -88,10 +103,12 @@ async fn read_user(store: &PostgresStore, user_id: &str) -> Result<Option<UserSc
 
 // LiteLLM's per-row LiteLLM_TeamTable.model_validate: a stored row the model refuses is an error, never a skipped team.
 pub(crate) fn team_scope_from_json(text: &str) -> Result<TeamScope, ScopeError> {
-    let record = TeamRecord::parse(text.as_bytes()).map_err(team_read_error)?;
-    let decoded = decode_team_record(record.as_ref()).map_err(team_read_error)?;
+    let record = TeamRecord::parse(text.as_bytes())
+        .map_err(|source| ScopeError::TeamRead(Box::new(source)))?;
+    let decoded = decode_team_record(record.as_ref())
+        .map_err(|source| ScopeError::TeamRead(Box::new(source)))?;
     let Some(team) = decoded else {
-        return Err(team_read_error(TeamRecordError::NotAnObject));
+        return Err(ScopeError::TeamRead(Box::new(TeamRecordError::NotAnObject)));
     };
     Ok(TeamScope {
         team_id: team.fields.base.team_id,
@@ -107,16 +124,16 @@ async fn read_team_rows(
     let client = store
         .session()
         .await
-        .map_err(|source| team_read_error(backend::<Infallible>(source)))?;
+        .map_err(|source| ScopeError::TeamRead(Box::new(backend::<Infallible>(source))))?;
     let rows = client
         .query(TEAMS_SQL, &[&team_ids])
         .await
-        .map_err(|source| team_read_error(backend::<Infallible>(source)))?;
+        .map_err(|source| ScopeError::TeamRead(Box::new(backend::<Infallible>(source))))?;
     let mut teams = Vec::with_capacity(rows.len());
     for row in &rows {
         let text: String = row
             .try_get(0)
-            .map_err(|source| team_read_error(backend::<Infallible>(source)))?;
+            .map_err(|source| ScopeError::TeamRead(Box::new(backend::<Infallible>(source))))?;
         teams.push(team_scope_from_json(&text)?);
     }
     Ok(teams)
@@ -129,18 +146,20 @@ async fn read_access_group_rows(
     let client = store
         .session()
         .await
-        .map_err(|source| access_group_read_error(backend::<Infallible>(source)))?;
+        .map_err(|source| ScopeError::AccessGroupRead(Box::new(backend::<Infallible>(source))))?;
     let rows = client
         .query(ACCESS_GROUPS_SQL, &[&access_group_ids])
         .await
-        .map_err(|source| access_group_read_error(backend::<Infallible>(source)))?;
+        .map_err(|source| ScopeError::AccessGroupRead(Box::new(backend::<Infallible>(source))))?;
+    let texts: Vec<String> = rows
+        .iter()
+        .map(|row| row.try_get(0))
+        .collect::<Result<_, _>>()
+        .map_err(|source| ScopeError::AccessGroupRead(Box::new(backend::<Infallible>(source))))?;
     let mut groups = AccessGroupMap::new();
-    for row in &rows {
-        let text: String = row
-            .try_get(0)
-            .map_err(|source| access_group_read_error(backend::<Infallible>(source)))?;
-        let group: AccessGroupTable =
-            serde_json::from_str(&text).map_err(access_group_read_error)?;
+    for text in &texts {
+        let group: AccessGroupTable = serde_json::from_str(text)
+            .map_err(|source| ScopeError::AccessGroupRead(Box::new(source)))?;
         groups.insert(group.access_group_id, group.access_model_names);
     }
     Ok(groups)
@@ -151,23 +170,7 @@ impl ScopeReads for PostgresScopeReads<'_> {
         &'a self,
         model_id: &'a str,
     ) -> ScopeFuture<'a, Result<Option<ModelCreator>, ScopeError>> {
-        Box::pin(async move {
-            let repository = PrismaTableRepository::new(
-                Some(self.client),
-                redis_config_change_publisher(None),
-                ProxyModelBinding,
-            );
-            let actions: ConfigSyncTableActions<ResourceActions<'_, ProxyModelBinding>> =
-                repository
-                    .table(ResourceActions::new)
-                    .map_err(|source| model_read_error(model_id, source))?;
-            let rows = actions
-                .as_ref()
-                .find::<JsonData>(KeyFilter::Equal(model_id))
-                .await
-                .map_err(|source| model_read_error(model_id, source))?;
-            model_creator_row(rows, model_id)
-        })
+        Box::pin(fetch_creator(self.client, model_id))
     }
 
     fn user_scope<'a>(

@@ -33,8 +33,18 @@ pub fn check_if_model_is_team_model(
         .collect()
 }
 
-fn unrestricted(team: &TeamScope) -> bool {
-    team.models.is_empty() || team.models.iter().any(|model| model == ALL_PROXY_MODELS)
+fn open(team: &TeamScope) -> bool {
+    if team.models.is_empty() {
+        return true;
+    }
+    team.models.iter().any(|model| model == ALL_PROXY_MODELS)
+}
+
+fn mark(team_models: &mut TeamModelMap, team_id: &str, model_id: &str) {
+    team_models
+        .entry(model_id.to_owned())
+        .or_default()
+        .insert(team_id.to_owned());
 }
 
 fn add_unrestricted_team(
@@ -49,33 +59,33 @@ fn add_unrestricted_team(
         let reachable = text_field(&deployment.model_info, "team_id")
             .is_none_or(|model_team| team.team_id.contains(model_team));
         if reachable {
-            team_models
-                .entry(model_id.to_owned())
-                .or_default()
-                .insert(team.team_id.clone());
+            mark(team_models, &team.team_id, model_id);
         }
     }
     Ok(())
 }
-fn add_restricted_team_models(
+
+fn record_rows<I>(
     team: &TeamScope,
+    model_names: I,
     lookup: &CatalogLookup<'_>,
-    proxy_model_list: &[String],
-    groups: &AccessGroupMap,
     team_models: &mut TeamModelMap,
-) -> Result<(), ScopeError> {
-    for model_name in get_team_models(&team.models, proxy_model_list, groups, false) {
-        for deployment in lookup.get_model_list(Some(&model_name), Some(&team.team_id))? {
-            if let Some(model_id) = deployment.id() {
-                team_models
-                    .entry(model_id.to_owned())
-                    .or_default()
-                    .insert(team.team_id.clone());
-            }
+) -> Result<(), ScopeError>
+where
+    I: IntoIterator,
+    I::Item: AsRef<str>,
+{
+    for model_name in model_names {
+        for deployment in lookup.get_model_list(Some(model_name.as_ref()), Some(&team.team_id))? {
+            let Some(model_id) = deployment.id() else {
+                continue;
+            };
+            mark(team_models, &team.team_id, model_id);
         }
     }
     Ok(())
 }
+
 pub fn add_team_models_to_all_models(
     teams: &[TeamScope],
     lookup: &CatalogLookup<'_>,
@@ -85,10 +95,11 @@ pub fn add_team_models_to_all_models(
     let groups = access_groups.get_model_access_groups(lookup, None, None, None)?;
     let mut team_models = TeamModelMap::new();
     for team in teams {
-        if unrestricted(team) {
+        if open(team) {
             add_unrestricted_team(team, lookup, &mut team_models)?;
         } else {
-            add_restricted_team_models(team, lookup, &proxy_model_list, &groups, &mut team_models)?;
+            let names = get_team_models(&team.models, &proxy_model_list, &groups, false);
+            record_rows(team, names, lookup, &mut team_models)?;
         }
     }
     Ok(team_models)
@@ -97,7 +108,7 @@ pub fn add_team_models_to_all_models(
 pub fn access_group_ids_for_teams(teams: &[TeamScope]) -> Vec<String> {
     let mut ids = IndexSet::new();
     for team in teams {
-        if team.access_group_ids.is_empty() || unrestricted(team) {
+        if team.access_group_ids.is_empty() || open(team) {
             continue;
         }
         ids.extend(team.access_group_ids.iter().cloned());
@@ -106,13 +117,13 @@ pub fn access_group_ids_for_teams(teams: &[TeamScope]) -> Vec<String> {
 }
 
 pub fn add_access_group_models(
-    teams: &[TeamScope],
     lookup: &CatalogLookup<'_>,
+    teams: &[TeamScope],
     group_models: &AccessGroupMap,
     team_models: &mut TeamModelMap,
 ) -> Result<(), ScopeError> {
     for team in teams {
-        if team.access_group_ids.is_empty() || unrestricted(team) {
+        if team.access_group_ids.is_empty() || open(team) {
             continue;
         }
         let mut model_names = IndexSet::new();
@@ -121,16 +132,7 @@ pub fn add_access_group_models(
                 model_names.extend(models.iter().map(String::as_str));
             }
         }
-        for model_name in model_names {
-            for deployment in lookup.get_model_list(Some(model_name), Some(&team.team_id))? {
-                if let Some(model_id) = deployment.id() {
-                    team_models
-                        .entry(model_id.to_owned())
-                        .or_default()
-                        .insert(team.team_id.clone());
-                }
-            }
-        }
+        record_rows(team, model_names, lookup, team_models)?;
     }
     Ok(())
 }

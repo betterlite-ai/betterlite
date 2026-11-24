@@ -12,5 +12,13 @@ call:
         model_info: {id: dep-2}
     model_group_alias: {}
     grant: [gpt-4o]
+    all_models: []
+    key_models: []
+    user: null
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
 env: {}
 compare: {ignore: []}
