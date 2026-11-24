@@ -68,7 +68,7 @@ fn request_reads_every_named_parameter() {
 
 #[test]
 fn request_keeps_the_order_of_query_parameters_and_headers() {
-    let mut blobs = Vec::new();
+    let mut blobs = full_blobs();
     let args = call_args(FULL_REQUEST, &mut blobs).unwrap();
     let query: Vec<(String, String)> = args.request_query_params.unwrap().into_iter().collect();
     assert_eq!(
@@ -132,7 +132,7 @@ fn request_refuses_a_content_that_is_not_a_file_marker() {
     let request = r#"{"method": "POST", "endpoint": "e", "model": "m", "content": "text"}"#;
     assert!(matches!(
         call_args(request, &mut Vec::new()),
-        Err(ConvertError::File { key: "content", .. })
+        Err(ConvertError::Content)
     ));
 }
 

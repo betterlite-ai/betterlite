@@ -560,20 +560,31 @@ def astream_of(answer: AsyncStreamReply) -> AsyncPassthroughStreamingResponse:
             raise AssertionError("the truncated call answered with a full response")
 
 
-def first_then_failure(stream: PassthroughStreamingResponse) -> tuple[bytes, APIError]:
+def drain_chunks(stream: PassthroughStreamingResponse) -> None:
+    for _chunk in stream:
+        pass
+
+
+# ast-grep-ignore: no-long-names
+async def adrain_chunks(stream: AsyncPassthroughStreamingResponse) -> None:
+    async for _chunk in stream:
+        pass
+
+
+def chunks_then_failure(stream: PassthroughStreamingResponse) -> tuple[bytes, APIError]:
     first = next(stream)
     with pytest.raises(APIError) as failure:
-        next(stream)
+        drain_chunks(stream)
     with pytest.raises(StopIteration):
         next(stream)
     return first, failure.value
 
 
 # ast-grep-ignore: no-long-names
-async def afirst_then_failure(stream: AsyncPassthroughStreamingResponse) -> tuple[bytes, APIError]:
+async def achunks_then_failure(stream: AsyncPassthroughStreamingResponse) -> tuple[bytes, APIError]:
     first = await anext(stream)
     with pytest.raises(APIError) as failure:
-        await anext(stream)
+        await adrain_chunks(stream)
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     return first, failure.value
@@ -582,7 +593,7 @@ async def afirst_then_failure(stream: AsyncPassthroughStreamingResponse) -> tupl
 async def atruncated_stream(server: PassthroughServer) -> tuple[bytes, int]:
     arguments = call_for(STREAM_BODY, server.base, endpoint=TRUNCATED_ENDPOINT)
     asked = await allm_passthrough_route(**arguments)
-    first, failure = await afirst_then_failure(astream_of(asked))
+    first, failure = await achunks_then_failure(astream_of(asked))
     return first, failure.status_code
 
 
@@ -714,7 +725,8 @@ def test_calls_match(server: PassthroughServer) -> None:
 def test_calls_raise_for_status() -> None:
     with pytest.raises(APIError) as failure:
         PassthroughResponse(UNAUTHORIZED, {}, ERROR_TEXT.encode()).raise_for_status()
-    assert (failure.value.status_code, failure.value.message) == (UNAUTHORIZED, ERROR_TEXT)
+    expected = (UNAUTHORIZED, f"litellm.APIError: {ERROR_TEXT}")
+    assert (failure.value.status_code, failure.value.message) == expected
     PassthroughResponse(OK, {}, ANSWER).raise_for_status()
 
 
@@ -906,14 +918,14 @@ def test_error_upstream(server: PassthroughServer) -> None:
 
 def test_error_stream_truncated(server: PassthroughServer) -> None:
     asked = llm_passthrough_route(**call_for(STREAM_BODY, server.base, TRUNCATED_ENDPOINT))
-    first, failure = first_then_failure(stream_of(asked))
-    assert TRUNCATED_FRAME.startswith(first)
+    first, failure = chunks_then_failure(stream_of(asked))
+    assert first and TRUNCATED_FRAME.startswith(first)
     assert failure.status_code == SERVER_ERROR
 
 
 def test_error_truncated_async(server: PassthroughServer) -> None:
     first, status = asyncio.run(atruncated_stream(server))
-    assert TRUNCATED_FRAME.startswith(first)
+    assert first and TRUNCATED_FRAME.startswith(first)
     assert status == SERVER_ERROR
 
 
