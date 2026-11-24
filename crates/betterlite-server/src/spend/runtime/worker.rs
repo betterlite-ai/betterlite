@@ -70,8 +70,10 @@ impl AccountingWorker {
                 daily_team: Some(self.daily.team.as_ref()),
                 daily_org: Some(self.daily.org.as_ref()),
                 daily_tag: Some(self.daily.tag.as_ref()),
+                tool_usage: None,
                 model_usage: self.usage.model_usage.as_deref(),
-                ..SpendWriterQueues::default()
+                discovery: None,
+                turns: None,
             },
             attachment: None,
             failures: self.failures.as_ref(),

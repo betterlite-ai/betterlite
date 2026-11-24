@@ -53,9 +53,17 @@ impl Harness {
         DbSpendUpdateWriter {
             settings,
             queues: SpendWriterQueues {
+                entity: None,
+                daily_user: None,
+                daily_end_user: None,
+                daily_agent: None,
+                daily_team: None,
+                daily_org: None,
+                daily_tag: None,
                 tool_usage: Some(&self.tool_usage),
+                model_usage: None,
                 discovery: Some(&self.discovery),
-                ..SpendWriterQueues::default()
+                turns: None,
             },
             attachment: Some(SpendLogAttachment {
                 table: &self.claim,
@@ -95,7 +103,9 @@ async fn disable_spend_updates_answers_true_without_writing() {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
     let settings = SpendWriterSettings {
         disable_spend_updates: true,
-        ..SpendWriterSettings::default()
+        disable_spend_logs: Some(false),
+        max_budget: Decimal::ZERO,
+        proxy_budget_name: "litellm-proxy-budget".to_owned(),
     };
     let writer = harness.writer(settings);
     let request = sample_request();
@@ -188,8 +198,10 @@ async fn a_failed_claim_queues_the_row_and_charges_on() {
 async fn log_dependent_counts(disable_spend_logs: Option<bool>) -> (usize, usize, usize) {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
     let settings = SpendWriterSettings {
+        disable_spend_updates: false,
         disable_spend_logs,
-        ..SpendWriterSettings::default()
+        max_budget: Decimal::ZERO,
+        proxy_budget_name: "litellm-proxy-budget".to_owned(),
     };
     let writer = harness.writer(settings);
     let names = vec!["lookup".to_owned()];
@@ -216,8 +228,10 @@ async fn writes_log_dependent_usage_only_when_logs_are_exactly_enabled() {
 async fn a_batch_claim_with_logs_disabled_writes_only_the_claim_fields() {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
     let settings = SpendWriterSettings {
+        disable_spend_updates: false,
         disable_spend_logs: Some(true),
-        ..SpendWriterSettings::default()
+        max_budget: Decimal::ZERO,
+        proxy_budget_name: "litellm-proxy-budget".to_owned(),
     };
     let writer = harness.writer(settings);
     assert!(

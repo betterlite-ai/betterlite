@@ -224,12 +224,12 @@ impl BreakerGate for ClosedBreaker {
 
 // A cache whose address refuses every connection: the Redis handles exist without a server, as the cache routes' own fixture builds one.
 pub(super) async fn redis_cache() -> Arc<RedisCache> {
+    let mut overrides: RedisOverrides =
+        serde_json::from_str("{}").expect("the empty overrides deserialize");
+    overrides.host = Some("127.0.0.1".to_owned());
+    overrides.port = Some(IntOrText::Value(1_i64));
     let options = RedisCacheOptions {
-        overrides: RedisOverrides {
-            host: Some("127.0.0.1".to_owned()),
-            port: Some(IntOrText::Value(1_i64)),
-            ..RedisOverrides::default()
-        },
+        overrides,
         family: RedisCacheFamily::Standalone,
         namespace: None,
         default_ttl: 60_i64,

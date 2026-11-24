@@ -109,8 +109,10 @@ impl Harness {
                 daily_team: Some(&self.daily_team),
                 daily_org: Some(&self.daily_org),
                 daily_tag: Some(&self.daily_tag),
+                tool_usage: None,
                 model_usage: Some(&self.model_usage),
-                ..SpendWriterQueues::default()
+                discovery: None,
+                turns: None,
             },
             attachment: None,
             failures: &self.failures,
@@ -162,9 +164,13 @@ async fn charges_every_entity_and_daily_row_in_source_order() {
             (EntityType::Agent, "agent-1".to_owned()),
         ]
     );
-    for item in harness.entity.items() {
-        assert_eq!(item.response_cost, Some(cost()));
-    }
+    assert!(
+        harness
+            .entity
+            .items()
+            .iter()
+            .all(|item| item.response_cost == Some(cost()))
+    );
     assert_eq!(daily_keys(&harness.daily_user), vec![format!("u1{SUFFIX}")]);
     assert_eq!(
         daily_keys(&harness.daily_end_user),
@@ -269,8 +275,10 @@ async fn charges_the_proxy_identity_only_with_a_positive_budget_and_never_dedupe
     let harness = Harness::new();
     let charge = work_for(row(REQUEST));
     let settings = SpendWriterSettings {
+        disable_spend_updates: false,
+        disable_spend_logs: Some(false),
         max_budget: Decimal::from(10_i64),
-        ..SpendWriterSettings::default()
+        proxy_budget_name: "litellm-proxy-budget".to_owned(),
     };
     harness.run(&charge, settings).await;
     let charged = ids(&harness.entity.items());
@@ -288,8 +296,10 @@ async fn charges_the_proxy_identity_only_with_a_positive_budget_and_never_dedupe
     duplicate_charge.user_id = Some("litellm-proxy-budget".to_owned());
     duplicate_charge.end_user_id = None;
     let duplicate_settings = SpendWriterSettings {
+        disable_spend_updates: false,
+        disable_spend_logs: Some(false),
         max_budget: Decimal::ONE,
-        ..SpendWriterSettings::default()
+        proxy_budget_name: "litellm-proxy-budget".to_owned(),
     };
     duplicate.run(&duplicate_charge, duplicate_settings).await;
     assert_eq!(

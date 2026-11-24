@@ -116,9 +116,9 @@ async fn drains_the_admitted_accounting_before_the_shutdown_returns() {
     let view = PricingView(pricing.as_ref());
     let request = support::request(&view);
     let payload = StaticPayload(PAYLOAD);
-    for _round in 0..3 {
-        assert!(runtime.writer().update_database(&payload, &request).await);
-    }
+    assert!(runtime.writer().update_database(&payload, &request).await);
+    assert!(runtime.writer().update_database(&payload, &request).await);
+    assert!(runtime.writer().update_database(&payload, &request).await);
 
     let logging = service();
     runtime
@@ -302,26 +302,51 @@ async fn charges_every_accounting_queue_the_runtime_writer_was_built_with() {
         Some(&SpendAmount(Decimal::new(25, 2)))
     );
     assert_eq!(charged.key_list_transactions.len(), 1);
-    for queue in [
-        &runtime.daily.user,
-        &runtime.daily.end_user,
-        &runtime.daily.agent,
-        &runtime.daily.team,
-        &runtime.daily.org,
-    ] {
-        let updates = queue
+    let flushed = [
+        runtime
+            .daily
+            .user
             .flush_aggregated_daily_rows()
             .await
-            .expect("the daily queue flushes");
-        assert_eq!(updates.len(), 1);
-    }
-    let tags = runtime
-        .daily
-        .tag
-        .flush_aggregated_daily_rows()
-        .await
-        .expect("the tag queue flushes");
-    assert_eq!(tags.len(), 2);
+            .expect("the daily user queue flushes")
+            .len(),
+        runtime
+            .daily
+            .end_user
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily end user queue flushes")
+            .len(),
+        runtime
+            .daily
+            .agent
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily agent queue flushes")
+            .len(),
+        runtime
+            .daily
+            .team
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily team queue flushes")
+            .len(),
+        runtime
+            .daily
+            .org
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily organization queue flushes")
+            .len(),
+        runtime
+            .daily
+            .tag
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily tag queue flushes")
+            .len(),
+    ];
+    assert_eq!(flushed, [1, 1, 1, 1, 1, 2]);
     assert_eq!(model_usage.len(), 1);
     runtime.shutdown(&service()).await.expect("the shutdown");
 }
