@@ -8,6 +8,7 @@ use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
 use betterlite_auth::auth_model_patterns::user_model::can_user_call_model;
 use betterlite_auth::auth_model_patterns::view::ModelAccessView;
 use betterlite_auth::auth_request_models::RequestedModels;
+use betterlite_auth::user_roles::UserRole;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable};
 use betterlite_db::database_replica::availability::Availability;
@@ -25,7 +26,7 @@ use crate::organization_create::caller::{DEFAULT_ADMIN_USER_ID, OrgCaller};
 use crate::organization_create::error::OrganizationCreateError;
 use crate::organization_create::records::{
     BUDGET_SCHEMA_FIELDS, NewOrganizationRequest, NewOrganizationResponse, OrganizationRow,
-    from_json_data, to_json_data,
+    amount_of, decimal_of, request_amount,
 };
 use crate::organization_create::store::OrganizationStore;
 
@@ -59,7 +60,7 @@ pub async fn create_organization(
     let Some(store) = state.database.as_deref() else {
         return Err(OrganizationCreateError::DatabaseNotConnected);
     };
-    if !caller.is_proxy_admin() {
+    if caller.user_role != Some(UserRole::ProxyAdmin) {
         return Err(OrganizationCreateError::NotAdmin {
             role: caller.role_text(),
         });
@@ -67,8 +68,18 @@ pub async fn create_organization(
     if !state.router_configured {
         return Err(OrganizationCreateError::NoRouter);
     }
-    validate_budget(MAX_BUDGET, request.max_budget.map(|money| money.0))?;
-    validate_budget(SOFT_BUDGET, request.soft_budget.map(|money| money.0))?;
+    validate_budget(
+        MAX_BUDGET,
+        request_amount(MAX_BUDGET, request.max_budget.as_ref())?,
+    )?;
+    validate_budget(
+        SOFT_BUDGET,
+        request_amount(SOFT_BUDGET, request.soft_budget.as_ref())?,
+    )?;
+    let _increase = request_amount(
+        "temp_budget_increase",
+        request.temp_budget_increase.as_ref(),
+    )?;
 
     let user_object = match caller.user_id.as_deref() {
         Some(user_id) => match (DatabaseUserLookup { store }).find_user(user_id).await {
@@ -91,7 +102,7 @@ pub async fn create_organization(
         reader: store,
         availability: &availability,
     };
-    let organization_store = OrganizationStore::new(prisma);
+    let organization_store = OrganizationStore { client: prisma };
     let actor = caller
         .user_id
         .clone()
@@ -110,7 +121,7 @@ pub async fn create_organization(
 
     set_object_permission(&mut fields, Some(prisma), &[]).await?;
 
-    if !caller.has_all_models() {
+    if !caller.models.is_empty() {
         if request.models.is_empty() {
             return Err(OrganizationCreateError::AllModelsDenied);
         }
@@ -145,15 +156,15 @@ pub async fn create_organization(
             JsonData::Object(metadata_fields.clone()),
         );
     }
-    organization.insert(
-        "models".to_owned(),
-        to_json_data(&request.models).map_err(OrganizationCreateError::Encoding)?,
-    );
+    let models = serde_json::to_value(&request.models)
+        .and_then(serde_json::from_value::<JsonData>)
+        .map_err(OrganizationCreateError::Encoding)?;
+    organization.insert("models".to_owned(), models);
     organization.insert("model_spend".to_owned(), JsonData::Object(BTreeMap::new()));
-    organization.insert(
-        "spend".to_owned(),
-        to_json_data(&0.0_f64).map_err(OrganizationCreateError::Encoding)?,
-    );
+    let spend = serde_json::to_value(0.0_f64)
+        .and_then(serde_json::from_value::<JsonData>)
+        .map_err(OrganizationCreateError::Encoding)?;
+    organization.insert("spend".to_owned(), spend);
     organization.insert("created_by".to_owned(), JsonData::String(actor.clone()));
     organization.insert("updated_by".to_owned(), JsonData::String(actor));
     if let Some(JsonData::String(permission_id)) = fields.get("object_permission_id") {
@@ -169,7 +180,8 @@ pub async fn create_organization(
     tracing::info!("new_organization_row: {logged}");
 
     let created = organization_store.create_organization(record).await?;
-    let row: OrganizationRow = from_json_data(&created)
+    let row: OrganizationRow = serde_json::to_value(&created)
+        .and_then(serde_json::from_value::<OrganizationRow>)
         .map_err(|error| OrganizationCreateError::Row(error.to_string()))?;
     let object_permission_id = row.object_permission_id.clone();
     Ok(NewOrganizationResponse {
@@ -211,8 +223,16 @@ fn budget_write_payload(
 fn created_budget_row(budget_id: &str, request: &NewOrganizationRequest) -> LiteLLMBudgetTable {
     LiteLLMBudgetTable {
         budget_id: Some(budget_id.to_owned()),
-        soft_budget: request.soft_budget.and_then(|money| money.decimal()),
-        max_budget: request.max_budget.and_then(|money| money.decimal()),
+        soft_budget: request
+            .soft_budget
+            .as_ref()
+            .and_then(amount_of)
+            .and_then(decimal_of),
+        max_budget: request
+            .max_budget
+            .as_ref()
+            .and_then(amount_of)
+            .and_then(decimal_of),
         max_parallel_requests: request.max_parallel_requests,
         tpm_limit: request.tpm_limit,
         rpm_limit: request.rpm_limit,
@@ -222,7 +242,9 @@ fn created_budget_row(budget_id: &str, request: &NewOrganizationRequest) -> Lite
         allowed_models: Some(request.allowed_models.clone().unwrap_or_default()),
         temp_budget_increase: request
             .temp_budget_increase
-            .and_then(|money| money.decimal()),
+            .as_ref()
+            .and_then(amount_of)
+            .and_then(decimal_of),
         temp_budget_expiry: request.temp_budget_expiry,
     }
 }

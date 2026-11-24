@@ -24,8 +24,19 @@ deviations:
       the handler then answers 400 "must be a non-negative finite number. Received: nan".
     why: >-
       betterlite reads request bodies with serde_json, which accepts no non-finite number literals, so
-      the value never becomes a request field. Finite numbers and the 1e400 spellings that overflow to
-      infinity still reach the same 400 check.
+      the value never becomes a request field. In-range finite numbers and the 1e400 spellings that
+      overflow to infinity still reach the same 400 check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L458-L468
+  - what: >-
+      A max_budget, soft_budget or temp_budget_increase beyond Decimal's range (about 7.9e28) is
+      refused with 400 detail.error "<field> must be a number the budget table can store. Received:
+      <value>". LiteLLM's float accepts any finite value, stores it in the DOUBLE PRECISION column and
+      echoes it back, and temp_budget_increase is not range-checked at all.
+    why: >-
+      betterlite's LiteLLM_BudgetTable decodes its money columns into Decimal, so a value Decimal
+      cannot hold would be written and would then fail every later read of that row; a 4xx at creation
+      beats a 500 on a later list. The 1e400 spellings stay on LiteLLM's path: they overflow to an
+      infinity and get the non-finite answer instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L458-L468
   - what: >-
       The created organization response carries litellm_budget_table and metadata as the objects

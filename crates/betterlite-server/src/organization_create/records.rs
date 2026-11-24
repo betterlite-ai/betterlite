@@ -6,11 +6,12 @@ use betterlite_db::budget_permission_rows::{
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 use crate::key_fields::values::LiteLLMObjectPermissionBase;
 use crate::management_guards::amounts::Amount;
+use crate::organization_create::error::OrganizationCreateError;
 
 // LiteLLM_BudgetTable's own fields, the allowlist a budget-row write filters the request through
 pub const BUDGET_SCHEMA_FIELDS: [&str; 12] = [
@@ -28,56 +29,45 @@ pub const BUDGET_SCHEMA_FIELDS: [&str; 12] = [
     "temp_budget_expiry",
 ];
 
-// a request money value: a JSON number read into Amount so non-finite values keep their description
-#[derive(Debug, Clone, Copy)]
-pub struct Money(pub Amount);
+// a request money value as Amount: a number that overflows f64 keeps the inf or -inf spelling
+#[must_use]
+pub fn amount_of(number: &Number) -> Option<Amount> {
+    let value = number.as_f64()?;
+    if value.is_nan() {
+        return Some(Amount::Nan);
+    }
+    if value == f64::INFINITY {
+        return Some(Amount::PositiveInfinity);
+    }
+    if value == f64::NEG_INFINITY {
+        return Some(Amount::NegativeInfinity);
+    }
+    Decimal::from_f64(value).map(Amount::Finite)
+}
 
-impl Money {
-    #[must_use]
-    pub fn decimal(self) -> Option<Decimal> {
-        match self.0 {
-            Amount::Finite(decimal) => Some(decimal),
-            Amount::Nan | Amount::PositiveInfinity | Amount::NegativeInfinity => None,
-        }
+// a sent money value: None is absent, and a number past Decimal's range is refused since no budget row could hold it
+pub fn request_amount(
+    field: &'static str,
+    value: Option<&Number>,
+) -> Result<Option<Amount>, OrganizationCreateError> {
+    let Some(number) = value else {
+        return Ok(None);
+    };
+    match amount_of(number) {
+        Some(amount) => Ok(Some(amount)),
+        None => Err(OrganizationCreateError::BudgetRange {
+            field,
+            received: number.to_string(),
+        }),
     }
 }
 
-impl<'de> Deserialize<'de> for Money {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let number = serde_json::Number::deserialize(deserializer)?;
-        let Some(value) = number.as_f64() else {
-            return Err(D::Error::custom("the value is not a JSON number"));
-        };
-        if value.is_nan() {
-            return Ok(Self(Amount::Nan));
-        }
-        if value == f64::INFINITY {
-            return Ok(Self(Amount::PositiveInfinity));
-        }
-        if value == f64::NEG_INFINITY {
-            return Ok(Self(Amount::NegativeInfinity));
-        }
-        let Some(decimal) = Decimal::from_f64(value) else {
-            return Err(D::Error::custom("the number is out of decimal range"));
-        };
-        Ok(Self(Amount::Finite(decimal)))
-    }
-}
-
-impl Serialize for Money {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self.0 {
-            Amount::Finite(decimal) => rust_decimal::serde::float::serialize(&decimal, serializer),
-            Amount::Nan | Amount::PositiveInfinity | Amount::NegativeInfinity => Err(
-                serde::ser::Error::custom("a non-finite amount cannot be stored"),
-            ),
-        }
+// the Decimal a budget response column carries; a non-finite amount never reaches storage
+#[must_use]
+pub fn decimal_of(amount: Amount) -> Option<Decimal> {
+    match amount {
+        Amount::Finite(decimal) => Some(decimal),
+        Amount::Nan | Amount::PositiveInfinity | Amount::NegativeInfinity => None,
     }
 }
 
@@ -100,9 +90,9 @@ pub struct NewOrganizationRequest {
     #[serde(default)]
     pub object_permission: Option<LiteLLMObjectPermissionBase>,
     #[serde(default)]
-    pub soft_budget: Option<Money>,
+    pub soft_budget: Option<Number>,
     #[serde(default)]
-    pub max_budget: Option<Money>,
+    pub max_budget: Option<Number>,
     #[serde(default)]
     pub max_parallel_requests: Option<i64>,
     #[serde(default)]
@@ -118,7 +108,7 @@ pub struct NewOrganizationRequest {
     #[serde(default)]
     pub allowed_models: Option<Vec<String>>,
     #[serde(default)]
-    pub temp_budget_increase: Option<Money>,
+    pub temp_budget_increase: Option<Number>,
     #[serde(default)]
     pub temp_budget_expiry: Option<Timestamp>,
 }
@@ -128,8 +118,14 @@ impl NewOrganizationRequest {
     pub fn fields(&self) -> Result<BTreeMap<String, JsonData>, serde_json::Error> {
         let mut fields = BTreeMap::new();
         insert_option(&mut fields, "organization_id", &self.organization_id)?;
-        insert_value(&mut fields, "organization_alias", &self.organization_alias)?;
-        insert_value(&mut fields, "models", &self.models)?;
+        fields.insert(
+            "organization_alias".to_owned(),
+            serde_json::from_value::<JsonData>(serde_json::to_value(&self.organization_alias)?)?,
+        );
+        fields.insert(
+            "models".to_owned(),
+            serde_json::from_value::<JsonData>(serde_json::to_value(&self.models)?)?,
+        );
         insert_option(&mut fields, "budget_id", &self.budget_id)?;
         insert_option(&mut fields, "metadata", &self.metadata)?;
         insert_option(&mut fields, "model_rpm_limit", &self.model_rpm_limit)?;
@@ -154,7 +150,8 @@ impl NewOrganizationRequest {
         )?;
         insert_option(&mut fields, "temp_budget_expiry", &self.temp_budget_expiry)?;
         if let Some(permission) = &self.object_permission {
-            let mut permission_data = to_json_data(permission)?;
+            let mut permission_data =
+                serde_json::from_value::<JsonData>(serde_json::to_value(permission)?)?;
             if let JsonData::Object(permission_fields) = &mut permission_data {
                 permission_fields.retain(|_, value| !matches!(value, JsonData::Null));
             }
@@ -162,18 +159,6 @@ impl NewOrganizationRequest {
         }
         Ok(fields)
     }
-}
-
-fn insert_value<T>(
-    fields: &mut BTreeMap<String, JsonData>,
-    name: &str,
-    value: &T,
-) -> Result<(), serde_json::Error>
-where
-    T: Serialize + ?Sized,
-{
-    fields.insert(name.to_owned(), to_json_data(value)?);
-    Ok(())
 }
 
 fn insert_option<T>(
@@ -185,23 +170,12 @@ where
     T: Serialize + ?Sized,
 {
     if let Some(inner) = value {
-        insert_value(fields, name, inner)?;
+        fields.insert(
+            name.to_owned(),
+            serde_json::from_value::<JsonData>(serde_json::to_value(inner)?)?,
+        );
     }
     Ok(())
-}
-
-pub fn to_json_data<T>(value: &T) -> Result<JsonData, serde_json::Error>
-where
-    T: Serialize + ?Sized,
-{
-    serde_json::from_str(&serde_json::to_string(value)?)
-}
-
-pub fn from_json_data<T>(value: &JsonData) -> Result<T, serde_json::Error>
-where
-    T: serde::de::DeserializeOwned,
-{
-    serde_json::from_str(&serde_json::to_string(value)?)
 }
 
 // NewOrganizationResponse: B723's organization row with the three required creation columns

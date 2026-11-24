@@ -14,7 +14,6 @@ use crate::routes::router;
 use crate::routes::tests::{empty_config, state_for};
 
 const DEFAULT_BODY: &str = r#"{"organization_alias":"acme"}"#;
-// ast-grep-ignore: no-long-names
 const DB_NOT_CONNECTED: &str = CommonProxyErrors::DbNotConnectedError.as_str();
 
 fn assert_created_defaults(reply: &Reply) {
@@ -266,6 +265,16 @@ async fn create_role_matrix(
     "soft_budget must be a non-negative finite number. Received: -2.5"
 )]
 #[case::soft_budget_zero(r#"{"organization_alias":"a","soft_budget":0}"#, 200, "")]
+#[case::max_budget_out_of_range(
+    r#"{"organization_alias":"a","max_budget":1e30}"#,
+    400,
+    "max_budget must be a number the budget table can store. Received: 1e30"
+)]
+#[case::temp_budget_out_of_range(
+    r#"{"organization_alias":"a","temp_budget_increase":1e30}"#,
+    400,
+    "temp_budget_increase must be a number the budget table can store. Received: 1e30"
+)]
 #[case::max_checked_before_soft(
     r#"{"organization_alias":"a","max_budget":-1,"soft_budget":-1}"#,
     400,

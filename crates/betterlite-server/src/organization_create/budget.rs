@@ -6,7 +6,6 @@ use betterlite_db::budget_permission_rows::JsonData;
 use crate::management_guards::metadata::METADATA_FIELDS;
 use crate::management_guards::metadata::has_effect;
 use crate::organization_create::records::BUDGET_SCHEMA_FIELDS;
-use crate::organization_create::records::to_json_data;
 
 pub const NESTED_BUDGET_FIELD: &str = "litellm_budget_table";
 pub const BUDGET_DURATION_FIELD: &str = "budget_duration";
@@ -72,7 +71,7 @@ pub fn build_budget_write_data(
 fn reset_value(
     timestamp: betterlite_db::budget_permission_rows::Timestamp,
 ) -> Result<String, BudgetTransformError> {
-    match to_json_data(&timestamp) {
+    match serde_json::to_value(&timestamp).and_then(serde_json::from_value::<JsonData>) {
         Ok(JsonData::String(text)) => Ok(text),
         Ok(_) => Err(BudgetTransformError::ResetValue),
         Err(error) => {
@@ -82,10 +81,11 @@ fn reset_value(
     }
 }
 
-// LiteLLM's handle_nested_budget_structure_in_organization_update_request: the UI's nested budget wins for known fields
+// ast-grep-ignore: no-long-names
 pub fn handle_nested_budget_structure_in_organization_update_request(
     raw_data: BTreeMap<String, JsonData>,
 ) -> Result<BTreeMap<String, JsonData>, BudgetTransformError> {
+    // the UI's nested budget wins over the top-level value for every known budget field
     let mut transformed = raw_data;
     let Some(nested) = transformed.remove(NESTED_BUDGET_FIELD) else {
         return Ok(transformed);

@@ -74,11 +74,6 @@ impl OrgCaller {
         })
     }
 
-    #[must_use]
-    pub fn is_proxy_admin(&self) -> bool {
-        self.user_role == Some(UserRole::ProxyAdmin)
-    }
-
     // the role text the 401 renders, Python's None when the key carries no role
     #[must_use]
     pub fn role_text(&self) -> String {
@@ -86,11 +81,6 @@ impl OrgCaller {
             Some(role) => role.to_string(),
             None => "None".to_owned(),
         }
-    }
-
-    #[must_use]
-    pub fn has_all_models(&self) -> bool {
-        self.models.is_empty()
     }
 }
 

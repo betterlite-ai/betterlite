@@ -7,7 +7,7 @@ use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable};
 use betterlite_db::resource_repository::budget::{BudgetRepository, BudgetRepositoryError};
 use betterlite_db::resource_repository::table::{ResourceActions, ResourceBinding, RowWrite};
 use betterlite_redis::config_sync::publish::redis_config_change_publisher;
-use betterlite_redis::config_sync::table_actions::TableActions as _;
+use betterlite_redis::config_sync::table_actions::TableActions;
 
 // the LiteLLM_OrganizationTable binding B723's live tables use for the organization row
 pub struct OrganizationBinding;
@@ -27,15 +27,10 @@ impl ResourceBinding for OrganizationBinding {
 
 // The three child writes creation needs, over one Prisma client
 pub struct OrganizationStore<'db> {
-    client: PrismaClient<'db>,
+    pub client: PrismaClient<'db>,
 }
 
 impl<'db> OrganizationStore<'db> {
-    #[must_use]
-    pub const fn new(client: PrismaClient<'db>) -> Self {
-        Self { client }
-    }
-
     pub async fn create_budget(
         &self,
         data: BTreeMap<String, JsonData>,
@@ -51,15 +46,13 @@ impl<'db> OrganizationStore<'db> {
         &self,
         data: BTreeMap<String, JsonData>,
     ) -> Result<JsonData, TableError> {
-        PrismaTableRepository::new(
-            Some(self.client),
-            redis_config_change_publisher(None),
-            OrganizationBinding,
-        )
-        .table(ResourceActions::<OrganizationBinding>::new)
-        .map_err(TableError::Database)?
-        .create(RowWrite(data))
-        .await
+        let publisher = redis_config_change_publisher(None);
+        let repository =
+            PrismaTableRepository::new(Some(self.client), publisher, OrganizationBinding);
+        let actions = ResourceActions::<OrganizationBinding>::new;
+        let table = repository.table(actions).map_err(TableError::Database)?;
+        let write = RowWrite(data);
+        TableActions::create(&table, write).await
     }
 
     pub async fn find_budget(

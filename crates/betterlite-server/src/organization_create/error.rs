@@ -28,6 +28,11 @@ pub enum OrganizationCreateError {
     NoRouter,
     #[error(transparent)]
     Budget(#[from] KeyPatchError),
+    #[error("{field} must be a number the budget table can store. Received: {received}")]
+    BudgetRange {
+        field: &'static str,
+        received: String,
+    },
     #[error("the caller may not hand every model to the organization")]
     AllModelsDenied,
     #[error(transparent)]
@@ -129,6 +134,7 @@ impl IntoResponse for OrganizationCreateError {
                 CommonProxyErrors::NoLlmRouter.as_str(),
             ),
             Self::Budget(error) => detail_error(StatusCode::BAD_REQUEST, &error.to_string()),
+            Self::BudgetRange { .. } => detail_error(StatusCode::BAD_REQUEST, &self.to_string()),
             Self::AllModelsDenied => detail_error(StatusCode::BAD_REQUEST, ALL_MODELS_DENIED),
             Self::ModelDenied(denial) => {
                 rejection_response(&ModelAccessRejection::Denied(Box::clone(denial)))

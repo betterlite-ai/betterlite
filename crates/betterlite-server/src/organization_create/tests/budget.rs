@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_auth::auth_user_lookup::ports::{BudgetResetCalculator, PortError};
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use rstest::rstest;
 
 use super::support::parsed;
 use crate::organization_create::budget::{
@@ -9,7 +10,6 @@ use crate::organization_create::budget::{
     UPDATED_BY_FIELD, budget_settable_fields, build_budget_write_data,
     handle_nested_budget_structure_in_organization_update_request, org_metadata_fields,
 };
-use crate::organization_create::records::to_json_data;
 
 fn data(text: &str) -> BTreeMap<String, JsonData> {
     let JsonData::Object(fields) = parsed(text) else {
@@ -84,7 +84,7 @@ fn budget_duration_omitted() {
 #[test]
 fn budget_duration_reset_and_clear() {
     let at: Timestamp = serde_json::from_str(r#""2026-02-03T04:05:06+00:00""#).unwrap();
-    let expected = to_json_data(&at).unwrap();
+    let expected = serde_json::from_value::<JsonData>(serde_json::to_value(&at).unwrap()).unwrap();
     let written = build_budget_write_data(
         &data(r#"{"budget_duration":"1d"}"#),
         "actor",
@@ -98,23 +98,23 @@ fn budget_duration_reset_and_clear() {
         Some(&JsonData::String(String::from("1d")))
     );
 
-    // a sent nonstring or null duration clears the reset time without asking the calculator
-    for body in [
-        r#"{"budget_duration":null}"#,
-        r#"{"budget_duration":3600}"#,
-        r#"{"budget_duration":false}"#,
-    ] {
-        let cleared = build_budget_write_data(&data(body), "actor", &FailingReset).unwrap();
-        assert_eq!(
-            cleared.get(BUDGET_RESET_AT_FIELD),
-            Some(&JsonData::Null),
-            "{body}"
-        );
-    }
-
     let failed =
         build_budget_write_data(&data(r#"{"budget_duration":"1y"}"#), "actor", &FailingReset);
     assert!(matches!(failed, Err(BudgetTransformError::Reset(_))));
+}
+
+// a sent nonstring or null duration clears the reset time without asking the calculator
+#[rstest]
+#[case::null(r#"{"budget_duration":null}"#)]
+#[case::number(r#"{"budget_duration":3600}"#)]
+#[case::boolean(r#"{"budget_duration":false}"#)]
+fn budget_duration_cleared(#[case] body: &str) {
+    let cleared = build_budget_write_data(&data(body), "actor", &FailingReset).unwrap();
+    assert_eq!(
+        cleared.get(BUDGET_RESET_AT_FIELD),
+        Some(&JsonData::Null),
+        "{body}"
+    );
 }
 
 #[test]
@@ -173,28 +173,37 @@ fn nested_budget_precedence() {
 }
 
 #[test]
-fn nested_budget_falsey_removed() {
+fn nested_budget_absent_keeps_data() {
     let untouched =
         handle_nested_budget_structure_in_organization_update_request(data(r#"{"max_budget":1}"#))
             .unwrap();
     assert_eq!(untouched, data(r#"{"max_budget":1}"#));
-
-    for nested in ["{}", "[]", r#""""#, "0", "false", "null"] {
-        let body = format!(r#"{{"max_budget":1,"{NESTED_BUDGET_FIELD}":{nested}}}"#);
-        let transformed =
-            handle_nested_budget_structure_in_organization_update_request(data(&body)).unwrap();
-        assert_eq!(transformed, data(r#"{"max_budget":1}"#), "{nested}");
-    }
 }
 
-#[test]
-fn nested_budget_nonmapping_fail() {
-    for nested in [r#""x""#, "[1]", "5", "true"] {
-        let body = format!(r#"{{"max_budget":1,"{NESTED_BUDGET_FIELD}":{nested}}}"#);
-        let failed = handle_nested_budget_structure_in_organization_update_request(data(&body));
-        assert!(
-            matches!(failed, Err(BudgetTransformError::NestedNotAMapping)),
-            "{nested}"
-        );
-    }
+#[rstest]
+#[case::empty_object("{}")]
+#[case::empty_array("[]")]
+#[case::empty_string(r#""""#)]
+#[case::zero("0")]
+#[case::boolean("false")]
+#[case::null("null")]
+fn nested_budget_falsey_removed(#[case] nested: &str) {
+    let body = format!(r#"{{"max_budget":1,"{NESTED_BUDGET_FIELD}":{nested}}}"#);
+    let transformed =
+        handle_nested_budget_structure_in_organization_update_request(data(&body)).unwrap();
+    assert_eq!(transformed, data(r#"{"max_budget":1}"#), "{nested}");
+}
+
+#[rstest]
+#[case::string(r#""x""#)]
+#[case::array("[1]")]
+#[case::number("5")]
+#[case::boolean("true")]
+fn nested_budget_nonmapping_fail(#[case] nested: &str) {
+    let body = format!(r#"{{"max_budget":1,"{NESTED_BUDGET_FIELD}":{nested}}}"#);
+    let failed = handle_nested_budget_structure_in_organization_update_request(data(&body));
+    assert!(
+        matches!(failed, Err(BudgetTransformError::NestedNotAMapping)),
+        "{nested}"
+    );
 }

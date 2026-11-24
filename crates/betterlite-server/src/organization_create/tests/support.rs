@@ -287,7 +287,10 @@ impl TestApp {
         Self::start_with(|_| {}).await
     }
 
-    pub async fn start_with(configure: impl FnOnce(&mut OrganizationCreateState)) -> Self {
+    pub async fn start_with<F>(configure: F) -> Self
+    where
+        F: FnOnce(&mut OrganizationCreateState),
+    {
         let database = TestDatabase::start().await;
         let mut state = OrganizationCreateState {
             database: Some(database.store()),
@@ -358,14 +361,7 @@ impl Reply {
     }
 
     pub fn detail_error(&self) -> String {
-        let detail = self.field("detail");
-        let JsonData::Object(detail) = detail else {
-            panic!("detail is not an object: {}", self.body);
-        };
-        match detail.get("error") {
-            Some(JsonData::String(text)) => text.clone(),
-            _ => panic!("detail.error is not a string: {}", self.body),
-        }
+        self.nested_text("detail", "error")
     }
 
     pub fn detail_text(&self) -> String {
@@ -376,12 +372,19 @@ impl Reply {
     }
 
     pub fn error_text(&self, name: &str) -> String {
-        let JsonData::Object(error) = self.field("error") else {
-            panic!("error is not an object: {}", self.body);
+        self.nested_text("error", name)
+    }
+
+    fn nested_text(&self, name: &str, field: &str) -> String {
+        let JsonData::Object(object) = self.field(name) else {
+            panic!("the response field {name} is not an object: {}", self.body);
         };
-        match error.get(name) {
+        match object.get(field) {
             Some(JsonData::String(text)) => text.clone(),
-            _ => panic!("error.{name} is not a string: {}", self.body),
+            _ => panic!(
+                "the response field {name}.{field} is not a string: {}",
+                self.body
+            ),
         }
     }
 }
