@@ -258,7 +258,7 @@ def send_message(
     request: RequestValue,
     **kwargs: CallValue,
 ) -> LiteLLMSendMessageResponse | Coroutine[None, None, LiteLLMSendMessageResponse]:
-    send: Callable[..., Awaitable[LiteLLMSendMessageResponse]] = asend_message
+    send: Callable[..., Coroutine[None, None, LiteLLMSendMessageResponse]] = asend_message
     call = send(a2a_client=a2a_client, request=request, **kwargs)
     try:
         _ = asyncio.get_running_loop()
