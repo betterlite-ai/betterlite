@@ -9,6 +9,7 @@ use std::time::Duration;
 use betterlite_anthropic::batches::config::{AnthropicBatchesConfig, BatchesConfig as _};
 use betterlite_anthropic::batches::timestamps::Clock;
 use betterlite_anthropic::credentials::AnthropicSettings;
+use betterlite_auth::user_roles::UserRole;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -23,13 +24,15 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, Offset as _, Utc};
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use tokio::sync::mpsc;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::pass_through_logging::anthropic_batch::{
     AnthropicBatchLogging, BatchCreationInput, BatchCreationLogged, BatchLoggingMessage,
-    BatchRegistration, ManagedBatchRegistry, RegistryError, ResponseIds, RouterModelIds,
+    BatchRegistrant, BatchRegistration, ManagedBatchRegistry, RegistryError, ResponseIds,
+    RouterModelIds,
 };
 
 pub(crate) const BATCH_ID: &str = "msgbatch_1";
@@ -263,6 +266,26 @@ pub(crate) fn registry_port(
     let (recording, received) = registry(outcome);
     let port: Option<Arc<dyn ManagedBatchRegistry>> = Some(recording);
     (port, received)
+}
+
+pub(crate) fn assert_registrant_defaults(registrant: &BatchRegistrant) {
+    assert_eq!(registrant.team_alias, None);
+    assert_eq!(registrant.user_role, UserRole::Customer);
+    assert_eq!(registrant.user_email, None);
+    assert_eq!(registrant.max_budget, None);
+    assert_eq!(registrant.spend, Decimal::ZERO);
+    assert!(registrant.models.is_empty());
+    assert_eq!(registrant.tpm_limit, None);
+    assert_eq!(registrant.rpm_limit, None);
+    assert_eq!(registrant.budget_duration, None);
+    assert_eq!(registrant.budget_reset_at, None);
+    assert_eq!(registrant.max_parallel_requests, None);
+    assert_eq!(registrant.allowed_model_region, None);
+    assert!(registrant.metadata.is_empty());
+    assert_eq!(registrant.key_alias, None);
+    assert!(registrant.permissions.is_empty());
+    assert!(registrant.model_max_budget.is_empty());
+    assert!(registrant.model_spend.is_empty());
 }
 
 pub(crate) fn handler(

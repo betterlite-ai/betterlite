@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use betterlite_auth::user_roles::UserRole;
 use betterlite_models::decisions::Json;
 use betterlite_openai::batches::records::{BatchObjectKind, BatchStatus};
 use chrono::{DateTime, Utc};
@@ -19,8 +18,9 @@ use tokio::time::timeout;
 
 use self::support::{
     BATCH_ID, COLLECTION_ROUTE, CountingIds, Creation, ID_SCOPED_ROUTE, MODEL, RESPONSE_ID,
-    batch_body, batch_object, capture_logs, field, handler, handler_with_ids, message, metadata,
-    provider_fields, registry_port, router, router_port, run, start_time, text,
+    assert_registrant_defaults, batch_body, batch_object, capture_logs, field, handler,
+    handler_with_ids, message, metadata, provider_fields, registry_port, router, router_port, run,
+    start_time, text,
 };
 use super::{BatchJobState, RegistryError, RouterModelIds, unified_object_id};
 
@@ -32,7 +32,7 @@ fn batch_success_record_matches_litellm_shape() {
     assert_eq!(logged.result.id, RESPONSE_ID);
     assert_eq!(logged.result.model, MODEL);
     assert_eq!(logged.result.object, "batch");
-    assert_eq!(logged.result.created, 1767225600_i64);
+    assert_eq!(logged.result.created, 1_767_225_600_i64);
     assert_eq!(logged.result.choices.len(), 1);
     let choice = logged.result.choices.first().expect("one choice");
     assert_eq!(choice.finish_reason, "stop");
@@ -50,7 +50,7 @@ fn batch_success_record_matches_litellm_shape() {
     let names: Vec<&str> = fields.keys().map(String::as_str).collect();
     assert_eq!(
         names,
-        vec!["batch_job_id", "batch_job_state", "unified_object_id"]
+        ["batch_job_id", "batch_job_state", "unified_object_id"]
     );
     assert_eq!(text(fields, "batch_job_id"), BATCH_ID);
     assert_eq!(text(fields, "batch_job_state"), "in_progress");
@@ -103,7 +103,7 @@ fn batch_success_created_from_start_time() {
         .with_timezone(&Utc);
     let creation = Creation::success(MODEL).with_start_time(start);
     let (logged, _call_log) = run(&handler(None, None), &creation);
-    assert_eq!(logged.result.created, 1717243200_i64);
+    assert_eq!(logged.result.created, 1_717_243_200_i64);
     assert_ne!(logged.result.created, start_time().timestamp());
 }
 
@@ -198,7 +198,7 @@ fn batch_success_router_id_replaces_model_in_unified_id() {
         text(provider_fields(&logged), "unified_object_id"),
         unified_object_id("litellm-deployment", BATCH_ID)
     );
-    assert_eq!(recording.asked(), vec![MODEL.to_owned()]);
+    assert_eq!(recording.asked(), [MODEL.to_owned()]);
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn batch_success_router_found_logs_info_and_uses_first_id() {
             .contents()
             .contains("Found model ID in router: deployment-1")
     );
-    assert_eq!(recording.asked(), vec![MODEL.to_owned()]);
+    assert_eq!(recording.asked(), [MODEL.to_owned()]);
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn batch_non_200_gives_failed_record() {
     assert_eq!(logged.result.id, RESPONSE_ID);
     assert_eq!(logged.result.model, "anthropic_batch");
     assert_eq!(logged.result.object, "batch");
-    assert_eq!(logged.result.created, 1767225600_i64);
+    assert_eq!(logged.result.created, 1_767_225_600_i64);
     assert_eq!(
         message(&logged).content,
         "Batch job creation failed. Status: 500"
@@ -459,23 +459,7 @@ async fn batch_collection_route_registers_managed_object() {
     assert_eq!(registrant.user_id, Some("user-1".to_owned()));
     assert_eq!(registrant.api_key, Some("sk-key".to_owned()));
     assert_eq!(registrant.team_id, Some("team-1".to_owned()));
-    assert_eq!(registrant.team_alias, None);
-    assert_eq!(registrant.user_role, UserRole::Customer);
-    assert_eq!(registrant.user_email, None);
-    assert_eq!(registrant.max_budget, None);
-    assert_eq!(registrant.spend, Decimal::ZERO);
-    assert!(registrant.models.is_empty());
-    assert_eq!(registrant.tpm_limit, None);
-    assert_eq!(registrant.rpm_limit, None);
-    assert_eq!(registrant.budget_duration, None);
-    assert_eq!(registrant.budget_reset_at, None);
-    assert_eq!(registrant.max_parallel_requests, None);
-    assert_eq!(registrant.allowed_model_region, None);
-    assert!(registrant.metadata.is_empty());
-    assert_eq!(registrant.key_alias, None);
-    assert!(registrant.permissions.is_empty());
-    assert!(registrant.model_max_budget.is_empty());
-    assert!(registrant.model_spend.is_empty());
+    assert_registrant_defaults(registrant);
     timeout(Duration::from_secs(5), lines.recv())
         .await
         .expect("the done callback logs")
