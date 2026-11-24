@@ -73,7 +73,12 @@ fn validate_answer(
         Ok(Some(row)) => (row_summary(&row), None),
         Err(failure) => (Value::Null, Some(error_json(&failure))),
     };
-    Ok(envelope(value, error, store.trace()))
+    Ok(json!({
+        "value": value,
+        "error": error,
+        "warnings": [],
+        "effects": store.trace(),
+    }))
 }
 
 fn teams_answer(
@@ -92,22 +97,29 @@ fn teams_answer(
         Ok(teams) => (team_ids_of(&teams), None),
         Err(failure) => (Value::Null, Some(error_json(&failure))),
     };
-    Ok(envelope(value, error, fake.trace()))
+    Ok(json!({
+        "value": value,
+        "error": error,
+        "warnings": [],
+        "effects": fake.trace(),
+    }))
 }
 
 fn projections_answer(fields: &Caller, rows: &[Value]) -> Result<Value, CallFailed> {
     let auth = auth_of(fields)?;
     let caller = TeamCaller::try_from(&auth)?;
     let teams = teams_of(rows)?;
-    Ok(envelope(
-        json!({
-            "admins": admin_team_ids(&caller, &teams),
-            "list_permission": list_permission_team_ids(&caller, &teams),
-            "members": member_team_ids(&caller, &teams),
-        }),
-        None,
-        Vec::new(),
-    ))
+    let projection = json!({
+        "admins": admin_team_ids(&caller, &teams),
+        "list_permission": list_permission_team_ids(&caller, &teams),
+        "members": member_team_ids(&caller, &teams),
+    });
+    Ok(json!({
+        "value": projection,
+        "error": null,
+        "warnings": [],
+        "effects": [],
+    }))
 }
 
 fn alias_scope_answer(
@@ -131,7 +143,12 @@ fn alias_scope_answer(
         Ok(()) => (json!({"params": params, "where_parts": filters}), None),
         Err(failure) => (Value::Null, Some(error_json(&failure))),
     };
-    Ok(envelope(value, error, store.trace()))
+    Ok(json!({
+        "value": value,
+        "error": error,
+        "warnings": [],
+        "effects": store.trace(),
+    }))
 }
 
 fn auth_of(fields: &Caller) -> Result<UserAPIKeyAuth, CallFailed> {
@@ -228,10 +245,6 @@ fn error_json(failure: &KeyListFiltersError) -> Value {
             "code": Value::Null,
         }),
     }
-}
-
-fn envelope(value: Value, error: Option<Value>, effects: Vec<String>) -> Value {
-    json!({"value": value, "error": error, "warnings": [], "effects": effects})
 }
 
 fn runtime() -> Result<Runtime, CallFailed> {

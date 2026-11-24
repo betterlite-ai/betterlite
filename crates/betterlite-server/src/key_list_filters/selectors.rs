@@ -7,9 +7,3 @@ pub struct KeyListSelectors<'query> {
     pub key_alias: Option<&'query str>,
     pub key_hash: Option<&'query str>,
 }
-
-// LiteLLM's `if value:` skips a check for None and for the empty string alike
-#[must_use]
-pub fn requested(value: Option<&str>) -> Option<&str> {
-    value.filter(|text| !text.is_empty())
-}

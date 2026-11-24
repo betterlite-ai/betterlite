@@ -5,7 +5,7 @@ use betterlite_db::key_hash::KeyHash;
 
 use super::error::{KeyListFiltersError, KeyListReadError};
 use super::ports::KeyListFiltersStore;
-use super::selectors::{KeyListSelectors, requested};
+use super::selectors::KeyListSelectors;
 use crate::key_info::access::can_user_query_key_info;
 use crate::team_access::caller::TeamCaller;
 
@@ -31,22 +31,26 @@ pub async fn validate_key_list_check(
     Ok(Some(user_row))
 }
 
-// each truthy selector must fall inside the caller row's own scope, in LiteLLM's check order
+// LiteLLM's `if value:` skips an absent or empty selector; the rest must fall inside the row's scope, in check order
 fn permit(
     selectors: &KeyListSelectors<'_>,
     user_row: &LiteLLMUserTable,
 ) -> Result<(), KeyListFiltersError> {
-    if requested(selectors.user_id).is_some_and(|wanted| user_row.user_id != wanted) {
+    if selectors
+        .user_id
+        .filter(|text| !text.is_empty())
+        .is_some_and(|wanted| user_row.user_id != wanted)
+    {
         return Err(KeyListFiltersError::ForeignUser);
     }
-    if let Some(wanted) = requested(selectors.team_id) {
+    if let Some(wanted) = selectors.team_id.filter(|text| !text.is_empty()) {
         let member = user_row.teams.iter().any(|team| team == wanted);
         if !member {
             return Err(KeyListFiltersError::ForeignTeam);
         }
     }
     // any membership role reaches the organization's keys, and an absent list reaches none
-    if let Some(wanted) = requested(selectors.organization_id) {
+    if let Some(wanted) = selectors.organization_id.filter(|text| !text.is_empty()) {
         let memberships = user_row
             .organization_memberships
             .as_deref()
@@ -68,7 +72,7 @@ async fn permit_key_hash(
     teams: &TeamLookup,
     team_caller: &TeamCaller,
 ) -> Result<(), KeyListFiltersError> {
-    let Some(wanted) = requested(selectors.key_hash) else {
+    let Some(wanted) = selectors.key_hash.filter(|text| !text.is_empty()) else {
         return Ok(());
     };
     // LiteLLM turns every failed key read into the same not-found denial
