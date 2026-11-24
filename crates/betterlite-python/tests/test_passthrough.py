@@ -508,7 +508,8 @@ async def async_answer(answer: AsyncStreamReply | AnswerView) -> Answer:
             raise AssertionError("the async call answered with a stream")
 
 
-async def async_stream(stream: AsyncPassthroughStreamingResponse) -> Answer:
+async def async_stream(answer: AsyncStreamReply) -> Answer:
+    stream = astream_of(answer)
     returned = stream.aiter_bytes()
     assert returned is stream
     chunks = [chunk async for chunk in returned]
@@ -527,7 +528,7 @@ async def reference_async_stream(answer: CallResult) -> Answer:
 async def ours_async(base: str) -> tuple[Answer, Answer]:
     full = await allm_passthrough_route(**call_for(INPUT_BODY, base))
     streamed = await allm_passthrough_route(**call_for(STREAM_BODY, base))
-    return await async_answer(full), await async_stream(astream_of(streamed))
+    return await async_answer(full), await async_stream(streamed)
 
 
 async def reference_async(base: str) -> tuple[Answer, Answer]:
