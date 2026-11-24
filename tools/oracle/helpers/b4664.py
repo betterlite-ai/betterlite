@@ -6,37 +6,20 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
-from litellm.proxy._experimental.mcp_server.outbound_credentials.oauth_token_store import (
-    OAuthToken,
-    RefreshCoordinator,
-)
-from litellm.proxy._experimental.mcp_server.outbound_credentials.result import (
-    Error,
-    Ok,
-    Result,
-)
-from litellm.proxy._experimental.mcp_server.outbound_credentials.sso_assertion_refresher import (
-    RefreshFailure,
-    RefreshingSSOAssertionStore,
-    SSOAssertionRefresher,
-    SSOClientConfig,
-    sso_client_config,
+from litellm.proxy._experimental.mcp_server.outbound_credentials import (
+    oauth_token_store,
+    result,
+    sso_assertion_refresher,
+    sso_assertion_store,
 )
 from litellm.proxy._experimental.mcp_server.outbound_credentials.sso_assertion_store import (
-    AssertionStoreUnavailable,
     SSOIdentityAssertion,
-    assertion_from_sso_login,
 )
 from pydantic import JsonValue
+from typing_extensions import override
 
 TOKEN_HEADER: Final = b'{"alg":"none"}'
-READ_FAILURE: Final = "the scripted row read failed"
-WRITE_FAILURE: Final = "the scripted row write failed"
-EXPIRY_SKEW_SECONDS: Final = 60.0
-MILLISECONDS_PER_SECOND: Final = 1000.0
-
-FailureMode: TypeAlias = Literal["none", "read", "write"]
-RecordedCall: TypeAlias = tuple[str, list[tuple[str, str]], list[tuple[str, str]]]
+FailureMode: TypeAlias = Literal["read", "write"]
 
 
 class ClientConfigInput(TypedDict):
@@ -55,22 +38,10 @@ class BodySpec(TypedDict, total=False):
     refresh_token: JsonValue
 
 
-class OkOutcome(TypedDict):
-    kind: Literal["ok"]
-    body: NotRequired[BodySpec]
-
-
-class RejectedOutcome(TypedDict):
-    kind: Literal["rejected"]
+class OutcomeSpec(TypedDict, total=False):
+    kind: Literal["ok", "rejected", "unavailable"]
     detail: str
-
-
-class UnavailableOutcome(TypedDict):
-    kind: Literal["unavailable"]
-    detail: str
-
-
-OutcomeSpec: TypeAlias = OkOutcome | RejectedOutcome | UnavailableOutcome
+    body: BodySpec
 
 
 class RefreshInput(TypedDict):
@@ -95,22 +66,21 @@ class StoreInput(TypedDict):
     failure: NotRequired[FailureMode]
 
 
-Input: TypeAlias = ClientConfigInput | RefreshInput | StoreInput
-
-TransportAnswer: TypeAlias = Result[Mapping[str, object], RefreshFailure]
-
-
-def encode_segment(raw: bytes) -> str:
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+TransportAnswer: TypeAlias = result.Result[
+    Mapping[str, object], sso_assertion_refresher.RefreshFailure
+]
 
 
 def mint_id_token(claims: Mapping[str, JsonValue]) -> str:
-    payload = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return f"{encode_segment(TOKEN_HEADER)}.{encode_segment(payload)}."
+    header = base64.urlsafe_b64encode(TOKEN_HEADER).rstrip(b"=").decode("ascii")
+    payload_text = json.dumps(claims, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload = base64.urlsafe_b64encode(payload_text).rstrip(b"=").decode("ascii")
+    return f"{header}.{payload}."
 
 
 def build_assertion(spec: AssertionSpec) -> SSOIdentityAssertion:
-    assertion = assertion_from_sso_login(mint_id_token(spec["claims"]), spec.get("refresh_token"))
+    minted = mint_id_token(spec["claims"])
+    assertion = sso_assertion_store.assertion_from_sso_login(minted, spec.get("refresh_token"))
     if assertion is None:
         raise ValueError("the case's assertion does not decode")
     return assertion
@@ -119,13 +89,12 @@ def build_assertion(spec: AssertionSpec) -> SSOIdentityAssertion:
 def render(assertion: SSOIdentityAssertion) -> JsonValue:
     expires_at = assertion.expires_at
     refresh_token = assertion.refresh_token
+    expiry_ms = None if expires_at is None else round(expires_at.timestamp() * 1000.0)
     return {
         "id_token": assertion.id_token.get_secret_value(),
         "refresh_token": None if refresh_token is None else refresh_token.get_secret_value(),
         "issuer": assertion.issuer,
-        "expires_at_ms": None
-        if expires_at is None
-        else round(expires_at.timestamp() * MILLISECONDS_PER_SECOND),
+        "expires_at_ms": expiry_ms,
     }
 
 
@@ -149,34 +118,35 @@ def body_object(spec: BodySpec | None) -> dict[str, JsonValue]:
 
 def build_answer(outcome: OutcomeSpec) -> TransportAnswer:
     if outcome["kind"] == "ok":
-        return Ok(body_object(outcome.get("body")))
+        return result.Ok(body_object(outcome.get("body")))
     if outcome["kind"] == "rejected":
-        return Error(RefreshFailure.of_rejected(outcome["detail"]))
-    return Error(RefreshFailure.of_unavailable(outcome["detail"]))
+        return result.Error(sso_assertion_refresher.RefreshFailure.of_rejected(outcome["detail"]))
+    return result.Error(sso_assertion_refresher.RefreshFailure.of_unavailable(outcome["detail"]))
 
 
 class MemoryAccess:
-    def __init__(self, rows: dict[str, SSOIdentityAssertion], failure: FailureMode) -> None:
+    def __init__(self, rows: dict[str, SSOIdentityAssertion], failure: FailureMode | None) -> None:
         self.rows = rows
         self.writes: list[tuple[str, JsonValue]] = []
         self.failure = failure
 
     async def read(self, user_id: str) -> SSOIdentityAssertion | None:
         if self.failure == "read":
-            raise AssertionStoreUnavailable(READ_FAILURE)
+            raise sso_assertion_store.AssertionStoreUnavailable("the scripted row read failed")
         return self.rows.get(user_id)
 
     async def write(self, user_id: str, assertion: SSOIdentityAssertion) -> None:
         if self.failure == "write":
-            raise AssertionStoreUnavailable(WRITE_FAILURE)
+            raise sso_assertion_store.AssertionStoreUnavailable("the scripted row write failed")
         self.rows[user_id] = assertion
         self.writes.append((user_id, render(assertion)))
 
 
-class InnerStore:
+class InnerStore(sso_assertion_store.SSOAssertionStore):
     def __init__(self, rows: dict[str, SSOIdentityAssertion]) -> None:
         self.rows = rows
 
+    @override
     async def fetch(self, user_id: str) -> SSOIdentityAssertion | None:
         return self.rows.get(user_id)
 
@@ -186,13 +156,13 @@ class FixedClock:
         self.now_ms = now_ms
 
     def __call__(self) -> datetime:
-        return datetime.fromtimestamp(self.now_ms / MILLISECONDS_PER_SECOND, tz=UTC)
+        return datetime.fromtimestamp(self.now_ms / 1000.0, tz=UTC)
 
 
 class ScriptedTransport:
     def __init__(self, outcomes: list[TransportAnswer]) -> None:
         self.outcomes = outcomes
-        self.calls: list[RecordedCall] = []
+        self.calls: list[tuple[str, list[list[str]], list[list[str]]]] = []
 
     async def post(
         self,
@@ -200,81 +170,84 @@ class ScriptedTransport:
         form: Mapping[str, str],
         headers: Mapping[str, str],
     ) -> TransportAnswer:
-        self.calls.append((url, sorted(form.items()), sorted(headers.items())))
+        self.calls.append(
+            (
+                url,
+                [[name, value] for name, value in sorted(form.items())],
+                [[name, value] for name, value in sorted(headers.items())],
+            )
+        )
         return self.outcomes.pop(0)
 
 
-class LoserCoordinator:
+class ScriptedCoordinator:
+    def __init__(self, loser: bool | None) -> None:
+        self.loser = loser
+
+    def __call__(self) -> oauth_token_store.RefreshCoordinator | None:
+        return self if self.loser else None
+
     async def run(
         self,
         user_id: str,
         server_id: str,
-        refresh: Callable[[], Awaitable[OAuthToken | None]],
-        reread: Callable[[], Awaitable[OAuthToken | None]],
-    ) -> OAuthToken | None:
+        refresh: Callable[[], Awaitable[oauth_token_store.OAuthToken | None]],
+        reread: Callable[[], Awaitable[oauth_token_store.OAuthToken | None]],
+    ) -> oauth_token_store.OAuthToken | None:
         del user_id, server_id, refresh
         return await reread()
 
 
-def no_coordinator() -> RefreshCoordinator | None:
-    return None
-
-
-def loser_coordinator() -> RefreshCoordinator | None:
-    return LoserCoordinator()
-
-
-def client_config_view(config: SSOClientConfig) -> JsonValue:
-    return {
-        "token_endpoint": config.token_endpoint,
-        "client_id": config.client_id,
-        "auth_method": config.auth_method,
-        "client_secret_len": len(config.client_secret.get_secret_value()),
-    }
+def refresher_over(
+    transport: ScriptedTransport,
+    variables: dict[str, str],
+    access: MemoryAccess,
+) -> sso_assertion_refresher.SSOAssertionRefresher:
+    return sso_assertion_refresher.SSOAssertionRefresher(
+        transport,
+        client_config=partial(sso_assertion_refresher.sso_client_config, variables),
+        read=access.read,
+        write=access.write,
+    )
 
 
 def answered(
-    result: str,
+    result_text: str,
     detail: JsonValue,
     assertion: JsonValue,
     transport: ScriptedTransport,
     writes: list[tuple[str, JsonValue]],
 ) -> JsonValue:
     calls = transport.calls
-    first = calls[0] if calls else None
-    return {
-        "result": result,
+    answer: dict[str, JsonValue] = {
+        "result": result_text,
         "detail": detail,
         "assertion": assertion,
-        "url": None if first is None else first[0],
-        "form": [] if first is None else first[1],
-        "headers": [] if first is None else first[2],
-        "writes": [
-            {"user_id": user_id, "assertion": rendered} for user_id, rendered in writes
-        ],
         "posts": len(calls),
+        "writes": [{"user_id": user_id, "assertion": shown} for user_id, shown in writes],
     }
+    if calls:
+        url, form, headers = calls[0]
+        form_pairs: list[JsonValue] = [[name, value] for name, value in form]
+        header_pairs: list[JsonValue] = [[name, value] for name, value in headers]
+        answer["url"] = url
+        answer["form"] = form_pairs
+        answer["headers"] = header_pairs
+    return answer
 
 
 async def refresh_view(input_value: RefreshInput) -> JsonValue:
     user_id = input_value["user_id"]
     row = input_value.get("row")
-    access = MemoryAccess(
-        {} if row is None else {user_id: build_assertion(row)},
-        input_value.get("failure", "none"),
-    )
+    rows = {} if row is None else {user_id: build_assertion(row)}
+    access = MemoryAccess(rows, input_value.get("failure"))
     transport = ScriptedTransport([build_answer(input_value["outcome"])])
-    refresher = SSOAssertionRefresher(
-        transport,
-        client_config=partial(sso_client_config, input_value["vars"]),
-        read=access.read,
-        write=access.write,
-    )
+    refresher = refresher_over(transport, input_value["vars"], access)
     starting = build_assertion(input_value["assertion"])
     match await refresher.refresh(user_id, starting):
-        case Ok(ok=renewed):
+        case result.Ok(ok=renewed):
             return answered("renewed", None, render(renewed), transport, access.writes)
-        case Error(error=failure):
+        case result.Error(error=failure):
             return answered(failure.kind, failure.detail, None, transport, access.writes)
 
 
@@ -287,35 +260,38 @@ async def store_view(input_value: StoreInput) -> JsonValue:
         if fresh_spec is None
         else {key: build_assertion(spec) for key, spec in fresh_spec.items()}
     )
-    access = MemoryAccess(fresh_rows, input_value.get("failure", "none"))
+    access = MemoryAccess(fresh_rows, input_value.get("failure"))
     transport = ScriptedTransport([build_answer(input_value["outcome"])])
-    refresher = SSOAssertionRefresher(
-        transport,
-        client_config=partial(sso_client_config, input_value["vars"]),
-        read=access.read,
-        write=access.write,
-    )
-    store = RefreshingSSOAssertionStore(
+    store = sso_assertion_refresher.RefreshingSSOAssertionStore(
         InnerStore(inner_rows),
-        refresher,
+        refresher_over(transport, input_value["vars"], access),
         fresh_read=access.read,
-        coordinator_factory=loser_coordinator if input_value.get("loser", False) else no_coordinator,
-        expiry_skew_seconds=EXPIRY_SKEW_SECONDS,
+        coordinator_factory=ScriptedCoordinator(input_value.get("loser")),
+        expiry_skew_seconds=60.0,
         clock=FixedClock(input_value["now_ms"]),
     )
     try:
         found = await store.fetch(user_id)
-    except AssertionStoreUnavailable as unavailable:
+    except sso_assertion_store.AssertionStoreUnavailable as unavailable:
         return answered("unavailable", str(unavailable), None, transport, access.writes)
     if found is None:
         return answered("none", None, None, transport, access.writes)
     return answered("assertion", None, render(found), transport, access.writes)
 
 
-def run(input_value: Input) -> JsonValue:
+def run(input_value: ClientConfigInput | RefreshInput | StoreInput) -> JsonValue:
     if input_value["function"] == "client_config":
-        config = sso_client_config(input_value["vars"])
-        return {"config": None if config is None else client_config_view(config)}
+        config = sso_assertion_refresher.sso_client_config(input_value["vars"])
+        if config is None:
+            return {"config": None}
+        return {
+            "config": {
+                "token_endpoint": config.token_endpoint,
+                "client_id": config.client_id,
+                "auth_method": config.auth_method,
+                "client_secret_len": len(config.client_secret.get_secret_value()),
+            }
+        }
     if input_value["function"] == "refresh":
         return asyncio.run(refresh_view(input_value))
     return asyncio.run(store_view(input_value))

@@ -18,9 +18,9 @@ use tokio::task::JoinSet;
 use super::super::refresher::AssertionAccess as _;
 use super::super::store::{RenewalCoordinator, SINGLE_FLIGHT_KEY};
 use super::super::tests::support::{
-    AccessFailure, LoserCoordinator, NOW_MS, NOW_SECONDS, RecordingCoordinator, StoreFixture,
-    access_with, assertion, claims, factory, failing_inner, id_token, inner, outage, rejected,
-    renewed_body, transport, yielding_transport,
+    AccessFailure, NOW_MS, NOW_SECONDS, RecordingCoordinator, StoreFixture, access_with, assertion,
+    claims, factory, failing_inner, id_token, inner, outage, rejected, renewed_body, transport,
+    yielding_transport,
 };
 
 const RENEWED_EXP: i64 = NOW_SECONDS + 3600;
@@ -314,7 +314,10 @@ async fn a_loser_whose_reread_still_sees_an_expiring_row_fails_with_the_retry_me
         inner(vec![("user-1", expired.clone())]),
         transport(Vec::new()),
         access_with(vec![("user-1", expired)], AccessFailure::None),
-        factory(vec![Some(Arc::new(LoserCoordinator))]),
+        factory(vec![Some(Arc::new(RecordingCoordinator {
+            runs: Arc::new(AtomicUsize::new(0)),
+            losing: true,
+        }))]),
         NOW_MS,
     );
     let failure = fixture
@@ -338,7 +341,10 @@ async fn a_loser_whose_reread_finds_the_row_current_returns_it() {
         inner(vec![("user-1", expired)]),
         transport(Vec::new()),
         access_with(vec![("user-1", current.clone())], AccessFailure::None),
-        factory(vec![Some(Arc::new(LoserCoordinator))]),
+        factory(vec![Some(Arc::new(RecordingCoordinator {
+            runs: Arc::new(AtomicUsize::new(0)),
+            losing: true,
+        }))]),
         NOW_MS,
     );
     let found = fixture
@@ -359,6 +365,7 @@ async fn keeps_the_distributed_coordinator_once_the_factory_yields_one() {
     let runs = Arc::new(AtomicUsize::new(0));
     let recording: RenewalCoordinator = Arc::new(RecordingCoordinator {
         runs: Arc::clone(&runs),
+        losing: false,
     });
     let still_expiring = assertion(NOW_SECONDS + 30, Some("carried-token"));
     let fixture = StoreFixture::new(

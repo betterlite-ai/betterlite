@@ -93,35 +93,24 @@ where
 
     // The elected renewal, judged from a fresh read so a rotation another replica just landed is never redeemed again.
     async fn renew(&self, user_id: &str) -> Result<(), RenewalUnavailable> {
-        let latest = self
-            .access
-            .read(user_id)
-            .await
-            .map_err(RenewalUnavailable::from)?;
-        match latest {
-            Some(assertion) if self.expiring(Some(&assertion)) => {
-                match self.refresher.refresh(user_id, &assertion).await {
-                    Ok(_renewed) => Ok(()),
-                    Err(failure) => match failure.kind {
-                        RefreshFailureKind::Rejected => Ok(()),
-                        RefreshFailureKind::Unavailable => Err(RenewalUnavailable {
-                            detail: failure.detail,
-                        }),
-                    },
-                }
-            }
-            Some(_current) | None => Ok(()),
+        let stored = self.access.read(user_id).await?;
+        let Some(assertion) = stored.filter(|assertion| self.expiring(Some(assertion))) else {
+            return Ok(());
+        };
+        match self.refresher.refresh(user_id, &assertion).await {
+            Ok(_renewed) => Ok(()),
+            Err(failure) => match failure.kind {
+                RefreshFailureKind::Rejected => Ok(()),
+                RefreshFailureKind::Unavailable => Err(RenewalUnavailable {
+                    detail: failure.detail,
+                }),
+            },
         }
     }
 
     // A loser cannot tell a refusal from an unrecorded renewal without risking token replay, so it answers retryable.
     async fn reread_renewed(&self, user_id: &str) -> Result<(), RenewalUnavailable> {
-        let latest = self
-            .access
-            .read(user_id)
-            .await
-            .map_err(RenewalUnavailable::from)?;
-        if !self.expiring(latest.as_ref()) {
+        if !self.expiring(self.access.read(user_id).await?.as_ref()) {
             return Ok(());
         }
         Err(RenewalUnavailable {

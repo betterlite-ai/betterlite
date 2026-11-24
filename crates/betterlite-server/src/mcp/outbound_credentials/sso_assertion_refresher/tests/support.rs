@@ -102,7 +102,7 @@ pub(crate) enum AccessFailure {
 
 #[derive(Clone)]
 pub(crate) struct MemoryAccess {
-    pub(crate) rows: Arc<Mutex<HashMap<String, SsoIdentityAssertion>>>,
+    pub(crate) store: ScriptedInner,
     pub(crate) writes: Arc<Mutex<Vec<(String, SsoIdentityAssertion)>>>,
     pub(crate) failure: AccessFailure,
 }
@@ -113,15 +113,10 @@ impl AssertionAccess for MemoryAccess {
         &self,
         user_id: &str,
     ) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable> {
-        if matches!(self.failure, AccessFailure::Read) {
-            return Err(unavailable("the scripted row read failed"));
+        match self.failure {
+            AccessFailure::Read => Err(unavailable("the scripted row read failed")),
+            AccessFailure::None | AccessFailure::Write => self.store.fetch(user_id).await,
         }
-        Ok(self
-            .rows
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(user_id)
-            .cloned())
     }
 
     async fn write(
@@ -136,7 +131,8 @@ impl AssertionAccess for MemoryAccess {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((user_id.to_owned(), assertion.clone()));
-        self.rows
+        self.store
+            .rows
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(user_id.to_owned(), assertion.clone());
@@ -149,11 +145,7 @@ pub(crate) fn access_with(
     failure: AccessFailure,
 ) -> MemoryAccess {
     MemoryAccess {
-        rows: Arc::new(Mutex::new(
-            rows.into_iter()
-                .map(|(user, found)| (user.to_owned(), found))
-                .collect(),
-        )),
+        store: inner(rows),
         writes: Arc::new(Mutex::new(Vec::new())),
         failure,
     }
@@ -308,11 +300,9 @@ pub(crate) fn transport(
 pub(crate) fn yielding_transport(
     outcome: Result<RefreshResponseBody, RefreshFailure>,
 ) -> ScriptedTransport {
-    ScriptedTransport {
-        outcomes: Arc::new(Mutex::new(VecDeque::from([outcome]))),
-        calls: Arc::new(Mutex::new(Vec::new())),
-        yields: 3,
-    }
+    let mut scripted = transport(vec![outcome]);
+    scripted.yields = 3;
+    scripted
 }
 
 pub(crate) struct ManualClock(pub(crate) Mutex<DateTime<Utc>>);
@@ -353,25 +343,9 @@ pub(crate) fn factory(answers: Vec<Option<RenewalCoordinator>>) -> RecordingFact
     }
 }
 
-pub(crate) struct LoserCoordinator;
-
-#[async_trait]
-impl RefreshCoordinator for LoserCoordinator {
-    type Output = ();
-    type Error = RenewalUnavailable;
-
-    async fn run(
-        &self,
-        _key: TokenKey,
-        _refresh: RefreshStep<'_, (), RenewalUnavailable>,
-        reread: RefreshStep<'_, (), RenewalUnavailable>,
-    ) -> Result<(), RenewalUnavailable> {
-        reread().await
-    }
-}
-
 pub(crate) struct RecordingCoordinator {
     pub(crate) runs: Arc<AtomicUsize>,
+    pub(crate) losing: bool,
 }
 
 #[async_trait]
@@ -383,9 +357,12 @@ impl RefreshCoordinator for RecordingCoordinator {
         &self,
         _key: TokenKey,
         refresh: RefreshStep<'_, (), RenewalUnavailable>,
-        _reread: RefreshStep<'_, (), RenewalUnavailable>,
+        reread: RefreshStep<'_, (), RenewalUnavailable>,
     ) -> Result<(), RenewalUnavailable> {
         self.runs.fetch_add(1, Ordering::Relaxed);
+        if self.losing {
+            return reread().await;
+        }
         refresh().await
     }
 }

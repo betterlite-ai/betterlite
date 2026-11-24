@@ -1,3 +1,4 @@
+mod fakes;
 mod runners;
 mod support;
 mod tests;
@@ -24,14 +25,8 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ClientConfig(config) => Ok(client_config_answer(config)),
-            Input::Refresh(refresh) => {
-                let executor = support::runtime()?;
-                executor.block_on(runners::refreshed(refresh))
-            }
-            Input::Store(store) => {
-                let executor = support::runtime()?;
-                executor.block_on(runners::fetched(store))
-            }
+            Input::Refresh(refresh) => support::runtime()?.block_on(runners::refreshed(refresh)),
+            Input::Store(store) => support::runtime()?.block_on(runners::fetched(store)),
         }
     }
 }

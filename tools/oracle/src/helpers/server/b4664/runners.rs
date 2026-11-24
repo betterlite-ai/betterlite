@@ -1,22 +1,16 @@
-use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::collections::BTreeMap;
 
 use betterlite_mcp::sso_assertions::assertion::SsoIdentityAssertion;
 use betterlite_mcp::sso_assertions::read::SsoAssertionStore as _;
-use betterlite_server::mcp::outbound_credentials::refresh_store::InProcessRefreshCoordinator;
-use betterlite_server::mcp::outbound_credentials::sso_assertion_refresher::refresher::AssertionRefresher;
-use betterlite_server::mcp::outbound_credentials::sso_assertion_refresher::store::{
-    DEFAULT_EXPIRY_SKEW, RefreshingAssertionStore,
-};
 use serde::Deserialize;
 use serde_json::Value;
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
+use super::fakes::Harness;
 use super::support::{
-    AccessFailure, AssertionSpec, FixedClient, FixedFactory, InnerStore, MemoryAccess, OutcomeSpec,
-    ScriptedTransport, answered, assertion_from_spec, clock, kind_text, scripted, transcript, view,
+    AccessFailure, AssertionSpec, OutcomeSpec, answered, assertion_from_spec, kind_text, view,
 };
 
 #[derive(Debug, Deserialize)]
@@ -61,33 +55,23 @@ pub(crate) async fn refreshed(input: &RefreshInput) -> HelperResult {
         Some(spec) => BTreeMap::from([(input.user_id.clone(), assertion_from_spec(spec)?)]),
         None => BTreeMap::new(),
     };
-    let access = Arc::new(MemoryAccess {
-        rows: Mutex::new(rows),
-        writes: Mutex::new(Vec::new()),
-        failure: input.failure,
-    });
-    let transport = ScriptedTransport {
-        outcomes: Arc::new(Mutex::new(VecDeque::from([scripted(&input.outcome)?]))),
-        calls: Arc::new(Mutex::new(Vec::new())),
-    };
-    let refresher = AssertionRefresher {
-        transport: transport.clone(),
-        client_source: FixedClient {
-            vars: input.vars.clone(),
-        },
-        access: Arc::clone(&access),
-    };
-    let answer = refresher.refresh(&input.user_id, &starting).await;
-    let sent = transcript(&transport, &access.writes);
-    match &answer {
-        Ok(renewed) => Ok(answered("renewed", &Value::Null, &view(renewed), &sent)),
-        Err(failure) => Ok(answered(
+    let harness = Harness::new(
+        rows.clone(),
+        rows,
+        input.failure,
+        &input.vars,
+        &input.outcome,
+    )?;
+    let answer = harness.refresher().refresh(&input.user_id, &starting).await;
+    Ok(match &answer {
+        Ok(renewed) => answered("renewed", &Value::Null, &view(renewed), &harness),
+        Err(failure) => answered(
             kind_text(failure.kind),
             &Value::String(failure.detail.clone()),
             &Value::Null,
-            &sent,
-        )),
-    }
+            &harness,
+        ),
+    })
 }
 
 pub(crate) async fn fetched(input: &StoreInput) -> HelperResult {
@@ -96,43 +80,23 @@ pub(crate) async fn fetched(input: &StoreInput) -> HelperResult {
         Some(fresh) => rows_from(fresh)?,
         None => inner_rows.clone(),
     };
-    let access = Arc::new(MemoryAccess {
-        rows: Mutex::new(fresh_rows),
-        writes: Mutex::new(Vec::new()),
-        failure: input.failure,
-    });
-    let transport = ScriptedTransport {
-        outcomes: Arc::new(Mutex::new(VecDeque::from([scripted(&input.outcome)?]))),
-        calls: Arc::new(Mutex::new(Vec::new())),
-    };
-    let store = RefreshingAssertionStore {
-        inner: InnerStore {
-            rows: Mutex::new(inner_rows),
-        },
-        refresher: AssertionRefresher {
-            transport: transport.clone(),
-            client_source: FixedClient {
-                vars: input.vars.clone(),
-            },
-            access: Arc::clone(&access),
-        },
-        access,
-        factory: FixedFactory { loser: input.loser },
-        in_process: Arc::new(InProcessRefreshCoordinator::default()),
-        distributed: Mutex::new(None),
-        skew: DEFAULT_EXPIRY_SKEW,
-        clock: clock(input.now_ms)?,
-    };
+    let harness = Harness::new(
+        inner_rows,
+        fresh_rows,
+        input.failure,
+        &input.vars,
+        &input.outcome,
+    )?;
+    let store = harness.store(input.loser, input.now_ms)?;
     let found = store.fetch(&input.user_id).await;
-    let sent = transcript(&transport, &store.access.writes);
-    match &found {
-        Ok(Some(assertion)) => Ok(answered("assertion", &Value::Null, &view(assertion), &sent)),
-        Ok(None) => Ok(answered("none", &Value::Null, &Value::Null, &sent)),
-        Err(unavailable) => Ok(answered(
+    let (result, detail, assertion) = match &found {
+        Ok(Some(stored)) => ("assertion", Value::Null, view(stored)),
+        Ok(None) => ("none", Value::Null, Value::Null),
+        Err(problem) => (
             "unavailable",
-            &Value::String(unavailable.cause.to_string()),
-            &Value::Null,
-            &sent,
-        )),
-    }
+            Value::String(problem.cause.to_string()),
+            Value::Null,
+        ),
+    };
+    Ok(answered(result, &detail, &assertion, &harness))
 }
