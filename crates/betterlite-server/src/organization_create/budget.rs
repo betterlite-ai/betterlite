@@ -73,7 +73,7 @@ pub fn build_budget_write_data(
 }
 
 fn reset_value(timestamp: Timestamp) -> Result<String, BudgetTransformError> {
-    match serde_json::to_value(&timestamp).and_then(serde_json::from_value::<JsonData>) {
+    match serde_json::to_value(timestamp).and_then(serde_json::from_value::<JsonData>) {
         Ok(JsonData::String(text)) => Ok(text),
         Ok(_) => Err(BudgetTransformError::ResetValue),
         Err(error) => {

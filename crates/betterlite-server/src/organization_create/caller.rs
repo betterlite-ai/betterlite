@@ -74,10 +74,8 @@ impl OrgCaller {
     // the role text the 401 renders, Python's None when the key carries no role
     #[must_use]
     pub fn role_text(&self) -> String {
-        match self.user_role {
-            Some(role) => role.to_string(),
-            None => "None".to_owned(),
-        }
+        self.user_role
+            .map_or_else(|| "None".to_owned(), |role| role.to_string())
     }
 }
 

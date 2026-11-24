@@ -55,13 +55,15 @@ pub fn request_amount(
     let Some(number) = value else {
         return Ok(None);
     };
-    match amount_of(number) {
-        Some(amount) => Ok(Some(amount)),
-        None => Err(OrganizationCreateError::BudgetRange {
-            field,
-            received: number.to_string(),
-        }),
-    }
+    amount_of(number).map_or_else(
+        || {
+            Err(OrganizationCreateError::BudgetRange {
+                field,
+                received: number.to_string(),
+            })
+        },
+        |amount| Ok(Some(amount)),
+    )
 }
 
 // the Decimal a budget response column carries; a non-finite amount never reaches storage

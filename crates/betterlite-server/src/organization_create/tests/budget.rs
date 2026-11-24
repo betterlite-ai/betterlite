@@ -24,16 +24,21 @@ struct FixedReset {
 
 impl BudgetResetCalculator for FixedReset {
     fn reset_time(&self, budget_duration: &str) -> Result<Timestamp, PortError> {
-        assert_eq!(budget_duration, "1d");
-        Ok(self.at)
+        if budget_duration == "1d" {
+            return Ok(self.at);
+        }
+        Err(PortError::new("unexpected budget duration"))
     }
 }
 
-struct PanicReset;
+// a durationless request must not compute a reset time; the error fails the unwrap that follows
+struct ForbiddenReset;
 
-impl BudgetResetCalculator for PanicReset {
+impl BudgetResetCalculator for ForbiddenReset {
     fn reset_time(&self, _budget_duration: &str) -> Result<Timestamp, PortError> {
-        panic!("a request without a duration must not compute a reset time");
+        Err(PortError::new(
+            "a request without a duration must not compute a reset time",
+        ))
     }
 }
 
@@ -66,7 +71,7 @@ fn field_set_contract() {
 #[test]
 fn budget_duration_omitted() {
     let input = data(r#"{"max_budget":10,"created_by":"writer"}"#);
-    let written = build_budget_write_data(&input, "actor", &PanicReset).unwrap();
+    let written = build_budget_write_data(&input, "actor", &ForbiddenReset).unwrap();
     assert!(!written.contains_key(BUDGET_RESET_AT_FIELD));
     assert_eq!(written.get("max_budget"), Some(&parsed("10")));
     assert_eq!(
@@ -84,7 +89,7 @@ fn budget_duration_omitted() {
 #[test]
 fn budget_duration_reset_and_clear() {
     let at: Timestamp = serde_json::from_str(r#""2026-02-03T04:05:06+00:00""#).unwrap();
-    let expected = serde_json::from_value::<JsonData>(serde_json::to_value(&at).unwrap()).unwrap();
+    let expected = serde_json::from_value::<JsonData>(serde_json::to_value(at).unwrap()).unwrap();
     let written = build_budget_write_data(
         &data(r#"{"budget_duration":"1d"}"#),
         "actor",
@@ -122,7 +127,7 @@ fn budget_actor_override() {
     let written = build_budget_write_data(
         &data(r#"{"updated_by":"spoofed","created_by":"original","max_budget":1}"#),
         "actor",
-        &PanicReset,
+        &ForbiddenReset,
     )
     .unwrap();
     assert_eq!(

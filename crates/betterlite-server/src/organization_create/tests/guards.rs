@@ -9,7 +9,10 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 use tower::ServiceExt as _;
 
-use super::support::{Reply, TestApp, admin_caller, key_caller, master_caller, number, parsed};
+use super::support::{
+    Reply, TestApp, admin_caller, assert_number, key_caller, master_caller, parsed,
+};
+use crate::auth::auth_identity::AuthContext;
 use crate::routes::router;
 use crate::routes::tests::{empty_config, state_for};
 
@@ -41,48 +44,36 @@ async fn create_request_defaults() {
     assert_eq!(reply.text_field("organization_alias"), "acme");
     assert_eq!(reply.text_field("created_by"), "default_user_id");
     assert_eq!(reply.text_field("updated_by"), "default_user_id");
-
-    let budget = app.database.budget_row(&budget_id).await.unwrap();
-    assert_eq!(budget.get("max_budget"), Some(&JsonData::Null));
-    assert_eq!(budget.get("soft_budget"), Some(&JsonData::Null));
-    assert_eq!(
-        budget.get("created_by"),
-        Some(&JsonData::String(String::from("default_user_id")))
-    );
-    assert_eq!(
-        budget.get("allowed_models"),
-        Some(&JsonData::Array(Vec::new()))
-    );
-
-    let JsonData::Object(table) = reply.field("litellm_budget_table") else {
-        panic!("the created budget table is nested in the response");
-    };
-    assert_eq!(
-        table.get("budget_id"),
-        Some(&JsonData::String(budget_id.clone()))
-    );
-    assert_eq!(table.get("max_budget"), Some(&JsonData::Null));
-    assert_eq!(
-        table.get("allowed_models"),
-        Some(&JsonData::Array(Vec::new()))
-    );
+    assert_created_budget(&app, &reply, &budget_id).await;
 
     let organization = app
         .database
         .organization_row(&organization_id)
         .await
         .unwrap();
-    assert_eq!(
-        organization.get("budget_id"),
-        Some(&JsonData::String(budget_id))
-    );
+    assert_eq!(organization["budget_id"], JsonData::String(budget_id));
     app.close().await;
 }
 
-#[tokio::test]
-async fn inherited_budget_fields_preserved() {
-    let app = TestApp::start().await;
-    let body = r#"{
+async fn assert_created_budget(app: &TestApp, reply: &Reply, budget_id: &str) {
+    let budget = app.database.budget_row(budget_id).await.unwrap();
+    assert_eq!(budget["max_budget"], JsonData::Null);
+    assert_eq!(budget["soft_budget"], JsonData::Null);
+    assert_eq!(
+        budget["created_by"],
+        JsonData::String(String::from("default_user_id"))
+    );
+    assert_eq!(budget["allowed_models"], JsonData::Array(Vec::new()));
+
+    let JsonData::Object(table) = reply.field("litellm_budget_table") else {
+        panic!("the created budget table is nested in the response");
+    };
+    assert_eq!(table["budget_id"], JsonData::String(budget_id.to_owned()));
+    assert_eq!(table["max_budget"], JsonData::Null);
+    assert_eq!(table["allowed_models"], JsonData::Array(Vec::new()));
+}
+
+const INHERITED_BODY: &str = r#"{
         "organization_alias": "acme",
         "models": ["gpt-4"],
         "max_budget": 12.5,
@@ -97,54 +88,60 @@ async fn inherited_budget_fields_preserved() {
         "temp_budget_increase": 2,
         "temp_budget_expiry": "2026-01-02T03:04:05+00:00"
     }"#;
-    let reply = app.post(admin_caller(Some("u1")), body).await;
+
+#[tokio::test]
+async fn inherited_budget_fields_preserved() {
+    let app = TestApp::start().await;
+    let reply = app.post(admin_caller(Some("u1")), INHERITED_BODY).await;
     assert_eq!(reply.status, StatusCode::OK);
     let budget_id = reply.text_field("budget_id");
-    let budget = app.database.budget_row(&budget_id).await.unwrap();
-    assert_eq!(number(budget.get("max_budget").unwrap()), 12.5);
-    assert_eq!(number(budget.get("soft_budget").unwrap()), 3.0);
-    assert_eq!(number(budget.get("max_parallel_requests").unwrap()), 4.0);
-    assert_eq!(number(budget.get("tpm_limit").unwrap()), 5.0);
-    assert_eq!(number(budget.get("rpm_limit").unwrap()), 6.0);
-    assert_eq!(number(budget.get("tpd_limit").unwrap()), 7.0);
-    assert_eq!(number(budget.get("temp_budget_increase").unwrap()), 2.0);
+    assert_inherited_budget_row(&app, &budget_id).await;
+    assert_inherited_budget_table(&reply);
+    app.close().await;
+}
+
+async fn assert_inherited_budget_row(app: &TestApp, budget_id: &str) {
+    let budget = app.database.budget_row(budget_id).await.unwrap();
+    assert_number(&budget["max_budget"], 12.5_f64);
+    assert_number(&budget["soft_budget"], 3.0_f64);
+    assert_number(&budget["max_parallel_requests"], 4.0_f64);
+    assert_number(&budget["tpm_limit"], 5.0_f64);
+    assert_number(&budget["rpm_limit"], 6.0_f64);
+    assert_number(&budget["tpd_limit"], 7.0_f64);
+    assert_number(&budget["temp_budget_increase"], 2.0_f64);
     assert_eq!(
-        budget.get("budget_duration"),
-        Some(&JsonData::String(String::from("1d")))
+        budget["budget_duration"],
+        JsonData::String(String::from("1d"))
     );
     assert_eq!(
-        budget.get("allowed_models"),
-        Some(&JsonData::Array(vec![JsonData::String(String::from(
-            "gpt-4"
-        ))]))
+        budget["allowed_models"],
+        JsonData::Array(vec![JsonData::String(String::from("gpt-4"))])
     );
     // the jsonified mapping columns are stored as JSON text, like every LiteLLM Prisma Json write
-    let Some(JsonData::String(model_max_budget)) = budget.get("model_max_budget") else {
+    let JsonData::String(model_max_budget) = &budget["model_max_budget"] else {
         panic!("model_max_budget is jsonified into the row");
     };
     assert_eq!(
         serde_json::from_str::<JsonData>(model_max_budget).unwrap(),
         parsed(r#"{"gpt-4":9}"#)
     );
+}
 
+fn assert_inherited_budget_table(reply: &Reply) {
     let JsonData::Object(table) = reply.field("litellm_budget_table") else {
         panic!("the created budget table is nested in the response");
     };
+    assert_eq!(table["model_max_budget"], parsed(r#"{"gpt-4":9}"#));
     assert_eq!(
-        table.get("model_max_budget"),
-        Some(&parsed(r#"{"gpt-4":9}"#))
-    );
-    assert_eq!(
-        table.get("budget_duration"),
-        Some(&JsonData::String(String::from("1d")))
+        table["budget_duration"],
+        JsonData::String(String::from("1d"))
     );
     // the nested table echoes the request's money and limit columns, not only the stored row
-    assert_eq!(number(table.get("max_budget").unwrap()), 12.5);
-    assert_eq!(number(table.get("soft_budget").unwrap()), 3.0);
-    assert_eq!(number(table.get("temp_budget_increase").unwrap()), 2.0);
-    assert_eq!(table.get("max_parallel_requests"), Some(&parsed("4")));
-    assert_eq!(table.get("tpm_limit"), Some(&parsed("5")));
-    app.close().await;
+    assert_number(&table["max_budget"], 12.5_f64);
+    assert_number(&table["soft_budget"], 3.0_f64);
+    assert_number(&table["temp_budget_increase"], 2.0_f64);
+    assert_eq!(table["max_parallel_requests"], parsed("4"));
+    assert_eq!(table["tpm_limit"], parsed("5"));
 }
 
 enum GuardCase {
@@ -169,7 +166,15 @@ enum GuardCase {
 )]
 #[tokio::test]
 async fn create_guard_order(#[case] case: GuardCase, #[case] status: u16, #[case] message: &str) {
-    let (app, caller, body) = match case {
+    let (app, caller, body) = guard_app(&case).await;
+    let reply = app.post(caller, &body).await;
+    assert_eq!(reply.status, StatusCode::from_u16(status).unwrap());
+    assert_eq!(reply.detail_error(), message);
+    app.close().await;
+}
+
+async fn guard_app(case: &GuardCase) -> (TestApp, AuthContext, String) {
+    match case {
         GuardCase::DatabaseMissing => {
             let app = TestApp::start_with(|state| state.database = None).await;
             (app, master_caller(), String::from(DEFAULT_BODY))
@@ -198,11 +203,7 @@ async fn create_guard_order(#[case] case: GuardCase, #[case] status: u16, #[case
                 String::from(r#"{"organization_alias":"acme","max_budget":-1}"#),
             )
         }
-    };
-    let reply = app.post(caller, &body).await;
-    assert_eq!(reply.status, StatusCode::from_u16(status).unwrap());
-    assert_eq!(reply.detail_error(), message);
-    app.close().await;
+    }
 }
 
 #[rstest]

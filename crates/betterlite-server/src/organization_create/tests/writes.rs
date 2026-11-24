@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_db::budget_permission_rows::JsonData;
 
-use super::support::{TestApp, admin_caller, key_caller, role_only_caller};
+use super::support::{TestApp, admin_caller, assert_number, key_caller, role_only_caller};
 
 const DEFAULT_BODY: &str = r#"{"organization_alias":"acme"}"#;
 
@@ -59,10 +59,7 @@ async fn explicit_budget_bypasses_create() {
     // the handler never creates, checks or updates the sent budget row
     assert_eq!(app.database.budget_count().await, 1);
     let seeded = app.database.budget_row("seeded-budget").await.unwrap();
-    assert_eq!(
-        super::support::number(seeded.get("max_budget").unwrap()),
-        25.0
-    );
+    assert_number(&seeded["max_budget"], 25.0_f64);
     let JsonData::Object(table) = reply.field("litellm_budget_table") else {
         panic!("the sent budget row is attached to the response");
     };
@@ -134,7 +131,13 @@ async fn permission_none_and_empty() {
     assert_eq!(absent.field("object_permission_id"), JsonData::Null);
     assert_eq!(app.database.permission_count().await, 0);
 
-    // the docstring claims an empty object means no permission; the handler stores a row for it
+    assert_empty_permission_stored(&app).await;
+    assert_null_permission_dropped(&app).await;
+    app.close().await;
+}
+
+// the docstring claims an empty object means no permission; the handler stores a row for it
+async fn assert_empty_permission_stored(app: &TestApp) {
     let empty = app
         .post(
             admin_caller(Some("u1")),
@@ -159,8 +162,10 @@ async fn permission_none_and_empty() {
         organization.get("object_permission_id"),
         Some(&JsonData::String(permission_id))
     );
+}
 
-    // an explicit null inside object_permission is dropped like exclude_none, so the column default applies
+// an explicit null inside object_permission is dropped like exclude_none, so the column default applies
+async fn assert_null_permission_dropped(app: &TestApp) {
     let nulled = app
         .post(
             admin_caller(Some("u1")),
@@ -177,7 +182,6 @@ async fn permission_none_and_empty() {
         nulled_permission.get("vector_stores"),
         Some(&JsonData::Array(Vec::new()))
     );
-    app.close().await;
 }
 
 #[tokio::test]

@@ -12,9 +12,7 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_auth::auth_model_patterns::view::{DeploymentView, ModelAccessView};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
-use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
@@ -138,15 +136,14 @@ struct Environment {
     url: Option<String>,
 }
 
-pub struct TestDatabase {
+pub(crate) struct TestDatabase {
     fixture: PostgresFixture,
     pool: Pool,
     store: PostgresStore,
-    availability: Availability,
 }
 
 impl TestDatabase {
-    pub async fn start() -> Self {
+    pub(crate) async fn start() -> Self {
         let url = Environment::parse_from(["b826-organization-create-tests"])
             .url
             .map(SecretString::from);
@@ -163,94 +160,89 @@ impl TestDatabase {
                 pool: Some(pool.clone()),
             },
             pool,
-            availability: Availability::default(),
         }
     }
 
     #[must_use]
-    pub fn store(&self) -> Arc<PostgresStore> {
+    pub(crate) fn store(&self) -> Arc<PostgresStore> {
         Arc::new(self.store.clone())
     }
 
-    #[must_use]
-    pub const fn prisma(&self) -> PrismaClient<'_> {
-        PrismaClient {
-            writer: &self.store,
-            reader: &self.store,
-            availability: &self.availability,
-        }
-    }
-
-    pub async fn execute(&self, sql: &str, params: &[&(dyn ToSql + Sync)]) {
+    pub(crate) async fn execute(&self, sql: &str, params: &[&(dyn ToSql + Sync)]) {
         let client = self.pool.get().await.unwrap();
         client.execute(sql, params).await.unwrap();
     }
 
-    pub async fn drop_user_table(&self) {
+    pub(crate) async fn drop_user_table(&self) {
         self.execute(DROP_USER_TABLE_SQL, &[]).await;
     }
 
-    pub async fn drop_permission_table(&self) {
+    pub(crate) async fn drop_permission_table(&self) {
         self.execute(DROP_PERMISSION_TABLE_SQL, &[]).await;
     }
 
-    pub async fn seed_user(&self, user_id: &str, role: Option<&str>, models: &[&str]) {
-        let models: Vec<&str> = models.to_vec();
-        self.execute(SEED_USER_SQL, &[&user_id, &role, &models])
+    pub(crate) async fn seed_user(&self, user_id: &str, role: Option<&str>, models: &[&str]) {
+        let model_list: Vec<&str> = models.to_vec();
+        self.execute(SEED_USER_SQL, &[&user_id, &role, &model_list])
             .await;
     }
 
-    pub async fn seed_membership(&self, user_id: &str, organization_id: &str, role: Option<&str>) {
+    pub(crate) async fn seed_membership(
+        &self,
+        user_id: &str,
+        organization_id: &str,
+        role: Option<&str>,
+    ) {
         self.execute(SEED_MEMBERSHIP_SQL, &[&user_id, &organization_id, &role])
             .await;
     }
 
-    pub async fn seed_organization(&self, organization_id: &str) {
+    pub(crate) async fn seed_organization(&self, organization_id: &str) {
         self.execute(SEED_ORGANIZATION_SQL, &[&organization_id])
             .await;
     }
 
-    pub async fn seed_budget(&self, budget_id: &str) {
+    pub(crate) async fn seed_budget(&self, budget_id: &str) {
         self.execute(SEED_BUDGET_SQL, &[&budget_id, &Some(25.0_f64)])
             .await;
     }
 
-    pub async fn seed_mcp_server(&self, server_id: &str, alias: &str, name: &str) {
+    pub(crate) async fn seed_mcp_server(&self, server_id: &str, alias: &str, name: &str) {
         self.execute(SEED_MCP_SQL, &[&server_id, &alias, &name])
             .await;
     }
 
-    pub async fn organization_row(
+    pub(crate) async fn organization_row(
         &self,
         organization_id: &str,
     ) -> Option<BTreeMap<String, JsonData>> {
         self.row(ORGANIZATION_ROW_SQL, organization_id).await
     }
 
-    pub async fn budget_row(&self, budget_id: &str) -> Option<BTreeMap<String, JsonData>> {
+    pub(crate) async fn budget_row(&self, budget_id: &str) -> Option<BTreeMap<String, JsonData>> {
         self.row(BUDGET_ROW_SQL, budget_id).await
     }
 
-    pub async fn permission_row(
+    pub(crate) async fn permission_row(
         &self,
         object_permission_id: &str,
     ) -> Option<BTreeMap<String, JsonData>> {
         self.row(PERMISSION_ROW_SQL, object_permission_id).await
     }
 
-    pub async fn organization_count(&self) -> i64 {
+    pub(crate) async fn organization_count(&self) -> i64 {
         self.count(ORGANIZATION_COUNT_SQL).await
     }
 
-    pub async fn budget_count(&self) -> i64 {
+    pub(crate) async fn budget_count(&self) -> i64 {
         self.count(BUDGET_COUNT_SQL).await
     }
 
-    pub async fn permission_count(&self) -> i64 {
+    pub(crate) async fn permission_count(&self) -> i64 {
         self.count(PERMISSION_COUNT_SQL).await
     }
 
-    pub async fn organization_ids(&self) -> Vec<String> {
+    pub(crate) async fn organization_ids(&self) -> Vec<String> {
         let client = self.pool.get().await.unwrap();
         let rows = client
             .query(r#"SELECT organization_id FROM "LiteLLM_OrganizationTable" ORDER BY organization_id"#, &[])
@@ -274,23 +266,23 @@ impl TestDatabase {
         Some(fields)
     }
 
-    pub async fn close(self) {
+    pub(crate) async fn close(self) {
         self.pool.close();
         self.fixture.close_async().await.unwrap();
     }
 }
 
-pub struct TestApp {
-    pub database: TestDatabase,
-    pub state: Arc<OrganizationCreateState>,
+pub(crate) struct TestApp {
+    pub(crate) database: TestDatabase,
+    pub(crate) state: Arc<OrganizationCreateState>,
 }
 
 impl TestApp {
-    pub async fn start() -> Self {
+    pub(crate) async fn start() -> Self {
         Self::start_with(|_| {}).await
     }
 
-    pub async fn start_with<F>(configure: F) -> Self
+    pub(crate) async fn start_with<F>(configure: F) -> Self
     where
         F: FnOnce(&mut OrganizationCreateState),
     {
@@ -308,11 +300,12 @@ impl TestApp {
         }
     }
 
-    pub async fn post(&self, caller: AuthContext, body: &str) -> Reply {
-        self.post_optional(Some(caller), body).await
+    pub(crate) async fn post(&self, caller: AuthContext, body: &str) -> Reply {
+        // boxed so each call site's future stays small; the handler chain is far past clippy's limit
+        Box::pin(self.post_optional(Some(caller), body)).await
     }
 
-    pub async fn post_optional(&self, caller: Option<AuthContext>, body: &str) -> Reply {
+    pub(crate) async fn post_optional(&self, caller: Option<AuthContext>, body: &str) -> Reply {
         let mut router = mount(Arc::clone(&self.state));
         if let Some(context) = caller {
             router = router.layer(Extension(context));
@@ -332,19 +325,19 @@ impl TestApp {
         }
     }
 
-    pub async fn close(self) {
+    pub(crate) async fn close(self) {
         self.database.close().await;
     }
 }
 
-pub struct Reply {
-    pub status: StatusCode,
-    pub body: String,
+pub(crate) struct Reply {
+    pub(crate) status: StatusCode,
+    pub(crate) body: String,
 }
 
 impl Reply {
     #[must_use]
-    pub fn object(&self) -> BTreeMap<String, JsonData> {
+    pub(crate) fn object(&self) -> BTreeMap<String, JsonData> {
         let JsonData::Object(fields) = serde_json::from_str(&self.body).unwrap() else {
             panic!(
                 "the response body is a JSON object: {body}",
@@ -355,14 +348,14 @@ impl Reply {
     }
 
     #[must_use]
-    pub fn field(&self, name: &str) -> JsonData {
+    pub(crate) fn field(&self, name: &str) -> JsonData {
         self.object()
             .remove(name)
             .unwrap_or_else(|| panic!("the response has no {name}: {body}", body = self.body))
     }
 
     #[must_use]
-    pub fn text_field(&self, name: &str) -> String {
+    pub(crate) fn text_field(&self, name: &str) -> String {
         let body = &self.body;
         let JsonData::String(text) = self.field(name) else {
             panic!("the response field {name} is not a string: {body}");
@@ -371,20 +364,12 @@ impl Reply {
     }
 
     #[must_use]
-    pub fn detail_error(&self) -> String {
+    pub(crate) fn detail_error(&self) -> String {
         self.nested_text("detail", "error")
     }
 
     #[must_use]
-    pub fn detail_text(&self) -> String {
-        let JsonData::String(text) = self.field("detail") else {
-            panic!("detail is not a string: {body}", body = self.body);
-        };
-        text
-    }
-
-    #[must_use]
-    pub fn error_text(&self, name: &str) -> String {
+    pub(crate) fn error_text(&self, name: &str) -> String {
         self.nested_text("error", name)
     }
 
@@ -437,7 +422,11 @@ fn key_fields(
 }
 
 #[must_use]
-pub fn key_caller(user_id: Option<&str>, role: Option<&str>, models: &[&str]) -> AuthContext {
+pub(crate) fn key_caller(
+    user_id: Option<&str>,
+    role: Option<&str>,
+    models: &[&str],
+) -> AuthContext {
     let fields = key_fields(user_id, role, models);
     let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
     AuthContext {
@@ -468,17 +457,12 @@ pub fn key_caller(user_id: Option<&str>, role: Option<&str>, models: &[&str]) ->
 }
 
 #[must_use]
-pub fn admin_caller(user_id: Option<&str>) -> AuthContext {
+pub(crate) fn admin_caller(user_id: Option<&str>) -> AuthContext {
     key_caller(user_id, Some("proxy_admin"), &[])
 }
 
 #[must_use]
-pub fn token_caller(user_id: &str, roles: &[Role]) -> AuthContext {
-    jwt_principal(Some(user_id), roles)
-}
-
-#[must_use]
-pub fn role_only_caller(roles: &[Role]) -> AuthContext {
+pub(crate) fn role_only_caller(roles: &[Role]) -> AuthContext {
     jwt_principal(None, roles)
 }
 
@@ -486,10 +470,8 @@ fn jwt_principal(user_id: Option<&str>, roles: &[Role]) -> AuthContext {
     AuthContext {
         principal: Principal {
             principal_type: PrincipalType::Human,
-            subject: match user_id {
-                Some(id) => format!("jwt:{id}"),
-                None => String::from("jwt:anonymous"),
-            },
+            subject: user_id
+                .map_or_else(|| String::from("jwt:anonymous"), |id| format!("jwt:{id}")),
             issuer: None,
             audience: Vec::new(),
             user: user_id.map(|id| UserIdentity {
@@ -514,7 +496,7 @@ fn jwt_principal(user_id: Option<&str>, roles: &[Role]) -> AuthContext {
 }
 
 #[must_use]
-pub fn master_caller() -> AuthContext {
+pub(crate) fn master_caller() -> AuthContext {
     AuthContext {
         principal: Principal {
             principal_type: PrincipalType::Human,
@@ -537,13 +519,13 @@ pub fn master_caller() -> AuthContext {
 }
 
 #[derive(Debug, Default)]
-pub struct RecordingView {
-    pub calls: Mutex<Vec<String>>,
+pub(crate) struct RecordingView {
+    pub(crate) calls: Mutex<Vec<String>>,
 }
 
 impl RecordingView {
     #[must_use]
-    pub fn calls(&self) -> Vec<String> {
+    pub(crate) fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -574,11 +556,11 @@ impl ModelAccessView for RecordingView {
 }
 
 #[derive(Clone, Default)]
-pub struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+pub(crate) struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
 impl LogBuffer {
     #[must_use]
-    pub fn contents(&self) -> String {
+    pub(crate) fn contents(&self) -> String {
         let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         String::from_utf8(bytes.clone()).unwrap()
     }
@@ -607,7 +589,7 @@ impl MakeWriter<'_> for LogBuffer {
 }
 
 #[must_use]
-pub fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
+pub(crate) fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = fmt()
         .with_ansi(false)
@@ -620,14 +602,23 @@ pub fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
 }
 
 #[must_use]
-pub fn parsed(text: &str) -> JsonData {
+pub(crate) fn parsed(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap()
 }
 
 #[must_use]
-pub fn number(value: &JsonData) -> f64 {
+pub(crate) fn number(value: &JsonData) -> f64 {
     let JsonData::Number(number) = value else {
         panic!("the value is not a JSON number");
     };
     number.as_f64().unwrap()
+}
+
+// a JSON number equals the expected double: total_cmp keeps clippy's float comparison rule out of every call
+pub(crate) fn assert_number(value: &JsonData, expected: f64) {
+    let found = number(value);
+    assert!(
+        found.total_cmp(&expected).is_eq(),
+        "expected {expected}, found {found}"
+    );
 }

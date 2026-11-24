@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use betterlite_db::budget_permission_rows::JsonData;
 
-use super::support::{TestApp, admin_caller, capture_logs, number, parsed};
+use super::support::{Reply, TestApp, admin_caller, assert_number, capture_logs, parsed};
 use crate::organization_create::records::NewOrganizationRequest;
 
 const DEFAULT_BODY: &str = r#"{"organization_alias":"acme"}"#;
@@ -33,7 +33,7 @@ fn request_fields_projection() {
             "gpt-4"
         ))]))
     );
-    assert_eq!(number(fields.get("max_budget").unwrap()), 12.5);
+    assert_number(&fields["max_budget"], 12.5_f64);
     // absent option fields are left out instead of written as null
     assert!(!fields.contains_key("metadata"));
     assert!(!fields.contains_key("object_permission"));
@@ -77,7 +77,7 @@ async fn metadata_field_partition() {
         .await
         .unwrap();
     // the temp budget columns stay on the budget row, not in metadata
-    assert_eq!(number(budget.get("temp_budget_increase").unwrap()), 2.0);
+    assert_number(&budget["temp_budget_increase"], 2.0_f64);
     assert!(matches!(
         budget.get("temp_budget_expiry"),
         Some(JsonData::String(_))
@@ -94,6 +94,21 @@ async fn organization_row_defaults() {
     assert_eq!(reply.status, StatusCode::OK);
     let organization_id = reply.text_field("organization_id");
     uuid::Uuid::parse_str(&organization_id).unwrap();
+    assert_default_response(&reply);
+
+    let stored = app
+        .database
+        .organization_row(&organization_id)
+        .await
+        .unwrap();
+    assert_stored_defaults(&stored);
+
+    // a sent id is used verbatim instead of a generated one
+    assert_explicit_id_used(&app).await;
+    app.close().await;
+}
+
+fn assert_default_response(reply: &Reply) {
     assert_eq!(reply.field("models"), JsonData::Array(Vec::new()));
     assert_eq!(reply.field("metadata"), JsonData::Null);
     assert_eq!(reply.field("users"), JsonData::Null);
@@ -101,39 +116,31 @@ async fn organization_row_defaults() {
         reply.field("model_spend"),
         JsonData::Object(BTreeMap::new())
     );
-    assert_eq!(number(&reply.field("spend")), 0.0);
+    assert_number(&reply.field("spend"), 0.0_f64);
     assert!(!text_value(Some(&reply.field("created_at"))).is_empty());
     assert!(!text_value(Some(&reply.field("updated_at"))).is_empty());
+}
 
-    let stored = app
-        .database
-        .organization_row(&organization_id)
-        .await
-        .unwrap();
+fn assert_stored_defaults(stored: &BTreeMap<String, JsonData>) {
     assert_eq!(
-        stored.get("organization_alias"),
-        Some(&JsonData::String(String::from("acme")))
+        stored["organization_alias"],
+        JsonData::String(String::from("acme"))
     );
-    assert_eq!(
-        stored.get("created_by"),
-        Some(&JsonData::String(String::from("u1")))
-    );
-    assert_eq!(stored.get("models"), Some(&JsonData::Array(Vec::new())));
-    assert_eq!(number(stored.get("spend").unwrap()), 0.0);
+    assert_eq!(stored["created_by"], JsonData::String(String::from("u1")));
+    assert_eq!(stored["models"], JsonData::Array(Vec::new()));
+    assert_number(&stored["spend"], 0.0_f64);
     assert!(!text_value(stored.get("created_at")).is_empty());
     assert!(!text_value(stored.get("updated_at")).is_empty());
     // an absent metadata field takes the column default, and model_spend is jsonified
-    assert_eq!(
-        stored.get("metadata"),
-        Some(&JsonData::Object(BTreeMap::new()))
-    );
+    assert_eq!(stored["metadata"], JsonData::Object(BTreeMap::new()));
     let stored_model_spend = text_value(stored.get("model_spend"));
     assert_eq!(
         serde_json::from_str::<JsonData>(stored_model_spend).unwrap(),
         JsonData::Object(BTreeMap::new())
     );
+}
 
-    // a sent id is used verbatim instead of a generated one
+async fn assert_explicit_id_used(app: &TestApp) {
     let explicit = app
         .post(
             admin_caller(Some("u1")),
@@ -142,12 +149,11 @@ async fn organization_row_defaults() {
         .await;
     assert_eq!(explicit.status, StatusCode::OK);
     assert_eq!(explicit.text_field("organization_id"), "org-fixed");
-    let stored = app.database.organization_row("org-fixed").await.unwrap();
+    let explicit_row = app.database.organization_row("org-fixed").await.unwrap();
     assert_eq!(
-        stored.get("organization_alias"),
-        Some(&JsonData::String(String::from("explicit")))
+        explicit_row["organization_alias"],
+        JsonData::String(String::from("explicit"))
     );
-    app.close().await;
 }
 
 #[tokio::test]

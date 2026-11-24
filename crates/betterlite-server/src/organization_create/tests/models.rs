@@ -59,33 +59,13 @@ async fn model_check_inputs_order() {
     let probe = Arc::clone(&view);
     let app = TestApp::start_with(|state| state.view = view).await;
     app.database.seed_user("u1", None, &["alpha", "zeta"]).await;
-    let caller = || key_caller(Some("u1"), Some("proxy_admin"), &["zeta"]);
 
-    let allowed = app
-        .post(
-            caller(),
-            r#"{"organization_alias":"acme","models":["zeta","alpha"]}"#,
-        )
-        .await;
-    assert_eq!(allowed.status, StatusCode::OK);
-    assert_eq!(
-        probe.calls(),
-        vec![String::from("zeta"), String::from("alpha")]
-    );
-    let organization = app
-        .database
-        .organization_row(&allowed.text_field("organization_id"))
-        .await
-        .unwrap();
-    assert_eq!(
-        organization.get("models"),
-        Some(&parsed(r#"["zeta","alpha"]"#))
-    );
+    assert_first_request_checked_in_order(&app, &probe).await;
 
     // the request's order decides the checks, and the first refusal ends them
     let denied = app
         .post(
-            caller(),
+            key_caller(Some("u1"), Some("proxy_admin"), &["zeta"]),
             r#"{"organization_alias":"other","models":["beta","zeta"]}"#,
         )
         .await;
@@ -108,6 +88,29 @@ async fn model_check_inputs_order() {
     assert_eq!(denied.error_text("type"), "user_model_access_denied");
     assert_eq!(app.database.organization_count().await, 1);
     app.close().await;
+}
+
+async fn assert_first_request_checked_in_order(app: &TestApp, probe: &RecordingView) {
+    let allowed = app
+        .post(
+            key_caller(Some("u1"), Some("proxy_admin"), &["zeta"]),
+            r#"{"organization_alias":"acme","models":["zeta","alpha"]}"#,
+        )
+        .await;
+    assert_eq!(allowed.status, StatusCode::OK);
+    assert_eq!(
+        probe.calls(),
+        vec![String::from("zeta"), String::from("alpha")]
+    );
+    let organization = app
+        .database
+        .organization_row(&allowed.text_field("organization_id"))
+        .await
+        .unwrap();
+    assert_eq!(
+        organization.get("models"),
+        Some(&parsed(r#"["zeta","alpha"]"#))
+    );
 }
 
 #[tokio::test]
