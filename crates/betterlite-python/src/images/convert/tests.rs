@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::super::edit::{edit, edit_file, form, parts, reply, status_message};
-use super::super::generate::generate;
+use super::super::generate::{generate, request};
 use super::super::session::{
     ImageSession, call_setup, explicit_credentials, first_text, now_seconds,
 };
@@ -307,6 +307,14 @@ fn request_generation_options_drop_the_additional_names() {
         options.get("quality"),
         Some(&Json::Text(String::from("hd")))
     );
+}
+
+#[test]
+fn request_generation_call_keeps_the_prompt() {
+    let (wire, _files) = call(r#"{"prompt":"a cat"}"#);
+    let built = request(&session(), &wire, "dall-e-2", "openai").unwrap();
+    assert_eq!(built.prompt, "a cat");
+    assert_eq!(built.model, "dall-e-2");
 }
 
 #[test]

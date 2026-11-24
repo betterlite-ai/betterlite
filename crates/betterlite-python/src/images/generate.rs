@@ -53,7 +53,7 @@ fn prompt_of(arguments: &RequestMap) -> Option<String> {
     }
 }
 
-fn request(
+pub(crate) fn request(
     session: &ImageSession,
     call: &ImageCallWire,
     model: &str,
