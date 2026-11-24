@@ -1,0 +1,12 @@
+task: B8351
+deviations:
+  - what: >-
+      An order level is collected only from a deployment whose order is an integer, so a litellm_params.order or
+      model_info.order of another JSON kind counts as unset.
+    why: >-
+      order is declared int | None in LiteLLM's LiteLLMParamsTypedDict, and betterlite reads it through B364's
+      OrderedDeployment, which maps any other kind to None. LiteLLM hands the raw value to sorted() and to the
+      order comparison, so a malformed order raises a TypeError in the middle of a stream where skipping it is
+      the only usable answer; a working configuration never carries one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5188-L5198
+kept_bugs: []

@@ -4720,6 +4720,7 @@ dependencies = [
  "mutants",
  "num-traits",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry_sdk",
  "pem",
  "percent-encoding",

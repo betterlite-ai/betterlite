@@ -557,3 +557,10 @@ path = "fuzz_targets/responses_poll_state.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "responses_poll_stream"
+path = "fuzz_targets/responses_poll_stream.rs"
+test = false
+doc = false
+bench = false
