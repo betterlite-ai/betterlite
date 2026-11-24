@@ -69,9 +69,9 @@ def _load(input_value: RegistryInput, registry: MCPToolRegistry) -> JsonValue:
 
 
 def run(input_value: RegistryInput) -> JsonValue:
-    registry = MCPToolRegistry()
+    registry = MCPToolRegistry()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L23-L25
     for tool_name in input_value["tool_names"]:
-        registry.register_tool(
+        registry.register_tool(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L27-L33
             name=tool_name,
             description="",
             input_schema=_EMPTY_SCHEMA,

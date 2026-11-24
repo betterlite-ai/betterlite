@@ -6,7 +6,7 @@ use std::sync::Arc;
 use betterlite_config::sections::mcp_tools::decode_mcp_tools;
 use betterlite_mcp::openapi_tools::output::OpenApiToolOutput;
 use betterlite_mcp::openapi_tools::request_headers::OpenApiCallContext;
-use betterlite_mcp::tool_registry::handler::{LocalTool, ToolHandler, ToolHandlerError};
+use betterlite_mcp::tool_registry::handler::{ToolHandler, ToolHandlerError};
 use betterlite_mcp::tool_registry::loader::{HandlerLoadError, ToolHandlerLoader};
 use betterlite_mcp::tool_registry::registry::ToolRegistry;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
@@ -24,21 +24,18 @@ pub(crate) fn run(input: &Input) -> HelperResult {
     match input.function {
         Function::ListTools => {
             let tools = registry.list_tools(input.prefix.as_deref());
-            Ok(short_answer(&tools, 0))
+            let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+            Ok(json!({"names": names, "removed": 0}))
         }
         Function::UnregisterPrefix => {
             let prefix = input.prefix.as_deref().unwrap_or_default();
             let removed = registry.unregister_tools_with_prefix(prefix);
             let tools = registry.list_tools(None);
-            Ok(short_answer(&tools, removed))
+            let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+            Ok(json!({"names": names, "removed": removed}))
         }
         Function::LoadFromConfig => load(&registry, input),
     }
-}
-
-fn short_answer(tools: &[LocalTool], removed: usize) -> Value {
-    let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
-    json!({"names": names, "removed": removed})
 }
 
 // LiteLLM raises on a missing or non-list config, so the Python side answers the message as a value

@@ -53,10 +53,7 @@ impl Section for Raw {
             Json::List(values) => values,
             Json::Null => return Ok(McpToolsSection::default()),
             other @ (Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-                return Err(ConfigError::InvalidScalar {
-                    path: KEY.to_owned(),
-                    value: matches!(other, Json::Bool(true)),
-                });
+                return Err(scalar_error(KEY, &other));
             }
         };
         let entries = values
@@ -90,10 +87,7 @@ fn optional_text(value: Option<&Json>, path: &str) -> Result<Option<String>, Con
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: matches!(value, Some(Json::Bool(true))),
-        }),
+        Some(other) => Err(scalar_error(path, other)),
     }
 }
 
@@ -102,10 +96,14 @@ fn schema(value: Option<&Json>, path: &str) -> Result<IndexMap<String, Json>, Co
     match value {
         None | Some(Json::Null) => Ok(IndexMap::new()),
         Some(Json::Object(fields)) => Ok(fields.clone()),
-        Some(_) => Err(ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: matches!(value, Some(Json::Bool(true))),
-        }),
+        Some(other) => Err(scalar_error(path, other)),
+    }
+}
+
+fn scalar_error(path: &str, value: &Json) -> ConfigError {
+    ConfigError::InvalidScalar {
+        path: path.to_owned(),
+        value: matches!(value, Json::Bool(true)),
     }
 }
 
