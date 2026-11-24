@@ -1,0 +1,14 @@
+id: B10065
+milestone: M9 agents and mcp
+title: MCP static credential check
+status: done
+depends_on: [B4650, B4741]
+file: tasks/B10065-mcp-static-credential-check.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/adapter.py"
+parent: B137
+split_from: B4667
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3052

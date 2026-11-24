@@ -1,15 +1,18 @@
+use std::time::SystemTime;
+
 use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::collector_factory::collector::MetricValue;
 
 use super::Bucket;
 
-// one label set's samples: the running total, the observation count and the cumulative bucket counts
+// one label set's samples: the running total, the observation count, the cumulative bucket counts and when the series was created
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Sample {
     pub total: MetricValue,
     pub count: u64,
     pub buckets: Vec<u64>,
+    pub created: SystemTime,
 }
 
 impl Sample {

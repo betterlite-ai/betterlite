@@ -1,0 +1,15 @@
+id: B10087
+milestone: M2 routing
+title: Fuse profile preset catalog
+status: done
+depends_on: []
+file: tasks/B10087-fuse-presets.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/fuse_presets.py"
+  - "litellm/router_strategy/complexity_router/fuse_presets.json"
+parent: B021
+split_from: B353
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3078

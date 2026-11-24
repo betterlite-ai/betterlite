@@ -1,0 +1,14 @@
+id: B10068
+milestone: M4 keys, spend and management
+title: Key info access check
+status: done
+depends_on: [B171, B720, B800, B2314]
+file: tasks/B10068-key-info-access.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+parent: B055
+split_from: B778
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3058

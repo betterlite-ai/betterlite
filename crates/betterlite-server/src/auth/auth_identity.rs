@@ -10,6 +10,7 @@ use subtle::ConstantTimeEq as _;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
+use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
@@ -27,6 +28,7 @@ pub enum AuthBackend {
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
+    AuthOrgLookup,
     AuthEndUsers,
 }
 
@@ -40,6 +42,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
+    AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
 
@@ -53,6 +56,7 @@ pub enum StageInput {
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
+    AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
 
@@ -85,6 +89,7 @@ pub(crate) enum StageFailure {
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
+    OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
 
@@ -120,6 +125,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the reads ran while the stage input was assembled, so the budget failures already surfaced there
+            Ok(stage.context.clone())
+        }
+        AuthBackend::AuthOrgLookup => {
+            let StageInput::AuthOrgLookup(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the request-scoped lookup ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
         AuthBackend::AuthEndUsers => {

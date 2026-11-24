@@ -89,7 +89,8 @@ pitfalls:
 - "`retrieve_content` is not a prefix of `retrieve`, so a flag named `aretrieve` must not trigger the content call."
 - "`filter` shadows a builtin name in `list`; keep the name, as callers pass it by keyword."
 - "`attributes` holds scalars only, and None is not sent, but an empty dict is."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, A001, A002, ASYNC109). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 14

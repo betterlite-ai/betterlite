@@ -1,0 +1,49 @@
+kind: helper
+name: azure-rate-limit-probe
+call:
+  azure_speech:
+    probe:
+      scenarios:
+        - outcome: reply
+          model: gpt-4o
+          api_key: sk-azure-fixture
+          api_base: https://example.openai.azure.com
+          api_version: "2024-06-01"
+          reply:
+            status: 200
+            headers:
+              x-ratelimit-remaining-requests: "9"
+              x-ratelimit-remaining-tokens: "8"
+              x-ms-region: eastus
+              content-type: application/json
+            body: "{}"
+        - outcome: request
+          model: gpt-4o
+          api_key: sk-azure-fixture
+          api_base: https://example.openai.azure.com
+          api_version: "2024-06-01"
+          messages: [{role: user, content: Hi}]
+        - outcome: reply
+          model: gpt-4o
+          api_key: sk-azure-fixture
+          api_base: https://example.openai.azure.com
+          api_version: "2024-06-01"
+          reply:
+            status: 400
+            headers: {content-type: application/json}
+            body: '{"error": {"message": "bad probe"}}'
+        - outcome: reply
+          api_key: sk-azure-fixture
+          api_base: https://example.openai.azure.com
+          api_version: "2024-06-01"
+        - outcome: reply
+          api_key: sk-azure-fixture
+          api_base: https://example.openai.azure.com
+          api_version: "2024-06-01"
+          mode: image_generation
+          reply:
+            status: 200
+            headers: {}
+            body: "{}"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: supported-db-objects-value-that-is-not-a-list-loads-every-kind
+call:
+  b10054:
+    general_settings:
+      supported_db_objects: models
+    object_type: models
+env: {}
+compare:
+  ignore: []

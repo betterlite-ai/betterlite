@@ -10,6 +10,7 @@ path = "lib.rs"
 
 [dependencies]
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-reporting = { path = "../../../../../crates/betterlite-reporting" }
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
 
 [lints]

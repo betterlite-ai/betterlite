@@ -1,14 +1,14 @@
 id: B8062
 milestone: M12 python
 title: Python get_llm_provider and the provider lookup helpers
-status: blocked
+status: done
 depends_on: [B5369, B157, B158, B5658, B174, B209, B210, B211, B9951]
 file: tasks/B8062-python-provider-lookup.yaml
 covers:
   - "litellm/litellm_core_utils/get_llm_provider_logic.py"
 parent: B166
 split_from: B166
-resolution: null
+resolution: merged
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Python SDK parity"
-pr: null
+blocked_reason: null
+pr: 3063

@@ -1,0 +1,14 @@
+id: B10074
+milestone: M8 platform
+title: Environment value codec for stored config maps
+status: done
+depends_on: [B2303, B4307, B4308, B8502]
+file: tasks/B10074-env-value-codec.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: B8382
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3083

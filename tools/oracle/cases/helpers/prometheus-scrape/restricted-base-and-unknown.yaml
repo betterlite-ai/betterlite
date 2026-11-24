@@ -1,0 +1,20 @@
+kind: helper
+name: prometheus-scrape-restricted-base-and-unknown
+call:
+  b10090:
+    metrics:
+      - {kind: counter, name: requests, help: requests, labels: [], buckets: []}
+    updates: []
+    accept: ""
+    accept_encoding: ""
+    names: [requests, missing_total]
+calls:
+  - b10090:
+      metrics:
+        - {kind: counter, name: requests, help: requests, labels: [], buckets: []}
+      updates: []
+      accept: application/openmetrics-text
+      accept_encoding: ""
+      names: [requests, missing_total]
+env: {}
+compare: {ignore: []}

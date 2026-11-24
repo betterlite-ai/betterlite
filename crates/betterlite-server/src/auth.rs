@@ -126,6 +126,9 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
+            auth_org_lookup::stage_input(request, authenticated)?,
+        ))),
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
@@ -210,6 +213,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .await
                 .map_err(StageFailure::KeyBudgets)?;
             Ok(StageInput::AuthKeyBudgets(stage))
+        }
+        StageInput::AuthOrgLookup(stage) => {
+            auth_org_lookup::prefetch(&stage)
+                .await
+                .map_err(StageFailure::OrgLookup)?;
+            Ok(StageInput::AuthOrgLookup(stage))
         }
         StageInput::AuthEndUsers(stage) => {
             auth_end_users::prefetch(&stage)
