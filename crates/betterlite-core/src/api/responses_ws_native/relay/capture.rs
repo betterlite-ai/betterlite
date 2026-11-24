@@ -63,9 +63,7 @@ where
 
     async fn store_input(&self, message: &str) {
         let collected = collect_input(message);
-        if !collected.is_empty() {
-            self.input_messages.lock().await.extend(collected);
-        }
+        self.input_messages.lock().await.extend(collected);
         if let Some(logging) = self.setup.logging {
             logging.pre_call(message, "");
         }
@@ -134,12 +132,12 @@ where
             return Ok(());
         }
         let Some(exception) = self.failure_exception().await else {
-            logging.dispatch_success(messages);
+            logging.dispatch_success(messages, true);
             return Ok(());
         };
         record_usage_for_failure(&messages, logging)?;
         let traceback = traceback_text(&exception);
-        logging.dispatch_failure(exception, traceback);
+        logging.dispatch_failure(exception, traceback, true);
         Ok(())
     }
 }

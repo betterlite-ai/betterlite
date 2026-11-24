@@ -19,10 +19,10 @@ pub trait WsNativeLogging: Send + Sync {
     fn update_from_kwargs(&self, update: WsCallUpdate<'_>) -> Result<(), LoggingStateError>;
     fn pre_call(&self, input: &str, api_key: &str);
     fn record_input_messages(&self, messages: &[IndexMap<String, Json>]);
-    fn dispatch_success(&self, messages: Vec<IndexMap<String, Json>>);
+    fn dispatch_success(&self, messages: Vec<IndexMap<String, Json>>, prefer_async: bool);
     fn response_cost(&self, billing: &RealtimeBilling) -> Option<f64>;
     fn record_partial_usage(&self, usage: &Usage, response_cost: f64);
-    fn dispatch_failure(&self, exception: ErrorClass, traceback: String);
+    fn dispatch_failure(&self, exception: ErrorClass, traceback: String, prefer_async: bool);
 }
 
 #[must_use]
