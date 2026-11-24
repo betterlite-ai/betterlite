@@ -310,8 +310,8 @@ fn drops_a_mostrecent_series_whose_timestamps_are_zero() {
 #[test]
 fn accumulates_histogram_buckets_with_their_count_and_sum() {
     let dir = TempDir::new().unwrap();
-    let first = write_histogram(dir.path(), 1001, "1", [2.0, 3.0], 1.0);
-    let second = write_histogram(dir.path(), 1002, "1.0", [1.0, 2.0], 0.5);
+    let first = write_histogram(dir.path(), 1001, "1", [2.0_f64, 3.0_f64], 1.0);
+    let second = write_histogram(dir.path(), 1002, "1.0", [1.0_f64, 2.0_f64], 0.5);
     let families = merge(&[first, second]).unwrap();
     let family = families.first().unwrap();
     assert_eq!(family.kind, MetricKind::Histogram);
