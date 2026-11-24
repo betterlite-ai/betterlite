@@ -32,7 +32,7 @@ impl LateFailureHook for QueueLateFailure {
     }
 }
 
-fn exception_from_sse(failure: &SseFailure) -> ProxyException {
+pub(super) fn exception_from_sse(failure: &SseFailure) -> ProxyException {
     let message = failure
         .detail
         .as_deref()

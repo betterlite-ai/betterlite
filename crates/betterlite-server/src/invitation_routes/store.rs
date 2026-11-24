@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use axum::http::StatusCode;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{NaiveDateTime, Utc};
 use thiserror::Error;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;

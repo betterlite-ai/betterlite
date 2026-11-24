@@ -19,7 +19,7 @@ struct AcceptInvitation {
     is_accepted: bool,
 }
 
-pub(super) async fn update_invitation(
+pub(crate) async fn update_invitation(
     State(state): State<Arc<InvitationRouteState>>,
     caller: Caller,
     body: Bytes,

@@ -169,7 +169,7 @@ struct NoQueueStream;
 
 impl ErrorStateSource for NoQueueStream {
     fn new_state(&self) -> Box<dyn StreamErrorState + Send> {
-        Box::new(NoQueueStream)
+        Box::new(Self)
     }
 }
 

@@ -19,7 +19,7 @@ struct RemoveInvitation {
     invitation_id: String,
 }
 
-pub(super) async fn delete_invitation(
+pub(crate) async fn delete_invitation(
     State(state): State<Arc<InvitationRouteState>>,
     caller: Caller,
     body: Bytes,

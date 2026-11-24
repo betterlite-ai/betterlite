@@ -18,7 +18,7 @@ struct InfoQuery {
     invitation_id: Option<String>,
 }
 
-pub(super) async fn invitation_info(
+pub(crate) async fn invitation_info(
     State(state): State<Arc<InvitationRouteState>>,
     caller: Caller,
     query: Query<InfoQuery>,

@@ -23,7 +23,7 @@ struct NewInvitation {
     user_id: String,
 }
 
-pub(super) async fn new_invitation(
+pub(crate) async fn new_invitation(
     State(state): State<Arc<InvitationRouteState>>,
     caller: Caller,
     body: Bytes,
