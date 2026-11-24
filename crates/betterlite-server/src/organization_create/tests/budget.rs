@@ -5,8 +5,9 @@ use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 
 use super::support::parsed;
 use crate::organization_create::budget::{
-    BUDGET_RESET_AT_FIELD, BudgetTransformError, NESTED_BUDGET_FIELD, UPDATED_BY_FIELD,
-    build_budget_write_data, handle_nested_budget_structure_in_organization_update_request,
+    BUDGET_RESET_AT_FIELD, BudgetTransformError, NESTED_BUDGET_FIELD, ORG_COLUMN_FIELDS,
+    UPDATED_BY_FIELD, budget_settable_fields, build_budget_write_data,
+    handle_nested_budget_structure_in_organization_update_request, org_metadata_fields,
 };
 use crate::organization_create::records::to_json_data;
 
@@ -42,6 +43,24 @@ impl BudgetResetCalculator for FailingReset {
     fn reset_time(&self, _budget_duration: &str) -> Result<Timestamp, PortError> {
         Err(PortError::new("unknown budget duration"))
     }
+}
+
+#[test]
+fn field_set_contract() {
+    // _ORG_COLUMN_FIELDS: the two organization columns a request sets directly
+    assert_eq!(ORG_COLUMN_FIELDS, ["organization_alias", "models"]);
+    // _BUDGET_SETTABLE_FIELDS: the budget schema without the key column
+    let settable = budget_settable_fields();
+    assert_eq!(settable.len(), 11);
+    assert!(!settable.contains(&"budget_id"));
+    assert!(settable.contains(&"max_budget"));
+    // _ORG_METADATA_FIELDS: the nineteen metadata names without the two budget columns
+    let metadata = org_metadata_fields();
+    assert_eq!(metadata.len(), 17);
+    assert!(metadata.contains(&"model_rpm_limit"));
+    assert!(metadata.contains(&"enable_prompt_caching"));
+    assert!(!metadata.contains(&"temp_budget_increase"));
+    assert!(!metadata.contains(&"temp_budget_expiry"));
 }
 
 #[test]
