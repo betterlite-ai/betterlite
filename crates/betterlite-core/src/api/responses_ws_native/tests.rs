@@ -722,6 +722,18 @@ async fn failed_backend_frame_is_logged() {
     assert!(lock(&logging.success).is_empty());
 }
 
+async fn backend_send_failure_ends_forwarding() {
+    let mut client = TestClient::new(Vec::new());
+    client.fail_sends = true;
+    let backend = ScriptedBackend::new();
+    backend.text(r#"{"type":"response.created"}"#);
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay.backend_to_client().await.unwrap();
+    assert_eq!(client.sent(), texts(&[r#"{"type":"response.created"}"#]));
+}
+
 async fn output_events_are_dropped() {
     let client = TestClient::new(Vec::new());
     let backend = ScriptedBackend::new();
@@ -809,6 +821,7 @@ async fn client_termination_closes_backend() {
 async fn backend_close_and_disconnect() {
     recv_fallback_and_connection_closed().await;
     failed_backend_frame_is_logged().await;
+    backend_send_failure_ends_forwarding().await;
     output_events_are_dropped().await;
     array_frame_fails_wrapping().await;
     invalid_utf8_sends_nothing().await;
