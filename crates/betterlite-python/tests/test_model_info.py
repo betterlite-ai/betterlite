@@ -284,7 +284,7 @@ def test_sync_capability_flags() -> None:
         get_model_info("gpt-4")
 
 
-def test_sync_prefixed_capability_flags() -> None:
+def test_sync_prefixed_flags() -> None:
     model = "o3"
     prefixed = "openai/o3"
     ours_entry = dict(_MODEL_INFO.validate_python(betterlite.model_cost[model]))
