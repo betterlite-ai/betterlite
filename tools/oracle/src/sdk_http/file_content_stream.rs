@@ -32,8 +32,12 @@ use super::call_kind::CallKind;
 use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
+#[path = "file_content_stream/fixtures/clients.rs"]
+mod clients;
 mod fixtures;
+#[path = "file_content_stream/fixtures/outcome.rs"]
 pub mod outcome;
+#[path = "file_content_stream/fixtures/wire.rs"]
 mod wire;
 
 // the header a supplied HTTPHandler's own client adds, so the wire shows whether the handler was used
