@@ -1,0 +1,9 @@
+{
+  "custom": {
+    "label": "Custom",
+    "description": "No reasoning tier.",
+    "complexity_router_config": {
+      "tiers": {"SIMPLE": ["a"], "MEDIUM": ["b"], "COMPLEX": ["c"]}
+    }
+  }
+}

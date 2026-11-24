@@ -1,0 +1,15 @@
+{
+  "custom": {
+    "label": "Custom",
+    "description": "Extras in every allowed position.",
+    "badge": "gold",
+    "complexity_router_config": {
+      "tiers": {"SIMPLE": ["a"], "MEDIUM": ["b", "c"], "COMPLEX": [], "REASONING": ["d"]},
+      "classifier_type": "heuristic",
+      "classifier_context_window_size": 0,
+      "session_affinity": false,
+      "tier_model_configs": {"REASONING": [{"model_name": "d", "litellm_params": {"reasoning_effort": "high"}}]},
+      "notes": null
+    }
+  }
+}
