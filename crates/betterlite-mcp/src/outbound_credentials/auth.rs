@@ -114,14 +114,11 @@ impl ResolvedAuth for ClientCredentialsAuth {
                 config: &self.config,
             };
             let refetched = self.source.refetch(request, &failed).await;
-            match refetched {
-                Some(fresh) => {
-                    let mut guard = self.token.lock().unwrap_or_else(PoisonError::into_inner);
-                    *guard = fresh;
-                    true
-                }
-                None => false,
-            }
+            refetched.is_some_and(|fresh| {
+                let mut guard = self.token.lock().unwrap_or_else(PoisonError::into_inner);
+                *guard = fresh;
+                true
+            })
         })
     }
 }

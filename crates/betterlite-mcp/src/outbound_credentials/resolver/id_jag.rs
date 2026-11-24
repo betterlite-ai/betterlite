@@ -127,12 +127,12 @@ fn first_leg_params(
         config.subject_token_type.clone(),
     );
     let audience = config.audience.as_deref().filter(|value| !value.is_empty());
-    if let Some(audience) = audience {
-        params.insert("audience".to_owned(), audience.to_owned());
+    if let Some(configured) = audience {
+        params.insert("audience".to_owned(), configured.to_owned());
     }
     let resource = config.resource.as_deref().filter(|value| !value.is_empty());
-    if let Some(resource) = resource {
-        params.insert("resource".to_owned(), resource.to_owned());
+    if let Some(configured) = resource {
+        params.insert("resource".to_owned(), configured.to_owned());
     }
     if !config.scopes.is_empty() {
         params.insert("scope".to_owned(), config.scopes.join(" "));

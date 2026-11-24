@@ -49,8 +49,7 @@ pub(super) fn shared_key(
         .upstream_token_header
         .as_deref()
         .filter(|text| !text.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| default_header.to_owned());
+        .map_or_else(|| default_header.to_owned(), str::to_owned);
     let config = ApiKeyConfig {
         header: HeaderCarrier::new(&header, value_prefix)?,
         key_source: ApiKeySource::Shared(SharedKey {
@@ -247,9 +246,9 @@ fn id_jag(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> 
 
 fn id_jag_client_auth(server: &MCPServer) -> Option<ClientAuth> {
     let private_key = secret_text(server.fields.client_private_key.as_ref());
-    if let Some(private_key) = private_key {
+    if let Some(key) = private_key {
         return Some(ClientAuth::PrivateKeyJwt(PrivateKeyJwtAuth {
-            private_key: SecretString::from(private_key),
+            private_key: SecretString::from(key),
             key_id: server.fields.client_private_key_id.clone(),
             signing_alg: server.fields.client_assertion_signing_alg.clone(),
         }));

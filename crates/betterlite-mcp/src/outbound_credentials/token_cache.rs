@@ -73,8 +73,9 @@ impl ExchangedTokenCache {
             .guards
             .remove(cache_key)
             .and_then(|weak| weak.upgrade());
-        if let Some(guard) = guard {
-            guard.generation.fetch_add(1, Ordering::SeqCst);
+        drop(state);
+        if let Some(held) = guard {
+            held.generation.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -84,6 +85,7 @@ impl ExchangedTokenCache {
         let entry = state.entries.get(cache_key)?;
         if entry.expires_at <= now {
             state.entries.remove(cache_key);
+            drop(state);
             return None;
         }
         if entry.fingerprint == fingerprint {

@@ -28,21 +28,21 @@ pub fn to_subject(principal: Option<&UserPrincipal>, subject_token: Option<&str>
         .filter(|text| !text.is_empty())
         .map(str::to_owned)
         .map(SecretString::from);
-    let Some(principal) = principal else {
+    let Some(user) = principal else {
         return Subject {
             tenant_id: String::new(),
             subject_id: String::new(),
             inbound_token,
         };
     };
-    let tenant_id = principal
+    let tenant_id = user
         .org_id
         .as_deref()
         .filter(|text| !text.is_empty())
-        .or_else(|| principal.team_id.as_deref().filter(|text| !text.is_empty()))
+        .or_else(|| user.team_id.as_deref().filter(|text| !text.is_empty()))
         .unwrap_or_default()
         .to_owned();
-    let subject_id = principal
+    let subject_id = user
         .user_id
         .as_deref()
         .filter(|text| !text.is_empty())
@@ -116,8 +116,7 @@ pub(super) fn token_header(server: &MCPServer) -> String {
         .upstream_token_header
         .as_deref()
         .filter(|text| !text.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| DEFAULT_CREDENTIAL_HEADER.to_owned())
+        .map_or_else(|| DEFAULT_CREDENTIAL_HEADER.to_owned(), str::to_owned)
 }
 
 pub(super) const fn token_endpoint_method(
@@ -140,6 +139,5 @@ fn resource_of(server: &MCPServer) -> String {
         .url
         .as_deref()
         .filter(|text| !text.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| server.fields.server_id.clone())
+        .map_or_else(|| server.fields.server_id.clone(), str::to_owned)
 }

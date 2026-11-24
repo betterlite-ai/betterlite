@@ -126,11 +126,9 @@ pub(super) async fn authz_token(
     server: &ServerSpec,
     store: &dyn OAuthTokenStore,
 ) -> Option<OAuthToken> {
-    let fetched = store.fetch(&subject.subject_id, &server.server_id).await;
-    match fetched {
-        Ok(token) => token,
-        Err(TokenStoreUnavailable) => None,
-    }
+    let fetched: Result<Option<OAuthToken>, TokenStoreUnavailable> =
+        store.fetch(&subject.subject_id, &server.server_id).await;
+    fetched.unwrap_or_default()
 }
 
 fn unauthorized(detail: &str, www_authenticate: Option<&str>) -> CredError {
