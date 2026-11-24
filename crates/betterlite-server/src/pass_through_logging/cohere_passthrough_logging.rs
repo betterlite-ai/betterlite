@@ -12,12 +12,11 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 use super::base_passthrough_logging::{
     PassthroughChatInput, PassthroughChatLogger, PassthroughLoggingError, PassthroughOutcome,
-    PassthroughPayload, request_model,
+    PassthroughPayload, PassthroughStage, request_model,
 };
 use super::response_payload::ResponseLoggingKwargs;
 
@@ -142,7 +141,10 @@ impl CoherePassthroughLogger {
             &mut *input.call_log,
         )?;
         write_call_log(&mut *input.call_log, &model, cost);
-        let result = converted::<_, Json>(&response).map_err(PassthroughLoggingError::payload)?;
+        let response_json =
+            serde_json::to_string(&response).map_err(PassthroughStage::Payload.failed)?;
+        let result: Json =
+            serde_json::from_str(&response_json).map_err(PassthroughStage::Payload.failed)?;
         Ok(PassthroughOutcome {
             result: Some(PassThroughResponse::Embedding(result)),
             kwargs: take(&mut input.kwargs),
@@ -194,18 +196,16 @@ fn embedding_texts(request_body: &JsonObject) -> Result<Vec<Json>, PassthroughLo
         Some(Json::List(items)) if !items.is_empty() => return Ok(items.clone()),
         None | Some(Json::Null | Json::List(_)) => request_body.get("input"),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(PassthroughLoggingError::transform(
-                CohereLoggingError::EmbeddingList { field: "texts" },
-            ));
+            return Err(PassthroughStage::Transform
+                .failed(CohereLoggingError::EmbeddingList { field: "texts" }));
         }
     };
     match fallback {
         None | Some(Json::Null) => Ok(Vec::new()),
         Some(Json::List(items)) => Ok(items.clone()),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(PassthroughLoggingError::transform(
-                CohereLoggingError::EmbeddingList { field: "input" },
-            ))
+            Err(PassthroughStage::Transform
+                .failed(CohereLoggingError::EmbeddingList { field: "input" }))
         }
     }
 }
@@ -215,14 +215,4 @@ pub(crate) fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
-}
-
-// One serde round trip through text, which keeps object keys in order: serde_json's Value sorts them.
-pub(crate) fn converted<T, U>(value: &T) -> Result<U, serde_json::Error>
-where
-    T: Serialize + ?Sized,
-    U: DeserializeOwned,
-{
-    let encoded = serde_json::to_string(value)?;
-    serde_json::from_str(&encoded)
 }

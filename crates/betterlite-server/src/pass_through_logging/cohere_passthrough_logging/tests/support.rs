@@ -18,7 +18,8 @@ use crate::pass_through_logging::base_passthrough_logging::tests::support::{
     END, FakePayload, FakeProvider, RecordingBuilder, START, json_object, timestamp,
 };
 use crate::pass_through_logging::base_passthrough_logging::{
-    PassthroughChatInput, PassthroughChatLogger, PassthroughLoggingError, UpstreamChatReply,
+    PassthroughChatInput, PassthroughChatLogger, PassthroughLoggingError, PassthroughStage,
+    UpstreamChatReply,
 };
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
 
@@ -161,9 +162,8 @@ impl FakeTools {
             .unwrap_or_else(PoisonError::into_inner)
             .push(name);
         if self.failing_step == Some(name) {
-            return Err(PassthroughLoggingError::transform(io::Error::other(
-                format!("the fake {name} step failed"),
-            )));
+            return Err(PassthroughStage::Transform
+                .failed(io::Error::other(format!("the fake {name} step failed"))));
         }
         Ok(())
     }

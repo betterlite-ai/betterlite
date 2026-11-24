@@ -166,34 +166,25 @@ pub enum PassthroughLoggingError {
     },
 }
 
-impl PassthroughLoggingError {
-    #[must_use]
-    pub fn transform<E>(source: E) -> Self
-    where
-        E: Error + Send + Sync + 'static,
-    {
-        Self::Transform {
-            source: Box::new(source),
-        }
-    }
+// The step a failure came from, so one constructor covers the three boxed variants.
+#[derive(Clone, Copy, Debug)]
+pub enum PassthroughStage {
+    Transform,
+    StreamBuild,
+    Payload,
+}
 
+impl PassthroughStage {
     #[must_use]
-    pub fn stream_build<E>(source: E) -> Self
+    pub fn failed<E>(self, source: E) -> PassthroughLoggingError
     where
         E: Error + Send + Sync + 'static,
     {
-        Self::StreamBuild {
-            source: Box::new(source),
-        }
-    }
-
-    #[must_use]
-    pub fn payload<E>(source: E) -> Self
-    where
-        E: Error + Send + Sync + 'static,
-    {
-        Self::Payload {
-            source: Box::new(source),
+        let boxed: Box<dyn Error + Send + Sync> = Box::new(source);
+        match self {
+            Self::Transform => PassthroughLoggingError::Transform { source: boxed },
+            Self::StreamBuild => PassthroughLoggingError::StreamBuild { source: boxed },
+            Self::Payload => PassthroughLoggingError::Payload { source: boxed },
         }
     }
 }

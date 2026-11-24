@@ -11,10 +11,10 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use super::super::base_passthrough_logging::{
-    PassthroughLoggingError, PassthroughProvider, UpstreamChatReply,
+    PassthroughLoggingError, PassthroughProvider, PassthroughStage, UpstreamChatReply,
 };
 use super::stream;
-use super::{converted, unix_seconds};
+use super::unix_seconds;
 
 // Cohere's passthrough provider: the V2 chat config for every route and the V1 collected stream builder.
 pub struct CohereProvider;
@@ -40,7 +40,7 @@ impl PassthroughProvider for CohereProvider {
             message: AssistantReply::default(),
             next_id: || Uuid::new_v4().to_string(),
         })
-        .map_err(PassthroughLoggingError::transform)?;
+        .map_err(PassthroughStage::Transform.failed)?;
         logged_model_response(&reply)
     }
 
@@ -106,5 +106,6 @@ fn logged_model_response(reply: &CohereV2Reply) -> Result<Json, PassthroughLoggi
         }],
         usage: &reply.usage,
     };
-    converted::<_, Json>(&logged).map_err(PassthroughLoggingError::transform)
+    let encoded = serde_json::to_string(&logged).map_err(PassthroughStage::Transform.failed)?;
+    serde_json::from_str(&encoded).map_err(PassthroughStage::Transform.failed)
 }

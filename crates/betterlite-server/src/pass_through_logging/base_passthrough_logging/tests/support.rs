@@ -27,7 +27,7 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use super::super::{
     PassthroughChatLogger, PassthroughLoggingError, PassthroughPayload, PassthroughPayloadInput,
-    PassthroughProvider, UpstreamChatReply,
+    PassthroughProvider, PassthroughStage, UpstreamChatReply,
 };
 use crate::pass_through_logging::response_costing::{ResponseCostRequest, ResponseCostService};
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
@@ -163,9 +163,10 @@ impl PassthroughProvider for FakeProvider {
             .clone();
         match response {
             Some(response) => Ok(response),
-            None => Err(PassthroughLoggingError::transform(io::Error::other(
-                "the fake transform failed",
-            ))),
+            None => {
+                Err(PassthroughStage::Transform
+                    .failed(io::Error::other("the fake transform failed")))
+            }
         }
     }
 
@@ -179,9 +180,8 @@ impl PassthroughProvider for FakeProvider {
             .unwrap_or_else(PoisonError::into_inner)
             .push(model.to_owned());
         if self.stream_fails {
-            return Err(PassthroughLoggingError::stream_build(io::Error::other(
-                "the fake stream build failed",
-            )));
+            return Err(PassthroughStage::StreamBuild
+                .failed(io::Error::other("the fake stream build failed")));
         }
         let streamed = self
             .streamed
