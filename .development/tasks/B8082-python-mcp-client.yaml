@@ -50,6 +50,8 @@ description: >-
   already locks through `litellm[proxy]`.
 scope:
   paths:
+  - "crates/betterlite-python/src/mcp/convert/payload.rs"
+  - "crates/betterlite-python/pyproject.toml"
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/__init__.py
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/types.py
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/errors.py
