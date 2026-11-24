@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::oauth_token_resolution::ports::TokenResponse;
@@ -108,7 +109,7 @@ impl EpochClock for FixedClock {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct PostCall {
     url: String,
     form: BTreeMap<String, String>,
@@ -122,12 +123,12 @@ pub(super) struct ScriptedPost {
 }
 
 impl TokenEndpointPost for ScriptedPost {
-    async fn post_form(
+    fn post_form(
         &self,
         url: &str,
         form: &BTreeMap<String, String>,
         headers: &BTreeMap<String, String>,
-    ) -> Option<TokenResponse> {
+    ) -> impl Future<Output = Option<TokenResponse>> + Send {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -136,11 +137,11 @@ impl TokenEndpointPost for ScriptedPost {
                 form: form.clone(),
                 headers: headers.clone(),
             });
-        self.answer.clone()
+        ready(self.answer.clone())
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct PersistCall {
     user_id: String,
     server_id: String,
@@ -157,7 +158,10 @@ pub(super) struct RecordingPersist {
 }
 
 impl CredentialPersist for RecordingPersist {
-    async fn persist(&self, request: &PersistRequest<'_>) -> Result<(), TokenStoreUnavailable> {
+    fn persist(
+        &self,
+        request: &PersistRequest<'_>,
+    ) -> impl Future<Output = Result<(), TokenStoreUnavailable>> + Send {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -170,7 +174,7 @@ impl CredentialPersist for RecordingPersist {
                 scopes: request.scopes.map(<[String]>::to_vec),
                 identity_binding_proof: request.identity_binding_proof.map(str::to_owned),
             });
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -182,7 +186,7 @@ pub(super) enum ValidatorAnswer {
     Denied,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct ValidatorCall {
     user_id: Option<String>,
     grant_type: String,
@@ -190,7 +194,7 @@ pub(super) struct ValidatorCall {
     refresh_token: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct ProofCall {
     user_id: String,
     server_id: String,
@@ -220,10 +224,10 @@ impl OauthBindingPort for ScriptedBinding {
     type Ownership = RefreshOwnership;
     type Denied = BindingDenied;
 
-    async fn enforce(
+    fn enforce(
         &self,
         request: &EnforceRequest<'_, MCPServer, RefreshOwnership>,
-    ) -> Result<Option<String>, BindingDenied> {
+    ) -> impl Future<Output = Result<Option<String>, BindingDenied>> + Send {
         let refresh_token = match request.ownership {
             Some(RefreshOwnership::Presented(token)) => Some(token.expose_secret().to_owned()),
             Some(RefreshOwnership::Proven) | None => None,
@@ -243,7 +247,7 @@ impl OauthBindingPort for ScriptedBinding {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(ValidatorAnswer::None);
-        match answer {
+        ready(match answer {
             ValidatorAnswer::Proof { proof } => Ok(Some(proof)),
             ValidatorAnswer::None => Ok(None),
             ValidatorAnswer::Denied => Err(BindingDenied {
@@ -251,15 +255,15 @@ impl OauthBindingPort for ScriptedBinding {
                 description: "the scripted validator denied the refresh".to_owned(),
                 server_id: request.server.fields.server_id.clone(),
             }),
-        }
+        })
     }
 
-    async fn proof_matches(
+    fn proof_matches(
         &self,
         server: &MCPServer,
         user_id: &str,
         stored_proof: Option<&str>,
-    ) -> bool {
+    ) -> impl Future<Output = bool> + Send {
         self.proof_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -268,10 +272,12 @@ impl OauthBindingPort for ScriptedBinding {
                 server_id: server.fields.server_id.clone(),
                 proof: stored_proof.map(str::to_owned),
             });
-        self.matches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or(false)
+        ready(
+            self.matches
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop_front()
+                .unwrap_or(false),
+        )
     }
 }

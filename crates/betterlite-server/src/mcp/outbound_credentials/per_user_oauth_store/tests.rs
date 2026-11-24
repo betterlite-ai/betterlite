@@ -23,7 +23,7 @@ use http::header::ACCEPT;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::task::JoinSet;
-use tokio::time::{sleep, timeout};
+use tokio::time::timeout;
 
 use super::adapters::{DbCredentialPersist, DbCredentialReader, PooledTokenPost, refresh_request};
 use super::chain::{SharedBinding, StoreBuilder as _};
@@ -38,10 +38,10 @@ use crate::mcp::outbound_credentials::{
     iso_to_epoch,
 };
 use support::{
-    DEADLINE, FailingRows, FakeRows, FixedWallClock, RecordingBinding, answer_with_array,
-    answer_with_object, answer_with_server_error, base_time, chain_fixture, expired_credential,
-    exposed, grant, lazy_fixture, lazy_token, oauth_server, pooled_client, reader_fixture,
-    sealed_byok, serving_token_endpoint, test_cipher,
+    ChainWiring, DEADLINE, FailingRows, FakeRows, FixedWallClock, RecordingBinding,
+    answer_with_array, answer_with_object, answer_with_server_error, base_time, chain_fixture,
+    expired_credential, exposed, grant, lazy_fixture, lazy_token, oauth_server, pooled_client,
+    reader_fixture, sealed_byok, serving_token_endpoint, test_cipher,
 };
 
 mod support;
@@ -458,7 +458,12 @@ async fn store_shared_binding_delegates_enforce_and_the_proof_check() {
 
 #[tokio::test]
 async fn store_lazy_builds_a_chain_on_the_first_fetch() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Local,
+    );
     let fetched = fixture.store.fetch("user", "srv").await.unwrap().unwrap();
     assert_eq!(fetched.access_token, "fresh");
     assert_eq!(fixture.builds.load(Ordering::Relaxed), 1);
@@ -474,7 +479,12 @@ async fn store_lazy_builds_a_chain_on_the_first_fetch() {
 
 #[tokio::test]
 async fn store_lazy_keeps_a_redis_chain() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, true);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Redis,
+    );
     drop(fixture.store.fetch("user", "srv").await.unwrap());
     drop(fixture.store.fetch("user", "srv").await.unwrap());
     assert_eq!(fixture.builds.load(Ordering::Relaxed), 1);
@@ -483,7 +493,12 @@ async fn store_lazy_keeps_a_redis_chain() {
 
 #[tokio::test]
 async fn store_lazy_replaces_a_local_chain_once_redis_is_available() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Local,
+    );
     drop(fixture.store.fetch("user", "srv").await.unwrap());
     assert_eq!(fixture.builds.load(Ordering::Relaxed), 1);
     fixture.redis.store(true, Ordering::Relaxed);
@@ -500,7 +515,12 @@ async fn store_lazy_replaces_a_local_chain_once_redis_is_available() {
 
 #[tokio::test]
 async fn store_lazy_waits_for_an_in_flight_local_fetch_before_replacing_the_chain() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Local,
+    );
     fixture.chain.hold_first.store(true, Ordering::SeqCst);
     let started = Arc::clone(&fixture.chain.started);
     let release = Arc::clone(&fixture.chain.release);
@@ -513,12 +533,11 @@ async fn store_lazy_waits_for_an_in_flight_local_fetch_before_replacing_the_chai
     fixture.builder_redis.store(true, Ordering::Relaxed);
     let second = shared.fetch("user", "srv");
     tokio::pin!(second);
-    let completed_early = tokio::select! {
-        result = &mut second => Some(result),
-        () = sleep(Duration::from_millis(20)) => None,
-    };
+    let completed_early = timeout(Duration::from_millis(20), &mut second)
+        .await
+        .is_ok();
     assert!(
-        completed_early.is_none(),
+        !completed_early,
         "a fetch arriving during the transition waits for the in-flight local fetch"
     );
     assert_eq!(fixture.builds.load(Ordering::Relaxed), 1);
@@ -532,7 +551,12 @@ async fn store_lazy_waits_for_an_in_flight_local_fetch_before_replacing_the_chai
 
 #[tokio::test]
 async fn store_lazy_releases_a_cancelled_local_fetch() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Local,
+    );
     fixture.chain.hold_first.store(true, Ordering::SeqCst);
     let started = Arc::clone(&fixture.chain.started);
     let shared = Arc::new(fixture.store);
@@ -559,7 +583,12 @@ async fn store_lazy_releases_a_cancelled_local_fetch() {
 
 #[tokio::test]
 async fn store_lazy_invalidate_builds_a_chain_when_none_exists() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Local,
+    );
     fixture.store.invalidate("user", "srv").await;
     assert_eq!(fixture.builds.load(Ordering::Relaxed), 1);
     assert_eq!(fixture.chain.invalidations.lock().unwrap().len(), 1);
@@ -567,7 +596,12 @@ async fn store_lazy_invalidate_builds_a_chain_when_none_exists() {
 
 #[tokio::test]
 async fn store_lazy_invalidate_releases_its_local_fetch() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Local,
+    );
     fixture.store.invalidate("user", "srv").await;
     fixture.redis.store(true, Ordering::Relaxed);
     fixture.builder_redis.store(true, Ordering::Relaxed);
@@ -582,7 +616,12 @@ async fn store_lazy_invalidate_releases_its_local_fetch() {
 
 #[tokio::test]
 async fn store_lazy_exposes_the_redis_chain_once_built() {
-    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, true);
+    let fixture = lazy_fixture(
+        None,
+        Some(lazy_token("fresh", None)),
+        true,
+        ChainWiring::Redis,
+    );
     assert!(fixture.store.redis_store().await.is_none());
     drop(fixture.store.fetch("user", "srv").await.unwrap());
     assert!(fixture.store.redis_store().await.is_some());
@@ -594,7 +633,7 @@ async fn store_lazy_fetch_returns_none_and_invalidates_on_an_enforce_mismatch() 
         Some(oauth_server(Some("enforce"))),
         Some(lazy_token("fresh", Some("other-user"))),
         false,
-        false,
+        ChainWiring::Local,
     );
     let fetched = fixture.store.fetch("user", "srv").await.unwrap();
     assert!(fetched.is_none());
@@ -608,7 +647,7 @@ async fn store_lazy_fetch_returns_the_token_when_the_proof_matches() {
         Some(oauth_server(Some("enforce"))),
         Some(lazy_token("fresh", Some("user-proof"))),
         true,
-        false,
+        ChainWiring::Local,
     );
     let fetched = fixture.store.fetch("user", "srv").await.unwrap().unwrap();
     assert_eq!(fetched.access_token, "fresh");
@@ -627,7 +666,7 @@ async fn store_lazy_fetch_returns_the_token_for_unknown_unbound_and_audit_server
         server,
         Some(lazy_token("fresh", Some("other-user"))),
         false,
-        false,
+        ChainWiring::Local,
     );
     let fetched = fixture.store.fetch("user", "srv").await.unwrap().unwrap();
     assert_eq!(fetched.access_token, "fresh");

@@ -2,20 +2,22 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
+use std::future::{Future, ready};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use betterlite_db::mcp_stored_contracts::JsonValue;
+use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
+use betterlite_db::mcp_stored_contracts::{JsonValue, MCPAuth, MCPTokenEndpointAuthMethod};
 use betterlite_db::oauth_token_resolution::ports::TokenResponse;
 use betterlite_db::oauth_token_resolution::{EnforceRequest, OauthBindingPort};
 use betterlite_mcp::oauth_identity_binding::port_types::{
     BindingDenied, RefreshOwnership, RejectionCode,
 };
-use betterlite_mcp::server_record::MCPServer;
+use betterlite_mcp::server_record::binding::{BindingMode, CallerField};
+use betterlite_mcp::server_record::{MCPOAuthIdentityBinding, MCPServer, SecretCredential};
 use chrono::DateTime;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 
 use super::grant_body::{parse_expires_in, parse_scopes, read_grant_body};
 use super::ports::{
@@ -69,18 +71,18 @@ impl FakePost {
 }
 
 impl TokenEndpointPost for FakePost {
-    async fn post_form(
+    fn post_form(
         &self,
         url: &str,
         form: &BTreeMap<String, String>,
         headers: &BTreeMap<String, String>,
-    ) -> Option<TokenResponse> {
+    ) -> impl Future<Output = Option<TokenResponse>> + Send {
         self.calls.lock().unwrap().push(PostCall {
             url: url.to_owned(),
             form: form.clone(),
             headers: headers.clone(),
         });
-        self.answer.clone()
+        ready(self.answer.clone())
     }
 }
 
@@ -107,7 +109,10 @@ impl FakePersist {
 }
 
 impl CredentialPersist for FakePersist {
-    async fn persist(&self, request: &PersistRequest<'_>) -> Result<(), TokenStoreUnavailable> {
+    fn persist(
+        &self,
+        request: &PersistRequest<'_>,
+    ) -> impl Future<Output = Result<(), TokenStoreUnavailable>> + Send {
         self.calls.lock().unwrap().push(PersistRecord {
             user_id: request.user_id.to_owned(),
             server_id: request.server_id.to_owned(),
@@ -117,10 +122,11 @@ impl CredentialPersist for FakePersist {
             scopes: request.scopes.map(<[String]>::to_vec),
             identity_binding_proof: request.identity_binding_proof.map(str::to_owned),
         });
-        match &self.failure {
-            Some(error) => Err(error.clone()),
-            None => Ok(()),
-        }
+        ready(
+            self.failure
+                .as_ref()
+                .map_or(Ok(()), |error| Err(error.clone())),
+        )
     }
 }
 
@@ -155,30 +161,32 @@ impl OauthBindingPort for FakeBinding {
     type Ownership = RefreshOwnership;
     type Denied = BindingDenied;
 
-    async fn enforce(
+    fn enforce(
         &self,
         request: &EnforceRequest<'_, MCPServer, RefreshOwnership>,
-    ) -> Result<Option<String>, BindingDenied> {
+    ) -> impl Future<Output = Result<Option<String>, BindingDenied>> + Send {
         self.calls.lock().unwrap().push(EnforceRecord {
             user_id: request.user_id.map(str::to_owned),
             grant_type: request.grant_type.to_owned(),
             ownership: presented(request.ownership),
             response: request.token_response.clone(),
         });
-        self.outcomes
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or(Ok(None))
+        ready(
+            self.outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(None)),
+        )
     }
 
-    async fn proof_matches(
+    fn proof_matches(
         &self,
         _server: &MCPServer,
         _user_id: &str,
         _stored_proof: Option<&str>,
-    ) -> bool {
-        true
+    ) -> impl Future<Output = bool> + Send {
+        ready(true)
     }
 }
 
@@ -192,24 +200,32 @@ impl EpochClock for FixedClock {
 
 fn oauth_server_making(
     token_url: Option<&str>,
-    auth_method: Option<&str>,
+    auth_method: Option<MCPTokenEndpointAuthMethod>,
     binding_mode: Option<&str>,
     client_secret: Option<&str>,
 ) -> Arc<MCPServer> {
-    let binding = binding_mode
-        .map(|mode| json!({"mode": mode, "issuer": "https://idp.test", "audiences": ["aud"]}));
-    let value = json!({
-        "server_id": "srv",
-        "name": "Server",
-        "transport": "http",
-        "auth_type": "oauth2",
-        "client_id": "client",
-        "client_secret": client_secret,
-        "token_url": token_url,
-        "token_endpoint_auth_method": auth_method,
-        "oauth_identity_binding": binding,
+    let mut server: MCPServer =
+        serde_json::from_str(r#"{"server_id":"srv","name":"Server","transport":"http"}"#).unwrap();
+    server.fields.auth_type = Some(MCPAuth::Oauth2);
+    server.fields.client_id = Some("client".to_owned());
+    server.fields.token_url = token_url.map(str::to_owned);
+    server.fields.token_endpoint_auth_method = auth_method;
+    server.fields.client_secret = client_secret
+        .map(|secret| SecretCredential(StoredSecret(SecretString::from(secret.to_owned()))));
+    server.fields.oauth_identity_binding = binding_mode.map(|mode| MCPOAuthIdentityBinding {
+        mode: if mode == "audit" {
+            BindingMode::Audit
+        } else {
+            BindingMode::Enforce
+        },
+        issuer: "https://idp.test".to_owned(),
+        jwks_url: None,
+        audiences: vec!["aud".to_owned()],
+        principal_claim: "email".to_owned(),
+        caller_field: CallerField::UserEmail,
+        require_email_verified: true,
     });
-    Arc::new(serde_json::from_value(value).unwrap())
+    Arc::new(server)
 }
 
 fn oauth_server(token_url: Option<&str>, binding_mode: Option<&str>) -> Arc<MCPServer> {
@@ -337,7 +353,7 @@ async fn a_server_without_a_token_url_returns_none(#[case] token_url: Option<&st
 async fn a_misconfigured_client_auth_returns_none_before_the_binding_check() {
     let server = oauth_server_making(
         Some("https://idp.test/token"),
-        Some("client_secret_basic"),
+        Some(MCPTokenEndpointAuthMethod::ClientSecretBasic),
         Some("enforce"),
         None,
     );
@@ -421,7 +437,7 @@ fn a_client_auth_body_key_wins_over_the_grant_keys() {
 async fn the_configured_client_secret_basic_becomes_an_authorization_header() {
     let server = oauth_server_making(
         Some("https://idp.test/token"),
-        Some("client_secret_basic"),
+        Some(MCPTokenEndpointAuthMethod::ClientSecretBasic),
         None,
         Some("secret"),
     );
@@ -679,22 +695,7 @@ async fn a_persist_failure_is_returned_to_the_caller() {
 
 #[test]
 fn parse_expires_in_follows_python_int_rules() {
-    assert_eq!(parse_expires_in(&JsonValue::Bool(true)), None);
-    assert_eq!(parse_expires_in(&JsonValue::Bool(false)), None);
-    assert_eq!(parse_expires_in(&JsonValue::Null), None);
-    assert_eq!(parse_expires_in(&JsonValue::Array(Vec::new())), None);
-    assert_eq!(parse_expires_in(&JsonValue::Object(BTreeMap::new())), None);
     assert_eq!(parse_expires_in(&integer(3_600)), Some(3_600));
-    assert_eq!(
-        parse_expires_in(&JsonValue::Number(
-            serde_json::Number::from_f64(3_600.0).unwrap()
-        )),
-        None
-    );
-    assert_eq!(
-        parse_expires_in(&JsonValue::Number(serde_json::Number::from(u64::MAX))),
-        None
-    );
     assert_eq!(parse_expires_in(&text("3600")), Some(3_600));
     assert_eq!(parse_expires_in(&text(" +1_0 ")), Some(10));
     assert_eq!(parse_expires_in(&text("-7")), Some(-7));
@@ -705,6 +706,25 @@ fn parse_expires_in_follows_python_int_rules() {
     assert_eq!(parse_expires_in(&text("_1")), None);
     assert_eq!(parse_expires_in(&text("1_")), None);
     assert_eq!(parse_expires_in(&text("  ")), None);
+}
+
+#[test]
+fn parse_expires_in_returns_none_for_non_integer_json() {
+    assert_eq!(parse_expires_in(&JsonValue::Bool(true)), None);
+    assert_eq!(parse_expires_in(&JsonValue::Bool(false)), None);
+    assert_eq!(parse_expires_in(&JsonValue::Null), None);
+    assert_eq!(parse_expires_in(&JsonValue::Array(Vec::new())), None);
+    assert_eq!(parse_expires_in(&JsonValue::Object(BTreeMap::new())), None);
+    assert_eq!(
+        parse_expires_in(&JsonValue::Number(
+            serde_json::Number::from_f64(3_600.0).unwrap()
+        )),
+        None
+    );
+    assert_eq!(
+        parse_expires_in(&JsonValue::Number(serde_json::Number::from(u64::MAX))),
+        None
+    );
 }
 
 #[test]

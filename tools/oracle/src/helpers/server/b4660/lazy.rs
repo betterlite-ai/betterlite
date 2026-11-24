@@ -92,7 +92,8 @@ impl StoreBuilder for ScriptedBuilder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(uses_redis);
-        let store: Arc<dyn InvalidatableOAuthTokenStore> = Arc::clone(&self.store);
+        let chain: Arc<ChainStore> = Arc::clone(&self.store);
+        let store: Arc<dyn InvalidatableOAuthTokenStore> = chain;
         BuiltStore { store, uses_redis }
     }
 }

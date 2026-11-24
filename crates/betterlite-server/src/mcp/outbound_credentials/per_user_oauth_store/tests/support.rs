@@ -12,13 +12,16 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::mcp::table_access::types::McpTableError;
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use betterlite_db::mcp_stored_contracts::MCPAuth;
+use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use betterlite_db::mcp_user_credentials::rows::{CredentialRows, CredentialScope};
 use betterlite_db::oauth_token_resolution::ports::TokenResponse;
 use betterlite_db::oauth_token_resolution::{EnforceRequest, OauthBindingPort};
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_mcp::oauth_identity_binding::port_types::{BindingDenied, RefreshOwnership};
-use betterlite_mcp::server_record::MCPServer;
+use betterlite_mcp::server_record::binding::{BindingMode, CallerField};
+use betterlite_mcp::server_record::{MCPOAuthIdentityBinding, MCPServer, SecretCredential};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{
     Algorithm, CipherSettings, OsNonces, StoredCipher, StoredValue,
@@ -26,8 +29,8 @@ use betterlite_secrets::secret_codec::{
 use chrono::{DateTime, Utc};
 use http::StatusCode;
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::json;
 use tokio::net::TcpListener;
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
 
 use super::super::super::authz_code_refresher::ports::{
@@ -209,19 +212,28 @@ fn credential(proof: Option<&str>) -> CredentialPayload {
 }
 
 pub(super) fn oauth_server(binding_mode: Option<&str>) -> Arc<MCPServer> {
-    let binding = binding_mode
-        .map(|mode| json!({"mode": mode, "issuer": "https://idp.test", "audiences": ["aud"]}));
-    let value = json!({
-        "server_id": "srv",
-        "name": "Server",
-        "transport": "http",
-        "auth_type": "oauth2",
-        "client_id": "client",
-        "client_secret": "secret",
-        "token_url": "https://idp.test/token",
-        "oauth_identity_binding": binding,
+    let mut server: MCPServer =
+        serde_json::from_str(r#"{"server_id":"srv","name":"Server","transport":"http"}"#).unwrap();
+    server.fields.auth_type = Some(MCPAuth::Oauth2);
+    server.fields.client_id = Some("client".to_owned());
+    server.fields.token_url = Some("https://idp.test/token".to_owned());
+    server.fields.client_secret = Some(SecretCredential(StoredSecret(SecretString::from(
+        "secret".to_owned(),
+    ))));
+    server.fields.oauth_identity_binding = binding_mode.map(|mode| MCPOAuthIdentityBinding {
+        mode: if mode == "audit" {
+            BindingMode::Audit
+        } else {
+            BindingMode::Enforce
+        },
+        issuer: "https://idp.test".to_owned(),
+        jwks_url: None,
+        audiences: vec!["aud".to_owned()],
+        principal_claim: "email".to_owned(),
+        caller_field: CallerField::UserEmail,
+        require_email_verified: true,
     });
-    Arc::new(serde_json::from_value(value).unwrap())
+    Arc::new(server)
 }
 
 pub(super) struct FakeLookup {
@@ -246,25 +258,25 @@ impl OauthBindingPort for RecordingBinding {
     type Ownership = RefreshOwnership;
     type Denied = BindingDenied;
 
-    async fn enforce(
+    fn enforce(
         &self,
         _request: &EnforceRequest<'_, MCPServer, RefreshOwnership>,
-    ) -> Result<Option<String>, BindingDenied> {
-        Ok(self.proof.clone())
+    ) -> impl Future<Output = Result<Option<String>, BindingDenied>> + Send {
+        ready(Ok(self.proof.clone()))
     }
 
-    async fn proof_matches(
+    fn proof_matches(
         &self,
         _server: &MCPServer,
         _user_id: &str,
         stored_proof: Option<&str>,
-    ) -> bool {
+    ) -> impl Future<Output = bool> + Send {
         self.checks.fetch_add(1, Ordering::Relaxed);
         self.proofs
             .lock()
             .unwrap()
             .push(stored_proof.map(str::to_owned));
-        self.matches
+        ready(self.matches)
     }
 }
 
@@ -289,14 +301,14 @@ pub(super) struct RecordingPost {
 }
 
 impl TokenEndpointPost for RecordingPost {
-    async fn post_form(
+    fn post_form(
         &self,
         _url: &str,
         _form: &BTreeMap<String, String>,
         _headers: &BTreeMap<String, String>,
-    ) -> Option<TokenResponse> {
+    ) -> impl Future<Output = Option<TokenResponse>> + Send {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        self.answer.clone()
+        ready(self.answer.clone())
     }
 }
 
@@ -305,9 +317,12 @@ pub(super) struct RecordingPersist {
 }
 
 impl CredentialPersist for RecordingPersist {
-    async fn persist(&self, _request: &PersistRequest<'_>) -> Result<(), TokenStoreUnavailable> {
+    fn persist(
+        &self,
+        _request: &PersistRequest<'_>,
+    ) -> impl Future<Output = Result<(), TokenStoreUnavailable>> + Send {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -388,13 +403,17 @@ impl RefreshCoordinator for RecordingCoordinator {
     }
 }
 
+type CacheEntries = BTreeMap<String, (String, Option<Duration>)>;
+
+type MaybeTtl = Option<Option<Duration>>;
+
 #[derive(Clone, Default)]
 pub(super) struct FakeCache {
-    entries: Arc<Mutex<BTreeMap<String, (String, Option<Duration>)>>>,
+    entries: Arc<Mutex<CacheEntries>>,
 }
 
 impl FakeCache {
-    pub(super) fn ttl_of(&self, key: &str) -> Option<Option<Duration>> {
+    pub(super) fn ttl_of(&self, key: &str) -> MaybeTtl {
         self.entries
             .lock()
             .unwrap()
@@ -530,8 +549,8 @@ pub(super) struct FakeStore {
     token: Option<OAuthToken>,
     pub(super) fetches: AtomicUsize,
     pub(super) invalidations: Mutex<Vec<String>>,
-    pub(super) started: Arc<tokio::sync::Notify>,
-    pub(super) release: Arc<tokio::sync::Notify>,
+    pub(super) started: Arc<Notify>,
+    pub(super) release: Arc<Notify>,
     pub(super) hold_first: AtomicBool,
 }
 
@@ -608,23 +627,29 @@ pub(super) fn lazy_token(access: &str, proof: Option<&str>) -> OAuthToken {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum ChainWiring {
+    Local,
+    Redis,
+}
+
 pub(super) fn lazy_fixture(
     server: Option<Arc<MCPServer>>,
     token: Option<OAuthToken>,
     matches: bool,
-    uses_redis: bool,
+    wiring: ChainWiring,
 ) -> LazyFixture {
     let chain = Arc::new(FakeStore {
         token,
         fetches: AtomicUsize::new(0),
         invalidations: Mutex::new(Vec::new()),
-        started: Arc::new(tokio::sync::Notify::new()),
-        release: Arc::new(tokio::sync::Notify::new()),
+        started: Arc::new(Notify::new()),
+        release: Arc::new(Notify::new()),
         hold_first: AtomicBool::new(false),
     });
     let builds = Arc::new(AtomicUsize::new(0));
     let redis = Arc::new(AtomicBool::new(false));
-    let builder_redis = Arc::new(AtomicBool::new(uses_redis));
+    let builder_redis = Arc::new(AtomicBool::new(matches!(wiring, ChainWiring::Redis)));
     let store = LazyPerUserOAuthTokenStore::new(
         Arc::new(FakeLookup { server }),
         Arc::new(RecordingBinding {
