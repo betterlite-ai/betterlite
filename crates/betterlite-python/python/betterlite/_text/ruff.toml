@@ -1,0 +1,5 @@
+extend = "../../../ruff.toml"
+src = ["../.."]
+
+[lint.per-file-ignores]
+"*.py" = ["A002", "FBT001", "FBT002", "PLR0913", "PLR0917"] # LiteLLM's text_completion and moderation keep its 22 parameters, its input and echo/stream names and their bool defaults

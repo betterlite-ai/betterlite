@@ -1,0 +1,44 @@
+kind: helper
+name: batch-limit-descriptors-project-io-descriptors
+call:
+  batch_limit_descriptors:
+    settings: {}
+    principal:
+      project_id: proj-1
+      project_metadata:
+        model_itpm_limit:
+          gpt: 100
+        model_otpm_limit:
+          gpt: 50
+    calls:
+      - function: project_has_io_limits
+      - function: create_project_io_descriptors
+        per_model_usage:
+          claude:
+            total_tokens: 7
+          gpt:
+            total_tokens: 10
+            output_tokens: 3
+      - function: has_applicable_limits
+        descriptors:
+          - key: api_key
+            value: key-batch
+            rate_limit:
+              requests_per_unit: 5
+              tokens_per_unit: null
+              max_parallel_requests: null
+              window_size: 60
+      - function: has_applicable_limits
+        descriptors:
+          - key: api_key
+            value: key-batch
+            rate_limit:
+              requests_per_unit: null
+              tokens_per_unit: null
+              max_parallel_requests: null
+              window_size: 60
+          - key: user
+            value: user-1
+            rate_limit: null
+env: {}
+compare: {ignore: []}

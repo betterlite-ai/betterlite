@@ -1,0 +1,24 @@
+kind: helper
+name: model-info-scope-unrestricted-excludes-team
+call:
+  model_info_scope:
+    function: grant_resolution
+    model_list:
+      - model_name: gpt-4o
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: global-1}
+      - model_name: team-gpt
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: team-1, team_id: team-alpha, team_public_model_name: team-gpt}
+    model_group_alias: {}
+    grant: []
+    all_models: []
+    key_models: []
+    user: null
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
+env: {}
+compare: {ignore: []}
