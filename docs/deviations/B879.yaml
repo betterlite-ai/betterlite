@@ -1,0 +1,9 @@
+task: B879
+deviations: []
+kept_bugs:
+  - what: A non-outage failure of the request-scoped organization lookup (a cache read error, a row that fails validation, or no database at all) returns None and the request continues without the organization ceiling; only a debug line records it.
+    why: The task keeps LiteLLM's wrapper as it is, and a working setup relies on requests continuing when the organization lookup hits an unrelated fault instead of failing authentication.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4219-L4221
+  - what: When the org_id cache write of an alias lookup fails, the call answers 500 but the org_alias entry written just before it stays cached, so the next lookup by that alias is served from the cache while org_id lookups still miss.
+    why: The task asks for this write order and LiteLLM has no rollback; a setup that hit a transient cache failure already relies on the next alias lookup being served.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3591-L3614

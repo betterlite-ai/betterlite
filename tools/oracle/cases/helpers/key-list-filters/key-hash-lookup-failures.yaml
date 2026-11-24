@@ -1,0 +1,61 @@
+kind: helper
+name: key-list-filters-key-hash-lookup-failures
+call:
+  key_list_filters:
+    calls:
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: sk-hash-1}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: sk-hash-1}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+        key_row: null
+        key_fails: true
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: sk-hash-1}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+        key_row: {token: sk-hash-1, user_id: u1}
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: sk-hash-1}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+        key_row: {token: SK-HASH-1, user_id: u1}
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: sk-hash-1}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+        key_row: {token: sk-hash-1, user_id: u2}
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: u2, team_id: t9, organization_id: null, key_alias: null, key_hash: sk-hash-1}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: proxy_admin}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: sk-hash-1}
+        user_row: null
+        key_row: null
+        key_fails: true
+env: {}
+compare: {ignore: []}

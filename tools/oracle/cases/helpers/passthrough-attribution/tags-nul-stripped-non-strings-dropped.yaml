@@ -1,0 +1,44 @@
+kind: helper
+name: tags-nul-stripped-non-strings-dropped
+call:
+  b3630:
+    routes: []
+    tags:
+      - metadata:
+          tags:
+            - "a\u0000b"
+            - 7
+            - "c\u0000"
+      - metadata:
+          tags:
+            - "\u0000"
+      - metadata:
+          tags:
+            - "\u0000\u0000"
+            - "keep"
+      - metadata:
+          tags:
+            - 1
+            - 2
+          user_api_key_auth_metadata:
+            tags:
+              - "\u0000key\u0000"
+      - metadata:
+          user_api_key_auth_metadata:
+            tags:
+              - "ok\u0000"
+      - metadata:
+          tags:
+            - "one\u0000two\u0000three"
+      - metadata:
+          tags:
+            - null
+            - ""
+            - false
+    models: []
+    ids: []
+    costing: []
+    speeds: []
+env: {}
+compare:
+  ignore: []

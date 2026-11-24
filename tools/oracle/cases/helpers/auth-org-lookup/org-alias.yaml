@@ -1,0 +1,39 @@
+kind: helper
+name: auth-org-lookup-org-alias
+call:
+  auth_org_lookup:
+    function: org_alias
+    database: true
+    target: acme
+    in_memory_ttl: 5.0
+    alias_rows:
+      - organization_id: o1
+        organization_alias: acme
+        budget_id: b1
+        models: [gpt-4o]
+        created_by: ops
+        updated_by: ops
+        litellm_budget_table: {budget_id: b1, max_budget: 10.5, allowed_models: [gpt-4o]}
+    steps:
+      - {now: 100.0, fail: []}
+      - {now: 101.0, fail: []}
+calls:
+  # a cached alias answers an outage without touching the table
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      cached_org:
+        organization_id: o1
+        organization_alias: acme
+        budget_id: b1
+        models: [gpt-4o]
+        created_by: ops
+        updated_by: ops
+        litellm_budget_table: {budget_id: b1, max_budget: 10.5, allowed_models: [gpt-4o]}
+      steps:
+        - {now: 100.0, fail: [outage]}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}
