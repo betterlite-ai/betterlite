@@ -12,10 +12,13 @@ from typing_extensions import override
 HOST: Final = "127.0.0.1"
 STATUS_OK: Final = 200
 STATUS_BAD_REQUEST: Final = 400
+STATUS_UNAUTHORIZED: Final = 401
 GOOD_KEY: Final = "test-key"
 BAD_KEY: Final = "bad-key"
+GENERIC_BAD_KEY: Final = "generic-bad-key"
 MODEL: Final = "gemini-2.5-flash"
-PREFIXED_MODEL: Final = f"gemini/{MODEL}"
+PROVIDER: Final = "gemini"
+PREFIXED_MODEL: Final = f"{PROVIDER}/{MODEL}"
 API_BASE_SUFFIX: Final = "/v1beta"
 GENERATE_PATH: Final = f"{API_BASE_SUFFIX}/models/{MODEL}:generateContent"
 STREAM_PATH: Final = f"{API_BASE_SUFFIX}/models/{MODEL}:streamGenerateContent?alt=sse"
@@ -64,6 +67,7 @@ EVENTS: Final[list[dict[str, JsonValue]]] = [
     },
 ]
 ERROR_MESSAGE: Final = "API key not valid. Please pass a valid API key."
+GENERIC_ERROR_MESSAGE: Final = "Invalid JSON payload received."
 API_KEY_HEADER: Final = "x-goog-api-key"
 
 CallArgument: TypeAlias = JsonValue
@@ -122,6 +126,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.owner.record(self.path, dict(self.headers.items()), body)
         if self.headers.get(API_KEY_HEADER) == BAD_KEY:
             self.reply_error(STATUS_BAD_REQUEST, ERROR_MESSAGE)
+            return
+        if self.headers.get(API_KEY_HEADER) == GENERIC_BAD_KEY:
+            self.reply_error(STATUS_BAD_REQUEST, GENERIC_ERROR_MESSAGE)
             return
         if self.path == STREAM_PATH:
             self.stream()

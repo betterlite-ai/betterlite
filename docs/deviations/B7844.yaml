@@ -24,4 +24,7 @@ deviations:
   - what: A file value in contents raises a ValueError from the payload builder instead of being sent to the provider.
     why: A generate-content request has no file part; B6040 encodes files as markers with their bytes beside the text, and the native call refuses those markers before any request is made.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L334-L357
-kept_bugs: []
+kept_bugs:
+  - what: "A provider 400 whose body is Google's invalid-key message raises BadRequestError on the sync generate-content entry points but AuthenticationError on the async ones, because only the async functions call get_llm_provider before exception_type runs and so reach the Vertex branch's API-key phrase rule."
+    why: A working setup catches whichever class its entry point raises, so betterlite keeps LiteLLM's split between sync and async instead of making the four functions agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L421-L424

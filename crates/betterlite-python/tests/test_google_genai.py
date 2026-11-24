@@ -15,14 +15,17 @@ from genai_server import (
     EVENTS,
     EXTRA_BODY,
     GENERATE_PATH,
+    GENERIC_BAD_KEY,
     GOOD_KEY,
     LITELLM,
     LITELLM_ASYNC,
     LITELLM_ERRORS,
     MODEL,
     PREFIXED_MODEL,
+    PROVIDER,
     SAFETY_SETTINGS,
     STATUS_BAD_REQUEST,
+    STATUS_UNAUTHORIZED,
     STREAM_PATH,
     SYSTEM_INSTRUCTION,
     TOOLS,
@@ -43,7 +46,7 @@ from betterlite._endpoints.payload import LOGGER_FN_DROPPED, CallValue
 from betterlite._endpoints.proxy import ProxyAuthProvider
 from betterlite._genai.arguments import fill_settings, session_settings
 from betterlite._genai.stream import GenaiStream
-from betterlite.exceptions import BadRequestError
+from betterlite.exceptions import AuthenticationError, BadRequestError
 from betterlite.google_genai import (
     agenerate_content,
     agenerate_content_stream,
@@ -74,6 +77,8 @@ class CommonCall(TypedDict):
 class ErrorPayload(TypedDict):
     type: str
     message: str
+    status_code: int | None
+    llm_provider: str | None
 
 
 class Defaulted(Protocol):
@@ -157,12 +162,24 @@ async def awaited_stream(result: StreamAnswer) -> GenaiStream:
             return await awaitable
 
 
-def bad_request_payload(failure: BadRequestError) -> ErrorPayload:
+def error_payload(failure: BaseException) -> ErrorPayload:
     cause = failure.__cause__
     assert cause is not None
-    payload = ERROR_PAYLOAD.validate_json(str(cause))
+    return ERROR_PAYLOAD.validate_json(str(cause))
+
+
+def bad_request_payload(failure: BadRequestError, message: str) -> ErrorPayload:
+    payload = error_payload(failure)
     assert failure.status_code == STATUS_BAD_REQUEST
-    assert "API key not valid" in payload["message"]
+    assert message in payload["message"]
+    return payload
+
+
+# only the async entry points resolve the provider before exception_type runs
+def authentication_payload(failure: AuthenticationError) -> ErrorPayload:
+    payload = error_payload(failure)
+    assert payload["status_code"] == STATUS_UNAUTHORIZED
+    assert payload["llm_provider"] == PROVIDER
     return payload
 
 
@@ -170,6 +187,11 @@ async def async_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str
     ours = await agenerate_content(**common_call(server_url))
     reference = reference_dict(await LITELLM_ASYNC.agenerate_content(**reference_call(server_url)))
     return ours, reference
+
+
+async def reference_content_async(server_url: str, key: str) -> dict[str, JsonValue]:
+    answer = await LITELLM_ASYNC.agenerate_content(**reference_call(server_url, key))
+    return reference_dict(answer)
 
 
 async def flagged_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
@@ -405,19 +427,46 @@ def test_stream_error_class() -> None:
     with GenaiServer() as server:
         with pytest.raises(BadRequestError) as caught:
             generate_content_stream(**common_call(server.url, BAD_KEY))
-        with pytest.raises(BadRequestError) as awaited:
+        with pytest.raises(AuthenticationError) as awaited:
             asyncio.run(agenerate_content_stream(**common_call(server.url, BAD_KEY)))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
             LITELLM.generate_content_stream(**reference_call(server.url, BAD_KEY))
-        with pytest.raises(LITELLM_ERRORS.BadRequestError):
+        with pytest.raises(LITELLM_ERRORS.AuthenticationError):
             asyncio.run(
                 reference_stream_async(
                     LITELLM_ASYNC.agenerate_content_stream(**reference_call(server.url, BAD_KEY))
                 )
             )
         paths = [call["path"] for call in server.calls]
-    assert bad_request_payload(caught.value)["type"] == "BadRequestError"
-    assert bad_request_payload(awaited.value)["type"] == "BadRequestError"
+    assert bad_request_payload(caught.value, "API key not valid")["type"] == "BadRequestError"
+    assert authentication_payload(awaited.value)["type"] == "AuthenticationError"
+    assert paths == [STREAM_PATH, STREAM_PATH, STREAM_PATH, STREAM_PATH]
+
+
+def test_generic_error_class() -> None:
+    with GenaiServer() as server:
+        with pytest.raises(BadRequestError) as caught:
+            generate_content_stream(**common_call(server.url, GENERIC_BAD_KEY))
+        with pytest.raises(BadRequestError) as awaited:
+            asyncio.run(agenerate_content_stream(**common_call(server.url, GENERIC_BAD_KEY)))
+        with pytest.raises(LITELLM_ERRORS.BadRequestError):
+            LITELLM.generate_content_stream(**reference_call(server.url, GENERIC_BAD_KEY))
+        with pytest.raises(LITELLM_ERRORS.BadRequestError):
+            asyncio.run(
+                reference_stream_async(
+                    LITELLM_ASYNC.agenerate_content_stream(
+                        **reference_call(server.url, GENERIC_BAD_KEY)
+                    )
+                )
+            )
+        paths = [call["path"] for call in server.calls]
+    rejected = bad_request_payload(caught.value, "Invalid JSON payload received")
+    assert rejected["type"] == "BadRequestError"
+    mapped = error_payload(awaited.value)
+    assert awaited.value.status_code == STATUS_BAD_REQUEST
+    assert mapped["status_code"] == STATUS_BAD_REQUEST
+    assert mapped["type"] == "BadRequestError"
+    assert mapped["llm_provider"] == PROVIDER
     assert paths == [STREAM_PATH, STREAM_PATH, STREAM_PATH, STREAM_PATH]
 
 
@@ -447,10 +496,15 @@ def test_error_class_and_cause() -> None:
     with GenaiServer() as server:
         with pytest.raises(BadRequestError) as caught:
             generate_content(**common_call(server.url, BAD_KEY))
+        with pytest.raises(AuthenticationError) as awaited:
+            asyncio.run(agenerate_content(**common_call(server.url, BAD_KEY)))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
             LITELLM.generate_content(**reference_call(server.url, BAD_KEY))
-    payload = bad_request_payload(caught.value)
+        with pytest.raises(LITELLM_ERRORS.AuthenticationError):
+            asyncio.run(reference_content_async(server.url, BAD_KEY))
+    payload = bad_request_payload(caught.value, "API key not valid")
     assert payload["type"] == "BadRequestError"
+    assert authentication_payload(awaited.value)["type"] == "AuthenticationError"
 
 
 def test_client_is_refused(caplog: pytest.LogCaptureFixture) -> None:
