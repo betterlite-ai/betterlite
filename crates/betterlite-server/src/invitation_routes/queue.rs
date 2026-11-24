@@ -7,11 +7,12 @@ use std::sync::Arc;
 use axum::body::to_bytes;
 use axum::extract::{Extension, Query, Request, State};
 use axum::response::Response;
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde::Deserialize;
 
-use self::request::{QueueRequest, build_request, streams};
+use self::request::{QueueRequest, build_request};
 use self::scheduled::{QueueError, failure_response, non_streaming};
 use self::stream::streamed;
 use super::Caller;
@@ -65,7 +66,7 @@ async fn process(
     let Some(router) = input.queue.router.as_ref() else {
         return Err(QueueError::NoRouter);
     };
-    if streams(data) {
+    if matches!(data.get("stream"), Some(JsonValue::Bool(true))) {
         return streamed(input, router, data).await;
     }
     non_streaming(input, router, data).await

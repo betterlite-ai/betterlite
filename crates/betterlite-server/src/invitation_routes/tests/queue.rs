@@ -331,11 +331,8 @@ async fn queue_answers_a_non_streaming_completion() {
 async fn queue_reports_a_provider_failure() {
     let completion = Arc::new(FakeCompletion::new(Reply::Failure("boom".to_owned())));
     let hook = Arc::new(FakeHook::new(None));
-    let router = queue_router(queue_state(
-        &scheduler(),
-        &completion,
-        Some(Arc::clone(&hook) as Arc<dyn QueueFailureHook>),
-    ));
+    let failure_hook: Arc<dyn QueueFailureHook> = Arc::clone(&hook);
+    let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
     let (status, _, text) = send(
         &router,
         "POST",
@@ -362,11 +359,8 @@ async fn queue_reports_a_provider_failure() {
 async fn queue_lets_the_failure_hook_replace_the_error() {
     let completion = Arc::new(FakeCompletion::new(Reply::Failure("boom".to_owned())));
     let hook = Arc::new(FakeHook::new(Some(replacement(403))));
-    let router = queue_router(queue_state(
-        &scheduler(),
-        &completion,
-        Some(Arc::clone(&hook) as Arc<dyn QueueFailureHook>),
-    ));
+    let failure_hook: Arc<dyn QueueFailureHook> = hook;
+    let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
     let (status, _, text) = send(
         &router,
         "POST",
@@ -462,11 +456,8 @@ async fn queue_reports_a_stream_failure_to_the_hook() {
     ];
     let completion = Arc::new(FakeCompletion::streaming(items));
     let hook = Arc::new(FakeHook::new(None));
-    let router = queue_router(queue_state(
-        &scheduler(),
-        &completion,
-        Some(Arc::clone(&hook) as Arc<dyn QueueFailureHook>),
-    ));
+    let failure_hook: Arc<dyn QueueFailureHook> = Arc::clone(&hook);
+    let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
     let body = r#"{"model":"m","priority":1,"messages":[],"stream":true}"#;
     let (status, headers, _) = send(
         &router,
@@ -490,11 +481,8 @@ async fn queue_lets_the_stream_hook_replace_the_failure() {
     let items = vec![Err(stream_failure())];
     let completion = Arc::new(FakeCompletion::streaming(items));
     let hook = Arc::new(FakeHook::new(Some(replacement(429))));
-    let router = queue_router(queue_state(
-        &scheduler(),
-        &completion,
-        Some(Arc::clone(&hook) as Arc<dyn QueueFailureHook>),
-    ));
+    let failure_hook: Arc<dyn QueueFailureHook> = hook;
+    let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
     let body = r#"{"model":"m","priority":1,"messages":[],"stream":true}"#;
     let (status, _, text) = send(
         &router,

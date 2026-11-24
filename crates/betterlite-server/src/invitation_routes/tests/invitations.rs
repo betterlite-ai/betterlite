@@ -647,3 +647,24 @@ async fn delete_requires_the_database() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
 }
+
+#[tokio::test]
+async fn delete_by_a_proxy_admin_skips_the_ownership_check() {
+    let (store, _, router) = setup(
+        vec![record("inv-1", "alice", "someone-else")],
+        FakeScope::new(true, false),
+    );
+    let (status, _, _) = send(
+        &router,
+        "POST",
+        "/invitation/delete",
+        r#"{"invitation_id":"inv-1"}"#,
+        Some(platform_admin()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        store.rows.lock().expect("the store lock").deleted,
+        vec!["inv-1".to_owned()]
+    );
+}

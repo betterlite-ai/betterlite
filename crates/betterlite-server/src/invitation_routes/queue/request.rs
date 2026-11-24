@@ -69,10 +69,6 @@ pub(super) fn build_request(
     Ok(())
 }
 
-pub(super) fn streams(data: &JsonMap) -> bool {
-    matches!(data.get("stream"), Some(JsonValue::Bool(true)))
-}
-
 // the generator hands its request data back as the decision tree, and the failure hook reads a JSON map
 pub(super) fn data_map(object: &JsonObject) -> JsonMap {
     let mut map = JsonMap::new();
@@ -153,23 +149,33 @@ fn write_metadata(data: &mut JsonMap, key: &KeyView, parts: &Parts, endpoint: &s
     );
     bucket.insert(
         "user_api_key_alias".to_owned(),
-        optional_text(key.key_alias.as_deref()),
+        key.key_alias
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
     );
     bucket.insert(
         "user_api_key_user_id".to_owned(),
-        optional_text(key.user_id.as_deref()),
+        key.user_id
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
     );
     bucket.insert(
         "user_api_key_team_id".to_owned(),
-        optional_text(key.team_id.as_deref()),
+        key.team_id
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
     );
     bucket.insert(
         "user_api_key_object_permission_id".to_owned(),
-        optional_text(key.object_permission_id.as_deref()),
+        key.object_permission_id
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
     );
     bucket.insert(
         "user_api_key_team_object_permission_id".to_owned(),
-        optional_text(key.team_object_permission_id.as_deref()),
+        key.team_object_permission_id
+            .as_deref()
+            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
     );
     bucket.insert(
         "endpoint".to_owned(),
@@ -194,10 +200,6 @@ fn stripped_key_metadata(value: &JsonValue) -> JsonValue {
     };
     let stripped = strip_callback_config(&metadata);
     serde_json::to_value(&stripped).unwrap_or_else(|_error| JsonValue::Object(JsonMap::new()))
-}
-
-fn optional_text(value: Option<&str>) -> JsonValue {
-    value.map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned()))
 }
 
 fn sanitized_headers(parts: &Parts) -> JsonMap {
@@ -243,7 +245,10 @@ fn request_url(parts: &Parts) -> String {
     let scheme = parts.uri.scheme_str().unwrap_or("http");
     let authority = parts.uri.authority().map_or_else(
         || {
-            header_value(&parts.headers, HOST)
+            parts
+                .headers
+                .get(HOST)
+                .and_then(|value| value.to_str().ok())
                 .unwrap_or_default()
                 .to_owned()
         },
@@ -257,8 +262,4 @@ fn request_url(parts: &Parts) -> String {
         return path.to_owned();
     }
     format!("{scheme}://{authority}{path}")
-}
-
-fn header_value<'headers>(headers: &'headers HeaderMap, name: &str) -> Option<&'headers str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
 }

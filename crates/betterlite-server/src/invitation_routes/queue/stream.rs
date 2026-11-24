@@ -24,8 +24,7 @@ use super::request::{QueueRequest, data_map};
 use super::scheduled::{QueueError, QueuedCompletion, report, scheduler_item};
 use crate::data_generator_select::SelectDataGenerator;
 use crate::first_byte_sse::{
-    ByteStream, HookRaised, LateFailureHook, ProducedResponse, StreamedResponse,
-    open_sse_before_first_byte,
+    HookRaised, LateFailureHook, ProducedResponse, StreamedResponse, open_sse_before_first_byte,
 };
 use crate::keepalive_interval::{PingSetting, ttft_keepalive_interval};
 use crate::messages_first_chunk::answer::sse_stream_headers;
@@ -139,7 +138,7 @@ fn streaming_answer(input: &StreamedQueue, source: StreamSource) -> ProducedResp
     ProducedResponse::Streaming(StreamedResponse {
         status: StatusCode::OK,
         headers: stream_headers(),
-        body: relay(items),
+        body: stream::unfold(items, next_frame).boxed(),
     })
 }
 
@@ -159,11 +158,6 @@ fn stream_headers() -> HeaderMap {
 }
 
 type GeneratorStream = BoxStream<'static, Result<Bytes, io::Error>>;
-
-// the generator reports a failure the relay cannot carry as an io error, so the stream ends there
-fn relay(items: GeneratorStream) -> ByteStream {
-    stream::unfold(items, next_frame).boxed()
-}
 
 async fn next_frame(
     mut items: GeneratorStream,

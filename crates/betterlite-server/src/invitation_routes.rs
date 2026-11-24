@@ -34,6 +34,7 @@ const INVITE_NOT_ALLOWED: &str =
 const ORG_ADMIN_DELETE: &str = "Organization admins can only delete invitations they created.";
 const USER_UNIDENTIFIED: &str = "Unable to identify user id. Received=None";
 const FIELD_REQUIRED: &str = "Field required";
+const BODY_INVALID: &str = "the request body is not a valid invitation request";
 
 pub(crate) type Caller = Option<Extension<AuthContext>>;
 
@@ -79,7 +80,8 @@ pub fn public_routes(login: LoginPageState) -> Router {
 
 #[derive(Debug, Error)]
 pub enum InvitationRouteError {
-    #[error(transparent)]
+    // BodyError carries the FastAPI validation body itself and has no Display of its own
+    #[error("the request body is not a valid invitation request")]
     Body(BodyError),
     #[error("the query parameter invitation_id is required")]
     MissingInvitationId,
@@ -103,7 +105,7 @@ impl InvitationRouteError {
     #[must_use]
     pub fn message(&self) -> String {
         match self {
-            Self::Body(error) => error.to_string(),
+            Self::Body(_error) => BODY_INVALID.to_owned(),
             Self::MissingInvitationId => FIELD_REQUIRED.to_owned(),
             Self::Database => CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
             Self::NotAllowed { role } => {

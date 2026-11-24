@@ -133,7 +133,10 @@ async fn create_invitation(
     }
     database
         .invitations
-        .create(user_id, caller_user_id(principal))
+        .create(
+            user_id,
+            principal.user.as_ref().map(|user| user.id.as_str()),
+        )
         .await
         .map_err(InvitationRouteError::Store)
 }
@@ -169,7 +172,7 @@ async fn accept_invitation(
         .invitations
         .as_ref()
         .ok_or(InvitationRouteError::Database)?;
-    let Some(user_id) = caller_user_id(principal) else {
+    let Some(user_id) = principal.user.as_ref().map(|user| user.id.as_str()) else {
         return Err(InvitationRouteError::UserUnidentified);
     };
     database
@@ -203,7 +206,7 @@ async fn remove_invitation(
             .await
             .map_err(InvitationRouteError::Store)?
             .ok_or(InvitationRouteError::InvitationMissing)?;
-        if Some(found.created_by.as_str()) != caller_user_id(principal) {
+        if Some(found.created_by.as_str()) != principal.user.as_ref().map(|user| user.id.as_str()) {
             return Err(InvitationRouteError::OrgAdminDelete);
         }
     }
@@ -213,10 +216,6 @@ async fn remove_invitation(
         .await
         .map_err(InvitationRouteError::Store)?
         .ok_or(InvitationRouteError::InvitationMissing)
-}
-
-fn caller_user_id(principal: &Principal) -> Option<&str> {
-    principal.user.as_ref().map(|user| user.id.as_str())
 }
 
 // LiteLLM's user_api_key_dict.user_role, as the role text its errors print
