@@ -1,0 +1,6 @@
+task: B1080
+deviations:
+  - what: The failure callbacks receive an empty traceback string in FailureCall.traceback.
+    why: A Rust error carries no Python traceback, and the callback receives the error class itself, so callers that log the exception still see it; the formatted stack text that LiteLLM passes has no Rust counterpart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L215-L231
+kept_bugs: []
