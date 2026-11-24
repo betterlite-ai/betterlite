@@ -1,7 +1,14 @@
-use rmcp::transport::Transport as _;
+use std::any::TypeId;
 
+use rmcp::ServiceError;
+use rmcp::transport::{DynamicTransportError, Transport as _};
+
+use crate::client::cleanup::http_client::ResponseHead;
+use crate::client::http_transport::capture::CaptureRecord;
 use crate::client::http_transport::error::McpHttpError;
 use crate::client::sdk_transport::error::SdkError;
+use crate::client::sessions::error::SessionError;
+use crate::client::tools::result::describe_failure;
 
 use super::raw_server::{MISSING_BYTES, RawResponse, RawTestServer};
 use super::*;
@@ -196,6 +203,47 @@ async fn a_500_without_a_json_body_is_a_status_error() {
     let mut streams = enter(&mut transport).await;
     let error = streams.send(request(7, "tools/list")).await.err().unwrap();
     assert_eq!(status_of(error), 500);
+}
+
+#[test]
+fn a_transport_send_status_error_is_described_as_the_http_status_error() {
+    let head = ResponseHead {
+        status: 401,
+        headers: HeaderMap::new(),
+        capture: Some(CaptureRecord {
+            exchange: Exchange {
+                method: Method::POST,
+                url: Url::parse("http://mcp.test/mcp").unwrap(),
+                request_headers: HeaderMap::new(),
+                request_body: Bytes::new(),
+                status: 401,
+                response_headers: HeaderMap::new(),
+            },
+            preview: "denied".to_owned(),
+        }),
+    };
+    let dynamic = DynamicTransportError::from_parts(
+        "streamable-http",
+        TypeId::of::<()>(),
+        Box::new(SdkError::from(McpHttpError::Status(Box::new(head)))),
+    );
+    let error: SessionError<SdkError> = SessionError::Runtime(Arc::new(SdkError::Service(
+        ServiceError::TransportSend(dynamic),
+    )));
+    let failure = describe_failure(&error);
+    assert_eq!(failure.error_type, "HTTPStatusError");
+    assert_eq!(
+        failure.message,
+        "Client error '401 Unauthorized' for url 'http://mcp.test/mcp'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
+    );
+}
+
+#[test]
+fn a_runtime_error_that_is_not_a_status_error_keeps_its_type_name() {
+    let error: SessionError<SdkError> = SessionError::Runtime(Arc::new(SdkError::SessionClosed));
+    let failure = describe_failure(&error);
+    assert_eq!(failure.error_type, "SdkError");
+    assert_eq!(failure.message, "the MCP session is closed");
 }
 
 #[tokio::test]

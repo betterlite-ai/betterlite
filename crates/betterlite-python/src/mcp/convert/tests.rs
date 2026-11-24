@@ -16,7 +16,7 @@ use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionConfigError, SessionError};
 use betterlite_mcp::client::sessions::negotiate::ProtocolVersion;
 use betterlite_mcp::client::sessions::transport::TransportType;
-use betterlite_mcp::client::tools::result::error_text_result;
+use betterlite_mcp::client::tools::result::{error_text_result, http_status_message};
 use betterlite_mcp::credentials::{AuthValue, McpAuthType};
 use betterlite_mcp::tools::pagination::{LoadedTool, Page, ToolError, ToolFormat};
 use betterlite_mcp::tools::schemas::{McpTool, mcp_tool_to_openai};
@@ -499,6 +499,17 @@ fn error_status_keeps_the_status_the_body_and_the_url() {
         object.get("url"),
         Some(&Json::Text("http://mcp.test/mcp".to_owned()))
     );
+}
+
+#[rstest]
+#[case::informational(101_u16, "Informational response '101 ")]
+#[case::redirect(302_u16, "Redirect response '302 ")]
+#[case::client(401_u16, "Client error '401 ")]
+#[case::server(503_u16, "Server error '503 ")]
+#[case::invalid(99_u16, "Invalid status code '99 ")]
+fn http_status_message_names_each_status_family(#[case] status: u16, #[case] prefix: &str) {
+    let message = http_status_message(status, None);
+    assert!(message.starts_with(prefix), "{message}");
 }
 
 #[test]
