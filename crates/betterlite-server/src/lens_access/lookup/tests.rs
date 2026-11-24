@@ -3,6 +3,7 @@
 use axum::http::StatusCode;
 use betterlite_lens::models::settings::Scope;
 
+use crate::lens_access::error::failure_text;
 use crate::lens_access::lookup::{get_lens, lens_repository, required};
 use crate::lens_access::tests::support::{Harness, lens_in_team, lens_with, repository};
 
@@ -29,7 +30,7 @@ async fn a_missing_lens_is_not_found() {
         .await
         .expect_err("a missing lens fails");
     assert_eq!(error.status(), StatusCode::NOT_FOUND);
-    assert_eq!(error.detail(), "Lens not found");
+    assert_eq!(failure_text(&error), "Lens not found");
 }
 
 #[tokio::test]
@@ -50,7 +51,7 @@ async fn another_teams_lens_is_not_found() {
         .await
         .expect_err("another team's lens is hidden");
     assert_eq!(error.status(), StatusCode::NOT_FOUND);
-    assert_eq!(error.detail(), "Lens not found");
+    assert_eq!(failure_text(&error), "Lens not found");
 }
 
 #[tokio::test]
@@ -68,7 +69,7 @@ fn required_turns_none_into_a_conflict() {
     let error = required(None).expect_err("no lens is a conflict");
     assert_eq!(error.status(), StatusCode::CONFLICT);
     assert_eq!(
-        error.detail(),
+        failure_text(&error),
         "Lens changed concurrently; retry the operation"
     );
 }
@@ -85,7 +86,10 @@ fn without_a_database_the_repository_helper_is_503() {
     let state = harness.state_without_database();
     let error = lens_repository(&state).err().expect("no repository");
     assert_eq!(error.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(error.detail(), "Lens needs a connected Postgres database");
+    assert_eq!(
+        failure_text(&error),
+        "Lens needs a connected Postgres database"
+    );
 }
 
 #[test]
@@ -103,5 +107,5 @@ async fn a_repository_failure_is_reported_as_a_500() {
         .await
         .expect_err("the corrupt record fails");
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(!error.detail().is_empty());
+    assert!(!failure_text(&error).is_empty());
 }

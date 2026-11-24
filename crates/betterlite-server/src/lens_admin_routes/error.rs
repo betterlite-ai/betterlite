@@ -90,7 +90,7 @@ where
             Self::Unauthenticated => return unauthenticated(),
             Self::Body(error) => return error.into_response(),
             Self::Query(error) => return error.into_response(),
-            Self::Access(error) => (error.status(), error.detail()),
+            Self::Access(error) => (error.status(), failure_text(&error)),
             Self::Key(error) => (
                 StatusCode::from_u16(error.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
                 error.detail(),

@@ -2,6 +2,7 @@
 
 use axum::http::StatusCode;
 
+use crate::lens_access::error::failure_text;
 use crate::lens_access::scope::{key_caller, user_scope};
 use crate::lens_access::tests::support::auth_key;
 
@@ -26,7 +27,7 @@ fn viewer_reads_all_teams_and_writes_are_denied() {
     assert!(read.all_teams);
     let denial = user_scope(&auth, true).expect_err("a viewer cannot write");
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
-    assert_eq!(denial.detail(), WRITE_DENIED);
+    assert_eq!(failure_text(&denial), WRITE_DENIED);
 }
 
 #[test]
@@ -34,7 +35,7 @@ fn org_admin_is_denied() {
     let auth = auth_key(Some("org_admin"), None, &[]);
     let denial = user_scope(&auth, false).expect_err("the role is denied");
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
-    assert_eq!(denial.detail(), ACCESS_DENIED);
+    assert_eq!(failure_text(&denial), ACCESS_DENIED);
 }
 
 #[test]
@@ -42,7 +43,7 @@ fn internal_user_is_denied() {
     let auth = auth_key(Some("internal_user"), None, &[]);
     let denial = user_scope(&auth, false).expect_err("the role is denied");
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
-    assert_eq!(denial.detail(), ACCESS_DENIED);
+    assert_eq!(failure_text(&denial), ACCESS_DENIED);
 }
 
 #[test]
@@ -50,7 +51,7 @@ fn internal_user_viewer_is_denied() {
     let auth = auth_key(Some("internal_user_viewer"), None, &[]);
     let denial = user_scope(&auth, false).expect_err("the role is denied");
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
-    assert_eq!(denial.detail(), ACCESS_DENIED);
+    assert_eq!(failure_text(&denial), ACCESS_DENIED);
 }
 
 #[test]
@@ -58,7 +59,7 @@ fn team_role_is_denied() {
     let auth = auth_key(Some("team"), None, &[]);
     let denial = user_scope(&auth, false).expect_err("the role is denied");
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
-    assert_eq!(denial.detail(), ACCESS_DENIED);
+    assert_eq!(failure_text(&denial), ACCESS_DENIED);
 }
 
 #[test]
@@ -66,7 +67,7 @@ fn customer_role_is_denied() {
     let auth = auth_key(Some("customer"), None, &[]);
     let denial = user_scope(&auth, false).expect_err("the role is denied");
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
-    assert_eq!(denial.detail(), ACCESS_DENIED);
+    assert_eq!(failure_text(&denial), ACCESS_DENIED);
 }
 
 #[test]
@@ -74,7 +75,7 @@ fn a_key_without_a_role_is_denied() {
     let auth = auth_key(None, None, &[]);
     let denial = user_scope(&auth, false).expect_err("the key is denied");
     assert_eq!(denial.status(), StatusCode::FORBIDDEN);
-    assert_eq!(denial.detail(), ACCESS_DENIED);
+    assert_eq!(failure_text(&denial), ACCESS_DENIED);
 }
 
 #[test]

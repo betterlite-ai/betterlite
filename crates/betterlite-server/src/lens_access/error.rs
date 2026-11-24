@@ -119,16 +119,6 @@ impl LensAccessError {
         }
         StatusCode::INTERNAL_SERVER_ERROR
     }
-
-    #[must_use]
-    pub(crate) fn detail(&self) -> String {
-        match self {
-            Self::Caller(source) => format!("{CALLER_UNREADABLE}: {}", failure_text(source)),
-            Self::CallerKey(source) => format!("{CALLER_UNBUILT}: {}", failure_text(source)),
-            Self::Repository(source) => failure_text(source),
-            other => other.to_string(),
-        }
-    }
 }
 
 mod tests;

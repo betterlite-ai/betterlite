@@ -2,6 +2,7 @@
 
 use axum::http::StatusCode;
 
+use crate::lens_access::error::failure_text;
 use crate::lens_access::model::validate_model;
 use crate::lens_access::tests::support::{
     Harness, auth_key, execution_id, settings, settings_with_ids,
@@ -24,7 +25,7 @@ fn without_a_catalog_the_model_is_unknown() {
     let error =
         validate_model(&settings("gpt-4o"), &admin, &harness.state()).expect_err("no catalog");
     assert_eq!(error.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(error.detail(), UNKNOWN);
+    assert_eq!(failure_text(&error), UNKNOWN);
 }
 
 #[test]
@@ -34,7 +35,7 @@ fn an_unconfigured_model_is_unknown() {
     let error = validate_model(&settings("not-deployed"), &admin, &harness.state())
         .expect_err("the model is unknown");
     assert_eq!(error.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(error.detail(), UNKNOWN);
+    assert_eq!(failure_text(&error), UNKNOWN);
 }
 
 #[test]
@@ -44,7 +45,7 @@ fn a_non_admin_key_without_the_model_is_denied() {
     let error = validate_model(&settings("gpt-4o"), &key, &harness.state())
         .expect_err("the key lacks the model");
     assert_eq!(error.status(), StatusCode::FORBIDDEN);
-    assert_eq!(error.detail(), DENIED);
+    assert_eq!(failure_text(&error), DENIED);
 }
 
 #[test]

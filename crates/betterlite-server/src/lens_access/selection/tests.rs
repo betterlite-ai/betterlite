@@ -2,6 +2,7 @@
 
 use axum::http::StatusCode;
 
+use crate::lens_access::error::failure_text;
 use crate::lens_access::selection::validate_selection;
 use crate::lens_access::tests::support::{execution_id, settings, settings_with_ids};
 
@@ -25,7 +26,7 @@ fn a_broken_id_is_rejected() {
     let chosen = settings_with_ids(&["not base64 at all"]);
     let error = validate_selection(&chosen).expect_err("the id is broken");
     assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(error.detail(), INVALID);
+    assert_eq!(failure_text(&error), INVALID);
 }
 
 #[test]
@@ -34,7 +35,7 @@ fn an_unknown_source_is_rejected() {
     let chosen = settings_with_ids(&[logs.as_str()]);
     let error = validate_selection(&chosen).expect_err("the source is unknown");
     assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(error.detail(), INVALID);
+    assert_eq!(failure_text(&error), INVALID);
 }
 
 #[test]
