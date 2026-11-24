@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
+use std::io::Error as IoError;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -62,7 +63,7 @@ fn reserved(
 }
 
 impl BatchEnqueuedSource for ScriptedStore {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn reserve(
         &self,
@@ -127,7 +128,7 @@ impl ScriptedCache {
 }
 
 impl BatchWindowCache for ScriptedCache {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn get(
         &self,
@@ -195,7 +196,7 @@ impl ScriptedLimiter {
 }
 
 impl BatchCounterLimiter for ScriptedLimiter {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn base_descriptors(
         &self,
@@ -207,6 +208,7 @@ impl BatchCounterLimiter for ScriptedLimiter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         *count = count.saturating_add(1);
+        drop(count);
         Ok(self.base.clone())
     }
 
@@ -220,6 +222,7 @@ impl BatchCounterLimiter for ScriptedLimiter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         *count = count.saturating_add(1);
+        drop(count);
         self.project.clone()
     }
 
@@ -238,7 +241,7 @@ impl BatchCounterLimiter for ScriptedLimiter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .ok_or_else(|| std::io::Error::other("the scripted limiter has no response left"));
+            .ok_or_else(|| IoError::other("the scripted limiter has no response left"));
         ready(answer)
     }
 

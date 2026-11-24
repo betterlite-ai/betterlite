@@ -13,7 +13,7 @@ use betterlite_core::api::batch_limit_counters::records::BatchTpdRefundOperation
 use betterlite_core::api::batch_limit_descriptors::input::BatchLimitPrincipal;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::OrHelperError as _;
@@ -127,17 +127,27 @@ impl Helper for Op {
             .iter()
             .map(views::answer_view)
             .collect::<Vec<_>>();
-        let held = stash.reservation();
-        let operations = stash.operations();
-        let effects = json!({
-            "store_calls": store.calls(),
-            "limiter_calls": limiter.calls(),
-            "base_calls": limiter.base_calls(),
-            "project_calls": limiter.project_calls(),
-            "cache_reads": cache.reads(),
-            "reservation": held.as_ref().map(views::reservation_view),
-            "refund_ops": operations.iter().map(views::operation_view).collect::<Vec<_>>(),
-        });
+        let effects = scripted_effects(&store, &limiter, &cache, &stash);
         Ok(json!({"answers": answers, "effects": effects}))
     }
+}
+
+// what the scripted store, limiter, cache and stash saw after the run
+fn scripted_effects(
+    store: &ScriptedStore,
+    limiter: &ScriptedLimiter,
+    cache: &ScriptedCache,
+    stash: &RecordingStash,
+) -> Value {
+    let held = stash.reservation();
+    let operations = stash.operations();
+    json!({
+        "store_calls": store.calls(),
+        "limiter_calls": limiter.calls(),
+        "base_calls": limiter.base_calls(),
+        "project_calls": limiter.project_calls(),
+        "cache_reads": cache.reads(),
+        "reservation": held.as_ref().map(views::reservation_view),
+        "refund_ops": operations.iter().map(views::operation_view).collect::<Vec<_>>(),
+    })
 }

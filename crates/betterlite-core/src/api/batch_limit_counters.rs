@@ -16,6 +16,7 @@ mod tests;
 use input::{BatchLimitCounterCall, BatchLimitCountersInput};
 use ports::{BatchCounterLimiter, BatchCounterStash, BatchEnqueuedSource, BatchWindowCache};
 use records::{BatchLimitCounterAnswer, BatchLimitCountersResult, EpochClock};
+use rejections::refunds::refund_ops;
 use rejections::{BatchCounterValueError, RateLimitRejection};
 
 // Every way the counter work fails before or around a rejection; the 429s themselves come back as answers
@@ -151,7 +152,11 @@ where
                 descriptors,
                 tokens,
                 reservation_windows,
-            } => self.refund_operations(descriptors, *tokens, reservation_windows),
+            } => {
+                let operations =
+                    refund_ops(descriptors, *tokens, reservation_windows, &self.limiter)?;
+                Ok(BatchLimitCounterAnswer::BuildTpdRefundOps { operations })
+            }
         }
     }
 }

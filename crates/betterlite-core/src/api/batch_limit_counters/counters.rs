@@ -1,6 +1,5 @@
-use std::collections::BTreeSet;
-
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_error::rate_limit::ProxyRateLimitError;
 
 use crate::api::batch_enqueued_reserve::{BatchEnqueuedReserveResult, BatchEnqueuedTokenScope};
 use crate::api::batch_limit_descriptors::descriptors::{
@@ -10,9 +9,10 @@ use crate::api::request_destination::RequestData;
 
 use super::ports::{BatchCounterLimiter, BatchEnqueuedSource, BatchWindowCache};
 use super::records::{
-    BatchCounterCode, BatchCounterStatus, BatchEnqueuedLimitExceeded, BatchFileUsage,
-    BatchLimitCounterAnswer, BatchReservationWindow,
+    BatchCounterCode, BatchCounterResponse, BatchCounterStatus, BatchEnqueuedLimitExceeded,
+    BatchFileUsage, BatchLimitCounterAnswer,
 };
+use super::rejections::refunds::refund_ops;
 use super::rejections::{self, Attribution, RateLimitRejection};
 use super::{BatchLimitCounters, BatchLimitCountersError, CountingFailure};
 
@@ -79,13 +79,45 @@ where
         batch_usage: &BatchFileUsage,
         descriptors: Option<&[BatchLimitDescriptor]>,
     ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
-        let mut charged = match descriptors {
-            Some(given) => given.to_vec(),
-            None => self
-                .limiter
-                .base_descriptors(auth, data)
-                .map_err(BatchLimitCountersError::Limits)?,
-        };
+        let (charged, increments) = self
+            .charged_counters(auth, data, batch_usage, descriptors)
+            .map_err(BatchLimitCountersError::Limits)?;
+        let response = self
+            .limiter
+            .atomic_check_and_increment_by_n(&charged, &increments)
+            .await
+            .map_err(BatchLimitCountersError::Limits)?;
+        self.stash.set_batch_tpd_refund_ops(Vec::new());
+        if let Some(error) = self
+            .first_rejection(&charged, batch_usage, data, &response)
+            .await?
+        {
+            return Ok(BatchLimitCounterAnswer::CheckAndIncrementBatchCounters {
+                rejection: Some(Box::new(error)),
+            });
+        }
+        let operations = refund_ops(
+            &charged,
+            batch_usage.total_tokens,
+            &response.reservation_windows,
+            &self.limiter,
+        )?;
+        self.stash.set_batch_tpd_refund_ops(operations);
+        Ok(BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection: None })
+    }
+
+    // the descriptors this batch charges: the caller's list, or the counters the limiter derives
+    fn charged_counters(
+        &self,
+        auth: &UserAPIKeyAuth,
+        data: &RequestData,
+        batch_usage: &BatchFileUsage,
+        descriptors: Option<&[BatchLimitDescriptor]>,
+    ) -> Result<(Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>), Limiter::Error> {
+        let mut charged = descriptors.map_or_else(
+            || self.limiter.base_descriptors(auth, data),
+            |given| Ok(given.to_vec()),
+        )?;
         let mut increments: Vec<BatchDescriptorIncrements> = charged
             .iter()
             .map(|_descriptor| BatchDescriptorIncrements {
@@ -98,43 +130,42 @@ where
             .project_io_descriptors(auth, &batch_usage.project_usage());
         charged.extend(project);
         increments.extend(project_increments);
-        let response = self
-            .limiter
-            .atomic_check_and_increment_by_n(&charged, &increments)
-            .await
-            .map_err(BatchLimitCountersError::Limits)?;
-        self.stash.set_batch_tpd_refund_ops(Vec::new());
-        if response.overall_code == BatchCounterCode::OverLimit {
-            let requested_model = rejections::request_model(data);
-            for status in &response.statuses {
-                if status.code != BatchCounterCode::OverLimit {
-                    continue;
-                }
-                let window_start = self.tpd_window_start(status).await?;
-                let facts = RateLimitRejection {
-                    status,
-                    descriptors: &charged,
-                    batch_usage,
-                    limit_type: status.rate_limit_type.as_str(),
-                    requested_model,
-                    window_start,
-                    now: (self.clock)(),
-                    window_size: self.window_size,
-                };
-                let error = rejections::rate_limit_error(&facts, &self.attribution())?;
-                return Ok(BatchLimitCounterAnswer::CheckAndIncrementBatchCounters {
-                    rejection: Some(Box::new(error)),
-                });
-            }
+        Ok((charged, increments))
+    }
+
+    // the first OVER_LIMIT status's 429, or none when the charge passed
+    async fn first_rejection(
+        &self,
+        charged: &[BatchLimitDescriptor],
+        batch_usage: &BatchFileUsage,
+        data: &RequestData,
+        response: &BatchCounterResponse,
+    ) -> Result<Option<ProxyRateLimitError>, CountingFailure<Limiter, Store, Cache>> {
+        if response.overall_code != BatchCounterCode::OverLimit {
+            return Ok(None);
         }
-        let operations = rejections::refunds::refund_ops(
-            &charged,
-            batch_usage.total_tokens,
-            &response.reservation_windows,
-            &self.limiter,
-        )?;
-        self.stash.set_batch_tpd_refund_ops(operations);
-        Ok(BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection: None })
+        let Some(status) = response
+            .statuses
+            .iter()
+            .find(|status| status.code == BatchCounterCode::OverLimit)
+        else {
+            return Ok(None);
+        };
+        let window_start = self.tpd_window_start(status).await?;
+        let facts = RateLimitRejection {
+            status,
+            descriptors: charged,
+            batch_usage,
+            limit_type: status.rate_limit_type.as_str(),
+            requested_model: rejections::request_model(data),
+            window_start,
+            now: (self.clock)(),
+            window_size: self.window_size,
+        };
+        Ok(Some(rejections::rate_limit_error(
+            &facts,
+            &self.attribution(),
+        )?))
     }
 
     // _read_tpd_window_start: only a daily counter has a window key, and a value float cannot hold is absent
@@ -146,28 +177,12 @@ where
             return Ok(None);
         }
         let value = status.descriptor_value.as_deref().unwrap_or("");
-        let key = format!("{{{}:{}}}:window", status.descriptor_key, value);
+        let key = format!("{{{}:{value}}}:window", status.descriptor_key);
         let stored = self
             .cache
             .get(&key)
             .await
             .map_err(BatchLimitCountersError::Window)?;
         Ok(stored.and_then(|start| start.seconds()))
-    }
-
-    // _build_tpd_refund_ops itself: the callable as a direct case
-    pub(super) fn refund_operations(
-        &self,
-        descriptors: &[BatchLimitDescriptor],
-        tokens: i64,
-        reservation_windows: &BTreeSet<BatchReservationWindow>,
-    ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
-        let operations = rejections::refunds::refund_ops(
-            descriptors,
-            tokens,
-            reservation_windows,
-            &self.limiter,
-        )?;
-        Ok(BatchLimitCounterAnswer::BuildTpdRefundOps { operations })
     }
 }

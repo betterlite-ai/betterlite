@@ -180,14 +180,10 @@ pub enum BatchLimitCounterAnswer {
 impl BatchLimitCounterAnswer {
     // a rejection raises where it happens, so no later call runs
     #[must_use]
-    pub fn is_rejection(&self) -> bool {
+    pub const fn is_rejection(&self) -> bool {
         match self {
-            Self::ReserveBatchEnqueuedTokens {
-                rejection: Some(_error),
-            }
-            | Self::CheckAndIncrementBatchCounters {
-                rejection: Some(_error),
-            }
+            Self::ReserveBatchEnqueuedTokens { rejection: Some(_) }
+            | Self::CheckAndIncrementBatchCounters { rejection: Some(_) }
             | Self::RaiseEnqueuedLimitError { .. }
             | Self::RaiseRateLimitError { .. } => true,
             Self::ReserveBatchEnqueuedTokens { rejection: None }

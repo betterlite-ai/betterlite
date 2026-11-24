@@ -25,7 +25,7 @@ pub const PROJECT_OTPM_DESCRIPTOR_KEY: &str = "model_per_project_otpm";
 const FIRST_PYTHON_SECOND: i64 = -62_135_596_800;
 const LAST_PYTHON_SECOND: i64 = 253_402_300_799;
 
-// Why a rejection or a refund cannot be built: a value outside i64, a reset outside datetime's range, or a header HTTP refuses
+// Why a rejection cannot be built: a value outside i64, a reset outside datetime's range, or a header HTTP refuses
 #[derive(Debug, thiserror::Error)]
 pub enum BatchCounterValueError {
     #[error("a batch counter value is outside the i64 range")]
@@ -164,28 +164,30 @@ fn reset_times(
     let size = window_size
         .to_f64()
         .ok_or(BatchCounterValueError::OutOfRange)?;
-    let (whole, floating) = match window_start {
-        Some(start) => {
+    let (whole, floating) = window_start.map_or_else(
+        || Ok::<_, BatchCounterValueError>((None, size.mul_add(1.0_f64, now))),
+        |start| {
             let seconds = start
                 .checked_add(window_size)
                 .ok_or(BatchCounterValueError::OutOfRange)?;
             let as_float = seconds.to_f64().ok_or(BatchCounterValueError::OutOfRange)?;
-            (Some(seconds), as_float)
-        }
-        None => (None, size.mul_add(1.0_f64, now)),
-    };
+            Ok((Some(seconds), as_float))
+        },
+    )?;
     let elapsed = now.mul_add(-1.0_f64, floating);
     let retry_after = elapsed
         .max(0.0_f64)
         .to_i64()
         .ok_or(BatchCounterValueError::ResetOutOfRange)?;
-    let reset_seconds = match whole {
-        Some(seconds) => seconds,
-        None => floating
-            .floor()
-            .to_i64()
-            .ok_or(BatchCounterValueError::ResetOutOfRange)?,
-    };
+    let reset_seconds = whole.map_or_else(
+        || {
+            floating
+                .floor()
+                .to_i64()
+                .ok_or(BatchCounterValueError::ResetOutOfRange)
+        },
+        Ok,
+    )?;
     Ok(ResetTimes {
         retry_after,
         reset_at: format_reset(reset_seconds)?,
@@ -227,25 +229,7 @@ pub(super) fn rate_limit_error(
         .filter(|size| *size != 0)
         .unwrap_or(facts.window_size);
     let reset = reset_times(facts.window_start, facts.now, window_size)?;
-    let remaining = facts.status.limit_remaining.max(0);
-    let current_limit = facts.status.current_limit;
-    let detail = if facts.limit_type == "requests" {
-        format!(
-            "Batch rate limit exceeded for {descriptor_key}: {descriptor_value}. Batch contains {} requests but only {remaining} requests remaining out of {current_limit} RPM limit. Limit resets at: {}",
-            facts.batch_usage.request_count, reset.reset_at
-        )
-    } else {
-        let tokens = token_count(descriptor_key, descriptor_value, facts.batch_usage);
-        let label = if descriptor_key.ends_with(TPD_SUFFIX) {
-            "TPD"
-        } else {
-            "TPM"
-        };
-        format!(
-            "Batch rate limit exceeded for {descriptor_key}: {descriptor_value}. Batch contains {tokens} tokens but only {remaining} tokens remaining out of {current_limit} {label} limit. Limit resets at: {}",
-            reset.reset_at
-        )
-    };
+    let detail = rejection_detail(facts, descriptor_key, descriptor_value, &reset);
     let (model, llm_provider) = resolve_rate_limit_provider(
         facts.requested_model,
         attribution.resolver,
@@ -253,13 +237,44 @@ pub(super) fn rate_limit_error(
     );
     proxy_rate_limit_error(
         detail,
-        BTreeMap::from([
-            (String::from("retry-after"), reset.retry_after.to_string()),
-            (String::from("rate_limit_type"), facts.limit_type.to_owned()),
-            (String::from("reset_at"), reset.reset_at),
-        ]),
+        rejection_headers(facts.limit_type, &reset),
         facts.limit_type,
         model,
         llm_provider,
     )
+}
+
+// the detail text: requests report their count, tokens the charged model's figure and its TPM/TPD label
+fn rejection_detail(
+    facts: &RateLimitRejection<'_>,
+    descriptor_key: &str,
+    descriptor_value: &str,
+    reset: &ResetTimes,
+) -> String {
+    let remaining = facts.status.limit_remaining.max(0);
+    let current_limit = facts.status.current_limit;
+    if facts.limit_type == "requests" {
+        return format!(
+            "Batch rate limit exceeded for {descriptor_key}: {descriptor_value}. Batch contains {} requests but only {remaining} requests remaining out of {current_limit} RPM limit. Limit resets at: {}",
+            facts.batch_usage.request_count, reset.reset_at
+        );
+    }
+    let tokens = token_count(descriptor_key, descriptor_value, facts.batch_usage);
+    let label = if descriptor_key.ends_with(TPD_SUFFIX) {
+        "TPD"
+    } else {
+        "TPM"
+    };
+    format!(
+        "Batch rate limit exceeded for {descriptor_key}: {descriptor_value}. Batch contains {tokens} tokens but only {remaining} tokens remaining out of {current_limit} {label} limit. Limit resets at: {}",
+        reset.reset_at
+    )
+}
+
+fn rejection_headers(limit_type: &str, reset: &ResetTimes) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (String::from("retry-after"), reset.retry_after.to_string()),
+        (String::from("rate_limit_type"), limit_type.to_owned()),
+        (String::from("reset_at"), reset.reset_at.clone()),
+    ])
 }

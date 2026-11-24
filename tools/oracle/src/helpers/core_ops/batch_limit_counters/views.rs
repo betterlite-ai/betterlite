@@ -14,14 +14,14 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 #[derive(Serialize)]
-struct ScopeView<'a> {
-    key: &'a str,
-    value: &'a str,
+struct ScopeView<'scope> {
+    key: &'scope str,
+    value: &'scope str,
     limit: i64,
 }
 
-impl<'a> From<&'a BatchEnqueuedTokenScope> for ScopeView<'a> {
-    fn from(scope: &'a BatchEnqueuedTokenScope) -> Self {
+impl<'scope> From<&'scope BatchEnqueuedTokenScope> for ScopeView<'scope> {
+    fn from(scope: &'scope BatchEnqueuedTokenScope) -> Self {
         Self {
             key: scope.key.as_str(),
             value: scope.value.as_str(),

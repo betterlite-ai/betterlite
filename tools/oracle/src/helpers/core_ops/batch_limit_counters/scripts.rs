@@ -32,7 +32,7 @@ pub(super) enum BackendName {
 }
 
 impl BackendName {
-    pub(super) fn reserved(self) -> ReservationBackend {
+    pub(super) const fn reserved(self) -> ReservationBackend {
         match self {
             Self::Redis => ReservationBackend::Redis,
             Self::Memory => ReservationBackend::Memory,

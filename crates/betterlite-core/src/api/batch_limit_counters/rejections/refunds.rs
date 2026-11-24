@@ -10,7 +10,7 @@ use crate::api::batch_limit_descriptors::descriptors::{
 };
 
 // _build_tpd_refund_ops: one negative-tokens operation per charged daily counter window
-pub(super) fn refund_ops<Limiter>(
+pub(crate) fn refund_ops<Limiter>(
     descriptors: &[BatchLimitDescriptor],
     tokens: i64,
     reservation_windows: &BTreeSet<BatchReservationWindow>,

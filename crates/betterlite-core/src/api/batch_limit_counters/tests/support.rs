@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::rejection_provider::ProviderResolution;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
-use betterlite_error::rate_limit::ProxyRateLimitError;
+use betterlite_error::rate_limit::{ProxyRateLimitError, RateLimitCategory, RateLimitDimension};
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use betterlite_redact::structured::Payload;
@@ -22,11 +22,11 @@ use crate::api::batch_limit_counters::ports::{
 };
 use crate::api::batch_limit_counters::records::{
     BatchCounterCode, BatchCounterLimitType, BatchCounterResponse, BatchCounterStatus,
-    BatchEnqueuedLimitExceeded, BatchFileUsage, BatchLimitCounterAnswer, BatchReservationBackend,
-    BatchReservationWindow, BatchTpdRefundOperation, WindowStartValue,
+    BatchEnqueuedLimitExceeded, BatchFileUsage, BatchLimitCounterAnswer, BatchLimitCountersResult,
+    BatchReservationBackend, BatchReservationWindow, BatchTpdRefundOperation, WindowStartValue,
 };
 use crate::api::batch_limit_descriptors::descriptors::{
-    BatchDescriptorIncrements, BatchDescriptorRateLimit, BatchLimitDescriptor,
+    BatchDescriptorIncrements, BatchDescriptorRateLimit, BatchLimitDescriptor, TPD_WINDOW_SECONDS,
 };
 use crate::api::batch_limit_descriptors::input::{BatchLimitPrincipal, BatchModelUsage};
 use crate::api::request_destination::RequestData;
@@ -34,27 +34,33 @@ use crate::api::request_destination::RequestData;
 const NOW: f64 = 1_700_000_000.0;
 pub(super) const WINDOW: i64 = 60;
 pub(super) const RESET_AT: &str = "2023-11-14 22:14:20 UTC";
+const ENQUEUED_DETAIL: &str = "Batch enqueued token limit exceeded for api_key: sk-1. Batch requires 30 tokens but only 5 enqueued tokens remaining out of 15 enqueued token limit. Tokens free up as running batches complete or are cancelled.";
+
+// one atomic limiter call: the descriptors charged and the increments each one gets
+pub(super) type LimiterCall = (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>);
+// one enqueued-store call: the batch's tokens and the scopes reserved
+pub(super) type StoreCall = (i64, Vec<BatchEnqueuedTokenScope>);
 
 #[derive(Debug, thiserror::Error)]
 #[error("the scripted limiter failed")]
-struct LimiterFailure;
+pub(super) struct LimiterFailure;
 
 #[derive(Debug, thiserror::Error)]
 #[error("the scripted store failed")]
-struct StoreFailure;
+pub(super) struct StoreFailure;
 
 #[derive(Debug, thiserror::Error)]
 #[error("the scripted cache failed")]
-struct CacheFailure;
+pub(super) struct CacheFailure;
 
 #[derive(Clone, Default)]
 pub(super) struct ScriptedLimiter {
     pub(super) base: Vec<BatchLimitDescriptor>,
     pub(super) project: (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>),
     pub(super) responses: Arc<Mutex<VecDeque<Result<BatchCounterResponse, LimiterFailure>>>>,
-    pub(super) calls: Arc<Mutex<Vec<(Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>)>>>,
+    pub(super) calls: Arc<Mutex<Vec<LimiterCall>>>,
     pub(super) base_calls: Arc<Mutex<u32>>,
-    project_usages: Arc<Mutex<Vec<IndexMap<String, BatchModelUsage>>>>,
+    pub(super) project_usages: Arc<Mutex<Vec<IndexMap<String, BatchModelUsage>>>>,
 }
 
 impl ScriptedLimiter {
@@ -71,7 +77,7 @@ impl ScriptedLimiter {
         }
     }
 
-    pub(super) fn calls(&self) -> Vec<(Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>)> {
+    pub(super) fn calls(&self) -> Vec<LimiterCall> {
         let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.clone()
     }
@@ -151,7 +157,7 @@ impl BatchCounterLimiter for ScriptedLimiter {
 #[derive(Clone, Default)]
 pub(super) struct ScriptedStore {
     replies: Arc<Mutex<Vec<Result<BatchEnqueuedReserveResult, StoreFailure>>>>,
-    calls: Arc<Mutex<Vec<(i64, Vec<BatchEnqueuedTokenScope>)>>>,
+    calls: Arc<Mutex<Vec<StoreCall>>>,
 }
 
 impl ScriptedStore {
@@ -162,7 +168,7 @@ impl ScriptedStore {
         }
     }
 
-    pub(super) fn calls(&self) -> Vec<(i64, Vec<BatchEnqueuedTokenScope>)> {
+    pub(super) fn calls(&self) -> Vec<StoreCall> {
         let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.clone()
     }
@@ -336,6 +342,18 @@ pub(super) fn null_model_data() -> RequestData {
     fields
 }
 
+pub(super) fn non_text_model_data() -> RequestData {
+    let mut fields = RequestData::new();
+    fields.insert(String::from("model"), Json::Bool(true));
+    fields
+}
+
+pub(super) fn empty_model_data() -> RequestData {
+    let mut fields = RequestData::new();
+    fields.insert(String::from("model"), Json::Text(String::new()));
+    fields
+}
+
 pub(super) fn usage(total_tokens: i64, request_count: i64, output_tokens: i64) -> BatchFileUsage {
     BatchFileUsage {
         total_tokens,
@@ -369,8 +387,7 @@ pub(super) fn status(
     descriptor_key: &str,
     descriptor_value: Option<&str>,
     rate_limit_type: BatchCounterLimitType,
-    current_limit: i64,
-    limit_remaining: i64,
+    (current_limit, limit_remaining): (i64, i64),
 ) -> BatchCounterStatus {
     BatchCounterStatus {
         code,
@@ -423,7 +440,7 @@ pub(super) fn reserved(
     })
 }
 
-pub(super) fn over_limit(
+pub(super) const fn over_limit(
     scope: BatchEnqueuedTokenScope,
     enqueued: i64,
 ) -> BatchEnqueuedReserveResult {
@@ -450,7 +467,7 @@ pub(super) fn window(
     }
 }
 
-pub(super) fn input(calls: Vec<BatchLimitCounterCall>) -> BatchLimitCountersInput {
+pub(super) const fn input(calls: Vec<BatchLimitCounterCall>) -> BatchLimitCountersInput {
     BatchLimitCountersInput {
         principal: BatchLimitPrincipal(BTreeMap::new()),
         calls,
@@ -458,7 +475,7 @@ pub(super) fn input(calls: Vec<BatchLimitCounterCall>) -> BatchLimitCountersInpu
 }
 
 // a call that answers without rejecting and touches no dependency
-pub(super) fn refund_call() -> BatchLimitCounterCall {
+pub(super) const fn refund_call() -> BatchLimitCounterCall {
     BatchLimitCounterCall::BuildTpdRefundOps {
         descriptors: Vec::new(),
         tokens: 0,
@@ -528,12 +545,6 @@ pub(super) async fn assert_direct_enqueued_model(
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum StoreReplyKind {
-    Reservation,
-    OverLimit,
-}
-
-#[derive(Clone, Copy)]
 pub(super) enum Stored {
     Integer(i64),
     Float(f64),
@@ -545,5 +556,350 @@ pub(super) fn stored_value(stored: Stored) -> WindowStartValue {
         Stored::Integer(value) => WindowStartValue::Integer(value),
         Stored::Float(value) => WindowStartValue::Float(value),
         Stored::Text(text) => WindowStartValue::Text(text.to_owned()),
+    }
+}
+
+pub(super) fn daily_descriptor() -> BatchLimitDescriptor {
+    descriptor(
+        "api_key_tpd",
+        "sk-1",
+        Some(TPD_WINDOW_SECONDS),
+        None,
+        Some(100),
+    )
+}
+
+// the batch's own counts, plus the named model's row when a case charges one
+pub(super) fn usage_for_row(
+    model: Option<&str>,
+    row_total: Option<i64>,
+    row_output: Option<i64>,
+) -> BatchFileUsage {
+    let mut batch_usage = usage(120, 3, 7);
+    if let Some(name) = model {
+        let mut row = BTreeMap::new();
+        if let Some(total) = row_total {
+            row.insert(String::from("total_tokens"), total);
+        }
+        if let Some(output) = row_output {
+            row.insert(String::from("output_tokens"), output);
+        }
+        batch_usage.per_model_usage.insert(name.to_owned(), row);
+    }
+    batch_usage
+}
+
+pub(super) fn usage_with_rows() -> BatchFileUsage {
+    let mut batch_usage = usage(120, 3, 30);
+    batch_usage.per_model_usage.insert(
+        String::from("gpt-4o"),
+        BTreeMap::from([(String::from("output_tokens"), 30)]),
+    );
+    batch_usage
+}
+
+pub(super) fn project_usage_row() -> IndexMap<String, BatchModelUsage> {
+    IndexMap::from_iter([(
+        String::from("gpt-4o"),
+        BatchModelUsage {
+            total_tokens: 0,
+            output_tokens: 30,
+        },
+    )])
+}
+
+pub(super) const fn increments(requests: i64, tokens: i64) -> BatchDescriptorIncrements {
+    BatchDescriptorIncrements { requests, tokens }
+}
+
+// a limiter that answers one requests-counter check with the given status
+pub(super) fn requests_limiter(code: BatchCounterCode, remaining: i64) -> ScriptedLimiter {
+    ScriptedLimiter::with_responses(vec![Ok(response(
+        code,
+        vec![status(
+            code,
+            "api_key",
+            Some("sk-1"),
+            BatchCounterLimitType::Requests,
+            (5, remaining),
+        )],
+        Vec::new(),
+    ))])
+}
+
+// three charges on the daily counter and two on counters that get no refund
+pub(super) fn refund_windows() -> BTreeSet<BatchReservationWindow> {
+    BTreeSet::from([
+        window(
+            "{api_key_tpd:sk-1}:tokens",
+            "1699990000",
+            BatchReservationBackend::Local,
+        ),
+        window(
+            "{api_key_tpd:sk-1}:tokens",
+            "1699990000",
+            BatchReservationBackend::Redis,
+        ),
+        window(
+            "{api_key_tpd:sk-1}:tokens",
+            "1699990001",
+            BatchReservationBackend::Local,
+        ),
+        window(
+            "{api_key:sk-1}:tokens",
+            "1699990000",
+            BatchReservationBackend::Redis,
+        ),
+        window(
+            "{team:team-1}:tokens",
+            "1699990000",
+            BatchReservationBackend::Redis,
+        ),
+    ])
+}
+
+// the refunds refund_windows produces, in the order the daily counter's windows sort
+pub(super) fn expected_operations(increment_value: i64) -> Vec<BatchTpdRefundOperation> {
+    let window_key = String::from("{api_key_tpd:sk-1}:window");
+    [
+        ("1699990000", BatchReservationBackend::Local),
+        ("1699990000", BatchReservationBackend::Redis),
+        ("1699990001", BatchReservationBackend::Local),
+    ]
+    .into_iter()
+    .map(
+        |(window_start, reservation_backend)| BatchTpdRefundOperation {
+            key: String::from("{api_key_tpd:sk-1}:tokens"),
+            increment_value,
+            ttl: TPD_WINDOW_SECONDS,
+            window_key: window_key.clone(),
+            expected_window_start: String::from(window_start),
+            reservation_backend,
+        },
+    )
+    .collect()
+}
+
+// the statuses a partial failure reports: an Ok row, then the daily and team counters over their limits
+pub(super) fn partial_failure_statuses() -> Vec<BatchCounterStatus> {
+    vec![
+        status(
+            BatchCounterCode::Ok,
+            "api_key",
+            Some("sk-1"),
+            BatchCounterLimitType::Requests,
+            (5, 1),
+        ),
+        status(
+            BatchCounterCode::OverLimit,
+            "api_key_tpd",
+            Some("sk-1"),
+            BatchCounterLimitType::Tokens,
+            (100, 0),
+        ),
+        status(
+            BatchCounterCode::OverLimit,
+            "team_tpd",
+            Some("team-1"),
+            BatchCounterLimitType::Tokens,
+            (100, 0),
+        ),
+    ]
+}
+
+// base and project counters that charge in one call, answered by partial_failure_statuses
+pub(super) fn partial_failure_limiter() -> ScriptedLimiter {
+    ScriptedLimiter {
+        base: vec![
+            descriptor("api_key", "sk-1", Some(WINDOW), Some(5), None),
+            daily_descriptor(),
+        ],
+        project: (
+            vec![descriptor(
+                "model_per_project_otpm",
+                "proj:gpt-4o",
+                Some(WINDOW),
+                None,
+                Some(100),
+            )],
+            vec![increments(0, 30)],
+        ),
+        ..ScriptedLimiter::with_responses(vec![Ok(response(
+            BatchCounterCode::OverLimit,
+            partial_failure_statuses(),
+            Vec::new(),
+        ))])
+    }
+}
+
+pub(super) fn partial_failure_cache() -> ScriptedCache {
+    ScriptedCache {
+        values: BTreeMap::from([
+            (
+                String::from("{api_key_tpd:sk-1}:window"),
+                WindowStartValue::Integer(1_699_990_000),
+            ),
+            (
+                String::from("{team_tpd:team-1}:window"),
+                WindowStartValue::Integer(1_699_980_000),
+            ),
+        ]),
+        reads: Arc::default(),
+    }
+}
+
+pub(super) fn window_status(
+    descriptor_key: &str,
+    descriptor_value: Option<&str>,
+) -> BatchCounterStatus {
+    status(
+        BatchCounterCode::OverLimit,
+        descriptor_key,
+        descriptor_value,
+        BatchCounterLimitType::Tokens,
+        (10, 0),
+    )
+}
+
+pub(super) async fn run_check(
+    limiter: ScriptedLimiter,
+    cache: ScriptedCache,
+    data: RequestData,
+    batch_usage: BatchFileUsage,
+    descriptors: Option<Vec<BatchLimitDescriptor>>,
+) -> (Harness, BatchLimitCountersResult) {
+    let harness = harness(limiter, ScriptedStore::default(), cache);
+    let result = harness
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::CheckAndIncrementBatchCounters {
+                data,
+                batch_usage,
+                descriptors,
+            },
+        ]))
+        .await
+        .unwrap();
+    (harness, result)
+}
+
+pub(super) async fn run_raise(
+    status: BatchCounterStatus,
+    descriptors: Vec<BatchLimitDescriptor>,
+    batch_usage: BatchFileUsage,
+    requested_model: Option<&str>,
+    window_start: Option<i64>,
+) -> (Harness, BatchLimitCountersResult) {
+    let limit_type = status.rate_limit_type.as_str();
+    let harness = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    let result = harness
+        .service
+        .run(&input(vec![BatchLimitCounterCall::RaiseRateLimitError {
+            status,
+            descriptors,
+            batch_usage,
+            limit_type: String::from(limit_type),
+            requested_model: requested_model.map(str::to_owned),
+            window_start,
+        }]))
+        .await
+        .unwrap();
+    (harness, result)
+}
+
+pub(super) async fn run_window(
+    cache: ScriptedCache,
+    status: BatchCounterStatus,
+) -> (Harness, BatchLimitCountersResult) {
+    let harness = harness(ScriptedLimiter::default(), ScriptedStore::default(), cache);
+    let result = harness
+        .service
+        .run(&input(vec![BatchLimitCounterCall::ReadTpdWindowStart {
+            status,
+        }]))
+        .await
+        .unwrap();
+    (harness, result)
+}
+
+pub(super) async fn run_refund(
+    descriptors: Vec<BatchLimitDescriptor>,
+    tokens: i64,
+    reservation_windows: BTreeSet<BatchReservationWindow>,
+) -> (Harness, BatchLimitCountersResult) {
+    let harness = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    let result = harness
+        .service
+        .run(&input(vec![BatchLimitCounterCall::BuildTpdRefundOps {
+            descriptors,
+            tokens,
+            reservation_windows,
+        }]))
+        .await
+        .unwrap();
+    (harness, result)
+}
+
+pub(super) fn assert_accepted(answer: &BatchLimitCounterAnswer) {
+    match answer {
+        BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection }
+        | BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection } => {
+            assert!(rejection.is_none());
+        }
+        other => panic!("not an accepted answer: {other:?}"),
+    }
+}
+
+pub(super) fn assert_requests_rejection(
+    answer: &BatchLimitCounterAnswer,
+    expected_model: &str,
+    expected_provider: &str,
+    expected_detail: &str,
+    retry_after: &str,
+) {
+    let error = rejection(answer);
+    assert_eq!(error.category, RateLimitCategory::LitellmBatchRateLimit);
+    assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Requests));
+    assert_eq!(error.model, expected_model);
+    assert_eq!(error.llm_provider, expected_provider);
+    assert_eq!(detail_text(&error.detail), expected_detail);
+    assert_eq!(header(error, "retry-after"), retry_after);
+    assert_eq!(header(error, "rate_limit_type"), "requests");
+    assert_eq!(header(error, "reset_at"), RESET_AT);
+}
+
+pub(super) fn assert_enqueued_rejection(
+    answer: &BatchLimitCounterAnswer,
+    expected_model: &str,
+    expected_provider: &str,
+) {
+    let error = rejection(answer);
+    assert_eq!(error.category, RateLimitCategory::LitellmBatchRateLimit);
+    assert_eq!(error.rate_limit_type, Some(RateLimitDimension::Tokens));
+    assert_eq!(detail_text(&error.detail), ENQUEUED_DETAIL);
+    assert_eq!(header(error, "rate_limit_type"), "tokens");
+    assert_eq!(error.model, expected_model);
+    assert_eq!(error.llm_provider, expected_provider);
+}
+
+pub(super) fn window_start_of(answer: &BatchLimitCounterAnswer) -> Option<i64> {
+    match answer {
+        BatchLimitCounterAnswer::ReadTpdWindowStart { window_start } => *window_start,
+        other => panic!("not a window answer: {other:?}"),
+    }
+}
+
+pub(super) fn operations_of(answer: &BatchLimitCounterAnswer) -> &Vec<BatchTpdRefundOperation> {
+    match answer {
+        BatchLimitCounterAnswer::BuildTpdRefundOps { operations } => operations,
+        other => panic!("not a refund answer: {other:?}"),
     }
 }
