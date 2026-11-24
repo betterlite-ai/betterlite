@@ -67,7 +67,7 @@ class StoreInput(TypedDict):
 
 
 TransportAnswer: TypeAlias = result.Result[
-    Mapping[str, object], sso_assertion_refresher.RefreshFailure
+    Mapping[str, JsonValue], sso_assertion_refresher.RefreshFailure
 ]
 
 
@@ -219,21 +219,17 @@ def answered(
     writes: list[tuple[str, JsonValue]],
 ) -> JsonValue:
     calls = transport.calls
-    answer: dict[str, JsonValue] = {
+    first = calls[0] if calls else None
+    return {
         "result": result_text,
         "detail": detail,
         "assertion": assertion,
         "posts": len(calls),
         "writes": [{"user_id": user_id, "assertion": shown} for user_id, shown in writes],
+        "url": None if first is None else first[0],
+        "form": [] if first is None else [[name, value] for name, value in first[1]],
+        "headers": [] if first is None else [[name, value] for name, value in first[2]],
     }
-    if calls:
-        url, form, headers = calls[0]
-        form_pairs: list[JsonValue] = [[name, value] for name, value in form]
-        header_pairs: list[JsonValue] = [[name, value] for name, value in headers]
-        answer["url"] = url
-        answer["form"] = form_pairs
-        answer["headers"] = header_pairs
-    return answer
 
 
 async def refresh_view(input_value: RefreshInput) -> JsonValue:
