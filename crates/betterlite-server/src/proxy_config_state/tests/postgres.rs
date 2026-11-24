@@ -211,7 +211,7 @@ async fn database_seal_environment_encrypts_every_value() {
     let opened = database
         .cipher
         .decrypt_value(
-            StoredValue::Text(SecretString::from(text.clone())),
+            StoredValue::<()>::Text(SecretString::from(text.clone())),
             "OPENAI_API_KEY",
             decrypt_policy(),
         )
