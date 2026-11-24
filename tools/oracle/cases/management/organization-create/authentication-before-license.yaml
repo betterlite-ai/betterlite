@@ -18,5 +18,6 @@ compare:
   ignore:
     - pointer: ""
       why: >-
-        The 401 body belongs to B052's authentication stage on both servers; this case pins only that an
-        unauthenticated organization call is refused before the enterprise license guard, which MIT turns on.
+        The 400 no_db_connection body belongs to B052's authentication stage on both servers; this
+        case pins only that an unauthenticated organization call is refused before the enterprise
+        license guard, which MIT turns on.
