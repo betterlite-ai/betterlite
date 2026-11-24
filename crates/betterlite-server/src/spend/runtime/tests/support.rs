@@ -1,10 +1,13 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::error::Error as StdError;
 use std::future::ready;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use betterlite_db::daily_records::projection::CallTypeEndpoints;
 use betterlite_db::queues::pod_lock::NoPodLockEventSink;
 use betterlite_db::queues::pod_lock::owner::PodId;
 use betterlite_db::redis_spend::events::NoRedisBufferEventSink;
@@ -15,8 +18,20 @@ use betterlite_db::spend_writer::request::{PayloadFuture, SpendPayloadSource, Sp
 use betterlite_db::spend_writer::{
     NoSpendWriterFailureSink, SpendWriterFailure, SpendWriterFailureSink, SpendWriterOperation,
 };
+use betterlite_error::proxy_model_not_found::route_endpoint;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_models::savings_pricing::context::ModelIdentity;
+use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
+use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
+use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
+use betterlite_redis::redis_client_reuse::store::RedisClientStore;
+use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
+use betterlite_redis::redis_live_client::LiveClientFactory;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use uuid::Uuid;
@@ -174,4 +189,60 @@ impl SpendLogsService for FakeSpendLogs {
     fn run_spend_logs(&self) -> ServiceFuture<'_, Result<(), ServiceFailure>> {
         Box::pin(self.clear())
     }
+}
+
+// The call-type map the daily rows record, read through the same table the route error uses.
+pub(super) struct Endpoints;
+
+impl CallTypeEndpoints for Endpoints {
+    fn endpoint(&self, call_type: &str) -> Option<&str> {
+        route_endpoint(call_type)
+    }
+}
+
+struct QuietHooks;
+
+impl ServiceHooks for QuietHooks {
+    fn success(&self, _event: &ServiceEvent) {}
+
+    fn failure(&self, _event: &ServiceEvent, _error: &(dyn StdError + Send + Sync)) {}
+}
+
+struct ClosedBreaker;
+
+impl BreakerGate for ClosedBreaker {
+    fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        Ok(BreakerAdmission::from(0_u64))
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn StdError + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
+}
+
+// A cache whose address refuses every connection: the Redis handles exist without a server, as the cache routes' own fixture builds one.
+pub(super) async fn redis_cache() -> Arc<RedisCache> {
+    let options = RedisCacheOptions {
+        overrides: RedisOverrides {
+            host: Some("127.0.0.1".to_owned()),
+            port: Some(IntOrText::Value(1_i64)),
+            ..RedisOverrides::default()
+        },
+        family: RedisCacheFamily::Standalone,
+        namespace: None,
+        default_ttl: 60_i64,
+        redis_flush_size: None,
+        default_major_version: 7_u32,
+        factory: Arc::new(LiveClientFactory::new(None)),
+        store: Arc::new(RedisClientStore::new()),
+        hooks: Arc::new(QuietHooks),
+        gate: Arc::new(ClosedBreaker),
+    };
+    let environment = BTreeMap::<String, String>::new();
+    let cache = connect(options, &environment)
+        .await
+        .expect("the cache opens without a server");
+    Arc::new(cache)
 }

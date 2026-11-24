@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::ptr::eq;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -9,7 +10,11 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::spend_queue::SpendQueueSettings;
 use betterlite_config::spend_storage::load_spend_storage_policy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_db::daily_records::projection::DailyPricing;
+use betterlite_db::daily_spend_sql::values::SpendColumnValue;
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::redis_spend::codec::decode_log_record;
+use betterlite_db::redis_spend::events::NoRedisBufferEventSink;
 use betterlite_db::redis_spend::log_row::SpendLogRow;
 use betterlite_db::request_usage::queues::UsageQueue;
 use betterlite_db::spend_flush::monitor::SpendMonitorSettings;
@@ -17,16 +22,20 @@ use betterlite_db::spend_log_storage::postgres::PostgresSpendLogsWriter;
 use betterlite_db::spend_queues::entity::SpendAmount;
 use betterlite_db::spend_writer::SpendWriterOperation;
 use betterlite_db::spend_writer::accounting::{
-    SpendAccounting, SpendAccountingAdmission, SpendAccountingClosed,
+    SpendAccounting, SpendAccountingAdmission, SpendAccountingClosed, SpendAccountingEnvironment,
 };
 use betterlite_db::spend_writer::settings::SpendWriterSettings;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::model_registration::JsonObject;
+use betterlite_models::savings_pricing::context::{ModelIdentity, SavingsPricingContext as _};
+use chrono::Utc;
 use rust_decimal::Decimal;
 
 use super::parts::SpendUsageQueues;
-use super::pricing::PricingView;
+use super::pricing::{PricingView, SpendPricingSource};
 use super::{SpendRuntime, SpendRuntimeError, SpendRuntimeSettings};
+use crate::cost_estimate_route::testing::service_from;
 use crate::state::shared::Shared;
 use crate::state::spend_runtime::Slot;
 
@@ -35,6 +44,7 @@ mod support;
 use self::support::{FakeSpendLogs, RecordingFailures, StaticPayload};
 
 const PAYLOAD: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","model_group":"gpt-4o","custom_llm_provider":"openai","prompt_tokens":3,"completion_tokens":4,"request_id":"req-b070","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[]","metadata":"{}","status":"success","spend":0.25}"#;
+const ACCOUNTING_ROW: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","model_group":"gpt-4o","custom_llm_provider":"openai","call_type":"acompletion","prompt_tokens":3,"completion_tokens":4,"request_id":"req-b070-accounting","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[\"tag-a\",\"tag-b\"]","metadata":"{}","status":"success","spend":0.25,"team_id":"team-1","organization_id":"org-1","end_user":"eu-1","agent_id":"agent-1"}"#;
 const CONFIG: &str = "model_list:
   - {model_name: b070-spend, litellm_params: {model: openai/gpt-4o}}
 ";
@@ -66,6 +76,26 @@ fn service() -> FakeSpendLogs {
     FakeSpendLogs {
         queued: AtomicI64::new(0),
         runs: AtomicUsize::new(0),
+    }
+}
+
+fn accounting_row() -> SpendLogRow {
+    decode_log_record(ACCOUNTING_ROW.as_bytes())
+        .expect("the accounting row decodes")
+        .expect("the accounting row is a JSON object")
+}
+
+fn accounting_work() -> SpendAccounting {
+    SpendAccounting {
+        response_cost: Some(SpendAmount(Decimal::new(25, 2))),
+        user_id: Some("u1".to_owned()),
+        hashed_token: Some("hash-1".to_owned()),
+        team_id: Some("team-1".to_owned()),
+        org_id: Some("org-1".to_owned()),
+        project_id: Some("proj-1".to_owned()),
+        end_user_id: Some("eu-1".to_owned()),
+        model_access_groups: vec!["g1".to_owned(), "g2".to_owned()],
+        payload: accounting_row(),
     }
 }
 
@@ -235,4 +265,217 @@ async fn installs_the_runtime_once_and_maps_the_spend_policy() {
     let second = slot.install(settings, support::parts_with(pricing));
     assert!(matches!(second, Err(SpendRuntimeError::AlreadyInstalled)));
     assert!(slot.runtime.lock().unwrap().is_some());
+}
+
+#[tokio::test]
+async fn charges_every_accounting_queue_the_runtime_writer_was_built_with() {
+    let model_usage = Arc::new(UsageQueue::new(100).expect("the model usage queue"));
+    let source = support::pricing();
+    let mut parts = support::parts_with(Arc::clone(&source));
+    parts.usage = SpendUsageQueues {
+        tool_usage: None,
+        model_usage: Some(Arc::clone(&model_usage)),
+    };
+    let runtime = SpendRuntime::new(settings(), parts).expect("the runtime");
+    let view = PricingView(source.as_ref());
+    let pricing = DailyPricing {
+        context: &view,
+        zone: source.zone(),
+        fallback_moment: Utc::now(),
+    };
+    let endpoints = support::Endpoints;
+    let environment = SpendAccountingEnvironment {
+        pricing: &pricing,
+        endpoints: &endpoints,
+        deployments: None,
+    };
+    runtime
+        .writer()
+        .batch_database_updates(&accounting_work(), &environment)
+        .await;
+    let charged = runtime
+        .entity
+        .flush_aggregated_transactions()
+        .expect("the entity queue flushes");
+    assert_eq!(
+        charged.user_list_transactions.get("u1"),
+        Some(&SpendAmount(Decimal::new(25, 2)))
+    );
+    assert_eq!(charged.key_list_transactions.len(), 1);
+    for queue in [
+        &runtime.daily.user,
+        &runtime.daily.end_user,
+        &runtime.daily.agent,
+        &runtime.daily.team,
+        &runtime.daily.org,
+    ] {
+        let updates = queue
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily queue flushes");
+        assert_eq!(updates.len(), 1);
+    }
+    let tags = runtime
+        .daily
+        .tag
+        .flush_aggregated_daily_rows()
+        .await
+        .expect("the tag queue flushes");
+    assert_eq!(tags.len(), 2);
+    assert_eq!(model_usage.len(), 1);
+    runtime.shutdown(&service()).await.expect("the shutdown");
+}
+
+#[tokio::test]
+async fn writes_the_request_tool_usage_and_discovery_from_the_runtime_queues() {
+    let tool_usage = Arc::new(UsageQueue::new(10).expect("the tool usage queue"));
+    let source = support::pricing();
+    let mut parts = support::parts_with(Arc::clone(&source));
+    parts.usage = SpendUsageQueues {
+        tool_usage: Some(Arc::clone(&tool_usage)),
+        model_usage: None,
+    };
+    let runtime = SpendRuntime::new(settings(), parts).expect("the runtime");
+    let view = PricingView(source.as_ref());
+    let kwargs = JsonObject::new();
+    let names = vec!["lookup".to_owned()];
+    let mut request = support::request(&view);
+    request.kwargs = Some(&kwargs);
+    request.response_names = &names;
+    assert!(
+        runtime
+            .writer()
+            .update_database(&StaticPayload(PAYLOAD), &request)
+            .await
+    );
+    assert_eq!(tool_usage.len(), 1);
+    let tools: Vec<Option<String>> = runtime
+        .discovery
+        .flush()
+        .into_iter()
+        .map(|item| item.tool_name)
+        .collect();
+    assert_eq!(tools, vec![Some("lookup".to_owned())]);
+    runtime.shutdown(&service()).await.expect("the shutdown");
+}
+
+#[tokio::test]
+async fn charges_every_runtime_daily_queue_and_records_the_endpoint() {
+    let source = support::pricing();
+    let runtime = SpendRuntime::new(settings(), support::parts_with(Arc::clone(&source)))
+        .expect("the runtime");
+    let view = PricingView(source.as_ref());
+    let mut request = support::request(&view);
+    request.team_id = Some("team-1");
+    request.org_id = Some("org-1");
+    assert!(
+        runtime
+            .writer()
+            .update_database(&StaticPayload(ACCOUNTING_ROW), &request)
+            .await
+    );
+    runtime.shutdown(&service()).await.expect("the shutdown");
+
+    let user = runtime
+        .daily
+        .user
+        .flush_aggregated_daily_rows()
+        .await
+        .expect("the daily user queue flushes");
+    assert_eq!(user.len(), 1);
+    let row = user.values().next().expect("the daily user row");
+    assert_eq!(
+        row.get("endpoint"),
+        Some(&SpendColumnValue::Text("/chat/completions".to_owned()))
+    );
+    assert_eq!(
+        runtime
+            .daily
+            .end_user
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily end user queue flushes")
+            .len(),
+        1
+    );
+    assert_eq!(
+        runtime
+            .daily
+            .agent
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily agent queue flushes")
+            .len(),
+        1
+    );
+    assert_eq!(
+        runtime
+            .daily
+            .team
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily team queue flushes")
+            .len(),
+        1
+    );
+    assert_eq!(
+        runtime
+            .daily
+            .org
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily organization queue flushes")
+            .len(),
+        1
+    );
+    assert_eq!(
+        runtime
+            .daily
+            .tag
+            .flush_aggregated_daily_rows()
+            .await
+            .expect("the daily tag queue flushes")
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn builds_both_redis_list_handles_from_a_cache() {
+    let cache = support::redis_cache().await;
+    let (buffer, publisher) =
+        super::handles::build_redis(&settings(), Some(&cache), Arc::new(NoRedisBufferEventSink));
+    assert!(buffer.lists.is_some());
+    assert!(publisher.lists.is_some());
+    let (no_buffer, no_publisher) =
+        super::handles::build_redis(&settings(), None, Arc::new(NoRedisBufferEventSink));
+    assert!(no_buffer.lists.is_none());
+    assert!(no_publisher.lists.is_none());
+}
+
+#[test]
+fn resolves_the_model_through_the_real_cost_service() {
+    let bytes = (BundledCatalog::default().asset)().expect("the bundled catalog is readable");
+    let service = service_from(&bytes).expect("the cost service builds");
+    assert_eq!(
+        service.resolve_model("gpt-4o", Some("openai")),
+        Some(ModelIdentity {
+            model: "gpt-4o".to_owned(),
+            provider: "openai".to_owned(),
+        })
+    );
+    assert!(eq(SpendPricingSource::zone(&service), &service.database));
+}
+
+#[test]
+fn delegates_model_identity_through_the_pricing_view() {
+    let source = support::pricing();
+    let view = PricingView(source.as_ref());
+    assert_eq!(
+        view.resolve_model("gpt-4o", Some("openai")),
+        Some(ModelIdentity {
+            model: "gpt-4o".to_owned(),
+            provider: "openai".to_owned(),
+        })
+    );
 }
