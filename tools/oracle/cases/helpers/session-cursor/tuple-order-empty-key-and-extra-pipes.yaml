@@ -1,0 +1,12 @@
+kind: helper
+name: session-cursor-tuple-order-empty-key-and-extra-pipes
+call:
+  session_cursor:
+    cursor: "2026-01-01 00:00:00|hashed-key|session|with|pipes"
+calls:
+  - session_cursor:
+      cursor: "2026-01-01 00:00:00||session-2"
+  - session_cursor:
+      cursor: "0001-01-01 00:00:00|hashed-key|"
+env: {}
+compare: {ignore: []}
