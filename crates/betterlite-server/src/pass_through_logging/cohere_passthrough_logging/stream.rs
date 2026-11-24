@@ -93,13 +93,13 @@ fn collected_chunks(
         let generic: GenericChunk =
             converted(&decoded).map_err(PassthroughLoggingError::stream_build)?;
         let chunk = ProviderChunk::Generic(Box::new(generic));
-        let shaped = match chunk_creator(&mut shaper, &mut state, &chunk) {
+        let emitted = match chunk_creator(&mut shaper, &mut state, &chunk) {
             Ok(Some(kept)) => kept,
             Ok(None) => continue,
             Err(ProviderChunkError::StopIteration) => break,
             Err(error) => return Err(PassthroughLoggingError::stream_build(error)),
         };
-        let collected = converted::<_, CollectedChunk>(&shaped)
+        let collected = converted::<_, CollectedChunk>(&emitted)
             .map_err(PassthroughLoggingError::stream_build)?;
         chunks.push(collected);
     }

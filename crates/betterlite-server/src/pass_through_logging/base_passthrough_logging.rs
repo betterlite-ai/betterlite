@@ -168,21 +168,30 @@ pub enum PassthroughLoggingError {
 
 impl PassthroughLoggingError {
     #[must_use]
-    pub fn transform<E: Error + Send + Sync + 'static>(source: E) -> Self {
+    pub fn transform<E>(source: E) -> Self
+    where
+        E: Error + Send + Sync + 'static,
+    {
         Self::Transform {
             source: Box::new(source),
         }
     }
 
     #[must_use]
-    pub fn stream_build<E: Error + Send + Sync + 'static>(source: E) -> Self {
+    pub fn stream_build<E>(source: E) -> Self
+    where
+        E: Error + Send + Sync + 'static,
+    {
         Self::StreamBuild {
             source: Box::new(source),
         }
     }
 
     #[must_use]
-    pub fn payload<E: Error + Send + Sync + 'static>(source: E) -> Self {
+    pub fn payload<E>(source: E) -> Self
+    where
+        E: Error + Send + Sync + 'static,
+    {
         Self::Payload {
             source: Box::new(source),
         }
@@ -230,10 +239,17 @@ impl PassthroughChatLogger {
         &self,
         input: CollectedChunksInput<'_>,
     ) -> Result<PassthroughOutcome, PassthroughLoggingError> {
-        let model = request_model(input.request_body, None)?;
+        let CollectedChunksInput {
+            call_log,
+            request_body,
+            start_time,
+            end_time,
+            all_chunks,
+        } = input;
+        let model = request_model(request_body, None)?;
         let built = self
             .provider
-            .build_complete_streaming_response(input.all_chunks, &model)?;
+            .build_complete_streaming_response(all_chunks, &model)?;
         let Some(mut complete) = built else {
             tracing::error!("{NO_COMPLETE_RESPONSE}");
             return Ok(PassthroughOutcome {
@@ -248,9 +264,9 @@ impl PassthroughChatLogger {
             response,
             model: &model,
             kwargs: ResponseLoggingKwargs::default(),
-            start_time: input.start_time,
-            end_time: input.end_time,
-            call_log: input.call_log,
+            start_time,
+            end_time,
+            call_log,
         });
         let result = match complete {
             StreamedResponse::Model(json) => PassThroughResponse::ModelResponse(json),

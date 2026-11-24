@@ -19,11 +19,11 @@ use crate::pass_through_logging::base_passthrough_logging::{
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
 
 use super::chat::CohereProvider;
-use super::support::{
+use super::{CohereEmbeddingTools as _, EmbeddingDecodeInput, StandardObjectInput};
+use support::{
     FakeTools, PricedCall, RecordingPricing, call_log_detail, cohere_logger, embedding_response,
     input, json, production_tools,
 };
-use super::{CohereEmbeddingTools as _, EmbeddingDecodeInput, StandardObjectInput};
 
 pub(crate) mod support;
 
@@ -33,7 +33,7 @@ fn cohere_route_embed_goes_to_the_embed_branch() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -59,7 +59,7 @@ fn cohere_route_embeddings_goes_to_the_chat_handler() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r"}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -84,7 +84,7 @@ fn cohere_route_embed_prefix_goes_to_the_embed_branch() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -108,7 +108,7 @@ fn cohere_route_chat_goes_to_the_chat_handler() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r"}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -138,7 +138,7 @@ fn cohere_embed_takes_texts_before_input() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a", "b"], "input": ["c"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let _outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -159,7 +159,7 @@ fn cohere_embed_falls_back_to_input_for_empty_texts() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": [], "input": ["c"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let _outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -179,7 +179,7 @@ fn cohere_embed_falls_back_to_input_for_null_texts() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": null, "input": ["c"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let _outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -199,7 +199,7 @@ fn cohere_embed_uses_no_text_when_neither_key_is_present() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r"}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let _outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -219,7 +219,7 @@ fn cohere_embed_falls_back_to_the_chat_handler_for_a_non_list_texts_value() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": "a", "input": ["c"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -244,7 +244,7 @@ fn cohere_embed_falls_back_to_the_chat_handler_for_a_non_list_input_value() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "input": {"text": "c"}}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -269,7 +269,7 @@ fn cohere_embed_stores_the_cost_in_the_hidden_params() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -298,7 +298,7 @@ fn cohere_embed_sets_the_kwargs_and_the_call_log() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -329,7 +329,7 @@ fn cohere_embed_writes_the_call_log_after_the_standard_object() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let _outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -352,7 +352,7 @@ fn cohere_embed_replaces_only_the_proxy_server_request() {
     let payload =
         Arc::new(FakePayload::new(ResponseLoggingKwargs::default()).with_end_user("alice"));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let kwargs = ResponseLoggingKwargs {
         response_cost: None,
         model: None,
@@ -383,7 +383,7 @@ fn cohere_embed_skips_the_user_lookup_without_a_request_body() {
     let payload =
         Arc::new(FakePayload::new(ResponseLoggingKwargs::default()).with_end_user("alice"));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -409,7 +409,7 @@ fn cohere_fallback_runs_the_chat_handler_after_a_decode_failure() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -436,7 +436,7 @@ fn cohere_fallback_runs_the_chat_handler_after_a_cost_failure() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -461,7 +461,7 @@ fn cohere_fallback_keeps_the_kwargs_the_failed_branch_wrote() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools)
         .cohere_passthrough_handler(input(
@@ -489,7 +489,7 @@ fn cohere_fallback_returns_the_chat_error() {
     let provider = Arc::new(FakeProvider::failing());
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = cohere_logger(&provider, &payload, &tools).cohere_passthrough_handler(input(
         &request,

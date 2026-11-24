@@ -10,15 +10,15 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use tracing::Level;
 
-use super::support::{
-    END, FakePayload, FakeProvider, FixedCost, RecordingBuilder, START, capture_logs, field,
-    json_object, logger, logging_state, object, timestamp,
-};
 use super::{
     CollectedChunksInput, PassthroughChatInput, PassthroughLoggingError, PassthroughPayload as _,
     PassthroughPayloadInput, ResponsePayloadBuilder, UpstreamChatReply,
 };
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
+use support::{
+    END, FakePayload, FakeProvider, FixedCost, RecordingBuilder, START, capture_logs, field,
+    json_object, logger, logging_state, object, timestamp,
+};
 
 pub(crate) mod support;
 
@@ -60,7 +60,7 @@ fn chat_uses_the_request_model_for_the_transform_and_the_payload() {
 fn chat_takes_the_model_from_the_response_body_when_the_request_omits_it() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
-    let request = object(r#"{}"#);
+    let request = object("{}");
     let response = object(r#"{"model": "served-model"}"#);
     let mut state = logging_state();
     let outcome = logger(&provider, &payload)
@@ -111,7 +111,7 @@ fn chat_takes_a_null_request_model_as_absent() {
 fn chat_uses_the_empty_model_when_neither_body_names_one() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
-    let request = object(r#"{}"#);
+    let request = object("{}");
     let response = object(r#"{"model": null}"#);
     let mut state = logging_state();
     let outcome = logger(&provider, &payload)
@@ -170,7 +170,7 @@ fn chat_returns_the_model_type_error_for_a_non_text_request_model() {
 fn chat_returns_the_model_type_error_for_a_non_text_response_model() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
-    let request = object(r#"{}"#);
+    let request = object("{}");
     let response = object(r#"{"model": 3}"#);
     let mut state = logging_state();
     let outcome = logger(&provider, &payload).passthrough_chat_handler(PassthroughChatInput {
@@ -202,7 +202,7 @@ fn chat_returns_the_transform_error_before_the_payload_runs() {
     let provider = Arc::new(FakeProvider::failing());
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r"}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = logger(&provider, &payload).passthrough_chat_handler(PassthroughChatInput {
         upstream: UpstreamChatReply {
@@ -236,7 +236,7 @@ fn chat_returns_the_kwargs_the_payload_built() {
     };
     let payload = Arc::new(FakePayload::new(built.clone()));
     let request = object(r#"{"model": "command-r"}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let outcome = logger(&provider, &payload)
         .passthrough_chat_handler(PassthroughChatInput {
@@ -263,7 +263,7 @@ fn chat_hands_the_call_log_to_the_payload() {
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
     let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
     let request = object(r#"{"model": "command-r"}"#);
-    let response = object(r#"{}"#);
+    let response = object("{}");
     let mut state = logging_state();
     let _outcome = logger(&provider, &payload)
         .passthrough_chat_handler(PassthroughChatInput {
