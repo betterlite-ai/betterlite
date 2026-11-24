@@ -57,15 +57,23 @@ def hidden_object(value: InitValue) -> dict[str, JsonValue] | None:
             return value.model_dump()
         case Mapping():
             return JSON_OBJECT.validate_python(value)
-        case str() | int() | float() | bool() | None | Sequence():
+        case str() | int() | float() | None | Sequence():
             return None
 
 
-# LiteLLM's hasattr(obj, "_hidden_params"), read through the response classes' own accessors.
+# pydantic keeps private attributes beside fields; ResponseObject reads only fields.
+def private_fields(response: ResponseObject) -> dict[str, JsonValue]:
+    private: dict[str, JsonValue] | None = response.__pydantic_private__
+    if private is None:
+        return {}
+    return private
+
+
+# LiteLLM's hasattr(obj, "_hidden_params"), read from where pydantic keeps private attributes.
 def hidden_params(response: JsonSource) -> dict[str, JsonValue] | None:
     match response:
         case ResponseObject():
-            return hidden_object(response.get("_hidden_params"))
+            return hidden_object(private_fields(response).get("_hidden_params"))
         case DecisionsResponse() | OpenAIDecisionResponse():
             return response.hidden_params
         case Dumpable() | Mapping():
@@ -75,8 +83,8 @@ def hidden_params(response: JsonSource) -> dict[str, JsonValue] | None:
 def has_hidden_params(response: JsonSource) -> bool:
     match response:
         case DecisionsResponse() | OpenAIDecisionResponse():
-            return response.hidden_params is not None
+            return True
         case ResponseObject():
-            return "_hidden_params" in response
+            return "_hidden_params" in private_fields(response)
         case Dumpable() | Mapping():
             return False
