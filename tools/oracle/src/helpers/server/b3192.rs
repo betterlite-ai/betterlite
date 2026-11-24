@@ -1,11 +1,150 @@
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, PoisonError};
+
+use axum::http::HeaderMap;
+use betterlite_config::sections::public_router_presets::Settings;
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_router::fuse_presets::get_fuse_presets;
+use betterlite_server::public_endpoints::router_presets::catalog::PresetCatalog;
+use betterlite_server::public_endpoints::router_presets::scorer::ComplexityScorerDefaults;
+use betterlite_server::public_endpoints::router_presets::service::AutorouterPresetService;
+use betterlite_server::roi_github::transport::Transport;
+use serde::{Deserialize, Serialize};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
-impl Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Debug, Deserialize)]
+#[serde(tag = "function", deny_unknown_fields)]
+pub(crate) enum Input {
+    #[serde(rename = "autorouter_presets")]
+    Autorouter {
+        url: String,
+        local_only: bool,
+        responses: Vec<RemoteResponse>,
+        resolutions: u8,
+    },
+    #[serde(rename = "scorer_defaults")]
+    ScorerDefaults,
+    #[serde(rename = "fuse_presets")]
+    FusePresets,
+}
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b3192")
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RemoteResponse {
+    status: u16,
+    body: String,
+}
+
+#[derive(Serialize)]
+struct AutorouterAnswer<'presets> {
+    presets: &'presets PresetCatalog,
+    requests: usize,
+    urls: Vec<String>,
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::Autorouter {
+                url,
+                local_only,
+                responses,
+                resolutions,
+            } => autorouter_answer(url, *local_only, responses, *resolutions),
+            Input::ScorerDefaults => scorer_answer(),
+            Input::FusePresets => fuse_answer(),
+        }
+    }
+}
+
+fn autorouter_answer(
+    url: &str,
+    local_only: bool,
+    responses: &[RemoteResponse],
+    resolutions: u8,
+) -> HelperResult {
+    let script = Script::new(responses);
+    let settings = Settings {
+        url: url.to_owned(),
+        local_only,
+    };
+    let service = AutorouterPresetService::new(script.clone(), settings);
+    let runtime = Builder::new_current_thread().build()?;
+    let presets = runtime.block_on(async {
+        let mut resolved = service.presets().await.or_config_error()?;
+        for _ in 1..resolutions {
+            resolved = service.presets().await.or_config_error()?;
+        }
+        Ok::<_, Box<HelperError>>(resolved)
+    })?;
+    let urls = script.requests();
+    let answer = AutorouterAnswer {
+        presets: presets.as_ref(),
+        requests: urls.len(),
+        urls,
+    };
+    Ok(serde_json::to_value(answer)?)
+}
+
+fn scorer_answer() -> HelperResult {
+    let defaults = ComplexityScorerDefaults::shipped().or_config_error()?;
+    Ok(serde_json::to_value(defaults)?)
+}
+
+fn fuse_answer() -> HelperResult {
+    let catalog = get_fuse_presets().or_config_error()?;
+    Ok(serde_json::to_value(catalog.as_ref())?)
+}
+
+#[derive(Clone, Default)]
+struct Script {
+    replies: Arc<Mutex<VecDeque<RemoteResponse>>>,
+    urls: Arc<Mutex<Vec<String>>>,
+}
+
+impl Script {
+    fn new(responses: &[RemoteResponse]) -> Self {
+        let replies = VecDeque::from(responses.to_vec());
+        Self {
+            replies: Arc::new(Mutex::new(replies)),
+            urls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn requests(&self) -> Vec<String> {
+        self.urls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl Transport for Script {
+    async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+        self.urls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.url.to_string());
+        let next = self
+            .replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front();
+        match next {
+            Some(response) => Ok(UpstreamResponse {
+                status: response.status,
+                headers: HeaderMap::new(),
+                body: response.body.into_bytes(),
+            }),
+            None => Err(TransportError::Closed),
+        }
     }
 }

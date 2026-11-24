@@ -1,0 +1,7 @@
+kind: helper
+name: public-complexity-router-scorer-defaults
+call:
+  b3192:
+    function: scorer_defaults
+env: {}
+compare: {ignore: []}
