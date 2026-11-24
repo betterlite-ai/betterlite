@@ -1,0 +1,30 @@
+task: B7880
+deviations:
+  - what: "The managed container id is encoded on create and decoded for retrieve and delete in Rust, inside the B3369 and B3370 provider operations, where LiteLLM does it in Python around the handler call."
+    why: "The id wrapper belongs to the provider call, and Python doing it again would fork the routing metadata format. The result is the same: with litellm_metadata.model_info.id or extra_body.target_model_names set, create answers the encoded id, and retrieve and delete decode that id before the request."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L266-L275
+  - what: "mock_response is resolved in Rust: a JSON string or an object stands in for the provider answer of create, list, retrieve and delete, and no request leaves. The Python layer only carries the value across."
+    why: "The provider call runs in Rust, so the short-circuit sits with it, and a mock string is parsed the way LiteLLM parses it before the answer model is built."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L203-L210
+  - what: "extra_body crosses into Rust as a map of strings. A nested object, list, number, boolean or null value fails the call with a ValueError whose text is the JSON shape error, not the parameter name, where LiteLLM accepts any value and on create only reads a string, or a list taken as text, in target_model_names."
+    why: "B3369 types the create routing hint as a string map, and the Python layer must not carry a value the Rust call cannot take. A working setup sends target_model_names as text or leaves an unused extra_body out."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L138-L147
+  - what: "An extra_query value must be a string or an integer. A float, boolean, null, list or object fails the call with a RuntimeError that names the parameter, where LiteLLM hands any value to httpx and httpx writes it into the query string."
+    why: "The Rust query type holds text and integers, which covers what the OpenAI API and a working setup send, and a value of another type is an error that names the field."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L194-L207
+  - what: "A caller that passes client or shared_session not None gets UnsupportedCallArgument instead of having that client make the request."
+    why: "The request runs on the session's own Rust client, and a Python httpx client cannot cross into it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8826-L8830
+  - what: "A caller that passes azure_ad_token_provider gets UnsupportedCallArgument, so an azure or azure_text container call cannot mint its token through a Python callable."
+    why: "A Python callable cannot cross into the Rust session, and an azure container call is unsupported here, as this file records below."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L86
+  - what: "An azure or azure_text container call fails with a 400 bad-request answer, where LiteLLM serves both ids with its AzureContainerConfig."
+    why: "The Azure container config is not ported, so B3369 and B3370 answer only openai; B547 owns the AzureContainerConfig implementation."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9741-L9743
+  - what: "A call's ssl_verify is ignored: every container request verifies TLS with the session client's default policy, where LiteLLM builds the container client from litellm_params.ssl_verify."
+    why: "The session builds one client at startup and the container transport carries no per-call TLS policy yet, so a call against a self-signed endpoint or a CA bundle fails the handshake."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8828
+  - what: "This task has no helper oracle cases; the tests run both packages against one local HTTP server and compare the recorded requests and the answers."
+    why: "The oracle helper runs a LiteLLM function in process and caches its answer, while these eight functions answer through a native session, so the local server compares both packages on the same input instead."
+    link: ""
+kept_bugs: []

@@ -1,0 +1,1 @@
+{"litellm_params": {"model": "gpt-4o", "metadata": {"team": "a"}}, "model_info": {"health_check_params": {"max_tokens": 16}}}

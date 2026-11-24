@@ -1,0 +1,77 @@
+task: B4683
+deviations:
+  - what: >-
+      The per-request header values (BYOK Authorization, caller extra headers, gateway-resolved
+      credential) reach the tool through an OpenApiCallContext argument rather than module-level
+      context variables.
+    why: >-
+      The repository forbids module-level state. The merge order and the headers sent upstream are
+      the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109-L128
+  - what: >-
+      A tool call follows redirects inside the OpenApiTransport implementation, up to 20 hops,
+      instead of inside the HTTP client.
+    why: >-
+      The pooled ProxiedClient never follows redirects, and the credential guard needs to see every
+      hop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L745
+  - what: >-
+      An upstream failure or a failed static credential check becomes an OpenApiToolError variant
+      instead of an HTTPException or an MCP exception.
+    why: >-
+      The server layer owns the public error shape; this module reports the status, the challenge and
+      the server label.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L442-L465
+  - what: >-
+      A Swagger 2 document with an empty schemes list falls back to https.
+    why: >-
+      LiteLLM reads schemes[0] and raises IndexError on an empty list, so no working setup relies on
+      it. Null and absent schemes take the same https default, as the compatibility rules say.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L213
+  - what: >-
+      A path argument that is a list or an object is sent as compact JSON.
+    why: >-
+      LiteLLM renders it with Python str(), whose spacing and quoting are runtime text the
+      compatibility rules do not copy. A scalar renders the same on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L136
+  - what: >-
+      A query argument that is an object is sent as compact JSON.
+    why: >-
+      LiteLLM hands the value to httpx, which renders it with Python str(), spacing and single
+      quotes included, and the compatibility rules do not copy that text. A list is still
+      repeated once per item, as httpx does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L540-L546
+  - what: >-
+      A 2xx upstream body that is not valid UTF-8 fails with OpenApiToolError::BodyText instead of
+      becoming tool text.
+    why: >-
+      LiteLLM reads response.text, which decodes through the Content-Type charset and replaces
+      undecodable bytes with U+FFFD. This module does not implement other charsets, and a tool
+      result must not silently carry substituted characters, so it reports the failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L592
+  - what: >-
+      A servers entry without a url contributes an empty base URL.
+    why: >-
+      LiteLLM raises KeyError on servers[0]["url"], so a document it cannot load has no behavior to
+      copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L191
+kept_bugs:
+  - what: >-
+      An argument of 0, false, "" or an empty list or object counts as absent for path, query and
+      body parameters.
+    why: >-
+      LiteLLM decides with if param_value and if not body_value, and a working setup sees a zero left
+      out of the URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L530
+  - what: >-
+      The "{name}" replacement runs before "{{name}}", so a double-braced placeholder keeps one
+      brace pair around the value.
+    why: >-
+      LiteLLM replaces in that order, and the leftover braces reach the upstream path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L537-L538
+  - what: >-
+      Header and cookie parameters appear in the input schema but are never sent.
+    why: >-
+      build_input_schema copies every named parameter while extract_parameters only knows path, query
+      and body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L325-L338
