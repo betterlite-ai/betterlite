@@ -13,8 +13,8 @@ use crate::api::vector_store_http_write::service::SuppliedClient;
 use super::error::FileContentError;
 use super::plan::{Plan, content_timeout, known_provider, resolved_provider};
 use super::target::{
-    CallerClient, ContentLogger, ContentMode, ContentOperation, ContentTarget, GenericContent,
-    NewLogger, SuppliedSdk, XaiBatchContent,
+    CallerClient, ContentLogger, ContentMode, ContentOperation, ContentTarget, FileContentDispatch,
+    GenericContent, NewLogger, SuppliedSdk, XaiBatchContent,
 };
 use super::{
     ContentAnswer, ContentCall, ContentContext, ContentEntry, ContentKwargs, FileContentStream,
