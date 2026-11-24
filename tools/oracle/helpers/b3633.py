@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
 from typing import NotRequired, TypedDict
@@ -80,14 +79,10 @@ OUTCOME: TypeAdapter[OutcomeView] = TypeAdapter(OutcomeView)
 LOGGING: TypeAdapter[LoggingView] = TypeAdapter(LoggingView)
 
 
-def cost_text(cost: float) -> str:
-    return format(Decimal(repr(cost)).normalize(), "f")
-
-
 def cost_or_none(cost: float | None) -> JsonValue:
     if cost is None:
         return None
-    return cost_text(cost)
+    return format(Decimal(repr(cost)).normalize(), "f")
 
 
 def make_logging(start: datetime) -> Logging:
@@ -155,7 +150,7 @@ def kwargs_value(
     if "unified_object_id" in view:
         unified_object_id = view["unified_object_id"]
     return {
-        "response_cost": cost_text(view["response_cost"]),
+        "response_cost": format(Decimal(repr(view["response_cost"])).normalize(), "f"),
         "model": view["model"],
         "batch_id": batch_id,
         "unified_object_id": unified_object_id,
@@ -165,7 +160,7 @@ def kwargs_value(
 
 
 def call_log_value(logging_obj: Logging) -> dict[str, JsonValue]:
-    view = LOGGING.model_validate(logging_obj)
+    view = LOGGING.validate_python(logging_obj)
     details = view.model_call_details
     return {
         "model": view.model,
@@ -183,17 +178,18 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     response = httpx.Response(
         input_value["status_code"], content=input_value["body"].encode()
     )
-    returned: Mapping[str, object] = Handler.batch_creation_handler(
-        httpx_response=response,
-        logging_obj=logging_obj,
-        url_route=input_value["url_route"],
-        result=input_value["body"],
-        start_time=start,
-        end_time=start,
-        cache_hit=False,
-        request_body=input_value["request_body"],
+    outcome = OUTCOME.validate_python(
+        Handler.batch_creation_handler(  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L896-L907
+            httpx_response=response,
+            logging_obj=logging_obj,
+            url_route=input_value["url_route"],
+            result=input_value["body"],
+            start_time=start,
+            end_time=start,
+            cache_hit=False,
+            request_body=input_value["request_body"],
+        )
     )
-    outcome = OUTCOME.validate_python(dict(returned))
     return {
         "result": result_value(outcome.result),
         "kwargs": kwargs_value(outcome.kwargs, input_value["request_metadata"]),
