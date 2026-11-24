@@ -498,9 +498,8 @@ def test_error_class_and_cause() -> None:
 
 
 def test_async_error_class() -> None:
-    with GenaiServer() as server:
-        with pytest.raises(AuthenticationError) as awaited:
-            asyncio.run(agenerate_content(**common_call(server.url, BAD_KEY)))
+    with GenaiServer() as server, pytest.raises(AuthenticationError) as awaited:
+        asyncio.run(agenerate_content(**common_call(server.url, BAD_KEY)))
     assert authentication_payload(awaited.value)["type"] == "AuthenticationError"
 
 
