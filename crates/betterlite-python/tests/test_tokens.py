@@ -24,8 +24,9 @@ from betterlite.types.utils import Message
 TEXT: Final = "hello world"
 TEXT_IDS: Final[list[int]] = [15339, 1917]
 UNKNOWN_MODEL: Final = "betterlite-unknown-model"
+# 5M characters, past LiteLLM's 4M-character sampling threshold, so both counts extrapolate
 LONG_TEXT: Final = "tokenizer " * 500_000
-LONG_TEXT_MIN_TOKENS: Final = 1_000_000
+LONG_TEXT_MIN_TOKENS: Final = 500_000
 MODELS: Final = ("gpt-4o", "gpt-3.5-turbo", "claude-3-5-sonnet-20241022", UNKNOWN_MODEL)
 RUNTIME_MODELS: Final = ("gpt-3.5-turbo-0301", "gpt-3.5-turbo", "", UNKNOWN_MODEL)
 PLAIN_MESSAGES: Final[list[dict[str, JsonValue]]] = [{"role": "user", "content": TEXT}]
