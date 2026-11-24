@@ -148,6 +148,15 @@ fn request_extra_headers_become_a_header_map() {
         panic!("a header that is not text is a field error");
     };
     assert_eq!(name, "extra_headers");
+    for extra in [
+        r#"{"skill_id": "s1", "extra_headers": {"bad name": "x"}}"#,
+        r#"{"skill_id": "s1", "extra_headers": {"x-a": "bad\nvalue"}}"#,
+    ] {
+        let Err(RequestError::FieldType { name, .. }) = skill::arguments(arguments(extra)) else {
+            panic!("a header HTTP cannot carry is a field error");
+        };
+        assert_eq!(name, "extra_headers");
+    }
 }
 
 #[test]
