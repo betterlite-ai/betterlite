@@ -366,7 +366,7 @@ fn the_stream_flag_follows_the_optional_value_then_the_sdk() {
         &sdk_stream(Value::Bool(false))
     ));
     assert!(resolve_stream_flag(
-        &absent,
+        &no_optional_params,
         &sdk_stream(Value::from("yes"))
     ));
     assert!(!resolve_stream_flag(
