@@ -30,7 +30,7 @@ fn context() -> ErrorContext {
 }
 
 fn wire(text: &str) -> CallWire {
-    parse(&format!(r#"{{"arguments":{{{text}}}}}"#)).unwrap()
+    parse(&format!(r#"{{"arguments":{text}}}"#)).unwrap()
 }
 
 fn container() -> ContainerObject {
