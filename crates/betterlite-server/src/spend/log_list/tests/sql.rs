@@ -196,7 +196,10 @@ fn the_page_limits_and_offsets_bind_after_every_condition() {
         "spend ASC",
         false,
         &[],
-        PageWindow::from_page(2, 10),
+        PageWindow {
+            page_size: 10,
+            offset: 10,
+        },
     );
     assert!(flat.sql.contains("LIMIT $1 OFFSET $2"));
     assert_eq!(
@@ -208,7 +211,10 @@ fn the_page_limits_and_offsets_bind_after_every_condition() {
         "spend ASC",
         true,
         &[SessionParam::Text(String::from("alice"))],
-        PageWindow::from_page(1, 50),
+        PageWindow {
+            page_size: 50,
+            offset: 0,
+        },
     );
     assert!(grouped.sql.contains("DISTINCT ON"));
     assert!(grouped.sql.contains("LIMIT $2 OFFSET $3"));
@@ -242,7 +248,12 @@ fn a_total_past_the_cap_is_reported_as_the_cap() {
 
 #[test]
 fn a_skip_past_the_signed_range_saturates() {
-    let window = PageWindow::from_page(i64::MAX, 1000);
+    let page = i64::MAX;
+    let page_size = 1000;
+    let window = PageWindow {
+        page_size,
+        offset: page.saturating_sub(1).saturating_mul(page_size),
+    };
     assert_eq!(window.page_size, 1000);
     assert_eq!(window.offset, i64::MAX);
 }

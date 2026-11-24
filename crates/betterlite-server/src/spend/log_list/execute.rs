@@ -131,7 +131,12 @@ async fn flat_page(
     let count = count_query(&joined, grouped, &page.built.params);
     let raw_total = page.store.count_matches(&count).await?;
     let order_sql = order_clause(page.choices, page.built.request_id_index, grouped);
-    let window = PageWindow::from_page(page.query.page.page, page.query.page.page_size);
+    let page_number = page.query.page.page;
+    let page_size = page.query.page.page_size;
+    let window = PageWindow {
+        page_size,
+        offset: page_number.saturating_sub(1).saturating_mul(page_size),
+    };
     let rows_query = page_query(&joined, &order_sql, grouped, &page.built.params, window);
     let mut rows = page.store.list_rows(&rows_query).await?;
     let scope = state.scope.as_deref();

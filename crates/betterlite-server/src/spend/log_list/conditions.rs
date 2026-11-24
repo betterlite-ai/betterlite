@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use super::authz::{Authorization, ScopeClause};
+use crate::list_api::problem::escape_like;
 use crate::spend::log_query::SpendLogQuery;
 use crate::spend::log_query::prepare::PreparedSpendLogQuery;
 use crate::spend::log_query::sql::{
@@ -136,21 +137,7 @@ fn push_scope(built: &mut BuiltConditions, scope: &ScopeClause) {
     }
 }
 
-// session_id is read as a literal, so its wildcard characters are escaped; key_alias and error_message keep theirs
-fn escape_like(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
-        match character {
-            '\\' => escaped.push_str("\\\\"),
-            '%' => escaped.push_str("\\%"),
-            '_' => escaped.push_str("\\_"),
-            other => escaped.push(other),
-        }
-    }
-    escaped
-}
-
-// session_id is a literal match with its wildcards escaped; a success status also matches NULL, and a deferred one waits for the representative
+// session_id is a literal match escaped through the shared list-API helper; a success status also matches NULL, and a deferred one waits for the representative
 fn push_session_and_status(
     built: &mut BuiltConditions,
     query: &SpendLogQuery,

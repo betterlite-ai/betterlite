@@ -346,6 +346,21 @@ async fn the_requested_page_binds_after_every_condition() {
 }
 
 #[tokio::test]
+async fn a_huge_page_binds_the_largest_offset() {
+    let fixture = Fixture::new(StoreMode::Ready, 1);
+    let page = i64::MAX;
+    let (reply, events) = fixture
+        .call(
+            &format!("{UI}&page={page}&page_size=1000"),
+            Some(&internal("alice")),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let query = query_event(&events, "rows");
+    assert!(query.contains("Integer(1000), Integer(9223372036854775807)"));
+}
+
+#[tokio::test]
 async fn a_store_failure_is_converted_with_its_own_code() {
     let fixture = Fixture::new(StoreMode::Failing, 0);
     let (reply, _) = fixture.call(UI, Some(&internal("alice"))).await;

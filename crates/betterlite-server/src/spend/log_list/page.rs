@@ -10,16 +10,6 @@ pub struct PageWindow {
     pub offset: i64,
 }
 
-impl PageWindow {
-    #[must_use]
-    pub const fn from_page(page: i64, page_size: i64) -> Self {
-        Self {
-            page_size,
-            offset: page.saturating_sub(1).saturating_mul(page_size),
-        }
-    }
-}
-
 // the count is bounded by the cap plus one, so the response can tell a capped total from an exact one
 #[must_use]
 pub fn count_query(joined: &str, session_grouping: bool, params: &[SessionParam]) -> SessionQuery {
