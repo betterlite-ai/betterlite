@@ -1,0 +1,17 @@
+name: claude-plugin-read-auth-invalid
+config: |
+  general_settings:
+    master_key: oracle-master-auth
+env: {}
+upstream: []
+request:
+  method: GET
+  path: /claude-code/plugins
+  headers: {authorization: Bearer sk-not-the-master}
+  body: null
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}
