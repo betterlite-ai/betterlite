@@ -65,8 +65,10 @@ fn input_tokens(py: Python<'_>, wire: &ModifiedRequest) -> Result<Option<usize>,
 #[pyfunction]
 pub(crate) fn modified_max_tokens(py: Python<'_>, request: &str) -> PyResult<Option<i64>> {
     let wire: ModifiedRequest = read(request)?;
+    // LiteLLM's token_counter returns 0 while disable_token_counter is set, so the buffer alone counts
     let counted = match wire.user_max_tokens {
         None => None,
+        Some(_user) if wire.disable_token_counter => Some(0_usize),
         Some(_user) => input_tokens(py, &wire)?,
     };
     let catalog = BundledCatalog::default().get();

@@ -1,6 +1,8 @@
 import asyncio
 import importlib
-from collections.abc import Mapping, Sequence
+import threading
+import time
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Final, Literal, Protocol, TypeAlias
 
@@ -14,6 +16,8 @@ from betterlite.types.utils import Message
 
 TEXT: Final = "hello world"
 TEXT_IDS: Final[list[int]] = [15339, 1917]
+ANTHROPIC_MODEL: Final = "claude-sonnet-4-5"
+ANTHROPIC_IDS: Final[list[int]] = [9381, 2253]
 UNKNOWN_MODEL: Final = "betterlite-unknown-model"
 # 5M characters, past LiteLLM's 4M-character sampling threshold, so both counts extrapolate
 LONG_TEXT: Final = "tokenizer " * 500_000
@@ -47,8 +51,10 @@ MODIFIED_CASES: Final[list[tuple[str, int, float | None, float | None]]] = [
     ("gpt-4o", 55, None, None),
     (UNKNOWN_MODEL, 55, None, None),
     ("ai21.j2-mid-v1", 20_000, None, None),
+    ("ai21.j2-mid-v1", 20_000, 2.0, None),
     ("ai21.j2-mid-v1", 20_000, None, 1000.0),
 ]
+DISABLED_MAX_TOKENS: Final = 8181
 WORD_LEVEL: Final = (
     '{"version":"1.0","truncation":null,"padding":null,"added_tokens":[],'
     '"normalizer":null,"pre_tokenizer":{"type":"Whitespace"},"post_processor":null,'
@@ -57,6 +63,10 @@ WORD_LEVEL: Final = (
 )
 MISSING_REPOSITORY: Final = "betterlite-nonexistent/repository"
 OFFLOAD_TIMEOUT: Final = 30.0
+OFFLOAD_SLEEP: Final = 0.1
+OFFLOAD_CALLS: Final = 5
+# litellm's TOKEN_COUNTER_MAX_CONCURRENT_COUNTS, the width of the offload semaphore
+OFFLOAD_CONCURRENCY: Final = 4
 PNG_DATA: Final = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABNIAAAI3"
 GIF_DATA: Final = "data:image/gif;base64,R0lGODlhKAAeAA=="
 PNG_SIZE: Final[tuple[int, int]] = (1234, 567)
@@ -291,6 +301,22 @@ def test_counter_value_errors() -> None:
         ValueError, match="tools or tool_choice cannot be set if using text"
     ):
         their_counter.token_counter(text=TEXT, tools=TOOLS)
+    with pytest.raises(
+        ValueError, match="tools or tool_choice cannot be set if using text"
+    ):
+        betterlite.token_counter(text=TEXT, tool_choice="none")
+    with pytest.raises(
+        ValueError, match="tools or tool_choice cannot be set if using text"
+    ):
+        their_counter.token_counter(text=TEXT, tool_choice="none")
+    with pytest.raises(
+        ValueError, match="tools or tool_choice cannot be set if using text"
+    ):
+        betterlite.token_counter(text=TEXT, tool_choice=TOOL_CHOICES[0])
+    with pytest.raises(
+        ValueError, match="tools or tool_choice cannot be set if using text"
+    ):
+        their_counter.token_counter(text=TEXT, tool_choice=TOOL_CHOICES[0])
 
 
 def test_counter_encoding_name() -> None:
@@ -305,10 +331,41 @@ def test_counter_legacy_accounting() -> None:
         assert ours == their_helpers.uses_legacy_message_accounting(model), model
 
 
+class OffloadProbe:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+        self.threads: list[int] = []
+
+    def __call__(self, text: str) -> int:
+        with self.lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            self.threads.append(threading.get_ident())
+        try:
+            time.sleep(OFFLOAD_SLEEP)
+        finally:
+            with self.lock:
+                self.active -= 1
+        return betterlite.token_counter(text=text)
+
+
+async def gather_offloaded(offloaded: Callable[[str], Awaitable[int]], calls: int) -> list[int]:
+    coroutines = [offloaded(TEXT) for _ in range(calls)]
+    return await asyncio.gather(*coroutines)
+
+
 def test_counter_offload() -> None:
-    offloaded = betterlite.offload_token_count(betterlite.token_counter)
-    counted = asyncio.run(asyncio.wait_for(offloaded(text=TEXT), timeout=OFFLOAD_TIMEOUT))
-    assert counted == betterlite.token_counter(text=TEXT)
+    probe = OffloadProbe()
+    offloaded = betterlite.offload_token_count(probe)
+    counted = asyncio.run(
+        asyncio.wait_for(gather_offloaded(offloaded, OFFLOAD_CALLS), timeout=OFFLOAD_TIMEOUT)
+    )
+    assert counted == [betterlite.token_counter(text=TEXT)] * OFFLOAD_CALLS
+    assert probe.peak == OFFLOAD_CONCURRENCY
+    loop_thread = threading.get_ident()
+    assert all(thread != loop_thread for thread in probe.threads)
 
 
 def test_codec_default_encoding() -> None:
@@ -325,6 +382,16 @@ def test_codec_ignores_model() -> None:
     their_ids = their_codec.encode(model="gpt-4o", text=TEXT)
     assert ours == their_ids
     assert ours == TEXT_IDS
+
+
+def test_codec_follows_the_model() -> None:
+    ours = betterlite.encode(model=ANTHROPIC_MODEL, text=TEXT)
+    their_ids = their_codec.encode(model=ANTHROPIC_MODEL, text=TEXT)
+    assert ours == their_ids == ANTHROPIC_IDS
+    assert ours != TEXT_IDS
+    their_text: str = litellm.decode(model=ANTHROPIC_MODEL, tokens=ANTHROPIC_IDS)
+    decoded = betterlite.decode(model=ANTHROPIC_MODEL, tokens=ours)
+    assert decoded == their_text == TEXT
 
 
 def test_codec_ignores_skip_flag() -> None:
@@ -433,3 +500,26 @@ def test_modified_max_tokens() -> None:
             buffer_num,
         )
         assert ours == theirs, model
+    betterlite.disable_token_counter = True
+    litellm.disable_token_counter = True
+    try:
+        disabled: int | None = litellm.get_modified_max_tokens(
+            "ai21.j2-mid-v1",
+            "ai21.j2-mid-v1",
+            MODIFIED_MESSAGES,
+            20_000,
+            None,
+            None,
+        )
+        ours_disabled = betterlite.get_modified_max_tokens(
+            "ai21.j2-mid-v1",
+            "ai21.j2-mid-v1",
+            MODIFIED_MESSAGES,
+            20_000,
+            None,
+            None,
+        )
+        assert ours_disabled == disabled == DISABLED_MAX_TOKENS
+    finally:
+        betterlite.disable_token_counter = False
+        litellm.disable_token_counter = False

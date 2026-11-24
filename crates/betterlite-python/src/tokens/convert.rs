@@ -123,9 +123,13 @@ impl TileRequest {
     pub(crate) fn settings(&self) -> ImageSettings {
         let defaults = ImageSettings::default();
         ImageSettings {
+            default_width: defaults.default_width,
+            default_height: defaults.default_height,
+            default_token_count: defaults.default_token_count,
+            max_short_side: defaults.max_short_side,
+            max_long_side: defaults.max_long_side,
             tile_width: self.tile_width.unwrap_or(defaults.tile_width),
             tile_height: self.tile_height.unwrap_or(defaults.tile_height),
-            ..defaults
         }
     }
 }
@@ -174,6 +178,8 @@ pub(crate) struct ModifiedRequest {
     pub(crate) user_max_tokens: Option<i64>,
     pub(crate) buffer_perc: Option<f64>,
     pub(crate) buffer_num: Option<f64>,
+    // LiteLLM counts the input with token_counter, which reads litellm.disable_token_counter
+    pub(crate) disable_token_counter: bool,
 }
 
 impl ModifiedRequest {

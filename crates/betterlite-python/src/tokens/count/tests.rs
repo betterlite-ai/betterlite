@@ -18,8 +18,11 @@ fn tokens_count_counts_a_text_like_litellm() {
 #[test]
 fn tokens_count_counts_with_the_models_encoding() {
     Python::attach(|py| {
-        let counted = token_count(py, r#"{"model":"gpt-4o","text":"hello world"}"#).unwrap();
-        assert_eq!(counted, 2);
+        // the CJK clause is three tokens under gpt-4o's o200k_base and six under cl100k_base
+        let o200k = token_count(py, r#"{"model":"gpt-4o","text":"hello world 世界"}"#).unwrap();
+        assert_eq!(o200k, 3);
+        let cl100k = token_count(py, r#"{"model":"gpt-3.5-turbo","text":"hello world 世界"}"#);
+        assert_eq!(cl100k.unwrap(), 6);
     });
 }
 
@@ -124,5 +127,13 @@ fn tokens_modified_max_tokens_shrinks_to_the_shared_context() {
         assert_eq!(modified_max_tokens(py, request).unwrap(), Some(8172));
         let buffered = r#"{"model":"ai21.j2-mid-v1","base_model":"ai21.j2-mid-v1","messages":[{"role":"user","content":"hello world"}],"user_max_tokens":20000,"buffer_num":1000.0}"#;
         assert_eq!(modified_max_tokens(py, buffered).unwrap(), Some(7182));
+    });
+}
+
+#[test]
+fn tokens_modified_max_tokens_counts_nothing_when_the_counter_is_disabled() {
+    Python::attach(|py| {
+        let request = r#"{"model":"ai21.j2-mid-v1","base_model":"ai21.j2-mid-v1","messages":[{"role":"user","content":"hello world"}],"user_max_tokens":20000,"disable_token_counter":true}"#;
+        assert_eq!(modified_max_tokens(py, request).unwrap(), Some(8181));
     });
 }
