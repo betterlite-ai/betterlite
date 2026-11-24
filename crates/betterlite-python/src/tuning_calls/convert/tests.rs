@@ -25,6 +25,7 @@ use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -116,6 +117,13 @@ fn failure_of(raised: Raised) -> Failure {
 
 fn json_error() -> serde_json::Error {
     serde_json::from_str::<Json>("{").expect_err("the text is not JSON")
+}
+
+fn python_error(value: Raised) -> PyErr {
+    let Raised::Python(error) = value else {
+        panic!("the failure is a Python error");
+    };
+    *error
 }
 
 #[test]
@@ -820,22 +828,26 @@ fn error_a_transport_failure_is_a_connection_error() {
 
 #[test]
 fn error_a_missing_azure_base_is_a_python_value_error() {
-    assert!(matches!(
-        wire_failure(WireError::MissingAzureBase),
-        Raised::Python(_)
-    ));
+    Python::initialize();
+    Python::attach(|py| {
+        let base = python_error(wire_failure(WireError::MissingAzureBase));
+        assert!(base.is_instance_of::<PyValueError>(py));
+    });
 }
 
 #[test]
 fn error_a_job_id_failure_is_a_python_value_error() {
-    let dot = wire_failure(WireError::JobId(HttpError::DotSegment {
-        field_name: "job_id".to_owned(),
-    }));
-    assert!(matches!(dot, Raised::Python(_)));
-    let empty = wire_failure(WireError::JobId(HttpError::Required {
-        field_name: "job_id".to_owned(),
-    }));
-    assert!(matches!(empty, Raised::Python(_)));
+    Python::initialize();
+    Python::attach(|py| {
+        let dot = python_error(wire_failure(WireError::JobId(HttpError::DotSegment {
+            field_name: "job_id".to_owned(),
+        })));
+        assert!(dot.is_instance_of::<PyValueError>(py));
+        let empty = python_error(wire_failure(WireError::JobId(HttpError::Required {
+            field_name: "job_id".to_owned(),
+        })));
+        assert!(empty.is_instance_of::<PyValueError>(py));
+    });
 }
 
 #[test]
@@ -855,30 +867,25 @@ fn error_vertex_names_the_task() {
 
 #[test]
 fn error_timeout_and_data_are_python_value_errors() {
-    assert!(matches!(
-        Raised::from(TuningFailure::Create(FineTuningCreateError::Timeout(
-            TimeoutError::NonFinite
-        ))),
-        Raised::Python(_)
-    ));
-    assert!(matches!(
-        Raised::from(TuningFailure::Create(FineTuningCreateError::Data(
-            json_error()
-        ))),
-        Raised::Python(_)
-    ));
-    assert!(matches!(
-        Raised::from(TuningFailure::Read(FineTuningReadError::Timeout(
-            TimeoutError::NonFinite
-        ))),
-        Raised::Python(_)
-    ));
-    assert!(matches!(
-        Raised::from(TuningFailure::Cancel(FineTuningCancelError::Timeout(
-            TimeoutError::NonFinite
-        ))),
-        Raised::Python(_)
-    ));
+    Python::initialize();
+    Python::attach(|py| {
+        let create_timeout = python_error(Raised::from(TuningFailure::Create(
+            FineTuningCreateError::Timeout(TimeoutError::NonFinite),
+        )));
+        assert!(create_timeout.is_instance_of::<PyValueError>(py));
+        let create_data = python_error(Raised::from(TuningFailure::Create(
+            FineTuningCreateError::Data(json_error()),
+        )));
+        assert!(create_data.is_instance_of::<PyValueError>(py));
+        let read_timeout = python_error(Raised::from(TuningFailure::Read(
+            FineTuningReadError::Timeout(TimeoutError::NonFinite),
+        )));
+        assert!(read_timeout.is_instance_of::<PyValueError>(py));
+        let cancel_timeout = python_error(Raised::from(TuningFailure::Cancel(
+            FineTuningCancelError::Timeout(TimeoutError::NonFinite),
+        )));
+        assert!(cancel_timeout.is_instance_of::<PyValueError>(py));
+    });
 }
 
 #[test]
