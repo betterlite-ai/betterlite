@@ -1,0 +1,70 @@
+kind: helper
+name: tags-request-wins
+call:
+  b3630:
+    routes: []
+    tags:
+      - metadata:
+          tags:
+            - "a"
+            - "b"
+          user_api_key_auth_metadata:
+            tags:
+              - "key"
+      - metadata:
+          tags:
+            - "a"
+            - 1
+            - "b"
+          user_api_key_auth_metadata:
+            tags:
+              - "key"
+      - metadata:
+          tags:
+            - ""
+          user_api_key_auth_metadata:
+            tags:
+              - "key"
+      - metadata:
+          tags:
+            - 1
+            - 2
+          user_api_key_auth_metadata:
+            tags:
+              - "key"
+      - metadata:
+          tags: []
+          user_api_key_auth_metadata:
+            tags:
+              - "key"
+      - metadata:
+          user_api_key_auth_metadata:
+            tags:
+              - "key"
+      - metadata:
+          tags: "a"
+          user_api_key_auth_metadata:
+            tags:
+              - "key"
+      - metadata:
+          tags:
+            - "x"
+          user_api_key_auth_metadata:
+            tags:
+              - "key1"
+              - "key2"
+      - metadata:
+          tags:
+            - "x"
+          user_api_key_auth_metadata:
+            tags: []
+      - metadata:
+          tags:
+            - "only"
+    models: []
+    ids: []
+    costing: []
+    speeds: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,36 @@
+kind: helper
+name: auth-org-lookup-project-absent
+call:
+  auth_org_lookup:
+    function: project_object
+    database: true
+    target: p2
+    in_memory_ttl: 5.0
+    project_row: {project_id: p1, project_alias: research, budget_id: b2}
+    steps:
+      - {now: 100.0, fail: []}
+calls:
+  # the same table answers the present project, so absence is not a read failure
+  - auth_org_lookup:
+      function: project_object
+      database: true
+      target: p2
+      in_memory_ttl: 5.0
+      project_row:
+        project_id: p2
+        project_alias: billing
+        budget_id: b3
+        litellm_budget_table: {budget_id: b3, max_budget: 5.0}
+      steps:
+        - {now: 100.0, fail: []}
+  - auth_org_lookup:
+      function: project_object
+      database: false
+      target: p2
+      in_memory_ttl: 5.0
+      project_row: {project_id: p2, project_alias: billing, budget_id: b3}
+      steps:
+        - {now: 100.0, fail: []}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}

@@ -1,0 +1,26 @@
+kind: helper
+name: key-list-filters-team-list-permission
+call:
+  key_list_filters:
+    calls:
+      - function: projections
+        caller: {user_id: u1, user_role: internal_user}
+        teams:
+          - {team_id: t1, members_with_roles: [{user_id: u1, role: admin}], team_member_permissions: ["/key/list"]}
+          - {team_id: t2, members_with_roles: [{user_id: u1, role: user}], team_member_permissions: ["/key/list"]}
+          - {team_id: t3, members_with_roles: [{user_id: u1, role: user}], team_member_permissions: ["/key/info"]}
+          - {team_id: t4, members_with_roles: [{user_id: u1, role: user}], team_member_permissions: null}
+          - {team_id: t5, members_with_roles: [{user_id: null, user_email: e@example.com, role: user}], team_member_permissions: ["/key/list"]}
+          - {team_id: t6, members_with_roles: [{user_id: u2, role: admin}], team_member_permissions: ["/key/list"]}
+          - {team_id: t1, members_with_roles: [{user_id: u1, role: admin}], team_member_permissions: ["/key/list"]}
+      - function: projections
+        caller: {user_id: null, user_role: internal_user}
+        teams:
+          - {team_id: t1, members_with_roles: [{user_id: null, user_email: e@example.com, role: user}], team_member_permissions: ["/key/list"]}
+          - {team_id: t2, members_with_roles: [{user_id: u1, role: admin}], team_member_permissions: ["/key/list"]}
+      - function: projections
+        caller: {user_id: u1, user_role: proxy_admin_viewer}
+        teams:
+          - {team_id: t1, members_with_roles: [{user_id: u1, role: admin}], team_member_permissions: null}
+env: {}
+compare: {ignore: []}

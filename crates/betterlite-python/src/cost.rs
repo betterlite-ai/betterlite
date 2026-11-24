@@ -1,6 +1,14 @@
+mod billing;
+mod breakdown;
+mod convert;
+mod engine;
+mod error;
+mod native;
+mod settings;
+use self::native::NativeCost;
 use pyo3::prelude::*;
-
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The cost family task adds its native functions here.
+// The classes betterlite._cost reaches for: one pricing engine per settings text.
+pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<NativeCost>()?;
     Ok(())
 }

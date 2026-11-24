@@ -1,0 +1,2 @@
+paddata: {"type":"ping"}data: {"type":"message_start","message":{"model":"vertical"}}data: {"type":"ping"}data: {"type":"ping"}�data: {"type":"message_start","message":{"id":"msg_9"}} data: {"type":"ping"} data: {"type":"message_stop"}
+data: {"type":"message_start","message":{"model":"crlf"}}

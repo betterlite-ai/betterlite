@@ -1,0 +1,25 @@
+kind: helper
+name: key-list-filters-admin-team-scope
+call:
+  key_list_filters:
+    calls:
+      - function: validate
+        caller: {user_id: null, user_role: proxy_admin}
+        selectors: {user_id: u2, team_id: t9, organization_id: o9, key_alias: someone, key_hash: sk-missing}
+        user_row: null
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: null, user_role: proxy_admin_viewer}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: null}
+        user_row: null
+        key_row: null
+        key_fails: false
+      - function: projections
+        caller: {user_id: u1, user_role: internal_user}
+        teams:
+          - {team_id: t1, members_with_roles: [{user_id: u1, role: admin}], team_member_permissions: ["/key/list"]}
+          - {team_id: t2, members_with_roles: [{user_id: u1, role: user}], team_member_permissions: null}
+          - {team_id: t1, members_with_roles: [{user_id: u1, role: admin}], team_member_permissions: ["/key/list"]}
+env: {}
+compare: {ignore: []}

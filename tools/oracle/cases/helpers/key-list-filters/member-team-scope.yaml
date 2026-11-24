@@ -1,0 +1,42 @@
+kind: helper
+name: key-list-filters-member-team-scope
+call:
+  key_list_filters:
+    calls:
+      - function: teams
+        user: {user_id: u1, teams: [t1, t2]}
+        teams:
+          - {team_id: t2, members_with_roles: [{user_id: u1, role: user}]}
+          - {team_id: t1, members_with_roles: [{user_id: u2, role: admin}]}
+        teams_fail: false
+      - function: teams
+        user: null
+        teams: null
+        teams_fail: false
+      - function: teams
+        user: {user_id: u1, teams: []}
+        teams:
+          - {team_id: t1, members_with_roles: [{user_id: u1, role: user}]}
+        teams_fail: false
+      - function: teams
+        user: {user_id: u1, teams: [t1]}
+        teams: null
+        teams_fail: false
+      - function: teams
+        user: {user_id: u1, teams: [t1]}
+        teams:
+          - {team_id: t1, members_with_roles: [{user_id: u1, role: user}]}
+        teams_fail: true
+      - function: teams
+        user: {user_id: u1, teams: [t1]}
+        teams:
+          - {members_with_roles: not-json}
+        teams_fail: false
+      - function: projections
+        caller: {user_id: u1, user_role: internal_user}
+        teams:
+          - {team_id: t1, members_with_roles: [{user_id: null, user_email: e@example.com, role: user}]}
+          - {team_id: t2, members_with_roles: [{user_id: u2, role: admin}]}
+          - {team_id: t3, members_with_roles: [{user_id: u1, role: user}]}
+env: {}
+compare: {ignore: []}

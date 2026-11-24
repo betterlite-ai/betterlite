@@ -1,0 +1,49 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "Petstore", "version": "1.0.0"},
+  "servers": [{"url": "https://petstore.test/v1"}],
+  "components": {
+    "parameters": {
+      "Limit": {"name": "limit", "in": "query", "schema": {"type": "integer"}, "required": false}
+    }
+  },
+  "paths": {
+    "/pets": {
+      "parameters": [{"name": "tenant", "in": "header"}],
+      "get": {
+        "operationId": "listPets",
+        "summary": "List pets",
+        "parameters": [
+          {"$ref": "#/components/parameters/Limit"},
+          {"name": "tag", "in": "query", "description": "Filter by tag", "required": true}
+        ]
+      },
+      "post": {
+        "operationId": "createPet",
+        "description": "Create a pet",
+        "requestBody": {
+          "description": "The pet to add",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "tag": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pets/{petId}": {
+      "get": {
+        "operationId": "get.pet by id",
+        "parameters": [{"name": "petId", "in": "path", "required": true, "schema": {"type": "string"}}]
+      },
+      "delete": {
+        "operationId": "deletePet",
+        "parameters": [{"name": "petId", "in": "path", "required": true}]
+      }
+    }
+  }
+}
