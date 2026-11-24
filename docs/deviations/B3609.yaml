@@ -13,7 +13,7 @@ deviations:
     why: LiteLLM returns before recording partial usage or dispatching failure handlers because the poller owns the authoritative row and a second row would collide on its request id; betterlite keeps that exclusive billing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L79-L80
   - what: A clean completion parks the success job through the DeferredStreamLogging port when the lifecycle has one, and binds the reservation before parking, as LiteLLM writes the coroutine to logging_obj._deferred_stream_complete_args.
-    why: betterlite owns no logging object to hang the coroutine on, and the port keeps the same order: the job is built and the reservation bound once, exactly, and never on a disconnect or an error path.
+    why: betterlite owns no logging object to hang the coroutine on, and the port keeps the same order, with the job built and the reservation bound once, exactly, and never on a disconnect or an error path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L235-L242
   - what: The reconstruction of a failed stream's partial usage reads its end time from the stream's injected clock instead of LiteLLM's datetime.now(timezone.utc) at the moment of failure.
     why: Both values are the time the failure is handled; betterlite threads one SuccessClock through the success and failure paths, so the logged end time has one source and the tests can pin it.
