@@ -1,0 +1,13 @@
+kind: helper
+name: team-list-query-seed
+call:
+  team_list_query:
+    teams:
+      - team_id: t1
+        members_with_roles:
+          - {user_id: u1, role: user}
+    use_deleted_table: false
+    keys_count_by_team:
+      t1: 1
+env: {}
+compare: {ignore: []}
