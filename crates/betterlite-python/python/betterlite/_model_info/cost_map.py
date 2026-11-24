@@ -5,7 +5,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -20,10 +20,8 @@ class _CostMapClient(Protocol):
     ...
 
 
-class CostMapOptions(TypedDict, total=False):
-    sleep: Callable[[float], None] | Callable[[float], Awaitable[None]]
-    rng: random.Random
-    client: _CostMapClient
+_SyncSleep: TypeAlias = Callable[[float], None]
+_AsyncSleep: TypeAlias = Callable[[float], Awaitable[None]]
 
 
 class CostMapProvenance(TypedDict):
@@ -81,14 +79,15 @@ ModelCostMapReloadResult: TypeAlias = ModelCostMapReloaded | ModelCostMapReloadU
 
 
 def _reject_injected_options(
-    options: CostMapOptions,
-    default_sleep: Callable[[float], None] | Callable[[float], Awaitable[None]],
+    sleep: _SyncSleep | _AsyncSleep | None,
+    rng: random.Random | None,
+    client: _CostMapClient | None,
+    default_sleep: _SyncSleep | _AsyncSleep,
 ) -> None:
-    if options.get("client") is not None:
+    if client is not None:
         raise UnsupportedCallArgument("client")
-    if options.get("rng") is not None:
+    if rng is not None:
         raise UnsupportedCallArgument("rng")
-    sleep = options.get("sleep")
     if sleep is not None and sleep is not default_sleep:
         raise UnsupportedCallArgument("sleep")
 
@@ -113,9 +112,11 @@ def get_model_cost_map(
     url: str,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    **options: Unpack[CostMapOptions],
+    sleep: _SyncSleep = time.sleep,
+    rng: random.Random | None = None,
+    client: _CostMapClient | None = None,
 ) -> dict[str, JsonValue]:
-    _reject_injected_options(options, time.sleep)
+    _reject_injected_options(sleep, rng, client, time.sleep)
     text = catalog_state.native.reload_blocking(_reload_request(url, float(timeout), max_attempts))
     return _RELOADED.validate_json(text)["model_cost_map"]
 
@@ -124,9 +125,11 @@ async def refetch_model_cost_map(
     url: str,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
-    **options: Unpack[CostMapOptions],
+    sleep: _AsyncSleep = asyncio.sleep,
+    rng: random.Random | None = None,
+    client: _CostMapClient | None = None,
 ) -> ModelCostMapReloadResult:
-    _reject_injected_options(options, asyncio.sleep)
+    _reject_injected_options(sleep, rng, client, asyncio.sleep)
     request = _reload_request(url, float(timeout), max_attempts)
     text = await catalog_state.native.reload_async(request)
     return _reload_result(text)

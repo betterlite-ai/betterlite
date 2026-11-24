@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import random
 import re
+import time
 from collections.abc import Iterator, Mapping
 from datetime import datetime
 from typing import Final, Protocol
@@ -337,7 +338,13 @@ def test_unsupported_options(server: ModelMapServer) -> None:
     with pytest.raises(UnsupportedCallArgument):
         get_model_cost_map(url, sleep=_OtherSleeper())
     with pytest.raises(UnsupportedCallArgument):
+        get_model_cost_map(url, 5, 3, time.sleep, random.SystemRandom(), object())
+    with pytest.raises(UnsupportedCallArgument):
         asyncio.run(refetch_model_cost_map(url, rng=random.SystemRandom()))
+    with pytest.raises(UnsupportedCallArgument):
+        asyncio.run(
+            refetch_model_cost_map(url, 5, 3, asyncio.sleep, random.SystemRandom(), object())
+        )
 
 
 def test_reload_adopt_cost_map(
