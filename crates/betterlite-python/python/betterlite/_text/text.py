@@ -7,6 +7,7 @@ from betterlite._completion import CustomStreamWrapper
 from betterlite._completion.completion import completion_from_arguments, settle_outcome
 from betterlite._completion.stream import CompletionOutcome, usage_from_wire
 from betterlite._completion.wire import WireUsage
+from betterlite._cost.objects import hidden_params
 from betterlite._endpoints import (
     CallPayload,
     CallValue,
@@ -259,7 +260,5 @@ def text_from_chat(chat: ModelResponse) -> TextCompletionResponse:
     response["created"] = chat["created"]
     response["model"] = chat["model"]
     response["usage"] = chat.get("usage")
-    hidden = chat.get("_hidden_params")
-    params = HiddenParams() if hidden is None else HiddenParams.model_validate(hidden)
-    response["_hidden_params"] = params
+    response["_hidden_params"] = HiddenParams.model_validate(hidden_params(chat))
     return response
