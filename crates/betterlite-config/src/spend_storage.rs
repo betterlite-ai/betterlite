@@ -28,6 +28,7 @@ pub const ENV_PRECREATE_AHEAD: &str = "SPEND_LOG_PARTITION_PRECREATE_AHEAD";
 pub const DEFAULT_PRECREATE_AHEAD: i64 = 7;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
 const USE_REDIS_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
+const DISABLE_SPEND_LOGS_PATH: &str = "general_settings.disable_spend_logs";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
 const DISABLE_END_USER_PATH: &str = "litellm_settings.disable_end_user_cost_tracking";
 const ENABLE_PROMETHEUS_PATH: &str =
@@ -53,6 +54,9 @@ pub struct GeneralSettings {
     store_prompts_in_spend_logs: JsonValue,
     missing_session_id: JsonValue,
     disable_spend_updates: JsonValue,
+    // absent keeps the proxy's False, an explicit null stays "not exactly false"
+    #[serde(default, with = "serde_with::rust::double_option")]
+    disable_spend_logs: Option<Option<JsonValue>>,
     use_redis_transaction_buffer: JsonValue,
     #[serde(flatten)]
     retention: CleanupGeneralSettings,
@@ -75,6 +79,7 @@ pub struct Settings {
     pub max_string_length_prompt_in_db: i64,
     pub missing_session_id: Option<MissingSessionId>,
     pub spend_updates: SpendUpdates,
+    pub disable_spend_logs: Option<bool>,
     pub max_budget: Decimal,
     pub disable_end_user_cost_tracking: Option<bool>,
     pub enable_prometheus_only: Option<bool>,
@@ -116,6 +121,7 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
+            disable_spend_logs: disable_spend_logs(&general.disable_spend_logs)?,
             max_budget: max_budget(litellm.max_budget, lookup)?,
             disable_end_user_cost_tracking: optional_flag(
                 &litellm.disable_end_user_cost_tracking,
@@ -137,6 +143,25 @@ impl Section for Raw {
         })
     }
 }
+// proxy_server's disable_spend_logs starts False, general_settings replaces it only when the key is there, and an explicit null is neither False nor True.
+fn disable_spend_logs(configured: &Option<Option<JsonValue>>) -> Result<Option<bool>, ConfigError> {
+    match configured {
+        None => Ok(Some(false)),
+        Some(None) => Ok(None),
+        Some(Some(JsonValue::Bool(flag))) => Ok(Some(*flag)),
+        Some(Some(
+            JsonValue::Null
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_),
+        )) => Err(ConfigError::InvalidScalar {
+            path: DISABLE_SPEND_LOGS_PATH.to_owned(),
+            value: false,
+        }),
+    }
+}
+
 // litellm takes max_budget as a number or an os.environ reference; an absent one leaves zero
 fn max_budget<L>(configured: Option<JsonValue>, lookup: &L) -> Result<Decimal, ConfigError>
 where

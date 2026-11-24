@@ -1,0 +1,5 @@
+# a present null is not exactly false, so the writer keeps the log row but skips the log-dependent usage work
+general_settings:
+  disable_spend_logs: null
+litellm_settings:
+  max_budget: 0
