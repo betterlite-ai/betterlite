@@ -93,5 +93,5 @@ fn system_clock_reports_utc_time_that_advances() {
     while Instant::now() < deadline {}
     assert!(clock.monotonic() > start);
     assert!(clock.now().timestamp() > 0);
-    assert_eq!(clock.now().offset().local_minus_utc(), 0);
+    assert_eq!(clock.now().offset().local_minus_utc(), 0_i32);
 }
