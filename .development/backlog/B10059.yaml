@@ -1,14 +1,14 @@
 id: B10059
 milestone: M5 api families
 title: Request provider hint accessors
-status: todo
+status: done
 depends_on: [B003, B1100, B171]
 file: tasks/B10059-request-provider-hints.yaml
 covers:
   - "litellm/proxy/common_utils/openai_endpoint_utils.py"
 parent: B124
 split_from: B2400
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3123
