@@ -1,0 +1,57 @@
+kind: helper
+name: batch-limit-counters-counter-partial-failure
+call:
+  batch_limit_counters:
+    principal: {}
+    clock: 1700000000.0
+    window_size: 60
+    cache:
+      "{api_key_tpd:sk-1}:window": 1699990000
+    store:
+      replies: []
+    limiter:
+      base:
+        - key: api_key
+          value: sk-1
+          rate_limit:
+            requests_per_unit: 5
+            tokens_per_unit: null
+            max_parallel_requests: null
+            window_size: 60
+        - key: api_key_tpd
+          value: sk-1
+          rate_limit:
+            requests_per_unit: null
+            tokens_per_unit: 100
+            max_parallel_requests: null
+            window_size: 86400
+      project:
+        descriptors: []
+        increments: []
+      responses:
+        - overall_code: OVER_LIMIT
+          statuses:
+            - code: OK
+              current_limit: 5
+              limit_remaining: 1
+              rate_limit_type: requests
+              descriptor_key: api_key
+              descriptor_value: sk-1
+            - code: OVER_LIMIT
+              current_limit: 100
+              limit_remaining: 0
+              rate_limit_type: tokens
+              descriptor_key: api_key_tpd
+              descriptor_value: sk-1
+          reservation_windows: []
+    calls:
+      - function: check_and_increment_batch_counters
+        data:
+          model: gpt-4o-mini
+        batch_usage:
+          total_tokens: 120
+          request_count: 3
+          output_tokens: 0
+          per_model_usage: {}
+env: {}
+compare: {ignore: []}

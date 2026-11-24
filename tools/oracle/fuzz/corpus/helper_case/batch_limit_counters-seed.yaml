@@ -1,0 +1,27 @@
+kind: helper
+name: batch_limit_counters-seed
+call:
+  batch_limit_counters:
+    principal: {}
+    clock: 1700000000.0
+    window_size: 60
+    cache: {}
+    store:
+      replies: []
+    limiter:
+      base: []
+      project:
+        descriptors: []
+        increments: []
+      responses: []
+    calls:
+      - function: read_tpd_window_start
+        status:
+          code: OVER_LIMIT
+          current_limit: 100
+          limit_remaining: 0
+          rate_limit_type: tokens
+          descriptor_key: api_key_tpd
+          descriptor_value: sk-1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,43 @@
+kind: helper
+name: batch-limit-counters-tpm-limit
+call:
+  batch_limit_counters:
+    principal: {}
+    clock: 1700000000.0
+    window_size: 60
+    cache: {}
+    store:
+      replies: []
+    limiter:
+      base: []
+      project:
+        descriptors: []
+        increments: []
+      responses: []
+    calls:
+      - function: raise_rate_limit_error
+        status:
+          code: OVER_LIMIT
+          current_limit: 100
+          limit_remaining: 5
+          rate_limit_type: tokens
+          descriptor_key: api_key_tpd
+          descriptor_value: sk-1
+        descriptors:
+          - key: api_key_tpd
+            value: sk-1
+            rate_limit:
+              requests_per_unit: null
+              tokens_per_unit: 100
+              max_parallel_requests: null
+              window_size: 86400
+        batch_usage:
+          total_tokens: 120
+          request_count: 3
+          output_tokens: 0
+          per_model_usage: {}
+        limit_type: tokens
+        requested_model: gpt-4o-mini
+        window_start: 1699990000
+env: {}
+compare: {ignore: []}
