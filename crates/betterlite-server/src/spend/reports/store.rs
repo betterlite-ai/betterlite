@@ -108,13 +108,7 @@ impl ScopedReportStore for PostgresScopedReportStore {
         &self,
         request: OrganizationReportRequest<'_>,
     ) -> Result<Vec<OrganizationKeySpend>, ScopedReportError> {
-        let teams = request.team_ids.to_vec();
-        let parameters = vec![request.start, request.end, &request.organization_id, &teams];
-        let query = Query {
-            sql: ORGANIZATION_SPEND_REPORT_SQL,
-            parameters,
-        };
-        query_service::decoded_rows(&self.store, &query).await
+        organization_rows(&self.store, request).await
     }
 
     async fn organization_team_ids(
@@ -149,4 +143,17 @@ impl ScopedReportStore for PostgresScopedReportStore {
         query_service::get_spend_by_team(&self.store, request.start, request.end, request.team_id)
             .await
     }
+}
+
+// _ORG_SPEND_REPORT_SQL over the window, organization and its current teams, decoded into organization rows
+async fn organization_rows(
+    store: &PostgresStore,
+    request: OrganizationReportRequest<'_>,
+) -> Result<Vec<OrganizationKeySpend>, ScopedReportError> {
+    let teams = request.team_ids.to_vec();
+    let query = Query {
+        sql: ORGANIZATION_SPEND_REPORT_SQL,
+        parameters: vec![request.start, request.end, &request.organization_id, &teams],
+    };
+    query_service::decoded_rows(store, &query).await
 }

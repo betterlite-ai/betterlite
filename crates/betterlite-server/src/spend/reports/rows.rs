@@ -43,13 +43,13 @@ pub struct OrganizationModelSpend {
 }
 
 // get_spend_by_team: one entry per day, each with its teams and their per-model, per-key metadata
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DailyTeamSpend {
     pub group_by_day: String,
     pub teams: Vec<TeamSpend>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct TeamSpend {
     pub team_name: String,
     #[serde(with = "rust_decimal::serde::arbitrary_precision")]
