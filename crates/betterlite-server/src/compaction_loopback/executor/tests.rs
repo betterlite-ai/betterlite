@@ -23,6 +23,7 @@ use super::{LoopbackExecutor, MAX_CHILD_BODY_BYTES};
 use crate::compaction_loopback::error::LoopbackError;
 
 const CHILD_MODEL: &str = "child-model";
+const FOUR_MEBIBYTES: usize = 4 * 1024 * 1024;
 const PARENT_MODEL: &str = "parent-model";
 const RECORDED_BODY_LIMIT: usize = 16 * 1024 * 1024;
 const REDACTION_OPT_OUT: &str = "litellm-disable-message-redaction";
@@ -402,7 +403,7 @@ async fn a_child_body_at_the_limit_is_read_and_parsed() {
     let mut body = b"{\"blob\":\"".to_vec();
     body.resize(MAX_CHILD_BODY_BYTES - 2, b'a');
     body.extend_from_slice(b"\"}");
-    assert_eq!(body.len(), MAX_CHILD_BODY_BYTES);
+    assert_eq!(body.len(), FOUR_MEBIBYTES);
     let (executor, _recorder) = executor_of(StatusCode::OK, body);
     let request_payload = summary_payload();
     let result = summarize(&executor, CompactionProtocol::Chat, &request_payload, false).await;
