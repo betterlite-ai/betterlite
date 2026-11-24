@@ -21,6 +21,7 @@ from betterlite.main import (
     image_generation,
     image_variation,
 )
+from betterlite.types.utils.media import ImageResponse
 
 HOST: Final = "127.0.0.1"
 OK: Final = 200
@@ -163,18 +164,24 @@ def offset(body: bytes, needle: bytes) -> int:
 
 
 def test_signature_matches_litellm() -> None:
-    pairs = [
-        (image_generation, REFERENCE.image_generation),
-        (aimage_generation, REFERENCE.aimage_generation),
-        (image_variation, REFERENCE.image_variation),
-        (aimage_variation, REFERENCE.aimage_variation),
-        (image_edit, REFERENCE.image_edit),
-        (aimage_edit, REFERENCE.aimage_edit),
-    ]
-    for ours, reference in pairs:
-        assert parameter_rows(inspect.signature(ours)) == parameter_rows(
-            inspect.signature(reference)
-        )
+    assert parameter_rows(inspect.signature(image_generation)) == parameter_rows(
+        inspect.signature(REFERENCE.image_generation)
+    )
+    assert parameter_rows(inspect.signature(aimage_generation)) == parameter_rows(
+        inspect.signature(REFERENCE.aimage_generation)
+    )
+    assert parameter_rows(inspect.signature(image_variation)) == parameter_rows(
+        inspect.signature(REFERENCE.image_variation)
+    )
+    assert parameter_rows(inspect.signature(aimage_variation)) == parameter_rows(
+        inspect.signature(REFERENCE.aimage_variation)
+    )
+    assert parameter_rows(inspect.signature(image_edit)) == parameter_rows(
+        inspect.signature(REFERENCE.image_edit)
+    )
+    assert parameter_rows(inspect.signature(aimage_edit)) == parameter_rows(
+        inspect.signature(REFERENCE.aimage_edit)
+    )
     assert not inspect.iscoroutinefunction(image_generation)
     assert inspect.iscoroutinefunction(aimage_generation)
 
@@ -221,7 +228,7 @@ def test_generate_ignores_mock_response() -> None:
 
 
 def test_async_generate_returns_the_image_response() -> None:
-    async def asked() -> tuple[JsonValue, RecordedCall]:
+    async def asked() -> tuple[ImageResponse, RecordedCall]:
         with closing(ImageServer()) as server:
             response = await aimage_generation(
                 prompt=PROMPT, api_base=server.url, api_key=GOOD_KEY,
@@ -261,15 +268,14 @@ def test_edit_sends_files_in_order_with_their_types() -> None:
 
 
 def test_edit_dall_e_2_rejects_two_images() -> None:
-    with closing(ImageServer()) as server, pytest.raises(BadRequestError) as caught:
+    images = [NamedFile(PNG_BYTES, "first.png"), NamedFile(JPEG_BYTES, "second.jpg")]
+    with closing(ImageServer()) as server, pytest.raises(
+        BadRequestError, match="DALL-E-2 only supports editing a single image"
+    ):
         image_edit(
-            image=[NamedFile(PNG_BYTES, "first.png"), NamedFile(JPEG_BYTES, "second.jpg")],
-            prompt=PROMPT,
-            model=DEFAULT_MODEL,
-            api_base=server.url,
-            api_key=GOOD_KEY,
+            image=images, prompt=PROMPT, model=DEFAULT_MODEL,
+            api_base=server.url, api_key=GOOD_KEY,
         )
-    assert "DALL-E-2 only supports editing a single image" in caught.value.message
     assert server.calls == []
 
 

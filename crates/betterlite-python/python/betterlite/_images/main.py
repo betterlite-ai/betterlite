@@ -1,5 +1,5 @@
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Final, TypeAlias
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Final, NoReturn, TypeAlias
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -61,19 +61,30 @@ def image_generation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    values = positional(
-        GENERATION_NAMES,
-        (prompt, model, n, quality, response_format, size, style, user, timeout,
-         api_key, api_base, api_version, custom_llm_provider),
-        kwargs,
+    return image_response(
+        call_image(
+            NativeImageSession("{}").generate,
+            image_payload(
+                {
+                    **kwargs,
+                    **dict(
+                        zip(
+                            GENERATION_NAMES,
+                            (prompt, model, n, quality, response_format, size, style, user,
+                             timeout, api_key, api_base, api_version, custom_llm_provider),
+                            strict=False,
+                        )
+                    ),
+                }
+            ),
+        )
     )
-    return image_response(call_image(NativeImageSession("{}").generate, image_payload(values)))
 
 
 async def aimage_generation(*args: CallValue, **kwargs: CallValue) -> ImageResponse:
-    values = positional(GENERATION_NAMES, args, kwargs)
-    text = await acall_image(NativeImageSession("{}").agenerate, image_payload(values))
-    return image_response(text)
+    arguments = {**kwargs, **dict(zip(GENERATION_NAMES, args, strict=False))}
+    session = NativeImageSession("{}")
+    return image_response(await acall_image(session.agenerate, image_payload(arguments)))
 
 
 def image_variation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L616
@@ -85,14 +96,19 @@ def image_variation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/lit
     user: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    values = positional(VARIATION_NAMES, (image, model, n, response_format, size, user), kwargs)
-    return image_response(call_image(NativeImageSession("{}").variation, image_payload(values)))
+    given = (image, model, n, response_format, size, user)
+    named = {**kwargs, **dict(zip(VARIATION_NAMES, given, strict=False))}
+    payload = image_payload(named)
+    return image_response(call_image(NativeImageSession("{}").variation, payload))
 
 
 async def aimage_variation(*args: CallValue, **kwargs: CallValue) -> ImageResponse:
-    values = positional(VARIATION_NAMES, args, kwargs)
-    text = await acall_image(NativeImageSession("{}").avariation, image_payload(values))
-    return image_response(text)
+    return image_response(
+        await acall_image(
+            NativeImageSession("{}").avariation,
+            image_payload({**kwargs, **dict(zip(VARIATION_NAMES, args, strict=False))}),
+        )
+    )
 
 
 def image_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L712
@@ -112,13 +128,23 @@ def image_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    values = positional(
-        EDIT_NAMES,
-        (image, prompt, model, mask, n, quality, response_format, size, user,
-         extra_headers, extra_query, extra_body, timeout, custom_llm_provider),
-        kwargs,
+    payload = image_payload(
+        {
+            **kwargs,
+            **dict(
+                zip(
+                    EDIT_NAMES,
+                    (
+                        image, prompt, model, mask, n, quality, response_format, size, user,
+                        extra_headers, extra_query, extra_body, timeout, custom_llm_provider,
+                    ),
+                    strict=False,
+                )
+            ),
+        }
     )
-    return image_response(call_image(NativeImageSession("{}").edit, image_payload(values)))
+    session = NativeImageSession("{}")
+    return image_response(call_image(session.edit, payload))
 
 
 async def aimage_edit(  # noqa: ASYNC109, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L964
@@ -138,35 +164,19 @@ async def aimage_edit(  # noqa: ASYNC109, PLR0913, PLR0917  # https://github.com
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    values = positional(
-        EDIT_NAMES,
-        (image, prompt, model, mask, n, quality, response_format, size, user,
-         extra_headers, extra_query, extra_body, timeout, custom_llm_provider),
-        kwargs,
+    given = (image, prompt, model, mask, n, quality, response_format, size, user,
+             extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
+    named = dict(zip(EDIT_NAMES, given, strict=False))
+    return image_response(
+        await acall_image(NativeImageSession("{}").aedit, image_payload({**kwargs, **named}))
     )
-    text = await acall_image(NativeImageSession("{}").aedit, image_payload(values))
-    return image_response(text)
-
-
-def positional(
-    names: Sequence[str],
-    args: tuple[CallValue, ...],
-    kwargs: Mapping[str, CallValue],
-) -> dict[str, CallValue]:
-    return {**kwargs, **dict(zip(names, args, strict=False))}
 
 
 def image_payload(values: Mapping[str, CallValue]) -> CallPayload:
-    payload: dict[str, CallValue] = {
-        "arguments": forwarded(values), "settings": read_settings(SETTINGS),
-        "client": values.get("client"), "logger_fn": values.get("logger_fn"),
-        "shared_session": values.get("shared_session"),
-    }
+    payload: dict[str, CallValue] = {"settings": read_settings(SETTINGS)}
+    payload["arguments"] = {name: value for name, value in values.items() if value is not None}
+    payload.update({name: values.get(name) for name in ("client", "logger_fn", "shared_session")})
     return to_call_payload(payload)
-
-
-def forwarded(values: Mapping[str, CallValue]) -> dict[str, CallValue]:
-    return {name: value for name, value in values.items() if value is not None}
 
 
 def call_image(method: SyncNativeCall, payload: CallPayload) -> str:
@@ -197,6 +207,6 @@ def image_response(text: str) -> ImageResponse:
     )
 
 
-def __getattr__(name: str) -> type[object]:
+def __getattr__(name: str) -> NoReturn:
     # LiteLLM's images.main loads ImageEditRequestUtils lazily; the edit rules run in Rust here
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

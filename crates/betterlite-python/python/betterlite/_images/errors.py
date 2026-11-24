@@ -8,5 +8,5 @@ from betterlite._native import NativeImageError
 def raise_image_error(error: NativeImageError) -> NoReturn:
     payload: ErrorPayload = ERROR_PAYLOAD.validate_json(str(error))
     if payload["type"] == "ValueError":
-        raise ValueError(payload.get("message") or "") from error
+        raise ValueError(payload["message"]) from error
     raise_native_error(error)

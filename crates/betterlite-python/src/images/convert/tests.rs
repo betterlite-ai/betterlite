@@ -6,7 +6,7 @@ use super::super::session::{ImageSession, explicit_credentials, first_text, now_
 use super::super::variation::{first_image, variation};
 use super::fields::{headers, resolve_target, target, timeout};
 use super::options::{edit_options, generation_options};
-use super::{ConvertError, DEFAULT_CONTENT_TYPE, image_file, mask_file, parse};
+use super::{ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, image_file, images, parse};
 use crate::completion::setup::outbound_client;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -186,7 +186,9 @@ fn request_unnamed_mask_takes_the_mask_name() {
         content_type: None,
         bytes: vec![0_u8],
     };
-    let mask = mask_file(&[(String::from("mask"), file)]).unwrap();
+    let mask = images(&[(String::from("mask"), file)], "mask", DEFAULT_MASK_NAME)
+        .pop()
+        .unwrap();
     assert_eq!(mask.filename.as_deref(), Some("mask.png"));
 }
 

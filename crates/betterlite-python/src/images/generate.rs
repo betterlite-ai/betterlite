@@ -4,12 +4,10 @@ use super::convert::{ConvertError, ImageAnswer, ImageCallWire, OPENAI_PROVIDER};
 use super::error::{CallFailure, connection_failure, convert_failure, provider_failure};
 use super::session::{ImageSession, SilentImageLogger, call_setup, now_seconds};
 use betterlite_openai::image_generation::call::ImageGenerationCall;
-use betterlite_openai::image_generation::error::ImageGenerationFailure;
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
 use betterlite_openai::image_generation::request::{
     begin_image_generation, finish_image_generation, send_image_generation,
 };
-use betterlite_redact::secret::Redactor;
 
 pub(crate) async fn generate(
     session: &ImageSession,
@@ -72,19 +70,12 @@ async fn round(
 ) -> Result<ImageGenerationReply, CallFailure> {
     let redactor = &session.redactor;
     let mut logger = SilentImageLogger;
-    let prepared = begin_image_generation(request, &mut logger)
-        .map_err(|error| failure(&error, model, provider, redactor))?;
+    let prepared = begin_image_generation(request, &mut logger).map_err(|error| {
+        provider_failure(error.to_string(), error.status(), model, provider, redactor)
+    })?;
     let sent = send_image_generation(&prepared, &session.client).await;
-    let outcome = finish_image_generation(&prepared, sent, &mut logger)
-        .map_err(|error| failure(&error, model, provider, redactor))?;
+    let outcome = finish_image_generation(&prepared, sent, &mut logger).map_err(|error| {
+        provider_failure(error.to_string(), error.status(), model, provider, redactor)
+    })?;
     Ok(outcome.reply)
-}
-
-fn failure(
-    error: &ImageGenerationFailure,
-    model: &str,
-    provider: &str,
-    redactor: &Redactor,
-) -> CallFailure {
-    provider_failure(error.to_string(), error.status(), model, provider, redactor)
 }

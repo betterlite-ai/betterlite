@@ -105,11 +105,6 @@ pub(crate) fn images(files: &[(String, CallFile)], key: &str, fallback: &str) ->
     found
 }
 
-// an image_edit mask travels as a file, the way each image does
-pub(crate) fn mask_file(files: &[(String, CallFile)]) -> Option<ImageFile> {
-    images(files, "mask", DEFAULT_MASK_NAME).pop()
-}
-
 pub(crate) fn image_file(file: &CallFile, default_name: &str) -> ImageFile {
     let selected = if file.name.is_empty() || file.name == "file" {
         default_name.to_owned()

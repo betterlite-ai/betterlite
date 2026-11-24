@@ -1,8 +1,8 @@
 use super::convert::fields::{target, text};
 use super::convert::options::edit_options;
 use super::convert::{
-    DEFAULT_IMAGE_NAME, ImageAnswer, ImageCallWire, OPENAI_PROVIDER, content_type_for, images,
-    mask_file,
+    DEFAULT_IMAGE_NAME, DEFAULT_MASK_NAME, ImageAnswer, ImageCallWire, OPENAI_PROVIDER,
+    content_type_for, images,
 };
 use super::error::{
     CallFailure, connection_failure, convert_failure, convert_failure_at, provider_failure,
@@ -109,7 +109,9 @@ pub(crate) fn form(
     .map_err(|error| convert_failure_at(&error, model, provider))?;
     let prompt = text(&call.arguments, "prompt")
         .map_err(|error| convert_failure_at(&error, model, provider))?;
-    let mask = mask_file(files).map(|file| vec![Some(edit_file(&file))]);
+    let mask = images(files, "mask", DEFAULT_MASK_NAME)
+        .pop()
+        .map(|file| vec![Some(edit_file(&file))]);
     let request = ImageEditRequest {
         model: model.to_owned(),
         prompt,
