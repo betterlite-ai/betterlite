@@ -3,6 +3,8 @@ pub mod memberships;
 
 mod tests;
 
+use std::slice::from_ref;
+
 use betterlite_db::postgres_store::errors::backend;
 use deadpool_postgres::GenericClient;
 use tokio_postgres::Row;
@@ -84,7 +86,9 @@ impl<C: GenericClient + Sync> PgAccessGroupTables<'_, C> {
         access_group_id: &str,
         decode: fn(&Row) -> Result<R, AccessGroupStoreError>,
     ) -> Result<Vec<R>, AccessGroupStoreError> {
-        let parameters: [&(dyn ToSql + Sync); 1] = [&access_group_id];
+        // Prisma's hasSome sends the ids as a list, and the query's parameter is text[]
+        let groups: &[&str] = from_ref(&access_group_id);
+        let parameters: [&(dyn ToSql + Sync); 1] = [&groups];
         let rows = self.query(statement, &parameters).await?;
         rows.iter().map(decode).collect()
     }
