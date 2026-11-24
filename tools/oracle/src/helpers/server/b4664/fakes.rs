@@ -104,20 +104,13 @@ impl Harness {
     }
 }
 
-fn row(
-    rows: &Mutex<BTreeMap<String, SsoIdentityAssertion>>,
-    user_id: &str,
-) -> Option<SsoIdentityAssertion> {
-    let stored = rows.lock().unwrap_or_else(PoisonError::into_inner);
-    stored.get(user_id).cloned()
-}
-
 impl SsoAssertionStore for Harness {
     async fn fetch(
         &self,
         user_id: &str,
     ) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable> {
-        Ok(row(&self.inner, user_id))
+        let stored = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(stored.get(user_id).cloned())
     }
 }
 
@@ -161,7 +154,10 @@ impl AssertionAccess for Harness {
     ) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable> {
         match self.failure {
             AccessFailure::Read => Err(unavailable(READ_FAILURE)),
-            AccessFailure::None | AccessFailure::Write => Ok(row(&self.fresh, user_id)),
+            AccessFailure::None | AccessFailure::Write => {
+                let stored = self.fresh.lock().unwrap_or_else(PoisonError::into_inner);
+                Ok(stored.get(user_id).cloned())
+            }
         }
     }
 

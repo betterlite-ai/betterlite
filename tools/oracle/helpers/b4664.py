@@ -38,10 +38,10 @@ class BodySpec(TypedDict, total=False):
     refresh_token: JsonValue
 
 
-class OutcomeSpec(TypedDict, total=False):
+class OutcomeSpec(TypedDict):
     kind: Literal["ok", "rejected", "unavailable"]
     detail: str
-    body: BodySpec
+    body: NotRequired[BodySpec]
 
 
 class RefreshInput(TypedDict):
@@ -181,7 +181,7 @@ class ScriptedTransport:
 
 
 class ScriptedCoordinator:
-    def __init__(self, loser: bool | None) -> None:
+    def __init__(self, *, loser: bool | None) -> None:
         self.loser = loser
 
     def __call__(self) -> oauth_token_store.RefreshCoordinator | None:
@@ -266,7 +266,7 @@ async def store_view(input_value: StoreInput) -> JsonValue:
         InnerStore(inner_rows),
         refresher_over(transport, input_value["vars"], access),
         fresh_read=access.read,
-        coordinator_factory=ScriptedCoordinator(input_value.get("loser")),
+        coordinator_factory=ScriptedCoordinator(loser=input_value.get("loser")),
         expiry_skew_seconds=60.0,
         clock=FixedClock(input_value["now_ms"]),
     )
