@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::Mutex;
 
 use axum::http::StatusCode;
@@ -15,7 +16,7 @@ use betterlite_router::model_group_lookups::access_groups::{AccessGroupMap, Acce
 use super::annotate::{populate_team_access, visible_models};
 use super::compose::{
     ModelCreator, ScopeCaller, ScopeFuture, ScopeReads, TeamSelection, UserScope,
-    accessible_models, non_admin_all_models,
+    accessible_models, non_admin_all_models, read_caller_rows, read_user_models,
 };
 use super::error::ScopeError;
 use super::grants::direct_access_models;
@@ -105,7 +106,6 @@ fn selection_label(selection: &TeamSelection) -> String {
 struct StubReads {
     creators: BTreeMap<String, Option<String>>,
     user: Option<UserScope>,
-    user_fails: bool,
     teams: Vec<TeamScope>,
     teams_fail: bool,
     groups: AccessGroupMap,
@@ -119,21 +119,16 @@ impl StubReads {
         calls.push(label);
     }
 
-    fn creator(&self, model_id: &str) -> Result<Option<ModelCreator>, ScopeError> {
+    fn creator(&self, model_id: &str) -> Option<ModelCreator> {
         self.note(format!("model:{model_id}"));
-        let creator = self.creators.get(model_id).map(|created_by| ModelCreator {
+        self.creators.get(model_id).map(|created_by| ModelCreator {
             created_by: created_by.clone(),
-        });
-        Ok(creator)
+        })
     }
 
-    fn user_row(&self, user_id: &str) -> Result<Option<UserScope>, ScopeError> {
+    fn user_row(&self, user_id: &str) -> Option<UserScope> {
         self.note(format!("user:{user_id}"));
-        if !self.user_fails {
-            return Ok(self.user.clone());
-        }
-        let failure = std::io::Error::other("user read failed");
-        Err(ScopeError::UserRead(Box::new(failure)))
+        self.user.clone()
     }
 
     fn team_rows(&self, selection: &TeamSelection) -> Result<Vec<TeamScope>, ScopeError> {
@@ -141,7 +136,7 @@ impl StubReads {
         if !self.teams_fail {
             return Ok(self.teams.clone());
         }
-        let failure = std::io::Error::other("team read failed");
+        let failure = io::Error::other("team read failed");
         Err(ScopeError::TeamRead(Box::new(failure)))
     }
 
@@ -150,7 +145,7 @@ impl StubReads {
         if !self.groups_fail {
             return Ok(self.groups.clone());
         }
-        let failure = std::io::Error::other("access group read failed");
+        let failure = io::Error::other("access group read failed");
         Err(ScopeError::AccessGroupRead(Box::new(failure)))
     }
 }
@@ -160,14 +155,14 @@ impl ScopeReads for StubReads {
         &'scope self,
         model_id: &'scope str,
     ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>> {
-        Box::pin(async move { self.creator(model_id) })
+        Box::pin(async move { Ok(self.creator(model_id)) })
     }
 
     fn user_scope<'scope>(
         &'scope self,
         user_id: &'scope str,
     ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>> {
-        Box::pin(async move { self.user_row(user_id) })
+        Box::pin(async move { Ok(self.user_row(user_id)) })
     }
 
     fn team_scopes<'scope>(
@@ -231,17 +226,23 @@ async fn admin_annotations() {
         team_row("team-gpt", "team-1", "team-alpha"),
         team_row("other-gpt", "team-2", "team-beta"),
     ];
-    let snapshot = snapshot(&rows);
     let mut store = StubReads::default();
     store.teams = vec![restricted("team-alpha", &[], &[])];
-    let groups = AccessGroups::default();
     let admin = ScopeCaller {
         admin_view: true,
         ..caller(Some("admin"), &[])
     };
-    let annotated = accessible_models(rows, true, &admin, &store, &snapshot.lookup(), &groups)
-        .await
-        .unwrap();
+    let reading = read_caller_rows(&admin, &store).await.unwrap();
+    let lookup = snapshot(&rows);
+    let annotated = accessible_models(
+        rows,
+        true,
+        &admin,
+        reading,
+        &lookup.lookup(),
+        &AccessGroups::default(),
+    )
+    .unwrap();
     assert_eq!(ids(&annotated), vec![Some("global-1"), Some("team-1")]);
     assert_annotations(&annotated[0], true, Some(&["team-alpha"]));
     assert_annotations(&annotated[1], false, Some(&["team-alpha"]));
@@ -260,18 +261,18 @@ async fn missing_user_annotations() {
         ),
         identified("gpt-4o-mini", "g2"),
     ];
-    let rows_snapshot = snapshot(&rows);
     let store = StubReads::default();
-    let groups = AccessGroups::default();
+    let ghost = caller(Some("ghost"), &[]);
+    let reading = read_caller_rows(&ghost, &store).await.unwrap();
+    let lookup = snapshot(&rows);
     let annotated = accessible_models(
         rows,
         false,
-        &caller(Some("ghost"), &[]),
-        &store,
-        &rows_snapshot.lookup(),
-        &groups,
+        &ghost,
+        reading,
+        &lookup.lookup(),
+        &AccessGroups::default(),
     )
-    .await
     .unwrap();
     assert_eq!(annotated.len(), 2);
     assert_annotations(&annotated[0], false, Some(&["team-old"]));
@@ -284,18 +285,18 @@ async fn missing_user_annotations() {
 #[tokio::test]
 async fn anonymous_annotations() {
     let rows = vec![identified("gpt-4o-mini", "a1")];
-    let lookup = snapshot(&rows);
     let store = StubReads::default();
-    let groups = AccessGroups::default();
+    let anonymous = caller(None, &[]);
+    let reading = read_caller_rows(&anonymous, &store).await.unwrap();
+    let lookup = snapshot(&rows);
     let populated = accessible_models(
         rows,
         false,
-        &caller(None, &[]),
-        &store,
+        &anonymous,
+        reading,
         &lookup.lookup(),
-        &groups,
+        &AccessGroups::default(),
     )
-    .await
     .unwrap();
     assert_annotations(&populated[0], false, None);
     assert_calls(&store, &[]);
@@ -366,46 +367,35 @@ fn exact_team_annotation_gate() {
 #[tokio::test]
 async fn creator_matches_anonymous_row() {
     let rows = vec![identified("gpt-4o", "d3")];
-    let snapshot = snapshot(&rows);
     let mut store = StubReads::default();
     store.creators.insert("d3".to_owned(), None);
-    let kept = non_admin_all_models(rows, &caller(None, &[]), Some(&store), &snapshot.lookup())
+    let anonymous = caller(None, &[]);
+    let stored = read_user_models(rows.clone(), &anonymous, Some(&store))
         .await
         .unwrap();
+    let lookup = snapshot(&rows);
+    let kept = non_admin_all_models(stored, &lookup.lookup()).unwrap();
     assert_eq!(ids(&kept), vec![Some("d3")]);
     assert_calls(&store, &["model:d3"]);
 }
 
 #[tokio::test]
 async fn annotation_team_read_failure() {
-    let rows = vec![identified("gpt-4o", "g1")];
-    let snapshot = snapshot(&rows);
-    let groups = AccessGroups::default();
     let mut store = StubReads::default();
     store.user = Some(UserScope {
         teams: team_list(&["team-alpha"]),
         models: Vec::new(),
     });
     store.teams_fail = true;
-    let error = accessible_models(
-        rows,
-        false,
-        &caller(Some("alice"), &[]),
-        &store,
-        &snapshot.lookup(),
-        &groups,
-    )
-    .await
-    .unwrap_err();
+    let error = read_caller_rows(&caller(Some("alice"), &[]), &store)
+        .await
+        .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(matches!(error, ScopeError::TeamRead(_)));
 }
 
 #[tokio::test]
 async fn annotation_group_read_failure() {
-    let rows = vec![identified("gpt-4o", "g1")];
-    let snapshot = snapshot(&rows);
-    let groups = AccessGroups::default();
     let mut store = StubReads::default();
     store.user = Some(UserScope {
         teams: team_list(&["team-alpha"]),
@@ -413,16 +403,9 @@ async fn annotation_group_read_failure() {
     });
     store.teams = vec![restricted("team-alpha", &["gpt-4o"], &["ag-1"])];
     store.groups_fail = true;
-    let error = accessible_models(
-        rows,
-        false,
-        &caller(Some("alice"), &[]),
-        &store,
-        &snapshot.lookup(),
-        &groups,
-    )
-    .await
-    .unwrap_err();
+    let error = read_caller_rows(&caller(Some("alice"), &[]), &store)
+        .await
+        .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(matches!(error, ScopeError::AccessGroupRead(_)));
 }
@@ -452,20 +435,17 @@ async fn team_models_join_user_deployments() {
         team_row("team-gpt", "t1", "team-alpha"),
         team_row("other-gpt", "t2", "team-beta"),
     ];
-    let snapshot = snapshot(&rows);
     let mut store = StubReads::default();
     store.user = Some(UserScope {
         teams: team_list(&["team-alpha"]),
         models: Vec::new(),
     });
-    let kept = non_admin_all_models(
-        rows,
-        &caller(Some("alice"), &[]),
-        Some(&store),
-        &snapshot.lookup(),
-    )
-    .await
-    .unwrap();
+    let alice = caller(Some("alice"), &[]);
+    let stored = read_user_models(rows.clone(), &alice, Some(&store))
+        .await
+        .unwrap();
+    let lookup = snapshot(&rows);
+    let kept = non_admin_all_models(stored, &lookup.lookup()).unwrap();
     assert_eq!(ids(&kept), vec![Some("t1")]);
 }
 
@@ -473,7 +453,6 @@ async fn team_models_join_user_deployments() {
 #[tokio::test]
 async fn user_and_team_model_counts_once() {
     let rows = vec![team_row("gpt-4o", "u1", "team-alpha")];
-    let snapshot = snapshot(&rows);
     let mut store = StubReads::default();
     store
         .creators
@@ -482,14 +461,12 @@ async fn user_and_team_model_counts_once() {
         teams: team_list(&["team-alpha"]),
         models: Vec::new(),
     });
-    let kept = non_admin_all_models(
-        rows,
-        &caller(Some("alice"), &[]),
-        Some(&store),
-        &snapshot.lookup(),
-    )
-    .await
-    .unwrap();
+    let alice = caller(Some("alice"), &[]);
+    let stored = read_user_models(rows.clone(), &alice, Some(&store))
+        .await
+        .unwrap();
+    let lookup = snapshot(&rows);
+    let kept = non_admin_all_models(stored, &lookup.lookup()).unwrap();
     assert_eq!(ids(&kept), vec![Some("u1")]);
 }
 
@@ -499,22 +476,22 @@ async fn all_proxy_grant_marks_non_team_models() {
         identified("global-gpt", "g1"),
         team_row("team-gpt", "t1", "team-alpha"),
     ];
-    let snapshot = snapshot(&rows);
     let mut store = StubReads::default();
     store.user = Some(UserScope {
         teams: Vec::new(),
         models: vec![JsonData::String(String::from(ALL_PROXY_MODELS))],
     });
-    let groups = AccessGroups::default();
+    let alice = caller(Some("alice"), &[]);
+    let reading = read_caller_rows(&alice, &store).await.unwrap();
+    let lookup = snapshot(&rows);
     let annotated = accessible_models(
         rows,
         false,
-        &caller(Some("alice"), &[]),
-        &store,
-        &snapshot.lookup(),
-        &groups,
+        &alice,
+        reading,
+        &lookup.lookup(),
+        &AccessGroups::default(),
     )
-    .await
     .unwrap();
     assert_annotations(&annotated[0], true, Some(&[]));
     assert_annotations(&annotated[1], false, None);
@@ -526,22 +503,22 @@ async fn wildcard_key_keeps_the_user_grant() {
         identified("global-gpt", "g1"),
         team_row("team-gpt", "t1", "team-alpha"),
     ];
-    let snapshot = snapshot(&rows);
     let mut store = StubReads::default();
     store.user = Some(UserScope {
         teams: Vec::new(),
         models: vec![JsonData::String(String::from("team-gpt"))],
     });
-    let groups = AccessGroups::default();
+    let alice = caller(Some("alice"), &[ALL_PROXY_MODELS, "extra"]);
+    let reading = read_caller_rows(&alice, &store).await.unwrap();
+    let lookup = snapshot(&rows);
     let annotated = accessible_models(
         rows,
         false,
-        &caller(Some("alice"), &[ALL_PROXY_MODELS, "extra"]),
-        &store,
-        &snapshot.lookup(),
-        &groups,
+        &alice,
+        reading,
+        &lookup.lookup(),
+        &AccessGroups::default(),
     )
-    .await
     .unwrap();
     assert_annotations(&annotated[0], false, Some(&[]));
     assert_annotations(&annotated[1], true, None);

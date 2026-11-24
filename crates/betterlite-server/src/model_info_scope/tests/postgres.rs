@@ -14,10 +14,13 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
-use super::{assert_annotations, caller, identified, ids, snapshot, team_list, team_row};
+use super::{
+    assert_annotations, caller, identified, ids, snapshot, team_list, team_row, unnumbered,
+};
 use crate::model_info_scope::compose::{
-    TeamSelection, accessible_models, check_if_model_is_user_added, get_all_team_models,
-    non_admin_all_models,
+    ScopeReads, TeamSelection, accessible_models, check_if_model_is_user_added,
+    get_all_team_models, non_admin_all_models, read_caller_rows, read_team_models,
+    read_user_models,
 };
 use crate::model_info_scope::error::{ScopeDetail, ScopeError, USER_NOT_FOUND};
 use crate::model_info_scope::postgres::PostgresScopeReads;
@@ -182,17 +185,15 @@ async fn creator_reads_by_id() {
         identified("gpt-4o", "d1"),
         identified("gpt-4o-mini", "d2"),
         identified("gpt-4o-small", "d3"),
-        super::unnumbered("no-id-gpt"),
+        unnumbered("no-id-gpt"),
     ];
-    let lookup = snapshot(&rows[..3]);
-    let kept = non_admin_all_models(
-        rows,
-        &caller(Some("alice"), &[]),
-        Some(&db.reads()),
-        &lookup.lookup(),
-    )
-    .await
-    .unwrap();
+    let stored = read_user_models(rows.clone(), &caller(Some("alice"), &[]), Some(&db.reads()))
+        .await
+        .unwrap();
+    let kept = {
+        let lookup = snapshot(&rows[..3]);
+        non_admin_all_models(stored, &lookup.lookup()).unwrap()
+    };
     assert_eq!(ids(&kept), vec![Some("d1")]);
     db.close().await;
 }
@@ -200,9 +201,9 @@ async fn creator_reads_by_id() {
 #[tokio::test]
 async fn no_database() {
     let empty: Vec<DeploymentSpec> = Vec::new();
-    let lookup = snapshot(&empty);
     let anonymous = caller(None, &[]);
-    let error = check_if_model_is_user_added(empty.clone(), &anonymous, None)
+    let absent: Option<&dyn ScopeReads> = None;
+    let error = check_if_model_is_user_added(empty.clone(), &anonymous, absent)
         .await
         .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -212,7 +213,7 @@ async fn no_database() {
             error: CommonProxyErrors::DbNotConnectedError.as_str(),
         }
     );
-    let second = non_admin_all_models(empty, &anonymous, None, &lookup.lookup())
+    let second = read_user_models(empty, &anonymous, absent)
         .await
         .unwrap_err();
     assert_eq!(second.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -224,15 +225,9 @@ async fn user_read_error_400() {
     seed_creator(&db, "d1", Some("alice")).await;
     db.batch(DROP_USER_SQL).await;
     let rows = vec![identified("gpt-4o", "d1")];
-    let lookup = snapshot(&rows);
-    let error = non_admin_all_models(
-        rows,
-        &caller(Some("alice"), &[]),
-        Some(&db.reads()),
-        &lookup.lookup(),
-    )
-    .await
-    .unwrap_err();
+    let error = read_user_models(rows, &caller(Some("alice"), &[]), Some(&db.reads()))
+        .await
+        .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
     assert_eq!(
         error.detail(),
@@ -251,15 +246,13 @@ async fn missing_user() {
         identified("gpt-4o", "d1"),
         team_row("team-gpt", "t1", "team-alpha"),
     ];
-    let lookup = snapshot(&rows);
-    let kept = non_admin_all_models(
-        rows,
-        &caller(Some("alice"), &[]),
-        Some(&db.reads()),
-        &lookup.lookup(),
-    )
-    .await
-    .unwrap();
+    let stored = read_user_models(rows.clone(), &caller(Some("alice"), &[]), Some(&db.reads()))
+        .await
+        .unwrap();
+    let kept = {
+        let lookup = snapshot(&rows);
+        non_admin_all_models(stored, &lookup.lookup()).unwrap()
+    };
     assert_eq!(ids(&kept), vec![Some("d1")]);
     db.close().await;
 }
@@ -271,16 +264,12 @@ async fn team_batch_query() {
     seed_team(&db, "team-beta", Some(&["gpt-4o"]), None).await;
     seed_team(&db, "team-gamma", Some(&["gpt-4o-mini"]), None).await;
     let rows = vec![identified("gpt-4o", "g1"), identified("gpt-4o-mini", "g2")];
-    let lookup = snapshot(&rows);
     let selection = TeamSelection::Ids(team_list(&["team-alpha", "team-beta"]));
-    let found = get_all_team_models(
-        &selection,
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap();
+    let read = read_team_models(&selection, &db.reads()).await.unwrap();
+    let found = {
+        let lookup = snapshot(&rows);
+        get_all_team_models(read, &lookup.lookup(), &AccessGroups::default()).unwrap()
+    };
     // Both selected teams reach g1 through one read, and the unselected team's model stays out.
     assert_eq!(
         found.get("g1"),
@@ -303,16 +292,12 @@ async fn access_group_batch_query() {
         identified("group-model", "group-1"),
         identified("other", "other-1"),
     ];
-    let lookup = snapshot(&rows);
     let selection = TeamSelection::Ids(team_list(&["team-alpha", "team-beta"]));
-    let found = get_all_team_models(
-        &selection,
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap();
+    let read = read_team_models(&selection, &db.reads()).await.unwrap();
+    let found = {
+        let lookup = snapshot(&rows);
+        get_all_team_models(read, &lookup.lookup(), &AccessGroups::default()).unwrap()
+    };
     let both = team_list(&["team-alpha", "team-beta"]);
     assert_eq!(found.get("base-1"), Some(&both));
     assert_eq!(found.get("group-1"), Some(&both));
@@ -335,16 +320,12 @@ async fn missing_access_group() {
         identified("base", "base-1"),
         identified("group-model", "group-1"),
     ];
-    let lookup = snapshot(&rows);
     let selection = TeamSelection::Ids(team_list(&["team-alpha"]));
-    let found = get_all_team_models(
-        &selection,
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap();
+    let read = read_team_models(&selection, &db.reads()).await.unwrap();
+    let found = {
+        let lookup = snapshot(&rows);
+        get_all_team_models(read, &lookup.lookup(), &AccessGroups::default()).unwrap()
+    };
     assert_eq!(found.get("base-1"), Some(&team_list(&["team-alpha"])));
     assert_eq!(found.get("group-1"), Some(&team_list(&["team-alpha"])));
     db.close().await;
@@ -360,16 +341,12 @@ async fn null_access_model_names() {
         identified("base", "base-1"),
         identified("group-model", "group-1"),
     ];
-    let lookup = snapshot(&rows);
     let selection = TeamSelection::Ids(team_list(&["team-alpha"]));
-    let found = get_all_team_models(
-        &selection,
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap();
+    let read = read_team_models(&selection, &db.reads()).await.unwrap();
+    let found = {
+        let lookup = snapshot(&rows);
+        get_all_team_models(read, &lookup.lookup(), &AccessGroups::default()).unwrap()
+    };
     assert_eq!(found.get("base-1"), Some(&team_list(&["team-alpha"])));
     assert_eq!(found.get("group-1"), None);
     db.close().await;
@@ -385,15 +362,13 @@ async fn unrestricted_skips_groups() {
         team_row("team-gpt", "t2", "team-beta"),
         team_row("inner-gpt", "t3", "alpha"),
     ];
-    let lookup = snapshot(&rows);
-    let found = get_all_team_models(
-        &TeamSelection::All,
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap();
+    let read = read_team_models(&TeamSelection::All, &db.reads())
+        .await
+        .unwrap();
+    let found = {
+        let lookup = snapshot(&rows);
+        get_all_team_models(read, &lookup.lookup(), &AccessGroups::default()).unwrap()
+    };
     // A null models column is unrestricted, and the dropped table proves no group read follows.
     assert_eq!(found.len(), 2);
     assert_eq!(found.get("g1"), Some(&team_list(&["team-alpha"])));
@@ -407,27 +382,16 @@ async fn row_validation_failure() {
     let db = Database::start().await;
     seed_team(&db, "team-alpha", None, None).await;
     let rows = vec![identified("gpt-4o", "g1")];
-    let lookup = snapshot(&rows);
     let selection = TeamSelection::Ids(team_list(&["team-alpha"]));
-    let found = get_all_team_models(
-        &selection,
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap();
+    let read = read_team_models(&selection, &db.reads()).await.unwrap();
+    let found = {
+        let lookup = snapshot(&rows);
+        get_all_team_models(read, &lookup.lookup(), &AccessGroups::default()).unwrap()
+    };
     assert_eq!(found.get("g1"), Some(&team_list(&["team-alpha"])));
     db.execute(SET_TEAM_MODELS_SQL, &[&"\"not-a-list\"", &"team-alpha"])
         .await;
-    let error = get_all_team_models(
-        &selection,
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap_err();
+    let error = read_team_models(&selection, &db.reads()).await.unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(matches!(error, ScopeError::TeamRead(_)));
     db.close().await;
@@ -437,19 +401,10 @@ async fn row_validation_failure() {
 async fn annotation_read_failure() {
     let db = Database::start().await;
     db.batch(DROP_USER_SQL).await;
-    let rows = vec![identified("gpt-4o", "g1")];
-    let lookup = snapshot(&rows);
-    let error = accessible_models(
-        rows,
-        false,
-        &caller(Some("alice"), &[]),
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap_err();
     // The annotation path does not catch a user read error, so it surfaces as LiteLLM's 500.
+    let error = read_caller_rows(&caller(Some("alice"), &[]), &db.reads())
+        .await
+        .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(matches!(error, ScopeError::UserRead(_)));
     db.close().await;
@@ -466,17 +421,20 @@ async fn stored_roster_annotates_models() {
         identified("team-model", "d2"),
         identified("other", "d3"),
     ];
-    let lookup = snapshot(&rows);
-    let annotated = accessible_models(
-        rows,
-        false,
-        &caller(Some("alice"), &[]),
-        &db.reads(),
-        &lookup.lookup(),
-        &AccessGroups::default(),
-    )
-    .await
-    .unwrap();
+    let alice = caller(Some("alice"), &[]);
+    let reading = read_caller_rows(&alice, &db.reads()).await.unwrap();
+    let annotated = {
+        let lookup = snapshot(&rows);
+        accessible_models(
+            rows,
+            false,
+            &alice,
+            reading,
+            &lookup.lookup(),
+            &AccessGroups::default(),
+        )
+        .unwrap()
+    };
     assert_annotations(&annotated[0], true, Some(&[]));
     assert_annotations(&annotated[1], false, Some(&["team-alpha"]));
     assert_annotations(&annotated[2], false, Some(&[]));
