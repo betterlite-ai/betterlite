@@ -19,11 +19,21 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L632-L642
   - what: >-
       A provider failure raises betterlite.exceptions.AuthenticationError and its siblings (the names LiteLLM's
-      exception_type produces) where LiteLLM's sync functions let the raw openai SDK exception through.
+      exception_type produces) where LiteLLM's sync functions let the raw openai SDK exception through. The raw
+      classes Python here cannot build become that mapped class: APITimeoutError raises Timeout, ConflictError and
+      APIStatusError raise APIError, OpenAIError raises AuthenticationError and ValueError raises APIConnectionError.
     why: >-
       The request runs in Rust, so every failure comes back as an error envelope that raise_native_error maps to
       betterlite's class with the same name, status_code, message and body fields.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L121-L131
+  - what: >-
+      AuthenticationError, NotFoundError, PermissionDeniedError and UnprocessableEntityError carry type, param and
+      code None, where the openai SDK error LiteLLM's sync functions raise reads them off the response body (the
+      test server's 401 gives type "invalid_request_error", param None and code "invalid_api_key").
+    why: >-
+      raise_native_error builds those four from a class whose constructor takes no body, and that module is outside
+      this task; the message, status_code, model and llm_provider match the reference error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L126-L134
   - what: >-
       A provider failure of get_assistants or delete_assistant, and of their async twins, carries model "" because
       betterlite has one path for both; the exception LiteLLM's sync path raises is the SDK's, which has no model
