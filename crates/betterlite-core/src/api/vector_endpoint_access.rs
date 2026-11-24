@@ -65,6 +65,40 @@ impl VectorStorePermission {
     }
 }
 
+// the two policies differ in their provider table, their lifecycle handling and their denial message
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Policy {
+    Store,
+    Files,
+}
+
+impl Policy {
+    // the provider's endpoint table and the route both policies match, or None when the provider has no config
+    fn table_and_route(
+        self,
+        access: &VectorEndpointAccess<'_>,
+    ) -> Option<(VectorStoreIndexEndpoints, String)> {
+        let endpoints = match self {
+            Self::Store => {
+                let config = select_vector_stores_config(access.provider, None)?;
+                access.tables.store_endpoints(config)
+            }
+            Self::Files => {
+                let config = select_store_files_config(access.provider)?;
+                access.tables.file_endpoints(config)
+            }
+        };
+        Some((endpoints, get_request_route(&access.route)))
+    }
+
+    fn denied(self, vector_store_id: &str) -> VectorEndpointAccessError {
+        match self {
+            Self::Store => store_denied(vector_store_id),
+            Self::Files => file_denied(vector_store_id),
+        }
+    }
+}
+
 // LiteLLM's _does_endpoint_match: a literal anywhere in the route, then only the prefix before the first brace
 #[must_use]
 pub fn does_endpoint_match(endpoint_path: &str, request_path: &str) -> bool {
@@ -141,27 +175,16 @@ pub fn store_endpoint_decision(
         return Ok(EndpointDecision::Allowed);
     }
     let grants = caller_grants(access.auth)?;
-    let Some(config) = select_vector_stores_config(access.provider, None) else {
+    let Some((endpoints, route)) = Policy::Store.table_and_route(access) else {
         return Ok(EndpointDecision::NotApplicable);
     };
-    let endpoints = access.tables.store_endpoints(config);
-    let route = get_request_route(&access.route);
-    if is_index_lifecycle_request(access.method, &route, access.vector_store_id) {
-        let operation = match access.method {
-            "DELETE" => IndexOperation::Delete,
-            "PUT" | "PATCH" => IndexOperation::Update,
-            _ => IndexOperation::Create,
-        };
-        require_index_admin(access.auth, operation)?;
-        return Ok(EndpointDecision::Allowed);
+    if let Some(decision) = lifecycle(access, &route)? {
+        return Ok(decision);
     }
-    let Some(permission) = classify_endpoint(&endpoints, access.method, &route) else {
-        return Err(store_denied(access.vector_store_id));
-    };
-    if granted(access, &grants, permission) {
-        return Ok(EndpointDecision::Allowed);
+    match classify_endpoint(&endpoints, access.method, &route) {
+        Some(permission) => permitted(access, &grants, permission, Policy::Store),
+        None => Err(store_denied(access.vector_store_id)),
     }
-    Err(store_denied(access.vector_store_id))
 }
 
 // LiteLLM's is_allowed_to_call_vector_store_files_endpoint: an unmatched endpoint is not this policy's
@@ -172,18 +195,43 @@ pub fn file_endpoint_decision(
         return Ok(EndpointDecision::Allowed);
     }
     let grants = caller_grants(access.auth)?;
-    let Some(config) = select_store_files_config(access.provider) else {
+    let Some((endpoints, route)) = Policy::Files.table_and_route(access) else {
         return Ok(EndpointDecision::NotApplicable);
     };
-    let endpoints = access.tables.file_endpoints(config);
-    let route = get_request_route(&access.route);
     let Some(permission) = classify_endpoint(&endpoints, access.method, &route) else {
         return Ok(EndpointDecision::NotApplicable);
     };
-    if granted(access, &grants, permission) {
+    permitted(access, &grants, permission, Policy::Files)
+}
+
+// index lifecycle requests run B10071's admin gate with LiteLLM's delete/update/create label
+fn lifecycle(
+    access: &VectorEndpointAccess<'_>,
+    route: &str,
+) -> Result<Option<EndpointDecision>, VectorEndpointAccessError> {
+    if !is_index_lifecycle_request(access.method, route, access.vector_store_id) {
+        return Ok(None);
+    }
+    let operation = match access.method {
+        "DELETE" => IndexOperation::Delete,
+        "PUT" | "PATCH" => IndexOperation::Update,
+        _ => IndexOperation::Create,
+    };
+    require_index_admin(access.auth, operation)?;
+    Ok(Some(EndpointDecision::Allowed))
+}
+
+// the grant answer both policies share
+fn permitted(
+    access: &VectorEndpointAccess<'_>,
+    grants: &Grants,
+    permission: VectorStorePermission,
+    policy: Policy,
+) -> Result<EndpointDecision, VectorEndpointAccessError> {
+    if granted(access, grants, permission) {
         return Ok(EndpointDecision::Allowed);
     }
-    Err(file_denied(access.vector_store_id))
+    Err(policy.denied(access.vector_store_id))
 }
 
 // writes are classified first, so a route matching both patterns needs the stronger grant
