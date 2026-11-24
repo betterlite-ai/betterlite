@@ -16,3 +16,9 @@ kept_bugs:
   - what: A live /health probe that names no model, with no CLI model, writes no history row even though it probed every deployment.
     why: _perform_health_check_and_save saves only when cli_model or target_model names one model, so an untargeted monitoring call does not grow the table; a setup that polls /health relies on that.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1065-L1080
+  - what: A failed /health/history read answers 200 with an empty page instead of the route's 500.
+    why: PrismaClient.get_health_check_history catches the driver error, logs "Error getting health check history: %s" and returns [], so the route's except can never fire; B7640's history() ports that, and a setup that polls history relies on the empty page.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6980-L6982
+  - what: A failed /health/latest read answers 200 with an empty object instead of the route's 500.
+    why: fetch_latest_health_checks catches the query error, logs "Error getting all latest health checks: %s" and returns (), so the route's except can never fire; B7640's fetch_latest() ports that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/health_check_latest.py#L82-L87
