@@ -114,7 +114,8 @@ pitfalls:
   - "`delete_deployment(id)` and `get_model_info(id)` name their parameter `id`, so keyword callers pass `id=`; do not rename it to dodge the builtin."
   - "`update_settings(timeout=30.5)` stores 30, because LiteLLM casts the five integer settings with `int()`."
   - "After `set_model_list` or `add_deployment` the Python attributes `model_list` and `model_names` must change too; LiteLLM users read them directly."
+  - "Ruff flags LiteLLM's own signatures here (FBT001, FBT002, A002, N803). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 8

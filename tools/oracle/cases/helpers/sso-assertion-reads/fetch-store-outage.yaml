@@ -1,0 +1,22 @@
+kind: helper
+name: fetch-store-outage
+call:
+  b10064:
+    database: true
+    rows: []
+    failure: {method: find, call: 0}
+    steps:
+      - {step: fetch, user_id: alice}
+      - {step: fetch_uncached, user_id: bravo}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10064:
+      database: true
+      rows:
+        - {user_id: alice, assertion_b64: '2dh80cBkdHDkovybj_OND81M0C-mbkbor1qIucTPKyjogVXhEpGo5QJQageNSTVt_UEA6qfm8LTw4kaeqK_6IZPpsDtPpqOXH40rPOPxvijhxNGlheBqJVueJE8Tk0Lf8xiUoUqspQqzTeRvzVh755-TtoGuJ_uo4Ij33czhdcayo7OgMTG_t90unCZC39qNFgSPOUIKA7vnXsc1UitU4u1Xg1_rORC7w2tmOByr9_nq_tjEEsus'}
+      failure: {method: find, call: 1}
+      steps:
+        - {step: fetch, user_id: alice}
+        - {step: fetch, user_id: alice}
+        - {step: fetch_uncached, user_id: alice}

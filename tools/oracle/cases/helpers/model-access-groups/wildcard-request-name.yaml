@@ -1,0 +1,16 @@
+kind: helper
+name: model-access-groups-wildcard-request-name
+call:
+  b10047:
+    model_list:
+      - model_name: anthropic/*
+        litellm_params:
+          model: anthropic/claude-*
+        model_info:
+          id: x
+          access_groups: [beta]
+    model_group_alias: {}
+    arguments:
+      model_name: anthropic/claude-3
+env: {}
+compare: {ignore: []}

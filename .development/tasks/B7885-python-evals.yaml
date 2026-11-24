@@ -65,7 +65,8 @@ pitfalls:
 - "`cancel_eval` posts to a cancel path and is not a delete."
 - "`list_evals` sends `limit`, `after`, `order` and `order_by` only when set."
 - "The default provider is `openai`, decided in Rust."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, ASYNC109). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 12
