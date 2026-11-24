@@ -1,7 +1,9 @@
 import asyncio
 import importlib
 import inspect
+import logging
 from collections.abc import Awaitable
+from types import ModuleType
 from typing import Final, Protocol
 
 import pytest
@@ -10,6 +12,7 @@ from vector_server import (
     BAD_KEY,
     GOOD_KEY,
     SEARCH_PATH,
+    SLOW_STORE_ID,
     STORE_ID,
     STORE_NAME,
     STORE_PATH,
@@ -17,9 +20,11 @@ from vector_server import (
     header_of,
 )
 
+import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._endpoints.payload import LOGGER_FN_DROPPED
 from betterlite._native import NativeVectorSearchError
-from betterlite.exceptions import AuthenticationError
+from betterlite.exceptions import APIConnectionError, AuthenticationError, Timeout
 from betterlite.types.vector_stores import (
     VectorStoreCreateResponse,
     VectorStoreSearchResponse,
@@ -55,6 +60,12 @@ RESULTS: Final[list[VectorStoreSearchResult]] = [
     }
 ]
 SEEDED: Final[VectorStoreCreateResponse] = {"id": "vs_seeded", "object": "vector_store"}
+EXPIRES_AFTER: Final[JsonValue] = {"anchor": "last_active_at", "days": 7}
+CHUNKING_STRATEGY: Final[JsonValue] = {"type": "auto"}
+EXTRA_BODY: Final[JsonValue] = {"custom_field": "extra"}
+EXTRA_HEADERS: Final[JsonValue] = {"X-Custom": "yes"}
+CUSTOM_PROVIDER: Final = "anthropic"
+SHORT_TIMEOUT: Final = 0.05
 
 
 class VectorCall(Protocol):
@@ -98,6 +109,7 @@ LITELLM: VectorStores = importlib.import_module("litellm.vector_stores")
 LITELLM_ASYNC: VectorStoresAsync = importlib.import_module("litellm.vector_stores")
 LITELLM_HELPERS: VectorStoreHelpers = importlib.import_module("litellm.vector_stores.main")
 LITELLM_ERRORS: ExceptionClass = importlib.import_module("litellm")
+LITELLM_MODULE: Final[ModuleType] = importlib.import_module("litellm")
 
 
 def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
@@ -159,8 +171,11 @@ def test_calls_create() -> None:
         ours = create(
             name=STORE_NAME,
             file_ids=FILE_IDS,
+            expires_after=EXPIRES_AFTER,
+            chunking_strategy=CHUNKING_STRATEGY,
             metadata=METADATA,
-            extra_headers={"X-Custom": "yes"},
+            extra_headers=EXTRA_HEADERS,
+            extra_body=EXTRA_BODY,
             api_base=server.url,
             api_key=GOOD_KEY,
         )
@@ -168,8 +183,11 @@ def test_calls_create() -> None:
         reference = LITELLM.create(
             name=STORE_NAME,
             file_ids=JSON.validate_python(FILE_IDS),
+            expires_after=EXPIRES_AFTER,
+            chunking_strategy=CHUNKING_STRATEGY,
             metadata=JSON.validate_python(METADATA),
-            extra_headers={"X-Custom": "yes"},
+            extra_headers=EXTRA_HEADERS,
+            extra_body=EXTRA_BODY,
             api_base=server.url,
             api_key=GOOD_KEY,
         )
@@ -179,12 +197,17 @@ def test_calls_create() -> None:
     assert ours_call["body"] == reference_call["body"]
     assert ours_call["body"]["name"] == STORE_NAME
     assert ours_call["body"]["file_ids"] == FILE_IDS
+    assert ours_call["body"]["expires_after"] == EXPIRES_AFTER
+    assert ours_call["body"]["chunking_strategy"] == CHUNKING_STRATEGY
     assert ours_call["body"]["metadata"] == METADATA
+    # LiteLLM takes extra_body for a create and never reads it, so it stays out of the body
+    assert "custom_field" not in ours_call["body"]
     assert header_of(ours_call, "Authorization") == header_of(reference_call, "Authorization")
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
     assert header_of(ours_call, "Content-Type") == header_of(reference_call, "Content-Type")
     assert header_of(ours_call, "OpenAI-Beta") == header_of(reference_call, "OpenAI-Beta")
     assert header_of(ours_call, "OpenAI-Beta") == "assistants=v2"
+    assert header_of(ours_call, "X-Custom") == header_of(reference_call, "X-Custom")
     assert header_of(ours_call, "X-Custom") == "yes"
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
@@ -198,6 +221,8 @@ def test_calls_search() -> None:
             max_num_results=MAX_NUM_RESULTS,
             ranking_options=RANKING,
             rewrite_query=True,
+            extra_headers=EXTRA_HEADERS,
+            extra_body=EXTRA_BODY,
             api_base=server.url,
             api_key=GOOD_KEY,
         )
@@ -209,6 +234,8 @@ def test_calls_search() -> None:
             max_num_results=MAX_NUM_RESULTS,
             ranking_options=RANKING,
             rewrite_query=True,
+            extra_headers=EXTRA_HEADERS,
+            extra_body=EXTRA_BODY,
             api_base=server.url,
             api_key=GOOD_KEY,
         )
@@ -221,8 +248,135 @@ def test_calls_search() -> None:
     assert ours_call["body"]["max_num_results"] == MAX_NUM_RESULTS
     assert ours_call["body"]["ranking_options"] == RANKING
     assert ours_call["body"]["rewrite_query"] is True
+    # OpenAI's search transform ignores extra_body too, so only the four declared keys are sent
+    assert "custom_field" not in ours_call["body"]
+    assert header_of(ours_call, "Authorization") == header_of(reference_call, "Authorization")
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
+    assert header_of(ours_call, "X-Custom") == header_of(reference_call, "X-Custom")
+    assert header_of(ours_call, "X-Custom") == "yes"
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
+
+
+def test_calls_use_module_globals(monkeypatch: pytest.MonkeyPatch) -> None:
+    with VectorServer() as server:
+        monkeypatch.setattr(betterlite, "api_base", server.url)
+        monkeypatch.setattr(betterlite, "api_key", GOOD_KEY)
+        monkeypatch.setattr(betterlite, "openai_key", GOOD_KEY)
+        monkeypatch.setattr(LITELLM_MODULE, "api_base", server.url)
+        monkeypatch.setattr(LITELLM_MODULE, "api_key", GOOD_KEY)
+        monkeypatch.setattr(LITELLM_MODULE, "openai_key", GOOD_KEY)
+        ours_create = create(name=STORE_NAME)
+        ours_create_call = server.calls[-1]
+        reference_create = LITELLM.create(name=STORE_NAME)
+        reference_create_call = server.calls[-1]
+        ours_search = search(vector_store_id=STORE_ID, query=QUERY_TEXT)
+        ours_search_call = server.calls[-1]
+        reference_search = LITELLM.search(vector_store_id=STORE_ID, query=QUERY_TEXT)
+        reference_search_call = server.calls[-1]
+    assert ours_create_call["path"] == reference_create_call["path"]
+    assert ours_create_call["body"] == reference_create_call["body"]
+    assert ours_search_call["path"] == reference_search_call["path"]
+    assert ours_search_call["body"] == reference_search_call["body"]
+    assert header_of(ours_create_call, "Authorization") == f"Bearer {GOOD_KEY}"
+    assert header_of(ours_search_call, "Authorization") == f"Bearer {GOOD_KEY}"
+    assert JSON.validate_python(ours_create) == JSON.validate_python(reference_create)
+    assert JSON.validate_python(ours_search) == JSON.validate_python(reference_search)
+
+
+def test_calls_refuse_an_unsupported_provider() -> None:
+    with VectorServer() as server:
+        with pytest.raises(APIConnectionError) as ours_create:
+            create(
+                name=STORE_NAME,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError):
+            LITELLM.create(
+                name=STORE_NAME,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(APIConnectionError) as ours_search:
+            search(
+                vector_store_id=STORE_ID,
+                query=QUERY_TEXT,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError):
+            LITELLM.search(
+                vector_store_id=STORE_ID,
+                query=QUERY_TEXT,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        assert server.calls == []
+    assert type(ours_create.value).__name__ == LITELLM_ERRORS.APIConnectionError.__name__
+    assert type(ours_search.value).__name__ == LITELLM_ERRORS.APIConnectionError.__name__
+
+
+def test_calls_search_timeout() -> None:
+    with VectorServer() as server:
+        with pytest.raises(Timeout) as ours_caught:
+            search(
+                vector_store_id=SLOW_STORE_ID,
+                query=QUERY_TEXT,
+                timeout=SHORT_TIMEOUT,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(LITELLM_ERRORS.Timeout):
+            LITELLM.search(
+                vector_store_id=SLOW_STORE_ID,
+                query=QUERY_TEXT,
+                timeout=SHORT_TIMEOUT,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+    assert type(ours_caught.value).__name__ == LITELLM_ERRORS.Timeout.__name__
+
+
+def test_calls_drop_the_logging_objects(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="LiteLLM"):
+        with VectorServer() as server:
+            ours_create = create(
+                name=STORE_NAME,
+                litellm_logging_obj=object(),
+                logger_fn=print,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+            ours_create_call = server.calls[-1]
+            ours_search = search(
+                vector_store_id=STORE_ID,
+                query=QUERY_TEXT,
+                litellm_logging_obj=object(),
+                logger_fn=print,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+            ours_search_call = server.calls[-1]
+            reference_create = LITELLM.create(
+                name=STORE_NAME, api_base=server.url, api_key=GOOD_KEY
+            )
+            reference_create_call = server.calls[-1]
+            reference_search = LITELLM.search(
+                vector_store_id=STORE_ID,
+                query=QUERY_TEXT,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+            reference_search_call = server.calls[-1]
+    assert LOGGER_FN_DROPPED in caplog.messages
+    assert ours_create_call["body"] == reference_create_call["body"]
+    assert ours_search_call["body"] == reference_search_call["body"]
+    assert JSON.validate_python(ours_create) == JSON.validate_python(reference_create)
+    assert JSON.validate_python(ours_search) == JSON.validate_python(reference_search)
 
 
 def test_calls_search_defaults() -> None:

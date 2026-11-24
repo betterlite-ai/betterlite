@@ -15,7 +15,12 @@ from betterlite._endpoints import (
     read_settings,
     to_call_payload,
 )
-from betterlite._endpoints.payload import REFUSED
+from betterlite._endpoints.payload import (
+    LOGGER,
+    LOGGER_FN_DROPPED,
+    REFUSED,
+    is_json_container,
+)
 from betterlite._native import NativeVectorSearchError, NativeVectorSearchSession
 from betterlite.types.vector_stores import (
     VectorStoreCreateResponse,
@@ -84,32 +89,18 @@ def mock_vector_store_create_response(
 
 # a nonempty dict is the create mock, and a null, an empty one or any other value goes to HTTP
 def create_mock_answer(given: CallValue) -> VectorStoreCreateResponse | None:
-    match given:
-        case dict() as fields:
-            if fields:
-                return mock_vector_store_create_response(
-                    CREATE_RESPONSE.validate_python(fields)
-                )
-            return None
-        case object():
-            return None
+    if is_json_container(given) and isinstance(given, dict) and given:
+        return mock_vector_store_create_response(CREATE_RESPONSE.validate_python(given))
+    return None
 
 
 # a nonempty string or list is the search mock, and an empty or other value goes to HTTP
 def search_mock_answer(given: CallValue) -> VectorStoreSearchResponse | None:
-    match given:
-        case str() as text:
-            if text:
-                return mock_vector_store_search_response()
-            return None
-        case list() as results:
-            if results:
-                return mock_vector_store_search_response(
-                    SEARCH_RESULTS.validate_python(results)
-                )
-            return None
-        case object():
-            return None
+    if isinstance(given, str):
+        return mock_vector_store_search_response() if given else None
+    if is_json_container(given) and isinstance(given, list) and given:
+        return mock_vector_store_search_response(SEARCH_RESULTS.validate_python(given))
+    return None
 
 
 # LiteLLM's Python client and session cannot cross into the Rust transport, so they are named back
@@ -117,6 +108,13 @@ def refuse_handles(values: dict[str, CallValue]) -> None:
     for name in REFUSED:
         if values.pop(name, None) is not None:
             raise UnsupportedCallArgument(name)
+
+
+# LiteLLM's logging object and logger function are bookkeeping a Rust call cannot use
+def drop_bookkeeping(values: dict[str, CallValue]) -> None:
+    values.pop("litellm_logging_obj", None)
+    if values.pop("logger_fn", None) is not None:
+        LOGGER.warning(LOGGER_FN_DROPPED)
 
 
 def create_now(arguments: dict[str, CallValue]) -> VectorStoreCreateResponse:
@@ -164,6 +162,7 @@ def create(
     if mocked is not None:
         return mocked
     refuse_handles(kwargs)
+    drop_bookkeeping(kwargs)
     asynchronous = kwargs.pop("acreate", None) is True
     optional: dict[str, CallValue] = {
         "name": name,
@@ -210,6 +209,7 @@ def search(
     if mocked is not None:
         return mocked
     refuse_handles(kwargs)
+    drop_bookkeeping(kwargs)
     asynchronous = kwargs.pop("asearch", None) is True
     optional: dict[str, CallValue] = {
         "filters": filters,

@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Final, Self
@@ -17,6 +18,9 @@ STORE_ID = "vs_test123"
 STORE_NAME = "documents"
 STORE_PATH = "/v1/vector_stores"
 SEARCH_PATH = f"/v1/vector_stores/{STORE_ID}/search"
+SLOW_STORE_ID = "vs_slow123"
+SLOW_PATH = f"/v1/vector_stores/{SLOW_STORE_ID}/search"
+SLOW_SECONDS = 2.0
 CREATED_AT = 1700000000
 EXPIRES_DAYS = 7
 DAY_SECONDS = 86400
@@ -138,6 +142,11 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if self.path == SEARCH_PATH:
             self.reply(OK, search_payload())
+            return
+        if self.path == SLOW_PATH:
+            # the caller leaves at its own timeout; answering this late would only break the pipe
+            time.sleep(SLOW_SECONDS)
+            self.close_connection = True
             return
         self.send_error(NOT_FOUND)
 
