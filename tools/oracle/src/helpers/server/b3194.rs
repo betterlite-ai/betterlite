@@ -20,9 +20,10 @@ mod tests;
 pub(crate) struct Op;
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "function", deny_unknown_fields)]
 pub(crate) enum Input {
-    AgentHub {
+    #[serde(rename = "agent_hub")]
+    Agent {
         agents: Vec<AgentResponse>,
         #[serde(default)]
         public_agent_groups: Option<Vec<String>>,
@@ -31,14 +32,16 @@ pub(crate) enum Input {
         #[serde(default)]
         proxy_base_url: Option<String>,
     },
-    McpHub {
+    #[serde(rename = "mcp_hub")]
+    Mcp {
         config_servers: Vec<MCPServer>,
         db_servers: Vec<MCPServer>,
         #[serde(default)]
         public_mcp_servers: Option<Vec<String>>,
         public_hub_strict: bool,
     },
-    SkillHub {
+    #[serde(rename = "skill_hub")]
+    Skill {
         plugins: Vec<PluginRow>,
         #[serde(default)]
         table_error: bool,
@@ -50,7 +53,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::AgentHub {
+            Input::Agent {
                 agents,
                 public_agent_groups,
                 request_base_url,
@@ -63,7 +66,7 @@ impl Helper for Op {
                 root_path,
                 proxy_base_url.as_deref(),
             ),
-            Input::McpHub {
+            Input::Mcp {
                 config_servers,
                 db_servers,
                 public_mcp_servers,
@@ -74,7 +77,7 @@ impl Helper for Op {
                 public_mcp_servers.as_deref(),
                 *public_hub_strict,
             ),
-            Input::SkillHub {
+            Input::Skill {
                 plugins,
                 table_error,
             } => skill_hub_answer(plugins, *table_error),
@@ -100,7 +103,7 @@ fn agent_hub_answer(
         request_base_url,
         root_path,
     )
-    .map_err(hub_error)?;
+    .map_err(|error| hub_error(&error))?;
     Ok(serde_json::to_value(cards)?)
 }
 
@@ -119,7 +122,8 @@ fn mcp_hub_answer(
         config_servers.to_vec(),
         db_servers.to_vec(),
     );
-    let entries = build_mcp_servers(&registry, public_mcp_servers).map_err(hub_error)?;
+    let entries =
+        build_mcp_servers(&registry, public_mcp_servers).map_err(|error| hub_error(&error))?;
     Ok(serde_json::to_value(entries)?)
 }
 
@@ -131,7 +135,7 @@ fn skill_hub_answer(plugins: &[PluginRow], table_error: bool) -> HelperResult {
     let runtime = Builder::new_current_thread().build()?;
     let response = runtime
         .block_on(plugin_response(&table))
-        .map_err(hub_error)?;
+        .map_err(|error| hub_error(&error))?;
     Ok(serde_json::to_value(response)?)
 }
 
@@ -158,7 +162,7 @@ impl PluginTable for InputTable<'_> {
     }
 }
 
-fn hub_error(error: ResourceHubsError) -> Box<HelperError> {
+fn hub_error(error: &ResourceHubsError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("HTTPException"),
         status: Some(500),
