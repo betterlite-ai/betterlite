@@ -10,6 +10,7 @@ use betterlite_models::decisions::Json;
 use betterlite_ocr::json::{Json as OcrJson, Object as OcrObject};
 use betterlite_ocr::ocr_error::OcrError;
 use betterlite_sdk::call_wrapper::error::CallError;
+use rstest::rstest;
 use secrecy::SecretString;
 
 use self::support::{
@@ -577,42 +578,51 @@ async fn error_ocr_probe_keeps_the_aocr_error_as_source() {
     assert_eq!(sent.len(), 1);
 }
 
+#[rstest]
+#[case::authentication(401_u16)]
+#[case::permission_denied(403)]
+#[case::not_found(404)]
+#[case::request_timeout(408)]
+#[case::unprocessable(422)]
+#[case::rate_limit(429)]
+#[case::internal_server(500)]
+#[case::bad_gateway(502)]
+#[case::service_unavailable(503)]
+#[case::gateway_timeout(504)]
 #[tokio::test]
-async fn error_ocr_probe_maps_each_provider_status_to_its_class() {
+async fn error_ocr_probe_maps_each_provider_status_to_its_class(#[case] status: u16) {
     let probe = OcrProbe { client: ocr_client };
-    for status in [401_u16, 403, 404, 408, 422, 429, 500, 502, 503, 504] {
-        let server = MockServer::start(status, OCR_REJECTION).await;
-        let api_base = format!("{}/v1", server.base);
-        let call = OcrCall {
-            parameters: mode_parameters(&[
-                ("model", text("mistral-ocr-latest")),
-                ("api_base", text(&api_base)),
-                ("custom_llm_provider", text("mistral")),
-            ]),
-            document: document("data:application/pdf;base64,YWJj"),
-            api_key: Some(SecretString::from("sk-test")),
-            logging: None,
-        };
-        let error = probe.ocr(call).await.expect_err("the provider is rejected");
-        let HealthProbeError::Backend { class, .. } = &error else {
-            panic!("the ocr failure is a backend error");
-        };
-        match status {
-            401 => assert!(matches!(class, ErrorClass::Authentication(_))),
-            403 => assert!(matches!(class, ErrorClass::PermissionDenied(_))),
-            404 => assert!(matches!(class, ErrorClass::NotFound(_))),
-            408 | 504 => assert!(matches!(class, ErrorClass::Timeout(_))),
-            422 => assert!(matches!(class, ErrorClass::BadRequest(_))),
-            429 => assert!(matches!(class, ErrorClass::RateLimit(_))),
-            500 => assert!(matches!(class, ErrorClass::InternalServer(_))),
-            502 => assert!(matches!(class, ErrorClass::BadGateway(_))),
-            503 => assert!(matches!(class, ErrorClass::ServiceUnavailable(_))),
-            _ => panic!("unexpected status {status}"),
-        }
-        assert_eq!(class.metadata().status_code, status);
-        let sent = server.requests().await;
-        assert_eq!(sent.len(), 1);
+    let server = MockServer::start(status, OCR_REJECTION).await;
+    let api_base = format!("{}/v1", server.base);
+    let call = OcrCall {
+        parameters: mode_parameters(&[
+            ("model", text("mistral-ocr-latest")),
+            ("api_base", text(&api_base)),
+            ("custom_llm_provider", text("mistral")),
+        ]),
+        document: document("data:application/pdf;base64,YWJj"),
+        api_key: Some(SecretString::from("sk-test")),
+        logging: None,
+    };
+    let error = probe.ocr(call).await.expect_err("the provider is rejected");
+    let HealthProbeError::Backend { class, .. } = &error else {
+        panic!("the ocr failure is a backend error");
+    };
+    match status {
+        401 => assert!(matches!(class, ErrorClass::Authentication(_))),
+        403 => assert!(matches!(class, ErrorClass::PermissionDenied(_))),
+        404 => assert!(matches!(class, ErrorClass::NotFound(_))),
+        408 | 504 => assert!(matches!(class, ErrorClass::Timeout(_))),
+        422 => assert!(matches!(class, ErrorClass::BadRequest(_))),
+        429 => assert!(matches!(class, ErrorClass::RateLimit(_))),
+        500 => assert!(matches!(class, ErrorClass::InternalServer(_))),
+        502 => assert!(matches!(class, ErrorClass::BadGateway(_))),
+        503 => assert!(matches!(class, ErrorClass::ServiceUnavailable(_))),
+        _ => panic!("unexpected status {status}"),
     }
+    assert_eq!(class.metadata().status_code, status);
+    let sent = server.requests().await;
+    assert_eq!(sent.len(), 1);
 }
 
 #[test]
