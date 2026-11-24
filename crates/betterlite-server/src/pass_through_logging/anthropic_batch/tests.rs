@@ -564,7 +564,8 @@ async fn batch_registry_failure_logs_done_callback() {
     let (capture, mut lines, _guard) = capture_logs("boom");
     let creation = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE)
         .with_request_body(r#"{"model":"claude-x"}"#);
-    let _ = run(&handler(None, port), &creation);
+    let (logged, _call_log) = run(&handler(None, port), &creation);
+    assert_eq!(logged.kwargs.batch_job_state, BatchJobState::InProgress);
     let _registration = timeout(Duration::from_secs(5), received.recv())
         .await
         .expect("a registration arrives")
