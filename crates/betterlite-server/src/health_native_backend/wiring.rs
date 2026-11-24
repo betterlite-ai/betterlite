@@ -23,7 +23,7 @@ pub struct HealthEntryDeps {
 #[must_use]
 pub fn build_health_check_entry(deps: HealthEntryDeps) -> HealthCheckEntry {
     let backend = Arc::new(deps.backend);
-    let health: Arc<dyn HealthProbeBackend> = Arc::clone(&backend);
+    let health: Arc<dyn HealthProbeBackend> = Arc::<NativeHealthBackend>::clone(&backend);
     let cheapest: Arc<dyn CheapestChatModels> = backend;
     HealthCheckEntry {
         backend: health,

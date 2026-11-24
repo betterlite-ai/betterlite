@@ -146,7 +146,7 @@ impl FakeChat {
 
 #[async_trait]
 impl CallTarget for FakeChat {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "completion"
     }
 
@@ -487,18 +487,20 @@ impl Harness {
     }
 
     pub(super) fn backend(&self) -> NativeHealthBackend {
-        let chat: Arc<dyn CallTarget> = Arc::clone(&self.chat);
-        let completion: Arc<dyn TextCompletionProbeCall> = Arc::clone(&self.owner);
-        let embedding: Arc<dyn EmbeddingProbeCall> = Arc::clone(&self.owner);
-        let audio_speech: Arc<dyn SpeechProbeCall> = Arc::clone(&self.owner);
-        let audio_transcription: Arc<dyn TranscriptionProbeCall> = Arc::clone(&self.owner);
-        let image_generation: Arc<dyn ImageGenerationProbeCall> = Arc::clone(&self.owner);
-        let image_edit: Arc<dyn ImageEditProbeCall> = Arc::clone(&self.owner);
-        let rerank: Arc<dyn RerankProbeCall> = Arc::clone(&self.owner);
-        let batch: Arc<dyn BatchProbeCall> = Arc::clone(&self.owner);
-        let responses: Arc<dyn ResponsesProbeCall> = Arc::clone(&self.owner);
-        let ocr: Arc<dyn OcrProbeCall> = Arc::clone(&self.owner);
-        let prices: Arc<dyn PriceLookup + Send + Sync> = Arc::clone(&self.prices);
+        let chat: Arc<dyn CallTarget> = Arc::<FakeChat>::clone(&self.chat);
+        let completion: Arc<dyn TextCompletionProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let embedding: Arc<dyn EmbeddingProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let audio_speech: Arc<dyn SpeechProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let audio_transcription: Arc<dyn TranscriptionProbeCall> =
+            Arc::<FakeOwner>::clone(&self.owner);
+        let image_generation: Arc<dyn ImageGenerationProbeCall> =
+            Arc::<FakeOwner>::clone(&self.owner);
+        let image_edit: Arc<dyn ImageEditProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let rerank: Arc<dyn RerankProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let batch: Arc<dyn BatchProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let responses: Arc<dyn ResponsesProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let ocr: Arc<dyn OcrProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let prices: Arc<dyn PriceLookup + Send + Sync> = Arc::<FakePrices>::clone(&self.prices);
         NativeHealthBackend {
             chat,
             completion,
