@@ -178,6 +178,28 @@ async fn an_unavailable_renewal_fails_the_fetch() {
 }
 
 #[tokio::test]
+async fn a_failing_fresh_read_during_the_renewal_fails_the_fetch() {
+    let expired = assertion(NOW_SECONDS, Some("carried-token"));
+    let fixture = StoreFixture::new(
+        inner(vec![("user-1", expired.clone())]),
+        transport(Vec::new()),
+        access_with(vec![("user-1", expired)], AccessFailure::Read),
+        factory(Vec::new()),
+        NOW_MS,
+    );
+    let failure = fixture
+        .store
+        .fetch("user-1")
+        .await
+        .expect_err("the fresh read failed");
+    assert_eq!(
+        failure.to_string(),
+        "the SSO identity assertion store is unavailable: the scripted row read failed"
+    );
+    assert!(fixture.transport.sent().is_empty());
+}
+
+#[tokio::test]
 async fn the_inner_store_failure_goes_straight_up() {
     let fixture = StoreFixture::new(
         failing_inner(),
