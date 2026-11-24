@@ -665,6 +665,10 @@ async fn native_responses_error_maps_a_translation_failure() {
     let failure = error.normalize("openai/gpt-4o", "openai", &fixture.redactor);
     assert_eq!(failure.status, 500);
     assert_eq!(failure.class, "APIConnectionError");
+    assert!(
+        matches!(error, MessagesResponseCallError::Translate(_)),
+        "the adapter's translation failure keeps its variant"
+    );
 }
 
 async fn first_chunk<S>(stream: &mut MessagesResponseStream<S>) -> Json
