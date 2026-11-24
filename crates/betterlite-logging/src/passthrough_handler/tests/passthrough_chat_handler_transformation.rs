@@ -1,7 +1,10 @@
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
-use super::support::{chat_input, cost, cost_json, harness, headers, json, json_object, kwargs};
+use super::support::{
+    chat_input, cost, cost_json, end, harness, harness_returning, headers, json, json_object,
+    kwargs, payload, start,
+};
 use crate::passthrough_handler::types::UpstreamChatResponse;
 use crate::passthrough_logging_state::response::PassThroughResponse;
 
@@ -42,6 +45,24 @@ fn transforms_through_the_provider_config() {
         outcome.kwargs.entries.get("standard_logging_object"),
         Some(&Json::Null)
     );
+}
+
+#[test]
+fn builds_the_payload_from_the_transformed_response() {
+    let harness = harness_returning(payload());
+    let transformed = json(r#"{"id": "chatcmpl-9", "object": "chat.completion"}"#);
+    harness.provider.transform_ok(transformed.clone());
+    harness.cost.costs(cost("0.25"));
+    let headers = headers();
+    let request = json_object(r#"{"model": "claude-3"}"#);
+    let response = json_object(r#"{"type": "message"}"#);
+    let input = chat_input(&harness.logging, &headers, &request, &response, kwargs(&[]));
+    harness.handler.passthrough_chat_handler(input).unwrap();
+    let built = harness.builder.calls();
+    assert_eq!(built.len(), 1);
+    assert_eq!(built[0].start_time, start());
+    assert_eq!(built[0].end_time, end());
+    assert_eq!(built[0].response, transformed);
 }
 
 #[rstest]

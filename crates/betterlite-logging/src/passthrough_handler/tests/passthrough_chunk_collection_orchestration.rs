@@ -79,6 +79,11 @@ fn records_the_rebuild_inputs() {
         harness.cost.calls()[0].response,
         json(r#"{"id": "rebuilt-9"}"#)
     );
+    let built = harness.builder.calls();
+    assert_eq!(built.len(), 1);
+    assert_eq!(built[0].start_time, start());
+    assert_eq!(built[0].end_time, end());
+    assert_eq!(built[0].response, json(r#"{"id": "rebuilt-9"}"#));
 }
 
 #[test]

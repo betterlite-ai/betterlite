@@ -109,7 +109,8 @@ fn a_cost_failure_leaves_the_cost_and_the_rest_unwritten() {
 fn stamps_the_call_id_and_the_model() {
     let harness = harness();
     harness.cost.costs(cost("0.25"));
-    let mut response = json(r#"{"id": "upstream-9", "object": "chat.completion"}"#);
+    let mut response =
+        json(r#"{"id": "upstream-9", "object": "chat.completion", "model": "upstream-model"}"#);
     let _written = harness
         .handler
         .build_response_logging_payload(payload_input(
