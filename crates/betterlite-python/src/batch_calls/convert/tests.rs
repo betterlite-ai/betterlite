@@ -638,13 +638,17 @@ fn request_read_hidden_params_default_the_provider_base() {
         openai.optional_params.api_base.as_deref(),
     );
     assert_eq!(openai_hidden.api_base, None);
+    // xai reaches the payload only when the caller passed it, and get_api_base reports its base with or without a model
     let unmodeled_xai = read_call("xai", None);
     let unmodeled_xai_hidden = HiddenParams::new(
         unmodeled_xai.provider.name(),
         unmodeled_xai.model.as_deref(),
         unmodeled_xai.optional_params.api_base.as_deref(),
     );
-    assert_eq!(unmodeled_xai_hidden.api_base, None);
+    assert_eq!(
+        unmodeled_xai_hidden.api_base.as_deref(),
+        Some("https://api.x.ai/v1")
+    );
     let xai = read_call("xai", Some("xai/grok-2"));
     let hidden = HiddenParams::new(
         xai.provider.name(),

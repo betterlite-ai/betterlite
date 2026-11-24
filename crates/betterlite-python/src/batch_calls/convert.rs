@@ -132,14 +132,14 @@ impl HiddenParams {
     }
 }
 
-// set_hidden_params reports get_api_base over the call's own kwargs, never the deployment's resolved base
+// set_hidden_params reports get_api_base over the call's own kwargs; xai is only ever passed explicitly, while openai is also the facade's default and resolves nothing without a model
 fn hidden_api_base(provider: &str, model: Option<&str>, given: Option<&str>) -> Option<String> {
     if let Some(api_base) = given {
         return Some(api_base.to_owned());
     }
     match (provider, model) {
         ("openai", Some(_)) => Some(String::from(OPENAI_DEFAULT_BASE)),
-        ("xai", Some(_)) => Some(String::from(XAI_DEFAULT_BASE)),
+        ("xai", _) => Some(String::from(XAI_DEFAULT_BASE)),
         _ => None,
     }
 }
