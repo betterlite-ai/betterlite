@@ -20,6 +20,7 @@ betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-db = { path = "../../../../../crates/betterlite-db" }
 betterlite-error = { path = "../../../../../crates/betterlite-error" }
+betterlite-foundry = { path = "../../../../../crates/betterlite-foundry" }
 betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-http-fixture = { path = "../../../../../tools/http-fixture" }

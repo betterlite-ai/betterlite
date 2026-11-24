@@ -533,6 +533,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "session_inputs"
+path = "fuzz_targets/session_inputs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "shadow_q"
 path = "fuzz_targets/shadow_q.rs"
 test = false
