@@ -183,10 +183,7 @@ impl RequestProcessing for FakeProcessing {
             model: data_model(data),
         });
         let pending = self.reply.lock().unwrap().take();
-        match pending {
-            Some(reply) => reply,
-            None => panic!("the fake has no reply"),
-        }
+        pending.map_or_else(|| panic!("the fake has no reply"), |reply| reply)
     }
 
     async fn handle_exception(
@@ -197,10 +194,7 @@ impl RequestProcessing for FakeProcessing {
     ) -> ProxyException {
         self.failures.lock().unwrap().push(failure);
         let mapped = self.mapped.lock().unwrap().take();
-        match mapped {
-            Some(exception) => exception,
-            None => mapped_exception(),
-        }
+        mapped.map_or_else(mapped_exception, |exception| exception)
     }
 }
 

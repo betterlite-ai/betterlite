@@ -7,7 +7,7 @@ use betterlite_core::api::container_ownership::repository::ContainerOwnerRow;
 use betterlite_core::api::container_ownership::{ContainerForwardingParams, ContainerIdentity};
 use betterlite_prompts::arguments::json::Json;
 
-use super::super::ports::{ContainerAccess, OwnershipAccess};
+use super::super::ports::{ContainerAccess as _, OwnershipAccess};
 use super::super::{ContainerFileRequestError, ContainerRequestData};
 use super::support::{
     FakeAccess, FakeObjects, FakeProcessing, bytes_reply, caller, container_requests,
