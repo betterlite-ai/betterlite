@@ -501,19 +501,60 @@ fn assert_recovery_reasons(writer: &PendingWriter, expected: bool) {
     }
 }
 
+#[derive(Clone, Copy)]
+enum RecoveryInterface {
+    Present,
+    Missing,
+}
+
+fn recovery_without_an_interface(database: Option<&DbError>) -> ProxyException {
+    handle_exception_on_proxy(
+        CaughtException::Failure(failure_facts("boom", None, None, database)),
+        None,
+        &SilentDiagnostics,
+        None,
+    )
+}
+
 #[rstest]
-#[case::read_only(Some(prisma_failure("read-only transaction")), true)]
-#[case::other_failure(Some(prisma_failure("permission denied for the write")), false)]
-#[case::no_database(None, false)]
+#[case::read_only(
+    Some(prisma_failure("read-only transaction")),
+    RecoveryInterface::Present,
+    true
+)]
+#[case::read_only_without_an_interface(
+    Some(prisma_failure("read-only transaction")),
+    RecoveryInterface::Missing,
+    false
+)]
+#[case::other_failure(
+    Some(prisma_failure("permission denied for the write")),
+    RecoveryInterface::Present,
+    false
+)]
+#[case::no_database(None, RecoveryInterface::Present, false)]
 #[tokio::test]
-async fn recovery_submission(#[case] database: Option<DbError>, #[case] expected: bool) {
+async fn recovery_submission(
+    #[case] database: Option<DbError>,
+    #[case] interface: RecoveryInterface,
+    #[case] expected: bool,
+) {
+    if matches!(interface, RecoveryInterface::Missing) {
+        let record = recovery_without_an_interface(database.as_ref());
+        assert_eq!(
+            record.code, "500",
+            "a read-only failure without a recovery interface still maps"
+        );
+        return;
+    }
+
     let (tracker, writer, record) = submitted_recovery(database.as_ref());
 
     assert_eq!(record.code, "500");
     assert_eq!(
         tracker.len(),
         usize::from(expected),
-        "exactly one recovery is submitted when the failure is a read-only transaction"
+        "exactly one recovery is submitted for a read-only transaction with an interface"
     );
     assert!(
         !writer.completed.load(Ordering::SeqCst),
