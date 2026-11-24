@@ -119,15 +119,12 @@ def target_answer(case: Case) -> JsonValue:
     return {"model_name": model_name}
 
 
-def resolve_targets(value: ResolveInput) -> JsonValue:
-    return [target_answer(case) for case in value["cases"]]
-
-
 def run(input_value: Input) -> JsonValue:
     litellm.suppress_debug_info = True
     operation = input_value["function"]
     if operation == "convert_row":
         return convert_rows(CONVERT_INPUT.validate_python(input_value))
     if operation == "resolve_target":
-        return resolve_targets(RESOLVE_INPUT.validate_python(input_value))
+        resolve_input = RESOLVE_INPUT.validate_python(input_value)
+        return [target_answer(case) for case in resolve_input["cases"]]
     raise ValueError(f"unknown function: {operation}")
