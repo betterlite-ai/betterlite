@@ -10,6 +10,7 @@ use betterlite_core::agents::provider::a2a::LiteLLMSendMessageResponse;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
 use serde::Deserialize;
+use serde::de::Error as _;
 
 use super::error::A2aCallError;
 
@@ -105,6 +106,11 @@ pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, A2aCallError>
 where
     T: Deserialize<'text>,
 {
+    // A derived Deserialize also reads a JSON array of field values; the native text must be an object.
+    if !text.trim_start().starts_with('{') {
+        let source = serde_json::Error::custom("expected a JSON object");
+        return Err(A2aCallError::Json { source });
+    }
     match serde_json::from_str(text) {
         Ok(value) => Ok(value),
         Err(source) => Err(A2aCallError::Json { source }),
