@@ -5,6 +5,7 @@ use betterlite_http::error::HttpError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+use tokio::task::JoinError;
 
 use super::convert::request::{BodyError, DurationError};
 use super::convert::{ConvertError, SettingsError};
@@ -72,7 +73,7 @@ pub(crate) enum BatchError {
     #[error("the batch call task failed: {source}")]
     Task {
         #[source]
-        source: tokio::task::JoinError,
+        source: JoinError,
     },
     #[error("the batch create task ended without a result")]
     TaskWithoutResult,

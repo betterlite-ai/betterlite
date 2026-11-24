@@ -205,10 +205,11 @@ pub(crate) fn read_payload(text: &str) -> Result<BatchProviderReadInput, Convert
 
 fn without_timeout(text: &str) -> Result<(String, Option<JsonValue>), ConvertError> {
     let mut payload: JsonValue = parse(text)?;
-    let mut timeout = None;
-    if let JsonValue::Object(fields) = &mut payload {
-        timeout = take_optional_timeout(fields);
-    }
+    let timeout = if let JsonValue::Object(fields) = &mut payload {
+        take_optional_timeout(fields)
+    } else {
+        None
+    };
     let rewritten =
         serde_json::to_string(&payload).map_err(|source| ConvertError::Write { source })?;
     Ok((rewritten, timeout))
