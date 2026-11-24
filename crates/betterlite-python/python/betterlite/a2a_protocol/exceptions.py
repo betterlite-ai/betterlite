@@ -1,3 +1,5 @@
+from typing_extensions import override
+
 from betterlite.exceptions._http import Request, Response
 
 LLM_PROVIDER = "a2a_agent"
@@ -46,6 +48,7 @@ class A2AError(Exception):
         )
         super().__init__(self.message)
 
+    @override
     def __str__(self) -> str:
         message = self.message
         if self.num_retries:
@@ -54,6 +57,7 @@ class A2AError(Exception):
             message += f", LiteLLM Max Retries: {self.max_retries}"
         return message
 
+    @override
     def __repr__(self) -> str:
         return self.__str__()
 
@@ -73,14 +77,14 @@ class A2AConnectionError(A2AError):
     ) -> None:
         self.url = url
         super().__init__(
-            message=message,
-            status_code=CONNECTION_STATUS,
-            llm_provider=LLM_PROVIDER,
-            model=model,
-            response=response,
-            litellm_debug_info=litellm_debug_info,
-            max_retries=max_retries,
-            num_retries=num_retries,
+            message,
+            CONNECTION_STATUS,
+            LLM_PROVIDER,
+            model,
+            response,
+            litellm_debug_info,
+            max_retries,
+            num_retries,
         )
 
 
