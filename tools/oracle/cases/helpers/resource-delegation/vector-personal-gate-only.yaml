@@ -1,0 +1,30 @@
+kind: helper
+name: vector_personal_gate_only
+call:
+  resource_delegation:
+    function: validate_vector_stores
+    permission: {vector_stores: ["v-b", "v-a", ""]}
+    is_proxy_admin: false
+calls:
+  - resource_delegation:
+      function: validate_vector_stores
+      permission: {vector_stores: ["v-b", "v-a", ""]}
+      is_proxy_admin: true
+  - resource_delegation:
+      function: validate_vector_stores
+      permission: {vector_stores: ["v-any"]}
+      team: {team_id: team-1}
+  - resource_delegation:
+      function: validate_vector_stores
+      permission: {vector_stores: []}
+      is_proxy_admin: false
+  - resource_delegation:
+      function: validate_vector_stores
+      permission: {vector_stores: null}
+      is_proxy_admin: false
+  - resource_delegation:
+      function: validate_vector_stores
+      permission: {vector_stores: "v-a"}
+      is_proxy_admin: false
+env: {}
+compare: {ignore: []}

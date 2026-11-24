@@ -1,0 +1,30 @@
+kind: helper
+name: search_personal_duplicates
+call:
+  resource_delegation:
+    function: validate_search_tools
+    permission: {search_tools: ["b", "a", "b", ""]}
+    is_proxy_admin: false
+calls:
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["b", "a", "b", ""]}
+      is_proxy_admin: true
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["b", "a", "b", ""]}
+      team: {team_id: team-1}
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["b", "a", "b", ""]}
+      team: {team_id: team-1, search_tools: []}
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: []}
+      is_proxy_admin: false
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: null}
+      is_proxy_admin: false
+env: {}
+compare: {ignore: []}
