@@ -9,13 +9,14 @@ use tokio_util::task::TaskTracker;
 
 use crate::gateway_request_tracking::test_support::captured_logs;
 use crate::spend_commit::policy::{SpendFailure, SpendRetryPolicy};
+use crate::spend_flush::daily::DailyCommitParts;
 use crate::spend_flush::fakes::tests::{
     ChunkStep, Events, FakeCache, FakeDailyWriter, FakeDiscovery, FakeEntityWriter, FakeService,
     FakeWindow, FixedClock, FixedJitter,
 };
 use crate::spend_flush::memory::{DailySpendQueues, MemorySpendFlush};
 use crate::spend_flush::redis::fakes::tests::{
-    CountingPause, parts_with_pause, recording_pass, spend_queues,
+    CountingPause, Queues, parts_with_pause, recording_pass, spend_queues,
 };
 use crate::spend_flush::redis::jobs::{
     DailyTagSpendError, DailyTagSpendFlush, SPEND_JOB_RETRIES, SpendUpdateJob, UpdateSpendJobError,
@@ -239,62 +240,102 @@ async fn the_adapters_retry_count_reaches_the_memory_tag_commit() {
     );
 }
 
+// The memory branch's ports and events, owned so a case reads them after the commit and its failed entity writer is in place.
+struct MemoryCase {
+    queues: Queues,
+    events: Arc<Events>,
+    entity_writer: FakeEntityWriter,
+    cache: FakeCache,
+    window: FakeWindow,
+    discovery: FakeDiscovery,
+    commits: TaskTracker,
+    shutdown: CancellationToken,
+    clock: FixedClock,
+    jitter: FixedJitter,
+    pause: Arc<CountingPause>,
+    failures: NoSpendLogFailureSink,
+    parts: Arc<DailyCommitParts<FakeDailyWriter>>,
+}
+
+impl MemoryCase {
+    fn new(events: Arc<Events>) -> Self {
+        let writer = Arc::new(FakeDailyWriter::new(Arc::clone(&events), Vec::new()));
+        let pause = Arc::new(CountingPause::default());
+        let parts = parts_with_pause(writer, Arc::clone(&pause));
+        let entity_writer = FakeEntityWriter::new(Arc::clone(&events));
+        entity_writer.fail_with(SpendFailure::Deadlock);
+        Self {
+            queues: spend_queues(),
+            cache: FakeCache::new(Arc::clone(&events)),
+            window: FakeWindow::new(Arc::clone(&events)),
+            discovery: FakeDiscovery::new(Arc::clone(&events)),
+            commits: TaskTracker::new(),
+            shutdown: CancellationToken::new(),
+            clock: FixedClock {
+                instant: Instant::now(),
+            },
+            jitter: FixedJitter,
+            failures: NoSpendLogFailureSink,
+            entity_writer,
+            parts,
+            pause,
+            events,
+        }
+    }
+
+    fn policy(&self) -> SpendRetryPolicy<'_> {
+        SpendRetryPolicy {
+            retries: 0,
+            clock: &self.clock,
+            jitter: &self.jitter,
+            pause: &*self.pause,
+            failures: &self.failures,
+        }
+    }
+
+    // The memory branch's one tick through the source's selector at the job adapter's retry count; true when its failure surfaces as the memory variant.
+    async fn commit(&self) -> bool {
+        let flush = MemorySpendFlush {
+            entity_queue: &self.queues.entity,
+            entity_writer: &self.entity_writer,
+            entity_cache: &self.cache,
+            policy: self.policy(),
+            daily: DailySpendQueues {
+                user: &self.queues.daily_user,
+                team: &self.queues.daily_team,
+                org: &self.queues.daily_org,
+                end_user: &self.queues.daily_end_user,
+                agent: &self.queues.daily_agent,
+            },
+            daily_commits: &self.commits,
+            daily_parts: &self.parts,
+            window_queue: &self.queues.window,
+            window: &self.window,
+            discovery_queue: &self.queues.discovery,
+            discovery: &self.discovery,
+            shutdown: &self.shutdown,
+        };
+        let redis = recording_pass("redis", Arc::clone(&self.events), false);
+        SpendUpdateTransactionHandler::select(false, &redis, &flush)
+            .commit_spend_updates(SPEND_JOB_RETRIES)
+            .await
+            .is_err_and(|error| matches!(error, SpendUpdateError::Memory(_)))
+    }
+}
+
 #[tokio::test]
 async fn the_memory_branch_retries_the_entity_commit_with_the_adapters_count() {
-    let events = Arc::new(Events::default());
-    let writer = Arc::new(FakeDailyWriter::new(Arc::clone(&events), Vec::new()));
-    let pause = Arc::new(CountingPause::default());
-    let parts = parts_with_pause(Arc::clone(&writer), Arc::clone(&pause));
-    let queues = spend_queues();
-    queues.add_entity(EntityType::User, "u-memory", "2").await;
-    let entity_writer = FakeEntityWriter::new(Arc::clone(&events));
-    entity_writer.fail_with(SpendFailure::Deadlock);
-    let cache = FakeCache::new(Arc::clone(&events));
-    let window = FakeWindow::new(Arc::clone(&events));
-    let discovery = FakeDiscovery::new(Arc::clone(&events));
-    let commits = TaskTracker::new();
-    let shutdown = CancellationToken::new();
-    let clock = FixedClock {
-        instant: Instant::now(),
-    };
-    let jitter = FixedJitter;
-    let failures = NoSpendLogFailureSink;
-    let policy = SpendRetryPolicy {
-        retries: 0,
-        clock: &clock,
-        jitter: &jitter,
-        pause: &*pause,
-        failures: &failures,
-    };
-    let flush = MemorySpendFlush {
-        entity_queue: &queues.entity,
-        entity_writer: &entity_writer,
-        entity_cache: &cache,
-        policy,
-        daily: DailySpendQueues {
-            user: &queues.daily_user,
-            team: &queues.daily_team,
-            org: &queues.daily_org,
-            end_user: &queues.daily_end_user,
-            agent: &queues.daily_agent,
-        },
-        daily_commits: &commits,
-        daily_parts: &parts,
-        window_queue: &queues.window,
-        window: &window,
-        discovery_queue: &queues.discovery,
-        discovery: &discovery,
-        shutdown: &shutdown,
-    };
-    let redis = recording_pass("redis", Arc::clone(&events), false);
+    let case = MemoryCase::new(Arc::new(Events::default()));
+    case.queues
+        .add_entity(EntityType::User, "u-memory", "2")
+        .await;
 
-    let error = SpendUpdateTransactionHandler::select(false, &redis, &flush)
-        .commit_spend_updates(SPEND_JOB_RETRIES)
-        .await
-        .unwrap_err();
-    assert!(matches!(error, SpendUpdateError::Memory(_)));
+    assert!(
+        case.commit().await,
+        "the exhausted entity commit surfaces as the memory branch's error"
+    );
 
-    let entries = events.entries();
+    let entries = case.events.entries();
     let attempts = entries
         .iter()
         .filter(|event| event.starts_with("entity user_list_transactions"))
@@ -303,7 +344,7 @@ async fn the_memory_branch_retries_the_entity_commit_with_the_adapters_count() {
         attempts, 4,
         "the handler's retry count reaches the memory entity commit"
     );
-    assert_eq!(pause.delays().len(), 3);
+    assert_eq!(case.pause.delays().len(), 3);
     assert!(
         !entries.iter().any(|event| event.starts_with("balance")),
         "the redis branch is not the one that ran"
