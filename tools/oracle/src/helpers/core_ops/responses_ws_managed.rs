@@ -11,6 +11,7 @@ use serde_json::json;
 use tokio::runtime::Builder;
 use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::registry;
 
 use self::support::{Captured, QuotaRow, ScriptRow, ScriptedProvider, ScriptedSource, SinkRow};
 
@@ -51,7 +52,7 @@ impl Helper for Op {
         let source = ScriptedSource::new(&shared, &input.frames, &input.disconnect);
         let mut handler = support::build_handler(&input.setup, sink, &shared, input.quota.as_ref());
         let captured = Captured::default();
-        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let subscriber = registry().with(captured.clone());
         runtime.block_on(
             answer(&shared, &captured, &mut handler, &provider, source).with_subscriber(subscriber),
         )

@@ -62,3 +62,23 @@ async fn the_alias_uses_the_connection_model_and_the_body_names_the_alias() {
     assert_eq!(body.get("input"), Some(&support::json(r#""hello""#)));
     assert_eq!(body.get("store"), Some(&support::json("true")));
 }
+
+#[tokio::test]
+async fn a_frame_without_a_model_names_the_group_in_the_proxy_body() {
+    let shared = support::shared();
+    let mut connection = support::connection(support::MODEL, support::sink(&shared));
+    connection.litellm_metadata = Some(support::object(r#"{"model_group": "router-model"}"#));
+    let mut handler = support::handler(connection);
+    let scripts = vec![support::script(vec![support::event(COMPLETED)])];
+    let provider = support::ScriptedProvider::new(&shared, scripts);
+    let frame = r#"{"type": "response.create", "input": "hello"}"#;
+
+    let (outcome, _logs) =
+        support::capture(process_response_create(&mut handler, &provider, frame)).await;
+    outcome.unwrap();
+    let recorded = support::calls(&shared);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].model, support::MODEL);
+    let body = support::proxy_body(&recorded[0].kwargs);
+    assert_eq!(body.get("model"), Some(&support::json(r#""router-model""#)));
+}
