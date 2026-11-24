@@ -512,7 +512,7 @@ fn request_cancel_quotes_a_slash_and_a_query() {
 fn request_cancel_rejects_an_empty_or_dot_job_id() {
     let key = SecretString::from("sk-test");
     let timeout = openai_timeout();
-    for job_id in ["", "."] {
+    for job_id in ["", ".", ".."] {
         let call = OpenAiFineTuningCancel {
             values: FineTuningCancelValues {
                 is_async: false,
