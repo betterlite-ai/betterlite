@@ -5,6 +5,7 @@ from types import ModuleType
 from typing import ClassVar, Final, Literal, NotRequired, Self, TypedDict
 
 import litellm
+from litellm.constants import EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE
 from litellm.exceptions import BudgetExceededError
 from litellm.models.user import LiteLLM_UserTable
 from litellm.proxy._types import CallInfo, UserAPIKeyAuth
@@ -137,7 +138,7 @@ def fix_clock(call: Call) -> None:
     if moment is None:
         raise ValueError("the call names the fixed clock")
     FixedClock.moment = datetime.fromisoformat(moment)
-    user_api_key_auth.datetime = FixedClock
+    user_api_key_auth.datetime = FixedClock  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3615-L3623
 
 
 def denial_record(denied: BudgetExceededError) -> JsonValue:
@@ -185,7 +186,7 @@ async def admit_call(call: Call) -> JsonValue:
         "alerts": list(recorder.alerts),
         "reads": list(reader.reads),
         "throttle_pct": updated.budget_throttle_pct,
-        "fraction": auth_checks.EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE,
+        "fraction": EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE,
         "denial": denial,
     }
 
