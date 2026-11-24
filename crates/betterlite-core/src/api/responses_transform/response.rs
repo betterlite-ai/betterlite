@@ -96,7 +96,7 @@ fn message_text(part: &OutputMessageContentValue) -> Option<String> {
     }
 }
 
-fn text_record(text: &str) -> InteractionObject {
+pub(crate) fn text_record(text: &str) -> InteractionObject {
     let mut record = InteractionObject::new();
     record.insert(
         String::from("type"),
@@ -106,7 +106,7 @@ fn text_record(text: &str) -> InteractionObject {
     record
 }
 
-fn model_output_step(contents: Vec<InteractionObject>) -> InteractionObject {
+pub(crate) fn model_output_step(contents: Vec<InteractionObject>) -> InteractionObject {
     let mut step = InteractionObject::new();
     step.insert(
         String::from("type"),

@@ -1,0 +1,30 @@
+kind: helper
+name: mcp-transport-checks-top-level-method-scan
+call:
+  b8724:
+    operation: top_level_method_scan
+    texts:
+      - '{"method":"initialize"}'
+      - '{"method": "tools/call", "params": {}}'
+      - '{"result": {"method": "tools/call"}}'
+      - '{"a": "method"}'
+      - '["method"]'
+      - '{"a": [{"method": "x"}]}'
+      - '{"Method": "x"}'
+      - '{a:"method"}'
+      - '{"method": "initial'
+      - '{"meth'
+      - '{"method'
+      - '{"method":'
+      - '{"x\"y": 1, "method": 2}'
+      - '{"a": "x\"y", "method": 1}'
+      - '{"a": "x", "method": 1}'
+      - '{"a": 1}{"method": 1}'
+      - ""
+      - '{"jsonrpc": "2.0", "id": 1, "result": {"method": "tools/call"}}'
+      - '{"jsonrpc":"2.0","method":"tools/call","params":{"result":'
+      - '{"a": {"b": 1}, "method": "x"}'
+      - '["a", {"method": 1}]'
+      - '{"": 1, "method": 2}'
+env: {}
+compare: {ignore: []}

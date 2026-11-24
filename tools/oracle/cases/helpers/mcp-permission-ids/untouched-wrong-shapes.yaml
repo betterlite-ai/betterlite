@@ -1,0 +1,42 @@
+kind: helper
+name: untouched_wrong_shapes
+call:
+  mcp_permission_ids:
+    function: cleanup
+    object_permission:
+      mcp_servers: "text"
+      mcp_tool_permissions: []
+    identifiers: {"srv-a": ["id-a"]}
+calls:
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission: null
+      identifiers: {}
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission: []
+      identifiers: {}
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission: "text"
+      identifiers: {}
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission: {}
+      identifiers: {}
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission: 7
+      identifiers: {}
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission: false
+      identifiers: {}
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission:
+        mcp_servers: null
+        mcp_tool_permissions: {"srv-a": ["t1", "t1"]}
+      identifiers: {"srv-a": ["id-a"]}
+env: {}
+compare: {ignore: []}
