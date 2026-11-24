@@ -171,7 +171,9 @@ where
         &self,
         payload: &[u8],
         request: &SpendUpdateRequest<'_, C>,
-    ) {
+    ) where
+        C: SavingsPricingContext,
+    {
         if self.settings.disable_spend_logs != Some(false) {
             tracing::debug!(
                 "disable_spend_logs is not false; skipping the spend log usage and auto-router turn enqueues"

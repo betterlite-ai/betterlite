@@ -43,6 +43,7 @@ where
                 work.user_id.as_deref(),
                 OwnerKind::Team,
             )
+            .await
         );
         isolated!(
             "organization",
@@ -53,6 +54,7 @@ where
                 work.user_id.as_deref(),
                 OwnerKind::Organization,
             )
+            .await
         );
         isolated!(
             "project",
@@ -62,6 +64,7 @@ where
                 work.project_id.as_deref(),
                 RowKind::Project,
             )
+            .await
         );
         isolated!(
             "tag",
@@ -70,6 +73,7 @@ where
                 work.response_cost,
                 daily.and_then(request_tags),
             )
+            .await
         );
         update_model_access_group_db(
             self.queues.entity,
@@ -87,6 +91,7 @@ where
                 daily.and_then(|payload| payload.agent_id.as_deref()),
                 RowKind::Agent,
             )
+            .await
         );
     }
 

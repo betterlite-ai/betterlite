@@ -125,6 +125,7 @@ where
                 environment.pricing,
                 environment.endpoints,
             )
+            .await
         );
         isolated!(
             "daily end user",
@@ -134,6 +135,7 @@ where
                 environment.pricing,
                 environment.endpoints,
             )
+            .await
         );
         isolated!(
             "daily agent",
@@ -143,6 +145,7 @@ where
                 environment.pricing,
                 environment.endpoints,
             )
+            .await
         );
         isolated!(
             "daily team",
@@ -152,6 +155,7 @@ where
                 environment.pricing,
                 environment.endpoints,
             )
+            .await
         );
         isolated!(
             "daily organization",
@@ -162,6 +166,7 @@ where
                 environment.pricing,
                 environment.endpoints,
             )
+            .await
         );
         isolated!(
             "daily tag",
@@ -171,6 +176,7 @@ where
                 environment.pricing,
                 environment.endpoints,
             )
+            .await
         );
     }
 }

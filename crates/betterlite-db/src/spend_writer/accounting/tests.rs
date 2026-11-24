@@ -213,8 +213,8 @@ async fn a_failed_user_helper_is_reported_and_the_later_entities_charge() {
         }]
     );
     let charged = ids(&harness.entity.items());
-    assert!(!charged.iter().any(|(kind, _)| *kind == EntityType::User));
-    assert!(!charged.iter().any(|(kind, _)| *kind == EntityType::EndUser));
+    assert!(!charged.iter().any(|(kind, _)| kind == &EntityType::User));
+    assert!(!charged.iter().any(|(kind, _)| kind == &EntityType::EndUser));
     assert!(charged.contains(&(EntityType::Key, "hash-1".to_owned())));
     assert!(charged.contains(&(EntityType::Team, "team-1".to_owned())));
     assert!(charged.contains(&(EntityType::Agent, "agent-1".to_owned())));
@@ -235,7 +235,7 @@ async fn a_failed_key_enqueue_is_reported_and_the_later_entities_charge() {
         }]
     );
     let charged = ids(&harness.entity.items());
-    assert!(!charged.iter().any(|(kind, _)| *kind == EntityType::Key));
+    assert!(!charged.iter().any(|(kind, _)| kind == &EntityType::Key));
     assert!(charged.contains(&(EntityType::Team, "team-1".to_owned())));
     assert!(charged.contains(&(EntityType::Agent, "agent-1".to_owned())));
 }
@@ -351,8 +351,8 @@ async fn charges_entities_without_a_daily_projection() {
     assert!(charged.contains(&(EntityType::User, "u1".to_owned())));
     assert!(charged.contains(&(EntityType::Key, "hash-1".to_owned())));
     assert!(charged.contains(&(EntityType::Team, "team-1".to_owned())));
-    assert!(!charged.iter().any(|(kind, _)| *kind == EntityType::Tag));
-    assert!(!charged.iter().any(|(kind, _)| *kind == EntityType::Agent));
+    assert!(!charged.iter().any(|(kind, _)| kind == &EntityType::Tag));
+    assert!(!charged.iter().any(|(kind, _)| kind == &EntityType::Agent));
     assert!(daily_keys(&harness.daily_user).is_empty());
     assert!(daily_keys(&harness.daily_org).is_empty());
     assert!(harness.model_usage.is_empty());
@@ -367,7 +367,7 @@ async fn reads_an_already_parsed_tag_list_without_deduping_it() {
     harness.run(&charge, SpendWriterSettings::default()).await;
     let tags: Vec<String> = ids(&harness.entity.items())
         .into_iter()
-        .filter(|(kind, _)| *kind == EntityType::Tag)
+        .filter(|(kind, _)| kind == &EntityType::Tag)
         .map(|(_, tag)| tag)
         .collect();
     assert_eq!(tags, vec!["tag-a", "tag-a", "tag-b"]);
