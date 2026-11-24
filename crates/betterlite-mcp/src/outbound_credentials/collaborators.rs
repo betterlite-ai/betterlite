@@ -15,7 +15,7 @@ use crate::credential_contracts::server_spec::ServerSpec;
 use crate::sso_assertions::assertion::SsoIdentityAssertion;
 use crate::sso_assertions::read::{AssertionStoreUnavailable, SsoAssertionStore};
 
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub type BoxFuture<'future, T> = Pin<Box<dyn Future<Output = T> + Send + 'future>>;
 
 // The bearer a per-user store or exchanger returns. Only access_token reaches the wire; the rest keeps the collaborator contract intact.
 #[derive(Clone)]
@@ -44,11 +44,11 @@ pub trait OAuthTokenStore: Send + Sync {
 }
 
 // One OBO exchange: the caller's token, the server it is minted for and the tenant the caller belongs to.
-pub struct ExchangeRequest<'a> {
-    pub subject_token: &'a SecretString,
-    pub server: &'a ServerSpec,
-    pub config: &'a TokenExchangeConfig,
-    pub tenant_id: &'a str,
+pub struct ExchangeRequest<'request> {
+    pub subject_token: &'request SecretString,
+    pub server: &'request ServerSpec,
+    pub config: &'request TokenExchangeConfig,
+    pub tenant_id: &'request str,
 }
 
 pub trait TokenExchanger: Send + Sync {
@@ -60,9 +60,9 @@ pub trait TokenExchanger: Send + Sync {
     fn invalidate<'call>(&'call self, request: ExchangeRequest<'call>) -> BoxFuture<'call, ()>;
 }
 
-pub struct CredentialRequest<'a> {
-    pub server_id: &'a str,
-    pub config: &'a ClientCredentialsConfig,
+pub struct CredentialRequest<'request> {
+    pub server_id: &'request str,
+    pub config: &'request ClientCredentialsConfig,
 }
 
 pub trait ClientCredentialsSource: Send + Sync {

@@ -59,7 +59,7 @@ pub(super) async fn subject_token(
             EXPIRED_ASSERTION.to_owned(),
         ));
     }
-    Ok(assertion.id_token.clone())
+    Ok(assertion.id_token)
 }
 
 pub(super) async fn exchange(
@@ -154,8 +154,8 @@ pub(super) fn slot_key(subject: &Subject, server: &ServerSpec) -> String {
         .as_ref()
         .map_or("", ExposeSecret::expose_secret);
     let material = format!(
-        "{}\u{0}{}\u{0}{}\u{0}{}",
-        subject.tenant_id, subject.subject_id, server.server_id, inbound
+        "{}\u{0}{}\u{0}{}\u{0}{inbound}",
+        subject.tenant_id, subject.subject_id, server.server_id
     );
     hex::encode(Sha256::digest(material.as_bytes()))
 }
@@ -164,13 +164,11 @@ pub(super) fn slot_key(subject: &Subject, server: &ServerSpec) -> String {
 fn fingerprint(subject_token: &SecretString, server_id: &str, config: &IdJagConfig) -> String {
     let client_auth = client_auth_fingerprint(&config.client_auth);
     let material = format!(
-        "{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
+        "{}\u{0}{server_id}\u{0}{}\u{0}{}\u{0}{}\u{0}{client_auth}\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
         subject_token.expose_secret(),
-        server_id,
         config.org_token_endpoint,
         config.resource_token_endpoint,
         config.client_id,
-        client_auth,
         config.subject_token_type,
         config.audience.as_deref().unwrap_or_default(),
         config.resource.as_deref().unwrap_or_default(),

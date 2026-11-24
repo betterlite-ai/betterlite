@@ -52,9 +52,9 @@ pub(super) fn passthrough(subject: &Subject) -> CredResult<Arc<dyn ResolvedAuth>
 }
 
 // Where the caller's own bearer comes from: an SSO store for an authorization-code server, an OBO exchange for a token-exchange one.
-pub(super) enum CallerToken<'a> {
-    Stored(&'a dyn OAuthTokenStore),
-    Exchanged(&'a dyn TokenExchanger, &'a TokenExchangeConfig),
+pub(super) enum CallerToken<'call> {
+    Stored(&'call dyn OAuthTokenStore),
+    Exchanged(&'call dyn TokenExchanger, &'call TokenExchangeConfig),
 }
 
 pub(super) async fn user_token(

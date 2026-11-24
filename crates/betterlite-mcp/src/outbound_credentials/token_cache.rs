@@ -134,7 +134,7 @@ impl ExchangedTokenCache {
     }
 }
 
-const fn cache_ttl(expires_in: Option<i64>) -> Duration {
+fn cache_ttl(expires_in: Option<i64>) -> Duration {
     let lifetime = expires_in.unwrap_or(DEFAULT_TTL_SECONDS);
     let seconds = lifetime
         .saturating_sub(EXPIRY_BUFFER_SECONDS)

@@ -4,6 +4,8 @@ pub mod source;
 
 use std::sync::Arc;
 
+use chrono::Utc;
+
 use crate::credential_contracts::auth_config::AuthConfig;
 use crate::credential_contracts::auth_spec::AuthSpecKind;
 use crate::credential_contracts::errors::{CredError, CredResult};
@@ -108,14 +110,7 @@ impl UpstreamCredentialProvider {
                 arms::user_token(subject, server, &config.header, caller).await
             }
             AuthConfig::IdJag(config) => {
-                arms::id_jag(
-                    subject,
-                    server,
-                    config,
-                    &self.collaborators,
-                    chrono::Utc::now(),
-                )
-                .await
+                arms::id_jag(subject, server, config, &self.collaborators, Utc::now()).await
             }
             AuthConfig::AuthorizationCode(config) => {
                 let caller = arms::CallerToken::Stored(&*self.collaborators.oauth_token_store);
