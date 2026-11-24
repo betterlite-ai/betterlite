@@ -385,9 +385,10 @@ def test_signature_progress() -> None:
 
 def test_signature_ssl_verify() -> None:
     context = ssl.create_default_context()
+    refused_list: list[str] = [CA_BUNDLE]
     assert refusal_of(partial(MCPClient, ssl_verify=context)) == "ssl_verify"
     assert refusal_of(partial(MCPClient, ssl_verify=7)) == "ssl_verify"
-    assert refusal_of(partial(MCPClient, ssl_verify=[CA_BUNDLE])) == "ssl_verify"
+    assert refusal_of(partial(MCPClient, ssl_verify=refused_list)) == "ssl_verify"
 
 
 def test_signature_ssl_values() -> None:
