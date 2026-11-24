@@ -1,0 +1,25 @@
+kind: helper
+name: encrypt-for-db-idempotent
+call:
+  b10074:
+    salt_key: salt-one
+    master_key: null
+    general_settings:
+      encryption_algorithm: xsalsa20-poly1305
+    calls:
+      - operation: encrypt_env_for_db
+        values:
+          plain: hello
+          legacy: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj
+          sealed: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L"
+          port: 6379
+        new_key: null
+      - operation: encrypt_env_for_db
+        values:
+          plain: hello
+          legacy: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj
+          sealed: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L"
+        new_key: ""
+env: {}
+compare:
+  ignore: []
