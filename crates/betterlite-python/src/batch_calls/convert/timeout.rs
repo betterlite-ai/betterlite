@@ -2,20 +2,16 @@ use betterlite_core::api::batch_provider_create::timeout::{HttpTimeout, RequestT
 use betterlite_core::api::batch_provider_read::BatchReadTimeoutValue;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::batches::sdk::TimeoutPhases;
-use serde::de::DeserializeOwned;
 
 use super::ConvertError;
-use super::encode;
 
-const CREATE_SHAPES: &str =
-    "expected seconds or the connect/read/write/pool phases of an httpx.Timeout";
-const READ_SHAPES: &str =
-    "expected seconds, a number written as text, or the phases of an httpx.Timeout";
+const CREATE_SHAPES: &str = "seconds or the connect/read/write/pool phases of an httpx.Timeout";
+const READ_SHAPES: &str = "seconds, a number written as text, or the phases of an httpx.Timeout";
 
-// the phases are an HttpTimeout, so its own Deserialize reads them once the tree is clean JSON again
-fn typed<T: DeserializeOwned>(value: &JsonValue) -> Result<T, ConvertError> {
-    let text = encode(value)?;
-    serde_json::from_str(&text).map_err(|source| ConvertError::Timeout(source.to_string()))
+enum Shape {
+    Seconds(f64),
+    Text(String),
+    Phases(HttpTimeout),
 }
 
 fn seconds(number: &serde_json::Number) -> Result<f64, ConvertError> {
@@ -24,31 +20,41 @@ fn seconds(number: &serde_json::Number) -> Result<f64, ConvertError> {
         .ok_or_else(|| ConvertError::Timeout(format!("{number} is not a number of seconds")))
 }
 
-pub(super) fn create(value: &JsonValue) -> Result<RequestTimeout, ConvertError> {
+// the timeout crosses the payload as a number, as text or as phases, and each call takes some of them
+fn shape(value: &JsonValue, refusal: &'static str) -> Result<Shape, ConvertError> {
     match value {
-        JsonValue::Number(number) => Ok(RequestTimeout::Seconds(seconds(number)?)),
-        JsonValue::Object(_) => typed(value).map(RequestTimeout::Client),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Text(_) | JsonValue::Array(_) => {
-            Err(ConvertError::Timeout(String::from(CREATE_SHAPES)))
+        JsonValue::Number(number) => Ok(Shape::Seconds(seconds(number)?)),
+        JsonValue::Text(text) => Ok(Shape::Text(text.clone())),
+        JsonValue::Object(_) => {
+            let text =
+                serde_json::to_string(value).map_err(|source| ConvertError::Write { source })?;
+            let http: HttpTimeout = serde_json::from_str(&text)
+                .map_err(|source| ConvertError::Timeout(source.to_string()))?;
+            Ok(Shape::Phases(http))
+        }
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) => {
+            Err(ConvertError::Shapes(refusal))
         }
     }
 }
 
+pub(super) fn create(value: &JsonValue) -> Result<RequestTimeout, ConvertError> {
+    match shape(value, CREATE_SHAPES)? {
+        Shape::Seconds(seconds) => Ok(RequestTimeout::Seconds(seconds)),
+        Shape::Phases(http) => Ok(RequestTimeout::Client(http)),
+        Shape::Text(_) => Err(ConvertError::Shapes(CREATE_SHAPES)),
+    }
+}
+
 pub(super) fn read(value: &JsonValue) -> Result<BatchReadTimeoutValue, ConvertError> {
-    match value {
-        JsonValue::Number(number) => Ok(BatchReadTimeoutValue::Seconds(seconds(number)?)),
-        JsonValue::Text(text) => Ok(BatchReadTimeoutValue::Text(text.clone())),
-        JsonValue::Object(_) => {
-            let http: HttpTimeout = typed(value)?;
-            Ok(BatchReadTimeoutValue::Phases(TimeoutPhases {
-                connect: http.connect,
-                read: http.read,
-                write: http.write,
-                pool: http.pool,
-            }))
-        }
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) => {
-            Err(ConvertError::Timeout(String::from(READ_SHAPES)))
-        }
+    match shape(value, READ_SHAPES)? {
+        Shape::Seconds(seconds) => Ok(BatchReadTimeoutValue::Seconds(seconds)),
+        Shape::Text(text) => Ok(BatchReadTimeoutValue::Text(text)),
+        Shape::Phases(http) => Ok(BatchReadTimeoutValue::Phases(TimeoutPhases {
+            connect: http.connect,
+            read: http.read,
+            write: http.write,
+            pool: http.pool,
+        })),
     }
 }

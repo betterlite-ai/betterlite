@@ -167,6 +167,8 @@ pub(crate) enum ConvertError {
     },
     #[error("the batch payload's optional_params.timeout is not usable: {0}")]
     Timeout(String),
+    #[error("the batch payload's optional_params.timeout is not usable: expected {0}")]
+    Shapes(&'static str),
 }
 
 impl From<ConvertError> for PyErr {
@@ -186,29 +188,30 @@ where
     }
 }
 
-// arbitrary_precision shows an untagged enum no number, only a one-key map, so the timeout is lifted out
-// of the payload and read on its own.
+// arbitrary_precision hides numbers from untagged enums, so the timeout is lifted out and read on its own
 pub(crate) fn create_payload(text: &str) -> Result<BatchProviderCreateInput, ConvertError> {
-    let (payload, given_timeout) = without_timeout(text)?;
-    let mut input: BatchProviderCreateInput = parse(&encode(&payload)?)?;
+    let (rewritten, given_timeout) = without_timeout(text)?;
+    let mut input: BatchProviderCreateInput = parse(&rewritten)?;
     input.optional_params.timeout = given_timeout.as_ref().map(timeout::create).transpose()?;
     Ok(input)
 }
 
 pub(crate) fn read_payload(text: &str) -> Result<BatchProviderReadInput, ConvertError> {
-    let (payload, given_timeout) = without_timeout(text)?;
-    let mut input: BatchProviderReadInput = parse(&encode(&payload)?)?;
+    let (rewritten, given_timeout) = without_timeout(text)?;
+    let mut input: BatchProviderReadInput = parse(&rewritten)?;
     input.optional_params.timeout = given_timeout.as_ref().map(timeout::read).transpose()?;
     Ok(input)
 }
 
-fn without_timeout(text: &str) -> Result<(JsonValue, Option<JsonValue>), ConvertError> {
+fn without_timeout(text: &str) -> Result<(String, Option<JsonValue>), ConvertError> {
     let mut payload: JsonValue = parse(text)?;
     let mut timeout = None;
     if let JsonValue::Object(fields) = &mut payload {
         timeout = take_optional_timeout(fields);
     }
-    Ok((payload, timeout))
+    let rewritten =
+        serde_json::to_string(&payload).map_err(|source| ConvertError::Write { source })?;
+    Ok((rewritten, timeout))
 }
 
 fn take_optional_timeout(fields: &mut IndexMap<String, JsonValue>) -> Option<JsonValue> {
@@ -218,8 +221,4 @@ fn take_optional_timeout(fields: &mut IndexMap<String, JsonValue>) -> Option<Jso
     optional
         .shift_remove("timeout")
         .filter(|value| !matches!(value, JsonValue::Null))
-}
-
-fn encode(payload: &JsonValue) -> Result<String, ConvertError> {
-    serde_json::to_string(payload).map_err(|source| ConvertError::Write { source })
 }

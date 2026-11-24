@@ -156,7 +156,7 @@ def test_retrieve_matches_litellm() -> None:
     assert hidden["api_base"] == reference_hidden["api_base"] == server.url
 
 
-def test_retrieve_keeps_a_provider_endpoint() -> None:
+def test_retrieve_keeps_endpoint() -> None:
     # a proxy may answer with an endpoint outside BatchPath, and both sides hand it back unchanged
     with BatchServer(endpoint=PROVIDER_ENDPOINT) as server:
         reference = LITELLM.retrieve_batch(
