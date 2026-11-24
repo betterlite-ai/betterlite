@@ -8,12 +8,9 @@ from typing_extensions import TypedDict, override
 from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
 from betterlite._endpoints.runner import AsyncNativeCall, NativeCall, acall_native, call_native
 from betterlite._endpoints.settings import read_settings
-from betterlite._native import NativeBatchError, NativeBatchSession, NativeError
+from betterlite._native import NativeBatchError, NativeBatchSession
 from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.usage import Usage
-
-# call_native types its error argument as NativeError, so the class joins that family.
-NativeBatchError.__bases__ = (NativeError,)
 
 BatchPath: TypeAlias = Literal[
     "/v1/chat/completions", "/v1/embeddings", "/v1/completions", "/v1/responses", "/v1/ocr",
@@ -65,9 +62,9 @@ BATCH_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, J
 
 class LiteLLMBatch(ResponseObject):
     id: str
-    completion_window: Literal["24h"]
+    completion_window: str
     created_at: int
-    endpoint: BatchPath
+    endpoint: str
     input_file_id: str
     object: Literal["batch"]
     status: BatchState

@@ -17,6 +17,7 @@ from batch_server import (
     MODEL,
     MODEL_INFO,
     NOT_FOUND,
+    PROVIDER_ENDPOINT,
     WINDOW,
     BatchServer,
     parameter_rows,
@@ -52,11 +53,10 @@ async def awaited_batch(pending: Awaitable[LiteLLMBatch]) -> LiteLLMBatch:
     return batch
 
 
-def hidden_of(batch: LiteLLMBatch) -> dict[str, InitValue]:
-    params = batch["_hidden_params"]
-    match params:
+def hidden_of(value: InitValue) -> dict[str, InitValue]:
+    match value:
         case Mapping():
-            return dict(params)
+            return dict(value)
         case object():
             raise AssertionError("the batch carries no hidden parameters")
 
@@ -124,11 +124,12 @@ def test_create_matches_litellm() -> None:
     assert ours_call["body"].get("input_file_id") == INPUT_FILE_ID
     assert ours_call["body"].get("metadata") == METADATA
     assert ours_call["body"] == reference_call["body"]
-    hidden = hidden_of(made)
+    hidden = hidden_of(made["_hidden_params"])
+    reference_hidden = hidden_of(reference["_hidden_params"])
     assert hidden["llm_provider"] == "openai"
     assert hidden["model_id"] == DEPLOYMENT_ID
     assert hidden["litellm_model_name"] == MODEL
-    assert hidden["api_base"] == server.url
+    assert hidden["api_base"] == reference_hidden["api_base"] == server.url
 
 
 def test_retrieve_matches_litellm() -> None:
@@ -147,11 +148,29 @@ def test_retrieve_matches_litellm() -> None:
     assert found.status == "in_progress"
     assert ours_call["path"] == f"{BATCH_PATH}/{BATCH_ID}"
     assert reference_call["path"] == f"{BATCH_PATH}/{BATCH_ID}"
-    hidden = hidden_of(found)
+    hidden = hidden_of(found["_hidden_params"])
+    reference_hidden = hidden_of(reference["_hidden_params"])
     assert hidden["llm_provider"] == "openai"
     assert hidden["model_id"] is None
     assert hidden["litellm_model_name"] is None
-    assert hidden["api_base"] == server.url
+    assert hidden["api_base"] == reference_hidden["api_base"] == server.url
+
+
+def test_retrieve_keeps_a_provider_endpoint() -> None:
+    # a proxy may answer with an endpoint outside BatchPath, and both sides hand it back unchanged
+    with BatchServer(endpoint=PROVIDER_ENDPOINT) as server:
+        reference = LITELLM.retrieve_batch(
+            batch_id=BATCH_ID, metadata=METADATA, api_base=server.url, api_key=GOOD_KEY,
+        )
+        found = made_batch(
+            retrieve_batch(
+                batch_id=BATCH_ID, metadata=METADATA, api_base=server.url, api_key=GOOD_KEY
+            )
+        )
+        assert len(server.calls) == CALLS_PER_COMPARISON
+    assert found.endpoint == PROVIDER_ENDPOINT
+    assert reference["endpoint"] == PROVIDER_ENDPOINT
+    assert found.model_dump() == reference.model_dump()
 
 
 def test_retrieve_coroutines() -> None:

@@ -22,6 +22,8 @@ INPUT_FILE_ID = "file-abc123"
 BATCH_PATH = "/v1/batches"
 WINDOW: Final = "24h"
 ENDPOINT: Final = "/v1/chat/completions"
+# the endpoint a proxy may answer for a batch whose calls are not chat completions
+PROVIDER_ENDPOINT: Final = "/v1/messages"
 MODEL = "gpt-4o"
 DEPLOYMENT_ID = "deployment-abc"
 MODEL_INFO: dict[str, JsonValue] = {"id": DEPLOYMENT_ID}
@@ -38,13 +40,13 @@ class RecordedCall(TypedDict):
 
 
 def batch_payload(
-    batch_id: str, status: str, metadata: JsonValue = None
+    batch_id: str, status: str, metadata: JsonValue = None, endpoint: str = ENDPOINT
 ) -> dict[str, JsonValue]:
     return {
         "id": batch_id,
         "completion_window": WINDOW,
         "created_at": CREATED_AT,
-        "endpoint": ENDPOINT,
+        "endpoint": endpoint,
         "input_file_id": INPUT_FILE_ID,
         "object": "batch",
         "status": status,
@@ -57,10 +59,12 @@ def batch_payload(
 class BatchServer(ThreadingHTTPServer):
     daemon_threads = True
     calls: list[RecordedCall]
+    endpoint: str
 
-    def __init__(self) -> None:
+    def __init__(self, endpoint: str = ENDPOINT) -> None:
         super().__init__((HOST, 0), _Handler)
         self.calls = []
+        self.endpoint = endpoint
         _Handler.owner = self
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
@@ -102,7 +106,10 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path != BATCH_PATH:
             self.reply_error(NOT_FOUND, f"no batch endpoint at {self.path}")
             return
-        self.reply(OK, batch_payload(BATCH_ID, "validating", body.get("metadata")))
+        self.reply(
+            OK,
+            batch_payload(BATCH_ID, "validating", body.get("metadata"), self.owner.endpoint),
+        )
 
     def do_GET(self) -> None:
         self.owner.record(self.path, dict(self.headers.items()), {})
@@ -112,7 +119,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path != f"{BATCH_PATH}/{BATCH_ID}":
             self.reply_error(NOT_FOUND, f"no batch at {self.path}")
             return
-        self.reply(OK, batch_payload(BATCH_ID, "in_progress"))
+        self.reply(OK, batch_payload(BATCH_ID, "in_progress", endpoint=self.owner.endpoint))
 
     def reply_error(self, status: int, message: str) -> None:
         payload: dict[str, JsonValue] = {
@@ -131,6 +138,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 class BatchDump(Protocol):
     def model_dump(self) -> dict[str, JsonValue]: ...
+    def __getitem__(self, key: str) -> JsonValue: ...
 
 
 class BatchCall(Protocol):
