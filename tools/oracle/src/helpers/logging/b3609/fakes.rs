@@ -99,7 +99,7 @@ pub(super) struct Recorder {
 }
 
 impl Recorder {
-    pub(super) fn new(poller: bool, run_id: Option<String>) -> Self {
+    pub(super) const fn new(poller: bool, run_id: Option<String>) -> Self {
         Self {
             poller,
             run_id,

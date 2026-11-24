@@ -122,9 +122,7 @@ impl CompletionGuard {
 
     fn accept(&mut self, chunk: Vec<u8>) -> Option<Vec<u8>> {
         self.record(&chunk);
-        let Some(parts) = self.parts.as_mut() else {
-            return None;
-        };
+        let parts = self.parts.as_mut()?;
         stamp_first_chunk_if_needed(&parts.logging_obj, parts.lifecycle.clock.as_ref());
         if parts.injection_model.is_some() {
             return inject_frames(parts, &chunk);

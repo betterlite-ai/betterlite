@@ -57,7 +57,7 @@ fn completion_start(logging_obj: &StreamLoggingObject) -> Option<String> {
     Some(value.to_rfc3339())
 }
 
-fn outcome(driven: &Driven) -> &'static str {
+const fn outcome(driven: &Driven) -> &'static str {
     if driven.failure.is_some() {
         "failed"
     } else if driven.disconnected {
