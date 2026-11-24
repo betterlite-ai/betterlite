@@ -144,6 +144,16 @@ fn assert_echoed_pricing_dropped(info: &JsonObject) {
 }
 
 #[test]
+fn keeps_the_newest_cost_map_copies_after_the_cache_fills() {
+    let warnings = Warnings::default();
+    (0..4096_usize).for_each(|index| {
+        let fields = [format!("field_{index}")];
+        assert!(warnings.first_cost_map_copy("dep-1", &fields));
+    });
+    assert!(!warnings.first_cost_map_copy("dep-1", &["field_0".to_owned()]));
+}
+
+#[test]
 fn a_row_without_model_info_gets_the_minimal_info() {
     let row = row(
         r#"{"model_id":"dep-1","model_name":"gpt","litellm_params":{"model":"m"},"model_info":null}"#,

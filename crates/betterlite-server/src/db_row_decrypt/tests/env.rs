@@ -17,6 +17,7 @@ fn skips_the_stdio_flag_with_one_warning_per_process() {
         r#"{{"LITELLM_ENABLE_MCP_STDIO":"{sealed}","litellm_enable_mcp_stdio":"{sealed}"}}"#
     ));
     let first = decrypt_and_export_env(&values, false, &cipher, &mut environment, &warnings);
+    assert_eq!(logs.contents().matches(STDIO_WARNING).count(), 1);
     let second = decrypt_and_export_env(&values, false, &cipher, &mut environment, &warnings);
     assert!(first.is_empty());
     assert!(second.is_empty());
@@ -97,7 +98,7 @@ fn a_non_text_value_logs_and_does_not_stop_the_rest() {
     let (logs, _guard) = capture_logs();
     let cipher = cipher();
     let values = env_values(&format!(
-        r#"{{"PORT":6379,"API_KEY":"{}"}}"#,
+        r#"{{"PORT":6379,"RATIO":1.5,"API_KEY":"{}"}}"#,
         sealed(&cipher, "sk-db-secret")
     ));
     let mut environment = BTreeMap::new();
@@ -114,9 +115,14 @@ fn a_non_text_value_logs_and_does_not_stop_the_rest() {
     );
     assert_eq!(exported.get("PORT"), None);
     assert_eq!(environment.get("PORT"), None);
+    assert_eq!(exported.get("RATIO"), None);
     assert!(
         logs.contents()
             .contains("Error setting env variable: PORT - str expected, not int")
+    );
+    assert!(
+        logs.contents()
+            .contains("Error setting env variable: RATIO - str expected, not float")
     );
 }
 
