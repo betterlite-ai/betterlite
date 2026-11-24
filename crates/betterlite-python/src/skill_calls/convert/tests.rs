@@ -4,6 +4,7 @@ use super::*;
 use betterlite_error::error::class_message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
+use rstest::rstest;
 
 use crate::skill_calls::error::{NO_DATABASE, NativeErrorPayload, no_database_failure};
 
@@ -148,15 +149,16 @@ fn request_extra_headers_become_a_header_map() {
         panic!("a header that is not text is a field error");
     };
     assert_eq!(name, "extra_headers");
-    for extra in [
-        r#"{"skill_id": "s1", "extra_headers": {"bad name": "x"}}"#,
-        r#"{"skill_id": "s1", "extra_headers": {"x-a": "bad\nvalue"}}"#,
-    ] {
-        let Err(RequestError::FieldType { name, .. }) = skill::arguments(arguments(extra)) else {
-            panic!("a header HTTP cannot carry is a field error");
-        };
-        assert_eq!(name, "extra_headers");
-    }
+}
+
+#[rstest]
+#[case::name_with_space(r#"{"skill_id": "s1", "extra_headers": {"bad name": "x"}}"#)]
+#[case::value_with_newline(r#"{"skill_id": "s1", "extra_headers": {"x-a": "bad\nvalue"}}"#)]
+fn request_extra_headers_http_cannot_carry_is_a_field_error(#[case] extra: &str) {
+    let Err(RequestError::FieldType { name, .. }) = skill::arguments(arguments(extra)) else {
+        panic!("a header HTTP cannot carry is a field error");
+    };
+    assert_eq!(name, "extra_headers");
 }
 
 #[test]
