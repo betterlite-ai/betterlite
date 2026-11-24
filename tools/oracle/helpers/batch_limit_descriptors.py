@@ -4,15 +4,15 @@ from typing import ClassVar, Final, Literal, NotRequired, TypeAlias, TypedDict, 
 
 from litellm.proxy import proxy_server
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.proxy.hooks.batch_rate_limiter import (  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L120
-    _PROXY_BatchRateLimiter as BatchRateLimiter,
-)
-from litellm.proxy.hooks.parallel_request_limiter_v3 import (  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L761
-    _PROXY_MaxParallelRequestsHandler_v3 as ParallelLimiter,
+from litellm.proxy.hooks.batch_rate_limiter import (
+    _PROXY_BatchRateLimiter as BatchRateLimiter,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L120
 )
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
     RateLimitDescriptorRateLimitObject,
+)
+from litellm.proxy.hooks.parallel_request_limiter_v3 import (
+    _PROXY_MaxParallelRequestsHandler_v3 as ParallelLimiter,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L761
 )
 from litellm.proxy.utils import InternalUsageCache
 from litellm.router import Router
@@ -34,9 +34,9 @@ class SettingsView(TypedDict):
     # ast-grep-ignore: no-long-names
     disable_batch_input_file_rate_limiting: NotRequired[bool | None]
     # ast-grep-ignore: no-long-names
-    skip_batch_input_file_rate_limiting_for_providers: NotRequired[list[str] | None]
+    skip_batch_input_file_rate_limiting_for_providers: NotRequired[list[JsonValue] | None]
     # ast-grep-ignore: no-long-names
-    skip_batch_input_file_rate_limiting_for_models: NotRequired[list[str] | None]
+    skip_batch_input_file_rate_limiting_for_models: NotRequired[list[JsonValue] | None]
 
 
 class RouterScript(TypedDict):
@@ -75,7 +75,7 @@ class _WarningCollector(logging.Handler):
 
 
 class _ScriptedRouter:
-    def __init__(self, script: RouterScript, asked: list[str]) -> None:
+    def __init__(self, script: RouterScript, asked: list[JsonValue]) -> None:
         self._script = script
         self._asked = asked
 
@@ -98,20 +98,20 @@ def no_model_group(_model: str) -> str | None:  # ast-grep-ignore: no-one-line-f
 def descriptor_view(descriptor: RateLimitDescriptor) -> JsonValue:
     # ast-grep-ignore: no-long-names
     rate_limit: RateLimitDescriptorRateLimitObject | None = descriptor.get("rate_limit")
-    return JSON.validate_python(
-        {
-            "key": descriptor["key"],
-            "value": descriptor["value"],
-            "rate_limit": None
-            if rate_limit is None
-            else {
-                "requests_per_unit": rate_limit.get("requests_per_unit"),
-                "tokens_per_unit": rate_limit.get("tokens_per_unit"),
-                "max_parallel_requests": rate_limit.get("max_parallel_requests"),
-                "window_size": rate_limit.get("window_size"),
-            },
+    view: dict[str, JsonValue] = {
+        "key": descriptor["key"],
+        "value": descriptor["value"],
+        "rate_limit": None,
+    }
+    if rate_limit is not None:
+        limits_view: dict[str, JsonValue] = {
+            "requests_per_unit": rate_limit.get("requests_per_unit"),
+            "tokens_per_unit": rate_limit.get("tokens_per_unit"),
+            "max_parallel_requests": rate_limit.get("max_parallel_requests"),
+            "window_size": rate_limit.get("window_size"),
         }
-    )
+        view["rate_limit"] = limits_view
+    return JSON.validate_python(view)
 
 
 def build_hook() -> BatchRateLimiter:
@@ -137,13 +137,13 @@ def settings_dict(settings: SettingsView) -> dict[str, JsonValue]:
 
 def answer(call: Call, hook: BatchRateLimiter, auth: UserAPIKeyAuth) -> JsonValue:
     if call["function"] == "file_bound_model":
-        return {"function": "file_bound_model", "model": hook._get_file_bound_batch_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L151
+        return {"function": "file_bound_model", "model": hook._get_file_bound_batch_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L151
     if call["function"] == "batch_routing_model":
-        return {"function": "batch_routing_model", "model": hook._get_batch_routing_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L182
+        return {"function": "batch_routing_model", "model": hook._get_batch_routing_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L182
     if call["function"] == "resolve_batch_provider":
         return {"function": "resolve_batch_provider", "provider": hook._resolve_batch_provider(call["model"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L201
     if call["function"] == "create_batch_rate_limit_descriptors":
-        descriptors = hook._create_batch_rate_limit_descriptors(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L231
+        descriptors = hook._create_batch_rate_limit_descriptors(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L231
             user_api_key_dict=auth, data=call["data"]
         )
         return {
@@ -157,7 +157,7 @@ def answer(call: Call, hook: BatchRateLimiter, auth: UserAPIKeyAuth) -> JsonValu
 
 def answer_usage(call: Call, hook: BatchRateLimiter, auth: UserAPIKeyAuth) -> JsonValue:
     if call["function"] == "create_project_io_descriptors":
-        descriptors, increments = hook._create_project_io_descriptors_for_models(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L304
+        descriptors, increments = hook._create_project_io_descriptors_for_models(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L304
             user_api_key_dict=auth, per_model_usage=call["per_model_usage"]
         )
         return {
@@ -169,7 +169,7 @@ def answer_usage(call: Call, hook: BatchRateLimiter, auth: UserAPIKeyAuth) -> Js
             ],
         }
     if call["function"] == "should_skip":
-        skipped, skip_descriptors = hook._should_skip_batch_input_file_processing(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L338
+        skipped, skip_descriptors = hook._should_skip_batch_input_file_processing(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L338
             call["data"], auth, has_enqueued_scopes=bool(call.get("has_enqueued_scopes"))
         )
         return {
@@ -185,20 +185,23 @@ def answer_usage(call: Call, hook: BatchRateLimiter, auth: UserAPIKeyAuth) -> Js
         return {"function": "estimate_output_tokens", "tokens": hook._estimate_entry_output_tokens(call["entry"], call["min_configured_otpm_limit"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L439
     if call["function"] == "has_applicable_limits":
         return {"function": "has_applicable_limits", "applicable": BatchRateLimiter._has_applicable_batch_rate_limits(call["descriptors"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L492
-    file_id, params = hook._resolve_batch_input_file_fetch_params(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L505
-        call["file_id"], call["custom_llm_provider"], call["data"]
+    resolved = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L563
+        "tuple[str, dict[str, JsonValue]]",
+        hook._resolve_batch_input_file_fetch_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L505
+            call["file_id"], call["custom_llm_provider"], call["data"]
+        ),
     )
-    params_view = cast("dict[str, JsonValue]", params)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L563
+    file_id, params = resolved
     return {
         "function": "resolve_batch_input_file_fetch_params",
         "file_id": file_id,
-        "params": params_view,
+        "params": params,
     }
 
 
 def run(input_value: Input) -> JsonValue:
     events: list[JsonValue] = []
-    asked: list[str] = []
+    asked: list[JsonValue] = []
     router: _ScriptedRouter | None = None
     if "router" in input_value:
         script = input_value["router"]
@@ -215,4 +218,5 @@ def run(input_value: Input) -> JsonValue:
         answers = [answer(call, hook, auth) for call in input_value["calls"]]
     finally:
         logger.removeHandler(collector)
-    return JSON.validate_python({"answers": answers, "events": events, "asked": asked})
+    report: dict[str, JsonValue] = {"answers": answers, "events": events, "asked": asked}
+    return JSON.validate_python(report)
