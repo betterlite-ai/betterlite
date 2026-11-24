@@ -25,7 +25,7 @@ use super::records::{
 pub trait BatchEnqueuedSource: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 
-    fn reserve(
+    fn reserve_tokens(
         &self,
         tokens: i64,
         scopes: &[BatchEnqueuedTokenScope],
@@ -39,7 +39,7 @@ where
 {
     type Error = BatchEnqueuedReserveError;
 
-    fn reserve(
+    fn reserve_tokens(
         &self,
         tokens: i64,
         scopes: &[BatchEnqueuedTokenScope],

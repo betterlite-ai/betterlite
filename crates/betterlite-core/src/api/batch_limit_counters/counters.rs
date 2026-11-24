@@ -1,16 +1,18 @@
-use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_error::rate_limit::ProxyRateLimitError;
 
+use crate::api::api_boundaries::{ApiBoundariesInput, ItemsBoundary};
 use crate::api::batch_enqueued_reserve::{BatchEnqueuedReserveResult, BatchEnqueuedTokenScope};
 use crate::api::batch_limit_descriptors::descriptors::{
     BatchDescriptorIncrements, BatchLimitDescriptor, TPD_SUFFIX,
 };
 use crate::api::request_destination::RequestData;
 
+use super::input::{BatchLimitCounterCall, BatchLimitCountersInput};
 use super::ports::{BatchCounterLimiter, BatchEnqueuedSource, BatchWindowCache};
 use super::records::{
     BatchCounterCode, BatchCounterResponse, BatchCounterStatus, BatchEnqueuedLimitExceeded,
-    BatchFileUsage, BatchLimitCounterAnswer,
+    BatchFileUsage, BatchLimitCounterAnswer, BatchLimitCountersResult,
 };
 use super::rejections::refunds::refund_ops;
 use super::rejections::{self, Attribution, RateLimitRejection};
@@ -38,7 +40,7 @@ where
     ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
         let outcome = self
             .store
-            .reserve(batch_usage.total_tokens, scopes)
+            .reserve_tokens(batch_usage.total_tokens, scopes)
             .await
             .map_err(BatchLimitCountersError::Store)?;
         match outcome {
@@ -184,5 +186,99 @@ where
             .await
             .map_err(BatchLimitCountersError::Window)?;
         Ok(stored.and_then(|start| start.seconds()))
+    }
+
+    pub async fn run(
+        &self,
+        input: &BatchLimitCountersInput,
+    ) -> Result<
+        BatchLimitCountersResult,
+        BatchLimitCountersError<Limiter::Error, Store::Error, Cache::Error>,
+    > {
+        self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
+            known_count: input.calls.len(),
+        }))?;
+        let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.principal.0.clone()))?;
+        let mut answers = Vec::with_capacity(input.calls.len());
+        for call in &input.calls {
+            let answer = self.answer(&auth, call).await?;
+            let ends_run = answer.is_rejection();
+            answers.push(answer);
+            if ends_run {
+                break;
+            }
+        }
+        Ok(BatchLimitCountersResult { answers })
+    }
+
+    // one arm per owned batch callable; a rejection ends the request where it happens
+    #[expect(clippy::too_many_lines, reason = "one arm per owned batch callable")]
+    async fn answer(
+        &self,
+        auth: &UserAPIKeyAuth,
+        call: &BatchLimitCounterCall,
+    ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
+        match call {
+            BatchLimitCounterCall::ReserveBatchEnqueuedTokens {
+                data,
+                batch_usage,
+                scopes,
+            } => {
+                self.reserve_enqueued_tokens(data, batch_usage, scopes)
+                    .await
+            }
+            BatchLimitCounterCall::RaiseEnqueuedLimitError {
+                over_limit,
+                data,
+                batch_usage,
+            } => {
+                let error =
+                    rejections::enqueued_error(over_limit, data, batch_usage, &self.attribution())?;
+                Ok(BatchLimitCounterAnswer::RaiseEnqueuedLimitError {
+                    error: Box::new(error),
+                })
+            }
+            BatchLimitCounterCall::RaiseRateLimitError {
+                status,
+                descriptors,
+                batch_usage,
+                limit_type,
+                requested_model,
+                window_start,
+            } => {
+                let facts = RateLimitRejection {
+                    status,
+                    descriptors,
+                    batch_usage,
+                    limit_type,
+                    requested_model: requested_model.as_deref(),
+                    window_start: *window_start,
+                    now: (self.clock)(),
+                    window_size: self.window_size,
+                };
+                self.rate_rejection(&facts)
+            }
+            BatchLimitCounterCall::CheckAndIncrementBatchCounters {
+                data,
+                batch_usage,
+                descriptors,
+            } => {
+                self.check_and_increment(auth, data, batch_usage, descriptors.as_deref())
+                    .await
+            }
+            BatchLimitCounterCall::ReadTpdWindowStart { status } => {
+                let window_start = self.tpd_window_start(status).await?;
+                Ok(BatchLimitCounterAnswer::ReadTpdWindowStart { window_start })
+            }
+            BatchLimitCounterCall::BuildTpdRefundOps {
+                descriptors,
+                tokens,
+                reservation_windows,
+            } => {
+                let operations =
+                    refund_ops(descriptors, *tokens, reservation_windows, &self.limiter)?;
+                Ok(BatchLimitCounterAnswer::BuildTpdRefundOps { operations })
+            }
+        }
     }
 }

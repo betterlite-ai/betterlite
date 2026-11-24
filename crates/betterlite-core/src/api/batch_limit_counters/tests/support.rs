@@ -177,7 +177,7 @@ impl ScriptedStore {
 impl BatchEnqueuedSource for ScriptedStore {
     type Error = StoreFailure;
 
-    fn reserve(
+    fn reserve_tokens(
         &self,
         tokens: i64,
         scopes: &[BatchEnqueuedTokenScope],
@@ -311,7 +311,7 @@ pub(super) fn harness(
         limiter: limiter.clone(),
         store: store.clone(),
         cache: cache.clone(),
-        stash: stash.clone(),
+        stash: Arc::clone(&stash),
         resolver: Arc::new(ScriptedResolver {
             models: BTreeMap::from([(String::from("gpt-4o-mini"), String::from("openai"))]),
         }),
@@ -425,6 +425,17 @@ pub(super) fn ok_response(
     windows: Vec<(&str, &str, BatchReservationBackend)>,
 ) -> BatchCounterResponse {
     response(BatchCounterCode::Ok, statuses, windows)
+}
+
+// the one window a successful daily-counter charge leaves behind for the refund operations
+const DAILY_REFUND_WINDOW: (&str, &str, BatchReservationBackend) = (
+    "{api_key_tpd:sk-1}:tokens",
+    "1699990000",
+    BatchReservationBackend::Redis,
+);
+
+pub(super) fn daily_refund_response() -> BatchCounterResponse {
+    ok_response(Vec::new(), vec![DAILY_REFUND_WINDOW])
 }
 
 pub(super) fn reserved(
@@ -715,6 +726,9 @@ const PARTIAL_FAILURE_ROWS: [PartialFailureRow; 3] = [
     },
 ];
 
+// the 429 detail the first over-limit counter of a partial failure reports
+pub(super) const PARTIAL_FAILURE_DETAIL: &str = "Batch rate limit exceeded for api_key_tpd: sk-1. Batch contains 120 tokens but only 0 tokens remaining out of 100 TPD limit. Limit resets at: 2023-11-15 19:26:40 UTC";
+
 fn row_status(row: PartialFailureRow) -> BatchCounterStatus {
     let PartialFailureRow {
         code,
@@ -895,15 +909,15 @@ pub(super) fn assert_enqueued_rejection(
 }
 
 pub(super) fn window_start_of(answer: &BatchLimitCounterAnswer) -> Option<i64> {
-    match answer {
-        BatchLimitCounterAnswer::ReadTpdWindowStart { window_start } => *window_start,
-        other => panic!("not a window answer: {other:?}"),
-    }
+    let BatchLimitCounterAnswer::ReadTpdWindowStart { window_start } = answer else {
+        panic!("not a window answer: {answer:?}");
+    };
+    *window_start
 }
 
 pub(super) fn operations_of(answer: &BatchLimitCounterAnswer) -> &Vec<BatchTpdRefundOperation> {
-    match answer {
-        BatchLimitCounterAnswer::BuildTpdRefundOps { operations } => operations,
-        other => panic!("not a refund answer: {other:?}"),
-    }
+    let BatchLimitCounterAnswer::BuildTpdRefundOps { operations } = answer else {
+        panic!("not a refund answer: {answer:?}");
+    };
+    operations
 }

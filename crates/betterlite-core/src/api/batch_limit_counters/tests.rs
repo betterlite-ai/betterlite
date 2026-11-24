@@ -7,21 +7,20 @@ use crate::api::batch_enqueued_reserve::ReservationBackend;
 use crate::api::batch_limit_counters::BatchLimitCountersError;
 use crate::api::batch_limit_counters::input::BatchLimitCounterCall;
 use crate::api::batch_limit_counters::records::{
-    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, BatchReservationBackend,
-    WindowStartValue,
+    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, WindowStartValue,
 };
 use crate::api::batch_limit_counters::rejections::request_model;
 use crate::api::batch_limit_descriptors::descriptors::TPD_WINDOW_SECONDS;
 
 use self::support::{
-    LimiterFailure, RESET_AT, ScriptedCache, ScriptedLimiter, ScriptedStore, Stored, WINDOW,
-    assert_direct_enqueued_model, assert_enqueued_rejection, assert_requests_rejection,
-    daily_descriptor, data, descriptor, detail_text, empty_model_data, expected_operations,
-    harness, header, increments, input, non_text_model_data, null_model_data, ok_response,
-    operations_of, over_limit, partial_failure_cache, partial_failure_limiter, project_usage_row,
-    refund_call, refund_windows, rejection, requests_limiter, reserved, run_check, run_raise,
-    run_refund, run_window, scope, status, stored_value, usage, usage_for_row, usage_with_rows,
-    window_start_of, window_status,
+    LimiterFailure, PARTIAL_FAILURE_DETAIL, RESET_AT, ScriptedCache, ScriptedLimiter,
+    ScriptedStore, Stored, WINDOW, assert_direct_enqueued_model, assert_enqueued_rejection,
+    assert_requests_rejection, daily_descriptor, daily_refund_response, data, descriptor,
+    detail_text, empty_model_data, expected_operations, harness, header, increments, input,
+    non_text_model_data, null_model_data, operations_of, over_limit, partial_failure_cache,
+    partial_failure_limiter, project_usage_row, refund_call, refund_windows, rejection,
+    requests_limiter, reserved, run_check, run_raise, run_refund, run_window, scope, status,
+    stored_value, usage, usage_for_row, usage_with_rows, window_start_of, window_status,
 };
 
 mod support;
@@ -384,14 +383,7 @@ async fn tpd_window_refund_operations(#[case] tokens: i64, #[case] expected: usi
 #[tokio::test]
 async fn refunds_stash_and_aware_rejection() {
     let daily = daily_descriptor();
-    let limiter = ScriptedLimiter::with_responses(vec![Ok(ok_response(
-        Vec::new(),
-        vec![(
-            "{api_key_tpd:sk-1}:tokens",
-            "1699990000",
-            BatchReservationBackend::Redis,
-        )],
-    ))]);
+    let limiter = ScriptedLimiter::with_responses(vec![Ok(daily_refund_response())]);
     let (rig, result) = run_check(
         limiter,
         ScriptedCache::default(),
@@ -461,10 +453,7 @@ async fn counter_partial_failure() {
         vec![increments(3, 120), increments(3, 120), increments(0, 30)]
     );
     let error = rejection(&result.answers[0]);
-    assert_eq!(
-        detail_text(&error.detail),
-        "Batch rate limit exceeded for api_key_tpd: sk-1. Batch contains 120 tokens but only 0 tokens remaining out of 100 TPD limit. Limit resets at: 2023-11-15 19:26:40 UTC"
-    );
+    assert_eq!(detail_text(&error.detail), PARTIAL_FAILURE_DETAIL);
     assert_eq!(header(error, "retry-after"), "76400");
     // only the first over-limit status reads its window
     assert_eq!(
@@ -477,17 +466,8 @@ async fn counter_partial_failure() {
 // a limiter failure leaves the stash's earlier refunds in place
 #[tokio::test]
 async fn limiter_failure_keeps_stash() {
-    let limiter = ScriptedLimiter::with_responses(vec![
-        Ok(ok_response(
-            Vec::new(),
-            vec![(
-                "{api_key_tpd:sk-1}:tokens",
-                "1699990000",
-                BatchReservationBackend::Redis,
-            )],
-        )),
-        Err(LimiterFailure),
-    ]);
+    let limiter =
+        ScriptedLimiter::with_responses(vec![Ok(daily_refund_response()), Err(LimiterFailure)]);
     let (rig, first) = run_check(
         limiter,
         ScriptedCache::default(),

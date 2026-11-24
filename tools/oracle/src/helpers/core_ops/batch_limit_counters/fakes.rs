@@ -65,7 +65,7 @@ fn reserved(
 impl BatchEnqueuedSource for ScriptedStore {
     type Error = IoError;
 
-    fn reserve(
+    fn reserve_tokens(
         &self,
         tokens: i64,
         scopes: &[BatchEnqueuedTokenScope],
