@@ -5,6 +5,7 @@ mod corpus;
 mod decode;
 mod environment;
 mod masking;
+mod models;
 mod persist;
 mod state;
 
