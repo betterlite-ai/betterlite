@@ -57,7 +57,10 @@ async fn unscoped_admin_missing_context() {
         None
     );
     let alice = support::caller(Some("alice"), Some("team-a"));
-    assert_eq!(get_caller_byok_team_scope(Some(&alice), None).await, None);
+    assert_eq!(
+        get_caller_byok_team_scope(Some(&alice), None::<&support::StubReads>).await,
+        None
+    );
     assert!(reads.calls().is_empty());
 }
 
@@ -302,15 +305,9 @@ async fn all_models_excludes_foreign_byok() {
         ),
         support::deployment_json("hidden-gpt", &[("id", support::text("g2"))]),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(ids(&kept), vec![Some("g1"), Some("t1")]);
 }
 
@@ -337,15 +334,9 @@ async fn named_access_group_expansion() {
         support::deployment_json("second-group-model", &[("id", support::text("d2"))]),
         support::deployment_json("unrelated", &[("id", support::text("d3"))]),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(ids(&kept), vec![Some("d1"), Some("d2")]);
     let expected = vec![vec![
         String::from("group-model"),
@@ -390,15 +381,9 @@ async fn db_names_only() {
         support::deployment_json("b", &[("id", support::text("d3"))]),
         support::deployment_json("zzz", &[("id", support::text("d4"))]),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(
         ids(&kept),
         vec![Some("r1"), Some("d1"), Some("r2"), Some("d3")]
@@ -423,15 +408,9 @@ async fn db_query_error_keeps_router_ids() {
         support::deployment_json("gpt-4o", &[("id", support::text("r1"))]),
         support::deployment_json("stored-only", &[("id", support::text("d2"))]),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(ids(&kept), vec![Some("r1")]);
     let text = logs.contents();
     assert!(text.contains("DEBUG"));
@@ -451,15 +430,9 @@ async fn missing_ids_omitted() {
         support::deployment_json("no-id-gpt", &[]),
         support::deployment_json("empty-id-gpt", &[("id", support::text(""))]),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(ids(&kept), vec![Some("g1")]);
 }
 
@@ -518,15 +491,9 @@ async fn empty_models_unrestricted() {
             ],
         ),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(ids(&kept), vec![Some("g1")]);
 }
 
@@ -554,15 +521,9 @@ async fn direct_access_does_not_widen() {
             ],
         ),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(ids(&kept), vec![Some("t1"), Some("t2")]);
 }
 
@@ -599,15 +560,9 @@ async fn stable_filter_order() {
             ],
         ),
     ];
-    let kept = filter_models_by_team_id(
-        &models,
-        "team-a",
-        &reads,
-        Some(&router as &dyn HealthRouter),
-        None,
-    )
-    .await
-    .unwrap();
+    let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
+        .await
+        .unwrap();
     assert_eq!(ids(&kept), vec![Some("o1"), Some("g1"), Some("o1")]);
 }
 
@@ -619,29 +574,17 @@ async fn config_before_db_deep_copy() {
         r#"{"model_id":"d1","model_name":"db-name","litellm_params":{"model":"openai/gpt-4o"}}"#,
     )]);
     let fixture = support::DecryptFixture::new();
-    let (models, count) = find_model_by_id(
-        "d1",
-        None,
-        Some(&router as &dyn HealthRouter),
-        &reads,
-        &fixture.context(),
-    )
-    .await
-    .unwrap();
+    let (models, count) = find_model_by_id("d1", None, Some(&router), &reads, &fixture.context())
+        .await
+        .unwrap();
     assert_eq!(count, 1);
     assert_eq!(names(&models), vec!["gpt-4o"]);
     assert!(reads.calls().is_empty());
     let mut answer = models;
     answer[0].insert(String::from("model_name"), support::text("changed"));
-    let (again, _) = find_model_by_id(
-        "d1",
-        None,
-        Some(&router as &dyn HealthRouter),
-        &reads,
-        &fixture.context(),
-    )
-    .await
-    .unwrap();
+    let (again, _) = find_model_by_id("d1", None, Some(&router), &reads, &fixture.context())
+        .await
+        .unwrap();
     assert_eq!(names(&again), vec!["gpt-4o"]);
 }
 
@@ -741,7 +684,7 @@ async fn router_lookup_failure_is_500() {
         &models,
         "team-a",
         &reads,
-        Some(&support::FailingRouter as &dyn HealthRouter),
+        Some(&support::FailingRouter),
         None,
     )
     .await

@@ -13,11 +13,11 @@ use super::error::ScopeError;
 use super::reads::TeamScopeReads;
 
 // ProxyConfig.decrypt_model_list_from_db's inputs: the cipher, the secret manager, the request's environment and the once-only warnings.
-pub struct Decryption<'a> {
-    pub cipher: &'a DbCipher,
-    pub secrets: &'a SecretLookup,
-    pub environment: &'a BTreeMap<String, String>,
-    pub warnings: &'a Warnings,
+pub struct Decryption<'request> {
+    pub cipher: &'request DbCipher,
+    pub secrets: &'request SecretLookup,
+    pub environment: &'request BTreeMap<String, String>,
+    pub warnings: &'request Warnings,
 }
 
 // _find_model_by_id: the configured deployment, else the stored row decrypted; a search term then keeps only a name that contains it.

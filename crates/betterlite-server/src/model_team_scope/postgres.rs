@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
@@ -39,7 +40,7 @@ async fn fetch_user_teams(
     client: Option<PrismaClient<'_>>,
     user_id: &str,
 ) -> Result<Option<Vec<String>>, UserReadError> {
-    let connected = client.ok_or(DbError::NoDbConnected)?;
+    let connected = client.ok_or(DbError::<Infallible>::NoDbConnected)?;
     let session = read_store(connected).session().await?;
     let user = user_table(Some(&session)).find_by_id(user_id).await?;
     Ok(user.map(|row| row.teams))
