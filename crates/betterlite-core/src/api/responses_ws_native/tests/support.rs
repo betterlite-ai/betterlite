@@ -427,15 +427,21 @@ impl NativeWsResolution for FakeResolution {
 #[derive(Default)]
 pub(super) struct FakeConfigs {
     pub(super) native: bool,
+    pub(super) seen: Mutex<Vec<(String, String, Option<String>)>>,
 }
 
 impl ConfigLookup for FakeConfigs {
     fn responses_api_config(
         &self,
-        _model: &str,
-        _provider: &str,
-        _api_base: Option<&str>,
+        model: &str,
+        provider: &str,
+        api_base: Option<&str>,
     ) -> Option<NativeConfig> {
+        lock(&self.seen).push((
+            model.to_owned(),
+            provider.to_owned(),
+            api_base.map(String::from),
+        ));
         self.native.then_some(NativeConfig {
             encrypted_agent_messages: true,
         })

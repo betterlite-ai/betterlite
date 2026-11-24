@@ -346,10 +346,20 @@ async fn api_base_precedence() -> Vec<Option<String>> {
 async fn provider_configs() -> (Option<ResponsesApiConfig>, Option<ResponsesApiConfig>) {
     let mut entry = Entry::new();
     entry.configs.native = true;
+    entry.resolution.api_base = Some(String::from("wss://dynamic.test"));
     let native = entry.request().await;
+    assert_eq!(
+        lock(&entry.configs.seen).clone(),
+        vec![(
+            String::from("gpt-4o"),
+            String::from("openai"),
+            Some(String::from("wss://dynamic.test")),
+        )]
+    );
     let mut missing = Entry::new();
     missing.resolution.provider = None;
     let absent = missing.request().await;
+    assert!(lock(&missing.configs.seen).is_empty());
     (native.provider_config, absent.provider_config)
 }
 
@@ -596,18 +606,20 @@ async fn failed_backend_frame_is_logged() {
     let (captured, _guard) = capture_traces();
     let client = TestClient::new(Vec::new());
     let backend = ScriptedBackend::new();
-    backend.failing("boom");
+    backend
+        .text(r#"{"type":"response.created"}"#)
+        .failing("boom");
     let logging = RecordingLogging::default();
     let redactor = redactor();
     let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
     relay.backend_to_client().await.unwrap();
-    assert!(client.sent().is_empty());
+    assert_eq!(client.sent(), texts(&[r#"{"type":"response.created"}"#]));
     assert!(
         captured
             .text()
             .contains("Error in responses WS backend_to_client: boom")
     );
-    assert!(lock(&logging.success).is_empty());
+    assert_eq!(lock(&logging.success).len(), 1);
 }
 
 async fn backend_send_failure_ends_forwarding() {
