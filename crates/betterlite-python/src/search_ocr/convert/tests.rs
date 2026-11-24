@@ -9,7 +9,6 @@ use betterlite_ocr::json::Json as OcrJson;
 use betterlite_ocr::ocr_document::OcrDocument;
 use betterlite_ocr::ocr_error::OcrError;
 use betterlite_ocr::ocr_input::OcrDocumentInput;
-use serde_json::json;
 use std::collections::BTreeMap;
 
 fn ocr_json(text: &str) -> OcrJson {
@@ -18,21 +17,8 @@ fn ocr_json(text: &str) -> OcrJson {
 
 #[test]
 fn request_search_call_reads_every_public_keyword() {
-    let text = json!({
-        "query": ["one", "two"],
-        "search_provider": "brave",
-        "max_results": 5,
-        "search_domain_filter": ["example.com"],
-        "max_tokens_per_page": 512,
-        "country": "US",
-        "api_key": "sk-test",
-        "api_base": "http://127.0.0.1:8080",
-        "timeout_seconds": 2.5,
-        "extra_headers": {"x-extra": "one"},
-        "kwargs": {"objective": "find docs"}
-    })
-    .to_string();
-    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
+    let text = r#"{"query": ["one", "two"], "search_provider": "brave", "max_results": 5, "search_domain_filter": ["example.com"], "max_tokens_per_page": 512, "country": "US", "api_key": "sk-test", "api_base": "http://127.0.0.1:8080", "timeout_seconds": 2.5, "extra_headers": {"x-extra": "one"}, "kwargs": {"objective": "find docs"}}"#;
+    let call: SearchCall = serde_json::from_str(text).expect("the call parses");
     let request = call.into_request().expect("the request converts");
     assert_eq!(request.search_provider, "brave");
     assert_eq!(
@@ -56,16 +42,8 @@ fn request_search_call_reads_every_public_keyword() {
 
 #[test]
 fn request_search_call_keeps_the_connection_and_the_kwargs() {
-    let text = json!({
-        "query": "docs",
-        "search_provider": "brave",
-        "api_base": "http://127.0.0.1:8080",
-        "timeout_seconds": 2.5,
-        "extra_headers": {"x-extra": "one"},
-        "kwargs": {"objective": "find docs"}
-    })
-    .to_string();
-    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
+    let text = r#"{"query": "docs", "search_provider": "brave", "api_base": "http://127.0.0.1:8080", "timeout_seconds": 2.5, "extra_headers": {"x-extra": "one"}, "kwargs": {"objective": "find docs"}}"#;
+    let call: SearchCall = serde_json::from_str(text).expect("the call parses");
     let request = call.into_request().expect("the request converts");
     assert_eq!(
         request.extra_headers.get("x-extra").map(String::as_str),
@@ -83,8 +61,8 @@ fn request_search_call_keeps_the_connection_and_the_kwargs() {
 
 #[test]
 fn request_search_call_defaults_every_option_to_absent() {
-    let text = json!({"query": "docs", "search_provider": "brave"}).to_string();
-    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
+    let text = r#"{"query": "docs", "search_provider": "brave"}"#;
+    let call: SearchCall = serde_json::from_str(text).expect("the call parses");
     let request = call.into_request().expect("the request converts");
     assert_eq!(request.options, SearchOptions::default());
     assert!(request.extra_headers.is_empty());
@@ -95,19 +73,16 @@ fn request_search_call_defaults_every_option_to_absent() {
 
 #[test]
 fn request_search_call_rejects_a_negative_timeout() {
-    let text =
-        json!({"query": "docs", "search_provider": "brave", "timeout_seconds": -1.0}).to_string();
-    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
-    let error = call.into_request().err().expect("the timeout is refused");
+    let text = r#"{"query": "docs", "search_provider": "brave", "timeout_seconds": -1.0}"#;
+    let call: SearchCall = serde_json::from_str(text).expect("the call parses");
+    let error = call.into_request().expect_err("the timeout is refused");
     assert!(matches!(error, ConvertError::Timeout { .. }));
 }
 
 #[test]
 fn request_search_call_rejects_an_unknown_keyword() {
-    let text = json!({"query": "docs", "search_provider": "brave", "unknown": true}).to_string();
-    let error = serde_json::from_str::<SearchCall>(&text)
-        .err()
-        .expect("the field is refused");
+    let text = r#"{"query": "docs", "search_provider": "brave", "unknown": true}"#;
+    let error = serde_json::from_str::<SearchCall>(text).expect_err("the field is refused");
     assert!(error.to_string().contains("unknown field `unknown`"));
 }
 
@@ -122,14 +97,8 @@ fn request_cost_call_defaults_to_one_query_and_no_params() {
 
 #[test]
 fn request_cost_call_reads_the_tiered_max_results() {
-    let text = json!({
-        "model": "exa_ai/search",
-        "custom_llm_provider": "exa_ai",
-        "number_of_queries": 3,
-        "optional_params": {"max_results": 12}
-    })
-    .to_string();
-    let call: CostCall = serde_json::from_str(&text).expect("the call parses");
+    let text = r#"{"model": "exa_ai/search", "custom_llm_provider": "exa_ai", "number_of_queries": 3, "optional_params": {"max_results": 12}}"#;
+    let call: CostCall = serde_json::from_str(text).expect("the call parses");
     assert_eq!(call.number_of_queries, 3_i64);
     assert_eq!(call.custom_llm_provider.as_deref(), Some("exa_ai"));
     assert_eq!(call.optional_params.max_results, Some(12));
@@ -137,19 +106,8 @@ fn request_cost_call_reads_the_tiered_max_results() {
 
 #[test]
 fn request_ocr_call_reads_the_document_and_connection() {
-    let text = json!({
-        "model": "mistral-ocr-latest",
-        "document": {"type": "document_url", "document_url": "data:application/pdf;base64,YWJj"},
-        "api_key": "sk-test",
-        "api_base": "http://127.0.0.1:8080",
-        "custom_llm_provider": "mistral",
-        "extra_headers": {"x-extra": "one"},
-        "optional_params": {"pages": [0]},
-        "input_sources": {"api_key": "request"},
-        "timeout_seconds": 4.0
-    })
-    .to_string();
-    let call: OcrCall = serde_json::from_str(&text).expect("the call parses");
+    let text = r#"{"model": "mistral-ocr-latest", "document": {"type": "document_url", "document_url": "data:application/pdf;base64,YWJj"}, "api_key": "sk-test", "api_base": "http://127.0.0.1:8080", "custom_llm_provider": "mistral", "extra_headers": {"x-extra": "one"}, "optional_params": {"pages": [0]}, "input_sources": {"api_key": "request"}, "timeout_seconds": 4.0}"#;
+    let call: OcrCall = serde_json::from_str(text).expect("the call parses");
     assert_eq!(call.model, "mistral-ocr-latest");
     assert_eq!(call.custom_llm_provider.as_deref(), Some("mistral"));
     assert_eq!(call.timeout_seconds, Some(4.0_f64));
@@ -218,9 +176,7 @@ fn request_file_document_keeps_a_named_stream_and_its_mime_type() {
 #[test]
 fn error_file_document_without_a_file_names_the_missing_field() {
     let document = ocr_json(r#"{"type": "file"}"#);
-    let error = resolve_document(&document, &[])
-        .err()
-        .expect("the document is refused");
+    let error = resolve_document(&document, &[]).expect_err("the document is refused");
     assert_eq!(
         error.to_string(),
         "invalid OCR request: document with type='file' must include a 'file' field containing a pathlib.Path, file-like object, or bytes"
@@ -230,9 +186,7 @@ fn error_file_document_without_a_file_names_the_missing_field() {
 #[test]
 fn error_file_document_refuses_a_bare_string() {
     let document = ocr_json(r#"{"type": "file", "file": "scan.pdf"}"#);
-    let error = resolve_document(&document, &[])
-        .err()
-        .expect("the document is refused");
+    let error = resolve_document(&document, &[]).expect_err("the document is refused");
     assert!(matches!(error, OcrError::InvalidRequest(_)));
     assert!(error.to_string().contains("bare str"));
 }
@@ -242,18 +196,15 @@ fn error_file_document_refuses_a_marker_without_bytes() {
     let document = ocr_json(
         r#"{"type": "file", "file": {"$file": {"name": "file", "blob": 2, "content_type": null}}}"#,
     );
-    let error = resolve_document(&document, &[b"only".to_vec()])
-        .err()
-        .expect("the document is refused");
+    let error =
+        resolve_document(&document, &[b"only".to_vec()]).expect_err("the document is refused");
     assert!(matches!(error, OcrError::InvalidRequest(_)));
 }
 
 #[test]
 fn error_document_without_a_type_names_the_field() {
     let document = ocr_json("{}");
-    let error = resolve_document(&document, &[])
-        .err()
-        .expect("the document is refused");
+    let error = resolve_document(&document, &[]).expect_err("the document is refused");
     assert_eq!(
         error.to_string(),
         "invalid OCR request field: document.type"

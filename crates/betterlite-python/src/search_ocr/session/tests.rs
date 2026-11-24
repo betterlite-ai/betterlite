@@ -62,7 +62,9 @@ fn search_refuses_a_non_text_query_with_bad_request() {
     let outcome = get_runtime().block_on(session().search(call));
     match outcome.expect_err("the query is refused") {
         NativeFailure::Class { class, .. } => assert!(matches!(class, ErrorClass::BadRequest(_))),
-        other => panic!("the failure is not a class: {other:?}"),
+        failure @ (NativeFailure::Convert(_) | NativeFailure::Session(_)) => {
+            panic!("the failure is not a class: {failure:?}")
+        }
     }
 }
 
