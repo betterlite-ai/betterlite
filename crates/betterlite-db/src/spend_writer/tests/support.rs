@@ -21,14 +21,14 @@ use crate::spend_queues::SpendQueueError;
 use crate::spend_queues::daily::DailySpendUpdate;
 use crate::spend_queues::entity::SpendUpdateQueueItem;
 
-// An owned entity sink: it records what the writer charged and fails the enqueue at the chosen position.
-pub(crate) struct RecordingEntityQueue {
-    items: Mutex<Vec<SpendUpdateQueueItem>>,
+// A scripted sink: it records what the writer charged and fails the enqueue at the chosen position.
+pub(crate) struct ScriptedQueue<T> {
+    items: Mutex<Vec<T>>,
     fail_at: Option<usize>,
     failed: AtomicBool,
 }
 
-impl RecordingEntityQueue {
+impl<T> ScriptedQueue<T> {
     pub(crate) fn new(fail_at: Option<usize>) -> Self {
         Self {
             items: Mutex::new(Vec::new()),
@@ -37,7 +37,19 @@ impl RecordingEntityQueue {
         }
     }
 
-    pub(crate) fn items(&self) -> Vec<SpendUpdateQueueItem> {
+    fn push(&self, item: T) -> Result<(), SpendQueueError> {
+        let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.fail_at == Some(items.len()) && !self.failed.swap(true, Ordering::SeqCst) {
+            return Err(SpendQueueError::ZeroCapacity);
+        }
+        items.push(item);
+        Ok(())
+    }
+
+    pub(crate) fn items(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
         self.items
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -45,55 +57,49 @@ impl RecordingEntityQueue {
     }
 }
 
-impl EntitySpendQueue for RecordingEntityQueue {
-    fn enqueue(&self, update: SpendUpdateQueueItem) -> EnqueueFuture<'_> {
-        Box::pin(async move {
-            let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
-            if self.fail_at == Some(items.len()) && !self.failed.swap(true, Ordering::SeqCst) {
-                return Err(SpendQueueError::ZeroCapacity);
-            }
-            items.push(update);
-            drop(items);
-            Ok(())
-        })
+// The entity sink over the scripted queue.
+pub(crate) struct RecordingEntityQueue {
+    queue: ScriptedQueue<SpendUpdateQueueItem>,
+}
+
+impl RecordingEntityQueue {
+    pub(crate) fn new(fail_at: Option<usize>) -> Self {
+        Self {
+            queue: ScriptedQueue::new(fail_at),
+        }
+    }
+
+    pub(crate) fn items(&self) -> Vec<SpendUpdateQueueItem> {
+        self.queue.items()
     }
 }
 
-// An owned daily sink with the same scripted failure.
+impl EntitySpendQueue for RecordingEntityQueue {
+    fn enqueue(&self, update: SpendUpdateQueueItem) -> EnqueueFuture<'_> {
+        Box::pin(ready(self.queue.push(update)))
+    }
+}
+
+// The daily sink over the same scripted queue.
 pub(crate) struct RecordingDailyQueue {
-    updates: Mutex<Vec<DailySpendUpdate>>,
-    fail_at: Option<usize>,
-    failed: AtomicBool,
+    queue: ScriptedQueue<DailySpendUpdate>,
 }
 
 impl RecordingDailyQueue {
     pub(crate) fn new(fail_at: Option<usize>) -> Self {
         Self {
-            updates: Mutex::new(Vec::new()),
-            fail_at,
-            failed: AtomicBool::new(false),
+            queue: ScriptedQueue::new(fail_at),
         }
     }
 
     pub(crate) fn updates(&self) -> Vec<DailySpendUpdate> {
-        self.updates
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.queue.items()
     }
 }
 
 impl DailySpendQueue for RecordingDailyQueue {
     fn enqueue(&self, update: DailySpendUpdate) -> QueueFuture<'_> {
-        Box::pin(async move {
-            let mut updates = self.updates.lock().unwrap_or_else(PoisonError::into_inner);
-            if self.fail_at == Some(updates.len()) && !self.failed.swap(true, Ordering::SeqCst) {
-                return Err(SpendQueueError::ZeroCapacity);
-            }
-            updates.push(update);
-            drop(updates);
-            Ok(())
-        })
+        Box::pin(ready(self.queue.push(update)))
     }
 }
 
