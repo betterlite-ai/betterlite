@@ -1,0 +1,59 @@
+kind: helper
+name: refresh-no-usable-id-token
+call:
+  b4664:
+    function: refresh
+    user_id: user-1
+    assertion:
+      claims: {iss: https://idp.example, sub: user-1, exp: 2000000000}
+      refresh_token: carried-token
+    vars:
+      GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+      GENERIC_CLIENT_ID: client-id
+      GENERIC_CLIENT_SECRET: client-secret
+    outcome:
+      kind: ok
+      body:
+        refresh_token: rotated-token
+calls:
+  - b4664:
+      function: refresh
+      user_id: user-1
+      assertion:
+        claims: {iss: https://idp.example, sub: user-1, exp: 2000000000}
+        refresh_token: carried-token
+      vars:
+        GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+        GENERIC_CLIENT_ID: client-id
+        GENERIC_CLIENT_SECRET: client-secret
+      outcome:
+        kind: ok
+        body: {id_token: "", refresh_token: rotated-token}
+  - b4664:
+      function: refresh
+      user_id: user-1
+      assertion:
+        claims: {iss: https://idp.example, sub: user-1, exp: 2000000000}
+        refresh_token: carried-token
+      vars:
+        GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+        GENERIC_CLIENT_ID: client-id
+        GENERIC_CLIENT_SECRET: client-secret
+      outcome:
+        kind: ok
+        body: {id_token: 42}
+  - b4664:
+      function: refresh
+      user_id: user-1
+      assertion:
+        claims: {iss: https://idp.example, sub: user-1, exp: 2000000000}
+        refresh_token: carried-token
+      vars:
+        GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+        GENERIC_CLIENT_ID: client-id
+        GENERIC_CLIENT_SECRET: client-secret
+      outcome:
+        kind: ok
+        body: {id_token: not-a-jwt}
+env: {}
+compare: {ignore: []}
