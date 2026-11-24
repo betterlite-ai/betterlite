@@ -39,17 +39,14 @@ impl OrgCaller {
             });
         }
         let key = principal.source_key.0.as_ref();
-        let view = match key {
-            Some(record) => Some(serde_json::from_value::<KeyView>(serde_json::to_value(
-                record,
-            )?)?),
-            None => None,
-        };
-        let user_id = view
+        let stored = key
+            .map(|record| serde_json::from_value::<KeyView>(serde_json::to_value(record)?))
+            .transpose()?;
+        let user_id = stored
             .as_ref()
             .and_then(|view| view.user_id.clone())
             .or_else(|| principal.user.as_ref().map(|user| user.id.clone()));
-        let (user_role, models, admin_view) = match (view, key) {
+        let (user_role, models, admin_view) = match (stored, key) {
             (Some(view), Some(record)) => (
                 view.user_role,
                 view.models.unwrap_or_default(),

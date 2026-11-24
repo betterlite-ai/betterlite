@@ -30,7 +30,7 @@ pub struct OrganizationStore<'db> {
     pub client: PrismaClient<'db>,
 }
 
-impl<'db> OrganizationStore<'db> {
+impl OrganizationStore<'_> {
     pub async fn create_budget(
         &self,
         data: BTreeMap<String, JsonData>,

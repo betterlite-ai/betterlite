@@ -30,6 +30,7 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::organization_create::creation::OrganizationCreateState;
+use crate::organization_create::http::mount;
 
 // Every column the creation, permission and member paths read, with the defaults the proxy schema gives them.
 const SCHEMA: &str = r#"
@@ -310,7 +311,7 @@ impl TestApp {
     }
 
     pub async fn post_optional(&self, caller: Option<AuthContext>, body: &str) -> Reply {
-        let mut router = crate::organization_create::http::mount(Arc::clone(&self.state));
+        let mut router = mount(Arc::clone(&self.state));
         if let Some(context) = caller {
             router = router.layer(Extension(context));
         }
@@ -342,7 +343,10 @@ pub struct Reply {
 impl Reply {
     pub fn object(&self) -> BTreeMap<String, JsonData> {
         let JsonData::Object(fields) = serde_json::from_str(&self.body).unwrap() else {
-            panic!("the response body is a JSON object: {}", self.body);
+            panic!(
+                "the response body is a JSON object: {body}",
+                body = self.body
+            );
         };
         fields
     }
@@ -350,12 +354,13 @@ impl Reply {
     pub fn field(&self, name: &str) -> JsonData {
         self.object()
             .remove(name)
-            .unwrap_or_else(|| panic!("the response has no {name}: {}", self.body))
+            .unwrap_or_else(|| panic!("the response has no {name}: {body}", body = self.body))
     }
 
     pub fn text_field(&self, name: &str) -> String {
+        let body = &self.body;
         let JsonData::String(text) = self.field(name) else {
-            panic!("the response field {name} is not a string: {}", self.body);
+            panic!("the response field {name} is not a string: {body}");
         };
         text
     }
@@ -366,7 +371,7 @@ impl Reply {
 
     pub fn detail_text(&self) -> String {
         let JsonData::String(text) = self.field("detail") else {
-            panic!("detail is not a string: {}", self.body);
+            panic!("detail is not a string: {body}", body = self.body);
         };
         text
     }
@@ -377,32 +382,39 @@ impl Reply {
 
     fn nested_text(&self, name: &str, field: &str) -> String {
         let JsonData::Object(object) = self.field(name) else {
-            panic!("the response field {name} is not an object: {}", self.body);
+            panic!(
+                "the response field {name} is not an object: {body}",
+                body = self.body
+            );
         };
         match object.get(field) {
             Some(JsonData::String(text)) => text.clone(),
             _ => panic!(
-                "the response field {name}.{field} is not a string: {}",
-                self.body
+                "the response field {name}.{field} is not a string: {body}",
+                body = self.body
             ),
         }
     }
 }
 
-pub fn key_caller(user_id: Option<&str>, role: Option<&str>, models: &[&str]) -> AuthContext {
+fn key_fields(
+    user_id: Option<&str>,
+    role: Option<&str>,
+    models: &[&str],
+) -> BTreeMap<String, JsonData> {
     let mut fields: BTreeMap<String, JsonData> = BTreeMap::new();
     fields.insert(
         String::from("token"),
         JsonData::String(String::from("hashed-token")),
     );
-    if let Some(user_id) = user_id {
-        fields.insert(
-            String::from("user_id"),
-            JsonData::String(user_id.to_owned()),
-        );
+    if let Some(id) = user_id {
+        fields.insert(String::from("user_id"), JsonData::String(id.to_owned()));
     }
-    if let Some(role) = role {
-        fields.insert(String::from("user_role"), JsonData::String(role.to_owned()));
+    if let Some(parsed_role) = role {
+        fields.insert(
+            String::from("user_role"),
+            JsonData::String(parsed_role.to_owned()),
+        );
     }
     fields.insert(
         String::from("models"),
@@ -413,6 +425,11 @@ pub fn key_caller(user_id: Option<&str>, role: Option<&str>, models: &[&str]) ->
                 .collect(),
         ),
     );
+    fields
+}
+
+pub fn key_caller(user_id: Option<&str>, role: Option<&str>, models: &[&str]) -> AuthContext {
+    let fields = key_fields(user_id, role, models);
     let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
     AuthContext {
         principal: Principal {
@@ -458,7 +475,7 @@ fn jwt_principal(user_id: Option<&str>, roles: &[Role]) -> AuthContext {
         principal: Principal {
             principal_type: PrincipalType::Human,
             subject: match user_id {
-                Some(user_id) => format!("jwt:{user_id}"),
+                Some(id) => format!("jwt:{id}"),
                 None => String::from("jwt:anonymous"),
             },
             issuer: None,

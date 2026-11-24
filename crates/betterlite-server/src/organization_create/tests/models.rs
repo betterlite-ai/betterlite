@@ -102,8 +102,8 @@ async fn model_check_inputs_order() {
         denied
             .error_text("message")
             .contains("The requested model 'beta' is not available"),
-        "{}",
-        denied.body
+        "{body}",
+        body = denied.body
     );
     assert_eq!(denied.error_text("type"), "user_model_access_denied");
     assert_eq!(app.database.organization_count().await, 1);
@@ -143,8 +143,8 @@ async fn permission_survives_model_denial() {
         reply
             .error_text("message")
             .contains("The requested model 'beta' is not available"),
-        "{}",
-        reply.body
+        "{body}",
+        body = reply.body
     );
     assert_eq!(app.database.permission_count().await, 1);
     assert_eq!(app.database.budget_count().await, 1);

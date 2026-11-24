@@ -1,6 +1,8 @@
+use std::error::Error;
+
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::resource_repository::budget::BudgetRepositoryError;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
@@ -100,7 +102,7 @@ fn detail_error(status: StatusCode, message: &str) -> Response {
         .into_response()
 }
 
-fn unhandled(error: &dyn std::error::Error) -> Response {
+fn unhandled(error: &dyn Error) -> Response {
     tracing::error!(error = %error, "the organization request failed");
     let body = InternalBody {
         error: InternalMessage {

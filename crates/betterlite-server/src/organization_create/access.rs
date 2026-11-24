@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::table_ops::rows::RowDecoder as _;
@@ -83,6 +83,21 @@ pub async fn verify_org_access(
         return Ok(());
     }
     Err(OrgAccessError::Denied)
+}
+
+// the caller's stored user row; creation swallows every lookup and validation failure, as the source does
+pub async fn read_user_object(
+    store: &PostgresStore,
+    caller: &OrgCaller,
+) -> Option<LiteLLMUserTable> {
+    let user_id = caller.user_id.as_deref()?;
+    match (DatabaseUserLookup { store }).find_user(user_id).await {
+        Ok(found) => found,
+        Err(error) => {
+            tracing::debug!(error = %error, "the caller user row could not be read");
+            None
+        }
+    }
 }
 
 #[derive(Serialize)]

@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
 
 use betterlite_auth::auth_user_lookup::ports::{BudgetResetCalculator, PortError};
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable, Timestamp};
+use betterlite_db::key_user_writes::json_text::SerdeJsonEncoder;
+use betterlite_db::key_user_writes::json_text::jsonify_object;
 
 use crate::management_guards::metadata::METADATA_FIELDS;
 use crate::management_guards::metadata::has_effect;
-use crate::organization_create::records::BUDGET_SCHEMA_FIELDS;
+use crate::organization_create::records::{
+    BUDGET_SCHEMA_FIELDS, NewOrganizationRequest, amount_of, decimal_of,
+};
 
 pub const NESTED_BUDGET_FIELD: &str = "litellm_budget_table";
 pub const BUDGET_DURATION_FIELD: &str = "budget_duration";
@@ -68,9 +72,7 @@ pub fn build_budget_write_data(
     Ok(data)
 }
 
-fn reset_value(
-    timestamp: betterlite_db::budget_permission_rows::Timestamp,
-) -> Result<String, BudgetTransformError> {
+fn reset_value(timestamp: Timestamp) -> Result<String, BudgetTransformError> {
     match serde_json::to_value(&timestamp).and_then(serde_json::from_value::<JsonData>) {
         Ok(JsonData::String(text)) => Ok(text),
         Ok(_) => Err(BudgetTransformError::ResetValue),
@@ -102,4 +104,52 @@ pub fn handle_nested_budget_structure_in_organization_update_request(
         }
     }
     Ok(transformed)
+}
+
+// the request's LiteLLM_BudgetTable columns, jsonified, with the actor columns the create always writes
+#[must_use]
+pub fn budget_write_payload(
+    fields: &BTreeMap<String, JsonData>,
+    actor: &str,
+) -> BTreeMap<String, JsonData> {
+    let sent: BTreeMap<String, JsonData> = fields
+        .iter()
+        .filter(|(name, _)| BUDGET_SCHEMA_FIELDS.contains(&name.as_str()))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    let mut data = jsonify_object(&sent, &SerdeJsonEncoder);
+    data.insert("created_by".to_owned(), JsonData::String(actor.to_owned()));
+    data.insert("updated_by".to_owned(), JsonData::String(actor.to_owned()));
+    data
+}
+
+// the created row, projected onto LiteLLM_BudgetTable: allowed_models comes from the column default
+#[must_use]
+pub fn created_budget_row(budget_id: &str, request: &NewOrganizationRequest) -> LiteLLMBudgetTable {
+    LiteLLMBudgetTable {
+        budget_id: Some(budget_id.to_owned()),
+        soft_budget: request
+            .soft_budget
+            .as_ref()
+            .and_then(amount_of)
+            .and_then(decimal_of),
+        max_budget: request
+            .max_budget
+            .as_ref()
+            .and_then(amount_of)
+            .and_then(decimal_of),
+        max_parallel_requests: request.max_parallel_requests,
+        tpm_limit: request.tpm_limit,
+        rpm_limit: request.rpm_limit,
+        tpd_limit: request.tpd_limit,
+        model_max_budget: request.model_max_budget.clone(),
+        budget_duration: request.budget_duration.clone(),
+        allowed_models: Some(request.allowed_models.clone().unwrap_or_default()),
+        temp_budget_increase: request
+            .temp_budget_increase
+            .as_ref()
+            .and_then(amount_of)
+            .and_then(decimal_of),
+        temp_budget_expiry: request.temp_budget_expiry,
+    }
 }

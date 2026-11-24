@@ -36,11 +36,13 @@ pub fn amount_of(number: &Number) -> Option<Amount> {
     if value.is_nan() {
         return Some(Amount::Nan);
     }
-    if value == f64::INFINITY {
-        return Some(Amount::PositiveInfinity);
-    }
-    if value == f64::NEG_INFINITY {
-        return Some(Amount::NegativeInfinity);
+    if value.is_infinite() {
+        let amount = if value.is_sign_positive() {
+            Amount::PositiveInfinity
+        } else {
+            Amount::NegativeInfinity
+        };
+        return Some(amount);
     }
     Decimal::from_f64(value).map(Amount::Finite)
 }
@@ -64,7 +66,7 @@ pub fn request_amount(
 
 // the Decimal a budget response column carries; a non-finite amount never reaches storage
 #[must_use]
-pub fn decimal_of(amount: Amount) -> Option<Decimal> {
+pub const fn decimal_of(amount: Amount) -> Option<Decimal> {
     match amount {
         Amount::Finite(decimal) => Some(decimal),
         Amount::Nan | Amount::PositiveInfinity | Amount::NegativeInfinity => None,
@@ -150,24 +152,20 @@ impl NewOrganizationRequest {
         )?;
         insert_option(&mut fields, "temp_budget_expiry", &self.temp_budget_expiry)?;
         if let Some(permission) = &self.object_permission {
-            let mut permission_data =
-                serde_json::from_value::<JsonData>(serde_json::to_value(permission)?)?;
-            if let JsonData::Object(permission_fields) = &mut permission_data {
-                permission_fields.retain(|_, value| !matches!(value, JsonData::Null));
-            }
-            fields.insert("object_permission".to_owned(), permission_data);
+            insert_permission(&mut fields, permission)?;
         }
         Ok(fields)
     }
 }
 
-fn insert_option<T>(
+// pub because serde hands every optional field as &Option, and a pub fn keeps clippy's ref_option quiet
+pub fn insert_option<T>(
     fields: &mut BTreeMap<String, JsonData>,
     name: &str,
     value: &Option<T>,
 ) -> Result<(), serde_json::Error>
 where
-    T: Serialize + ?Sized,
+    T: Serialize,
 {
     if let Some(inner) = value {
         fields.insert(
@@ -175,6 +173,19 @@ where
             serde_json::from_value::<JsonData>(serde_json::to_value(inner)?)?,
         );
     }
+    Ok(())
+}
+
+// one object_permission mapping with the base's null columns dropped, as exclude_none keeps them out
+fn insert_permission(
+    fields: &mut BTreeMap<String, JsonData>,
+    permission: &LiteLLMObjectPermissionBase,
+) -> Result<(), serde_json::Error> {
+    let mut data = serde_json::from_value::<JsonData>(serde_json::to_value(permission)?)?;
+    if let JsonData::Object(permission_fields) = &mut data {
+        permission_fields.retain(|_, value| !matches!(value, JsonData::Null));
+    }
+    fields.insert("object_permission".to_owned(), data);
     Ok(())
 }
 
@@ -213,4 +224,52 @@ pub struct OrganizationRow {
     pub object_permission_id: Option<String>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+}
+
+// the organization payload: the exclude-none fields, the permission id and the two actor columns
+pub fn organization_row(
+    request: &NewOrganizationRequest,
+    fields: &BTreeMap<String, JsonData>,
+    metadata: Option<&BTreeMap<String, JsonData>>,
+    actor: &str,
+) -> Result<BTreeMap<String, JsonData>, OrganizationCreateError> {
+    let budget_id = match fields.get("budget_id") {
+        Some(JsonData::String(budget_id)) => budget_id.clone(),
+        _ => String::new(),
+    };
+    let mut organization = BTreeMap::new();
+    if let Some(JsonData::String(organization_id)) = fields.get("organization_id") {
+        organization.insert(
+            "organization_id".to_owned(),
+            JsonData::String(organization_id.clone()),
+        );
+    }
+    organization.insert(
+        "organization_alias".to_owned(),
+        JsonData::String(request.organization_alias.clone()),
+    );
+    organization.insert("budget_id".to_owned(), JsonData::String(budget_id));
+    if let Some(metadata_fields) = metadata {
+        organization.insert(
+            "metadata".to_owned(),
+            JsonData::Object(metadata_fields.clone()),
+        );
+    }
+    if let Some(models) = fields.get("models") {
+        organization.insert("models".to_owned(), models.clone());
+    }
+    organization.insert("model_spend".to_owned(), JsonData::Object(BTreeMap::new()));
+    let spend = serde_json::to_value(0.0_f64)
+        .and_then(serde_json::from_value::<JsonData>)
+        .map_err(OrganizationCreateError::Encoding)?;
+    organization.insert("spend".to_owned(), spend);
+    organization.insert("created_by".to_owned(), JsonData::String(actor.to_owned()));
+    organization.insert("updated_by".to_owned(), JsonData::String(actor.to_owned()));
+    if let Some(JsonData::String(permission_id)) = fields.get("object_permission_id") {
+        organization.insert(
+            "object_permission_id".to_owned(),
+            JsonData::String(permission_id.clone()),
+        );
+    }
+    Ok(organization)
 }

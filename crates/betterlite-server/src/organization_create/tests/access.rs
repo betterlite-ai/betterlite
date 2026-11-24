@@ -143,10 +143,10 @@ async fn org_access_lookup_error() {
         Some(&JsonData::String(String::from("internal_server_error")))
     );
 
-    let (status, text) = rendered(OrgAccessError::DatabaseNotConnected).await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    let (db_status, db_text) = rendered(OrgAccessError::DatabaseNotConnected).await;
+    assert_eq!(db_status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
-        text,
+        db_text,
         format!(
             r#"{{"detail":{{"error":"{}"}}}}"#,
             CommonProxyErrors::DbNotConnectedError.as_str()
