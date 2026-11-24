@@ -124,7 +124,7 @@ fn resolved_provider(
         api_key: None,
     });
     match target {
-        Some(target) => Ok(target.provider),
+        Some(resolved) => Ok(resolved.provider),
         None => Err(MessagesResponseCallError::Resolution(
             ResolutionError::MissingProvider {
                 model: model.to_owned(),

@@ -22,6 +22,7 @@ call:
         prompt_cache_key: cache-key
         include:
         - reasoning.encrypted_content
+        anthropic_messages: true
     include_supported: true
     provider: openai
     model_info: null

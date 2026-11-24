@@ -50,9 +50,8 @@ fn loads_settings_accepts_the_litellm_settings_table() {
 
 #[test]
 fn loads_settings_reports_no_unsupported_key() {
-    let lookup: BTreeMap<String, String> = [(VARIABLE.to_owned(), String::from("8192"))]
-        .into_iter()
-        .collect();
+    let lookup: BTreeMap<String, String> =
+        std::iter::once((VARIABLE.to_owned(), String::from("8192"))).collect();
     let config = ConfigLoader { lookup }
         .load("environment_variables:\n  DEFAULT_MAX_TOKENS: \"1234\"\n")
         .expect("the variable is a known key");

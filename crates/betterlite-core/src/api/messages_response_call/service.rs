@@ -72,7 +72,7 @@ where
     };
     let provider_hint = forwarded_provider(&input.forwarded)?;
     let model = local_model_name(&input.request.model, provider_hint);
-    let stream = MessagesResponseStream::new(
+    let wrapper = MessagesResponseStream::new(
         stream,
         ids,
         Some(&mut *log.state),
@@ -82,7 +82,7 @@ where
             limits: seams.limits,
         },
     );
-    Ok(MessagesResponseCallAnswer::Stream(Box::new(stream)))
+    Ok(MessagesResponseCallAnswer::Stream(Box::new(wrapper)))
 }
 
 // if not isinstance(result, ResponsesAPIResponse): raise ValueError(f"Expected ResponsesAPIResponse, got {type(result)}").

@@ -297,7 +297,7 @@ impl Fixture {
             },
             &self.redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .expect("the logging state builds")
     }
@@ -391,6 +391,20 @@ fn native() -> AnswerPlan {
     "",
     ""
 )]
+#[case::deployment_include_without_capability(
+    r#"{"custom_llm_provider":"openai","include":["extra.one","extra.two"]}"#,
+    false,
+    r#"["extra.one","extra.two"]"#,
+    "",
+    ""
+)]
+#[case::anthropic_messages_never_travels(
+    r#"{"custom_llm_provider":"openai","anthropic_messages":true}"#,
+    true,
+    r#"["reasoning.encrypted_content"]"#,
+    "",
+    ""
+)]
 #[case::explicit_prompt_cache_key_wins(
     r#"{"custom_llm_provider":"openai","api_base":"https://api.example.com","prompt_cache_key":"explicit"}"#,
     true,
@@ -442,6 +456,10 @@ async fn messages_responses_request(
     assert_eq!(
         call_result.call.kwargs.get("prompt_cache_key"),
         expected_cache_key.as_ref()
+    );
+    assert!(
+        !call_result.call.kwargs.contains_key("anthropic_messages"),
+        "anthropic_messages belongs to the route and never travels"
     );
     assert_eq!(state.call_type, "anthropic_messages");
     assert_eq!(
@@ -526,7 +544,9 @@ async fn encrypted_task_required_refuses_an_unresolvable_provider() {
     let request = r#"{"model":"nowhere/model","messages":[],"max_tokens":8}"#;
     let input = call_input(request, "{}", false);
     let (result, _) = run(&fixture, &input).await;
-    let error = result.expect_err("an unresolvable provider fails before the call");
+    let error = result
+        .err()
+        .expect("an unresolvable provider fails before the call");
     let failure = error.normalize("nowhere/model", "openai", &fixture.redactor);
     assert_eq!(failure.status, 400);
     assert_eq!(failure.class, "BadRequestError");
@@ -603,7 +623,7 @@ async fn native_responses_error(#[case] plan: &str, #[case] stream: bool) {
         stream,
     );
     let (result, _) = run(&fixture, &input).await;
-    let error = result.expect_err("a result the handler cannot use fails");
+    let error = result.err().expect("a result the handler cannot use fails");
     let failure = error.normalize("openai/gpt-4o", "openai", &fixture.redactor);
     assert_eq!(failure.status, 500);
     assert_eq!(failure.class, "APIConnectionError");
@@ -625,7 +645,7 @@ async fn native_responses_error_keeps_a_normalized_failure() {
     let fixture = fixture_with(true, Some("openai"), None, AnswerPlan::Failure(failure));
     let input = call_input(LISTED_REQUEST, r#"{"custom_llm_provider":"openai"}"#, false);
     let (result, _) = run(&fixture, &input).await;
-    let error = result.expect_err("a failed create fails the call");
+    let error = result.err().expect("a failed create fails the call");
     let normalized = error.normalize("openai/gpt-4o", "openai", &fixture.redactor);
     assert_eq!(normalized.status, 429);
     assert_eq!(normalized.class, "RateLimitError");
@@ -784,7 +804,9 @@ async fn forwarded_values_must_match_their_declared_types(
     let fixture = fixture_with(true, Some("openai"), None, native());
     let input = call_input(LISTED_REQUEST, forwarded, false);
     let (result, _) = run(&fixture, &input).await;
-    let error = result.expect_err("a forwarded value of the wrong type fails the build");
+    let error = result
+        .err()
+        .expect("a forwarded value of the wrong type fails the build");
     assert!(
         error.to_string().contains(field),
         "the error names the field"

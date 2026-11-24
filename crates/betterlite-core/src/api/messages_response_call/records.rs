@@ -28,7 +28,7 @@ impl Default for CallSettings {
     }
 }
 
-fn default_max_tokens() -> i64 {
+const fn default_max_tokens() -> i64 {
     DEFAULT_MAX_TOKENS
 }
 

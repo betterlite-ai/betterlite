@@ -31,9 +31,9 @@ pub trait ResponsesCreatePort: Send + Sync {
 
 // The lookups _build_responses_kwargs reads: the provider's Responses config, the provider get_llm_provider infers, and the metadata the effort normalization consults.
 pub struct MessagesResponseCallSeams<'seams> {
-    pub include: &'seams dyn ResponsesIncludeSupport,
-    pub provider: &'seams dyn ProviderResolution,
-    pub metadata: &'seams dyn ModelMetadata,
+    pub include: &'seams (dyn ResponsesIncludeSupport + Send + Sync),
+    pub provider: &'seams (dyn ProviderResolution + Send + Sync),
+    pub metadata: &'seams (dyn ModelMetadata + Send + Sync),
     pub redactor: Option<Arc<Redactor>>,
     pub limits: ApiLimits,
 }

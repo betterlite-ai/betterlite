@@ -74,14 +74,14 @@ pub(super) fn forwarded_include(
 
 // The deployment's include entries are appended to the bridge's, keeping the bridge's order and dropping repeats.
 pub(super) fn merge_include(object: &mut Object, deployment: Option<&[String]>) {
-    let Some(deployment) = deployment else {
+    let Some(extras) = deployment else {
         return;
     };
     let Some(Json::List(bridge)) = object.get(INCLUDE) else {
         return;
     };
     let mut merged = bridge.clone();
-    for item in deployment {
+    for item in extras {
         if !bridge
             .iter()
             .any(|existing| existing.as_str() == Some(item.as_str()))
