@@ -10,15 +10,30 @@ use betterlite_core::api::batch_limit_descriptors::descriptors::{
     BatchDescriptorIncrements, BatchLimitDescriptor,
 };
 use betterlite_error::rate_limit::ProxyRateLimitError;
+use serde::Serialize;
 use serde_json::{Value, json};
+
+#[derive(Serialize)]
+struct ScopeView<'a> {
+    key: &'a str,
+    value: &'a str,
+    limit: i64,
+}
+
+impl<'a> From<&'a BatchEnqueuedTokenScope> for ScopeView<'a> {
+    fn from(scope: &'a BatchEnqueuedTokenScope) -> Self {
+        Self {
+            key: scope.key.as_str(),
+            value: scope.value.as_str(),
+            limit: scope.limit,
+        }
+    }
+}
 
 pub(super) fn store_call(tokens: i64, scopes: &[BatchEnqueuedTokenScope]) -> Value {
     json!({
         "tokens": tokens,
-        "scopes": scopes
-            .iter()
-            .map(|scope| json!({"key": scope.key.as_str(), "value": scope.value, "limit": scope.limit}))
-            .collect::<Vec<_>>(),
+        "scopes": scopes.iter().map(ScopeView::from).collect::<Vec<_>>(),
     })
 }
 
@@ -63,11 +78,7 @@ pub(super) fn operation_view(operation: &BatchTpdRefundOperation) -> Value {
 }
 
 pub(super) fn reservation_view(reservation: &BatchEnqueuedTokenReservation) -> Value {
-    let scopes: Vec<Value> = reservation
-        .scopes
-        .iter()
-        .map(|scope| json!({"key": scope.key.as_str(), "value": scope.value, "limit": scope.limit}))
-        .collect();
+    let scopes: Vec<ScopeView<'_>> = reservation.scopes.iter().map(ScopeView::from).collect();
     json!({
         "tokens": reservation.tokens,
         "scopes": scopes,
