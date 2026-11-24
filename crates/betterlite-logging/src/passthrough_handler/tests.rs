@@ -1,0 +1,14 @@
+#![cfg(test)]
+
+mod passthrough_abstract_method_signature;
+mod passthrough_base_handler;
+mod passthrough_chat_handler_transformation;
+mod passthrough_chunk_collection_orchestration;
+mod passthrough_exception_handling;
+mod passthrough_get_user_from_metadata;
+mod passthrough_provider_config_method;
+mod passthrough_provider_name_property;
+mod passthrough_response_cost_write;
+mod passthrough_standard_logging_object;
+mod passthrough_user_extraction;
+mod support;
