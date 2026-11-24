@@ -12,8 +12,8 @@ use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use crate::passthrough_stream_lifecycle::lifecycle::StreamLifecycle;
 use crate::passthrough_stream_lifecycle::ports::StreamJobKind;
 use crate::passthrough_stream_lifecycle::support::{
-    Harness, RecordedFailure, json, model_details, object, recorded_usage, standard_outcome, time,
-    usage_outcome,
+    Harness, RecordedFailure, capture_logs, json, model_details, object, recorded_usage,
+    standard_outcome, time, usage_outcome,
 };
 use crate::passthrough_stream_logging::types::{EndpointType, HandlerError};
 
@@ -89,6 +89,33 @@ async fn a_tinyfish_stream_without_a_poller_still_dispatches_the_failure() {
     assert_eq!(harness.failure_dispatch.failures().len(), 1);
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
     assert!(recorded_usage(logging_obj.as_ref()).is_none());
+}
+
+#[tokio::test]
+async fn a_rejected_failure_job_is_logged_instead_of_raised() {
+    let harness = Harness::new(&["2024-01-01T00:00:02+00:00"]).with_rejecting_queue();
+    let lifecycle = harness.lifecycle(false);
+    let logging_obj = object(&[], IndexMap::new());
+    let body = json("{}");
+    let failure = failure();
+    let (logs, guard) = capture_logs();
+    schedule_failure_logging(FailureSchedulingCall {
+        lifecycle: lifecycle.as_ref(),
+        logging_obj: Arc::clone(&logging_obj),
+        endpoint_type: EndpointType::OpenAi,
+        request_body: &body,
+        raw_bytes: &chunks(),
+        failure: &failure,
+        stream_context: None,
+    })
+    .await;
+    drop(guard);
+    assert_eq!(harness.failure_dispatch.failures().len(), 1);
+    let text = logs.text();
+    assert!(
+        text.contains("Error scheduling stream failure logging: the job was dropped (QueueFull)"),
+        "{text}"
+    );
 }
 
 #[tokio::test]
