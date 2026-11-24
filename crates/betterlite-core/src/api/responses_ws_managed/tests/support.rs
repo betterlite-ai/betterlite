@@ -232,6 +232,7 @@ impl ScriptedProvider {
     }
 }
 
+#[async_trait]
 impl ResponsesStreaming for ScriptedProvider {
     type Stream = ScriptedStream;
 
@@ -296,6 +297,7 @@ fn provider_chunk(script: &ChunkScript) -> ProviderChunk {
     }
 }
 
+#[async_trait]
 impl ResponsesStream for ScriptedStream {
     async fn next_chunk(&mut self) -> Result<Option<ProviderChunk>, ProviderCallError> {
         if Some(self.consumed) == self.raise_after {

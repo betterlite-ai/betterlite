@@ -23,7 +23,10 @@ where
         return Ok(());
     };
     let output_messages = extract_output_messages(completed)?;
-    let capacity = prior_history.len() + current_messages.len() + output_messages.len();
+    let capacity = prior_history
+        .len()
+        .saturating_add(current_messages.len())
+        .saturating_add(output_messages.len());
     let mut messages = Vec::with_capacity(capacity);
     messages.extend_from_slice(prior_history);
     messages.extend_from_slice(current_messages);

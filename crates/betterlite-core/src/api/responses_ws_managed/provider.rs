@@ -1,5 +1,4 @@
-use std::future::Future;
-
+use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use thiserror::Error;
@@ -27,19 +26,19 @@ pub struct ProviderCallError {
 }
 
 // the chunk sequence of one provider call: a chunk or a stream failure
+#[async_trait]
 pub trait ResponsesStream: Send {
-    fn next_chunk(
-        &mut self,
-    ) -> impl Future<Output = Result<Option<ProviderChunk>, ProviderCallError>> + Send + '_;
+    async fn next_chunk(&mut self) -> Result<Option<ProviderChunk>, ProviderCallError>;
 }
 
 // B932's asynchronous public aresponses call, reduced to the stream this lifecycle consumes
+#[async_trait]
 pub trait ResponsesStreaming: Send + Sync {
     type Stream: ResponsesStream;
 
-    fn stream(
+    async fn stream(
         &self,
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
-    ) -> impl Future<Output = Result<Self::Stream, ProviderCallError>> + Send + '_;
+    ) -> Result<Self::Stream, ProviderCallError>;
 }
