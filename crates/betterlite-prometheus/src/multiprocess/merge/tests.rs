@@ -215,6 +215,26 @@ fn keeps_the_value_with_the_greatest_timestamp(#[case] mode: &str) {
 }
 
 #[test]
+fn takes_the_mode_of_the_last_gauge_file() {
+    let dir = TempDir::new().unwrap();
+    let first = write_file(
+        dir.path(),
+        "gauge_min_1001.db",
+        &[entry("queue_length", "queue_length", &[], 5.0)],
+    );
+    let second = write_file(
+        dir.path(),
+        "gauge_max_1002.db",
+        &[entry("queue_length", "queue_length", &[], 3.0)],
+    );
+    let families = merge(&[first, second]).unwrap();
+    assert_eq!(
+        families.first().unwrap().samples,
+        vec![sample("queue_length", &[], 5.0)]
+    );
+}
+
+#[test]
 fn min_keeps_the_first_of_two_equal_values() {
     let dir = TempDir::new().unwrap();
     let first = write_file(
