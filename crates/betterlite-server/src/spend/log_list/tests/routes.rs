@@ -260,8 +260,7 @@ async fn the_ui_grouped_start_time_page_delegates_to_the_keyset_pager() {
 
 #[tokio::test]
 async fn a_grouped_sort_other_than_start_time_uses_the_offset_read() {
-    let mut fixture = Fixture::with_rows(vec![session_row()]);
-    fixture.count = 1;
+    let fixture = Fixture::with_rows(vec![row("r1", Some("alice"), None)]);
     let (reply, events) = fixture
         .call(
             &format!("{UI}&group_by_session=true&sort_by=spend"),
