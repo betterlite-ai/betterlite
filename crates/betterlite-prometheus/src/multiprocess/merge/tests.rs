@@ -49,6 +49,28 @@ fn write_file(dir: &Path, name: &str, entries: &[DbEntry]) -> PathBuf {
     path
 }
 
+fn write_histogram(dir: &Path, pid: u32, bound: &str, counts: [f64; 2], sum: f64) -> PathBuf {
+    write_file(
+        dir,
+        &format!("histogram_{pid}.db"),
+        &[
+            entry(
+                "request_latency",
+                "request_latency_bucket",
+                &[("le", bound)],
+                counts[0],
+            ),
+            entry(
+                "request_latency",
+                "request_latency_bucket",
+                &[("le", "+Inf")],
+                counts[1],
+            ),
+            entry("request_latency", "request_latency_sum", &[], sum),
+        ],
+    )
+}
+
 fn sample(name: &str, labels: &[(&str, &str)], value: f64) -> MetricSample {
     let pairs = labels
         .iter()
@@ -141,12 +163,12 @@ fn keeps_each_pid_for_the_all_modes(#[case] mode: &str) {
 }
 
 #[rstest]
-#[case("min", 3.0)]
-#[case("livemin", 3.0)]
-#[case("max", 5.0)]
-#[case("livemax", 5.0)]
-#[case("sum", 8.0)]
-#[case("livesum", 8.0)]
+#[case("min", 3.0_f64)]
+#[case("livemin", 3.0_f64)]
+#[case("max", 5.0_f64)]
+#[case("livemax", 5.0_f64)]
+#[case("sum", 8.0_f64)]
+#[case("livesum", 8.0_f64)]
 fn combines_a_gauge_without_its_pid(#[case] mode: &str, #[case] value: f64) {
     let dir = TempDir::new().unwrap();
     let first = write_file(
@@ -287,44 +309,8 @@ fn drops_a_mostrecent_series_whose_timestamps_are_zero() {
 #[test]
 fn accumulates_histogram_buckets_with_their_count_and_sum() {
     let dir = TempDir::new().unwrap();
-    let first = write_file(
-        dir.path(),
-        "histogram_1001.db",
-        &[
-            entry(
-                "request_latency",
-                "request_latency_bucket",
-                &[("le", "1")],
-                2.0,
-            ),
-            entry(
-                "request_latency",
-                "request_latency_bucket",
-                &[("le", "+Inf")],
-                3.0,
-            ),
-            entry("request_latency", "request_latency_sum", &[], 1.0),
-        ],
-    );
-    let second = write_file(
-        dir.path(),
-        "histogram_1002.db",
-        &[
-            entry(
-                "request_latency",
-                "request_latency_bucket",
-                &[("le", "1.0")],
-                1.0,
-            ),
-            entry(
-                "request_latency",
-                "request_latency_bucket",
-                &[("le", "+Inf")],
-                2.0,
-            ),
-            entry("request_latency", "request_latency_sum", &[], 0.5),
-        ],
-    );
+    let first = write_histogram(dir.path(), 1001, "1", [2.0, 3.0], 1.0);
+    let second = write_histogram(dir.path(), 1002, "1.0", [1.0, 2.0], 0.5);
     let families = merge(&[first, second]).unwrap();
     let family = families.first().unwrap();
     assert_eq!(family.kind, MetricKind::Histogram);

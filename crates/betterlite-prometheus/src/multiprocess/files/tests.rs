@@ -35,11 +35,8 @@ fn round_trips_entries() {
 fn writes_a_fresh_page() {
     let bytes = encode_db_file(&[]);
     assert_eq!(bytes.len(), 0x0001_0000);
-    assert_eq!(
-        bytes.get(..8).unwrap(),
-        [8_u8, 0, 0, 0, 0, 0, 0, 0].as_slice()
-    );
-    assert!(bytes.get(8..).unwrap().iter().all(|byte| *byte == 0));
+    assert_eq!(&bytes[..8], [8_u8, 0, 0, 0, 0, 0, 0, 0].as_slice());
+    assert!(bytes[8..].iter().all(|byte| *byte == 0));
     assert!(decode_db_file(&bytes).unwrap().is_empty());
 }
 

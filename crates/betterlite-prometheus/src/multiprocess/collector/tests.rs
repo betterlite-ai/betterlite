@@ -163,7 +163,7 @@ fn mark_process_dead_tolerates_a_pid_with_no_files() {
 fn mark_process_dead_fails_when_a_live_file_cannot_be_removed() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("gauge_livesum_7.db");
-    fs::create_dir(&path).unwrap();
+    fs::create_dir_all(&path).unwrap();
     let error = mark_process_dead(7, dir.path()).unwrap_err();
     assert!(matches!(error, MultiprocessError::Remove { .. }));
 }
