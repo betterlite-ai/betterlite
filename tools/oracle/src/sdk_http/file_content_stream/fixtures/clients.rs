@@ -83,16 +83,12 @@ pub(super) async fn azure_answer(
     operation: ContentOperation<'_>,
 ) -> Result<ContentReply, ContentWireError> {
     let opened = open(content, environment)?;
-    match operation {
-        ContentOperation::Buffered { request } => {
-            match call(&opened, client, AzureOperation::Content(request)).await? {
-                Reply::Content(content) => Ok(ContentReply::Buffered(Box::new(content))),
-                Reply::Object(_) | Reply::Page(_) | Reply::Deleted(_) => {
-                    Err(ContentWireError::Reply)
-                }
-            }
-        }
-        // azure is outside the streaming set, so file_content_streaming never selects it
-        ContentOperation::Streamed { .. } => Err(ContentWireError::Reply),
+    // azure is outside the streaming set, so file_content_streaming never selects it
+    let ContentOperation::Buffered { request } = operation else {
+        return Err(ContentWireError::Reply);
+    };
+    match call(&opened, client, AzureOperation::Content(request)).await? {
+        Reply::Content(content) => Ok(ContentReply::Buffered(Box::new(content))),
+        Reply::Object(_) | Reply::Page(_) | Reply::Deleted(_) => Err(ContentWireError::Reply),
     }
 }

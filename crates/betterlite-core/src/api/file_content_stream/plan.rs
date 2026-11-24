@@ -43,10 +43,13 @@ impl Plan<'_> {
     pub(super) fn azure(&self, client: Option<SuppliedSdk>) -> AzureContent {
         let settings = &self.settings;
         let options = &self.options;
+        let api_base = settings.azure_base(options).map(str::to_owned);
+        let api_key = settings.azure_api_key(options).cloned();
+        let api_version = settings.azure_version(options).map(str::to_owned);
         AzureContent {
-            api_base: settings.azure_base(options).map(str::to_owned),
-            api_key: settings.azure_api_key(options).cloned(),
-            api_version: settings.azure_version(options).map(str::to_owned),
+            api_base,
+            api_key,
+            api_version,
             max_retries: self.kwargs.max_retries,
             mode: self.mode,
             client,

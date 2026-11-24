@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_core::api::assistant_threads::error::sdk_class;
 use betterlite_core::api::file_content_stream::StreamedContent;
-use betterlite_core::api::file_content_stream::error::FileContentError;
+use betterlite_core::api::file_content_stream::error::{BadRequest, FileContentError};
 use betterlite_core::api::file_http_content::error::ContentError;
 use betterlite_core::api::vector_store_http_write::error::BaseLlmException;
 use betterlite_openai::files::error::{FilesError, StatusError};
@@ -156,23 +156,25 @@ fn rejected(
     let request = error
         .bad_request()
         .ok_or_else(|| SdkHttpError::Invalid(error.to_string()))?;
-    Ok((
-        Failure {
-            class: String::from("BadRequestError"),
-            status: 400,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: format!("litellm.BadRequestError: {error}"),
-        },
-        Placeholder {
-            body: request.body.to_owned(),
-            method: request.method.to_owned(),
-            url: request.url.to_owned(),
-            model: request.model.to_owned(),
-            provider: request.llm_provider.to_owned(),
-        },
-    ))
+    let failure = Failure {
+        class: String::from("BadRequestError"),
+        status: 400,
+        kind: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message: format!("litellm.BadRequestError: {error}"),
+    };
+    Ok((failure, placeholder(request)))
+}
+
+fn placeholder(request: BadRequest<'_>) -> Placeholder {
+    Placeholder {
+        body: request.body.to_owned(),
+        method: request.method.to_owned(),
+        url: request.url.to_owned(),
+        model: request.model.to_owned(),
+        provider: request.llm_provider.to_owned(),
+    }
 }
 
 // LiteLLM's ValueError: no SDK class, a zero status and no type, param or code

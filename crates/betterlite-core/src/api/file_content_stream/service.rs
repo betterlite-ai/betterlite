@@ -68,17 +68,8 @@ where
         if call.stream && should_stream_file_content(selection.provider.as_deref()) {
             return self.streamed(call, &selection, context).await;
         }
-        self.buffered(call, &selection, context).await
-    }
-
-    async fn buffered<'call>(
-        &self,
-        call: &ContentCall<'call>,
-        selection: &Selection,
-        context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
-    ) -> Reply<ContentAnswer, Dispatch> {
-        let target = self.target(call, selection, context)?;
-        match self
+        let target = self.target(call, &selection, context)?;
+        let reply = self
             .dispatch
             .content(
                 target,
@@ -87,11 +78,8 @@ where
                 },
             )
             .await
-            .map_err(FileContentError::Dispatch)?
-        {
-            ContentReply::Buffered(content) => Ok(ContentAnswer::Buffered(content)),
-            ContentReply::Streamed(_stream) => Err(FileContentError::Reply),
-        }
+            .map_err(FileContentError::Dispatch)?;
+        buffered_answer(reply)
     }
 
     // file_content's provider branch: the xai batch shortcut, then the provider's config, then the named fallbacks
@@ -110,40 +98,31 @@ where
             }));
         }
         let id = known_provider::<Dispatch::Error>(selection.provider.as_deref())?;
-        match self.dispatch.files_config(id) {
-            Some(config) => Ok(self.configured(call, selection, config, context)),
-            None => self.named(call, selection, context),
-        }
-    }
-
-    // a provider config keeps only an HTTPHandler: neither SDK client class reaches the generic handler
-    fn configured<'call>(
-        &self,
-        call: &ContentCall<'call>,
-        selection: &Selection,
-        config: Dispatch::Config,
-        context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
-    ) -> ContentTarget<'call, Dispatch::Config, Dispatch::Client> {
         let ContentContext {
             trusted,
-            client: caller_client,
+            client,
             logger,
             logging: _logging,
         } = context;
-        let client = match caller_client {
-            Some(CallerClient::Http(supplied)) => Some(supplied),
-            Some(CallerClient::Sdk(SuppliedSdk::Azure | SuppliedSdk::OpenAi)) | None => None,
+        // each target takes only its own client class: an HTTPHandler reaches a config, an SDK kind reaches azure
+        let (sdk, http) = match client {
+            Some(CallerClient::Sdk(kind)) => (Some(kind), None),
+            Some(CallerClient::Http(handler)) => (None, Some(handler)),
+            None => (None, None),
         };
-        ContentTarget::Generic(Box::new(self.generic(
-            call,
-            selection,
-            config,
-            ContentInputs {
-                trusted,
-                client,
-                logger,
-            },
-        )))
+        if let Some(config) = self.dispatch.files_config(id) {
+            return Ok(ContentTarget::Generic(Box::new(self.generic(
+                call,
+                selection,
+                config,
+                ContentInputs {
+                    trusted,
+                    client: http,
+                    logger,
+                },
+            ))));
+        }
+        self.named(call, selection, sdk)
     }
 
     // without a provider config: the OpenAI-compatible names, then azure, then the 400 LiteLLM raises
@@ -151,26 +130,20 @@ where
         &self,
         call: &ContentCall<'call>,
         selection: &Selection,
-        context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
+        client: Option<SuppliedSdk>,
     ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
         let name = selection.provider.as_deref().unwrap_or_default();
-        if COMPATIBLE_PROVIDERS.contains(&name) {
-            return Ok(ContentTarget::Compatible(
+        match name {
+            name if COMPATIBLE_PROVIDERS.contains(&name) => Ok(ContentTarget::Compatible(
                 self.plan(call.kwargs, selection.mode).compatible(None),
-            ));
+            )),
+            "azure" => Ok(ContentTarget::Azure(
+                self.plan(call.kwargs, selection.mode).azure(client),
+            )),
+            other => Err(FileContentError::Unsupported {
+                provider: other.to_owned(),
+            }),
         }
-        if name == "azure" {
-            let supplied = match context.client {
-                Some(CallerClient::Sdk(kind)) => Some(kind),
-                Some(CallerClient::Http(_)) | None => None,
-            };
-            return Ok(ContentTarget::Azure(
-                self.plan(call.kwargs, selection.mode).azure(supplied),
-            ));
-        }
-        Err(FileContentError::Unsupported {
-            provider: name.to_owned(),
-        })
     }
 
     pub(super) fn generic<'call>(
@@ -230,6 +203,13 @@ where
 }
 
 // LiteLLM's FileContentRequest: the timeout stays out of it, since every handler passes its own deadline
+fn buffered_answer<D: FileContentDispatch>(reply: ContentReply) -> Reply<ContentAnswer, D> {
+    match reply {
+        ContentReply::Buffered(content) => Ok(ContentAnswer::Buffered(content)),
+        ContentReply::Streamed(_stream) => Err(FileContentError::Reply),
+    }
+}
+
 fn content_request(call: &ContentCall<'_>) -> FileContentRequest {
     FileContentRequest {
         file_id: call.file_id.to_owned(),

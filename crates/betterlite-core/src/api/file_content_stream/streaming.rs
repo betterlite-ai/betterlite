@@ -15,7 +15,7 @@ use crate::api::file_stream_logging::source::{
     AsyncByteSource, CloseCall, CloseResult, SourceFailure, StreamSource,
 };
 use crate::api::file_stream_logging::{FileContentStreamingResponse, FileStreamSetup};
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 use super::error::FileContentError;
 use super::plan::known_provider;
@@ -79,45 +79,17 @@ where
     ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
         let name = selection.provider.as_deref().unwrap_or_default();
         if COMPATIBLE_PROVIDERS.contains(&name) {
-            let supplied = match client {
-                Some(CallerClient::Sdk(SuppliedSdk::OpenAi)) => Some(SuppliedSdk::OpenAi),
-                Some(CallerClient::Sdk(SuppliedSdk::Azure) | CallerClient::Http(_)) | None => None,
-            };
             return Ok(ContentTarget::Compatible(
-                self.plan(call.kwargs, selection.mode).compatible(supplied),
+                self.plan(call.kwargs, selection.mode)
+                    .compatible(supplied_openai(client)),
             ));
         }
-        if name == "vertex_ai" {
-            return self.vertex_target(call, selection, client, credentials);
-        }
-        Err(FileContentError::UnsupportedStreaming {
-            provider: name.to_owned(),
-        })
-    }
-
-    // vertex raises on the sync entry first, then keeps the caller's client only when it is an AsyncHTTPHandler
-    fn vertex_target<'call>(
-        &self,
-        call: &ContentCall<'call>,
-        selection: &Selection,
-        client: Option<CallerClient<'call, Dispatch::Client>>,
-        credentials: ContentCredentials<'call>,
-    ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
-        if !selection.mode.is_async {
-            return Err(FileContentError::SyncVertexStreaming);
-        }
-        let supplied = match client {
-            Some(CallerClient::Http(handler)) if handler.kind == ClientKind::Asynchronous => {
-                Some(handler)
-            }
-            Some(CallerClient::Http(_) | CallerClient::Sdk(_)) | None => None,
-        };
-        let id = known_provider::<Dispatch::Error>(selection.provider.as_deref())?;
-        let Some(config) = self.dispatch.files_config(id) else {
+        if name != "vertex_ai" {
             return Err(FileContentError::UnsupportedStreaming {
-                provider: selection.provider.clone().unwrap_or_default(),
+                provider: name.to_owned(),
             });
-        };
+        }
+        let config = self.vertex_config(selection)?;
         let ContentCredentials { trusted, logger } = credentials;
         Ok(ContentTarget::Generic(Box::new(self.generic(
             call,
@@ -125,10 +97,23 @@ where
             config,
             ContentInputs {
                 trusted,
-                client: supplied,
+                client: supplied_async_http(client),
                 logger,
             },
         ))))
+    }
+
+    // vertex raises on the sync entry first, then needs a registered provider config
+    fn vertex_config(&self, selection: &Selection) -> Reply<Dispatch::Config, Dispatch> {
+        if !selection.mode.is_async {
+            return Err(FileContentError::SyncVertexStreaming);
+        }
+        let id = known_provider::<Dispatch::Error>(selection.provider.as_deref())?;
+        self.dispatch
+            .files_config(id)
+            .ok_or_else(|| FileContentError::UnsupportedStreaming {
+                provider: selection.provider.clone().unwrap_or_default(),
+            })
     }
 
     async fn dispatch_streamed<'call>(
@@ -185,6 +170,25 @@ where
             headers,
             exit,
         }))
+    }
+}
+
+const fn supplied_openai<Client>(client: Option<CallerClient<'_, Client>>) -> Option<SuppliedSdk> {
+    match client {
+        Some(CallerClient::Sdk(SuppliedSdk::OpenAi)) => Some(SuppliedSdk::OpenAi),
+        Some(CallerClient::Sdk(SuppliedSdk::Azure) | CallerClient::Http(_)) | None => None,
+    }
+}
+
+// vertex keeps the caller's client only as an AsyncHTTPHandler
+fn supplied_async_http<'call, Client>(
+    client: Option<CallerClient<'call, Client>>,
+) -> Option<SuppliedClient<'call, Client>> {
+    match client {
+        Some(CallerClient::Http(handler)) if handler.kind == ClientKind::Asynchronous => {
+            Some(handler)
+        }
+        Some(CallerClient::Http(_) | CallerClient::Sdk(_)) | None => None,
     }
 }
 

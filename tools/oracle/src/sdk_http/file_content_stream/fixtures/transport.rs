@@ -5,10 +5,12 @@ use betterlite_core::api::file_http_content::service::{
     BufferedReply, ClientSource, ContentRequest, ContentTransport, Reply, StreamedReply,
 };
 use betterlite_core::api::vector_store_http_write::error::ClientError;
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, StreamResponse};
+use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
+use url::Url;
 
 // The pooled client B2463's handler would create; a supplied HTTPHandler lends its headers instead
 pub(crate) struct ContentSource {
@@ -35,36 +37,37 @@ pub(crate) struct WireClient {
 
 impl ContentTransport for WireClient {
     async fn send(&self, request: ContentRequest) -> Result<BufferedReply, TransportError> {
-        let deadline = request.timeout.unwrap_or(self.client.limits.read_timeout);
-        let stream = self
-            .client
-            .send_following(outbound(self, request, deadline))
-            .await?;
+        let stream = self.open(request).await?;
         let url = stream.response.url().clone();
         let reply = stream.buffered(self.client.limits.body_bytes).await?;
-        Ok(Reply {
-            status: reply.status,
-            url,
-            headers: reply.headers,
-            body: reply.body,
-        })
+        Ok(reply_with(url, reply.status, reply.headers, reply.body))
     }
 
     async fn send_stream(&self, request: ContentRequest) -> Result<StreamedReply, TransportError> {
-        let deadline = request.timeout.unwrap_or(self.client.limits.read_timeout);
-        let stream = self
-            .client
-            .send_following(outbound(self, request, deadline))
-            .await?;
-        let status = stream.response.status().as_u16();
+        let stream = self.open(request).await?;
         let url = stream.response.url().clone();
+        let status = stream.response.status().as_u16();
         let headers = stream.response.headers().clone();
-        Ok(Reply {
-            status,
-            url,
-            headers,
-            body: stream.body_stream(),
-        })
+        Ok(reply_with(url, status, headers, stream.body_stream()))
+    }
+}
+
+impl WireClient {
+    async fn open(&self, request: ContentRequest) -> Result<StreamResponse, TransportError> {
+        let deadline = request.timeout.unwrap_or(self.client.limits.read_timeout);
+        self.client
+            .send_following(outbound(self, request, deadline))
+            .await
+    }
+}
+
+// the answered URL is the response's own, since a redirect changes it from the requested one
+const fn reply_with<B>(url: Url, status: u16, headers: HeaderMap, body: B) -> Reply<B> {
+    Reply {
+        status,
+        url,
+        headers,
+        body,
     }
 }
 
