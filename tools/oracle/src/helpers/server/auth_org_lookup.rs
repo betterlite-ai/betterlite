@@ -14,6 +14,7 @@ use betterlite_db::database_availability::policy::AllowRequestsOnOutage;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use rust_decimal::prelude::ToPrimitive;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tracing::subscriber::set_default;
@@ -104,10 +105,11 @@ fn org_view(org: Option<&OrganizationTable>) -> Value {
     })
 }
 
+// the ceiling stays the float LiteLLM declares, not the text a lone Decimal serializes to
 fn budget_view(budget: Option<&LiteLLMBudgetTable>) -> Value {
     budget.map_or(Value::Null, |row| {
         json!({
-            "max_budget": row.max_budget,
+            "max_budget": row.max_budget.as_ref().and_then(ToPrimitive::to_f64),
             "allowed_models": row.allowed_models,
         })
     })
