@@ -203,7 +203,7 @@ async fn fails_when_the_return_value_has_no_json_form() {
     load_tool(&fixture, "b8871_thing", source, "thing").await;
     match call(&fixture, "tool", "{}").await {
         Err(ToolHandlerError::Failed(message)) => {
-            assert_eq!(message, "a Python object value has no JSON form")
+            assert_eq!(message, "a Python object value has no JSON form");
         }
         other => panic!("expected the call to fail, got {other:?}"),
     }
