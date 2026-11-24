@@ -4,7 +4,7 @@ pub mod source;
 
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use crate::credential_contracts::auth_config::AuthConfig;
 use crate::credential_contracts::auth_spec::AuthSpecKind;
@@ -19,7 +19,21 @@ use super::collaborators::{
 };
 use super::token_cache::ExchangedTokenCache;
 
+pub trait WallClock: Send + Sync {
+    fn now(&self) -> DateTime<Utc>;
+}
+
+#[derive(Debug, Default)]
+pub struct SystemWallClock;
+
+impl WallClock for SystemWallClock {
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+}
+
 pub struct Collaborators {
+    pub wall_clock: Arc<dyn WallClock>,
     pub oauth_token_store: Arc<dyn OAuthTokenStore>,
     pub token_exchanger: Arc<dyn TokenExchanger>,
     pub token_endpoint: Arc<dyn TokenEndpointClient>,
@@ -31,6 +45,7 @@ pub struct Collaborators {
 impl Default for Collaborators {
     fn default() -> Self {
         Self {
+            wall_clock: Arc::new(SystemWallClock),
             oauth_token_store: Arc::new(NullTokenStore),
             token_exchanger: Arc::new(NullTokenExchanger),
             token_endpoint: Arc::new(NullTokenEndpoint),
@@ -42,6 +57,12 @@ impl Default for Collaborators {
 }
 
 impl Collaborators {
+    #[must_use]
+    pub fn with_wall_clock(mut self, clock: Arc<dyn WallClock>) -> Self {
+        self.wall_clock = clock;
+        self
+    }
+
     #[must_use]
     pub fn with_oauth_token_store(mut self, store: Arc<dyn OAuthTokenStore>) -> Self {
         self.oauth_token_store = store;
@@ -110,7 +131,8 @@ impl UpstreamCredentialProvider {
                 arms::user_token(subject, server, &config.header, caller).await
             }
             AuthConfig::IdJag(config) => {
-                arms::id_jag(subject, server, config, &self.collaborators, Utc::now()).await
+                let now = self.collaborators.wall_clock.now();
+                arms::id_jag(subject, server, config, &self.collaborators, now).await
             }
             AuthConfig::AuthorizationCode(config) => {
                 let caller = arms::CallerToken::Stored(&*self.collaborators.oauth_token_store);

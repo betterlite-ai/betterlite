@@ -4,6 +4,7 @@ use std::io::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credential_contracts::auth_config::id_jag::ClientAuth;
@@ -21,7 +22,7 @@ use super::super::collaborators::{
     BoxFuture, ClientCredentialsSource, CredentialRequest, ExchangeRequest, ExchangedToken,
     OAuthToken, OAuthTokenStore, TokenEndpointClient, TokenExchanger, TokenStoreUnavailable,
 };
-use super::super::resolver::{Collaborators, UpstreamCredentialProvider};
+use super::super::resolver::{Collaborators, UpstreamCredentialProvider, WallClock};
 
 pub(super) fn server_from(encoded: &str) -> MCPServer {
     serde_json::from_str(encoded).expect("a valid server record")
@@ -425,16 +426,43 @@ pub(super) fn shared_credentials(source: Arc<FakeCredentials>) -> Arc<dyn Client
     source
 }
 
+pub(super) fn instant(epoch_seconds: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp(epoch_seconds, 0).expect("a fixture instant inside the calendar")
+}
+
+pub(super) struct FakeClock {
+    now: Mutex<DateTime<Utc>>,
+}
+
+impl FakeClock {
+    pub(super) fn at(epoch_seconds: i64) -> Self {
+        Self {
+            now: Mutex::new(instant(epoch_seconds)),
+        }
+    }
+
+    pub(super) fn advance_to(&self, epoch_seconds: i64) {
+        *self.now.lock().unwrap_or_else(PoisonError::into_inner) = instant(epoch_seconds);
+    }
+}
+
+impl WallClock for FakeClock {
+    fn now(&self) -> DateTime<Utc> {
+        *self.now.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+pub(super) fn shared_clock(clock: Arc<FakeClock>) -> Arc<dyn WallClock> {
+    clock
+}
+
 pub(super) struct FakeAssertions {
     assertion: Option<SsoIdentityAssertion>,
     unavailable: bool,
 }
 
 impl FakeAssertions {
-    pub(super) fn storing(
-        user_id_token: &str,
-        expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    ) -> Self {
+    pub(super) fn storing(user_id_token: &str, expires_at: Option<DateTime<Utc>>) -> Self {
         Self {
             assertion: Some(SsoIdentityAssertion {
                 id_token: secret(user_id_token),

@@ -10,8 +10,8 @@ use crate::credential_contracts::errors::{CredError, Unauthorized};
 use crate::credential_contracts::header_carrier::HeaderCarrier;
 use crate::credential_contracts::server_spec::ServerSpec;
 
-use super::super::resolver::Collaborators;
 use super::super::resolver::source::resolve_with_source;
+use super::super::resolver::{Collaborators, SystemWallClock, WallClock};
 use super::support::{
     FakeAssertions, FakeCredentials, FakeEndpoint, FakeExchanger, FakeTokens, applied, bearer,
     failure, header, id_jag_spec, param, provider, request, shared_credentials, shared_endpoint,
@@ -578,4 +578,10 @@ async fn invalidate_with_no_inbound_noop() {
         .await;
     assert!(exchanger.invalidations().is_empty());
     assert!(exchanger.exchanges().is_empty());
+}
+
+#[test]
+fn the_system_clock_reads_the_wall_time() {
+    let clock = SystemWallClock;
+    assert!(clock.now().timestamp() >= 1_700_000_000);
 }

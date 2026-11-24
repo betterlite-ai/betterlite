@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
-use chrono::DateTime;
-
 use crate::credential_contracts::errors::CredError;
 use crate::credential_contracts::server_spec::ServerSpec;
 
 use super::super::resolver::{Collaborators, UpstreamCredentialProvider};
 use super::super::token_cache::ExchangedTokenCache;
 use super::support::{
-    FakeAssertions, FakeEndpoint, RecordedAuth, bearer, failure, param, provider, shared_endpoint,
-    spec_from, subject,
+    FakeAssertions, FakeClock, FakeEndpoint, RecordedAuth, bearer, failure, instant, param,
+    provider, shared_clock, shared_endpoint, spec_from, subject,
 };
 
 const MISSING_CALLER: &str = "ID-JAG requires an identified caller; this request carries neither an identity token nor a resolved LiteLLM user.";
@@ -17,6 +15,8 @@ const NO_ASSERTION: &str = "ID-JAG requires an IdP identity assertion for this u
 const EXPIRED_ASSERTION: &str = "The stored IdP identity assertion for this user has expired. Sign in through LiteLLM SSO again to capture a current one.";
 const STORE_OUTAGE: &str =
     "The IdP identity assertion store is unreachable, so ID-JAG cannot resolve a subject.";
+const FIXTURE_NOW: i64 = 1_700_000_000;
+const ASSERTION_EXPIRY: i64 = 1_700_003_600;
 
 fn id_jag_spec_with(
     org_endpoint: &str,
@@ -211,13 +211,14 @@ async fn id_jag_fingerprint_includes_client_auth() {
 #[tokio::test]
 async fn id_jag_subject_token_from_the_store() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
-    let future = DateTime::from_timestamp(4_102_444_800, 0).unwrap();
+    let clock = Arc::new(FakeClock::at(FIXTURE_NOW));
     let collaborators = Collaborators::default()
         .with_sso_assertion_store(Arc::new(FakeAssertions::storing(
             "stored-id-token",
-            Some(future),
+            Some(instant(ASSERTION_EXPIRY)),
         )))
-        .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint)));
+        .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint)))
+        .with_wall_clock(shared_clock(clock));
     let resolver = provider(collaborators);
     let auth = resolver
         .resolve_credentials(&subject("org-1", "user-1", None), &standard_spec())
@@ -349,12 +350,24 @@ async fn id_jag_requires_a_stored_assertion() {
 
 #[tokio::test]
 async fn id_jag_rejects_an_expired_assertion() {
-    let expired_at = DateTime::from_timestamp(0, 0).unwrap();
-    let collaborators = Collaborators::default().with_sso_assertion_store(Arc::new(
-        FakeAssertions::storing("id-token", Some(expired_at)),
-    ));
+    let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
+    let clock = Arc::new(FakeClock::at(FIXTURE_NOW));
+    let collaborators = Collaborators::default()
+        .with_sso_assertion_store(Arc::new(FakeAssertions::storing(
+            "id-token",
+            Some(instant(ASSERTION_EXPIRY)),
+        )))
+        .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint)))
+        .with_wall_clock(shared_clock(Arc::clone(&clock)));
+    let resolver = provider(collaborators);
+    let fresh = resolver
+        .resolve_credentials(&subject("org-1", "user-1", None), &standard_spec())
+        .await
+        .unwrap();
+    assert_eq!(bearer(&fresh), "bearer");
+    clock.advance_to(ASSERTION_EXPIRY);
     let error = failure(
-        provider(collaborators)
+        resolver
             .resolve_credentials(&subject("org-1", "user-1", None), &standard_spec())
             .await,
     );
@@ -362,6 +375,7 @@ async fn id_jag_rejects_an_expired_assertion() {
         error,
         CredError::PreconditionRequired(EXPIRED_ASSERTION.to_owned())
     );
+    assert_eq!(endpoint.calls().len(), 2);
 }
 
 #[tokio::test]
