@@ -248,3 +248,8 @@ where
         teams,
     })
 }
+
+// clippy::pub_use is denied and no expect may be added, and the oracle helper crate may not depend on betterlite-router, so these aliases keep the scope's deployment and group types nameable there
+pub type Deployment = DeploymentSpec;
+pub type GroupLookups = AccessGroups;
+pub type GroupModels = AccessGroupMap;

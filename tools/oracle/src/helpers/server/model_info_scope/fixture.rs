@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_server::model_info_scope::compose::Deployment;
 use betterlite_server::model_info_scope::teams::TeamModelLists;
 use betterlite_server::model_visibility::testing::{Row as SnapshotRow, Snapshot};
 use serde_json::{Value, json};
@@ -34,9 +34,9 @@ pub(super) fn fixture(input: &Input) -> Result<Snapshot, Failure> {
     Ok(Snapshot::build(&rows, &aliases)?)
 }
 
-pub(super) fn specs(rows: &[RawRow]) -> Vec<DeploymentSpec> {
+pub(super) fn specs(rows: &[RawRow]) -> Vec<Deployment> {
     rows.iter()
-        .map(|row| DeploymentSpec {
+        .map(|row| Deployment {
             model_name: row.model_name.clone(),
             litellm_params: row.litellm_params.clone(),
             model_info: row.model_info.clone(),
@@ -45,7 +45,7 @@ pub(super) fn specs(rows: &[RawRow]) -> Vec<DeploymentSpec> {
         .collect()
 }
 
-pub(super) fn spec_ids(models: &[DeploymentSpec]) -> Value {
+pub(super) fn spec_ids(models: &[Deployment]) -> Value {
     let ids: Vec<Value> = models
         .iter()
         .map(|model| {

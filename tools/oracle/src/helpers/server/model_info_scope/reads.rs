@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_router::model_group_lookups::access_groups::AccessGroupMap;
 use betterlite_server::model_info_scope::compose::{
-    ModelCreator, ScopeReads, TeamSelection, UserScope,
+    GroupModels, ModelCreator, ScopeReads, TeamSelection, UserScope,
 };
 use betterlite_server::model_info_scope::error::ScopeError;
 use betterlite_server::model_info_scope::teams::TeamScope;
@@ -17,7 +16,7 @@ pub(super) struct CaseReads {
     user_id: Option<String>,
     user: Option<UserScope>,
     teams: Vec<TeamScope>,
-    groups: AccessGroupMap,
+    groups: GroupModels,
 }
 
 impl CaseReads {
@@ -48,7 +47,7 @@ impl ScopeReads for CaseReads {
     async fn access_group_models(
         &self,
         _access_group_ids: &[String],
-    ) -> Result<AccessGroupMap, ScopeError> {
+    ) -> Result<GroupModels, ScopeError> {
         Ok(self.groups.clone())
     }
 }

@@ -2,14 +2,14 @@ mod fixture;
 mod reads;
 mod records;
 
-use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
-use betterlite_router::model_group_lookups::access_groups::AccessGroups;
 use betterlite_server::model_info_scope::annotate::visible_models;
+use betterlite_server::model_info_scope::compose::GroupLookups;
 use betterlite_server::model_info_scope::compose::{
     ScopeCaller, TeamSelection, get_all_team_models, non_admin_all_models, read_caller_rows,
     read_team_models, read_user_models,
 };
 use betterlite_server::model_info_scope::grants::{direct_access_models, grant_deployment_ids};
+use betterlite_server::model_visibility::testing::Snapshot;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
@@ -56,19 +56,19 @@ fn selection(input: &Input) -> Result<TeamSelection, Failure> {
 fn answer(input: &Input) -> Result<Value, Failure> {
     let runtime = Builder::new_current_thread().enable_all().build()?;
     let snapshot = fixture(input)?;
-    let lookup = snapshot.lookup();
     match input.function {
         Predicate::GrantResolution => {
-            let ids = grant_deployment_ids(&input.grant, &lookup, &AccessGroups::default())?;
+            let ids =
+                grant_deployment_ids(&input.grant, &snapshot.lookup(), &GroupLookups::default())?;
             Ok(json!({"ids": ids}))
         }
-        Predicate::DirectAccess => direct_ids(input, &lookup),
+        Predicate::DirectAccess => direct_ids(input, &snapshot),
         Predicate::TeamModels => {
             let read = runtime.block_on(read_team_models(&selection(input)?, &reads(input)))?;
             Ok(team_map(&get_all_team_models(
                 read,
-                &lookup,
-                &AccessGroups::default(),
+                &snapshot.lookup(),
+                &GroupLookups::default(),
             )?))
         }
         Predicate::NonAdmin => {
@@ -79,24 +79,25 @@ fn answer(input: &Input) -> Result<Value, Failure> {
                 &alice,
                 Some(&reads(input)),
             ))?;
-            Ok(spec_ids(&non_admin_all_models(read, &lookup)?))
+            Ok(spec_ids(&non_admin_all_models(read, &snapshot.lookup())?))
         }
-        Predicate::Populate => populate(input, &lookup, &runtime, false),
-        Predicate::TeamAndDirect => populate(input, &lookup, &runtime, true),
+        Predicate::Populate => populate(input, &snapshot, &runtime, false),
+        Predicate::TeamAndDirect => populate(input, &snapshot, &runtime, true),
         Predicate::Filter => Ok(spec_ids(&visible_models(specs(&input.all_models)))),
     }
 }
 
-fn direct_ids(input: &Input, lookup: &CatalogLookup<'_>) -> Result<Value, Failure> {
+fn direct_ids(input: &Input, snapshot: &Snapshot) -> Result<Value, Failure> {
     let user = input.user.as_ref().ok_or(Failure::MissingUser)?;
-    let groups = AccessGroups::default();
-    let ids = direct_access_models(&user.models, &input.key_models, lookup, &groups)?;
+    let lookup = snapshot.lookup();
+    let groups = GroupLookups::default();
+    let ids = direct_access_models(&user.models, &input.key_models, &lookup, &groups)?;
     Ok(json!({"ids": ids}))
 }
 
 fn populate(
     input: &Input,
-    lookup: &CatalogLookup<'_>,
+    snapshot: &Snapshot,
     runtime: &Runtime,
     visible_only: bool,
 ) -> Result<Value, Failure> {
@@ -107,7 +108,7 @@ fn populate(
         specs(&input.all_models),
         visible_only,
         read,
-        (lookup, &AccessGroups::default()),
+        (&snapshot.lookup(), &GroupLookups::default()),
     )?;
     Ok(spec_ids(&models))
 }
