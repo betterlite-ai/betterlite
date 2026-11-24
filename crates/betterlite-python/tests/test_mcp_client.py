@@ -358,6 +358,15 @@ def test_signature_refused_args() -> None:
     assert refusal_of(partial(MCPClient, logging_callback=REFUSED)) == "logging_callback"
 
 
+def test_signature_oauth() -> None:
+    with pytest.raises(ValueError, match="not supported by the native MCP client"):
+        MCPClient(auth_type=MCPAuth.oauth2_id_jag)
+    with pytest.raises(ValueError, match="not supported by the native MCP client"):
+        MCPClient(auth_type=MCPAuth.true_passthrough)
+    with pytest.raises(ValueError, match="not supported by the native MCP client"):
+        MCPClient(auth_type=MCPAuth.oauth_delegate)
+
+
 # ast-grep-ignore: no-one-line-functions
 def test_signature_progress() -> None:
     assert asyncio.run(progress_refused()) == "host_progress_callback"
