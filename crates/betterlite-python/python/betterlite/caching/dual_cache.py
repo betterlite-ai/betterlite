@@ -1,0 +1,169 @@
+import json
+from collections.abc import Sequence
+from typing import Final
+
+from pydantic import JsonValue
+
+import betterlite
+from betterlite._native import NativeDual
+from betterlite.caching._backend import _number, _text, _ttl_of, _value
+from betterlite.caching.base_cache import BaseCache
+from betterlite.caching.in_memory_cache import InMemoryCache
+from betterlite.caching.redis_cache import RedisCache
+
+DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE: Final = 1000
+_DEFAULT_BATCH_CACHE_EXPIRY: Final = 10.0
+
+
+class DualCache(BaseCache):
+    def __init__(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L87-L95
+        self,
+        in_memory_cache: InMemoryCache | None = None,
+        redis_cache: RedisCache | None = None,
+        default_in_memory_ttl: float | None = None,
+        default_redis_ttl: float | None = None,
+        default_redis_batch_cache_expiry: float | None = None,
+        default_max_redis_batch_cache_size: int = DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE,
+    ) -> None:
+        super().__init__()
+        self.in_memory_cache = InMemoryCache() if in_memory_cache is None else in_memory_cache
+        self.redis_cache = redis_cache
+        configured_expiry = (
+            betterlite.default_redis_batch_cache_expiry
+            if default_redis_batch_cache_expiry is None
+            else default_redis_batch_cache_expiry
+        )
+        self.redis_batch_cache_expiry = (
+            _DEFAULT_BATCH_CACHE_EXPIRY if configured_expiry is None else configured_expiry
+        )
+        configured_memory_ttl = (
+            betterlite.default_in_memory_ttl
+            if default_in_memory_ttl is None
+            else default_in_memory_ttl
+        )
+        self.default_in_memory_ttl = configured_memory_ttl
+        configured_redis_ttl = (
+            betterlite.default_redis_ttl if default_redis_ttl is None else default_redis_ttl
+        )
+        self.default_redis_ttl = configured_redis_ttl
+        settings: dict[str, JsonValue] = {
+            "batch_cache_expiry": self.redis_batch_cache_expiry,
+            "max_redis_batch_cache_size": default_max_redis_batch_cache_size,
+        }
+        if configured_memory_ttl is not None:
+            settings["default_in_memory_ttl"] = configured_memory_ttl
+        if configured_redis_ttl is not None:
+            settings["default_redis_ttl"] = configured_redis_ttl
+        self.native = NativeDual(
+            self.in_memory_cache.native,
+            None if redis_cache is None else redis_cache.native,
+            json.dumps(settings),
+        )
+
+    # LiteLLM stamps default_in_memory_ttl on a memory write that carries no ttl of its own.
+    def _memory_kwargs(self, kwargs: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if "ttl" in kwargs or self.default_in_memory_ttl is None:
+            return kwargs
+        return {**kwargs, "ttl": self.default_in_memory_ttl}
+
+    def set_cache(
+        self,
+        key: str,
+        value: JsonValue,
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150
+        **kwargs: JsonValue,
+    ) -> None:
+        if local_only:
+            self.in_memory_cache.set_cache(key, value, **self._memory_kwargs(kwargs))
+            return
+        self.native.set(key, _text(value), _ttl_of(kwargs))
+
+    async def async_set_cache(
+        self,
+        key: str,
+        value: JsonValue,
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505
+        **kwargs: JsonValue,
+    ) -> None:
+        if local_only:
+            await self.in_memory_cache.async_set_cache(
+                key, value, **self._memory_kwargs(kwargs)
+            )
+            return
+        await self.native.async_set(key, _text(value), _ttl_of(kwargs))
+
+    def get_cache(
+        self,
+        key: str,
+        parent_otel_span: JsonValue = None,
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L191
+        **kwargs: JsonValue,
+    ) -> JsonValue:
+        _unread = (parent_otel_span, kwargs)
+        if local_only:
+            return self.in_memory_cache.get_cache(key)
+        text = self.native.get(key)
+        return None if text is None else _value(text)
+
+    async def async_get_cache(
+        self,
+        key: str,
+        parent_otel_span: JsonValue = None,
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261-L267
+        **kwargs: JsonValue,
+    ) -> JsonValue:
+        _unread = (parent_otel_span, kwargs)
+        if local_only:
+            return await self.in_memory_cache.async_get_cache(key)
+        text = await self.native.async_get(key)
+        return None if text is None else _value(text)
+
+    def increment_cache(
+        self,
+        key: str,
+        value: int,
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164
+        **kwargs: JsonValue,
+    ) -> int:
+        if local_only:
+            return int(self.in_memory_cache.increment_cache(key, value, **kwargs))
+        return int(_number(self.native.increment(key, value, _ttl_of(kwargs))))
+
+    async def async_increment_cache(
+        self,
+        key: str,
+        value: float,
+        parent_otel_span: JsonValue = None,
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L565-L573
+        refresh_ttl: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L571
+        **kwargs: JsonValue,
+    ) -> float | None:
+        _unread = (parent_otel_span, refresh_ttl, kwargs)
+        if local_only:
+            return await self.in_memory_cache.async_increment(key, value, **kwargs)
+        return float(_number(await self.native.async_increment(key, value, _ttl_of(kwargs))))
+
+    async def async_set_cache_pipeline(
+        self,
+        cache_list: Sequence[tuple[str, JsonValue]],
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L543-L545
+        **kwargs: JsonValue,
+    ) -> None:
+        for cache_key, cache_value in cache_list:
+            await self.async_set_cache(cache_key, cache_value, local_only, **kwargs)
+
+    def flush_cache(self) -> None:
+        self.native.flush()
+
+    def delete_cache(self, key: str) -> None:
+        self.native.delete([key])
+
+    async def async_delete_cache(self, key: str) -> None:
+        await self.native.async_delete([key])
+
+    async def async_delete_cache_keys(self, keys: Sequence[str]) -> None:
+        await self.native.async_delete(list(keys))
+
+    async def async_get_ttl(self, key: str) -> int | float | None:
+        text = await self.native.async_ttl(key)
+        return None if text is None else _number(text)

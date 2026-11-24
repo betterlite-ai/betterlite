@@ -1,0 +1,36 @@
+task: B8066
+deviations:
+  - what: The s3, gcs, azure-blob, redis-semantic, valkey-semantic and qdrant-semantic caches and the Redis cluster cache raise NotImplementedError naming the type, and their classes are not exported.
+    why: Their Rust backends are separate tasks (B4320 and later, B4350 and later, B4380 and later), so only the local, redis and disk backends exist here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L290
+  - what: An unknown type raises NotImplementedError("... cache type is not built yet"); LiteLLM has no else branch and leaves Cache.cache unset, so the failure surfaces later as an attribute error.
+    why: A missing backend should fail where the caller configures it, with the type in the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L290
+  - what: InMemoryCache raises UnsupportedCallArgument for a clock callable; LiteLLM accepts any callable.
+    why: A Python callable cannot drive the Rust cache's clock, and silently ignoring it would make a ttl test lie.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L60
+  - what: DiskCache stores through Rust's disk cache, not the diskcache package, so the directory layout differs and a folder written by LiteLLM is not read; the oracle environment has no diskcache, so the tests check this class on its own rather than against LiteLLM.
+    why: diskcache is not a dependency of the wheel and the disk backend belongs to the Rust crate (B4291).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L15-L26
+  - what: RedisCache.batch_cache_write writes each value immediately; LiteLLM appends it to redis_batch_writing_buffer and flushes at redis_flush_size entries.
+    why: The buffer rules live in the Rust dual cache (B4294, B4295), and the shared handle has no Python-side buffer to flush.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1391-L1398
+  - what: The synchronous Redis write stores the JSON form of the value; LiteLLM stores str(value) and reads it back through json.loads then ast.literal_eval, which cannot decode a plain Python string.
+    why: The Rust handle stores JSON so every JSON value round-trips, including strings; the bytes LiteLLM writes for a dict are not valid JSON, so the on-server form differs without changing what a caller reads back for JSON values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L830-L850
+  - what: RedisCache.async_increment accepts refresh_ttl and ignores it, so a key that already carries no expiry gets one from the cache default; LiteLLM sends EXPIRE when refresh_ttl is set and TTL otherwise.
+    why: The refresh rule belongs to the Rust increment (B4292); passing the flag through would change the Rust cache's contract for every caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
+  - what: The cache callback entries are added with plain list operations in betterlite.caching.caching; LiteLLM routes the success ones through litellm.logging_callback_manager.
+    why: betterlite has no logging_callback_manager yet (B5368 owns it), and append-when-missing leaves the same three lists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L291-L296
+  - what: This task has no helper oracle cases.
+    why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
+    link: ""
+kept_bugs:
+  - what: The disk cache hides falsy stored values, so a key written with 0, false, "" or an empty container reads back as missing.
+    why: A working LiteLLM setup can rely on the miss rather than on the stored value, and betterlite copies the filter in the Rust disk cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L45
+  - what: The synchronous Redis write swallows every backend error after a debug line, so a set against an unreachable or read-only server reports success.
+    why: LiteLLM callers run this path on every completion and depend on a cache outage not failing the call; the Rust handle keeps the same swallow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L847-L849
