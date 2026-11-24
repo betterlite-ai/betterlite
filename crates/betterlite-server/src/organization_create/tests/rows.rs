@@ -194,8 +194,7 @@ async fn organization_failure_keeps_children() {
         .await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(reply.error_text("message"), "Internal server error");
-    // the budget and permission rows written earlier survive the failed organization insert
-    // (one of the two budget rows is the fixture's, referenced by the seeded organization)
+    // the handler's budget and permission rows survive the failed insert, beside the fixture's budget row
     assert_eq!(app.database.budget_count().await, 2);
     assert_eq!(app.database.permission_count().await, 1);
     assert_eq!(
