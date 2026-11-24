@@ -251,10 +251,26 @@ async fn the_ui_grouped_start_time_page_delegates_to_the_keyset_pager() {
         kinds(&events),
         ["permitted", "groups", "representatives", "aggregate"]
     );
+    assert!(query_event(&events, "groups").contains("DESC"));
     let text = body(&reply);
     assert!(text.contains(r#""next_session_cursor":null"#));
     assert!(text.contains(r#""has_more":false"#));
     assert!(text.contains(r#""total":1"#));
+}
+
+#[tokio::test]
+async fn a_grouped_sort_other_than_start_time_uses_the_offset_read() {
+    let mut fixture = Fixture::with_rows(vec![session_row()]);
+    fixture.count = 1;
+    let (reply, events) = fixture
+        .call(
+            &format!("{UI}&group_by_session=true&sort_by=spend"),
+            Some(&internal("alice")),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(kinds(&events), ["permitted", "count", "rows"]);
+    assert!(query_event(&events, "rows").contains("DISTINCT ON"));
 }
 
 #[tokio::test]
