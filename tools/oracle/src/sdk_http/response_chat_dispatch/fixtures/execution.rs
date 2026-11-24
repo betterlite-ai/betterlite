@@ -107,6 +107,8 @@ pub(crate) struct RealExecution<'run> {
     pub(crate) env: &'run BTreeMap<String, String>,
 }
 
+type CreateDeps<'deps> = ResponsesCreateDeps<'deps, Outbound, Configs, Nothing, Nothing, ()>;
+
 #[async_trait]
 impl ResponsesExecution<()> for RealExecution<'_> {
     type Error = ExecutionFailure;
@@ -134,7 +136,6 @@ impl RealExecution<'_> {
             ..
         } = call;
         let request = create_call(params, litellm_params, extra_headers, self.api_base)?;
-        let (provider, model) = scripted(&request.model, request.custom_llm_provider.as_deref());
         let origin = Outbound::new(self.env)?;
         let resolver = ScriptedResolver;
         let configs = Configs {
@@ -191,26 +192,36 @@ impl RealExecution<'_> {
             state: logging,
             env: &environment,
         };
-        let created = if asynchronous {
-            let prompts = AsyncCreateDeps {
-                resolver: deps.resolver,
-                lookup: deps.lookup,
-                prompts: None,
-            };
-            let handoff = CreateExecution { deps: &deps };
-            aresponses(&prompts, &handoff, &request, (), &mut log)
-                .await
-                .map_err(ExecutionFailure::Async)?
-        } else {
-            create(&deps, &request, (), &mut log)
-                .await
-                .map_err(|error| ExecutionFailure::Sync {
-                    error,
-                    provider,
-                    model,
-                })?
-        };
+        let created = dispatch_create(&deps, &request, &mut log, asynchronous).await?;
         answer(created)
+    }
+}
+
+async fn dispatch_create(
+    deps: &CreateDeps<'_>,
+    request: &ResponsesCreateCall,
+    log: &mut LogContext<'_, '_>,
+    asynchronous: bool,
+) -> Result<Created<()>, ExecutionFailure> {
+    if asynchronous {
+        let prompts = AsyncCreateDeps {
+            resolver: deps.resolver,
+            lookup: deps.lookup,
+            prompts: None,
+        };
+        let handoff = CreateExecution { deps };
+        aresponses(&prompts, &handoff, request, (), log)
+            .await
+            .map_err(ExecutionFailure::Async)
+    } else {
+        let (provider, model) = scripted(&request.model, request.custom_llm_provider.as_deref());
+        create(deps, request, (), log)
+            .await
+            .map_err(|error| ExecutionFailure::Sync {
+                error,
+                provider,
+                model,
+            })
     }
 }
 

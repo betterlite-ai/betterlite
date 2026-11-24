@@ -14,19 +14,20 @@ use indexmap::IndexMap;
 use super::execution::{ExecutionFailure, RealExecution, env_flags};
 use super::fixtures::Fixture;
 use super::projection::{StreamViews, response_view};
+use super::{Call, Outcome, RunOutcome};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::Failure;
 
 pub(super) async fn execute(
-    call: &super::Call,
+    call: &Call,
     api_base: &str,
     env: &BTreeMap<String, String>,
-) -> Result<super::Outcome, SdkHttpError> {
+) -> Result<Outcome, SdkHttpError> {
     let mut runs = Vec::with_capacity(call.runs.len());
     for run in &call.runs {
         runs.push(run_once(run, api_base, env).await?);
     }
-    Ok(super::Outcome { runs })
+    Ok(Outcome { runs })
 }
 
 struct RunSpec {
@@ -71,23 +72,22 @@ async fn run_once(
     run: &Json,
     api_base: &str,
     env: &BTreeMap<String, String>,
-) -> Result<super::RunOutcome, SdkHttpError> {
+) -> Result<RunOutcome, SdkHttpError> {
     let spec = RunSpec::parse(run, api_base)?;
     let fixture = Fixture::new("completion")?;
     let execution = RealExecution { api_base, env };
-    let unit = ();
     let call = BridgeCall {
         kwargs: &spec.kwargs,
         model_response: ModelResponseSeed::default(),
         logging: fixture.state,
-        client: Some(&unit),
+        client: Some(&()),
         limits: ApiLimits::default(),
         reasoning_auto_summary: env_flags(env).1,
         post_stream: None,
     };
     match completion(&execution, call).await {
         Ok(output) => project(output).await,
-        Err(error) => Ok(super::RunOutcome {
+        Err(error) => Ok(RunOutcome {
             result: None,
             stream: None,
             failure: Some(failure_of(&error, &fixture.redactor)),
@@ -95,9 +95,9 @@ async fn run_once(
     }
 }
 
-async fn project(output: BridgeOutput) -> Result<super::RunOutcome, SdkHttpError> {
+async fn project(output: BridgeOutput) -> Result<RunOutcome, SdkHttpError> {
     match output {
-        BridgeOutput::Response(response) => Ok(super::RunOutcome {
+        BridgeOutput::Response(response) => Ok(RunOutcome {
             result: Some(response_view(&response)),
             stream: None,
             failure: None,
@@ -105,7 +105,7 @@ async fn project(output: BridgeOutput) -> Result<super::RunOutcome, SdkHttpError
         BridgeOutput::Chat(_chat) => Err(SdkHttpError::Invalid(String::from(
             "the bridge never passes a chat answer through",
         ))),
-        BridgeOutput::Stream(stream) => Ok(super::RunOutcome {
+        BridgeOutput::Stream(stream) => Ok(RunOutcome {
             result: None,
             stream: Some(drain(stream).await?),
             failure: None,

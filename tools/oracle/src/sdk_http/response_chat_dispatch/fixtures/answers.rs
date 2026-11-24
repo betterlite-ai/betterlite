@@ -33,7 +33,7 @@ pub(crate) fn answer(created: Created<()>) -> Result<Answer, ExecutionFailure> {
             source: live.source,
             hidden: Map::new(),
         }))),
-        Created::Synthetic(synthetic) => synthetic_answer(synthetic.response),
+        Created::Synthetic(synthetic) => synthetic_answer(&synthetic.response),
         Created::Chat(_outcome) => Err(ExecutionFailure::Sdk(invalid(
             "a chat outcome is not a responses answer",
         ))),
@@ -41,8 +41,8 @@ pub(crate) fn answer(created: Created<()>) -> Result<Answer, ExecutionFailure> {
 }
 
 // A provider without native streaming replays its completed response as the one event the iterator reads
-fn synthetic_answer(response: ResponsesApiResponse) -> Result<Answer, ExecutionFailure> {
-    let payload = serde_json::to_value(&response).map_err(|error| invalid(&error.to_string()))?;
+fn synthetic_answer(response: &ResponsesApiResponse) -> Result<Answer, ExecutionFailure> {
+    let payload = serde_json::to_value(response).map_err(|error| invalid(&error.to_string()))?;
     let mut event = Map::new();
     event.insert(
         String::from("type"),
