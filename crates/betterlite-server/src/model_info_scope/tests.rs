@@ -61,6 +61,15 @@ fn team_row(name: &str, id: &str, team: &str) -> DeploymentSpec {
     )
 }
 
+fn unnumbered(name: &str, info: Vec<(&str, Json)>) -> DeploymentSpec {
+    DeploymentSpec {
+        model_name: name.to_owned(),
+        litellm_params: object(vec![("model", Json::Text("openai/gpt-4o".to_owned()))]),
+        model_info: object(info),
+        extra: JsonObject::new(),
+    }
+}
+
 fn snapshot(rows: &[DeploymentSpec]) -> Snapshot {
     let parts: Vec<(String, JsonObject, Json)> = rows
         .iter()
