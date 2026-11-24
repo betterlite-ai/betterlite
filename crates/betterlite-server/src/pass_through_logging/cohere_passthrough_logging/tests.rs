@@ -664,7 +664,15 @@ fn cohere_route_chat_transforms_the_v2_reply_into_a_logged_model_response() {
         &Json::Text("stop".to_owned())
     );
     assert_eq!(field(choice, "index"), &json("0"));
-    let message = field(choice, "message");
+}
+
+#[test]
+fn cohere_route_chat_logs_the_message_and_usage() {
+    let response = transformed(CHAT_REPLY);
+    let Json::List(choices) = field(&response, "choices") else {
+        panic!("choices is a list");
+    };
+    let message = field(&choices[0], "message");
     assert_eq!(
         field(message, "content"),
         &Json::Text("hello world".to_owned())
@@ -754,6 +762,26 @@ fn cohere_embed_tools_decode_logs_the_reply_and_fills_the_response() {
     );
     assert_eq!(response.usage.prompt_tokens, 3);
     assert!(response.hidden_params.is_empty());
+}
+
+#[test]
+fn cohere_embed_tools_decode_logs_the_post_call() {
+    let pricing = Arc::new(RecordingPricing::new(Decimal::ZERO));
+    let builder = Arc::new(RecordingBuilder::default());
+    let request = object(r#"{"model": "embed-english-v3.0", "texts": ["hello"]}"#);
+    let texts = [Json::Text("hello".to_owned())];
+    let mut state = logging_state();
+    let _response = production_tools(&pricing, &builder)
+        .decode_embedding(
+            EmbeddingDecodeInput {
+                upstream_body: EMBED_REPLY,
+                request_body: &request,
+                model: "embed-english-v3.0",
+                input: &texts,
+            },
+            &mut state,
+        )
+        .expect("the embedding reply decodes");
     assert_eq!(
         call_log_detail(&state, "log_event_type"),
         Some(Json::Text("post_api_call".to_owned()))

@@ -60,34 +60,11 @@ impl CohereEmbeddingTools for CohereEmbeddingLogging {
     ) -> Result<EmbeddingResponse, PassthroughLoggingError> {
         let request_data = converted::<_, PromptsObject>(input.request_body)
             .map_err(PassthroughLoggingError::transform)?;
-        let mut texts = Vec::with_capacity(input.input.len());
-        for value in input.input {
-            match value {
-                Json::Text(text) => texts.push(text.clone()),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    return Err(PassthroughLoggingError::transform(
-                        CohereLoggingError::EmbeddingText,
-                    ));
-                }
-            }
-        }
+        let texts = embedding_input_texts(input.input)?;
         let redactor =
             Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(PassthroughLoggingError::transform)?;
         let sink = TracingSink;
-        let environment = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &redactor,
-            log: &sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: Utc::now().fixed_offset(),
-        };
+        let environment = logging_environment(&redactor, &sink);
         let mut recorder = Recorder::default();
         let decoded = decode_cohere_legacy_embedding(
             DecodeInput {
@@ -134,6 +111,43 @@ impl CohereEmbeddingTools for CohereEmbeddingLogging {
             .build(call_log, &response, input.start_time, input.end_time);
         Ok(())
     }
+}
+
+// The debug-logging environment B1418's post_call reads: no content capture, one redactor, one sink.
+fn logging_environment<'env>(
+    redactor: &'env Redactor,
+    sink: &'env TracingSink,
+) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: Utc::now().fixed_offset(),
+    }
+}
+
+// Every input text must be a string; the token counter would otherwise count a non-text value.
+fn embedding_input_texts(input: &[Json]) -> Result<Vec<String>, PassthroughLoggingError> {
+    let mut texts = Vec::with_capacity(input.len());
+    for value in input {
+        match value {
+            Json::Text(text) => texts.push(text.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                return Err(PassthroughLoggingError::transform(
+                    CohereLoggingError::EmbeddingText,
+                ));
+            }
+        }
+    }
+    Ok(texts)
 }
 
 // LiteLLM's debug logging writes the record and the client never sees it.

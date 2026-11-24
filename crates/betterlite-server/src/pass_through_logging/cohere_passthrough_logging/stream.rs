@@ -57,11 +57,8 @@ pub(crate) fn complete_streaming_response(
         now: i64::try_from(unix_seconds()).unwrap_or(i64::MAX),
     };
     let hooks = silent_hooks()?;
-    let assembled = block_on(stream_chunk_builder(&request, &hooks));
-    let built = match assembled {
-        Ok(inner) => inner.map_err(PassthroughLoggingError::stream_build)?,
-        Err(error) => return Err(error),
-    };
+    let built = block_on(stream_chunk_builder(&request, &hooks))?
+        .map_err(PassthroughLoggingError::stream_build)?;
     match built {
         None => Ok(None),
         Some(Response::Chat(chat)) => {
@@ -88,21 +85,7 @@ fn collected_chunks(
         false,
         HiddenParams::new(),
     );
-    let mut state = DecodeState {
-        model: model.to_owned(),
-        kind: ProviderKind::Builtin,
-        received_finish_reason: None,
-        intermittent_finish_reason: None,
-        sent_first_chunk: false,
-        complete_response: String::new(),
-        completion_stream: None,
-        options: RequestOptions {
-            send_stream_usage: false,
-            is_function_call: false,
-        },
-        repeated_chunk_limit: REPEATED_CHUNK_LIMIT,
-        next_id: Uuid::new_v4,
-    };
+    let mut state = decode_state(model);
     let mut chunks = Vec::with_capacity(all_chunks.len());
     for line in all_chunks {
         let decoded = decode_cohere_line(CohereStreamVersion::V1, line.as_bytes(), false)
@@ -121,6 +104,25 @@ fn collected_chunks(
         chunks.push(collected);
     }
     Ok(chunks)
+}
+
+// The wrapper state LiteLLM keeps across the chunks of one stream.
+fn decode_state(model: &str) -> DecodeState {
+    DecodeState {
+        model: model.to_owned(),
+        kind: ProviderKind::Builtin,
+        received_finish_reason: None,
+        intermittent_finish_reason: None,
+        sent_first_chunk: false,
+        complete_response: String::new(),
+        completion_stream: None,
+        options: RequestOptions {
+            send_stream_usage: false,
+            is_function_call: false,
+        },
+        repeated_chunk_limit: REPEATED_CHUNK_LIMIT,
+        next_id: Uuid::new_v4,
+    }
 }
 
 // The stream builder has no logging object in this path, so its verbose output goes nowhere.

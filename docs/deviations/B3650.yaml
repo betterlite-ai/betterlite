@@ -38,10 +38,12 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L109-L114
   - what: >-
       A texts or input value that is present but not a list is a typed error naming the field,
-      where Python's truthiness check would hand any truthy value to the transform.
+      and a list element that is not a string is one too, where Python's truthiness check would
+      hand any truthy value to the transform.
     why: >-
       A value of the wrong type is an error that names the field (docs/compatibility.md); a
-      string texts value would otherwise be counted and logged one character at a time.
+      string texts value would otherwise be counted and logged one character at a time, and a
+      non-string element would fail inside the token counter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L92-L94
   - what: >-
       B1418's post_call hook only records the call; the production decode replays it into the
