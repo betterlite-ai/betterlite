@@ -14,7 +14,10 @@ use super::dates::{SpendReportDates, spend_report_dates};
 use super::error::{DB_NOT_CONNECTED_ERROR, TextDetail, internal_error};
 use super::query::{ScopedReportQuery, decode_scoped_report_query};
 use super::scope::{ScopeColumn, resolve_scope};
-use super::store::{ScopedReportError, ScopedReportHandle, ScopedReportStore, StoreOrgLookup};
+use super::store::{
+    OrganizationReportRequest, ScopedReportError, ScopedReportHandle, ScopedReportRequest,
+    ScopedReportStore, StoreOrgLookup,
+};
 
 const NO_ORGANIZATION_DETAIL: &str =
     "No organization_id associated with this API key; pass an organization_id query_param";
@@ -53,11 +56,49 @@ pub(super) async fn report_respond(
         }
     };
     let query = decode_scoped_report_query(raw_query.as_deref().unwrap_or_default().as_bytes());
+    let dates = match report_dates(&query) {
+        Ok(dates) => dates,
+        Err(response) => return response,
+    };
     match route {
-        ReportRoute::Key => key_report(store, &caller, &query).await,
-        ReportRoute::User => user_report(store, &caller, &query).await,
-        ReportRoute::Team => team_report(store, &caller, &query).await,
-        ReportRoute::Organization => organization_report(store, &caller, &query).await,
+        ReportRoute::Key => {
+            let requested = query.api_key.as_deref().map(requested_key);
+            scoped_report(
+                store,
+                &caller,
+                &dates,
+                requested.as_deref(),
+                caller.api_key.as_deref(),
+                ScopeColumn::ApiKey,
+                "api_key",
+            )
+            .await
+        }
+        ReportRoute::User => {
+            scoped_report(
+                store,
+                &caller,
+                &dates,
+                query.internal_user_id.as_deref(),
+                caller.org_caller.user_id.as_deref(),
+                ScopeColumn::User,
+                "internal_user_id",
+            )
+            .await
+        }
+        ReportRoute::Team => {
+            scoped_report(
+                store,
+                &caller,
+                &dates,
+                query.team_id.as_deref(),
+                caller.team_id.as_deref(),
+                ScopeColumn::TeamId,
+                "team_id",
+            )
+            .await
+        }
+        ReportRoute::Organization => organization_report(store, &caller, &query, &dates).await,
     }
 }
 
@@ -94,91 +135,40 @@ where
     }
 }
 
-async fn key_report(
+// _resolve_spend_report_scope over one route's requested and caller values
+async fn scoped_report(
     store: &dyn ScopedReportStore,
     caller: &ReportCaller,
-    query: &ScopedReportQuery,
+    dates: &SpendReportDates,
+    requested: Option<&str>,
+    caller_value: Option<&str>,
+    column: ScopeColumn,
+    scope_name: &'static str,
 ) -> Response {
-    let dates = match report_dates(query) {
-        Ok(dates) => dates,
-        Err(response) => return response,
-    };
-    let requested = query.api_key.as_deref().map(requested_key);
     let scope = match resolve_scope(
-        requested.as_deref(),
-        caller.api_key.as_deref(),
+        requested,
+        caller_value,
         caller.org_caller.admin_view,
-        "api_key",
+        scope_name,
     ) {
         Ok(scope) => scope,
         Err(error) => return error.respond(),
     };
-    report_rows(
-        store
-            .scoped_report(ScopeColumn::ApiKey, &dates.start, &dates.end, &scope)
-            .await,
-    )
-}
-
-async fn user_report(
-    store: &dyn ScopedReportStore,
-    caller: &ReportCaller,
-    query: &ScopedReportQuery,
-) -> Response {
-    let dates = match report_dates(query) {
-        Ok(dates) => dates,
-        Err(response) => return response,
+    let request = ScopedReportRequest {
+        column,
+        start: &dates.start,
+        end: &dates.end,
+        value: &scope,
     };
-    let scope = match resolve_scope(
-        query.internal_user_id.as_deref(),
-        caller.org_caller.user_id.as_deref(),
-        caller.org_caller.admin_view,
-        "internal_user_id",
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return error.respond(),
-    };
-    report_rows(
-        store
-            .scoped_report(ScopeColumn::User, &dates.start, &dates.end, &scope)
-            .await,
-    )
-}
-
-async fn team_report(
-    store: &dyn ScopedReportStore,
-    caller: &ReportCaller,
-    query: &ScopedReportQuery,
-) -> Response {
-    let dates = match report_dates(query) {
-        Ok(dates) => dates,
-        Err(response) => return response,
-    };
-    let scope = match resolve_scope(
-        query.team_id.as_deref(),
-        caller.team_id.as_deref(),
-        caller.org_caller.admin_view,
-        "team_id",
-    ) {
-        Ok(scope) => scope,
-        Err(error) => return error.respond(),
-    };
-    report_rows(
-        store
-            .scoped_report(ScopeColumn::TeamId, &dates.start, &dates.end, &scope)
-            .await,
-    )
+    report_rows(store.scoped_report(request).await)
 }
 
 async fn organization_report(
     store: &dyn ScopedReportStore,
     caller: &ReportCaller,
     query: &ScopedReportQuery,
+    dates: &SpendReportDates,
 ) -> Response {
-    let dates = match report_dates(query) {
-        Ok(dates) => dates,
-        Err(response) => return response,
-    };
     let requested = query
         .organization_id
         .as_deref()
@@ -206,7 +196,12 @@ async fn organization_report(
     };
     report_rows(
         store
-            .organization_report(&dates.start, &dates.end, target, &team_ids)
+            .organization_report(OrganizationReportRequest {
+                start: &dates.start,
+                end: &dates.end,
+                organization_id: target,
+                team_ids: &team_ids,
+            })
             .await,
     )
 }

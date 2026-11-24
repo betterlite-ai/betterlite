@@ -8,7 +8,10 @@ use tokio_postgres::NoTls;
 
 use super::super::query_service::get_spend_by_team;
 use super::super::scope::ScopeColumn;
-use super::super::store::{PostgresScopedReportStore, ScopedReportStore as _};
+use super::super::store::{
+    OrganizationReportRequest, PostgresScopedReportStore, ScopedReportRequest,
+    ScopedReportStore as _, TeamSpendRequest,
+};
 
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE "LiteLLM_SpendLogs" (
@@ -94,12 +97,12 @@ INSERT INTO "LiteLLM_SpendLogs" (request_id, api_key, spend, total_tokens, promp
 async fn a_scoped_report_keeps_the_start_and_end_days_only() {
     let (_fixture, store) = database(SCOPED_ROWS_SQL).await;
     let rows = store
-        .scoped_report(
-            ScopeColumn::ApiKey,
-            &midnight(2024, 1, 1),
-            &midnight(2024, 1, 2),
-            "k1",
-        )
+        .scoped_report(ScopedReportRequest {
+            column: ScopeColumn::ApiKey,
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 2),
+            value: "k1",
+        })
         .await
         .unwrap();
     assert_eq!(rows.len(), 1);
@@ -115,12 +118,12 @@ async fn a_scoped_report_keeps_the_start_and_end_days_only() {
 async fn a_scoped_report_orders_api_keys_by_total_cost() {
     let (_fixture, store) = database(SCOPED_ROWS_SQL).await;
     let rows = store
-        .scoped_report(
-            ScopeColumn::TeamId,
-            &midnight(2024, 1, 1),
-            &midnight(2024, 1, 2),
-            "team-1",
-        )
+        .scoped_report(ScopedReportRequest {
+            column: ScopeColumn::TeamId,
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 2),
+            value: "team-1",
+        })
         .await
         .unwrap();
     assert_eq!(rows.len(), 2);
@@ -141,12 +144,12 @@ async fn a_scoped_report_orders_api_keys_by_total_cost() {
 async fn a_user_scope_never_sees_another_users_rows() {
     let (_fixture, store) = database(SCOPED_ROWS_SQL).await;
     let rows = store
-        .scoped_report(
-            ScopeColumn::User,
-            &midnight(2024, 1, 1),
-            &midnight(2024, 1, 2),
-            "u1",
-        )
+        .scoped_report(ScopedReportRequest {
+            column: ScopeColumn::User,
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 2),
+            value: "u1",
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -156,12 +159,12 @@ async fn a_user_scope_never_sees_another_users_rows() {
         vec!["k2", "k1"]
     );
     let other = store
-        .scoped_report(
-            ScopeColumn::User,
-            &midnight(2024, 1, 1),
-            &midnight(2024, 1, 2),
-            "u2",
-        )
+        .scoped_report(ScopedReportRequest {
+            column: ScopeColumn::User,
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 2),
+            value: "u2",
+        })
         .await
         .unwrap();
     assert_eq!(other[0].api_key, "k3");
@@ -187,12 +190,12 @@ async fn find_user_reads_the_user_and_its_org_memberships() {
 async fn a_scoped_report_without_rows_is_empty() {
     let (_fixture, store) = database(SCOPED_ROWS_SQL).await;
     let rows = store
-        .scoped_report(
-            ScopeColumn::ApiKey,
-            &midnight(2025, 1, 1),
-            &midnight(2025, 1, 2),
-            "k1",
-        )
+        .scoped_report(ScopedReportRequest {
+            column: ScopeColumn::ApiKey,
+            start: &midnight(2025, 1, 1),
+            end: &midnight(2025, 1, 2),
+            value: "k1",
+        })
         .await
         .unwrap();
     assert!(rows.is_empty());
@@ -217,12 +220,12 @@ async fn an_organization_report_uses_stamps_and_team_membership_together() {
     let team_ids = store.organization_team_ids("org-1").await.unwrap();
     assert_eq!(team_ids, vec!["team-1"]);
     let rows = store
-        .organization_report(
-            &midnight(2024, 1, 1),
-            &midnight(2024, 1, 1),
-            "org-1",
-            &team_ids,
-        )
+        .organization_report(OrganizationReportRequest {
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 1),
+            organization_id: "org-1",
+            team_ids: &team_ids,
+        })
         .await
         .unwrap();
     assert_eq!(
@@ -238,12 +241,12 @@ async fn an_organization_report_keeps_the_per_model_team() {
     let (_fixture, store) = database(ORGANIZATION_ROWS_SQL).await;
     let team_ids = store.organization_team_ids("org-1").await.unwrap();
     let rows = store
-        .organization_report(
-            &midnight(2024, 1, 1),
-            &midnight(2024, 1, 1),
-            "org-1",
-            &team_ids,
-        )
+        .organization_report(OrganizationReportRequest {
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 1),
+            organization_id: "org-1",
+            team_ids: &team_ids,
+        })
         .await
         .unwrap();
     let unstamped = rows.iter().find(|row| row.api_key == "k5").unwrap();
@@ -259,7 +262,12 @@ async fn an_organization_report_keeps_the_per_model_team() {
 async fn an_organization_report_with_no_teams_keeps_only_stamped_rows() {
     let (_fixture, store) = database(ORGANIZATION_ROWS_SQL).await;
     let rows = store
-        .organization_report(&midnight(2024, 1, 1), &midnight(2024, 1, 1), "org-1", &[])
+        .organization_report(OrganizationReportRequest {
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 1),
+            organization_id: "org-1",
+            team_ids: &[],
+        })
         .await
         .unwrap();
     assert_eq!(rows.len(), 1);
@@ -342,7 +350,11 @@ async fn spend_by_team_applies_the_optional_team_filter() {
 async fn spend_by_team_through_the_store_matches_the_query_service() {
     let (_fixture, store) = database(TEAM_DAILY_ROWS_SQL).await;
     let rows = store
-        .spend_by_team(&midnight(2024, 1, 1), &midnight(2024, 1, 1), Some("team-2"))
+        .spend_by_team(TeamSpendRequest {
+            start: &midnight(2024, 1, 1),
+            end: &midnight(2024, 1, 1),
+            team_id: Some("team-2"),
+        })
         .await
         .unwrap();
     assert_eq!(rows.len(), 1);

@@ -24,10 +24,12 @@ use crate::auth::auth_identity::AuthContext;
 use crate::organization_create::access::OrgAccessError;
 use crate::spend::reports::rows::{
     DailyTeamSpend, ModelSpend, OrganizationKeySpend, OrganizationModelSpend, ScopedKeySpend,
-    TeamModelSpend, TeamSpend,
 };
 use crate::spend::reports::scope::ScopeColumn;
-use crate::spend::reports::store::{ScopedReportError, ScopedReportHandle, ScopedReportStore};
+use crate::spend::reports::store::{
+    OrganizationReportRequest, ScopedReportError, ScopedReportHandle, ScopedReportRequest,
+    ScopedReportStore, TeamSpendRequest,
+};
 
 pub(super) struct FakeStore {
     pub(super) scoped: Vec<ScopedKeySpend>,
@@ -68,35 +70,38 @@ impl FakeStore {
     }
 }
 
+fn report_range(start: &DateTime<Utc>, end: &DateTime<Utc>) -> String {
+    format!("{},{}", start.to_rfc3339(), end.to_rfc3339())
+}
+
+fn scoped_call(request: ScopedReportRequest<'_>) -> String {
+    let range = report_range(request.start, request.end);
+    let column = request.column;
+    format!("scoped_report({column:?},{range},{})", request.value)
+}
+
+fn organization_call(request: OrganizationReportRequest<'_>) -> String {
+    let listed = format!("{:?}", request.team_ids);
+    let range = report_range(request.start, request.end);
+    let id = request.organization_id;
+    format!("organization_report({range},{id},{listed})")
+}
+
 #[async_trait]
 impl ScopedReportStore for FakeStore {
     async fn scoped_report(
         &self,
-        column: ScopeColumn,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        value: &str,
+        request: ScopedReportRequest<'_>,
     ) -> Result<Vec<ScopedKeySpend>, ScopedReportError> {
-        self.record(format!(
-            "scoped_report({column:?},{},{},{value})",
-            start.to_rfc3339(),
-            end.to_rfc3339()
-        ))?;
+        self.record(scoped_call(request))?;
         Ok(self.scoped.clone())
     }
 
     async fn organization_report(
         &self,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        organization_id: &str,
-        team_ids: &[String],
+        request: OrganizationReportRequest<'_>,
     ) -> Result<Vec<OrganizationKeySpend>, ScopedReportError> {
-        self.record(format!(
-            "organization_report({},{},{organization_id},{team_ids:?})",
-            start.to_rfc3339(),
-            end.to_rfc3339()
-        ))?;
+        self.record(organization_call(request))?;
         Ok(self.organization.clone())
     }
 
@@ -114,15 +119,8 @@ impl ScopedReportStore for FakeStore {
 
     async fn spend_by_team(
         &self,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        team_id: Option<&str>,
+        _request: TeamSpendRequest<'_>,
     ) -> Result<Vec<DailyTeamSpend>, ScopedReportError> {
-        self.record(format!(
-            "spend_by_team({},{},{team_id:?})",
-            start.to_rfc3339(),
-            end.to_rfc3339()
-        ))?;
         Ok(self.daily.clone())
     }
 }
@@ -257,44 +255,6 @@ pub(super) fn organization_model(
         total_cost: decimal(total),
         total_input_tokens: 1,
         total_output_tokens: 2,
-    }
-}
-
-pub(super) fn organization_row(
-    api_key: &str,
-    total: &str,
-    models: Vec<OrganizationModelSpend>,
-) -> OrganizationKeySpend {
-    OrganizationKeySpend {
-        api_key: api_key.to_owned(),
-        total_cost: decimal(total),
-        total_input_tokens: 1,
-        total_output_tokens: 2,
-        model_details: models,
-    }
-}
-
-pub(super) fn team_model(model: &str, api_key: &str, spend: &str, tokens: i64) -> TeamModelSpend {
-    TeamModelSpend {
-        model: model.to_owned(),
-        api_key: api_key.to_owned(),
-        spend: decimal(spend),
-        total_tokens: tokens,
-    }
-}
-
-pub(super) fn team(name: &str, total: &str, metadata: Vec<TeamModelSpend>) -> TeamSpend {
-    TeamSpend {
-        team_name: name.to_owned(),
-        total_spend: decimal(total),
-        metadata,
-    }
-}
-
-pub(super) fn daily(day: &str, teams: Vec<TeamSpend>) -> DailyTeamSpend {
-    DailyTeamSpend {
-        group_by_day: day.to_owned(),
-        teams,
     }
 }
 

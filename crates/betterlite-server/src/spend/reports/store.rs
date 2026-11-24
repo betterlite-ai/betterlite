@@ -17,6 +17,32 @@ use super::sql::{ORGANIZATION_SPEND_REPORT_SQL, scoped_spend_report_sql};
 
 pub type ScopedReportHandle = Option<Arc<dyn ScopedReportStore>>;
 
+// the scope column, window and value a scoped report query binds as $1-$3
+#[derive(Clone, Copy)]
+pub struct ScopedReportRequest<'request> {
+    pub column: ScopeColumn,
+    pub start: &'request DateTime<Utc>,
+    pub end: &'request DateTime<Utc>,
+    pub value: &'request str,
+}
+
+// the organization and its current teams, bound as $1-$4
+#[derive(Clone, Copy)]
+pub struct OrganizationReportRequest<'request> {
+    pub start: &'request DateTime<Utc>,
+    pub end: &'request DateTime<Utc>,
+    pub organization_id: &'request str,
+    pub team_ids: &'request [String],
+}
+
+// the optional team filter of the day-by-team query, bound as $1-$3
+#[derive(Clone, Copy)]
+pub struct TeamSpendRequest<'request> {
+    pub start: &'request DateTime<Utc>,
+    pub end: &'request DateTime<Utc>,
+    pub team_id: Option<&'request str>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ScopedReportError {
     #[error(transparent)]
@@ -31,17 +57,11 @@ pub enum ScopedReportError {
 pub trait ScopedReportStore: Send + Sync {
     async fn scoped_report(
         &self,
-        column: ScopeColumn,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        value: &str,
+        request: ScopedReportRequest<'_>,
     ) -> Result<Vec<ScopedKeySpend>, ScopedReportError>;
     async fn organization_report(
         &self,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        organization_id: &str,
-        team_ids: &[String],
+        request: OrganizationReportRequest<'_>,
     ) -> Result<Vec<OrganizationKeySpend>, ScopedReportError>;
     async fn organization_team_ids(
         &self,
@@ -50,9 +70,7 @@ pub trait ScopedReportStore: Send + Sync {
     async fn find_user(&self, user_id: &str) -> Result<Option<LiteLLMUserTable>, OrgAccessError>;
     async fn spend_by_team(
         &self,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        team_id: Option<&str>,
+        request: TeamSpendRequest<'_>,
     ) -> Result<Vec<DailyTeamSpend>, ScopedReportError>;
 }
 
@@ -76,30 +94,25 @@ pub struct PostgresScopedReportStore {
 impl ScopedReportStore for PostgresScopedReportStore {
     async fn scoped_report(
         &self,
-        column: ScopeColumn,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        value: &str,
+        request: ScopedReportRequest<'_>,
     ) -> Result<Vec<ScopedKeySpend>, ScopedReportError> {
-        let sql = scoped_spend_report_sql(column);
+        let sql = scoped_spend_report_sql(request.column);
         let query = Query {
             sql: &sql,
-            parameters: vec![start, end, &value],
+            parameters: vec![request.start, request.end, &request.value],
         };
         query_service::decoded_rows(&self.store, &query).await
     }
 
     async fn organization_report(
         &self,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        organization_id: &str,
-        team_ids: &[String],
+        request: OrganizationReportRequest<'_>,
     ) -> Result<Vec<OrganizationKeySpend>, ScopedReportError> {
-        let teams = team_ids.to_vec();
+        let teams = request.team_ids.to_vec();
+        let parameters = vec![request.start, request.end, &request.organization_id, &teams];
         let query = Query {
             sql: ORGANIZATION_SPEND_REPORT_SQL,
-            parameters: vec![start, end, &organization_id, &teams],
+            parameters,
         };
         query_service::decoded_rows(&self.store, &query).await
     }
@@ -108,19 +121,19 @@ impl ScopedReportStore for PostgresScopedReportStore {
         &self,
         organization_id: &str,
     ) -> Result<Vec<String>, ScopedReportError> {
-        let teams = TeamRepository {
+        let repository = TeamRepository {
             database: TeamDatabase {
                 db: &self.store,
                 writer_db: &self.store,
             },
             use_writer: false,
+        };
+        let members = repository.find_by_organization_id(organization_id).await?;
+        let mut team_ids = Vec::with_capacity(members.len());
+        for team in members {
+            team_ids.push(team.fields.base.team_id);
         }
-        .find_by_organization_id(organization_id)
-        .await?;
-        Ok(teams
-            .into_iter()
-            .map(|team| team.fields.base.team_id)
-            .collect())
+        Ok(team_ids)
     }
 
     async fn find_user(&self, user_id: &str) -> Result<Option<LiteLLMUserTable>, OrgAccessError> {
@@ -131,10 +144,9 @@ impl ScopedReportStore for PostgresScopedReportStore {
 
     async fn spend_by_team(
         &self,
-        start: &DateTime<Utc>,
-        end: &DateTime<Utc>,
-        team_id: Option<&str>,
+        request: TeamSpendRequest<'_>,
     ) -> Result<Vec<DailyTeamSpend>, ScopedReportError> {
-        query_service::get_spend_by_team(&self.store, start, end, team_id).await
+        query_service::get_spend_by_team(&self.store, request.start, request.end, request.team_id)
+            .await
     }
 }

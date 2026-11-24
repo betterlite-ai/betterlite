@@ -9,8 +9,8 @@ use crate::spend::reports::rows::OrganizationKeySpend;
 
 use super::super::error::DB_NOT_CONNECTED_ERROR;
 use super::support::{
-    DetailBody, InternalBody, call, fake_store, jwt_user, key_principal, master_key, model,
-    organization_model, organization_row, scoped_row, user,
+    DetailBody, InternalBody, call, decimal, fake_store, jwt_user, key_principal, master_key,
+    model, organization_model, scoped_row, user,
 };
 
 const RANGE: &str = "start_date=2024-01-01&end_date=2024-01-02";
@@ -314,11 +314,13 @@ async fn organization_reports_verify_access_and_use_current_teams() {
     fake.team_ids = vec!["team-1".to_owned(), "team-2".to_owned()];
     fake.users
         .insert("u1".to_owned(), user(&membership("org-1")));
-    fake.organization = vec![organization_row(
-        "key-hash",
-        "1.5",
-        vec![organization_model(Some("team-1"), "gpt", "1.5")],
-    )];
+    fake.organization = vec![OrganizationKeySpend {
+        api_key: "key-hash".to_owned(),
+        total_cost: decimal("1.5"),
+        total_input_tokens: 1,
+        total_output_tokens: 2,
+        model_details: vec![organization_model(Some("team-1"), "gpt", "1.5")],
+    }];
     let store = Arc::new(fake);
     let uri = scoped_call("organization", "");
     let reply = call(&uri, Some(&caller), Some(&store)).await;
