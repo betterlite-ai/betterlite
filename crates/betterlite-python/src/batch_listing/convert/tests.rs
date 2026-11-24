@@ -15,7 +15,7 @@ use super::{
     list_payload, section_settings,
 };
 use crate::batch_listing::error::{DispatchFailure, ErrorBody};
-use crate::batch_listing::payload::{cancel_error_payload, class_for_status, list_error_payload};
+use crate::batch_listing::payload::{ProviderError, class_for_status, provider_error_payload};
 
 const CANCEL: &str = r#"{"cancel":{"batch_id":"batch-1","model":"gpt-4o","provider":"openai","extra_headers":{"x-test":"1"},"extra_body":{"note":"n"},"params":{"api_base":"http://127.0.0.1:1/v1","api_key":"sk-test","timeout":3}}}"#;
 
@@ -233,7 +233,7 @@ fn error_list_payload_names_an_unsupported_provider() {
     let error = BatchProviderListError::UnsupportedProvider {
         provider: "anthropic".to_owned(),
     };
-    let payload = list_error_payload(&error, "openai");
+    let payload = provider_error_payload(ProviderError::List(&error), "openai", None);
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
     assert_eq!(payload.llm_provider, "anthropic");
@@ -244,7 +244,7 @@ fn error_list_payload_names_an_unsupported_provider() {
 #[test]
 fn error_list_payload_keeps_the_requested_provider() {
     let error = BatchProviderListError::NonFiniteTimeout;
-    let payload = list_error_payload(&error, "openai");
+    let payload = provider_error_payload(ProviderError::List(&error), "openai", None);
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
     assert_eq!(payload.llm_provider, "openai");
@@ -256,7 +256,7 @@ fn error_cancel_payload_names_an_unsupported_provider() {
     let error: BatchProviderCancelError<DispatchFailure> = BatchProviderCancelError::Unsupported {
         provider: "anthropic".to_owned(),
     };
-    let payload = cancel_error_payload(&error, "anthropic", None);
+    let payload = provider_error_payload(ProviderError::Cancel(&error), "anthropic", None);
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
     assert_eq!(payload.llm_provider, "anthropic");
@@ -271,7 +271,7 @@ fn error_cancel_payload_keeps_a_provider_status() {
             message: "gone".to_owned(),
             body: None,
         });
-    let payload = cancel_error_payload(&error, "openai", Some("gpt-4o"));
+    let payload = provider_error_payload(ProviderError::Cancel(&error), "openai", Some("gpt-4o"));
     assert_eq!(payload.error_type, "NotFoundError");
     assert_eq!(payload.status_code, Some(404));
     assert_eq!(payload.message, "gone");
@@ -291,7 +291,7 @@ fn error_cancel_payload_keeps_the_provider_body() {
                 code: None,
             }),
         });
-    let payload = cancel_error_payload(&error, "openai", None);
+    let payload = provider_error_payload(ProviderError::Cancel(&error), "openai", None);
     let body = payload.body.unwrap();
     assert_eq!(body.error_type.as_deref(), Some("invalid_request_error"));
     assert_eq!(body.param.as_deref(), Some("after"));
@@ -302,7 +302,7 @@ fn error_cancel_payload_keeps_the_provider_body() {
 fn error_cancel_payload_reports_a_connection() {
     let error: BatchProviderCancelError<DispatchFailure> =
         BatchProviderCancelError::Dispatch(DispatchFailure::Connection("boom".to_owned()));
-    let payload = cancel_error_payload(&error, "openai", None);
+    let payload = provider_error_payload(ProviderError::Cancel(&error), "openai", None);
     assert_eq!(payload.error_type, "APIConnectionError");
     assert_eq!(payload.status_code, None);
     assert_eq!(payload.message, "boom");
@@ -312,7 +312,7 @@ fn error_cancel_payload_reports_a_connection() {
 fn error_cancel_payload_maps_a_timeout() {
     let error: BatchProviderCancelError<DispatchFailure> =
         BatchProviderCancelError::Timeout(TimeoutError::NonFinite);
-    let payload = cancel_error_payload(&error, "openai", Some("gpt-4o"));
+    let payload = provider_error_payload(ProviderError::Cancel(&error), "openai", Some("gpt-4o"));
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
 }
@@ -323,7 +323,7 @@ fn error_cancel_payload_names_the_unwired_branch() {
         BatchProviderCancelError::Dispatch(DispatchFailure::Unsupported {
             provider: "azure".to_owned(),
         });
-    let payload = cancel_error_payload(&error, "azure", None);
+    let payload = provider_error_payload(ProviderError::Cancel(&error), "azure", None);
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
     assert_eq!(payload.llm_provider, "azure");

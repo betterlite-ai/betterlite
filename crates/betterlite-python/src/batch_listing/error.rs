@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use super::convert::{ConvertError, SettingsError};
 use super::payload::{
-    ErrorPayload, cancel_error_payload, dispatch_fields, error_payload, list_error_payload,
+    ErrorPayload, ProviderError, dispatch_fields, error_payload, provider_error_payload,
 };
 use super::transport::DurationError;
 
@@ -113,8 +113,16 @@ pub(crate) fn payload_for(
     model: Option<&str>,
 ) -> Option<ErrorPayload> {
     match error {
-        ListingError::List(inner) => Some(list_error_payload(inner, provider)),
-        ListingError::Cancel(inner) => Some(cancel_error_payload(inner, provider, model)),
+        ListingError::List(inner) => Some(provider_error_payload(
+            ProviderError::List(inner),
+            provider,
+            model,
+        )),
+        ListingError::Cancel(inner) => Some(provider_error_payload(
+            ProviderError::Cancel(inner),
+            provider,
+            model,
+        )),
         ListingError::Dispatch(failure) => {
             Some(error_payload(dispatch_fields(failure), provider, model))
         }

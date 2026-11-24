@@ -82,7 +82,7 @@ impl ListTransport {
                 let page = batches
                     .list_batches(context, window.after.as_deref(), window.limit)
                     .await
-                    .map_err(|error| xai_failure(&error))?;
+                    .map_err(|error| dispatch_failure(ProviderFailure::Xai(&error)))?;
                 Ok(ListAnswer::Xai(page))
             }
             BatchListProviderCall::Azure(_) => Err(DispatchFailure::Unsupported {
@@ -116,7 +116,7 @@ async fn openai_list(
     openai_batches(&transport.client)
         .list_batches(connection, window.after.as_deref(), window.limit)
         .await
-        .map_err(|error| openai_failure(&error))
+        .map_err(|error| dispatch_failure(ProviderFailure::OpenAi(&error)))
 }
 
 // The five provider entry points cancel_batch dispatches to: the two executors this build has, and the rest named.
@@ -181,7 +181,7 @@ async fn openai_cancel(
     openai_batches(client)
         .batch(connection, BatchOperation::Cancel(&query))
         .await
-        .map_err(|error| openai_failure(&error))
+        .map_err(|error| dispatch_failure(ProviderFailure::OpenAi(&error)))
 }
 
 // XAIBatchesHandler.cancel_batch
@@ -205,57 +205,60 @@ async fn xai_cancel(
     batches
         .cancel_batch(call.values.batch_id, context)
         .await
-        .map_err(|error| xai_failure(&error))
+        .map_err(|error| dispatch_failure(ProviderFailure::Xai(&error)))
+}
+
+// the SDK error a provider call answered with, in its executor's own type
+#[derive(Clone, Copy)]
+pub(crate) enum ProviderFailure<'a> {
+    OpenAi(&'a BatchesError),
+    Xai(&'a XaiBatchesError),
+}
+
+// one shape for both executors: a provider status keeps its own message, anything else is a connection failure
+const fn failure(status: Option<u16>, message: String) -> DispatchFailure {
+    match status {
+        Some(code) => DispatchFailure::Status {
+            status: code,
+            message,
+            body: None,
+        },
+        None => DispatchFailure::Connection(message),
+    }
 }
 
 // an SDK status keeps the provider's message and error object; every other SDK failure never reached it
-pub(crate) fn openai_failure(error: &BatchesError) -> DispatchFailure {
-    if let BatchesError::Sdk {
-        source:
-            SdkError::Status {
-                status,
-                error_type,
-                param,
-                code,
-                message,
-            },
-    } = error
-    {
-        return DispatchFailure::Status {
+pub(crate) fn dispatch_failure(error: ProviderFailure<'_>) -> DispatchFailure {
+    match error {
+        ProviderFailure::OpenAi(BatchesError::Sdk {
+            source:
+                SdkError::Status {
+                    status,
+                    error_type,
+                    param,
+                    code,
+                    message,
+                },
+        }) => DispatchFailure::Status {
             status: *status,
             message: message.clone(),
             body: ErrorBody::from_fields(error_type.clone(), param.clone(), code.clone()),
-        };
-    }
-    DispatchFailure::Connection(error.to_string())
-}
-
-pub(crate) fn xai_failure(error: &XaiBatchesError) -> DispatchFailure {
-    match error {
-        XaiBatchesError::Status {
-            status, message, ..
-        } => DispatchFailure::Status {
-            status: *status,
-            message: message.clone(),
-            body: None,
         },
-        XaiBatchesError::MissingApiKey => DispatchFailure::Status {
-            status: 401,
-            message: error.to_string(),
-            body: None,
+        ProviderFailure::OpenAi(sdk) => failure(None, sdk.to_string()),
+        ProviderFailure::Xai(sdk) => match sdk {
+            XaiBatchesError::Status {
+                status, message, ..
+            } => failure(Some(*status), message.clone()),
+            XaiBatchesError::MissingApiKey => failure(Some(401), sdk.to_string()),
+            XaiBatchesError::InputFileRequired => failure(Some(400), sdk.to_string()),
+            XaiBatchesError::Limit(_)
+            | XaiBatchesError::Decode { .. }
+            | XaiBatchesError::Transport { .. }
+            | XaiBatchesError::Path { .. }
+            | XaiBatchesError::Authorization { .. }
+            | XaiBatchesError::BaseUrl { .. }
+            | XaiBatchesError::Encode { .. } => failure(None, sdk.to_string()),
         },
-        XaiBatchesError::InputFileRequired => DispatchFailure::Status {
-            status: 400,
-            message: error.to_string(),
-            body: None,
-        },
-        XaiBatchesError::Limit(_)
-        | XaiBatchesError::Decode { .. }
-        | XaiBatchesError::Transport { .. }
-        | XaiBatchesError::Path { .. }
-        | XaiBatchesError::Authorization { .. }
-        | XaiBatchesError::BaseUrl { .. }
-        | XaiBatchesError::Encode { .. } => DispatchFailure::Connection(error.to_string()),
     }
 }
 

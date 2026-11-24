@@ -25,7 +25,7 @@ use super::error::{DispatchFailure, payload_for};
 use super::register;
 use super::session::ListingCore;
 use super::transport::{
-    DurationError, ListTransport, duration_of, openai_failure, sdk_timeout, xai_failure,
+    DurationError, ListTransport, ProviderFailure, dispatch_failure, duration_of, sdk_timeout,
 };
 
 const EMPTY_ENVIRONMENT: &str = r#"{"environment":{}}"#;
@@ -329,7 +329,7 @@ fn transport_failures_follow_the_status() {
         message: "slow down".to_owned(),
     };
     assert!(matches!(
-        openai_failure(&BatchesError::Sdk { source: sdk_status }),
+        dispatch_failure(ProviderFailure::OpenAi(&BatchesError::Sdk { source: sdk_status })),
         DispatchFailure::Status {
             status: 429,
             message,
@@ -337,15 +337,15 @@ fn transport_failures_follow_the_status() {
         } if message == "slow down"
     ));
     assert!(matches!(
-        openai_failure(&BatchesError::NotInitialized),
+        dispatch_failure(ProviderFailure::OpenAi(&BatchesError::NotInitialized)),
         DispatchFailure::Connection(_)
     ));
     assert!(matches!(
-        xai_failure(&XaiBatchesError::MissingApiKey),
+        dispatch_failure(ProviderFailure::Xai(&XaiBatchesError::MissingApiKey)),
         DispatchFailure::Status { status: 401, .. }
     ));
     assert!(matches!(
-        xai_failure(&XaiBatchesError::InputFileRequired),
+        dispatch_failure(ProviderFailure::Xai(&XaiBatchesError::InputFileRequired)),
         DispatchFailure::Status { status: 400, .. }
     ));
 }
@@ -360,7 +360,9 @@ fn transport_failure_keeps_the_provider_fields() {
         code: Some("invalid_cursor".to_owned()),
         message: "bad cursor".to_owned(),
     };
-    match openai_failure(&BatchesError::Sdk { source: sdk_status }) {
+    match dispatch_failure(ProviderFailure::OpenAi(&BatchesError::Sdk {
+        source: sdk_status,
+    })) {
         DispatchFailure::Status {
             status: 400,
             body: Some(body),
@@ -384,7 +386,9 @@ fn transport_failure_keeps_a_partial_body() {
         code: Some("invalid_cursor".to_owned()),
         message: "bad cursor".to_owned(),
     };
-    match openai_failure(&BatchesError::Sdk { source: sdk_status }) {
+    match dispatch_failure(ProviderFailure::OpenAi(&BatchesError::Sdk {
+        source: sdk_status,
+    })) {
         DispatchFailure::Status {
             body: Some(body), ..
         } => {

@@ -39,7 +39,7 @@ pub(crate) struct PayloadFields {
 }
 
 // a status whose error object is not the reason: a locally refused call or a limit the core hit
-fn status_fields(status: u16, message: String) -> PayloadFields {
+const fn status_fields(status: u16, message: String) -> PayloadFields {
     PayloadFields {
         error_type: class_for_status(status),
         status_code: Some(status),
@@ -63,43 +63,63 @@ pub(crate) fn error_payload(
     }
 }
 
+// the provider error a list or cancel call answered with, in the entry's own type
+#[derive(Clone, Copy)]
+pub(crate) enum ProviderError<'a> {
+    List(&'a BatchProviderListError),
+    Cancel(&'a BatchProviderCancelError<DispatchFailure>),
+}
+
 // LiteLLM names the provider the request asked for and model n/a when its branch table has no entry
-pub(crate) fn list_error_payload(error: &BatchProviderListError, provider: &str) -> ErrorPayload {
-    let (target_provider, target_model) = match error {
+pub(crate) fn provider_error_payload(
+    error: ProviderError<'_>,
+    provider: &str,
+    model: Option<&str>,
+) -> ErrorPayload {
+    match error {
+        ProviderError::List(failure) => {
+            let (named_provider, named_model) = list_target(failure, provider);
+            error_payload(
+                status_fields(400, failure.to_string()),
+                named_provider,
+                named_model,
+            )
+        }
+        ProviderError::Cancel(failure) => match failure {
+            BatchProviderCancelError::Dispatch(dispatch) => {
+                error_payload(dispatch_fields(dispatch), provider, model)
+            }
+            BatchProviderCancelError::Limits(limit) => {
+                let status = limit.fields().status;
+                error_payload(status_fields(status, failure.to_string()), provider, model)
+            }
+            BatchProviderCancelError::Timeout(_) => {
+                error_payload(status_fields(400, failure.to_string()), provider, model)
+            }
+            BatchProviderCancelError::Unsupported {
+                provider: unsupported,
+            } => error_payload(
+                status_fields(400, failure.to_string()),
+                unsupported.as_str(),
+                Some("n/a"),
+            ),
+        },
+    }
+}
+
+// the provider and model a list error names: the unsupported one and n/a, or the caller's and none
+const fn list_target<'a>(
+    error: &'a BatchProviderListError,
+    provider: &'a str,
+) -> (&'a str, Option<&'a str>) {
+    match error {
         BatchProviderListError::UnsupportedProvider {
             provider: unsupported,
         } => (unsupported.as_str(), Some("n/a")),
         BatchProviderListError::InvalidTimeout { .. }
         | BatchProviderListError::NonFiniteTimeout
         | BatchProviderListError::InvalidVertexCredentials => (provider, None),
-    };
-    let fields = status_fields(400, error.to_string());
-    error_payload(fields, target_provider, target_model)
-}
-
-pub(crate) fn cancel_error_payload(
-    error: &BatchProviderCancelError<DispatchFailure>,
-    provider: &str,
-    model: Option<&str>,
-) -> ErrorPayload {
-    let (fields, target_provider, target_model) = match error {
-        BatchProviderCancelError::Dispatch(failure) => (dispatch_fields(failure), provider, model),
-        BatchProviderCancelError::Limits(limit) => {
-            let status = limit.fields().status;
-            (status_fields(status, error.to_string()), provider, model)
-        }
-        BatchProviderCancelError::Timeout(_) => {
-            (status_fields(400, error.to_string()), provider, model)
-        }
-        BatchProviderCancelError::Unsupported {
-            provider: unsupported,
-        } => (
-            status_fields(400, error.to_string()),
-            unsupported.as_str(),
-            Some("n/a"),
-        ),
-    };
-    error_payload(fields, target_provider, target_model)
+    }
 }
 
 pub(crate) fn dispatch_fields(failure: &DispatchFailure) -> PayloadFields {
