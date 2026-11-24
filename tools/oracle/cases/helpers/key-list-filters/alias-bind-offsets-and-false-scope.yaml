@@ -1,0 +1,42 @@
+kind: helper
+name: key-list-filters-alias-bind-offsets-and-false-scope
+call:
+  key_list_filters:
+    calls:
+      - function: alias_scope
+        caller: {user_id: u1, user_role: internal_user}
+        user_row: {user_id: u1, teams: [t1, t2]}
+        query_params: [keep]
+        where_parts: ["user_id = $1"]
+      - function: alias_scope
+        caller: {user_id: u1, user_role: internal_user}
+        user_row: {user_id: u1, teams: [t1, t2]}
+        query_params: []
+        where_parts: []
+      - function: alias_scope
+        caller: {user_id: u1, user_role: internal_user}
+        user_row: null
+        query_params: [keep]
+        where_parts: []
+      - function: alias_scope
+        caller: {user_id: u1, user_role: internal_user}
+        user_row: {user_id: u1, teams: []}
+        query_params: []
+        where_parts: []
+      - function: alias_scope
+        caller: {user_id: null, user_role: internal_user}
+        user_row: null
+        query_params: [keep]
+        where_parts: []
+      - function: alias_scope
+        caller: {user_id: "", user_role: internal_user}
+        user_row: {user_id: u1, teams: [t1]}
+        query_params: []
+        where_parts: []
+      - function: alias_scope
+        caller: {user_id: "u1'); DROP TABLE --", user_role: internal_user}
+        user_row: {user_id: u1, teams: ["t1); DELETE FROM x; --"]}
+        query_params: []
+        where_parts: []
+env: {}
+compare: {ignore: []}

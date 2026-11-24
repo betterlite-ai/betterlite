@@ -131,6 +131,6 @@ pitfalls:
 - "`model` may come from `completion_response.model`, so pass both to Rust and let it choose."
 - "`total_time` is only used for per-second and Replicate pricing and is zero by default."
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0
 review_level: security

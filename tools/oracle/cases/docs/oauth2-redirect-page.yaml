@@ -1,0 +1,15 @@
+name: docs-oauth2-redirect-page
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /docs/oauth2-redirect
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

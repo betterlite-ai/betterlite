@@ -1,0 +1,71 @@
+kind: helper
+name: auth-org-lookup-alias-errors-and-cache-order
+call:
+  auth_org_lookup:
+    function: org_alias
+    database: true
+    target: acme
+    in_memory_ttl: 5.0
+    alias_rows:
+      - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+    steps:
+      - {now: 100.0, fail: []}
+calls:
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      steps:
+        - {now: 100.0, fail: []}
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      alias_rows:
+        - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+        - {organization_id: o2, organization_alias: acme, budget_id: b2, created_by: ops, updated_by: ops}
+      steps:
+        - {now: 100.0, fail: []}
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      alias_rows:
+        - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+      steps:
+        - {now: 100.0, fail: [outage]}
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      alias_rows:
+        - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+      steps:
+        - {now: 100.0, fail: [fault]}
+  # the alias key is written first and never rolled back when the org id write fails
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      alias_rows:
+        - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+      steps:
+        - {now: 100.0, fail: ["write org_id:o1"]}
+        - {now: 101.0, fail: []}
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      alias_rows:
+        - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+      steps:
+        - {now: 100.0, fail: ["write org_alias:acme"]}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}
