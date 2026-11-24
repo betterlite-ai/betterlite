@@ -1,0 +1,17 @@
+task: B4663
+deviations:
+  - what: The license gate is not built. TokenExchangePrerequisites has no licensed field, so a gateway with JWT auth and a database exchanges tokens and advertises the grant, where LiteLLM without a license answers unsupported_grant_type with "JWT auth is an enterprise only feature; no license is set".
+    why: betterlite has no paid tier and every feature is on. B053 records the same difference for JWT auth itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L52-L73
+  - what: >-
+      A subject token whose JWT auth answer has user_id set to empty text is refused with 400 invalid_request
+      "subject_token names no user the gateway knows", as a token with no user is. LiteLLM builds
+      SubjectIdentity(user_id="") from it, pydantic's Field(min_length=1) raises ValidationError, nothing catches it
+      before the /token route, and the proxy's catch-all handler answers 500
+      {"error": {"message": "Internal server error", "type": "internal_server_error"}}.
+    why: rules.yaml's owned-behavior-is-built fixes a 500 from an unhandled exception on input LiteLLM already fails, where a 4xx belongs, and no working setup relies on that 500. B10063's ExchangeSubjectToken answers an identity or a refusal and carries no 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L216-L219
+  - what: Only ASCII digits make a Proxy denial a 5xx, and any digit string past u16's range counts as one. LiteLLM tests code.isdigit() and int(code) >= 500, whose isdigit() also accepts other Unicode decimal digits such as "٥٠٠" (answer invalid_request here, temporarily_unavailable there), and whose int() raises ValueError on a digit string longer than Python's conversion limit, which escapes the /token route's handler as a 500.
+    why: LiteLLM builds ProxyException.code by str()-ing an int or a status it set itself, so no working setup reaches a non-ASCII or over-long code; copying the crash and the Unicode-only comparison would add a bug neither the grant nor a client can use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L214-L221
+kept_bugs: []

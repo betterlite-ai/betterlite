@@ -1,0 +1,13 @@
+kind: helper
+name: vector-endpoint-access-endpoint-pattern-matching
+call:
+  vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /vector_stores/vs_a/files/file_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+calls:
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /vector_stores/vs_a/whatever, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: openai, id: idx, method: GET, path: /v1/vector_stores/idx/search, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /embeddings/vs_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: openai, id: idx, method: GET, path: /embeddings/idx, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /vector_stores/vs_a/files/file_a, app_root_path: /vector_stores, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: get, path: /vector_stores/vs_a/files/file_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+env: {}
+compare: {ignore: []}
