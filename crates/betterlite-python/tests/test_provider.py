@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Final, TypeAlias
 
@@ -7,7 +7,6 @@ import openai
 import pytest
 from litellm.litellm_core_utils import get_llm_provider_logic
 from litellm.llms.custom_llm import CustomLLM
-from litellm.types.router import GenericLiteLLMParams as TheirParams
 
 import betterlite
 from betterlite._provider import _get_openai_compatible_provider_info as our_compatible_info
@@ -170,17 +169,19 @@ def test_lookup_params_fill() -> None:
             custom_llm_provider="groq", api_base="https://example/v1", api_key="sk-params"
         ),
     )
+    # LiteLLM fills the three arguments from params only when all three are None
+    # (get_llm_provider_logic.py:187), so passing them explicitly is that same call.
     theirs = get_llm_provider_logic.get_llm_provider(
         model="llama3-8b-8192",
-        litellm_params=TheirParams(
-            custom_llm_provider="groq", api_base="https://example/v1", api_key="sk-params"
-        ),
+        custom_llm_provider="groq",
+        api_base="https://example/v1",
+        api_key="sk-params",
     )
     assert ours == theirs
 
 
 @contextmanager
-def custom_maps() -> Iterator[str]:
+def custom_maps() -> Generator[str]:
     betterlite.custom_provider_map = [{"provider": "myprovider"}]
     litellm.custom_provider_map = [{"provider": "myprovider", "custom_handler": CustomLLM()}]
     try:
@@ -275,17 +276,13 @@ def test_errors_none_model() -> None:
 
 
 def test_errors_params_ignored() -> None:
-    theirs_params = TheirParams(
-        custom_llm_provider="groq", api_base="https://example/v1", api_key="sk-params"
-    )
     ours_params = GenericLiteLLMParams(
         custom_llm_provider="groq", api_base="https://example/v1", api_key="sk-params"
     )
     caught: list[str] = []
     try:
-        get_llm_provider_logic.get_llm_provider(
-            model="llama3-8b-8192", custom_llm_provider="", litellm_params=theirs_params
-        )
+        # a non-None custom_llm_provider keeps LiteLLM from reading the params (line 188)
+        get_llm_provider_logic.get_llm_provider(model="llama3-8b-8192", custom_llm_provider="")
     except openai.BadRequestError as error:
         caught.append(str(error))
     with pytest.raises(BadRequestError) as actual:
