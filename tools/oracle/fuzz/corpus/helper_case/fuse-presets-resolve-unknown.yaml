@@ -1,0 +1,10 @@
+kind: helper
+name: fuse-presets-resolve-unknown
+call:
+  b10087:
+    function: resolve
+    text: A hand-written profile for this deployment.
+    preset_id: gpt-6-sol-v9
+    kind: model
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+kind: helper
+name: poll-frame-literal-selection
+call:
+  responses_poll_frame:
+    frames:
+      - "data:{\"type\":\"x\"}\n\n"
+      - ": keep-alive\n\n"
+      - ""
+      - "data:  {\"type\":\"x\"}  \n\n"
+      - "event: response.created\ndata: {\"type\":\"x\"}"
+      - "data: {\"type\":\"first\"}\ndata: {\"type\":\"second\"}"
+      - "data: {\"type\":\"response.out"
+      - "data: [DONE]\n\n"
+      - "data:  [DONE] \r\n"
+      - "data: 42\n"
+      - "data: null\n"
+      - "data: \u00a0{\"type\":\"x\"}\u001c"
+      - "data: {\"type\":\"x\"}\u2028data: {\"type\":\"y\"}"
+      - "data: {\"type\":\"x\"}\rdata: {\"type\":\"y\"}"
+env: {}
+compare: {ignore: []}
