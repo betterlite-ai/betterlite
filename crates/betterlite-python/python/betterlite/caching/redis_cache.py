@@ -26,7 +26,7 @@ class RedisCache(_BackendCache[NativeRedis]):
     ) -> None:
         if startup_nodes is not None or cluster_nodes_are_set():
             raise NotImplementedError("the redis cluster cache is not built yet")
-        configured = betterlite.default_redis_ttl
+        configured: float | None = betterlite.default_redis_ttl
         resolved_ttl = _DEFAULT_TTL if configured is None else int(configured)
         super().__init__(default_ttl=resolved_ttl)
         self.namespace = namespace

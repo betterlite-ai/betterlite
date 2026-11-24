@@ -77,8 +77,21 @@ class BackendModule(Protocol):
     def __getattr__(self, name: str) -> BackendFactory: ...
 
 
+class DualCacheFactory(Protocol):
+    def __call__(
+        self,
+        in_memory_cache: ReferenceBackend | None = None,
+        redis_cache: ReferenceBackend | None = None,
+    ) -> ReferenceBackend: ...
+
+
+class DualCacheModule(Protocol):
+    def __getattr__(self, name: str) -> DualCacheFactory: ...
+
+
 # litellm ships these classes untyped, so its backends come through this typed shape.
 LITELLM_CACHING: BackendModule = importlib.import_module("litellm.caching")
+LITELLM_DUAL: DualCacheModule = importlib.import_module("litellm.caching")
 
 
 async def _in_memory_round_trip(
@@ -294,7 +307,7 @@ def test_dual_local_only_stays(redis_server: FakeRedisServer) -> None:
     redis_ours = RedisCache(host=redis_server.host, port=redis_server.port)
     ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_ours)
     redis_theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
-    theirs = LITELLM_CACHING.DualCache(
+    theirs = LITELLM_DUAL.DualCache(
         in_memory_cache=LITELLM_CACHING.InMemoryCache(), redis_cache=redis_theirs
     )
     ours.set_cache("ours:dual-local", CACHED, local_only=True)
@@ -302,7 +315,7 @@ def test_dual_local_only_stays(redis_server: FakeRedisServer) -> None:
     assert ours.get_cache("ours:dual-local") == CACHED
     assert theirs.get_cache("litellm:dual-local") == CACHED
     fresh_ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_ours)
-    fresh_theirs = LITELLM_CACHING.DualCache(
+    fresh_theirs = LITELLM_DUAL.DualCache(
         in_memory_cache=LITELLM_CACHING.InMemoryCache(), redis_cache=redis_theirs
     )
     assert fresh_ours.get_cache("ours:dual-local") is None

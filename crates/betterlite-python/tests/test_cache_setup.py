@@ -74,11 +74,16 @@ class ReferenceListModule(Protocol):
     def __getattr__(self, name: str) -> list[Callback]: ...
 
 
+class CacheStateModule(Protocol):
+    def __getattr__(self, name: str) -> Cache | None: ...
+
+
 # litellm ships its cache types untyped, so its objects come through these typed shapes.
 LITELLM_CACHING: ReferenceCachingModule = importlib.import_module("litellm.caching.caching")
 LITELLM_SWITCHES: ReferenceSwitchModule = importlib.import_module("litellm.caching.caching")
 LITELLM_STATE: ReferenceStateModule = importlib.import_module("litellm")
 LITELLM_LISTS: ReferenceListModule = importlib.import_module("litellm")
+OURS_STATE: CacheStateModule = importlib.import_module("betterlite")
 
 
 @pytest.fixture(autouse=True)
@@ -284,7 +289,7 @@ def test_repr_hides_credentials(redis_server: FakeRedisServer) -> None:
 def test_enable_adds_cache() -> None:
     enable_cache()
     LITELLM_SWITCHES.enable_cache()
-    assert betterlite.cache is not None
+    assert OURS_STATE.cache is not None
     assert LITELLM_STATE.cache is not None
     ours_counts, theirs_counts = _cache_callback_counts()
     assert ours_counts == theirs_counts == CACHE_CALLBACK_COUNTS
@@ -296,24 +301,24 @@ def test_enable_adds_cache() -> None:
 
 def test_enable_keeps_cache() -> None:
     ours = Cache()
-    betterlite.cache = ours
+    betterlite.cache = ours  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L402-L405
     LITELLM_SWITCHES.update_cache()
     reference = LITELLM_STATE.cache
     enable_cache(type="disk")
     LITELLM_SWITCHES.enable_cache(type="disk")
-    assert betterlite.cache is ours
+    assert OURS_STATE.cache is ours
     assert LITELLM_STATE.cache is reference
 
 
 def test_update_replaces_cache() -> None:
     update_cache()
-    ours_first = betterlite.cache
+    ours_first = OURS_STATE.cache
     LITELLM_SWITCHES.update_cache()
     reference_first = LITELLM_STATE.cache
     update_cache()
     LITELLM_SWITCHES.update_cache()
-    assert betterlite.cache is not None
-    assert betterlite.cache is not ours_first
+    assert OURS_STATE.cache is not None
+    assert OURS_STATE.cache is not ours_first
     assert LITELLM_STATE.cache is not reference_first
     assert LITELLM_STATE.cache is not None
     ours_counts, theirs_counts = _cache_callback_counts()
@@ -325,7 +330,7 @@ def test_disable_removes_all() -> None:
     LITELLM_SWITCHES.enable_cache()
     disable_cache()
     LITELLM_SWITCHES.disable_cache()
-    assert betterlite.cache is None
+    assert OURS_STATE.cache is None
     assert LITELLM_STATE.cache is None
     ours_counts, theirs_counts = _cache_callback_counts()
     assert ours_counts == theirs_counts == EMPTY_CALLBACK_COUNTS

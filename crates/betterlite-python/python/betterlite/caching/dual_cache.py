@@ -135,7 +135,7 @@ class DualCache(BaseCache):
         self,
         key: str,
         value: int,
-        local_only: JsonValue = False,
+        local_only: JsonValue = False,  # noqa: FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164
         **kwargs: JsonValue,
     ) -> int:
         if _local_only(local_only):
@@ -147,7 +147,7 @@ class DualCache(BaseCache):
         key: str,
         value: float,
         parent_otel_span: JsonValue = None,
-        local_only: JsonValue = False,
+        local_only: JsonValue = False,  # noqa: FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L570
         refresh_ttl: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L571
         **kwargs: JsonValue,
     ) -> float | None:
