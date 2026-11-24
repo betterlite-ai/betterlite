@@ -8,7 +8,7 @@ use super::support::{cipher, config, credential, sealed};
 use crate::db_row_decrypt::credentials::{credential_list, decrypt_credential};
 
 fn value<'item>(item: &'item CredentialItem, name: &str) -> &'item CredentialValue {
-    item.credential_values.0.get(name).unwrap()
+    &item.credential_values.0[name]
 }
 
 #[test]

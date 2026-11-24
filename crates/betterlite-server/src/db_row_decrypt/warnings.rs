@@ -36,6 +36,7 @@ impl Warnings {
         while seen.len() > MAX_COST_MAP_COPY_WARNINGS {
             seen.shift_remove_index(0);
         }
+        drop(seen);
         true
     }
 }

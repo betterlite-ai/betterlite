@@ -92,8 +92,8 @@ fn warns_again_for_a_different_field_set_on_the_same_deployment() {
         r#"{"model_id":"dep-1","model_name":"gpt","litellm_params":{"model":"m"},
         "model_info":{"key":"k","output_cost_per_token":0.5}}"#,
     );
-    model_info_for(&first, false, &warnings);
-    model_info_for(&second, false, &warnings);
+    drop(model_info_for(&first, false, &warnings));
+    drop(model_info_for(&second, false, &warnings));
     let captured = logs.contents();
     assert_eq!(
         captured
