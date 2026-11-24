@@ -320,3 +320,30 @@ async fn buffered_content_dispatch_keeps_a_supplied_logging_state() {
         .unwrap();
     assert_eq!(sent(&read).pop().unwrap().target.generic().created, None);
 }
+
+// LiteLLM forwards any non-None client to the Azure SDK handler, where an httpx client fails
+#[tokio::test]
+async fn buffered_content_dispatch_azure_drops_an_http_handler() {
+    let env = Env::default();
+    let resolution = env.resolution();
+    let read = reader(&resolution);
+    let kwargs = ContentKwargs::default();
+    let mut call = content_call(&kwargs);
+    call.custom_llm_provider = Some(String::from("azure"));
+    let context = ContentContext {
+        trusted: None,
+        client: Some(CallerClient::Http(SuppliedClient {
+            kind: ClientKind::Asynchronous,
+            transport: &(),
+        })),
+        logger: None,
+        logging: None,
+    };
+    run(&read, ContentEntry::Async, &call, context)
+        .await
+        .unwrap();
+    assert!(matches!(
+        sent(&read).pop().unwrap().target,
+        Seen::Azure { client: None, .. }
+    ));
+}
