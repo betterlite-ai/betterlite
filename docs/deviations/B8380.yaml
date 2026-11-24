@@ -12,6 +12,9 @@ deviations:
   - what: team_config returns ConfigStateError::InvalidSetting when litellm_settings or default_team_settings is not the expected shape, and ConfigStateError::MissingTeamId when an entry is not an object or has no team_id.
     why: LiteLLM calls .get on a non-mapping litellm_settings and raises AttributeError, and indexes a non-mapping team entry and raises TypeError; a working setup never reaches either, and the typed error keeps a 4xx-shaped failure with the entry masked.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5832-L5860
+  - what: decode_section_values refuses a stored section row that holds JSON that is not an object with ConfigStateError::InvalidStoredSection.
+    why: LiteLLM reads any stored value that is not a mapping as an empty mapping, so a corrupt row silently reads as a section with no keys and the next merge writes it away; a typed error names the row instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5687-L5694
   - what: Without a database, save_config writes the config file with serde_saphyr (block style, sorted keys) instead of PyYAML's yaml.dump.
     why: The written document parses to the same mapping, but PyYAML's quoting and indentation of some scalars differ from the serializer, so the file text is not byte-identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5586-L5588
