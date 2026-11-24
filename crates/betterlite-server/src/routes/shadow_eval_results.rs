@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::Router;
-use axum::extract::{Extension, Path, RawQuery, State};
+use axum::extract::{Extension, OriginalUri, Path, RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -39,9 +39,9 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         store: store_from_state(state).map(Arc::new),
     });
     Router::new()
-        .route(LIST_PATH, get(shadow_eval_list_read))
-        .route(DETAIL_PATH, get(shadow_eval_detail_read))
-        .route(START_PATH, get(shadow_eval_detail_read))
+        .route(LIST_PATH, get(shadow_eval_read))
+        .route(DETAIL_PATH, get(shadow_eval_read))
+        .route(START_PATH, get(shadow_eval_read))
         .with_state(results)
 }
 
@@ -61,26 +61,27 @@ impl IntoResponse for RouteFailure {
 }
 
 // FastAPI checks the auth (401) before it validates the query (422), then the endpoint checks the role (403)
-async fn shadow_eval_list_read(
+async fn shadow_eval_read(
     State(state): State<Arc<ResultsState>>,
+    OriginalUri(uri): OriginalUri,
+    job: Option<Path<String>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
 ) -> Result<Response, RouteFailure> {
     let identity = identity_of_caller(caller.as_ref())?;
-    let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
-        .map_err(|error| RouteFailure::from(failure(&ShadowResultsRouteError::from(error))))?;
-    let store = viewer_store(&state, &identity)?;
-    answered(list_shadow_eval_jobs(store, &query, Utc::now()).await)
-}
-
-// LiteLLM's {job_id} route reads GET on the static start path as job "start", so this handler serves both reads
-async fn shadow_eval_detail_read(
-    State(state): State<Arc<ResultsState>>,
-    job: Option<Path<String>>,
-    caller: Option<Extension<AuthContext>>,
-) -> Result<Response, RouteFailure> {
-    let identity = identity_of_caller(caller.as_ref())?;
-    let job_id = job.map_or_else(|| "start".to_owned(), |Path(job_id)| job_id);
+    let job_id = match job {
+        Some(Path(job_id)) => job_id,
+        // LiteLLM's {job_id} route reads GET on the static start path as job "start"
+        None if uri.path() == START_PATH => "start".to_owned(),
+        None => {
+            let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
+                .map_err(|error| {
+                    RouteFailure::from(failure(&ShadowResultsRouteError::from(error)))
+                })?;
+            let store = viewer_store(&state, &identity)?;
+            return answered(list_shadow_eval_jobs(store, &query, Utc::now()).await);
+        }
+    };
     let store = viewer_store(&state, &identity)?;
     answered(get_shadow_eval_job(store, &job_id, Utc::now()).await)
 }
