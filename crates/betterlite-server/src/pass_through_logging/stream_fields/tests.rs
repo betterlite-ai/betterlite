@@ -121,13 +121,20 @@ fn fields_split_lines_matches_python_splitlines() {
 #[test]
 fn fields_extract_trims_python_whitespace_around_the_data() {
     let text = concat!(
-        "data: \u{1c}\t{\"type\": \"message_start\", \"message\": {\"model\": \"a\"}}\u{1f}\u{3000}\n",
-        "data:\u{a0}{\"type\": \"message_start\", \"message\": {\"model\": \"b\"}}\n",
+        "data: \t\u{1f}{\"type\": \"message_start\", \"message\": {\"model\": \"a\"}}\u{3000}\u{a0}\r\n",
+        "data:\u{2000}{\"type\": \"message_start\", \"message\": {\"model\": \"b\"}}\n",
     );
     let chunks = [Chunk::Text(text.to_owned())];
     assert_eq!(
         extract_message_start_field(&chunks, "model").expect("valid text"),
         Some("a".to_owned())
+    );
+    let second = [Chunk::Text(
+        "data:\u{2000}{\"type\": \"message_start\", \"message\": {\"model\": \"b\"}}\n".to_owned(),
+    )];
+    assert_eq!(
+        extract_message_start_field(&second, "model").expect("valid text"),
+        Some("b".to_owned())
     );
 }
 
