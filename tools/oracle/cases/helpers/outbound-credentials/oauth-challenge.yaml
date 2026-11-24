@@ -1,0 +1,46 @@
+kind: helper
+name: outbound-credentials-oauth-challenge
+call:
+  b4667:
+    function: user_oauth_challenge
+    server:
+      server_id: srv-1
+      name: Server One
+      transport: http
+      url: https://mcp.example.com/mcp
+      alias: Alias
+    root_path: /
+    scalar_root_path: ""
+calls:
+  - b4667:
+      function: user_oauth_challenge
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: ""
+      scalar_root_path: ""
+  - b4667:
+      function: user_oauth_challenge
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: /team/a
+      scalar_root_path: ""
+  - b4667:
+      function: user_oauth_challenge
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        server_name: named
+      root_path: /team/a
+      scalar_root_path: ""
+env: {}
+compare: {ignore: []}
