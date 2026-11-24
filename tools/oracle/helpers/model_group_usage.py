@@ -203,7 +203,7 @@ async def answer(input_value: Input, router: CaseRouter, cache: ScriptedCache) -
         returned: JsonValue = await router.set_response_headers(  # type: ignore[misc]  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11367
             response=input_value["response"],
             model_group=input_value["model_group"],
-            request_kwargs=input_value["request_kwargs"],
+            request_kwargs=input_value["request_kwargs"],  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11371
         )
         response: ResponsePayload = {"response": returned, "reads": cache.reads}
         return ANSWER.validate_python(response)
@@ -212,7 +212,7 @@ async def answer(input_value: Input, router: CaseRouter, cache: ScriptedCache) -
 
 def filter_answer(input_value: Input, router: CaseRouter) -> JsonValue:
     group = model_group(input_value, "filter")
-    filtered: list[FilteredRow] = router._filter_deployments_by_model_access_groups(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12941
+    filtered: list[FilteredRow] = router._filter_deployments_by_model_access_groups(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12941
         model=group,
         healthy_deployments=candidate_rows(input_value, group),
         request_kwargs=filter_request_kwargs(input_value),
