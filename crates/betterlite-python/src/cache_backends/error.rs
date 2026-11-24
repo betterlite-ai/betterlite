@@ -5,8 +5,8 @@ use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::redis_counters::RedisCountersError;
-use pyo3::PyErr;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::{PyErr, PyResult};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BackendHandleError {

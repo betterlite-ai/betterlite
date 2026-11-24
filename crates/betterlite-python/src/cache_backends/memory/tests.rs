@@ -2,10 +2,8 @@
 
 use std::sync::Arc;
 
-use betterlite_cache::backend::memory::MemoryCacheOps as _;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_context::local_ttl_cache::CacheValue;
-use pyo3::prelude::*;
 
 use super::*;
 use crate::cache_backends::convert;
