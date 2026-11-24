@@ -23,17 +23,21 @@ pub enum GatewayOutage {
     Faulted,
 }
 
+// clippy's struct_excessive_bools allows two bools per struct, and these three gates are independent
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrerequisiteSwitch(pub bool);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TokenExchangePrerequisites {
-    pub jwt_auth_enabled: bool,
-    pub has_database: bool,
-    pub maps_jwts_to_virtual_keys: bool,
+    pub jwt_auth_enabled: PrerequisiteSwitch,
+    pub has_database: PrerequisiteSwitch,
+    pub maps_jwts_to_virtual_keys: PrerequisiteSwitch,
 }
 
 impl TokenExchangePrerequisites {
     #[must_use]
     pub fn refusal(self) -> Option<SubjectTokenRefusal> {
-        if !self.jwt_auth_enabled {
+        if !self.jwt_auth_enabled.0 {
             return Some(SubjectTokenRefusal {
                 error: RefusalCode::UnsupportedGrantType,
                 description:
@@ -41,14 +45,14 @@ impl TokenExchangePrerequisites {
                         .to_owned(),
             });
         }
-        if !self.has_database {
+        if !self.has_database.0 {
             return Some(SubjectTokenRefusal {
                 error: RefusalCode::UnsupportedGrantType,
                 description: "this gateway has no database, so it cannot exchange IdP tokens"
                     .to_owned(),
             });
         }
-        if self.maps_jwts_to_virtual_keys {
+        if self.maps_jwts_to_virtual_keys.0 {
             return Some(SubjectTokenRefusal {
                 error: RefusalCode::UnsupportedGrantType,
                 description: "this gateway maps IdP tokens to virtual keys, which the exchange does not serve"

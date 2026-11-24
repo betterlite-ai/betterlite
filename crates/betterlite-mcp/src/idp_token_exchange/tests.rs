@@ -15,8 +15,8 @@ use tracing_subscriber::registry;
 
 use super::{
     AuthorizeSubjectToken, AuthorizedSubject, DenialSource, EXCHANGE_ROUTE, IdpTokenExchange,
-    REJECTED_SUBJECT_TOKEN, SUBJECT_CHECK_FAULTED, SUBJECT_CHECK_UNAVAILABLE, SubjectTokenDenial,
-    TokenExchangeInputs, TokenExchangePrerequisites,
+    PrerequisiteSwitch, REJECTED_SUBJECT_TOKEN, SUBJECT_CHECK_FAULTED, SUBJECT_CHECK_UNAVAILABLE,
+    SubjectTokenDenial, TokenExchangeInputs, TokenExchangePrerequisites,
 };
 use crate::gateway_dcr::subject_token::{
     ExchangeSubjectToken, RefusalCode, SubjectIdentity, SubjectTokenRefusal,
@@ -130,9 +130,9 @@ where
 
 fn prerequisites() -> TokenExchangePrerequisites {
     TokenExchangePrerequisites {
-        jwt_auth_enabled: true,
-        has_database: true,
-        maps_jwts_to_virtual_keys: false,
+        jwt_auth_enabled: PrerequisiteSwitch(true),
+        has_database: PrerequisiteSwitch(true),
+        maps_jwts_to_virtual_keys: PrerequisiteSwitch(false),
     }
 }
 
@@ -221,25 +221,25 @@ fn the_exchange_constants_match_litellms_token_route() {
 #[rstest]
 #[case::jwt_off(
     TokenExchangePrerequisites {
-        jwt_auth_enabled: false,
-        has_database: true,
-        maps_jwts_to_virtual_keys: false,
+        jwt_auth_enabled: PrerequisiteSwitch(false),
+        has_database: PrerequisiteSwitch(true),
+        maps_jwts_to_virtual_keys: PrerequisiteSwitch(false),
     },
     "JWT auth is not enabled on this gateway, so it cannot exchange IdP tokens"
 )]
 #[case::no_database(
     TokenExchangePrerequisites {
-        jwt_auth_enabled: true,
-        has_database: false,
-        maps_jwts_to_virtual_keys: true,
+        jwt_auth_enabled: PrerequisiteSwitch(true),
+        has_database: PrerequisiteSwitch(false),
+        maps_jwts_to_virtual_keys: PrerequisiteSwitch(true),
     },
     "this gateway has no database, so it cannot exchange IdP tokens"
 )]
 #[case::mapped(
     TokenExchangePrerequisites {
-        jwt_auth_enabled: true,
-        has_database: true,
-        maps_jwts_to_virtual_keys: true,
+        jwt_auth_enabled: PrerequisiteSwitch(true),
+        has_database: PrerequisiteSwitch(true),
+        maps_jwts_to_virtual_keys: PrerequisiteSwitch(true),
     },
     "this gateway maps IdP tokens to virtual keys, which the exchange does not serve"
 )]
@@ -260,9 +260,9 @@ fn refusal_is_none_when_every_prerequisite_holds() {
 #[tokio::test]
 async fn a_prerequisite_refusal_comes_before_the_shape_test() {
     let unmet = TokenExchangePrerequisites {
-        jwt_auth_enabled: false,
-        has_database: false,
-        maps_jwts_to_virtual_keys: false,
+        jwt_auth_enabled: PrerequisiteSwitch(false),
+        has_database: PrerequisiteSwitch(false),
+        maps_jwts_to_virtual_keys: PrerequisiteSwitch(false),
     };
     let outcome = run_with("garbage", unmet, Ok(subject(Some("user-1"), None, None))).await;
     let refusal = outcome.result.unwrap_err();
@@ -397,7 +397,9 @@ async fn empty_user_id_is_no_user() {
     "a signed code"
 )]
 #[case::proxy_unicode_digits(
-    DenialSource::Proxy { code: "٥٠٠".to_owned() },
+    DenialSource::Proxy {
+        code: "\u{665}\u{660}\u{660}".to_owned(),
+    },
     "Unicode digits"
 )]
 #[tokio::test]

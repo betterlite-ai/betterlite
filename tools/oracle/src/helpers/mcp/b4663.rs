@@ -4,8 +4,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_mcp::idp_token_exchange::{
-    AuthorizeSubjectToken, AuthorizedSubject, DenialSource, IdpTokenExchange, SubjectTokenDenial,
-    TokenExchangeInputs, TokenExchangePrerequisites, identity_from_subject_token,
+    AuthorizeSubjectToken, AuthorizedSubject, DenialSource, IdpTokenExchange, PrerequisiteSwitch,
+    SubjectTokenDenial, TokenExchangeInputs, TokenExchangePrerequisites,
+    identity_from_subject_token,
 };
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
@@ -19,12 +20,17 @@ use tracing_subscriber::registry;
 
 const PREFIX: &str = "token exchange ";
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the case input.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(transparent)]
+struct CaseFlag(bool);
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Prerequisites {
-    jwt_auth_enabled: bool,
-    has_database: bool,
-    maps_jwts_to_virtual_keys: bool,
+    jwt_auth_enabled: CaseFlag,
+    has_database: CaseFlag,
+    maps_jwts_to_virtual_keys: CaseFlag,
 }
 
 // The case names what the proxy's JWT auth answers: a resolved result or the exception it raises.
@@ -83,9 +89,11 @@ struct CaseInputs<'case> {
 impl TokenExchangeInputs for CaseInputs<'_> {
     fn prerequisites(&self) -> TokenExchangePrerequisites {
         TokenExchangePrerequisites {
-            jwt_auth_enabled: self.prerequisites.jwt_auth_enabled,
-            has_database: self.prerequisites.has_database,
-            maps_jwts_to_virtual_keys: self.prerequisites.maps_jwts_to_virtual_keys,
+            jwt_auth_enabled: PrerequisiteSwitch(self.prerequisites.jwt_auth_enabled.0),
+            has_database: PrerequisiteSwitch(self.prerequisites.has_database.0),
+            maps_jwts_to_virtual_keys: PrerequisiteSwitch(
+                self.prerequisites.maps_jwts_to_virtual_keys.0,
+            ),
         }
     }
 }
