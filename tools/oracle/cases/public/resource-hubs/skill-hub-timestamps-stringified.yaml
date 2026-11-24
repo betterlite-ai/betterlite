@@ -1,0 +1,21 @@
+kind: helper
+name: resource-hubs-skill-hub-timestamps-stringified
+call:
+  b3194:
+    function: skill_hub
+    plugins:
+      - id: plugin-alpha
+        name: alpha
+        manifest_json: '{"description": "an alpha plugin"}'
+        enabled: true
+        created_at: "2024-01-02T03:04:05.123456"
+        updated_at: "2026-11-23T00:00:00"
+      - id: plugin-beta
+        name: beta
+        manifest_json: null
+        enabled: true
+        created_at: null
+        updated_at: "2024-05-06T07:08:09.120000"
+    table_error: false
+env: {}
+compare: {ignore: []}

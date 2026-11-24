@@ -1,0 +1,15 @@
+kind: helper
+name: resource-hubs-mcp-hub-filters-by-allowlist
+call:
+  b3194:
+    function: mcp_hub
+    config_servers:
+      - {server_id: cfg-listed, name: Listed Config, alias: cfg-alias, transport: http, available_on_public_internet: false}
+      - {server_id: cfg-open, name: Open Config, transport: http, available_on_public_internet: true}
+    db_servers:
+      - {server_id: db-listed, name: Listed Database, transport: sse}
+      - {server_id: db-hidden, name: Hidden Database, transport: http, available_on_public_internet: false}
+    public_mcp_servers: [cfg-listed]
+    public_hub_strict: true
+env: {}
+compare: {ignore: []}

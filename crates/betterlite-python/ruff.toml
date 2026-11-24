@@ -8,5 +8,8 @@ src = ["python"]
 "python/betterlite/_custom_llm/*" = ["A002", "ARG002", "ASYNC109", "FBT001", "PLE0302", "PLR0913", "PLR0917", "PYI036"] # user subclasses override LiteLLM's handler signatures, so these parameters stay as LiteLLM has them
 "python/betterlite/_completion/*" = ["B006", "BLE001", "PLR0913", "PLR0917"] # LiteLLM's 44-parameter completion, its messages: list = [] defaults, the 6-parameter acount_tokens and keyword-only LiteLLM(), and its broad proxy-auth catch stay as LiteLLM has them
 "python/betterlite/_completion/acompletion.py" = ["ASYNC109"] # LiteLLM's acompletion is async and keeps the timeout parameter its signature carries
+"python/betterlite/ocr/*" = ["A003", "N815", "PLR0913", "PLR0917"] # LiteLLM's OCRResponse keeps its object and keyValuePairs fields, and _bind_request its seven keywords
+"python/betterlite/search/*" = ["A003", "ASYNC109", "PLR0913", "PLR0917"] # LiteLLM's search and asearch keep their 11 keywords and its timeout, and SearchResponse its object field
 "python/betterlite/_completion/errors.py" = ["C901", "PLR0912", "PLR0915"] # one dispatch over the native error types, as the task requires, is over ruff's default branch, complexity and statement limits
 "python/betterlite/_embeddings/*" = ["A002", "B006", "FBT001", "FBT002", "PLR0913", "PLR0917"] # LiteLLM's 14-parameter embedding keeps its bool caching parameter, its input=[] and caching=False defaults and its parameter names
+"python/betterlite/containers/*" = ["ASYNC109", "PLR0913", "PLR0917"] # LiteLLM's eight container functions keep their declared parameters, and the async twin keeps the timeout parameter its signature carries
