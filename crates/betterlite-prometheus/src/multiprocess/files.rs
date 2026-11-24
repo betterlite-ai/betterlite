@@ -12,7 +12,7 @@ const DOUBLE_BYTES: usize = 8;
 const TWO_DOUBLES_BYTES: usize = 16;
 const ALIGNMENT_BYTES: usize = 8;
 // prometheus_client's mmap_dict._INITIAL_MMAP_SIZE: a fresh file is one 64 KiB page of zero bytes
-const INITIAL_CAPACITY: usize = 65536;
+const INITIAL_CAPACITY: usize = 0x0001_0000;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DbEntry {

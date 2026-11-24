@@ -27,14 +27,14 @@ fn round_trips_entries() {
         entry(r#"["queue", "queue_length", {}, "queue"]"#, -2.0, 0.0),
     ];
     let bytes = encode_db_file(&entries);
-    assert_eq!(bytes.len(), 65536);
+    assert_eq!(bytes.len(), 0x0001_0000);
     assert_eq!(decode_db_file(&bytes).unwrap(), entries);
 }
 
 #[test]
 fn writes_a_fresh_page() {
     let bytes = encode_db_file(&[]);
-    assert_eq!(bytes.len(), 65536);
+    assert_eq!(bytes.len(), 0x0001_0000);
     assert_eq!(
         bytes.get(..8).unwrap(),
         [8_u8, 0, 0, 0, 0, 0, 0, 0].as_slice()
@@ -48,7 +48,7 @@ fn grows_the_file_while_entries_do_not_fit() {
     let key = "k".repeat(70000);
     let entries = vec![entry(&key, 1.0, 2.0)];
     let bytes = encode_db_file(&entries);
-    assert_eq!(bytes.len(), 131072);
+    assert_eq!(bytes.len(), 0x0002_0000);
     assert_eq!(decode_db_file(&bytes).unwrap(), entries);
 }
 
@@ -57,7 +57,7 @@ fn keeps_the_page_when_the_entries_fill_it_exactly() {
     let key = "k".repeat(65504);
     let entries = vec![entry(&key, 1.0, 2.0)];
     let bytes = encode_db_file(&entries);
-    assert_eq!(bytes.len(), 65536);
+    assert_eq!(bytes.len(), 0x0001_0000);
     assert_eq!(decode_db_file(&bytes).unwrap(), entries);
 }
 
