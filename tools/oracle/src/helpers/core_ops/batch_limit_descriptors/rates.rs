@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use async_trait::async_trait;
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_core::api::batch_limit_descriptors::descriptors::{
@@ -46,7 +47,7 @@ impl AgentPolicyRegistry for NoDeps {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl DeploymentHealthSource for NoDeps {
     async fn deployments_for_model(
         &self,
@@ -63,7 +64,7 @@ impl DeploymentHealthSource for NoDeps {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl TagRateLimitResolver for NoDeps {
     async fn resolve(&self, _tag_names: &[String]) -> BTreeMap<String, TagRateLimit> {
         BTreeMap::new()

@@ -9,6 +9,7 @@ use betterlite_auth::resolved_key::credential::safe_hash_api_key;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
+use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::BatchLimitDescriptors;
@@ -44,9 +45,9 @@ fn empty_limiter() -> FakeLimiter {
 }
 
 fn single(answers: Vec<BatchLimitAnswer>) -> BatchLimitAnswer {
-    let mut answers = answers.into_iter();
-    let answer = answers.next().expect("one answer");
-    assert!(answers.next().is_none(), "exactly one answer");
+    let mut remaining = answers.into_iter();
+    let answer = remaining.next().expect("one answer");
+    assert!(remaining.next().is_none(), "exactly one answer");
     answer
 }
 
@@ -245,8 +246,7 @@ fn max_output_estimate(#[case] entry: &str, #[case] candidates: i64, #[case] exp
 #[test]
 fn unsupported_model_skip_warning() {
     let warnings = support::LevelLog::warnings();
-    let guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(warnings.clone()));
+    let guard = set_default(tracing_subscriber::registry().with(warnings.clone()));
     let service = service(
         settings(None, None, Some(vec!["gpt".to_owned()])),
         empty_limiter(),
@@ -266,8 +266,7 @@ fn unsupported_model_skip_warning() {
 #[case::empty(Some(Vec::new()))]
 fn unsupported_model_skip_warning_is_silent(#[case] models: Option<Vec<String>>) {
     let warnings = support::LevelLog::warnings();
-    let guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(warnings.clone()));
+    let guard = set_default(tracing_subscriber::registry().with(warnings.clone()));
     let service = service(settings(None, None, models), empty_limiter(), None);
     drop(run_calls(
         &service,
@@ -572,8 +571,7 @@ fn should_skip_does_not_resolve_without_skip_providers() {
 #[test]
 fn skip_debug_messages_name_the_provider_and_the_missing_limits() {
     let messages = support::LevelLog::debugs();
-    let guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(messages.clone()));
+    let guard = set_default(tracing_subscriber::registry().with(messages.clone()));
     let providers = skip_service("providers");
     drop(run_calls(
         &providers,

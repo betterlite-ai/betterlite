@@ -158,9 +158,12 @@ where
                 custom_llm_provider,
                 data,
             } => {
-                let (file_id, params) =
+                let (resolved_file_id, params) =
                     fetch_params::fetch_params(self, file_id, custom_llm_provider, data)?;
-                Ok(BatchLimitAnswer::ResolveFetchParams { file_id, params })
+                Ok(BatchLimitAnswer::ResolveFetchParams {
+                    file_id: resolved_file_id,
+                    params,
+                })
             }
         }
     }

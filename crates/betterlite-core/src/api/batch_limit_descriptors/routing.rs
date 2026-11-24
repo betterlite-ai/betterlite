@@ -104,10 +104,10 @@ pub(super) fn resolve_batch_provider<Limiter, Credentials>(
 where
     Credentials: CredentialSource,
 {
-    let Some(model) = model.filter(|name| !name.is_empty()) else {
+    let Some(bound) = model.filter(|name| !name.is_empty()) else {
         return Ok(None);
     };
-    match credentials_for(service.credentials.as_ref(), model)? {
+    match credentials_for(service.credentials.as_ref(), bound)? {
         Some(credentials) => Ok(provider_from(&credentials)),
         None => Ok(None),
     }

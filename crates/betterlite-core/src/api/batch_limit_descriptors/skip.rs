@@ -51,8 +51,8 @@ where
     let providers = service.settings.skip_providers.as_deref().unwrap_or(&[]);
     if !providers.is_empty() {
         let provider = resolve_batch_provider(service, batch_routing_model(data).as_deref())?;
-        if let Some(provider) = provider.filter(|name| providers.contains(name)) {
-            tracing::debug!("Skipping batch input file processing for provider={provider}");
+        if let Some(skipped) = provider.filter(|name| providers.contains(name)) {
+            tracing::debug!("Skipping batch input file processing for provider={skipped}");
             return Ok(BatchSkip {
                 skip: true,
                 descriptors: None,

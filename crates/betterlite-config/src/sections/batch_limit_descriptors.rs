@@ -50,10 +50,10 @@ fn names<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(value) = value.filter(|value| !matches!(value, JsonValue::Null)) else {
+    let Some(raw) = value.filter(|entry| !matches!(entry, JsonValue::Null)) else {
         return Ok(None);
     };
-    let JsonValue::Array(items) = value else {
+    let JsonValue::Array(items) = raw else {
         return Err(ConfigError::InvalidScalar {
             path: path.to_owned(),
             value: false,

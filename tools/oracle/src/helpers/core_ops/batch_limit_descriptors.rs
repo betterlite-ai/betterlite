@@ -14,7 +14,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use tracing::subscriber;
 use tracing_subscriber::layer::SubscriberExt as _;
 
@@ -112,9 +112,9 @@ impl Helper for Op {
         let guard = subscriber::set_default(
             tracing_subscriber::registry().with(capture::Capture(Arc::clone(&events))),
         );
-        let result = service.run(&record);
+        let outcome = service.run(&record);
         drop(guard);
-        let result = result.map_err(|error| failure(error.to_string()))?;
+        let result = outcome.map_err(|error| failure(error.to_string()))?;
         let answers =
             serde_json::to_value(&result.answers).map_err(|error| failure(error.to_string()))?;
         let asked = service

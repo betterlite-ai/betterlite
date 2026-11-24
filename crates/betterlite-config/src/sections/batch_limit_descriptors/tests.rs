@@ -29,7 +29,8 @@ fn load(yaml: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigErro
 }
 
 fn owned(names: Option<&[&str]>) -> Option<Vec<String>> {
-    names.map(|names| names.iter().map(|name| (*name).to_owned()).collect())
+    let entries = names?;
+    Some(entries.iter().map(|name| (*name).to_owned()).collect())
 }
 
 #[rstest]

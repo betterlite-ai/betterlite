@@ -62,8 +62,8 @@ where
     ]
     .into_iter()
     .filter_map(|(scope, value, limit)| {
-        let value = value.filter(|text| !text.is_empty())?;
-        Some((scope, value.to_owned(), limit?))
+        let bound = value.filter(|text| !text.is_empty())?;
+        Some((scope, bound.to_owned(), limit?))
     })
     .collect();
     if scopes.is_empty() {

@@ -14,19 +14,16 @@ impl<Inner: Subscriber> Layer<Inner> for Capture {
         if !matches!(level, Level::ERROR | Level::WARN) {
             return;
         }
+        let name = match level {
+            Level::ERROR => "error",
+            Level::WARN => "warning",
+            Level::INFO => "info",
+            Level::DEBUG => "debug",
+            Level::TRACE => "trace",
+        };
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({"event": "warning", "level": level_name(level)}));
-    }
-}
-
-const fn level_name(level: Level) -> &'static str {
-    match level {
-        Level::ERROR => "error",
-        Level::WARN => "warning",
-        Level::INFO => "info",
-        Level::DEBUG => "debug",
-        Level::TRACE => "trace",
+            .push(json!({"event": "warning", "level": name}));
     }
 }
