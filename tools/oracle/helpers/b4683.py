@@ -1,5 +1,6 @@
 import asyncio
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterator
+from contextlib import contextmanager
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
@@ -55,12 +56,15 @@ class OperationInput(TypedDict):
     spec_operation: JsonValue
 
 
-class MergeHeadersInput(TypedDict):
+class RequestHeaders(TypedDict):
+    auth_header: str | None
+    extra_headers: dict[str, str]
+    resolved_auth_headers: dict[str, str]
+
+
+class MergeHeadersInput(RequestHeaders):
     operation: Literal["merge_headers"]
     static_headers: dict[str, str]
-    extra_headers: dict[str, str]
-    auth_header: str | None
-    resolved_auth_headers: dict[str, str]
 
 
 class Reply(TypedDict):
@@ -117,6 +121,21 @@ class Capture:
             self.reply["status"], headers=self.reply["headers"],
             text=self.reply["body"], request=request,
         )
+
+
+@contextmanager
+def _request_headers(source: RequestHeaders) -> Iterator[None]:
+    auth_token, extra_token, resolved_token = (
+        openapi_to_mcp_generator._request_auth_header.set(source["auth_header"]),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109
+        openapi_to_mcp_generator._request_extra_headers.set(source["extra_headers"]),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L112
+        openapi_to_mcp_generator._request_resolved_auth_headers.set(source["resolved_auth_headers"]),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L118
+    )
+    try:
+        yield
+    finally:
+        openapi_to_mcp_generator._request_auth_header.reset(auth_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109
+        openapi_to_mcp_generator._request_extra_headers.reset(extra_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L112
+        openapi_to_mcp_generator._request_resolved_auth_headers.reset(resolved_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L118
 
 
 def _parameter_json(parameter: ParameterOut) -> dict[str, JsonValue]:
@@ -187,20 +206,15 @@ async def _invoke(
     client = httpx.AsyncClient(transport=httpx.MockTransport(capture.handle))
     handler = openapi_to_mcp_generator._upstream_client()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L378
     original = handler.client
-    auth_token = openapi_to_mcp_generator._request_auth_header.set(call["auth_header"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109
-    extra_token = openapi_to_mcp_generator._request_extra_headers.set(call["extra_headers"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L112
-    resolved_token = openapi_to_mcp_generator._request_resolved_auth_headers.set(call["resolved_auth_headers"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L118
-    handler._client = client  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L629-L647
-    try:
-        outcome = await tool(**arguments)
-    except (HTTPException, MCPUpstreamAuthError, MCPOpenApiUpstreamError) as failure:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L442-L465
-        return capture.request, None, failure
-    finally:
-        handler._client = original  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L629-L647
-        await client.aclose()
-        openapi_to_mcp_generator._request_auth_header.reset(auth_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109
-        openapi_to_mcp_generator._request_extra_headers.reset(extra_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L112
-        openapi_to_mcp_generator._request_resolved_auth_headers.reset(resolved_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L118
+    with _request_headers(call):
+        handler._client = client  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L629-L647
+        try:
+            outcome = await tool(**arguments)
+        except (HTTPException, MCPUpstreamAuthError, MCPOpenApiUpstreamError) as failure:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L442-L465
+            return capture.request, None, failure
+        finally:
+            handler._client = original  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L629-L647
+            await client.aclose()
     return capture.request, outcome, None
 
 
@@ -237,21 +251,14 @@ def _schema(input_value: OperationInput) -> JsonValue:
 
 
 def _merge_headers(input_value: MergeHeadersInput) -> JsonValue:
-    auth_token = openapi_to_mcp_generator._request_auth_header.set(input_value["auth_header"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109
-    extra_token = openapi_to_mcp_generator._request_extra_headers.set(input_value["extra_headers"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L112
-    resolved_token = openapi_to_mcp_generator._request_resolved_auth_headers.set(input_value["resolved_auth_headers"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L118
-    try:
+    with _request_headers(input_value):
         merged = openapi_to_mcp_generator._merge_openapi_tool_request_headers(input_value["static_headers"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L393
-    finally:
-        openapi_to_mcp_generator._request_auth_header.reset(auth_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109
-        openapi_to_mcp_generator._request_extra_headers.reset(extra_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L112
-        openapi_to_mcp_generator._request_resolved_auth_headers.reset(resolved_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L118
     answer: dict[str, JsonValue] = {"headers": merged}
     return _JSON.validate_python(answer)
 
 
 def _call(input_value: CallInput) -> JsonValue:
-    tool = cast(ToolCall, create_tool_function(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L468
+    tool = cast(ToolCall, create_tool_function(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L468
         input_value["path"],
         input_value["method"],
         input_value["spec_operation"],  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L468
@@ -275,12 +282,6 @@ def _call(input_value: CallInput) -> JsonValue:
     return _JSON.validate_python(answer)
 
 
-def _operation(input_value: OperationInput) -> JsonValue:
-    if input_value["operation"] == "extract_params":
-        return _extract(input_value)
-    return _schema(input_value)
-
-
 def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "tool_name":
         answer: dict[str, JsonValue] = {"name": sanitize_openapi_tool_name(input_value["raw"])}
@@ -293,4 +294,6 @@ def run(input_value: Input) -> JsonValue:
         return _merge_headers(input_value)
     if input_value["operation"] == "call":
         return _call(input_value)
-    return _operation(input_value)
+    if input_value["operation"] == "extract_params":
+        return _extract(input_value)
+    return _schema(input_value)
