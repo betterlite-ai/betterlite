@@ -1,6 +1,18 @@
+mod compatible;
+mod convert;
+mod error;
+mod handlers;
+mod lookup;
+mod native;
+mod settings;
+mod snapshot;
+mod tests;
+
 use pyo3::prelude::*;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The provider family task adds its native functions here.
+pub(crate) use native::NativeProviders;
+
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<NativeProviders>()?;
     Ok(())
 }
