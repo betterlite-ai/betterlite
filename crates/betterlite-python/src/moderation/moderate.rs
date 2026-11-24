@@ -6,6 +6,9 @@ use betterlite_openai::moderation_request::ModerationRequest;
 use betterlite_openai::moderation_response::ModerationResponse;
 use indexmap::IndexMap;
 
+// omni-moderation-latest is the openai client's own default when create() is given no model
+const DEFAULT_MODERATION_MODEL: &str = "omni-moderation-latest";
+
 pub(crate) async fn moderate(
     session: &TextSession,
     wire: ModerationCallWire,
@@ -18,13 +21,17 @@ pub(crate) async fn moderate(
     let api_key = secret_text(arguments.api_key.as_ref())
         .or_else(|| secret_text(settings.api_key.as_ref()))
         .or_else(|| secret_text(settings.openai_key.as_ref()));
-    let model = moderation_model(&arguments, entry);
+    // the wire omits a model the caller did not give, while the deployment still needs one
+    let requested = moderation_model(&arguments, entry);
+    let model = requested
+        .clone()
+        .unwrap_or_else(|| String::from(DEFAULT_MODERATION_MODEL));
     let api_base = arguments.api_base.clone();
     let input = arguments.input;
     let deployment = session.moderation_deployment(&model, api_key, api_base)?;
     let executor = session.chat_executor(&deployment)?;
     let request = ModerationRequest {
-        model: Some(model.clone()),
+        model: requested,
         input,
         passthrough: IndexMap::new(),
     };

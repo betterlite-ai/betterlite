@@ -12,7 +12,7 @@ use betterlite_openai::text_completion_request::PromptRefusal;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 fn arguments(text: &str) -> TextArguments {
-    let wire: TextCallWire = serde_json::from_str(text).unwrap();
+    let wire: TextCallWire = serde_json::from_str(&format!(r#"{{"arguments":{text}}}"#)).unwrap();
     wire.arguments
 }
 
@@ -26,14 +26,14 @@ where
 #[test]
 fn request_string_prompt_is_one_user_message() {
     let call = arguments(r#"{"prompt": "hello"}"#);
-    let messages = chat_messages(&call).unwrap();
+    let messages = chat_messages(&call, false).unwrap();
     assert_eq!(encoded(&messages), r#"[{"content":"hello","role":"user"}]"#);
 }
 
 #[test]
 fn request_string_list_prompt_is_one_message_per_string() {
     let call = arguments(r#"{"prompt": ["first", "second"]}"#);
-    let messages = chat_messages(&call).unwrap();
+    let messages = chat_messages(&call, false).unwrap();
     assert_eq!(
         encoded(&messages),
         r#"[{"content":"first","role":"user"},{"content":"second","role":"user"}]"#
@@ -43,7 +43,13 @@ fn request_string_list_prompt_is_one_message_per_string() {
 #[test]
 fn request_token_prompt_is_refused_for_a_chat_provider() {
     let call = arguments(r#"{"prompt": [1, 2]}"#);
-    assert!(matches!(chat_messages(&call), Err(ConvertError::Prompt)));
+    assert!(matches!(
+        chat_messages(&call, false),
+        Err(ConvertError::Prompt)
+    ));
+    // a mock answer builds the user message from the token prompt before any endpoint is chosen
+    let mocked = chat_messages(&call, true).unwrap();
+    assert_eq!(encoded(&mocked), r#"[{"content":[1,2],"role":"user"}]"#);
     assert!(matches!(prompt(&call), CompletionPrompt::Tokens(_)));
 }
 
@@ -124,22 +130,19 @@ fn request_max_retries_alone_is_kept() {
 }
 
 #[test]
-fn request_moderation_model_defaults_and_strips_the_openai_prefix_async() {
+fn request_moderation_model_is_none_unless_given_and_strips_the_async_prefix() {
     let call: ModerationArguments = serde_json::from_str(r#"{"input": "hello"}"#).unwrap();
-    assert_eq!(
-        moderation_model(&call, Entry::Sync),
-        "omni-moderation-latest"
-    );
+    assert_eq!(moderation_model(&call, Entry::Sync), None);
     let prefixed: ModerationArguments =
         serde_json::from_str(r#"{"input": "hello", "model": "openai/omni-moderation-latest"}"#)
             .unwrap();
     assert_eq!(
-        moderation_model(&prefixed, Entry::Sync),
-        "openai/omni-moderation-latest"
+        moderation_model(&prefixed, Entry::Sync).as_deref(),
+        Some("openai/omni-moderation-latest")
     );
     assert_eq!(
-        moderation_model(&prefixed, Entry::Async),
-        "omni-moderation-latest"
+        moderation_model(&prefixed, Entry::Async).as_deref(),
+        Some("omni-moderation-latest")
     );
 }
 
@@ -196,22 +199,17 @@ fn error_payload_names_the_class_and_its_status() {
 
 #[test]
 fn error_payload_carries_no_status_for_a_plain_exception() {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let class = dispatch(
-        &DispatchInput::Raw(Box::new(RawException {
-            model: String::new(),
-            custom_llm_provider: String::from("openai"),
-            error_str: String::from("boom"),
-            status_code: None,
-            status_code_is_synthesized: false,
-            message: None,
-            body: None,
-            exception_type: String::new(),
-        })),
-        &redactor,
+    let failure = convert_failure(
+        &ConvertError::Prompt,
+        &CallFacts {
+            model: "gpt-4o",
+            provider: "openai",
+        },
     );
-    let payload = super::NativeTextErrorPayload::from_class(&class);
+    let payload = super::NativeTextErrorPayload::from_class(&failure.0);
+    assert_eq!(payload.kind, "Exception");
     assert!(payload.status_code.is_none());
+    assert!(payload.message.starts_with("Unmapped prompt format"));
 }
 
 #[test]

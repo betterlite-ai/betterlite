@@ -28,8 +28,6 @@ const CONTROL_PARAMETERS: [&str; 12] = [
     "mock_response",
     "mock_tool_calls",
 ];
-// omni-moderation-latest is the openai client's own default when create() is given no model
-pub(crate) const DEFAULT_MODERATION_MODEL: &str = "omni-moderation-latest";
 pub(crate) const OPENAI_PROVIDER: &str = "openai";
 
 #[derive(Debug, Default, Deserialize)]
@@ -188,12 +186,18 @@ pub(crate) fn completion_request(
     serde_json::from_value(plain).map_err(|source| ConvertError::Body { source })
 }
 
-pub(crate) fn chat_messages(arguments: &TextArguments) -> Result<Vec<Json>, ConvertError> {
+pub(crate) fn chat_messages(
+    arguments: &TextArguments,
+    mock: bool,
+) -> Result<Vec<Json>, ConvertError> {
     let prompt = prompt(arguments);
-    if !matches!(
-        &prompt,
-        CompletionPrompt::Text(_) | CompletionPrompt::Texts(_)
-    ) {
+    // a mock answer builds the user message from a token prompt, where a chat request refuses it
+    if !mock
+        && !matches!(
+            &prompt,
+            CompletionPrompt::Text(_) | CompletionPrompt::Texts(_)
+        )
+    {
         return Err(ConvertError::Prompt);
     }
     let Some(messages) = prompt.messages() else {
@@ -209,12 +213,9 @@ pub(crate) fn chat_messages(arguments: &TextArguments) -> Result<Vec<Json>, Conv
 
 // amoderation runs get_llm_provider before the call and sends its model, while moderation sends the value as given
 #[must_use]
-pub(crate) fn moderation_model(arguments: &ModerationArguments, entry: Entry) -> String {
-    arguments.model.as_ref().map_or_else(
-        || String::from(DEFAULT_MODERATION_MODEL),
-        |model| match entry {
-            Entry::Async => model.strip_prefix("openai/").unwrap_or(model).to_owned(),
-            Entry::Sync => model.clone(),
-        },
-    )
+pub(crate) fn moderation_model(arguments: &ModerationArguments, entry: Entry) -> Option<String> {
+    arguments.model.as_ref().map(|model| match entry {
+        Entry::Async => model.strip_prefix("openai/").unwrap_or(model).to_owned(),
+        Entry::Sync => model.clone(),
+    })
 }

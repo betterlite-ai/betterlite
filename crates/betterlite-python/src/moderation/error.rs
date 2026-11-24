@@ -8,6 +8,7 @@ use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::moderation_execution::ModerationError;
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_openai::text_completion_transport::error::{ErrorStatus, TextCompletionError};
+use betterlite_openai::text_completion_transport::sdk::status_error;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
 use pyo3::PyErr;
@@ -177,7 +178,12 @@ fn fields(source: &RawSource<'_>, redactor: &Redactor) -> (String, Option<u16>, 
             RawExceptionBody::default(),
         ),
         RawSource::Moderation(error) => {
-            let failure = route_error(error, redactor);
+            let mut failure = route_error(error, redactor);
+            // the SDK's exception carries the provider body's text, which the route's message drops
+            if let ModerationError::Provider { response } = error {
+                let sdk = status_error(response.status, response.headers.clone(), &response.body);
+                failure.message = redactor.redact_internal_details(&sdk.to_string());
+            }
             (
                 failure.message,
                 Some(failure.status),

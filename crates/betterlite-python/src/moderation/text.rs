@@ -88,7 +88,7 @@ async fn answer_for(
         .filter_map(|name| arguments.extra.get(*name))
         .any(|value| !matches!(value, Json::Null));
     if answered || session.executor.endpoint(deployment).await == CompletionEndpoint::Chat {
-        return chat_messages(arguments)
+        return chat_messages(arguments, answered)
             .map(|messages| TextAnswer::Chat { messages })
             .map_err(|error| convert_failure(&error, facts));
     }
