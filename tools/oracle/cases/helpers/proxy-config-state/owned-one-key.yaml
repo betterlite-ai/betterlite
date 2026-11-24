@@ -1,0 +1,15 @@
+kind: helper
+name: proxy-config-state-owned-one-key
+call:
+  b8380:
+    operation: owned_writes
+    section: general_settings
+    yaml_values:
+      master_key: sk-file
+    database_row: null
+    changed_keys:
+      master_key: sk-new
+    config_file_path: /etc/betterlite/config.yaml
+env: {}
+compare:
+  ignore: []

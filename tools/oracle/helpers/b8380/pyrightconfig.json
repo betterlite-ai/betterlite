@@ -1,0 +1,8 @@
+{
+  "include": [
+    "../b8380.py"
+  ],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

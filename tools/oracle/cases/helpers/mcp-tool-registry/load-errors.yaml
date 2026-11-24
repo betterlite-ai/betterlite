@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-tool-registry-load-errors
+call:
+  b4680:
+    function: load_from_config
+    tool_names: []
+    prefix: null
+    mcp_tools: [not-a-mapping]
+calls:
+  - b4680:
+      function: load_from_config
+      tool_names: []
+      prefix: null
+      mcp_tools: null
+  - b4680:
+      function: load_from_config
+      tool_names: []
+      prefix: null
+      mcp_tools: [null]
+env: {}
+compare: {ignore: []}
