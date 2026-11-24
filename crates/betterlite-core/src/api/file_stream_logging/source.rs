@@ -1,4 +1,3 @@
-use std::convert::identity;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -38,9 +37,7 @@ pub enum StreamError {
 impl StreamError {
     // The source error wins unless a failure callback raised first
     pub(super) fn from_failure(error: ErrorClass, logged: Result<(), Self>) -> Self {
-        logged
-            .err()
-            .map_or(Self::Source { failure: error }, identity)
+        logged.err().unwrap_or(Self::Source { failure: error })
     }
 }
 

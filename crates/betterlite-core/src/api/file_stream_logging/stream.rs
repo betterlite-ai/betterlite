@@ -8,9 +8,9 @@ use super::source::{
 // The wrapper set both completion flags and swapped in the empty source before either close runs
 pub(super) fn close_source(source: StreamSource) -> Result<(), StreamError> {
     match source {
-        StreamSource::Sync(mut source) => sync_cleanup(source.close()),
-        StreamSource::Async(mut source) => {
-            let _pending = source.close();
+        StreamSource::Sync(mut inner) => sync_cleanup(inner.close()),
+        StreamSource::Async(mut inner) => {
+            let _pending = inner.close();
             Ok(())
         }
     }
@@ -18,8 +18,8 @@ pub(super) fn close_source(source: StreamSource) -> Result<(), StreamError> {
 
 pub(super) async fn aclose_source(source: StreamSource) -> Result<(), StreamError> {
     match source {
-        StreamSource::Sync(mut source) => sync_cleanup(source.close()),
-        StreamSource::Async(source) => shielded_cleanup(source).await,
+        StreamSource::Sync(mut inner) => sync_cleanup(inner.close()),
+        StreamSource::Async(inner) => shielded_cleanup(inner).await,
     }
 }
 

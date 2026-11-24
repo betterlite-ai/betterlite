@@ -96,7 +96,9 @@ pub fn merged_hidden(
         HiddenField::Null => merged.api_base = None,
         HiddenField::Value(value) => merged.api_base = Some(value.clone()),
     }
-    merged.litellm_model_name = hidden.litellm_model_name.clone();
+    merged
+        .litellm_model_name
+        .clone_from(&hidden.litellm_model_name);
     match &hidden.response_cost {
         HiddenField::Absent => {}
         HiddenField::Null => merged.response_cost = None,
@@ -106,7 +108,7 @@ pub fn merged_hidden(
 }
 
 #[must_use]
-pub fn hidden_api_base(hidden: &HiddenParams) -> Option<&str> {
+pub const fn hidden_api_base(hidden: &HiddenParams) -> Option<&str> {
     match &hidden.api_base {
         HiddenField::Value(value) => Some(value.as_str()),
         HiddenField::Absent | HiddenField::Null => None,

@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::iter::from_fn;
+use std::ptr::{eq, from_ref};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -16,6 +17,7 @@ use chrono::{DateTime, FixedOffset};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
+use tokio::runtime::Builder;
 
 use super::handler::{
     StreamingParamsCall, StreamingParamsError, resolve_streaming_params, should_stream_file_content,
@@ -64,7 +66,7 @@ fn block_on<Output, F>(future: F) -> Output
 where
     F: Future<Output = Output>,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
@@ -213,14 +215,14 @@ fn payload_fixture(
     api_base: &str,
     provider: Option<&str>,
 ) -> StandardLoggingPayload {
-    let provider = provider.map_or_else(|| String::from("null"), |text| format!("\"{text}\""));
+    let provider_json = provider.map_or_else(|| String::from("null"), |text| format!("\"{text}\""));
     let text = format!(
         r#"{{"id": "{id}", "trace_id": "trace-1", "session_id": "session-1", "call_type": "afile_content",
         "response_cost": 0.0, "status": "success", "status_fields": {{"llm_api_status": "success", "guardrail_status": "not_run"}},
         "total_tokens": 0, "prompt_tokens": 0, "completion_tokens": 0,
         "startTime": 1767225600.0, "endTime": 1767225601.0, "completionStartTime": 1767225600.0,
         "response_time": 1.0, "model_map_information": {{}}, "model": "{model}", "api_base": "{api_base}",
-        "custom_llm_provider": {provider}, "metadata": {{}}, "saved_cache_cost": 0.0, "request_tags": [],
+        "custom_llm_provider": {provider_json}, "metadata": {{}}, "saved_cache_cost": 0.0, "request_tags": [],
         "model_parameters": {{}}, "hidden_params": {{}}, "response": {{"id": "{id}", "object": "file.content"}}}}"#
     );
     serde_json::from_str(&text).unwrap()
@@ -330,11 +332,11 @@ impl AsyncByteSource for Scripted {
             AsyncClose::Absent => CloseCall::Absent,
             AsyncClose::Returned => CloseCall::Returned,
             AsyncClose::Awaitable(result) => {
-                let result = result.clone();
+                let pending = result.clone();
                 let awaited = Arc::clone(&self.counters.awaited);
                 CloseCall::Awaitable(Box::pin(async move {
                     *awaited.lock().unwrap() += 1;
-                    result
+                    pending
                 }))
             }
         }
@@ -409,7 +411,7 @@ fn streaming_projection_routes_credentials() {
         Json::Text(String::from("openai")),
     );
     credentials.insert(String::from("api_key"), Json::Text(String::from("k")));
-    let resolved = resolve_streaming_params(StreamingParamsCall {
+    let resolved = resolve_streaming_params(&StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "encoded",
         data: &data,
@@ -454,7 +456,7 @@ fn streaming_projection_leaves_unrouted_input_alone(
         String::from("custom_llm_provider"),
         Json::Text(String::from("openai")),
     );
-    let resolved = resolve_streaming_params(StreamingParamsCall {
+    let resolved = resolve_streaming_params(&StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "f",
         data: &data,
@@ -487,7 +489,7 @@ fn streaming_projection_rejects_a_bad_credential_provider(
     }
     let mut data = JsonObject::new();
     data.insert(String::from("model"), Json::Text(String::from("m")));
-    let Err(failure) = resolve_streaming_params(StreamingParamsCall {
+    let Err(failure) = resolve_streaming_params(&StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "f",
         data: &data,
@@ -516,7 +518,7 @@ fn streaming_projection_rejects_a_bad_file_id(
     if let Some(file_id) = file_id {
         data.insert(String::from("file_id"), file_id);
     }
-    let Err(failure) = resolve_streaming_params(StreamingParamsCall {
+    let Err(failure) = resolve_streaming_params(&StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "f",
         data: &data,
@@ -607,7 +609,7 @@ fn hidden_stream_metadata_syncs_api_base_once() {
         Scripted::new(Vec::new()),
         None,
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     assert_eq!(
         stream.logging.hidden.api_base,
@@ -646,15 +648,16 @@ fn hidden_stream_metadata_caches_an_existing_payload() {
         Scripted::new(Vec::new()),
         None,
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
-    let first =
-        stream.logging.standard_object(clock_time()).unwrap() as *const StandardLoggingPayload;
-    let second = stream
-        .logging
-        .standard_object(time("2026-01-01T00:00:09+00:00"))
-        .unwrap() as *const StandardLoggingPayload;
-    assert!(std::ptr::eq(first, second));
+    let first = from_ref(stream.logging.standard_object(clock_time()).unwrap());
+    let second = from_ref(
+        stream
+            .logging
+            .standard_object(time("2026-01-01T00:00:09+00:00"))
+            .unwrap(),
+    );
+    assert!(eq(first, second));
     assert_eq!(logger.build_count(), 1);
 }
 
@@ -674,7 +677,7 @@ fn hidden_stream_metadata_without_a_built_payload_has_none() {
         Scripted::new(chunks(&[b"ab"])),
         Some("m"),
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     assert!(stream.logging.standard_object(clock_time()).is_none());
     assert_eq!(drain_sync(&mut stream), vec![b"ab".to_vec()]);
@@ -696,7 +699,7 @@ fn stream_success_once_logs_one_sync_callback() {
         Scripted::new(chunks(&[b"ab", b"cd"])),
         Some("m"),
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     assert_eq!(
         drain_sync(&mut stream),
@@ -724,7 +727,7 @@ fn stream_success_once_logs_async_then_sync_callbacks() {
         Scripted::new(chunks(&[b"ab", b"cd"])).asynchronous(),
         Some("m"),
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     assert_eq!(
         drain_async(&mut stream),
@@ -760,7 +763,7 @@ fn stream_success_once_propagates_callback_errors_without_a_second_log() {
         Scripted::new(chunks(&[b"ab"])),
         None,
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     let mut iter = stream.sync_iter().unwrap();
     assert_eq!(iter.next_chunk().unwrap().unwrap(), b"ab".to_vec());
@@ -781,7 +784,7 @@ fn stream_success_once_propagates_async_callback_errors_without_a_second_log() {
         Scripted::new(chunks(&[b"ab"])).asynchronous(),
         None,
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     let failure = block_on(async {
         let mut iter = stream.async_iter().unwrap();
@@ -824,7 +827,7 @@ fn stream_failure_once_logs_one_sync_failure() {
         ]),
         None,
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     let mut iter = stream.sync_iter().unwrap();
     assert_eq!(iter.next_chunk().unwrap().unwrap(), b"a".to_vec());
@@ -857,7 +860,7 @@ fn stream_failure_once_runs_the_sync_then_async_failure_handler() {
         .asynchronous(),
         None,
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     let failure = block_on(async {
         let mut iter = stream.async_iter().unwrap();
@@ -878,7 +881,7 @@ fn stream_failure_once_skips_callbacks_for_a_cancellation() {
         Scripted::new(vec![Err(SourceFailure::Cancellation)]),
         None,
         None,
-        Some(Arc::clone(&logger)),
+        Some(Arc::<RecordingLogger>::clone(&logger)),
     );
     let mut iter = stream.sync_iter().unwrap();
     let failure = iter.next_chunk().unwrap().unwrap_err();
@@ -891,13 +894,13 @@ fn stream_failure_once_skips_callbacks_for_a_cancellation() {
 #[test]
 fn stream_failure_once_rejects_the_wrong_iteration_capability() {
     let mut async_only = file_stream(Scripted::new(Vec::new()).asynchronous(), None, None, None);
-    let failure = async_only.sync_iter().unwrap_err();
+    let failure = async_only.sync_iter().err().unwrap();
     assert_eq!(
         failure.to_string(),
         "File content stream does not support sync iteration"
     );
     let mut sync_only = file_stream(Scripted::new(Vec::new()), None, None, None);
-    let failure = sync_only.async_iter().unwrap_err();
+    let failure = sync_only.async_iter().err().unwrap();
     assert_eq!(
         failure.to_string(),
         "File content stream does not support async iteration"
@@ -909,7 +912,12 @@ fn explicit_close_suppresses_logging() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
     let source = Scripted::new(chunks(&[b"ab", b"cd"])).with_sync_close(Some(Ok(())));
     let counters = source.counters();
-    let mut stream = file_stream(source, None, None, Some(Arc::clone(&logger)));
+    let mut stream = file_stream(
+        source,
+        None,
+        None,
+        Some(Arc::<RecordingLogger>::clone(&logger)),
+    );
     let mut iter = stream.sync_iter().unwrap();
     assert_eq!(iter.next_chunk().unwrap().unwrap(), b"ab".to_vec());
     drop(iter);
@@ -932,7 +940,7 @@ fn explicit_close_calls_the_underlying_close_once_even_when_it_raises() {
     let failure = stream.close().unwrap_err();
     assert!(matches!(&failure, StreamError::Cleanup { .. }));
     assert_eq!(*counters.closes.lock().unwrap(), 1);
-    assert!(stream.close().is_ok());
+    stream.close().unwrap();
     assert_eq!(*counters.closes.lock().unwrap(), 1);
 }
 
@@ -986,7 +994,7 @@ fn explicit_close_makes_async_iteration_unsupported() {
     let source = Scripted::new(chunks(&[b"ab"])).with_aclose(Ok(()));
     let mut stream = file_stream(source.asynchronous(), None, None, None);
     block_on(stream.aclose()).unwrap();
-    let failure = stream.async_iter().unwrap_err();
+    let failure = stream.async_iter().err().unwrap();
     assert!(matches!(&failure, StreamError::UnsupportedAsync));
     assert!(drain_sync(&mut stream).is_empty());
 }

@@ -53,10 +53,7 @@ impl FileContentStreamingResponse {
     #[must_use]
     pub fn new(setup: FileStreamSetup, clock: Arc<dyn SuccessClock>) -> Self {
         let logger_start = setup.logger.as_ref().and_then(|logger| logger.start_time());
-        let start_time = match logger_start {
-            Some(time) => time,
-            None => clock.now(),
-        };
+        let start_time = logger_start.unwrap_or_else(|| clock.now());
         let mut logging = StreamLogging {
             file_id: setup.file_id,
             model: setup.model,
@@ -188,10 +185,10 @@ impl StreamLogging {
             payload.custom_llm_provider = Some(provider.clone());
         }
         if let Some(model) = &self.model {
-            payload.model = model.clone();
+            payload.model.clone_from(model);
         }
         if let Some(api_base) = hidden_api_base(&self.hidden) {
-            payload.api_base = api_base.to_owned();
+            api_base.clone_into(&mut payload.api_base);
         }
         Some(payload)
     }
@@ -209,7 +206,11 @@ impl StreamLogging {
         }
     }
 
-    fn failure_call(&self, exception: ErrorClass, end_time: DateTime<FixedOffset>) -> FailureCall {
+    const fn failure_call(
+        &self,
+        exception: ErrorClass,
+        end_time: DateTime<FixedOffset>,
+    ) -> FailureCall {
         FailureCall {
             exception,
             traceback: String::new(),

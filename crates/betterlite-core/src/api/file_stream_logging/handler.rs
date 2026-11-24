@@ -46,11 +46,11 @@ pub fn should_stream_file_content(custom_llm_provider: Option<&str>) -> bool {
 }
 
 pub fn resolve_streaming_params(
-    call: StreamingParamsCall<'_>,
+    call: &StreamingParamsCall<'_>,
 ) -> Result<ResolvedStreamingParams, StreamingParamsError> {
     let credentials = match call.credentials {
         Some(credentials) if call.should_route => credentials,
-        Some(_) | None => return Ok(unrouted(&call)),
+        Some(_) | None => return Ok(unrouted(call)),
     };
     let provider = text_field(
         credentials,
