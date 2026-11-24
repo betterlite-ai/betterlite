@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_core::api::assistant_messages::error::MessageFailure;
-use betterlite_core::api::assistant_messages::service::Reply;
+use betterlite_core::api::assistant_messages::service::{Operation, Reply};
 use betterlite_core::api::assistant_run_sdk::error::AssistantRunError;
 use betterlite_core::api::assistant_run_sdk::service::RunOutcome;
 use betterlite_redact::secret::Redactor;
@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use serde::Serialize;
 
-use super::convert::{self, AppendCall, ListCall, RunCall, message_error, run_error};
+use super::convert::{self, MessageCall, RunCall, message_error, run_error};
 use super::error::CallError;
 use super::session::{ProviderRunStream, Session};
 use super::stream::NativeAssistantStream;
@@ -24,12 +24,63 @@ pub(crate) struct NativeAssistantRunSession {
     session: Arc<Session>,
 }
 
+#[cfg_attr(test, mutants::skip)]
+#[pymethods]
 impl NativeAssistantRunSession {
-    #[cfg_attr(test, mutants::skip)]
-    fn opened_stream(
+    #[new]
+    fn new(settings: &str) -> PyResult<Self> {
+        let session = Session::build(settings)?;
+        Ok(Self {
+            session: Arc::new(session),
+        })
+    }
+
+    fn add_message(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let call: MessageCall = convert::read("assistant add message request", text)?;
+        let answer = py.detach(|| {
+            get_runtime().block_on(self.session.message(&call, Operation::Append, false))
+        });
+        reply_text(answer, &call.custom_llm_provider, Operation::Append)
+    }
+
+    fn a_add_message<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> ReplyObject<'py> {
+        let call: MessageCall = convert::read("assistant add message request", text)?;
+        let session = Arc::clone(&self.session);
+        future_into_py(py, message_work(session, call, Operation::Append))
+    }
+
+    fn get_messages(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let call: MessageCall = convert::read("assistant get messages request", text)?;
+        let answer = py
+            .detach(|| get_runtime().block_on(self.session.message(&call, Operation::List, false)));
+        reply_text(answer, &call.custom_llm_provider, Operation::List)
+    }
+
+    fn aget_messages<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> ReplyObject<'py> {
+        let call: MessageCall = convert::read("assistant get messages request", text)?;
+        let session = Arc::clone(&self.session);
+        future_into_py(py, message_work(session, call, Operation::List))
+    }
+
+    fn run_thread(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
+        let call: RunCall = convert::read("assistant run request", text)?;
+        let provider = call.custom_llm_provider.clone();
+        let answer = py
+            .detach(|| get_runtime().block_on(self.session.run_sdk().run_thread(call.into_call())));
+        run_text(answer, &provider, self.session.redactor.as_ref())
+    }
+
+    fn arun_thread<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> ReplyObject<'py> {
+        let call: RunCall = convert::read("assistant run request", text)?;
+        let session = Arc::clone(&self.session);
+        future_into_py(py, run_work(session, call))
+    }
+
+    fn run_stream(
         &self,
         py: Python<'_>,
         text: &str,
+        _blobs: Blobs,
         asynchronous: bool,
     ) -> PyResult<Py<NativeAssistantStream>> {
         let call: RunCall = convert::read("assistant run request", text)?;
@@ -50,104 +101,42 @@ impl NativeAssistantRunSession {
     }
 }
 
+// The async twins await the same call on the asyncio loop's runtime with the GIL released.
 #[cfg_attr(test, mutants::skip)]
-#[pymethods]
-impl NativeAssistantRunSession {
-    #[new]
-    fn new(settings: &str) -> PyResult<Self> {
-        let session = Session::build(settings)?;
-        Ok(Self {
-            session: Arc::new(session),
-        })
-    }
-
-    fn add_message(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
-        let call: AppendCall = convert::read("assistant add message request", text)?;
-        let answer = py.detach(|| get_runtime().block_on(self.session.append(&call, false)));
-        message_text(answer, &call.custom_llm_provider)
-    }
-
-    fn a_add_message<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> ReplyObject<'py> {
-        let call: AppendCall = convert::read("assistant add message request", text)?;
-        let session = Arc::clone(&self.session);
-        future_into_py(py, async move {
-            let answer = session.append(&call, true).await;
-            message_text(answer, &call.custom_llm_provider)
-        })
-    }
-
-    fn get_messages(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
-        let call: ListCall = convert::read("assistant get messages request", text)?;
-        let answer = py.detach(|| get_runtime().block_on(self.session.list(&call, false)));
-        page_text(answer, &call.custom_llm_provider)
-    }
-
-    fn aget_messages<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> ReplyObject<'py> {
-        let call: ListCall = convert::read("assistant get messages request", text)?;
-        let session = Arc::clone(&self.session);
-        future_into_py(py, async move {
-            let answer = session.list(&call, true).await;
-            page_text(answer, &call.custom_llm_provider)
-        })
-    }
-
-    fn run_thread(&self, py: Python<'_>, text: &str, _blobs: Blobs) -> Encoded {
-        let call: RunCall = convert::read("assistant run request", text)?;
-        let provider = call.custom_llm_provider.clone();
-        let answer = py
-            .detach(|| get_runtime().block_on(self.session.run_sdk().run_thread(call.into_call())));
-        run_text(answer, &provider, self.session.redactor.as_ref())
-    }
-
-    fn arun_thread<'py>(&self, py: Python<'py>, text: &str, _blobs: Blobs) -> ReplyObject<'py> {
-        let call: RunCall = convert::read("assistant run request", text)?;
-        let session = Arc::clone(&self.session);
-        future_into_py(py, async move {
-            let provider = call.custom_llm_provider.clone();
-            let answer = session.run_sdk().arun_thread(call.into_call()).await;
-            run_text(answer, &provider, session.redactor.as_ref())
-        })
-    }
-
-    fn run_thread_stream(
-        &self,
-        py: Python<'_>,
-        text: &str,
-        _blobs: Blobs,
-    ) -> PyResult<Py<NativeAssistantStream>> {
-        self.opened_stream(py, text, false)
-    }
-
-    fn arun_thread_stream(
-        &self,
-        py: Python<'_>,
-        text: &str,
-        _blobs: Blobs,
-    ) -> PyResult<Py<NativeAssistantStream>> {
-        self.opened_stream(py, text, true)
-    }
+async fn message_work(session: Arc<Session>, call: MessageCall, operation: Operation) -> Encoded {
+    let provider = call.custom_llm_provider.as_str();
+    let answer = session.message(&call, operation, true).await;
+    reply_text(answer, provider, operation)
 }
 
-fn message_text(answer: Result<Reply, MessageFailure>, provider: &str) -> Encoded {
+#[cfg_attr(test, mutants::skip)]
+async fn run_work(session: Arc<Session>, call: RunCall) -> Encoded {
+    let provider = call.custom_llm_provider.clone();
+    let answer = session.run_sdk().arun_thread(call.into_call()).await;
+    run_text(answer, &provider, session.redactor.as_ref())
+}
+
+// A message call answers the message add_message built or the page get_messages asked for, never the other.
+#[cfg_attr(test, mutants::skip)]
+fn reply_text(
+    answer: Result<Reply, MessageFailure>,
+    provider: &str,
+    operation: Operation,
+) -> Encoded {
     let reply = answer.map_err(|failure| message_error(failure, provider).into_exception())?;
-    match reply {
-        Reply::Message(message) => encode(&message),
-        Reply::Page(_) => Err(PyErr::from(CallError::Reply {
+    match (reply, operation) {
+        (Reply::Message(message), Operation::Append) => encode(&message),
+        (Reply::Page(page), Operation::List) => encode(&page),
+        (Reply::Page(_), Operation::Append) => Err(PyErr::from(CallError::Reply {
             operation: "add_message",
         })),
-    }
-}
-
-fn page_text(answer: Result<Reply, MessageFailure>, provider: &str) -> Encoded {
-    let reply = answer.map_err(|failure| message_error(failure, provider).into_exception())?;
-    match reply {
-        Reply::Page(page) => encode(&page),
-        Reply::Message(_) => Err(PyErr::from(CallError::Reply {
+        (Reply::Message(_), Operation::List) => Err(PyErr::from(CallError::Reply {
             operation: "get_messages",
         })),
     }
 }
 
+#[cfg_attr(test, mutants::skip)]
 fn run_text(
     answer: Result<RunOutcome<ProviderRunStream>, AssistantRunError>,
     provider: &str,
@@ -167,6 +156,7 @@ fn run_text(
     }
 }
 
+#[cfg_attr(test, mutants::skip)]
 fn encode<T>(value: &T) -> Encoded
 where
     T: Serialize,

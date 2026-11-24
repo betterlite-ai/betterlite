@@ -13,13 +13,12 @@ use betterlite_error::envelope::WireField;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use super::{
-    AppendCall, ListCall, ModuleSettings, RunCall, inner_message, message_error, read, run_error,
-    wire_body,
+    MessageCall, ModuleSettings, RunCall, inner_message, message_error, read, run_error, wire_body,
 };
 
-const APPEND: &str = r#"{"custom_llm_provider":"openai","thread_id":"thread_1","role":"user",
-    "content":"hello","attachments":[{"file_id":"file_1"}],"metadata":{"team":"a"},
-    "params":{"api_key":"sk-param"},"drop_params":true}"#;
+const APPEND: &str = r#"{"custom_llm_provider":"openai","thread_id":"thread_1",
+    "data":{"role":"user","content":"hello","attachments":[{"file_id":"file_1"}],
+    "metadata":{"team":"a"}},"params":{"api_key":"sk-param"},"drop_params":true}"#;
 
 #[test]
 fn request_settings_keeps_every_module_global() {
@@ -65,8 +64,8 @@ fn request_settings_replace_the_environment_values() {
 
 #[test]
 fn request_append_call_reads_the_named_arguments() {
-    let call: AppendCall = read("assistant add message request", APPEND).unwrap();
-    let data = call.data();
+    let call: MessageCall = read("assistant add message request", APPEND).unwrap();
+    let data = call.data.as_ref().unwrap();
     assert_eq!(call.custom_llm_provider, "openai");
     assert_eq!(call.thread_id, "thread_1");
     assert_eq!(data.role, "user");
@@ -90,10 +89,10 @@ fn request_append_call_reads_the_named_arguments() {
 
 #[test]
 fn request_append_call_defaults_the_optional_arguments() {
-    let text =
-        r#"{"custom_llm_provider":"azure","thread_id":"thread_1","role":"user","content":""}"#;
-    let call: AppendCall = read("assistant add message request", text).unwrap();
-    let data = call.data();
+    let text = r#"{"custom_llm_provider":"azure","thread_id":"thread_1",
+        "data":{"role":"user","content":""}}"#;
+    let call: MessageCall = read("assistant add message request", text).unwrap();
+    let data = call.data.as_ref().unwrap();
     assert_eq!(data.content.as_str(), Some(""));
     assert_eq!(data.attachments, None);
     assert_eq!(data.metadata, None);
@@ -103,16 +102,16 @@ fn request_append_call_defaults_the_optional_arguments() {
 
 #[test]
 fn request_append_call_refuses_a_key_the_facade_does_not_read() {
-    let text = r#"{"custom_llm_provider":"openai","thread_id":"t","role":"user",
-        "content":"hi","assistant_id":"asst"}"#;
-    let error = read::<AppendCall>("assistant add message request", text).unwrap_err();
+    let text = r#"{"custom_llm_provider":"openai","thread_id":"t",
+        "data":{"role":"user","content":"hi"},"assistant_id":"asst"}"#;
+    let error = read::<MessageCall>("assistant add message request", text).unwrap_err();
     assert!(error.to_string().contains("unknown field"));
 }
 
 #[test]
 fn request_list_call_requires_the_thread() {
     let text = r#"{"custom_llm_provider":"openai"}"#;
-    let error = read::<ListCall>("assistant get messages request", text).unwrap_err();
+    let error = read::<MessageCall>("assistant get messages request", text).unwrap_err();
     assert!(error.to_string().contains("missing field `thread_id`"));
 }
 
@@ -120,9 +119,10 @@ fn request_list_call_requires_the_thread() {
 fn request_list_call_reads_the_connection_parameters() {
     let text = r#"{"custom_llm_provider":"openai","thread_id":"thread_1",
         "params":{"api_base":"http://base","timeout":2.5}}"#;
-    let call: ListCall = read("assistant get messages request", text).unwrap();
+    let call: MessageCall = read("assistant get messages request", text).unwrap();
     assert_eq!(call.thread_id, "thread_1");
     assert_eq!(call.params.api_base.as_deref(), Some("http://base"));
+    assert!(call.data.is_none());
 }
 
 #[test]

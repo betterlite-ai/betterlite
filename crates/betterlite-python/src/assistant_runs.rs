@@ -3,6 +3,7 @@ mod error;
 mod native;
 mod session;
 mod stream;
+mod tests;
 
 use error::NativeAssistantRunError;
 use native::NativeAssistantRunSession;

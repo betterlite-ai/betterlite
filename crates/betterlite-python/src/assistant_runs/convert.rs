@@ -10,7 +10,6 @@ use betterlite_core::api::assistant_run_sdk::error::{
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_models::decisions::Json as BodyJson;
-use betterlite_prompts::arguments::json::Json;
 use betterlite_redact::secret::Redactor;
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
 use indexmap::IndexMap;
@@ -51,43 +50,18 @@ impl ModuleSettings {
     }
 }
 
-// add_message's named arguments plus the connection parameters left in kwargs.
+// add_message's data and named arguments plus the connection parameters left in kwargs; get_messages carries no data.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AppendCall {
+pub(crate) struct MessageCall {
     pub(crate) custom_llm_provider: String,
     pub(crate) thread_id: String,
-    pub(crate) role: String,
-    pub(crate) content: Json,
     #[serde(default)]
-    pub(crate) attachments: Option<Json>,
-    #[serde(default)]
-    pub(crate) metadata: Option<Json>,
+    pub(crate) data: Option<MessageData>,
     #[serde(default)]
     pub(crate) params: MessageParams,
     #[serde(default)]
     pub(crate) drop_params: bool,
-}
-
-impl AppendCall {
-    pub(crate) fn data(&self) -> MessageData {
-        MessageData {
-            role: self.role.clone(),
-            content: self.content.clone(),
-            attachments: self.attachments.clone(),
-            metadata: self.metadata.clone(),
-        }
-    }
-}
-
-// get_messages selects no parameter, so it carries the thread and the connection parameters alone.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ListCall {
-    pub(crate) custom_llm_provider: String,
-    pub(crate) thread_id: String,
-    #[serde(default)]
-    pub(crate) params: MessageParams,
 }
 
 // run_thread's named arguments; the Python branch that asks for the async call never reaches the wire.
@@ -137,7 +111,10 @@ pub(crate) fn read<T>(field: &'static str, text: &str) -> Result<T, CallError>
 where
     T: DeserializeOwned,
 {
-    serde_json::from_str(text).map_err(|source| CallError::Json { field, source })
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(CallError::Json { field, source }),
+    }
 }
 
 // The error body openai.APIError reads type, param and code from; an absent field stays absent.
@@ -157,10 +134,6 @@ fn wire_body(fields: [(&str, &WireField); 3]) -> Option<BodyJson> {
     (!body.is_empty()).then_some(BodyJson::Object(body))
 }
 
-fn text_field(value: Option<String>) -> WireField {
-    value.map_or(WireField::MISSING, WireField::Text)
-}
-
 // Each LiteLLM exception class re-adds "litellm.Class: " to the text it is built with.
 fn inner_message(name: &str, message: String) -> String {
     let prefix = format!("litellm.{name}: ");
@@ -178,14 +151,16 @@ fn mapped_payload(
     message: String,
 ) -> NativeErrorPayload {
     let metadata = class.metadata();
+    let code = metadata
+        .openai_code
+        .map_or(WireField::MISSING, WireField::Text);
     NativeErrorPayload {
         status_code: class_status(class),
         llm_provider: Some(provider.to_owned()),
-        model: None,
         body: wire_body([
             ("type", &metadata.error_type),
             ("param", &metadata.param),
-            ("code", &text_field(metadata.openai_code)),
+            ("code", &code),
         ]),
         ..payload(name, inner_message(name, message))
     }

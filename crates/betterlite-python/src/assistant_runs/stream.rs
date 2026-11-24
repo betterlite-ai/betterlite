@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use betterlite_azure::assistants::error::AssistantsRunError;
 use betterlite_core::api::assistant_run_sdk::error::AssistantRunError;
-use betterlite_openai::thread_runs::error::ThreadRunsError;
-use betterlite_openai::thread_runs::records::RunEvent;
 use betterlite_openai::thread_runs::stream::RunEventStream;
 use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
@@ -115,17 +113,19 @@ async fn advance(
             return Ok(None);
         }
     };
-    let mut events = match step {
-        Step::Read(events) => events,
+    let (events, next) = match step {
+        Step::Read(mut events) => {
+            let next = events.next().await;
+            (Some(events), next)
+        }
         Step::Open(source) => match source.events().await {
-            Ok(opened) => opened,
-            Err(error) => {
-                state.lock().await.closed = true;
-                return Err(stream_exception(error, provider, redactor));
+            Ok(mut events) => {
+                let next = events.next().await;
+                (Some(events), next)
             }
+            Err(error) => (None, Some(Err(error))),
         },
     };
-    let next = events.next().await;
     let mut guard = state.lock().await;
     if guard.closed {
         return Ok(None);
@@ -136,22 +136,15 @@ async fn advance(
             Ok(None)
         }
         Some(Ok(event)) => {
-            guard.events = Some(events);
-            encode_event(&event).map(Some)
+            guard.events = events;
+            let text = serde_json::to_string(&event)
+                .map_err(|source| PyErr::from(CallError::Encode { source }))?;
+            Ok(Some(text))
         }
         Some(Err(error)) => {
             guard.closed = true;
-            Err(stream_exception(error, provider, redactor))
+            let dispatch = AssistantRunError::Dispatch(AssistantsRunError::Runs(error));
+            Err(run_error(dispatch, provider, redactor).into_exception())
         }
     }
-}
-
-// A stream failure maps the way arun_thread maps one, since the SDK's own exception class is not in the wheel.
-fn stream_exception(error: ThreadRunsError, provider: &str, redactor: &Redactor) -> PyErr {
-    let dispatch = AssistantRunError::Dispatch(AssistantsRunError::Runs(error));
-    run_error(dispatch, provider, redactor).into_exception()
-}
-
-fn encode_event(event: &RunEvent) -> PyResult<String> {
-    serde_json::to_string(event).map_err(|source| PyErr::from(CallError::Encode { source }))
 }

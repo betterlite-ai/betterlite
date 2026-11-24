@@ -17,7 +17,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::thread_runs::stream::RunStream;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
-use super::convert::{self, AppendCall, ListCall, ModuleSettings};
+use super::convert::{self, MessageCall, ModuleSettings};
 use super::error::CallError;
 use crate::completion::setup::outbound_client;
 
@@ -58,47 +58,20 @@ impl Session {
         })
     }
 
-    pub(crate) async fn append(
+    pub(crate) async fn message(
         &self,
-        call: &AppendCall,
+        call: &MessageCall,
+        operation: Operation,
         asynchronous: bool,
     ) -> Result<Reply, MessageFailure> {
-        let data = call.data();
         let request = MessageRequest {
             provider: &call.custom_llm_provider,
             thread_id: &call.thread_id,
-            data: Some(&data),
+            data: call.data.as_ref(),
             params: &call.params,
             drop_params: call.drop_params,
         };
-        message_call(
-            &request,
-            &self.message_context(),
-            Operation::Append,
-            asynchronous,
-        )
-        .await
-    }
-
-    pub(crate) async fn list(
-        &self,
-        call: &ListCall,
-        asynchronous: bool,
-    ) -> Result<Reply, MessageFailure> {
-        let request = MessageRequest {
-            provider: &call.custom_llm_provider,
-            thread_id: &call.thread_id,
-            data: None,
-            params: &call.params,
-            drop_params: false,
-        };
-        message_call(
-            &request,
-            &self.message_context(),
-            Operation::List,
-            asynchronous,
-        )
-        .await
+        message_call(&request, &self.message_context(), operation, asynchronous).await
     }
 
     pub(crate) fn message_context(&self) -> MessageContext<'_, ProxiedClient> {
