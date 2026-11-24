@@ -15,6 +15,8 @@ use super::convert::run_error;
 use super::error::CallError;
 use super::session::ProviderRunStream;
 
+mod tests;
+
 // The lazy manager core built waits here until the first event read, which is when the provider is called.
 struct StreamState {
     source: Option<ProviderRunStream>,
