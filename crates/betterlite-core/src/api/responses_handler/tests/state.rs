@@ -161,6 +161,18 @@ fn events_for_chunk_completed_without_content_skips_step_stop() {
 }
 
 #[test]
+fn events_for_chunk_created_without_an_id_uses_the_fallback_id() {
+    let mut state = interaction_state("gpt-4o");
+    let events = state.events_for_chunk(&created_chunk(""));
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].id.as_deref(), Some(fallback_id().as_str()));
+    assert_eq!(
+        state.interaction_id.as_deref(),
+        Some(fallback_id().as_str())
+    );
+}
+
+#[test]
 fn events_for_chunk_completed_without_ids_uses_the_fallback_id() {
     let mut state = interaction_state("gpt-4o");
     let terminal = state.events_for_chunk(&completed_chunk(""));
@@ -207,6 +219,12 @@ fn terminal_events_on_eof_completes_an_interaction_without_content() {
         Some("interaction.completed")
     );
     assert_eq!(terminal[0].id.as_deref(), Some("resp_1"));
+    assert_eq!(
+        terminal[0].steps,
+        Some(vec![object(
+            r#"{"type": "model_output", "content": [{"type": "text", "text": ""}]}"#
+        )])
+    );
 }
 
 #[test]

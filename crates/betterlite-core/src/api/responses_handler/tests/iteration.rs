@@ -1,8 +1,8 @@
 use std::sync::atomic::Ordering;
 
 use super::support::{
-    FakeError, SetupFixture, async_iterator, completed_chunk, created_chunk, delta_chunk, object,
-    sync_iterator,
+    FakeError, SetupFixture, async_iterator, completed_chunk, created_chunk, delta_chunk,
+    done_chunk, object, sync_iterator,
 };
 
 fn expected_kinds() -> Vec<String> {
@@ -44,6 +44,21 @@ fn sync_iterator_drains_the_queue_before_pulling_again() {
         .expect("the fake stream does not fail");
     assert_eq!(delta.event_type.as_deref(), Some("step.delta"));
     assert_eq!(pulls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn sync_iterator_skips_chunks_that_produce_no_events() {
+    let fixture = SetupFixture::new("gpt-4o");
+    let (mut iterator, pulls) = sync_iterator(
+        &fixture,
+        vec![Ok(done_chunk()), Ok(delta_chunk("item_1", "hi"))],
+    );
+    let created = iterator
+        .next_event()
+        .expect("the interaction start")
+        .expect("the fake stream does not fail");
+    assert_eq!(created.event_type.as_deref(), Some("interaction.created"));
+    assert_eq!(pulls.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -144,6 +159,22 @@ async fn async_iterator_drains_the_queue_before_pulling_again() {
         .expect("the fake stream does not fail");
     assert_eq!(started.event_type.as_deref(), Some("step.start"));
     assert_eq!(pulls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn async_iterator_skips_chunks_that_produce_no_events() {
+    let fixture = SetupFixture::new("gpt-4o");
+    let (mut iterator, pulls) = async_iterator(
+        &fixture,
+        vec![Ok(done_chunk()), Ok(delta_chunk("item_1", "hi"))],
+    );
+    let created = iterator
+        .next_event()
+        .await
+        .expect("the interaction start")
+        .expect("the fake stream does not fail");
+    assert_eq!(created.event_type.as_deref(), Some("interaction.created"));
+    assert_eq!(pulls.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]

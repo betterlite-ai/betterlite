@@ -99,6 +99,20 @@ fn handler_without_a_stream_flag_clears_the_optional_params_stream() {
         .recorded()
         .expect("the operation is called");
     assert_eq!(recorded.stream, None);
+    assert!(recorded.passthrough.get("custom_llm_provider").is_none());
+}
+
+#[test]
+fn handler_reports_a_response_that_cannot_be_transformed() {
+    let fixture = HandlerFixture::new("gpt-4o");
+    let operation = RecordingOperation::new(Ok(SyncResponsesAnswer::Complete(Box::new(response(
+        r#"{"id": "resp_1", "created_at": 9223372036854775807, "output": []}"#,
+    )))));
+    let error = match interactions_api_handler(&operation, &fixture.request(), ()) {
+        Ok(_) => panic!("the transform must refuse the created_at"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, InteractionsHandlerError::Transform(_)));
 }
 
 #[test]
