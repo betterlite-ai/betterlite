@@ -330,7 +330,11 @@ fn transport_failures_follow_the_status() {
     };
     assert!(matches!(
         openai_failure(&BatchesError::Sdk { source: sdk_status }),
-        DispatchFailure::Status { status: 429, message } if message == "slow down"
+        DispatchFailure::Status {
+            status: 429,
+            message,
+            ..
+        } if message == "slow down"
     ));
     assert!(matches!(
         openai_failure(&BatchesError::NotInitialized),
@@ -344,6 +348,30 @@ fn transport_failures_follow_the_status() {
         xai_failure(&XaiBatchesError::InputFileRequired),
         DispatchFailure::Status { status: 400, .. }
     ));
+}
+
+// a provider status hands the SDK the error object's type, param and code, not only the status and message
+#[test]
+fn transport_failure_keeps_the_provider_fields() {
+    let sdk_status = SdkError::Status {
+        status: 400,
+        error_type: Some("invalid_request_error".to_owned()),
+        param: Some("after".to_owned()),
+        code: Some("invalid_cursor".to_owned()),
+        message: "bad cursor".to_owned(),
+    };
+    match openai_failure(&BatchesError::Sdk { source: sdk_status }) {
+        DispatchFailure::Status {
+            status: 400,
+            body: Some(body),
+            ..
+        } => {
+            assert_eq!(body.error_type.as_deref(), Some("invalid_request_error"));
+            assert_eq!(body.param.as_deref(), Some("after"));
+            assert_eq!(body.code.as_deref(), Some("invalid_cursor"));
+        }
+        other => panic!("expected a provider status, got {other:?}"),
+    }
 }
 
 #[test]

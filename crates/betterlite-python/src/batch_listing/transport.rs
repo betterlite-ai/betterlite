@@ -22,7 +22,7 @@ use betterlite_openai::xai_batches::execution::{CallContext, XaiBatches};
 use betterlite_openai::xai_batches::transformation::OpenAiBatchListResponse;
 use serde::Serialize;
 
-use super::error::DispatchFailure;
+use super::error::{DispatchFailure, ErrorBody};
 
 const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
 
@@ -208,17 +208,23 @@ async fn xai_cancel(
         .map_err(|error| xai_failure(&error))
 }
 
-// an SDK status keeps the provider's message; every other SDK failure never reached it
+// an SDK status keeps the provider's message and error object; every other SDK failure never reached it
 pub(crate) fn openai_failure(error: &BatchesError) -> DispatchFailure {
     if let BatchesError::Sdk {
-        source: SdkError::Status {
-            status, message, ..
-        },
+        source:
+            SdkError::Status {
+                status,
+                error_type,
+                param,
+                code,
+                message,
+            },
     } = error
     {
         return DispatchFailure::Status {
             status: *status,
             message: message.clone(),
+            body: ErrorBody::from_fields(error_type.clone(), param.clone(), code.clone()),
         };
     }
     DispatchFailure::Connection(error.to_string())
@@ -231,14 +237,17 @@ pub(crate) fn xai_failure(error: &XaiBatchesError) -> DispatchFailure {
         } => DispatchFailure::Status {
             status: *status,
             message: message.clone(),
+            body: None,
         },
         XaiBatchesError::MissingApiKey => DispatchFailure::Status {
             status: 401,
             message: error.to_string(),
+            body: None,
         },
         XaiBatchesError::InputFileRequired => DispatchFailure::Status {
             status: 400,
             message: error.to_string(),
+            body: None,
         },
         XaiBatchesError::Limit(_)
         | XaiBatchesError::Decode { .. }

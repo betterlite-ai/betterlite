@@ -14,7 +14,7 @@ use super::{
     CallMode, ConvertError, HiddenParams, ModuleSettings, cancel_input, cancel_payload, list_input,
     list_payload, section_settings,
 };
-use crate::batch_listing::error::DispatchFailure;
+use crate::batch_listing::error::{DispatchFailure, ErrorBody};
 use crate::batch_listing::payload::{cancel_error_payload, class_for_status, list_error_payload};
 
 const CANCEL: &str = r#"{"cancel":{"batch_id":"batch-1","model":"gpt-4o","provider":"openai","extra_headers":{"x-test":"1"},"extra_body":{"note":"n"},"params":{"api_base":"http://127.0.0.1:1/v1","api_key":"sk-test","timeout":3}}}"#;
@@ -269,6 +269,7 @@ fn error_cancel_payload_keeps_a_provider_status() {
         BatchProviderCancelError::Dispatch(DispatchFailure::Status {
             status: 404,
             message: "gone".to_owned(),
+            body: None,
         });
     let payload = cancel_error_payload(&error, "openai", Some("gpt-4o"));
     assert_eq!(payload.error_type, "NotFoundError");
@@ -276,6 +277,25 @@ fn error_cancel_payload_keeps_a_provider_status() {
     assert_eq!(payload.message, "gone");
     assert_eq!(payload.llm_provider, "openai");
     assert_eq!(payload.model.as_deref(), Some("gpt-4o"));
+}
+
+#[test]
+fn error_cancel_payload_keeps_the_provider_body() {
+    let error: BatchProviderCancelError<DispatchFailure> =
+        BatchProviderCancelError::Dispatch(DispatchFailure::Status {
+            status: 400,
+            message: "bad cursor".to_owned(),
+            body: Some(ErrorBody {
+                error_type: Some("invalid_request_error".to_owned()),
+                param: Some("after".to_owned()),
+                code: None,
+            }),
+        });
+    let payload = cancel_error_payload(&error, "openai", None);
+    let body = payload.body.unwrap();
+    assert_eq!(body.error_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(body.param.as_deref(), Some("after"));
+    assert_eq!(body.code, None);
 }
 
 #[test]
@@ -310,12 +330,13 @@ fn error_cancel_payload_names_the_unwired_branch() {
     assert!(payload.message.contains("azure"));
 }
 
-// every status LiteLLM's exception table names keeps its class; anything else is the bare APIError
+// every status LiteLLM's exception table names has a case; 409 answers the bare APIError here, where the SDK raises ConflictError (docs/deviations/B7873.yaml)
 #[rstest]
 #[case::bad_request(400, "BadRequestError")]
 #[case::authentication(401, "AuthenticationError")]
 #[case::permission(403, "PermissionDeniedError")]
 #[case::not_found(404, "NotFoundError")]
+#[case::conflict(409, "APIError")]
 #[case::unprocessable(422, "UnprocessableEntityError")]
 #[case::rate_limit(429, "RateLimitError")]
 #[case::internal_first(500, "InternalServerError")]

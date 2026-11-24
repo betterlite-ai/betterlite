@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import json
 import threading
 from collections.abc import Awaitable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -7,6 +8,7 @@ from types import TracebackType
 from typing import ClassVar, Final, Self
 from urllib.parse import parse_qsl, urlsplit
 
+import openai
 import pytest
 from batch_server import (
     BATCH_ID,
@@ -40,12 +42,43 @@ from betterlite.batches._list_cancel import (
     cancel_batch,
     list_batches,
 )
-from betterlite.exceptions import APIConnectionError, AuthenticationError, NotFoundError
+from betterlite.exceptions import (
+    APIConnectionError,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+    UnprocessableEntityError,
+)
 
 CALLS_PER_COMPARISON = 2
 AFTER = "batch_prev"
 LIMIT = 2
 CANCELLED_AT = 1710000100
+BAD_AFTER = "batch_bad"
+BAD_SHAPE = "batch_shape"
+BAD_REQUEST_STATUS = 400
+UNPROCESSABLE_STATUS = 422
+ERROR_TYPE: Final = "invalid_request_error"
+ERROR_PARAM: Final = "after"
+ERROR_CODE: Final = "invalid_cursor"
+PROVIDER_ERROR: Final[dict[str, JsonValue]] = {
+    "error": {
+        "message": "the cursor is not a batch id",
+        "type": ERROR_TYPE,
+        "param": ERROR_PARAM,
+        "code": ERROR_CODE,
+    },
+}
+XAI_BATCH_NAME = "probe"
+XAI_CREATED_TIME = "2024-03-09T00:00:00Z"
+XAI_CANCELLED_TIME = "2024-03-10T00:00:00Z"
+XAI_STATE: Final[dict[str, JsonValue]] = {
+    "num_requests": 1,
+    "num_pending": 0,
+    "num_success": 1,
+    "num_error": 0,
+    "num_cancelled": 0,
+}
 EXTRA_HEADERS: Final[dict[str, str]] = {"x-test": "1"}
 EXTRA_BODY: Final[dict[str, str]] = {"note": "n"}
 
@@ -92,13 +125,26 @@ def cancelled_object() -> dict[str, JsonValue]:
     return batch
 
 
+def xai_batch(cancel_time: str | None) -> dict[str, JsonValue]:
+    return {
+        "batch_id": BATCH_ID,
+        "name": XAI_BATCH_NAME,
+        "create_time": XAI_CREATED_TIME,
+        "cancel_time": cancel_time,
+        "state": XAI_STATE,
+        "input_file_id": INPUT_FILE_ID,
+    }
+
+
 class ListServer(ThreadingHTTPServer):
     daemon_threads = True
     calls: list[RecordedCall]
+    xai: bool
 
-    def __init__(self) -> None:
+    def __init__(self, *, xai: bool = False) -> None:
         super().__init__((HOST, 0), _Handler)
         self.calls = []
+        self.xai = xai
         _Handler.owner = self
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
@@ -106,6 +152,10 @@ class ListServer(ThreadingHTTPServer):
     @property
     def url(self) -> str:
         return f"http://{HOST}:{self.server_port}/v1"
+
+    @property
+    def base(self) -> str:
+        return f"http://{HOST}:{self.server_port}"
 
     def record(self, call: RecordedCall) -> None:
         self.calls.append(call)
@@ -131,11 +181,21 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parts = urlsplit(self.path)
+        query = dict(parse_qsl(parts.query))
         self.record_call("GET", parts.path, parts.query, {})
         if not self.authorized():
             return
         if parts.path != BATCH_PATH:
             self.reply_error(NOT_FOUND, f"no batch list at {parts.path}")
+            return
+        if self.owner.xai:
+            self.reply(OK, {"batches": [xai_batch(None)], "pagination_token": None})
+            return
+        if query.get("after") == BAD_AFTER:
+            self.reply(BAD_REQUEST_STATUS, PROVIDER_ERROR)
+            return
+        if query.get("after") == BAD_SHAPE:
+            self.reply(UNPROCESSABLE_STATUS, PROVIDER_ERROR)
             return
         self.reply(OK, page_object())
 
@@ -144,6 +204,12 @@ class _Handler(BaseHTTPRequestHandler):
         body = self.read_body()
         self.record_call("POST", parts.path, parts.query, body)
         if not self.authorized():
+            return
+        if self.owner.xai and parts.path != f"{BATCH_PATH}/{BATCH_ID}:cancel":
+            self.reply_error(NOT_FOUND, f"no xai cancel at {parts.path}")
+            return
+        if self.owner.xai:
+            self.reply(OK, xai_batch(XAI_CANCELLED_TIME))
             return
         if parts.path == f"{BATCH_PATH}/{MISSING_ID}/cancel":
             self.reply_error(NOT_FOUND, "no such batch")
@@ -228,6 +294,16 @@ def hidden_of(response: LiteLLMBatch | BatchDump) -> dict[str, JsonValue]:
     private: dict[str, JsonValue] | None = response.__pydantic_private__
     assert private is not None
     return HIDDEN.validate_python(private["_hidden_params"])
+
+
+def dumped(payload: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    written = json.dumps(payload)
+    return BODY.validate_json(written)
+
+
+def authorization(call: RecordedCall) -> str | None:
+    lowered = {name.lower(): value for name, value in call["headers"].items()}
+    return lowered.get("authorization")
 
 
 def native_cause(error: BaseException) -> NativeBatchListError:
@@ -365,6 +441,43 @@ def test_page_error_class() -> None:
     assert caught.value.llm_provider == "openai"
 
 
+def test_page_error_body_fields() -> None:
+    with ListServer() as server:
+        with pytest.raises(openai.BadRequestError) as reference:
+            LITELLM.list_batches(
+                after=BAD_AFTER, max_retries=0, api_base=server.url, api_key=GOOD_KEY
+            )
+        with pytest.raises(BadRequestError) as made:
+            list_batches(
+                after=BAD_AFTER, max_retries=0, api_base=server.url, api_key=GOOD_KEY
+            )
+        assert len(server.calls) == CALLS_PER_COMPARISON
+    assert made.value.status_code == reference.value.status_code == BAD_REQUEST_STATUS
+    assert made.value.type == reference.value.type == ERROR_TYPE
+    assert made.value.param == reference.value.param == ERROR_PARAM
+    assert made.value.code == reference.value.code == ERROR_CODE
+
+
+def test_page_unprocessable() -> None:
+    with ListServer() as server:
+        with pytest.raises(openai.UnprocessableEntityError) as reference:
+            LITELLM.list_batches(
+                after=BAD_SHAPE, max_retries=0, api_base=server.url, api_key=GOOD_KEY
+            )
+        with pytest.raises(UnprocessableEntityError) as made:
+            list_batches(
+                after=BAD_SHAPE, max_retries=0, api_base=server.url, api_key=GOOD_KEY
+            )
+        assert len(server.calls) == CALLS_PER_COMPARISON
+    assert made.value.status_code == reference.value.status_code == UNPROCESSABLE_STATUS
+    assert reference.value.type == ERROR_TYPE
+    assert reference.value.param == ERROR_PARAM
+    assert reference.value.code == ERROR_CODE
+    assert made.value.type is None
+    assert made.value.param is None
+    assert made.value.code is None
+
+
 def test_cancel_matches_litellm() -> None:
     with ListServer() as server:
         reference = LITELLM.cancel_batch(
@@ -484,6 +597,54 @@ def test_cancel_refuses_client() -> None:
     with pytest.raises(UnsupportedCallArgument) as session_refused:
         cancel_batch(batch_id=BATCH_ID, shared_session=object())
     assert session_refused.value.argument == "shared_session"
+
+
+def test_xai_page_and_cancel() -> None:
+    with ListServer(xai=True) as server:
+        reference_page = LITELLM.list_batches(
+            custom_llm_provider="xai",
+            after=AFTER,
+            limit=LIMIT,
+            api_base=server.base,
+            api_key=GOOD_KEY,
+        )
+        made_page_result = made_page(
+            list_batches(
+                custom_llm_provider="xai",
+                after=AFTER,
+                limit=LIMIT,
+                api_base=server.base,
+                api_key=GOOD_KEY,
+            )
+        )
+        reference_batch = LITELLM.cancel_batch(
+            batch_id=BATCH_ID,
+            custom_llm_provider="xai",
+            api_base=server.base,
+            api_key=GOOD_KEY,
+        )
+        made_batch_result = made_batch(
+            cancel_batch(
+                batch_id=BATCH_ID,
+                custom_llm_provider="xai",
+                api_base=server.base,
+                api_key=GOOD_KEY,
+            )
+        )
+        assert len(server.calls) == 2 * CALLS_PER_COMPARISON
+        list_reference, list_ours, cancel_reference, cancel_ours = server.calls
+    assert dumped(made_page_result.model_dump()) == dumped(reference_page.model_dump())
+    assert dumped(made_batch_result.model_dump()) == dumped(reference_batch.model_dump())
+    assert list_ours["method"] == list_reference["method"] == "GET"
+    assert list_ours["path"] == list_reference["path"] == BATCH_PATH
+    assert dict(list_ours["query"]) == dict(list_reference["query"]) == {
+        "limit": str(LIMIT),
+        "pagination_token": AFTER,
+    }
+    assert cancel_ours["method"] == cancel_reference["method"] == "POST"
+    assert cancel_ours["path"] == cancel_reference["path"] == f"{BATCH_PATH}/{BATCH_ID}:cancel"
+    assert authorization(list_ours) == authorization(list_reference) == f"Bearer {GOOD_KEY}"
+    assert authorization(cancel_ours) == authorization(cancel_reference) == f"Bearer {GOOD_KEY}"
 
 
 def test_package_exports() -> None:

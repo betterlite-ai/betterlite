@@ -5,6 +5,7 @@ use betterlite_http::error::HttpError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+use serde::Serialize;
 
 use super::convert::{ConvertError, SettingsError};
 use super::payload::{ErrorPayload, cancel_error_payload, dispatch_payload, list_error_payload};
@@ -12,11 +13,44 @@ use super::transport::DurationError;
 
 create_exception!(betterlite_native, NativeBatchListError, PyException);
 
+// The three fields the openai SDK's classes read off a provider error object; the rest of the body is not on the native error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ErrorBody {
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub(crate) error_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) param: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) code: Option<String>,
+}
+
+impl ErrorBody {
+    // a status whose error object names none of the three fields has no body to hand on
+    pub(crate) const fn from_fields(
+        error_type: Option<String>,
+        param: Option<String>,
+        code: Option<String>,
+    ) -> Option<Self> {
+        if error_type.is_none() && param.is_none() && code.is_none() {
+            return None;
+        }
+        Some(Self {
+            error_type,
+            param,
+            code,
+        })
+    }
+}
+
 // what one provider entry point reports when its executor ran and failed, or the build has none
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum DispatchFailure {
     #[error("{message}")]
-    Status { status: u16, message: String },
+    Status {
+        status: u16,
+        message: String,
+        body: Option<ErrorBody>,
+    },
     #[error("{0}")]
     Connection(String),
     #[error(transparent)]
