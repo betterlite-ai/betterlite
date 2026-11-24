@@ -1,8 +1,11 @@
 use axum::http::StatusCode;
+use axum::http::header::InvalidHeaderValue;
 use axum::response::{IntoResponse, Response};
+use rand::rngs::SysError;
 
 use crate::health_access_and_connections::connection_error::{Rejection, RejectionDetail};
 use crate::health_access_and_connections::visibility::{CallerError, LookupFailure};
+use crate::health_cycle::error::HealthCycleError;
 use crate::tracing_routes::router::unauthenticated;
 
 // Every failure the three routes raise: an HTTPException's status and detail dict, or a re-raised internal error
@@ -21,7 +24,11 @@ pub enum HealthRouteError {
     #[error(transparent)]
     Http(Rejection),
     #[error("{0}")]
-    Internal(String),
+    Notice(#[source] InvalidHeaderValue),
+    #[error("{0}")]
+    Random(#[from] SysError),
+    #[error(transparent)]
+    Cycle(#[from] HealthCycleError),
 }
 
 impl HealthRouteError {
@@ -44,7 +51,9 @@ impl IntoResponse for HealthRouteError {
             Self::Database => internal_error("Database not initialized"),
             Self::ModelListNotInitialized => internal_error("Model list not initialized"),
             Self::Http(rejection) => rejection.into_response(),
-            Self::Internal(message) => internal_text(message),
+            Self::Notice(error) => internal_text(error.to_string()),
+            Self::Random(error) => internal_text(error.to_string()),
+            Self::Cycle(error) => internal_text(error.to_string()),
         }
     }
 }

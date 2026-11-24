@@ -3,8 +3,6 @@ use std::sync::Arc;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, Utc};
-use rand::SeedableRng as _;
-use rand::rngs::{StdRng, SysRng};
 
 use crate::health_cycle::catalog::HealthCatalog;
 use crate::health_cycle::cycle::{HealthCheckRequest, HealthCycleDeps, perform_health_check};
@@ -12,7 +10,9 @@ use crate::health_cycle::endpoints::HealthCheckResult;
 use crate::health_persistence::{SingleHealthCheck, save_single};
 use crate::health_probe_settings::model_info::CatalogModelInfo;
 use crate::health_status_routes::error::HealthRouteError;
-use crate::health_status_routes::state::{HealthCheckResults, HealthStatusState};
+use crate::health_status_routes::state::{
+    DetailVisibility, HealthCheckResults, HealthStatusState, SkipDisabledModels,
+};
 
 // _perform_health_check_and_save's arguments: one cycle's model list and target, plus who asked and when
 #[derive(Clone, Copy)]
@@ -59,8 +59,7 @@ async fn run_cycle(
     let models = CatalogModelInfo {
         catalog: state.cycle.models.as_ref(),
     };
-    let mut random = StdRng::try_from_rng(&mut SysRng)
-        .map_err(|error| HealthRouteError::Internal(error.to_string()))?;
+    let mut random = state.cycle.random.generator()?;
     let deps = HealthCycleDeps {
         provider: state.cycle.provider.as_ref(),
         models: &models,
@@ -69,9 +68,7 @@ async fn run_cycle(
         tasks: &state.tasks,
     };
     let request = cycle_request(state, call, lookup.as_ref());
-    perform_health_check(request, deps)
-        .await
-        .map_err(|error| HealthRouteError::Internal(error.to_string()))
+    Ok(perform_health_check(request, deps).await?)
 }
 
 fn cycle_lookup<'state, 'loaded>(
@@ -101,11 +98,11 @@ fn cycle_request<'call>(
         model_id: call.model_id,
         team_id: call.team_id,
         cli_model: call.cli_model,
-        details: state.health_check_details.0,
+        details: state.health_check_details == DetailVisibility::Shown,
         max_concurrency: state
             .health_check_concurrency
             .and_then(|value| i64::try_from(value).ok()),
-        skip_disabled: state.skip_disabled_models.0,
+        skip_disabled: state.skip_disabled_models == SkipDisabledModels::Skip,
         lookup,
         instrumentation: None,
     }

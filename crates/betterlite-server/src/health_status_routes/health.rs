@@ -20,7 +20,7 @@ use crate::health_status_routes::health_response::{
 };
 use crate::health_status_routes::query::{HealthQuery, decode_health_query};
 use crate::health_status_routes::save::{HealthProbeCall, perform_health_check_and_save};
-use crate::health_status_routes::state::HealthStatusState;
+use crate::health_status_routes::state::{HealthCheckSource, HealthStatusState};
 use crate::health_status_routes::target::resolve_target_model_name;
 
 // The caller's model scope, as _caller_may_probe_deployment sees it
@@ -159,7 +159,7 @@ async fn router_health(
     let scope = probe_scope(state, caller, mode)?;
     let kept = scope.kept(deployments);
     let targeted_ids = resolve_targeting(&kept, &scope, query)?;
-    if state.use_background_health_checks.0 {
+    if state.use_background_health_checks == HealthCheckSource::Background {
         return background_health(state, &scope, &kept, targeted_ids.as_ref(), mode);
     }
     let probe = HealthProbeCall {

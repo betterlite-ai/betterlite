@@ -57,7 +57,7 @@ fn healthy_count(result: &JsonObject) -> u64 {
 fn notice_header() -> Result<HeaderValue, HealthRouteError> {
     let fields = ADMIN_ONLY_DISPLAY_PARAMS.join(", ");
     let value = format!("{fields} are admin-only on this endpoint");
-    HeaderValue::from_str(&value).map_err(|error| HealthRouteError::Internal(error.to_string()))
+    HeaderValue::from_str(&value).map_err(HealthRouteError::Notice)
 }
 
 pub(super) fn model_specific_request(query: &HealthQuery) -> bool {

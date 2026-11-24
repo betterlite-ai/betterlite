@@ -4,13 +4,20 @@ use axum::response::{IntoResponse as _, Response};
 use betterlite_db::health_check_rows::HealthCheckRow;
 use betterlite_models::decisions::Json as Decisions;
 use betterlite_models::model_registration::JsonObject;
-use serde_json::Number;
+use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::health_status_routes::convert::convert_health_check;
 use crate::health_status_routes::error::HealthRouteError;
 use crate::health_status_routes::prisma::check_prisma_client;
 use crate::health_status_routes::state::HealthStatusState;
+
+// GET /health/latest's object, in LiteLLM's key order
+#[derive(Serialize)]
+struct LatestPage {
+    latest_health_checks: JsonObject,
+    total_models: usize,
+}
 
 pub(super) async fn latest_health_checks_endpoint(
     State(state): State<HealthStatusState>,
@@ -25,14 +32,14 @@ pub(super) async fn latest_health_checks_endpoint(
     }
 }
 
-async fn latest_page(state: &HealthStatusState) -> Result<JsonObject, HealthRouteError> {
+async fn latest_page(state: &HealthStatusState) -> Result<LatestPage, HealthRouteError> {
     let rows = check_prisma_client(state.rows.as_deref())?;
     // fetch_latest_health_checks logs a driver error and reads as no rows, as LiteLLM's wrapper does
     let records = rows.fetch_latest().await;
     Ok(latest_body(&records))
 }
 
-fn latest_body(records: &[HealthCheckRow]) -> JsonObject {
+fn latest_body(records: &[HealthCheckRow]) -> LatestPage {
     let mut checks = JsonObject::new();
     for row in records {
         // a later row with the same key replaces the value where the earlier one sits
@@ -41,11 +48,11 @@ fn latest_body(records: &[HealthCheckRow]) -> JsonObject {
             Decisions::Object(convert_health_check(row)),
         );
     }
-    let total = Number::from(checks.len());
-    let mut body = JsonObject::new();
-    body.insert("latest_health_checks".to_owned(), Decisions::Object(checks));
-    body.insert("total_models".to_owned(), Decisions::Number(total));
-    body
+    let total_models = checks.len();
+    LatestPage {
+        latest_health_checks: checks,
+        total_models,
+    }
 }
 
 fn lookup_key(row: &HealthCheckRow) -> String {

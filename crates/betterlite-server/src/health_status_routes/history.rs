@@ -2,9 +2,8 @@ use axum::Json;
 use axum::extract::{Extension, RawQuery, State};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_db::health_check_rows::HealthCheckRow;
-use betterlite_models::decisions::Json as Decisions;
 use betterlite_models::model_registration::JsonObject;
-use serde_json::Number;
+use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::health_status_routes::convert::convert_health_check;
@@ -12,6 +11,15 @@ use crate::health_status_routes::error::HealthRouteError;
 use crate::health_status_routes::prisma::check_prisma_client;
 use crate::health_status_routes::query::{HistoryQuery, decode_history_query};
 use crate::health_status_routes::state::HealthStatusState;
+
+// GET /health/history's page object, in LiteLLM's key order
+#[derive(Serialize)]
+struct HistoryPage {
+    health_checks: Vec<JsonObject>,
+    total_records: usize,
+    limit: i64,
+    offset: i64,
+}
 
 pub(super) async fn health_check_history_endpoint(
     State(state): State<HealthStatusState>,
@@ -34,7 +42,7 @@ pub(super) async fn health_check_history_endpoint(
 async fn history_page(
     state: &HealthStatusState,
     query: &HistoryQuery,
-) -> Result<JsonObject, HealthRouteError> {
+) -> Result<HistoryPage, HealthRouteError> {
     let rows = check_prisma_client(state.rows.as_deref())?;
     let records = rows
         .history(
@@ -47,28 +55,11 @@ async fn history_page(
     Ok(history_body(&records, query))
 }
 
-fn history_body(records: &[HealthCheckRow], query: &HistoryQuery) -> JsonObject {
-    let mut body = JsonObject::new();
-    body.insert(
-        "health_checks".to_owned(),
-        Decisions::List(
-            records
-                .iter()
-                .map(|row| Decisions::Object(convert_health_check(row)))
-                .collect(),
-        ),
-    );
-    body.insert(
-        "total_records".to_owned(),
-        Decisions::Number(Number::from(records.len())),
-    );
-    body.insert(
-        "limit".to_owned(),
-        Decisions::Number(Number::from(query.limit)),
-    );
-    body.insert(
-        "offset".to_owned(),
-        Decisions::Number(Number::from(query.offset)),
-    );
-    body
+fn history_body(records: &[HealthCheckRow], query: &HistoryQuery) -> HistoryPage {
+    HistoryPage {
+        health_checks: records.iter().map(convert_health_check).collect(),
+        total_records: records.len(),
+        limit: query.limit,
+        offset: query.offset,
+    }
 }

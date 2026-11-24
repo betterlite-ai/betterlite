@@ -9,6 +9,8 @@ use betterlite_router::catalog_updates::catalog::CatalogHandle;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
+use rand::SeedableRng as _;
+use rand::rngs::{StdRng, SysError, SysRng};
 use serde_json::Number;
 use tokio_util::task::TaskTracker;
 
@@ -16,9 +18,29 @@ use crate::health_access_and_connections::visibility::HealthRouter;
 use crate::health_cycle::ports::ProviderHealth;
 use crate::model_deprecation::clock::UtcClock;
 
-// A bool in the route state; the newtype keeps struct_excessive_bools off a record that declares three
+// health_check_details: whether a probe's endpoint rows keep the approved detail fields
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct HealthFlag(pub bool);
+pub enum DetailVisibility {
+    #[default]
+    Hidden,
+    Shown,
+}
+
+// use_background_health_checks: answer from the cache the background loop fills, or probe live
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HealthCheckSource {
+    #[default]
+    Live,
+    Background,
+}
+
+// skip_disabled_models: leave a deployment that opted out in model_info out of a probe
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SkipDisabledModels {
+    #[default]
+    Keep,
+    Skip,
+}
 
 // health_check_results as the background loop leaves it: the four keys GET /health answers from the cache
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -56,15 +78,11 @@ impl HealthCheckResults {
         );
         result.insert(
             "healthy_count".to_owned(),
-            Json::Number(Number::from(
-                u64::try_from(self.healthy_count).unwrap_or(u64::MAX),
-            )),
+            Json::Number(Number::from(self.healthy_count)),
         );
         result.insert(
             "unhealthy_count".to_owned(),
-            Json::Number(Number::from(
-                u64::try_from(self.unhealthy_count).unwrap_or(u64::MAX),
-            )),
+            Json::Number(Number::from(self.unhealthy_count)),
         );
         result
     }
@@ -73,6 +91,20 @@ impl HealthCheckResults {
 // The cache the background loop fills; snapshot takes no lock of the server's and copies what it answers
 pub trait HealthResultsSource: Send + Sync {
     fn snapshot(&self) -> HealthCheckResults;
+}
+
+// The cycle's random source, injected by the server: each request draws the generator its probes use
+pub trait RandomSource: Send + Sync {
+    fn generator(&self) -> Result<StdRng, SysError>;
+}
+
+// The server's source: a generator seeded from the operating system's entropy
+pub struct SystemRandom;
+
+impl RandomSource for SystemRandom {
+    fn generator(&self) -> Result<StdRng, SysError> {
+        StdRng::try_from_rng(&mut SysRng)
+    }
 }
 
 // The router crate's provider hook, shared by the cycle catalog and the lookup it builds
@@ -94,6 +126,7 @@ pub struct HealthCycleState {
     pub models: Arc<ModelCatalog>,
     pub policy: ProbePolicy,
     pub catalog: Option<CycleCatalog>,
+    pub random: Arc<dyn RandomSource>,
 }
 
 // What LiteLLM's health endpoints read from proxy_server globals, handed in by the server that owns them
@@ -102,10 +135,10 @@ pub struct HealthStatusState {
     pub deployments: Option<Arc<Vec<DeploymentSpec>>>,
     pub router: Option<Arc<dyn HealthRouter>>,
     pub user_model: Option<String>,
-    pub health_check_details: HealthFlag,
+    pub health_check_details: DetailVisibility,
     pub health_check_concurrency: Option<usize>,
-    pub use_background_health_checks: HealthFlag,
-    pub skip_disabled_models: HealthFlag,
+    pub use_background_health_checks: HealthCheckSource,
+    pub skip_disabled_models: SkipDisabledModels,
     pub results: Arc<dyn HealthResultsSource>,
     pub rows: Option<Arc<HealthCheckRows>>,
     pub clock: Arc<dyn UtcClock + Send + Sync>,
