@@ -17,7 +17,7 @@ pub enum ScopeError {
     #[error("{}", CommonProxyErrors::DbNotConnectedError.as_str())]
     DatabaseUnavailable,
     #[error("{USER_NOT_FOUND}")]
-    UserNotFound(#[source] Box<ScopeError>),
+    UserNotFound(#[source] Box<Self>),
     #[error(transparent)]
     Lookup(#[from] LookupError),
     #[error(transparent)]
