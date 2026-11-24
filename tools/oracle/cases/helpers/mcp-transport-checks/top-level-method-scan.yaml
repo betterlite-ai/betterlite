@@ -14,8 +14,11 @@ call:
       - '{a:"method"}'
       - '{"method": "initial'
       - '{"meth'
+      - '{"method'
       - '{"method":'
       - '{"x\"y": 1, "method": 2}'
+      - '{"a": "x\"y", "method": 1}'
+      - '{"a": "x", "method": 1}'
       - '{"a": 1}{"method": 1}'
       - ""
       - '{"jsonrpc": "2.0", "id": 1, "result": {"method": "tools/call"}}'

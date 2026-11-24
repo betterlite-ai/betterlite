@@ -82,35 +82,60 @@ pub fn initialize_client_info(bytes: &[u8]) -> Option<ClientInfo> {
     Some(envelope.params.client_info)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScanMode {
+    Outside,
+    Key,
+    Value,
+    KeyEscape,
+    ValueEscape,
+}
+
+fn quoted_step(mode: &mut ScanMode, character: char, key_chars: &mut Vec<char>) -> bool {
+    match *mode {
+        ScanMode::Key => match character {
+            '"' => {
+                *mode = ScanMode::Outside;
+                return true;
+            }
+            '\\' => *mode = ScanMode::KeyEscape,
+            _ => key_chars.push(character),
+        },
+        ScanMode::Value => match character {
+            '"' => *mode = ScanMode::Outside,
+            '\\' => *mode = ScanMode::ValueEscape,
+            _ => {}
+        },
+        ScanMode::KeyEscape => *mode = ScanMode::Key,
+        ScanMode::ValueEscape => *mode = ScanMode::Value,
+        ScanMode::Outside => {}
+    }
+    false
+}
+
 pub fn has_top_level_method(text: &str) -> bool {
     let mut depth = 0_i32;
-    let mut in_string = false;
-    let mut escaped = false;
+    let mut mode = ScanMode::Outside;
     let mut containers: Vec<bool> = Vec::new();
-    let mut reading_key = false;
     let mut expect_key = false;
     let mut key_chars: Vec<char> = Vec::new();
     for character in text.chars() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == '"' {
-                in_string = false;
-                if reading_key && depth == 1 && key_chars.iter().copied().eq(METHOD_KEY.chars()) {
-                    return true;
-                }
-            } else if reading_key {
-                key_chars.push(character);
+        if mode != ScanMode::Outside {
+            if quoted_step(&mut mode, character, &mut key_chars)
+                && depth == 1
+                && key_chars.iter().copied().eq(METHOD_KEY.chars())
+            {
+                return true;
             }
             continue;
         }
         match character {
             '"' => {
-                in_string = true;
-                reading_key =
-                    expect_key && depth >= 1 && containers.last().copied().unwrap_or(false);
+                mode = if expect_key && depth >= 1 {
+                    ScanMode::Key
+                } else {
+                    ScanMode::Value
+                };
                 key_chars.clear();
                 expect_key = false;
             }
