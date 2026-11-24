@@ -78,7 +78,6 @@ def call_kwargs(run: BridgeRun, api_base: str) -> dict[str, BridgeValue]:
         case dict() as params:
             params["api_base"] = api_base
         case None | bool() | int() | float() | str() | list() | ModelResponse() | Logging():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L107-L155
-            # the bridge's own validation rejects a litellm_params that is not an object
             pass
     return values
 
