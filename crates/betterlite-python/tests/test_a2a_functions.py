@@ -1,13 +1,20 @@
 import asyncio
 import copy
-from collections.abc import Coroutine
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from typing import Final, TypedDict
 
 import pytest
 from a2a.client import Client
 from a2a.client.card_resolver import parse_agent_card
-from a2a.compat.v0_3.types import AgentCard as CompatAgentCard
-from a2a.compat.v0_3.types import MessageSendParams, SendMessageRequest, SendStreamingMessageRequest
+from a2a.compat.v0_3.types import (
+    Message,
+    MessageSendParams,
+    Part,
+    Role,
+    SendMessageRequest,
+    SendStreamingMessageRequest,
+    TextPart,
+)
 from a2a.types.a2a_pb2 import AgentCard
 from a2a_server import AGENT_NAME, AgentServer, Recorder
 from litellm.a2a_protocol import card_resolver as litellm_cards
@@ -42,6 +49,12 @@ STATUS_EVENT: Final = (
 
 CARD: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
+# LiteLLM's asend_message is wrapped by its untyped @client decorator, so the call itself is Any
+LITELLM_SEND: Final[Callable[..., Awaitable[LiteLLMResponse]]] = litellm_main.asend_message
+LITELLM_STREAM: Final[Callable[..., AsyncIterator[BaseModel]]] = (
+    litellm_main.asend_message_streaming
+)
+
 
 class InterfaceView(TypedDict):
     protocolBinding: str
@@ -70,14 +83,10 @@ def params() -> dict[str, JsonValue]:
     return {"message": message}
 
 
-def sdk_request(request_id: str) -> SendMessageRequest:
-    message = MessageSendParams.model_validate(params())
-    return SendMessageRequest(id=request_id, params=message)
-
-
-def sdk_stream_request(request_id: str) -> SendStreamingMessageRequest:
-    message = MessageSendParams.model_validate(params())
-    return SendStreamingMessageRequest(id=request_id, params=message)
+def sdk_params() -> MessageSendParams:
+    part = Part(root=TextPart(text=USER_TEXT))
+    message = Message(message_id=USER_MESSAGE_ID, parts=[part], role=Role.user)
+    return MessageSendParams(message=message)
 
 
 def dumped(model: BaseModel) -> dict[str, JsonValue]:
@@ -85,9 +94,15 @@ def dumped(model: BaseModel) -> dict[str, JsonValue]:
     return values
 
 
-async def fetched_cards(server: AgentServer) -> tuple[dict[str, JsonValue], CompatAgentCard]:
+def parsed_card(card: dict[str, JsonValue]) -> AgentCard:
+    card_copy: dict[str, JsonValue] = copy.deepcopy(card)
+    return parse_agent_card(card_copy)
+
+
+async def fetched_cards(server: AgentServer) -> tuple[dict[str, JsonValue], AgentCard]:
     ours = await main.aget_agent_card(server.url)
-    theirs = await litellm_main.aget_agent_card(server.url)
+    # LiteLLM annotates the compat AgentCard here but its resolver returns the proto
+    theirs: AgentCard = await litellm_main.aget_agent_card(server.url)  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L848
     return dumped(ours), theirs
 
 
@@ -107,15 +122,15 @@ async def card_headers(server: AgentServer) -> None:
 def test_card_matches_litellm() -> None:
     with V1Server(Recorder()) as server:
         our_card, their_card = asyncio.run(fetched_cards(server))
-    assert parse_agent_card(copy.deepcopy(our_card)) == their_card
+    assert parsed_card(our_card) == their_card
 
 
 def test_client_card_matches() -> None:
     with V1Server(Recorder()) as server:
         our_card = asyncio.run(our_client_card(server))
         their_client = asyncio.run(litellm_main.create_a2a_client(server.url))
-        reference: AgentCard = their_client._litellm_agent_card  # noqa: SLF001  # pyright: ignore[reportAny, reportAttributeAccessIssue, reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L841
-    assert parse_agent_card(copy.deepcopy(our_card)) == reference
+        reference: AgentCard = their_client._litellm_agent_card  # type: ignore[attr-defined]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L841
+    assert parsed_card(our_card) == reference
 
 
 def test_card_headers_reach_agent() -> None:
@@ -149,26 +164,24 @@ def test_card_helpers_match() -> None:
     ours_interface = INTERFACES.validate_python(normalized["supportedInterfaces"])[0]
     assert ours_interface["protocolBinding"] == "JSONRPC"
     assert ours_interface["protocolVersion"] == "0.3"
-    reference = litellm_cards.normalize_agent_card_interfaces(parse_agent_card(copy.deepcopy(card)))
-    assert parse_agent_card(copy.deepcopy(normalized)) == reference
+    reference = litellm_cards.normalize_agent_card_interfaces(parsed_card(card))
+    assert parsed_card(normalized) == reference
     assert card_resolver.get_agent_card_url(card) == litellm_cards.get_agent_card_url(
-        parse_agent_card(copy.deepcopy(card))
+        parsed_card(card)
     )
     interface: dict[str, JsonValue] = {"url": "https://first.example/"}
     interface_card: dict[str, JsonValue] = {"supportedInterfaces": [interface]}
     assert card_resolver.get_agent_card_url(interface_card) == litellm_cards.get_agent_card_url(
-        parse_agent_card(copy.deepcopy(interface_card))
+        parsed_card(interface_card)
     )
     moved = card_resolver.set_agent_card_url(card, "https://other.example/")
     assert card_resolver.get_agent_card_url(moved) == "https://other.example/"
-    their_moved = parse_agent_card(copy.deepcopy(card))
+    their_moved = parsed_card(card)
     litellm_cards.set_agent_card_url(their_moved, "https://other.example/")
     assert litellm_cards.get_agent_card_url(their_moved) == "https://other.example/"
     fixed = card_resolver.fix_agent_card_url(card, "https://agent.example")
     assert card_resolver.get_agent_card_url(fixed) == "https://agent.example/"
-    their_fixed = litellm_cards.fix_agent_card_url(
-        parse_agent_card(copy.deepcopy(card)), "https://agent.example"
-    )
+    their_fixed = litellm_cards.fix_agent_card_url(parsed_card(card), "https://agent.example")
     assert litellm_cards.get_agent_card_url(their_fixed) == "https://agent.example/"
 
 
@@ -192,7 +205,13 @@ async def litellm_send(
     agent_id: str | None = None,
     headers: dict[str, str] | None = None,
 ) -> dict[str, JsonValue]:
-    theirs: LiteLLMResponse = await litellm_main.asend_message(a2a_client=client, request=sdk_request(request_id), api_base=api_base, agent_id=agent_id, agent_extra_headers=headers)  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L404
+    theirs: LiteLLMResponse = await LITELLM_SEND(
+        a2a_client=client,
+        request=SendMessageRequest(id=request_id, params=sdk_params()),
+        api_base=api_base,
+        agent_id=agent_id,
+        agent_extra_headers=headers,
+    )
     return dumped(theirs)
 
 
@@ -332,7 +351,13 @@ async def both_streams(
         async for chunk in main.asend_message_streaming(a2a_client=our_client, request=our_request)
     ]
     their_client = await litellm_main.create_a2a_client(server.url, streaming=True)
-    theirs = [dumped(chunk) async for chunk in litellm_main.asend_message_streaming(a2a_client=their_client, request=sdk_stream_request(request_id))]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L627
+    theirs = [
+        dumped(chunk)
+        async for chunk in LITELLM_STREAM(
+            a2a_client=their_client,
+            request=SendStreamingMessageRequest(id=request_id, params=sdk_params()),
+        )
+    ]
     return ours, theirs
 
 

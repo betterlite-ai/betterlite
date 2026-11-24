@@ -173,29 +173,26 @@ def test_native_a2a_error() -> None:
     assert error.__cause__ is not None
 
 
-def test_native_connection_error() -> None:
-    payload = payload_of("A2AConnectionError", "down")
-    payload["status_code"] = TEAPOT
-    payload["url"] = DEAD_URL
-    with pytest.raises(exceptions.A2AConnectionError) as caught:
-        raise_native_error(native_of(**payload))
-    error = caught.value
-    assert error.status_code == DEAD_STATUS
-    assert error.llm_provider == LLM_PROVIDER
-    assert error.url == DEAD_URL
-    assert error.__cause__ is not None
-
-
-def test_native_card_error() -> None:
-    payload = payload_of("A2AAgentCardError", "bad card")
-    payload["status_code"] = TEAPOT
-    payload["url"] = AGENT_URL
-    with pytest.raises(exceptions.A2AAgentCardError) as caught:
-        raise_native_error(native_of(**payload))
-    error = caught.value
-    assert error.status_code == TEAPOT
-    assert error.url == AGENT_URL
-    assert error.llm_provider == LLM_PROVIDER
+def test_native_status_errors() -> None:
+    connection = payload_of("A2AConnectionError", "down")
+    connection["status_code"] = TEAPOT
+    connection["url"] = DEAD_URL
+    with pytest.raises(exceptions.A2AConnectionError) as caught_connection:
+        raise_native_error(native_of(**connection))
+    connection_error = caught_connection.value
+    assert connection_error.status_code == DEAD_STATUS
+    assert connection_error.llm_provider == LLM_PROVIDER
+    assert connection_error.url == DEAD_URL
+    assert connection_error.__cause__ is not None
+    card = payload_of("A2AAgentCardError", "bad card")
+    card["status_code"] = TEAPOT
+    card["url"] = AGENT_URL
+    with pytest.raises(exceptions.A2AAgentCardError) as caught_card:
+        raise_native_error(native_of(**card))
+    card_error = caught_card.value
+    assert card_error.status_code == TEAPOT
+    assert card_error.url == AGENT_URL
+    assert card_error.llm_provider == LLM_PROVIDER
 
 
 def test_native_discovery_error() -> None:
@@ -294,9 +291,11 @@ def test_missing_client() -> None:
 
 
 def test_connection_at_agent() -> None:
-    with AgentServer(Recorder(card_url=DEAD_URL)) as server:
-        with pytest.raises(exceptions.A2AConnectionError) as caught:
-            asyncio.run(failing_send(server.url))
+    with (
+        AgentServer(Recorder(card_url=DEAD_URL)) as server,
+        pytest.raises(exceptions.A2AConnectionError) as caught,
+    ):
+        asyncio.run(failing_send(server.url))
     error = caught.value
     assert error.status_code == DEAD_STATUS
     assert error.llm_provider == LLM_PROVIDER
