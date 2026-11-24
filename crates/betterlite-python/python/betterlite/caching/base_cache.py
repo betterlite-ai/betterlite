@@ -9,15 +9,15 @@ class BaseCache(ABC):
 
     def get_ttl(self, **kwargs: JsonValue) -> int | None:
         raw = kwargs.get("ttl")
+        if raw is None:
+            return self.default_ttl
         match raw:
-            case None:
-                return self.default_ttl
-            case int() | float() | str():
+            case bool() | int() | float() | str():
                 try:
                     return int(raw)
                 except ValueError:
                     return self.default_ttl
-            case _:
+            case list() | dict():
                 raise ValueError(f"ttl must be a number, not {type(raw).__name__}")
 
     def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:

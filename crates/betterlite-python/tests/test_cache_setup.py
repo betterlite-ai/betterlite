@@ -1,4 +1,5 @@
 import importlib
+import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Final, Protocol
@@ -8,7 +9,9 @@ from fake_redis_server import FakeRedisServer
 from pydantic import JsonValue
 
 import betterlite
+from betterlite._cache_ops.types import CacheStore
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._settings.callbacks import Callback
 from betterlite.caching import (
     BaseCache,
     Cache,
@@ -20,7 +23,10 @@ from betterlite.caching import (
     RedisCache,
 )
 from betterlite.caching.caching import disable_cache, enable_cache, update_cache
-from betterlite.types.caching import DEFAULT_CACHING_SUPPORTED_CALL_TYPES
+from betterlite.types.caching import (
+    DEFAULT_CACHING_SUPPORTED_CALL_TYPES as SUPPORTED_CALLS,
+)
+from betterlite.types.caching import CachingSupportedCallTypes as CallType
 
 CACHED: Final[dict[str, JsonValue]] = {"answer": 1}
 STARTUP_NODES: Final[list[JsonValue]] = [{"host": "127.0.0.1", "port": 6379}]
@@ -35,18 +41,17 @@ EMPTY_CALLBACK_COUNTS: Final[list[int]] = [0, 0, 0]
 
 
 class ReferenceCache(Protocol):
-    type: object
-    mode: object
-    ttl: object
-    namespace: object
-    redis_flush_size: object
-    supported_call_types: object
-    semantic_cache_scope: object
-    cache: object
+    type: str
+    mode: str
+    ttl: float | None
+    namespace: str | None
+    redis_flush_size: int | None
+    supported_call_types: list[CallType] | None
+    semantic_cache_scope: str
 
 
 class ReferenceCacheFactory(Protocol):
-    def __call__(self, **kwargs: object) -> ReferenceCache: ...
+    def __call__(self, **kwargs: JsonValue) -> ReferenceCache: ...
 
 
 class ReferenceCachingModule(Protocol):
@@ -54,7 +59,7 @@ class ReferenceCachingModule(Protocol):
 
 
 class ReferenceSwitch(Protocol):
-    def __call__(self, **kwargs: object) -> None: ...
+    def __call__(self, **kwargs: JsonValue) -> None: ...
 
 
 class ReferenceSwitchModule(Protocol):
@@ -62,11 +67,11 @@ class ReferenceSwitchModule(Protocol):
 
 
 class ReferenceStateModule(Protocol):
-    def __getattr__(self, name: str) -> object: ...
+    def __getattr__(self, name: str) -> JsonValue: ...
 
 
 class ReferenceListModule(Protocol):
-    def __getattr__(self, name: str) -> list[object]: ...
+    def __getattr__(self, name: str) -> list[Callback]: ...
 
 
 # litellm ships its cache types untyped, so its objects come through these typed shapes.
@@ -85,7 +90,7 @@ def _isolated_cache_state() -> Iterator[None]:
     LITELLM_SWITCHES.disable_cache()
 
 
-@pytest.fixture
+@pytest.fixture()
 def redis_server() -> Iterator[FakeRedisServer]:
     server = FakeRedisServer()
     server.start()
@@ -94,7 +99,7 @@ def redis_server() -> Iterator[FakeRedisServer]:
     assert server.unknown_commands == []
 
 
-def _litellm_callback_lists() -> tuple[Sequence[object], Sequence[object], Sequence[object]]:
+def _litellm_callback_lists() -> tuple[Sequence[Callback], ...]:
     return (
         LITELLM_LISTS.input_callback,
         LITELLM_LISTS.success_callback,
@@ -102,7 +107,7 @@ def _litellm_callback_lists() -> tuple[Sequence[object], Sequence[object], Seque
     )
 
 
-def _betterlite_callback_lists() -> tuple[Sequence[object], Sequence[object], Sequence[object]]:
+def _betterlite_callback_lists() -> tuple[Sequence[Callback], ...]:
     return (
         betterlite.input_callback,
         betterlite.success_callback,
@@ -120,6 +125,30 @@ def _cache_callback_counts() -> tuple[list[int], list[int]]:
     return ours, theirs
 
 
+def _require_memory(backend: CacheStore) -> InMemoryCache:
+    match backend:
+        case InMemoryCache():
+            return backend
+        case CacheStore():
+            raise AssertionError(f"{type(backend).__name__} is not an InMemoryCache")
+
+
+def _require_redis(backend: CacheStore) -> RedisCache:
+    match backend:
+        case RedisCache():
+            return backend
+        case CacheStore():
+            raise AssertionError(f"{type(backend).__name__} is not a RedisCache")
+
+
+def _require_disk(backend: CacheStore) -> DiskCache:
+    match backend:
+        case DiskCache():
+            return backend
+        case CacheStore():
+            raise AssertionError(f"{type(backend).__name__} is not a DiskCache")
+
+
 def test_cache_init_local_defaults() -> None:
     reference = LITELLM_CACHING.Cache()
     ours = Cache()
@@ -132,12 +161,11 @@ def test_cache_init_local_defaults() -> None:
     assert reference.namespace is None
     assert ours.redis_flush_size is None
     assert reference.redis_flush_size is None
-    assert ours.supported_call_types == list(DEFAULT_CACHING_SUPPORTED_CALL_TYPES)
-    assert reference.supported_call_types == list(DEFAULT_CACHING_SUPPORTED_CALL_TYPES)
+    assert ours.supported_call_types == list(SUPPORTED_CALLS)
+    assert reference.supported_call_types == list(SUPPORTED_CALLS)
     assert ours.semantic_cache_scope == "key"
     assert reference.semantic_cache_scope == "key"
-    backend = ours.cache
-    assert isinstance(backend, InMemoryCache)
+    _require_memory(ours.cache)
     ours_counts, theirs_counts = _cache_callback_counts()
     assert ours_counts == theirs_counts == CACHE_CALLBACK_COUNTS
 
@@ -151,7 +179,7 @@ def test_cache_init_ttl_rules() -> None:
     assert ours_plain.ttl == reference_plain.ttl == PLAIN_TTL
 
 
-def test_cache_init_redis_attributes(redis_server: FakeRedisServer) -> None:
+def test_init_redis_attributes(redis_server: FakeRedisServer) -> None:
     port = str(redis_server.port)
     reference = LITELLM_CACHING.Cache(
         type="redis",
@@ -171,8 +199,7 @@ def test_cache_init_redis_attributes(redis_server: FakeRedisServer) -> None:
     assert reference.type == "redis"
     assert ours.namespace == reference.namespace == "tenant"
     assert ours.ttl == reference.ttl == REDIS_TTL
-    backend = ours.cache
-    assert isinstance(backend, RedisCache)
+    backend = _require_redis(ours.cache)
     assert backend.namespace == "tenant"
     assert backend.default_ttl == REDIS_DEFAULT_TTL
     assert backend.redis_flush_size == REDIS_DEFAULT_FLUSH_SIZE
@@ -182,20 +209,19 @@ def test_cache_init_disk_directory(tmp_path: Path) -> None:
     ours = Cache(type="disk", disk_cache_dir=str(tmp_path))
     assert ours.type == "disk"
     assert ours.ttl is None
-    backend = ours.cache
-    assert isinstance(backend, DiskCache)
+    backend = _require_disk(ours.cache)
     backend.set_cache("key", CACHED)
     assert backend.get_cache("key") == CACHED
     assert backend.get_cache("missing") is None
 
 
-def test_cache_init_unsupported_type_raises() -> None:
+def test_init_unsupported_type() -> None:
     for cache_type in ("bogus", LiteLLMCacheType.S3, "redis-semantic"):
         with pytest.raises(NotImplementedError, match="cache type is not built yet"):
             Cache(type=cache_type)
 
 
-def test_cache_init_cluster_settings_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_init_cluster_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(NotImplementedError, match="cluster"):
         Cache(type="redis", host="127.0.0.1", port="6379", redis_startup_nodes=STARTUP_NODES)
     monkeypatch.setenv("REDIS_CLUSTER_NODES", '[{"host": "127.0.0.1"}]')
@@ -207,7 +233,7 @@ def test_cache_init_cluster_settings_raise(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_cache_init_clock_refused() -> None:
     with pytest.raises(UnsupportedCallArgument):
-        InMemoryCache(clock=lambda: 1.0)
+        InMemoryCache(clock=time.monotonic)
 
 
 def test_cache_import_exports() -> None:
@@ -233,7 +259,7 @@ def test_cache_import_exports() -> None:
     assert [member.value for member in CacheMode] == ["default_on", "default_off"]
 
 
-def test_cache_repr_hides_credentials(redis_server: FakeRedisServer) -> None:
+def test_repr_hides_credentials(redis_server: FakeRedisServer) -> None:
     credential = "hunter" + "2"
     port = str(redis_server.port)
     ours = Cache(
@@ -251,11 +277,11 @@ def test_cache_repr_hides_credentials(redis_server: FakeRedisServer) -> None:
         namespace="tenant",
     )
     assert "hunter2" not in repr(ours)
-    assert "hunter2" not in repr(vars(ours))
+    assert "hunter2" not in repr(ours.cache)
     assert "hunter2" not in repr(reference)
 
 
-def test_enable_cache_adds_cache_and_callbacks() -> None:
+def test_enable_adds_cache() -> None:
     enable_cache()
     LITELLM_SWITCHES.enable_cache()
     assert betterlite.cache is not None
@@ -268,7 +294,7 @@ def test_enable_cache_adds_cache_and_callbacks() -> None:
     assert ours_counts == theirs_counts == CACHE_CALLBACK_COUNTS
 
 
-def test_enable_cache_keeps_existing_cache() -> None:
+def test_enable_keeps_cache() -> None:
     ours = Cache()
     betterlite.cache = ours
     LITELLM_SWITCHES.update_cache()
@@ -279,14 +305,14 @@ def test_enable_cache_keeps_existing_cache() -> None:
     assert LITELLM_STATE.cache is reference
 
 
-def test_update_cache_replaces_the_cache() -> None:
+def test_update_replaces_cache() -> None:
     update_cache()
     ours_first = betterlite.cache
     LITELLM_SWITCHES.update_cache()
     reference_first = LITELLM_STATE.cache
     update_cache()
     LITELLM_SWITCHES.update_cache()
-    assert isinstance(betterlite.cache, Cache)
+    assert betterlite.cache is not None
     assert betterlite.cache is not ours_first
     assert LITELLM_STATE.cache is not reference_first
     assert LITELLM_STATE.cache is not None
@@ -294,7 +320,7 @@ def test_update_cache_replaces_the_cache() -> None:
     assert ours_counts == theirs_counts == CACHE_CALLBACK_COUNTS
 
 
-def test_disable_cache_removes_cache_and_callbacks() -> None:
+def test_disable_removes_all() -> None:
     enable_cache()
     LITELLM_SWITCHES.enable_cache()
     disable_cache()

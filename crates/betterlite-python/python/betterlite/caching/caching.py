@@ -15,8 +15,8 @@ from betterlite.caching.disk_cache import DiskCache
 from betterlite.caching.in_memory_cache import InMemoryCache
 from betterlite.caching.redis_cache import RedisCache
 from betterlite.types.caching import (
-    DEFAULT_CACHING_SUPPORTED_CALL_TYPES,
-    CachingSupportedCallTypes,
+    DEFAULT_CACHING_SUPPORTED_CALL_TYPES as SUPPORTED_CALLS,
+    CachingSupportedCallTypes as CallType,
     LiteLLMCacheType,
     SemanticCacheScope,
 )
@@ -24,14 +24,8 @@ from betterlite.types.caching import (
 _LOGGER: Final = logging.getLogger("LiteLLM")
 _CACHE_CALLBACK: Final = "cache"
 
-cache: "Cache | None" = None
-set_verbose: bool = False
-default_in_memory_ttl: float | None = None
-default_redis_ttl: float | None = None
-default_redis_batch_cache_expiry: float | None = None
 
-
-def print_verbose(print_statement: object) -> None:
+def print_verbose(print_statement: JsonValue) -> None:
     # LiteLLM swallows every failure in this line so a broken log handler can't fail a completion.
     with suppress(Exception):
         _LOGGER.debug("%s", print_statement)
@@ -72,26 +66,31 @@ class Cache(CacheOperations):
         default_in_memory_ttl: float | None = None,
         default_in_redis_ttl: float | None = None,
         similarity_threshold: float | None = None,
-        supported_call_types: list[CachingSupportedCallTypes] | None = list(DEFAULT_CACHING_SUPPORTED_CALL_TYPES),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L93
+        supported_call_types: list[CallType] | None = list(SUPPORTED_CALLS),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L93
         azure_account_url: str | None = None,
         azure_blob_container: str | None = None,
         s3_bucket_name: str | None = None,
         s3_region_name: str | None = None,
         s3_api_version: str | None = None,
         s3_use_ssl: bool | None = True,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L100
-        s3_verify: bool | str | None = None,
+        s3_verify: bool | str | None = None,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L101
         s3_endpoint_url: str | None = None,
         s3_aws_access_key_id: str | None = None,
         s3_aws_secret_access_key: str | None = None,
         s3_aws_session_token: str | None = None,
+        # ast-grep-ignore: no-loose-types - LiteLLM declares this parameter as object
         s3_config: object | None = None,
         s3_path: str | None = None,
         gcs_bucket_name: str | None = None,
         gcs_path_service_account: str | None = None,
         gcs_path: str | None = None,
+        # ast-grep-ignore: no-long-names
         redis_semantic_cache_embedding_model: str = "text-embedding-ada-002",
+        # ast-grep-ignore: no-long-names
         redis_semantic_cache_index_name: str | None = None,
+        # ast-grep-ignore: no-long-names
         valkey_semantic_cache_embedding_model: str = "text-embedding-ada-002",
+        # ast-grep-ignore: no-long-names
         valkey_semantic_cache_index_name: str | None = None,
         redis_flush_size: int | None = None,
         redis_startup_nodes: list[JsonValue] | None = None,
@@ -100,9 +99,13 @@ class Cache(CacheOperations):
         qdrant_api_key: str | None = None,
         qdrant_collection_name: str | None = None,
         qdrant_quantization_config: str | None = None,
+        # ast-grep-ignore: no-long-names
         qdrant_semantic_cache_embedding_model: str = "text-embedding-ada-002",
+        # ast-grep-ignore: no-long-names
         qdrant_semantic_cache_vector_size: int | None = None,
+        # ast-grep-ignore: no-long-names
         semantic_cache_embedding_max_input_tokens: int | None = None,
+        # ast-grep-ignore: no-long-names
         semantic_cache_embedding_timeout: float | None = None,
         semantic_cache_scope: str = SemanticCacheScope.KEY.value,
         gcp_service_account: str | None = None,
@@ -110,7 +113,7 @@ class Cache(CacheOperations):
         _backend: BaseCache | None = None,
         **kwargs: JsonValue,
     ) -> None:
-        # The semantic, S3, GCS and Azure backends are later tasks; their arguments are taken and unused.
+        # The semantic, S3, GCS and Azure backends are later tasks; their arguments stay unused.
         _unread = (
             similarity_threshold,
             azure_account_url,
@@ -129,18 +132,18 @@ class Cache(CacheOperations):
             gcs_bucket_name,
             gcs_path_service_account,
             gcs_path,
-            redis_semantic_cache_embedding_model,
-            redis_semantic_cache_index_name,
-            valkey_semantic_cache_embedding_model,
-            valkey_semantic_cache_index_name,
+            redis_semantic_cache_embedding_model,  # ast-grep-ignore: no-long-names
+            redis_semantic_cache_index_name,  # ast-grep-ignore: no-long-names
+            valkey_semantic_cache_embedding_model,  # ast-grep-ignore: no-long-names
+            valkey_semantic_cache_index_name,  # ast-grep-ignore: no-long-names
             qdrant_api_base,
             qdrant_api_key,
             qdrant_collection_name,
             qdrant_quantization_config,
-            qdrant_semantic_cache_embedding_model,
-            qdrant_semantic_cache_vector_size,
-            semantic_cache_embedding_max_input_tokens,
-            semantic_cache_embedding_timeout,
+            qdrant_semantic_cache_embedding_model,  # ast-grep-ignore: no-long-names
+            qdrant_semantic_cache_vector_size,  # ast-grep-ignore: no-long-names
+            semantic_cache_embedding_max_input_tokens,  # ast-grep-ignore: no-long-names
+            semantic_cache_embedding_timeout,  # ast-grep-ignore: no-long-names
             gcp_service_account,
             gcp_ssl_ca_certs,
         )
@@ -157,7 +160,7 @@ class Cache(CacheOperations):
                 password=password,
                 redis_flush_size=redis_flush_size,
                 namespace=namespace,
-                **kwargs,
+                **kwargs,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L213-L219
             )
         elif selected == LiteLLMCacheType.LOCAL:
             backend = InMemoryCache()
@@ -182,8 +185,12 @@ class Cache(CacheOperations):
             LiteLLMCacheType.VALKEY_SEMANTIC,
         ) and default_in_redis_ttl is not None:
             self.ttl = default_in_redis_ttl
-        if self.namespace is not None and isinstance(self.cache, RedisCache):
-            self.cache.namespace = self.namespace
+        if self.namespace is not None:
+            match backend:
+                case RedisCache():
+                    backend.namespace = self.namespace
+                case BaseCache():
+                    ...
         if _backend is None and self.type == LiteLLMCacheType.LOCAL:
             self._native_cache = NativeCache(self._settings_text())
 
@@ -202,7 +209,7 @@ def enable_cache(
     host: str | None = None,
     port: str | None = None,
     password: str | None = None,
-    supported_call_types: list[CachingSupportedCallTypes] | None = list(DEFAULT_CACHING_SUPPORTED_CALL_TYPES),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1020
+    supported_call_types: list[CallType] | None = list(SUPPORTED_CALLS),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1020
     **kwargs: JsonValue,
 ) -> None:
     print_verbose("LiteLLM: Enabling Cache")
@@ -214,10 +221,10 @@ def enable_cache(
             port=port,
             password=password,
             supported_call_types=supported_call_types,
-            **kwargs,
+            **kwargs,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1050-L1056
         )
     print_verbose(f"LiteLLM: Cache enabled, litellm.cache={betterlite.cache}")
-    print_verbose(f"LiteLLM Cache: {vars(betterlite.cache)}")
+    print_verbose(f"LiteLLM Cache: {betterlite.cache}")
 
 
 def update_cache(
@@ -225,7 +232,7 @@ def update_cache(
     host: str | None = None,
     port: str | None = None,
     password: str | None = None,
-    supported_call_types: list[CachingSupportedCallTypes] | None = list(DEFAULT_CACHING_SUPPORTED_CALL_TYPES),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1067
+    supported_call_types: list[CallType] | None = list(SUPPORTED_CALLS),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1067
     **kwargs: JsonValue,
 ) -> None:
     print_verbose("LiteLLM: Updating Cache")
@@ -235,16 +242,16 @@ def update_cache(
         port=port,
         password=password,
         supported_call_types=supported_call_types,
-        **kwargs,
+        **kwargs,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1086-L1093
     )
     print_verbose(f"LiteLLM: Cache Updated, litellm.cache={betterlite.cache}")
-    print_verbose(f"LiteLLM Cache: {vars(betterlite.cache)}")
+    print_verbose(f"LiteLLM Cache: {betterlite.cache}")
 
 
 def disable_cache() -> None:
     print_verbose("LiteLLM: Disabling Cache")
-    for entries in _callback_lists():
-        with suppress(ValueError):
+    with suppress(ValueError):
+        for entries in _callback_lists():
             entries.remove(_CACHE_CALLBACK)
     betterlite.cache = None
     print_verbose(f"LiteLLM: Cache disabled, litellm.cache={betterlite.cache}")

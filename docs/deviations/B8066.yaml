@@ -24,10 +24,19 @@ deviations:
   - what: The cache callback entries are added with plain list operations in betterlite.caching.caching; LiteLLM routes the success ones through litellm.logging_callback_manager.
     why: betterlite has no logging_callback_manager yet (B5368 owns it), and append-when-missing leaves the same three lists.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L291-L296
+  - what: DualCache's BaseCache overrides annotate local_only as JsonValue and raise ValueError naming the field for a value that is not a bool; LiteLLM declares local_only as bool on the same methods.
+    why: BaseCache's overrides take **kwargs typed as JsonValue, so a narrower bool parameter fails the Liskov check, and Python callers pass a bool while a value of another type names the field where it is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150
+  - what: The cache switches keep betterlite.cache, set_verbose, default_in_memory_ttl, default_redis_ttl and default_redis_batch_cache_expiry on the caching package itself, so betterlite.caching carries them as well as betterlite; LiteLLM declares them on the litellm package only.
+    why: betterlite's top package builds betterlite.cache with a star import of betterlite.caching, which needs the typed globals there to give the attribute a Cache | None type instead of the None the params module declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L402-L405
   - what: This task has no helper oracle cases.
     why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
     link: ""
 kept_bugs:
+  - what: disable_cache removes the cache callback under one suppress block, so the first list without the entry ends the removals and the later lists keep theirs; betterlite copies the block.
+    why: A working LiteLLM setup keeps the three lists consistent and never sees this, and LiteLLM's own order is the one a setup that edits the lists by hand already meets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1114-L1118
   - what: The disk cache hides falsy stored values, so a key written with 0, false, "" or an empty container reads back as missing.
     why: A working LiteLLM setup can rely on the miss rather than on the stored value, and betterlite copies the filter in the Rust disk cache.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L45

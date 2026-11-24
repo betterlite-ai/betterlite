@@ -2,6 +2,7 @@ import json
 from typing import Final
 
 from pydantic import JsonValue
+from typing_extensions import override
 
 import betterlite
 from betterlite._native import NativeRedis
@@ -81,5 +82,6 @@ class RedisCache(_BackendCache[NativeRedis]):
         return None if text is None else int(text)
 
     # LiteLLM buffers these writes until redis_flush_size; the shared handle writes each one now.
+    @override
     async def batch_cache_write(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
         await self.async_set_cache(key, value, **kwargs)

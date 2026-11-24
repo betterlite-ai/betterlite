@@ -6,6 +6,7 @@ from typing import Final, Protocol
 
 from fake_redis_server import FakeRedisServer
 from pydantic import JsonValue
+from typing_extensions import override
 
 from betterlite.caching import Cache, DiskCache, DualCache, InMemoryCache, RedisCache
 from betterlite.caching.base_cache import BaseCache
@@ -19,7 +20,7 @@ CHAT_RESPONSE: Final[dict[str, JsonValue]] = {"id": "chatcmpl-1", "content": "he
 IN_MEMORY_TTL: Final = 120.0
 TTL_ALLOWANCE: Final = 30.0
 MEMORY_INCREMENT: Final = 1.5
-MEMORY_COUNT: Final = 2.5
+MEMORY_COUNT: Final = 3.0
 REDIS_INCREMENT: Final = 2
 REDIS_SECOND_INCREMENT: Final = 3
 REDIS_COUNT: Final = 5
@@ -33,11 +34,11 @@ DISK_COUNT: Final = 5
 
 
 class ReferenceBackend(Protocol):
-    def get_cache(self, key: str, **kwargs: JsonValue) -> object: ...
+    def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
 
     def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None: ...
 
-    async def async_get_cache(self, key: str, **kwargs: JsonValue) -> object: ...
+    async def async_get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
 
     async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None: ...
 
@@ -58,8 +59,18 @@ class ReferenceBackend(Protocol):
     async def disconnect(self) -> None: ...
 
 
+class ReferenceStore(Protocol):
+    def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
+
+    def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None: ...
+
+    def delete_cache(self, key: str) -> None: ...
+
+    def flush_cache(self) -> None: ...
+
+
 class BackendFactory(Protocol):
-    def __call__(self, **kwargs: object) -> ReferenceBackend: ...
+    def __call__(self, **kwargs: JsonValue) -> ReferenceBackend: ...
 
 
 class BackendModule(Protocol):
@@ -72,7 +83,7 @@ LITELLM_CACHING: BackendModule = importlib.import_module("litellm.caching")
 
 async def _in_memory_round_trip(
     ours: InMemoryCache, theirs: ReferenceBackend
-) -> tuple[object, object, float | None, float | None]:
+) -> tuple[JsonValue, JsonValue, float | None, float | None]:
     await ours.async_set_cache("ours:memory-async", CACHED)
     await theirs.async_set_cache("litellm:memory-async", CACHED)
     await ours.async_set_cache("ours:memory-ttl", CACHED, ttl=IN_MEMORY_TTL)
@@ -87,7 +98,18 @@ async def _in_memory_round_trip(
 
 async def _redis_scenario(
     ours: RedisCache, theirs: ReferenceBackend
-) -> tuple[object, object, float | None, float | None, float, float, bool, bool, object, object]:
+) -> tuple[
+    JsonValue,
+    JsonValue,
+    float | None,
+    float | None,
+    float,
+    float,
+    bool,
+    bool,
+    JsonValue,
+    JsonValue,
+]:
     await ours.async_set_cache("ours:redis-async", CACHED)
     await theirs.async_set_cache("litellm:redis-async", CACHED)
     await ours.async_set_cache("ours:redis-ttl", CACHED, ttl=REDIS_TTL)
@@ -127,18 +149,23 @@ class DynamicCache(BaseCache):
         super().__init__()
         self.values: dict[str, JsonValue] = {}
 
+    @override
     def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
         return self.values.get(key)
 
+    @override
     def set_cache(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
         self.values[key] = value
 
+    @override
     async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
         return self.values.get(key)
 
+    @override
     async def async_set_cache(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
         self.values[key] = value
 
+    @override
     async def async_set_cache_pipeline(
         self, cache_list: list[tuple[str, JsonValue]], **_kwargs: JsonValue
     ) -> None:
@@ -146,30 +173,52 @@ class DynamicCache(BaseCache):
             self.values[key] = value
 
 
-def test_in_memory_backend_matches_litellm() -> None:
-    ours = InMemoryCache()
-    theirs = LITELLM_CACHING.InMemoryCache()
-    ours.set_cache("ours:memory", CACHED)
-    theirs.set_cache("litellm:memory", CACHED)
-    assert ours.get_cache("ours:memory") == CACHED
-    assert theirs.get_cache("litellm:memory") == CACHED
-    assert ours.get_cache("ours:memory-missing") is None
-    assert theirs.get_cache("litellm:memory-missing") is None
+def _check_store(ours: ReferenceStore, theirs: ReferenceStore, name: str) -> None:
+    ours.set_cache(f"ours:{name}", CACHED)
+    theirs.set_cache(f"litellm:{name}", CACHED)
+    assert ours.get_cache(f"ours:{name}") == CACHED
+    assert theirs.get_cache(f"litellm:{name}") == CACHED
+    assert ours.get_cache(f"ours:{name}-missing") is None
+    assert theirs.get_cache(f"litellm:{name}-missing") is None
+    ours.delete_cache(f"ours:{name}")
+    theirs.delete_cache(f"litellm:{name}")
+    assert ours.get_cache(f"ours:{name}") is None
+    assert theirs.get_cache(f"litellm:{name}") is None
+
+
+def _check_flushed(ours: ReferenceStore, theirs: ReferenceStore, name: str) -> None:
+    ours.flush_cache()
+    theirs.flush_cache()
+    assert ours.get_cache(f"ours:{name}") is None
+    assert theirs.get_cache(f"litellm:{name}") is None
+
+
+def _count_memory(ours: InMemoryCache, theirs: ReferenceBackend) -> None:
     assert ours.increment_cache("ours:memory-count", MEMORY_INCREMENT) == MEMORY_INCREMENT
     assert theirs.increment_cache("litellm:memory-count", MEMORY_INCREMENT) == MEMORY_INCREMENT
     assert ours.increment_cache("ours:memory-count", MEMORY_INCREMENT) == MEMORY_COUNT
     assert theirs.increment_cache("litellm:memory-count", MEMORY_INCREMENT) == MEMORY_COUNT
-    ours.delete_cache("ours:memory")
-    theirs.delete_cache("litellm:memory")
-    assert ours.get_cache("ours:memory") is None
-    assert theirs.get_cache("litellm:memory") is None
-    ours.flush_cache()
-    theirs.flush_cache()
-    assert ours.get_cache("ours:memory-count") is None
-    assert theirs.get_cache("litellm:memory-count") is None
+    _check_flushed(ours, theirs, "memory-count")
 
 
-def test_in_memory_async_matches_litellm() -> None:
+def _count_redis(ours: RedisCache, theirs: ReferenceBackend) -> None:
+    ttl_write = ours.increment_cache("ours:redis-count", REDIS_INCREMENT, ttl=REDIS_TTL)
+    assert ttl_write == REDIS_INCREMENT
+    theirs_first = theirs.increment_cache("litellm:redis-count", REDIS_INCREMENT)
+    assert theirs_first == REDIS_INCREMENT
+    assert ours.increment_cache("ours:redis-count", REDIS_SECOND_INCREMENT) == REDIS_COUNT
+    assert theirs.increment_cache("litellm:redis-count", REDIS_SECOND_INCREMENT) == REDIS_COUNT
+    _check_flushed(ours, theirs, "redis-count")
+
+
+def test_memory_matches_litellm() -> None:
+    ours = InMemoryCache()
+    theirs = LITELLM_CACHING.InMemoryCache()
+    _check_store(ours, theirs, "memory")
+    _count_memory(ours, theirs)
+
+
+def test_memory_async_matches() -> None:
     ours = InMemoryCache()
     theirs = LITELLM_CACHING.InMemoryCache()
     before = time.time()
@@ -185,30 +234,14 @@ def test_in_memory_async_matches_litellm() -> None:
     assert theirs_ttl <= before + IN_MEMORY_TTL + TTL_ALLOWANCE
 
 
-def test_redis_backend_matches_litellm(redis_server: FakeRedisServer) -> None:
+def test_redis_matches_litellm(redis_server: FakeRedisServer) -> None:
     ours = RedisCache(host=redis_server.host, port=redis_server.port)
     theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
-    ours.set_cache("ours:redis", CACHED)
-    theirs.set_cache("litellm:redis", CACHED)
-    assert ours.get_cache("ours:redis") == CACHED
-    assert theirs.get_cache("litellm:redis") == CACHED
-    assert ours.get_cache("ours:redis-missing") is None
-    assert theirs.get_cache("litellm:redis-missing") is None
-    assert ours.increment_cache("ours:redis-count", REDIS_INCREMENT) == REDIS_INCREMENT
-    assert theirs.increment_cache("litellm:redis-count", REDIS_INCREMENT) == REDIS_INCREMENT
-    assert ours.increment_cache("ours:redis-count", REDIS_SECOND_INCREMENT) == REDIS_COUNT
-    assert theirs.increment_cache("litellm:redis-count", REDIS_SECOND_INCREMENT) == REDIS_COUNT
-    ours.delete_cache("ours:redis")
-    theirs.delete_cache("litellm:redis")
-    assert ours.get_cache("ours:redis") is None
-    assert theirs.get_cache("litellm:redis") is None
-    ours.flush_cache()
-    theirs.flush_cache()
-    assert ours.get_cache("ours:redis-count") is None
-    assert theirs.get_cache("litellm:redis-count") is None
+    _check_store(ours, theirs, "redis")
+    _count_redis(ours, theirs)
 
 
-def test_redis_async_matches_litellm(redis_server: FakeRedisServer) -> None:
+def test_redis_async_matches(redis_server: FakeRedisServer) -> None:
     ours = RedisCache(host=redis_server.host, port=redis_server.port)
     theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
     (
@@ -226,9 +259,9 @@ def test_redis_async_matches_litellm(redis_server: FakeRedisServer) -> None:
     assert ours_value == theirs_value == CACHED
     assert ours_ttl is not None
     assert theirs_ttl is not None
-    assert REDIS_TTL - REDIS_TTL_ALLOWANCE <= ours_ttl
+    assert ours_ttl >= REDIS_TTL - REDIS_TTL_ALLOWANCE
     assert ours_ttl <= REDIS_TTL
-    assert REDIS_TTL - REDIS_TTL_ALLOWANCE <= theirs_ttl
+    assert theirs_ttl >= REDIS_TTL - REDIS_TTL_ALLOWANCE
     assert theirs_ttl <= REDIS_TTL
     assert ours_count == theirs_count == float(REDIS_INCREMENT)
     assert ours_ping is True
@@ -237,7 +270,7 @@ def test_redis_async_matches_litellm(redis_server: FakeRedisServer) -> None:
     assert theirs_deleted is None
 
 
-def test_dual_cache_matches_litellm() -> None:
+def test_dual_matches_litellm() -> None:
     ours = DualCache()
     theirs = LITELLM_CACHING.DualCache()
     assert ours.redis_cache is None
@@ -257,7 +290,7 @@ def test_dual_cache_matches_litellm() -> None:
     assert theirs.get_cache("litellm:dual") is None
 
 
-def test_dual_cache_local_only_stays_in_memory(redis_server: FakeRedisServer) -> None:
+def test_dual_local_only_stays(redis_server: FakeRedisServer) -> None:
     redis_ours = RedisCache(host=redis_server.host, port=redis_server.port)
     ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_ours)
     redis_theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
@@ -294,7 +327,7 @@ def test_disk_backend_contract(tmp_path: Path) -> None:
     assert ours.get_cache("disk-text") is None
 
 
-def test_base_cache_subclass_is_a_dynamic_cache_object() -> None:
+def test_dynamic_cache_object() -> None:
     dynamic = DynamicCache()
     cache = Cache(_backend=dynamic)
     cache.add_cache(CHAT_RESPONSE, dynamic, **CHAT)

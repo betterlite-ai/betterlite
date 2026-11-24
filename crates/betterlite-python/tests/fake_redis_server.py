@@ -6,6 +6,8 @@ from collections.abc import Callable
 from io import BufferedReader
 from typing import Final, TypeAlias
 
+from typing_extensions import override
+
 _HOST: Final = "127.0.0.1"
 _INFO: Final = b"redis_version:7.2.0\r\n"
 # redis-py 8 talks RESP3 and expects this map back from the HELLO handshake.
@@ -23,22 +25,10 @@ _SET_ARGUMENTS: Final = 3
 _POLL_INTERVAL: Final = 0.01
 
 
-def _error(text: str) -> bytes:
-    return b"-ERR " + text.encode() + b"\r\n"
-
-
-def _integer(value: int) -> bytes:
-    return b":" + str(value).encode() + b"\r\n"
-
-
 def _bulk(payload: bytes | None) -> bytes:
     if payload is None:
         return _NIL
     return b"$" + str(len(payload)).encode() + b"\r\n" + payload + b"\r\n"
-
-
-def _array(items: list[bytes]) -> bytes:
-    return b"*" + str(len(items)).encode() + b"\r\n" + b"".join(items)
 
 
 def _read_command(reader: BufferedReader) -> list[bytes] | None:
@@ -85,9 +75,7 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        self._thread = threading.Thread(
-            target=self.serve_forever, kwargs={"poll_interval": _POLL_INTERVAL}
-        )
+        self._thread = threading.Thread(target=self.serve_forever, args=(_POLL_INTERVAL,))
         self._thread.start()
 
     def stop(self) -> None:
@@ -112,17 +100,36 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
             entry = self._values.get(key)
         return None if entry is None else entry[0]
 
-    def finish_request(self, request: object, _client_address: object) -> None:
-        if not isinstance(request, socket.socket):
-            return
-        with self._lock:
-            self._connections.append(request)
-        try:
-            self._serve(request)
-        finally:
-            with self._lock:
-                if request in self._connections:
-                    self._connections.remove(request)
+    @override
+    def finish_request(
+        self,
+        request: socket.socket | tuple[bytes, socket.socket],
+        _client_address: tuple[str, int],
+    ) -> None:
+        match request:
+            case socket.socket() as connection:
+                with self._lock:
+                    self._connections.append(connection)
+                try:
+                    self._serve(connection)
+                finally:
+                    with self._lock:
+                        if connection in self._connections:
+                            self._connections.remove(connection)
+            case tuple():
+                return
+
+    @staticmethod
+    def _error(text: str) -> bytes:
+        return b"-ERR " + text.encode() + b"\r\n"
+
+    @staticmethod
+    def _integer(value: int) -> bytes:
+        return b":" + str(value).encode() + b"\r\n"
+
+    @staticmethod
+    def _array(items: list[bytes]) -> bytes:
+        return b"*" + str(len(items)).encode() + b"\r\n" + b"".join(items)
 
     def reply(self, args: list[bytes]) -> bytes:
         name = args[0].upper() if args else b""
@@ -130,7 +137,7 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
         if handler is None:
             with self._lock:
                 self._unknown.append(name.decode())
-            return _error(f"unknown command '{name.decode()}'")
+            return self._error(f"unknown command '{name.decode()}'")
         return handler(self, args)
 
     def ping(self, args: list[bytes]) -> bytes:
@@ -151,7 +158,7 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
 
     def set(self, args: list[bytes]) -> bytes:
         if len(args) < _SET_ARGUMENTS:
-            return _error("wrong number of arguments for 'set'")
+            return self._error("wrong number of arguments for 'set'")
         key = args[1].decode()
         exists = self._entry(key) is not None
         if b"NX" in {option.upper() for option in args[3:]} and exists:
@@ -163,38 +170,38 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
         return _OK
 
     def mget(self, args: list[bytes]) -> bytes:
-        return _array([self.get([b"GET", key]) for key in args[1:]])
+        return self._array([self.get([b"GET", key]) for key in args[1:]])
 
     def incrby(self, args: list[bytes]) -> bytes:
         try:
             amount = int(args[2])
         except ValueError:
-            return _error("value is not an integer or out of range")
+            return self._error("value is not an integer or out of range")
         return self._bump(args[1].decode(), amount, amount)
 
     def incrbyfloat(self, args: list[bytes]) -> bytes:
         try:
             amount = float(args[2])
         except ValueError:
-            return _error("value is not a valid float")
+            return self._error("value is not a valid float")
         return self._bump(args[1].decode(), amount, None)
 
     def ttl(self, args: list[bytes]) -> bytes:
         entry = self._entry(args[1].decode())
         if entry is None:
-            return _integer(-2)
+            return self._integer(-2)
         if entry[1] is None:
-            return _integer(-1)
-        return _integer(max(0, int(entry[1] - time.monotonic())))
+            return self._integer(-1)
+        return self._integer(max(0, int(entry[1] - time.monotonic())))
 
     def expire(self, args: list[bytes]) -> bytes:
         key = args[1].decode()
         entry = self._entry(key)
         if entry is None:
-            return _integer(0)
+            return self._integer(0)
         with self._lock:
             self._values[key] = (entry[0], time.monotonic() + int(args[2]))
-        return _integer(1)
+        return self._integer(1)
 
     def delete(self, args: list[bytes]) -> bytes:
         removed = 0
@@ -204,7 +211,7 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
                 with self._lock:
                     del self._values[name]
                 removed += 1
-        return _integer(removed)
+        return self._integer(removed)
 
     def flushall(self, _args: list[bytes]) -> bytes:
         with self._lock:
@@ -227,7 +234,7 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
         try:
             current = 0.0 if entry is None else float(entry[0])
         except ValueError:
-            return _error("value is not a number")
+            return self._error("value is not a number")
         payload = (
             str(whole + int(current)).encode()
             if whole is not None
@@ -236,7 +243,7 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
         with self._lock:
             expire_at = None if entry is None else entry[1]
             self._values[key] = (payload, expire_at)
-        return _integer(int(payload)) if whole is not None else _bulk(payload)
+        return self._integer(int(payload)) if whole is not None else _bulk(payload)
 
     def _serve(self, connection: socket.socket) -> None:
         reader = connection.makefile("rb")

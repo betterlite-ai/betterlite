@@ -3,6 +3,7 @@ import os
 from typing import Final, Generic, TypeAlias, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 from betterlite._native import NativeDisk, NativeDual, NativeMemory, NativeRedis
 from betterlite.caching.base_cache import BaseCache
@@ -19,56 +20,68 @@ def cluster_nodes_are_set() -> bool:
     return raw is not None and raw.strip() != ""
 
 
+# ast-grep-ignore: no-one-line-functions - a backend write sends its value through this serialise
 def _text(value: JsonValue) -> str:
     return json.dumps(value)
 
 
+# ast-grep-ignore: no-one-line-functions - a backend read parses its answer through this call
 def _value(text: str) -> JsonValue:
     return _JSON.validate_json(text)
 
 
+def _value_or_none(text: str | None) -> JsonValue:
+    if text is None:
+        return None
+    return _value(text)
+
+
 def _number(text: str) -> int | float:
-    match _JSON.validate_json(text):
+    decoded = _JSON.validate_json(text)
+    match decoded:
+        case bool() | str() | list() | dict() | None:
+            raise ValueError(f"the cache answered {decoded!r}, not a number")
         case int() as whole:
             return whole
         case float() as fraction:
             return fraction
-        case other:
-            raise ValueError(f"the cache answered {other!r}, not a number")
 
 
 def _ttl_of(kwargs: dict[str, JsonValue]) -> float | None:
-    match kwargs.get("ttl"):
-        case None:
-            return None
-        case int() as seconds:
+    raw = kwargs.get("ttl")
+    if raw is None:
+        return None
+    match raw:
+        case bool() as flag:
+            return float(flag)
+        case int() | float() as seconds:
             return float(seconds)
-        case float() as seconds:
-            return seconds
-        case other:
-            raise ValueError(f"ttl must be a number, not {type(other).__name__}")
+        case str() | list() | dict():
+            raise ValueError(f"ttl must be a number, not {type(raw).__name__}")
 
 
 class _BackendCache(BaseCache, Generic[_HandleT]):
     native: _HandleT
 
-    # A memory tier that carries its own default ttl puts it on every write; the other tiers let Rust apply theirs.
+    # A tier with its own default ttl puts it on every write; the others let Rust apply theirs.
     def _write_ttl(self, kwargs: dict[str, JsonValue]) -> float | None:
         return _ttl_of(kwargs)
 
+    @override
     def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
         self.native.set(key, _text(value), self._write_ttl(kwargs))
 
+    @override
     async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
         await self.native.async_set(key, _text(value), self._write_ttl(kwargs))
 
-    def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
-        text = self.native.get(key)
-        return None if text is None else _value(text)
+    @override
+    def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
+        return _value_or_none(self.native.get(key))
 
-    async def async_get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
-        text = await self.native.async_get(key)
-        return None if text is None else _value(text)
+    @override
+    async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
+        return _value_or_none(await self.native.async_get(key))
 
     def delete_cache(self, key: str) -> None:
         self.native.delete([key])
@@ -79,6 +92,7 @@ class _BackendCache(BaseCache, Generic[_HandleT]):
     async def async_delete_cache_keys(self, keys: list[str]) -> None:
         await self.native.async_delete(keys)
 
+    @override
     async def async_set_cache_pipeline(
         self, cache_list: list[tuple[str, JsonValue]], **kwargs: JsonValue
     ) -> None:
@@ -88,13 +102,16 @@ class _BackendCache(BaseCache, Generic[_HandleT]):
     def flush_cache(self) -> None:
         self.native.flush()
 
-    # LiteLLM's BaseCache leaves batch_cache_write unimplemented outside Redis; the shared handle writes now.
+    # LiteLLM leaves batch_cache_write unimplemented outside Redis; the shared handle writes now.
+    @override
     async def batch_cache_write(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
         await self.async_set_cache(key, value, **kwargs)
 
+    @override
     async def disconnect(self) -> None:
         await self.native.async_close()
 
+    @override
     async def test_connection(self) -> dict[str, JsonValue]:
         alive = await self.native.async_ping()
         return {"status": "success" if alive else "failed"}

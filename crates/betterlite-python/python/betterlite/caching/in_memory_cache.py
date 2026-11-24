@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Final
 
 from pydantic import JsonValue
+from typing_extensions import override
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeMemory
@@ -37,7 +38,8 @@ class InMemoryCache(_BackendCache[NativeMemory]):
         }
         self.native = NativeMemory(json.dumps(settings))
 
-    # The memory tier's own default_ttl is what an unset ttl writes with, as LiteLLM's InMemoryCache does.
+    # An unset ttl writes with the tier's default_ttl, as LiteLLM's InMemoryCache does.
+    @override
     def _write_ttl(self, kwargs: dict[str, JsonValue]) -> float | None:
         ttl = super()._write_ttl(kwargs)
         return float(self.default_ttl) if ttl is None else ttl
