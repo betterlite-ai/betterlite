@@ -11,10 +11,10 @@ use super::support::{FakeTransport, object, openapi_tool};
 
 #[tokio::test]
 async fn calls_the_tool_with_the_arguments_and_the_context() {
-    let transport = Arc::new(FakeTransport::replying(200, r#"{"ok": true}"#));
+    let transport = FakeTransport::replying(200, r#"{"ok": true}"#);
     let handler = OpenApiToolHandler {
         tool: openapi_tool(false),
-        transport: Arc::clone(&transport),
+        transport: Arc::new(transport.clone()),
     };
     let arguments = object(r#"{"id": "7"}"#);
     let context = OpenApiCallContext {
@@ -34,10 +34,10 @@ async fn calls_the_tool_with_the_arguments_and_the_context() {
 
 #[tokio::test]
 async fn keeps_the_upstream_auth_failure_with_its_type() {
-    let transport = Arc::new(FakeTransport::replying(401, "").with_challenge());
+    let transport = FakeTransport::replying(401, "").with_challenge();
     let handler = OpenApiToolHandler {
         tool: openapi_tool(true),
-        transport: Arc::clone(&transport),
+        transport: Arc::new(transport),
     };
     let arguments = object("{}");
     let outcome = handler
@@ -57,10 +57,10 @@ async fn keeps_the_upstream_auth_failure_with_its_type() {
 
 #[tokio::test]
 async fn keeps_other_upstream_failures_as_open_api_errors() {
-    let transport = Arc::new(FakeTransport::replying(500, ""));
+    let transport = FakeTransport::replying(500, "");
     let handler = OpenApiToolHandler {
         tool: openapi_tool(false),
-        transport: Arc::clone(&transport),
+        transport: Arc::new(transport),
     };
     let arguments = object("{}");
     let outcome = handler

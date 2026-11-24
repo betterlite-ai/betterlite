@@ -35,9 +35,10 @@ impl ToolRegistry {
         input_schema: Object,
         handler: Arc<dyn ToolHandler>,
     ) {
-        {
-            let mut tools = self.tools.write().unwrap_or_else(PoisonError::into_inner);
-            tools.insert(
+        self.tools
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(
                 name.to_owned(),
                 LocalTool {
                     name: name.to_owned(),
@@ -46,7 +47,6 @@ impl ToolRegistry {
                     handler,
                 },
             );
-        }
         debug!("Registered tool: {name}");
     }
 

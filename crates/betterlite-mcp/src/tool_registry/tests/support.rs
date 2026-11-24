@@ -167,11 +167,12 @@ pub(super) fn capture_logs() -> (Logs, DefaultGuard) {
     (logs, guard)
 }
 
+#[derive(Clone)]
 pub(super) struct FakeTransport {
     status: u16,
     headers: HeaderMap,
     body: Vec<u8>,
-    requests: Mutex<Vec<OpenApiRequest>>,
+    requests: Arc<Mutex<Vec<OpenApiRequest>>>,
 }
 
 impl FakeTransport {
@@ -180,7 +181,7 @@ impl FakeTransport {
             status,
             headers: HeaderMap::new(),
             body: body.as_bytes().to_vec(),
-            requests: Mutex::new(Vec::new()),
+            requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
