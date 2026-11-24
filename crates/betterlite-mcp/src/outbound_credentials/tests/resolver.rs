@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use rstest::rstest;
-use serde_json::json;
 
 use crate::credential_contracts::auth_config::AuthConfig;
 use crate::credential_contracts::auth_config::aws::{AwsCredentialSource, AwsSigV4Config};

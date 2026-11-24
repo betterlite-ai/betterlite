@@ -6,11 +6,10 @@ use base64::engine::general_purpose::STANDARD;
 use crate::server_record::MCPServer;
 use crate::wire_compat::errors::HttpException;
 
-use super::present;
-
 const UNAUTHORIZED_DETAIL: &str = "Unauthorized";
 
 // A scalar SERVER_ROOT_PATH registers the well-known routes with the prefix inserted (RFC 8414), while a per-request prefix is stripped before routing, so the two deployments need different URLs for the same document.
+#[must_use]
 pub fn oauth_protected_resource_path(
     root_path: &str,
     scalar_root_path: &str,
@@ -26,6 +25,7 @@ pub fn oauth_protected_resource_path(
     format!("{prefix}/.well-known/oauth-protected-resource/mcp/{name}")
 }
 
+#[must_use]
 pub fn raise_user_oauth_challenge(
     server: &MCPServer,
     root_path: &str,
@@ -36,6 +36,7 @@ pub fn raise_user_oauth_challenge(
     challenge_exception(challenge)
 }
 
+#[must_use]
 pub fn raise_token_exchange_challenge(
     server: &MCPServer,
     root_path: &str,
@@ -60,7 +61,9 @@ pub fn raise_token_exchange_challenge(
         "Bearer resource_metadata=\"{resource_metadata}\", error=\"{error}\", error_description=\"{description}\""
     );
     if let Some(encoded) = &encoded_claims {
-        challenge.push_str(&format!(", claims=\"{encoded}\""));
+        challenge.push_str(", claims=\"");
+        challenge.push_str(encoded);
+        challenge.push('"');
     }
     challenge_exception(challenge)
 }
@@ -72,8 +75,12 @@ fn resource_name(server: &MCPServer) -> String {
         Some(server.fields.name.as_str()),
         Some(server.fields.server_id.as_str()),
     ];
-    let name = candidates.into_iter().find_map(present);
-    name.unwrap_or_default()
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn challenge_exception(challenge: String) -> HttpException {

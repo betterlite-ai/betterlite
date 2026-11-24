@@ -40,26 +40,31 @@ impl Default for Collaborators {
 }
 
 impl Collaborators {
+    #[must_use]
     pub fn with_oauth_token_store(mut self, store: Arc<dyn OAuthTokenStore>) -> Self {
         self.oauth_token_store = store;
         self
     }
 
+    #[must_use]
     pub fn with_token_exchanger(mut self, exchanger: Arc<dyn TokenExchanger>) -> Self {
         self.token_exchanger = exchanger;
         self
     }
 
+    #[must_use]
     pub fn with_token_endpoint(mut self, endpoint: Arc<dyn TokenEndpointClient>) -> Self {
         self.token_endpoint = endpoint;
         self
     }
 
+    #[must_use]
     pub fn with_exchanged_tokens(mut self, cache: Arc<ExchangedTokenCache>) -> Self {
         self.exchanged_tokens = cache;
         self
     }
 
+    #[must_use]
     pub fn with_client_credentials_source(
         mut self,
         source: Arc<dyn ClientCredentialsSource>,
@@ -68,6 +73,7 @@ impl Collaborators {
         self
     }
 
+    #[must_use]
     pub fn with_sso_assertion_store(mut self, store: Arc<dyn AssertionStore>) -> Self {
         self.sso_assertion_store = store;
         self
@@ -122,6 +128,7 @@ impl UpstreamCredentialProvider {
         }
     }
 
+    #[must_use]
     pub async fn has_user_token(&self, subject: &Subject, server: &ServerSpec) -> bool {
         let store: &dyn OAuthTokenStore = &*self.collaborators.oauth_token_store;
         let fetched = arms::authz_token(subject, server, store).await;

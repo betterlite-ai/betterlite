@@ -48,7 +48,7 @@ impl ExchangedTokenCache {
         compute: F,
     ) -> CredResult<SecretString>
     where
-        F: Future<Output = CredResult<ExchangedToken>>,
+        F: Future<Output = CredResult<ExchangedToken>> + Send,
     {
         if let Some(cached) = self.cached(cache_key, fingerprint) {
             return Ok(cached);
@@ -134,7 +134,7 @@ impl ExchangedTokenCache {
     }
 }
 
-fn cache_ttl(expires_in: Option<i64>) -> Duration {
+const fn cache_ttl(expires_in: Option<i64>) -> Duration {
     let lifetime = expires_in.unwrap_or(DEFAULT_TTL_SECONDS);
     let seconds = lifetime
         .saturating_sub(EXPIRY_BUFFER_SECONDS)

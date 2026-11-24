@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use crate::credential_contracts::errors::CredError;
 use crate::wire_compat::errors::{HttpException, url_credentials_exception};
 
+#[must_use]
 pub fn raise_public(error: &CredError) -> HttpException {
     match error {
         CredError::Unauthorized(challenge) => {

@@ -152,8 +152,7 @@ pub(super) fn slot_key(subject: &Subject, server: &ServerSpec) -> String {
     let inbound = subject
         .inbound_token
         .as_ref()
-        .map(ExposeSecret::expose_secret)
-        .unwrap_or_default();
+        .map_or("", ExposeSecret::expose_secret);
     let material = format!(
         "{}\u{0}{}\u{0}{}\u{0}{}",
         subject.tenant_id, subject.subject_id, server.server_id, inbound

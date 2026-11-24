@@ -206,6 +206,14 @@ pub(super) enum RecordedAuth {
     },
 }
 
+impl RecordedAuth {
+    pub(super) fn client_secret(value: &str) -> Self {
+        Self::ClientSecret {
+            client_secret: value.to_owned(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RecordedCall {
     pub(super) endpoint: String,

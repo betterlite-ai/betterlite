@@ -21,13 +21,13 @@ impl ResolvedAuth for NoOpAuth {
     fn close(&self) {}
 }
 
-pub struct StaticAuth {
+pub(super) struct StaticAuth {
     header_name: String,
     value: SecretString,
 }
 
 impl StaticAuth {
-    pub fn new(header_name: &str, value: &str) -> CredResult<Self> {
+    pub(super) fn new(header_name: &str, value: &str) -> CredResult<Self> {
         let validated = validate_header_name(header_name)?;
         Ok(Self {
             header_name: validated,
@@ -62,7 +62,7 @@ impl ResolvedAuth for StaticAuth {
     }
 }
 
-pub struct ClientCredentialsAuth {
+pub(super) struct ClientCredentialsAuth {
     source: Arc<dyn ClientCredentialsSource>,
     server_id: String,
     config: ClientCredentialsConfig,
@@ -71,7 +71,7 @@ pub struct ClientCredentialsAuth {
 }
 
 impl ClientCredentialsAuth {
-    pub fn new(
+    pub(super) fn new(
         source: Arc<dyn ClientCredentialsSource>,
         server_id: String,
         config: ClientCredentialsConfig,
@@ -90,8 +90,10 @@ impl ClientCredentialsAuth {
 
 impl ResolvedAuth for ClientCredentialsAuth {
     fn authenticate(&self, mut request: Request) -> Result<Request, CredentialError> {
-        let guard = self.token.lock().unwrap_or_else(PoisonError::into_inner);
-        let (header_name, header_value) = self.config.header.header(guard.expose_secret());
+        let (header_name, header_value) = {
+            let guard = self.token.lock().unwrap_or_else(PoisonError::into_inner);
+            self.config.header.header(guard.expose_secret())
+        };
         insert_header(&mut request.headers, &header_name, &header_value);
         Ok(request)
     }

@@ -201,21 +201,15 @@ async fn id_jag_fingerprint_includes_client_auth() {
     assert_eq!(calls.len(), 6);
     assert_eq!(
         calls[0].client_auth,
-        RecordedAuth::ClientSecret {
-            client_secret: "secret-1".to_owned()
-        }
+        RecordedAuth::client_secret("secret-1")
     );
     assert_eq!(
         calls[2].client_auth,
-        RecordedAuth::ClientSecret {
-            client_secret: "secret-2".to_owned()
-        }
+        RecordedAuth::client_secret("secret-2")
     );
     assert_eq!(
         calls[4].client_auth,
-        RecordedAuth::ClientSecret {
-            client_secret: "secret-1".to_owned()
-        }
+        RecordedAuth::client_secret("secret-1")
     );
 }
 

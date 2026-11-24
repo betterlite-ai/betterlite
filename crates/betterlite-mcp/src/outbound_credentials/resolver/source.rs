@@ -25,7 +25,7 @@ pub async fn resolve_with_source(
 }
 
 // A passthrough server that forwarded no token resolved nothing, which is the same no-auth answer the none mode gives.
-fn auth_source(subject: &Subject, server: &ServerSpec) -> AuthResolution {
+const fn auth_source(subject: &Subject, server: &ServerSpec) -> AuthResolution {
     match &server.config {
         AuthConfig::None(_config) => AuthResolution::NoAuth,
         AuthConfig::Passthrough(_config) => {
