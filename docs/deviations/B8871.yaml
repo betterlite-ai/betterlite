@@ -1,0 +1,30 @@
+task: B8871
+deviations:
+  - what: >-
+      Importing a configured handler is bounded by the embedded host's 60-second load deadline, and
+      a tool handler that runs past 30 seconds returns the existing MCP error tool result instead of
+      waiting indefinitely.
+    why: >-
+      LiteLLM calls the handler with no timeout at all, so a handler that never returns keeps the
+      tools/call request open until the client gives up. The embedded host already bounds imports and
+      hook calls; this adapter surfaces that policy through ToolHandlerError::Failed rather than
+      adding a second timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2633-L2645
+  - what: >-
+      A handler result that is a JSON string stays a text result; every other JSON value becomes a
+      structured result whose text is the value's compact JSON. A value with no JSON form, such as
+      an arbitrary Python object or a NaN float, fails the call.
+    why: >-
+      LiteLLM's handler_outcome wraps every return in str(), so a dict comes back as a Python repr
+      with single quotes and an arbitrary object as "<object object at 0x...>". The compatibility
+      rules keep the value itself and drop Python's textual representation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_outcome.py#L52-L56
+kept_bugs:
+  - what: >-
+      A handler string that resolves to a non-None, non-callable object is registered as a tool and
+      only fails when that tool is called.
+    why: >-
+      get_instance_fn returns whatever the attribute is and load_tools_from_config registers it
+      without a callability check, so a working setup can keep a placeholder attribute in the module
+      and still start. betterlite keeps that late failure instead of refusing the whole startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L55-L57
