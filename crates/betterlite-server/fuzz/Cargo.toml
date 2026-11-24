@@ -559,3 +559,10 @@ path = "fuzz_targets/refresh_grant_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "lens_admin_parsers"
+path = "fuzz_targets/lens_admin_parsers.rs"
+test = false
+doc = false
+bench = false
