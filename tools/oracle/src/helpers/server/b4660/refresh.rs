@@ -31,10 +31,7 @@ pub(super) fn refresh(input: &RefreshInput) -> HelperResult {
         None => None,
     };
     let binding = Arc::new(ScriptedBinding::new(input.validators.clone(), Vec::new()));
-    let answer = match &input.post_answer {
-        Some(value) => Some(token_response(value)?),
-        None => None,
-    };
+    let answer = input.post_answer.as_ref().map(token_response).transpose()?;
     let post = Arc::new(ScriptedPost {
         answer,
         calls: Mutex::new(Vec::new()),
