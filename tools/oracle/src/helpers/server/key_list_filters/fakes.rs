@@ -30,7 +30,7 @@ pub(super) struct ScriptStore {
 }
 
 impl ScriptStore {
-    pub(super) fn new(
+    pub(super) const fn new(
         user: Option<LiteLLMUserTable>,
         key: Option<LiteLLMVerificationToken>,
         key_fails: bool,
@@ -49,12 +49,6 @@ impl ScriptStore {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-}
-
-fn read_failure() -> KeyListFiltersError {
-    KeyListFiltersError::Read(KeyListReadError::Teams(TeamReadError::Record(
-        TeamRecordError::NotAnObject,
-    )))
 }
 
 #[async_trait]
@@ -79,7 +73,9 @@ impl KeyListFiltersStore for ScriptStore {
             .unwrap_or_else(PoisonError::into_inner)
             .push("key".to_owned());
         if self.key_fails {
-            return Err(read_failure());
+            return Err(KeyListFiltersError::Read(KeyListReadError::Teams(
+                TeamReadError::Record(TeamRecordError::NotAnObject),
+            )));
         }
         Ok(self.key.clone().filter(|row| {
             row.token

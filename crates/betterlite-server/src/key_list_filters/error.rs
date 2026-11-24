@@ -29,7 +29,7 @@ pub enum KeyListFiltersError {
     // LiteLLM raises a bare HTTPException(403) here, whose detail carries the caller's role
     #[error(
         "You are not allowed to access this key's info. Your role={}",
-        role.map_or_else(|| "None".to_owned(), |role| role.to_string())
+        role.map_or_else(|| "None".to_owned(), |value| value.to_string())
     )]
     KeyInfoForbidden { role: Option<UserRole> },
     #[error("a key-list row could not be read")]

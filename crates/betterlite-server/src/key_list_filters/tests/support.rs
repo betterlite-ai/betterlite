@@ -246,8 +246,8 @@ impl ObjectPermissionCache for NoTeamReads {
 
 pub(crate) fn team_lookup() -> (TeamLookup, Arc<NoTeamReads>) {
     let reads = Arc::new(NoTeamReads::default());
-    let cache: Arc<dyn TeamCache> = Arc::clone(&reads);
-    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::clone(&reads);
+    let cache: Arc<dyn TeamCache> = Arc::<NoTeamReads>::clone(&reads);
+    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::<NoTeamReads>::clone(&reads);
     let lookup = TeamLookup {
         cache,
         permission_cache,
