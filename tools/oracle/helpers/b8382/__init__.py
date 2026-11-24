@@ -72,7 +72,7 @@ def model_row(row: ModelRowInput) -> ModelRow:
 def model_info_answer(proxy_config: ProxyConfig, rows: list[ModelRowInput]) -> JsonValue:
     infos: list[JsonValue] = []
     for row in rows:
-        info = proxy_config.get_model_info_with_id(model=model_row(row), db_model=False)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7241-L7277
+        info = proxy_config.get_model_info_with_id(model=model_row(row), db_model=False)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7241-L7277
         infos.append(OBJECT.validate_json(info.model_dump_json(exclude_none=True)))
     return infos
 

@@ -14,8 +14,8 @@ pub struct Warnings {
 }
 
 impl Warnings {
-    // ast-grep-ignore: no-one-line-functions - the swap is the whole once-only check for the stdio flag
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - the swap is the whole once-only check for the stdio flag
     pub(crate) fn first_stdio_flag(&self) -> bool {
         !self.stdio_flag.swap(true, Ordering::SeqCst)
     }
