@@ -32,6 +32,8 @@ use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use chrono::{DateTime, NaiveDateTime, TimeZone as _, Utc};
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
+use rand::SeedableRng as _;
+use rand::rngs::{StdRng, SysError};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
@@ -46,8 +48,8 @@ use crate::health_status_routes::error::HealthRouteError;
 use crate::health_status_routes::health_status_routes;
 use crate::health_status_routes::save::HealthProbeCall;
 use crate::health_status_routes::state::{
-    CycleCatalog, HealthCheckResults, HealthCycleState, HealthFlag, HealthResultsSource,
-    HealthStatusState,
+    CycleCatalog, DetailVisibility, HealthCheckResults, HealthCheckSource, HealthCycleState,
+    HealthResultsSource, HealthStatusState, RandomSource, SkipDisabledModels,
 };
 use crate::model_deprecation::clock::UtcClock;
 
@@ -253,6 +255,23 @@ impl HealthResultsSource for FakeResults {
     }
 }
 
+struct SeededRandom(u64);
+
+impl RandomSource for SeededRandom {
+    fn generator(&self) -> Result<StdRng, SysError> {
+        Ok(StdRng::seed_from_u64(self.0))
+    }
+}
+
+// A source that refuses to seed, as the operating system's entropy call can
+pub(crate) struct FailingRandom;
+
+impl RandomSource for FailingRandom {
+    fn generator(&self) -> Result<StdRng, SysError> {
+        Err(SysError::new_custom(1_u16))
+    }
+}
+
 pub(crate) struct FixedClock(pub(crate) DateTime<Utc>);
 
 impl UtcClock for FixedClock {
@@ -344,7 +363,7 @@ pub(crate) fn background(state: &mut HealthStatusState, healthy: Vec<JsonObject>
         snapshot: results(healthy, Vec::new()),
     });
     state.results = Arc::<FakeResults>::clone(&source);
-    state.use_background_health_checks = HealthFlag(true);
+    state.use_background_health_checks = HealthCheckSource::Background;
 }
 
 // The deployment list and the router over it, as the server's state carries them
@@ -416,10 +435,10 @@ pub(crate) fn fixture() -> (HealthStatusState, Arc<FakeProvider>, Arc<FakeResult
         deployments: None,
         router: None,
         user_model: None,
-        health_check_details: HealthFlag(true),
+        health_check_details: DetailVisibility::Shown,
         health_check_concurrency: None,
-        use_background_health_checks: HealthFlag(false),
-        skip_disabled_models: HealthFlag(false),
+        use_background_health_checks: HealthCheckSource::Live,
+        skip_disabled_models: SkipDisabledModels::Keep,
         results: Arc::<FakeResults>::clone(&source),
         rows: None,
         clock: Arc::new(FixedClock(fixed_now())),
@@ -429,9 +448,20 @@ pub(crate) fn fixture() -> (HealthStatusState, Arc<FakeProvider>, Arc<FakeResult
             models,
             policy: ProbePolicy::default(),
             catalog: None,
+            random: Arc::new(SeededRandom(7_u64)),
         },
     };
     (state, provider, source)
+}
+
+// A state whose store holds these rows, and the database the caller finishes
+pub(crate) async fn state_with_rows(rows: &[SeedRow]) -> (HealthStatusState, Database) {
+    let mut database = database().await;
+    insert_rows(&database, rows).await;
+    database.release();
+    let (mut state, _provider, _source) = fixture();
+    state.rows = Some(Arc::new(database.rows()));
+    (state, database)
 }
 
 pub(crate) fn context(subject: &str, roles: &[Role], source_key: SourceKey) -> AuthContext {

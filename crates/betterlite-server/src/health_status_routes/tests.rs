@@ -1,20 +1,27 @@
 #![cfg(test)]
 
 mod support;
-mod units;
 
+use std::ptr::eq;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
+use rand::rngs::SysError;
 use rstest::rstest;
+use serde_json::Number;
 
+use crate::health_status_routes::convert::{convert_health_check, isoformat};
+use crate::health_status_routes::prisma::check_prisma_client;
 use crate::health_status_routes::save::perform_health_check_and_save;
+use crate::health_status_routes::state::{DetailVisibility, SkipDisabledModels};
+use crate::health_status_routes::target::resolve_target_model_name;
 use crate::health_status_routes::tests::support::{
-    FakeProvider, admin, assert_issue, background, capture_logs, cycle_catalog,
+    FailingRandom, FakeProvider, admin, assert_issue, background, capture_logs, cycle_catalog,
     database as open_database, deployment, deployment_with_info, deployment_without_id, endpoint,
-    failing_router, fixture, get, insert_rows, key_context, latest_checks, probe, serve, settle,
-    team_user, text, text_field, unconnected, user,
+    failing_router, fixture, get, instant, instant_with_fraction, key_context, latest_checks,
+    object, probe, render, router, row, serve, settle, state_with_rows, team_user, text,
+    text_field, unconnected, user,
 };
 
 #[rstest]
@@ -203,33 +210,17 @@ async fn health_without_a_model_list_saves_the_cli_model() {
     database.finish().await;
 }
 
+#[rstest]
+#[case::admin(r#"{"user_id":"admin-1","user_role":"proxy_admin"}"#, None)]
+#[case::non_admin(
+    r#"{"user_id":"user-1","models":["a"]}"#,
+    Some("api_base, api_version, aws_bedrock_runtime_endpoint are admin-only on this endpoint")
+)]
 #[tokio::test]
-async fn health_admin_receives_the_result_as_it_is() {
-    let models = vec![deployment_with_info(
-        "group-a",
-        "id-a",
-        vec![
-            ("model", text("openai/a")),
-            ("api_base", text("https://internal.example.com")),
-        ],
-        Vec::new(),
-    )];
-    let (mut state, provider, _source) = fixture();
-    serve(&mut state, models);
-    let reply = get(state, Some(&admin()), "/health").await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.count("healthy_count"), 1);
-    assert_eq!(reply.header("litellm-health-field-notice"), None);
-    assert_eq!(provider.calls(), vec!["openai/a".to_owned()]);
-    let healthy = reply.list("healthy_endpoints");
-    assert_eq!(
-        text_field(&healthy[0], "api_base"),
-        Some("https://internal.example.com".to_owned())
-    );
-}
-
-#[tokio::test]
-async fn health_non_admin_gets_the_notice_header_and_stripped_rows() {
+async fn health_field_visibility_follows_the_admin_role(
+    #[case] key: &str,
+    #[case] notice: Option<&str>,
+) {
     let models = vec![deployment_with_info(
         "a",
         "id-a",
@@ -239,46 +230,47 @@ async fn health_non_admin_gets_the_notice_header_and_stripped_rows() {
         ],
         Vec::new(),
     )];
-    let (mut state, _provider, _source) = fixture();
+    let (mut state, provider, _source) = fixture();
     serve(&mut state, models);
-    let reply = get(state, Some(&user(r#"["a"]"#)), "/health").await;
+    let reply = get(state, Some(&key_context(key)), "/health").await;
     assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.count("healthy_count"), 1);
     assert_eq!(
         reply.header("litellm-health-field-notice").as_deref(),
-        Some("api_base, api_version, aws_bedrock_runtime_endpoint are admin-only on this endpoint")
+        notice
     );
+    assert_eq!(provider.calls(), vec!["openai/a".to_owned()]);
     let healthy = reply.list("healthy_endpoints");
-    assert_eq!(text_field(&healthy[0], "api_base"), None);
+    assert_eq!(
+        text_field(&healthy[0], "api_base").is_some(),
+        notice.is_none()
+    );
+    if notice.is_none() {
+        assert_eq!(
+            text_field(&healthy[0], "api_base"),
+            Some("https://internal.example.com".to_owned())
+        );
+    }
     assert_eq!(
         text_field(&healthy[0], "model"),
         Some("openai/a".to_owned())
     );
 }
 
+#[rstest]
+#[case::model_id("/health?model_id=id-b")]
+#[case::model_name("/health?model=b")]
 #[tokio::test]
-async fn health_probes_only_the_deployment_a_model_id_names() {
+async fn health_probes_only_the_deployment_the_query_names(#[case] uri: &str) {
     let models = vec![
         deployment("a", "id-a", "openai/a"),
         deployment("b", "id-b", "openai/b"),
     ];
     let (mut state, provider, _source) = fixture();
     serve(&mut state, models);
-    let reply = get(state, Some(&admin()), "/health?model_id=id-b").await;
+    let reply = get(state, Some(&admin()), uri).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.count("healthy_count"), 1);
-    assert_eq!(provider.calls(), vec!["openai/b".to_owned()]);
-}
-
-#[tokio::test]
-async fn health_probes_only_the_deployments_a_model_name_names() {
-    let models = vec![
-        deployment("a", "id-a", "openai/a"),
-        deployment("b", "id-b", "openai/b"),
-    ];
-    let (mut state, provider, _source) = fixture();
-    serve(&mut state, models);
-    let reply = get(state, Some(&admin()), "/health?model=b").await;
-    assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(provider.calls(), vec!["openai/b".to_owned()]);
 }
 
@@ -371,30 +363,21 @@ async fn health_restricted_caller_targeting_a_model_is_403() {
     );
 }
 
+#[rstest]
+#[case::model_id("/health?model_id=id-a")]
+#[case::model_name("/health?model=a")]
 #[tokio::test]
-async fn health_targeted_model_id_with_no_healthy_endpoint_is_503() {
+async fn health_targeted_models_with_no_healthy_endpoint_are_503(#[case] uri: &str) {
     let models = vec![deployment("a", "id-a", "openai/a")];
     let (mut state, _provider, _source) = fixture();
     let provider = Arc::new(FakeProvider::new().failing("openai/a"));
     state.cycle.provider = Arc::<FakeProvider>::clone(&provider);
     serve(&mut state, models);
-    let reply = get(state, Some(&admin()), "/health?model_id=id-a").await;
+    let reply = get(state, Some(&admin()), uri).await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(reply.count("healthy_count"), 0);
     assert_eq!(reply.count("unhealthy_count"), 1);
     assert_eq!(reply.list("unhealthy_endpoints").len(), 1);
-}
-
-#[tokio::test]
-async fn health_targeted_model_name_with_no_healthy_endpoint_is_503() {
-    let models = vec![deployment("a", "id-a", "openai/a")];
-    let (mut state, _provider, _source) = fixture();
-    let provider = Arc::new(FakeProvider::new().failing("openai/a"));
-    state.cycle.provider = Arc::<FakeProvider>::clone(&provider);
-    serve(&mut state, models);
-    let reply = get(state, Some(&admin()), "/health?model=a").await;
-    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(reply.count("healthy_count"), 0);
 }
 
 #[tokio::test]
@@ -408,8 +391,15 @@ async fn health_admin_targeting_an_unknown_model_name_is_503() {
     assert_eq!(reply.count("unhealthy_count"), 0);
 }
 
+#[rstest]
+#[case::untargeted_admin(r#"{"user_id":"admin-1","user_role":"proxy_admin"}"#, 2, false)]
+#[case::restricted(r#"{"user_id":"user-1","models":["a"]}"#, 1, true)]
 #[tokio::test]
-async fn health_background_untargeted_admin_gets_the_cache_untouched() {
+async fn health_background_narrows_the_cache_to_the_callers_scope(
+    #[case] key: &str,
+    #[case] healthy_count: i64,
+    #[case] restricted: bool,
+) {
     let models = vec![
         deployment("a", "id-a", "openai/a"),
         deployment("b", "id-b", "openai/b"),
@@ -420,59 +410,41 @@ async fn health_background_untargeted_admin_gets_the_cache_untouched() {
         &mut state,
         vec![endpoint("a", "id-a"), endpoint("b", "id-b")],
     );
-    let reply = get(state, Some(&admin()), "/health").await;
+    let reply = get(state, Some(&key_context(key)), "/health").await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.count("healthy_count"), 2);
+    assert_eq!(reply.count("healthy_count"), healthy_count);
     assert!(provider.calls().is_empty());
     let healthy = reply.list("healthy_endpoints");
-    assert_eq!(text_field(&healthy[0], "model_id"), Some("id-a".to_owned()));
-}
-
-#[tokio::test]
-async fn health_background_targeted_admin_filters_the_cache() {
-    let models = vec![
-        deployment("a", "id-a", "openai/a"),
-        deployment("b", "id-b", "openai/b"),
-    ];
-    let (mut state, _provider, _source) = fixture();
-    serve(&mut state, models);
-    background(
-        &mut state,
-        vec![endpoint("a", "id-a"), endpoint("b", "id-b")],
+    assert_eq!(
+        healthy.len(),
+        usize::try_from(healthy_count).expect("a small count")
     );
-    let reply = get(state, Some(&admin()), "/health?model_id=id-a").await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.count("healthy_count"), 1);
-    let healthy = reply.list("healthy_endpoints");
-    assert_eq!(healthy.len(), 1);
     assert_eq!(text_field(&healthy[0], "model_id"), Some("id-a".to_owned()));
-}
-
-#[tokio::test]
-async fn health_background_restricted_caller_sees_only_allowed_ids() {
-    let models = vec![
-        deployment("a", "id-a", "openai/a"),
-        deployment("b", "id-b", "openai/b"),
-    ];
-    let (mut state, provider, _source) = fixture();
-    serve(&mut state, models);
-    background(
-        &mut state,
-        vec![endpoint("a", "id-a"), endpoint("b", "id-b")],
+    assert_eq!(text_field(&healthy[0], "api_base").is_some(), !restricted);
+    assert_eq!(
+        reply.header("litellm-health-field-notice").is_some(),
+        restricted
     );
-    let reply = get(state, Some(&user(r#"["a"]"#)), "/health").await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.count("healthy_count"), 1);
-    assert!(provider.calls().is_empty());
-    let healthy = reply.list("healthy_endpoints");
-    assert_eq!(healthy.len(), 1);
-    assert_eq!(text_field(&healthy[0], "api_base"), None);
-    assert!(reply.header("litellm-health-field-notice").is_some());
     assert_eq!(reply.body.get("warnings"), None);
 }
 
+#[rstest]
+#[case::targeted_admin(
+    r#"{"user_id":"admin-1","user_role":"proxy_admin"}"#,
+    "/health?model_id=id-a",
+    "id-a"
+)]
+#[case::targeted_restricted(
+    r#"{"user_id":"user-1","models":["a","b"]}"#,
+    "/health?model_id=id-b",
+    "id-b"
+)]
 #[tokio::test]
-async fn health_background_restricted_caller_targets_one_allowed_model() {
+async fn health_background_targeted_callers_get_the_cache_filtered(
+    #[case] key: &str,
+    #[case] uri: &str,
+    #[case] model_id: &str,
+) {
     let models = vec![
         deployment("a", "id-a", "openai/a"),
         deployment("b", "id-b", "openai/b"),
@@ -483,11 +455,15 @@ async fn health_background_restricted_caller_targets_one_allowed_model() {
         &mut state,
         vec![endpoint("a", "id-a"), endpoint("b", "id-b")],
     );
-    let reply = get(state, Some(&user(r#"["a","b"]"#)), "/health?model_id=id-b").await;
+    let reply = get(state, Some(&key_context(key)), uri).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.count("healthy_count"), 1);
     let healthy = reply.list("healthy_endpoints");
-    assert_eq!(text_field(&healthy[0], "model_id"), Some("id-b".to_owned()));
+    assert_eq!(healthy.len(), 1);
+    assert_eq!(
+        text_field(&healthy[0], "model_id"),
+        Some(model_id.to_owned())
+    );
 }
 
 #[tokio::test]
@@ -552,18 +528,11 @@ async fn health_router_lookup_failure_is_500_and_logged() {
 
 #[tokio::test]
 async fn history_returns_the_page() {
-    let mut database = open_database().await;
-    insert_rows(
-        &database,
-        &[
-            ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
-            ("hc-2", "group-b", None, "healthy", "2026-03-15 10:00:00"),
-        ],
-    )
+    let (state, database) = state_with_rows(&[
+        ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
+        ("hc-2", "group-b", None, "healthy", "2026-03-15 10:00:00"),
+    ])
     .await;
-    database.release();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/history").await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.count("total_records"), 2);
@@ -584,19 +553,12 @@ async fn history_returns_the_page() {
 
 #[tokio::test]
 async fn history_honours_limit_and_offset() {
-    let mut database = open_database().await;
-    insert_rows(
-        &database,
-        &[
-            ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
-            ("hc-2", "group-a", None, "healthy", "2026-03-15 10:00:00"),
-            ("hc-3", "group-a", None, "healthy", "2026-03-15 11:00:00"),
-        ],
-    )
+    let (state, database) = state_with_rows(&[
+        ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
+        ("hc-2", "group-a", None, "healthy", "2026-03-15 10:00:00"),
+        ("hc-3", "group-a", None, "healthy", "2026-03-15 11:00:00"),
+    ])
     .await;
-    database.release();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/history?limit=1&offset=1").await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.count("total_records"), 1);
@@ -613,19 +575,12 @@ async fn history_honours_limit_and_offset() {
 
 #[tokio::test]
 async fn history_filters_by_model_and_status() {
-    let mut database = open_database().await;
-    insert_rows(
-        &database,
-        &[
-            ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
-            ("hc-2", "group-a", None, "unhealthy", "2026-03-15 10:00:00"),
-            ("hc-3", "group-b", None, "unhealthy", "2026-03-15 11:00:00"),
-        ],
-    )
+    let (state, database) = state_with_rows(&[
+        ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
+        ("hc-2", "group-a", None, "unhealthy", "2026-03-15 10:00:00"),
+        ("hc-3", "group-b", None, "unhealthy", "2026-03-15 11:00:00"),
+    ])
     .await;
-    database.release();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(database.rows()));
     let reply = get(
         state,
         Some(&admin()),
@@ -679,65 +634,41 @@ async fn history_invalid_bounds_are_422(
 }
 
 #[rstest]
-#[case::minimum("limit=1", 1)]
-#[case::maximum("limit=1000&offset=0", 1000)]
+#[case::minimum("limit=1", 1, 0)]
+#[case::maximum("limit=1000&offset=0", 1000, 0)]
+#[case::huge_offset("offset=99999999999999999999", 100, i64::MAX)]
+#[case::failed_read("model=group-a", 100, 0)]
 #[tokio::test]
-async fn history_limit_boundaries_are_accepted(#[case] query: &str, #[case] limit: i64) {
+async fn history_reads_an_empty_store_as_an_empty_page(
+    #[case] query: &str,
+    #[case] limit: i64,
+    #[case] offset: i64,
+) {
+    let (buffer, _guard) = capture_logs();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(unconnected()));
     let uri = format!("/health/history?{query}");
     let reply = get(state, Some(&admin()), &uri).await;
     assert_eq!(reply.status, StatusCode::OK, "{uri}");
     assert_eq!(reply.count("limit"), limit, "{uri}");
-    assert_eq!(reply.count("offset"), 0, "{uri}");
-}
-
-#[tokio::test]
-async fn history_huge_offset_is_an_empty_page() {
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(unconnected()));
-    let reply = get(
-        state,
-        Some(&admin()),
-        "/health/history?offset=99999999999999999999",
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.count("offset"), i64::MAX);
-    assert_eq!(reply.count("total_records"), 0);
-}
-
-#[tokio::test]
-async fn history_failed_read_is_an_empty_page() {
-    let (buffer, _guard) = capture_logs();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(unconnected()));
-    let reply = get(state, Some(&admin()), "/health/history").await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.count("total_records"), 0);
-    assert!(reply.list("health_checks").is_empty());
+    assert_eq!(reply.count("offset"), offset, "{uri}");
+    assert_eq!(reply.count("total_records"), 0, "{uri}");
+    assert!(reply.list("health_checks").is_empty(), "{uri}");
     let logs = buffer.text();
     assert!(
         logs.contains("Error getting health check history: "),
-        "{logs}"
+        "{uri}: {logs}"
     );
 }
 
 #[tokio::test]
 async fn latest_returns_the_latest_row_per_model() {
-    let mut database = open_database().await;
-    insert_rows(
-        &database,
-        &[
-            ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
-            ("hc-2", "group-a", None, "healthy", "2026-03-15 10:00:00"),
-            ("hc-3", "group-b", None, "healthy", "2026-03-15 11:00:00"),
-        ],
-    )
+    let (state, database) = state_with_rows(&[
+        ("hc-1", "group-a", None, "healthy", "2026-03-15 09:00:00"),
+        ("hc-2", "group-a", None, "healthy", "2026-03-15 10:00:00"),
+        ("hc-3", "group-b", None, "healthy", "2026-03-15 11:00:00"),
+    ])
     .await;
-    database.release();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.count("total_models"), 2);
@@ -762,21 +693,14 @@ async fn latest_returns_the_latest_row_per_model() {
 
 #[tokio::test]
 async fn latest_prints_the_converted_row() {
-    let mut database = open_database().await;
-    insert_rows(
-        &database,
-        &[(
-            "hc-1",
-            "group-a",
-            Some("id-a"),
-            "healthy",
-            "2026-03-15 09:00:00",
-        )],
-    )
+    let (state, database) = state_with_rows(&[(
+        "hc-1",
+        "group-a",
+        Some("id-a"),
+        "healthy",
+        "2026-03-15 09:00:00",
+    )])
     .await;
-    database.release();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;
     let checks = latest_checks(&reply);
     match checks.get("id-a") {
@@ -798,24 +722,17 @@ async fn latest_prints_the_converted_row() {
 
 #[tokio::test]
 async fn latest_keys_by_model_id_else_model_name() {
-    let mut database = open_database().await;
-    insert_rows(
-        &database,
-        &[
-            (
-                "hc-1",
-                "group-a",
-                Some("id-a"),
-                "healthy",
-                "2026-03-15 09:00:00",
-            ),
-            ("hc-2", "group-b", None, "healthy", "2026-03-15 10:00:00"),
-        ],
-    )
+    let (state, database) = state_with_rows(&[
+        (
+            "hc-1",
+            "group-a",
+            Some("id-a"),
+            "healthy",
+            "2026-03-15 09:00:00",
+        ),
+        ("hc-2", "group-b", None, "healthy", "2026-03-15 10:00:00"),
+    ])
     .await;
-    database.release();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.count("total_models"), 2);
@@ -827,24 +744,17 @@ async fn latest_keys_by_model_id_else_model_name() {
 
 #[tokio::test]
 async fn latest_collapses_rows_that_share_a_key() {
-    let mut database = open_database().await;
-    insert_rows(
-        &database,
-        &[
-            (
-                "hc-1",
-                "group-a",
-                Some(""),
-                "healthy",
-                "2026-03-15 09:00:00",
-            ),
-            ("hc-2", "group-a", None, "healthy", "2026-03-15 10:00:00"),
-        ],
-    )
+    let (state, database) = state_with_rows(&[
+        (
+            "hc-1",
+            "group-a",
+            Some(""),
+            "healthy",
+            "2026-03-15 09:00:00",
+        ),
+        ("hc-2", "group-a", None, "healthy", "2026-03-15 10:00:00"),
+    ])
     .await;
-    database.release();
-    let (mut state, _provider, _source) = fixture();
-    state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.count("total_models"), 1);
@@ -876,4 +786,208 @@ async fn latest_failed_read_is_an_empty_object() {
         logs.contains("Error getting all latest health checks: "),
         "{logs}"
     );
+}
+
+#[test]
+fn convert_returns_the_twelve_keys_in_litellm_order() {
+    let stored = row("hc-1", "group-a", instant("2026-03-15 10:00:00"));
+    let converted = convert_health_check(&stored);
+    let keys: Vec<&str> = converted.keys().map(String::as_str).collect();
+    let expected = concat!(
+        "health_check_id,model_name,model_id,status,healthy_count,unhealthy_count,",
+        "error_message,response_time_ms,details,checked_by,checked_at,created_at"
+    );
+    assert_eq!(keys.join(","), expected);
+    assert_eq!(text_field(&converted, "model_id"), Some("id-a".to_owned()));
+    let response_time = Number::from_f64(12.5_f64).expect("a finite float");
+
+    assert_eq!(
+        converted.get("response_time_ms"),
+        Some(&Json::Number(response_time))
+    );
+    assert_eq!(
+        converted.get("health_check_id"),
+        Some(&Json::Text("hc-1".to_owned()))
+    );
+    assert_eq!(
+        converted.get("checked_at"),
+        Some(&Json::Text("2026-03-15T10:00:00+00:00".to_owned()))
+    );
+}
+
+#[test]
+fn convert_prints_the_fraction_only_when_the_microseconds_are_not_zero() {
+    assert_eq!(
+        isoformat(instant("2026-03-15 10:00:00")),
+        "2026-03-15T10:00:00+00:00"
+    );
+    assert_eq!(
+        isoformat(instant_with_fraction("2026-03-15 10:00:00.123")),
+        "2026-03-15T10:00:00.123000+00:00"
+    );
+    assert_eq!(
+        isoformat(instant_with_fraction("2026-03-15 10:00:00.123456")),
+        "2026-03-15T10:00:00.123456+00:00"
+    );
+    let mut stored = row(
+        "hc-2",
+        "group-a",
+        instant_with_fraction("2026-03-15 10:00:00.5"),
+    );
+    stored.created_at = instant("2026-03-16 00:00:00");
+    let converted = convert_health_check(&stored);
+    assert_eq!(
+        converted.get("checked_at"),
+        Some(&Json::Text("2026-03-15T10:00:00.500000+00:00".to_owned()))
+    );
+    assert_eq!(
+        converted.get("created_at"),
+        Some(&Json::Text("2026-03-16T00:00:00+00:00".to_owned()))
+    );
+}
+
+#[test]
+fn convert_keeps_nulls_and_passes_details_through() {
+    let mut stored = row("hc-3", "group-a", instant("2026-03-15 10:00:00"));
+    stored.model_id = None;
+    stored.error_message = None;
+    stored.response_time_ms = None;
+    stored.checked_by = None;
+    stored.details = Some(Json::Object(object(vec![("latency", text("fast"))])));
+    let converted = convert_health_check(&stored);
+    assert_eq!(converted.get("model_id"), Some(&Json::Null));
+    assert_eq!(converted.get("error_message"), Some(&Json::Null));
+    assert_eq!(converted.get("response_time_ms"), Some(&Json::Null));
+    assert_eq!(converted.get("checked_by"), Some(&Json::Null));
+    assert_eq!(converted.get("details"), stored.details.as_ref());
+}
+
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
+fn target_returns_the_model_when_no_model_id_is_given(#[case] model_id: Option<&str>) {
+    let lookup = router(vec![deployment("group-a", "id-a", "openai/a")]);
+    assert_eq!(
+        resolve_target_model_name(Some("group-a"), model_id, Some(lookup.as_ref()))
+            .expect("resolves"),
+        Some("group-a".to_owned()),
+        "{model_id:?}"
+    );
+    assert_eq!(
+        resolve_target_model_name(None, None, None).expect("resolves"),
+        None
+    );
+}
+
+#[test]
+fn target_returns_the_models_name_for_a_known_id() {
+    let lookup = router(vec![deployment("group-a", "id-a", "openai/a")]);
+    assert_eq!(
+        resolve_target_model_name(None, Some("id-a"), Some(lookup.as_ref())).expect("resolves"),
+        Some("group-a".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn target_unknown_id_is_a_404_even_beside_a_known_model() {
+    let lookup = router(vec![deployment("group-a", "id-a", "openai/a")]);
+    let error = resolve_target_model_name(Some("group-a"), Some("missing"), Some(lookup.as_ref()))
+        .expect_err("the id is unknown");
+    let reply = render(error).await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert_eq!(reply.detail_error(), "Model with ID missing not found");
+}
+
+#[tokio::test]
+async fn target_without_a_router_is_a_404() {
+    let error = resolve_target_model_name(None, Some("id-a"), None).expect_err("no router");
+    let reply = render(error).await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert_eq!(reply.detail_error(), "Model with ID id-a not found");
+}
+
+#[tokio::test]
+async fn target_failing_lookup_logs_and_is_a_404() {
+    let (buffer, _guard) = capture_logs();
+    let lookup = failing_router();
+    let error = resolve_target_model_name(None, Some("id-a"), Some(lookup.as_ref()))
+        .expect_err("the lookup fails");
+    let reply = render(error).await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert_eq!(reply.detail_error(), "Model with ID id-a not found");
+    let logs = buffer.text();
+    assert!(
+        logs.contains("Error getting deployment for model_id id-a:"),
+        "{logs}"
+    );
+}
+
+#[tokio::test]
+async fn check_without_a_store_is_database_not_initialized() {
+    let Err(error) = check_prisma_client(None) else {
+        panic!("no store gives an error");
+    };
+    let reply = render(error).await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(reply.detail_error(), "Database not initialized");
+}
+
+#[test]
+fn check_with_a_store_returns_it() {
+    let rows = unconnected();
+    let found = check_prisma_client(Some(&rows)).expect("the store");
+    assert!(eq(found, &raw const rows));
+}
+
+#[tokio::test]
+async fn health_random_source_failure_is_500() {
+    let models = vec![deployment("a", "id-a", "openai/a")];
+    let (mut state, _provider, _source) = fixture();
+    state.cycle.random = Arc::new(FailingRandom);
+    serve(&mut state, models);
+    let reply = get(state, Some(&admin()), "/health").await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        reply.detail_error(),
+        SysError::new_custom(1_u16).to_string()
+    );
+}
+
+#[rstest]
+#[case::shown(DetailVisibility::Shown, true)]
+#[case::hidden(DetailVisibility::Hidden, false)]
+#[tokio::test]
+async fn save_shows_the_probe_error_only_with_details(
+    #[case] details: DetailVisibility,
+    #[case] shown: bool,
+) {
+    let models = vec![deployment("a", "id-a", "openai/a")];
+    let (mut state, _provider, _source) = fixture();
+    state.health_check_details = details;
+    let provider = Arc::new(FakeProvider::new().failing("openai/a"));
+    state.cycle.provider = Arc::<FakeProvider>::clone(&provider);
+    let outcome = perform_health_check_and_save(&state, probe(&models))
+        .await
+        .expect("the probe runs");
+    assert_eq!(
+        text_field(&outcome.unhealthy_endpoints[0], "error").is_some(),
+        shown
+    );
+}
+
+#[tokio::test]
+async fn health_skipping_a_disabled_deployment_does_not_probe_it() {
+    let models = vec![deployment_with_info(
+        "a",
+        "id-a",
+        vec![("model", text("openai/a"))],
+        vec![("disable_background_health_check", Json::Bool(true))],
+    )];
+    let (mut state, provider, _source) = fixture();
+    state.skip_disabled_models = SkipDisabledModels::Skip;
+    serve(&mut state, models);
+    let reply = get(state, Some(&admin()), "/health").await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert!(provider.calls().is_empty());
+    assert_eq!(reply.count("healthy_count"), 0);
 }
