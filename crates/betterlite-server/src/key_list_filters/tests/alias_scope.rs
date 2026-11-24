@@ -74,9 +74,10 @@ async fn aliases_missing_identity_false() {
 async fn aliases_hostile_identifier_bound() {
     let hostile_user = "u1'; DROP TABLE \"LiteLLM_UserTable\" --";
     let hostile_team = "t1'); DELETE FROM \"LiteLLM_VerificationToken\"; --";
-    let stored = serde_json::to_string(hostile_team).unwrap();
+    let stored_user = serde_json::to_string(hostile_user).unwrap();
+    let stored_team = serde_json::to_string(hostile_team).unwrap();
     let store = FakeStore::with_user(user_row(&format!(
-        r#"{{"user_id":"u1","teams":[{stored}]}}"#
+        r#"{{"user_id":{stored_user},"teams":[{stored_team}]}}"#
     )));
     let owner = team_caller(Some(hostile_user));
     let (query, filters) = bind(&owner, &store, Vec::new(), Vec::new()).await;

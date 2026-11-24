@@ -234,13 +234,13 @@ fn error_json(failure: &KeyListFiltersError) -> Value {
     match failure.proxy_exception() {
         Some(raised) => json!({
             "status": status,
-            "type": raised.error_type,
+            "error_type": raised.error_type,
             "param": raised.param,
             "code": raised.code,
         }),
         None => json!({
             "status": status,
-            "type": Value::Null,
+            "error_type": Value::Null,
             "param": Value::Null,
             "code": Value::Null,
         }),
