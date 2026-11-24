@@ -4,7 +4,10 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::mcp_permission_ids::cleanup::{
-    dedupe_preserving_order, drop_stale_object_permission_mcp_identifiers,
+    dedupe_preserving_order,
+    // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
+    drop_stale_object_permission_mcp_identifiers,
+    // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
     flatten_resolved_mcp_server_ids,
 };
 use serde::Deserialize;
@@ -38,15 +41,16 @@ impl Helper for Op {
             } => {
                 let mut permission = object_permission.clone();
                 let server_ids = identifier_sets(identifiers);
+                // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
                 drop_stale_object_permission_mcp_identifiers(&mut permission, &server_ids)
                     .or_value_error()?;
                 Ok(serde_json::to_value(permission)?)
             }
             Input::Flatten { identifiers } => {
                 let server_ids = identifier_sets(identifiers);
-                Ok(serde_json::to_value(flatten_resolved_mcp_server_ids(
-                    &server_ids,
-                ))?)
+                // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
+                let resolved = flatten_resolved_mcp_server_ids(&server_ids);
+                Ok(serde_json::to_value(resolved)?)
             }
         }
     }

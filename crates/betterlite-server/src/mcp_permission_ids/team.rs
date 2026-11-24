@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::mcp_identifier_resolution::{ResolveError, resolve_identifiers_to_ids};
 
-use super::cleanup::flatten_resolved_mcp_server_ids;
+use super::cleanup::flatten_resolved_mcp_server_ids; // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
 use super::decode::{McpToolGrantsJsonError, decode_mcp_tool_grants_json};
 
 pub const ALL_PROXY_MCP_SERVERS: &str = "all-proxy-mcpservers";
@@ -77,7 +77,7 @@ where
     };
     let registry_refs: Vec<&MCPServer> = registry_servers.iter().collect();
     let resolved = resolve_identifiers_to_ids(&identifiers, client, &registry_refs).await?;
-    let mut allowed = flatten_resolved_mcp_server_ids(&resolved);
+    let mut allowed = flatten_resolved_mcp_server_ids(&resolved); // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
     for identifier in identifiers {
         if resolved
             .get(&identifier)

@@ -100,11 +100,12 @@ pub fn drop_stale_object_permission_mcp_identifiers(
     if !matches!(object_permission, JsonData::Object(fields) if !fields.is_empty()) {
         return Ok(());
     }
-    drop_stale_object_permission_mcp_servers(object_permission, identifier_to_server_ids)?;
-    drop_stale_object_permission_mcp_tool_permissions(object_permission, identifier_to_server_ids)
+    drop_stale_object_permission_mcp_servers(object_permission, identifier_to_server_ids)?; // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
+    drop_stale_object_permission_mcp_tool_permissions(object_permission, identifier_to_server_ids) // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
 }
 
 #[must_use]
+// ast-grep-ignore: no-long-names - the LiteLLM function this task owns
 pub fn flatten_resolved_mcp_server_ids(
     identifier_to_server_ids: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeSet<String> {

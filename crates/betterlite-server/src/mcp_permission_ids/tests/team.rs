@@ -16,8 +16,9 @@ use super::fixtures::{json, nested_array_grant, registry, registry_server, strin
 
 fn tool_permission(raw: JsonData) -> TeamObjectPermission {
     TeamObjectPermission {
+        mcp_servers: None,
+        mcp_access_groups: None,
         mcp_tool_permissions: Some(raw),
-        ..TeamObjectPermission::default()
     }
 }
 
@@ -65,7 +66,8 @@ async fn all_proxy_matches_among_other_entries() {
     );
     let permission = TeamObjectPermission {
         mcp_servers: Some(strings(&["ignored", ALL_PROXY_MCP_SERVERS])),
-        ..TeamObjectPermission::default()
+        mcp_access_groups: None,
+        mcp_tool_permissions: None,
     };
     let allowed = resolve_team_allowed_mcp_servers::<FakeRows>(&permission, None, &shared, None)
         .await
@@ -82,8 +84,9 @@ async fn group_failure_keeps_config_servers() {
         Vec::new(),
     );
     let permission = TeamObjectPermission {
+        mcp_servers: None,
         mcp_access_groups: Some(strings(&["group-a"])),
-        ..TeamObjectPermission::default()
+        mcp_tool_permissions: None,
     };
     let rows = FakeRows::failing();
     let allowed = resolve_team_allowed_mcp_servers(&permission, None, &shared, Some(&rows))
@@ -105,8 +108,9 @@ async fn group_rows_extend_config_servers() {
         Vec::new(),
     );
     let permission = TeamObjectPermission {
+        mcp_servers: None,
         mcp_access_groups: Some(strings(&["group-a"])),
-        ..TeamObjectPermission::default()
+        mcp_tool_permissions: None,
     };
     let rows = FakeRows::answering(&["db-from-group"]);
     let allowed = resolve_team_allowed_mcp_servers(&permission, None, &shared, Some(&rows))
