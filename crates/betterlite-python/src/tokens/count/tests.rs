@@ -18,10 +18,17 @@ fn tokens_count_counts_a_text_like_litellm() {
 #[test]
 fn tokens_count_counts_with_the_models_encoding() {
     Python::attach(|py| {
-        // the CJK clause is three tokens under gpt-4o's o200k_base and six under cl100k_base
-        let o200k = token_count(py, r#"{"model":"gpt-4o","text":"hello world 世界"}"#).unwrap();
+        // the CJK clause, written as JSON escapes, is three tokens under gpt-4o and six under cl100k
+        let o200k = token_count(
+            py,
+            r#"{"model":"gpt-4o","text":"hello world \u4e16\u754c"}"#,
+        )
+        .unwrap();
         assert_eq!(o200k, 3);
-        let cl100k = token_count(py, r#"{"model":"gpt-3.5-turbo","text":"hello world 世界"}"#);
+        let cl100k = token_count(
+            py,
+            r#"{"model":"gpt-3.5-turbo","text":"hello world \u4e16\u754c"}"#,
+        );
         assert_eq!(cl100k.unwrap(), 6);
     });
 }
