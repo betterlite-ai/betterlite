@@ -368,11 +368,11 @@ def test_error_class_and_client() -> None:
 
 def test_error_fields_429_and_500() -> None:
     with AssistantServer() as server:
-        limited = {"api_key": RATE_LIMITED_KEY, "api_base": server.url, "max_retries": 0}
+        limited = {"api_key": RATE_LIMITED_KEY, "api_base": server.url}
         with pytest.raises(errors.RateLimitError) as ours_limited:
-            _records.get_assistants("openai", **limited)
+            _records.get_assistants("openai", max_retries=0, **limited)
         with pytest.raises(openai.RateLimitError) as reference_limited:
-            LITELLM.get_assistants("openai", **limited)
+            LITELLM.get_assistants("openai", max_retries=0, **limited)
         assert ours_limited.value.status_code == RATE_LIMIT_STATUS
         assert ours_limited.value.model == ""
         assert ours_limited.value.param is None
@@ -382,11 +382,11 @@ def test_error_fields_429_and_500() -> None:
         assert reference_limited.value.param is None
         assert reference_limited.value.type == RATE_LIMIT_TYPE
         assert reference_limited.value.code == RATE_LIMIT_CODE
-        failing = {"api_key": FAILING_KEY, "api_base": server.url, "max_retries": 0}
+        failing = {"api_key": FAILING_KEY, "api_base": server.url}
         with pytest.raises(errors.InternalServerError) as ours_failing:
-            _records.get_assistants("openai", **failing)
+            _records.get_assistants("openai", max_retries=0, **failing)
         with pytest.raises(openai.InternalServerError) as reference_failing:
-            LITELLM.get_assistants("openai", **failing)
+            LITELLM.get_assistants("openai", max_retries=0, **failing)
         assert ours_failing.value.status_code == SERVER_ERROR_STATUS
         assert ours_failing.value.model == ""
         assert ours_failing.value.param is None
