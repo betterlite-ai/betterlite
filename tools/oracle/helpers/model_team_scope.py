@@ -1,13 +1,13 @@
 import asyncio
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
 import litellm
 from litellm.proxy import proxy_server
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.utils import PrismaClient
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
 
 class CallerRecord(TypedDict):
@@ -22,13 +22,32 @@ class UserRecord(TypedDict):
 
 
 class Input(TypedDict):
-    function: str
+    function: Literal[
+        "byok_row_outside_caller_teams",
+        "team_models_resolve_to_names",
+        "caller_byok_team_scope",
+    ]
     model_info: dict[str, JsonValue]
     allowed_team_ids: list[str] | None
     team_models: list[str]
     access_groups: dict[str, list[str]]
     caller: CallerRecord | None
     user: UserRecord | None
+
+
+class ByokAnswer(TypedDict):
+    outside: bool
+
+
+class NamesAnswer(TypedDict):
+    names: list[JsonValue]
+
+
+class ScopeAnswer(TypedDict):
+    allowed_team_ids: list[JsonValue] | None
+
+
+Answer: TypeAlias = ByokAnswer | NamesAnswer | ScopeAnswer
 
 
 @dataclass
@@ -60,7 +79,7 @@ def build_prisma(input_value: Input) -> FakePrismaClient:
     user = input_value["user"]
     users: dict[str, UserRow] = {}
     if user is not None:
-        users[user["user_id"]] = UserRow(user_id=user["user_id"], teams=[*user["teams"]])
+        users[user["user_id"]] = UserRow(user_id=user["user_id"], teams=list(user["teams"]))
     return FakePrismaClient(FakeDatabase(UserTable(users)))
 
 
@@ -76,27 +95,26 @@ def build_caller(input_value: Input) -> UserAPIKeyAuth | None:
     )
 
 
-def byok_answer(input_value: Input) -> JsonValue:
+def byok_answer(input_value: Input) -> ByokAnswer:
     allowed = input_value["allowed_team_ids"]
     outside = proxy_server._byok_row_outside_caller_teams(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14650-L14661
         model_info_dict=input_value["model_info"],
         allowed_team_ids=None if allowed is None else set(allowed),
     )
-    payload: dict[str, JsonValue] = {"outside": outside}
-    return payload
+    return {"outside": outside}
 
 
-def resolve_answer(input_value: Input) -> JsonValue:
+def resolve_answer(input_value: Input) -> NamesAnswer:
     resolved = proxy_server._team_models_resolve_to_names(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15068-L15076
         team_models=input_value["team_models"],
         access_groups=input_value["access_groups"],
     )
-    names: list[JsonValue] = [name for name in resolved]
-    payload: dict[str, JsonValue] = {"names": names}
-    return payload
+    names: list[JsonValue] = []
+    names.extend(resolved)
+    return {"names": names}
 
 
-async def caller_scope_answer(input_value: Input) -> JsonValue:
+async def caller_scope_answer(input_value: Input) -> ScopeAnswer:
     caller = build_caller(input_value)
     prisma: PrismaClient | None = None
     if caller is not None:
@@ -105,24 +123,23 @@ async def caller_scope_answer(input_value: Input) -> JsonValue:
         user_api_key_dict=caller,
         prisma_client=prisma,
     )
-    ids: list[JsonValue] | None = None
-    if scope is not None:
-        ids = [team for team in sorted(scope)]
-    payload: dict[str, JsonValue] = {"allowed_team_ids": ids}
-    return payload
+    if scope is None:
+        return {"allowed_team_ids": None}
+    allowed: list[JsonValue] = []
+    allowed.extend(sorted(scope))
+    return {"allowed_team_ids": allowed}
 
 
-async def answer(input_value: Input) -> JsonValue:
-    function = input_value["function"]
-    if function == "byok_row_outside_caller_teams":
-        return byok_answer(input_value)
-    if function == "team_models_resolve_to_names":
-        return resolve_answer(input_value)
-    if function == "caller_byok_team_scope":
-        return await caller_scope_answer(input_value)
-    raise ValueError(f"unsupported model_team_scope function {function}")
+async def answer(input_value: Input) -> Answer:
+    match input_value["function"]:
+        case "byok_row_outside_caller_teams":
+            return byok_answer(input_value)
+        case "team_models_resolve_to_names":
+            return resolve_answer(input_value)
+        case "caller_byok_team_scope":
+            return await caller_scope_answer(input_value)
 
 
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
+def run(input_value: Input) -> Answer:
     litellm.suppress_debug_info = True
-    return asyncio.run(answer(TypeAdapter(Input).validate_python(input_value)))
+    return asyncio.run(answer(input_value))
