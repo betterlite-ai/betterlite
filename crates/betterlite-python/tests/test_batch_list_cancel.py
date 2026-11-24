@@ -461,6 +461,25 @@ def test_cancel_sends_the_extra_headers_and_body() -> None:
     assert ours_call["headers"].get("x-test") == "1"
 
 
+def test_cancel_ignores_the_metadata_kwarg() -> None:
+    with ListServer() as server:
+        reference = LITELLM.cancel_batch(
+            batch_id=BATCH_ID, metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY
+        )
+        made = made_batch(
+            cancel_batch(
+                batch_id=BATCH_ID,
+                metadata=dict(METADATA),
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
+        assert len(server.calls) == CALLS_PER_COMPARISON
+        reference_call, ours_call = server.calls
+    assert made.model_dump() == reference.model_dump()
+    assert ours_call["body"] == reference_call["body"] == {}
+
+
 def test_cancel_error_keeps_the_class_and_cause() -> None:
     with ListServer() as server, pytest.raises(NotFoundError) as caught:
         cancel_batch(batch_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
