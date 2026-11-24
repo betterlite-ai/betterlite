@@ -95,13 +95,13 @@ async fn project_model_order() {
         Rejection::ProjectModel { model, .. } => {
             assert_eq!(model, JsonData::String("z-model".to_owned()));
         }
-        other @ Rejection::NonFinite { .. }
-        | other @ Rejection::Upperbound { .. }
-        | other @ Rejection::Allocation { .. }
-        | other @ Rejection::ProjectNotFound { .. }
-        | other @ Rejection::ProjectBudget { .. }
-        | other @ Rejection::AssignWithoutUser
-        | other @ Rejection::NotMember { .. } => {
+        other @ (Rejection::NonFinite { .. }
+        | Rejection::Upperbound { .. }
+        | Rejection::Allocation { .. }
+        | Rejection::ProjectNotFound { .. }
+        | Rejection::ProjectBudget { .. }
+        | Rejection::AssignWithoutUser
+        | Rejection::NotMember { .. }) => {
             panic!("expected a project model rejection, got {other:?}")
         }
     }

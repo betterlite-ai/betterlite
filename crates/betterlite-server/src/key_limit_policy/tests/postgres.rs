@@ -79,13 +79,13 @@ async fn project_query_reads_the_row() {
     let checked = check_project_key_limits("proj-1", &model_request, &recorded);
     match rejected(checked.await) {
         Rejection::ProjectModel { allowed, .. } => assert_eq!(allowed, vec!["gpt-4".to_owned()]),
-        other @ Rejection::NonFinite { .. }
-        | other @ Rejection::Upperbound { .. }
-        | other @ Rejection::Allocation { .. }
-        | other @ Rejection::ProjectNotFound { .. }
-        | other @ Rejection::ProjectBudget { .. }
-        | other @ Rejection::AssignWithoutUser
-        | other @ Rejection::NotMember { .. } => {
+        other @ (Rejection::NonFinite { .. }
+        | Rejection::Upperbound { .. }
+        | Rejection::Allocation { .. }
+        | Rejection::ProjectNotFound { .. }
+        | Rejection::ProjectBudget { .. }
+        | Rejection::AssignWithoutUser
+        | Rejection::NotMember { .. }) => {
             panic!("expected the stored model list to refuse claude-4, got {other:?}")
         }
     }

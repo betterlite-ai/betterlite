@@ -101,11 +101,13 @@ impl Rejection {
 fn json_text(value: &JsonData) -> String {
     match value {
         JsonData::String(text) => format!("{text:?}"),
-        other @ JsonData::Null
-        | other @ JsonData::Bool(_)
-        | other @ JsonData::Number(_)
-        | other @ JsonData::Array(_)
-        | other @ JsonData::Object(_) => format!("{other:?}"),
+        JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::Array(_)
+        | JsonData::Object(_) => {
+            format!("{value:?}")
+        }
     }
 }
 

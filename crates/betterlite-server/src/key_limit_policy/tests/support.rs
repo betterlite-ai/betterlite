@@ -44,11 +44,11 @@ pub(super) fn data(text: &str) -> JsonData {
 pub(super) fn object(text: &str) -> BTreeMap<String, JsonData> {
     match data(text) {
         JsonData::Object(fields) => fields,
-        other @ JsonData::Null
-        | other @ JsonData::Bool(_)
-        | other @ JsonData::Number(_)
-        | other @ JsonData::String(_)
-        | other @ JsonData::Array(_) => panic!("expected an object, got {other:?}"),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Array(_)) => panic!("expected an object, got {other:?}"),
     }
 }
 
