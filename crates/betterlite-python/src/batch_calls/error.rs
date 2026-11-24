@@ -69,8 +69,13 @@ pub(crate) enum BatchError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the batch call task failed: {0}")]
-    Task(String),
+    #[error("the batch call task failed: {source}")]
+    Task {
+        #[source]
+        source: tokio::task::JoinError,
+    },
+    #[error("the batch create task ended without a result")]
+    TaskWithoutResult,
 }
 
 pub(crate) fn payload_for(
@@ -81,7 +86,7 @@ pub(crate) fn payload_for(
     match error {
         BatchError::Create(inner) => Some(create_error_payload(inner, provider, model)),
         BatchError::Read(inner) => Some(read_error_payload(inner, provider, model)),
-        BatchError::Encode { .. } | BatchError::Task(_) => None,
+        BatchError::Encode { .. } | BatchError::Task { .. } | BatchError::TaskWithoutResult => None,
     }
 }
 

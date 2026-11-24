@@ -2,12 +2,11 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigError;
 use betterlite_config::sections::Section;
-use betterlite_core::api::batch_provider_create::{
-    BatchProviderCreateCall, BatchProviderCreateInput,
-};
+use betterlite_core::api::batch_provider_create::BatchProviderCreateInput;
 use betterlite_core::api::batch_provider_read::BatchProviderReadInput;
-use betterlite_core::api::batch_provider_read::call::BatchProviderReadCall;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::batches::records::BatchObject;
+use indexmap::IndexMap;
 use pyo3::PyErr;
 use pyo3::exceptions::PyValueError;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -16,6 +15,10 @@ use serde_with::{As, FromIntoRef};
 
 pub(crate) mod request;
 mod tests;
+mod timeout;
+
+const OPENAI_DEFAULT_BASE: &str = "https://api.openai.com";
+const XAI_DEFAULT_BASE: &str = "https://api.x.ai/v1";
 
 // Everything one Python session owns besides its HTTP client: the environment snapshot and the module globals.
 #[derive(Debug, Default, Deserialize)]
@@ -108,7 +111,7 @@ pub(crate) const fn read_input(
     input
 }
 
-// what a finished call hands LiteLLMBatch._hidden_params: the provider, the model and the base it reached
+// what a finished call hands LiteLLMBatch._hidden_params: the provider, the model and the base the caller's kwargs name
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct HiddenParams {
     pub(crate) llm_provider: String,
@@ -118,44 +121,26 @@ pub(crate) struct HiddenParams {
 }
 
 impl HiddenParams {
-    pub(crate) fn new(provider: &str, model: Option<&str>, call: FinishedCall<'_>) -> Self {
+    pub(crate) fn new(provider: &str, model: Option<&str>, given_api_base: Option<&str>) -> Self {
         Self {
             llm_provider: provider.to_owned(),
             // LiteLLM takes model_id from model_info.id, which the Python facade writes into this key after the call
             model_id: None,
             litellm_model_name: model.map(str::to_owned),
-            api_base: call.api_base(),
+            api_base: hidden_api_base(provider, given_api_base),
         }
     }
 }
 
-// whichever call a finished service hands back: its base is the hidden api_base
-pub(crate) enum FinishedCall<'call> {
-    Create(&'call BatchProviderCreateCall),
-    Read(&'call BatchProviderReadCall),
-}
-
-impl FinishedCall<'_> {
-    pub(crate) fn api_base(self) -> Option<String> {
-        match self {
-            Self::Create(call) => match call {
-                BatchProviderCreateCall::ProviderConfig(inner) => inner.api_base.clone(),
-                BatchProviderCreateCall::Xai(inner)
-                | BatchProviderCreateCall::OpenAiCompatible(inner)
-                | BatchProviderCreateCall::Azure(inner)
-                | BatchProviderCreateCall::VertexAi(inner) => inner.api_base.clone(),
-            },
-            Self::Read(call) => match call {
-                BatchProviderReadCall::OpenAiCompatible(inner) => Some(inner.api_base.clone()),
-                BatchProviderReadCall::VertexAi(inner) => Some(inner.api_base.clone()),
-                BatchProviderReadCall::ProviderConfig(inner) => inner.api_base.clone(),
-                BatchProviderReadCall::Xai(inner) => inner.api_base.clone(),
-                BatchProviderReadCall::Azure(inner) => inner.api_base.clone(),
-                BatchProviderReadCall::Anthropic(inner) => inner.api_base.clone(),
-                BatchProviderReadCall::BedrockAsyncInvoke(_)
-                | BatchProviderReadCall::BedrockModelInvocationJob(_) => None,
-            },
-        }
+// set_hidden_params reports get_api_base over the call's own kwargs, never the deployment's resolved base
+fn hidden_api_base(provider: &str, given: Option<&str>) -> Option<String> {
+    if let Some(api_base) = given {
+        return Some(api_base.to_owned());
+    }
+    match provider {
+        "openai" => Some(String::from(OPENAI_DEFAULT_BASE)),
+        "xai" => Some(String::from(XAI_DEFAULT_BASE)),
+        _ => None,
     }
 }
 
@@ -175,6 +160,13 @@ pub(crate) enum ConvertError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the batch payload could not be written back: {source}")]
+    Write {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the batch payload's optional_params.timeout is not usable: {0}")]
+    Timeout(String),
 }
 
 impl From<ConvertError> for PyErr {
@@ -192,4 +184,42 @@ where
         Ok(value) => Ok(value),
         Err(source) => Err(ConvertError::Json { source }),
     }
+}
+
+// arbitrary_precision shows an untagged enum no number, only a one-key map, so the timeout is lifted out
+// of the payload and read on its own.
+pub(crate) fn create_payload(text: &str) -> Result<BatchProviderCreateInput, ConvertError> {
+    let (payload, given_timeout) = without_timeout(text)?;
+    let mut input: BatchProviderCreateInput = parse(&encode(&payload)?)?;
+    input.optional_params.timeout = given_timeout.as_ref().map(timeout::create).transpose()?;
+    Ok(input)
+}
+
+pub(crate) fn read_payload(text: &str) -> Result<BatchProviderReadInput, ConvertError> {
+    let (payload, given_timeout) = without_timeout(text)?;
+    let mut input: BatchProviderReadInput = parse(&encode(&payload)?)?;
+    input.optional_params.timeout = given_timeout.as_ref().map(timeout::read).transpose()?;
+    Ok(input)
+}
+
+fn without_timeout(text: &str) -> Result<(JsonValue, Option<JsonValue>), ConvertError> {
+    let mut payload: JsonValue = parse(text)?;
+    let mut timeout = None;
+    if let JsonValue::Object(fields) = &mut payload {
+        timeout = take_optional_timeout(fields);
+    }
+    Ok((payload, timeout))
+}
+
+fn take_optional_timeout(fields: &mut IndexMap<String, JsonValue>) -> Option<JsonValue> {
+    let JsonValue::Object(optional) = fields.get_mut("optional_params")? else {
+        return None;
+    };
+    optional
+        .shift_remove("timeout")
+        .filter(|value| !matches!(value, JsonValue::Null))
+}
+
+fn encode(payload: &JsonValue) -> Result<String, ConvertError> {
+    serde_json::to_string(payload).map_err(|source| ConvertError::Write { source })
 }

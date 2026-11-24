@@ -7,17 +7,11 @@ use betterlite_config::sections::{batch_provider_create, batch_provider_read, xa
 use betterlite_core::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
 use betterlite_core::api::batch_provider_create::error::BatchProviderCreateError;
 use betterlite_core::api::batch_provider_create::timeout::{HttpTimeout, RequestTimeout};
-use betterlite_core::api::batch_provider_create::{
-    BatchProvider, BatchProviderCreateCall, BatchProviderCreateInput, ProviderBatchCall,
-    ProviderConfigCall,
-};
-use betterlite_core::api::batch_provider_read::call::{
-    AnthropicBatchReadCall, AwsCredentials, AzureBatchReadCall, AzureReadParams,
-    BatchProviderReadCall, BedrockAsyncInvokeReadCall, BedrockJobReadCall, OpenAiBatchReadCall,
-    ProviderConfigReadCall, VertexBatchReadCall, XaiBatchReadCall,
-};
+use betterlite_core::api::batch_provider_create::{BatchProvider, BatchProviderCreateInput};
 use betterlite_core::api::batch_provider_read::error::BatchProviderReadError;
-use betterlite_core::api::batch_provider_read::{BatchProviderReadInput, BatchReadProvider};
+use betterlite_core::api::batch_provider_read::{
+    BatchProviderReadInput, BatchReadProvider, BatchReadTimeoutValue,
+};
 use betterlite_core::api::resource_sdk_settings::timeout::TimeoutError;
 use betterlite_openai::api::batch_records::{BatchIdRequest, CreateBatchRequest};
 use betterlite_openai::batches::records::{
@@ -30,8 +24,8 @@ use serde::Deserialize;
 
 use super::request::{BodyError, DurationError, batch_create, batch_query, duration_of};
 use super::{
-    BatchAnswer, CallMode, FinishedCall, HiddenParams, ModuleSettings, SessionWire, create_input,
-    parse, read_input, section_settings,
+    BatchAnswer, CallMode, HiddenParams, ModuleSettings, SessionWire, create_input, create_payload,
+    parse, read_input, read_payload, section_settings,
 };
 use crate::batch_calls::error::DispatchFailure;
 use crate::batch_calls::payload::{
@@ -85,25 +79,8 @@ fn batch_body() -> CreateBatchRequest {
     }
 }
 
-fn openai_call(api_base: Option<&str>) -> ProviderBatchCall {
-    ProviderBatchCall {
-        body: CreateBatchRequest::default(),
-        api_base: api_base.map(str::to_owned),
-        api_key: None,
-        organization: None,
-        api_version: None,
-        vertex_project: None,
-        vertex_location: None,
-        vertex_credentials: None,
-        custom_endpoint: None,
-        timeout: 600.0,
-        max_retries: None,
-        is_async: false,
-    }
-}
-
 fn read_call(provider: &str, model: Option<&str>) -> BatchProviderReadInput {
-    let mut input: BatchProviderReadInput = parse(r#"{"batch_id":"batch-1"}"#).unwrap();
+    let mut input: BatchProviderReadInput = read_payload(r#"{"batch_id":"batch-1"}"#).unwrap();
     input.provider = BatchReadProvider::from(provider.to_owned());
     input.model = model.map(str::to_owned);
     input
@@ -120,21 +97,21 @@ const fn phases() -> TimeoutPhases {
 
 #[test]
 fn request_create_mode_sets_is_async() {
-    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
+    let input: BatchProviderCreateInput = create_payload(CREATE_PAYLOAD).unwrap();
     assert!(!create_input(input.clone(), CallMode::Sync).is_async);
     assert!(create_input(input, CallMode::Async).is_async);
 }
 
 #[test]
 fn request_read_mode_sets_aretrieve_batch() {
-    let input: BatchProviderReadInput = parse(r#"{"batch_id":"batch-1"}"#).unwrap();
+    let input: BatchProviderReadInput = read_payload(r#"{"batch_id":"batch-1"}"#).unwrap();
     assert!(!read_input(input.clone(), CallMode::Sync).aretrieve_batch);
     assert!(read_input(input, CallMode::Async).aretrieve_batch);
 }
 
 #[test]
 fn request_create_payload_keeps_the_identifying_fields() {
-    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
+    let input: BatchProviderCreateInput = create_payload(CREATE_PAYLOAD).unwrap();
     assert_eq!(input.completion_window, CompletionWindow::Day);
     assert_eq!(input.endpoint, BatchEndpoint::ChatCompletions);
     assert_eq!(input.input_file_id, "file-1");
@@ -144,7 +121,7 @@ fn request_create_payload_keeps_the_identifying_fields() {
 
 #[test]
 fn request_create_payload_keeps_the_passthrough_maps() {
-    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
+    let input: BatchProviderCreateInput = create_payload(CREATE_PAYLOAD).unwrap();
     assert_eq!(
         input
             .metadata
@@ -183,7 +160,7 @@ fn request_create_payload_keeps_the_passthrough_maps() {
 
 #[test]
 fn request_create_payload_keeps_the_optional_params() {
-    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
+    let input: BatchProviderCreateInput = create_payload(CREATE_PAYLOAD).unwrap();
     assert_eq!(
         input.optional_params.api_base.as_deref(),
         Some("http://local/v1")
@@ -219,13 +196,52 @@ fn request_create_payload_keeps_the_optional_params() {
     assert_eq!(input.optional_params.custom_endpoint, Some(true));
 }
 
+// The timeout crosses the payload as a number or as phases, which the typed parse alone cannot read.
+#[test]
+fn request_create_payload_reads_a_numeric_timeout() {
+    let input: BatchProviderCreateInput = create_payload(
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"timeout":30}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        input.optional_params.timeout,
+        Some(RequestTimeout::Seconds(30.0_f64))
+    );
+}
+
+#[test]
+fn request_create_payload_treats_a_null_timeout_as_absent() {
+    let input: BatchProviderCreateInput = create_payload(
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"timeout":null,"request_timeout":5}}"#,
+    )
+    .unwrap();
+    assert_eq!(input.optional_params.timeout, None);
+    assert_eq!(input.optional_params.request_timeout, Some(5.0_f64));
+}
+
+#[test]
+fn request_create_payload_refuses_a_bad_timeout() {
+    let text = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"timeout":"10"}}"#;
+    let error = create_payload(text).unwrap_err();
+    assert!(error.to_string().contains("optional_params.timeout"));
+    let unknown = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"timeout":{"connect":1,"deadline":2}}}"#;
+    let unknown_error = create_payload(unknown).unwrap_err();
+    assert!(unknown_error.to_string().contains("deadline"));
+    let wrong = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"timeout":{"read":"30"}}}"#;
+    let wrong_error = create_payload(wrong).unwrap_err();
+    assert!(wrong_error.to_string().contains("expected f64"));
+    let huge = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"timeout":1e999}}"#;
+    let huge_error = create_payload(huge).unwrap_err();
+    assert!(huge_error.to_string().contains("1e999"));
+}
+
 #[test]
 fn request_create_payload_refuses_an_unknown_key() {
     let text = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","acreate_batch":true}"#;
-    let error = parse::<BatchProviderCreateInput>(text).unwrap_err();
+    let error = create_payload(text).unwrap_err();
     assert!(error.to_string().contains("acreate_batch"));
     let nested = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"num_retries":1}}"#;
-    let nested_error = parse::<BatchProviderCreateInput>(nested).unwrap_err();
+    let nested_error = create_payload(nested).unwrap_err();
     assert!(nested_error.to_string().contains("num_retries"));
 }
 
@@ -234,25 +250,25 @@ fn request_create_payload_refuses_an_unknown_key() {
 fn request_create_payload_refuses_a_value_outside_the_literal() {
     let window =
         r#"{"completion_window":"48h","endpoint":"/v1/chat/completions","input_file_id":"f"}"#;
-    let window_error = parse::<BatchProviderCreateInput>(window).unwrap_err();
+    let window_error = create_payload(window).unwrap_err();
     assert!(window_error.to_string().contains("48h"));
     let endpoint = r#"{"completion_window":"24h","endpoint":"/v1/files","input_file_id":"f"}"#;
-    let endpoint_error = parse::<BatchProviderCreateInput>(endpoint).unwrap_err();
+    let endpoint_error = create_payload(endpoint).unwrap_err();
     assert!(endpoint_error.to_string().contains("/v1/files"));
     let provider = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"cohere"}"#;
-    let provider_error = parse::<BatchProviderCreateInput>(provider).unwrap_err();
+    let provider_error = create_payload(provider).unwrap_err();
     assert!(provider_error.to_string().contains("cohere"));
 }
 
 #[test]
 fn request_read_payload_defaults_the_provider() {
     let input: BatchProviderReadInput =
-        parse(r#"{"batch_id":"batch-1","provider":"openai"}"#).unwrap();
+        read_payload(r#"{"batch_id":"batch-1","provider":"openai"}"#).unwrap();
     assert_eq!(input.provider, BatchReadProvider::OpenAi);
     assert!(!input.aretrieve_batch);
     assert!(input.model.is_none());
     assert!(input.optional_params.api_base.is_none());
-    let defaulted: BatchProviderReadInput = parse(r#"{"batch_id":"batch-1"}"#).unwrap();
+    let defaulted: BatchProviderReadInput = read_payload(r#"{"batch_id":"batch-1"}"#).unwrap();
     assert_eq!(defaulted.provider, BatchReadProvider::OpenAi);
 }
 
@@ -265,6 +281,48 @@ fn request_read_payload_keeps_an_unknown_provider() {
     );
     assert_eq!(input.provider.name(), "cohere");
     assert!(!input.provider.supports_httpx_timeout());
+}
+
+// the read path hands the timeout to the provider wrappers as the value Python gave, so each shape survives
+#[test]
+fn request_read_payload_reads_each_timeout_shape() {
+    let seconds: BatchProviderReadInput =
+        read_payload(r#"{"batch_id":"b","optional_params":{"timeout":30}}"#).unwrap();
+    assert_eq!(
+        seconds.optional_params.timeout,
+        Some(BatchReadTimeoutValue::Seconds(30.0_f64))
+    );
+    let text: BatchProviderReadInput =
+        read_payload(r#"{"batch_id":"b","optional_params":{"timeout":"30"}}"#).unwrap();
+    assert_eq!(
+        text.optional_params.timeout,
+        Some(BatchReadTimeoutValue::Text(String::from("30")))
+    );
+    let phases_input: BatchProviderReadInput =
+        read_payload(r#"{"batch_id":"b","optional_params":{"timeout":{"connect":1,"read":2.5}}}"#)
+            .unwrap();
+    assert_eq!(
+        phases_input.optional_params.timeout,
+        Some(BatchReadTimeoutValue::Phases(TimeoutPhases {
+            connect: Some(1.0_f64),
+            read: Some(2.5_f64),
+            write: None,
+            pool: None,
+        }))
+    );
+    let absent: BatchProviderReadInput =
+        read_payload(r#"{"batch_id":"b","optional_params":{"timeout":null}}"#).unwrap();
+    assert_eq!(absent.optional_params.timeout, None);
+}
+
+#[test]
+fn request_read_payload_refuses_a_bad_timeout() {
+    let array = r#"{"batch_id":"b","optional_params":{"timeout":[30]}}"#;
+    let array_error = read_payload(array).unwrap_err();
+    assert!(array_error.to_string().contains("optional_params.timeout"));
+    let unknown = r#"{"batch_id":"b","optional_params":{"timeout":{"connect":1,"total":2}}}"#;
+    let unknown_error = read_payload(unknown).unwrap_err();
+    assert!(unknown_error.to_string().contains("total"));
 }
 
 #[test]
@@ -495,188 +553,98 @@ fn request_duration_follows_the_timeout_pieces() {
 }
 
 #[test]
-fn request_create_hidden_params_name_the_provider() {
-    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
-    let call = BatchProviderCreateCall::OpenAiCompatible(openai_call(Some("http://local/v1")));
+fn request_create_hidden_params_take_the_callers_api_base() {
+    let input: BatchProviderCreateInput = create_payload(CREATE_PAYLOAD).unwrap();
     let hidden = HiddenParams::new(
         input.custom_llm_provider.as_str(),
         input.model.as_deref(),
-        FinishedCall::Create(&call),
+        input.optional_params.api_base.as_deref(),
     );
     assert_eq!(hidden.llm_provider, "openai");
     assert_eq!(hidden.model_id, None);
     assert_eq!(hidden.litellm_model_name.as_deref(), Some("gpt-4o"));
     assert_eq!(hidden.api_base.as_deref(), Some("http://local/v1"));
-    assert_eq!(
-        FinishedCall::Create(&call).api_base().as_deref(),
-        Some("http://local/v1")
-    );
 }
 
 #[test]
-fn request_create_hidden_params_follow_a_provider_config() {
-    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
-    let call = BatchProviderCreateCall::ProviderConfig(ProviderConfigCall {
-        provider: BatchProvider::Bedrock,
-        model: "bedrock/model".to_owned(),
-        body: CreateBatchRequest::default(),
-        headers: BTreeMap::new(),
-        api_base: Some("http://aws".to_owned()),
-        api_key: None,
-        timeout: 600.0,
-        is_async: false,
-    });
+fn request_create_hidden_params_default_the_provider_base() {
+    let openai: BatchProviderCreateInput = create_payload(
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"openai"}"#,
+    )
+    .unwrap();
     let hidden = HiddenParams::new(
-        input.custom_llm_provider.as_str(),
-        input.model.as_deref(),
-        FinishedCall::Create(&call),
+        openai.custom_llm_provider.as_str(),
+        openai.model.as_deref(),
+        openai.optional_params.api_base.as_deref(),
     );
-    assert_eq!(hidden.llm_provider, "openai");
-    assert_eq!(hidden.api_base.as_deref(), Some("http://aws"));
+    assert_eq!(hidden.api_base.as_deref(), Some("https://api.openai.com"));
+    let xai: BatchProviderCreateInput = create_payload(
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"xai"}"#,
+    )
+    .unwrap();
+    let xai_hidden = HiddenParams::new(
+        xai.custom_llm_provider.as_str(),
+        xai.model.as_deref(),
+        xai.optional_params.api_base.as_deref(),
+    );
+    assert_eq!(xai_hidden.api_base.as_deref(), Some("https://api.x.ai/v1"));
+    let proxy: BatchProviderCreateInput = create_payload(
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"litellm_proxy"}"#,
+    )
+    .unwrap();
+    let proxy_hidden = HiddenParams::new(
+        proxy.custom_llm_provider.as_str(),
+        proxy.model.as_deref(),
+        proxy.optional_params.api_base.as_deref(),
+    );
+    assert_eq!(proxy_hidden.api_base, None);
 }
 
 #[test]
-fn request_read_hidden_params_follow_the_openai_call() {
-    let input = read_call("openai", Some("gpt-4o"));
-    let openai = BatchProviderReadCall::OpenAiCompatible(Box::new(OpenAiBatchReadCall {
-        request: BatchIdRequest::default(),
-        api_base: "http://local/v1".to_owned(),
-        api_key: None,
-        organization: None,
-        timeout: Timeout::Seconds(600.0),
-        max_retries: None,
-        is_async: false,
-    }));
+fn request_read_hidden_params_take_the_callers_api_base() {
+    let input: BatchProviderReadInput = read_payload(
+        r#"{"batch_id":"b","provider":"openai","model":"gpt-4o","optional_params":{"api_base":"http://local/v1"}}"#,
+    )
+    .unwrap();
     let hidden = HiddenParams::new(
         input.provider.name(),
         input.model.as_deref(),
-        FinishedCall::Read(&openai),
+        input.optional_params.api_base.as_deref(),
     );
     assert_eq!(hidden.llm_provider, "openai");
     assert_eq!(hidden.model_id, None);
     assert_eq!(hidden.litellm_model_name.as_deref(), Some("gpt-4o"));
     assert_eq!(hidden.api_base.as_deref(), Some("http://local/v1"));
-    assert_eq!(
-        FinishedCall::Read(&openai).api_base().as_deref(),
-        Some("http://local/v1")
-    );
 }
 
 #[test]
-fn request_read_hidden_params_follow_the_xai_call() {
-    let xai = BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
-        batch_id: "b".to_owned(),
-        api_base: Some("http://xai".to_owned()),
-        api_key: None,
-        timeout: Timeout::Seconds(1.0),
-        is_async: false,
-    }));
-    assert_eq!(
-        FinishedCall::Read(&xai).api_base().as_deref(),
-        Some("http://xai")
+fn request_read_hidden_params_default_the_provider_base() {
+    let xai = read_call("xai", None);
+    let hidden = HiddenParams::new(
+        xai.provider.name(),
+        xai.model.as_deref(),
+        xai.optional_params.api_base.as_deref(),
     );
-    let absent = BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
-        batch_id: "b".to_owned(),
-        api_base: None,
-        api_key: None,
-        timeout: Timeout::Seconds(1.0),
-        is_async: false,
-    }));
-    assert_eq!(FinishedCall::Read(&absent).api_base(), None);
-}
-
-#[test]
-fn request_read_hidden_params_follow_the_azure_and_vertex_calls() {
-    let azure = BatchProviderReadCall::Azure(Box::new(AzureBatchReadCall {
-        request: BatchIdRequest::default(),
-        api_base: Some("http://azure".to_owned()),
-        api_key: None,
-        api_version: None,
-        timeout: Timeout::Seconds(1.0),
-        max_retries: None,
-        litellm_params: AzureReadParams::default(),
-        is_async: false,
-    }));
-    assert_eq!(
-        FinishedCall::Read(&azure).api_base().as_deref(),
-        Some("http://azure")
+    assert_eq!(hidden.api_base.as_deref(), Some("https://api.x.ai/v1"));
+    let unknown = read_call("cohere", None);
+    let unknown_hidden = HiddenParams::new(
+        unknown.provider.name(),
+        unknown.model.as_deref(),
+        unknown.optional_params.api_base.as_deref(),
     );
-    let vertex = BatchProviderReadCall::VertexAi(Box::new(VertexBatchReadCall {
-        batch_id: "b".to_owned(),
-        api_base: "http://vertex".to_owned(),
-        vertex_project: None,
-        vertex_location: None,
-        vertex_credentials: None,
-        timeout: Timeout::Seconds(1.0),
-        max_retries: None,
-        is_async: false,
-    }));
-    assert_eq!(
-        FinishedCall::Read(&vertex).api_base().as_deref(),
-        Some("http://vertex")
-    );
-}
-
-#[test]
-fn request_read_hidden_params_follow_the_anthropic_call() {
-    let anthropic = BatchProviderReadCall::Anthropic(Box::new(AnthropicBatchReadCall {
-        batch_id: "b".to_owned(),
-        api_base: Some("http://anthropic".to_owned()),
-        api_key: None,
-        timeout: Timeout::Seconds(1.0),
-        max_retries: None,
-        is_async: false,
-    }));
-    assert_eq!(
-        FinishedCall::Read(&anthropic).api_base().as_deref(),
-        Some("http://anthropic")
-    );
-}
-
-#[test]
-fn request_read_hidden_params_stay_absent_for_bedrock() {
-    let bedrock = BatchProviderReadCall::BedrockAsyncInvoke(Box::new(BedrockAsyncInvokeReadCall {
-        batch_id: "arn".to_owned(),
-        aws: AwsCredentials::default(),
-    }));
-    assert_eq!(FinishedCall::Read(&bedrock).api_base(), None);
-    let job = BatchProviderReadCall::BedrockModelInvocationJob(Box::new(BedrockJobReadCall {
-        batch_id: "arn".to_owned(),
-        aws: AwsCredentials::default(),
-    }));
-    assert_eq!(FinishedCall::Read(&job).api_base(), None);
-}
-
-#[test]
-fn request_read_hidden_params_follow_a_provider_config() {
-    let config = BatchProviderReadCall::ProviderConfig(Box::new(ProviderConfigReadCall {
-        provider: BatchReadProvider::Bedrock,
-        model: "m".to_owned(),
-        batch_id: "b".to_owned(),
-        headers: BTreeMap::new(),
-        api_base: Some("http://cfg".to_owned()),
-        api_key: None,
-        aws: AwsCredentials::default(),
-        timeout: Timeout::Seconds(1.0),
-        is_async: false,
-    }));
-    assert_eq!(
-        FinishedCall::Read(&config).api_base().as_deref(),
-        Some("http://cfg")
-    );
+    assert_eq!(unknown_hidden.api_base, None);
 }
 
 #[test]
 fn request_answer_flattens_the_batch_and_hidden_params() {
     let batch: BatchObject = parse(BATCH_JSON).unwrap();
-    let input: BatchProviderCreateInput = parse(CREATE_PAYLOAD).unwrap();
-    let call = BatchProviderCreateCall::OpenAiCompatible(openai_call(Some("http://local/v1")));
+    let input: BatchProviderCreateInput = create_payload(CREATE_PAYLOAD).unwrap();
     let text = serde_json::to_string(&BatchAnswer {
         batch: &batch,
         hidden_params: HiddenParams::new(
             input.custom_llm_provider.as_str(),
             input.model.as_deref(),
-            FinishedCall::Create(&call),
+            input.optional_params.api_base.as_deref(),
         ),
     })
     .unwrap();

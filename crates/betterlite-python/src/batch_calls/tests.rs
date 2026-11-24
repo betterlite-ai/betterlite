@@ -163,7 +163,7 @@ fn create_with_answers_the_batch_and_hidden_params() {
     );
     assert_eq!(
         view.hidden_params.api_base.as_deref(),
-        Some("https://api.openai.com/v1")
+        Some("https://api.openai.com")
     );
 }
 
@@ -207,7 +207,7 @@ fn retrieve_with_answers_the_batch_and_hidden_params() {
     assert_eq!(view.hidden_params.litellm_model_name, None);
     assert_eq!(
         view.hidden_params.api_base.as_deref(),
-        Some("https://api.openai.com/v1")
+        Some("https://api.openai.com")
     );
 }
 
@@ -338,11 +338,12 @@ fn register_adds_the_batch_classes() {
 
 // every sync session method runs its call and hands back the provider and model the payload asked for
 #[rstest]
-#[case::create("create", CREATE_REFUSED)]
-#[case::retrieve("retrieve", READ_REFUSED)]
+#[case::create("create", CREATE_REFUSED, "InternalServerError")]
+#[case::retrieve("retrieve", READ_REFUSED, "APIConnectionError")]
 fn session_errors_name_the_provider_and_model_the_payload_asked_for(
     #[case] method: &str,
     #[case] payload: &str,
+    #[case] expected_type: &str,
 ) {
     Python::initialize();
     Python::attach(|py| {
@@ -355,6 +356,10 @@ fn session_errors_name_the_provider_and_model_the_payload_asked_for(
             .unwrap_err();
         let message = error.value(py).to_string();
         assert!(message.starts_with(r#"{"type":"#), "{method}: {message}");
+        assert!(
+            message.contains(&format!(r#""type":"{expected_type}""#)),
+            "{method}: {message}"
+        );
         assert!(
             message.contains(r#""llm_provider":"openai""#),
             "{method}: {message}"

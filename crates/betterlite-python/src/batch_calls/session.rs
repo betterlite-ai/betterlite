@@ -25,13 +25,11 @@ use serde::de::DeserializeOwned;
 use tokio::task::JoinSet;
 
 use super::convert::{
-    BatchAnswer, CallMode, FinishedCall, HiddenParams, SessionWire, create_input, parse,
-    read_input, section_settings,
+    BatchAnswer, CallMode, HiddenParams, SessionWire, create_input, create_payload, parse,
+    read_input, read_payload, section_settings,
 };
 use super::error::{BatchError, DispatchFailure, SessionError, batch_error};
 use super::transport::{BatchDispatch, BatchTransport};
-
-const TASK_WITHOUT_RESULT: &str = "the batch create task ended without a result";
 
 // One Python batch session owns its environment snapshot, the section settings resolved once, and the pooled client.
 pub(crate) struct BatchCore {
@@ -118,7 +116,7 @@ impl BatchCore {
             hidden_params: HiddenParams::new(
                 prepared.custom_llm_provider.as_str(),
                 prepared.model.as_deref(),
-                FinishedCall::Create(&result.call),
+                prepared.optional_params.api_base.as_deref(),
             ),
         };
         serde_json::to_string(&answer).map_err(|source| BatchError::Encode { source })
@@ -145,7 +143,7 @@ impl BatchCore {
             hidden_params: HiddenParams::new(
                 prepared.provider.name(),
                 prepared.model.as_deref(),
-                FinishedCall::Read(&result.call),
+                prepared.optional_params.api_base.as_deref(),
             ),
         };
         serde_json::to_string(&answer).map_err(|source| BatchError::Encode { source })
@@ -190,8 +188,8 @@ impl BatchOperation for CreateCall {
         tasks.spawn_blocking(move || core.create_with(input, mode, transport));
         match tasks.join_next().await {
             Some(Ok(answer)) => answer,
-            Some(Err(join_error)) => Err(BatchError::Task(join_error.to_string())),
-            None => Err(BatchError::Task(TASK_WITHOUT_RESULT.to_owned())),
+            Some(Err(source)) => Err(BatchError::Task { source }),
+            None => Err(BatchError::TaskWithoutResult),
         }
     }
 }
@@ -247,7 +245,7 @@ impl NativeBatchSession {
 
     // the synchronous create: a blocking task on the runtime, this thread waiting with the GIL released
     fn create(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
-        let input: BatchProviderCreateInput = parse(payload)?;
+        let input: BatchProviderCreateInput = create_payload(payload)?;
         let core = Arc::clone(&self.core);
         py.detach(move || {
             get_runtime().block_on(answer_text::<CreateCall>(core, input, CallMode::Sync))
@@ -256,7 +254,7 @@ impl NativeBatchSession {
 
     // the synchronous retrieve: the dispatch is already awaitable, so the runtime drives it here
     fn retrieve(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
-        let input: BatchProviderReadInput = parse(payload)?;
+        let input: BatchProviderReadInput = read_payload(payload)?;
         let core = Arc::clone(&self.core);
         py.detach(move || {
             get_runtime().block_on(answer_text::<ReadCall>(core, input, CallMode::Sync))
@@ -265,7 +263,7 @@ impl NativeBatchSession {
 
     // the awaitable create: the synchronous transport runs on a blocking task, not on the event loop
     fn acreate(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<Py<PyAny>> {
-        let input: BatchProviderCreateInput = parse(payload)?;
+        let input: BatchProviderCreateInput = create_payload(payload)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, answer_text::<CreateCall>(core, input, CallMode::Async))
             .map(Bound::unbind)
@@ -273,7 +271,7 @@ impl NativeBatchSession {
 
     // the awaitable retrieve: the dispatch is awaited on the event loop's runtime
     fn aretrieve(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<Py<PyAny>> {
-        let input: BatchProviderReadInput = parse(payload)?;
+        let input: BatchProviderReadInput = read_payload(payload)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, answer_text::<ReadCall>(core, input, CallMode::Async)).map(Bound::unbind)
     }
