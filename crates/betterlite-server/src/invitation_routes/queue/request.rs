@@ -212,13 +212,11 @@ fn headers_object(headers: &HeaderMap) -> JsonMap {
         let Ok(text) = value.to_str() else {
             continue;
         };
-        let name = name.as_str();
-        if let Some(JsonValue::String(existing)) = object.get_mut(name) {
-            existing.push_str(", ");
-            existing.push_str(text);
-        } else {
-            object.insert(name.to_owned(), JsonValue::String(text.to_owned()));
-        }
+        let merged = match object.get(name.as_str()).and_then(JsonValue::as_str) {
+            Some(existing) => format!("{existing}, {text}"),
+            None => text.to_owned(),
+        };
+        object.insert(name.as_str().to_owned(), JsonValue::String(merged));
     }
     object
 }

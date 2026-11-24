@@ -10,8 +10,9 @@ use betterlite_models::model_registration::JsonObject;
 use super::super::request::data_map;
 use crate::invitation_routes::state::QueueFailureHook;
 use crate::sse_data_generator::types::{
-    FailureKind, FailureParam, FailureType, ItemStream, StreamFailure, StreamHooks, StreamItem,
+    FailureKind, FailureParam, FailureType, ItemStream, StreamFailure, StreamHooks,
 };
+use crate::stream_chunks::StreamItem;
 
 mod tests;
 

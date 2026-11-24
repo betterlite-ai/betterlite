@@ -11,7 +11,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::Extension;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use betterlite_config::sections::login_form::Settings;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
@@ -23,6 +23,7 @@ use self::store::InvitationStoreError;
 use crate::auth::auth_identity::AuthContext;
 use crate::login_form::{LoginForm, should_hide_credentials_hint};
 use crate::search_tool_routes::body::BodyError;
+use crate::tracing_routes::router::unauthenticated;
 
 const INVITATION_ID: &str = "invitation_id";
 const FIELD_REQUIRED: &str = "Field required";
@@ -70,7 +71,7 @@ pub fn public_routes(login: LoginPageState) -> Router {
 }
 
 impl InvitationRouteState {
-    fn database(&self) -> Result<&InvitationDatabase, InvitationRouteError> {
+    const fn database(&self) -> Result<&InvitationDatabase, InvitationRouteError> {
         match self.invitations.as_ref() {
             Some(database) => Ok(database),
             None => Err(InvitationRouteError::Database),
