@@ -1,5 +1,4 @@
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
 
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::response_input::ResponsesInput;
@@ -7,6 +6,7 @@ use betterlite_openai::response_input::ResponsesInput;
 use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_create::error::CreateError;
+use crate::api::responses_create::preparation::connection_kwargs;
 use crate::api::responses_parameters::prompt_merge::{
     ClientMessage, input_to_chat_messages, merge_prompt_management_input,
 };
@@ -16,8 +16,8 @@ use crate::api::responses_provider_selection::prompting::swap::{
     PromptSwapError, SwapRequest, model_info_after_swap, resolve_swapped_provider,
 };
 use crate::api::responses_provider_selection::prompting::{
-    CARRY_UNMATCHED_MESSAGE_POINTS, HookRequest, MergeAnswer, MergeRequest, PromptError,
-    PromptManagerError, ProvisionalBridge, api_base_kwarg, will_use_chat_bridge,
+    CARRY_UNMATCHED_MESSAGE_POINTS, HookRequest, MergeAnswer, PromptError, PromptManagerError,
+    ProvisionalBridge, api_base_kwarg, merge_request, text_value, will_use_chat_bridge,
 };
 use crate::api::responses_provider_selection::provider_config::{
     ASYNC_PROMPT_MERGED_PARAMS, ConfigLookup,
@@ -91,22 +91,6 @@ fn client_messages(
     })
 }
 
-// LiteLLM's kwargs at the hook: the caller's extras plus the base and key the call carries as named arguments
-fn connection_kwargs(call: &ResponsesCreateCall) -> ParameterMap {
-    let mut kwargs = call.kwargs.clone();
-    if let Some(base) = &call.api_base {
-        kwargs.insert(String::from("api_base"), JsonValue::Text(base.clone()));
-    }
-    if let Some(key) = &call.api_key {
-        let secret = JsonValue::Text(key.expose_secret().to_owned());
-        kwargs.insert(String::from("api_key"), secret);
-    }
-    if let Some(verify) = call.ssl_verify {
-        kwargs.insert(String::from("ssl_verify"), JsonValue::Bool(verify));
-    }
-    kwargs
-}
-
 // LiteLLM reads the flag without consuming it, and the sync call still pops it for itself
 fn bridges(
     lookup: &dyn ConfigLookup,
@@ -125,41 +109,6 @@ fn bridges(
             api_base: api_base_kwarg(kwargs),
         },
     )
-}
-
-fn text_value<'map>(kwargs: &'map ParameterMap, name: &str) -> Option<&'map str> {
-    match kwargs.get(name) {
-        Some(JsonValue::Text(text)) => Some(text),
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        )
-        | None => None,
-    }
-}
-
-fn merge_request<'request>(
-    model: &'request str,
-    messages: &'request [ClientMessage],
-    kwargs: &'request ParameterMap,
-) -> MergeRequest<'request> {
-    MergeRequest {
-        model,
-        messages,
-        non_default_params: kwargs,
-        prompt_id: text_value(kwargs, "prompt_id"),
-        prompt_variables: kwargs
-            .get("prompt_variables")
-            .filter(|value| **value != JsonValue::Null),
-        prompt_label: text_value(kwargs, "prompt_label"),
-        prompt_version: kwargs
-            .get("prompt_version")
-            .filter(|value| **value != JsonValue::Null),
-        request_kwargs: kwargs,
-    }
 }
 
 // LiteLLM holds the carry signal only while the hook that sees the provisional message list runs

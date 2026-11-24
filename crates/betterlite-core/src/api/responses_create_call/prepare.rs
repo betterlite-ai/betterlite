@@ -1,14 +1,9 @@
-use indexmap::IndexMap;
-
 use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::controls::json_value::JsonValue;
-use betterlite_models::decisions::Json;
 use betterlite_models::resolution::ResolutionError;
 
 use crate::api::responses_create::call::ResponsesCreateCall;
-use crate::api::responses_create::error::CreateError;
-use crate::api::responses_json::{decision_json, json_value};
-use crate::api::responses_parameters::text_format::text_format_to_text;
+use crate::api::responses_create::preparation::response_text;
 use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::prefixes::normalize_openai_chat_model;
 use crate::api::responses_provider_selection::resolution::{ModelResolver, resolve_model_provider};
@@ -59,32 +54,6 @@ fn convert(call: &ResponsesCreateCall) -> Result<ResponsesCreateCall, AsyncCreat
         .kwargs
         .insert(String::from("aresponses"), JsonValue::Bool(true));
     Ok(converted)
-}
-
-fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError> {
-    let text_format = call
-        .text_format
-        .as_ref()
-        .filter(|value| **value != Json::Null)
-        .map(json_value);
-    let given_text = call
-        .text
-        .as_ref()
-        .filter(|value| **value != Json::Null)
-        .map(json_value);
-    if given_text.is_none()
-        && let Some(JsonValue::Object(fields)) = text_format.as_ref()
-        && !matches!(fields.get("type"), Some(JsonValue::Text(kind)) if kind == "json_schema")
-    {
-        let format = JsonValue::Object(fields.clone());
-        let envelope = IndexMap::from([(String::from("format"), format)]);
-        return Ok(Some(decision_json(&JsonValue::Object(envelope))));
-    }
-    Ok(
-        text_format_to_text(text_format.as_ref(), given_text.as_ref())?
-            .as_ref()
-            .map(decision_json),
-    )
 }
 
 // LiteLLM reads local_vars["base_url"], which aresponses never has, so detection gets no api_base
