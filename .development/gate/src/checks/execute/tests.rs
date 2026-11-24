@@ -60,3 +60,63 @@ fn hints_keep_whole_words_and_fall_back_to_the_last_lines() {
     let quiet = "one\ntwo\nthree\nfour\n";
     assert_eq!(hints(quiet), ["two", "three", "four"]);
 }
+
+#[test]
+fn hints_hand_on_the_findings_under_each_failed_hook() {
+    let output = r#"rustfmt............................................................Passed
+ruff...............................................................Failed
+- hook id: ruff
+- exit code: 1
+
+  All checks passed!
+  PERF403 Use a dictionary comprehension instead of a for-loop
+    --> crates/betterlite-python/python/betterlite/fine_tuning/_calls.py:57:13
+     |
+  57 |             kept[name] = value
+     |             ^^^^^^^^^^^^^^^^^^
+
+  Found 1 error.
+
+mypy strict........................................................Failed
+- hook id: mypy
+- exit code: 1
+
+  crates/betterlite-python/tests/test_fine_tuning.py:28: error: Module "betterlite.fine_tuning.main" does not explicitly export attribute "HYPERPARAMETERS_DEFAULT"  [attr-defined]
+  Found 1 error in 1 file (checked 6 source files)
+basedpyright on the helper files the change touches...(no files to check)Skipped
+"#;
+    assert_eq!(
+        hints(output),
+        [
+            "ruff...............................................................Failed",
+            "  All checks passed!",
+            "  PERF403 Use a dictionary comprehension instead of a for-loop",
+            "    --> crates/betterlite-python/python/betterlite/fine_tuning/_calls.py:57:13",
+            "     |",
+            "  57 |             kept[name] = value",
+            "     |             ^^^^^^^^^^^^^^^^^^",
+            "  Found 1 error.",
+            "mypy strict........................................................Failed",
+            r#"  crates/betterlite-python/tests/test_fine_tuning.py:28: error: Module "betterlite.fine_tuning.main" does not explicitly export attribute "HYPERPARAMETERS_DEFAULT"  [attr-defined]"#,
+            "  Found 1 error in 1 file (checked 6 source files)",
+        ]
+    );
+}
+
+#[test]
+fn a_long_failed_hook_leaves_room_for_the_next_one() {
+    let findings: Vec<String> = (0..30_u32)
+        .map(|number| format!("  finding {number}"))
+        .collect();
+    let output = format!(
+        "ast-grep rules......Failed\n{}\ntypos......Failed\n  crates/a.rs:1:1 teh\n",
+        findings.join("\n")
+    );
+    let mut expected = vec!["ast-grep rules......Failed".to_owned()];
+    expected.extend(findings.into_iter().take(20));
+    expected.extend([
+        "typos......Failed".to_owned(),
+        "  crates/a.rs:1:1 teh".to_owned(),
+    ]);
+    assert_eq!(hints(&output), expected);
+}
