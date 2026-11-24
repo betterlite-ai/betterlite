@@ -30,6 +30,12 @@ deviations:
   - what: 'POST /queue/chat/completions without a router answers the detail text "No models configured on proxy", not the {"error": ...} dict LiteLLM puts in the message field.'
     why: 'LiteLLM raises HTTPException(500, detail={"error": ...}) and its handler copies that detail into ProxyException.message, which is declared str; docs/compatibility.md keeps output to the declared types and plain JSON, with the 500 status, auth_error type and "None" param unchanged.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16870-L16876
+  - what: 'A store failure on GET /invitation/info, POST /invitation/update or POST /invitation/delete answers 500 with betterlite''s shared error envelope, param null and code "500", where LiteLLM''s unhandled exception handler returns only message and type with the same status and type.'
+    why: 'LiteLLM wraps none of those three handlers, so a store failure reaches that handler; betterlite answers one internal_server_error body for an unexpected storage failure and writes the cause to the error log instead of the body.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2072-L2080
+  - what: 'A store failure on those three routes answers that same 500 when the database is unreachable, where LiteLLM answers 503 with type no_db_connection and code 503.'
+    why: 'The invitation store keeps one storage-failure answer for every cause; the Prisma unavailable check lives in LiteLLM''s global exception handler, which betterlite does not have, and the cause stays in the error log.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2053-L2057
 kept_bugs:
   - what: 'The queued route copies LiteLLM by placing the key (here its stored hash) into metadata.user_api_key and metadata.user_api_key_hash, which reaches callback and spend logs.'
     why: 'LiteLLM does it so logging callbacks attribute spend to the key and a working setup relies on the field; it leaks a stable key identifier into every log.'

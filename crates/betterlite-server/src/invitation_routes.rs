@@ -21,6 +21,7 @@ use thiserror::Error;
 use self::state::{InvitationDatabase, InvitationRouteState};
 use self::store::InvitationStoreError;
 use crate::auth::auth_identity::AuthContext;
+use crate::error_body::json_error;
 use crate::login_form::{LoginForm, should_hide_credentials_hint};
 use crate::search_tool_routes::body::BodyError;
 use crate::tracing_routes::router::unauthenticated;
@@ -144,13 +145,21 @@ impl IntoResponse for InvitationRouteError {
             Self::Body(error) => error.into_response(),
             Self::MissingInvitationId => missing_query_parameter(),
             Self::Unauthenticated => unauthenticated(),
+            Self::Store(error) => {
+                tracing::error!(error = %error, "the invitation store request failed");
+                json_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error",
+                    "internal_server_error",
+                    "500",
+                )
+            }
             other @ (Self::Database
             | Self::NotAllowed { .. }
             | Self::InviteNotAllowed
             | Self::InvitationMissing
             | Self::UserUnidentified
-            | Self::OrgAdminDelete
-            | Self::Store(_)) => detail_response(other.status(), other.message()),
+            | Self::OrgAdminDelete) => detail_response(other.status(), other.message()),
         }
     }
 }

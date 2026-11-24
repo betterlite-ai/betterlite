@@ -20,6 +20,7 @@ use crate::invitation_routes::store::PostgresInvitations;
 use crate::user_invitation::{InvitationError, InvitationRecord};
 
 const DB_NOT_CONNECTED: &str = CommonProxyErrors::DbNotConnectedError.as_str();
+const INTERNAL_SERVER_ERROR_BODY: &str = r#"{"error":{"message":"Internal server error","type":"internal_server_error","param":null,"code":"500"}}"#;
 const NOT_ALLOWED: &str = CommonProxyErrors::NotAllowedAccess.as_str();
 
 fn setup(
@@ -375,10 +376,7 @@ async fn info_reports_a_store_failure() {
     ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(
-        parse(&text)["detail"]["error"],
-        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
-    );
+    assert_eq!(text, INTERNAL_SERVER_ERROR_BODY);
 }
 
 #[tokio::test]
@@ -433,10 +431,7 @@ async fn info_reports_a_database_it_cannot_reach() {
     ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(
-        parse(&text)["detail"]["error"],
-        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
-    );
+    assert_eq!(text, INTERNAL_SERVER_ERROR_BODY);
 }
 
 #[tokio::test]
@@ -536,10 +531,7 @@ async fn update_reports_a_store_failure() {
     ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(
-        parse(&text)["detail"]["error"],
-        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
-    );
+    assert_eq!(text, INTERNAL_SERVER_ERROR_BODY);
 }
 
 #[tokio::test]
@@ -579,10 +571,7 @@ async fn update_reports_a_database_it_cannot_reach() {
     ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(
-        parse(&text)["detail"]["error"],
-        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
-    );
+    assert_eq!(text, INTERNAL_SERVER_ERROR_BODY);
 }
 
 #[tokio::test]
@@ -754,10 +743,7 @@ async fn delete_reports_a_store_failure() {
     ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(
-        parse(&text)["detail"]["error"],
-        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
-    );
+    assert_eq!(text, INTERNAL_SERVER_ERROR_BODY);
 }
 
 #[tokio::test]
@@ -797,10 +783,7 @@ async fn delete_reports_a_database_it_cannot_reach() {
     ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(
-        parse(&text)["detail"]["error"],
-        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
-    );
+    assert_eq!(text, INTERNAL_SERVER_ERROR_BODY);
 }
 
 #[tokio::test]
