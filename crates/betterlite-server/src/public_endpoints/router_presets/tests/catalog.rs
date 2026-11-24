@@ -106,3 +106,10 @@ fn accepts_a_catalog_exactly_at_the_size_limit() {
     bytes[MAX_CATALOG_BYTES - 1] = b'}';
     assert!(decode_catalog(&bytes).unwrap().is_empty());
 }
+
+#[test]
+fn accepts_a_catalog_larger_than_two_kilobytes() {
+    let mut bytes = br#"{"p":{"label":"P","description":"D","complexity_router_config":{"tiers":{"SIMPLE":[],"MEDIUM":[],"COMPLEX":[],"REASONING":[]}}}}"#.to_vec();
+    bytes.resize(bytes.len() + 3 * 1024, b' ');
+    assert_eq!(decode_catalog(&bytes).unwrap().len(), 1);
+}
