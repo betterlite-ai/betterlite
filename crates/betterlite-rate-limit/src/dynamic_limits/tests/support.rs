@@ -66,13 +66,15 @@ pub(crate) struct SetWrite {
     pub(crate) ttl: i64,
 }
 
-// a minute-set cache that keeps its sets and records every read and write
+// a minute-set cache that keeps its sets and records every read and write, able to fail a read, fail a write or hold a write until released
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RecordingCache {
     sets: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
     reads: Arc<Mutex<Vec<String>>>,
     writes: Arc<Mutex<Vec<SetWrite>>>,
+    gate: Option<Arc<Notify>>,
     read_fails: bool,
+    write_fails: bool,
 }
 
 impl RecordingCache {
@@ -82,12 +84,34 @@ impl RecordingCache {
         cache
     }
 
-    pub(crate) fn failing_reads() -> Self {
+    fn configured(gate: Option<Arc<Notify>>, read_fails: bool, write_fails: bool) -> Self {
         Self {
             sets: Arc::default(),
             reads: Arc::default(),
             writes: Arc::default(),
-            read_fails: true,
+            gate,
+            read_fails,
+            write_fails,
+        }
+    }
+
+    pub(crate) fn failing_reads() -> Self {
+        Self::configured(None, true, false)
+    }
+
+    // a cache whose set add waits for release, so a hook that awaited the write could never return
+    pub(crate) fn gated() -> Self {
+        Self::configured(Some(Arc::default()), false, false)
+    }
+
+    // a cache whose set add always fails, still recording the attempt so the test can see the task ran
+    pub(crate) fn failing_writes() -> Self {
+        Self::configured(None, false, true)
+    }
+
+    pub(crate) fn release(&self) {
+        if let Some(gate) = &self.gate {
+            gate.notify_one();
         }
     }
 
@@ -142,99 +166,21 @@ impl MinuteSetCache for RecordingCache {
         values: &[String],
         ttl: i64,
     ) -> Result<(), CacheWriteError> {
+        if let Some(gate) = &self.gate {
+            gate.notified().await;
+        }
         self.lock_writes().push(SetWrite {
             key: key.to_owned(),
             values: values.to_vec(),
             ttl,
         });
+        if self.write_fails {
+            return Err(CacheWriteError);
+        }
         let mut sets = self.lock_sets();
         let stored = sets.entry(key.to_owned()).or_default();
         stored.extend(values.iter().cloned());
         Ok(())
-    }
-}
-
-// a cache whose set add waits for the test's release, so a hook that awaited the write could never return
-#[derive(Clone, Debug, Default)]
-pub(crate) struct GatedCache {
-    release: Arc<Notify>,
-    writes: Arc<Mutex<Vec<SetWrite>>>,
-}
-
-impl GatedCache {
-    pub(crate) fn release(&self) {
-        self.release.notify_one();
-    }
-
-    pub(crate) fn set_writes(&self) -> Vec<SetWrite> {
-        self.writes
-            .lock()
-            .expect("the test cache's lock is not poisoned")
-            .clone()
-    }
-}
-
-#[async_trait]
-impl MinuteSetCache for GatedCache {
-    async fn async_get_cache(&self, _key: &str) -> Result<Option<Vec<String>>, CacheReadError> {
-        Ok(None)
-    }
-
-    async fn async_set_cache_sadd(
-        &self,
-        key: &str,
-        values: &[String],
-        ttl: i64,
-    ) -> Result<(), CacheWriteError> {
-        self.release.notified().await;
-        self.writes
-            .lock()
-            .expect("the test cache's lock is not poisoned")
-            .push(SetWrite {
-                key: key.to_owned(),
-                values: values.to_vec(),
-                ttl,
-            });
-        Ok(())
-    }
-}
-
-// a cache whose set add always fails, recording each attempt so the test can see the task ran
-#[derive(Clone, Debug, Default)]
-pub(crate) struct FailingWriteCache {
-    attempts: Arc<Mutex<Vec<SetWrite>>>,
-}
-
-impl FailingWriteCache {
-    pub(crate) fn attempts(&self) -> Vec<SetWrite> {
-        self.attempts
-            .lock()
-            .expect("the test cache's lock is not poisoned")
-            .clone()
-    }
-}
-
-#[async_trait]
-impl MinuteSetCache for FailingWriteCache {
-    async fn async_get_cache(&self, _key: &str) -> Result<Option<Vec<String>>, CacheReadError> {
-        Ok(None)
-    }
-
-    async fn async_set_cache_sadd(
-        &self,
-        key: &str,
-        values: &[String],
-        ttl: i64,
-    ) -> Result<(), CacheWriteError> {
-        self.attempts
-            .lock()
-            .expect("the test cache's lock is not poisoned")
-            .push(SetWrite {
-                key: key.to_owned(),
-                values: values.to_vec(),
-                ttl,
-            });
-        Err(CacheWriteError)
     }
 }
 
