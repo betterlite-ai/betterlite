@@ -390,7 +390,7 @@ REFERENCE_REALTIME_USAGES: Final = (
     REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
     .collect_usage_from_realtime_stream_results([REALTIME_USAGE])
 )
-REFERENCE_COMBINED_REALTIME_USAGE: Final = (
+REFERENCE_REALTIME_USAGE: Final = (
     REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
     .collect_and_combine_usage_from_realtime_stream_results(REALTIME_EVENTS)
 )
@@ -447,7 +447,7 @@ REFERENCE_BATCH_PAIR: Final = REFERENCE.batch_cost_calculator(
 )
 REFERENCE_REALTIME_COST: Final = REFERENCE.handle_realtime_stream_cost_calculation(
     results=REALTIME_EVENTS,
-    combined_usage_object=REFERENCE_COMBINED_REALTIME_USAGE,
+    combined_usage_object=REFERENCE_REALTIME_USAGE,
     custom_llm_provider=OPENAI,
     litellm_model_name=REALTIME_MODEL,
 )
@@ -489,7 +489,9 @@ def test_cost_extra_signatures() -> None:
 
 
 def test_ocr_cost_pages() -> None:
-    compare_pair(ocr_cost(OCR_MODEL, None, our_ocr(OCR_PAGES)), REFERENCE_OCR_PAIR)
+    ours = ocr_cost(OCR_MODEL, None, our_ocr(OCR_PAGES))
+    compare_pair(ours, REFERENCE_OCR_PAIR)
+    assert ours[0] > ZERO
 
 
 def test_ocr_batch_cost_pages() -> None:
@@ -617,6 +619,26 @@ def test_realtime_transcription() -> None:
     )
     compare_float(ours, REFERENCE_TRANSCRIPTION_COST)
     assert ours > ZERO
+
+
+def test_ocr_cost_no_response() -> None:
+    with pytest.raises(ValueError, match="response must be of type OCRResponse"):
+        ocr_cost(OCR_MODEL, None)
+
+
+def test_ocr_cost_no_usage_info() -> None:
+    response = OCRResponse(pages=PAGES, model=OCR_MODEL, usage_info=None)
+    with pytest.raises(ValueError, match="OCR response usage_info is None"):
+        ocr_cost(OCR_MODEL, None, response)
+
+
+def test_processor_logging_object() -> None:
+    usage = BaseTokenUsageProcessor.combine_usage_objects(COMBINED_USAGES)
+    logging_object = RealtimeAPITokenUsageProcessor.create_logging_realtime_object(
+        usage, REALTIME_EVENTS
+    )
+    compare_usages([logging_object.usage], [REFERENCE_COMBINED_USAGE])
+    assert logging_object.results == REALTIME_EVENTS
 
 
 def test_cost_module_reexports() -> None:
