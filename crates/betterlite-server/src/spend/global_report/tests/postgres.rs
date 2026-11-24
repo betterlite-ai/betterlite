@@ -110,40 +110,45 @@ async fn team_customer_rows_need_both_filters_and_keep_the_window() {
     let GlobalReport::TeamsCustomers(days) = report(&store, branch, 2).await else {
         panic!("the team and customer branch answers teams_customers rows");
     };
-    let shape: Vec<(String, Vec<(String, String, String)>)> = days
+    let shape: Vec<(&str, Vec<(&str, &str, String)>)> = days
         .iter()
         .map(|day| {
             let groups = day
                 .teams_customers
                 .iter()
                 .map(|group| {
-                    (
-                        group.team_name.clone(),
-                        group.customer.clone(),
-                        group.total_spend.to_string(),
-                    )
+                    let spend = group.total_spend.to_string();
+                    (group.team_name.as_str(), group.customer.as_str(), spend)
                 })
                 .collect();
-            (day.group_by_day.clone(), groups)
+            (day.group_by_day.as_str(), groups)
         })
         .collect();
     assert_eq!(
         shape,
         vec![
             (
-                String::from("2024-01-01T00:00:00.000Z"),
-                vec![(String::from("Alpha"), String::from("c1"), String::from("3"))]
+                "2024-01-01T00:00:00.000Z",
+                vec![("Alpha", "c1", String::from("3"))]
             ),
             (
-                String::from("2024-01-02T00:00:00.000Z"),
-                vec![(
-                    String::from("Alpha"),
-                    String::from("c1"),
-                    String::from("16")
-                )]
+                "2024-01-02T00:00:00.000Z",
+                vec![("Alpha", "c1", String::from("16"))]
             ),
         ]
     );
+}
+
+#[tokio::test]
+async fn team_customer_metadata_lists_each_model_and_key() {
+    let (_fixture, store) = database().await;
+    let branch = ReportBranch::TeamCustomer {
+        team_id: "t1",
+        customer_id: "c1",
+    };
+    let GlobalReport::TeamsCustomers(days) = report(&store, branch, 1).await else {
+        panic!("the team and customer branch answers teams_customers rows");
+    };
     // SQL aggregates the nested metadata in no promised order, so it is compared as a map
     let first_day: BTreeMap<String, String> = days[0].teams_customers[0]
         .metadata
