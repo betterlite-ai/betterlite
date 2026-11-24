@@ -47,6 +47,7 @@ pub(crate) struct Settings {
 
 impl Settings {
     pub(crate) fn build(wire: SettingsWire) -> Result<Self, SettingsError> {
+        ensure_price_objects(&wire.model_cost)?;
         let bytes = serde_json::to_vec(&wire.model_cost)
             .map_err(|source| SettingsError::Encode { source })?;
         let mut bundled = BundledCatalog::default();
@@ -73,6 +74,16 @@ impl Settings {
     }
 }
 
+// LiteLLM reads every model_cost entry as a price object, so a scalar entry stops the engine from being built.
+fn ensure_price_objects(model_cost: &IndexMap<String, Json>) -> Result<(), SettingsError> {
+    for (key, entry) in model_cost {
+        if !matches!(entry, Json::Object(_)) {
+            return Err(SettingsError::ModelEntry { key: key.clone() });
+        }
+    }
+    Ok(())
+}
+
 // The library resolves names with no router, dashboard environment or dynamic provider sources.
 fn lookup_settings() -> LookupSettings {
     LookupSettings {
@@ -97,6 +108,10 @@ pub(crate) enum SettingsError {
         #[source]
         source: serde_json::Error,
     },
+    #[error(
+        "the price lookup could not be built: the model_cost entry {key} is not a price object"
+    )]
+    ModelEntry { key: String },
     #[error("the price lookup could not be built: {0}")]
     Lookup(#[from] LookupError),
     #[error("the image size pattern could not be built: {0}")]

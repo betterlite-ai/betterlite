@@ -44,4 +44,12 @@ deviations:
     why: The price rules are Rust, and the two members are the ones completion_cost's public
       behavior reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1221
+  - what: >-
+      The native cost engine checks every `model_cost` entry while it is built and refuses one
+      that is not a price object, naming the entry in the ValueError that constructing the engine
+      raises. LiteLLM keeps the map as assigned and fails only when that model's info is read,
+      where the scalar has no `.get`.
+    why: The map's shape is checked once at startup, so a malformed entry fails there instead of
+      on the first request that reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6111
 kept_bugs: []
