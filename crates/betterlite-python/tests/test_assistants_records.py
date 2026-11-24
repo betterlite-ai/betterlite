@@ -222,8 +222,8 @@ def test_signature_matches_litellm() -> None:
 def test_calls_list_assistants() -> None:
     with AssistantServer() as server:
         args = {"api_key": GOOD_KEY, "api_base": server.url}
-        reference = page_of(LITELLM.get_assistants("openai", **args))
-        ours = page_of(_records.get_assistants("openai", **args))
+        reference = page_of(LITELLM.get_assistants("openai", timeout=None, **args))
+        ours = page_of(_records.get_assistants("openai", timeout=None, **args))
         matched_calls(server)
         assert page_view(ours) == page_view(reference)
 
