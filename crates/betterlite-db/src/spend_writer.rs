@@ -2,10 +2,8 @@ pub mod accounting;
 pub mod request;
 pub mod settings;
 
-#[cfg(test)]
 #[path = "spend_writer/tests/claim.rs"]
 mod claim;
-#[cfg(test)]
 #[path = "spend_writer/tests/support.rs"]
 mod support;
 

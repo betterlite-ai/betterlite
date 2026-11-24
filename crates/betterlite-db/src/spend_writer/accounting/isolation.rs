@@ -1,4 +1,3 @@
-// Each helper runs inside its own catch, so one failure never skips the siblings that come after it.
 macro_rules! isolated {
     ($label:literal, $call:expr) => {
         if let Err(error) = $call {
@@ -11,4 +10,5 @@ macro_rules! isolated {
     };
 }
 
+// Each helper runs inside its own catch, so one failure never skips the siblings that come after it.
 pub(super) use isolated;

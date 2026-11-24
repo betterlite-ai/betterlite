@@ -1,7 +1,6 @@
 mod handles;
 pub mod parts;
 pub mod pricing;
-#[cfg(test)]
 mod tests;
 mod worker;
 
@@ -180,10 +179,10 @@ impl SpendRuntime {
                 daily_team: Some(self.daily.team.as_ref()),
                 daily_org: Some(self.daily.org.as_ref()),
                 daily_tag: Some(self.daily.tag.as_ref()),
-                discovery: Some(self.discovery.as_ref()),
                 tool_usage: self.usage.tool_usage.as_deref(),
                 model_usage: self.usage.model_usage.as_deref(),
-                ..SpendWriterQueues::default()
+                discovery: Some(self.discovery.as_ref()),
+                turns: None,
             },
             attachment: self.spend_logs.as_deref().map(|table| SpendLogAttachment {
                 table,
