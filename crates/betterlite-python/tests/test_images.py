@@ -207,6 +207,19 @@ def test_generate_returns_the_image_response() -> None:
     assert response._hidden_params["model"] == DEFAULT_MODEL  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L233
 
 
+def test_generate_ignores_mock_response() -> None:
+    with closing(ImageServer()) as server:
+        response = image_generation(
+            prompt=PROMPT,
+            api_base=server.url,
+            api_key=GOOD_KEY,
+            mock_response="mocked",
+        )
+        calls = server.calls
+    assert len(calls) == 1
+    assert response.data[0].b64_json == B64
+
+
 def test_async_generate_returns_the_image_response() -> None:
     async def asked() -> tuple[JsonValue, RecordedCall]:
         with closing(ImageServer()) as server:
