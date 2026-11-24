@@ -39,8 +39,8 @@ async fn fetch_user_teams(
     client: Option<PrismaClient<'_>>,
     user_id: &str,
 ) -> Result<Option<Vec<String>>, UserReadError> {
-    let client = client.ok_or(DbError::NoDbConnected)?;
-    let session = read_store(client).session().await?;
+    let connected = client.ok_or(DbError::NoDbConnected)?;
+    let session = read_store(connected).session().await?;
     let user = user_table(Some(&session)).find_by_id(user_id).await?;
     Ok(user.map(|row| row.teams))
 }
@@ -49,8 +49,8 @@ async fn fetch_team_models(
     client: Option<PrismaClient<'_>>,
     team_id: &str,
 ) -> Result<Option<Vec<String>>, TeamQueryError> {
-    let client = client.ok_or(DbError::NoDbConnected)?;
-    let repository = team_table(Some(client))?;
+    let connected = client.ok_or(DbError::NoDbConnected)?;
+    let repository = team_table(Some(connected))?;
     let team = repository.find_by_id(team_id).await?;
     Ok(team.map(|row| row.fields.base.models))
 }
@@ -71,9 +71,9 @@ async fn fetch_model_row(
     client: Option<PrismaClient<'_>>,
     model_id: &str,
 ) -> Result<Option<ProxyModelTable>, ModelRowReadError> {
-    let client = client.ok_or(DbError::NoDbConnected)?;
+    let connected = client.ok_or(DbError::NoDbConnected)?;
     let repository = PrismaTableRepository::new(
-        Some(client),
+        Some(connected),
         redis_config_change_publisher(None),
         ProxyModelBinding,
     );

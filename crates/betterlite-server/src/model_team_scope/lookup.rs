@@ -48,10 +48,10 @@ fn configured_model(
     model_id: &str,
     router: Option<&dyn HealthRouter>,
 ) -> Result<Option<JsonObject>, ScopeError> {
-    let Some(router) = router else {
+    let Some(health) = router else {
         return Ok(None);
     };
-    Ok(router
+    Ok(health
         .get_deployment(model_id)?
         .map(|deployment| deployment.to_json()))
 }
@@ -90,18 +90,15 @@ where
 
 // The search arm: a blank term keeps the model, and any other term must appear in the model's lowercased name.
 fn search_keeps(model: JsonObject, search: Option<&str>) -> Option<JsonObject> {
-    let Some(search) = search else {
+    let Some(term) = search else {
         return Some(model);
     };
-    let lowered = search.to_lowercase();
+    let lowered = term.to_lowercase();
     let needle = lowered.trim();
     if needle.is_empty() {
         return Some(model);
     }
     let name = text_field(&model, "model_name").unwrap_or_default();
-    if name.to_lowercase().contains(needle) {
-        Some(model)
-    } else {
-        None
-    }
+    let keeps = name.to_lowercase().contains(needle);
+    keeps.then_some(model)
 }

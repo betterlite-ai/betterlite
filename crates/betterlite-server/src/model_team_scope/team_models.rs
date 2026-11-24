@@ -34,7 +34,7 @@ pub fn team_models_resolve_to_names(
 }
 
 // _load_team_object_for_model_filter: the team row, or none for a missing row (a warning) and for a failed read (an error log).
-pub async fn load_team_object_for_model_filter<Reads>(
+pub async fn load_team_for_model_filter<Reads>(
     team_id: &str,
     reads: &Reads,
 ) -> Option<TeamModelScope>
@@ -55,7 +55,7 @@ where
 }
 
 // _gather_team_accessible_model_ids: the router rows the team can call, then the stored rows its resolved model names name.
-pub async fn gather_team_accessible_model_ids<Reads>(
+pub async fn gather_accessible_model_ids<Reads>(
     team_object: &TeamModelScope,
     team_id: &str,
     reads: &Reads,
@@ -65,7 +65,7 @@ where
     Reads: TeamScopeReads + ?Sized,
 {
     let access_groups = match router {
-        Some(router) => router.get_model_access_groups()?,
+        Some(health) => health.get_model_access_groups()?,
         None => GroupModels::new(),
     };
     let mut accessible = router_accessible_model_ids(team_object, team_id, &access_groups, router)?;
@@ -92,7 +92,7 @@ fn router_accessible_model_ids(
     access_groups: &GroupModels,
     router: Option<&dyn HealthRouter>,
 ) -> Result<BTreeSet<String>, ScopeError> {
-    let Some(router) = router else {
+    let Some(health) = router else {
         return Ok(BTreeSet::new());
     };
     let all_proxy_models = team_object
@@ -100,7 +100,7 @@ fn router_accessible_model_ids(
         .iter()
         .any(|name| name == ALL_PROXY_MODELS);
     if team_object.models.is_empty() || all_proxy_models {
-        return unrestricted_model_ids(team_id, router);
+        return unrestricted_model_ids(team_id, health);
     }
     let resolved: BTreeSet<String> =
         team_models_resolve_to_names(&team_object.models, access_groups)
@@ -108,7 +108,7 @@ fn router_accessible_model_ids(
             .collect();
     let mut accessible = BTreeSet::new();
     for model_name in &resolved {
-        for model in router.get_model_list(Some(model_name.as_str()), Some(team_id))? {
+        for model in health.get_model_list(Some(model_name.as_str()), Some(team_id))? {
             if let Some(model_id) = text_field(&model.model_info, "id") {
                 accessible.insert(model_id.to_owned());
             }

@@ -18,11 +18,22 @@ mod postgres;
 mod support;
 
 fn ids(rows: &[JsonObject]) -> Vec<Option<&str>> {
-    rows.iter().map(|row| support::json_id(row)).collect()
+    rows.iter().map(support::json_id).collect()
 }
 
 fn names(rows: &[JsonObject]) -> Vec<&str> {
-    rows.iter().map(|row| support::name_of(row)).collect()
+    rows.iter().map(support::name_of).collect()
+}
+
+async fn search_models(
+    router: &dyn HealthRouter,
+    reads: &support::StubReads,
+    search: Option<&str>,
+) -> (Vec<JsonObject>, usize) {
+    let fixture = support::DecryptFixture::new();
+    find_model_by_id("d1", search, Some(router), reads, &fixture.context())
+        .await
+        .unwrap()
 }
 
 fn team_models(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
@@ -39,7 +50,7 @@ fn team_models(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
 
 #[tokio::test]
 async fn unscoped_admin_missing_context() {
-    let reads = support::StubReads::default();
+    let reads = support::StubReads::new();
     assert_eq!(get_caller_byok_team_scope(None, Some(&reads)).await, None);
     assert_eq!(
         get_caller_byok_team_scope(Some(&support::admin_caller()), Some(&reads)).await,
@@ -52,7 +63,7 @@ async fn unscoped_admin_missing_context() {
 
 #[tokio::test]
 async fn key_scope_no_user() {
-    let reads = support::StubReads::default();
+    let reads = support::StubReads::new();
     let keyed = support::caller(None, Some("team-a"));
     assert_eq!(
         get_caller_byok_team_scope(Some(&keyed), Some(&reads)).await,
@@ -73,13 +84,10 @@ async fn key_scope_no_user() {
 
 #[tokio::test]
 async fn live_user_scope_union() {
-    let reads = support::StubReads {
-        users: BTreeMap::from([(
-            String::from("alice"),
-            vec![String::from("team-a"), String::from("team-key")],
-        )]),
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_users(BTreeMap::from([(
+        String::from("alice"),
+        vec![String::from("team-a"), String::from("team-key")],
+    )]));
     let alice = support::caller(Some("alice"), Some("team-key"));
     assert_eq!(
         get_caller_byok_team_scope(Some(&alice), Some(&reads)).await,
@@ -91,10 +99,7 @@ async fn live_user_scope_union() {
 #[tokio::test]
 async fn lookup_failure_key_scope_log() {
     let (logs, _guard) = support::capture_logs();
-    let reads = support::StubReads {
-        failing: vec![support::Failing::User],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_failing(vec![support::Failing::User]);
     let alice = support::caller(Some("alice"), Some("team-key"));
     assert_eq!(
         get_caller_byok_team_scope(Some(&alice), Some(&reads)).await,
@@ -135,7 +140,7 @@ fn nonteam_rows_unrestricted() {
 
 #[tokio::test]
 async fn empty_scope_denies_byok() {
-    let reads = support::StubReads::default();
+    let reads = support::StubReads::new();
     let alice = support::caller(Some("alice"), None);
     let scope = get_caller_byok_team_scope(Some(&alice), Some(&reads))
         .await
@@ -149,10 +154,10 @@ async fn empty_scope_denies_byok() {
 
 #[tokio::test]
 async fn explicit_team_requires_user_membership() {
-    let reads = support::StubReads {
-        users: BTreeMap::from([(String::from("alice"), vec![String::from("team-a")])]),
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_users(BTreeMap::from([(
+        String::from("alice"),
+        vec![String::from("team-a")],
+    )]));
     let admin = support::admin_caller();
     authorize_team_id_query("team-other", &admin, &reads)
         .await
@@ -185,10 +190,7 @@ async fn explicit_team_requires_user_membership() {
 #[tokio::test]
 async fn team_lookup_failure_403() {
     let (logs, _guard) = support::capture_logs();
-    let reads = support::StubReads {
-        failing: vec![support::Failing::User],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_failing(vec![support::Failing::User]);
     let alice = support::caller(Some("alice"), None);
     let error = authorize_team_id_query("team-a", &alice, &reads)
         .await
@@ -207,10 +209,10 @@ async fn team_lookup_failure_403() {
 
 #[tokio::test]
 async fn authorize_before_team_read() {
-    let reads = support::StubReads {
-        users: BTreeMap::from([(String::from("alice"), vec![String::from("team-a")])]),
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_users(BTreeMap::from([(
+        String::from("alice"),
+        vec![String::from("team-a")],
+    )]));
     let alice = support::caller(Some("alice"), None);
     let models = vec![support::deployment_json(
         "gpt-4o",
@@ -226,7 +228,7 @@ async fn authorize_before_team_read() {
 #[tokio::test]
 async fn missing_team_warn_empty() {
     let (logs, _guard) = support::capture_logs();
-    let reads = support::StubReads::default();
+    let reads = support::StubReads::new();
     let models = vec![support::deployment_json(
         "gpt-4o",
         &[("id", support::text("d1"))],
@@ -243,10 +245,7 @@ async fn missing_team_warn_empty() {
 #[tokio::test]
 async fn team_read_error_empty() {
     let (logs, _guard) = support::capture_logs();
-    let reads = support::StubReads {
-        failing: vec![support::Failing::Team],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_failing(vec![support::Failing::Team]);
     let models = vec![support::deployment_json(
         "gpt-4o",
         &[("id", support::text("d1"))],
@@ -279,14 +278,12 @@ async fn all_models_excludes_foreign_byok() {
             ],
         ),
     ]);
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["all-proxy-models"])]),
-        // A stored row named like the team's entry: the all-proxy branch never asks the database for it.
-        rows: vec![support::model_row(
+    // A stored row named like the team's entry: the all-proxy branch never asks the database for it.
+    let reads = support::StubReads::new()
+        .with_teams(team_models(&[("team-a", &["all-proxy-models"])]))
+        .with_rows(vec![support::model_row(
             r#"{"model_id":"g2","model_name":"all-proxy-models","litellm_params":{"model":"openai/gpt-4o"}}"#,
-        )],
-        ..Default::default()
-    };
+        )]);
     let models = vec![
         support::deployment_json("gpt-4o", &[("id", support::text("g1"))]),
         support::deployment_json(
@@ -334,10 +331,7 @@ async fn named_access_group_expansion() {
         ),
         support::spec("unrelated", &[("id", support::text("d3"))]),
     ]);
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["group-a"])]),
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_teams(team_models(&[("team-a", &["group-a"])]));
     let models = vec![
         support::deployment_json("group-model", &[("id", support::text("d1"))]),
         support::deployment_json("second-group-model", &[("id", support::text("d2"))]),
@@ -376,9 +370,9 @@ async fn db_names_only() {
             &[("id", support::text("r2")), ("access_groups", grouped)],
         ),
     ]);
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["b", "group-a"])]),
-        rows: vec![
+    let reads = support::StubReads::new()
+        .with_teams(team_models(&[("team-a", &["b", "group-a"])]))
+        .with_rows(vec![
             support::model_row(
                 r#"{"model_id":"d3","model_name":"b","litellm_params":{"model":"openai/gpt-4o"}}"#,
             ),
@@ -388,9 +382,7 @@ async fn db_names_only() {
             support::model_row(
                 r#"{"model_id":"d4","model_name":"zzz","litellm_params":{"model":"openai/gpt-4o"}}"#,
             ),
-        ],
-        ..Default::default()
-    };
+        ]);
     let models = vec![
         support::deployment_json("c", &[("id", support::text("r1"))]),
         support::deployment_json("c", &[("id", support::text("d1"))]),
@@ -424,11 +416,9 @@ async fn db_query_error_keeps_router_ids() {
     let (logs, _guard) = support::capture_logs();
     let router =
         support::FixtureRouter::new(&[support::spec("gpt-4o", &[("id", support::text("r1"))])]);
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["gpt-4o"])]),
-        failing: vec![support::Failing::Names],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new()
+        .with_teams(team_models(&[("team-a", &["gpt-4o"])]))
+        .with_failing(vec![support::Failing::Names]);
     let models = vec![
         support::deployment_json("gpt-4o", &[("id", support::text("r1"))]),
         support::deployment_json("stored-only", &[("id", support::text("d2"))]),
@@ -454,10 +444,8 @@ async fn missing_ids_omitted() {
         support::spec("gpt-4o", &[("id", support::text("g1"))]),
         support::unnumbered("no-id-gpt", &[]),
     ]);
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["all-proxy-models"])]),
-        ..Default::default()
-    };
+    let reads =
+        support::StubReads::new().with_teams(team_models(&[("team-a", &["all-proxy-models"])]));
     let models = vec![
         support::deployment_json("gpt-4o", &[("id", support::text("g1"))]),
         support::deployment_json("no-id-gpt", &[]),
@@ -477,10 +465,7 @@ async fn missing_ids_omitted() {
 
 #[tokio::test]
 async fn access_via_list_only() {
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &[])]),
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_teams(team_models(&[("team-a", &[])]));
     let models = vec![
         support::deployment_json(
             "annotated",
@@ -519,13 +504,37 @@ async fn access_via_list_only() {
 }
 
 #[tokio::test]
+async fn empty_models_unrestricted() {
+    let router =
+        support::FixtureRouter::new(&[support::spec("gpt-4o", &[("id", support::text("g1"))])]);
+    let reads = support::StubReads::new().with_teams(team_models(&[("team-a", &[])]));
+    let models = vec![
+        support::deployment_json("gpt-4o", &[("id", support::text("g1"))]),
+        support::deployment_json(
+            "foreign-gpt",
+            &[
+                ("id", support::text("t2")),
+                ("team_id", support::text("team-b")),
+            ],
+        ),
+    ];
+    let kept = filter_models_by_team_id(
+        &models,
+        "team-a",
+        &reads,
+        Some(&router as &dyn HealthRouter),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids(&kept), vec![Some("g1")]);
+}
+
+#[tokio::test]
 async fn direct_access_does_not_widen() {
     let router =
         support::FixtureRouter::new(&[support::spec("team-model", &[("id", support::text("t1"))])]);
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["team-model"])]),
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_teams(team_models(&[("team-a", &["team-model"])]));
     let models = vec![
         support::deployment_json(
             "byok-direct",
@@ -568,10 +577,8 @@ async fn stable_filter_order() {
             ],
         ),
     ]);
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["all-proxy-models"])]),
-        ..Default::default()
-    };
+    let reads =
+        support::StubReads::new().with_teams(team_models(&[("team-a", &["all-proxy-models"])]));
     let owned = support::deployment_json(
         "team-gpt",
         &[
@@ -607,12 +614,9 @@ async fn stable_filter_order() {
 async fn config_before_db_deep_copy() {
     let router =
         support::FixtureRouter::new(&[support::spec("gpt-4o", &[("id", support::text("d1"))])]);
-    let reads = support::StubReads {
-        rows: vec![support::model_row(
-            r#"{"model_id":"d1","model_name":"db-name","litellm_params":{"model":"openai/gpt-4o"}}"#,
-        )],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_rows(vec![support::model_row(
+        r#"{"model_id":"d1","model_name":"db-name","litellm_params":{"model":"openai/gpt-4o"}}"#,
+    )]);
     let fixture = support::DecryptFixture::new();
     let (models, count) = find_model_by_id(
         "d1",
@@ -642,12 +646,9 @@ async fn config_before_db_deep_copy() {
 
 #[tokio::test]
 async fn db_decrypted_first_row() {
-    let reads = support::StubReads {
-        rows: vec![support::model_row(
-            r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"sk-plain"},"model_info":{"id":"stored","team_id":"team-a"}}"#,
-        )],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_rows(vec![support::model_row(
+        r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"sk-plain"},"model_info":{"id":"stored","team_id":"team-a"}}"#,
+    )]);
     let fixture = support::DecryptFixture::new();
     let (models, count) = find_model_by_id("d1", None, None, &reads, &fixture.context())
         .await
@@ -665,12 +666,9 @@ async fn db_decrypted_first_row() {
 #[tokio::test]
 async fn decryption_error_logs_empty() {
     let (logs, _guard) = support::capture_logs();
-    let reads = support::StubReads {
-        rows: vec![support::model_row(
-            r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"os.environ/oidc/google"}}"#,
-        )],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_rows(vec![support::model_row(
+        r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"os.environ/oidc/google"}}"#,
+    )]);
     let fixture = support::DecryptFixture::new();
     let (models, count) = find_model_by_id("d1", None, None, &reads, &fixture.context())
         .await
@@ -686,41 +684,28 @@ async fn decryption_error_logs_empty() {
 async fn trimmed_search() {
     let router =
         support::FixtureRouter::new(&[support::spec("gpt-4o", &[("id", support::text("d1"))])]);
-    let reads = support::StubReads::default();
-    let fixture = support::DecryptFixture::new();
-    for search in [None, Some(""), Some("   "), Some("  GPT-4O  ")] {
-        let (models, count) = find_model_by_id(
-            "d1",
-            search,
-            Some(&router as &dyn HealthRouter),
-            &reads,
-            &fixture.context(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(count, 1);
-        assert_eq!(names(&models), vec!["gpt-4o"]);
-    }
-    let (models, count) = find_model_by_id(
-        "d1",
-        Some("mini"),
-        Some(&router as &dyn HealthRouter),
-        &reads,
-        &fixture.context(),
-    )
-    .await
-    .unwrap();
-    assert!(models.is_empty());
-    assert_eq!(count, 0);
+    let reads = support::StubReads::new();
+    let (models, count) = search_models(&router, &reads, None).await;
+    assert_eq!(count, 1);
+    assert_eq!(names(&models), vec!["gpt-4o"]);
+    let (blank, blank_count) = search_models(&router, &reads, Some("")).await;
+    assert_eq!(blank_count, 1);
+    assert_eq!(names(&blank), vec!["gpt-4o"]);
+    let (spaces, spaces_count) = search_models(&router, &reads, Some("   ")).await;
+    assert_eq!(spaces_count, 1);
+    assert_eq!(names(&spaces), vec!["gpt-4o"]);
+    let (padded, padded_count) = search_models(&router, &reads, Some("  GPT-4O  ")).await;
+    assert_eq!(padded_count, 1);
+    assert_eq!(names(&padded), vec!["gpt-4o"]);
+    let (missing, missing_count) = search_models(&router, &reads, Some("mini")).await;
+    assert!(missing.is_empty());
+    assert_eq!(missing_count, 0);
 }
 
 #[tokio::test]
 async fn stored_row_read_error_logs_empty() {
     let (logs, _guard) = support::capture_logs();
-    let reads = support::StubReads {
-        failing: vec![support::Failing::Row],
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_failing(vec![support::Failing::Row]);
     let fixture = support::DecryptFixture::new();
     let (models, count) = find_model_by_id("d1", None, None, &reads, &fixture.context())
         .await
@@ -734,7 +719,7 @@ async fn stored_row_read_error_logs_empty() {
 
 #[tokio::test]
 async fn unknown_deployment() {
-    let reads = support::StubReads::default();
+    let reads = support::StubReads::new();
     let fixture = support::DecryptFixture::new();
     let (models, count) = find_model_by_id("missing", None, None, &reads, &fixture.context())
         .await
@@ -746,10 +731,7 @@ async fn unknown_deployment() {
 
 #[tokio::test]
 async fn router_lookup_failure_is_500() {
-    let reads = support::StubReads {
-        teams: team_models(&[("team-a", &["gpt-4o"])]),
-        ..Default::default()
-    };
+    let reads = support::StubReads::new().with_teams(team_models(&[("team-a", &["gpt-4o"])]));
     let models = vec![support::deployment_json(
         "gpt-4o",
         &[("id", support::text("d1"))],
@@ -764,6 +746,6 @@ async fn router_lookup_failure_is_500() {
     .await
     .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-    let failure: HttpException = error.into();
+    let failure = HttpException::from(error);
     assert_eq!(failure.status, StatusCode::INTERNAL_SERVER_ERROR);
 }

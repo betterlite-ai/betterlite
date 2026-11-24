@@ -16,23 +16,23 @@ pub async fn get_caller_byok_team_scope<Reads>(
 where
     Reads: TeamScopeReads + ?Sized,
 {
-    let (Some(caller), Some(reads)) = (caller, reads) else {
+    let (Some(requester), Some(store)) = (caller, reads) else {
         return None;
     };
-    if is_admin_view_safe(caller) {
+    if is_admin_view_safe(requester) {
         return None;
     }
-    let key_team_scope: BTreeSet<String> = caller
+    let key_team_scope: BTreeSet<String> = requester
         .team_id
         .iter()
         .filter(|team| !team.is_empty())
         .cloned()
         .collect();
-    let Some(user_id) = caller.user_id.as_deref() else {
+    let Some(user_id) = requester.user_id.as_deref() else {
         return Some(key_team_scope);
     };
-    let stored = match reads.user_teams(user_id).await {
-        Ok(stored) => stored,
+    let listed = match store.user_teams(user_id).await {
+        Ok(listed) => listed,
         Err(error) => {
             tracing::error!(
                 "Failed to look up caller teams while scoping BYOK search; defaulting to key team scope only. {error}"
@@ -41,8 +41,8 @@ where
         }
     };
     let mut scope = key_team_scope;
-    if let Some(teams) = stored {
-        scope.extend(teams);
+    if let Some(members) = listed {
+        scope.extend(members);
     }
     Some(scope)
 }

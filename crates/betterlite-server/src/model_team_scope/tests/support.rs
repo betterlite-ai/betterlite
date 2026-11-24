@@ -183,6 +183,37 @@ pub(crate) fn read_failure() -> TeamScopeReadError {
 }
 
 impl StubReads {
+    pub(crate) const fn new() -> Self {
+        Self {
+            users: BTreeMap::new(),
+            teams: BTreeMap::new(),
+            rows: Vec::new(),
+            failing: Vec::new(),
+            calls: Mutex::new(Vec::new()),
+            names_seen: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn with_users(mut self, users: BTreeMap<String, Vec<String>>) -> Self {
+        self.users = users;
+        self
+    }
+
+    pub(crate) fn with_teams(mut self, teams: BTreeMap<String, Vec<String>>) -> Self {
+        self.teams = teams;
+        self
+    }
+
+    pub(crate) fn with_rows(mut self, rows: Vec<ProxyModelTable>) -> Self {
+        self.rows = rows;
+        self
+    }
+
+    pub(crate) fn with_failing(mut self, failing: Vec<Failing>) -> Self {
+        self.failing = failing;
+        self
+    }
+
     pub(crate) fn note(&self, label: String) {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.push(label);
@@ -388,7 +419,7 @@ impl DecryptFixture {
         }
     }
 
-    pub(crate) fn context(&self) -> Decryption<'_> {
+    pub(crate) const fn context(&self) -> Decryption<'_> {
         Decryption {
             cipher: &self.cipher,
             secrets: &self.secrets,

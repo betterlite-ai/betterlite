@@ -89,7 +89,7 @@ impl Database {
         }
     }
 
-    fn reads(&self) -> PostgresScopeReads<'_> {
+    const fn reads(&self) -> PostgresScopeReads<'_> {
         PostgresScopeReads {
             client: Some(PrismaClient {
                 writer: &self.store,
