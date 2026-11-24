@@ -415,6 +415,7 @@ async fn metadata_and_credentials() {
     assert_eq!(merged.api_key.as_deref(), Some("sk-dynamic"));
     assert_eq!(merged.custom_llm_provider.as_deref(), Some("openai"));
     assert_call_credentials_reach_resolution().await;
+    assert_api_base_precedence().await;
     assert_guardrail_precedence().await;
     assert_credential_fallbacks().await;
     assert_provider_config().await;
