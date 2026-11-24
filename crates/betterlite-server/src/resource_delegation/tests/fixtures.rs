@@ -115,24 +115,24 @@ where
 {
     match error {
         KeyServersError::Denied(Denial { detail }) => detail,
-        KeyServersError::Requested(error) => panic!("a request error, not a denial: {error}"),
-        KeyServersError::TeamRead(error) => panic!("a team read error, not a denial: {error}"),
-        KeyServersError::Resolve(error) => panic!("a resolve error, not a denial: {error}"),
-        KeyServersError::Cleanup(error) => panic!("a cleanup error, not a denial: {error}"),
-        KeyServersError::Grandfather(error) => panic!("a grandfather error, not a denial: {error}"),
+        KeyServersError::Requested(cause) => panic!("a request error, not a denial: {cause}"),
+        KeyServersError::TeamRead(cause) => panic!("a team read error, not a denial: {cause}"),
+        KeyServersError::Resolve(cause) => panic!("a resolve error, not a denial: {cause}"),
+        KeyServersError::Cleanup(cause) => panic!("a cleanup error, not a denial: {cause}"),
+        KeyServersError::Grandfather(cause) => panic!("a grandfather error, not a denial: {cause}"),
     }
 }
 
 pub(crate) fn gate_detail(error: GateError) -> String {
     match error {
         GateError::Denied(Denial { detail }) => detail,
-        GateError::Requested(error) => panic!("a request error, not a denial: {error}"),
+        GateError::Requested(cause) => panic!("a request error, not a denial: {cause}"),
     }
 }
 
 pub(crate) fn admin_detail(error: AdminGrantError) -> String {
     match error {
         AdminGrantError::Denied(Denial { detail }) => detail,
-        AdminGrantError::Existing(error) => panic!("a stored read error, not a denial: {error}"),
+        AdminGrantError::Existing(cause) => panic!("a stored read error, not a denial: {cause}"),
     }
 }

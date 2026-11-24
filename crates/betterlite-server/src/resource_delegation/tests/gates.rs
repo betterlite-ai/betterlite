@@ -1,6 +1,4 @@
-use crate::resource_delegation::gates::{
-    validate_search_tools, validate_toolsets, validate_vector_stores,
-};
+use crate::resource_delegation::gates::{validate_search_tools, validate_vector_stores};
 
 use super::fixtures::{ceiling_grants, gate_detail, json, team_grants};
 
@@ -42,22 +40,6 @@ fn search_personal_duplicates() {
 }
 
 #[test]
-fn toolsets_gate_reads_the_team_ceiling() {
-    let ceiling = team_grants("team-1", &[], Some(ceiling_grants(Some(&["t-a"]), None)));
-    let error = validate_toolsets(
-        Some(&json(r#"{"mcp_toolsets": ["t-a", "t-b"]}"#)),
-        Some(&ceiling),
-        false,
-    )
-    .unwrap_err();
-    assert_eq!(
-        gate_detail(error),
-        "Key requests MCP toolsets not allowed by team 'team-1': ['t-b']. Team allows: ['t-a']."
-    );
-    validate_toolsets(None, None, false).unwrap();
-}
-
-#[test]
 fn search_nonempty_ceiling() {
     let team = team_grants(
         "team-1",
@@ -80,10 +62,11 @@ fn search_nonempty_ceiling() {
         false,
     )
     .unwrap();
-    let error = validate_search_tools(Some(&json(r#"{"search_tools": ["c"]}"#)), Some(&team), true)
-        .unwrap_err();
+    let admin_error =
+        validate_search_tools(Some(&json(r#"{"search_tools": ["c"]}"#)), Some(&team), true)
+            .unwrap_err();
     assert_eq!(
-        gate_detail(error),
+        gate_detail(admin_error),
         "Key requests search tools not allowed by team 'team-1': ['c']. Team allows: ['a', 'a', 'b']."
     );
     let empty_ceiling = team_grants("team-1", &[], Some(ceiling_grants(None, Some(&[]))));

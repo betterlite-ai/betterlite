@@ -91,20 +91,20 @@ async fn server_group_toolset_error_order() {
     };
     let mut all_three =
         json(r#"{"mcp_servers": ["cfg-x"], "mcp_access_groups": ["g"], "mcp_toolsets": ["t"]}"#);
-    let error = check(Some(&mut all_three), None, &case, None)
+    let server_error = check(Some(&mut all_three), None, &case, None)
         .await
         .unwrap_err();
-    assert!(denied_detail(error).contains("Only globally available"));
+    assert!(denied_detail(server_error).contains("Only globally available"));
     let mut groups_and_toolsets = json(r#"{"mcp_access_groups": ["g"], "mcp_toolsets": ["t"]}"#);
-    let error = check(Some(&mut groups_and_toolsets), None, &case, None)
+    let group_error = check(Some(&mut groups_and_toolsets), None, &case, None)
         .await
         .unwrap_err();
-    assert!(denied_detail(error).contains("MCP access groups cannot be assigned"));
+    assert!(denied_detail(group_error).contains("MCP access groups cannot be assigned"));
     let mut toolsets_only = json(r#"{"mcp_toolsets": ["t"]}"#);
-    let error = check(Some(&mut toolsets_only), None, &case, None)
+    let toolset_error = check(Some(&mut toolsets_only), None, &case, None)
         .await
         .unwrap_err();
-    assert!(denied_detail(error).contains("MCP toolsets cannot be assigned"));
+    assert!(denied_detail(toolset_error).contains("MCP toolsets cannot be assigned"));
 }
 
 #[tokio::test]
@@ -291,7 +291,7 @@ async fn group_not_grandfathered() {
     let existing = server_grants(None, Some(&["old-group"]), None);
     let team = team_grants("team-1", &[], Some(server_grants(None, None, None)));
     let mut kept_group = json(r#"{"mcp_access_groups": ["old-group"]}"#);
-    let error = validate_key_servers(
+    let team_error = validate_key_servers(
         Some(&mut kept_group),
         Some(&team),
         reads(&shared, None, &rows, None),
@@ -301,11 +301,11 @@ async fn group_not_grandfathered() {
     .await
     .unwrap_err();
     assert_eq!(
-        denied_detail(error),
+        denied_detail(team_error),
         "Key requests MCP access groups not allowed by team 'team-1': ['old-group']. Team allows: []."
     );
     let mut personal_group = json(r#"{"mcp_access_groups": ["old-group"]}"#);
-    let error = validate_key_servers(
+    let personal_error = validate_key_servers(
         Some(&mut personal_group),
         None,
         reads(&shared, None, &rows, None),
@@ -315,7 +315,7 @@ async fn group_not_grandfathered() {
     .await
     .unwrap_err();
     assert_eq!(
-        denied_detail(error),
+        denied_detail(personal_error),
         "Key is not in a team. MCP access groups cannot be assigned to keys outside of a team. Disallowed groups: ['old-group']."
     );
 }
@@ -361,11 +361,11 @@ async fn toolset_ceiling_denies_members_and_admins() {
         admin: false,
     };
     let mut outside = json(requested);
-    let error = check(Some(&mut outside), Some(&ceiling), &case, None)
+    let member_error = check(Some(&mut outside), Some(&ceiling), &case, None)
         .await
         .unwrap_err();
     assert_eq!(
-        denied_detail(error),
+        denied_detail(member_error),
         "Key requests MCP toolsets not allowed by team 'team-1': ['t-b']. Team allows: ['t-a']."
     );
     let admin_case = Case {
@@ -375,11 +375,11 @@ async fn toolset_ceiling_denies_members_and_admins() {
         admin: true,
     };
     let mut outside_admin = json(requested);
-    let error = check(Some(&mut outside_admin), Some(&ceiling), &admin_case, None)
+    let admin_error = check(Some(&mut outside_admin), Some(&ceiling), &admin_case, None)
         .await
         .unwrap_err();
     assert_eq!(
-        denied_detail(error),
+        denied_detail(admin_error),
         "Key requests MCP toolsets not allowed by team 'team-1': ['t-b']. Team allows: ['t-a']."
     );
 }

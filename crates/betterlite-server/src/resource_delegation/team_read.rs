@@ -15,7 +15,6 @@ use crate::mcp_permission_ids::team::resolve_team_allowed_mcp_servers as resolve
 use super::GrantReads;
 use super::ObjectPermissionGrants;
 use super::TeamGrants;
-use super::registry_servers;
 
 #[derive(Debug, Error)]
 pub enum TeamReadError<RowError>
@@ -43,20 +42,23 @@ pub async fn team_allowed_server_ids<Rows>(
 where
     Rows: AccessGroupServerRows,
 {
-    let Some(team) = team else {
+    let Some(team_grants) = team else {
         return Ok(BTreeSet::new());
     };
     // B747's lookup keeps an unavailable group out of the result unless the caller reads the database only.
     let unified_ids = collect_resources(
-        &team.access_group_ids,
+        &team_grants.access_group_ids,
         ResourceField::McpServerIds,
         reads.unified,
         false,
     )
     .unwrap_or_default();
     let identifiers: BTreeSet<String> = unified_ids.iter().cloned().collect();
-    let servers = registry_servers(reads.registry).await;
-    let refs: Vec<&MCPServer> = servers.iter().collect();
+    let registry_servers: Vec<MCPServer> = {
+        let guard = reads.registry.read().await;
+        guard.get_registry().into_iter().cloned().collect()
+    };
+    let refs: Vec<&MCPServer> = registry_servers.iter().collect();
     let resolved = resolve_identifiers_to_ids(&identifiers, reads.client, &refs).await?;
     let mut allowed = flatten_resolved_ids(&resolved);
     for identifier in unified_ids {
@@ -64,7 +66,7 @@ where
             allowed.insert(identifier);
         }
     }
-    let Some(permission) = team.object_permission.as_ref() else {
+    let Some(permission) = team_grants.object_permission.as_ref() else {
         return Ok(allowed);
     };
     let direct = resolve_direct_team_grants(

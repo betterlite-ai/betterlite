@@ -13,7 +13,6 @@ use crate::mcp_permission_ids::decode::{McpToolGrantsJsonError, decode_mcp_tool_
 use crate::mcp_permission_ids::team::ALL_PROXY_MCP_SERVERS;
 
 use super::ObjectPermissionGrants;
-use super::registry_servers;
 
 #[derive(Debug, Error)]
 pub enum GrandfatherError {
@@ -28,24 +27,26 @@ pub async fn grandfathered_server_ids(
     client: Option<PrismaClient<'_>>,
     registry: &SharedRegistry,
 ) -> Result<BTreeSet<String>, GrandfatherError> {
-    let Some(existing) = existing else {
+    let Some(stored) = existing else {
         return Ok(BTreeSet::new());
     };
     if client.is_none() {
         return Ok(BTreeSet::new());
     }
-    let mut identifiers: BTreeSet<String> =
-        existing.mcp_servers.iter().flatten().cloned().collect();
+    let mut identifiers: BTreeSet<String> = stored.mcp_servers.iter().flatten().cloned().collect();
     // Python's `or {}` skips the stored-JSON decoder for a falsey column before it reads any keys
-    if let Some(raw) = &existing.mcp_tool_permissions
+    if let Some(raw) = &stored.mcp_tool_permissions
         && !is_falsey(raw)
     {
         identifiers.extend(stored_tool_keys(raw)?);
     }
     identifiers.remove(NO_MCP_SERVERS);
     identifiers.remove(ALL_PROXY_MCP_SERVERS);
-    let servers = registry_servers(registry).await;
-    let refs: Vec<&MCPServer> = servers.iter().collect();
+    let registry_servers: Vec<MCPServer> = {
+        let guard = registry.read().await;
+        guard.get_registry().into_iter().cloned().collect()
+    };
+    let refs: Vec<&MCPServer> = registry_servers.iter().collect();
     let resolved = resolve_identifiers_to_ids(&identifiers, client, &refs).await?;
     Ok(flatten_resolved_ids(&resolved))
 }

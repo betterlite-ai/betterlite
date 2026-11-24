@@ -7,9 +7,7 @@ use super::TeamGrants;
 use super::denial::Denial;
 use super::quoted_list;
 use super::requested::RequestedError;
-use super::requested::requested_search_tools;
-use super::requested::requested_toolsets;
-use super::requested::requested_vector_stores;
+use super::requested::requested_entries;
 
 #[derive(Debug, Error)]
 pub enum GateError {
@@ -27,7 +25,7 @@ pub fn validate_requested_toolsets(
     if requested.is_empty() {
         return Ok(());
     }
-    let Some(team) = team else {
+    let Some(team_grants) = team else {
         if is_proxy_admin {
             return Ok(());
         }
@@ -38,7 +36,7 @@ pub fn validate_requested_toolsets(
             ),
         });
     };
-    let team_toolsets: &[String] = team
+    let team_toolsets: &[String] = team_grants
         .object_permission
         .as_ref()
         .and_then(|permission| permission.mcp_toolsets.as_deref())
@@ -51,7 +49,7 @@ pub fn validate_requested_toolsets(
     if disallowed.is_empty() {
         return Ok(());
     }
-    let team_id = team.team_id.as_str();
+    let team_id = team_grants.team_id.as_str();
     let disallowed_text = quoted_list(&disallowed);
     let allowed_text = quoted_list(team_toolsets);
     Err(Denial {
@@ -61,21 +59,12 @@ pub fn validate_requested_toolsets(
     })
 }
 
-pub fn validate_toolsets(
-    permission: Option<&JsonData>,
-    team: Option<&TeamGrants>,
-    is_proxy_admin: bool,
-) -> Result<(), GateError> {
-    let requested = requested_toolsets(permission)?;
-    validate_requested_toolsets(&requested, team, is_proxy_admin).map_err(GateError::from)
-}
-
 pub fn validate_vector_stores(
     permission: Option<&JsonData>,
     team: Option<&TeamGrants>,
     is_proxy_admin: bool,
 ) -> Result<(), GateError> {
-    let requested = requested_vector_stores(permission)?;
+    let requested: BTreeSet<String> = requested_entries("vector_stores", permission, true)?;
     if requested.is_empty() || team.is_some() || is_proxy_admin {
         return Ok(());
     }
@@ -92,20 +81,20 @@ pub fn validate_search_tools(
     team: Option<&TeamGrants>,
     is_proxy_admin: bool,
 ) -> Result<(), GateError> {
-    let requested = requested_search_tools(permission)?;
+    let requested: Vec<String> = requested_entries("search_tools", permission, true)?;
     if requested.is_empty() {
         return Ok(());
     }
     if team.is_none() && !is_proxy_admin {
         return Err(GateError::Denied(personal_search_denial(&requested)));
     }
-    let Some(team) = team else {
+    let Some(team_grants) = team else {
         return Ok(());
     };
-    let team_tools: &[String] = team
+    let team_tools: &[String] = team_grants
         .object_permission
         .as_ref()
-        .and_then(|permission| permission.search_tools.as_deref())
+        .and_then(|grants| grants.search_tools.as_deref())
         .unwrap_or_default();
     if team_tools.is_empty() {
         return Ok(());
@@ -119,7 +108,7 @@ pub fn validate_search_tools(
     if disallowed.is_empty() {
         return Ok(());
     }
-    let team_id = team.team_id.as_str();
+    let team_id = team_grants.team_id.as_str();
     let disallowed_text = quoted_list(&disallowed);
     let allowed_text = quoted_list(team_tools);
     Err(GateError::Denied(Denial {

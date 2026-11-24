@@ -11,8 +11,14 @@ pub enum RequestedError {
     NotAString { field: &'static str, index: usize },
 }
 
-fn string_list(field: &'static str, raw: Option<&JsonData>) -> Result<Vec<String>, RequestedError> {
-    let Some(JsonData::Array(items)) = raw else {
+fn string_list(
+    field: &'static str,
+    permission: Option<&JsonData>,
+) -> Result<Vec<String>, RequestedError> {
+    let Some(JsonData::Object(fields)) = permission else {
+        return Ok(Vec::new());
+    };
+    let Some(JsonData::Array(items)) = fields.get(field) else {
         return Ok(Vec::new());
     };
     items
@@ -29,60 +35,34 @@ fn string_list(field: &'static str, raw: Option<&JsonData>) -> Result<Vec<String
         .collect()
 }
 
-pub fn requested_server_ids(
+// LiteLLM keeps empty entries for access groups and toolsets, and skips them only for vector stores and search tools.
+pub fn requested_entries<Collection>(
+    field: &'static str,
     permission: Option<&JsonData>,
-) -> Result<BTreeSet<String>, RequestedError> {
-    let Some(JsonData::Object(fields)) = permission else {
-        return Ok(BTreeSet::new());
-    };
-    let listed = string_list("mcp_servers", fields.get("mcp_servers"))?;
-    let mut server_ids: BTreeSet<String> = listed.into_iter().collect();
-    server_ids.remove(NO_MCP_SERVERS);
-    if let Some(JsonData::Object(grants)) = fields.get("mcp_tool_permissions") {
-        server_ids.extend(grants.keys().cloned());
+    drop_empty: bool,
+) -> Result<Collection, RequestedError>
+where
+    Collection: FromIterator<String>,
+{
+    let listed = string_list(field, permission)?;
+    if !drop_empty {
+        return Ok(listed.into_iter().collect());
     }
-    Ok(server_ids)
-}
-
-pub fn requested_access_groups(
-    permission: Option<&JsonData>,
-) -> Result<BTreeSet<String>, RequestedError> {
-    let Some(JsonData::Object(fields)) = permission else {
-        return Ok(BTreeSet::new());
-    };
-    let listed = string_list("mcp_access_groups", fields.get("mcp_access_groups"))?;
-    Ok(listed.into_iter().collect())
-}
-
-pub fn requested_toolsets(
-    permission: Option<&JsonData>,
-) -> Result<BTreeSet<String>, RequestedError> {
-    let Some(JsonData::Object(fields)) = permission else {
-        return Ok(BTreeSet::new());
-    };
-    let listed = string_list("mcp_toolsets", fields.get("mcp_toolsets"))?;
-    Ok(listed.into_iter().collect())
-}
-
-pub fn requested_vector_stores(
-    permission: Option<&JsonData>,
-) -> Result<BTreeSet<String>, RequestedError> {
-    let Some(JsonData::Object(fields)) = permission else {
-        return Ok(BTreeSet::new());
-    };
-    let listed = string_list("vector_stores", fields.get("vector_stores"))?;
     Ok(listed
         .into_iter()
-        .filter(|store| !store.is_empty())
+        .filter(|entry| !entry.is_empty())
         .collect())
 }
 
-pub fn requested_search_tools(
+pub fn requested_server_ids(
     permission: Option<&JsonData>,
-) -> Result<Vec<String>, RequestedError> {
-    let Some(JsonData::Object(fields)) = permission else {
-        return Ok(Vec::new());
-    };
-    let listed = string_list("search_tools", fields.get("search_tools"))?;
-    Ok(listed.into_iter().filter(|tool| !tool.is_empty()).collect())
+) -> Result<BTreeSet<String>, RequestedError> {
+    let mut server_ids: BTreeSet<String> = requested_entries("mcp_servers", permission, false)?;
+    server_ids.remove(NO_MCP_SERVERS);
+    if let Some(JsonData::Object(fields)) = permission
+        && let Some(JsonData::Object(grants)) = fields.get("mcp_tool_permissions")
+    {
+        server_ids.extend(grants.keys().cloned());
+    }
+    Ok(server_ids)
 }

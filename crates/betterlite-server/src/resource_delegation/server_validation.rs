@@ -1,9 +1,9 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::error::Error as StdError;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_mcp::access_group_servers::AccessGroupServerRows;
-use betterlite_mcp::registry::servers::SharedRegistry;
 use betterlite_mcp::server_record::MCPServer;
 use thiserror::Error;
 use tracing::warn;
@@ -22,11 +22,9 @@ use super::gates::validate_requested_toolsets;
 use super::grandfather::GrandfatherError;
 use super::grandfather::grandfathered_server_ids;
 use super::quoted_list;
-use super::registry_servers;
 use super::requested::RequestedError;
-use super::requested::requested_access_groups;
+use super::requested::requested_entries;
 use super::requested::requested_server_ids;
-use super::requested::requested_toolsets;
 use super::team_read::TeamReadError;
 use super::team_read::team_allowed_server_ids;
 
@@ -57,57 +55,39 @@ struct ServerScope<'a> {
     teamless_admin: bool,
 }
 
-fn server_denial(
-    team: Option<&TeamGrants>,
+fn team_denial(
+    team_id: &str,
+    resource: &str,
     disallowed: &BTreeSet<String>,
     team_allowed: &BTreeSet<String>,
-    allow_all: &BTreeSet<String>,
+    globals: Option<&BTreeSet<String>>,
 ) -> Denial {
-    let disallowed_text = quoted_list(disallowed);
-    match team {
-        Some(team) => {
-            let team_id = team.team_id.as_str();
-            let team_text = quoted_list(team_allowed);
-            let global_text = quoted_list(allow_all);
-            Denial {
-                detail: format!(
-                    "Key requests MCP servers not allowed by team '{team_id}': {disallowed_text}. Team allows: {team_text}. Global (allow_all_keys) servers: {global_text}."
-                ),
-            }
-        }
-        None => {
-            let global_text = quoted_list(allow_all);
-            Denial {
-                detail: format!(
-                    "Key is not in a team. Only globally available (allow_all_keys) MCP servers can be assigned: {global_text}. Disallowed servers: {disallowed_text}."
-                ),
-            }
-        }
+    let prefix = format!(
+        "Key requests {resource} not allowed by team '{team_id}': {}. Team allows: {}.",
+        quoted_list(disallowed),
+        quoted_list(team_allowed)
+    );
+    let globals_text = globals.map_or_else(String::new, |global_ids| {
+        format!(
+            " Global (allow_all_keys) servers: {}.",
+            quoted_list(global_ids)
+        )
+    });
+    Denial {
+        detail: format!("{prefix}{globals_text}"),
     }
 }
 
-fn group_denial(
-    team: Option<&TeamGrants>,
-    disallowed: &BTreeSet<String>,
-    team_groups: &BTreeSet<String>,
-) -> Denial {
-    let disallowed_text = quoted_list(disallowed);
-    match team {
-        Some(team) => {
-            let team_id = team.team_id.as_str();
-            let team_text = quoted_list(team_groups);
-            Denial {
-                detail: format!(
-                    "Key requests MCP access groups not allowed by team '{team_id}': {disallowed_text}. Team allows: {team_text}."
-                ),
-            }
-        }
-        None => Denial {
-            detail: format!(
-                "Key is not in a team. MCP access groups cannot be assigned to keys outside of a team. Disallowed groups: {disallowed_text}."
-            ),
-        },
+fn permitted_grants(
+    ceiling: &BTreeSet<String>,
+    requested: &BTreeSet<String>,
+    teamless_admin: bool,
+) -> BTreeSet<String> {
+    let mut permitted = ceiling.clone();
+    if teamless_admin {
+        permitted.extend(requested.iter().cloned());
     }
+    permitted
 }
 
 fn check_requested_groups(
@@ -116,38 +96,37 @@ fn check_requested_groups(
     teamless_admin: bool,
 ) -> Result<(), Denial> {
     let team_groups: BTreeSet<String> = team
-        .and_then(|team| team.object_permission.as_ref())
+        .and_then(|team_grants| team_grants.object_permission.as_ref())
         .and_then(|permission| permission.mcp_access_groups.as_ref())
         .map(|groups| groups.iter().cloned().collect())
         .unwrap_or_default();
-    let mut permitted = team_groups.clone();
-    if teamless_admin {
-        permitted.extend(requested.iter().cloned());
-    }
+    let permitted = permitted_grants(&team_groups, requested, teamless_admin);
     let disallowed: BTreeSet<String> = requested.difference(&permitted).cloned().collect();
     if disallowed.is_empty() {
         return Ok(());
     }
-    Err(group_denial(team, &disallowed, &team_groups))
+    let Some(team_grants) = team else {
+        return Err(Denial {
+            detail: format!(
+                "Key is not in a team. MCP access groups cannot be assigned to keys outside of a team. Disallowed groups: {}.",
+                quoted_list(&disallowed)
+            ),
+        });
+    };
+    Err(team_denial(
+        &team_grants.team_id,
+        "MCP access groups",
+        &disallowed,
+        &team_groups,
+        None,
+    ))
 }
 
-async fn allow_all_keys_from(registry: &SharedRegistry) -> BTreeSet<String> {
-    let guard = registry.read().await;
-    allow_all_keys_server_ids(&guard)
-}
-
-async fn check_requested_servers<Rows>(
+fn drop_stale_servers(
     permission: &mut JsonData,
     requested: &BTreeSet<String>,
-    scope: &ServerScope<'_>,
-    reads: &GrantReads<'_, Rows>,
-) -> Result<(), KeyServersError<Rows::Error>>
-where
-    Rows: AccessGroupServerRows,
-{
-    let servers = registry_servers(reads.registry).await;
-    let refs: Vec<&MCPServer> = servers.iter().collect();
-    let resolved = resolve_identifiers_to_ids(requested, reads.client, &refs).await?;
+    resolved: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<(), GrantCleanupError> {
     let stale: Vec<String> = requested
         .iter()
         .filter(|identifier| resolved.get(*identifier).is_none_or(BTreeSet::is_empty))
@@ -159,13 +138,29 @@ where
             "validate_key_mcp_servers_against_team: ignoring stale MCP server identifiers (no longer in registry or DB): {stale_text}"
         );
     }
-    drop_stale_identifiers(permission, &resolved)?;
+    drop_stale_identifiers(permission, resolved)
+}
+
+async fn check_requested_servers<Rows>(
+    permission: &mut JsonData,
+    requested: &BTreeSet<String>,
+    scope: &ServerScope<'_>,
+    reads: &GrantReads<'_, Rows>,
+) -> Result<(), KeyServersError<Rows::Error>>
+where
+    Rows: AccessGroupServerRows,
+{
+    let registry_servers: Vec<MCPServer> = {
+        let guard = reads.registry.read().await;
+        guard.get_registry().into_iter().cloned().collect()
+    };
+    let refs: Vec<&MCPServer> = registry_servers.iter().collect();
+    let resolved = resolve_identifiers_to_ids(requested, reads.client, &refs).await?;
+    drop_stale_servers(permission, requested, &resolved)?;
     let active = flatten_resolved_ids(&resolved);
-    let mut permitted: BTreeSet<String> = scope.team_allowed.clone();
-    permitted.extend(scope.allow_all.iter().cloned());
-    if scope.teamless_admin {
-        permitted.extend(active.iter().cloned());
-    }
+    let mut ceiling = scope.team_allowed.clone();
+    ceiling.extend(scope.allow_all.iter().cloned());
+    let permitted = permitted_grants(&ceiling, &active, scope.teamless_admin);
     let grandfathered =
         grandfathered_server_ids(scope.existing, reads.client, reads.registry).await?;
     let disallowed: BTreeSet<String> = active
@@ -176,11 +171,21 @@ where
     if disallowed.is_empty() {
         return Ok(());
     }
-    Err(KeyServersError::Denied(server_denial(
-        scope.team,
+    let Some(team) = scope.team else {
+        return Err(KeyServersError::Denied(Denial {
+            detail: format!(
+                "Key is not in a team. Only globally available (allow_all_keys) MCP servers can be assigned: {}. Disallowed servers: {}.",
+                quoted_list(scope.allow_all),
+                quoted_list(&disallowed)
+            ),
+        }));
+    };
+    Err(KeyServersError::Denied(team_denial(
+        &team.team_id,
+        "MCP servers",
         &disallowed,
         scope.team_allowed,
-        scope.allow_all,
+        Some(scope.allow_all),
     )))
 }
 
@@ -195,15 +200,20 @@ where
     Rows: AccessGroupServerRows,
 {
     let server_ids = requested_server_ids(permission.as_deref())?;
-    let access_groups = requested_access_groups(permission.as_deref())?;
-    let toolsets = requested_toolsets(permission.as_deref())?;
+    let access_groups: BTreeSet<String> =
+        requested_entries("mcp_access_groups", permission.as_deref(), false)?;
+    let toolsets: BTreeSet<String> =
+        requested_entries("mcp_toolsets", permission.as_deref(), false)?;
     if server_ids.is_empty() && access_groups.is_empty() && toolsets.is_empty() {
         return Ok(());
     }
-    let Some(permission) = permission else {
+    let Some(permission_value) = permission else {
         return Ok(());
     };
-    let allow_all = allow_all_keys_from(reads.registry).await;
+    let allow_all = {
+        let guard = reads.registry.read().await;
+        allow_all_keys_server_ids(&guard)
+    };
     let team_allowed = team_allowed_server_ids(team, &reads).await?;
     let scope = ServerScope {
         team,
@@ -213,7 +223,7 @@ where
         teamless_admin: team.is_none() && is_proxy_admin,
     };
     if !server_ids.is_empty() {
-        check_requested_servers(permission, &server_ids, &scope, &reads).await?;
+        check_requested_servers(permission_value, &server_ids, &scope, &reads).await?;
     }
     if !access_groups.is_empty() {
         check_requested_groups(team, &access_groups, scope.teamless_admin)?;

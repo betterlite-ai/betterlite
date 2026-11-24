@@ -1,10 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::mcp_permission_ids::team::ALL_PROXY_MCP_SERVERS;
-use crate::resource_delegation::requested::{
-    requested_access_groups, requested_search_tools, requested_server_ids, requested_toolsets,
-    requested_vector_stores,
-};
+use crate::resource_delegation::requested::{requested_entries, requested_server_ids};
 
 use super::fixtures::{json, string_set, strings};
 
@@ -13,19 +10,19 @@ fn server_ids(text: &str) -> BTreeSet<String> {
 }
 
 fn groups(text: &str) -> BTreeSet<String> {
-    requested_access_groups(Some(&json(text))).unwrap()
+    requested_entries("mcp_access_groups", Some(&json(text)), false).unwrap()
 }
 
 fn toolsets(text: &str) -> BTreeSet<String> {
-    requested_toolsets(Some(&json(text))).unwrap()
+    requested_entries("mcp_toolsets", Some(&json(text)), false).unwrap()
 }
 
 fn vector_stores(text: &str) -> BTreeSet<String> {
-    requested_vector_stores(Some(&json(text))).unwrap()
+    requested_entries("vector_stores", Some(&json(text)), true).unwrap()
 }
 
 fn search_tools(text: &str) -> Vec<String> {
-    requested_search_tools(Some(&json(text))).unwrap()
+    requested_entries("search_tools", Some(&json(text)), true).unwrap()
 }
 
 #[test]
@@ -76,11 +73,30 @@ fn extractor_contents() {
 
 #[test]
 fn extractor_entry_type_errors() {
-    let error =
+    let server_error =
         requested_server_ids(Some(&json(r#"{"mcp_servers": ["srv-a", null]}"#))).unwrap_err();
-    assert_eq!(error.to_string(), "mcp_servers entry 1 is not a string");
-    let error = requested_search_tools(Some(&json(r#"{"search_tools": [7]}"#))).unwrap_err();
-    assert_eq!(error.to_string(), "search_tools entry 0 is not a string");
-    let error = requested_vector_stores(Some(&json(r#"{"vector_stores": [{}]}"#))).unwrap_err();
-    assert_eq!(error.to_string(), "vector_stores entry 0 is not a string");
+    assert_eq!(
+        server_error.to_string(),
+        "mcp_servers entry 1 is not a string"
+    );
+    let tool_error = requested_entries::<Vec<String>>(
+        "search_tools",
+        Some(&json(r#"{"search_tools": [7]}"#)),
+        true,
+    )
+    .unwrap_err();
+    assert_eq!(
+        tool_error.to_string(),
+        "search_tools entry 0 is not a string"
+    );
+    let store_error = requested_entries::<BTreeSet<String>>(
+        "vector_stores",
+        Some(&json(r#"{"vector_stores": [{}]}"#)),
+        true,
+    )
+    .unwrap_err();
+    assert_eq!(
+        store_error.to_string(),
+        "vector_stores entry 0 is not a string"
+    );
 }
