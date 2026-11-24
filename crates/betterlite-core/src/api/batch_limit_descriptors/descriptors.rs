@@ -52,7 +52,7 @@ pub(super) fn create_batch_descriptors<Limiter, Credentials>(
 where
     Limiter: BatchLimiterSource,
 {
-    let descriptors = service.limiter.descriptors_for(auth, data)?;
+    let mut descriptors = service.limiter.descriptors_for(auth, data)?;
     let account = account_limits(auth);
     let view = auth.request_quota_view();
     let scopes: Vec<(&'static str, String, i64)> = [
@@ -66,32 +66,26 @@ where
         Some((scope, bound.to_owned(), limit?))
     })
     .collect();
-    if scopes.is_empty() {
-        return Ok(descriptors);
-    }
-    let mut kept = Vec::with_capacity(descriptors.len().saturating_add(scopes.len()));
-    for descriptor in descriptors {
-        if scopes
+    descriptors.retain(|descriptor| {
+        scopes
             .iter()
-            .any(|(scope, _, _)| descriptor.key.as_str() == *scope)
-        {
-            continue;
-        }
-        kept.push(descriptor);
-    }
-    for (scope, value, limit) in scopes {
-        kept.push(BatchLimitDescriptor {
-            key: format!("{scope}{TPD_SUFFIX}"),
-            value,
-            rate_limit: Some(BatchDescriptorRateLimit {
-                requests_per_unit: None,
-                tokens_per_unit: Some(limit),
-                max_parallel_requests: None,
-                window_size: Some(TPD_WINDOW_SECONDS),
+            .all(|(scope, _, _)| descriptor.key.as_str() != *scope)
+    });
+    descriptors.extend(
+        scopes
+            .into_iter()
+            .map(|(scope, value, limit)| BatchLimitDescriptor {
+                key: format!("{scope}{TPD_SUFFIX}"),
+                value,
+                rate_limit: Some(BatchDescriptorRateLimit {
+                    requests_per_unit: None,
+                    tokens_per_unit: Some(limit),
+                    max_parallel_requests: None,
+                    window_size: Some(TPD_WINDOW_SECONDS),
+                }),
             }),
-        });
-    }
-    Ok(kept)
+    );
+    Ok(descriptors)
 }
 
 // One project ITPM/OTPM pair per row model, each charged that model's own counted tokens

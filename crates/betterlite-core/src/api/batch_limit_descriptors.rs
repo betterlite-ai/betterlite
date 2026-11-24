@@ -93,6 +93,7 @@ where
         Ok(BatchLimitDescriptorsResult { answers })
     }
 
+    #[expect(clippy::too_many_lines, reason = "one arm per owned batch callable")]
     fn answer(
         &self,
         auth: &UserAPIKeyAuth,

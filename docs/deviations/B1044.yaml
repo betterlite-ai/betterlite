@@ -3,7 +3,4 @@ deviations:
   - what: An output cap outside i64, or a cap times the candidate count above i64::MAX, gives the no-cap floor estimate or a saturated i64::MAX token count, where LiteLLM's Python int keeps the exact value.
     why: betterlite counts tokens and limits in i64, so a value beyond it has no exact representation and the estimate stays bounded.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L486
-  - what: For an API key that betterlite hashes (an sk- key or a JWT), the key-scope daily-token descriptor's value is the safe hash, where LiteLLM uses user_api_key_dict.api_key as the auth path stored it, the raw key for header authentication.
-    why: betterlite's auth keeps only the hashed key, and a raw virtual key in rate-limit state is a leak no working setup needs.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L262
 kept_bugs: []
