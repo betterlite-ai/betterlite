@@ -34,7 +34,7 @@ pub fn reject_disallowed_origin(
         .get_all(ORIGIN)
         .iter()
         .map(latin1_header_text)
-        .any(|origin| !origins.iter().any(|allowed| *allowed == origin));
+        .any(|origin| !origins.contains(&origin));
     if refused {
         return Err(McpHttpError {
             status: 403,
@@ -45,9 +45,10 @@ pub fn reject_disallowed_origin(
     Ok(())
 }
 
+#[must_use]
 pub fn unsupported_protocol_version(headers: &HeaderMap, configured: &[String]) -> Option<String> {
     let values = headers.get_all(PROTOCOL_VERSION_HEADER);
-    for value in values.iter() {
+    for value in &values {
         let decoded = latin1_header_text(value);
         let trimmed = decoded.trim();
         if !trimmed.is_empty() && !configured.iter().any(|supported| supported == trimmed) {
@@ -70,6 +71,7 @@ struct VersionRefusalError {
     message: String,
 }
 
+#[must_use]
 pub fn version_refusal(value: &str, configured: &[String]) -> McpHttpError {
     let message = format!(
         "Unsupported MCP-Protocol-Version {value}; supported: {}",
@@ -90,9 +92,10 @@ pub fn version_refusal(value: &str, configured: &[String]) -> McpHttpError {
     }
 }
 
+#[must_use]
 pub fn proxy_error_to_http(code: Option<&str>, message: &str, headers: &HeaderMap) -> McpHttpError {
     let status = code
-        .and_then(|code| code.trim().parse::<u16>().ok())
+        .and_then(|raw| raw.trim().parse::<u16>().ok())
         .filter(|status| (100..=599).contains(status))
         .unwrap_or(SERVER_ERROR_STATUS);
     McpHttpError {
@@ -112,9 +115,7 @@ struct ClientAuthView {
 }
 
 fn optional_setting_name(setting: &str, value: Option<&JsonValue>) -> Option<String> {
-    let Some(value) = value else {
-        return None;
-    };
+    let value = value?;
     match value {
         JsonValue::Null => None,
         JsonValue::String(name) => Some(name.clone()),
@@ -127,33 +128,35 @@ fn optional_setting_name(setting: &str, value: Option<&JsonValue>) -> Option<Str
 
 // _load_mcp_client_allowlist re-reads general_settings on every request, so the caller passes its current snapshot
 pub fn allowlist_from_settings(general_settings: &SettingsStore) -> Option<McpClientAllowlist> {
-    let Some(raw_clients) = general_settings.get(MCP_ALLOWED_CLIENTS_SETTING) else {
-        return None;
-    };
+    let raw_clients = general_settings.get(MCP_ALLOWED_CLIENTS_SETTING)?;
     if raw_clients == &JsonValue::Null {
         return None;
     }
-    let mcp_allowed_clients = match serde_json::from_value::<Vec<McpAllowedClient>>(
-        raw_clients.clone(),
-    ) {
-        Ok(clients) => Some(clients),
-        Err(_) => {
-            warn!(
-                "{MCP_ALLOWED_CLIENTS_SETTING} is not a list of {{alias, value}} entries; rejecting every MCP client until it is fixed"
-            );
-            Some(Vec::new())
-        }
-    };
-    let mut jwt_auth = None;
-    if let Some(JsonValue::Object(fields)) = general_settings.get(JWT_AUTH_SETTING) {
-        let field = optional_setting_name(
-            &format!("{JWT_AUTH_SETTING}.{CLIENT_ID_JWT_FIELD_SETTING}"),
-            fields.get(CLIENT_ID_JWT_FIELD_SETTING),
+    let mcp_allowed_clients = serde_json::from_value::<Vec<McpAllowedClient>>(raw_clients.clone())
+        .map_or_else(
+            |_| {
+                warn!(
+                    "{MCP_ALLOWED_CLIENTS_SETTING} is not a list of {{alias, value}} entries; rejecting every MCP client until it is fixed"
+                );
+                Some(Vec::new())
+            },
+            Some,
         );
-        jwt_auth = Some(JwtAuthSettings {
-            mcp_client_id_jwt_field: field,
+    let jwt_auth = general_settings
+        .get(JWT_AUTH_SETTING)
+        .and_then(|settings_value| match settings_value {
+            JsonValue::Object(fields) => Some(JwtAuthSettings {
+                mcp_client_id_jwt_field: optional_setting_name(
+                    &format!("{JWT_AUTH_SETTING}.{CLIENT_ID_JWT_FIELD_SETTING}"),
+                    fields.get(CLIENT_ID_JWT_FIELD_SETTING),
+                ),
+            }),
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_)
+            | JsonValue::Array(_) => None,
         });
-    }
     let settings = McpClientAllowlistSettings {
         mcp_allowed_clients,
         mcp_client_id_header: optional_setting_name(
@@ -175,7 +178,7 @@ pub fn reject_disallowed_client(
         return Ok(());
     }
     let claims: Option<Payload> = auth
-        .and_then(|auth| serde_json::to_value(auth).ok())
+        .and_then(|caller| serde_json::to_value(caller).ok())
         .and_then(|value| serde_json::from_value::<ClientAuthView>(value).ok())
         .and_then(|view| view.jwt_claims);
     let Err(rejection) = check_mcp_client_allowed(allowlist, claims.as_ref(), headers) else {

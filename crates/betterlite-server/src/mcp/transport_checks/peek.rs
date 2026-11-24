@@ -40,6 +40,7 @@ pub async fn peek_routing_body(body: Body) -> (Body, Bytes) {
     (Body::from_stream(replay), Bytes::from(sniffed))
 }
 
+#[must_use]
 pub fn lossy_utf8(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len());
     for chunk in bytes.utf8_chunks() {
@@ -74,6 +75,7 @@ fn default_method() -> String {
     INITIALIZE_METHOD.to_owned()
 }
 
+#[must_use]
 pub fn initialize_client_info(bytes: &[u8]) -> Option<ClientInfo> {
     let envelope: InitializeEnvelope = serde_json::from_slice(bytes).ok()?;
     if envelope.method != INITIALIZE_METHOD {
@@ -89,6 +91,14 @@ enum ScanMode {
     Value,
     KeyEscape,
     ValueEscape,
+}
+
+struct ScanState {
+    depth: i32,
+    mode: ScanMode,
+    containers: Vec<bool>,
+    expect_key: bool,
+    key_chars: Vec<char>,
 }
 
 fn quoted_step(mode: &mut ScanMode, character: char, key_chars: &mut Vec<char>) -> bool {
@@ -113,71 +123,85 @@ fn quoted_step(mode: &mut ScanMode, character: char, key_chars: &mut Vec<char>) 
     false
 }
 
+// one character outside a string: opens or closes the containers and tracks whether a key may start
+fn structural_step(scan: &mut ScanState, character: char) -> bool {
+    match character {
+        '"' => {
+            scan.mode = if scan.expect_key && scan.depth >= 1_i32 {
+                ScanMode::Key
+            } else {
+                ScanMode::Value
+            };
+            scan.key_chars.clear();
+            scan.expect_key = false;
+        }
+        '{' | '[' => {
+            scan.depth = scan.depth.saturating_add(1);
+            scan.containers.push(character == '{');
+            scan.expect_key = character == '{';
+        }
+        '}' | ']' => {
+            scan.containers.pop();
+            scan.depth = scan.depth.saturating_sub(1);
+            if scan.depth <= 0_i32 {
+                return false;
+            }
+            scan.expect_key = false;
+        }
+        ',' => {
+            scan.expect_key = scan.containers.last().copied().unwrap_or(false);
+        }
+        ':' => {
+            scan.expect_key = false;
+        }
+        _ => {}
+    }
+    true
+}
+
+#[must_use]
 pub fn has_top_level_method(text: &str) -> bool {
-    let mut depth = 0_i32;
-    let mut mode = ScanMode::Outside;
-    let mut containers: Vec<bool> = Vec::new();
-    let mut expect_key = false;
-    let mut key_chars: Vec<char> = Vec::new();
+    let mut scan = ScanState {
+        depth: 0_i32,
+        mode: ScanMode::Outside,
+        containers: Vec::new(),
+        expect_key: false,
+        key_chars: Vec::new(),
+    };
     for character in text.chars() {
-        if mode != ScanMode::Outside {
-            if quoted_step(&mut mode, character, &mut key_chars)
-                && depth == 1
-                && key_chars.iter().copied().eq(METHOD_KEY.chars())
+        if scan.mode != ScanMode::Outside {
+            if quoted_step(&mut scan.mode, character, &mut scan.key_chars)
+                && scan.depth == 1_i32
+                && scan.key_chars.iter().copied().eq(METHOD_KEY.chars())
             {
                 return true;
             }
             continue;
         }
-        match character {
-            '"' => {
-                mode = if expect_key && depth >= 1 {
-                    ScanMode::Key
-                } else {
-                    ScanMode::Value
-                };
-                key_chars.clear();
-                expect_key = false;
-            }
-            '{' | '[' => {
-                depth = depth.saturating_add(1);
-                containers.push(character == '{');
-                expect_key = character == '{';
-            }
-            '}' | ']' => {
-                containers.pop();
-                depth = depth.saturating_sub(1);
-                if depth <= 0 {
-                    break;
-                }
-                expect_key = false;
-            }
-            ',' => {
-                expect_key = containers.last().copied().unwrap_or(false);
-            }
-            ':' => {
-                expect_key = false;
-            }
-            _ => {}
+        if !structural_step(&mut scan, character) {
+            break;
         }
     }
     false
 }
 
 // the inline test in handle_streamable_http_mcp: a parse failure means the peek truncated the body
+#[must_use]
 pub fn is_jsonrpc_response(bytes: &[u8]) -> bool {
-    match serde_json::from_slice::<Json>(bytes) {
-        Ok(value) => value.as_object().is_some_and(|fields| {
-            fields.get("jsonrpc").and_then(Json::as_str) == Some(JSONRPC_VERSION)
-                && fields.contains_key("id")
-                && !fields.contains_key(METHOD_KEY)
-                && (fields.contains_key("result") || fields.contains_key("error"))
-        }),
-        Err(_) => {
+    serde_json::from_slice::<Json>(bytes).map_or_else(
+        |_| {
             let text = lossy_utf8(bytes);
             text.contains("\"jsonrpc\"")
                 && (text.contains("\"result\"") || text.contains("\"error\""))
                 && !has_top_level_method(&text)
-        }
-    }
+        },
+        |value| {
+            value.as_object().is_some_and(|fields| {
+                fields.get("jsonrpc").and_then(Json::as_str) == Some(JSONRPC_VERSION)
+                    && fields.contains_key("id")
+                    && !fields.contains_key(METHOD_KEY)
+                    && (fields.contains_key("result") || fields.contains_key("error"))
+            })
+        },
+    )
 }

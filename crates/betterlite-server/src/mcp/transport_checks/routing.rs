@@ -51,13 +51,13 @@ pub fn servers_in_path(path: &str) -> Option<Vec<String>> {
         );
     }
     let single_name = Regex::new(SINGLE_NAME_PATTERN).ok()?;
-    let name = single_name
+    let found_name = single_name
         .captures(captured)
         .and_then(|found| found.get(1));
-    match name {
-        Some(name) => Some(vec![name.as_str().to_owned()]),
-        None => Some(vec![captured.to_owned()]),
-    }
+    found_name.map_or_else(
+        || Some(vec![captured.to_owned()]),
+        |name| Some(vec![name.as_str().to_owned()]),
+    )
 }
 
 pub fn session_id_header(headers: &HeaderMap) -> Option<String> {
@@ -84,13 +84,14 @@ fn sha256_hex(value: &str) -> String {
 }
 
 // _owner_fingerprint_for: first present credential wins, and an empty string is no credential
+#[must_use]
 pub fn owner_fingerprint(
     auth: Option<&UserAPIKeyAuth>,
     oauth2_headers: Option<&BTreeMap<String, String>>,
     client_ip: Option<&str>,
 ) -> String {
     let fields: OwnerFields = auth
-        .and_then(|auth| serde_json::to_value(auth).ok())
+        .and_then(|credential| serde_json::to_value(credential).ok())
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default();
     if let Some(api_key) = fields.api_key.as_deref().filter(|key| !key.is_empty()) {
@@ -105,10 +106,10 @@ pub fn owner_fingerprint(
         let upper = headers
             .get("Authorization")
             .filter(|value| !value.is_empty());
-        let authorization = upper
+        let presented = upper
             .or_else(|| headers.get("authorization"))
             .filter(|value| !value.is_empty());
-        if let Some(authorization) = authorization {
+        if let Some(authorization) = presented {
             let hash = sha256_hex(authorization);
             return format!("oauth:{hash}");
         }
@@ -129,6 +130,7 @@ pub fn authorization_header(headers: &HeaderMap) -> Option<String> {
 }
 
 // _get_forwarded_auth_from_scope: Authorization is the upstream token only next to x-litellm-api-key
+#[must_use]
 pub fn forwarded_authorization(headers: &HeaderMap) -> Option<String> {
     if !headers.contains_key(LITELLM_KEY_HEADER) {
         return None;

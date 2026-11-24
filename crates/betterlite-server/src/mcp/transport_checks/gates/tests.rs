@@ -28,6 +28,10 @@ fn names(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
+fn json_value(text: &str) -> JsonValue {
+    serde_json::from_str(text).expect("the test fixture is valid JSON")
+}
+
 fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
     let mut map = HeaderMap::new();
     let built: Vec<(HeaderName, HeaderValue)> = pairs
@@ -168,11 +172,9 @@ fn a_version_refusal_carries_litellms_body(
     assert_eq!(error.status, 400);
     assert_eq!(
         error.detail,
-        json!({
-            "jsonrpc": "2.0",
-            "id": null,
-            "error": {"code": -32600, "message": message},
-        })
+        json_value(&format!(
+            r#"{{"jsonrpc": "2.0", "id": null, "error": {{"code": -32600, "message": "{message}"}}}}"#
+        ))
     );
     assert!(error.headers.is_empty());
 }
@@ -236,7 +238,7 @@ fn a_malformed_client_list_admits_nobody() {
 #[test]
 fn a_malformed_client_list_still_reads_the_header() {
     let settings = store(&[
-        (MCP_ALLOWED_CLIENTS_SETTING, json!(7)),
+        (MCP_ALLOWED_CLIENTS_SETTING, json_value("7")),
         (MCP_CLIENT_ID_HEADER_SETTING, json!("X-Client-ID")),
     ]);
     let found = allowlist_from_settings(&settings).unwrap();
@@ -248,7 +250,7 @@ fn a_malformed_client_list_still_reads_the_header() {
 fn a_client_list_pairs_each_value_with_its_alias() {
     let settings = store(&[(
         MCP_ALLOWED_CLIENTS_SETTING,
-        json!([{"alias": "claude-code", "value": "client-1"}]),
+        json_value(r#"[{"alias": "claude-code", "value": "client-1"}]"#),
     )]);
     let found = allowlist_from_settings(&settings).unwrap();
     assert_eq!(
@@ -263,7 +265,7 @@ fn a_client_list_pairs_each_value_with_its_alias() {
 fn a_client_entry_without_an_alias_admits_nobody() {
     let settings = store(&[(
         MCP_ALLOWED_CLIENTS_SETTING,
-        json!([{"alias": "claude-code", "value": "client-1"}, {"value": "client-2"}]),
+        json_value(r#"[{"alias": "claude-code", "value": "client-1"}, {"value": "client-2"}]"#),
     )]);
     let found = allowlist_from_settings(&settings).unwrap();
     assert!(found.aliases_by_value.is_empty());
@@ -273,7 +275,7 @@ fn a_client_entry_without_an_alias_admits_nobody() {
 fn a_client_entry_with_a_blank_value_admits_nobody() {
     let settings = store(&[(
         MCP_ALLOWED_CLIENTS_SETTING,
-        json!([{"alias": "claude-code", "value": ""}]),
+        json_value(r#"[{"alias": "claude-code", "value": ""}]"#),
     )]);
     let found = allowlist_from_settings(&settings).unwrap();
     assert!(found.aliases_by_value.is_empty());
@@ -313,7 +315,10 @@ fn a_header_setting_of_the_wrong_type_is_ignored() {
 fn a_jwt_field_comes_from_litellm_jwtauth() {
     let settings = store(&[
         (MCP_ALLOWED_CLIENTS_SETTING, json!([])),
-        ("litellm_jwtauth", json!({"mcp_client_id_jwt_field": "azp"})),
+        (
+            "litellm_jwtauth",
+            json_value(r#"{"mcp_client_id_jwt_field": "azp"}"#),
+        ),
     ]);
     let found = allowlist_from_settings(&settings).unwrap();
     assert_eq!(found.jwt_field.as_deref(), Some("azp"));
@@ -333,7 +338,10 @@ fn a_jwt_auth_section_of_the_wrong_type_is_ignored() {
 fn a_blank_jwt_field_is_no_field() {
     let settings = store(&[
         (MCP_ALLOWED_CLIENTS_SETTING, json!([])),
-        ("litellm_jwtauth", json!({"mcp_client_id_jwt_field": ""})),
+        (
+            "litellm_jwtauth",
+            json_value(r#"{"mcp_client_id_jwt_field": ""}"#),
+        ),
     ]);
     let found = allowlist_from_settings(&settings).unwrap();
     assert_eq!(found.jwt_field, None);
@@ -343,7 +351,10 @@ fn a_blank_jwt_field_is_no_field() {
 fn a_null_jwt_field_is_no_field() {
     let settings = store(&[
         (MCP_ALLOWED_CLIENTS_SETTING, json!([])),
-        ("litellm_jwtauth", json!({"mcp_client_id_jwt_field": null})),
+        (
+            "litellm_jwtauth",
+            json_value(r#"{"mcp_client_id_jwt_field": null}"#),
+        ),
     ]);
     let found = allowlist_from_settings(&settings).unwrap();
     assert_eq!(found.jwt_field, None);
@@ -356,14 +367,14 @@ fn a_null_jwt_field_is_no_field() {
 #[case::field_outside_litellm_jwtauth(
     &[
         (MCP_ALLOWED_CLIENTS_SETTING, json!([])),
-        ("litellm_settings", json!({"mcp_client_id_jwt_field": "azp"})),
+        ("litellm_settings", json_value(r#"{"mcp_client_id_jwt_field": "azp"}"#)),
     ],
     false
 )]
 #[case::list_with_a_field(
     &[
         (MCP_ALLOWED_CLIENTS_SETTING, json!([])),
-        ("litellm_jwtauth", json!({"mcp_client_id_jwt_field": "azp"})),
+        ("litellm_jwtauth", json_value(r#"{"mcp_client_id_jwt_field": "azp"}"#)),
     ],
     true
 )]
@@ -406,10 +417,9 @@ fn an_unlisted_client_is_forbidden_with_litellms_body() {
     assert_eq!(error.status, 403);
     assert_eq!(
         error.detail,
-        json!({
-            "error": "Forbidden",
-            "details": "MCP client 'client-2' (from header 'x-client-id') is not listed in this gateway's mcp_allowed_clients.",
-        })
+        json_value(
+            r#"{"error": "Forbidden", "details": "MCP client 'client-2' (from header 'x-client-id') is not listed in this gateway's mcp_allowed_clients."}"#
+        )
     );
     assert!(error.headers.is_empty());
 }
@@ -421,10 +431,9 @@ fn a_missing_client_header_is_forbidden() {
     assert_eq!(error.status, 403);
     assert_eq!(
         error.detail,
-        json!({
-            "error": "Forbidden",
-            "details": "The request has no 'x-client-id' header naming the client application. This gateway only admits client applications listed in mcp_allowed_clients.",
-        })
+        json_value(
+            r#"{"error": "Forbidden", "details": "The request has no 'x-client-id' header naming the client application. This gateway only admits client applications listed in mcp_allowed_clients."}"#
+        )
     );
 }
 
@@ -445,7 +454,7 @@ fn a_jwt_claim_names_the_client_when_the_allowlist_has_a_field() {
         Some("x-client-id"),
         Some("azp"),
     );
-    let caller = auth(&[("jwt_claims", json!({"azp": "client-1"}))]);
+    let caller = auth(&[("jwt_claims", json_value(r#"{"azp": "client-1"}"#))]);
     reject_disallowed_client(Some(&allowed), &headers(&[]), Some(&caller)).unwrap();
 }
 
@@ -456,7 +465,7 @@ fn a_jwt_claim_outranks_the_client_header() {
         Some("x-client-id"),
         Some("azp"),
     );
-    let caller = auth(&[("jwt_claims", json!({"azp": "client-9"}))]);
+    let caller = auth(&[("jwt_claims", json_value(r#"{"azp": "client-9"}"#))]);
     let error = reject_disallowed_client(
         Some(&allowed),
         &headers(&[("x-client-id", "client-1")]),

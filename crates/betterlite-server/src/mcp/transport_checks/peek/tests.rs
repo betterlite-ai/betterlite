@@ -158,10 +158,17 @@ async fn a_frame_past_the_limit_is_sniffed_in_part_and_replayed_whole() {
         Ok(Bytes::from(second.clone())),
     ];
     let (replayed, sniffed) = peek_routing_body(Body::from_stream(stream::iter(frames))).await;
+    let kept = first.len();
     assert_eq!(sniffed.len(), PEEK_LIMIT);
-    assert_eq!(
-        sniffed.iter().filter(|byte| **byte == b'a').count(),
-        PEEK_LIMIT.saturating_sub(4)
+    assert!(
+        sniffed
+            .get(..kept)
+            .is_some_and(|head| head.iter().all(|byte| *byte == b'a'))
+    );
+    assert!(
+        sniffed
+            .get(kept..)
+            .is_some_and(|tail| tail.iter().all(|byte| *byte == b'b'))
     );
     let whole = to_bytes(replayed, PEEK_LIMIT.saturating_add(6))
         .await
@@ -271,10 +278,7 @@ fn a_top_level_method_key_is_detected(#[case] text: &str, #[case] expected: bool
     ),
     false
 )]
-#[case::truncated_result_holding_a_method(
-    concat!(r#"{"jsonrpc":"2.0","id":1,"result":{"method":"#),
-    true
-)]
+#[case::truncated_result_holding_a_method(r#"{"jsonrpc":"2.0","id":1,"result":{"method":"#, true)]
 #[case::text_without_result(r#"{"jsonrpc": "2.0", "id": 1, "message": "x"#, false)]
 #[case::empty("", false)]
 fn a_jsonrpc_response_is_detected(#[case] body: &str, #[case] expected: bool) {

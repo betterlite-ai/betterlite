@@ -14,7 +14,7 @@ pub(super) fn latin1_header_text(value: &HeaderValue) -> String {
         .collect()
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct McpHttpError {
     pub status: u16,
     pub detail: JsonValue,

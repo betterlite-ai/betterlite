@@ -95,9 +95,9 @@ fn oauth(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[case::double_slash_prefix("//mcp/x", None)]
 #[case::names_are_trimmed("/mcp/ a , b /tools", Some(vec!["a", "b"]))]
 fn servers_in_path_matches_litellm(#[case] path: &str, #[case] expected: Option<Vec<&str>>) {
-    let expected: Option<Vec<String>> =
+    let wanted: Option<Vec<String>> =
         expected.map(|names| names.into_iter().map(str::to_owned).collect());
-    assert_eq!(servers_in_path(path), expected);
+    assert_eq!(servers_in_path(path), wanted);
 }
 
 #[test]
