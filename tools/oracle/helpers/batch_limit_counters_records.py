@@ -167,29 +167,6 @@ class ErrorView(TypedDict):
     llm_provider: str
 
 
-class RejectionAnswer(TypedDict):
-    function: Function
-    rejection: ErrorView | None
-
-
-class ErrorAnswer(TypedDict):
-    function: Function
-    error: ErrorView
-
-
-class WindowAnswer(TypedDict):
-    function: Function
-    window_start: int | None
-
-
-class RefundAnswer(TypedDict):
-    function: Function
-    operations: list[OperationView]
-
-
-Answer: TypeAlias = RejectionAnswer | ErrorAnswer | WindowAnswer | RefundAnswer
-
-
 class Effects(TypedDict):
     store_calls: list[StoreCallView]
     limiter_calls: list[LimiterCallView]
@@ -295,7 +272,3 @@ def error_view(error: ProxyRateLimitError) -> ErrorView:
     }
 
 
-def rejection_answer(call: Call, error: ProxyRateLimitError) -> RejectionAnswer | ErrorAnswer:
-    if call["function"] in ("raise_enqueued_limit_error", "raise_rate_limit_error"):
-        return {"function": call["function"], "error": error_view(error)}
-    return {"function": call["function"], "rejection": error_view(error)}

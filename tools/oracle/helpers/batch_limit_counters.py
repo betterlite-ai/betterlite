@@ -1,5 +1,5 @@
 import asyncio
-from typing import TypedDict, cast
+from typing import TypeAlias, TypedDict, cast
 
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.common_utils.proxy_rate_limit_error import ProxyRateLimitError
@@ -21,17 +21,15 @@ from batch_limit_counters_fakes import (
 from batch_limit_counters_records import (
     BATCH_USAGE,
     JSON,
-    Answer,
     Call,
     Effects,
-    ErrorAnswer,
+    ErrorView,
+    Function,
     LimiterScript,
-    RejectionAnswer,
-    RefundAnswer,
+    OperationView,
     StoreScript,
-    WindowAnswer,
+    error_view,
     operation_view,
-    rejection_answer,
     reservation_view,
     response_of,
     scope_of,
@@ -47,6 +45,35 @@ class Input(TypedDict):
     store: StoreScript
     limiter: LimiterScript
     calls: list[Call]
+
+
+class RejectionAnswer(TypedDict):
+    function: Function
+    rejection: ErrorView | None
+
+
+class ErrorAnswer(TypedDict):
+    function: Function
+    error: ErrorView
+
+
+class WindowAnswer(TypedDict):
+    function: Function
+    window_start: int | None
+
+
+class RefundAnswer(TypedDict):
+    function: Function
+    operations: list[OperationView]
+
+
+Answer: TypeAlias = RejectionAnswer | ErrorAnswer | WindowAnswer | RefundAnswer
+
+
+def rejection_answer(call: Call, error: ProxyRateLimitError) -> RejectionAnswer | ErrorAnswer:
+    if call["function"] in ("raise_enqueued_limit_error", "raise_rate_limit_error"):
+        return {"function": call["function"], "error": error_view(error)}
+    return {"function": call["function"], "rejection": error_view(error)}
 
 
 async def invoke(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> Answer:

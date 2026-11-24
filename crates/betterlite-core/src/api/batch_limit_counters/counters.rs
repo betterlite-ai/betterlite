@@ -136,7 +136,7 @@ where
                 });
             }
         }
-        let operations = rejections::refund_ops(
+        let operations = rejections::refunds::refund_ops(
             &charged,
             batch_usage.total_tokens,
             &response.reservation_windows,
@@ -179,8 +179,12 @@ where
         tokens: i64,
         reservation_windows: &BTreeSet<BatchReservationWindow>,
     ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
-        let operations =
-            rejections::refund_ops(descriptors, tokens, reservation_windows, &self.limiter)?;
+        let operations = rejections::refunds::refund_ops(
+            descriptors,
+            tokens,
+            reservation_windows,
+            &self.limiter,
+        )?;
         Ok(BatchLimitCounterAnswer::BuildTpdRefundOps { operations })
     }
 }
