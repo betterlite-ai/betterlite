@@ -100,16 +100,6 @@ fn sync_cleanup(outcome: Option<CloseResult>) -> Result<(), StreamError> {
     }
 }
 
-// close() on an async source: LiteLLM calls it and never awaits what it returns
-fn drop_call(pending: CloseCall<'_>) {
-    match pending {
-        CloseCall::Awaitable(awaitable) => {
-            drop(awaitable);
-        }
-        CloseCall::Absent | CloseCall::Returned => {}
-    }
-}
-
 // anyio.CancelScope(shield=True): the cleanup runs on its own task, so dropping the request future cannot stop it
 async fn shielded_cleanup(source: Box<dyn AsyncByteSource>) -> Result<(), StreamError> {
     let Some(handle) = Handle::try_current().ok() else {
