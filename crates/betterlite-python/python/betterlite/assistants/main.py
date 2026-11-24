@@ -1,3 +1,7 @@
+from collections.abc import Coroutine
+
+from betterlite._endpoints.payload import CallValue, to_call_payload
+from betterlite._native import NativeAssistantRunSession
 from betterlite.assistants._records import (
     Assistant,
     AssistantDeleted,
@@ -12,6 +16,7 @@ from betterlite.assistants._records import (
     delete_assistant,
     get_assistants,
     get_thread,
+    named_arguments,
 )
 from betterlite.assistants._runs import (
     AssistantStream,
@@ -19,17 +24,162 @@ from betterlite.assistants._runs import (
     AsyncAssistantStream,
     EventHandler,
     Message,
+    MessageAnswer,
     MessagePage,
+    MessagePageAnswer,
     Run,
-    a_add_message,
-    add_message,
-    aget_messages,
-    arun_thread,
-    arun_thread_stream,
-    get_messages,
-    run_thread,
-    run_thread_stream,
+    RunAnswer,
+    StreamAnswer,
+    call_values,
+    checked_handler,
+    completed_message,
+    message_payload,
+    open_stream,
+    run_payload,
+    validated_aanswer,
+    validated_answer,
 )
+
+
+def add_message(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L892
+    custom_llm_provider: str, thread_id: str, role: str, content: str,
+    attachments: CallValue = None, metadata: CallValue = None, client: CallValue = None,
+    **kwargs: CallValue,
+) -> MessageAnswer:
+    arguments = named_arguments(
+        kwargs,
+        {"attachments": attachments, "metadata": metadata, "client": client},
+    )
+    if arguments.get("a_add_message") is True:
+        return a_add_message(custom_llm_provider, thread_id, role, content, **arguments)
+    payload = message_payload(custom_llm_provider, thread_id, role, content, arguments)
+    message = validated_answer(Message, NativeAssistantRunSession.add_message, payload)
+    return completed_message(message)
+
+
+async def a_add_message(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L841
+    custom_llm_provider: str, thread_id: str, role: str, content: str,
+    attachments: CallValue = None, metadata: CallValue = None, client: CallValue = None,
+    **kwargs: CallValue,
+) -> Message:
+    arguments = named_arguments(
+        kwargs,
+        {"attachments": attachments, "metadata": metadata, "client": client},
+    )
+    payload = message_payload(custom_llm_provider, thread_id, role, content, arguments)
+    message = await validated_aanswer(
+        Message, NativeAssistantRunSession.a_add_message, payload,
+    )
+    return completed_message(message)
+
+
+def get_messages(
+    custom_llm_provider: str, thread_id: str, client: CallValue = None,
+    **kwargs: CallValue,
+) -> MessagePageAnswer:
+    arguments = named_arguments(kwargs, {"client": client})
+    if arguments.get("aget_messages") is True:
+        return aget_messages(custom_llm_provider, thread_id, **arguments)
+    payload = to_call_payload(call_values(custom_llm_provider, thread_id, arguments))
+    return validated_answer(MessagePage, NativeAssistantRunSession.get_messages, payload)
+
+
+async def aget_messages(
+    custom_llm_provider: str, thread_id: str, client: CallValue = None,
+    **kwargs: CallValue,
+) -> MessagePage:
+    arguments = named_arguments(kwargs, {"client": client})
+    payload = to_call_payload(call_values(custom_llm_provider, thread_id, arguments))
+    return await validated_aanswer(
+        MessagePage, NativeAssistantRunSession.aget_messages, payload,
+    )
+
+
+def run_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1239
+    custom_llm_provider: str, thread_id: str, assistant_id: str,
+    additional_instructions: CallValue = None, instructions: CallValue = None,
+    metadata: CallValue = None, model: CallValue = None, stream: CallValue = None,
+    tools: CallValue = None, client: CallValue = None,
+    event_handler: EventHandler | CallValue = None, **kwargs: CallValue,
+) -> RunAnswer:
+    asynchronous = kwargs.get("arun_thread") is True
+    handler = checked_handler(event_handler)
+    arguments = named_arguments(
+        kwargs,
+        {
+            "additional_instructions": additional_instructions,
+            "instructions": instructions,
+            "metadata": metadata,
+            "model": model,
+            "tools": tools,
+            "client": client,
+        },
+    )
+    payload = run_payload(custom_llm_provider, thread_id, assistant_id, arguments)
+    if stream is True:
+        native = open_stream(payload, asynchronous=asynchronous)
+        if asynchronous:
+            return AsyncAssistantStream(native, handler)
+        return AssistantStream(native, handler)
+    if asynchronous:
+        return validated_aanswer(Run, NativeAssistantRunSession.arun_thread, payload)
+    return validated_answer(Run, NativeAssistantRunSession.run_thread, payload)
+
+
+async def arun_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1174
+    custom_llm_provider: str, thread_id: str, assistant_id: str,
+    additional_instructions: CallValue = None, instructions: CallValue = None,
+    metadata: CallValue = None, model: CallValue = None, stream: CallValue = None,
+    tools: CallValue = None, client: CallValue = None, **kwargs: CallValue,
+) -> Run | AsyncAssistantStream:
+    answer = run_thread(
+        custom_llm_provider,
+        thread_id,
+        assistant_id,
+        additional_instructions,
+        instructions,
+        metadata,
+        model,
+        stream,
+        tools,
+        client,
+        arun_thread=True,
+        **kwargs,
+    )
+    match answer:
+        case AsyncAssistantStream() as opened:
+            return opened
+        case Coroutine() as pending:
+            return await pending
+        case object():
+            raise TypeError("run_thread answered no run or stream")
+
+
+def stream_answer(answer: RunAnswer) -> StreamAnswer:
+    match answer:
+        case AssistantStream() | AsyncAssistantStream() as opened:
+            return opened
+        case object():
+            raise TypeError("run_thread answered no stream")
+
+
+def run_thread_stream(
+    *, event_handler: EventHandler | CallValue = None, **kwargs: CallValue,
+) -> StreamAnswer:
+    handler = checked_handler(event_handler)
+    return stream_answer(run_thread(stream=True, event_handler=handler, **kwargs))
+
+
+def arun_thread_stream(
+    *, event_handler: EventHandler | CallValue = None, **kwargs: CallValue,
+) -> AsyncAssistantStream:
+    kwargs["arun_thread"] = True
+    match run_thread(stream=True, event_handler=event_handler, **kwargs):
+        case AsyncAssistantStream() as opened:
+            return opened
+        case object():
+            raise TypeError("run_thread answered no async stream")
+
 
 __all__ = [
     "Assistant", "AssistantDeleted", "AssistantPage", "AssistantStream",
