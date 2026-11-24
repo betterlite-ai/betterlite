@@ -1,0 +1,17 @@
+name: public-openapi-default-url
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /openapi.json
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: ""
+      why: the document lists only the eleven LLM POST routes and the WebSocket stubs, without request body schemas, and info.version is the betterlite version (docs/deviations/B8681.yaml)

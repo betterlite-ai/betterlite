@@ -1,0 +1,6 @@
+data: {not json}
+data: [1, 2]
+data: {"type":"content_block_delta","delta":{"text":"hi"}}
+data: {"type":"message_start","message":{"model":7,"id":"msg_2"}}
+data: {"type":"message_start","message":{"model":"","id":""}}
+data: {"type":"message_start","message":{"model":"fallback-model","id":"msg_3"}}

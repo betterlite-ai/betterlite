@@ -1,0 +1,21 @@
+task: B847
+deviations:
+  - what: >-
+      Counter sums, remaining arithmetic and the io reset are i64. A counter or limit beyond the i64
+      range saturates here, while LiteLLM's Python ints grow without bound.
+    why: >-
+      betterlite stores counters as i64 in its cache and headers, so no working setup can produce a
+      value that Python would represent and betterlite could not; saturating keeps the worst case a
+      wrong number instead of a panic. The ordinary and io splits, the bool-as-0/1 rule and the
+      negative ordinary remaining values all follow the source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11246-L11265
+kept_bugs:
+  - what: >-
+      get_model_group_usage and get_model_group_io_token_usage split a short batch answer at the first
+      key list's length, so a value list shorter than the key list lands in the source's order rather
+      than being regrouped by key kind: a short answer can count a tpm value as rpm usage.
+    why: >-
+      The split is Python slicing on whatever the cache returns, and a cache that answers fewer values
+      than keys is a working setup whose headers already show this result. The task pins the slice
+      semantics, and short_batch proves each short answer keeps its source order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11246-L11248
