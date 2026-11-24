@@ -114,8 +114,8 @@ struct ClientAuthView {
     jwt_claims: Option<Payload>,
 }
 
-fn optional_setting_name(setting: &str, value: Option<&JsonValue>) -> Option<String> {
-    let value = value?;
+fn optional_setting_name(setting: &str, configured: Option<&JsonValue>) -> Option<String> {
+    let value = configured?;
     match value {
         JsonValue::Null => None,
         JsonValue::String(name) => Some(name.clone()),
@@ -166,6 +166,14 @@ pub fn allowlist_from_settings(general_settings: &SettingsStore) -> Option<McpCl
         litellm_jwtauth: jwt_auth,
     };
     load_mcp_client_allowlist(&settings)
+}
+
+#[must_use]
+pub fn jwt_client_field_set(general_settings: &SettingsStore) -> bool {
+    match allowlist_from_settings(general_settings) {
+        Some(allowlist) => allowlist.jwt_field.is_some(),
+        None => false,
+    }
 }
 
 // reject_disallowed_mcp_client: the dashboard's own session is not a client application
