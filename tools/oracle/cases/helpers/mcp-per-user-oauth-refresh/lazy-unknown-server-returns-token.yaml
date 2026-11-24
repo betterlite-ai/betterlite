@@ -1,0 +1,17 @@
+kind: helper
+name: lazy-unknown-server-returns-token
+call:
+  b4660:
+    function: lazy_fetch
+    token:
+      access_token: fresh
+      refresh_token: stored-refresh
+      scopes: [read]
+      identity_binding_proof: user-proof
+    builds: [false]
+    binding_matches: [false]
+    steps:
+      - {op: fetch, user_id: user, server_id: srv}
+env: {}
+compare:
+  ignore: []
