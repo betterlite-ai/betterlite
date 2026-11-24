@@ -1,0 +1,15 @@
+task: B985
+deviations:
+  - what: A request that omits max_tokens sends the configured DEFAULT_MAX_TOKENS (4096 unless the environment overrides it) as max_output_tokens, where LiteLLM only sends a max_tokens its caller supplied and an absent one reaches the adapter as null.
+    why: The typed AnthropicRequestRecord keeps max_tokens optional and this slice owns the setting, and docs/compatibility.md gives an absent value the declared default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L90
+  - what: The built call always carries call_type anthropic_messages, where the Python handler sets it only when the forwarded litellm_logging_obj is a concrete LiteLLM Logging instance.
+    why: The route injects a LogContext around every call, so there is no request without a logging state to bill the spend row against.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/handler.py#L137-L141
+  - what: "The non-ResponsesAPIResponse failure reads \"Expected ResponsesAPIResponse, got <kind>\", where LiteLLM interpolates the Python type object and prints <class 'dict'>."
+    why: The port names the value's kind as a string because no type object survives the typed boundary; error_status, class, param and the ValueError mapping to APIConnectionError 500 are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/handler.py#L218-L219
+kept_bugs:
+  - what: A deployment include list is merged after the bridge list by keeping every item the bridge list lacks, so duplicates already inside the deployment list survive the merge.
+    why: The dedupe checks only the bridge list, and a deployment that repeats an include item relies on that repetition being harmless.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/handler.py#L152-L158
