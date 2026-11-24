@@ -37,7 +37,7 @@ fn request_list_payload_reads_the_window() {
     assert_eq!(input.limit, Some(0));
     assert!(matches!(
         input.timeout,
-        Some(BatchListTimeoutValue::Seconds(seconds)) if seconds == 2.5
+        Some(BatchListTimeoutValue::Seconds(seconds)) if seconds.total_cmp(&2.5_f64).is_eq()
     ));
 }
 
@@ -98,8 +98,8 @@ fn request_list_payload_rejects_an_unknown_key() {
 fn request_list_input_marks_the_async_call() {
     let input = list_payload("{}").unwrap();
     assert!(list_input(input, CallMode::Async).alist_batches);
-    let input = list_payload("{}").unwrap();
-    assert!(!list_input(input, CallMode::Sync).alist_batches);
+    let sync_input = list_payload("{}").unwrap();
+    assert!(!list_input(sync_input, CallMode::Sync).alist_batches);
 }
 
 #[test]
@@ -123,7 +123,8 @@ fn request_cancel_payload_keeps_the_call() {
     );
     assert!(matches!(
         call.params.timeout,
-        Some(CancelTimeout::Plain(TimeoutValue::Number(seconds))) if seconds == 3.0
+        Some(CancelTimeout::Plain(TimeoutValue::Number(seconds)))
+            if seconds.total_cmp(&3.0_f64).is_eq()
     ));
     assert!(matches!(call.call, CancelCall::Sync));
 }
@@ -148,7 +149,7 @@ fn request_cancel_payload_reads_a_text_timeout() {
     let call = cancel_payload(text).unwrap();
     assert!(matches!(
         call.params.timeout,
-        Some(CancelTimeout::Plain(TimeoutValue::String(text))) if text == "4"
+        Some(CancelTimeout::Plain(TimeoutValue::String(given))) if given == "4"
     ));
 }
 

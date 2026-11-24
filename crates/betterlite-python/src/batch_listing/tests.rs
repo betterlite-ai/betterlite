@@ -24,7 +24,9 @@ use super::convert::{CallMode, ModuleSettings, cancel_payload, parse, section_se
 use super::error::{DispatchFailure, payload_for};
 use super::register;
 use super::session::ListingCore;
-use super::transport::{ListTransport, duration_of, openai_failure, sdk_timeout, xai_failure};
+use super::transport::{
+    DurationError, ListTransport, duration_of, openai_failure, sdk_timeout, xai_failure,
+};
 
 const EMPTY_ENVIRONMENT: &str = r#"{"environment":{}}"#;
 const SECRET_ENVIRONMENT: &str = r#"{"environment":{},"settings":{"api_key":"sk-module","openai_key":"sk-openai","azure_key":"sk-azure"}}"#;
@@ -272,7 +274,7 @@ fn transport_timeouts_follow_the_read_phase() {
     };
     assert_eq!(
         duration_of(&Timeout::Phases(phases)).unwrap(),
-        Duration::from_secs_f64(2.5_f64)
+        Duration::try_from_secs_f64(2.5_f64).unwrap()
     );
     let bare = TimeoutPhases {
         connect: None,
@@ -288,7 +290,10 @@ fn transport_timeouts_follow_the_read_phase() {
         duration_of(&Timeout::Seconds(3.0_f64)).unwrap(),
         Duration::from_secs(3)
     );
-    assert!(duration_of(&Timeout::Seconds(-1.0_f64)).is_err());
+    assert_eq!(
+        duration_of(&Timeout::Seconds(-1.0_f64)).unwrap_err(),
+        DurationError::Invalid { seconds: -1.0_f64 }
+    );
 }
 
 #[test]
@@ -316,31 +321,47 @@ fn transport_sdk_timeout_keeps_the_seconds() {
 
 #[test]
 fn transport_failures_follow_the_status() {
-    let status = SdkError::Status {
+    let sdk_status = SdkError::Status {
         status: 429,
         error_type: None,
         param: None,
         code: None,
         message: "slow down".to_owned(),
     };
-    match openai_failure(BatchesError::Sdk { source: status }) {
+    match openai_failure(&BatchesError::Sdk { source: sdk_status }) {
         DispatchFailure::Status { status, message } => {
             assert_eq!(status, 429);
             assert_eq!(message, "slow down");
         }
-        other => panic!("expected a status, got {other}"),
+        other @ DispatchFailure::Connection(_)
+        | other @ DispatchFailure::Timeout(_)
+        | other @ DispatchFailure::Unsupported { .. } => {
+            panic!("expected a status, got {other}");
+        }
     }
-    match openai_failure(BatchesError::NotInitialized) {
+    match openai_failure(&BatchesError::NotInitialized) {
         DispatchFailure::Connection(_) => {}
-        other => panic!("expected a connection failure, got {other}"),
+        other @ DispatchFailure::Status { .. }
+        | other @ DispatchFailure::Timeout(_)
+        | other @ DispatchFailure::Unsupported { .. } => {
+            panic!("expected a connection failure, got {other}");
+        }
     }
-    match xai_failure(XaiBatchesError::MissingApiKey) {
+    match xai_failure(&XaiBatchesError::MissingApiKey) {
         DispatchFailure::Status { status, .. } => assert_eq!(status, 401),
-        other => panic!("expected a status, got {other}"),
+        other @ DispatchFailure::Connection(_)
+        | other @ DispatchFailure::Timeout(_)
+        | other @ DispatchFailure::Unsupported { .. } => {
+            panic!("expected a status, got {other}");
+        }
     }
-    match xai_failure(XaiBatchesError::InputFileRequired) {
+    match xai_failure(&XaiBatchesError::InputFileRequired) {
         DispatchFailure::Status { status, .. } => assert_eq!(status, 400),
-        other => panic!("expected a status, got {other}"),
+        other @ DispatchFailure::Connection(_)
+        | other @ DispatchFailure::Timeout(_)
+        | other @ DispatchFailure::Unsupported { .. } => {
+            panic!("expected a status, got {other}");
+        }
     }
 }
 

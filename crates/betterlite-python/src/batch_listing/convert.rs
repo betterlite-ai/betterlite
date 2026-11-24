@@ -100,7 +100,7 @@ pub(crate) enum CallMode {
 }
 
 // list_batches pops alist_batches and hands `_is_async` to the provider call
-pub(crate) fn list_input(
+pub(crate) const fn list_input(
     mut input: BatchProviderListInput,
     mode: CallMode,
 ) -> BatchProviderListInput {

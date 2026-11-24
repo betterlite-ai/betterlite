@@ -82,7 +82,7 @@ impl ListTransport {
                 let page = batches
                     .list_batches(context, window.after.as_deref(), window.limit)
                     .await
-                    .map_err(xai_failure)?;
+                    .map_err(|error| xai_failure(&error))?;
                 Ok(ListAnswer::Xai(page))
             }
             BatchListProviderCall::Azure(_) => Err(DispatchFailure::Unsupported {
@@ -116,7 +116,7 @@ async fn openai_list(
     openai_batches(&transport.client)
         .list_batches(connection, window.after.as_deref(), window.limit)
         .await
-        .map_err(openai_failure)
+        .map_err(|error| openai_failure(&error))
 }
 
 // The five provider entry points cancel_batch dispatches to: the two executors this build has, and the rest named.
@@ -181,7 +181,7 @@ async fn openai_cancel(
     openai_batches(client)
         .batch(connection, BatchOperation::Cancel(&query))
         .await
-        .map_err(openai_failure)
+        .map_err(|error| openai_failure(&error))
 }
 
 // XAIBatchesHandler.cancel_batch
@@ -205,16 +205,16 @@ async fn xai_cancel(
     batches
         .cancel_batch(call.values.batch_id, context)
         .await
-        .map_err(xai_failure)
+        .map_err(|error| xai_failure(&error))
 }
 
 // an SDK status keeps the provider's message; every other SDK failure never reached it
-pub(crate) fn openai_failure(error: BatchesError) -> DispatchFailure {
+pub(crate) fn openai_failure(error: &BatchesError) -> DispatchFailure {
     if let BatchesError::Sdk {
         source: SdkError::Status {
             status, message, ..
         },
-    } = &error
+    } = error
     {
         return DispatchFailure::Status {
             status: *status,
@@ -224,8 +224,8 @@ pub(crate) fn openai_failure(error: BatchesError) -> DispatchFailure {
     DispatchFailure::Connection(error.to_string())
 }
 
-pub(crate) fn xai_failure(error: XaiBatchesError) -> DispatchFailure {
-    match &error {
+pub(crate) fn xai_failure(error: &XaiBatchesError) -> DispatchFailure {
+    match error {
         XaiBatchesError::Status {
             status, message, ..
         } => DispatchFailure::Status {
@@ -266,7 +266,7 @@ pub(crate) fn duration_of(timeout: &Timeout) -> Result<Duration, DurationError> 
 }
 
 // the timeout an OpenAI SDK client takes: the seconds, or the phases it would apply per request
-pub(crate) fn sdk_timeout(timeout: &FineTuningTimeout) -> Timeout {
+pub(crate) const fn sdk_timeout(timeout: &FineTuningTimeout) -> Timeout {
     match timeout {
         FineTuningTimeout::Seconds(seconds) => Timeout::Seconds(*seconds),
         FineTuningTimeout::Structured(phases) => Timeout::Phases(TimeoutPhases {
