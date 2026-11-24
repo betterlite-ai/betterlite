@@ -1,0 +1,28 @@
+kind: helper
+name: mcp-openapi-extract-params
+call:
+  b4683:
+    operation: extract_params
+    spec_operation:
+      parameters:
+        - {name: id, in: path}
+        - {name: q, in: query}
+        - {name: x-token, in: header}
+        - {name: sid, in: cookie}
+        - {name: payload, in: body}
+        - {in: query}
+      requestBody:
+        content:
+          application/json: {}
+calls:
+  - b4683:
+      operation: extract_params
+      spec_operation:
+        parameters:
+          - {name: id, in: path}
+  - b4683:
+      operation: extract_params
+      spec_operation:
+        requestBody: {}
+env: {}
+compare: {ignore: []}

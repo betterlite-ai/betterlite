@@ -1,0 +1,79 @@
+kind: helper
+name: key-list-filters-selector-denials
+call:
+  key_list_filters:
+    calls:
+      - function: validate
+        caller: {user_id: null, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: null}
+        user_row: null
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: null, key_hash: null}
+        user_row: null
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: u2, team_id: null, organization_id: null, key_alias: null, key_hash: null}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+          organization_memberships:
+            - {user_id: u1, organization_id: o1, user_role: member, created_at: "2026-01-01T00:00:00+00:00", updated_at: "2026-01-01T00:00:00+00:00"}
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: t9, organization_id: null, key_alias: null, key_hash: null}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+          organization_memberships:
+            - {user_id: u1, organization_id: o1, user_role: member, created_at: "2026-01-01T00:00:00+00:00", updated_at: "2026-01-01T00:00:00+00:00"}
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: o9, key_alias: null, key_hash: null}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+          organization_memberships:
+            - {user_id: u1, organization_id: o1, user_role: member, created_at: "2026-01-01T00:00:00+00:00", updated_at: "2026-01-01T00:00:00+00:00"}
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: u1, team_id: t2, organization_id: o1, key_alias: null, key_hash: null}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+          organization_memberships:
+            - {user_id: u1, organization_id: o1, user_role: member, created_at: "2026-01-01T00:00:00+00:00", updated_at: "2026-01-01T00:00:00+00:00"}
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: "", team_id: "", organization_id: "", key_alias: someone-elses-alias, key_hash: ""}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+          organization_memberships:
+            - {user_id: u1, organization_id: o1, user_role: member, created_at: "2026-01-01T00:00:00+00:00", updated_at: "2026-01-01T00:00:00+00:00"}
+        key_row: null
+        key_fails: false
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: null, team_id: null, organization_id: null, key_alias: someone-elses-alias, key_hash: null}
+        user_row:
+          user_id: u1
+          teams: [t1, t2]
+          organization_memberships:
+            - {user_id: u1, organization_id: o1, user_role: member, created_at: "2026-01-01T00:00:00+00:00", updated_at: "2026-01-01T00:00:00+00:00"}
+        key_row: null
+        key_fails: false
+env: {}
+compare: {ignore: []}

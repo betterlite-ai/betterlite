@@ -1,0 +1,21 @@
+kind: helper
+name: key-list-filters-seed
+call:
+  key_list_filters:
+    calls:
+      - function: validate
+        caller: {user_id: u1, user_role: internal_user}
+        selectors: {user_id: u1, team_id: null, organization_id: null, key_alias: null, key_hash: null}
+        user_row: {user_id: u1, teams: [t1]}
+        key_row: null
+        key_fails: false
+      - function: projections
+        caller: {user_id: u1, user_role: internal_user}
+        teams: [{team_id: t1, members_with_roles: [{user_id: u1, role: user}], team_member_permissions: ["/key/list"]}]
+      - function: alias_scope
+        caller: {user_id: u1, user_role: internal_user}
+        user_row: {user_id: u1, teams: [t1]}
+        query_params: []
+        where_parts: []
+env: {}
+compare: {ignore: []}
