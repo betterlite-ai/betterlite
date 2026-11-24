@@ -135,14 +135,14 @@ impl RefreshTransport for Harness {
         };
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.push(call);
+        drop(calls);
         let mut outcomes = self.outcomes.lock().unwrap_or_else(PoisonError::into_inner);
-        match outcomes.pop_front() {
-            Some(answer) => answer,
-            None => Err(RefreshFailure {
+        outcomes.pop_front().unwrap_or_else(|| {
+            Err(RefreshFailure {
                 kind: RefreshFailureKind::Unavailable,
                 detail: "the case scripted no outcome".to_owned(),
-            }),
-        }
+            })
+        })
     }
 }
 
@@ -171,8 +171,10 @@ impl AssertionAccess for Harness {
         }
         let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
         writes.push((user_id.to_owned(), assertion.clone()));
+        drop(writes);
         let mut fresh = self.fresh.lock().unwrap_or_else(PoisonError::into_inner);
         fresh.insert(user_id.to_owned(), assertion.clone());
+        drop(fresh);
         Ok(())
     }
 }

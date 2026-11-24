@@ -7,7 +7,7 @@ use std::time::Duration;
 use betterlite_db::sso_assertion_rows::MemoryAssertionRows;
 use betterlite_mcp::credential_contracts::byok_cache::SystemClock;
 use betterlite_mcp::sso_assertions::cache::{CacheState, SsoAssertionCache};
-use betterlite_mcp::sso_assertions::read::SsoAssertionStore;
+use betterlite_mcp::sso_assertions::read::SsoAssertionStore as _;
 use betterlite_mcp::sso_assertions::store::DbSsoAssertionStore;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
@@ -402,30 +402,14 @@ async fn keeps_the_distributed_coordinator_once_the_factory_yields_one() {
         factory(vec![None, None, Some(recording)]),
         NOW_MS,
     );
-    fixture
-        .store
-        .fetch("user-1")
-        .await
-        .expect("the first fetch succeeds")
-        .expect("the first fetch finds the row");
-    fixture
-        .store
-        .fetch("user-1")
-        .await
-        .expect("the second fetch succeeds")
-        .expect("the second fetch finds the row");
-    fixture
-        .store
-        .fetch("user-1")
-        .await
-        .expect("the third fetch succeeds")
-        .expect("the third fetch finds the row");
-    fixture
-        .store
-        .fetch("user-1")
-        .await
-        .expect("the fourth fetch succeeds")
-        .expect("the fourth fetch finds the row");
+    for _round in 0..4 {
+        fixture
+            .store
+            .fetch("user-1")
+            .await
+            .expect("the fetch succeeds")
+            .expect("the row exists");
+    }
     assert_eq!(fixture.factory.asked.load(Ordering::Relaxed), 3);
     assert_eq!(runs.load(Ordering::Relaxed), 2);
     assert_eq!(fixture.transport.sent().len(), 4);
@@ -436,9 +420,8 @@ fn the_single_flight_key_is_the_sso_assertion_namespace() {
     assert_eq!(SINGLE_FLIGHT_KEY, "sso_identity_assertion");
 }
 
-#[tokio::test]
-async fn the_db_access_reads_back_what_it_writes() {
-    let store = DbSsoAssertionStore {
+fn db_store() -> DbSsoAssertionStore<MemoryAssertionRows> {
+    DbSsoAssertionStore {
         rows: Some(MemoryAssertionRows::default()),
         cipher: StoredCipher {
             settings: CipherSettings {
@@ -455,7 +438,12 @@ async fn the_db_access_reads_back_what_it_writes() {
             state: Mutex::new(CacheState::default()),
         }),
         config_declares_id_jag: false,
-    };
+    }
+}
+
+#[tokio::test]
+async fn the_db_access_reads_none_when_no_row_exists() {
+    let store = db_store();
     assert!(
         store
             .read("user-1")
@@ -463,6 +451,11 @@ async fn the_db_access_reads_back_what_it_writes() {
             .expect("the empty read succeeds")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn the_db_access_reads_back_what_it_writes() {
+    let store = db_store();
     let stored = assertion(NOW_SECONDS, Some("carried-token"));
     store
         .write("user-1", &stored)

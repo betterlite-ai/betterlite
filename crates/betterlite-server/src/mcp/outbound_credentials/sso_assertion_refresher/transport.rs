@@ -163,7 +163,7 @@ fn grant_form_request(
     for (name, value) in form {
         encoded.append_pair(name, value);
     }
-    let mut map = HeaderMap::with_capacity(headers.len() + 1);
+    let mut map = HeaderMap::with_capacity(headers.len().saturating_add(1));
     map.insert(ACCEPT, HeaderValue::from_static(JSON_ACCEPT));
     for (name, value) in headers {
         let header_name = HeaderName::try_from(name.as_str()).ok()?;

@@ -69,7 +69,7 @@ async fn posts_the_refresh_grant_with_basic_auth() {
         access_with(vec![("user-1", expired.clone())], AccessFailure::None),
         basic_client(),
     );
-    let renewed = fixture
+    fixture
         .refresher
         .refresh("user-1", &expired)
         .await
@@ -91,6 +91,21 @@ async fn posts_the_refresh_grant_with_basic_auth() {
         sent[0].headers.get("Authorization").map(String::as_str),
         Some("Basic Y2xpZW50LWlkOmNsaWVudC1zZWNyZXQ=")
     );
+}
+
+#[tokio::test]
+async fn the_basic_auth_renewal_returns_and_stores_the_renewed_assertion() {
+    let expired = assertion(NOW_SECONDS, Some("carried-token"));
+    let fixture = RefresherFixture::new(
+        transport(vec![Ok(renewed_body(RENEWED_EXP, None))]),
+        access_with(vec![("user-1", expired.clone())], AccessFailure::None),
+        basic_client(),
+    );
+    let renewed = fixture
+        .refresher
+        .refresh("user-1", &expired)
+        .await
+        .expect("the renewal succeeds");
     assert_eq!(
         renewed.id_token.expose_secret(),
         id_token(&claims(RENEWED_EXP))

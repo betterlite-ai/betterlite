@@ -33,12 +33,12 @@ impl Helper for Op {
 
 fn client_config_answer(input: &support::ClientConfigInput) -> Value {
     let config = sso_client_config(&input.vars);
-    let rendered = config.as_ref().map(|config| {
+    let rendered = config.as_ref().map(|resolved| {
         json!({
-            "token_endpoint": config.token_endpoint,
-            "client_id": config.client_id,
-            "auth_method": config.auth_method.as_str(),
-            "client_secret_len": config.client_secret.expose_secret().len(),
+            "token_endpoint": resolved.token_endpoint,
+            "client_id": resolved.client_id,
+            "auth_method": resolved.auth_method.as_str(),
+            "client_secret_len": resolved.client_secret.expose_secret().len(),
         })
     });
     json!({ "config": rendered })

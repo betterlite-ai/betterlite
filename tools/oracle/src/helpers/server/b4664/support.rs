@@ -9,7 +9,7 @@ use betterlite_server::mcp::outbound_credentials::sso_assertion_refresher::failu
     RefreshFailure, RefreshFailureKind,
 };
 use betterlite_server::mcp::outbound_credentials::sso_assertion_refresher::transport::RefreshResponseBody;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -172,12 +172,16 @@ pub(crate) fn answered(
     let records = harness.calls.lock().unwrap_or_else(PoisonError::into_inner);
     let first = records.first().cloned();
     let posts = records.len();
-    let locked = harness.writes.lock();
-    let made = locked.unwrap_or_else(PoisonError::into_inner);
+    drop(records);
+    let made = harness
+        .writes
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     let writes: Vec<Value> = made
         .iter()
         .map(|(user_id, stored)| json!({"user_id": user_id, "assertion": view(stored)}))
         .collect();
+    drop(made);
     json!({
         "result": result,
         "detail": detail,

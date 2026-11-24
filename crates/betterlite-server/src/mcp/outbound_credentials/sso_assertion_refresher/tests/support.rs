@@ -13,7 +13,7 @@ use betterlite_mcp::sso_assertions::assertion::{SsoIdentityAssertion, assertion_
 use betterlite_mcp::sso_assertions::read::{AssertionStoreUnavailable, SsoAssertionStore};
 use chrono::{DateTime, Utc};
 use secrecy::SecretString;
-use serde_json::json;
+use serde::Serialize;
 use tokio::task::yield_now;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
@@ -36,8 +36,20 @@ pub(crate) const CLIENT_SECRET: &str = "client-secret";
 pub(crate) const NOW_SECONDS: i64 = 1_700_000_000;
 pub(crate) const NOW_MS: i64 = NOW_SECONDS * 1000;
 
+#[derive(Serialize)]
+struct Claims {
+    iss: &'static str,
+    sub: &'static str,
+    exp: i64,
+}
+
 pub(crate) fn claims(exp: i64) -> JsonValue {
-    json!({"iss": "https://idp.example", "sub": "user-1", "exp": exp})
+    serde_json::to_value(Claims {
+        iss: "https://idp.example",
+        sub: "user-1",
+        exp,
+    })
+    .expect("the claims serialize")
 }
 
 pub(crate) fn id_token(claims: &JsonValue) -> String {

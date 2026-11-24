@@ -17,9 +17,15 @@ use crate::mcp::outbound_credentials::sso_assertion_refresher::failure::RefreshF
 
 const TOKEN_ENDPOINT: &str = "https://idp.example/token";
 
+struct SentPost {
+    url: String,
+    form: BTreeMap<String, String>,
+    headers: BTreeMap<String, String>,
+}
+
 struct ScriptedPost {
     answers: Mutex<VecDeque<GrantAnswer>>,
-    calls: Mutex<Vec<(String, BTreeMap<String, String>, BTreeMap<String, String>)>>,
+    calls: Mutex<Vec<SentPost>>,
 }
 
 #[async_trait]
@@ -33,7 +39,11 @@ impl RefreshGrantPost for ScriptedPost {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((url.to_owned(), form.clone(), headers.clone()));
+            .push(SentPost {
+                url: url.to_owned(),
+                form: form.clone(),
+                headers: headers.clone(),
+            });
         self.answers
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -68,9 +78,7 @@ fn headers() -> BTreeMap<String, String> {
     )])
 }
 
-fn sent_calls(
-    transport: &GrantPostTransport<ScriptedPost>,
-) -> Vec<(String, BTreeMap<String, String>, BTreeMap<String, String>)> {
+fn sent_calls(transport: &GrantPostTransport<ScriptedPost>) -> Vec<SentPost> {
     transport
         .post
         .calls
@@ -186,9 +194,9 @@ async fn forwards_the_url_form_and_headers_unchanged() {
         .expect("an empty object answers");
     let calls = sent_calls(&transport);
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].0, TOKEN_ENDPOINT);
-    assert_eq!(calls[0].1, sent_form);
-    assert_eq!(calls[0].2, sent_headers);
+    assert_eq!(calls[0].url, TOKEN_ENDPOINT);
+    assert_eq!(calls[0].form, sent_form);
+    assert_eq!(calls[0].headers, sent_headers);
 }
 
 #[tokio::test]

@@ -64,21 +64,21 @@ where
 {
     // Built on first use and kept, because the Redis client is not wired at start; asked again while it answers None.
     fn coordinator(&self) -> RenewalCoordinator {
-        let mut distributed = self
-            .distributed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if distributed.is_none() {
-            *distributed = self.factory.coordinator();
-        }
-        let Some(coordinator) = distributed.as_ref() else {
-            return Arc::clone(&self.in_process);
+        let chosen = {
+            let mut distributed = self
+                .distributed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if distributed.is_none() {
+                *distributed = self.factory.coordinator();
+            }
+            distributed.as_ref().cloned()
         };
-        Arc::clone(coordinator)
+        chosen.unwrap_or_else(|| Arc::clone(&self.in_process))
     }
 
     fn expiring(&self, assertion: Option<&SsoIdentityAssertion>) -> bool {
-        let Some(assertion) = assertion else {
+        let Some(stored) = assertion else {
             return false;
         };
         let Ok(skew) = TimeDelta::from_std(self.skew) else {
@@ -87,7 +87,7 @@ where
         self.clock
             .now()
             .checked_add_signed(skew)
-            .is_none_or(|deadline| assertion_expired(assertion, deadline))
+            .is_none_or(|deadline| assertion_expired(stored, deadline))
     }
 
     // The elected renewal, judged from a fresh read so a rotation another replica just landed is never redeemed again.
