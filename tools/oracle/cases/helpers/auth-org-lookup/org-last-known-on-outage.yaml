@@ -1,0 +1,30 @@
+kind: helper
+name: auth-org-lookup-org-last-known-on-outage
+call:
+  auth_org_lookup:
+    function: org_for_request
+    database: true
+    target: o1
+    in_memory_ttl: 5.0
+    cached_last_known:
+      organization_id: o1
+      organization_alias: acme
+      budget_id: b1
+      models: [gpt-4o]
+      created_by: ops
+      updated_by: ops
+      litellm_budget_table: {budget_id: b1, max_budget: 10.5, allowed_models: [gpt-4o]}
+    org_row:
+      organization_id: o1
+      organization_alias: acme
+      budget_id: b1
+      models: [gpt-4o]
+      created_by: ops
+      updated_by: ops
+      litellm_budget_table: {budget_id: b1, max_budget: 10.5, allowed_models: [gpt-4o]}
+    steps:
+      - {now: 100.0, fail: [outage], allow: false}
+      - {now: 101.0, fail: [outage], allow: true}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}

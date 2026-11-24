@@ -1,0 +1,17 @@
+name: docs-swagger-at-root
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: ""
+      why: LiteLLM's page carries the LazyLoadPlugin edit and betterlite drops it, since betterlite loads every route at startup (docs/deviations/B7740.yaml)
