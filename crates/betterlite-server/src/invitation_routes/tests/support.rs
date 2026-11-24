@@ -184,19 +184,20 @@ type Found = Result<Option<InvitationRecord>, InvitationStoreError>;
 #[async_trait]
 impl InvitationStore for FakeStore {
     async fn create(&self, user_id: &str, actor_user_id: Option<&str>) -> Created {
-        {
+        let created = {
             let mut rows = self.rows.lock().expect("the store lock");
             if let Some(error) = rows.create_error.take() {
                 return Err(InvitationStoreError::Create(error));
             }
             rows.created
                 .push((user_id.to_owned(), actor_user_id.map(str::to_owned)));
-        }
-        Ok(record(
-            "fresh-id",
-            user_id,
-            actor_user_id.unwrap_or("default_user_id"),
-        ))
+            record(
+                "fresh-id",
+                user_id,
+                actor_user_id.unwrap_or("default_user_id"),
+            )
+        };
+        Ok(created)
     }
 
     async fn info(&self, invitation_id: &str) -> Found {
@@ -234,6 +235,7 @@ impl InvitationStore for FakeStore {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum ScopeRights {
     Open,
     Privileged,
