@@ -24,6 +24,8 @@ use super::stack;
 use super::transport::Source;
 use crate::completion::setup::outbound_client;
 
+mod tests;
+
 const LIST: &str = "list_container_files";
 const UPLOAD: &str = "upload_container_file";
 const RETRIEVE: &str = "retrieve_container_file";

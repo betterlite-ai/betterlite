@@ -13,6 +13,8 @@ use betterlite_openai::containers::container_file_http::transport::{
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 
+mod tests;
+
 // One pooled client per session and the deadline its call asked for; a supplied Python client never crosses
 #[derive(Clone)]
 pub(crate) struct Source {
