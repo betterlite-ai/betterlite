@@ -174,8 +174,8 @@ async fn target_the_target_app_is_the_router_from_before_install() {
             .unwrap()
             .expect("a request through install carries the target")
     };
-    let response = target.app.clone().oneshot(probe()).await.unwrap();
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let from_target = target.app.clone().oneshot(probe()).await.unwrap();
+    assert_eq!(from_target.status(), StatusCode::NO_CONTENT);
     let without = recorder.targets.lock().unwrap().pop().unwrap();
     assert!(
         without.is_none(),
@@ -201,8 +201,8 @@ fn executor_a_request_without_a_peer_builds_no_peer() {
         .uri("/v1/chat/completions")
         .body(Body::empty())
         .unwrap();
-    let request = request_with_target(request, "");
-    let (parts, _body) = request.into_parts();
+    let parent = request_with_target(request, "");
+    let (parts, _body) = parent.into_parts();
     let executor = executor_for(&parts).expect("a request with a target builds an executor");
     assert!(
         executor.peer.is_none(),
@@ -222,8 +222,8 @@ fn executor_the_parent_uri_prefers_the_original_uri() {
         .insert(OriginalUri(Uri::from_static(
             "https://gateway.internal:4000/v1/chat/completions",
         )));
-    let request = request_with_target(request, "");
-    let (parts, _body) = request.into_parts();
+    let parent = request_with_target(request, "");
+    let (parts, _body) = parent.into_parts();
     let executor = executor_for(&parts).expect("a request with a target builds an executor");
     assert_eq!(
         executor.parent_uri,
@@ -238,8 +238,8 @@ fn executor_the_parent_uri_falls_back_to_the_request_uri() {
         .uri("https://gateway.internal:4000/v1/chat/completions?stream=true")
         .body(Body::empty())
         .unwrap();
-    let request = request_with_target(request, "");
-    let (parts, _body) = request.into_parts();
+    let parent = request_with_target(request, "");
+    let (parts, _body) = parent.into_parts();
     let executor = executor_for(&parts).expect("a request with a target builds an executor");
     assert_eq!(
         executor.parent_uri,
@@ -254,8 +254,8 @@ fn executor_the_root_path_falls_back_to_the_target_scalar_root() {
         .uri("/v1/chat/completions")
         .body(Body::empty())
         .unwrap();
-    let request = request_with_target(request, "/gateway");
-    let (parts, _body) = request.into_parts();
+    let parent = request_with_target(request, "/gateway");
+    let (parts, _body) = parent.into_parts();
     let executor = executor_for(&parts).expect("a request with a target builds an executor");
     assert_eq!(executor.root_path, "/gateway");
 }
