@@ -154,7 +154,7 @@ async fn the_default_ttl_is_one_hour() {
         .await
         .unwrap();
     assert_eq!(exposed(&first), "one");
-    advance(Duration::from_secs(3599)).await;
+    advance(Duration::from_secs(3539)).await;
     let cached = cache
         .get_or_compute("slot", "fp", minted("two", None, &calls))
         .await

@@ -401,9 +401,9 @@ fn id_jag_client_auth_selection(
 }
 
 #[rstest]
-#[case::default("")]
-#[case::empty(r#","subject_token_type":"""#)]
-#[case::access_token(r#","subject_token_type":"urn:ietf:params:oauth:token-type:access_token""#)]
+#[case::default(r#","client_secret":"secret-1""#)]
+#[case::empty(r#","client_secret":"secret-1","subject_token_type":"""#)]
+#[case::access_token(r#","client_secret":"secret-1","subject_token_type":"urn:ietf:params:oauth:token-type:access_token""#)]
 fn id_jag_subject_token_type_default_mapping(#[case] extra: &str) {
     let config = id_jag_config(extra);
     assert_eq!(config.subject_token_type, ID_JAG_SUBJECT_TOKEN_TYPE);
@@ -412,10 +412,13 @@ fn id_jag_subject_token_type_default_mapping(#[case] extra: &str) {
 
 #[rstest]
 #[case::saml2(
-    r#","subject_token_type":"urn:ietf:params:oauth:token-type:saml2""#,
+    r#","client_secret":"secret-1","subject_token_type":"urn:ietf:params:oauth:token-type:saml2""#,
     "urn:ietf:params:oauth:token-type:saml2"
 )]
-#[case::custom(r#","subject_token_type":"custom-assertion""#, "custom-assertion")]
+#[case::custom(
+    r#","client_secret":"secret-1","subject_token_type":"custom-assertion""#,
+    "custom-assertion"
+)]
 fn id_jag_subject_token_type_keeps_an_explicit_value(#[case] extra: &str, #[case] expected: &str) {
     let config = id_jag_config(extra);
     assert_eq!(config.subject_token_type, expected);
