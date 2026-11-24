@@ -5,18 +5,20 @@ use indexmap::IndexMap;
 // The chat fields the oracle compares: the id B919 writes, the message text and the finish reason
 pub(super) fn response_view(response: &ModelResponse) -> Json {
     let choice = response.choices.first();
-    let (role, content, finish_reason) = match choice {
-        Some(choice) => (
-            Json::Text(String::from(role_name(choice.message.role))),
-            optional_text(choice.message.content.as_deref()),
-            Json::Text(choice.finish_reason.clone()),
-        ),
-        None => (Json::Null, Json::Null, Json::Null),
-    };
-    let model = match &response.model {
-        Some(model) => Json::Text(model.clone()),
-        None => Json::Null,
-    };
+    let (role, content, finish_reason) = choice.map_or_else(
+        || (Json::Null, Json::Null, Json::Null),
+        |chosen| {
+            (
+                Json::Text(String::from(role_name(chosen.message.role))),
+                optional_text(chosen.message.content.as_deref()),
+                Json::Text(chosen.finish_reason.clone()),
+            )
+        },
+    );
+    let model = response
+        .model
+        .as_ref()
+        .map_or_else(|| Json::Null, |name| Json::Text(name.clone()));
     Json::Object(IndexMap::from([
         (String::from("id"), Json::Text(response.id.clone())),
         (String::from("model"), model),
@@ -104,13 +106,10 @@ fn text_of(value: Option<&Json>) -> Option<String> {
 }
 
 fn optional_text(text: Option<&str>) -> Json {
-    match text {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
-    }
+    text.map_or_else(|| Json::Null, |value| Json::Text(value.to_owned()))
 }
 
-fn role_name(role: ChatRole) -> &'static str {
+const fn role_name(role: ChatRole) -> &'static str {
     match role {
         ChatRole::Assistant => "assistant",
         ChatRole::User => "user",

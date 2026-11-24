@@ -10,11 +10,11 @@ use super::result::kinds::SdkResult;
 
 #[path = "response_chat_dispatch/fixtures/answers.rs"]
 mod answers;
-#[path = "responses_async_create/config.rs"]
+#[path = "response_chat_dispatch/fixtures/config.rs"]
 mod config;
 #[path = "response_chat_dispatch/fixtures/execution.rs"]
 mod execution;
-#[path = "responses_async_create/fixtures/support.rs"]
+#[path = "response_chat_dispatch/fixtures/support.rs"]
 mod fixtures;
 mod native;
 #[path = "response_chat_dispatch/fixtures/projection.rs"]

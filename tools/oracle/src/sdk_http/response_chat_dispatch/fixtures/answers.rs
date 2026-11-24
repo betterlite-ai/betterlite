@@ -93,7 +93,7 @@ impl ResponsesEventStream for LiveEvents {
 
 fn source_text(failure: SourceFailure) -> String {
     match failure {
-        SourceFailure::Transport(failure) => failure.message,
+        SourceFailure::Transport(error) => error.message,
         SourceFailure::Decode(text) => text,
     }
 }

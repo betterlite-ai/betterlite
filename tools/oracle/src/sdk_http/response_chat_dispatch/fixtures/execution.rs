@@ -37,7 +37,7 @@ use crate::sdk_http::result::Failure;
 #[derive(Debug)]
 pub(crate) enum ExecutionFailure {
     Sync {
-        error: CreateError,
+        error: Box<CreateError>,
         provider: String,
         model: String,
     },
@@ -87,11 +87,11 @@ impl ExecutionFailure {
 }
 
 impl fmt::Display for ExecutionFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Sync { error, .. } => write!(formatter, "{error}"),
-            Self::Async(error) => write!(formatter, "{error}"),
-            Self::Sdk(error) => write!(formatter, "{error}"),
+            Self::Sync { error, .. } => write!(f, "{error}"),
+            Self::Async(error) => write!(f, "{error}"),
+            Self::Sdk(error) => write!(f, "{error}"),
         }
     }
 }
@@ -240,7 +240,7 @@ async fn dispatch_create(
         create(deps, request, (), log)
             .await
             .map_err(|error| ExecutionFailure::Sync {
-                error,
+                error: Box::new(error),
                 provider,
                 model,
             })
