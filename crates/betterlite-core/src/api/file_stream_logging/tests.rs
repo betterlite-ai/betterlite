@@ -334,7 +334,7 @@ impl AsyncByteSource for Scripted {
                 let pending = result.clone();
                 let awaited = Arc::clone(&self.counters.awaited);
                 CloseCall::Awaitable(Box::pin(async move {
-                    let _count = awaited.fetch_add(1, Ordering::SeqCst);
+                    let _awaited_count = awaited.fetch_add(1, Ordering::SeqCst);
                     pending
                 }))
             }
