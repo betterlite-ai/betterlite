@@ -47,11 +47,9 @@ pub(super) fn static_auth(
 
 impl ResolvedAuth for StaticAuth {
     fn authenticate(&self, mut request: Request) -> Result<Request, CredentialError> {
-        insert_header(
-            &mut request.headers,
-            &self.header_name,
-            self.value.expose_secret(),
-        );
+        let name = self.header_name.as_str();
+        let value = self.value.expose_secret();
+        insert_header(&mut request.headers, name, value);
         Ok(request)
     }
 
