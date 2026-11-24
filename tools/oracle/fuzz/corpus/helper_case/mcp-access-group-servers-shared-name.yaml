@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-access-group-servers-shared-name
+call:
+  b10078:
+    servers:
+      - {server_id: alpha, name: Alpha, transport: http, access_groups: [team-a, team-b]}
+      - {server_id: beta, name: Beta, transport: http, access_groups: [team-b]}
+      - {server_id: gamma, name: Gamma, transport: http, access_groups: [team-c]}
+    access_groups: [team-b]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: custom-scheme-refused
+call:
+  b10062:
+    native_redirect_uris: null
+    uris:
+      - 'myapp://host/cb'
+      # the scheme check runs before the fragment check
+      - 'ftp://host/cb#x'
+      - 'mailto:user@example.com'
+      - 'not a url'
+env: {}
+compare: {ignore: []}

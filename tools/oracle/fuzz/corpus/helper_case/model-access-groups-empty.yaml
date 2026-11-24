@@ -1,0 +1,9 @@
+kind: helper
+name: model-access-groups-empty
+call:
+  b10047:
+    model_list: []
+    model_group_alias: {}
+    arguments: {}
+env: {}
+compare: {ignore: []}

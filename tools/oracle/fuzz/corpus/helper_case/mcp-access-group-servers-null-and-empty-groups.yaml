@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-access-group-servers-null-and-empty-groups
+call:
+  b10078:
+    servers:
+      - {server_id: absent, name: Absent, transport: http, access_groups: null}
+      - {server_id: empty, name: Empty, transport: http, access_groups: []}
+      - {server_id: matching, name: Matching, transport: http, access_groups: [team-a]}
+    access_groups: [team-a]
+env: {}
+compare: {ignore: []}
