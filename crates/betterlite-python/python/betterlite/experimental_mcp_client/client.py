@@ -1,12 +1,11 @@
 import json
-import os
-import ssl
 from collections.abc import Awaitable, Callable
 from typing import Final, Protocol, Required, TypedDict, TypeVar, runtime_checkable
 
 from pydantic import AnyUrl, JsonValue, TypeAdapter
 
 from betterlite._native import NativeMcpClient, NativeMcpError, NativeMcpSession
+from betterlite._settings.env import env_number
 from betterlite.experimental_mcp_client.errors import (
     UnsupportedMcpArgument,
     native_answer,
@@ -49,14 +48,12 @@ from betterlite.types.mcp import (
 
 CLIENT_TIMEOUT_VARIABLE: Final = "LITELLM_MCP_CLIENT_TIMEOUT"
 CLIENT_TIMEOUT_SECONDS: Final = 60.0
-# Pattern the constant, not ssl.SSLContext: typeshed's class object carries Any through __new__
-SSL_CONTEXT_TYPE: Final[type[ssl.SSLContext]] = ssl.SSLContext
 OPENAI_TOOLS: Final[TypeAdapter[list[ChatCompletionToolParam]]] = TypeAdapter(
     list[ChatCompletionToolParam]
 )
 
 
-# An argument the Rust client cannot carry: refused by name, so the annotation accepts any value
+# A value the Rust client cannot carry: refused by name, so the annotation accepts any value
 class RefusedArgument(Protocol):
     ...
 
@@ -133,7 +130,7 @@ class MCPClient:
         timeout: float | None = None,
         stdio_config: MCPStdioConfig | None = None,
         extra_headers: dict[str, str] | None = None,
-        ssl_verify: VerifyTypes | None = None,
+        ssl_verify: VerifyTypes | RefusedArgument | None = None,
         aws_auth: RefusedArgument | None = None,
         resolved_auth: RefusedArgument | None = None,
         sampling_callback: RefusedArgument | None = None,
@@ -155,15 +152,13 @@ class MCPClient:
         if protocol_version not in allowed:
             raise ValueError(f"protocol_version must be one of {list(allowed)}")
         self.ssl_verify: bool | str | None = None
-        match ssl_verify:
-            case bool() | str():
-                self.ssl_verify = ssl_verify
-            case SSL_CONTEXT_TYPE():
-                raise UnsupportedMcpArgument("ssl_verify")
-            case object():
-                self.ssl_verify = None
-        configured = os.getenv(CLIENT_TIMEOUT_VARIABLE)
-        default_timeout = CLIENT_TIMEOUT_SECONDS if not configured else float(configured)
+        if ssl_verify is not None:
+            match ssl_verify:
+                case bool() | str():
+                    self.ssl_verify = ssl_verify
+                case object():
+                    raise UnsupportedMcpArgument("ssl_verify")
+        default_timeout = env_number(CLIENT_TIMEOUT_VARIABLE, CLIENT_TIMEOUT_SECONDS, float)
         self.server_url: str = server_url
         self.transport_type: MCPTransport = transport_type
         self.auth_type: MCPAuthType = auth_type

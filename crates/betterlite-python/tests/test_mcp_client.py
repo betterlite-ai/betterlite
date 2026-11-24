@@ -38,6 +38,8 @@ DEFAULT_TIMEOUT: Final = 60.0
 CONFIGURED_TIMEOUT: Final = "0.5"
 CONFIGURED_SECONDS: Final = 0.5
 EXPLICIT_TIMEOUT: Final = 7.0
+BLANK_TIMEOUT: Final = " "
+INVALID_TIMEOUT: Final = "fast"
 SHORT_TIMEOUT: Final = 0.2
 CA_BUNDLE: Final = "/etc/ssl/certs/ca.pem"
 PLACEHOLDER_URL: Final = "http://127.0.0.1:1/mcp"
@@ -384,6 +386,8 @@ def test_signature_progress() -> None:
 def test_signature_ssl_verify() -> None:
     context = ssl.create_default_context()
     assert refusal_of(partial(MCPClient, ssl_verify=context)) == "ssl_verify"
+    assert refusal_of(partial(MCPClient, ssl_verify=7)) == "ssl_verify"
+    assert refusal_of(partial(MCPClient, ssl_verify=[CA_BUNDLE])) == "ssl_verify"
 
 
 def test_signature_ssl_values() -> None:
@@ -409,6 +413,11 @@ def test_signature_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(TIMEOUT_VARIABLE, CONFIGURED_TIMEOUT)
     assert MCPClient().timeout == CONFIGURED_SECONDS
     assert MCPClient(timeout=EXPLICIT_TIMEOUT).timeout == EXPLICIT_TIMEOUT
+    monkeypatch.setenv(TIMEOUT_VARIABLE, BLANK_TIMEOUT)
+    assert MCPClient().timeout == DEFAULT_TIMEOUT
+    monkeypatch.setenv(TIMEOUT_VARIABLE, INVALID_TIMEOUT)
+    with pytest.raises(ValueError, match=TIMEOUT_VARIABLE):
+        MCPClient()
 
 
 def test_methods_list_tools() -> None:

@@ -32,8 +32,8 @@ deviations:
       an HTTP status apart from a JSON-RPC error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L677-L735
   - what: >-
-      ssl_verify takes a bool, a CA bundle path or None and refuses an ssl.SSLContext, and an unknown protocol_version
-      raises ValueError rather than pydantic's ValidationError.
+      ssl_verify takes a bool, a CA bundle path or None and refuses every other value, an ssl.SSLContext included, and
+      an unknown protocol_version raises ValueError rather than pydantic's ValidationError.
     why: >-
       The Rust transport takes a boolean or a CA path, and the settings are validated in Rust and reported as a native
       error payload.
