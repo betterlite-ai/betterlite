@@ -1,0 +1,43 @@
+kind: helper
+name: override-projection-mask-only-selected-string-fields
+call:
+  override_projection:
+    function: mask
+    kind: hashicorp_vault
+    config:
+      vault_addr: "https://vault.example.com:8200"
+      vault_token: hunter2-token
+      approle_role_id: 7
+      approle_secret_id: secret-id-value
+      client_cert: cert-path
+      client_key: ""
+      vault_namespace: null
+      extra_field: left-alone
+calls:
+  - override_projection:
+      function: mask
+      kind: hashicorp_vault
+      config:
+        vault_token: short
+        approle_secret_id: "tökén-value"
+  - override_projection:
+      function: mask
+      kind: hashicorp_vault
+      config:
+        vault_token:
+          - a
+        approle_secret_id: true
+        client_key:
+          nested: x
+  - override_projection:
+      function: mask
+      kind: cyberark
+      config:
+        cyberark_api_base: "https://conjur.example.com"
+        cyberark_api_key: hunter2-api-key
+        client_key: secret
+        client_cert: cert
+        ssl_verify: "false"
+        refresh_interval: 60
+env: {}
+compare: {ignore: []}

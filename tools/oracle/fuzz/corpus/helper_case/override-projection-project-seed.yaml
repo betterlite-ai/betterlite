@@ -1,0 +1,9 @@
+kind: helper
+name: "override_projection: project seed"
+call:
+  override_projection:
+    function: project
+    kind: hashicorp_vault
+    raw: '{"vault_addr": "", "vault_token": "hunter2"}'
+env: {}
+compare: {ignore: []}

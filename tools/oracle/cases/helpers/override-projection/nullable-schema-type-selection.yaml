@@ -1,0 +1,12 @@
+kind: helper
+name: override-projection-nullable-schema-type-selection
+call:
+  override_projection:
+    function: schema
+    kind: hashicorp_vault
+calls:
+  - override_projection:
+      function: schema
+      kind: cyberark
+env: {}
+compare: {ignore: []}

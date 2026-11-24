@@ -1,0 +1,11 @@
+kind: helper
+name: "override_projection: mask seed"
+call:
+  override_projection:
+    function: mask
+    kind: cyberark
+    config:
+      cyberark_api_key: hunter2
+      client_key: ""
+env: {}
+compare: {ignore: []}
