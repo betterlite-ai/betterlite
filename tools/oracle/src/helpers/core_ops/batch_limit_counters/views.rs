@@ -12,14 +12,13 @@ use betterlite_core::api::batch_limit_descriptors::descriptors::{
 use betterlite_error::rate_limit::ProxyRateLimitError;
 use serde_json::{Value, json};
 
-pub(super) fn scope_view(scope: &BatchEnqueuedTokenScope) -> Value {
-    json!({"key": scope.key.as_str(), "value": scope.value, "limit": scope.limit})
-}
-
 pub(super) fn store_call(tokens: i64, scopes: &[BatchEnqueuedTokenScope]) -> Value {
     json!({
         "tokens": tokens,
-        "scopes": scopes.iter().map(scope_view).collect::<Vec<_>>(),
+        "scopes": scopes
+            .iter()
+            .map(|scope| json!({"key": scope.key.as_str(), "value": scope.value, "limit": scope.limit}))
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -64,9 +63,14 @@ pub(super) fn operation_view(operation: &BatchTpdRefundOperation) -> Value {
 }
 
 pub(super) fn reservation_view(reservation: &BatchEnqueuedTokenReservation) -> Value {
+    let scopes: Vec<Value> = reservation
+        .scopes
+        .iter()
+        .map(|scope| json!({"key": scope.key.as_str(), "value": scope.value, "limit": scope.limit}))
+        .collect();
     json!({
         "tokens": reservation.tokens,
-        "scopes": reservation.scopes.iter().map(scope_view).collect::<Vec<_>>(),
+        "scopes": scopes,
         "backend": reservation.backend,
         "owner": reservation.owner,
     })
@@ -98,30 +102,43 @@ pub(super) fn error_view(error: &ProxyRateLimitError) -> Value {
 }
 
 pub(super) fn answer_view(answer: &BatchLimitCounterAnswer) -> Value {
-    match answer {
-        BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection } => json!({
-            "function": "reserve_batch_enqueued_tokens",
-            "rejection": rejection.as_deref().map(error_view),
-        }),
-        BatchLimitCounterAnswer::RaiseEnqueuedLimitError { error } => json!({
-            "function": "raise_enqueued_limit_error",
-            "error": error_view(error),
-        }),
-        BatchLimitCounterAnswer::RaiseRateLimitError { error } => json!({
-            "function": "raise_rate_limit_error",
-            "error": error_view(error),
-        }),
-        BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection } => json!({
-            "function": "check_and_increment_batch_counters",
-            "rejection": rejection.as_deref().map(error_view),
-        }),
-        BatchLimitCounterAnswer::ReadTpdWindowStart { window_start } => json!({
-            "function": "read_tpd_window_start",
-            "window_start": window_start,
-        }),
-        BatchLimitCounterAnswer::BuildTpdRefundOps { operations } => json!({
-            "function": "build_tpd_refund_ops",
-            "operations": operations.iter().map(operation_view).collect::<Vec<_>>(),
-        }),
-    }
+    let fields = answer_fields(answer);
+    Value::Object(
+        fields
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect(),
+    )
+}
+
+fn answer_fields(answer: &BatchLimitCounterAnswer) -> BTreeMap<&'static str, Value> {
+    let (function, payload_name, payload) = match answer {
+        BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection } => (
+            "reserve_batch_enqueued_tokens",
+            "rejection",
+            json!(rejection.as_deref().map(error_view)),
+        ),
+        BatchLimitCounterAnswer::RaiseEnqueuedLimitError { error } => (
+            "raise_enqueued_limit_error",
+            "error",
+            json!(error_view(error)),
+        ),
+        BatchLimitCounterAnswer::RaiseRateLimitError { error } => {
+            ("raise_rate_limit_error", "error", json!(error_view(error)))
+        }
+        BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection } => (
+            "check_and_increment_batch_counters",
+            "rejection",
+            json!(rejection.as_deref().map(error_view)),
+        ),
+        BatchLimitCounterAnswer::ReadTpdWindowStart { window_start } => {
+            ("read_tpd_window_start", "window_start", json!(window_start))
+        }
+        BatchLimitCounterAnswer::BuildTpdRefundOps { operations } => (
+            "build_tpd_refund_ops",
+            "operations",
+            json!(operations.iter().map(operation_view).collect::<Vec<_>>()),
+        ),
+    };
+    BTreeMap::from([("function", json!(function)), (payload_name, payload)])
 }
