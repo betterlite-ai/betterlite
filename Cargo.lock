@@ -3003,6 +3003,7 @@ dependencies = [
  "betterlite-policy",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-secrets",
