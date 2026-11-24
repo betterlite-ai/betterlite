@@ -462,6 +462,30 @@ async fn team_models_join_user_deployments() {
     assert_eq!(ids(&kept), vec![Some("t1")]);
 }
 
+// A deployment the user created and also reaches as a team model is listed once, by id.
+#[tokio::test]
+async fn user_and_team_model_counts_once() {
+    let rows = vec![team_row("gpt-4o", "u1", "team-alpha")];
+    let snapshot = snapshot(&rows);
+    let mut store = StubReads::default();
+    store
+        .creators
+        .insert("u1".to_owned(), Some("alice".to_owned()));
+    store.user = Some(UserScope {
+        teams: team_list(&["team-alpha"]),
+        models: Vec::new(),
+    });
+    let kept = non_admin_all_models(
+        rows,
+        &caller(Some("alice"), &[]),
+        Some(&store),
+        &snapshot.lookup(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids(&kept), vec![Some("u1")]);
+}
+
 #[tokio::test]
 async fn all_proxy_grant_marks_non_team_models() {
     let rows = vec![
