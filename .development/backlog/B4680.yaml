@@ -1,7 +1,7 @@
 id: B4680
 milestone: M9 agents and mcp
 title: Local MCP tool registry and configured handlers
-status: todo
+status: done
 depends_on: [B4683]
 file: tasks/B4680-mcp-tool-registry.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/mcp_server/tool_registry.py"
 parent: B138
 split_from: B138
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3137
