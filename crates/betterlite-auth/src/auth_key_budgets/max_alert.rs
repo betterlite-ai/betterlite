@@ -57,11 +57,11 @@ pub fn max_budget_alert_check(
 }
 
 // `if not config` in LiteLLM: the JSON values Python reads as false
-fn is_falsey(value: &JsonData) -> bool {
-    match value {
+fn is_falsey(raw: &JsonData) -> bool {
+    match raw {
         JsonData::Null => true,
         JsonData::Bool(flag) => !*flag,
-        JsonData::Number(number) => number.as_f64().is_some_and(|value| value == 0.0),
+        JsonData::Number(number) => number.as_f64().is_some_and(|value| value == 0.0_f64),
         JsonData::String(text) => text.is_empty(),
         JsonData::Array(items) => items.is_empty(),
         JsonData::Object(fields) => fields.is_empty(),

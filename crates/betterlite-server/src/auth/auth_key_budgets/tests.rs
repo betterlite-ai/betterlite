@@ -379,8 +379,10 @@ async fn soft_alert_passes_without_denial() {
 #[tokio::test]
 async fn missing_duration_parser_leaves_the_start_unset() {
     let reader = ScriptedReader::new(vec![Decimal::from(1_i64)]);
+    let shared = Arc::clone(&reader);
+    let spend_reader: Arc<dyn SpendReader> = shared;
     let windowed = Arc::new(KeyBudgetRule {
-        reader: Some(Arc::clone(&reader)),
+        reader: Some(spend_reader),
         ..rule(
             r#"{"token":"sk-no-duration","spend":0,"budget_limits":[{"budget_duration":"1m","max_budget":5}]}"#,
         )

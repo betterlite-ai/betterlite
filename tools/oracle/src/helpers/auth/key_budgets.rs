@@ -108,15 +108,7 @@ async fn admit_value(call: &Call) -> Result<Value, Failure> {
     // user_api_key_auth.datetime, held at the moment the case fixes
     let clock = call.now.as_deref().ok_or(Failure::Missing("the clock"))?;
     let now = DateTime::parse_from_rfc3339(clock)?.with_timezone(&Utc);
-    let spends = call
-        .spends
-        .as_deref()
-        .ok_or(Failure::Missing("the spend reads"))?;
-    let reader = ScriptedSpend {
-        spends: spends.to_vec(),
-        next: AtomicUsize::new(0),
-        reads: Mutex::new(Vec::new()),
-    };
+    let reader = scripted_spend(call)?;
     let recorder = Recorder::default();
     let budgets = effective_budgets(&auth, now)?;
     let durations = CaseDurations(TimeZoneDatabase::from_env());
@@ -183,6 +175,19 @@ fn team_member_value(call: &Call) -> Result<Value, Failure> {
     let recorder = Recorder::default();
     team_member_alert_check(&alert, Some(&recorder));
     Ok(json!({"alerts": recorder.take()}))
+}
+
+// the reads the case scripts, consumed in order as the checks ask for them
+fn scripted_spend(call: &Call) -> Result<ScriptedSpend, Failure> {
+    let spends = call
+        .spends
+        .as_deref()
+        .ok_or(Failure::Missing("the spend reads"))?;
+    Ok(ScriptedSpend {
+        spends: spends.to_vec(),
+        next: AtomicUsize::new(0),
+        reads: Mutex::new(Vec::new()),
+    })
 }
 
 fn auth_of(call: &Call) -> Result<UserAPIKeyAuth, Failure> {

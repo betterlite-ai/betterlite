@@ -66,7 +66,7 @@ impl fmt::Debug for KeyBudgetRule {
                 &self.applied.try_lock().is_ok_and(|key| key.is_some()),
             )
             .field("throttle_pct", &self.throttle_pct)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
