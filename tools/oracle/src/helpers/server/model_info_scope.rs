@@ -41,29 +41,57 @@ fn caller(input: &Input) -> Result<ScopeCaller, Failure> {
 }
 
 fn answer(input: &Input) -> Result<Value, Failure> {
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(resolve(input))
+}
+
+async fn resolve(input: &Input) -> Result<Value, Failure> {
     match input.function {
         Predicate::GrantResolution => grant_answer(input),
         Predicate::DirectAccess => direct_answer(input),
-        Predicate::TeamModels => team_answer(input),
-        Predicate::NonAdmin => non_admin_answer(input),
-        Predicate::Populate => populate_answer(input, false),
-        Predicate::TeamAndDirect => populate_answer(input, true),
+        Predicate::TeamModels => {
+            let snapshot = fixture(input)?;
+            let found = get_all_team_models(
+                &selection(input)?,
+                &reads(input),
+                &snapshot.lookup(),
+                &AccessGroups::default(),
+            )
+            .await?;
+            Ok(team_map(&found))
+        }
+        Predicate::NonAdmin => {
+            let snapshot = fixture(input)?;
+            let models = non_admin_all_models(
+                specs(&input.all_models),
+                &caller(input)?,
+                Some(&reads(input)),
+                &snapshot.lookup(),
+            )
+            .await?;
+            Ok(spec_ids(&models))
+        }
+        Predicate::Populate => populate(input, false).await,
+        Predicate::TeamAndDirect => populate(input, true).await,
         Predicate::Filter => Ok(spec_ids(&visible_models(specs(&input.all_models)))),
     }
 }
 
 fn grant_answer(input: &Input) -> Result<Value, Failure> {
     let snapshot = fixture(input)?;
-    let groups = AccessGroups::default();
-    let ids = grant_deployment_ids(&input.grant, &snapshot.lookup(), &groups)?;
+    let ids = grant_deployment_ids(&input.grant, &snapshot.lookup(), &AccessGroups::default())?;
     Ok(json!({"ids": ids}))
 }
 
 fn direct_answer(input: &Input) -> Result<Value, Failure> {
     let user = input.user.as_ref().ok_or(Failure::MissingUser)?;
     let snapshot = fixture(input)?;
-    let groups = AccessGroups::default();
-    let ids = direct_access_models(&user.models, &input.key_models, &snapshot.lookup(), &groups)?;
+    let ids = direct_access_models(
+        &user.models,
+        &input.key_models,
+        &snapshot.lookup(),
+        &AccessGroups::default(),
+    )?;
     Ok(json!({"ids": ids}))
 }
 
@@ -76,46 +104,16 @@ fn selection(input: &Input) -> Result<TeamSelection, Failure> {
     }
 }
 
-fn team_answer(input: &Input) -> Result<Value, Failure> {
-    let runtime = Builder::new_current_thread().enable_all().build()?;
+async fn populate(input: &Input, visible_only: bool) -> Result<Value, Failure> {
     let snapshot = fixture(input)?;
-    let store = reads(input);
-    let groups = AccessGroups::default();
-    let team_selection = selection(input)?;
-    let found = runtime.block_on(get_all_team_models(
-        &team_selection,
-        &store,
-        &snapshot.lookup(),
-        &groups,
-    ))?;
-    Ok(team_map(&found))
-}
-
-fn non_admin_answer(input: &Input) -> Result<Value, Failure> {
-    let runtime = Builder::new_current_thread().enable_all().build()?;
-    let snapshot = fixture(input)?;
-    let store = reads(input);
-    let models = runtime.block_on(non_admin_all_models(
-        specs(&input.all_models),
-        &caller(input)?,
-        Some(&store),
-        &snapshot.lookup(),
-    ))?;
-    Ok(spec_ids(&models))
-}
-
-fn populate_answer(input: &Input, visible_only: bool) -> Result<Value, Failure> {
-    let runtime = Builder::new_current_thread().enable_all().build()?;
-    let snapshot = fixture(input)?;
-    let store = reads(input);
-    let groups = AccessGroups::default();
-    let models = runtime.block_on(accessible_models(
+    let models = accessible_models(
         specs(&input.all_models),
         visible_only,
         &caller(input)?,
-        &store,
+        &reads(input),
         &snapshot.lookup(),
-        &groups,
-    ))?;
+        &AccessGroups::default(),
+    )
+    .await?;
     Ok(spec_ids(&models))
 }
