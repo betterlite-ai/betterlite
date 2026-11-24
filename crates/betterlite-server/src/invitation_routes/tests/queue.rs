@@ -473,6 +473,7 @@ async fn queue_reports_a_stream_failure_to_the_hook() {
         hook.seen(),
         vec![("upstream broke".to_owned(), "500".to_owned())]
     );
+    assert_eq!(hook.data.lock().expect("the hook lock")[0]["priority"], 1);
 }
 
 #[tokio::test]

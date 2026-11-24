@@ -13,6 +13,9 @@ use crate::sse_data_generator::types::{
     FailureKind, FailureParam, FailureType, ItemStream, StreamFailure, StreamHooks, StreamItem,
 };
 
+#[cfg(test)]
+mod tests;
+
 pub(super) struct QueueHooks {
     pub(super) failure: Option<Arc<dyn QueueFailureHook>>,
 }

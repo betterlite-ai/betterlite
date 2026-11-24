@@ -24,6 +24,9 @@ use crate::management_admins::scope::AdminCaller;
 use crate::pre_call::rewrites::CliOverrides;
 use crate::sse_data_generator::types::StreamSource;
 
+#[cfg(test)]
+mod tests;
+
 // The two access questions /invitation/new and /invitation/delete ask of B863
 #[async_trait]
 pub trait InvitationScope: Send + Sync {

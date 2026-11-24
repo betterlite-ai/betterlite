@@ -26,6 +26,9 @@ use super::request::QueueRequest;
 use crate::auth::auth_resource_grants::denial_response;
 use crate::sse_data_generator::types::StreamSource;
 
+#[cfg(test)]
+mod tests;
+
 pub(super) const PRIORITY_HEADER: &str = "x-litellm-priority";
 const HIDDEN_PARAMS: &str = "_hidden_params";
 

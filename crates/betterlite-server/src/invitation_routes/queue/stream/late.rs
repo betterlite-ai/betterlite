@@ -12,6 +12,9 @@ use crate::first_byte_sse::{HookRaised, LateFailureHook};
 use crate::invitation_routes::state::QueueFailureHook;
 use crate::sse_error_frames::{SseFailure, exception_detail_parts};
 
+#[cfg(test)]
+mod tests;
+
 pub(super) struct QueueLateFailure {
     pub(super) hook: Arc<dyn QueueFailureHook>,
     pub(super) caller: Principal,

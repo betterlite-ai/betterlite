@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::http::StatusCode;
 use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
@@ -12,7 +13,10 @@ use super::support::{
     FakeScope, FakeStore, internal_user, invitation_router, master, org_admin, parse,
     platform_admin, platform_viewer, record, router_for, send, userless_admin,
 };
-use crate::invitation_routes::state::InvitationRouteState;
+use crate::invitation_routes::state::{
+    InvitationDatabase, InvitationRouteState, InvitationScope, QueueRouteState,
+};
+use crate::invitation_routes::store::PostgresInvitations;
 use crate::user_invitation::{InvitationError, InvitationRecord};
 
 const DB_NOT_CONNECTED: &str = CommonProxyErrors::DbNotConnectedError.as_str();
@@ -310,6 +314,21 @@ async fn info_answers_a_platform_viewer() {
 }
 
 #[tokio::test]
+async fn info_answers_a_platform_admin() {
+    let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
+    let (status, _, text) = send(
+        &router,
+        "GET",
+        "/invitation/info?invitation_id=inv-1",
+        "",
+        Some(platform_admin()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(parse(&text)["id"], "inv-1");
+}
+
+#[tokio::test]
 async fn info_reports_a_missing_row() {
     let (_, _, router) = setup(Vec::new(), open_scope());
     let (status, _, text) = send(
@@ -359,6 +378,34 @@ async fn info_requires_the_database() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
+}
+
+#[tokio::test]
+async fn info_reports_a_database_it_cannot_reach() {
+    let scope: Arc<dyn InvitationScope> = Arc::new(open_scope());
+    let store = PostgresInvitations {
+        store: PostgresStore { pool: None },
+    };
+    let router = router_for(InvitationRouteState {
+        invitations: Some(InvitationDatabase {
+            invitations: Arc::new(store),
+            scope,
+        }),
+        queue: QueueRouteState::default(),
+    });
+    let (status, _, text) = send(
+        &router,
+        "GET",
+        "/invitation/info?invitation_id=inv-1",
+        "",
+        Some(master()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        parse(&text)["detail"]["error"],
+        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
+    );
 }
 
 #[tokio::test]
