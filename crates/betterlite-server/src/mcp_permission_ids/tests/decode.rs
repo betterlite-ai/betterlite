@@ -81,7 +81,7 @@ fn mcp_tool_json_limits() {
             if len == over_limit.len()
     ));
     let at_depth = nested_array_grant(MAX_JSON_DEPTH.saturating_sub(1));
-    decode_mcp_tool_grants_json(at_depth.as_bytes()).expect("the depth limit is inclusive");
+    drop(decode_mcp_tool_grants_json(at_depth.as_bytes()).expect("the depth limit is inclusive"));
     let too_deep = nested_array_grant(MAX_JSON_DEPTH);
     let refused = decode_mcp_tool_grants_json(too_deep.as_bytes())
         .expect_err("a level over the depth limit is refused");
