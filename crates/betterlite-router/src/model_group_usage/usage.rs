@@ -84,24 +84,15 @@ fn split_totals(values: Option<Vec<Option<Json>>>, first_len: usize) -> (Option<
 
 // isinstance(value, int) with bool accepted: every other JSON shape, a float included, is skipped.
 fn total(values: &[Option<Json>]) -> Option<i64> {
-    let mut total: Option<i64> = None;
-    for value in values {
-        let Some(number) = counter(value.as_ref()) else {
-            continue;
-        };
-        total = Some(total.unwrap_or(0).saturating_add(number));
-    }
-    total
-}
-
-fn counter(value: Option<&Json>) -> Option<i64> {
-    let observed = value?;
-    match observed {
-        Json::Bool(flag) => Some(i64::from(u8::from(*flag))),
-        Json::Number(number) => match number.as_i64() {
-            Some(signed) => Some(signed),
-            None => i64::try_from(number.as_u64()?).ok(),
-        },
-        Json::Text(_) | Json::List(_) | Json::Object(_) | Json::Null => None,
-    }
+    values
+        .iter()
+        .filter_map(|value| match value.as_ref()? {
+            Json::Bool(flag) => Some(i64::from(u8::from(*flag))),
+            Json::Number(number) => match number.as_i64() {
+                Some(signed) => Some(signed),
+                None => i64::try_from(number.as_u64()?).ok(),
+            },
+            Json::Text(_) | Json::List(_) | Json::Object(_) | Json::Null => None,
+        })
+        .reduce(i64::saturating_add)
 }
