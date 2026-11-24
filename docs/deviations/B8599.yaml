@@ -21,6 +21,9 @@ deviations:
   - what: 'The first-byte keepalive on /queue/chat/completions reads the global sse_keepalive_ping_interval_seconds, not a deployment keepalive_seconds.'
     why: "The completion port exposes a healthy-deployment count and the call, not the router's deployment list, so the per-deployment override cannot be resolved here."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1136-L1144
+  - what: 'A non-streaming failure of POST /queue/chat/completions answers the replacement post_call_failure_hook returns; LiteLLM''s queue route calls the hook and discards its return, so the original error is answered.'
+    why: "The hook''s docstring says a callback can return an HTTPException to transform the error response, and /chat/completions and this route''s streamed path both use the hook''s answer; dropping it on the plain failure is an oversight no working setup can rely on."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16866-L16869
 kept_bugs:
   - what: 'The queued route copies LiteLLM by placing the key (here its stored hash) into metadata.user_api_key and metadata.user_api_key_hash, which reaches callback and spend logs.'
     why: 'LiteLLM does it so logging callbacks attribute spend to the key and a working setup relies on the field; it leaks a stable key identifier into every log.'
