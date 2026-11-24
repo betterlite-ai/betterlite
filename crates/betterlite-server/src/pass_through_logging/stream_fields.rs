@@ -24,7 +24,6 @@ pub enum StreamFieldError {
 }
 
 // The field readers of the Anthropic message_start event: the first non-empty string wins
-#[must_use]
 pub fn extract_message_start_field(
     chunks: &[Chunk],
     field: &str,
@@ -38,7 +37,6 @@ pub fn extract_message_start_field(
     Ok(None)
 }
 
-#[must_use]
 pub fn resolve_logged_model(
     call_log: &LoggingState,
     request_body: &JsonObject,

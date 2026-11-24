@@ -74,7 +74,7 @@ fn run_steps(
     input: &mut ResponseLoggingInput<'_>,
 ) -> Result<(), ResponsePayloadError> {
     apply_cost(cost, input)?;
-    apply_user(input)?;
+    apply_user(input);
     apply_standard_object(builder, input)?;
     apply_identity(input)
 }
@@ -102,17 +102,17 @@ fn apply_cost(
     Ok(())
 }
 
-fn apply_user(input: &mut ResponseLoggingInput<'_>) -> Result<(), ResponsePayloadError> {
+fn apply_user(input: &mut ResponseLoggingInput<'_>) {
     let carries_body = input
         .kwargs
         .passthrough_request_body
         .as_ref()
         .is_some_and(|request_body| !request_body.is_empty());
     if !carries_body {
-        return Ok(());
+        return;
     }
     let Some(user) = input.end_user.filter(|user| !user.is_empty()) else {
-        return Ok(());
+        return;
     };
     let mut body = IndexMap::new();
     body.insert("user".to_owned(), Json::Text(user.to_owned()));
@@ -127,14 +127,13 @@ fn apply_user(input: &mut ResponseLoggingInput<'_>) -> Result<(), ResponsePayloa
         .call_log
         .litellm_params
         .insert("proxy_server_request".to_owned(), replacement);
-    Ok(())
 }
 
 fn apply_standard_object(
     builder: &dyn StandardPayloadBuilder,
     input: &mut ResponseLoggingInput<'_>,
 ) -> Result<(), ResponsePayloadError> {
-    input.call_log.model = input.model.to_owned();
+    input.call_log.model = String::from(input.model);
     let built = builder.build(
         &*input.call_log,
         &*input.response,

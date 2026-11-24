@@ -45,15 +45,15 @@ pub fn resolve_costing_model(model: &str, call_log: &LoggingState) -> String {
         return model.to_owned();
     }
     let params = cost_params(call_log);
-    let deployment = params.and_then(|fields| usable_model_in(fields.get("model")));
-    if let Some(deployment) = deployment {
+    let deployment_model = params.and_then(|fields| usable_model_in(fields.get("model")));
+    if let Some(deployment) = deployment_model {
         return deployment.to_owned();
     }
-    let model_group = params
+    let group_model = params
         .and_then(|fields| fields.get("metadata"))
         .and_then(object_of)
         .and_then(|metadata| non_empty_text_in(metadata.get("model_group")));
-    if let Some(model_group) = model_group {
+    if let Some(model_group) = group_model {
         return model_group
             .strip_prefix("passthrough/")
             .unwrap_or(model_group)
@@ -136,7 +136,7 @@ fn text_in(value: Option<&Json>) -> Option<&str> {
     }
 }
 
-fn object_of(value: &Json) -> Option<&JsonObject> {
+const fn object_of(value: &Json) -> Option<&JsonObject> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
@@ -159,14 +159,14 @@ fn provider_of(call_log: &LoggingState) -> Option<&str> {
 }
 
 fn prefixed_model(model: &str, provider: Option<&str>) -> String {
-    let Some(provider) = provider else {
+    let Some(prefix_source) = provider else {
         return model.to_owned();
     };
-    let prefix = format!("{provider}/");
+    let prefix = format!("{prefix_source}/");
     if model.starts_with(&prefix) {
         return model.to_owned();
     }
-    format!("{provider}/{model}")
+    format!("{prefix_source}/{model}")
 }
 
 // use_custom_pricing_for_model: the pricing fields on litellm_params, then each deployment model_info
