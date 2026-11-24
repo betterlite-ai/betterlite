@@ -1,0 +1,17 @@
+kind: helper
+name: lazy-builds-on-first-fetch
+call:
+  b4660:
+    function: lazy_fetch
+    token:
+      access_token: fresh
+      refresh_token: stored-refresh
+      scopes: [read]
+      identity_binding_proof: user-proof
+    builds: [false]
+    steps:
+      - {op: fetch, user_id: user, server_id: srv}
+      - {op: fetch, user_id: user, server_id: srv}
+env: {}
+compare:
+  ignore: []

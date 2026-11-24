@@ -1,0 +1,41 @@
+kind: helper
+name: failure-usage-logging
+call:
+  responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.failed"}'
+    request_data: {}
+calls:
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.failed"}'
+      - '{"type":"error"}'
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.completed"}'
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.incomplete"}'
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"unknown"}'
+      - '{"type":"response.output_text.delta","delta":"x"}'
+    request_data: {}
+env: {}
+compare:
+  ignore: []
