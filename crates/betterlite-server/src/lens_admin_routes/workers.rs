@@ -5,7 +5,6 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_db::lens_repository::repository::LensRepository;
 use betterlite_lens::models::job::{JobStatus, Worker};
-use betterlite_lens::models::settings::Scope;
 use betterlite_lens::sources::storage::Storage;
 use betterlite_lens::state::transitions::can_access;
 use chrono::{DateTime, Utc};
@@ -120,25 +119,12 @@ where
 {
     let (_, scope) = route_key_scope::<Store>(caller, true)?;
     let repository = lens_repository(state)?;
-    let worker = scoped_worker::<Db, Store>(repository, &scope, worker_id).await?;
-    Ok((repository, worker))
-}
-
-// the worker named by the path, when the caller's scope covers it, else LiteLLM's 404
-async fn scoped_worker<Db, Store>(
-    repository: &LensRepository<Db>,
-    scope: &Scope,
-    worker_id: &str,
-) -> Result<Worker, LensRouteError<<Store as Storage>::Error>>
-where
-    Db: LensDatabase,
-    Store: Storage,
-{
     let workers = repository.workers().await?;
     let found = workers
         .into_iter()
-        .find(|worker| worker.id == worker_id && can_access(scope, &worker.scope));
-    found.ok_or(LensRouteError::Access(LensAccessError::WorkerNotFound))
+        .find(|candidate| candidate.id == worker_id && can_access(&scope, &candidate.scope));
+    let worker = found.ok_or(LensRouteError::Access(LensAccessError::WorkerNotFound))?;
+    Ok((repository, worker))
 }
 
 mod tests;
