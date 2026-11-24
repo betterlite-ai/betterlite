@@ -209,10 +209,10 @@ fn headers(provider: &str, value: Option<Json>) -> Result<HeaderMap, RequestErro
         return Ok(HeaderMap::new());
     };
     let mut headers = HeaderMap::new();
-    for (name, value) in fields {
+    for (name, entry) in fields {
         let header = HeaderName::try_from(name.as_str())
             .map_err(|_invalid| RequestError::field(provider, "extra_headers"))?;
-        let Json::Text(text) = value else {
+        let Json::Text(text) = entry else {
             return Err(RequestError::field(provider, "extra_headers"));
         };
         let header_value = HeaderValue::from_str(&text)

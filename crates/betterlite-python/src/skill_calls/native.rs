@@ -35,7 +35,7 @@ fn native_answer(outcome: Outcome) -> PyResult<String> {
 }
 
 // The awaitable calls: the same attempt on the asyncio loop's runtime, handed back as a coroutine.
-fn prompt<'py>(py: Python<'py>, core: Arc<SkillCore>, mode: Mode, call: Call) -> Answer<'py> {
+fn prompt(py: Python<'_>, core: Arc<SkillCore>, mode: Mode, call: Call) -> Answer<'_> {
     future_into_py(py, async move {
         let outcome = core.execute(mode, call).await;
         Python::attach(|_attached| native_answer(outcome))
