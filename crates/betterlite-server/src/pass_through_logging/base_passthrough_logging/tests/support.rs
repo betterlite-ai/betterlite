@@ -101,7 +101,6 @@ pub(crate) fn logger(
 }
 
 // The provider as the handlers see it: the models it was asked about and the answers it gives.
-#[derive(Default)]
 pub(crate) struct FakeProvider {
     models: Mutex<Vec<String>>,
     chat: Mutex<Option<Json>>,
@@ -112,22 +111,28 @@ pub(crate) struct FakeProvider {
 impl FakeProvider {
     pub(crate) fn chat(response: Json) -> Self {
         Self {
+            models: Mutex::new(Vec::new()),
             chat: Mutex::new(Some(response)),
-            ..Self::default()
+            streamed: Mutex::new(None),
+            stream_fails: false,
         }
     }
 
     pub(crate) fn failing() -> Self {
         Self {
+            models: Mutex::new(Vec::new()),
+            chat: Mutex::new(None),
+            streamed: Mutex::new(None),
             stream_fails: true,
-            ..Self::default()
         }
     }
 
     pub(crate) fn streaming(streamed: Option<StreamedResponse>) -> Self {
         Self {
+            models: Mutex::new(Vec::new()),
+            chat: Mutex::new(None),
             streamed: Mutex::new(streamed),
-            ..Self::default()
+            stream_fails: false,
         }
     }
 
@@ -190,7 +195,6 @@ impl PassthroughProvider for FakeProvider {
 }
 
 // The payload collaborator as the handlers see it: the models it priced and the kwargs it answers with.
-#[derive(Default)]
 pub(crate) struct FakePayload {
     models: Mutex<Vec<String>>,
     call_ids: Mutex<Vec<String>>,
@@ -203,8 +207,12 @@ pub(crate) struct FakePayload {
 impl FakePayload {
     pub(crate) fn new(kwargs: ResponseLoggingKwargs) -> Self {
         Self {
+            models: Mutex::new(Vec::new()),
+            call_ids: Mutex::new(Vec::new()),
+            inputs: Mutex::new(Vec::new()),
+            end_user_bodies: Mutex::new(Vec::new()),
             kwargs,
-            ..Self::default()
+            end_user: None,
         }
     }
 

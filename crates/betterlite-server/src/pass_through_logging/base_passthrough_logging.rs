@@ -15,11 +15,11 @@ use thiserror::Error;
 
 use super::response_costing::ResponseCostService;
 use super::response_payload::{
-    ResponseLoggingInput, ResponseLoggingKwargs, create_response_logging_payload,
-    end_user_from_request_body,
+    ResponseLoggingInput, ResponseLoggingKwargs, end_user_from_request_body,
 };
+// ast-grep-ignore: no-long-names - B3630's fixed name, called from the shared handler
+use super::response_payload::create_response_logging_payload;
 
-#[cfg(test)]
 pub(crate) mod tests;
 
 // LiteLLM's httpx.Response as a provider transform reads it: the upstream status and the body bytes.
@@ -39,6 +39,7 @@ pub trait PassthroughProvider: Send + Sync {
         upstream: &UpstreamChatReply<'_>,
     ) -> Result<Json, PassthroughLoggingError>;
 
+    // ast-grep-ignore: no-long-names - B3637's OpenAI provider implements this fixed name
     fn build_complete_streaming_response(
         &self,
         all_chunks: &[String],
@@ -90,6 +91,7 @@ impl ResponsePayloadBuilder {
 impl PassthroughPayload for ResponsePayloadBuilder {
     fn build(&self, input: PassthroughPayloadInput<'_>) -> ResponseLoggingKwargs {
         let end_user = self.end_user(input.kwargs.passthrough_request_body.as_ref());
+        // ast-grep-ignore: no-long-names - B3630's fixed name, called from the shared handler
         create_response_logging_payload(
             self.cost.as_ref(),
             self.builder.as_ref(),
@@ -194,6 +196,7 @@ pub struct PassthroughChatLogger {
 
 impl PassthroughChatLogger {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - B3637 and B8931 build the shared logger through this fixed constructor
     pub fn new(
         provider: Arc<dyn PassthroughProvider>,
         payload: Arc<dyn PassthroughPayload>,

@@ -44,6 +44,7 @@ impl PassthroughProvider for CohereProvider {
         logged_model_response(&reply)
     }
 
+    // ast-grep-ignore: no-long-names - B3637's OpenAI provider implements this fixed name
     fn build_complete_streaming_response(
         &self,
         all_chunks: &[String],

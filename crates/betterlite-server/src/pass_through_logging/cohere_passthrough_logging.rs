@@ -25,7 +25,6 @@ pub mod chat;
 pub mod embedding;
 mod stream;
 
-#[cfg(test)]
 pub(crate) mod tests;
 
 pub(crate) const COHERE: &str = "cohere";
@@ -94,6 +93,7 @@ pub struct CoherePassthroughLogger {
 
 impl CoherePassthroughLogger {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - B3606 and B8931 build the Cohere logger through this fixed constructor
     pub fn new(chat: PassthroughChatLogger, embedding: Arc<dyn CohereEmbeddingTools>) -> Self {
         Self { chat, embedding }
     }

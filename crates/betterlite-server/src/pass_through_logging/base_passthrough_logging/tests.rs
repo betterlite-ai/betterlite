@@ -1,9 +1,11 @@
+#![cfg(test)]
 use std::sync::Arc;
 
 use betterlite_config::sections::request_headers::Settings;
 use betterlite_logging::passthrough_handler::types::{NO_COMPLETE_RESPONSE, StreamedResponse};
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use tracing::Level;
 
@@ -296,8 +298,11 @@ fn chat_payload_builder_runs_the_response_payload_with_the_end_user() {
         response: &mut response,
         model: "command-r",
         kwargs: ResponseLoggingKwargs {
+            response_cost: None,
+            model: None,
+            litellm_params: IndexMap::new(),
+            standard_logging_object: None,
             passthrough_request_body: Some(object(r#"{"user": "alice"}"#)),
-            ..ResponseLoggingKwargs::default()
         },
         start_time: timestamp(START),
         end_time: timestamp(END),
