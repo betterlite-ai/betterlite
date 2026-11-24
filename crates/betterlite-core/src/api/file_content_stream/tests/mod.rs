@@ -51,9 +51,8 @@ use super::error::FileContentError;
 use super::service::Selection;
 use super::streaming::source_failure as stream_source_failure;
 use super::target::{
-    AzureContent, CallerClient, CompatibleContent, ContentLogger, ContentLogging, ContentMode,
-    ContentOperation, ContentReply, ContentTarget, FileContentDispatch, GenericContent, NewLogger,
-    StreamIdentity, SuppliedSdk, XaiBatchContent,
+    CallerClient, ContentLogger, ContentLogging, ContentMode, ContentOperation, ContentReply,
+    ContentTarget, FileContentDispatch, GenericContent, NewLogger, StreamIdentity, SuppliedSdk,
 };
 use super::{
     ContentAnswer, ContentCall, ContentContext, ContentEntry, ContentKwargs, FileContentStream,
@@ -297,68 +296,62 @@ impl FileContentDispatch for FakeDispatch {
 
 fn seen(target: ContentTarget<'_, FakeConfig, ()>) -> Seen {
     match target {
-        ContentTarget::Compatible(content) => seen_compatible(content),
-        ContentTarget::Azure(content) => seen_azure(content),
-        ContentTarget::Generic(boxed) => seen_generic(*boxed),
-        ContentTarget::XaiBatch(content) => seen_xai(content),
+        ContentTarget::Compatible(content) => Seen::Compatible {
+            api_key: content
+                .api_key
+                .map(|secret| secret.expose_secret().to_owned()),
+            api_base: content.api_base,
+            organization: content.organization,
+            max_retries: content.max_retries,
+            mode: content.mode,
+            client: content.client,
+        },
+        ContentTarget::Azure(content) => Seen::Azure {
+            api_key: content
+                .api_key
+                .map(|secret| secret.expose_secret().to_owned()),
+            api_base: content.api_base,
+            api_version: content.api_version,
+            max_retries: content.max_retries,
+            mode: content.mode,
+            client: content.client,
+        },
+        ContentTarget::Generic(boxed) => Seen::Generic(Box::new(generic_snapshot(*boxed))),
+        ContentTarget::XaiBatch(content) => Seen::XaiBatch {
+            batch_id: content.batch_id.to_owned(),
+            api_base: content.api_base.map(str::to_owned),
+            api_key: content
+                .api_key
+                .map(|secret| secret.expose_secret().to_owned()),
+            timeout: content.timeout,
+        },
     }
 }
 
-fn seen_compatible(content: CompatibleContent) -> Seen {
-    Seen::Compatible {
-        api_key: content
+fn generic_snapshot(content: GenericContent<'_, FakeConfig, ()>) -> GenericSeen {
+    let GenericContent {
+        config,
+        params,
+        trusted,
+        headers,
+        logger,
+        client,
+        mode,
+    } = content;
+    GenericSeen {
+        config,
+        api_key: params
             .api_key
             .map(|secret| secret.expose_secret().to_owned()),
-        api_base: content.api_base,
-        organization: content.organization,
-        max_retries: content.max_retries,
-        mode: content.mode,
-        client: content.client,
-    }
-}
-
-fn seen_azure(content: AzureContent) -> Seen {
-    Seen::Azure {
-        api_key: content
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        api_base: content.api_base,
-        api_version: content.api_version,
-        max_retries: content.max_retries,
-        mode: content.mode,
-        client: content.client,
-    }
-}
-
-fn seen_generic(content: GenericContent<'_, FakeConfig, ()>) -> Seen {
-    Seen::Generic(Box::new(GenericSeen {
-        config: content.config,
-        api_key: content
-            .params
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        api_base: content.params.api_base,
-        trusted: content
-            .trusted
-            .map(|snapshot| snapshot.values.keys().cloned().collect()),
-        headers: content.headers,
-        created: match content.logger {
+        api_base: params.api_base,
+        trusted: trusted.map(|snapshot| snapshot.values.keys().cloned().collect()),
+        headers,
+        created: match logger {
             ContentLogger::Created(logger) => Some(*logger),
             ContentLogger::Supplied(_) => None,
         },
-        client: content.client.map(|supplied| supplied.kind),
-        mode: content.mode,
-    }))
-}
-
-fn seen_xai(content: XaiBatchContent<'_>) -> Seen {
-    Seen::XaiBatch {
-        batch_id: content.batch_id.to_owned(),
-        api_base: content.api_base.map(str::to_owned),
-        api_key: content
-            .api_key
-            .map(|secret| secret.expose_secret().to_owned()),
-        timeout: content.timeout,
+        client: client.map(|supplied| supplied.kind),
+        mode,
     }
 }
 
@@ -504,6 +497,30 @@ const fn trusted_context(trusted: &TrustedCredentials) -> ContentContext<'_, (),
     ContentContext {
         trusted: Some(trusted),
         client: None,
+        logger: None,
+        logging: None,
+    }
+}
+
+const fn sdk_context(kind: SuppliedSdk) -> ContentContext<'static, (), RecordingLogging> {
+    ContentContext {
+        trusted: None,
+        client: Some(CallerClient::Sdk(kind)),
+        logger: None,
+        logging: None,
+    }
+}
+
+const fn http_context<'call>(
+    kind: ClientKind,
+    trusted: Option<&'call TrustedCredentials>,
+) -> ContentContext<'call, (), RecordingLogging> {
+    ContentContext {
+        trusted,
+        client: Some(CallerClient::Http(SuppliedClient {
+            kind,
+            transport: &(),
+        })),
         logger: None,
         logging: None,
     }

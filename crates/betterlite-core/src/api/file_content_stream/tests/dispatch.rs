@@ -13,8 +13,15 @@ async fn buffered_content_dispatch_compatible(#[case] provider: &str) {
     settings.openai_organization = Some(String::from("org-settings"));
     let read = service(&resolution, settings, &[]);
     let kwargs = ContentKwargs {
+        api_key: None,
+        api_base: None,
+        api_version: None,
+        organization: None,
+        timeout: None,
+        request_timeout: None,
         max_retries: Some(4),
-        ..ContentKwargs::default()
+        litellm_call_id: None,
+        id: None,
     };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(provider.to_owned());
@@ -69,17 +76,19 @@ async fn buffered_content_dispatch_azure() {
     settings.azure_api_version = Some(String::from("2024-06-01"));
     let read = service(&resolution, settings, &[]);
     let kwargs = ContentKwargs {
+        api_key: None,
         api_base: Some(String::from("https://azure.example")),
-        ..ContentKwargs::default()
+        api_version: None,
+        organization: None,
+        timeout: None,
+        request_timeout: None,
+        max_retries: None,
+        litellm_call_id: None,
+        id: None,
     };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("azure"));
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Sdk(SuppliedSdk::Azure)),
-        logger: None,
-        logging: None,
-    };
+    let context = sdk_context(SuppliedSdk::Azure);
     run(&read, ContentEntry::Async, &call, context)
         .await
         .unwrap();
@@ -113,19 +122,18 @@ async fn buffered_content_dispatch_generic_configs(#[case] provider: ProviderId)
     };
     let kwargs = ContentKwargs {
         api_key: Some(SecretString::from("sk-call")),
-        ..ContentKwargs::default()
+        api_base: None,
+        api_version: None,
+        organization: None,
+        timeout: None,
+        request_timeout: None,
+        max_retries: None,
+        litellm_call_id: None,
+        id: None,
     };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(provider.to_owned());
-    let context = ContentContext {
-        trusted: Some(&trusted),
-        client: Some(CallerClient::Http(SuppliedClient {
-            kind: ClientKind::Asynchronous,
-            transport: &(),
-        })),
-        logger: None,
-        logging: None,
-    };
+    let context = http_context(ClientKind::Asynchronous, Some(&trusted));
     run(&read, ContentEntry::Sync, &call, context)
         .await
         .unwrap();
@@ -153,12 +161,7 @@ async fn buffered_content_dispatch_generic_drops_sdk_clients() {
     let kwargs = ContentKwargs::default();
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("anthropic"));
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Sdk(SuppliedSdk::OpenAi)),
-        logger: None,
-        logging: None,
-    };
+    let context = sdk_context(SuppliedSdk::OpenAi);
     run(&read, ContentEntry::Sync, &call, context)
         .await
         .unwrap();
@@ -173,12 +176,7 @@ async fn buffered_content_dispatch_compatible_drops_every_client() {
     let kwargs = ContentKwargs::default();
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("openai"));
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Sdk(SuppliedSdk::OpenAi)),
-        logger: None,
-        logging: None,
-    };
+    let context = sdk_context(SuppliedSdk::OpenAi);
     run(&read, ContentEntry::Sync, &call, context)
         .await
         .unwrap();
@@ -210,7 +208,13 @@ async fn buffered_content_dispatch_xai_batch_precedes_config() {
     let kwargs = ContentKwargs {
         api_key: Some(SecretString::from("sk-xai")),
         api_base: Some(String::from("https://xai.example")),
-        ..ContentKwargs::default()
+        api_version: None,
+        organization: None,
+        timeout: None,
+        request_timeout: None,
+        max_retries: None,
+        litellm_call_id: None,
+        id: None,
     };
     let mut call = content_call(&kwargs);
     call.file_id = "batch_7";
@@ -330,15 +334,7 @@ async fn buffered_content_dispatch_azure_drops_an_http_handler() {
     let kwargs = ContentKwargs::default();
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("azure"));
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Http(SuppliedClient {
-            kind: ClientKind::Asynchronous,
-            transport: &(),
-        })),
-        logger: None,
-        logging: None,
-    };
+    let context = http_context(ClientKind::Asynchronous, None);
     run(&read, ContentEntry::Async, &call, context)
         .await
         .unwrap();

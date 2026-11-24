@@ -8,16 +8,31 @@ fn written_identity(model: &str, provider: &str, api_base: Option<&str>) -> Reco
     }
 }
 
+const fn content_kwargs(
+    api_base: Option<String>,
+    litellm_call_id: Option<String>,
+    id: Option<String>,
+) -> ContentKwargs {
+    ContentKwargs {
+        api_key: None,
+        api_base,
+        api_version: None,
+        organization: None,
+        timeout: None,
+        request_timeout: None,
+        max_retries: None,
+        litellm_call_id,
+        id,
+    }
+}
+
 #[tokio::test]
 async fn streaming_logging_identity_keeps_a_supplied_object() {
     let env = Env::default();
     let resolution = env.resolution();
     let read = reader(&resolution);
     let logger = Arc::new(RecordingLogging::default());
-    let kwargs = ContentKwargs {
-        api_base: Some(String::from("https://call.example")),
-        ..ContentKwargs::default()
-    };
+    let kwargs = content_kwargs(Some(String::from("https://call.example")), None, None);
     let mut call = content_call(&kwargs);
     call.model = Some("gpt-4o");
     call.custom_llm_provider = Some(String::from("openai"));
@@ -92,10 +107,7 @@ async fn streaming_logging_identity_writes_only_a_non_null_api_base(
     let resolution = env.resolution();
     let read = reader(&resolution);
     let logger = Arc::new(RecordingLogging::default());
-    let kwargs = ContentKwargs {
-        api_base: api_base.map(str::to_owned),
-        ..ContentKwargs::default()
-    };
+    let kwargs = content_kwargs(api_base.map(str::to_owned), None, None);
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("hosted_vllm"));
     call.stream = true;
@@ -126,11 +138,11 @@ async fn streaming_logging_identity_creates_the_missing_object(
     let env = Env::default();
     let resolution = env.resolution();
     let read = reader(&resolution);
-    let kwargs = ContentKwargs {
-        litellm_call_id: litellm_call_id.map(str::to_owned),
-        id: id.map(str::to_owned),
-        ..ContentKwargs::default()
-    };
+    let kwargs = content_kwargs(
+        None,
+        litellm_call_id.map(str::to_owned),
+        id.map(str::to_owned),
+    );
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("openai"));
     call.stream = true;
@@ -193,12 +205,7 @@ async fn sdk_stream_selection_compatible(#[case] provider: &str) {
     call.custom_llm_provider = Some(provider.to_owned());
     call.stream = true;
     call.chunk_size = 3;
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Sdk(SuppliedSdk::OpenAi)),
-        logger: None,
-        logging: None,
-    };
+    let context = sdk_context(SuppliedSdk::OpenAi);
     let mut content = answered_streamed(
         run(&read, ContentEntry::Async, &call, context)
             .await
@@ -225,12 +232,7 @@ async fn sdk_stream_selection_default_chunk_size_and_no_sdk_azure_client() {
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("openai"));
     call.stream = true;
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Sdk(SuppliedSdk::Azure)),
-        logger: None,
-        logging: None,
-    };
+    let context = sdk_context(SuppliedSdk::Azure);
     run(&read, ContentEntry::Sync, &call, context)
         .await
         .unwrap();
@@ -265,15 +267,7 @@ async fn sdk_stream_selection_vertex_needs_an_async_http_handler() {
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("vertex_ai"));
     call.stream = true;
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Http(SuppliedClient {
-            kind: ClientKind::Asynchronous,
-            transport: &(),
-        })),
-        logger: None,
-        logging: None,
-    };
+    let context = http_context(ClientKind::Asynchronous, None);
     answered_streamed(
         run(&read, ContentEntry::Async, &call, context)
             .await
@@ -299,15 +293,7 @@ async fn sdk_stream_selection_vertex_drops_a_sync_http_handler() {
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("vertex_ai"));
     call.stream = true;
-    let context = ContentContext {
-        trusted: None,
-        client: Some(CallerClient::Http(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &(),
-        })),
-        logger: None,
-        logging: None,
-    };
+    let context = http_context(ClientKind::Sync, None);
     answered_streamed(
         run(&read, ContentEntry::Async, &call, context)
             .await

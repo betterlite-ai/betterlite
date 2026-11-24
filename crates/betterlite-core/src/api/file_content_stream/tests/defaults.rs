@@ -115,7 +115,13 @@ async fn file_content_defaults_trusted_credentials_precede_key_and_base() {
     let kwargs = ContentKwargs {
         api_key: Some(SecretString::from("sk-call")),
         api_base: Some(String::from("https://call.example")),
-        ..ContentKwargs::default()
+        api_version: None,
+        organization: None,
+        timeout: None,
+        request_timeout: None,
+        max_retries: None,
+        litellm_call_id: None,
+        id: None,
     };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("anthropic"));
@@ -126,7 +132,16 @@ async fn file_content_defaults_trusted_credentials_precede_key_and_base() {
     assert_eq!(generic.trusted, Some(vec![String::from("bucket")]));
     assert_eq!(generic.api_key.as_deref(), Some("sk-call"));
     assert_eq!(generic.api_base.as_deref(), Some("https://call.example"));
+}
 
+#[tokio::test]
+async fn file_content_defaults_trusted_credentials_replace_null_key_and_base() {
+    let env = Env::default();
+    let resolution = env.resolution();
+    let read = reader(&resolution);
+    let trusted = TrustedCredentials {
+        values: BTreeMap::from([(String::from("bucket"), SecretString::from("files"))]),
+    };
     let null_kwargs = ContentKwargs::default();
     let mut null_call = content_call(&null_kwargs);
     null_call.custom_llm_provider = Some(String::from("anthropic"));
@@ -223,9 +238,15 @@ async fn file_content_defaults_timeout_selection(
     let resolution = env.resolution();
     let read = reader(&resolution);
     let kwargs = ContentKwargs {
+        api_key: None,
+        api_base: None,
+        api_version: None,
+        organization: None,
         timeout,
         request_timeout,
-        ..ContentKwargs::default()
+        max_retries: None,
+        litellm_call_id: None,
+        id: None,
     };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(provider.to_owned());
@@ -242,8 +263,15 @@ async fn file_content_defaults_bad_text_fails_before_the_provider(#[case] provid
     let resolution = env.resolution();
     let read = reader(&resolution);
     let kwargs = ContentKwargs {
+        api_key: None,
+        api_base: None,
+        api_version: None,
+        organization: None,
         timeout: Some(ReadTimeout::Plain(text("soon"))),
-        ..ContentKwargs::default()
+        request_timeout: None,
+        max_retries: None,
+        litellm_call_id: None,
+        id: None,
     };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(provider.to_owned());
