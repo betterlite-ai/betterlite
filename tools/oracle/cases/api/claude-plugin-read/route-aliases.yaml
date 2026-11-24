@@ -1,0 +1,27 @@
+name: claude-plugin-read-route-aliases
+config: |
+  general_settings:
+    master_key: oracle-master-routes
+env: {}
+upstream: []
+steps:
+  - request:
+      method: GET
+      path: /claude-code/plugins
+      headers: {authorization: Bearer oracle-master-routes}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: GET
+      path: /claude-code/plugins/route-plugin
+      headers: {authorization: Bearer oracle-master-routes}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []

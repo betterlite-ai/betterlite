@@ -1,0 +1,21 @@
+kind: helper
+name: bearer-credentials-prefix-schemes
+call:
+  b10086:
+    operation: bearer
+    value: "Bearer sk-123"
+calls:
+  - b10086: {operation: bearer, value: "Basic dXNlcjpwYXNz"}
+  - b10086: {operation: bearer, value: "bearer sk-123"}
+  - b10086: {operation: bearer, value: "Bearer "}
+  - b10086: {operation: bearer, value: "Basic "}
+  - b10086: {operation: bearer, value: "bearer "}
+  - b10086: {operation: bearer, value: "BEARER sk-123"}
+  - b10086: {operation: bearer, value: "Bearer\tsk-123"}
+  - b10086: {operation: bearer, value: "Bearersk-123"}
+  - b10086: {operation: bearer, value: "BASIC dXNlcjpwYXNz"}
+  - b10086: {operation: bearer, value: "sk-123"}
+  - b10086: {operation: bearer, value: ""}
+env: {}
+compare:
+  ignore: []

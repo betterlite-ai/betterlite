@@ -526,6 +526,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "claude_plugin_read"
+path = "fuzz_targets/claude_plugin_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "health_connection_body"
 path = "fuzz_targets/health_connection_body.rs"
 test = false
