@@ -1,0 +1,21 @@
+task: B8382
+deviations:
+  - what: model_info always carries created_at, updated_at, created_by and updated_by, copied from the row with nulls left out of the dump.
+    why: LiteLLM copies them only for premium_user; betterlite has no paid tier, so it behaves as a premium proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7256-L7261
+  - what: A row whose stored model_info is null gets the minimal RouterModelInfo (the row's model_id, the db_model flag, member_auto_router false) instead of raising.
+    why: LiteLLM indexes the null model_info while stamping the id and the audit columns, and the TypeError makes _get_models_from_db drop every DB model; the row itself is readable, so betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7250-L7252
+  - what: A row whose resolved litellm_params fail LiteLLM_Params validation is logged and skipped, and the log carries the validation error rather than the stored params.
+    why: the task asks for skip-and-continue, while LiteLLM raises the pydantic ValidationError out of decrypt_model_list_from_db; its own log for the non-dict case prints litellm_params, which can hold API keys (secrets-stay-secret).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7425-L7429
+  - what: A stored row whose litellm_params or model_info is not a JSON object fails the whole read (None) instead of only that row being skipped or folded.
+    why: rows are decoded into typed fields before either helper sees them, so a shape the row schema does not allow is a read error; LiteLLM's untyped dict lets the bad row fall through its isinstance checks one row at a time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7418-L7430
+  - what: A decrypted credential value that is the empty string is used as given; LiteLLM's `decrypt_value_helper(...) or v` keeps the stored ciphertext.
+    why: docs/compatibility.md uses an explicit "" as given instead of porting Python truthiness; returning the ciphertext for an empty plaintext is a bug no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9087-L9091
+  - what: Stored model_info fields are carried into the deployment without pydantic field validation.
+    why: LiteLLM builds RouterModelInfo from the stored dict and a wrong-typed known field raises ValidationError, which drops every DB model; betterlite passes the stored JSON through, which only differs for rows LiteLLM's declared types do not describe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7271-L7273
+kept_bugs: []
