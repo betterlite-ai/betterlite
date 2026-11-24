@@ -12,6 +12,7 @@ use super::filter::filter_models_by_team_id;
 use super::lookup::find_model_by_id;
 use super::team_models::authorize_team_id_query;
 use crate::health_access_and_connections::visibility::HealthRouter;
+use crate::proxy_helpers::checks::HttpException;
 
 mod postgres;
 mod support;
@@ -280,6 +281,10 @@ async fn all_models_excludes_foreign_byok() {
     ]);
     let reads = support::StubReads {
         teams: team_models(&[("team-a", &["all-proxy-models"])]),
+        // A stored row named like the team's entry: the all-proxy branch never asks the database for it.
+        rows: vec![support::model_row(
+            r#"{"model_id":"g2","model_name":"all-proxy-models","litellm_params":{"model":"openai/gpt-4o"}}"#,
+        )],
         ..Default::default()
     };
     let models = vec![
@@ -737,4 +742,28 @@ async fn unknown_deployment() {
     assert!(models.is_empty());
     assert_eq!(count, 0);
     assert_eq!(reads.calls(), vec![String::from("row:missing")]);
+}
+
+#[tokio::test]
+async fn router_lookup_failure_is_500() {
+    let reads = support::StubReads {
+        teams: team_models(&[("team-a", &["gpt-4o"])]),
+        ..Default::default()
+    };
+    let models = vec![support::deployment_json(
+        "gpt-4o",
+        &[("id", support::text("d1"))],
+    )];
+    let error = filter_models_by_team_id(
+        &models,
+        "team-a",
+        &reads,
+        Some(&support::FailingRouter as &dyn HealthRouter),
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    let failure: HttpException = error.into();
+    assert_eq!(failure.status, StatusCode::INTERNAL_SERVER_ERROR);
 }

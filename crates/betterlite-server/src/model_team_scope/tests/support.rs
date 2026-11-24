@@ -18,6 +18,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::model_group_lookups::access_groups::{AccessGroupMap, AccessGroups};
+use betterlite_router::model_group_lookups::error::AccessGroupError;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
@@ -118,6 +119,35 @@ pub(crate) fn spec(name: &str, info: &[(&str, Json)]) -> DeploymentSpec {
         String::new,
     )
     .expect("a fixture deployment")
+}
+
+// A router whose access-group read fails, as a stale catalog index would.
+pub(crate) struct FailingRouter;
+
+impl HealthRouter for FailingRouter {
+    fn get_deployment(&self, _model_id: &str) -> Result<Option<DeploymentSpec>, LookupFailure> {
+        Ok(None)
+    }
+
+    fn get_model_list(
+        &self,
+        _model_name: Option<&str>,
+        _team_id: Option<&str>,
+    ) -> Result<Vec<DeploymentSpec>, LookupFailure> {
+        Ok(Vec::new())
+    }
+
+    fn get_model_names(&self, _team_id: Option<&str>) -> Result<Vec<String>, LookupFailure> {
+        Ok(Vec::new())
+    }
+
+    fn get_model_access_groups(&self) -> Result<AccessGroupMap, LookupFailure> {
+        Err(LookupFailure::AccessGroups(
+            AccessGroupError::InvalidAccessGroups {
+                model_name: String::from("gpt-4o"),
+            },
+        ))
+    }
 }
 
 // A deployment whose row lost its id, as LiteLLM's model list allows.
