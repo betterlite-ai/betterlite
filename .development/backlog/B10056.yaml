@@ -1,14 +1,14 @@
 id: B10056
 milestone: M4 keys, spend and management
 title: Access group record and transaction protocols
-status: todo
+status: done
 depends_on: [B700, B726, B860]
 file: tasks/B10056-access-group-protocols.yaml
 covers:
   - "litellm/proxy/management_endpoints/access_group_endpoints.py"
 parent: B058
 split_from: B821
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3077
