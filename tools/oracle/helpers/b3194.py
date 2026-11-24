@@ -1,7 +1,7 @@
 import asyncio
 import os
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from datetime import UTC, datetime
 from importlib import import_module
 from types import ModuleType
@@ -104,6 +104,10 @@ class SkillHubRoute(Protocol):
     async def __call__(self) -> ListPluginsResponse: ...
 
 
+# LiteLLM infers the agent route's return type, so this name pins the JSON its call returns
+AGENT_HUB: Final[
+    Callable[[Request], Coroutine[JsonValue, JsonValue, list[dict[str, JsonValue]]]]
+] = get_agents
 MCP_HUB: Final[McpHubRoute] = get_mcp_servers
 SKILL_HUB: Final[SkillHubRoute] = public_skill_hub
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -206,12 +210,6 @@ def build_request(base_url: str, root_path: str) -> Request:
     return Request(scope)
 
 
-async def agent_hub_cards(call: AgentHubCall) -> Sequence[Mapping[str, JsonValue]]:
-    # LiteLLM infers a partial type for get_agents, so the route contract pins what callers may read
-    request = build_request(call["request_base_url"], call["root_path"])
-    return await get_agents(request)
-
-
 def apply_agent_hub(call: AgentHubCall) -> None:
     global_agent_registry.agent_list = [
         AGENT_RESPONSE.validate_python(record) for record in call["agents"]
@@ -241,8 +239,9 @@ async def hub_answer(call: AgentHubCall | McpHubCall) -> JsonValue:
         match call["function"]:
             case "agent_hub":
                 apply_agent_hub(call)
-                cards = await agent_hub_cards(call)
-                return JSON.validate_python(AGENT_CARDS.validate_python(cards))
+                request = build_request(call["request_base_url"], call["root_path"])
+                cards = AGENT_CARDS.validate_python(await AGENT_HUB(request))
+                return JSON.validate_python(cards)
             case "mcp_hub":
                 apply_mcp_hub(call)
                 servers = await MCP_HUB()
