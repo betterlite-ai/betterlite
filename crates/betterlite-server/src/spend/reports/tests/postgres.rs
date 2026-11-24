@@ -29,6 +29,27 @@ CREATE TABLE "LiteLLM_TeamTable" (
     team_alias TEXT,
     organization_id TEXT
 );
+CREATE TABLE "LiteLLM_UserTable" (
+    user_id TEXT NOT NULL,
+    user_email TEXT,
+    user_role TEXT,
+    models TEXT[] DEFAULT ARRAY[]::TEXT[],
+    metadata JSONB,
+    spend DOUBLE PRECISION DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "LiteLLM_UserTable_pkey" PRIMARY KEY (user_id)
+);
+CREATE TABLE "LiteLLM_OrganizationMembership" (
+    user_id TEXT NOT NULL,
+    organization_id TEXT NOT NULL,
+    user_role TEXT,
+    spend DOUBLE PRECISION DEFAULT 0.0,
+    budget_id TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "LiteLLM_OrganizationMembership_pkey" PRIMARY KEY (user_id, organization_id)
+);
 "#;
 
 #[derive(Parser)]
@@ -139,6 +160,22 @@ async fn a_user_scope_never_sees_another_users_rows() {
         .await
         .unwrap();
     assert_eq!(other[0].api_key, "k3");
+}
+
+const USER_ROWS_SQL: &str = r#"
+INSERT INTO "LiteLLM_UserTable" (user_id, user_role) VALUES ('u1', 'org_admin');
+INSERT INTO "LiteLLM_OrganizationMembership" (user_id, organization_id, user_role) VALUES ('u1', 'org-1', 'org_admin');
+"#;
+
+#[tokio::test]
+async fn find_user_reads_the_user_and_its_org_memberships() {
+    let (_fixture, store) = database(USER_ROWS_SQL).await;
+    let found = store.find_user("u1").await.unwrap().unwrap();
+    assert_eq!(found.user_id, "u1");
+    let memberships = found.organization_memberships.unwrap();
+    assert_eq!(memberships[0].organization_id, "org-1");
+    assert_eq!(memberships[0].user_role.as_deref(), Some("org_admin"));
+    assert!(store.find_user("ghost").await.unwrap().is_none());
 }
 
 #[tokio::test]

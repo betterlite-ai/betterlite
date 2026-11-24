@@ -179,6 +179,17 @@ async fn admin_views_may_request_any_scope(#[case] caller: Principal) {
 }
 
 #[tokio::test]
+async fn master_reports_fall_back_to_litellm_proxy_master_key() {
+    let store = Arc::new(fake_store());
+    let reply = call(&scoped_call("key", ""), Some(&master_key()), Some(&store)).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        store.calls(),
+        vec![expected_scoped("ApiKey", "litellm_proxy_master_key")]
+    );
+}
+
+#[tokio::test]
 async fn session_tokens_log_and_query_their_key_alias() {
     let caller = key_principal(
         r#"{"api_key":"sk-session","is_session_token":true,"key_alias":"session-alias"}"#,
