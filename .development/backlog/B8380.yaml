@@ -1,14 +1,14 @@
 id: B8380
 milestone: M8 platform
 title: Proxy config state, config saves and config-owned write guards
-status: todo
+status: done
 depends_on: [B4140, B10074, B8397, B8410, B10054]
 file: tasks/B8380-proxy-config-state.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3141
