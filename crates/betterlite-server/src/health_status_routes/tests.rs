@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
+use serde_json::Number;
 
 use crate::health_status_routes::convert::{convert_health_check, isoformat};
 use crate::health_status_routes::prisma::check_prisma_client;
@@ -23,21 +24,20 @@ fn convert_returns_the_twelve_keys_in_litellm_order() {
     let stored = row("hc-1", "group-a", instant("2026-03-15 10:00:00"));
     let converted = convert_health_check(&stored);
     let keys: Vec<&str> = converted.keys().map(String::as_str).collect();
-    let expected = [
-        "health_check_id",
-        "model_name",
-        "model_id",
-        "status",
-        "healthy_count",
-        "unhealthy_count",
-        "error_message",
-        "response_time_ms",
-        "details",
-        "checked_by",
-        "checked_at",
-        "created_at",
-    ];
-    assert_eq!(keys, expected);
+    let expected = concat!(
+        "health_check_id,model_name,model_id,status,healthy_count,unhealthy_count,",
+        "error_message,response_time_ms,details,checked_by,checked_at,created_at"
+    );
+    assert_eq!(keys.join(","), expected);
+    assert_eq!(text_field(&converted, "model_id"), Some("id-a".to_owned()));
+    assert_eq!(
+        text_field(&converted, "checked_by"),
+        Some("user-1".to_owned())
+    );
+    assert_eq!(
+        converted.get("response_time_ms"),
+        Some(&Json::Number(Number::from(12.5_f64)))
+    );
     assert_eq!(
         converted.get("health_check_id"),
         Some(&Json::Text("hc-1".to_owned()))
@@ -489,7 +489,7 @@ async fn health_restricted_caller_targeting_a_model_is_403() {
     ];
     let (mut state, _provider, _source) = fixture();
     serve(&mut state, models);
-    let reply = get(state, Some(&user(r#"["a"]"#)), "/health?model=b").await;
+    let reply = get(state, Some(&user(r#"["a"]"#)), "/health?model=b&model_id=").await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
     assert_eq!(
         reply.detail_error(),
@@ -521,6 +521,17 @@ async fn health_targeted_model_name_with_no_healthy_endpoint_is_503() {
     let reply = get(state, Some(&admin()), "/health?model=a").await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(reply.count("healthy_count"), 0);
+}
+
+#[tokio::test]
+async fn health_admin_targeting_an_unknown_model_name_is_503() {
+    let models = vec![deployment("a", "id-a", "openai/a")];
+    let (mut state, _provider, _source) = fixture();
+    serve(&mut state, models);
+    let reply = get(state, Some(&admin()), "/health?model=missing").await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(reply.count("healthy_count"), 0);
+    assert_eq!(reply.count("unhealthy_count"), 0);
 }
 
 #[tokio::test]
@@ -583,6 +594,7 @@ async fn health_background_restricted_caller_sees_only_allowed_ids() {
     assert_eq!(healthy.len(), 1);
     assert_eq!(text_field(&healthy[0], "api_base"), None);
     assert!(reply.header("litellm-health-field-notice").is_some());
+    assert_eq!(reply.body.get("warnings"), None);
 }
 
 #[tokio::test]
