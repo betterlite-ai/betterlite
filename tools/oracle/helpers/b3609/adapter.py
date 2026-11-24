@@ -122,7 +122,7 @@ async def execute(input_value: Input) -> JsonValue:
     response = ScriptedResponse(
         [bytes(chunk) for chunk in input_value["chunks"]], scripted, input_value["status_code"]
     )
-    stream = cast(
+    stream = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L138-L148
         "AsyncGenerator[bytes, None]",
         PassThroughStreamingHandler.chunk_processor(  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L138-L148
             response,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L139-L148
@@ -132,7 +132,7 @@ async def execute(input_value: Input) -> JsonValue:
             FIXED_START,
             PassThroughEndpointLogging(),
             input_value["url_route"],
-            route_streaming_logging=RECORDER.route,  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L147
+            route_streaming_logging=RECORDER.route,  # type: ignore[arg-type, misc]  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L147
         ),
     )
     yielded = await drive(stream, input_value["disconnect_after"])

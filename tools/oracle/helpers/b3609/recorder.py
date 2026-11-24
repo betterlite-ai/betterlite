@@ -31,7 +31,7 @@ class Recorder:
     def __call__(self, async_coroutine: Coroutine[None, None, None]) -> None:
         self.jobs.append(async_coroutine)
 
-    def route(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L41-L53
+    async def route(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L41-L53
         self,
         *,
         litellm_logging_obj: LiteLLMLoggingObj,
