@@ -25,6 +25,8 @@ const WARNING: &str = "general_settings.skip_batch_input_file_rate_limiting_for_
 const UNIFIED_ID: &str =
     "litellm_proxy:application/octet-stream;unified_id,uid;target_model_names,model-a,model-b";
 const TPD_PRINCIPAL: &str = r#"{"api_key": "key-batch", "tpd_limit": 1000, "team_id": "team-1", "team_tpd_limit": 0, "end_user_id": "user-1", "end_user_tpd_limit": 3000}"#;
+const PROJECT_LIMITS_CALL: &str = r#"[{"function": "project_has_io_limits"}]"#;
+const ACCESS_CHECK_CALL: &str = r#"[{"function": "key_requires_access_check"}]"#;
 
 fn run_calls(
     service: &BatchLimitDescriptors<FakeLimiter, FakeCredentials>,
@@ -65,6 +67,15 @@ fn routing_answer(answer: BatchLimitAnswer) -> Option<String> {
 fn skip_answer(answer: BatchLimitAnswer) -> (bool, Option<Vec<BatchLimitDescriptor>>) {
     match answer {
         BatchLimitAnswer::ShouldSkip { skip, descriptors } => (skip, descriptors),
+        other => panic!("unexpected answer {other:?}"),
+    }
+}
+
+fn answer_flag(answer: BatchLimitAnswer) -> bool {
+    match answer {
+        BatchLimitAnswer::ProjectHasIoLimits { has_limits } => has_limits,
+        BatchLimitAnswer::KeyRequiresAccessCheck { required } => required,
+        BatchLimitAnswer::HasApplicableLimits { applicable } => applicable,
         other => panic!("unexpected answer {other:?}"),
     }
 }
@@ -183,15 +194,8 @@ fn project_io_descriptors() {
 )]
 fn project_io_has_limits(#[case] principal: &str, #[case] expected: bool) {
     let service = service(settings(None, None, None), empty_limiter(), None);
-    let answer = single(run_calls(
-        &service,
-        principal,
-        r#"[{"function": "project_has_io_limits"}]"#,
-    ));
-    match answer {
-        BatchLimitAnswer::ProjectHasIoLimits { has_limits } => assert_eq!(has_limits, expected),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let answer = single(run_calls(&service, principal, PROJECT_LIMITS_CALL));
+    assert_eq!(answer_flag(answer), expected);
 }
 
 #[rstest]
@@ -213,7 +217,7 @@ fn project_io_has_limits(#[case] principal: &str, #[case] expected: bool) {
 #[case::false_cap(r#"{"body": {"max_tokens": false}}"#, 1, 0)]
 #[case::text_cap(r#"{"body": {"max_tokens": "12"}}"#, 1, 12)]
 #[case::text_cap_with_spaces(r#"{"body": {"max_tokens": " 12 "}}"#, 1, 12)]
-#[case::unparseable_cap(r#"{"body": {"max_tokens": "abc"}}"#, 1, 1024)]
+#[case::unparsable_cap(r#"{"body": {"max_tokens": "abc"}}"#, 1, 1024)]
 #[case::candidates_multiply(r#"{"body": {"max_tokens": 10}}"#, 3, 30)]
 #[case::floor_candidates_multiply(r#"{"body": {}}"#, 3, 3072)]
 #[case::huge_cap_saturates(
@@ -240,7 +244,7 @@ fn max_output_estimate(#[case] entry: &str, #[case] candidates: i64, #[case] exp
 
 #[test]
 fn unsupported_model_skip_warning() {
-    let warnings = support::Warnings::default();
+    let warnings = support::LevelLog::warnings();
     let guard =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(warnings.clone()));
     let service = service(
@@ -261,7 +265,7 @@ fn unsupported_model_skip_warning() {
 #[case::unset(None)]
 #[case::empty(Some(Vec::new()))]
 fn unsupported_model_skip_warning_is_silent(#[case] models: Option<Vec<String>>) {
-    let warnings = support::Warnings::default();
+    let warnings = support::LevelLog::warnings();
     let guard =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(warnings.clone()));
     let service = service(settings(None, None, models), empty_limiter(), None);
@@ -285,15 +289,8 @@ fn unsupported_model_skip_warning_is_silent(#[case] models: Option<Vec<String>>)
 #[case::empty_groups(r#"{"access_group_ids": []}"#, false)]
 fn key_requires_access_check(#[case] principal: &str, #[case] expected: bool) {
     let service = service(settings(None, None, None), empty_limiter(), None);
-    let answer = single(run_calls(
-        &service,
-        principal,
-        r#"[{"function": "key_requires_access_check"}]"#,
-    ));
-    match answer {
-        BatchLimitAnswer::KeyRequiresAccessCheck { required } => assert_eq!(required, expected),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let answer = single(run_calls(&service, principal, ACCESS_CHECK_CALL));
+    assert_eq!(answer_flag(answer), expected);
 }
 
 fn base_descriptors() -> Vec<BatchLimitDescriptor> {
@@ -440,10 +437,7 @@ fn has_applicable_limits(#[case] descriptors: &str, #[case] expected: bool) {
     let calls =
         format!(r#"[{{"function": "has_applicable_limits", "descriptors": {descriptors}}}]"#);
     let answer = single(run_calls(&service, "{}", &calls));
-    match answer {
-        BatchLimitAnswer::HasApplicableLimits { applicable } => assert_eq!(applicable, expected),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    assert_eq!(answer_flag(answer), expected);
 }
 
 fn skip_service(preset: &str) -> BatchLimitDescriptors<FakeLimiter, FakeCredentials> {
@@ -577,7 +571,7 @@ fn should_skip_does_not_resolve_without_skip_providers() {
 
 #[test]
 fn skip_debug_messages_name_the_provider_and_the_missing_limits() {
-    let messages = support::Debugs::default();
+    let messages = support::LevelLog::debugs();
     let guard =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(messages.clone()));
     let providers = skip_service("providers");

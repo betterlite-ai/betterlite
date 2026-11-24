@@ -204,24 +204,30 @@ pub(super) fn service(
     BatchLimitDescriptors::new(settings, limiter, credentials, ApiLimits::default())
 }
 
-#[derive(Clone, Default)]
-pub(super) struct Warnings(Arc<Mutex<Vec<String>>>);
-
-impl Warnings {
-    pub(super) fn lines(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
+#[derive(Clone)]
+pub(super) struct LevelLog {
+    level: Level,
+    lines: Arc<Mutex<Vec<String>>>,
 }
 
-#[derive(Clone, Default)]
-pub(super) struct Debugs(Arc<Mutex<Vec<String>>>);
+impl LevelLog {
+    pub(super) fn warnings() -> Self {
+        Self::new(Level::WARN)
+    }
 
-impl Debugs {
+    pub(super) fn debugs() -> Self {
+        Self::new(Level::DEBUG)
+    }
+
+    fn new(level: Level) -> Self {
+        Self {
+            level,
+            lines: Arc::default(),
+        }
+    }
+
     pub(super) fn lines(&self) -> Vec<String> {
-        self.0
+        self.lines
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -239,25 +245,12 @@ impl Visit for Message {
     }
 }
 
-impl<Inner: Subscriber> Layer<Inner> for Warnings {
+impl<Inner: Subscriber> Layer<Inner> for LevelLog {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        if *event.metadata().level() == Level::WARN {
+        if *event.metadata().level() == self.level {
             let mut message = Message::default();
             event.record(&mut message);
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(message.0);
-        }
-    }
-}
-
-impl<Inner: Subscriber> Layer<Inner> for Debugs {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        if *event.metadata().level() == Level::DEBUG {
-            let mut message = Message::default();
-            event.record(&mut message);
-            self.0
+            self.lines
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(message.0);
