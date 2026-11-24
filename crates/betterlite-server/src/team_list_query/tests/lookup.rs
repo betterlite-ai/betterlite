@@ -7,7 +7,9 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use crate::team_list_query::TeamListQueryError;
 use crate::team_list_query::lookup::{org_admin_org_ids, user_team_ids_from_db};
 
-use super::support::{RecordingCache, database, lookup, user, user_insert, user_store};
+use super::support::{
+    FailingStore, RecordingCache, database, lookup, user, user_insert, user_store,
+};
 
 #[tokio::test]
 async fn org_lookup_value_error() {
@@ -19,8 +21,7 @@ async fn org_lookup_value_error() {
         .unwrap();
     assert_eq!(missing, None);
     // _user_read_failure turns an ordinary read failure into the same ValueError
-    let broken = PostgresStore { pool: None };
-    let failing = lookup(&cache, Some(user_store(&broken, &broken)));
+    let failing = lookup(&cache, Some(Arc::new(FailingStore)));
     let unreadable = org_admin_org_ids(&failing, "u1").await.unwrap();
     assert_eq!(unreadable, None);
     fixture.close().await;
@@ -58,5 +59,13 @@ async fn unexpected_lookup_error_propagates() {
     assert!(matches!(
         teams_error,
         TeamListQueryError::Lookup(UserLookupError::NoDatabase)
+    ));
+    // a database that cannot answer is an outage, not a missing user, so it keeps propagating
+    let broken = PostgresStore { pool: None };
+    let outage = lookup(&cache, Some(user_store(&broken, &broken)));
+    let outage_error = org_admin_org_ids(&outage, "u1").await.unwrap_err();
+    assert!(matches!(
+        outage_error,
+        TeamListQueryError::Lookup(UserLookupError::Unavailable(_))
     ));
 }

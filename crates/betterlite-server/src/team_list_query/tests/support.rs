@@ -9,7 +9,10 @@ use betterlite_auth::auth_user_lookup::lookup::UserLookup;
 use betterlite_auth::auth_user_lookup::ports::{
     BudgetResetCalculator, DefaultTeamEnrollment, NoDefaultTeams, PortError,
 };
-use betterlite_auth::auth_user_lookup::store::{DatabaseUserStore, UserStore};
+use betterlite_auth::auth_user_lookup::rows::UserCreateData;
+use betterlite_auth::auth_user_lookup::store::{
+    DatabaseUserStore, UserStore, UserStoreError, UserStoreResult,
+};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
@@ -171,6 +174,51 @@ pub(super) fn user_store(reader: &PostgresStore, writer: &PostgresStore) -> Arc<
         }),
         tasks: TaskTracker::new(),
     })
+}
+
+// every read fails with an ordinary error, the ValueError class LiteLLM answers with None
+pub(super) struct FailingStore;
+
+#[derive(Debug, thiserror::Error)]
+#[error("the user read failed")]
+struct ReadFailure;
+
+#[async_trait]
+impl UserStore for FailingStore {
+    async fn find_by_id(
+        &self,
+        _user_id: &str,
+        _use_writer: bool,
+    ) -> UserStoreResult<Option<JsonData>> {
+        Err(UserStoreError::Other(Box::new(ReadFailure)))
+    }
+
+    async fn find_by_sso_id(&self, _sso_user_id: &str) -> UserStoreResult<Option<JsonData>> {
+        Err(UserStoreError::Other(Box::new(ReadFailure)))
+    }
+
+    async fn find_by_email(&self, _email: &str) -> UserStoreResult<Option<JsonData>> {
+        Err(UserStoreError::Other(Box::new(ReadFailure)))
+    }
+
+    async fn create(&self, _data: UserCreateData) -> UserStoreResult<JsonData> {
+        Err(UserStoreError::Other(Box::new(ReadFailure)))
+    }
+
+    async fn update_sso_user_id(&self, _user_id: &str, _sso_user_id: &str) -> UserStoreResult<()> {
+        Err(UserStoreError::Other(Box::new(ReadFailure)))
+    }
+
+    async fn backfill_null_email(&self, _user_id: &str, _email: &str) -> UserStoreResult<()> {
+        Err(UserStoreError::Other(Box::new(ReadFailure)))
+    }
+
+    async fn reread_for_backfill(
+        &self,
+        _user_id: &str,
+    ) -> UserStoreResult<Option<LiteLLMUserTable>> {
+        Err(UserStoreError::Other(Box::new(ReadFailure)))
+    }
 }
 
 #[derive(Parser)]
