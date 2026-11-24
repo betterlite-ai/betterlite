@@ -47,4 +47,13 @@ deviations:
       whole load. The typed section stores a JSON object, and the compatibility rules say null takes
       the default, which is the {} the absent key gets.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L112
+  - what: >-
+      An os.environ reference that no environment value resolves is a config error naming the
+      variable and the field, for name, description, handler and the strings inside input_schema.
+    why: >-
+      LiteLLM resolves references through get_secret, which returns None for an unset variable: an
+      unresolved name, description or handler makes the entry skip silently, and an unresolved
+      schema string reaches the handler as null. The compatibility rules make an unset reference a
+      MissingEnvironment load error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5786
 kept_bugs: []
