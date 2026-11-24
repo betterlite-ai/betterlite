@@ -63,21 +63,11 @@ impl ErrorPayload {
         }
     }
 
-    pub(crate) const fn base(message: String) -> Self {
+    pub(crate) fn base(message: String) -> Self {
         Self {
-            kind: "A2AError",
-            message,
             status_code: Some(BASE_STATUS),
             llm_provider: Some(LLM_PROVIDER),
-            url: None,
-            model: None,
-            litellm_debug_info: None,
-            max_retries: None,
-            num_retries: None,
-            base_url: None,
-            localhost_url: None,
-            failures: None,
-            original_error: None,
+            ..Self::empty("A2AError", message)
         }
     }
 
