@@ -17,6 +17,7 @@ use betterlite_core::api::fine_tuning_read::{
 use betterlite_core::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError,
 };
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
@@ -137,6 +138,10 @@ fn request_openai_create_writes_the_sdk_wire() {
         header(&request.headers, "content-type").as_deref(),
         Some("application/json")
     );
+    assert_eq!(
+        header(&request.headers, "accept").as_deref(),
+        Some("application/json")
+    );
     assert_eq!(request.deadline, Duration::from_secs(30));
     assert_eq!(
         json_body(&request),
@@ -217,6 +222,10 @@ fn request_azure_create_uses_the_api_key_header() {
         header(&request.headers, "api-key").as_deref(),
         Some("sk-azure")
     );
+    assert_eq!(
+        header(&request.headers, "accept").as_deref(),
+        Some("application/json")
+    );
     assert_eq!(header(&request.headers, "authorization"), None);
 }
 
@@ -285,6 +294,10 @@ fn request_list_sends_the_cursor_and_a_zero_limit() {
         "http://127.0.0.1:9/v1/fine_tuning/jobs"
     );
     assert_eq!(
+        header(&request.headers, "accept").as_deref(),
+        Some("application/json")
+    );
+    assert_eq!(
         request.query,
         vec![
             ("after".to_owned(), "cursor".to_owned()),
@@ -342,6 +355,57 @@ fn request_retrieve_appends_the_job_id() {
         header(&request.headers, "openai-organization").as_deref(),
         Some("org-1")
     );
+    assert_eq!(
+        header(&request.headers, "accept").as_deref(),
+        Some("application/json")
+    );
+}
+
+#[test]
+fn request_retrieve_quotes_a_slash_and_a_query() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    for (job_id, encoded) in [("a/b", "a%2Fb"), ("a?b=c", "a%3Fb%3Dc")] {
+        let call = OpenAiReadCall {
+            values: ReadValues {
+                is_async: false,
+                operation: ReadOperation::Retrieve { job_id },
+                timeout: &timeout,
+                max_retries: None,
+            },
+            api_base: "http://127.0.0.1:9/v1".to_owned(),
+            api_key: Some(&key),
+            api_version: None,
+            organization: None,
+        };
+        let request = request_of(WireCall::OpenAiRead(&call));
+        let expected = format!("http://127.0.0.1:9/v1/fine_tuning/jobs/{encoded}");
+        assert_eq!(request.url.as_str(), expected.as_str());
+        assert!(request.query.is_empty());
+    }
+}
+
+#[test]
+fn request_retrieve_rejects_an_empty_or_dot_job_id() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    for job_id in ["", ".", ".."] {
+        let call = OpenAiReadCall {
+            values: ReadValues {
+                is_async: false,
+                operation: ReadOperation::Retrieve { job_id },
+                timeout: &timeout,
+                max_retries: None,
+            },
+            api_base: "http://127.0.0.1:9/v1".to_owned(),
+            api_key: Some(&key),
+            api_version: None,
+            organization: None,
+        };
+        let error = request_for(WireCall::OpenAiRead(&call), None)
+            .expect_err("the id cannot be one path segment");
+        assert!(matches!(error, WireError::JobId(_)));
+    }
 }
 
 #[test]
@@ -379,6 +443,10 @@ fn request_azure_list_names_the_api_version() {
         header(&request.headers, "api-key").as_deref(),
         Some("sk-azure")
     );
+    assert_eq!(
+        header(&request.headers, "accept").as_deref(),
+        Some("application/json")
+    );
 }
 
 #[test]
@@ -409,6 +477,81 @@ fn request_cancel_posts_without_a_body() {
     assert_eq!(
         header(&request.headers, "authorization").as_deref(),
         Some("Bearer sk-test")
+    );
+    assert_eq!(
+        header(&request.headers, "accept").as_deref(),
+        Some("application/json")
+    );
+}
+
+#[test]
+fn request_cancel_quotes_a_slash_and_a_query() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    for (job_id, encoded) in [("a/b", "a%2Fb"), ("a?b=c", "a%3Fb%3Dc")] {
+        let call = OpenAiFineTuningCancel {
+            values: FineTuningCancelValues {
+                is_async: false,
+                job_id,
+                timeout: &timeout,
+                max_retries: None,
+            },
+            api_base: "http://127.0.0.1:9/v1".to_owned(),
+            api_key: Some(&key),
+            api_version: None,
+            organization: None,
+            client: None,
+        };
+        let request = request_of(WireCall::OpenAiCancel(&call));
+        let expected = format!("http://127.0.0.1:9/v1/fine_tuning/jobs/{encoded}/cancel");
+        assert_eq!(request.url.as_str(), expected.as_str());
+    }
+}
+
+#[test]
+fn request_cancel_rejects_an_empty_or_dot_job_id() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    for job_id in ["", "."] {
+        let call = OpenAiFineTuningCancel {
+            values: FineTuningCancelValues {
+                is_async: false,
+                job_id,
+                timeout: &timeout,
+                max_retries: None,
+            },
+            api_base: "http://127.0.0.1:9/v1".to_owned(),
+            api_key: Some(&key),
+            api_version: None,
+            organization: None,
+            client: None,
+        };
+        let error = request_for(WireCall::OpenAiCancel(&call), None)
+            .expect_err("the id cannot be one path segment");
+        assert!(matches!(error, WireError::JobId(_)));
+    }
+}
+
+#[test]
+fn request_azure_cancel_quotes_the_job_id() {
+    let key = SecretString::from("sk-azure");
+    let timeout = openai_timeout();
+    let call = AzureFineTuningCancel {
+        values: FineTuningCancelValues {
+            is_async: false,
+            job_id: "a/b",
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: Some("https://example.openai.azure.com"),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    };
+    let request = request_of(WireCall::AzureCancel(&call));
+    assert_eq!(
+        request.url.as_str(),
+        "https://example.openai.azure.com/openai/fine_tuning/jobs/a%2Fb/cancel"
     );
 }
 
@@ -709,6 +852,18 @@ fn error_a_missing_azure_base_is_a_python_value_error() {
         wire_failure(WireError::MissingAzureBase),
         Raised::Python(_)
     ));
+}
+
+#[test]
+fn error_a_job_id_failure_is_a_python_value_error() {
+    let dot = wire_failure(WireError::JobId(HttpError::DotSegment {
+        field_name: "job_id".to_owned(),
+    }));
+    assert!(matches!(dot, Raised::Python(_)));
+    let empty = wire_failure(WireError::JobId(HttpError::Required {
+        field_name: "job_id".to_owned(),
+    }));
+    assert!(matches!(empty, Raised::Python(_)));
 }
 
 #[test]

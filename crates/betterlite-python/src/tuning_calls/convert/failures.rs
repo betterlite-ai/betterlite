@@ -20,14 +20,13 @@ const VERTEX_MESSAGE: &str = "the vertex_ai fine-tuning call is not implemented 
 
 pub(crate) fn provider_error(response: &UpstreamResponse) -> WireError {
     let headers = response_headers(&response.headers);
-    let body = match serde_json::from_slice::<Json>(&response.body) {
-        Ok(value) => value,
-        Err(_source) => Json::Text(
+    let body = serde_json::from_slice::<Json>(&response.body).unwrap_or_else(|_source| {
+        Json::Text(
             from_utf8(&response.body)
                 .map(str::to_owned)
                 .unwrap_or_default(),
-        ),
-    };
+        )
+    });
     WireError::Provider {
         status: response.status,
         body,
@@ -117,40 +116,30 @@ fn unsupported_failure(provider: &str, message: String) -> Failure {
 
 pub(crate) fn wire_failure(source: WireError) -> Raised {
     let text = source.to_string();
-    match source {
+    let payload = match source {
         WireError::Provider {
             status,
             body,
             headers,
-        } => Raised::Failure(Box::new(provider_failure(status, body, headers))),
-        WireError::MissingAzureBase => Raised::Python(Box::new(PyValueError::new_err(
-            String::from(AZURE_BASE_MESSAGE),
-        ))),
-        WireError::MissingOpenAiKey => Raised::Failure(Box::new(failure(
-            "Exception",
-            String::from(OPENAI_KEY_MESSAGE),
-        ))),
-        WireError::MissingAzureKey => Raised::Failure(Box::new(failure(
-            "Exception",
-            String::from(AZURE_KEY_MESSAGE),
-        ))),
-        WireError::Vertex => {
-            Raised::Failure(Box::new(failure("Exception", String::from(VERTEX_MESSAGE))))
+        } => provider_failure(status, body, headers),
+        WireError::MissingAzureBase => {
+            return Raised::Python(Box::new(PyValueError::new_err(AZURE_BASE_MESSAGE)));
         }
-        WireError::Transport { .. } => {
-            Raised::Failure(Box::new(failure("APIConnectionError", text)))
-        }
-        WireError::Decode { .. } => {
-            Raised::Failure(Box::new(failure("APIResponseValidationError", text)))
-        }
+        WireError::MissingOpenAiKey => failure("Exception", String::from(OPENAI_KEY_MESSAGE)),
+        WireError::MissingAzureKey => failure("Exception", String::from(AZURE_KEY_MESSAGE)),
+        WireError::Vertex => failure("Exception", String::from(VERTEX_MESSAGE)),
+        WireError::Transport { .. } => failure("APIConnectionError", text),
+        WireError::Decode { .. } => failure("APIResponseValidationError", text),
+        WireError::JobId(_) => return Raised::Python(Box::new(PyValueError::new_err(text))),
         WireError::Body { .. }
         | WireError::Encode { .. }
         | WireError::Url { .. }
         | WireError::Header { .. }
         | WireError::Proxy { .. }
         | WireError::Config { .. }
-        | WireError::Client { .. } => Raised::Failure(Box::new(failure("Exception", text))),
-    }
+        | WireError::Client { .. } => failure("Exception", text),
+    };
+    Raised::Failure(Box::new(payload))
 }
 
 // The error a call's own steps raised, before it becomes the class LiteLLM shows the caller.

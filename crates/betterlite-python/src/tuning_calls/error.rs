@@ -89,6 +89,8 @@ pub(crate) enum WireError {
     MissingAzureKey,
     #[error("the vertex_ai fine-tuning call is not implemented yet")]
     Vertex,
+    #[error(transparent)]
+    JobId(#[from] HttpError),
 }
 
 // What a native method raises: a LiteLLM exception described as JSON, or a plain Python error.

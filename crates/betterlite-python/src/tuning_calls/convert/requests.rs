@@ -12,6 +12,7 @@ use betterlite_core::api::fine_tuning_read::{
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::url_path::encode_segment;
 use betterlite_models::decisions::Json;
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use http::Method;
@@ -23,7 +24,7 @@ use super::super::error::WireError;
 use super::azure::{azure_headers, azure_jobs_url, azure_query, azure_version};
 use super::insert_header;
 
-const JSON_CONTENT: &str = "application/json";
+pub(super) const JSON_CONTENT: &str = "application/json";
 const DEFAULT_DEADLINE: Duration = Duration::from_secs(600);
 
 // One fine-tuning call the native side can send, whichever provider or operation named it.
@@ -110,9 +111,9 @@ fn azure_create(call: &AzureCreateCall, integrations: Option<&[Json]>) -> Outbou
 
 fn openai_read(call: &OpenAiReadCall<'_>) -> OutboundResult {
     let operation = call.values.operation;
-    let url = openai_jobs_url(&call.api_base, &read_suffix(operation))?;
-    let query = paging(operation);
     let headers = openai_headers(call.api_key, call.organization, false)?;
+    let url = openai_jobs_url(&call.api_base, &read_suffix(operation)?)?;
+    let query = paging(operation);
     Ok(OutboundRequest {
         method: Method::GET,
         url,
@@ -127,7 +128,7 @@ fn azure_read(call: &AzureReadCall<'_>) -> OutboundResult {
     let (key, api_base, version) = azure_api(call.api_key, call.api_base, call.api_version)?;
     let mut query = azure_query(version);
     query.extend(paging(call.values.operation));
-    let url = azure_jobs_url(api_base, version, &read_suffix(call.values.operation))?;
+    let url = azure_jobs_url(api_base, version, &read_suffix(call.values.operation)?)?;
     let headers = azure_headers(key, version)?;
     Ok(OutboundRequest {
         method: Method::GET,
@@ -140,9 +141,9 @@ fn azure_read(call: &AzureReadCall<'_>) -> OutboundResult {
 }
 
 fn openai_cancel(call: &OpenAiFineTuningCancel<'_>) -> OutboundResult {
-    let suffix = format!("/{}/cancel", call.values.job_id);
-    let url = openai_jobs_url(&call.api_base, &suffix)?;
     let headers = openai_headers(call.api_key, call.organization, false)?;
+    let suffix = format!("/{}/cancel", encode_segment(call.values.job_id, "job_id")?);
+    let url = openai_jobs_url(&call.api_base, &suffix)?;
     Ok(OutboundRequest {
         method: Method::POST,
         url,
@@ -155,7 +156,7 @@ fn openai_cancel(call: &OpenAiFineTuningCancel<'_>) -> OutboundResult {
 
 fn azure_cancel(call: &AzureFineTuningCancel<'_>) -> OutboundResult {
     let (key, api_base, version) = azure_api(call.api_key, call.api_base, call.api_version)?;
-    let suffix = format!("/{}/cancel", call.values.job_id);
+    let suffix = format!("/{}/cancel", encode_segment(call.values.job_id, "job_id")?);
     let url = azure_jobs_url(api_base, version, &suffix)?;
     let headers = azure_headers(key, version)?;
     Ok(OutboundRequest {
@@ -181,6 +182,7 @@ fn openai_headers(
     if is_json {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT));
     }
+    insert_header(&mut headers, "accept", JSON_CONTENT)?;
     insert_header(
         &mut headers,
         "authorization",
@@ -240,10 +242,10 @@ pub(super) fn create_body(
     serde_json::to_vec(&body).map_err(|source| WireError::Encode { source })
 }
 
-fn read_suffix(operation: ReadOperation<'_>) -> String {
+fn read_suffix(operation: ReadOperation<'_>) -> Result<String, WireError> {
     match operation {
-        ReadOperation::List { .. } => String::new(),
-        ReadOperation::Retrieve { job_id } => format!("/{job_id}"),
+        ReadOperation::List { .. } => Ok(String::new()),
+        ReadOperation::Retrieve { job_id } => Ok(format!("/{}", encode_segment(job_id, "job_id")?)),
     }
 }
 
