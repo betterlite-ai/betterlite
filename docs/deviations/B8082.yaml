@@ -21,16 +21,16 @@ deviations:
       Result objects are ResponseObject classes, not the mcp package's pydantic models, and McpError,
       UnsupportedMcpArgument and UnknownNativeError stand in for mcp.MCPError and LiteLLM's refused-argument errors.
     why: >-
-      The wheel depends only on python-dotenv, so no mcp models are installed. Code that catches mcp.MCPError catches
-      McpError instead; the code and message attributes match.
+      The wheel does not depend on the mcp package, so no mcp models are installed. Code that catches mcp.MCPError
+      catches McpError instead; the code and message attributes match.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L960
   - what: >-
-      A 401 with raise_on_error=True raises McpError with code -32603, while LiteLLM lets httpx2.HTTPStatusError
-      through, and the swallowed error text for that failure starts with "MCPError:" rather than "HTTPStatusError:".
+      A POST answer whose error status other than 404 carries a JSON-RPC error body is relayed as that JSON-RPC error;
+      LiteLLM's HTTP client raises httpx2.HTTPStatusError for every POST error status except 404.
     why: >-
-      The Rust transport reports every upstream failure as a protocol error payload, so the Python layer cannot tell
-      an HTTP status apart from a JSON-RPC error.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L677-L735
+      The MCP streamable HTTP client reads a JSON-RPC error body before falling back, and betterlite keeps that branch;
+      LiteLLM's _MCPHTTPClient wraps it and raises before the MCP client sees the body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L247-L251
   - what: >-
       ssl_verify takes a bool, a CA bundle path or None and refuses every other value, an ssl.SSLContext included, and
       an unknown protocol_version raises ValueError rather than pydantic's ValidationError.
