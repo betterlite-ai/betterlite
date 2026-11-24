@@ -41,9 +41,9 @@ pub(crate) enum Input {
     },
     CredentialResolver {
         server: MCPServer,
-        subject: resolve::SubjectInput,
+        subject: Box<resolve::SubjectInput>,
         #[serde(default)]
-        collaborators: fakes::CollaboratorsInput,
+        collaborators: Box<fakes::CollaboratorsInput>,
         actions: Vec<resolve::Action>,
     },
 }
@@ -51,9 +51,12 @@ pub(crate) enum Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Principal {
-    org_id: Option<String>,
-    team_id: Option<String>,
-    user_id: Option<String>,
+    #[serde(rename = "org_id")]
+    org: Option<String>,
+    #[serde(rename = "team_id")]
+    team: Option<String>,
+    #[serde(rename = "user_id")]
+    user: Option<String>,
 }
 
 pub(crate) struct Op;
@@ -101,9 +104,9 @@ impl Helper for Op {
 
 fn subject_answer(principal: Option<&Principal>, subject_token: Option<&str>) -> Value {
     let user = principal.map(|fields| UserPrincipal {
-        org_id: fields.org_id.clone(),
-        team_id: fields.team_id.clone(),
-        user_id: fields.user_id.clone(),
+        org_id: fields.org.clone(),
+        team_id: fields.team.clone(),
+        user_id: fields.user.clone(),
     });
     let subject = adapter::to_subject(user.as_ref(), subject_token);
     json!({

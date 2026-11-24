@@ -195,7 +195,7 @@ async fn a_second_key_keeps_the_inflight_guard_alive() {
     let cache = ExchangedTokenCache::default();
     let calls = AtomicUsize::new(0);
     let started = AtomicUsize::new(0);
-    let (_, ()) = tokio::join!(
+    let ((), ()) = tokio::join!(
         async {
             let _first = cache
                 .get_or_compute("slot-a", "fp", yielding_mint("one", &calls, &started))

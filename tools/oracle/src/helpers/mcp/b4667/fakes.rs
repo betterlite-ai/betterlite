@@ -19,7 +19,7 @@ use super::recorders::{NOT_WIRED, RecordingEndpoint, RecordingExchanger, oauth_t
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct CollaboratorsInput {
+pub(crate) struct CollaboratorsInput {
     oauth_token_store: Option<TokenStoreInput>,
     assertion_store: Option<AssertionStoreInput>,
     token_endpoint: Option<Vec<String>>,
@@ -139,16 +139,16 @@ fn build_exchanger(input: Option<&ExchangerInput>) -> RecordingExchanger {
 }
 
 fn build_credentials(input: Option<&ClientCredentialsInput>) -> MintedCredentials {
-    match input {
-        Some(fields) => MintedCredentials {
-            access_token: Some(fields.access_token.clone()),
-            refetched: fields.refetch.clone().map(SecretString::from),
-        },
-        None => MintedCredentials {
+    input.map_or_else(
+        || MintedCredentials {
             access_token: None,
             refetched: None,
         },
-    }
+        |fields| MintedCredentials {
+            access_token: Some(fields.access_token.clone()),
+            refetched: fields.refetch.clone().map(SecretString::from),
+        },
+    )
 }
 
 pub(super) fn error_from_tag(tag: &str, detail: &str) -> CredError {

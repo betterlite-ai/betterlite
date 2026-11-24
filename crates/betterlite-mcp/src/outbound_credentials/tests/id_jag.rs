@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use chrono::DateTime;
-use serde_json::json;
 
 use crate::credential_contracts::errors::CredError;
 use crate::credential_contracts::server_spec::ServerSpec;
@@ -10,7 +9,7 @@ use super::super::resolver::{Collaborators, UpstreamCredentialProvider};
 use super::super::token_cache::ExchangedTokenCache;
 use super::support::{
     FakeAssertions, FakeEndpoint, RecordedAuth, bearer, failure, param, provider, shared_endpoint,
-    spec, subject,
+    spec_from, subject,
 };
 
 const MISSING_CALLER: &str = "ID-JAG requires an identified caller; this request carries neither an identity token nor a resolved LiteLLM user.";
@@ -25,18 +24,11 @@ fn id_jag_spec_with(
     client_secret: &str,
     scopes: &[&str],
 ) -> ServerSpec {
-    spec(json!({
-        "server_id": "srv-1",
-        "name": "ID JAG",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "oauth2_id_jag",
-        "token_exchange_endpoint": org_endpoint,
-        "id_jag_resource_token_endpoint": resource_endpoint,
-        "client_id": "client-1",
-        "client_secret": client_secret,
-        "scopes": scopes
-    }))
+    let scopes_json = serde_json::to_string(scopes).expect("scopes fixture");
+    let encoded = format!(
+        r#"{{"server_id":"srv-1","name":"ID JAG","transport":"http","url":"https://mcp.example.com/mcp","auth_type":"oauth2_id_jag","token_exchange_endpoint":"{org_endpoint}","id_jag_resource_token_endpoint":"{resource_endpoint}","client_id":"client-1","client_secret":"{client_secret}","scopes":{scopes_json}}}"#
+    );
+    spec_from(&encoded)
 }
 
 fn standard_spec() -> ServerSpec {
@@ -288,20 +280,9 @@ async fn id_jag_omits_absent_optional_parameters() {
 async fn id_jag_drops_empty_optional_parameters() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
     let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
-    let server = spec(json!({
-        "server_id": "srv-1",
-        "name": "ID JAG",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "oauth2_id_jag",
-        "token_exchange_endpoint": "https://idp.example.com/org/token",
-        "id_jag_resource_token_endpoint": "https://upstream.example.com/token",
-        "client_id": "client-1",
-        "client_secret": "secret-1",
-        "audience": "",
-        "id_jag_resource": "",
-        "scopes": []
-    }));
+    let server = spec_from(
+        r#"{"server_id":"srv-1","name":"ID JAG","transport":"http","url":"https://mcp.example.com/mcp","auth_type":"oauth2_id_jag","token_exchange_endpoint":"https://idp.example.com/org/token","id_jag_resource_token_endpoint":"https://upstream.example.com/token","client_id":"client-1","client_secret":"secret-1","audience":"","id_jag_resource":"","scopes":[]}"#,
+    );
     let _credential = resolver
         .resolve_credentials(&subject("org-1", "user-1", None), &server)
         .await

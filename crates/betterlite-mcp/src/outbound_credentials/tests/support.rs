@@ -27,19 +27,16 @@ pub(super) fn server_from(encoded: &str) -> MCPServer {
     serde_json::from_str(encoded).expect("a valid server record")
 }
 
-pub(super) fn server<T>(raw: T) -> MCPServer
-where
-    T: serde::Serialize,
-{
-    let encoded = serde_json::to_string(&raw).expect("server fixture json");
-    server_from(&encoded)
-}
-
 pub(super) fn spec<T>(raw: T) -> ServerSpec
 where
     T: serde::Serialize,
 {
-    let mapped = to_server_spec(&server(raw)).expect("adapter mapping");
+    let encoded = serde_json::to_string(&raw).expect("server fixture json");
+    spec_from(&encoded)
+}
+
+pub(super) fn spec_from(encoded: &str) -> ServerSpec {
+    let mapped = to_server_spec(&server_from(encoded)).expect("adapter mapping");
     mapped.expect("the mode is owned by the resolver")
 }
 
@@ -103,20 +100,10 @@ pub(super) fn bearer(auth: &Arc<dyn ResolvedAuth>) -> String {
 }
 
 pub(super) fn id_jag_spec(client_secret: &str) -> ServerSpec {
-    spec(serde_json::json!({
-        "server_id": "srv-1",
-        "name": "ID JAG",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "oauth2_id_jag",
-        "token_exchange_endpoint": "https://idp.example.com/org/token",
-        "id_jag_resource_token_endpoint": "https://upstream.example.com/token",
-        "client_id": "client-1",
-        "client_secret": client_secret,
-        "audience": "api://upstream",
-        "id_jag_resource": "https://resource.example.com",
-        "scopes": ["read", "write"]
-    }))
+    let encoded = format!(
+        r#"{{"server_id":"srv-1","name":"ID JAG","transport":"http","url":"https://mcp.example.com/mcp","auth_type":"oauth2_id_jag","token_exchange_endpoint":"https://idp.example.com/org/token","id_jag_resource_token_endpoint":"https://upstream.example.com/token","client_id":"client-1","client_secret":"{client_secret}","audience":"api://upstream","id_jag_resource":"https://resource.example.com","scopes":["read","write"]}}"#
+    );
+    spec_from(&encoded)
 }
 
 pub(super) fn client_with(
@@ -234,33 +221,28 @@ pub(super) fn param<'call>(call: &'call RecordedCall, name: &str) -> Option<&'ca
     call.grant.get(name).map(String::as_str)
 }
 
-pub(super) enum Reply {
-    Token(ExchangedToken),
-    Error(CredError),
-}
-
 pub(super) struct FakeEndpoint {
-    replies: Mutex<VecDeque<Reply>>,
+    replies: Mutex<VecDeque<ExchangedToken>>,
     calls: Mutex<Vec<RecordedCall>>,
 }
 
 impl FakeEndpoint {
-    pub(super) fn new(replies: Vec<Reply>) -> Self {
+    pub(super) fn new(replies: Vec<ExchangedToken>) -> Self {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
             calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub(super) fn token(access_token: &str) -> Reply {
-        Reply::Token(ExchangedToken {
+    pub(super) fn token(access_token: &str) -> ExchangedToken {
+        ExchangedToken {
             access_token: secret(access_token),
             expires_in: None,
-        })
+        }
     }
 
     pub(super) fn tokens(values: &[&str]) -> Self {
-        let replies: Vec<Reply> = values.iter().map(|value| Self::token(value)).collect();
+        let replies: Vec<ExchangedToken> = values.iter().map(|value| Self::token(value)).collect();
         Self::new(replies)
     }
 
@@ -304,13 +286,9 @@ impl TokenEndpointClient for FakeEndpoint {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         Box::pin(async move {
-            match reply {
-                Some(Reply::Token(token)) => Ok(token),
-                Some(Reply::Error(error)) => Err(error),
-                None => Err(CredError::UpstreamUnavailable(
-                    "no canned token endpoint reply".to_owned(),
-                )),
-            }
+            reply.ok_or_else(|| {
+                CredError::UpstreamUnavailable("no canned token endpoint reply".to_owned())
+            })
         })
     }
 }

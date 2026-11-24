@@ -21,7 +21,7 @@ const UPSTREAM_URL: &str = "https://upstream.example.com/mcp";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct SubjectInput {
+pub(crate) struct SubjectInput {
     tenant_id: String,
     subject_id: String,
     inbound_token: Option<String>,
@@ -29,7 +29,7 @@ pub(super) struct SubjectInput {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Action {
+pub(crate) enum Action {
     Resolve,
     ResolveWithSource,
     HasUserToken,

@@ -61,7 +61,7 @@ fn token_exchange(spec: &ServerSpec) -> &TokenExchangeConfig {
 }
 
 fn id_jag_config(extra: &str) -> IdJagConfig {
-    let encoded = format!("{}{extra}", ID_JAG_BASE);
+    let encoded = format!("{ID_JAG_BASE}{extra}");
     let spec = owned(&encoded);
     let AuthConfig::IdJag(config) = spec.config else {
         panic!("expected id_jag, got {}", spec.config.kind());
@@ -273,9 +273,8 @@ fn client_credentials_carries_the_grant_fields() {
 #[test]
 fn authorization_code_carries_the_upstream_token_header() {
     let spec = owned(r#","auth_type":"oauth2","upstream_token_header":"X-Custom""#);
-    let config = match &spec.config {
-        AuthConfig::AuthorizationCode(config) => config,
-        other => panic!("expected authorization_code, got {}", other.kind()),
+    let AuthConfig::AuthorizationCode(config) = &spec.config else {
+        panic!("expected authorization_code, got {}", spec.config.kind());
     };
     assert_eq!(config.header.header("token").0, "X-Custom");
     assert_eq!(config.header.header("token").1, "Bearer token");

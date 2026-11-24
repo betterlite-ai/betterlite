@@ -68,27 +68,27 @@ fn config_answer(config: &AuthConfig) -> Value {
         AuthConfig::AuthorizationCode(fields) => with_header(
             "authorization_code",
             &fields.header,
-            json!({"scopes": fields.scopes, "client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "authorization_url": fields.authorization_url, "token_url": fields.token_url}),
+            &json!({"scopes": fields.scopes, "client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "authorization_url": fields.authorization_url, "token_url": fields.token_url}),
         ),
         AuthConfig::ClientCredentials(fields) => with_header(
             "client_credentials",
             &fields.header,
-            json!({"client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "token_url": fields.token_url, "scopes": fields.scopes, "audience": fields.audience, "upstream_resource": fields.upstream_resource, "token_endpoint_auth_method": fields.token_endpoint_auth_method.map(TokenEndpointAuthMethod::as_str)}),
+            &json!({"client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "token_url": fields.token_url, "scopes": fields.scopes, "audience": fields.audience, "upstream_resource": fields.upstream_resource, "token_endpoint_auth_method": fields.token_endpoint_auth_method.map(TokenEndpointAuthMethod::as_str)}),
         ),
         AuthConfig::TokenExchange(fields) => with_header(
             "token_exchange",
             &fields.header,
-            json!({"profile": profile(fields.profile), "subject_token_type": fields.subject_token_type, "token_exchange_endpoint": fields.token_exchange_endpoint, "audience": fields.audience, "client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "token_endpoint_auth_method": fields.token_endpoint_auth_method.map(TokenEndpointAuthMethod::as_str), "scopes": fields.scopes}),
+            &json!({"profile": profile(fields.profile), "subject_token_type": fields.subject_token_type, "token_exchange_endpoint": fields.token_exchange_endpoint, "audience": fields.audience, "client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "token_endpoint_auth_method": fields.token_endpoint_auth_method.map(TokenEndpointAuthMethod::as_str), "scopes": fields.scopes}),
         ),
         AuthConfig::IdJag(fields) => with_header(
             "id_jag",
             &fields.header,
-            json!({"org_token_endpoint": fields.org_token_endpoint, "resource_token_endpoint": fields.resource_token_endpoint, "client_id": fields.client_id, "client_auth": client_auth_answer(&fields.client_auth), "subject_token_type": fields.subject_token_type, "audience": fields.audience, "resource": fields.resource, "scopes": fields.scopes}),
+            &json!({"org_token_endpoint": fields.org_token_endpoint, "resource_token_endpoint": fields.resource_token_endpoint, "client_id": fields.client_id, "client_auth": client_auth_answer(&fields.client_auth), "subject_token_type": fields.subject_token_type, "audience": fields.audience, "resource": fields.resource, "scopes": fields.scopes}),
         ),
         AuthConfig::ApiKey(fields) => with_header(
             "api_key",
             &fields.header,
-            json!({"key_source": key_source_answer(&fields.key_source)}),
+            &json!({"key_source": key_source_answer(&fields.key_source)}),
         ),
         AuthConfig::Passthrough(_fields) => json!({"kind": "passthrough", "fields": {}}),
         AuthConfig::None(_fields) => json!({"kind": "none", "fields": {}}),
@@ -130,7 +130,7 @@ fn aws_sigv4_answer(fields: &AwsSigV4Config) -> Value {
     })
 }
 
-fn with_header(kind: &str, header: &HeaderCarrier, fields: Value) -> Value {
+fn with_header(kind: &str, header: &HeaderCarrier, fields: &Value) -> Value {
     let (name, prefix) = header_parts(header);
     json!({"kind": kind, "header": {"name": name, "prefix": prefix}, "fields": fields})
 }
