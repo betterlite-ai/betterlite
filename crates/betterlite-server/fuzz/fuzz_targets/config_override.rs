@@ -11,18 +11,18 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let kinds = [OverrideKind::HashicorpVault, OverrideKind::CyberArk];
-    kinds.into_iter().for_each(|kind| {
+    for kind in kinds {
         drop(decode_config_override(data, kind));
-    });
+    }
     if let Ok(text) = from_utf8(data) {
         let stored = JsonValue::String(text.to_owned());
-        kinds.into_iter().for_each(|kind| {
+        for kind in kinds {
             drop(decode_stored_override(&stored, kind));
-        });
+        }
     }
     if let Ok(value) = serde_json::from_slice::<JsonValue>(data) {
-        kinds.into_iter().for_each(|kind| {
+        for kind in kinds {
             drop(decode_stored_override(&value, kind));
-        });
+        }
     }
 });

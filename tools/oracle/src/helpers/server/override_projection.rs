@@ -36,12 +36,12 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
             Function::Mask => {
-                let config: JsonMap =
+                let config: JsonMap<String, Value> =
                     serde_json::from_value(input.config.clone()).or_value_error()?;
                 serde_json::to_value(mask_sensitive_fields(input.kind, &config)).or_value_error()
             }
             Function::Audit => {
-                let config: Option<JsonMap> = if input.config.is_null() {
+                let config: Option<JsonMap<String, Value>> = if input.config.is_null() {
                     None
                 } else {
                     Some(serde_json::from_value(input.config.clone()).or_value_error()?)
