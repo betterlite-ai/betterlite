@@ -18,9 +18,9 @@ use tokio::time::timeout;
 
 use self::support::{
     BATCH_ID, COLLECTION_ROUTE, CountingIds, Creation, ID_SCOPED_ROUTE, MODEL, RESPONSE_ID,
-    assert_registrant_defaults, assert_registrant_empty_defaults, assert_registrant_identity,
-    batch_body, batch_object, capture_logs, field, handler, handler_with_ids, message, metadata,
-    provider_fields, registry_port, router, router_port, router_port_of, run, start_time, text,
+    assert_registrant_fields, batch_body, batch_object, capture_logs, field, handler,
+    handler_with_ids, message, metadata, provider_fields, registry_port, router, router_port,
+    router_port_of, run, start_time, text,
 };
 use super::{BatchJobState, RegistryError, unified_object_id};
 
@@ -484,9 +484,7 @@ async fn batch_collection_route_registers_managed_object() {
         Some(vec!["a".to_owned(), "b".to_owned()])
     );
     let registrant = &registration.registrant;
-    assert_registrant_identity(registrant);
-    assert_registrant_defaults(registrant);
-    assert_registrant_empty_defaults(registrant);
+    assert_registrant_fields(registrant);
     timeout(Duration::from_secs(5), lines.recv())
         .await
         .expect("the done callback logs")

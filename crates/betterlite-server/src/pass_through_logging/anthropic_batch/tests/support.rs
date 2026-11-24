@@ -276,38 +276,44 @@ pub(crate) fn registry_port(
     (port, received)
 }
 
-pub(crate) fn assert_registrant_identity(registrant: &BatchRegistrant) {
-    assert_eq!(registrant.user_id, Some("user-1".to_owned()));
-    assert_eq!(registrant.team_id, Some("team-1".to_owned()));
-    assert!(
-        registrant
-            .api_key
-            .as_ref()
-            .is_some_and(|key| key.expose_secret() == "sk-key")
+pub(crate) fn assert_registrant_fields(registrant: &BatchRegistrant) {
+    assert_eq!(registrant.user_id.as_deref(), Some("user-1"));
+    assert_eq!(registrant.team_id.as_deref(), Some("team-1"));
+    let api_key = registrant.api_key.as_ref().expect("the key is stored");
+    assert_eq!(api_key.expose_secret(), "sk-key");
+    let scalars = (
+        registrant.team_alias.as_deref(),
+        registrant.user_role,
+        registrant.user_email.as_deref(),
+        registrant.max_budget,
+        registrant.spend,
+        registrant.tpm_limit,
+        registrant.rpm_limit,
+        registrant.budget_duration.as_deref(),
     );
-}
-
-pub(crate) fn assert_registrant_defaults(registrant: &BatchRegistrant) {
-    assert_eq!(registrant.team_alias, None);
-    assert_eq!(registrant.user_role, UserRole::Customer);
-    assert_eq!(registrant.user_email, None);
-    assert_eq!(registrant.max_budget, None);
-    assert_eq!(registrant.spend, Decimal::ZERO);
-    assert!(registrant.models.is_empty());
-    assert_eq!(registrant.tpm_limit, None);
-    assert_eq!(registrant.rpm_limit, None);
-    assert_eq!(registrant.budget_duration, None);
-}
-
-pub(crate) fn assert_registrant_empty_defaults(registrant: &BatchRegistrant) {
-    assert_eq!(registrant.budget_reset_at, None);
-    assert_eq!(registrant.max_parallel_requests, None);
-    assert_eq!(registrant.allowed_model_region, None);
-    assert!(registrant.metadata.is_empty());
-    assert_eq!(registrant.key_alias, None);
-    assert!(registrant.permissions.is_empty());
-    assert!(registrant.model_max_budget.is_empty());
-    assert!(registrant.model_spend.is_empty());
+    let expected = (
+        None,
+        UserRole::Customer,
+        None,
+        None,
+        Decimal::ZERO,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(scalars, expected);
+    let absent = (
+        registrant.budget_reset_at,
+        registrant.max_parallel_requests,
+        registrant.allowed_model_region.as_deref(),
+        registrant.key_alias.as_deref(),
+        registrant.models.len(),
+        registrant.metadata.len(),
+        registrant.permissions.len(),
+        registrant.model_max_budget.len(),
+        registrant.model_spend.len(),
+    );
+    assert_eq!(absent, (None, None, None, None, 0, 0, 0, 0, 0));
 }
 
 pub(crate) fn handler(
