@@ -195,6 +195,22 @@ fn executor_a_request_without_a_target_builds_no_executor() {
 }
 
 #[test]
+fn executor_a_request_without_a_peer_builds_no_peer() {
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/v1/chat/completions")
+        .body(Body::empty())
+        .unwrap();
+    let request = request_with_target(request, "");
+    let (parts, _body) = request.into_parts();
+    let executor = executor_for(&parts).expect("a request with a target builds an executor");
+    assert!(
+        executor.peer.is_none(),
+        "the request carried no peer and the executor gets none"
+    );
+}
+
+#[test]
 fn executor_the_parent_uri_prefers_the_original_uri() {
     let mut request = Request::builder()
         .method(Method::POST)
