@@ -16,6 +16,7 @@ async fn minted(
     expires_in: Option<i64>,
     calls: &AtomicUsize,
 ) -> CredResult<ExchangedToken> {
+    yield_now().await;
     calls.fetch_add(1, Ordering::SeqCst);
     let token = ExchangedToken {
         access_token: secret(access_token),

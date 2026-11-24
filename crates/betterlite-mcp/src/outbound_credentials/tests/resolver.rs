@@ -14,7 +14,8 @@ use super::super::resolver::Collaborators;
 use super::super::resolver::source::resolve_with_source;
 use super::support::{
     FakeAssertions, FakeCredentials, FakeEndpoint, FakeExchanger, FakeTokens, applied, bearer,
-    failure, header, id_jag_spec, param, provider, request, spec, subject,
+    failure, header, id_jag_spec, param, provider, request, shared_credentials, shared_endpoint,
+    shared_exchanger, spec, subject,
 };
 
 #[derive(serde::Serialize)]
@@ -233,8 +234,8 @@ async fn passthrough_missing_token() {
 #[tokio::test]
 async fn client_credentials_success() {
     let source = Arc::new(FakeCredentials::new("minted", Some("fresh")));
-    let collaborators =
-        Collaborators::default().with_client_credentials_source(Arc::clone(&source));
+    let collaborators = Collaborators::default()
+        .with_client_credentials_source(shared_credentials(Arc::clone(&source)));
     let auth = provider(collaborators)
         .resolve_credentials(
             &subject("", "", None),
@@ -252,8 +253,8 @@ async fn client_credentials_success() {
 #[tokio::test]
 async fn client_credentials_keeps_the_rejected_token_without_a_refetch() {
     let source = Arc::new(FakeCredentials::new("minted", None));
-    let collaborators =
-        Collaborators::default().with_client_credentials_source(Arc::clone(&source));
+    let collaborators = Collaborators::default()
+        .with_client_credentials_source(shared_credentials(Arc::clone(&source)));
     let auth = provider(collaborators)
         .resolve_credentials(
             &subject("", "", None),
@@ -302,7 +303,8 @@ async fn token_exchange_no_inbound_fails_closed() {
 #[tokio::test]
 async fn token_exchange_reaches_the_exchanger() {
     let exchanger = Arc::new(FakeExchanger::returning("exchanged-token"));
-    let collaborators = Collaborators::default().with_token_exchanger(Arc::clone(&exchanger));
+    let collaborators =
+        Collaborators::default().with_token_exchanger(shared_exchanger(Arc::clone(&exchanger)));
     let caller = subject("org-1", "user-1", Some("caller-token"));
     let auth = provider(collaborators)
         .resolve_credentials(&caller, &oauth2_profile_spec(Oauth2Profile::TokenExchange))
@@ -390,7 +392,7 @@ async fn id_jag_two_leg_exchange() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["leg1-jag", "leg2-bearer"]));
     let collaborators = Collaborators::default()
         .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
-        .with_token_endpoint(Arc::clone(&endpoint));
+        .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint)));
     let resolver = provider(collaborators);
     let server = id_jag_spec("secret-1");
     let caller = subject("org-1", "user-1", None);
@@ -498,7 +500,7 @@ async fn invalidate_id_jag_by_slot() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["one", "two", "three", "four"]));
     let collaborators = Collaborators::default()
         .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
-        .with_token_endpoint(Arc::clone(&endpoint));
+        .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint)));
     let resolver = provider(collaborators);
     let server = id_jag_spec("secret-1");
     let alice = subject("org-1", "user-1", None);
@@ -518,7 +520,8 @@ async fn invalidate_id_jag_by_slot() {
 #[tokio::test]
 async fn invalidate_token_exchange_drops_bearer() {
     let exchanger = Arc::new(FakeExchanger::returning("exchanged-token"));
-    let collaborators = Collaborators::default().with_token_exchanger(Arc::clone(&exchanger));
+    let collaborators =
+        Collaborators::default().with_token_exchanger(shared_exchanger(Arc::clone(&exchanger)));
     let resolver = provider(collaborators);
     let server = oauth2_profile_spec(Oauth2Profile::TokenExchange);
     let caller = subject("org-1", "user-1", Some("caller-token"));
@@ -549,8 +552,8 @@ async fn invalidate_nonexchanged_noop(#[case] server: ServerSpec) {
     let exchanger = Arc::new(FakeExchanger::returning("exchanged-token"));
     let source = Arc::new(FakeCredentials::new("minted", Some("fresh")));
     let collaborators = Collaborators::default()
-        .with_token_exchanger(Arc::clone(&exchanger))
-        .with_client_credentials_source(Arc::clone(&source))
+        .with_token_exchanger(shared_exchanger(Arc::clone(&exchanger)))
+        .with_client_credentials_source(shared_credentials(Arc::clone(&source)))
         .with_oauth_token_store(Arc::new(FakeTokens::with_token("user-1", "user-token")));
     let resolver = provider(collaborators);
     let caller = subject("org-1", "user-1", Some("caller-token"));
@@ -563,7 +566,8 @@ async fn invalidate_nonexchanged_noop(#[case] server: ServerSpec) {
 #[tokio::test]
 async fn invalidate_with_no_inbound_noop() {
     let exchanger = Arc::new(FakeExchanger::returning("exchanged-token"));
-    let collaborators = Collaborators::default().with_token_exchanger(Arc::clone(&exchanger));
+    let collaborators =
+        Collaborators::default().with_token_exchanger(shared_exchanger(Arc::clone(&exchanger)));
     let resolver = provider(collaborators);
     let anonymous = subject("org-1", "user-1", None);
     resolver

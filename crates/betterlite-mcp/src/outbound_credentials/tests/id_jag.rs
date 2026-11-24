@@ -9,7 +9,8 @@ use crate::credential_contracts::server_spec::ServerSpec;
 use super::super::resolver::{Collaborators, UpstreamCredentialProvider};
 use super::super::token_cache::ExchangedTokenCache;
 use super::support::{
-    FakeAssertions, FakeEndpoint, RecordedAuth, bearer, failure, param, provider, spec, subject,
+    FakeAssertions, FakeEndpoint, RecordedAuth, bearer, failure, param, provider, shared_endpoint,
+    spec, subject,
 };
 
 const MISSING_CALLER: &str = "ID-JAG requires an identified caller; this request carries neither an identity token nor a resolved LiteLLM user.";
@@ -224,7 +225,7 @@ async fn id_jag_subject_token_from_the_store() {
             "stored-id-token",
             Some(future),
         )))
-        .with_token_endpoint(Arc::clone(&endpoint));
+        .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint)));
     let resolver = provider(collaborators);
     let auth = resolver
         .resolve_credentials(&subject("org-1", "user-1", None), &standard_spec())
@@ -242,7 +243,7 @@ async fn id_jag_inbound_token_wins_over_the_store() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
     let collaborators = Collaborators::default()
         .with_sso_assertion_store(Arc::new(FakeAssertions::storing("stored-id-token", None)))
-        .with_token_endpoint(Arc::clone(&endpoint));
+        .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint)));
     let resolver = provider(collaborators);
     let auth = resolver
         .resolve_credentials(
@@ -321,14 +322,14 @@ async fn id_jag_reuses_an_injected_token_cache() {
         Collaborators::default()
             .with_exchanged_tokens(Arc::clone(&cache))
             .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
-            .with_token_endpoint(Arc::clone(&endpoint)),
+            .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint))),
     );
     let _one = first.resolve_credentials(&alice, &server).await.unwrap();
     let second = provider(
         Collaborators::default()
             .with_exchanged_tokens(cache)
             .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
-            .with_token_endpoint(Arc::clone(&endpoint)),
+            .with_token_endpoint(shared_endpoint(Arc::clone(&endpoint))),
     );
     let _two = second.resolve_credentials(&alice, &server).await.unwrap();
     assert_eq!(endpoint.calls().len(), 2);

@@ -315,6 +315,10 @@ impl TokenEndpointClient for FakeEndpoint {
     }
 }
 
+pub(super) fn shared_endpoint(endpoint: Arc<FakeEndpoint>) -> Arc<dyn TokenEndpointClient> {
+    endpoint
+}
+
 pub(super) struct FakeExchanger {
     token: Option<OAuthToken>,
     error: Option<CredError>,
@@ -380,6 +384,10 @@ impl TokenExchanger for FakeExchanger {
     }
 }
 
+pub(super) fn shared_exchanger(exchanger: Arc<FakeExchanger>) -> Arc<dyn TokenExchanger> {
+    exchanger
+}
+
 fn record(records: &Mutex<Vec<(String, String)>>, subject_token: &SecretString, tenant_id: &str) {
     let entry = (exposed(subject_token), tenant_id.to_owned());
     records
@@ -433,6 +441,10 @@ impl ClientCredentialsSource for FakeCredentials {
         let fresh = self.refetched.clone().map(SecretString::from);
         Box::pin(async move { fresh })
     }
+}
+
+pub(super) fn shared_credentials(source: Arc<FakeCredentials>) -> Arc<dyn ClientCredentialsSource> {
+    source
 }
 
 pub(super) struct FakeAssertions {

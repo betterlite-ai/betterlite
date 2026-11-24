@@ -22,7 +22,10 @@ fn mapped(extra: &str) -> Option<ServerSpec> {
         r#"{{"server_id":"srv-1","name":"Server One","transport":"http","url":"https://mcp.example.com/mcp"{extra}}}"#
     );
     let record = server_from(&encoded);
-    to_server_spec(&record).expect("adapter mapping")
+    match to_server_spec(&record) {
+        Ok(spec) => spec,
+        Err(error) => panic!("adapter mapping failed: {error}"),
+    }
 }
 
 fn owned(extra: &str) -> ServerSpec {
