@@ -303,7 +303,10 @@ async fn native_organization_routes_without_license() {
         )
         .await;
     assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
-    assert!(!refused.detail_error().contains("Enterprise"));
+    assert_eq!(
+        refused.detail_error(),
+        "Only admins can create orgs. Your role is = internal_user"
+    );
     app.close().await;
 }
 
