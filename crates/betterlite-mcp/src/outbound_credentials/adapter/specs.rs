@@ -134,7 +134,7 @@ fn oauth_spec(server: &MCPServer, resource: &str, grant: Grant) -> CredResult<Op
     Ok(Some(spec(server, resource, config)))
 }
 
-// Both OAuth grants carry the same client registration, so one match builds either; only the resource and the exchange endpoint differ.
+// Both OAuth grants carry the same client registration, so one match builds either.
 fn oauth_config(server: &MCPServer, grant: Grant) -> CredResult<AuthConfig> {
     let config = match grant {
         Grant::ClientCredentials => {
