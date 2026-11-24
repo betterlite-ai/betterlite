@@ -12,12 +12,18 @@ use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_reporting::bug_report::notice::NOTICE_PREFIX;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::model_catalog_lookup::error::LookupError;
+use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use rstest::rstest;
 use serde::Deserialize;
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::Semaphore;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
@@ -150,7 +156,6 @@ impl RecoverySubmission for RecordingRecovery {
 
 struct PendingWriter {
     gate: Semaphore,
-    notify: Notify,
     completed: AtomicBool,
     reasons: Mutex<Vec<String>>,
 }
@@ -159,7 +164,6 @@ impl Default for PendingWriter {
     fn default() -> Self {
         Self {
             gate: Semaphore::new(0),
-            notify: Notify::new(),
             completed: AtomicBool::new(false),
             reasons: Mutex::new(Vec::new()),
         }
@@ -172,7 +176,6 @@ impl ReadOnlyWriterRecovery for PendingWriter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(reason.to_owned());
-        self.notify.notify_one();
         async move {
             let _permit = self.gate.acquire().await.expect("the gate never closes");
             self.completed.store(true, Ordering::SeqCst);
@@ -491,24 +494,28 @@ async fn recovery_submission(#[case] database: Option<DbError>, #[case] expected
     );
 
     assert_eq!(record.code, "500");
+    assert_eq!(
+        tracker.len(),
+        usize::from(expected),
+        "exactly one recovery is submitted when the failure is a read-only transaction"
+    );
     assert!(
         !writer.completed.load(Ordering::SeqCst),
         "the mapping waits for the recovery"
     );
     if expected {
-        writer.notify.notified().await;
-        assert_eq!(
-            *writer.reasons.lock().unwrap(),
-            [READ_ONLY_RECOVERY_REASON.to_owned()]
-        );
-        assert!(!writer.completed.load(Ordering::SeqCst));
         writer.gate.add_permits(1);
     }
     tracker.close();
     tracker.wait().await;
 
     assert_eq!(writer.completed.load(Ordering::SeqCst), expected);
-    if !expected {
+    if expected {
+        assert_eq!(
+            *writer.reasons.lock().unwrap(),
+            [READ_ONLY_RECOVERY_REASON.to_owned()]
+        );
+    } else {
         assert!(writer.reasons.lock().unwrap().is_empty());
     }
 }
@@ -716,6 +723,59 @@ fn known_upload_model(
     let error = is_known_model(Some("model_a"), Some(&FailingCatalog))
         .expect_err("the catalog failure propagates");
     assert!(matches!(error, LookupError::InvalidRow { index: 0 }));
+}
+
+struct RealCatalog {
+    catalog: DeploymentCatalog,
+    aliases: AliasMap,
+    groups: RoutingGroupIndex,
+    provider: Box<dyn Fn(&str) -> Option<String>>,
+}
+
+impl RealCatalog {
+    fn with_models(names: &[&str]) -> Self {
+        let mut catalog = DeploymentCatalog::default();
+        for name in names {
+            let mut params = JsonObject::new();
+            params.insert("model".to_owned(), Json::Text("openai/gpt-4o".to_owned()));
+            catalog.models.push(
+                DeploymentSpec::new(
+                    (*name).to_owned(),
+                    params,
+                    JsonObject::new(),
+                    JsonObject::new(),
+                    String::new,
+                )
+                .expect("the fixture deployment builds"),
+            );
+        }
+        Self {
+            catalog,
+            aliases: AliasMap::new(),
+            groups: RoutingGroupIndex::default(),
+            provider: Box::new(|_model| None),
+        }
+    }
+
+    fn lookup(&self) -> CatalogLookup<'_> {
+        CatalogLookup {
+            catalog: &self.catalog,
+            model_group_alias: &self.aliases,
+            routing_groups: &self.groups,
+            inferred_provider: &*self.provider,
+        }
+    }
+}
+
+#[test]
+fn catalog_model_names_come_from_get_model_names() {
+    let catalog = RealCatalog::with_models(&["model_a", "model_a"]);
+    let lookup = catalog.lookup();
+    let router: &dyn ModelNameCatalog = &lookup;
+
+    assert!(is_known_model(Some("model_a"), Some(router)).expect("the catalog answers"));
+    assert!(!is_known_model(Some("Model_A"), Some(router)).expect("the catalog answers"));
+    assert!(!is_known_model(Some("openai/model_a"), Some(router)).expect("the catalog answers"));
 }
 
 #[tokio::test]
