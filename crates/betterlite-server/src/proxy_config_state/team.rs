@@ -59,7 +59,7 @@ fn default_team_settings(
     }
 }
 
-fn not_a_list() -> ConfigStateError {
+const fn not_a_list() -> ConfigStateError {
     ConfigStateError::InvalidSetting {
         field: "litellm_settings.default_team_settings",
         expected: "a list",

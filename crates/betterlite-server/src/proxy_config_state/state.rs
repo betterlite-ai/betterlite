@@ -17,7 +17,7 @@ pub struct ProxyConfigState {
     pub environment_variables: SettingsStore,
     pub config_file_path: PathBuf,
     pub store_model_in_db: bool,
-    pub(crate) snapshot: BTreeMap<String, JsonValue>,
+    pub snapshot: BTreeMap<String, JsonValue>,
 }
 
 impl ProxyConfigState {

@@ -1,5 +1,6 @@
 use betterlite_config::sections::settings::{JsonValue, Section};
 use serde_json::json;
+use tokio::fs;
 
 use super::support;
 use crate::proxy_config_state::error::ConfigStateError;
@@ -224,14 +225,14 @@ async fn a_config_without_a_carried_baseline_diffs_against_the_snapshot() {
 async fn save_config_without_a_database_rewrites_the_config_file() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("config.yaml");
-    tokio::fs::write(&path, "old: true\n").await.unwrap();
+    fs::write(&path, "old: true\n").await.unwrap();
     let mut state = ProxyConfigState::new(path.clone(), true);
     state.replace_snapshot(&support::values(&[("old", json!(true))]));
     let mut config = config_of(&[("general_settings", json!({"a": 1}))]);
     save::save_config(&mut state, &mut config, false, None)
         .await
         .unwrap();
-    let written = tokio::fs::read_to_string(&path).await.unwrap();
+    let written = fs::read_to_string(&path).await.unwrap();
     let parsed: JsonValue = serde_saphyr::from_str(&written).unwrap();
     assert_eq!(parsed, json!({"general_settings": {"a": 1}}));
 }
@@ -248,7 +249,7 @@ async fn save_config_with_store_model_in_db_off_rewrites_the_config_file() {
         .await
         .unwrap();
     assert!(database.merged().is_empty());
-    let written = tokio::fs::read_to_string(&path).await.unwrap();
+    let written = fs::read_to_string(&path).await.unwrap();
     let parsed: JsonValue = serde_saphyr::from_str(&written).unwrap();
     assert_eq!(parsed, json!({"general_settings": {"a": 2}}));
 }

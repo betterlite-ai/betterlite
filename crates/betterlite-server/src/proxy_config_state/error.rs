@@ -39,7 +39,7 @@ pub enum ConfigStateError {
     #[error("the config could not be serialized as YAML")]
     SerializeConfig {
         #[source]
-        source: serde_saphyr::Error,
+        source: serde_saphyr::SerializeError,
     },
     #[error("the config value could not be encoded")]
     Encode {

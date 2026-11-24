@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::settings::{DbRow, JsonValue, Section, changed_section_keys};
+use tokio::fs;
 
 use super::database::{ConfigStateDatabase, SectionWrite};
 use super::error::ConfigStateError;
@@ -128,7 +129,7 @@ async fn write_config_file(
 ) -> Result<(), ConfigStateError> {
     let yaml = serde_saphyr::to_string(config)
         .map_err(|source| ConfigStateError::SerializeConfig { source })?;
-    tokio::fs::write(&state.config_file_path, yaml)
+    fs::write(&state.config_file_path, yaml)
         .await
         .map_err(|source| ConfigStateError::WriteConfigFile {
             path: state.config_file_path.clone(),

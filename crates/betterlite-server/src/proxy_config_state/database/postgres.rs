@@ -38,10 +38,10 @@ impl ConfigSectionTransaction for deadpool_postgres::Transaction<'_> {
                 .map_err(|source| ConfigStateError::Database {
                     source: backend(source),
                 })?;
-        match stored {
-            Some(text) => decode_section_values(section, &text).map(Some),
-            None => Ok(None),
-        }
+        let Some(text) = stored else {
+            return Ok(None);
+        };
+        decode_section_values(section, &text).map(Some)
     }
 
     async fn write_values(

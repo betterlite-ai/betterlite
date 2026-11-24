@@ -77,7 +77,7 @@ fn section_of(name: &str) -> Result<Section, Failure> {
     }
 }
 
-fn store_mut(state: &mut ProxyConfigState, section: Section) -> Option<&mut SettingsStore> {
+const fn store_mut(state: &mut ProxyConfigState, section: Section) -> Option<&mut SettingsStore> {
     match section {
         Section::GeneralSettings => Some(&mut state.general_settings),
         Section::RouterSettings => Some(&mut state.router_settings),
