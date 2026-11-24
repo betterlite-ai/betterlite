@@ -14,9 +14,7 @@ use rstest::rstest;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_group_usage::counters::BatchCounters;
-use crate::model_group_usage::usage::{
-    IoUsage, Usage, get_model_group_io_token_usage, get_model_group_usage,
-};
+use crate::model_group_usage::usage::{UsageSeries, group_counter_totals};
 
 use super::support::{
     CacheFailure, FakeCache, answered, deployment, float, itpm_key, now, number, otpm_key, rpm_key,
@@ -108,9 +106,14 @@ fn batch_read_options_match_the_router_defaults() {
     };
     let rows = [deployment("group", "a", "openai/gpt-4o")];
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(usage, Usage::default());
+    assert_eq!(usage, (None, None));
     let recorded = cache.options.lock().unwrap_or_else(PoisonError::into_inner);
     let options = recorded.first().expect("the batch read");
     assert!(!options.local_only);
@@ -130,9 +133,14 @@ fn batch_key_order() {
         Json::Null,
     ]));
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(usage, Usage::default());
+    assert_eq!(usage, (None, None));
     assert_eq!(
         cache.batches(),
         [vec![
@@ -157,9 +165,14 @@ fn io_batch_key_order_sends_every_itpm_key_before_every_otpm_key() {
         Json::Null,
     ]));
     let usage = runtime()
-        .block_on(get_model_group_io_token_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::IoToken,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the io usage read");
-    assert_eq!(usage, IoUsage::default());
+    assert_eq!(usage, (None, None));
     assert_eq!(
         cache.batches(),
         [vec![
@@ -190,9 +203,14 @@ fn skip_missing_identity() {
         Json::Null,
     ]));
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(usage, Usage::default());
+    assert_eq!(usage, (None, None));
     assert_eq!(
         cache.batches(),
         [vec![
@@ -209,9 +227,14 @@ fn empty_batch() {
     let rows: [DeploymentSpec; 0] = [];
     let cache = FakeCache::answering(Some(Vec::new()));
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(usage, Usage::default());
+    assert_eq!(usage, (None, None));
     assert_eq!(cache.batches(), [Vec::new()]);
 }
 
@@ -219,9 +242,14 @@ fn empty_batch() {
 fn null_model_list_skips_the_cache() {
     let cache = FakeCache::failing();
     let usage = runtime()
-        .block_on(get_model_group_usage(None, &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            None,
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(usage, Usage::default());
+    assert_eq!(usage, (None, None));
     assert!(cache.batches().is_empty());
 }
 
@@ -248,9 +276,14 @@ fn short_batch(#[case] values: Vec<Option<Json>>, #[case] expected: (Option<i64>
     ];
     let cache = FakeCache::answering(Some(values));
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!((usage.tpm, usage.rpm), expected);
+    assert_eq!(usage, expected);
 }
 
 #[test]
@@ -272,31 +305,49 @@ fn boolean_and_invalid_counters_sum_only_python_ints() {
         Json::Object(JsonObject::new()),
     ]));
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(
-        usage,
-        Usage {
-            tpm: Some(3),
-            rpm: Some(0)
-        }
-    );
+    assert_eq!(usage, (Some(3), Some(0)));
 }
 
-#[rstest]
-#[case::a_zero_counter_is_usage(vec![Some(number(0)), Some(Json::Null)], (Some(0), None))]
-#[case::no_counters_is_none(vec![Some(Json::Null), Some(Json::Null)], (None, None))]
-#[case::the_rpm_side_can_be_zero_too(vec![Some(Json::Null), Some(number(0))], (None, Some(0)))]
-fn zero_versus_none(
-    #[case] values: Vec<Option<Json>>,
-    #[case] expected: (Option<i64>, Option<i64>),
-) {
+#[test]
+fn zero_versus_none() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(Some(values));
-    let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
-        .expect("the usage read");
-    assert_eq!((usage.tpm, usage.rpm), expected);
+    let observed_zero = FakeCache::answering(Some(vec![Some(number(0)), Some(Json::Null)]));
+    let zero = runtime()
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &observed_zero,
+            now(),
+        ))
+        .expect("the zero read");
+    assert_eq!(zero, (Some(0), None));
+    let observed_nothing = FakeCache::answering(Some(vec![Some(Json::Null), Some(Json::Null)]));
+    let absent = runtime()
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &observed_nothing,
+            now(),
+        ))
+        .expect("the empty read");
+    assert_eq!(absent, (None, None));
+    let other_side_zero = FakeCache::answering(Some(vec![Some(Json::Null), Some(number(0))]));
+    let rpm_zero = runtime()
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &other_side_zero,
+            now(),
+        ))
+        .expect("the rpm read");
+    assert_eq!(rpm_zero, (None, Some(0)));
 }
 
 #[test]
@@ -307,15 +358,14 @@ fn duplicate_deployment_sum_counts_every_key_in_the_batch() {
     ];
     let cache = FakeCache::answering(answered(vec![number(1), number(2), number(3), number(4)]));
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &cache, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &cache,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(
-        usage,
-        Usage {
-            tpm: Some(3),
-            rpm: Some(7)
-        }
-    );
+    assert_eq!(usage, (Some(3), Some(7)));
     let batches = cache.batches();
     let first = batches.first().expect("the batch read");
     assert_eq!(
@@ -333,9 +383,19 @@ fn duplicate_deployment_sum_counts_every_key_in_the_batch() {
 fn batch_error() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
     let cache = FakeCache::failing();
-    let standard = runtime().block_on(get_model_group_usage(Some(&rows), &cache, now()));
+    let standard = runtime().block_on(group_counter_totals(
+        UsageSeries::Standard,
+        Some(&rows),
+        &cache,
+        now(),
+    ));
     assert!(matches!(standard, Err(CacheFailure)));
-    let io = runtime().block_on(get_model_group_io_token_usage(Some(&rows), &cache, now()));
+    let io = runtime().block_on(group_counter_totals(
+        UsageSeries::IoToken,
+        Some(&rows),
+        &cache,
+        now(),
+    ));
     assert!(matches!(io, Err(CacheFailure)));
 }
 
@@ -362,13 +422,12 @@ fn reads_counters_from_the_dual_cache() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
     let counters = BatchCounters { cache: &cache };
     let usage = runtime()
-        .block_on(get_model_group_usage(Some(&rows), &counters, now()))
+        .block_on(group_counter_totals(
+            UsageSeries::Standard,
+            Some(&rows),
+            &counters,
+            now(),
+        ))
         .expect("the usage read");
-    assert_eq!(
-        usage,
-        Usage {
-            tpm: Some(7),
-            rpm: None
-        }
-    );
+    assert_eq!(usage, (Some(7), None));
 }

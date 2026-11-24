@@ -5,7 +5,7 @@ use rstest::rstest;
 
 use crate::model_group_info::group::ModelGroupInfo;
 use crate::model_group_usage::error::GroupUsageError;
-use crate::model_group_usage::remaining::get_remaining_model_group_usage;
+use crate::model_group_usage::remaining::group_remaining_usage;
 
 use super::support::{
     FailingMetadata, FakeCache, FakeMetadata, MetadataFailure, answered, deployment, group_info,
@@ -28,7 +28,7 @@ fn remaining_rpm() {
         answer: Some(group_info(None, Some(100), None, None)),
     };
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -62,7 +62,7 @@ fn remaining_tpm() {
         answer: Some(group_info(Some(50), None, None, None)),
     };
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -87,7 +87,7 @@ fn input_output_usage() {
         answer: Some(group_info(None, None, Some(40), Some(30))),
     };
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -123,7 +123,7 @@ fn missing_counter() {
         answer: Some(group_info(Some(100), Some(10), None, None)),
     };
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -143,7 +143,7 @@ fn io_and_standard_usage_are_read_separately_and_merged() {
         answer: Some(group_info(Some(100), Some(50), Some(40), Some(30))),
     };
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -186,7 +186,7 @@ fn ordinary_remaining_may_go_negative() {
         answer: Some(group_info(Some(10), None, None, None)),
     };
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -208,7 +208,7 @@ fn io_remaining_clamps_at_zero_and_the_reset_is_whole() {
         .checked_add(Duration::from_secs(60))
         .expect("the minute edge");
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -234,7 +234,7 @@ fn no_group_or_limits_reads_no_counters(#[case] answer: Option<ModelGroupInfo>) 
     let cache = FakeCache::failing();
     let metadata = FakeMetadata { answer };
     let headers = runtime()
-        .block_on(get_remaining_model_group_usage(
+        .block_on(group_remaining_usage(
             "group",
             Some(&rows),
             &metadata,
@@ -250,7 +250,7 @@ fn no_group_or_limits_reads_no_counters(#[case] answer: Option<ModelGroupInfo>) 
 fn metadata_failure_precedes_the_counter_read() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
     let cache = FakeCache::answering(answered(vec![number(3), Json::Null]));
-    let outcome = runtime().block_on(get_remaining_model_group_usage(
+    let outcome = runtime().block_on(group_remaining_usage(
         "group",
         Some(&rows),
         &FailingMetadata,

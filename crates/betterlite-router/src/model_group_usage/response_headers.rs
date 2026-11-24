@@ -15,7 +15,7 @@ use crate::routing_decision_headers::{RoutingValue, apply_quality_headers, compl
 use super::counters::UsageCounterCache;
 use super::error::GroupUsageError;
 use super::metadata::GroupMetadata;
-use super::remaining::get_remaining_model_group_usage;
+use super::remaining::group_remaining_usage;
 
 const METADATA_CHANNELS: [&str; 2] = ["litellm_metadata", "metadata"];
 
@@ -51,9 +51,7 @@ where
         return Ok(Response::Absent);
     };
     let remaining = match model_group {
-        Some(group) => {
-            Some(get_remaining_model_group_usage(group, model_list, metadata, cache, now).await?)
-        }
+        Some(group) => Some(group_remaining_usage(group, model_list, metadata, cache, now).await?),
         None => None,
     };
     stamp_headers(

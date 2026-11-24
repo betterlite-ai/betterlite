@@ -197,29 +197,31 @@ fn bucket(id: &str) -> Json {
     )]))
 }
 
-fn hidden(response: &Response) -> &JsonObject {
+fn body(response: &Response) -> &JsonObject {
     match response {
-        Response::Object(body) => match body.get("_hidden_params") {
-            Some(Json::Object(hidden)) => hidden,
-            None
-            | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-                panic!("the response carries no hidden params")
-            }
-        },
+        Response::Object(dict) => dict,
         Response::Absent | Response::Attributed(_) | Response::Stream | Response::Opaque => {
             panic!("the response is not a dict")
         }
     }
 }
 
-fn headers(response: &Response) -> &JsonObject {
-    match hidden(response).get("additional_headers") {
-        Some(Json::Object(headers)) => headers,
+fn object_field<'object>(object: &'object JsonObject, field: &str) -> &'object JsonObject {
+    match object.get(field) {
+        Some(Json::Object(bucket)) => bucket,
         None
         | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            panic!("the response has no header map")
+            panic!("the response has no {field} object")
         }
     }
+}
+
+fn hidden(response: &Response) -> &JsonObject {
+    object_field(body(response), "_hidden_params")
+}
+
+fn headers(response: &Response) -> &JsonObject {
+    object_field(hidden(response), "additional_headers")
 }
 
 // A response with no group to report usage for: the failing collaborators prove the read never happens.

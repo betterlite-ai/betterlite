@@ -24,7 +24,7 @@ pub struct AccessFilterRequest<'request> {
 }
 
 // Restrict the candidates to the access groups the caller holds, and hand every unconstrained case back untouched.
-pub fn filter_deployments_by_model_access_groups(
+pub fn filter_by_access_groups(
     request: AccessFilterRequest<'_>,
     access_groups: &AccessGroups,
     lookup: &CatalogLookup<'_>,

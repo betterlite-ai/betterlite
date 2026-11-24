@@ -11,82 +11,65 @@ use crate::router_observations::keys::usage_keys;
 
 use super::counters::UsageCounterCache;
 
-// Router.get_model_group_usage's answer: None when no counter was observed, a sum over the observed ones.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Usage {
-    pub tpm: Option<i64>,
-    pub rpm: Option<i64>,
+// Which RouterCacheEnum series a read covers: the tpm/rpm pair, or the itpm/otpm one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UsageSeries {
+    Standard,
+    IoToken,
 }
 
-// Router.get_model_group_io_token_usage's answer, summed the same way over the itpm and otpm keys.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct IoUsage {
-    pub itpm: Option<i64>,
-    pub otpm: Option<i64>,
-}
-
-// Every deployment's tpm keys then every rpm key, in one batch read, summed back per side.
-pub async fn get_model_group_usage<C>(
+// Router.get_model_group_usage and Router.get_model_group_io_token_usage: one batch read of the first series' keys then the second's, split at the first list's length and summed in read order.
+pub async fn group_counter_totals<C>(
+    series: UsageSeries,
     model_list: Option<&[DeploymentSpec]>,
     cache: &C,
     now: SystemTime,
-) -> Result<Usage, C::Error>
+) -> Result<(Option<i64>, Option<i64>), C::Error>
 where
     C: UsageCounterCache,
 {
     let Some(deployments) = model_list else {
-        return Ok(Usage::default());
+        return Ok((None, None));
     };
     let moment = DateTime::<Utc>::from(now);
-    let mut tpm_keys = Vec::with_capacity(deployments.len());
-    let mut rpm_keys = Vec::with_capacity(deployments.len());
+    let minute = minute_label(now);
+    let mut first_keys = Vec::with_capacity(deployments.len());
+    let mut second_keys = Vec::with_capacity(deployments.len());
     for deployment in deployments {
-        let (Some(id), Some(litellm_model)) = (model_id(deployment), model(deployment)) else {
+        let Some((first, second)) = series_keys(series, deployment, moment, &minute) else {
             continue;
         };
-        let keys = usage_keys(id, litellm_model, moment);
-        tpm_keys.push(keys.tpm);
-        rpm_keys.push(keys.rpm);
+        first_keys.push(first);
+        second_keys.push(second);
     }
-    let tpm_count = tpm_keys.len();
-    let mut combined = tpm_keys;
-    combined.extend(rpm_keys);
-    let (tpm, rpm) = split_totals(cache.batch_get(&combined).await?, tpm_count);
-    Ok(Usage { tpm, rpm })
+    let first_count = first_keys.len();
+    let mut combined = first_keys;
+    combined.extend(second_keys);
+    Ok(split_totals(cache.batch_get(&combined).await?, first_count))
 }
 
-// The io-token twin: every itpm key then every otpm key, in the same one read and slice.
-pub async fn get_model_group_io_token_usage<C>(
-    model_list: Option<&[DeploymentSpec]>,
-    cache: &C,
-    now: SystemTime,
-) -> Result<IoUsage, C::Error>
-where
-    C: UsageCounterCache,
-{
-    let Some(deployments) = model_list else {
-        return Ok(IoUsage::default());
-    };
-    let minute = minute_label(now);
-    let mut itpm_keys = Vec::with_capacity(deployments.len());
-    let mut otpm_keys = Vec::with_capacity(deployments.len());
-    for deployment in deployments {
-        let target = IoDeployment {
-            model_id: model_id(deployment),
-            model: model(deployment),
-            limits: IoLimits::default(),
-        };
-        let Some(keys) = minute_keys(&target, &minute) else {
-            continue;
-        };
-        itpm_keys.push(keys.itpm);
-        otpm_keys.push(keys.otpm);
+// One deployment's two keys for the series, or none when its model id or backend model is missing.
+fn series_keys(
+    series: UsageSeries,
+    deployment: &DeploymentSpec,
+    moment: DateTime<Utc>,
+    minute: &str,
+) -> Option<(String, String)> {
+    match series {
+        UsageSeries::Standard => {
+            let keys = usage_keys(model_id(deployment)?, model(deployment)?, moment);
+            Some((keys.tpm, keys.rpm))
+        }
+        UsageSeries::IoToken => {
+            let target = IoDeployment {
+                model_id: model_id(deployment),
+                model: model(deployment),
+                limits: IoLimits::default(),
+            };
+            let keys = minute_keys(&target, minute)?;
+            Some((keys.itpm, keys.otpm))
+        }
     }
-    let itpm_count = itpm_keys.len();
-    let mut combined = itpm_keys;
-    combined.extend(otpm_keys);
-    let (itpm, otpm) = split_totals(cache.batch_get(&combined).await?, itpm_count);
-    Ok(IoUsage { itpm, otpm })
 }
 
 // Python's slice: a short answer keeps its source order and never regroups, and no answer sums to none on both sides.

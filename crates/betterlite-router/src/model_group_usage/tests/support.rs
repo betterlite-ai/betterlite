@@ -152,18 +152,11 @@ pub(crate) fn deployment(group: &str, id: &str, model: &str) -> DeploymentSpec {
 }
 
 pub(crate) fn grouped(group: &str, id: &str, groups: &[&str]) -> DeploymentSpec {
-    let listed: Vec<Json> = groups.iter().map(|group| text(group)).collect();
-    DeploymentSpec::new(
-        group.to_owned(),
-        object(vec![("model", text("openai/m"))]),
-        object(vec![
-            ("id", text(id)),
-            ("access_groups", Json::List(listed)),
-        ]),
-        JsonObject::new(),
-        generated_id,
-    )
-    .expect("the fixture deployment is invalid")
+    let mut row = deployment(group, id, "openai/m");
+    let listed = groups.iter().copied().map(text).collect();
+    row.model_info
+        .insert("access_groups".to_owned(), Json::List(listed));
+    row
 }
 
 pub(crate) fn group_info(

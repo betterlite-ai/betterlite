@@ -2,7 +2,7 @@ use rstest::rstest;
 
 use crate::model_group_lookups::access_groups::AccessGroups;
 use crate::model_group_lookups::error::AccessGroupError;
-use crate::model_group_usage::access_filter::filter_deployments_by_model_access_groups;
+use crate::model_group_usage::access_filter::filter_by_access_groups;
 use crate::model_group_usage::access_filter::{AccessFilterRequest, KeyGrants};
 
 use super::support::{World, grants, grouped, text};
@@ -62,35 +62,26 @@ fn auth_metadata_precedence_prefers_the_request_metadata_principal() {
     );
 }
 
-#[test]
-fn no_principal_or_grants_leaves_the_candidates_untouched() {
+#[rstest]
+#[case::no_metadata(None)]
+#[case::no_grants(Some(KeyGrants::default()))]
+fn no_principal_or_grants_leaves_the_candidates_untouched(#[case] metadata: Option<KeyGrants>) {
     let rows = [
         grouped("group", "a", &["alpha"]),
         grouped("group", "b", &["beta"]),
     ];
     let world = World::new(&rows);
-    let empty = KeyGrants::default();
-    for request in [
-        AccessFilterRequest {
-            model: "group",
-            deployments: &rows,
-            metadata: None,
-            litellm_metadata: None,
-            team_id: None,
-        },
-        AccessFilterRequest {
-            model: "group",
-            deployments: &rows,
-            metadata: Some(&empty),
-            litellm_metadata: None,
-            team_id: None,
-        },
-    ] {
-        assert_eq!(
-            filtered_ids(request, &AccessGroups::default(), &world),
-            ["a", "b"]
-        );
-    }
+    let request = AccessFilterRequest {
+        model: "group",
+        deployments: &rows,
+        metadata: metadata.as_ref(),
+        litellm_metadata: None,
+        team_id: None,
+    };
+    assert_eq!(
+        filtered_ids(request, &AccessGroups::default(), &world),
+        ["a", "b"]
+    );
 }
 
 #[rstest]
@@ -179,8 +170,7 @@ fn an_unlisted_access_groups_value_is_rejected() {
         team_id: None,
     };
     let lookup = world.lookup();
-    let outcome =
-        filter_deployments_by_model_access_groups(request, &AccessGroups::default(), &lookup);
+    let outcome = filter_by_access_groups(request, &AccessGroups::default(), &lookup);
     assert!(matches!(
         outcome,
         Err(AccessGroupError::InvalidAccessGroups { model_name }) if model_name == "group"
@@ -193,7 +183,7 @@ fn filtered_ids(
     world: &World,
 ) -> Vec<String> {
     let lookup = world.lookup();
-    filter_deployments_by_model_access_groups(request, access_groups, &lookup)
+    filter_by_access_groups(request, access_groups, &lookup)
         .expect("the access filter")
         .iter()
         .map(|deployment| deployment.id().unwrap_or_default().to_owned())

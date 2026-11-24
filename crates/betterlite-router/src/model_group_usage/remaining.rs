@@ -3,15 +3,18 @@ use std::time::SystemTime;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::io_token_reservations::limits::IoLimits;
 use crate::model_group_info::group::ModelGroupInfo;
-use crate::remaining_usage_headers::{RemainingUsage, build_io_token_rate_limit_headers};
+use crate::remaining_usage_headers::RemainingUsage;
 
 use super::counters::UsageCounterCache;
 use super::error::GroupUsageError;
 use super::metadata::GroupMetadata;
-use super::usage::{get_model_group_io_token_usage, get_model_group_usage};
+use super::usage::{UsageSeries, group_counter_totals};
+
+// ast-grep-ignore: no-long-names
+use crate::remaining_usage_headers::build_io_token_rate_limit_headers;
 
 // Router.get_remaining_model_group_usage: the io headers first, then the standard pair for whichever of tpm and rpm is set.
-pub async fn get_remaining_model_group_usage<M, C>(
+pub async fn group_remaining_usage<M, C>(
     model_group: &str,
     model_list: Option<&[DeploymentSpec]>,
     metadata: &M,
@@ -32,11 +35,12 @@ where
         otpm: info.otpm,
     });
     if io_limits.itpm.is_some() || io_limits.otpm.is_some() {
-        let usage = get_model_group_io_token_usage(model_list, cache, now)
+        let (itpm, otpm) = group_counter_totals(UsageSeries::IoToken, model_list, cache, now)
             .await
             .map_err(GroupUsageError::Counter)?;
+        // ast-grep-ignore: no-long-names
         headers.extend(build_io_token_rate_limit_headers(
-            io_limits, usage.itpm, usage.otpm, now,
+            io_limits, itpm, otpm, now,
         ));
     }
     add_standard_headers(&mut headers, info.as_ref(), model_list, cache, now)
@@ -61,18 +65,18 @@ where
     if tpm_limit.is_none() && rpm_limit.is_none() {
         return Ok(());
     }
-    let usage = get_model_group_usage(model_list, cache, now).await?;
+    let (tpm, rpm) = group_counter_totals(UsageSeries::Standard, model_list, cache, now).await?;
     if let Some(limit) = tpm_limit {
         headers.insert(
             "x-ratelimit-remaining-tokens".to_owned(),
-            limit.saturating_sub(usage.tpm.unwrap_or(0)),
+            limit.saturating_sub(tpm.unwrap_or(0)),
         );
         headers.insert("x-ratelimit-limit-tokens".to_owned(), limit);
     }
     if let Some(limit) = rpm_limit {
         headers.insert(
             "x-ratelimit-remaining-requests".to_owned(),
-            limit.saturating_sub(usage.rpm.unwrap_or(0)),
+            limit.saturating_sub(rpm.unwrap_or(0)),
         );
         headers.insert("x-ratelimit-limit-requests".to_owned(), limit);
     }
