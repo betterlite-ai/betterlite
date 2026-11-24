@@ -51,6 +51,22 @@ fn request_search_call_reads_every_public_keyword() {
             country: Some("US".to_owned()),
         }
     );
+    assert!(request.api_key.is_some());
+}
+
+#[test]
+fn request_search_call_keeps_the_connection_and_the_kwargs() {
+    let text = json!({
+        "query": "docs",
+        "search_provider": "brave",
+        "api_base": "http://127.0.0.1:8080",
+        "timeout_seconds": 2.5,
+        "extra_headers": {"x-extra": "one"},
+        "kwargs": {"objective": "find docs"}
+    })
+    .to_string();
+    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
+    let request = call.into_request().expect("the request converts");
     assert_eq!(
         request.extra_headers.get("x-extra").map(String::as_str),
         Some("one")
@@ -63,7 +79,6 @@ fn request_search_call_reads_every_public_keyword() {
         request.kwargs.get("objective"),
         Some(&Json::Text("find docs".to_owned()))
     );
-    assert!(request.api_key.is_some());
 }
 
 #[test]
