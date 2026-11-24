@@ -9,7 +9,7 @@ use super::ResourceHubsState;
 use super::error::ResourceHubsError;
 use super::plugin_table::{PluginRow, PluginTable};
 use super::plugin_types::{ListPluginsResponse, PluginAuthor, PluginListItem};
-use super::timestamps::python_utc_timestamp;
+use super::timestamps::utc_timestamp_text;
 
 #[derive(Debug, Default, Deserialize)]
 struct Manifest {
@@ -92,8 +92,8 @@ fn plugin_item(row: &PluginRow) -> Result<PluginListItem, ResourceHubsError> {
         domain,
         namespace,
         enabled: row.enabled,
-        created_at: row.created_at.map(python_utc_timestamp),
-        updated_at: row.updated_at.map(python_utc_timestamp),
+        created_at: row.created_at.map(utc_timestamp_text),
+        updated_at: row.updated_at.map(utc_timestamp_text),
     })
 }
 

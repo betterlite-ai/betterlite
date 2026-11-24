@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import import_module
 from types import ModuleType
 from typing import Final, Literal, Protocol, TypedDict
@@ -69,17 +69,6 @@ class SkillHubCall(TypedDict):
 Call = AgentHubCall | McpHubCall | SkillHubCall
 
 
-class McpPublicServerJson(TypedDict):
-    server_id: str
-    name: str
-    alias: str | None
-    server_name: str | None
-    transport: str
-    spec_path: str | None
-    auth_type: str | None
-    mcp_info: dict[str, JsonValue] | None
-
-
 class PluginAuthorJson(TypedDict):
     name: str
     email: str | None
@@ -108,7 +97,7 @@ class PluginListJson(TypedDict):
 
 
 class AgentHubRoute(Protocol):
-    async def __call__(self, request: Request) -> list[AgentCard]: ...
+    async def __call__(self, request: Request) -> object: ...
 
 
 class McpHubRoute(Protocol):
@@ -126,7 +115,9 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 AGENT_CARDS: Final[TypeAdapter[list[AgentCard]]] = TypeAdapter(list[AgentCard])
 AGENT_RESPONSE: Final[TypeAdapter[AgentResponse]] = TypeAdapter(AgentResponse)
 MCP_SERVER: Final[TypeAdapter[MCPServer]] = TypeAdapter(MCPServer)
-MCP_PUBLIC_SERVER: Final[TypeAdapter[McpPublicServerJson]] = TypeAdapter(McpPublicServerJson)
+MCP_PUBLIC_SERVERS: Final[TypeAdapter[list[MCPPublicServer]]] = TypeAdapter(
+    list[MCPPublicServer]
+)
 PLUGIN_LIST: Final[TypeAdapter[PluginListJson]] = TypeAdapter(PluginListJson)
 
 
@@ -173,7 +164,7 @@ def utc_timestamp(value: str | None) -> datetime | None:
         return None
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return parsed.replace(tzinfo=UTC)
     return parsed
 
 
@@ -207,6 +198,7 @@ def servers_by_id(records: list[dict[str, JsonValue]]) -> dict[str, MCPServer]:
 
 def build_request(base_url: str, root_path: str) -> Request:
     parts = urlsplit(base_url)
+    headers: list[tuple[bytes, bytes]] = [(b"host", parts.netloc.encode("latin-1"))]
     scope: Scope = {
         "type": "http",
         "method": "GET",
@@ -214,7 +206,7 @@ def build_request(base_url: str, root_path: str) -> Request:
         "path": "/public/agent_hub",
         "query_string": b"",
         "root_path": root_path,
-        "headers": [(b"host", parts.netloc.encode("latin-1"))],
+        "headers": headers,
     }
     return Request(scope)
 
@@ -256,9 +248,7 @@ async def mcp_hub_answer(call: McpHubCall) -> JsonValue:
         global_mcp_server_manager.registry = saved_registry
         litellm.public_mcp_servers = saved_servers
         litellm.public_mcp_hub_strict_whitelist = saved_strict
-    return JSON.validate_python(
-        [MCP_PUBLIC_SERVER.validate_json(server.model_dump_json()) for server in servers]
-    )
+    return JSON.validate_json(MCP_PUBLIC_SERVERS.dump_json(servers))
 
 
 async def skill_hub_answer(call: SkillHubCall) -> JsonValue:

@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::extract::State;
 use betterlite_db::mcp_stored_contracts::JsonValue;
-use betterlite_db::mcp_stored_contracts::pinned::MCPInfo;
 use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTransport};
 use betterlite_mcp::registry::public_servers::PublicServers as _;
 use betterlite_mcp::registry::servers::ServerRegistry;
@@ -50,8 +49,12 @@ fn public_mcp_server(
     server: &MCPServer,
     explicit: Option<&[String]>,
 ) -> Result<PublicMcpServer, ResourceHubsError> {
+    // the stored metadata exposes no entries, and the JSON object it serializes to is exactly what the response spreads.
     let mut info = match server.fields.mcp_info.as_ref() {
-        Some(stored) => stored_entries(stored)?,
+        Some(stored) => {
+            let encoded = serde_json::to_string(stored).map_err(ResourceHubsError::McpInfo)?;
+            serde_json::from_str(&encoded).map_err(ResourceHubsError::McpInfo)?
+        }
         None => BTreeMap::new(),
     };
     info.insert(String::from("is_public"), JsonValue::Bool(true));
@@ -67,10 +70,4 @@ fn public_mcp_server(
         auth_type: server.fields.auth_type,
         mcp_info: info,
     })
-}
-
-// MCPInfo exposes no entries, and the JSON object it serializes to is exactly what the response spreads.
-fn stored_entries(info: &MCPInfo) -> Result<BTreeMap<String, JsonValue>, ResourceHubsError> {
-    let encoded = serde_json::to_string(info).map_err(ResourceHubsError::McpInfo)?;
-    serde_json::from_str(&encoded).map_err(ResourceHubsError::McpInfo)
 }

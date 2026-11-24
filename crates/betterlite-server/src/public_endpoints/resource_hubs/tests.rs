@@ -92,7 +92,10 @@ fn full_card() -> &'static str {
     r#"{"protocolVersion":"0.3.0","name":"planner","description":"plans","version":"1.0.0","capabilities":{"streaming":true},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[],"iconUrl":null,"extra":"dropped"}"#
 }
 
-fn encoded(value: &impl serde::Serialize) -> String {
+fn encoded<T>(value: &T) -> String
+where
+    T: serde::Serialize,
+{
     serde_json::to_string(value).expect("the value encodes")
 }
 

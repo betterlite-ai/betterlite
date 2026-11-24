@@ -74,7 +74,7 @@ mod public_endpoints {
         }
 
         #[tokio::test]
-        async fn agent_hub_answers_with_an_empty_list_when_the_allowlist_is_none() {
+        async fn agent_hub_empty_when_disabled() {
             let (status, text) =
                 body_text(resource_hubs_routes(state()), "/public/agent_hub").await;
             assert_eq!(status, StatusCode::OK);
@@ -82,7 +82,7 @@ mod public_endpoints {
         }
 
         #[tokio::test]
-        async fn agent_hub_lists_the_agent_of_an_allowlisted_group() {
+        async fn agent_hub_lists_allowlisted() {
             let agents = AgentRegistry::default();
             let record = r#"{"agent_id":"alpha","agent_name":"alpha","agent_card_params":{"protocolVersion":"0.3.0","name":"planner"}}"#;
             agents
@@ -101,7 +101,7 @@ mod public_endpoints {
         }
 
         #[tokio::test]
-        async fn mcp_hub_lists_a_server_that_is_public_on_the_internet() {
+        async fn mcp_hub_lists_public_server() {
             let record = r#"{"server_id":"open","name":"Open","transport":"http","available_on_public_internet":true}"#;
             let server: MCPServer = serde_json::from_str(record).expect("the MCP server record");
             let mut hubs = state();
@@ -122,14 +122,14 @@ mod public_endpoints {
         }
 
         #[tokio::test]
-        async fn mcp_hub_answers_with_an_empty_list_when_no_server_is_public() {
+        async fn mcp_hub_empty_when_not_public() {
             let (status, text) = body_text(resource_hubs_routes(state()), "/public/mcp_hub").await;
             assert_eq!(status, StatusCode::OK);
             assert_eq!(text, "[]");
         }
 
         #[tokio::test]
-        async fn skill_hub_answers_500_without_a_database() {
+        async fn skill_hub_500_no_database() {
             let (status, text) =
                 body_text(resource_hubs_routes(state()), "/public/skill_hub").await;
             assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
