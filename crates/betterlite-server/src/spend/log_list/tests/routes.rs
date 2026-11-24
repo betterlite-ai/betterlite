@@ -38,10 +38,7 @@ async fn refuses_a_request_without_an_identity() {
 
 #[tokio::test]
 async fn framework_validation_precedes_the_missing_database() {
-    let invalid = Fixture {
-        store: StoreMode::Missing,
-        ..Fixture::default()
-    };
+    let invalid = Fixture::new(StoreMode::Missing, 0);
     let (rejected, _) = invalid
         .call(&format!("{UI}&page=0"), Some(&internal("alice")))
         .await;
@@ -320,10 +317,7 @@ async fn a_search_disables_grouping_on_every_route() {
 
 #[tokio::test]
 async fn a_count_past_the_cap_is_reported_as_the_cap() {
-    let mut fixture = Fixture {
-        count: 10_001,
-        ..Fixture::default()
-    };
+    let mut fixture = Fixture::new(StoreMode::Ready, 10_001);
     let (capped, _) = fixture.call(UI, Some(&internal("alice"))).await;
     let text = body(&capped);
     assert!(text.contains(r#""total":10000"#));
@@ -336,10 +330,7 @@ async fn a_count_past_the_cap_is_reported_as_the_cap() {
 
 #[tokio::test]
 async fn the_requested_page_binds_after_every_condition() {
-    let fixture = Fixture {
-        count: 1,
-        ..Fixture::default()
-    };
+    let fixture = Fixture::new(StoreMode::Ready, 1);
     let (reply, events) = fixture
         .call(
             &format!("{UI}&page=2&page_size=10"),
@@ -356,10 +347,7 @@ async fn the_requested_page_binds_after_every_condition() {
 
 #[tokio::test]
 async fn a_store_failure_is_converted_with_its_own_code() {
-    let fixture = Fixture {
-        store: StoreMode::Failing,
-        ..Fixture::default()
-    };
+    let fixture = Fixture::new(StoreMode::Failing, 0);
     let (reply, _) = fixture.call(UI, Some(&internal("alice"))).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(body(&reply).contains(r#""type":"internal_server_error""#));

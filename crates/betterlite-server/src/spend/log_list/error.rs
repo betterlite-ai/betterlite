@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -20,7 +18,8 @@ const GROUPED_UNAVAILABLE: &str = "the grouped spend log read is unavailable";
 
 #[derive(Debug, thiserror::Error)]
 pub enum LogListError {
-    #[error("the caller's identity could not be read")]
+    // the converted envelope sends the caught failure's own message, so Display stays the source's
+    #[error("{0}")]
     Identity(#[source] serde_json::Error),
     // FastAPI rejects an undecodable query parameter before the endpoint runs
     #[error("the spend log query does not match the declared types")]
@@ -75,15 +74,7 @@ fn proxy_error(
     (status, Json(body)).into_response()
 }
 
-// handle_exception_on_proxy above the handler's except block: an HTTPException keeps its status and loses its type and param
-fn converted_error(message: String, status: StatusCode) -> Response {
-    proxy_error(message, CONVERTED_ERROR_TYPE, WireField::Null, status)
-}
-
-fn converted_failure(error: &dyn Error) -> Response {
-    converted_error(error.to_string(), StatusCode::INTERNAL_SERVER_ERROR)
-}
-
+// handle_exception_on_proxy above the handler's except block: a caught failure keeps its status and sends internal_server_error with a null param, while a ProxyException raised before the try keeps its own type and param
 impl IntoResponse for LogListError {
     fn into_response(self) -> Response {
         match self {
@@ -96,21 +87,26 @@ impl IntoResponse for LogListError {
                 WireField::Text(NONE_SENTINEL.to_owned()),
                 StatusCode::UNAUTHORIZED,
             ),
-            Self::ForbiddenRequestId { request_id } => converted_error(
-                format!("Not authorized to view spend log for request_id={request_id}"),
+            Self::ForbiddenRequestId { .. } | Self::ForbiddenTeam { .. } => proxy_error(
+                self.to_string(),
+                CONVERTED_ERROR_TYPE,
+                WireField::Null,
                 StatusCode::FORBIDDEN,
             ),
-            Self::ForbiddenTeam { team_id } => converted_error(
-                format!("Not authorized to view team spend for team_id={team_id}"),
-                StatusCode::FORBIDDEN,
+            Self::Identity(_)
+            | Self::Visibility(_)
+            | Self::Store(_)
+            | Self::Sessions(_)
+            | Self::Aggregate(_) => proxy_error(
+                self.to_string(),
+                CONVERTED_ERROR_TYPE,
+                WireField::Null,
+                StatusCode::INTERNAL_SERVER_ERROR,
             ),
-            Self::Identity(source) => converted_failure(&source),
-            Self::Visibility(source) => converted_failure(&source),
-            Self::Store(source) => converted_failure(&source),
-            Self::Sessions(source) => converted_failure(&source),
-            Self::Aggregate(source) => converted_failure(&source),
-            Self::GroupedStore => converted_error(
+            Self::GroupedStore => proxy_error(
                 GROUPED_UNAVAILABLE.to_owned(),
+                CONVERTED_ERROR_TYPE,
+                WireField::Null,
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
         }

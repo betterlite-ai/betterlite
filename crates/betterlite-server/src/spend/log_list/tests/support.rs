@@ -282,12 +282,25 @@ pub struct Fixture {
 }
 
 impl Fixture {
-    pub fn with_rows(rows: Vec<SpendLogListRow>) -> Self {
+    // a fixture with the store mode and count a test pins, and no rows, groups or teams yet
+    pub fn new(store: StoreMode, count: i64) -> Self {
         Self {
-            count: i64::try_from(rows.len()).unwrap(),
-            rows,
-            ..Self::default()
+            store,
+            count,
+            rows: Vec::new(),
+            groups: Vec::new(),
+            representatives: Vec::new(),
+            permitted: Vec::new(),
+            teams: Vec::new(),
+            answers: Answers::default(),
         }
+    }
+
+    pub fn with_rows(rows: Vec<SpendLogListRow>) -> Self {
+        let count = i64::try_from(rows.len()).unwrap();
+        let mut fixture = Self::new(StoreMode::Ready, count);
+        fixture.rows = rows;
+        fixture
     }
 
     // the four handles every test wires, with the store and the scope answering what the fixture pins
