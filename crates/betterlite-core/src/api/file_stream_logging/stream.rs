@@ -1,94 +1,54 @@
-use std::mem;
-
 use tokio::runtime::Handle;
 
-use super::FileContentStreamingResponse;
+use super::StreamLogging;
 use super::source::{
-    AsyncByteSource, CloseResult, EmptySource, StreamError, StreamSource, SyncByteSource,
+    AsyncByteSource, CloseCall, CloseResult, StreamError, StreamSource, SyncByteSource,
 };
 
-// The two close paths in one place: both flags are set before the source is taken, so a close never logs
-impl FileContentStreamingResponse {
-    pub fn close(&mut self) -> Result<(), StreamError> {
-        if self.close_completed {
-            return Ok(());
-        }
-        self.close_completed = true;
-        self.logging_completed = true;
-        let source = mem::replace(&mut self.source, StreamSource::Sync(Box::new(EmptySource)));
-        match source {
-            StreamSource::Sync(mut source) => sync_cleanup(source.close()),
-            StreamSource::Async(mut source) => {
-                let _pending = source.close();
-                Ok(())
-            }
+// The wrapper set both completion flags and swapped in the empty source before either close runs
+pub(super) fn close_source(source: StreamSource) -> Result<(), StreamError> {
+    match source {
+        StreamSource::Sync(mut source) => sync_cleanup(source.close()),
+        StreamSource::Async(mut source) => {
+            let _pending = source.close();
+            Ok(())
         }
     }
+}
 
-    pub async fn aclose(&mut self) -> Result<(), StreamError> {
-        if self.close_completed {
-            return Ok(());
-        }
-        self.close_completed = true;
-        self.logging_completed = true;
-        let source = mem::replace(&mut self.source, StreamSource::Sync(Box::new(EmptySource)));
-        match source {
-            StreamSource::Sync(mut source) => sync_cleanup(source.close()),
-            StreamSource::Async(source) => shielded_cleanup(source).await,
-        }
+pub(super) async fn aclose_source(source: StreamSource) -> Result<(), StreamError> {
+    match source {
+        StreamSource::Sync(mut source) => sync_cleanup(source.close()),
+        StreamSource::Async(source) => shielded_cleanup(source).await,
     }
 }
 
 pub struct SyncIter<'stream> {
-    stream: &'stream mut FileContentStreamingResponse,
+    pub(super) source: &'stream mut dyn SyncByteSource,
+    pub(super) logging: &'stream mut StreamLogging,
 }
 
 pub struct AsyncIter<'stream> {
-    stream: &'stream mut FileContentStreamingResponse,
+    pub(super) source: &'stream mut dyn AsyncByteSource,
+    pub(super) logging: &'stream mut StreamLogging,
 }
 
-impl<'stream> SyncIter<'stream> {
-    pub(super) const fn new(stream: &'stream mut FileContentStreamingResponse) -> Self {
-        Self { stream }
-    }
-
+impl SyncIter<'_> {
     pub fn next_chunk(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
-        let item = {
-            let StreamSource::Sync(source) = &mut self.stream.source else {
-                return Some(Err(StreamError::UnsupportedSync));
-            };
-            source.next_chunk()
-        };
-        match item {
+        match self.source.next_chunk() {
             Some(Ok(chunk)) => Some(Ok(chunk)),
-            Some(Err(failure)) => Some(Err(self.stream.fail_sync(failure))),
-            None => match self.stream.log_success_sync() {
-                Ok(()) => None,
-                Err(failure) => Some(Err(failure)),
-            },
+            Some(Err(failure)) => Some(Err(self.logging.fail_sync(failure))),
+            None => self.logging.finish_sync(),
         }
     }
 }
 
-impl<'stream> AsyncIter<'stream> {
-    pub(super) const fn new(stream: &'stream mut FileContentStreamingResponse) -> Self {
-        Self { stream }
-    }
-
+impl AsyncIter<'_> {
     pub async fn next_chunk(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
-        let item = {
-            let StreamSource::Async(source) = &mut self.stream.source else {
-                return Some(Err(StreamError::UnsupportedAsync));
-            };
-            source.next_chunk().await
-        };
-        match item {
+        match self.source.next_chunk().await {
             Some(Ok(chunk)) => Some(Ok(chunk)),
-            Some(Err(failure)) => Some(Err(self.stream.fail_async(failure).await)),
-            None => match self.stream.log_success_async().await {
-                Ok(()) => None,
-                Err(failure) => Some(Err(failure)),
-            },
+            Some(Err(failure)) => Some(Err(self.logging.fail_async(failure).await)),
+            None => self.logging.finish_async().await,
         }
     }
 }

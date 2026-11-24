@@ -1,3 +1,4 @@
+use std::mem;
 use std::sync::Arc;
 
 use betterlite_error::error::ErrorClass;
@@ -17,8 +18,8 @@ use logging::{
     FailureCall, FileStreamLogger, HiddenField, HiddenParams, SuccessCall, hidden_api_base,
     logging_response, merged_hidden,
 };
-use source::{SourceFailure, StreamError, StreamSource};
-use stream::{AsyncIter, SyncIter};
+use source::{EmptySource, SourceFailure, StreamError, StreamSource};
+use stream::{AsyncIter, SyncIter, aclose_source, close_source};
 
 pub struct FileStreamSetup {
     pub source: StreamSource,
@@ -28,9 +29,15 @@ pub struct FileStreamSetup {
     pub logger: Option<Arc<dyn FileStreamLogger>>,
 }
 
-// FileContentStreamingResponse: one logging flag and one close flag, so an early close never logs a success
+// the close flag lives on the wrapper and the logging flag on StreamLogging, so a close never logs
 pub struct FileContentStreamingResponse {
     source: StreamSource,
+    logging: StreamLogging,
+    close_completed: bool,
+}
+
+// The logging side of the wrapper: the payload cache, the hidden params and the one completion flag
+struct StreamLogging {
     file_id: String,
     model: Option<String>,
     custom_llm_provider: Option<String>,
@@ -39,7 +46,6 @@ pub struct FileContentStreamingResponse {
     standard_logging_object: Option<StandardLoggingPayload>,
     hidden: HiddenParams,
     logging_completed: bool,
-    close_completed: bool,
     start_time: DateTime<FixedOffset>,
 }
 
@@ -51,8 +57,7 @@ impl FileContentStreamingResponse {
             Some(time) => time,
             None => clock.now(),
         };
-        let mut stream = Self {
-            source: setup.source,
+        let mut logging = StreamLogging {
             file_id: setup.file_id,
             model: setup.model,
             custom_llm_provider: setup.custom_llm_provider,
@@ -61,54 +66,86 @@ impl FileContentStreamingResponse {
             standard_logging_object: None,
             hidden: HiddenParams::default(),
             logging_completed: false,
-            close_completed: false,
             start_time,
         };
-        stream.sync_hidden_params();
-        stream
-    }
-
-    #[must_use]
-    pub const fn logging_completed(&self) -> bool {
-        self.logging_completed
-    }
-
-    #[must_use]
-    pub const fn close_completed(&self) -> bool {
-        self.close_completed
-    }
-
-    #[must_use]
-    pub fn hidden_params(&self) -> &HiddenParams {
-        &self.hidden
-    }
-
-    #[must_use]
-    pub fn start_time(&self) -> DateTime<FixedOffset> {
-        self.start_time
-    }
-
-    #[must_use]
-    pub fn standard_logging_object(&self) -> Option<&StandardLoggingPayload> {
-        self.standard_logging_object.as_ref()
+        logging.sync_hidden_params();
+        Self {
+            source: setup.source,
+            logging,
+            close_completed: false,
+        }
     }
 
     pub fn sync_iter(&mut self) -> Result<SyncIter<'_>, StreamError> {
-        if matches!(&self.source, StreamSource::Sync(_)) {
-            return Ok(SyncIter::new(self));
-        }
-        Err(StreamError::UnsupportedSync)
+        let source = self.source.sync_source()?;
+        Ok(SyncIter {
+            source,
+            logging: &mut self.logging,
+        })
     }
 
     pub fn async_iter(&mut self) -> Result<AsyncIter<'_>, StreamError> {
-        if matches!(&self.source, StreamSource::Async(_)) {
-            return Ok(AsyncIter::new(self));
+        let source = self.source.async_source()?;
+        Ok(AsyncIter {
+            source,
+            logging: &mut self.logging,
+        })
+    }
+
+    pub fn close(&mut self) -> Result<(), StreamError> {
+        let Some(source) = self.take_source() else {
+            return Ok(());
+        };
+        close_source(source)
+    }
+
+    pub async fn aclose(&mut self) -> Result<(), StreamError> {
+        let Some(source) = self.take_source() else {
+            return Ok(());
+        };
+        aclose_source(source).await
+    }
+
+    // The two flags and the empty-source swap happen together, so a close never logs and never cleans up twice
+    fn take_source(&mut self) -> Option<StreamSource> {
+        if self.close_completed {
+            return None;
         }
-        Err(StreamError::UnsupportedAsync)
+        self.close_completed = true;
+        self.logging.logging_completed = true;
+        Some(mem::replace(
+            &mut self.source,
+            StreamSource::Sync(Box::new(EmptySource)),
+        ))
+    }
+}
+
+impl StreamLogging {
+    fn begin_logging(&mut self) -> Option<(Arc<dyn FileStreamLogger>, DateTime<FixedOffset>)> {
+        if self.logging_completed {
+            return None;
+        }
+        let logger = self.logger.clone()?;
+        self.logging_completed = true;
+        Some((logger, self.clock.now()))
+    }
+
+    fn success_logging_start(&mut self) -> Option<(Arc<dyn FileStreamLogger>, SuccessCall)> {
+        let (logger, end_time) = self.begin_logging()?;
+        let payload = self.standard_object(end_time).cloned();
+        Some((logger, self.success_call(end_time, payload)))
+    }
+
+    fn failure_logging_start(
+        &mut self,
+        exception: ErrorClass,
+    ) -> Option<(Arc<dyn FileStreamLogger>, FailureCall)> {
+        let (logger, end_time) = self.begin_logging()?;
+        Some((logger, self.failure_call(exception, end_time)))
     }
 
     // _sync_hidden_params: api_base is written once, the model name is always corrected from the file id
-    pub fn sync_hidden_params(&mut self) {
+    fn sync_hidden_params(&mut self) {
         let details = self
             .logger
             .as_ref()
@@ -125,7 +162,7 @@ impl FileContentStreamingResponse {
     }
 
     // _build_standard_logging_object: a built payload is cached unchanged
-    pub fn standard_object(
+    fn standard_object(
         &mut self,
         end_time: DateTime<FixedOffset>,
     ) -> Option<&StandardLoggingPayload> {
@@ -182,98 +219,75 @@ impl FileContentStreamingResponse {
     }
 
     fn log_success_sync(&mut self) -> Result<(), StreamError> {
-        if self.logging_completed {
-            return Ok(());
-        }
-        let Some(logger) = self.logger.clone() else {
+        let Some((logger, call)) = self.success_logging_start() else {
             return Ok(());
         };
-        self.logging_completed = true;
-        let end_time = self.clock.now();
-        let payload = self.standard_object(end_time).cloned();
-        let call = self.success_call(end_time, payload);
-        logger
-            .success_handler(call)
-            .map_err(|failure| StreamError::Callback { failure })
+        logger.success_handler(call).map_err(StreamError::from)
     }
 
+    // LiteLLM awaits async_success_handler, then runs the sync callbacks with no payload
     async fn log_success_async(&mut self) -> Result<(), StreamError> {
-        if self.logging_completed {
-            return Ok(());
-        }
-        let Some(logger) = self.logger.clone() else {
+        let Some((logger, call)) = self.success_logging_start() else {
             return Ok(());
         };
-        self.logging_completed = true;
-        let end_time = self.clock.now();
-        let payload = self.standard_object(end_time).cloned();
-        let call = self.success_call(end_time, payload);
+        let end_time = call.end_time;
         logger
             .async_success_handler(call)
             .await
-            .map_err(|failure| StreamError::Callback { failure })?;
-        let sync_call = self.success_call(end_time, None);
+            .map_err(StreamError::from)?;
         logger
-            .success_sync_callbacks(sync_call)
-            .map_err(|failure| StreamError::Callback { failure })
+            .success_sync_callbacks(self.success_call(end_time, None))
+            .map_err(StreamError::from)
     }
 
     fn log_failure_sync(&mut self, exception: ErrorClass) -> Result<(), StreamError> {
-        if self.logging_completed {
-            return Ok(());
-        }
-        let Some(logger) = self.logger.clone() else {
+        let Some((logger, call)) = self.failure_logging_start(exception) else {
             return Ok(());
         };
-        self.logging_completed = true;
-        let end_time = self.clock.now();
-        let call = self.failure_call(exception, end_time);
-        logger
-            .failure_handler(call)
-            .map_err(|failure| StreamError::Callback { failure })
+        logger.failure_handler(call).map_err(StreamError::from)
     }
 
-    // LiteLLM calls the sync handler first and awaits the async one only when it did not raise
+    // LiteLLM calls the sync failure handler first and awaits the async one only when it did not raise
     async fn log_failure_async(&mut self, exception: ErrorClass) -> Result<(), StreamError> {
-        if self.logging_completed {
-            return Ok(());
-        }
-        let Some(logger) = self.logger.clone() else {
+        let Some((logger, call)) = self.failure_logging_start(exception) else {
             return Ok(());
         };
-        self.logging_completed = true;
-        let end_time = self.clock.now();
-        let call = self.failure_call(exception, end_time);
         logger
             .failure_handler(call.clone())
-            .map_err(|failure| StreamError::Callback { failure })?;
+            .map_err(StreamError::from)?;
         logger
             .async_failure_handler(call)
             .await
-            .map_err(|failure| StreamError::Callback { failure })
+            .map_err(StreamError::from)
     }
 
     fn fail_sync(&mut self, failure: SourceFailure) -> StreamError {
-        match failure {
-            SourceFailure::Exception(error) => {
-                if let Err(callback) = self.log_failure_sync(error.clone()) {
-                    return callback;
-                }
-                StreamError::Source { failure: error }
-            }
-            SourceFailure::Cancellation => StreamError::Cancelled,
-        }
+        let SourceFailure::Exception(error) = failure else {
+            return StreamError::Cancelled;
+        };
+        let logged = self.log_failure_sync(error.clone());
+        StreamError::from_failure(error, logged)
     }
 
     async fn fail_async(&mut self, failure: SourceFailure) -> StreamError {
-        match failure {
-            SourceFailure::Exception(error) => {
-                if let Err(callback) = self.log_failure_async(error.clone()).await {
-                    return callback;
-                }
-                StreamError::Source { failure: error }
-            }
-            SourceFailure::Cancellation => StreamError::Cancelled,
+        let SourceFailure::Exception(error) = failure else {
+            return StreamError::Cancelled;
+        };
+        let logged = self.log_failure_async(error.clone()).await;
+        StreamError::from_failure(error, logged)
+    }
+
+    fn finish_sync(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
+        match self.log_success_sync() {
+            Ok(()) => None,
+            Err(failure) => Some(Err(failure)),
+        }
+    }
+
+    async fn finish_async(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
+        match self.log_success_async().await {
+            Ok(()) => None,
+            Err(failure) => Some(Err(failure)),
         }
     }
 }

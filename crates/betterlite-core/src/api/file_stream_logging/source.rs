@@ -1,3 +1,4 @@
+use std::convert::identity;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -34,6 +35,21 @@ pub enum StreamError {
     CleanupAborted { message: String },
 }
 
+impl StreamError {
+    // The source error wins unless a failure callback raised first
+    pub(super) fn from_failure(error: ErrorClass, logged: Result<(), Self>) -> Self {
+        logged
+            .err()
+            .map_or(Self::Source { failure: error }, identity)
+    }
+}
+
+impl From<CallbackFailure> for StreamError {
+    fn from(failure: CallbackFailure) -> Self {
+        Self::Callback { failure }
+    }
+}
+
 pub trait SyncByteSource: Send {
     fn next_chunk(&mut self) -> Option<Result<Vec<u8>, SourceFailure>>;
 
@@ -61,6 +77,22 @@ pub trait AsyncByteSource: Send {
 pub enum StreamSource {
     Sync(Box<dyn SyncByteSource>),
     Async(Box<dyn AsyncByteSource>),
+}
+
+impl StreamSource {
+    pub(super) fn sync_source(&mut self) -> Result<&mut dyn SyncByteSource, StreamError> {
+        match self {
+            Self::Sync(source) => Ok(&mut **source),
+            Self::Async(_) => Err(StreamError::UnsupportedSync),
+        }
+    }
+
+    pub(super) fn async_source(&mut self) -> Result<&mut dyn AsyncByteSource, StreamError> {
+        match self {
+            Self::Async(source) => Ok(&mut **source),
+            Self::Sync(_) => Err(StreamError::UnsupportedAsync),
+        }
+    }
 }
 
 // The synchronous iter(()) LiteLLM swaps in once it takes the real stream for cleanup

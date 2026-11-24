@@ -45,20 +45,30 @@ pub fn should_stream_file_content(custom_llm_provider: Option<&str>) -> bool {
     STREAMING_PROVIDERS.contains(&provider)
 }
 
-// ast-grep-ignore: no-long-names
-pub fn resolve_streaming_request_params(
+pub fn resolve_streaming_params(
     call: StreamingParamsCall<'_>,
 ) -> Result<ResolvedStreamingParams, StreamingParamsError> {
     let credentials = match call.credentials {
         Some(credentials) if call.should_route => credentials,
         Some(_) | None => return Ok(unrouted(&call)),
     };
-    let provider = provider_text(credentials)?;
+    let provider = text_field(
+        credentials,
+        "custom_llm_provider",
+        StreamingParamsError::MissingProvider,
+        StreamingParamsError::ProviderNotText,
+    )?;
     let mut data = call.data.clone();
     let trusted_credentials =
         prepare_data_with_credentials(&mut data, credentials, call.original_file_id, true);
     data.shift_remove("model");
-    let file_id = file_id_text(&data)?;
+    // prepare_data_with_credentials writes the original file id over the payload's, so the payload carries it either way
+    let file_id = text_field(
+        &data,
+        "file_id",
+        StreamingParamsError::MissingFileId,
+        StreamingParamsError::FileIdNotText,
+    )?;
     Ok(ResolvedStreamingParams {
         provider,
         file_id,
@@ -76,23 +86,17 @@ fn unrouted(call: &StreamingParamsCall<'_>) -> ResolvedStreamingParams {
     }
 }
 
-fn provider_text(credentials: &JsonObject) -> Result<String, StreamingParamsError> {
-    match credentials.get("custom_llm_provider") {
+fn text_field(
+    object: &JsonObject,
+    key: &str,
+    missing: StreamingParamsError,
+    not_text: StreamingParamsError,
+) -> Result<String, StreamingParamsError> {
+    match object.get(key) {
         Some(Json::Text(text)) => Ok(text.clone()),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(StreamingParamsError::ProviderNotText)
+            Err(not_text)
         }
-        None => Err(StreamingParamsError::MissingProvider),
-    }
-}
-
-// prepare_data_with_credentials writes the original file id over the payload's, so the payload carries it either way
-fn file_id_text(data: &JsonObject) -> Result<String, StreamingParamsError> {
-    match data.get("file_id") {
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(StreamingParamsError::FileIdNotText)
-        }
-        None => Err(StreamingParamsError::MissingFileId),
+        None => Err(missing),
     }
 }

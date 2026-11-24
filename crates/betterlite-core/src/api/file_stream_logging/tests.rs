@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::future::Future;
+use std::iter::from_fn;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -17,8 +18,7 @@ use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
 use super::handler::{
-    StreamingParamsCall, StreamingParamsError, resolve_streaming_request_params,
-    should_stream_file_content,
+    StreamingParamsCall, StreamingParamsError, resolve_streaming_params, should_stream_file_content,
 };
 use super::logging::{CallbackFailure, FailureCall, FileStreamLogger, HiddenField, SuccessCall};
 use super::source::{
@@ -60,7 +60,10 @@ fn clock() -> Arc<dyn SuccessClock> {
     Arc::new(FixedClock(clock_time()))
 }
 
-fn block_on<Output>(future: impl Future<Output = Output>) -> Output {
+fn block_on<Output, F>(future: F) -> Output
+where
+    F: Future<Output = Output>,
+{
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -220,50 +223,6 @@ fn payload_fixture(
     serde_json::from_str(&text).unwrap()
 }
 
-struct ScriptedSync {
-    items: Vec<Result<Vec<u8>, SourceFailure>>,
-    index: usize,
-    counters: Counters,
-    close_result: Option<CloseResult>,
-}
-
-impl ScriptedSync {
-    fn new(items: Vec<Result<Vec<u8>, SourceFailure>>, close_result: Option<CloseResult>) -> Self {
-        Self {
-            items,
-            index: 0,
-            counters: Counters::default(),
-            close_result,
-        }
-    }
-
-    fn counters(&self) -> Counters {
-        Counters {
-            closes: Arc::clone(&self.counters.closes),
-            acloses: Arc::clone(&self.counters.acloses),
-            awaited: Arc::clone(&self.counters.awaited),
-        }
-    }
-}
-
-impl SyncByteSource for ScriptedSync {
-    fn next_chunk(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {
-        match self.items.get(self.index) {
-            Some(item) => {
-                let item = item.clone();
-                self.index += 1;
-                Some(item)
-            }
-            None => None,
-        }
-    }
-
-    fn close(&mut self) -> Option<CloseResult> {
-        *self.counters.closes.lock().unwrap() += 1;
-        self.close_result.clone()
-    }
-}
-
 #[derive(Clone)]
 enum AsyncClose {
     Absent,
@@ -271,23 +230,45 @@ enum AsyncClose {
     Awaitable(CloseResult),
 }
 
-struct ScriptedAsync {
+struct Scripted {
     items: Vec<Result<Vec<u8>, SourceFailure>>,
     index: usize,
     counters: Counters,
+    close_result: Option<CloseResult>,
     aclose_result: Option<CloseResult>,
     close_mode: AsyncClose,
+    async_mode: bool,
 }
 
-impl ScriptedAsync {
+impl Scripted {
     fn new(items: Vec<Result<Vec<u8>, SourceFailure>>) -> Self {
         Self {
             items,
             index: 0,
             counters: Counters::default(),
+            close_result: None,
             aclose_result: None,
             close_mode: AsyncClose::Absent,
+            async_mode: false,
         }
+    }
+
+    fn asynchronous(mut self) -> Self {
+        self.async_mode = true;
+        self
+    }
+
+    fn into_source(self) -> StreamSource {
+        if self.async_mode {
+            StreamSource::Async(Box::new(self))
+        } else {
+            StreamSource::Sync(Box::new(self))
+        }
+    }
+
+    fn with_sync_close(mut self, result: Option<CloseResult>) -> Self {
+        self.close_result = result;
+        self
     }
 
     fn with_aclose(mut self, result: CloseResult) -> Self {
@@ -307,19 +288,29 @@ impl ScriptedAsync {
             awaited: Arc::clone(&self.counters.awaited),
         }
     }
+
+    fn pull(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {
+        let item = self.items.get(self.index)?.clone();
+        self.index += 1;
+        Some(item)
+    }
+}
+
+impl SyncByteSource for Scripted {
+    fn next_chunk(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {
+        self.pull()
+    }
+
+    fn close(&mut self) -> Option<CloseResult> {
+        *self.counters.closes.lock().unwrap() += 1;
+        self.close_result.clone()
+    }
 }
 
 #[async_trait]
-impl AsyncByteSource for ScriptedAsync {
+impl AsyncByteSource for Scripted {
     async fn next_chunk(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {
-        match self.items.get(self.index) {
-            Some(item) => {
-                let item = item.clone();
-                self.index += 1;
-                Some(item)
-            }
-            None => None,
-        }
+        self.pull()
     }
 
     async fn aclose(&mut self) -> Option<CloseResult> {
@@ -347,13 +338,6 @@ impl AsyncByteSource for ScriptedAsync {
     }
 }
 
-fn logger_slot(logger: Option<Arc<RecordingLogger>>) -> Option<Arc<dyn FileStreamLogger>> {
-    match logger {
-        Some(logger) => Some(logger),
-        None => None,
-    }
-}
-
 fn setup(source: StreamSource, model: Option<&str>, provider: Option<&str>) -> FileStreamSetup {
     FileStreamSetup {
         source,
@@ -364,26 +348,15 @@ fn setup(source: StreamSource, model: Option<&str>, provider: Option<&str>) -> F
     }
 }
 
-fn sync_stream(
-    source: ScriptedSync,
+fn file_stream(
+    source: Scripted,
     model: Option<&str>,
     provider: Option<&str>,
-    logger: Option<Arc<RecordingLogger>>,
+    logger: Option<Arc<dyn FileStreamLogger>>,
 ) -> FileContentStreamingResponse {
-    let mut file_stream = setup(StreamSource::Sync(Box::new(source)), model, provider);
-    file_stream.logger = logger_slot(logger);
-    FileContentStreamingResponse::new(file_stream, clock())
-}
-
-fn async_stream(
-    source: ScriptedAsync,
-    model: Option<&str>,
-    provider: Option<&str>,
-    logger: Option<Arc<RecordingLogger>>,
-) -> FileContentStreamingResponse {
-    let mut file_stream = setup(StreamSource::Async(Box::new(source)), model, provider);
-    file_stream.logger = logger_slot(logger);
-    FileContentStreamingResponse::new(file_stream, clock())
+    let mut stream = setup(source.into_source(), model, provider);
+    stream.logger = logger;
+    FileContentStreamingResponse::new(stream, clock())
 }
 
 fn chunks(items: &[&[u8]]) -> Vec<Result<Vec<u8>, SourceFailure>> {
@@ -392,11 +365,9 @@ fn chunks(items: &[&[u8]]) -> Vec<Result<Vec<u8>, SourceFailure>> {
 
 fn drain_sync(stream: &mut FileContentStreamingResponse) -> Vec<Vec<u8>> {
     let mut iter = stream.sync_iter().unwrap();
-    let mut drained = Vec::new();
-    while let Some(item) = iter.next_chunk() {
-        drained.push(item.unwrap());
-    }
-    drained
+    from_fn(|| iter.next_chunk())
+        .map(|item| item.unwrap())
+        .collect()
 }
 
 fn drain_async(stream: &mut FileContentStreamingResponse) -> Vec<Vec<u8>> {
@@ -435,7 +406,7 @@ fn streaming_projection_routes_credentials() {
         Json::Text(String::from("openai")),
     );
     credentials.insert(String::from("api_key"), Json::Text(String::from("k")));
-    let resolved = resolve_streaming_request_params(StreamingParamsCall {
+    let resolved = resolve_streaming_params(StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "encoded",
         data: &data,
@@ -480,7 +451,7 @@ fn streaming_projection_leaves_unrouted_input_alone(
         String::from("custom_llm_provider"),
         Json::Text(String::from("openai")),
     );
-    let resolved = resolve_streaming_request_params(StreamingParamsCall {
+    let resolved = resolve_streaming_params(StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "f",
         data: &data,
@@ -513,7 +484,7 @@ fn streaming_projection_rejects_a_bad_credential_provider(
     }
     let mut data = JsonObject::new();
     data.insert(String::from("model"), Json::Text(String::from("m")));
-    let Err(failure) = resolve_streaming_request_params(StreamingParamsCall {
+    let Err(failure) = resolve_streaming_params(StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "f",
         data: &data,
@@ -542,7 +513,7 @@ fn streaming_projection_rejects_a_bad_file_id(
     if let Some(file_id) = file_id {
         data.insert(String::from("file_id"), file_id);
     }
-    let Err(failure) = resolve_streaming_request_params(StreamingParamsCall {
+    let Err(failure) = resolve_streaming_params(StreamingParamsCall {
         custom_llm_provider: "openai",
         file_id: "f",
         data: &data,
@@ -579,14 +550,14 @@ fn streaming_predicate_rejects_a_null_provider() {
 #[test]
 fn hidden_stream_metadata_matches_litellm() {
     let logger = Arc::new(RecordingLogger::new("", "u", None).with_api_base(Some("u/")));
-    let mut stream = sync_stream(
-        ScriptedSync::new(chunks(&[b"ab"]), None),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab"])),
         Some("m"),
         Some("openai"),
         Some(logger),
     );
     drain_sync(&mut stream);
-    let payload = stream.standard_logging_object().unwrap();
+    let payload = stream.logging.standard_logging_object.as_ref().unwrap();
     assert_eq!(payload.id, "f");
     assert_eq!(payload.model, "m");
     assert_eq!(payload.api_base, "u/");
@@ -607,14 +578,14 @@ fn hidden_stream_metadata_matches_litellm() {
 #[test]
 fn hidden_stream_metadata_omits_response_model_for_an_empty_model() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = sync_stream(
-        ScriptedSync::new(chunks(&[b"ab"]), None),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab"])),
         Some(""),
         None,
         Some(logger),
     );
     drain_sync(&mut stream);
-    let payload = stream.standard_logging_object().unwrap();
+    let payload = stream.logging.standard_logging_object.as_ref().unwrap();
     assert_eq!(payload.model, "");
     assert_eq!(
         payload.response,
@@ -629,23 +600,23 @@ fn hidden_stream_metadata_omits_response_model_for_an_empty_model() {
 #[test]
 fn hidden_stream_metadata_syncs_api_base_once() {
     let logger = Arc::new(RecordingLogger::new("", "", None).with_api_base(Some("u")));
-    let mut stream = sync_stream(
-        ScriptedSync::new(Vec::new(), None),
+    let mut stream = file_stream(
+        Scripted::new(Vec::new()),
         None,
         None,
         Some(Arc::clone(&logger)),
     );
     assert_eq!(
-        stream.hidden_params().api_base,
+        stream.logging.hidden.api_base,
         HiddenField::Value(String::from("u"))
     );
     *logger.details_api_base.lock().unwrap() = Some(String::from("other"));
-    stream.sync_hidden_params();
+    stream.logging.sync_hidden_params();
     assert_eq!(
-        stream.hidden_params().api_base,
+        stream.logging.hidden.api_base,
         HiddenField::Value(String::from("u"))
     );
-    let payload = stream.standard_object(clock_time()).unwrap();
+    let payload = stream.logging.standard_object(clock_time()).unwrap();
     assert_eq!(payload.api_base, "u");
     assert!(payload.hidden_params.response_cost.is_none());
 }
@@ -653,14 +624,14 @@ fn hidden_stream_metadata_syncs_api_base_once() {
 #[test]
 fn hidden_stream_metadata_ignores_an_empty_api_base() {
     let logger = Arc::new(RecordingLogger::new("", "base", None).with_api_base(Some("")));
-    let mut stream = sync_stream(
-        ScriptedSync::new(chunks(&[b"ab"]), None),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab"])),
         Some("m"),
         None,
         Some(logger),
     );
     drain_sync(&mut stream);
-    let payload = stream.standard_logging_object().unwrap();
+    let payload = stream.logging.standard_logging_object.as_ref().unwrap();
     assert_eq!(payload.api_base, "base");
     assert!(payload.hidden_params.api_base.is_none());
 }
@@ -668,14 +639,16 @@ fn hidden_stream_metadata_ignores_an_empty_api_base() {
 #[test]
 fn hidden_stream_metadata_caches_an_existing_payload() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = sync_stream(
-        ScriptedSync::new(Vec::new(), None),
+    let mut stream = file_stream(
+        Scripted::new(Vec::new()),
         None,
         None,
         Some(Arc::clone(&logger)),
     );
-    let first = stream.standard_object(clock_time()).unwrap() as *const StandardLoggingPayload;
+    let first =
+        stream.logging.standard_object(clock_time()).unwrap() as *const StandardLoggingPayload;
     let second = stream
+        .logging
         .standard_object(time("2026-01-01T00:00:09+00:00"))
         .unwrap() as *const StandardLoggingPayload;
     assert!(std::ptr::eq(first, second));
@@ -684,26 +657,26 @@ fn hidden_stream_metadata_caches_an_existing_payload() {
 
 #[test]
 fn hidden_stream_metadata_without_a_logger_has_no_payload() {
-    let mut stream = sync_stream(ScriptedSync::new(chunks(&[b"ab"]), None), None, None, None);
-    assert!(stream.standard_object(clock_time()).is_none());
+    let mut stream = file_stream(Scripted::new(chunks(&[b"ab"])), None, None, None);
+    assert!(stream.logging.standard_object(clock_time()).is_none());
     drain_sync(&mut stream);
-    assert!(stream.standard_logging_object().is_none());
-    assert!(!stream.logging_completed());
+    assert!(stream.logging.standard_logging_object.is_none());
+    assert!(!stream.logging.logging_completed);
 }
 
 #[test]
 fn hidden_stream_metadata_without_a_built_payload_has_none() {
     let logger = Arc::new(RecordingLogger::new("", "", None).without_payload());
-    let mut stream = sync_stream(
-        ScriptedSync::new(chunks(&[b"ab"]), None),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab"])),
         Some("m"),
         None,
         Some(Arc::clone(&logger)),
     );
-    assert!(stream.standard_object(clock_time()).is_none());
+    assert!(stream.logging.standard_object(clock_time()).is_none());
     assert_eq!(drain_sync(&mut stream), vec![b"ab".to_vec()]);
-    assert!(stream.logging_completed());
-    assert!(stream.standard_logging_object().is_none());
+    assert!(stream.logging.logging_completed);
+    assert!(stream.logging.standard_logging_object.is_none());
     assert_eq!(logger.build_count(), 2);
     let calls = logger.calls();
     assert_eq!(calls.len(), 1);
@@ -716,8 +689,8 @@ fn hidden_stream_metadata_without_a_built_payload_has_none() {
 #[test]
 fn stream_success_once_logs_one_sync_callback() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = sync_stream(
-        ScriptedSync::new(chunks(&[b"ab", b"cd"]), None),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab", b"cd"])),
         Some("m"),
         None,
         Some(Arc::clone(&logger)),
@@ -726,7 +699,7 @@ fn stream_success_once_logs_one_sync_callback() {
         drain_sync(&mut stream),
         vec![b"ab".to_vec(), b"cd".to_vec()]
     );
-    assert!(stream.logging_completed());
+    assert!(stream.logging.logging_completed);
     let mut iter = stream.sync_iter().unwrap();
     assert!(iter.next_chunk().is_none());
     drop(iter);
@@ -744,8 +717,8 @@ fn stream_success_once_logs_one_sync_callback() {
 #[test]
 fn stream_success_once_logs_async_then_sync_callbacks() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = async_stream(
-        ScriptedAsync::new(chunks(&[b"ab", b"cd"])),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab", b"cd"])).asynchronous(),
         Some("m"),
         None,
         Some(Arc::clone(&logger)),
@@ -768,22 +741,20 @@ fn stream_success_once_uses_the_logger_or_the_clock_start_time() {
     let logger = Arc::new(
         RecordingLogger::new("", "", None).with_start(Some(time("2026-01-01T00:00:00+00:00"))),
     );
-    let from_logger = sync_stream(
-        ScriptedSync::new(Vec::new(), None),
-        None,
-        None,
-        Some(logger),
+    let from_logger = file_stream(Scripted::new(Vec::new()), None, None, Some(logger));
+    assert_eq!(
+        from_logger.logging.start_time,
+        time("2026-01-01T00:00:00+00:00")
     );
-    assert_eq!(from_logger.start_time(), time("2026-01-01T00:00:00+00:00"));
-    let from_clock = sync_stream(ScriptedSync::new(Vec::new(), None), None, None, None);
-    assert_eq!(from_clock.start_time(), clock_time());
+    let from_clock = file_stream(Scripted::new(Vec::new()), None, None, None);
+    assert_eq!(from_clock.logging.start_time, clock_time());
 }
 
 #[test]
 fn stream_success_once_propagates_callback_errors_without_a_second_log() {
     let logger = Arc::new(RecordingLogger::new("", "", None).failing_success("callback broke"));
-    let mut stream = sync_stream(
-        ScriptedSync::new(chunks(&[b"ab"]), None),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab"])),
         None,
         None,
         Some(Arc::clone(&logger)),
@@ -796,21 +767,21 @@ fn stream_success_once_propagates_callback_errors_without_a_second_log() {
     );
     assert!(iter.next_chunk().is_none());
     drop(iter);
-    assert!(stream.logging_completed());
+    assert!(stream.logging.logging_completed);
     assert_eq!(logger.calls().len(), 0);
 }
 
 #[test]
 fn stream_success_once_never_puts_file_bytes_in_the_payload() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = sync_stream(
-        ScriptedSync::new(chunks(&[b"secret bytes"]), None),
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"secret bytes"])),
         None,
         None,
         Some(logger),
     );
     drain_sync(&mut stream);
-    let payload = stream.standard_logging_object().unwrap();
+    let payload = stream.logging.standard_logging_object.as_ref().unwrap();
     assert_eq!(
         payload.response,
         Some(Json::Object(expected_response(None)))
@@ -821,14 +792,11 @@ fn stream_success_once_never_puts_file_bytes_in_the_payload() {
 #[test]
 fn stream_failure_once_logs_one_sync_failure() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = sync_stream(
-        ScriptedSync::new(
-            vec![
-                Ok(b"a".to_vec()),
-                Err(SourceFailure::Exception(broken("broken"))),
-            ],
-            None,
-        ),
+    let mut stream = file_stream(
+        Scripted::new(vec![
+            Ok(b"a".to_vec()),
+            Err(SourceFailure::Exception(broken("broken"))),
+        ]),
         None,
         None,
         Some(Arc::clone(&logger)),
@@ -856,11 +824,12 @@ fn stream_failure_once_logs_one_sync_failure() {
 #[test]
 fn stream_failure_once_runs_the_sync_then_async_failure_handler() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = async_stream(
-        ScriptedAsync::new(vec![
+    let mut stream = file_stream(
+        Scripted::new(vec![
             Ok(b"a".to_vec()),
             Err(SourceFailure::Exception(broken("broken"))),
-        ]),
+        ])
+        .asynchronous(),
         None,
         None,
         Some(Arc::clone(&logger)),
@@ -880,8 +849,8 @@ fn stream_failure_once_runs_the_sync_then_async_failure_handler() {
 #[test]
 fn stream_failure_once_skips_callbacks_for_a_cancellation() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let mut stream = sync_stream(
-        ScriptedSync::new(vec![Err(SourceFailure::Cancellation)], None),
+    let mut stream = file_stream(
+        Scripted::new(vec![Err(SourceFailure::Cancellation)]),
         None,
         None,
         Some(Arc::clone(&logger)),
@@ -891,18 +860,18 @@ fn stream_failure_once_skips_callbacks_for_a_cancellation() {
     assert!(matches!(&failure, StreamError::Cancelled));
     drop(iter);
     assert_eq!(logger.calls().len(), 0);
-    assert!(!stream.logging_completed());
+    assert!(!stream.logging.logging_completed);
 }
 
 #[test]
 fn stream_failure_once_rejects_the_wrong_iteration_capability() {
-    let mut async_only = async_stream(ScriptedAsync::new(Vec::new()), None, None, None);
+    let mut async_only = file_stream(Scripted::new(Vec::new()).asynchronous(), None, None, None);
     let failure = async_only.sync_iter().unwrap_err();
     assert_eq!(
         failure.to_string(),
         "File content stream does not support sync iteration"
     );
-    let mut sync_only = sync_stream(ScriptedSync::new(Vec::new(), None), None, None, None);
+    let mut sync_only = file_stream(Scripted::new(Vec::new()), None, None, None);
     let failure = sync_only.async_iter().unwrap_err();
     assert_eq!(
         failure.to_string(),
@@ -913,16 +882,16 @@ fn stream_failure_once_rejects_the_wrong_iteration_capability() {
 #[test]
 fn explicit_close_suppresses_logging() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
-    let source = ScriptedSync::new(chunks(&[b"ab", b"cd"]), Some(Ok(())));
+    let source = Scripted::new(chunks(&[b"ab", b"cd"])).with_sync_close(Some(Ok(())));
     let counters = source.counters();
-    let mut stream = sync_stream(source, None, None, Some(Arc::clone(&logger)));
+    let mut stream = file_stream(source, None, None, Some(Arc::clone(&logger)));
     let mut iter = stream.sync_iter().unwrap();
     assert_eq!(iter.next_chunk().unwrap().unwrap(), b"ab".to_vec());
     drop(iter);
-    assert!(!stream.close_completed());
+    assert!(!stream.close_completed);
     stream.close().unwrap();
-    assert!(stream.close_completed());
-    assert!(stream.logging_completed());
+    assert!(stream.close_completed);
+    assert!(stream.logging.logging_completed);
     assert_eq!(*counters.closes.lock().unwrap(), 1);
     assert!(drain_sync(&mut stream).is_empty());
     assert!(logger.calls().is_empty());
@@ -932,9 +901,9 @@ fn explicit_close_suppresses_logging() {
 
 #[test]
 fn explicit_close_calls_the_underlying_close_once_even_when_it_raises() {
-    let source = ScriptedSync::new(Vec::new(), Some(Err(broken("cleanup broke"))));
+    let source = Scripted::new(Vec::new()).with_sync_close(Some(Err(broken("cleanup broke"))));
     let counters = source.counters();
-    let mut stream = sync_stream(source, None, None, None);
+    let mut stream = file_stream(source, None, None, None);
     let failure = stream.close().unwrap_err();
     assert!(matches!(&failure, StreamError::Cleanup { .. }));
     assert_eq!(*counters.closes.lock().unwrap(), 1);
@@ -944,23 +913,23 @@ fn explicit_close_calls_the_underlying_close_once_even_when_it_raises() {
 
 #[test]
 fn explicit_close_prefers_aclose() {
-    let source = ScriptedAsync::new(chunks(&[b"ab"]))
+    let source = Scripted::new(chunks(&[b"ab"]))
         .with_aclose(Ok(()))
         .with_close(AsyncClose::Awaitable(Ok(())));
     let counters = source.counters();
-    let mut stream = async_stream(source, None, None, None);
+    let mut stream = file_stream(source.asynchronous(), None, None, None);
     block_on(stream.aclose()).unwrap();
-    assert!(stream.close_completed());
+    assert!(stream.close_completed);
     assert_eq!(*counters.acloses.lock().unwrap(), 1);
     assert_eq!(*counters.closes.lock().unwrap(), 0);
 }
 
 #[test]
 fn explicit_close_awaits_a_non_null_close_result() {
-    let source = ScriptedAsync::new(chunks(&[b"ab"]))
+    let source = Scripted::new(chunks(&[b"ab"]))
         .with_close(AsyncClose::Awaitable(Err(broken("close broke"))));
     let counters = source.counters();
-    let mut stream = async_stream(source, None, None, None);
+    let mut stream = file_stream(source.asynchronous(), None, None, None);
     let failure = block_on(stream.aclose()).unwrap_err();
     assert!(matches!(&failure, StreamError::Cleanup { .. }));
     assert_eq!(*counters.closes.lock().unwrap(), 1);
@@ -969,13 +938,13 @@ fn explicit_close_awaits_a_non_null_close_result() {
 
 #[test]
 fn explicit_close_sync_calls_only_close() {
-    let source = ScriptedAsync::new(chunks(&[b"ab"]))
+    let source = Scripted::new(chunks(&[b"ab"]))
         .with_aclose(Ok(()))
         .with_close(AsyncClose::Awaitable(Ok(())));
     let counters = source.counters();
-    let mut stream = async_stream(source, None, None, None);
+    let mut stream = file_stream(source.asynchronous(), None, None, None);
     stream.close().unwrap();
-    assert!(stream.close_completed());
+    assert!(stream.close_completed);
     assert_eq!(*counters.acloses.lock().unwrap(), 0);
     assert_eq!(*counters.closes.lock().unwrap(), 1);
     assert_eq!(*counters.awaited.lock().unwrap(), 0);
@@ -989,8 +958,8 @@ fn empty_source_has_no_close() {
 
 #[test]
 fn explicit_close_makes_async_iteration_unsupported() {
-    let source = ScriptedAsync::new(chunks(&[b"ab"])).with_aclose(Ok(()));
-    let mut stream = async_stream(source, None, None, None);
+    let source = Scripted::new(chunks(&[b"ab"])).with_aclose(Ok(()));
+    let mut stream = file_stream(source.asynchronous(), None, None, None);
     block_on(stream.aclose()).unwrap();
     let failure = stream.async_iter().unwrap_err();
     assert!(matches!(&failure, StreamError::UnsupportedAsync));
