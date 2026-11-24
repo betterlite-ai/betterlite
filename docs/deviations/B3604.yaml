@@ -1,0 +1,31 @@
+task: B3604
+deviations:
+  - what: >-
+      The transformed response is a JSON value, and the base handler requires it to be an object before it
+      reads or stamps id and model. A provider port that returns anything else fails the response logging
+      payload with a logged error: the cost and model kwargs stay, the standard logging object is not built,
+      and the upstream response is returned unstamped.
+    why: >-
+      LiteLLM's transform_response returns a pydantic ModelResponse, so the value is always an object with id
+      and model fields and the assignment at the end of the payload build cannot fail on shape. The Rust port
+      carries the same data as JSON, so the object check has no LiteLLM counterpart; a working setup reaches
+      it only through a provider port that breaks the BaseConfig contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L151-L154
+  - what: >-
+      The handler takes only the arguments the LiteLLM code reads. url_route, result, cache_hit and the
+      success handler object and endpoint type of the chunk path are not passed, and the provider config port
+      carries only transform_response, not the other abstract members of LiteLLM's BaseConfig.
+    why: >-
+      None of those arguments reaches a decision inside the owned methods; they feed the success dispatch and
+      the provider's own HTTP plumbing, which belong to other tasks and take the returned outcome or are
+      implemented by the provider port's owner. Carrying them would add fields no code in this task reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L41-L53
+  - what: >-
+      handle_collected_chunks returns the rebuilt response and its kwargs to its caller instead of logging
+      them through a success handler object passed into the call.
+    why: >-
+      LiteLLM's _handle_logging_llm_collected_chunks has no caller at the pinned commit, so nothing observes
+      the difference, and the pass-through success dispatch that would consume the outcome is B3605's and
+      B3608's, not this task's. The returned shape is the same result and kwargs the Python function returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L174-L218
+kept_bugs: []

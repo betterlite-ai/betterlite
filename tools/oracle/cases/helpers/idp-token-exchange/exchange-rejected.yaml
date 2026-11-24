@@ -1,0 +1,46 @@
+kind: helper
+name: exchange-rejected
+call:
+  b4663:
+    prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+    subject_token: header.payload.signature
+    authorizer: {kind: plain, message: the signature did not verify}
+    cause: null
+calls:
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: http, status: 400, detail: bad subject token}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: http, status: 499, detail: the client went away}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: "429", message: too many requests}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: abc, message: the code is not a number}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: 5xx, message: still not a number}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: "", message: the code is empty}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: "-500", message: a signed code}
+      cause: null
+env: {}
+compare: {ignore: []}
