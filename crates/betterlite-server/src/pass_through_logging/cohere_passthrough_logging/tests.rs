@@ -214,6 +214,27 @@ fn cohere_embed_uses_no_text_when_neither_key_is_present() {
 }
 
 #[test]
+fn cohere_embed_takes_the_model_from_the_response_body_when_the_request_omits_it() {
+    let tools = Arc::new(FakeTools::priced(Decimal::new(25, 2)));
+    let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
+    let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
+    let request = object(r#"{"texts": ["a"]}"#);
+    let response = object(r#"{"model": "served-model"}"#);
+    let mut state = logging_state();
+    let _outcome = cohere_logger(&provider, &payload, &tools)
+        .cohere_passthrough_handler(input(
+            &request,
+            &response,
+            &mut state,
+            "/v1/embed",
+            ResponseLoggingKwargs::default(),
+        ))
+        .expect("the embed reply is logged");
+    assert_eq!(tools.models(), ["served-model", "served-model"]);
+    assert_eq!(tools.texts(), [vec!["a".to_owned()]]);
+}
+
+#[test]
 fn cohere_embed_falls_back_to_the_chat_handler_for_a_non_list_texts_value() {
     let tools = Arc::new(FakeTools::priced(Decimal::new(25, 2)));
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
