@@ -121,7 +121,7 @@ where
         let request: WorkerBilling = decode(&body)?;
         let (_, scope) = route_key_scope::<Store>(caller, true)?;
         let repository = lens_repository(self)?;
-        let worker = scoped_worker(repository, &scope, &worker_id).await?;
+        let worker = scoped_worker::<Db, Store>(repository, &scope, &worker_id).await?;
         if worker.revoked {
             return Err(LensRouteError::Access(LensAccessError::WorkerRevoked));
         }
@@ -142,7 +142,7 @@ where
     ) -> Result<bool, LensRouteError<<Store as Storage>::Error>> {
         let (_, scope) = route_key_scope::<Store>(caller, true)?;
         let repository = lens_repository(self)?;
-        let worker = scoped_worker(repository, &scope, &worker_id).await?;
+        let worker = scoped_worker::<Db, Store>(repository, &scope, &worker_id).await?;
         let lenses = repository.lenses().await?;
         let busy = lenses.iter().flat_map(|lens| lens.jobs.iter()).any(|job| {
             job.status == JobStatus::Running && job.worker_id.as_deref() == Some(worker.id.as_str())
