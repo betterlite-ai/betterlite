@@ -1,0 +1,20 @@
+kind: helper
+name: mcp-separator-probe-separators
+call:
+  b8970:
+    separator: "-"
+calls:
+  - b8970: {separator: "."}
+  - b8970: {separator: "_"}
+  - b8970: {separator: ""}
+  - b8970: {separator: "/"}
+  - b8970: {separator: " "}
+  - b8970: {separator: "::"}
+  - b8970: {separator: ","}
+  - b8970: {separator: "é"}
+  - b8970:
+      separator: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  - b8970:
+      separator: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+env: {}
+compare: {ignore: []}
