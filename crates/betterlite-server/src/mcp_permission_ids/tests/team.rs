@@ -1,7 +1,8 @@
+use std::collections::BTreeSet;
+
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::safe_json::{MAX_JSON_BYTES, MAX_JSON_DEPTH};
-use rstest::rstest;
 
 use crate::mcp_permission_ids::decode::McpToolGrantsJsonError;
 use crate::mcp_permission_ids::team::{
@@ -10,7 +11,7 @@ use crate::mcp_permission_ids::team::{
 };
 
 use super::fixtures::database::TestDatabase;
-use super::fixtures::fake_rows::FakeRows;
+use super::fixtures::fake_rows::{FakeRows, PortFailure};
 use super::fixtures::{json, nested_array_grant, registry, registry_server, string_set, strings};
 
 fn tool_permission(raw: JsonData) -> TeamObjectPermission {
@@ -18,6 +19,18 @@ fn tool_permission(raw: JsonData) -> TeamObjectPermission {
         mcp_tool_permissions: Some(raw),
         ..TeamObjectPermission::default()
     }
+}
+
+async fn tool_grant_outcome(
+    raw: JsonData,
+) -> Result<BTreeSet<String>, TeamAllowedServersError<PortFailure>> {
+    let shared = registry(Vec::new(), Vec::new());
+    let permission = tool_permission(raw);
+    resolve_team_allowed_mcp_servers::<FakeRows>(&permission, None, &shared, None).await
+}
+
+async fn allowed_for_tool_grants(raw: JsonData) -> BTreeSet<String> {
+    tool_grant_outcome(raw).await.unwrap()
 }
 
 #[tokio::test]
@@ -181,39 +194,46 @@ async fn stored_tool_json_errors() {
     ));
 }
 
-#[rstest]
-#[case::null("null")]
-#[case::false_flag("false")]
-#[case::zero("0")]
-#[case::zero_float("0.0")]
-#[case::negative_zero_float("-0.0")]
-#[case::empty_string(r#""""#)]
-#[case::empty_array("[]")]
-#[case::empty_object("{}")]
 #[tokio::test]
-async fn falsey_tool_grants_are_empty(#[case] raw: &str) {
-    let shared = registry(Vec::new(), Vec::new());
-    let permission = tool_permission(json(raw));
-    let allowed = resolve_team_allowed_mcp_servers::<FakeRows>(&permission, None, &shared, None)
-        .await
-        .unwrap();
-    assert!(allowed.is_empty());
+async fn falsey_tool_grants_are_empty() {
+    assert!(allowed_for_tool_grants(json("null")).await.is_empty());
+    assert!(allowed_for_tool_grants(json("false")).await.is_empty());
+    assert!(allowed_for_tool_grants(json("0")).await.is_empty());
+    assert!(allowed_for_tool_grants(json("0.0")).await.is_empty());
+    assert!(allowed_for_tool_grants(json("-0.0")).await.is_empty());
+    assert!(allowed_for_tool_grants(json(r#""""#)).await.is_empty());
+    assert!(allowed_for_tool_grants(json("[]")).await.is_empty());
+    assert!(allowed_for_tool_grants(json("{}")).await.is_empty());
 }
 
-#[rstest]
-#[case::true_flag("true")]
-#[case::integer("7")]
-#[case::float("1.5")]
-#[case::array(r#"["stale"]"#)]
-#[case::string_document(r#""[]""#)]
 #[tokio::test]
-async fn non_falsey_wrong_shaped_tool_grants_error(#[case] raw: &str) {
-    let shared = registry(Vec::new(), Vec::new());
-    let permission = tool_permission(json(raw));
-    let outcome =
-        resolve_team_allowed_mcp_servers::<FakeRows>(&permission, None, &shared, None).await;
+async fn non_falsey_wrong_shaped_tool_grants_error() {
     assert!(matches!(
-        outcome,
+        tool_grant_outcome(json("true")).await,
+        Err(TeamAllowedServersError::ToolGrants(
+            McpToolGrantsJsonError::NotAnObject
+        ))
+    ));
+    assert!(matches!(
+        tool_grant_outcome(json("7")).await,
+        Err(TeamAllowedServersError::ToolGrants(
+            McpToolGrantsJsonError::NotAnObject
+        ))
+    ));
+    assert!(matches!(
+        tool_grant_outcome(json("1.5")).await,
+        Err(TeamAllowedServersError::ToolGrants(
+            McpToolGrantsJsonError::NotAnObject
+        ))
+    ));
+    assert!(matches!(
+        tool_grant_outcome(json(r#"["stale"]"#)).await,
+        Err(TeamAllowedServersError::ToolGrants(
+            McpToolGrantsJsonError::NotAnObject
+        ))
+    ));
+    assert!(matches!(
+        tool_grant_outcome(json(r#""[]""#)).await,
         Err(TeamAllowedServersError::ToolGrants(
             McpToolGrantsJsonError::NotAnObject
         ))
