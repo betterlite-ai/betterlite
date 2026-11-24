@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::provider::{ProviderCallError, ProviderChunk, ResponsesStreaming};
+use super::provider::{ProviderCallError, ProviderChunk, ResponsesStream, ResponsesStreaming};
 use crate::api::responses_ws_history::serialization::{Chunk, ChunkWriter};
 use crate::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 

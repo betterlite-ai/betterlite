@@ -9,8 +9,9 @@ use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamSuccessCall, StreamSuccessDispatch,
 };
 use secrecy::SecretString;
+use tracing::field::Field;
 use tracing::field::Visit;
-use tracing::{Event, Field, Subscriber};
+use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer};
 
 use super::Setup;

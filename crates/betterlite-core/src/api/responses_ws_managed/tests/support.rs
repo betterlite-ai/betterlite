@@ -14,9 +14,10 @@ use betterlite_logging::passthrough_stream_logging::object::{
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use tracing::field::Field;
 use tracing::field::Visit;
 use tracing::instrument::WithSubscriber as _;
-use tracing::{Event, Field, Subscriber};
+use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 
 use crate::api::response_synthetic_events::error::SyntheticEventsError;

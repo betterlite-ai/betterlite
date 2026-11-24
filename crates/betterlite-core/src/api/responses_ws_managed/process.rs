@@ -29,6 +29,14 @@ pub enum ManagedTurnError {
     Quota(ErrorClass),
 }
 
+// the provider call one frame builds, with the messages its history save needs
+struct PreparedCall {
+    model: String,
+    call_kwargs: IndexMap<String, Json>,
+    prior_history: Vec<IndexMap<String, Json>>,
+    current_messages: Vec<IndexMap<String, Json>>,
+}
+
 pub async fn process_response_create<Sink, Provider>(
     handler: &mut ManagedResponsesWebSocket<Sink>,
     provider: &Provider,
@@ -38,20 +46,61 @@ where
     Sink: FrameSink,
     Provider: ResponsesStreaming,
 {
-    let Some(message) = handler.parse_message(raw_message).await? else {
+    let Some(message) = accepted_message(handler, raw_message).await? else {
         return Ok(());
+    };
+    let prepared = prepare_call(handler, &message)?;
+    let forwarded =
+        stream_and_forward(handler, provider, &prepared.model, &prepared.call_kwargs).await;
+    let completed = match forwarded {
+        Ok(completed) => completed,
+        Err(error) => {
+            tracing::error!("ManagedResponsesWS: error processing response.create: {error}");
+            send_error(handler, &error.message, None).await;
+            return Ok(());
+        }
+    };
+    save_turn_history(
+        handler,
+        completed.as_ref(),
+        &prepared.prior_history,
+        &prepared.current_messages,
+    )?;
+    Ok(())
+}
+
+// the message a turn processes: invalid JSON is answered, a warmup is acknowledged, a refused frame is answered
+async fn accepted_message<Sink>(
+    handler: &mut ManagedResponsesWebSocket<Sink>,
+    raw_message: &str,
+) -> Result<Option<IndexMap<String, Json>>, ManagedTurnError>
+where
+    Sink: FrameSink,
+{
+    let Some(message) = handler.parse_message(raw_message).await? else {
+        return Ok(None);
     };
     if is_warmup_frame(&message) {
         if let Err(error) = send_warmup_ack(handler, &message).await {
             tracing::debug!("ManagedResponsesWS: error sending warmup ack: {error}");
         }
-        return Ok(());
+        return Ok(None);
     }
     if !admits_frame(handler, raw_message).await? {
-        return Ok(());
+        return Ok(None);
     }
+    Ok(Some(message))
+}
 
-    let mut call_kwargs = build_base_call_kwargs(&message);
+// the call kwargs one frame builds: routed model, applied history, credentials and proxy body
+fn prepare_call<Sink>(
+    handler: &ManagedResponsesWebSocket<Sink>,
+    message: &IndexMap<String, Json>,
+) -> Result<PreparedCall, ManagedTurnError>
+where
+    Sink: FrameSink,
+{
+    let mut call_kwargs = build_base_call_kwargs(message);
     call_kwargs.insert("stream".to_owned(), Json::Bool(true));
     let requested_model = optional_string(call_kwargs.shift_remove("model"));
     let model = routed_model(handler, requested_model.as_deref());
@@ -62,7 +111,6 @@ where
         Some(previous) => get_history_messages(handler, previous),
         None => Vec::new(),
     };
-
     apply_history(
         &mut call_kwargs,
         previous_response_id.as_deref(),
@@ -75,23 +123,12 @@ where
         proxy_model(handler, requested_model.as_deref(), &model),
     )?;
     call_kwargs.extend(handler.extra_kwargs.clone());
-
-    let forwarded = stream_and_forward(handler, provider, &model, &call_kwargs).await;
-    let completed = match forwarded {
-        Ok(completed) => completed,
-        Err(error) => {
-            tracing::error!("ManagedResponsesWS: error processing response.create: {error}");
-            send_error(handler, &error.message, None).await;
-            return Ok(());
-        }
-    };
-    save_turn_history(
-        handler,
-        completed.as_ref(),
-        &prior_history,
-        &current_messages,
-    )?;
-    Ok(())
+    Ok(PreparedCall {
+        model,
+        call_kwargs,
+        prior_history,
+        current_messages,
+    })
 }
 
 // the quota gate runs before any provider preparation, and only a rate limit answers with a frame
