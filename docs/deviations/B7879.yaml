@@ -21,6 +21,12 @@ deviations:
 - what: "A bedrock `size` without exactly two `x`-separated parts raises a `ValueError` with betterlite's text, where LiteLLM's tuple unpacking raises the interpreter's own message."
   why: Both raise `ValueError`; only the message text differs, and the declared type says nothing about the format.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/utils.py#L122-L128
+- what: "`add_message`, `get_messages` and `run_thread` return betterlite pydantic models (`Message`, `MessagePage`, `Run`) that keep nested values as JSON, not the OpenAI SDK's `Message`, `SyncCursorPage` and `Run` classes, so the SDK's cursor-page methods and nested content models are absent."
+  why: The OpenAI SDK is no dependency of the wheel; B7878 records the same deviation for the assistant and thread results.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2631-L2642
+- what: "An `event_handler` that is neither None nor an object with `on_event` raises `UnsupportedCallArgumentError` naming it before the call, where LiteLLM hands any value to the OpenAI SDK's stream manager."
+  why: betterlite dispatches the events in Python, so the handler is checked where it is called; the task makes that class the answer for any other handler.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1239-L1252
 kept_bugs:
 - what: "The message an invalid azure attachment raises is missing the closing backtick after `litellm.drop_params = True`."
   why: LiteLLM's own text lacks it, and caller code matching the text relies on it; betterlite copies the text byte for byte.
