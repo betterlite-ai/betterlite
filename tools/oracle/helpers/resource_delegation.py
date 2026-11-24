@@ -59,7 +59,7 @@ def admin_flag(input_value: Input) -> bool:
     return value
 
 
-def run(input_value: Input) -> JsonValue | list[str]:
+def run(input_value: Input) -> JsonValue | list[str]:  # noqa: PLR0911  # one branch per operation, mirroring https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L654-L941
     function = input_value["function"]
     if function == "extract_mcp_servers":
         return sorted(_extract_requested_mcp_server_ids(permission_of(input_value)))
