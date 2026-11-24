@@ -437,12 +437,22 @@ def test_cache_ops_write_failure(caplog: pytest.LogCaptureFixture) -> None:
     ours = Cache(FailingBackend())
     reference = LITELLM_CACHE.Cache(_backend=FailingBackend(), type="local")
     with caplog.at_level(logging.ERROR, logger="LiteLLM"):
+        caplog.clear()
         ours.add_cache(CHAT_RESPONSE, None, **CHAT)
+        assert "LiteLLM Cache: exception in add_cache" in caplog.text
+        assert FAILURE_TEXT in caplog.text
+        caplog.clear()
         asyncio.run(ours.async_add_cache(CHAT_RESPONSE, None, **CHAT))
+        assert "LiteLLM Cache: exception in add_cache" in caplog.text
+        assert FAILURE_TEXT in caplog.text
+        caplog.clear()
         reference.add_cache(CHAT_RESPONSE, **CHAT)
+        assert "LiteLLM Cache: exception in add_cache" in caplog.text
+        assert FAILURE_TEXT in caplog.text
+        caplog.clear()
         asyncio.run(reference.async_add_cache(CHAT_RESPONSE, None, **CHAT))
-    assert "LiteLLM Cache: exception in add_cache" in caplog.text
-    assert FAILURE_TEXT in caplog.text
+        assert "LiteLLM Cache: exception in add_cache" in caplog.text
+        assert FAILURE_TEXT in caplog.text
 
 
 def test_cache_ops_write_kwargs() -> None:
