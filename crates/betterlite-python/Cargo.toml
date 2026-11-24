@@ -20,6 +20,7 @@ betterlite-cache = { path = "../betterlite-cache" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
+betterlite-cost = { path = "../betterlite-cost" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-guardrails = { path = "../betterlite-guardrails" }
@@ -27,6 +28,7 @@ betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-mcp = { path = "../betterlite-mcp" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-provider = { path = "../betterlite-provider" }
