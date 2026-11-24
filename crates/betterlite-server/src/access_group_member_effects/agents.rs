@@ -1,7 +1,7 @@
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::agent_registry::{AgentRegistry, AgentRegistryApi as _};
 
-use crate::access_group_read::protocols::tables::AccessGroupTx;
+use crate::access_group_read::protocols::tables::{AccessGroupTx, AgentTable as _};
 
 use super::error::{MemberEffectsError, RegistrationRejected};
 

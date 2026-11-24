@@ -171,9 +171,9 @@ impl<Cache: MemberEffectCaches + ?Sized> CachePatchTarget for KeyCaches<'_, Cach
     }
 }
 
-struct MembershipPatch<'a> {
-    ids: &'a [String],
-    access_group_id: &'a str,
+struct MembershipPatch<'patch> {
+    ids: &'patch [String],
+    access_group_id: &'patch str,
     change: MembershipChange,
 }
 
