@@ -1,0 +1,28 @@
+task: B3371
+deviations:
+  - what: >-
+      The two request processors take their collaborators (ownership checks, common processing, request provider hints)
+      through constructor-injected traits, return a ContainerFileDownload value instead of a framework Response, and report
+      the pre-guard failures (access denied, malformed form, missing file) as typed error variants instead of raising
+      HTTPException here.
+    why: >-
+      betterlite-server wires the real services at startup and the axum layer renders the response and the error status, so
+      these functions stay testable without a server. The client sees the same bytes, content type, headers, status codes
+      and detail texts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L259-L268
+  - what: >-
+      The not-bytes failure names betterlite's variant: the message is "aretrieve_container_file_content expected bytes, got
+      json object" where LiteLLM interpolates type(content).__name__.
+    why: >-
+      Rust has no Python type names to print, so the module names the reply variant it received and keeps the sentence
+      shape the mapped error carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L256-L257
+kept_bugs:
+  - what: >-
+      A second upload sent under the plain form key "file" is dropped: the form reader keeps the last repeated plain key,
+      so only the final file reaches the upload processor.
+    why: >-
+      LiteLLM's get_form_data builds its dict the same way and the upload processor only replaces the value with the first
+      element when it is a list, so a working setup that repeats the plain key gets the last file either way. B1101 owns
+      the reader and mirrors LiteLLM here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L453-L512

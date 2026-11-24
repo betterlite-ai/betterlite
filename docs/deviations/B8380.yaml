@@ -1,0 +1,24 @@
+task: B8380
+deviations:
+  - what: save_config refuses a general_settings, router_settings or litellm_settings value that is not a JSON object, including null, with ConfigStateError::InvalidSetting.
+    why: LiteLLM reads such a value as an empty mapping, so every key the previous config carried counts as removed and it writes the stored row without them; refusing the write keeps the stored section as it is.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5602-L5611
+  - what: save_config with include_env_vars refuses an environment_variables value that is not a JSON object, and a null value inserts nothing.
+    why: LiteLLM stores a non-dict environment_variables value as the config row unchanged, and every reader then parses that row as an empty section, so the row holds data nothing reads; a typed error names the field instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5570-L5579
+  - what: save_environment_variables reads, merges, encrypts and writes the environment_variables row inside one transaction that holds pg_advisory_xact_lock(hashtext('environment_variables')), the same lock a section save takes.
+    why: LiteLLM reads the row, merges and upserts it without a lock, so two pods updating different keys at once can drop each other's key from the row; the lock makes the merge lose nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5728-L5746
+  - what: team_config returns ConfigStateError::InvalidSetting when litellm_settings or default_team_settings is not the expected shape, and ConfigStateError::MissingTeamId when an entry is not an object or has no team_id.
+    why: LiteLLM calls .get on a non-mapping litellm_settings and raises AttributeError, and indexes a non-mapping team entry and raises TypeError; a working setup never reaches either, and the typed error keeps a 4xx-shaped failure with the entry masked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5832-L5860
+  - what: decode_section_values refuses a stored section row that holds JSON that is not an object with ConfigStateError::InvalidStoredSection.
+    why: LiteLLM reads any stored value that is not a mapping as an empty mapping, so a corrupt row silently reads as a section with no keys and the next merge writes it away; a typed error names the row instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5687-L5694
+  - what: save_environment_variables decodes a stored environment_variables row that holds the JSON text save_config wrote before it merges the named keys.
+    why: LiteLLM reads the row with dict(row.param_value), so the json.dumps text that save_config itself stores for that row raises ValueError there and the update fails; decoding the text first makes the merge work on every row LiteLLM can write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5728-L5736
+  - what: Without a database, save_config writes the config file with serde_saphyr (block style, sorted keys) instead of PyYAML's yaml.dump.
+    why: The written document parses to the same mapping, but PyYAML's quoting and indentation of some scalars differ from the serializer, so the file text is not byte-identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5586-L5588
+kept_bugs: []
