@@ -1,0 +1,44 @@
+kind: helper
+name: auth-org-lookup-request-fallback-matrix
+call:
+  auth_org_lookup:
+    function: org_for_request
+    database: true
+    target: o1
+    in_memory_ttl: 5.0
+    org_row:
+      organization_id: o1
+      organization_alias: acme
+      budget_id: b1
+      models: [gpt-4o]
+      created_by: ops
+      updated_by: ops
+      litellm_budget_table: {budget_id: b1, max_budget: 10.5, allowed_models: [gpt-4o]}
+    steps:
+      - {now: 100.0, fail: [outage], allow: true}
+      - {now: 101.0, fail: [outage], allow: "true"}
+      - {now: 102.0, fail: [outage], allow: " TRUE "}
+      - {now: 103.0, fail: [outage], allow: false}
+      - {now: 104.0, fail: [outage], allow: "false"}
+      - {now: 105.0, fail: [outage], allow: ""}
+      - {now: 106.0, fail: [fault], allow: false}
+      - {now: 107.0, fail: [], allow: false}
+      - {now: 108.0, fail: [], allow: false}
+calls:
+  # a confirmed absence is no restriction even with the outage bypass off
+  - auth_org_lookup:
+      function: org_for_request
+      database: true
+      target: o9
+      in_memory_ttl: 5.0
+      org_row:
+        organization_id: o1
+        organization_alias: acme
+        budget_id: b1
+        created_by: ops
+        updated_by: ops
+      steps:
+        - {now: 100.0, fail: [], allow: false}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}
