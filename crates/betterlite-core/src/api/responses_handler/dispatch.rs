@@ -34,7 +34,6 @@ pub struct AsyncHandlerRequest<'call> {
     pub model: &'call str,
     pub input: Option<&'call JsonValue>,
     pub optional_params: &'call Params,
-    pub custom_llm_provider: Option<&'call str>,
     pub litellm_metadata: &'call Params,
     pub zone: &'call TimeZone,
     pub ids: &'call dyn IdSource,
@@ -126,7 +125,7 @@ where
                 model: request.model,
                 request_input: request.input,
                 optional_params: request.optional_params,
-                custom_llm_provider: request.custom_llm_provider,
+                custom_llm_provider: request_provider(request.responses_request),
                 litellm_metadata: request.litellm_metadata,
                 ids: request.ids,
             };
@@ -154,5 +153,18 @@ fn stream_value(stream: Option<bool>) -> JsonValue {
     match stream {
         Some(flag) => JsonValue::Bool(flag),
         None => JsonValue::Null,
+    }
+}
+
+// LiteLLM's async path reads the provider back out of the built request instead of taking it as an argument.
+fn request_provider(request: &ResponsesRequest) -> Option<&str> {
+    match request.passthrough.get("custom_llm_provider") {
+        Some(JsonValue::Text(provider)) => Some(provider.as_str()),
+        Some(JsonValue::Null)
+        | Some(JsonValue::Bool(_))
+        | Some(JsonValue::Number(_))
+        | Some(JsonValue::Array(_))
+        | Some(JsonValue::Object(_))
+        | None => None,
     }
 }

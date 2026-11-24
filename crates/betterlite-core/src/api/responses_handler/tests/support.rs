@@ -187,7 +187,6 @@ impl HandlerFixture {
             model: &self.model,
             input: self.input.as_ref(),
             optional_params: &self.optional_params,
-            custom_llm_provider: self.custom_llm_provider.as_deref(),
             litellm_metadata: &self.metadata,
             zone: &self.zone,
             ids: &self.ids,
