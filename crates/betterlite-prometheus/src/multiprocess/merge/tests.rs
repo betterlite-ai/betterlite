@@ -392,6 +392,14 @@ fn fails_on_a_missing_counter_file() {
 }
 
 #[test]
+fn fails_on_a_missing_counter_file_whose_second_part_starts_with_live() {
+    let dir = TempDir::new().unwrap();
+    let missing = dir.path().join("counter_livesum_1002.db");
+    let error = merge(&[missing]).unwrap_err();
+    assert!(matches!(error, MultiprocessError::Read { .. }));
+}
+
+#[test]
 fn fails_on_a_missing_gauge_file_whose_mode_is_not_live() {
     let dir = TempDir::new().unwrap();
     let missing = dir.path().join("gauge_all_1002.db");
