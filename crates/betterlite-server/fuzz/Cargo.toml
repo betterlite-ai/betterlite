@@ -545,3 +545,10 @@ path = "fuzz_targets/message_start_field.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "health_connection_body"
+path = "fuzz_targets/health_connection_body.rs"
+test = false
+doc = false
+bench = false

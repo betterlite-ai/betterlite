@@ -1,6 +1,17 @@
+mod convert;
+mod error;
+mod native;
+mod seams;
+mod session;
+mod source;
+
 use pyo3::prelude::*;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The vector_search family task adds its native functions here.
+use self::native::NativeVectorSearchSession;
+
+// The vector store create/search session and the exception every failed call of it carries.
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    error::register(module)?;
+    module.add_class::<NativeVectorSearchSession>()?;
     Ok(())
 }

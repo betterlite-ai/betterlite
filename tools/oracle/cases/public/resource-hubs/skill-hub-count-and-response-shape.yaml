@@ -1,0 +1,21 @@
+kind: helper
+name: resource-hubs-skill-hub-count-and-response-shape
+call:
+  b3194:
+    function: skill_hub
+    plugins:
+      - id: plugin-alpha
+        name: alpha
+        manifest_json: '{"source": {"source": "url", "url": "https://example.com/alpha.git"}, "version": "1.0.0", "description": "an alpha plugin"}'
+        enabled: true
+        created_at: null
+        updated_at: null
+      - id: plugin-beta
+        name: beta
+        manifest_json: null
+        enabled: true
+        created_at: null
+        updated_at: null
+    table_error: false
+env: {}
+compare: {ignore: []}

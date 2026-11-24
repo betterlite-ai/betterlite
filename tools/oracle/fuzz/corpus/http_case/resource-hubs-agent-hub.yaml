@@ -1,0 +1,7 @@
+name: resource-hubs-agent-hub
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: GET, path: /public/agent_hub, headers: {}, body: null}
+upstream: []
+hub_agents: [{agent_id: alpha, agent_name: alpha, agent_card_params: {}}]
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

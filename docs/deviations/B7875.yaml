@@ -1,0 +1,27 @@
+task: B7875
+deviations:
+- what: "`router` and `_direct_vector_store_embedding_executor` raise `UnsupportedCallArgument` naming the argument, where LiteLLM uses them to embed the query on the client side."
+  why: Both carry Python objects Rust cannot call, and no task plans a native Router handle for them, so the call is refused rather than run without the executor.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L46-L53
+- what: "`client` and `shared_session` in kwargs raise `UnsupportedCallArgument` instead of being passed to the vector store handler."
+  why: They are live Python HTTP clients; betterlite makes its own request through its Rust transport, so accepting them would silently ignore the client the caller gave.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L271
+- what: "A create `mock_response` dict answers with `mock_vector_store_create_response`, where LiteLLM turns the dict into a ModelResponse before its `isinstance(..., dict)` guard reads it, so the guard never fires and the call reaches the provider."
+  why: The dict is the documented create mock; answering it is what a caller passing one asks for, and LiteLLM's coercion is a bug no working setup can rely on.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L211-L215
+- what: "`create`, `search`, `acreate` and `asearch` run their body directly instead of through the `@client` wrapper, so the wrapper's logging-object setup, `litellm_credential_name` credential loading, caching, success and failure handlers, post-call rules and cost tracking do not run."
+  why: betterlite-sdk has no vector store call target for CallWrapper; the native session builds its own pre and post-call logging (B1731), and adding the target is outside this task's scope.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L172
+- what: "A `litellm_logging_obj` in kwargs is dropped, where LiteLLM hands the caller's logging object to the handler's pre-call and post-call logging."
+  why: The object is Python state a Rust call cannot reach; the native session logs the call with its own logging state, so keeping the object would promise records that never arrive.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L204
+- what: "`logger_fn` is never called; the call warns that the logger function does not run, where LiteLLM keeps it on the logging object and calls it on success and failure."
+  why: A Python callable cannot cross into Rust; a silent drop would leave the caller waiting for a call that never comes.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1400-L1403
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server in crates/betterlite-python/tests/test_vector_create_search.py.
+  link: ""
+kept_bugs:
+- what: "A search `mock_response` string is only checked for truthiness: the answer is the sample page, and the string itself never becomes the result text."
+  why: The task text says the helper builds one result from that text, but LiteLLM at the pinned commit leaves `mock_results` unset for a string and answers with the default page; a working setup relies on that answer, so betterlite copies it.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L410-L415

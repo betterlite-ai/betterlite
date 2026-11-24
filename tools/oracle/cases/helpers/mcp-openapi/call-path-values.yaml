@@ -1,0 +1,63 @@
+kind: helper
+name: mcp-openapi-call-path-values
+call:
+  b4683:
+    operation: call
+    path: /pets/{pet_id}/owners/{owner}
+    method: get
+    spec_operation:
+      parameters:
+        - {name: pet_id, in: path}
+        - {name: owner, in: path}
+    base_url: https://api.example.com
+    headers: {}
+    server_label: null
+    relays_upstream_auth: false
+    auth_type: null
+    upstream_token_header: null
+    arguments: {pet_id: 'abc 123', owner: 'x/y'}
+    auth_header: null
+    extra_headers: {}
+    resolved_auth_headers: {}
+    reply: {status: 200, headers: {}, body: '{"ok":true}'}
+calls:
+  - b4683:
+      operation: call
+      path: /pets/{pet_id}/owners/{owner}
+      method: get
+      spec_operation:
+        parameters:
+          - {name: pet_id, in: path}
+          - {name: owner, in: path}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {pet_id: 'abc 123', owner: '..'}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: ''}
+  - b4683:
+      operation: call
+      path: /pets/{pet_id}/owners/{owner}
+      method: get
+      spec_operation:
+        parameters:
+          - {name: pet_id, in: path}
+          - {name: owner, in: path}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: pets
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {pet_id: 7, owner: 'réx', extra: zzz}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: '{"ok":true}'}
+env: {}
+compare: {ignore: []}

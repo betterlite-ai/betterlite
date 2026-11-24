@@ -1,0 +1,42 @@
+kind: helper
+name: mcp-openapi-merge-headers
+call:
+  b4683:
+    operation: merge_headers
+    static_headers:
+      Authorization: Bearer static
+      X-Tenant: acme
+    extra_headers:
+      x-tenant: caller
+      X-Request-Id: r1
+    auth_header: Bearer byok
+    resolved_auth_headers:
+      Authorization: Bearer resolved
+      X-Cred: tok
+calls:
+  - b4683:
+      operation: merge_headers
+      static_headers:
+        X-API-Key: secret
+      extra_headers:
+        x-api-key: caller
+        X-Extra: e
+      auth_header: null
+      resolved_auth_headers: {}
+  - b4683:
+      operation: merge_headers
+      static_headers: {}
+      extra_headers:
+        X-Cred: caller
+      auth_header: null
+      resolved_auth_headers:
+        X-Cred: tok
+  - b4683:
+      operation: merge_headers
+      static_headers:
+        Authorization: Bearer static
+      extra_headers: {}
+      auth_header: ''
+      resolved_auth_headers: {}
+env: {}
+compare: {ignore: []}
