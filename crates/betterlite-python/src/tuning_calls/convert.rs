@@ -35,8 +35,7 @@ pub(crate) struct CancelCall {
     pub(crate) settings: SettingsWire,
 }
 
-// The three call shapes a native method decodes, so one runner serves them all.
-// The calls are boxed so no variant is much larger than another.
+// One runner decodes all three call shapes, and the boxes keep every variant the same size.
 pub(crate) enum NativeCall {
     Create(Box<CreateCall>),
     Read(Box<ReadCall>),
