@@ -14,7 +14,6 @@ use betterlite_db::key_hash::KeyHash;
 use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_db::team_repository::decoder::{TeamRecord, TeamRecordError};
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
-use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_server::key_list_filters::error::{KeyListFiltersError, KeyListReadError};
 use betterlite_server::key_list_filters::ports::KeyListFiltersStore;
 use betterlite_server::management_admins::ports::{TeamReadError, TeamReads};

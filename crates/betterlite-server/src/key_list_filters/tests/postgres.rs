@@ -153,9 +153,7 @@ async fn postgres_without_pool_reports_read_failures() {
 #[tokio::test]
 async fn postgres_token_client_serves_only_its_table() {
     let (_fixture, pool) = database().await;
-    let store = PostgresStore {
-        pool: Some(pool.clone()),
-    };
+    let store = PostgresStore { pool: Some(pool) };
     let client = PostgresTokenClient { store: &store };
     assert!(matches!(
         client.attribute(TOKEN_TABLE_ATTRIBUTE).unwrap(),
