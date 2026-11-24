@@ -328,9 +328,10 @@ def test_search_calls_parameters() -> None:
     assert DUMP.validate_json(ours.model_dump_json()) == DUMP.validate_json(
         theirs.model_dump_json()
     )
-    assert len(recorded) == 2
-    assert query_parameters(recorded[0][1]) == query_parameters(recorded[1][1])
-    ours_params = query_parameters(recorded[0][1])
+    # unpacking fails the test when either package sends anything but its one request
+    first, second = recorded
+    ours_params = query_parameters(first[1])
+    assert ours_params == query_parameters(second[1])
     assert ours_params["count"] == ["5"]
     assert ours_params["safesearch"] == ["strict"]
     assert "site:example.test" in ours_params["q"][0]
