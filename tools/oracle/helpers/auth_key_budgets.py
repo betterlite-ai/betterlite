@@ -5,7 +5,7 @@ from types import ModuleType
 from typing import ClassVar, Final, Literal, NotRequired, Self, TypedDict
 
 import litellm
-from litellm.constants import EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE
+from litellm import constants
 from litellm.exceptions import BudgetExceededError
 from litellm.models.user import LiteLLM_UserTable
 from litellm.proxy._types import CallInfo, UserAPIKeyAuth
@@ -62,7 +62,7 @@ class Recorder(ProxyLogging):
         self.alerts: Final[list[JsonValue]] = []
 
     @override
-    async def budget_alerts(self, type: str, user_info: CallInfo) -> None:  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3046-L3061
+    async def budget_alerts(self, type: str, user_info: CallInfo) -> None:  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3046-L3061
         self.alerts.append(
             {"type": type, "info": JSON.validate_json(user_info.model_dump_json())}
         )
@@ -73,7 +73,7 @@ class ScriptedSpend:
         self.spends: Final = spends
         self.reads: Final[list[JsonValue]] = []
 
-    async def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2797-L2806
+    async def __call__(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2797-L2806
         self,
         counter_key: str,
         fallback_spend: float,
@@ -123,7 +123,7 @@ def auth_of(call: Call) -> UserAPIKeyAuth:
     token = call.get("token")
     if token is None:
         raise ValueError("the call names the token fields")
-    return UserAPIKeyAuth.model_validate(token)
+    return UserAPIKeyAuth.model_validate(token)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
 
 
 def owner(call: Call) -> LiteLLM_UserTable | None:
@@ -138,7 +138,7 @@ def fix_clock(call: Call) -> None:
     if moment is None:
         raise ValueError("the call names the fixed clock")
     FixedClock.moment = datetime.fromisoformat(moment)
-    user_api_key_auth.datetime = FixedClock  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3615-L3623
+    user_api_key_auth.datetime = FixedClock  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3615-L3623
 
 
 def denial_record(denied: BudgetExceededError) -> JsonValue:
@@ -149,19 +149,6 @@ def denial_record(denied: BudgetExceededError) -> JsonValue:
         "entity_type": denied.entity_type,
         "entity_id": denied.entity_id,
     }
-
-
-async def checks(
-    updated: UserAPIKeyAuth, recorder: Recorder, user: LiteLLM_UserTable | None
-) -> JsonValue:
-    try:
-        await auth_checks._virtual_key_max_budget_alert_check(updated, recorder, user)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5683-L5762
-        await auth_checks._virtual_key_max_budget_check(updated, recorder, user)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5479-L5556
-        await auth_checks._virtual_key_soft_budget_check(updated, recorder, user)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5603-L5639
-        await auth_checks._virtual_key_multi_budget_check(updated)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5559-L5600
-    except BudgetExceededError as denied:
-        return denial_record(denied)
-    return None
 
 
 async def admit_call(call: Call) -> JsonValue:
@@ -179,14 +166,21 @@ async def admit_call(call: Call) -> JsonValue:
     litellm.default_key_max_budget_alert_emails = call.get("global_cfg")
     user = owner(call)
     updated = user_api_key_auth._update_key_budget_with_temp_budget_increase(fixed)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3626-L3634
-    denial = await checks(updated, recorder, user)
+    denial: JsonValue = None
+    try:
+        await auth_checks._virtual_key_max_budget_alert_check(updated, recorder, user)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5683-L5762
+        await auth_checks._virtual_key_max_budget_check(updated, recorder, user)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5479-L5556
+        await auth_checks._virtual_key_soft_budget_check(updated, recorder, user)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5603-L5639
+        await auth_checks._virtual_key_multi_budget_check(updated)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5559-L5600
+    except BudgetExceededError as denied:
+        denial = denial_record(denied)
     # a scheduled alert task only runs once the request path yields
     await asyncio.sleep(0)
     return {
         "alerts": list(recorder.alerts),
         "reads": list(reader.reads),
         "throttle_pct": updated.budget_throttle_pct,
-        "fraction": EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE,
+        "fraction": constants.EMAIL_BUDGET_ALERT_MAX_SPEND_ALERT_PERCENTAGE,
         "denial": denial,
     }
 
@@ -248,10 +242,10 @@ async def answer_for(call: Call) -> JsonValue:
 
 
 async def answer(parsed: Request) -> JsonValue:
-    answers: list[JsonValue] = []
-    for call in parsed["calls"]:
-        answers.append(await call_answer(call))
-    return answers
+    return [
+        await call_answer(call)
+        for call in parsed["calls"]
+    ]
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:

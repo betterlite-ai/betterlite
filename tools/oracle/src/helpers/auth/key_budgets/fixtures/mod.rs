@@ -11,22 +11,22 @@ use betterlite_auth::budget_counter::CounterEntityType;
 use betterlite_auth::budget_primitives::window_start::DurationParser;
 use betterlite_auth::current_spend::SpendQuery;
 use betterlite_core::duration::seconds::duration_in_seconds;
-use betterlite_db::budget_permission_rows::Timestamp;
+use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
+use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Number, Value, json};
 
 // the spend reads the case scripts, recorded the way LiteLLM's get_current_spend receives them
 pub(crate) struct ScriptedSpend<'script> {
-    spends: &'script [f64],
+    spends: &'script [JsonData],
     next: AtomicUsize,
     reads: Mutex<Vec<Value>>,
 }
 
 impl<'script> ScriptedSpend<'script> {
-    pub(crate) const fn new(spends: &'script [f64]) -> Self {
+    pub(crate) const fn new(spends: &'script [JsonData]) -> Self {
         Self {
             spends,
             next: AtomicUsize::new(0),
@@ -51,7 +51,9 @@ impl<'script> SpendReader for ScriptedSpend<'script> {
         let Some(scripted) = self.spends.get(index) else {
             return Err(unverifiable(query));
         };
-        Decimal::from_f64(*scripted).ok_or_else(|| unverifiable(query))
+        Money::from_json(scripted)
+            .and_then(Money::finite_value)
+            .ok_or_else(|| unverifiable(query))
     }
 }
 

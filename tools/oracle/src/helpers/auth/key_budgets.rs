@@ -13,8 +13,6 @@ use betterlite_auth::request_quota_view::RequestQuotaViewExt as _;
 use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -40,7 +38,7 @@ struct Call {
     #[serde(default)]
     token: Option<BTreeMap<String, JsonData>>,
     #[serde(default)]
-    spends: Option<Vec<f64>>,
+    spends: Option<Vec<JsonData>>,
     #[serde(default)]
     now: Option<String>,
     #[serde(default)]
@@ -62,9 +60,9 @@ struct Call {
     #[serde(default)]
     user_id: Option<String>,
     #[serde(default)]
-    spend: Option<f64>,
+    spend: Option<JsonData>,
     #[serde(default)]
-    max_budget: Option<f64>,
+    max_budget: Option<JsonData>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -104,7 +102,10 @@ fn execute(call: &Call, runtime: &Runtime) -> Result<Value, Failure> {
     match call.function {
         Function::Admit => runtime.block_on(admit_value(call)),
         Function::TempUpdate => temp_update_value(call),
-        Function::EmailMerge => Ok(email_merge_value(call)),
+        // _merge_budget_alert_email_configs: two empty mappings merge to None
+        Function::EmailMerge => Ok(json!({
+            "merged": merge_alert_email_configs(call.global_cfg.as_ref(), call.per_key_cfg.as_ref())
+        })),
         Function::TeamMember => team_member_value(call),
     }
 }
@@ -112,7 +113,9 @@ fn execute(call: &Call, runtime: &Runtime) -> Result<Value, Failure> {
 // the four LiteLLM key budget checks, in the order user_api_key_auth runs them
 async fn admit_value(call: &Call) -> Result<Value, Failure> {
     let auth = auth_of(call)?;
-    let now = moment(call)?;
+    // user_api_key_auth.datetime, held at the moment the case fixes
+    let clock = call.now.as_deref().ok_or(Failure::Missing("the clock"))?;
+    let now = DateTime::parse_from_rfc3339(clock)?.with_timezone(&Utc);
     let spends = call
         .spends
         .as_deref()
@@ -150,14 +153,10 @@ async fn admit_value(call: &Call) -> Result<Value, Failure> {
 // _update_key_budget_with_temp_budget_increase: the copy keeps the original maximum for an inactive increase
 fn temp_update_value(call: &Call) -> Result<Value, Failure> {
     let auth = auth_of(call)?;
-    let update = apply_temp_budget_increase(&auth, moment(call)?)?;
+    let clock = call.now.as_deref().ok_or(Failure::Missing("the clock"))?;
+    let now = DateTime::parse_from_rfc3339(clock)?.with_timezone(&Utc);
+    let update = apply_temp_budget_increase(&auth, now)?;
     Ok(json!({"max_budget": money_json(update.max_budget)}))
-}
-
-// _merge_budget_alert_email_configs: two empty mappings merge to None
-fn email_merge_value(call: &Call) -> Value {
-    let merged = merge_alert_email_configs(call.global_cfg.as_ref(), call.per_key_cfg.as_ref());
-    json!({"merged": merged})
 }
 
 // _team_member_max_budget_alert_check: a team's own map applies with no global merge
@@ -170,9 +169,16 @@ fn team_member_value(call: &Call) -> Result<Value, Failure> {
         .user_id
         .as_deref()
         .ok_or(Failure::Missing("the user id"))?;
-    let spend = call.spend.ok_or(Failure::Missing("the spend"))?;
-    let max_budget = call.max_budget.ok_or(Failure::Missing("the max budget"))?;
-    let spend = Decimal::from_f64(spend).ok_or(Failure::Missing("a finite spend"))?;
+    let spend_input = call.spend.as_ref().ok_or(Failure::Missing("the spend"))?;
+    let max_budget_input = call
+        .max_budget
+        .as_ref()
+        .ok_or(Failure::Missing("the max budget"))?;
+    let spend = Money::from_json(spend_input)
+        .and_then(Money::finite_value)
+        .ok_or(Failure::Missing("a finite spend"))?;
+    let max_budget =
+        Money::from_json(max_budget_input).ok_or(Failure::Missing("the max budget"))?;
     let recorder = Recorder::default();
     let alert = TeamMemberAlert {
         team_id,
@@ -182,7 +188,7 @@ fn team_member_value(call: &Call) -> Result<Value, Failure> {
         user_id,
         user_email: call.user_email.as_deref(),
         spend,
-        max_budget: Money::from_f64(max_budget),
+        max_budget,
     };
     team_member_alert_check(&alert, Some(&recorder));
     Ok(json!({"alerts": recorder.take()}))
@@ -194,12 +200,6 @@ fn auth_of(call: &Call) -> Result<UserAPIKeyAuth, Failure> {
         .clone()
         .ok_or(Failure::Missing("the token fields"))?;
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(Failure::Auth)
-}
-
-// user_api_key_auth.datetime, held at the moment the case fixes
-fn moment(call: &Call) -> Result<DateTime<Utc>, Failure> {
-    let text = call.now.as_deref().ok_or(Failure::Missing("the clock"))?;
-    Ok(DateTime::parse_from_rfc3339(text)?.with_timezone(&Utc))
 }
 
 // BudgetExceededError's caller-visible fields, with the status litellm.budget_exceeded_status_code defaults to
