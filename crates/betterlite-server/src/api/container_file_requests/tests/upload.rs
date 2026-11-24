@@ -9,7 +9,7 @@ use super::super::{
 };
 use super::support::{
     FakeAccess, FakeProcessing, caller, container_requests, file_upload_form, form, json_reply,
-    proxy_failure, request_parts, text_part, upload_part,
+    proxy_failure, request_parts, text_part, upload_part, upload_request,
 };
 
 fn forwarding_access() -> FakeAccess {
@@ -33,14 +33,9 @@ async fn upload_missing_file_fails_before_access() {
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
     let upload = form(vec![text_part("purpose", "assistants")]);
+    let payload = upload_request("aupload_container_file", upload);
     let error = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap_err();
     assert!(matches!(error, ContainerFileRequestError::MissingFileField));
@@ -55,17 +50,13 @@ async fn upload_single_file_becomes_the_tuple() {
     let processing = Arc::new(FakeProcessing::replying(json_reply()));
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
+    let payload = upload_request("aupload_container_file", file_upload_form());
     requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &file_upload_form(),
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Form(data) = &calls[0].data else {
         panic!("the upload data is a form");
     };
@@ -94,17 +85,13 @@ async fn upload_file_list_keeps_only_the_first_tuple() {
         upload_part("file[]", "first.csv"),
         upload_part("file[]", "second.csv"),
     ]);
+    let payload = upload_request("aupload_container_file", upload);
     requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Form(data) = &calls[0].data else {
         panic!("the upload data is a form");
     };
@@ -123,17 +110,13 @@ async fn upload_text_file_field_stays_text() {
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
     let upload = form(vec![text_part("file", "just-text")]);
+    let payload = upload_request("aupload_container_file", upload);
     requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Form(data) = &calls[0].data else {
         panic!("the upload data is a form");
     };
@@ -157,17 +140,13 @@ async fn upload_forwarding_overwrites_form_fields() {
         text_part("model_id", "form-model"),
         upload_part("file", "data.csv"),
     ]);
+    let payload = upload_request("aupload_container_file", upload);
     requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Form(data) = &calls[0].data else {
         panic!("the upload data is a form");
     };
@@ -192,17 +171,13 @@ async fn upload_forwarding_keeps_the_form_slots() {
         text_part("purpose", "assistants"),
         upload_part("file", "data.csv"),
     ]);
+    let payload = upload_request("aupload_container_file", upload);
     requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Form(data) = &calls[0].data else {
         panic!("the upload data is a form");
     };
@@ -229,17 +204,13 @@ async fn upload_keeps_the_form_model_id_when_forwarding_has_none() {
         text_part("model_id", "form-model"),
         upload_part("file", "data.csv"),
     ]);
+    let payload = upload_request("aupload_container_file", upload);
     requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Form(data) = &calls[0].data else {
         panic!("the upload data is a form");
     };
@@ -258,18 +229,14 @@ async fn upload_returns_the_processing_reply_unchanged() {
     let processing = Arc::new(FakeProcessing::replying(reply.clone()));
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
+    let payload = upload_request("aupload_container_file", file_upload_form());
     let answer = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &file_upload_form(),
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     assert_eq!(answer, reply);
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].route_type, "aupload_container_file");
     assert_eq!(calls[0].model, None);
 }
@@ -280,14 +247,9 @@ async fn upload_process_failure_fails_through_the_exception_handling() {
     let processing = Arc::new(FakeProcessing::failing(proxy_failure()));
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
+    let payload = upload_request("aupload_container_file", file_upload_form());
     let error = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &file_upload_form(),
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap_err();
     assert!(matches!(error, ContainerFileRequestError::Processing(_)));

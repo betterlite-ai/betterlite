@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::super::{ProviderHints, pick_provider};
 use super::support::{
     FakeAccess, FakeProcessing, bytes_reply, caller, container_requests, file_upload_form,
-    json_reply, request_parts,
+    json_reply, request_parts, upload_request,
 };
 
 #[test]
@@ -79,14 +79,9 @@ async fn provider_upload_request_reads_the_pick() {
         "/v1/containers/cntr/files?custom_llm_provider=bedrock",
         None,
     );
+    let payload = upload_request("aupload_container_file", file_upload_form());
     let reply = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &file_upload_form(),
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap();
     assert_eq!(reply.body, json_reply().body);

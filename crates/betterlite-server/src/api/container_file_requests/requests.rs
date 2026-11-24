@@ -13,7 +13,7 @@ use super::ports::{ContainerAccess, RequestProcessing};
 use super::{
     ContainerFileDownload, ContainerFileRequestError, ContainerFormData, ContainerFormValue,
     ContainerProcessingBody, ContainerProcessingReply, ContainerRequestData, FormReadError,
-    ProviderHints, RequestFailure, pick_provider,
+    ProviderHints, RequestFailure, content_type_for_file_id, pick_provider,
 };
 use crate::auth::auth_identity::AuthContext;
 
@@ -24,6 +24,12 @@ const MODEL_ID_FIELD: &str = "model_id";
 const FILE_FIELD: &str = "file";
 const CONTENT_ROUTE_TYPE: &str = "aretrieve_container_file_content";
 const NON_BYTES_TYPE: &str = "json object";
+
+// The upload route's per-route inputs: the catalog's async route name and B1101's decoded form
+pub struct UploadRequest<'request> {
+    pub route_type: &'request str,
+    pub form: FormParts,
+}
 
 // The two processors the container file routes share; every collaborator is injected and the module keeps no state
 #[derive(Clone)]
@@ -93,11 +99,11 @@ impl ContainerFileRequests {
         &self,
         parts: &Parts,
         container_id: &str,
-        route_type: &str,
         caller: &AuthContext,
-        form: &FormParts,
+        upload: &UploadRequest<'_>,
     ) -> Result<ContainerProcessingReply, ContainerFileRequestError> {
-        let fields = get_form_data(form).map_err(FormReadError::from)?;
+        let route_type = upload.route_type;
+        let fields = get_form_data(&upload.form).map_err(FormReadError::from)?;
         let converted = convert_uploads_to_file_data(&fields).map_err(FormReadError::from)?;
         let mut form_data = upload_data(converted);
         if !form_data.contains_key(FILE_FIELD) {

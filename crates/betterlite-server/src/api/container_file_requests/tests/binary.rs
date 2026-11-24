@@ -62,6 +62,7 @@ async fn binary_omits_model_id_when_forwarding_has_none() {
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Json(object) = &calls[0].data else {
         panic!("the content data is a JSON object");
     };
@@ -88,7 +89,7 @@ async fn binary_returns_bytes_content_type_and_headers() {
 #[tokio::test]
 async fn binary_not_bytes_reply_fails_through_the_exception_handling() {
     let access = Arc::new(FakeAccess::granting());
-    let mut fake_processing = FakeProcessing::replying(json_reply());
+    let fake_processing = FakeProcessing::replying(json_reply());
     *fake_processing.mapped.lock().unwrap() = Some(mapped_exception());
     let processing = Arc::new(fake_processing);
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));

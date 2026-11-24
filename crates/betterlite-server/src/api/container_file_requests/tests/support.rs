@@ -19,7 +19,7 @@ use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExce
 use betterlite_prompts::arguments::json::{Json, Object as JsonObject};
 
 use crate::api::container_file_requests::ports::{ContainerAccess, RequestProcessing};
-use crate::api::container_file_requests::requests::ContainerFileRequests;
+use crate::api::container_file_requests::requests::{ContainerFileRequests, UploadRequest};
 use crate::api::container_file_requests::{
     ContainerFormValue, ContainerProcessingBody, ContainerProcessingReply, ContainerRequestData,
     RequestFailure,
@@ -284,6 +284,10 @@ pub(super) fn file_upload_form() -> FormParts {
         text_part("purpose", "assistants"),
         upload_part("file", "data.csv"),
     ])
+}
+
+pub(super) fn upload_request(route_type: &str, form: FormParts) -> UploadRequest<'_> {
+    UploadRequest { route_type, form }
 }
 
 #[derive(Default)]

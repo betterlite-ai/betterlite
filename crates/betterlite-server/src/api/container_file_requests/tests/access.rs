@@ -11,7 +11,7 @@ use super::super::ports::{ContainerAccess, OwnershipAccess};
 use super::super::{ContainerFileRequestError, ContainerRequestData};
 use super::support::{
     FakeAccess, FakeObjects, FakeProcessing, bytes_reply, caller, container_requests,
-    file_upload_form, json_reply, request_parts,
+    file_upload_form, json_reply, request_parts, upload_request,
 };
 
 fn native_adapter() -> OwnershipAccess<FakeObjects> {
@@ -71,6 +71,7 @@ async fn access_resolved_identity_replaces_the_path_values() {
         .await
         .unwrap();
     let calls = processing.processed();
+    assert_eq!(calls.len(), 1);
     let ContainerRequestData::Json(object) = &calls[0].data else {
         panic!("the content data is a JSON object");
     };
@@ -113,14 +114,9 @@ async fn access_upload_denial_skips_the_processing() {
     let processing = Arc::new(FakeProcessing::replying(json_reply()));
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
+    let payload = upload_request("aupload_container_file", file_upload_form());
     let error = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("bob"),
-            &file_upload_form(),
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("bob"), &payload)
         .await
         .unwrap_err();
     assert!(matches!(

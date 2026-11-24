@@ -7,7 +7,7 @@ use betterlite_core::api::request_form::values::FormError;
 use super::super::{ContainerFileRequestError, FormReadError};
 use super::support::{
     FakeAccess, FakeProcessing, caller, container_requests, file_upload_form, form, json_reply,
-    request_parts, text_part, upload_part,
+    request_parts, text_part, upload_part, upload_request,
 };
 
 #[tokio::test]
@@ -20,14 +20,9 @@ async fn error_form_failure_skips_the_exception_handling() {
         upload_part("file", "data.csv"),
         upload_part("file[]", "second.csv"),
     ]);
+    let payload = upload_request("aupload_container_file", upload);
     let error = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -48,14 +43,9 @@ async fn error_convert_failure_skips_the_exception_handling() {
         upload_part("file[]", "first.csv"),
         text_part("file[]", "not-a-file"),
     ]);
+    let payload = upload_request("aupload_container_file", upload);
     let error = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &upload,
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -77,14 +67,9 @@ async fn error_forwarding_failure_skips_the_exception_handling() {
     let processing = Arc::new(FakeProcessing::replying(json_reply()));
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
+    let payload = upload_request("aupload_container_file", file_upload_form());
     let error = requests
-        .process_file_upload_request(
-            &parts,
-            "cntr",
-            "aupload_container_file",
-            &caller("alice"),
-            &file_upload_form(),
-        )
+        .process_file_upload_request(&parts, "cntr", &caller("alice"), &payload)
         .await
         .unwrap_err();
     assert!(matches!(
