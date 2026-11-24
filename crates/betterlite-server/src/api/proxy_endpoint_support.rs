@@ -14,6 +14,9 @@ use betterlite_router::model_catalog_lookup::error::LookupError;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use tokio_util::task::TaskTracker;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
+
 mod tests;
 
 const LITELLM_CALL_ID_HEADER: &str = "x-litellm-call-id";

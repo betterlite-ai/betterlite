@@ -28,6 +28,7 @@ use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
+use super::testing::ScriptedCatalog;
 use super::{
     CaughtException, DisconnectRelease, FailureFacts, HttpFailure, ModelNameCatalog,
     ParallelLimiterHook, ParallelLimiterHooks, ProxyDiagnostics, READ_ONLY_RECOVERY_REASON,
@@ -235,18 +236,6 @@ impl ParallelLimiterHooks for ScriptedHooks {
             HookKind::Older => Some(ParallelLimiterHook::Older),
             HookKind::V3 => Some(ParallelLimiterHook::V3(&self.limiter)),
         }
-    }
-}
-
-struct ScriptedCatalog {
-    names: Vec<String>,
-    calls: AtomicUsize,
-}
-
-impl ModelNameCatalog for ScriptedCatalog {
-    fn model_names(&self) -> Result<Vec<String>, LookupError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(self.names.clone())
     }
 }
 

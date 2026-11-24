@@ -1,15 +1,16 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_reporting::bug_report::notice::NOTICE_PREFIX;
-use betterlite_router::model_catalog_lookup::error::LookupError;
+use betterlite_server::api::proxy_endpoint_support::testing::ScriptedCatalog;
 use betterlite_server::api::proxy_endpoint_support::{
-    CaughtException, FailureFacts, HttpFailure, ModelNameCatalog, ProxyDiagnostics,
-    handle_exception_on_proxy, is_known_model,
+    CaughtException, FailureFacts, HttpFailure, ProxyDiagnostics, handle_exception_on_proxy,
+    is_known_model,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -67,16 +68,6 @@ impl ProxyDiagnostics for ScriptedDiagnostics {
     fn bug_report_notice(&self, _failure: &FailureFacts<'_>) -> Option<String> {
         self.notice
             .then(|| format!("{NOTICE_PREFIX} scripted notice"))
-    }
-}
-
-struct ScriptedCatalog {
-    names: Vec<String>,
-}
-
-impl ModelNameCatalog for ScriptedCatalog {
-    fn model_names(&self) -> Result<Vec<String>, LookupError> {
-        Ok(self.names.clone())
     }
 }
 
@@ -204,17 +195,18 @@ fn known_model_answer(
         let known = lookups
             .iter()
             .map(|model| is_known_model(model.as_deref(), None))
-            .collect::<Result<Vec<bool>, LookupError>>()
+            .collect::<Result<Vec<bool>, _>>()
             .or_value_error()?;
         return Ok(json!(known));
     };
     let catalog = ScriptedCatalog {
         names: names.to_vec(),
+        calls: AtomicUsize::new(0),
     };
     let known = lookups
         .iter()
         .map(|model| is_known_model(model.as_deref(), Some(&catalog)))
-        .collect::<Result<Vec<bool>, LookupError>>()
+        .collect::<Result<Vec<bool>, _>>()
         .or_value_error()?;
     Ok(json!(known))
 }
