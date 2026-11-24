@@ -47,8 +47,7 @@ fn text_field(value: Option<String>) -> WireField {
     WireField::Text(text)
 }
 
-// Python's raise_native_error builds only the names LiteLLM's exception_type raises, so the sync SDK's other
-// classes map the way exception_type maps them.
+// raise_native_error builds only exception_type's names, so the sync SDK's other classes map the same way.
 fn buildable(class: &str) -> &str {
     match class {
         "APITimeoutError" => "Timeout",

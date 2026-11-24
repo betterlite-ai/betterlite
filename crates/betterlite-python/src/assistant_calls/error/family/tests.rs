@@ -8,6 +8,7 @@ use betterlite_error::envelope::WireField;
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use rstest::rstest;
 
 use super::{ThreadOutcome, create, read_delete, thread};
 
@@ -38,31 +39,30 @@ fn error_payload_for_a_plain_create_failure_keeps_the_request_model() {
     );
 }
 
-#[test]
-fn error_payload_maps_every_raw_sdk_class_python_cannot_build() {
-    let cases = [
-        ("APITimeoutError", "Timeout"),
-        ("ConflictError", "APIError"),
-        ("APIStatusError", "APIError"),
-        ("OpenAIError", "AuthenticationError"),
-        ("ValueError", "APIConnectionError"),
-        ("BadRequestError", "BadRequestError"),
-    ];
-    for (class, expected) in cases {
-        let failure = AssistantCreateFailure {
-            class: String::from(class),
-            status: None,
-            kind: WireField::MISSING,
-            param: WireField::MISSING,
-            code: WireField::MISSING,
-            message: String::from("the call failed"),
-        };
-        let text = serde_json::to_string(&create(&failure, "gpt-4o-mini", "openai")).unwrap();
-        let expected_text = format!(
-            r#"{{"type":"{expected}","message":"the call failed","llm_provider":"openai","model":"gpt-4o-mini"}}"#
-        );
-        assert_eq!(text, expected_text);
-    }
+#[rstest]
+#[case::api_timeout_error("APITimeoutError", "Timeout")]
+#[case::conflict_error("ConflictError", "APIError")]
+#[case::api_status_error("APIStatusError", "APIError")]
+#[case::openai_error("OpenAIError", "AuthenticationError")]
+#[case::value_error("ValueError", "APIConnectionError")]
+#[case::buildable_class_stays("BadRequestError", "BadRequestError")]
+fn error_payload_maps_every_raw_sdk_class_python_cannot_build(
+    #[case] class: &str,
+    #[case] expected: &str,
+) {
+    let failure = AssistantCreateFailure {
+        class: String::from(class),
+        status: None,
+        kind: WireField::MISSING,
+        param: WireField::MISSING,
+        code: WireField::MISSING,
+        message: String::from("the call failed"),
+    };
+    let text = serde_json::to_string(&create(&failure, "gpt-4o-mini", "openai")).unwrap();
+    let expected_text = format!(
+        r#"{{"type":"{expected}","message":"the call failed","llm_provider":"openai","model":"gpt-4o-mini"}}"#
+    );
+    assert_eq!(text, expected_text);
 }
 
 #[test]
