@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Final, NoReturn, TypedDict, TypeVar
 
+import httpx2
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite._completion.errors import UnknownNativeError
@@ -38,7 +39,14 @@ class NativeMcpPayload(TypedDict):
     data: JsonValue
 
 
+class StatusDetails(TypedDict):
+    status: int
+    body: str
+    url: str
+
+
 PAYLOAD: Final[TypeAdapter[NativeMcpPayload]] = TypeAdapter(NativeMcpPayload)
+STATUS_DETAILS: Final[TypeAdapter[StatusDetails]] = TypeAdapter(StatusDetails)
 
 # the `type` each native error carries to the exception class LiteLLM's callers catch
 ERROR_TYPES: Final[dict[str, type[BaseException]]] = {
@@ -47,12 +55,23 @@ ERROR_TYPES: Final[dict[str, type[BaseException]]] = {
     "RuntimeError": RuntimeError,
     "ValueError": ValueError,
     "CancelledError": asyncio.CancelledError,
+    "HTTPStatusError": httpx2.HTTPStatusError,
 }
+
+
+# LiteLLM lets httpx2's HTTPStatusError through, so its request and response are rebuilt here
+def _http_status_error(payload: NativeMcpPayload) -> httpx2.HTTPStatusError:
+    details = STATUS_DETAILS.validate_python(payload["data"])
+    request = httpx2.Request("POST", details["url"])
+    response = httpx2.Response(details["status"], request=request, text=details["body"])
+    return httpx2.HTTPStatusError(payload["message"], request=request, response=response)
 
 
 def _build_error(payload: NativeMcpPayload, error_class: type[BaseException]) -> BaseException:
     if error_class is McpError:
         return McpError(payload["code"], payload["message"], payload["data"])
+    if error_class is httpx2.HTTPStatusError:
+        return _http_status_error(payload)
     return error_class(payload["message"])
 
 

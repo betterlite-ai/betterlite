@@ -43,7 +43,7 @@ INVALID_TIMEOUT: Final = "fast"
 SHORT_TIMEOUT: Final = 0.2
 CA_BUNDLE: Final = "/etc/ssl/certs/ca.pem"
 PLACEHOLDER_URL: Final = "http://127.0.0.1:1/mcp"
-INTERNAL_ERROR: Final = -32603
+UNAUTHORIZED_STATUS: Final = 401
 TOOL_NAME: Final = "search"
 PROMPT_NAME: Final = "greet"
 RESOURCE_URL: Final = "file:///notes.txt"
@@ -64,8 +64,13 @@ EXPECTED_AUTH_HEADERS: Final[dict[str, JsonValue]] = {
     "map": HEADER_MAP["X-Api-Key"],
     "updated": f"Bearer {UPDATED_BEARER}",
 }
+STATUS_DATA: Final[dict[str, JsonValue]] = {
+    "status": UNAUTHORIZED_STATUS,
+    "body": "denied",
+    "url": PLACEHOLDER_URL,
+}
 FAILURE_MODES: Final[tuple[tuple[str, str, str | None], ...]] = (
-    (UNAUTHORIZED_MODE, "MCPError: ", None),
+    (UNAUTHORIZED_MODE, "HTTPStatusError: ", "HTTPStatusError: "),
     (SLOW, "TimeoutError: ", "TimeoutError: "),
 )
 
@@ -211,11 +216,12 @@ def refusal_of(build: Callable[[], MCPClient]) -> str:
 
 
 def native_payload(kind: str) -> str:
+    data: JsonValue = STATUS_DATA if kind == "HTTPStatusError" else None
     payload: dict[str, JsonValue] = {
         "type": kind,
         "message": ERROR_MESSAGE,
         "code": DENIED_CODE,
-        "data": None,
+        "data": data,
     }
     return json.dumps(payload)
 
@@ -523,13 +529,26 @@ def test_errors_swallowed_failure(mode: str, ours_prefix: str, theirs_prefix: st
         assert error_text(theirs_call).startswith(theirs_prefix)
 
 
+def test_errors_http_status_payload() -> None:
+    native = NativeMcpError(native_payload("HTTPStatusError"))
+    with pytest.raises(httpx2.HTTPStatusError) as caught:
+        raise_native_error(native)
+    assert caught.value.response.status_code == UNAUTHORIZED_STATUS
+    assert caught.value.response.text == "denied"
+    assert str(caught.value.request.url) == PLACEHOLDER_URL
+    assert str(caught.value) == ERROR_MESSAGE
+
+
 def test_errors_401_raised() -> None:
     with Server(mode=UNAUTHORIZED_MODE) as server:
-        with pytest.raises(McpError) as ours:
+        with pytest.raises(httpx2.HTTPStatusError) as ours:
             asyncio.run(our_unauthorized(server))
-        with pytest.raises(httpx2.HTTPStatusError):
+        with pytest.raises(httpx2.HTTPStatusError) as theirs:
             asyncio.run(their_unauthorized(server))
-    assert ours.value.code == INTERNAL_ERROR
+    their_status = theirs.value.response.status_code
+    assert ours.value.response.status_code == their_status == UNAUTHORIZED_STATUS
+    assert ours.value.request.url == theirs.value.request.url
+    assert str(ours.value) == str(theirs.value)
 
 
 def test_errors_timeout_raised() -> None:

@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use betterlite_http::error::HttpError;
 use betterlite_mcp::client::cleanup::failure::ReadTimeout;
+use betterlite_mcp::client::cleanup::http_client::ResponseHead;
+use betterlite_mcp::client::http_transport::capture::{CaptureRecord, Exchange};
 use betterlite_mcp::client::http_transport::error::McpHttpError;
 use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionConfigError, SessionError};
@@ -19,11 +21,14 @@ use betterlite_mcp::credentials::{AuthValue, McpAuthType};
 use betterlite_mcp::tools::pagination::{LoadedTool, Page, ToolError, ToolFormat};
 use betterlite_mcp::tools::schemas::{McpTool, mcp_tool_to_openai};
 use betterlite_prompts::arguments::json::{Json, Object};
+use bytes::Bytes;
+use http::{HeaderMap, Method};
 use rmcp::service::ServiceError;
 use rmcp::transport::DynamicTransportError;
 use rstest::rstest;
 use secrecy::ExposeSecret;
 use tokio::time::timeout;
+use url::Url;
 
 use super::payload::{McpErrorKind, NativeMcpErrorPayload, status_payload};
 use super::*;
@@ -475,11 +480,13 @@ fn error_cancelled_names_the_cancellation() {
     assert_eq!(failure.kind, McpErrorKind::Cancelled);
 }
 
+const UNAUTHORIZED_MESSAGE: &str = "Client error '401 Unauthorized' for url 'http://mcp.test/mcp'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401";
+
 #[test]
-fn error_status_keeps_the_status_and_the_body() {
-    let failure = status_payload(401, Some("denied"));
-    assert_eq!(failure.kind, McpErrorKind::Runtime);
-    assert!(failure.message.contains("401"));
+fn error_status_keeps_the_status_the_body_and_the_url() {
+    let failure = status_payload(401, Some("denied"), Some("http://mcp.test/mcp"));
+    assert_eq!(failure.kind, McpErrorKind::HttpStatus);
+    assert_eq!(failure.message, UNAUTHORIZED_MESSAGE);
     let Json::Object(object) = failure.data.unwrap() else {
         panic!("expected an object");
     };
@@ -488,17 +495,62 @@ fn error_status_keeps_the_status_and_the_body() {
         Some(&Json::Number(serde_json::Number::from(401_u16)))
     );
     assert_eq!(object.get("body"), Some(&Json::Text("denied".to_owned())));
+    assert_eq!(
+        object.get("url"),
+        Some(&Json::Text("http://mcp.test/mcp".to_owned()))
+    );
 }
 
 #[test]
 fn error_status_without_a_capture_says_so() {
-    let failure = status_payload(500, None);
+    let failure = status_payload(500, None, None);
+    assert_eq!(failure.kind, McpErrorKind::HttpStatus);
+    assert!(failure.message.starts_with("Server error '500 "));
     let Json::Object(object) = failure.data.unwrap() else {
         panic!("expected an object");
     };
     assert_eq!(
         object.get("body"),
         Some(&Json::Text("(no body captured)".to_owned()))
+    );
+    assert_eq!(object.get("url"), Some(&Json::Text(String::new())));
+}
+
+#[test]
+fn error_transport_send_status_becomes_an_http_status_error() {
+    let exchange = Exchange {
+        method: Method::POST,
+        url: Url::parse("http://mcp.test/mcp").unwrap(),
+        request_headers: HeaderMap::new(),
+        request_body: Bytes::new(),
+        status: 401,
+        response_headers: HeaderMap::new(),
+    };
+    let dynamic = DynamicTransportError::from_parts(
+        "streamable-http",
+        TypeId::of::<()>(),
+        Box::new(SdkError::from(McpHttpError::Status(Box::new(
+            ResponseHead {
+                status: 401,
+                headers: HeaderMap::new(),
+                capture: Some(CaptureRecord {
+                    exchange,
+                    preview: "denied".to_owned(),
+                }),
+            },
+        )))),
+    );
+    let failure = session_payload(&SessionError::Runtime(Arc::new(SdkError::Service(
+        ServiceError::TransportSend(dynamic),
+    ))));
+    assert_eq!(failure.kind, McpErrorKind::HttpStatus);
+    assert_eq!(failure.message, UNAUTHORIZED_MESSAGE);
+    let Json::Object(object) = failure.data.unwrap() else {
+        panic!("expected an object");
+    };
+    assert_eq!(
+        object.get("url"),
+        Some(&Json::Text("http://mcp.test/mcp".to_owned()))
     );
 }
 
