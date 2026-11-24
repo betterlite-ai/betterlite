@@ -15,15 +15,9 @@ use crate::passthrough_calls::stream::NativePassthroughStream;
 const ENVIRONMENT: &str = r#"{"environment": {}}"#;
 
 fn request(address: &SocketAddr, stream: bool) -> String {
-    serde_json::json!({
-        "method": "POST",
-        "endpoint": "chat/completions",
-        "model": "vllm/my-model",
-        "custom_llm_provider": "vllm",
-        "api_base": format!("http://{address}/v1"),
-        "json": {"model": "original", "stream": stream},
-    })
-    .to_string()
+    format!(
+        r#"{{"method": "POST", "endpoint": "chat/completions", "model": "vllm/my-model", "custom_llm_provider": "vllm", "api_base": "http://{address}/v1", "json": {{"model": "original", "stream": {stream}}}}}"#
+    )
 }
 
 #[test]

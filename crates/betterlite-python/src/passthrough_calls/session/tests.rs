@@ -3,38 +3,37 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::api::passthrough_call::PassthroughBody;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use pyo3_async_runtimes::tokio::get_runtime;
 
 use super::{SessionCore, SessionError, logging_state};
-use crate::passthrough_calls::convert::{ErrorPayload, call_args};
+use crate::passthrough_calls::convert::{BAD_REQUEST, BAD_REQUEST_STATUS, ErrorPayload, call_args};
 
 const ENVIRONMENT: &str = r#"{"environment": {}}"#;
 
 fn vllm_request(address: &SocketAddr, stream: bool) -> String {
-    let request = serde_json::json!({
-        "method": "POST",
-        "endpoint": "chat/completions",
-        "model": "vllm/my-model",
-        "custom_llm_provider": "vllm",
-        "api_base": format!("http://{address}/v1"),
-        "json": {"model": "original", "stream": stream},
-    });
-    request.to_string()
+    format!(
+        r#"{{"method": "POST", "endpoint": "chat/completions", "model": "vllm/my-model", "custom_llm_provider": "vllm", "api_base": "http://{address}/v1", "json": {{"model": "original", "stream": {stream}}}}}"#
+    )
 }
 
-fn call_once(core: &SessionCore, request: &str) -> Result<PassthroughReplyWire, ErrorPayload> {
-    let args = call_args(request, &mut Vec::new()).unwrap();
-    match get_runtime().block_on(core.call(args)) {
-        Ok(reply) => Ok(PassthroughReplyWire {
-            status: reply.status,
-            headers: reply.headers,
-            body: reply.body,
-        }),
-        Err(error) => Err(*error),
-    }
+fn call_once(core: &SessionCore, request: &str) -> Result<PassthroughReplyWire, Box<ErrorPayload>> {
+    let args = call_args(request, &mut Vec::new()).map_err(|error| {
+        Box::new(ErrorPayload::failed(
+            BAD_REQUEST,
+            Some(BAD_REQUEST_STATUS),
+            error.to_string(),
+        ))
+    })?;
+    let reply = get_runtime().block_on(core.call(args))?;
+    Ok(PassthroughReplyWire {
+        status: reply.status,
+        headers: reply.headers,
+        body: reply.body,
+    })
 }
 
 // the reply stays borrowed from the runtime, so the test keeps its three observable parts
@@ -83,7 +82,8 @@ fn call_reports_an_upstream_error_with_its_status_and_body() {
     assert_eq!(error.kind, "APIError");
     assert_eq!(error.status_code, Some(404));
     assert_eq!(error.message, r#"{"error": "missing"}"#);
-    assert_eq!(error.body, Some(serde_json::json!({"error": "missing"})));
+    let expected_body: JsonValue = serde_json::from_str(r#"{"error": "missing"}"#).unwrap();
+    assert_eq!(error.body, Some(expected_body));
 }
 
 #[test]

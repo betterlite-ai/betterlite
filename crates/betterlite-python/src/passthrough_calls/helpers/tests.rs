@@ -7,6 +7,10 @@ use super::{
     resolve_sdk_timeout,
 };
 
+fn assert_same_seconds(actual: f64, expected: f64) {
+    assert_eq!(actual.to_bits(), expected.to_bits());
+}
+
 #[test]
 fn merge_query_parameters_layers_defaults_below_the_url_and_the_request() {
     let merged = merge_query_parameters(
@@ -97,104 +101,104 @@ fn encode_bedrock_runtime_modelid_arn_leaves_an_endpoint_without_an_arn_alone() 
 
 #[test]
 fn resolve_passthrough_timeout_prefers_the_endpoint_value() {
-    assert_eq!(resolve_passthrough_timeout(Some(12.5)), 12.5);
-    assert_eq!(resolve_passthrough_timeout(Some(0.0)), 0.0);
+    assert_same_seconds(resolve_passthrough_timeout(Some(12.5_f64)), 12.5_f64);
+    assert_same_seconds(resolve_passthrough_timeout(Some(0.0_f64)), 0.0_f64);
 }
 
 #[test]
 fn resolve_passthrough_timeout_falls_back_to_the_default() {
-    assert_eq!(resolve_passthrough_timeout(None), 600.0);
+    assert_same_seconds(resolve_passthrough_timeout(None), 600.0_f64);
 }
 
 #[test]
 fn resolve_sdk_timeout_falls_back_to_the_default() {
-    assert_eq!(resolve_sdk_timeout("{}").unwrap(), 600.0);
-    assert_eq!(
+    assert_same_seconds(resolve_sdk_timeout("{}").unwrap(), 600.0_f64);
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"timeout": null}}"#).unwrap(),
-        600.0
+        600.0_f64,
     );
 }
 
 #[test]
 fn resolve_sdk_timeout_prefers_the_request_timeout_fields() {
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"timeout": 12}}"#).unwrap(),
-        12.0
+        12.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"request_timeout": "30"}}"#).unwrap(),
-        30.0
+        30.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(concat!(
             r#"{"kwargs": {"timeout": null, "request_timeout": "30"}, "#,
             r#""litellm_params": {"timeout": 40}}"#
         ))
         .unwrap(),
-        30.0
+        30.0_f64,
     );
 }
 
 #[test]
 fn resolve_sdk_timeout_uses_the_deployment_and_router_fields() {
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"litellm_params": {"timeout": 20}, "router_timeout": 40}"#)
             .unwrap(),
-        20.0
+        20.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"litellm_params": {"request_timeout": 25}, "router_timeout": 40}"#)
             .unwrap(),
-        25.0
+        25.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"router_timeout": 40}"#).unwrap(),
-        40.0
+        40.0_f64,
     );
 }
 
 #[test]
 fn resolve_sdk_timeout_puts_the_stream_levels_first() {
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"stream": true, "stream_timeout": 5, "timeout": 9}}"#)
             .unwrap(),
-        5.0
+        5.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(concat!(
             r#"{"kwargs": {"stream": true}, "litellm_params": {"stream_timeout": 6}, "#,
             r#""router_stream_timeout": 7}"#
         ))
         .unwrap(),
-        6.0
+        6.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"stream": true}, "router_stream_timeout": 7}"#).unwrap(),
-        7.0
+        7.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(
-            r#"{"kwargs": {"stream": true, "timeout": 9}, "router_stream_timeout": 7}"#
+            r#"{"kwargs": {"stream": true, "timeout": 9}, "router_stream_timeout": 7}"#,
         )
         .unwrap(),
-        7.0
+        7.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"stream": false, "stream_timeout": 5, "timeout": 9}}"#)
             .unwrap(),
-        9.0
+        9.0_f64,
     );
 }
 
 #[test]
 fn resolve_sdk_timeout_reads_a_bool_as_seconds() {
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"timeout": true}}"#).unwrap(),
-        1.0
+        1.0_f64,
     );
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"timeout": false}}"#).unwrap(),
-        0.0
+        0.0_f64,
     );
 }
 
@@ -209,9 +213,9 @@ fn resolve_sdk_timeout_names_the_field_of_a_bad_value() {
 
 #[test]
 fn resolve_sdk_timeout_ignores_a_bad_value_in_a_lower_field() {
-    assert_eq!(
+    assert_same_seconds(
         resolve_sdk_timeout(r#"{"kwargs": {"timeout": 3}, "litellm_params": {"timeout": "soon"}}"#)
             .unwrap(),
-        3.0
+        3.0_f64,
     );
 }

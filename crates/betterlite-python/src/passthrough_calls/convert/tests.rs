@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Object;
 use secrecy::ExposeSecret as _;
@@ -109,7 +110,8 @@ fn request_starts_from_no_client_and_the_loose_kwargs() {
     let args = call_args(request, &mut Vec::new()).unwrap();
     assert!(args.client.is_none());
     assert_eq!(args.extra.get("stream"), Some(&json!(true)));
-    assert_eq!(args.extra.get("metadata"), Some(&json!({"k": "v"})));
+    let metadata: JsonValue = serde_json::from_str(r#"{"k": "v"}"#).unwrap();
+    assert_eq!(args.extra.get("metadata"), Some(&metadata));
     assert!(args.content.is_none());
     assert!(args.files.is_none());
     assert!(args.data.is_none());
@@ -166,7 +168,7 @@ fn provider_error(status: u16, body: Option<Object>) -> ProviderError {
 
 #[test]
 fn error_provider_keeps_the_status_message_and_body() {
-    let body = json!({"error": {"message": "bad key"}});
+    let body: JsonValue = serde_json::from_str(r#"{"error": {"message": "bad key"}}"#).unwrap();
     let payload = ErrorPayload::provider(
         &provider_error(401, body.as_object().cloned()),
         "vllm",
@@ -174,12 +176,13 @@ fn error_provider_keeps_the_status_message_and_body() {
     );
     let text = serde_json::to_value(&payload).unwrap();
     assert_eq!(text["type"], json!("APIError"));
-    assert_eq!(text["status_code"], json!(401));
+    assert_eq!(text["status_code"], json!(401_i32));
     assert_eq!(text["message"], json!("Invalid API key"));
     assert_eq!(text["llm_provider"], json!("vllm"));
     assert_eq!(text["model"], json!("vllm/m"));
     assert_eq!(text["body"], body);
-    assert_eq!(text["headers"], json!({"x-request-id": "r1"}));
+    let expected_headers: JsonValue = serde_json::from_str(r#"{"x-request-id": "r1"}"#).unwrap();
+    assert_eq!(text["headers"], expected_headers);
 }
 
 #[test]
@@ -192,7 +195,8 @@ fn error_upstream_reports_the_status_headers_and_body() {
     assert_eq!(payload.kind, "APIError");
     assert_eq!(payload.status_code, Some(404));
     assert_eq!(payload.message, r#"{"error": "missing"}"#);
-    assert_eq!(payload.body, Some(json!({"error": "missing"})));
+    let expected_body: JsonValue = serde_json::from_str(r#"{"error": "missing"}"#).unwrap();
+    assert_eq!(payload.body, Some(expected_body));
     assert_eq!(payload.headers.unwrap()["content-type"], "application/json");
 }
 
