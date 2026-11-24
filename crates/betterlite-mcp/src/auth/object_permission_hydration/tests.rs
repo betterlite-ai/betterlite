@@ -11,6 +11,7 @@ use thiserror::Error;
 use super::reads::{
     CachedLink, EndUserEntitlement, ObjectPermission, ObjectPermissionReads, OrgPermissionLink,
 };
+use super::record::McpAuth;
 
 mod agent_tests;
 mod grants_tests;
@@ -198,6 +199,20 @@ fn grants_of(names: &[&str]) -> Vec<String> {
 
 fn expected(entries: &[&str]) -> Vec<String> {
     entries.iter().map(|entry| String::from(*entry)).collect()
+}
+
+// a base with every key named: the ast-grep rules refuse ..McpAuth::default() in a literal
+fn mcp_auth() -> McpAuth {
+    McpAuth {
+        user_id: None,
+        team_id: None,
+        org_id: None,
+        end_user_id: None,
+        agent_id: None,
+        object_permission_id: None,
+        object_permission: None,
+        requires_fresh_policy: false,
+    }
 }
 
 fn auth_from_json(json: &str) -> UserAPIKeyAuth {

@@ -6,7 +6,7 @@ use super::super::grants::{
     union_tool_grants,
 };
 use super::super::record::{MCP_ALL_TOOLS_WILDCARD, McpAuth};
-use super::{FakeReads, Scripted, expected, grants_of, row, row_with_toolsets};
+use super::{FakeReads, Scripted, expected, grants_of, mcp_auth, row, row_with_toolsets};
 
 #[tokio::test]
 async fn toolset_grants_are_empty_without_a_row_or_declared_toolsets() {
@@ -197,7 +197,7 @@ async fn a_key_relation_with_toolsets_declares_them() {
     };
     let auth = McpAuth {
         object_permission: Some(row_with_toolsets("op", &["ts-1"])),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(key_or_team_declares_toolsets(&reads, Some(&auth)).await);
     assert!(reads.calls().is_empty());
@@ -208,7 +208,7 @@ async fn a_key_without_toolsets_and_without_a_team_declares_nothing() {
     let reads = FakeReads::standard();
     let auth = McpAuth {
         object_permission: Some(row("op")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(!key_or_team_declares_toolsets(&reads, Some(&auth)).await);
     assert!(reads.calls().is_empty());
@@ -222,7 +222,7 @@ async fn an_unhydrated_key_is_loaded_before_the_toolset_check() {
     };
     let auth = McpAuth {
         object_permission_id: Some(String::from("op-key")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(key_or_team_declares_toolsets(&reads, Some(&auth)).await);
     assert_eq!(
@@ -235,7 +235,7 @@ async fn an_unhydrated_key_is_loaded_before_the_toolset_check() {
 async fn a_team_declares_its_toolsets() {
     let auth = McpAuth {
         team_id: Some(String::from("t1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let declaring = FakeReads {
         team: Scripted::Value(Some(row_with_toolsets("op-team", &["ts-1"]))),
@@ -259,7 +259,7 @@ async fn a_team_declares_its_toolsets() {
     let dashboard = FakeReads::standard();
     let ui_auth = McpAuth {
         team_id: Some(String::from("litellm-dashboard")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(!key_or_team_declares_toolsets(&dashboard, Some(&ui_auth)).await);
     assert_eq!(dashboard.calls(), expected(&["has_database"]));
@@ -273,7 +273,7 @@ async fn faults_declare_nothing() {
     };
     let key_record = McpAuth {
         object_permission_id: Some(String::from("op-key")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(!key_or_team_declares_toolsets(&key_fault, Some(&key_record)).await);
 
@@ -283,7 +283,7 @@ async fn faults_declare_nothing() {
     };
     let team_record = McpAuth {
         team_id: Some(String::from("t1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(!key_or_team_declares_toolsets(&team_fault, Some(&team_record)).await);
     assert_eq!(

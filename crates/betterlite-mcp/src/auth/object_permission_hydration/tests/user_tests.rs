@@ -2,7 +2,7 @@ use super::super::error::{USER_POLICY_UNAVAILABLE_STATUS, UserPermissionError};
 use super::super::principal::user_object_permission;
 use super::super::reads::CachedLink;
 use super::super::record::McpAuth;
-use super::{FakeReads, Scripted, expected, row};
+use super::{FakeReads, Scripted, expected, mcp_auth, row};
 
 #[tokio::test]
 async fn user_permission_is_none_without_a_user_or_a_database() {
@@ -21,7 +21,7 @@ async fn user_permission_is_none_without_a_user_or_a_database() {
     };
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         user_object_permission(&offline, &auth)
@@ -37,7 +37,7 @@ async fn user_permission_is_none_when_the_user_links_none() {
     let reads = FakeReads::standard();
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         user_object_permission(&reads, &auth)
@@ -66,7 +66,7 @@ async fn user_permission_loads_the_linked_row() {
     };
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         user_object_permission(&reads, &auth).await.unwrap(),
@@ -94,7 +94,7 @@ async fn user_permission_uses_a_cached_link_without_a_row_read() {
     };
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         user_object_permission(&reads, &auth).await.unwrap(),
@@ -119,7 +119,7 @@ async fn user_permission_returns_none_for_the_cached_sentinel() {
     };
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         user_object_permission(&reads, &auth)
@@ -142,7 +142,7 @@ async fn user_permission_treats_a_cached_non_string_as_a_miss() {
     };
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let outcome = user_object_permission(&reads, &auth).await.unwrap();
     assert_eq!(outcome.unwrap().object_permission_id, "op-user");
@@ -165,7 +165,7 @@ async fn user_permission_skips_the_cache_when_the_policy_must_be_fresh() {
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
         requires_fresh_policy: true,
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         user_object_permission(&reads, &auth).await.unwrap(),
@@ -187,7 +187,7 @@ async fn user_permission_skips_the_cache_when_the_policy_must_be_fresh() {
 async fn user_permission_answers_none_on_a_link_or_cache_fault() {
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let link_fault = FakeReads {
         user_link: Scripted::Fault,
@@ -216,7 +216,7 @@ async fn user_permission_answers_none_on_a_link_or_cache_fault() {
 async fn user_permission_answers_none_when_the_cache_write_fails() {
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let write_fault = FakeReads {
         user_link: Scripted::Value(Some(String::from("op-user"))),
@@ -247,7 +247,7 @@ async fn user_permission_answers_503_when_a_fresh_link_or_cache_write_fails() {
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
         requires_fresh_policy: true,
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let link_fault = FakeReads {
         user_link: Scripted::Fault,
@@ -281,7 +281,7 @@ async fn user_permission_is_a_value_error_when_the_named_row_is_absent() {
     };
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let error = user_object_permission(&reads, &auth).await.unwrap_err();
     assert!(matches!(&error, UserPermissionError::Missing { .. }));
@@ -300,7 +300,7 @@ async fn user_permission_propagates_a_permission_read_fault() {
     };
     let auth = McpAuth {
         user_id: Some(String::from("u1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let error = user_object_permission(&reads, &auth).await.unwrap_err();
     assert!(matches!(&error, UserPermissionError::Read { .. }));

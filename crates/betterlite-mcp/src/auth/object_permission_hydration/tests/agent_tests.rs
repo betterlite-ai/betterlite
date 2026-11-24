@@ -5,7 +5,7 @@ use super::super::principal::{
 };
 use super::super::reads::CachedLink;
 use super::super::record::McpAuth;
-use super::{FakeReads, Scripted, expected, row};
+use super::{FakeReads, Scripted, expected, mcp_auth, row};
 
 #[tokio::test]
 async fn agent_id_prefers_a_cached_sentinel_or_id_over_the_row() {
@@ -129,7 +129,7 @@ async fn agent_permission_is_none_without_an_agent_or_a_database() {
     };
     let auth = McpAuth {
         agent_id: Some(String::from("a1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         named_object_permission(&offline, &auth, NamedPrincipal::Agent)
@@ -145,7 +145,7 @@ async fn agent_permission_is_none_when_the_agent_links_none() {
     let reads = FakeReads::standard();
     let auth = McpAuth {
         agent_id: Some(String::from("a1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         named_object_permission(&reads, &auth, NamedPrincipal::Agent)
@@ -175,7 +175,7 @@ async fn agent_permission_loads_the_linked_row_with_the_fresh_flag() {
     let auth = McpAuth {
         agent_id: Some(String::from("a1")),
         requires_fresh_policy: true,
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         named_object_permission(&reads, &auth, NamedPrincipal::Agent)
@@ -197,7 +197,7 @@ async fn agent_permission_loads_the_linked_row_with_the_fresh_flag() {
 async fn agent_permission_is_unloadable_when_the_named_row_is_absent_or_unreadable() {
     let auth = McpAuth {
         agent_id: Some(String::from("a1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let absent = FakeReads {
         cached: Scripted::Value(Some(CachedLink::Id(String::from("op-agent")))),

@@ -7,7 +7,7 @@ use super::super::principal::{
 };
 use super::super::reads::{EndUserEntitlement, ObjectPermission, OrgPermissionLink};
 use super::super::record::McpAuth;
-use super::{FakeReads, Scripted, StoreDown, auth_from_json, expected, row};
+use super::{FakeReads, Scripted, StoreDown, auth_from_json, expected, mcp_auth, row};
 
 #[tokio::test]
 async fn load_named_returns_the_row_and_passes_the_fresh_flag() {
@@ -89,7 +89,7 @@ async fn team_permission_is_none_without_a_team_a_database_or_a_real_team() {
     };
     let auth = McpAuth {
         team_id: Some(String::from("t1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         team_object_permission(&offline, &auth)
@@ -102,7 +102,7 @@ async fn team_permission_is_none_without_a_team_a_database_or_a_real_team() {
     let dashboard = FakeReads::standard();
     let ui_auth = McpAuth {
         team_id: Some(String::from("litellm-dashboard")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         team_object_permission(&dashboard, &ui_auth)
@@ -122,7 +122,7 @@ async fn team_permission_returns_the_hydrated_row_with_the_fresh_flag() {
     let auth = McpAuth {
         team_id: Some(String::from("t1")),
         requires_fresh_policy: true,
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         team_object_permission(&reads, &auth).await.unwrap(),
@@ -142,7 +142,7 @@ async fn key_permission_returns_the_preloaded_relation_without_a_read() {
     };
     let auth = McpAuth {
         object_permission: Some(row("op-loaded")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         key_object_permission_hydrated(&reads, &auth).await.unwrap(),
@@ -168,7 +168,7 @@ async fn key_permission_is_none_without_an_id_or_a_database() {
     };
     let auth = McpAuth {
         object_permission_id: Some(String::from("op-key")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         key_object_permission_hydrated(&offline, &auth)
@@ -187,7 +187,7 @@ async fn key_permission_loads_the_named_row_with_the_fresh_flag() {
     };
     let auth = McpAuth {
         object_permission_id: Some(String::from("op-key")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         key_object_permission_hydrated(&reads, &auth).await.unwrap(),
@@ -205,7 +205,7 @@ async fn key_permission_loads_the_named_row_with_the_fresh_flag() {
     let fresh_auth = McpAuth {
         object_permission_id: Some(String::from("op-key")),
         requires_fresh_policy: true,
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         key_object_permission_hydrated(&fresh, &fresh_auth)
@@ -232,7 +232,7 @@ async fn org_permission_is_none_without_an_org_a_database_or_a_named_row() {
 
     let auth = McpAuth {
         org_id: Some(String::from("o1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let offline = FakeReads {
         database: false,
@@ -269,7 +269,7 @@ async fn org_permission_loads_the_named_row_with_the_fresh_flag() {
     let auth = McpAuth {
         org_id: Some(String::from("o1")),
         requires_fresh_policy: true,
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         named_object_permission(&reads, &auth, NamedPrincipal::Org)
@@ -291,7 +291,7 @@ async fn org_permission_loads_the_named_row_with_the_fresh_flag() {
 async fn org_permission_is_unloadable_when_the_named_row_is_absent_or_unreadable() {
     let auth = McpAuth {
         org_id: Some(String::from("o1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let absent = FakeReads {
         org: Scripted::Value(OrgPermissionLink::Named(String::from("op-org"))),
@@ -323,7 +323,7 @@ async fn org_permission_propagates_a_link_read_fault() {
     };
     let auth = McpAuth {
         org_id: Some(String::from("o1")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let error = named_object_permission(&reads, &auth, NamedPrincipal::Org)
         .await
@@ -344,7 +344,7 @@ async fn end_user_permission_is_none_without_an_id_a_row_or_a_named_permission()
 
     let auth = McpAuth {
         end_user_id: Some(String::from("eu")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let absent = FakeReads::standard();
     assert!(
@@ -379,7 +379,7 @@ async fn end_user_permission_swallows_a_lookup_fault() {
     };
     let auth = McpAuth {
         end_user_id: Some(String::from("eu")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert!(
         named_object_permission(&reads, &auth, NamedPrincipal::EndUser)
@@ -402,7 +402,7 @@ async fn end_user_permission_prefers_the_loaded_relation() {
     };
     let auth = McpAuth {
         end_user_id: Some(String::from("eu")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         named_object_permission(&reads, &auth, NamedPrincipal::EndUser)
@@ -426,7 +426,7 @@ async fn end_user_permission_loads_the_named_row() {
     let auth = McpAuth {
         end_user_id: Some(String::from("eu")),
         requires_fresh_policy: true,
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     assert_eq!(
         named_object_permission(&reads, &auth, NamedPrincipal::EndUser)
@@ -444,7 +444,7 @@ async fn end_user_permission_loads_the_named_row() {
 async fn end_user_permission_is_unloadable_when_the_named_row_is_absent_or_unreadable() {
     let auth = McpAuth {
         end_user_id: Some(String::from("eu")),
-        ..McpAuth::default()
+        ..mcp_auth()
     };
     let absent = FakeReads {
         end_user: Scripted::Value(Some(EndUserEntitlement {
