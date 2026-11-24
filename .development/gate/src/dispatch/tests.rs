@@ -682,14 +682,13 @@ fn no_start_moves_while_the_other_vendor_is_full_or_at_its_limit() {
             .map(|link| link.rung.model.clone())
     };
     let openai = hold_seats(folder.path(), "openai", 12);
-    // a worker start takes a writer seat first, so holding every Claude writer seat fills Claude
-    let writers = agents
+    let seats = agents
         .vendors
         .iter()
         .find(|vendor| vendor.id == "anthropic")
-        .and_then(|vendor| vendor.max_writers)
+        .and_then(|vendor| vendor.max_parallel)
         .unwrap();
-    let anthropic = hold_seats(folder.path(), "anthropic-writer", writers);
+    let anthropic = hold_seats(folder.path(), "anthropic", seats);
     assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(anthropic);
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
