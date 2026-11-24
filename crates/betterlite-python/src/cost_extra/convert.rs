@@ -1,10 +1,11 @@
-use betterlite_core::cost::realtime::Event;
-use betterlite_models::cost_breakdown::CostBreakdown;
+use betterlite_core::cost::realtime::{Event, transcription::TranscriptionCostRequest};
 use betterlite_models::decisions::Json;
-use betterlite_models::ocr_pricing::OcrUsage;
+use betterlite_models::duration_cost::video::VideoCostRequest;
+use betterlite_models::image_cost::default_calculator::DefaultImageCostRequest;
+use betterlite_models::ocr_pricing::{OcrBatchUsage, OcrBilling, OcrResponseKind, OcrUsage};
 use betterlite_models::price_lookup::PriceRecord;
 use betterlite_openai::api::rerank_contracts::records::RerankBilledUnits;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::cost::convert::{Amount, optional};
 
@@ -14,34 +15,32 @@ mod tests;
 
 use usage::UsageWire;
 
+// The calculators read borrowed request structs; one field list per wire type builds each of them.
+macro_rules! calculator_request {
+    ($wire:ident => $target:ident, $request:ident { $($field:ident: $value:expr),+ $(,)? }) => {
+        impl $wire {
+            pub(crate) fn calculator($request: &Self) -> $target<'_> { $target { $($field: $value),+ } }
+        }
+    };
+}
+
+// Both OCR entry points take a model, its provider, LiteLLM's OCRUsageInfo and a deployment's own prices.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OcrCostRequest {
+pub(crate) struct OcrRequest {
     pub(crate) model: String,
     pub(crate) custom_llm_provider: Option<String>,
     pub(crate) usage: Option<OcrUsageWire>,
     pub(crate) model_info: Option<PriceRecord>,
 }
 
-// Both OCR entry points take LiteLLM's OCRUsageInfo: every counter is optional and absent means zero.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+// Every counter of LiteLLM's OCRUsageInfo is optional and absent means zero; other counters go unread.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub(crate) struct OcrUsageWire {
-    #[serde(default)]
     pub(crate) credits: Option<Amount>,
-    #[serde(default)]
     pub(crate) pages_processed: Option<i64>,
-    #[serde(default)]
     pub(crate) pages_processed_annotation: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct OcrBatchRequest {
-    pub(crate) model: String,
-    pub(crate) custom_llm_provider: Option<String>,
-    pub(crate) usage: OcrUsageWire,
-    pub(crate) model_info: Option<PriceRecord>,
 }
 
 impl From<&OcrUsageWire> for OcrUsage {
@@ -50,6 +49,25 @@ impl From<&OcrUsageWire> for OcrUsage {
             credits: optional(wire.credits),
             pages_processed: wire.pages_processed,
             pages_processed_annotation: wire.pages_processed_annotation.unwrap_or(0),
+        }
+    }
+}
+
+impl OcrRequest {
+    pub(crate) fn billing(&self) -> OcrBilling {
+        OcrBilling {
+            kind: OcrResponseKind::Ocr,
+            usage: self.usage.as_ref().map(OcrUsage::from),
+        }
+    }
+
+    pub(crate) fn batch_usage(&self) -> OcrBatchUsage {
+        let usage = self.usage.as_ref();
+        OcrBatchUsage {
+            pages_processed: usage.and_then(|fields| fields.pages_processed).unwrap_or(0),
+            pages_processed_annotation: usage
+                .and_then(|fields| fields.pages_processed_annotation)
+                .unwrap_or(0),
         }
     }
 }
@@ -157,14 +175,22 @@ pub(crate) struct RealtimeTranscriptionWire {
     pub(crate) custom_pricing_model: Option<String>,
 }
 
-// What a realtime handler answers: the session cost and the breakdown LiteLLM stores on its logging object.
-#[derive(Debug, Serialize)]
-pub(crate) struct RealtimeCostAnswer<'answer> {
-    pub(crate) cost: Amount,
-    pub(crate) breakdown: Option<&'answer CostBreakdown>,
-}
+calculator_request!(ImageRequest => DefaultImageCostRequest, wire {
+    model: &wire.model, custom_llm_provider: wire.custom_llm_provider.as_deref(),
+    quality: wire.quality.as_deref(), n_images: wire.n, size: wire.size.as_deref(),
+    model_info: wire.model_info.as_ref(),
+});
 
-#[derive(Debug, Serialize)]
-pub(crate) struct CostAnswer {
-    pub(crate) cost: Amount,
-}
+calculator_request!(VideoRequest => VideoCostRequest, wire {
+    model: &wire.model, duration_seconds: wire.duration_seconds.0,
+    custom_llm_provider: wire.custom_llm_provider.as_deref(),
+    model_info: wire.model_info.as_ref(), video_resolution: wire.video_resolution.as_deref(),
+});
+
+calculator_request!(RealtimeTranscriptionWire => TranscriptionCostRequest, wire {
+    results: &wire.results, custom_llm_provider: &wire.custom_llm_provider,
+    litellm_model_name: &wire.litellm_model_name,
+    custom_pricing_model: wire.custom_pricing_model.as_deref(),
+});
+
+pub(crate) type Pair = (Amount, Amount);

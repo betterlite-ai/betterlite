@@ -7,39 +7,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::cost::convert::{Amount, optional};
 
-// The usage a Python Usage object carries: its three counters, the two detail objects and any numeric extra.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+// The usage a Python Usage object carries: its counters, both detail objects and any extra, which travels flat.
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct UsageWire {
     pub(crate) prompt_tokens: i64,
     pub(crate) completion_tokens: i64,
     pub(crate) total_tokens: i64,
     pub(crate) prompt_tokens_details: Option<PromptDetailsWire>,
     pub(crate) completion_tokens_details: Option<CompletionDetailsWire>,
+    #[serde(flatten)]
     pub(crate) numeric_extras: BTreeMap<String, UsageNumberView>,
-}
-
-impl UsageWire {
-    pub(crate) fn usage(&self) -> Usage {
-        Usage {
-            prompt_tokens: self.prompt_tokens,
-            completion_tokens: self.completion_tokens,
-            total_tokens: self.total_tokens,
-            prompt_tokens_details: self
-                .prompt_tokens_details
-                .as_ref()
-                .map(PromptTokensDetails::from),
-            completion_tokens_details: self
-                .completion_tokens_details
-                .as_ref()
-                .map(CompletionTokensDetails::from),
-            numeric_extras: self
-                .numeric_extras
-                .iter()
-                .map(|(name, number)| (name.clone(), number.number()))
-                .collect(),
-        }
-    }
 }
 
 // Every counter LiteLLM's prompt wrapper declares; the wrapper allows extras, so unknown keys are ignored.
@@ -81,119 +58,6 @@ pub(crate) struct CompletionDetailsWire {
     pub(crate) rejected_prediction_tokens: Option<i64>,
 }
 
-impl From<&PromptDetailsWire> for PromptTokensDetails {
-    fn from(wire: &PromptDetailsWire) -> Self {
-        Self {
-            text_tokens: wire.text_tokens,
-            audio_tokens: wire.audio_tokens,
-            image_tokens: wire.image_tokens,
-            video_tokens: wire.video_tokens,
-            web_search_requests: wire.web_search_requests,
-            google_maps_grounding_requests: wire.google_maps_grounding_requests,
-            tool_use_tokens: wire.tool_use_tokens,
-            character_count: wire.character_count,
-            image_count: wire.image_count,
-            video_length_seconds: optional(wire.video_length_seconds),
-            audio_length_seconds: optional(wire.audio_length_seconds),
-            query_count: wire.query_count,
-            cache_write_tokens: wire.cache_write_tokens,
-            cache_creation_tokens: wire.cache_creation_tokens,
-            cached_tokens: wire.cached_tokens,
-            cached_tokens_details: wire
-                .cached_tokens_details
-                .as_ref()
-                .map(CachedTokensDetails::from),
-        }
-    }
-}
-
-impl From<&PromptTokensDetails> for PromptDetailsWire {
-    fn from(details: &PromptTokensDetails) -> Self {
-        Self {
-            text_tokens: details.text_tokens,
-            audio_tokens: details.audio_tokens,
-            image_tokens: details.image_tokens,
-            video_tokens: details.video_tokens,
-            web_search_requests: details.web_search_requests,
-            google_maps_grounding_requests: details.google_maps_grounding_requests,
-            tool_use_tokens: details.tool_use_tokens,
-            character_count: details.character_count,
-            image_count: details.image_count,
-            video_length_seconds: details.video_length_seconds.map(Amount),
-            audio_length_seconds: details.audio_length_seconds.map(Amount),
-            query_count: details.query_count,
-            cache_write_tokens: details.cache_write_tokens,
-            cache_creation_tokens: details.cache_creation_tokens,
-            cached_tokens: details.cached_tokens,
-            cached_tokens_details: details
-                .cached_tokens_details
-                .as_ref()
-                .map(CachedDetailsWire::from),
-        }
-    }
-}
-
-impl From<&CachedDetailsWire> for CachedTokensDetails {
-    fn from(wire: &CachedDetailsWire) -> Self {
-        Self {
-            text_tokens: wire.text_tokens,
-            audio_tokens: wire.audio_tokens,
-            image_tokens: wire.image_tokens,
-        }
-    }
-}
-
-impl From<&CachedTokensDetails> for CachedDetailsWire {
-    fn from(details: &CachedTokensDetails) -> Self {
-        Self {
-            text_tokens: details.text_tokens,
-            audio_tokens: details.audio_tokens,
-            image_tokens: details.image_tokens,
-        }
-    }
-}
-
-impl From<&CompletionDetailsWire> for CompletionTokensDetails {
-    fn from(wire: &CompletionDetailsWire) -> Self {
-        Self {
-            text_tokens: wire.text_tokens,
-            audio_tokens: wire.audio_tokens,
-            image_tokens: wire.image_tokens,
-            video_tokens: wire.video_tokens,
-            reasoning_tokens: wire.reasoning_tokens,
-            accepted_prediction_tokens: wire.accepted_prediction_tokens,
-            rejected_prediction_tokens: wire.rejected_prediction_tokens,
-        }
-    }
-}
-
-impl From<&CompletionTokensDetails> for CompletionDetailsWire {
-    fn from(details: &CompletionTokensDetails) -> Self {
-        Self {
-            text_tokens: details.text_tokens,
-            audio_tokens: details.audio_tokens,
-            image_tokens: details.image_tokens,
-            video_tokens: details.video_tokens,
-            reasoning_tokens: details.reasoning_tokens,
-            accepted_prediction_tokens: details.accepted_prediction_tokens,
-            rejected_prediction_tokens: details.rejected_prediction_tokens,
-        }
-    }
-}
-
-// The combined usage as LiteLLM's Usage model reads it back, aliases and numeric extras included.
-#[derive(Debug, Serialize)]
-pub(crate) struct UsageView {
-    pub(crate) prompt_tokens: i64,
-    pub(crate) completion_tokens: i64,
-    pub(crate) total_tokens: i64,
-    pub(crate) prompt_tokens_details: Option<PromptDetailsWire>,
-    pub(crate) completion_tokens_details: Option<CompletionDetailsWire>,
-    // LiteLLM's combined Usage carries an extra as a plain attribute, so the answer spells them flat.
-    #[serde(flatten)]
-    pub(crate) numeric_extras: BTreeMap<String, UsageNumberView>,
-}
-
 // One usage extra both ways: an int, an exact decimal or a flag, as LiteLLM's numeric attributes allow.
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -213,29 +77,6 @@ impl UsageNumberView {
     }
 }
 
-impl From<&Usage> for UsageView {
-    fn from(usage: &Usage) -> Self {
-        Self {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
-            prompt_tokens_details: usage
-                .prompt_tokens_details
-                .as_ref()
-                .map(PromptDetailsWire::from),
-            completion_tokens_details: usage
-                .completion_tokens_details
-                .as_ref()
-                .map(CompletionDetailsWire::from),
-            numeric_extras: usage
-                .numeric_extras
-                .iter()
-                .map(|(name, number)| (name.clone(), UsageNumberView::from(number)))
-                .collect(),
-        }
-    }
-}
-
 impl From<&UsageNumber> for UsageNumberView {
     fn from(number: &UsageNumber) -> Self {
         match number {
@@ -245,3 +86,90 @@ impl From<&UsageNumber> for UsageNumberView {
         }
     }
 }
+
+// The wire details and the model details name the same counters, so one field list drives both ways.
+macro_rules! mirrored_details {
+    ($wire:ident <=> $details:ident { $($field:ident),+ $(,)? }) => {
+        impl From<&$wire> for $details {
+            fn from(wire: &$wire) -> Self { Self { $($field: wire.$field),+ } }
+        }
+        impl From<&$details> for $wire {
+            fn from(details: &$details) -> Self { Self { $($field: details.$field),+ } }
+        }
+    };
+}
+
+// Prompt details also carry two exact durations and the nested cache counters.
+macro_rules! mirrored_prompt_details {
+    ($($field:ident),+ ; seconds $($seconds:ident),+ ; nested $nested:ident $(,)?) => {
+        impl From<&PromptDetailsWire> for PromptTokensDetails {
+            fn from(wire: &PromptDetailsWire) -> Self {
+                Self { $($field: wire.$field,)+ $($seconds: optional(wire.$seconds),)+
+                    $nested: wire.$nested.as_ref().map(CachedTokensDetails::from) }
+            }
+        }
+        impl From<&PromptTokensDetails> for PromptDetailsWire {
+            fn from(details: &PromptTokensDetails) -> Self {
+                Self { $($field: details.$field,)+ $($seconds: details.$seconds.map(Amount),)+
+                    $nested: details.$nested.as_ref().map(CachedDetailsWire::from) }
+            }
+        }
+    };
+}
+
+// The wire and the model share these field names; only how the extras carry differs.
+macro_rules! usage_bridge {
+    ($source:ident => $target:ident, prompt $prompt:path, completion $completion:path, extra $extra:path $(,)?) => {
+        impl From<&$source> for $target {
+            fn from(source: &$source) -> Self {
+                Self {
+                    prompt_tokens: source.prompt_tokens,
+                    completion_tokens: source.completion_tokens,
+                    total_tokens: source.total_tokens,
+                    prompt_tokens_details: source.prompt_tokens_details.as_ref().map($prompt),
+                    completion_tokens_details: source
+                        .completion_tokens_details
+                        .as_ref()
+                        .map($completion),
+                    numeric_extras: source
+                        .numeric_extras
+                        .iter()
+                        .map(|(name, number)| (name.clone(), $extra(number)))
+                        .collect(),
+                }
+            }
+        }
+    };
+}
+
+mirrored_details!(CachedDetailsWire <=> CachedTokensDetails {
+    text_tokens, audio_tokens, image_tokens,
+});
+
+mirrored_details!(CompletionDetailsWire <=> CompletionTokensDetails {
+    text_tokens, audio_tokens, image_tokens, video_tokens, reasoning_tokens,
+    accepted_prediction_tokens, rejected_prediction_tokens,
+});
+
+mirrored_prompt_details!(
+    text_tokens, audio_tokens, image_tokens, video_tokens, web_search_requests,
+    google_maps_grounding_requests, tool_use_tokens, character_count, image_count,
+    query_count, cache_write_tokens, cache_creation_tokens, cached_tokens;
+    seconds video_length_seconds, audio_length_seconds;
+    nested cached_tokens_details
+);
+
+usage_bridge!(
+    UsageWire => Usage,
+    prompt PromptTokensDetails::from,
+    completion CompletionTokensDetails::from,
+    extra UsageNumberView::number
+);
+
+// The combined usage as LiteLLM's Usage model reads it back: the same wire, extras included.
+usage_bridge!(
+    Usage => UsageWire,
+    prompt PromptDetailsWire::from,
+    completion CompletionDetailsWire::from,
+    extra UsageNumberView::from
+);

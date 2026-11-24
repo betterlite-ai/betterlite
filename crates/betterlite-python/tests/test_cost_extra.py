@@ -1,6 +1,6 @@
 import importlib
 import inspect
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from inspect import Signature
 from typing import Final, Protocol, TypeAlias
 
@@ -97,6 +97,14 @@ class DetailsView(TypedDict, total=False):
     text_tokens: int
 
 
+class ImageArgs(TypedDict):
+    model: str
+    quality: str | None
+    n: int | None
+    size: str | None
+    model_info: dict[str, JsonValue] | None
+
+
 class DumpView(TypedDict):
     prompt_tokens: int
     completion_tokens: int
@@ -171,6 +179,13 @@ REFERENCE_VECTOR_RESPONSE: Final[dict[str, JsonValue]] = {
     "data": [],
 }
 DALL_E_INFO: Final[dict[str, JsonValue]] = {"input_cost_per_image": DALL_E_PRICE}
+DALL_E_ARGS: Final[ImageArgs] = {
+    "model": DALL_E_MODEL,
+    "quality": "standard",
+    "n": DALL_E_IMAGES,
+    "size": IMAGE_SIZE,
+    "model_info": DALL_E_INFO,
+}
 PAGES: Final[list[OCRPage]] = []
 REFERENCE_PAGES: Final[list[JsonValue]] = []
 REALTIME_USAGE: Final[dict[str, JsonValue]] = {
@@ -323,6 +338,126 @@ def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
     )
 
 
+def compare_pair(ours: tuple[float, float], reference: JsonValue) -> None:
+    expected = PAIR.validate_python(reference)
+    assert_pair_matches(ours, expected)
+
+
+def compare_float(ours: float, reference: JsonValue) -> None:
+    expected = FLOAT.validate_python(reference)
+    assert ours == pytest.approx(expected, rel=RELATIVE)
+
+
+def compare_usages(ours: Sequence[Usage], reference: Sequence[ReferenceUsage]) -> None:
+    assert [usage_counts(usage) for usage in ours] == [
+        usage_counts(usage) for usage in reference
+    ]
+
+
+def assert_realtime_counts(usage: Usage) -> None:
+    counts = usage_counts(usage)
+    assert counts["cached_tokens"] == REALTIME_CACHED_TOKENS
+    assert counts["prompt_audio_tokens"] == REALTIME_AUDIO_TOKENS
+
+
+BATCH_USAGE: Final[OCRUsageInfo] = OCRUsageInfo(
+    pages_processed=OCR_BATCH_PAGES, pages_processed_annotation=OCR_ANNOTATION_PAGES
+)
+REFERENCE_BATCH_USAGE: Final = REFERENCE_OCR.OCRUsageInfo(
+    pages_processed=OCR_BATCH_PAGES, pages_processed_annotation=OCR_ANNOTATION_PAGES
+)
+COMBINED_USAGES: Final[list[Usage]] = [
+    our_usage(REALTIME_PROMPT_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL),
+    our_usage(REALTIME_COMPLETION_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL),
+]
+REFERENCE_COMBINED_USAGES: Final[list[ReferenceUsage]] = [
+    reference_usage(REALTIME_PROMPT_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL),
+    reference_usage(
+        REALTIME_COMPLETION_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL
+    ),
+]
+REFERENCE_COMBINED_USAGE: Final = (
+    REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects(
+        REFERENCE_COMBINED_USAGES
+    )
+)
+COMBINED_REALTIME_USAGE: Final = (
+    RealtimeAPITokenUsageProcessor.collect_and_combine_usage_from_realtime_stream_results(
+        REALTIME_EVENTS
+    )
+)
+REFERENCE_REALTIME_USAGES: Final = (
+    REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
+    .collect_usage_from_realtime_stream_results([REALTIME_USAGE])
+)
+REFERENCE_COMBINED_REALTIME_USAGE: Final = (
+    REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
+    .collect_and_combine_usage_from_realtime_stream_results(REALTIME_EVENTS)
+)
+REFERENCE_WS_USAGES: Final = (
+    REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+    .collect_usage_from_responses_ws_results(WS_EVENTS)
+)
+REFERENCE_WS_COMBINED: Final = (
+    REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+    .collect_and_combine_usage_from_responses_ws_results(WS_EVENTS)
+)
+REFERENCE_WS_PARTITION: Final = (
+    REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+    .partition_results_by_service_tier(WS_EVENTS)
+)
+REFERENCE_OCR_PAIR: Final = REFERENCE.ocr_cost(
+    model=OCR_MODEL, custom_llm_provider=None, response=reference_ocr(OCR_PAGES)
+)
+REFERENCE_OCR_BATCH_PAIR: Final = REFERENCE.ocr_batch_cost(
+    model=OCR_MODEL, custom_llm_provider=None, usage_info=REFERENCE_BATCH_USAGE
+)
+REFERENCE_VECTOR_PAIR: Final = REFERENCE.vector_store_search_cost(
+    model=VECTOR_MODEL, custom_llm_provider=VERTEX, response=REFERENCE_VECTOR_RESPONSE
+)
+REFERENCE_RERANK_PAIR: Final = REFERENCE.rerank_cost(
+    model=RERANK_MODEL, custom_llm_provider=COHERE, billed_units=REFERENCE_RERANK_UNITS
+)
+REFERENCE_TRANSCRIPTION_PAIR: Final = REFERENCE.transcription_cost(
+    model=TRANSCRIPTION_MODEL, custom_llm_provider=None, duration=TRANSCRIPTION_SECONDS
+)
+REFERENCE_IMAGE_DEFAULT: Final = REFERENCE.default_image_cost_calculator(model=IMAGE_MODEL)
+REFERENCE_IMAGE_SIZED: Final = REFERENCE.default_image_cost_calculator(
+    model=SIZED_IMAGE_MODEL, quality=IMAGE_QUALITY, size=IMAGE_WIDE_SIZE
+)
+REFERENCE_IMAGE_INFO: Final = REFERENCE.default_image_cost_calculator(**DALL_E_ARGS)
+REFERENCE_VIDEO_DURATION: Final = REFERENCE.default_video_cost_calculator(
+    model=VIDEO_MODEL, duration_seconds=VIDEO_SECONDS, custom_llm_provider=VERTEX
+)
+REFERENCE_VIDEO_RESOLUTION: Final = REFERENCE.default_video_cost_calculator(
+    model=VIDEO_MODEL,
+    duration_seconds=VIDEO_SECONDS,
+    custom_llm_provider=VERTEX,
+    video_resolution=VIDEO_RESOLUTION,
+)
+REFERENCE_BATCH_PAIR: Final = REFERENCE.batch_cost_calculator(
+    usage=ReferenceUsage(
+        prompt_tokens=BATCH_PROMPT_TOKENS,
+        completion_tokens=BATCH_COMPLETION_TOKENS,
+        total_tokens=BATCH_PROMPT_TOKENS + BATCH_COMPLETION_TOKENS,
+    ),
+    model=BATCH_MODEL,
+    custom_llm_provider=OPENAI,
+    data_residency=EU_RESIDENCY,
+)
+REFERENCE_REALTIME_COST: Final = REFERENCE.handle_realtime_stream_cost_calculation(
+    results=REALTIME_EVENTS,
+    combined_usage_object=REFERENCE_COMBINED_REALTIME_USAGE,
+    custom_llm_provider=OPENAI,
+    litellm_model_name=REALTIME_MODEL,
+)
+REFERENCE_TRANSCRIPTION_COST: Final = REFERENCE.handle_realtime_transcription_cost_calculation(
+    results=TRANSCRIPTION_EVENTS,
+    custom_llm_provider=OPENAI,
+    litellm_model_name=TRANSCRIPTION_MODEL,
+)
+
+
 def test_cost_extra_signatures() -> None:
     assert signature_rows(inspect.signature(ocr_cost)) == signature_rows(
         inspect.signature(REFERENCE.ocr_cost)
@@ -354,122 +489,55 @@ def test_cost_extra_signatures() -> None:
 
 
 def test_ocr_cost_pages() -> None:
-    ours = ocr_cost(OCR_MODEL, None, our_ocr(OCR_PAGES))
-    reference = PAIR.validate_python(
-        REFERENCE.ocr_cost(
-            model=OCR_MODEL, custom_llm_provider=None, response=reference_ocr(OCR_PAGES)
-        )
-    )
-    assert_pair_matches(ours, reference)
+    compare_pair(ocr_cost(OCR_MODEL, None, our_ocr(OCR_PAGES)), REFERENCE_OCR_PAIR)
 
 
 def test_ocr_batch_cost_pages() -> None:
-    usage = OCRUsageInfo(
-        pages_processed=OCR_BATCH_PAGES, pages_processed_annotation=OCR_ANNOTATION_PAGES
+    compare_pair(
+        ocr_batch_cost(OCR_MODEL, None, BATCH_USAGE), REFERENCE_OCR_BATCH_PAIR
     )
-    ours = ocr_batch_cost(OCR_MODEL, None, usage)
-    reference = PAIR.validate_python(
-        REFERENCE.ocr_batch_cost(
-            model=OCR_MODEL,
-            custom_llm_provider=None,
-            usage_info=REFERENCE_OCR.OCRUsageInfo(
-                pages_processed=OCR_BATCH_PAGES,
-                pages_processed_annotation=OCR_ANNOTATION_PAGES,
-            ),
-        )
-    )
-    assert_pair_matches(ours, reference)
 
 
 def test_vector_store_cost_vertex() -> None:
     ours = vector_store_search_cost(VECTOR_MODEL, VERTEX, VECTOR_RESPONSE)
-    reference = PAIR.validate_python(
-        REFERENCE.vector_store_search_cost(
-            model=VECTOR_MODEL,
-            custom_llm_provider=VERTEX,
-            response=REFERENCE_VECTOR_RESPONSE,
-        )
-    )
-    assert_pair_matches(ours, reference)
+    compare_pair(ours, REFERENCE_VECTOR_PAIR)
     assert ours[0] > ZERO
 
 
 def test_rerank_cost_units() -> None:
     ours = rerank_cost(RERANK_MODEL, COHERE, RERANK_UNITS)
-    reference = PAIR.validate_python(
-        REFERENCE.rerank_cost(
-            model=RERANK_MODEL,
-            custom_llm_provider=COHERE,
-            billed_units=REFERENCE_RERANK_UNITS,
-        )
-    )
-    assert_pair_matches(ours, reference)
+    compare_pair(ours, REFERENCE_RERANK_PAIR)
     assert ours[0] > ZERO
 
 
 def test_transcription_duration() -> None:
     ours = transcription_cost(TRANSCRIPTION_MODEL, None, TRANSCRIPTION_SECONDS)
-    reference = PAIR.validate_python(
-        REFERENCE.transcription_cost(
-            model=TRANSCRIPTION_MODEL,
-            custom_llm_provider=None,
-            duration=TRANSCRIPTION_SECONDS,
-        )
-    )
-    assert_pair_matches(ours, reference)
+    compare_pair(ours, REFERENCE_TRANSCRIPTION_PAIR)
     assert ours[1] > ZERO
 
 
 def test_image_cost_defaults() -> None:
     ours = default_image_cost_calculator(model=IMAGE_MODEL)
-    reference = FLOAT.validate_python(
-        REFERENCE.default_image_cost_calculator(model=IMAGE_MODEL)
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    compare_float(ours, REFERENCE_IMAGE_DEFAULT)
 
 
 def test_image_cost_quality_size() -> None:
     ours = default_image_cost_calculator(
         model=SIZED_IMAGE_MODEL, quality=IMAGE_QUALITY, size=IMAGE_WIDE_SIZE
     )
-    reference = FLOAT.validate_python(
-        REFERENCE.default_image_cost_calculator(
-            model=SIZED_IMAGE_MODEL, quality=IMAGE_QUALITY, size=IMAGE_WIDE_SIZE
-        )
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    compare_float(ours, REFERENCE_IMAGE_SIZED)
 
 
 def test_image_cost_model_info() -> None:
-    ours = default_image_cost_calculator(
-        model=DALL_E_MODEL,
-        quality="standard",
-        n=DALL_E_IMAGES,
-        size=IMAGE_SIZE,
-        model_info=DALL_E_INFO,
-    )
-    reference = FLOAT.validate_python(
-        REFERENCE.default_image_cost_calculator(
-            model=DALL_E_MODEL,
-            quality="standard",
-            n=DALL_E_IMAGES,
-            size=IMAGE_SIZE,
-            model_info=DALL_E_INFO,
-        )
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    ours = default_image_cost_calculator(**DALL_E_ARGS)
+    compare_float(ours, REFERENCE_IMAGE_INFO)
 
 
 def test_video_cost_duration() -> None:
     ours = default_video_cost_calculator(
         model=VIDEO_MODEL, duration_seconds=VIDEO_SECONDS, custom_llm_provider=VERTEX
     )
-    reference = FLOAT.validate_python(
-        REFERENCE.default_video_cost_calculator(
-            model=VIDEO_MODEL, duration_seconds=VIDEO_SECONDS, custom_llm_provider=VERTEX
-        )
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    compare_float(ours, REFERENCE_VIDEO_DURATION)
     assert ours > ZERO
 
 
@@ -480,15 +548,7 @@ def test_video_cost_resolution() -> None:
         custom_llm_provider=VERTEX,
         video_resolution=VIDEO_RESOLUTION,
     )
-    reference = FLOAT.validate_python(
-        REFERENCE.default_video_cost_calculator(
-            model=VIDEO_MODEL,
-            duration_seconds=VIDEO_SECONDS,
-            custom_llm_provider=VERTEX,
-            video_resolution=VIDEO_RESOLUTION,
-        )
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    compare_float(ours, REFERENCE_VIDEO_RESOLUTION)
 
 
 def test_batch_cost_eu_residency() -> None:
@@ -498,44 +558,13 @@ def test_batch_cost_eu_residency() -> None:
         custom_llm_provider=OPENAI,
         data_residency=EU_RESIDENCY,
     )
-    reference = PAIR.validate_python(
-        REFERENCE.batch_cost_calculator(
-            usage=ReferenceUsage(
-                prompt_tokens=BATCH_PROMPT_TOKENS,
-                completion_tokens=BATCH_COMPLETION_TOKENS,
-                total_tokens=BATCH_PROMPT_TOKENS + BATCH_COMPLETION_TOKENS,
-            ),
-            model=BATCH_MODEL,
-            custom_llm_provider=OPENAI,
-            data_residency=EU_RESIDENCY,
-        )
-    )
-    assert_pair_matches(ours, reference)
+    compare_pair(ours, REFERENCE_BATCH_PAIR)
     assert ours[0] > ZERO
 
 
 def test_processor_combines() -> None:
-    ours = BaseTokenUsageProcessor.combine_usage_objects(
-        [
-            our_usage(REALTIME_PROMPT_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL),
-            our_usage(
-                REALTIME_COMPLETION_TOKENS,
-                REALTIME_COMPLETION_TOKENS,
-                CACHED_TOKENS_PER_CALL,
-            ),
-        ]
-    )
-    reference = REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects(
-        [
-            reference_usage(
-                REALTIME_PROMPT_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL
-            ),
-            reference_usage(
-                REALTIME_COMPLETION_TOKENS, REALTIME_COMPLETION_TOKENS, CACHED_TOKENS_PER_CALL
-            ),
-        ]
-    )
-    assert usage_counts(ours) == usage_counts(reference)
+    ours = BaseTokenUsageProcessor.combine_usage_objects(COMBINED_USAGES)
+    compare_usages([ours], [REFERENCE_COMBINED_USAGE])
     assert usage_counts(ours)["prompt_tokens"] == (
         REALTIME_PROMPT_TOKENS + REALTIME_COMPLETION_TOKENS
     )
@@ -544,83 +573,41 @@ def test_processor_combines() -> None:
 def test_processor_empty() -> None:
     ours = BaseTokenUsageProcessor.combine_usage_objects([])
     reference = REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects([])
-    assert usage_counts(ours) == usage_counts(reference)
+    compare_usages([ours], [reference])
 
 
 def test_processor_realtime() -> None:
     ours = RealtimeAPITokenUsageProcessor.collect_usage_from_realtime_stream_results(
         [REALTIME_USAGE]
     )
-    reference = (
-        REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
-        .collect_usage_from_realtime_stream_results([REALTIME_USAGE])
-    )
-    assert len(ours) == len(reference)
-    assert usage_counts(ours[0]) == usage_counts(reference[0])
-    assert usage_counts(ours[0])["cached_tokens"] == REALTIME_CACHED_TOKENS
-    assert usage_counts(ours[0])["prompt_audio_tokens"] == REALTIME_AUDIO_TOKENS
+    compare_usages(ours, REFERENCE_REALTIME_USAGES)
+    assert_realtime_counts(ours[0])
 
 
 def test_processor_ws_collects() -> None:
-    ours = WsUsageProcessor.collect_usage_from_responses_ws_results(
-        WS_EVENTS
+    compare_usages(
+        WsUsageProcessor.collect_usage_from_responses_ws_results(WS_EVENTS),
+        REFERENCE_WS_USAGES,
     )
-    reference = (
-        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
-        .collect_usage_from_responses_ws_results(WS_EVENTS)
-    )
-    assert len(ours) == len(reference)
-    assert [usage_counts(usage) for usage in ours] == [
-        usage_counts(usage) for usage in reference
-    ]
 
 
 def test_processor_ws_combines() -> None:
-    ours = (
-        WsUsageProcessor.collect_and_combine_usage_from_responses_ws_results(WS_EVENTS)
-    )
-    reference = (
-        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
-        .collect_and_combine_usage_from_responses_ws_results(WS_EVENTS)
-    )
-    assert usage_counts(ours) == usage_counts(reference)
+    ours = WsUsageProcessor.collect_and_combine_usage_from_responses_ws_results(WS_EVENTS)
+    compare_usages([ours], [REFERENCE_WS_COMBINED])
 
 
 def test_processor_ws_partitions() -> None:
     ours = WsUsageProcessor.partition_results_by_service_tier(WS_EVENTS)
-    reference = (
-        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
-        .partition_results_by_service_tier(WS_EVENTS)
-    )
-    assert set(ours) == set(reference)
-    for tier, events in ours.items():
-        assert list(events) == list(reference[tier])
+    assert dict(ours) == {
+        tier: tuple(events) for tier, events in REFERENCE_WS_PARTITION.items()
+    }
 
 
 def test_realtime_cost_audio() -> None:
-    combined = (
-        RealtimeAPITokenUsageProcessor
-        .collect_and_combine_usage_from_realtime_stream_results(REALTIME_EVENTS)
-    )
     ours = realtime_stream_cost(
-        results=REALTIME_EVENTS,
-        combined_usage_object=combined,
-        custom_llm_provider=OPENAI,
-        litellm_model_name=REALTIME_MODEL,
+        REALTIME_EVENTS, COMBINED_REALTIME_USAGE, OPENAI, REALTIME_MODEL
     )
-    reference_combined = (
-        REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
-        .collect_and_combine_usage_from_realtime_stream_results(REALTIME_EVENTS)
-    )
-    reference = FLOAT.validate_python(
-        REFERENCE.handle_realtime_stream_cost_calculation(
-            results=REALTIME_EVENTS,
-            combined_usage_object=reference_combined,
-            custom_llm_provider=OPENAI,
-            litellm_model_name=REALTIME_MODEL,
-        )
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    compare_float(ours, REFERENCE_REALTIME_COST)
     assert ours > ZERO
 
 
@@ -628,14 +615,7 @@ def test_realtime_transcription() -> None:
     ours = handle_realtime_transcription_cost_calculation(
         TRANSCRIPTION_EVENTS, OPENAI, TRANSCRIPTION_MODEL
     )
-    reference = FLOAT.validate_python(
-        REFERENCE.handle_realtime_transcription_cost_calculation(
-            results=TRANSCRIPTION_EVENTS,
-            custom_llm_provider=OPENAI,
-            litellm_model_name=TRANSCRIPTION_MODEL,
-        )
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    compare_float(ours, REFERENCE_TRANSCRIPTION_COST)
     assert ours > ZERO
 
 

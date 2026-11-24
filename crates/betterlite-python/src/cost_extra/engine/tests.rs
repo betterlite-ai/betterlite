@@ -9,12 +9,12 @@ use betterlite_models::ocr_pricing::OcrCostError;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use crate::cost::convert::parse;
+use crate::cost::convert::{Amount, parse};
 use crate::cost::settings::{Settings, SettingsError, SettingsWire};
 use crate::cost_extra::convert::{
-    BatchRequest, CollectUsageRequest, CombineUsageRequest, ImageRequest, OcrBatchRequest,
-    OcrCostRequest, PartitionUsageRequest, RealtimeCostWire, RealtimeTranscriptionWire,
-    RerankRequest, TranscriptionRequest, VectorStoreRequest, VideoRequest,
+    BatchRequest, CollectUsageRequest, CombineUsageRequest, ImageRequest, OcrRequest,
+    PartitionUsageRequest, RealtimeCostWire, RealtimeTranscriptionWire, RerankRequest,
+    TranscriptionRequest, VectorStoreRequest, VideoRequest,
 };
 use crate::cost_extra::engine::Engine;
 use crate::cost_extra::engine::support::{collect_usage, combine_usage, partition_usage};
@@ -131,27 +131,27 @@ where
 
 #[test]
 fn cost_extra_engine_prices_ocr_pages_annotation_and_credits() {
-    let pages: OcrCostRequest = request(
+    let pages: OcrRequest = request(
         r#"{"model": "ocr-test", "custom_llm_provider": "mistral",
             "usage": {"credits": null, "pages_processed": 5, "pages_processed_annotation": 2},
             "model_info": null}"#,
     );
     assert_eq!(
         engine().ocr_cost(&pages).expect("the pages are priced"),
-        dec("0.009")
+        (Amount(dec("0.009")), Amount(Decimal::ZERO))
     );
 
-    let credits: OcrCostRequest = request(
+    let credits: OcrRequest = request(
         r#"{"model": "ocr-credit-test", "custom_llm_provider": "mistral",
             "usage": {"credits": 3, "pages_processed": 5, "pages_processed_annotation": 0},
             "model_info": null}"#,
     );
     assert_eq!(
         engine().ocr_cost(&credits).expect("the credits are priced"),
-        dec("0.03")
+        (Amount(dec("0.03")), Amount(Decimal::ZERO))
     );
 
-    let missing: OcrCostRequest = request(
+    let missing: OcrRequest = request(
         r#"{"model": "ocr-test", "custom_llm_provider": "mistral",
             "usage": {"credits": null, "pages_processed": null, "pages_processed_annotation": 0},
             "model_info": null}"#,
@@ -164,7 +164,7 @@ fn cost_extra_engine_prices_ocr_pages_annotation_and_credits() {
 
 #[test]
 fn cost_extra_engine_bills_ocr_batches_at_the_batch_rate() {
-    let batch: OcrBatchRequest = request(
+    let batch: OcrRequest = request(
         r#"{"model": "ocr-test", "custom_llm_provider": "mistral",
             "usage": {"pages_processed": 4, "pages_processed_annotation": 2},
             "model_info": null}"#,
@@ -173,10 +173,10 @@ fn cost_extra_engine_bills_ocr_batches_at_the_batch_rate() {
         engine()
             .ocr_batch_cost(&batch)
             .expect("the batch pages are priced"),
-        dec("0.006")
+        (Amount(dec("0.006")), Amount(Decimal::ZERO))
     );
 
-    let deployment: OcrBatchRequest = request(
+    let deployment: OcrRequest = request(
         r#"{"model": "unlisted-ocr", "custom_llm_provider": "mistral",
             "usage": {"pages_processed": 4, "pages_processed_annotation": 0},
             "model_info": {"ocr_cost_per_page_batches": 0.25}}"#,
@@ -185,7 +185,7 @@ fn cost_extra_engine_bills_ocr_batches_at_the_batch_rate() {
         engine()
             .ocr_batch_cost(&deployment)
             .expect("the deployment pages are priced"),
-        dec("1")
+        (Amount(dec("1")), Amount(Decimal::ZERO))
     );
 }
 
@@ -199,7 +199,7 @@ fn cost_extra_engine_prices_only_the_vertex_search_api() {
         engine()
             .vector_store_cost(&search)
             .expect("the search is priced"),
-        (dec("0.0015"), Decimal::ZERO)
+        (Amount(dec("0.0015")), Amount(Decimal::ZERO))
     );
 
     let rag: VectorStoreRequest = request(
@@ -209,7 +209,7 @@ fn cost_extra_engine_prices_only_the_vertex_search_api() {
         engine()
             .vector_store_cost(&rag)
             .expect("the rag query is free"),
-        (Decimal::ZERO, Decimal::ZERO)
+        (Amount(Decimal::ZERO), Amount(Decimal::ZERO))
     );
 
     let defaulted: VectorStoreRequest =
@@ -218,7 +218,7 @@ fn cost_extra_engine_prices_only_the_vertex_search_api() {
         engine()
             .vector_store_cost(&defaulted)
             .expect("openai declares no vector price"),
-        (Decimal::ZERO, Decimal::ZERO)
+        (Amount(Decimal::ZERO), Amount(Decimal::ZERO))
     );
 }
 
@@ -232,7 +232,7 @@ fn cost_extra_engine_prices_rerank_units_by_provider() {
         engine()
             .rerank_cost(&query)
             .expect("the query units are priced"),
-        (dec("0.004"), Decimal::ZERO)
+        (Amount(dec("0.004")), Amount(Decimal::ZERO))
     );
 
     let absent: RerankRequest = request(
@@ -242,7 +242,7 @@ fn cost_extra_engine_prices_rerank_units_by_provider() {
         engine()
             .rerank_cost(&absent)
             .expect("no units price nothing"),
-        (Decimal::ZERO, Decimal::ZERO)
+        (Amount(Decimal::ZERO), Amount(Decimal::ZERO))
     );
 
     let voyage: RerankRequest = request(
@@ -253,7 +253,7 @@ fn cost_extra_engine_prices_rerank_units_by_provider() {
         engine()
             .rerank_cost(&voyage)
             .expect("voyage bills the tokens"),
-        (dec("0.001"), Decimal::ZERO)
+        (Amount(dec("0.001")), Amount(Decimal::ZERO))
     );
 
     let jina: RerankRequest = request(
@@ -262,7 +262,7 @@ fn cost_extra_engine_prices_rerank_units_by_provider() {
     );
     assert_eq!(
         engine().rerank_cost(&jina).expect("jina bills the tokens"),
-        (dec("0.001"), Decimal::ZERO)
+        (Amount(dec("0.001")), Amount(Decimal::ZERO))
     );
 }
 
@@ -274,7 +274,7 @@ fn cost_extra_engine_prices_a_transcription_duration() {
         engine()
             .transcription_cost(&output)
             .expect("the seconds are priced"),
-        (Decimal::ZERO, dec("0.00025"))
+        (Amount(Decimal::ZERO), Amount(dec("0.00025")))
     );
 
     let prompt: TranscriptionRequest = request(
@@ -284,7 +284,7 @@ fn cost_extra_engine_prices_a_transcription_duration() {
         engine()
             .transcription_cost(&prompt)
             .expect("the prompt seconds are priced"),
-        (dec("0.0005"), Decimal::ZERO)
+        (Amount(dec("0.0005")), Amount(Decimal::ZERO))
     );
 }
 
@@ -296,7 +296,7 @@ fn cost_extra_engine_prices_an_image_from_the_map_or_the_deployment() {
     );
     assert_eq!(
         engine().image_cost(&mapped).expect("the images are priced"),
-        dec("1")
+        Amount(dec("1"))
     );
 
     let deployment: ImageRequest = request(
@@ -307,7 +307,7 @@ fn cost_extra_engine_prices_an_image_from_the_map_or_the_deployment() {
         engine()
             .image_cost(&deployment)
             .expect("the deployment pixels are priced"),
-        dec("0.01")
+        Amount(dec("0.01"))
     );
 }
 
@@ -321,7 +321,7 @@ fn cost_extra_engine_prices_a_video_duration() {
         engine()
             .video_cost(&per_video)
             .expect("the per-video rate wins"),
-        dec("3.2")
+        Amount(dec("3.2"))
     );
 
     let per_second: VideoRequest = request(
@@ -332,7 +332,7 @@ fn cost_extra_engine_prices_a_video_duration() {
         engine()
             .video_cost(&per_second)
             .expect("the resolution rate prices"),
-        dec("0.8")
+        Amount(dec("0.8"))
     );
 }
 
@@ -340,13 +340,13 @@ fn cost_extra_engine_prices_a_video_duration() {
 fn cost_extra_engine_halves_the_batch_rate_without_batch_prices() {
     let request: BatchRequest = request(
         r#"{"usage": {"prompt_tokens": 1000, "completion_tokens": 500, "total_tokens": 1500,
-            "prompt_tokens_details": null, "completion_tokens_details": null, "numeric_extras": {}},
+            "prompt_tokens_details": null, "completion_tokens_details": null},
             "model": "batch-test", "custom_llm_provider": "openai", "model_info": null,
             "data_residency": null}"#,
     );
     assert_eq!(
         engine().batch_cost(&request).expect("the half rate prices"),
-        (dec("0.00125"), dec("0.0025"))
+        (Amount(dec("0.00125")), Amount(dec("0.0025")))
     );
 }
 
@@ -354,7 +354,7 @@ fn cost_extra_engine_halves_the_batch_rate_without_batch_prices() {
 fn cost_extra_engine_applies_the_batch_rates_and_the_regional_uplift() {
     let request: BatchRequest = request(
         r#"{"usage": {"prompt_tokens": 1000, "completion_tokens": 500, "total_tokens": 1500,
-            "prompt_tokens_details": null, "completion_tokens_details": null, "numeric_extras": {}},
+            "prompt_tokens_details": null, "completion_tokens_details": null},
             "model": "batch-rate-test", "custom_llm_provider": "openai", "model_info": null,
             "data_residency": "eu"}"#,
     );
@@ -362,7 +362,7 @@ fn cost_extra_engine_applies_the_batch_rates_and_the_regional_uplift() {
         engine()
             .batch_cost(&request)
             .expect("the batch rates price"),
-        (dec("0.0011"), dec("0.0011"))
+        (Amount(dec("0.0011")), Amount(dec("0.0011")))
     );
 }
 
@@ -380,7 +380,7 @@ fn cost_extra_engine_combines_usage_and_keeps_the_cache_aliases() {
                                        "image_count": null, "video_length_seconds": null,
                                        "audio_length_seconds": null, "query_count": null,
                                        "cache_write_tokens": 3, "cached_tokens_details": null},
-             "completion_tokens_details": null, "numeric_extras": {"requests": 2}},
+             "completion_tokens_details": null, "requests": 2},
             {"prompt_tokens": 20, "completion_tokens": 7, "total_tokens": 27,
              "prompt_tokens_details": {"text_tokens": 19, "cached_tokens": 1,
                                        "cache_creation_tokens": null, "audio_tokens": 0,
@@ -396,7 +396,7 @@ fn cost_extra_engine_combines_usage_and_keeps_the_cache_aliases() {
                                            "video_tokens": null,
                                            "accepted_prediction_tokens": null,
                                            "rejected_prediction_tokens": null},
-             "numeric_extras": {"requests": 5}}
+             "requests": 5}
         ]}"#,
     );
     let combined = combine_usage(&request).expect("the usages combine");
@@ -470,14 +470,14 @@ fn cost_extra_engine_prices_a_realtime_session() {
     let tokens: RealtimeCostWire = request(
         r#"{"results": [], "combined_usage": {"prompt_tokens": 100, "completion_tokens": 20,
             "total_tokens": 120, "prompt_tokens_details": null,
-            "completion_tokens_details": null, "numeric_extras": {}},
+            "completion_tokens_details": null},
             "custom_llm_provider": "openai", "litellm_model_name": "realtime-test",
             "data_residency": null, "custom_pricing_model": null, "base_pricing_model": null}"#,
     );
     let (cost, breakdown) = engine()
         .realtime_cost(&tokens)
         .expect("the session is priced");
-    assert_eq!(cost, dec("0.0014"));
+    assert_eq!(cost.0, dec("0.0014"));
     assert!(breakdown.is_some());
 
     let transcribed: RealtimeCostWire = request(
@@ -488,14 +488,14 @@ fn cost_extra_engine_prices_a_realtime_session() {
              "usage": {"type": "duration", "seconds": 2.5}}
         ], "combined_usage": {"prompt_tokens": 100, "completion_tokens": 20,
             "total_tokens": 120, "prompt_tokens_details": null,
-            "completion_tokens_details": null, "numeric_extras": {}},
+            "completion_tokens_details": null},
             "custom_llm_provider": "openai", "litellm_model_name": "realtime-test",
             "data_residency": null, "custom_pricing_model": null, "base_pricing_model": null}"#,
     );
-    let (cost, _) = engine()
+    let (cost, _breakdown) = engine()
         .realtime_cost(&transcribed)
         .expect("the session and its transcription are priced");
-    assert_eq!(cost, dec("0.00165"));
+    assert_eq!(cost.0, dec("0.00165"));
 }
 
 #[test]
@@ -511,7 +511,8 @@ fn cost_extra_engine_prices_realtime_transcription_alone() {
     assert_eq!(
         engine()
             .realtime_transcription_cost(&request)
-            .expect("the transcriptions are priced"),
+            .expect("the transcriptions are priced")
+            .0,
         dec("0.00025")
     );
 }

@@ -7,12 +7,12 @@ use betterlite_models::ocr_pricing::OcrUsage;
 use betterlite_models::usage_sum::{Usage, UsageNumber};
 use rust_decimal::Decimal;
 
-use super::usage::{UsageNumberView, UsageView, UsageWire};
+use super::usage::{UsageNumberView, UsageWire};
 use betterlite_core::cost::realtime::Event;
 
 use super::{
-    CollectUsageRequest, CombineUsageRequest, ImageRequest, OcrBatchRequest, OcrCostRequest,
-    OcrUsageWire, RealtimeCostWire, RealtimeTranscriptionWire, RerankRequest, TranscriptionRequest,
+    CollectUsageRequest, CombineUsageRequest, ImageRequest, OcrRequest, OcrUsageWire,
+    RealtimeCostWire, RealtimeTranscriptionWire, RerankRequest, TranscriptionRequest,
     VectorStoreRequest, VideoRequest,
 };
 use crate::cost::convert::{Amount, ConvertError, encode, parse};
@@ -38,7 +38,7 @@ fn cost_extra_request_ocr_usage_leaves_an_absent_annotation_at_zero() {
 
 #[test]
 fn cost_extra_request_rejects_an_unknown_field() {
-    let failure = parse::<OcrCostRequest>(
+    let failure = parse::<OcrRequest>(
         r#"{"model": "m", "custom_llm_provider": null, "usage": null, "model_info": null, "x": 1}"#,
     );
     assert!(matches!(failure, Err(ConvertError::Json { .. })));
@@ -54,7 +54,7 @@ fn cost_extra_request_malformed_text_is_an_error() {
 
 #[test]
 fn cost_extra_request_every_method_shape_parses() {
-    let ocr: OcrCostRequest = parse(
+    let ocr: OcrRequest = parse(
         r#"{"model": "mistral/mistral-ocr-latest", "custom_llm_provider": "mistral",
             "usage": {"credits": null, "pages_processed": 2, "pages_processed_annotation": null},
             "model_info": {"ocr_cost_per_page": 0.001}}"#,
@@ -62,12 +62,18 @@ fn cost_extra_request_every_method_shape_parses() {
     .expect("ocr parses");
     assert_eq!(ocr.model, "mistral/mistral-ocr-latest");
 
-    let batch: OcrBatchRequest = parse(
+    let batch: OcrRequest = parse(
         r#"{"model": "m", "custom_llm_provider": null, "usage": {"pages_processed": 1},
             "model_info": null}"#,
     )
     .expect("the batch ocr parses");
-    assert_eq!(batch.usage.pages_processed_annotation, None);
+    assert_eq!(
+        batch
+            .usage
+            .expect("the batch usage parses")
+            .pages_processed_annotation,
+        None
+    );
 
     let vector: VectorStoreRequest = parse(
         r#"{"model": "vertex_ai/search_api", "custom_llm_provider": "vertex_ai",
@@ -112,7 +118,7 @@ fn cost_extra_request_every_method_shape_parses() {
     let realtime: RealtimeCostWire = parse(
         r#"{"results": [], "combined_usage": {"prompt_tokens": 1, "completion_tokens": 2,
             "total_tokens": 3, "prompt_tokens_details": null,
-            "completion_tokens_details": null, "numeric_extras": {}},
+            "completion_tokens_details": null},
             "custom_llm_provider": "openai", "litellm_model_name": "gpt-realtime",
             "data_residency": null, "custom_pricing_model": null, "base_pricing_model": null}"#,
     )
@@ -139,10 +145,10 @@ fn cost_extra_request_usage_keeps_details_and_numeric_extras() {
             "prompt_tokens_details": {"text_tokens": 6, "cached_tokens": 2,
                                       "cache_write_tokens": 1, "cache_creation_tokens": 1},
             "completion_tokens_details": {"reasoning_tokens": 3},
-            "numeric_extras": {"requests": 2}}"#,
+            "requests": 2}"#,
     )
     .expect("the usage parses");
-    let usage = wire.usage();
+    let usage = Usage::from(&wire);
     let details = usage.prompt_tokens_details.expect("the details parse");
     assert_eq!(details.text_tokens, Some(6));
     assert_eq!(details.cached_tokens, Some(2));
@@ -188,7 +194,7 @@ fn cost_extra_result_usage_view_spells_the_extras_flat() {
         completion_tokens_details: None,
         numeric_extras: extras,
     };
-    let encoded = encode(&UsageView::from(&usage)).expect("the usage answer encodes");
+    let encoded = encode(&UsageWire::from(&usage)).expect("the usage answer encodes");
     assert_eq!(
         encoded,
         r#"{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4,"prompt_tokens_details":null,"completion_tokens_details":null,"byok":true,"requests":2}"#

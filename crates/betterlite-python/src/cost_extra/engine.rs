@@ -1,31 +1,27 @@
 use std::time::SystemTime;
 
-use betterlite_core::cost::batch::batch_cost_per_token;
-use betterlite_core::cost::batch::error::BatchCostError;
+use betterlite_core::cost::batch::{BatchCostRequest, batch_cost_per_token, error::BatchCostError};
 use betterlite_core::cost::completion::reading;
 use betterlite_core::cost::realtime::error::RealtimeCostError;
 use betterlite_core::cost::realtime::pricing::{RealtimeCostRequest, stream_cost};
-use betterlite_core::cost::realtime::transcription::{self, TranscriptionCostRequest};
+use betterlite_core::cost::realtime::transcription;
 use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::duration_cost::error::DurationCostError;
 use betterlite_models::duration_cost::openai_seconds::cost_per_second;
-use betterlite_models::duration_cost::video::{VideoCostRequest, default_video_cost_calculator};
-use betterlite_models::image_cost::default_calculator::{
-    DefaultImageCostRequest, default_image_cost_calculator,
-};
+use betterlite_models::duration_cost::video::default_video_cost_calculator;
+use betterlite_models::image_cost::default_calculator::default_image_cost_calculator;
 use betterlite_models::image_cost::error::ImageCostError;
-use betterlite_models::ocr_pricing::{
-    OcrBatchUsage, OcrBilling, OcrCostError, OcrResponseKind, OcrUsage, ocr_batch_cost, ocr_cost,
-};
-use betterlite_models::resolution::{ResolutionError, ResolutionRequest, resolve};
+use betterlite_models::ocr_pricing::{OcrCostError, ocr_batch_cost, ocr_cost};
+use betterlite_models::resolution::{ResolutionRequest, resolve};
+use betterlite_models::usage_sum::Usage;
 use rust_decimal::Decimal;
 
+use crate::cost::convert::Amount;
 use crate::cost::settings::Settings;
 use crate::cost_extra::convert::{
-    BatchRequest, ImageRequest, OcrBatchRequest, OcrCostRequest, RealtimeCostWire,
-    RealtimeTranscriptionWire, RerankRequest, TranscriptionRequest, VectorStoreRequest,
-    VideoRequest,
+    BatchRequest, ImageRequest, OcrRequest, Pair, RealtimeCostWire, RealtimeTranscriptionWire,
+    RerankRequest, TranscriptionRequest, VectorStoreRequest, VideoRequest,
 };
 use crate::cost_extra::engine::support::{Capture, numeric, prompt_extras};
 use crate::cost_extra::error::{RealtimeFailure, RerankFailure};
@@ -49,44 +45,33 @@ pub(crate) struct Engine {
 }
 
 impl Engine {
-    // ocr_cost: credits first, then the page and annotation families, all read off the layered prices.
-    pub(crate) fn ocr_cost(&self, request: &OcrCostRequest) -> Result<Decimal, OcrCostError> {
-        let billing = OcrBilling {
-            kind: OcrResponseKind::Ocr,
-            usage: request.usage.as_ref().map(OcrUsage::from),
-        };
-        ocr_cost(
-            &request.model,
-            request.custom_llm_provider.as_deref(),
-            &billing,
-            request.model_info.as_ref(),
-            &self.settings.lookup,
-        )
+    pub(crate) fn ocr_cost(&self, request: &OcrRequest) -> Result<(Amount, Amount), OcrCostError> {
+        let billing = request.billing();
+        let info = request.model_info.as_ref();
+        let lookup = &self.settings.lookup;
+        let provider = request.custom_llm_provider.as_deref();
+        ocr_cost(&request.model, provider, &billing, info, lookup)
+            .map(|cost| (Amount(cost), Amount(Decimal::ZERO)))
     }
 
-    pub(crate) fn ocr_batch_cost(
-        &self,
-        request: &OcrBatchRequest,
-    ) -> Result<Decimal, OcrCostError> {
-        let usage = OcrBatchUsage {
-            pages_processed: request.usage.pages_processed.unwrap_or(0),
-            pages_processed_annotation: request.usage.pages_processed_annotation.unwrap_or(0),
-        };
+    pub(crate) fn ocr_batch_cost(&self, request: &OcrRequest) -> Result<Pair, OcrCostError> {
         ocr_batch_cost(
             &request.model,
             request.custom_llm_provider.as_deref(),
-            &usage,
+            &request.batch_usage(),
             request.model_info.as_ref(),
             &self.settings.lookup,
         )
+        .map(|cost| (Amount(cost), Amount(Decimal::ZERO)))
     }
 
-    // vector_store_search_cost: only vertex search_api declares a price, and it is the catalog's own per-query rate.
+    // vector_store_search_cost: only vertex search_api declares a price, and it is the catalog's per-query rate.
     pub(crate) fn vector_store_cost(
         &self,
         request: &VectorStoreRequest,
-    ) -> Result<(Decimal, Decimal), ResolutionError> {
-        let resolution = self.settings.lookup.resolution();
+    ) -> Result<Pair, RerankFailure> {
+        let lookup = &self.settings.lookup;
+        let resolution = lookup.resolution();
         let resolved = request
             .model
             .as_ref()
@@ -103,36 +88,25 @@ impl Engine {
                 )
             })
             .transpose()?;
-        let provider = resolved.as_ref().map_or_else(
-            || {
-                request
-                    .custom_llm_provider
-                    .as_deref()
-                    .unwrap_or(DEFAULT_VECTOR_PROVIDER)
-            },
-            |found| found.provider.slug(),
-        );
+        let fallback = request
+            .custom_llm_provider
+            .as_deref()
+            .unwrap_or(DEFAULT_VECTOR_PROVIDER);
+        let provider = resolved
+            .as_ref()
+            .map_or_else(|| fallback, |found| found.provider.slug());
         let api_type = resolved.as_ref().map(|found| found.model.as_str());
         if provider != VERTEX_PROVIDER || api_type != Some(VERTEX_SEARCH_API) {
-            return Ok((Decimal::ZERO, Decimal::ZERO));
+            return Ok((Amount(Decimal::ZERO), Amount(Decimal::ZERO)));
         }
-        let record = self
-            .settings
-            .lookup
-            .effective_model_info(VERTEX_SEARCH_MODEL, None);
-        let price = match numeric(record.as_ref(), QUERY_RATE)? {
-            Some(found) => found,
-            None => Decimal::ZERO,
-        };
-        Ok((price, Decimal::ZERO))
+        let record = lookup.effective_model_info(VERTEX_SEARCH_MODEL, None);
+        let price = numeric(record.as_ref(), QUERY_RATE)?.unwrap_or_default();
+        Ok((Amount(price), Amount(Decimal::ZERO)))
     }
 
-    // rerank_cost: the provider is resolved again and its own formula reads the billed units.
-    pub(crate) fn rerank_cost(
-        &self,
-        request: &RerankRequest,
-    ) -> Result<(Decimal, Decimal), RerankFailure> {
-        let resolution = self.settings.lookup.resolution();
+    pub(crate) fn rerank_cost(&self, request: &RerankRequest) -> Result<Pair, RerankFailure> {
+        let lookup = &self.settings.lookup;
+        let resolution = lookup.resolution();
         let resolved = resolve(
             &ResolutionRequest {
                 model: &request.model,
@@ -143,58 +117,35 @@ impl Engine {
             &resolution,
         )?;
         let provider = resolved.provider.slug();
-        let record = self
-            .settings
-            .lookup
-            .effective_model_info(&request.model, Some(provider));
-        support::rerank_price(provider, record.as_ref(), request.billed_units.as_ref())
+        let record = lookup.effective_model_info(&request.model, Some(provider));
+        let units = request.billed_units.as_ref();
+        support::rerank_price(provider, record.as_ref(), units)
+            .map(|(prompt, completion)| (Amount(prompt), Amount(completion)))
     }
 
     pub(crate) fn transcription_cost(
         &self,
         request: &TranscriptionRequest,
-    ) -> Result<(Decimal, Decimal), DurationCostError> {
-        cost_per_second(
-            &request.model,
-            request.custom_llm_provider.as_deref(),
-            request.duration.0,
-            &self.settings.lookup,
-        )
+    ) -> Result<(Amount, Amount), DurationCostError> {
+        let provider = request.custom_llm_provider.as_deref();
+        let duration = request.duration.0;
+        let lookup = &self.settings.lookup;
+        cost_per_second(&request.model, provider, duration, lookup)
+            .map(|cost| (Amount(cost), Amount(Decimal::ZERO)))
     }
 
-    pub(crate) fn image_cost(&self, request: &ImageRequest) -> Result<Decimal, ImageCostError> {
-        default_image_cost_calculator(
-            &DefaultImageCostRequest {
-                model: &request.model,
-                custom_llm_provider: request.custom_llm_provider.as_deref(),
-                quality: request.quality.as_deref(),
-                n_images: request.n,
-                size: request.size.as_deref(),
-                model_info: request.model_info.as_ref(),
-            },
-            &self.settings.lookup,
-        )
+    pub(crate) fn image_cost(&self, request: &ImageRequest) -> Result<Amount, ImageCostError> {
+        default_image_cost_calculator(&ImageRequest::calculator(request), &self.settings.lookup)
+            .map(Amount)
     }
 
-    pub(crate) fn video_cost(&self, request: &VideoRequest) -> Result<Decimal, DurationCostError> {
-        default_video_cost_calculator(
-            &VideoCostRequest {
-                model: &request.model,
-                duration_seconds: request.duration_seconds.0,
-                custom_llm_provider: request.custom_llm_provider.as_deref(),
-                model_info: request.model_info.as_ref(),
-                video_resolution: request.video_resolution.as_deref(),
-            },
-            &self.settings.lookup,
-        )
+    pub(crate) fn video_cost(&self, request: &VideoRequest) -> Result<Amount, DurationCostError> {
+        default_video_cost_calculator(&VideoRequest::calculator(request), &self.settings.lookup)
+            .map(Amount)
     }
 
-    // batch_cost_calculator: the batch rates, the half-rate fallback and the regional uplift, in one call.
-    pub(crate) fn batch_cost(
-        &self,
-        request: &BatchRequest,
-    ) -> Result<(Decimal, Decimal), BatchCostError> {
-        let usage = request.usage.usage();
+    pub(crate) fn batch_cost(&self, request: &BatchRequest) -> Result<Pair, BatchCostError> {
+        let usage = Usage::from(&request.usage);
         let cost_usage = CostUsage::from(&usage);
         let extras = prompt_extras(usage.prompt_tokens_details.as_ref());
         let resolution = self.settings.lookup.resolution();
@@ -210,15 +161,14 @@ impl Engine {
             &self.settings.lookup,
             &resolution,
         )?;
-        Ok((priced.prompt_cost, priced.completion_cost))
+        Ok((Amount(priced.prompt_cost), Amount(priced.completion_cost)))
     }
 
-    // handle_realtime_stream_cost_calculation: the session's token costs, its transcription charge and the breakdown.
     pub(crate) fn realtime_cost(
         &self,
         request: &RealtimeCostWire,
-    ) -> Result<(Decimal, Option<CostBreakdown>), RealtimeFailure> {
-        let usage = request.combined_usage.usage();
+    ) -> Result<(Amount, Option<CostBreakdown>), RealtimeFailure> {
+        let usage = Usage::from(&request.combined_usage);
         let mut capture = Capture::default();
         let cost = stream_cost(
             &RealtimeCostRequest {
@@ -235,22 +185,15 @@ impl Engine {
             &self.settings.database,
             Some(&mut capture),
         )?;
-        Ok((cost, capture.breakdown))
+        Ok((Amount(cost), capture.breakdown))
     }
 
-    // handle_realtime_transcription_cost_calculation: each completed transcription event bills on its own.
     pub(crate) fn realtime_transcription_cost(
         &self,
         request: &RealtimeTranscriptionWire,
-    ) -> Result<Decimal, RealtimeCostError> {
-        transcription::cost(
-            &TranscriptionCostRequest {
-                results: &request.results,
-                custom_llm_provider: &request.custom_llm_provider,
-                litellm_model_name: &request.litellm_model_name,
-                custom_pricing_model: request.custom_pricing_model.as_deref(),
-            },
-            &self.settings.lookup,
-        )
+    ) -> Result<Amount, RealtimeCostError> {
+        let events = RealtimeTranscriptionWire::calculator(request);
+        let cost = transcription::cost(&events, &self.settings.lookup)?;
+        Ok(Amount(cost))
     }
 }

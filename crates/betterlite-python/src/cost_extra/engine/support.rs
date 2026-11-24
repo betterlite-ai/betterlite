@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use betterlite_core::cost::realtime::error::RealtimeCostError;
-use betterlite_core::cost::realtime::{Event, realtime_stream, responses_ws};
+use betterlite_core::cost::realtime::{
+    Event, error::RealtimeCostError, realtime_stream, responses_ws,
+};
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::cost_usage::modality_projection::CachedTokenCounters;
@@ -15,7 +16,6 @@ use betterlite_openai::api::rerank_contracts::records::RerankBilledUnits;
 use rust_decimal::Decimal;
 
 use crate::cost_extra::convert::UsageSource;
-use crate::cost_extra::convert::usage::UsageWire;
 use crate::cost_extra::convert::{CollectUsageRequest, CombineUsageRequest, PartitionUsageRequest};
 use crate::cost_extra::error::RerankFailure;
 
@@ -64,12 +64,13 @@ impl CostBreakdownTarget for Capture {
 
 // combine_usage_objects: every counter and detail summed, an empty list giving LiteLLM's default usage.
 pub(crate) fn combine_usage(request: &CombineUsageRequest) -> Result<Usage, UsageSumError> {
-    let usages = request
-        .usages
-        .iter()
-        .map(UsageWire::usage)
-        .collect::<Vec<Usage>>();
-    usage_sum(&usages)
+    usage_sum(
+        &request
+            .usages
+            .iter()
+            .map(Usage::from)
+            .collect::<Vec<Usage>>(),
+    )
 }
 
 // The two collect_usage methods differ only in the event types they bill.
@@ -85,9 +86,8 @@ pub(crate) fn collect_usage(
 pub(crate) fn partition_usage(
     request: &PartitionUsageRequest,
 ) -> Result<Vec<(Option<String>, Vec<Event>)>, RealtimeCostError> {
-    Ok(responses_ws::partition_by_service_tier(&request.results)?
-        .into_iter()
-        .collect())
+    responses_ws::partition_by_service_tier(&request.results)
+        .map(|tiers| tiers.into_iter().collect())
 }
 
 // Ports jina's and voyage's rerank override; every other provider bills the query units.
