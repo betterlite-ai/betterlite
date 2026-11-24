@@ -1,5 +1,7 @@
-use betterlite_interactions::types::json::{Json as InteractionJson, Object as InteractionObject};
+use betterlite_interactions::types::json::Object as InteractionObject;
 use betterlite_interactions::types::response::InteractionsStreamChunk;
+
+use crate::api::responses_transform::response::{model_output_step, text_record};
 
 // _build_interaction_start_event: pydantic's default object is "interaction", and only this event and the completion carry id and model.
 #[must_use]
@@ -25,7 +27,7 @@ pub fn content_start_event() -> InteractionsStreamChunk {
 pub fn text_delta_event(text: &str) -> InteractionsStreamChunk {
     let mut event = chunk_with("step.delta");
     event.index = Some(0_i64);
-    event.delta = Some(text_object(text));
+    event.delta = Some(text_record(text));
     event
 }
 
@@ -44,7 +46,7 @@ pub fn completion_event(interaction_id: &str, model: &str, text: &str) -> Intera
     event.id = Some(interaction_id.to_owned());
     event.model = Some(model.to_owned());
     event.status = Some(String::from("completed"));
-    event.steps = Some(vec![model_output_step(vec![text_object(text)])]);
+    event.steps = Some(vec![model_output_step(vec![text_record(text)])]);
     event
 }
 
@@ -70,27 +72,4 @@ fn chunk_with(event_type: &str) -> InteractionsStreamChunk {
         extra: InteractionObject::new(),
         hidden_params: InteractionObject::new(),
     }
-}
-
-fn text_object(text: &str) -> InteractionObject {
-    let mut object = InteractionObject::new();
-    object.insert(
-        String::from("type"),
-        InteractionJson::Text(String::from("text")),
-    );
-    object.insert(String::from("text"), InteractionJson::Text(text.to_owned()));
-    object
-}
-
-fn model_output_step(content: Vec<InteractionObject>) -> InteractionObject {
-    let mut step = InteractionObject::new();
-    step.insert(
-        String::from("type"),
-        InteractionJson::Text(String::from("model_output")),
-    );
-    step.insert(
-        String::from("content"),
-        InteractionJson::List(content.into_iter().map(InteractionJson::Object).collect()),
-    );
-    step
 }
