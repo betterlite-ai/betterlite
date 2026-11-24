@@ -84,10 +84,8 @@ pub(super) fn provider_of<'model>(
     model: &'model str,
     custom_llm_provider: Option<&'model str>,
 ) -> &'model str {
-    match custom_llm_provider {
-        Some(provider) => provider,
-        None => model.split_once('/').map_or("", |(prefix, _rest)| prefix),
-    }
+    custom_llm_provider
+        .unwrap_or_else(|| model.split_once('/').map_or("", |(prefix, _rest)| prefix))
 }
 
 pub(super) fn class_failure(class: ErrorClass, headers: Vec<(String, String)>) -> NativeFailure {
