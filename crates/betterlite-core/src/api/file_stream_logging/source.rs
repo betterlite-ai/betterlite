@@ -34,13 +34,6 @@ pub enum StreamError {
     CleanupAborted { message: String },
 }
 
-impl StreamError {
-    // The source error wins unless a failure callback raised first
-    pub(super) fn from_failure(error: ErrorClass, logged: Result<(), Self>) -> Self {
-        logged.err().unwrap_or(Self::Source { failure: error })
-    }
-}
-
 impl From<CallbackFailure> for StreamError {
     fn from(failure: CallbackFailure) -> Self {
         Self::Callback { failure }

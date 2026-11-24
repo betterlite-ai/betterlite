@@ -267,7 +267,10 @@ impl StreamLogging {
             return StreamError::Cancelled;
         };
         let logged = self.log_failure_sync(error.clone());
-        StreamError::from_failure(error, logged)
+        // The source error wins unless a failure callback raised first
+        logged
+            .err()
+            .unwrap_or(StreamError::Source { failure: error })
     }
 
     async fn fail_async(&mut self, failure: SourceFailure) -> StreamError {
@@ -275,6 +278,9 @@ impl StreamLogging {
             return StreamError::Cancelled;
         };
         let logged = self.log_failure_async(error.clone()).await;
-        StreamError::from_failure(error, logged)
+        // The source error wins unless a failure callback raised first
+        logged
+            .err()
+            .unwrap_or(StreamError::Source { failure: error })
     }
 }
