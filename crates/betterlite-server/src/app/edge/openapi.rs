@@ -13,11 +13,13 @@ use thiserror::Error;
 
 mod tests;
 
+const DEPLOYMENTS_CHAT_PATH: &str = "/openai/deployments/{model}/chat/completions";
+
 const CHAT_COMPLETION_PATHS: [&str; 4] = [
     "/v1/chat/completions",
     "/chat/completions",
     "/engines/{model}/chat/completions",
-    "/openai/deployments/{model}/chat/completions",
+    DEPLOYMENTS_CHAT_PATH,
 ];
 
 const EMBEDDING_PATHS: [&str; 4] = [
@@ -94,18 +96,25 @@ fn document_bytes(server_root_path: &str, title: &str) -> Result<Bytes, Document
 fn llm_routes() -> Vec<RouteDoc> {
     let mut routes = Vec::with_capacity(11);
     for path in CHAT_COMPLETION_PATHS {
-        routes.push(post_route(path, "chat_completion", "chat/completions"));
+        // LiteLLM decorates the deployments alias with ERROR_RESPONSES and no other alias
+        let with_errors = path == DEPLOYMENTS_CHAT_PATH;
+        routes.push(post_route(
+            path,
+            "chat_completion",
+            "chat/completions",
+            with_errors,
+        ));
     }
     for path in EMBEDDING_PATHS {
-        routes.push(post_route(path, "embeddings", "embeddings"));
+        routes.push(post_route(path, "embeddings", "embeddings", false));
     }
     for path in RESPONSES_API_PATHS {
-        routes.push(post_route(path, "responses_api", "responses"));
+        routes.push(post_route(path, "responses_api", "responses", false));
     }
     routes
 }
 
-fn post_route(path: &str, operation: &str, category: &str) -> RouteDoc {
+fn post_route(path: &str, operation: &str, category: &str, error_responses: bool) -> RouteDoc {
     RouteDoc {
         path: path.to_owned(),
         method: "POST".to_owned(),
@@ -114,7 +123,7 @@ fn post_route(path: &str, operation: &str, category: &str) -> RouteDoc {
         tags: vec![category.to_owned()],
         parameters: Vec::new(),
         request_body: None,
-        error_responses: false,
+        error_responses,
     }
 }
 

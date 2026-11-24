@@ -7,37 +7,47 @@ use rstest::rstest;
 use super::document_inputs;
 
 #[rstest]
-#[case(0, "/v1/chat/completions", "chat_completion", "chat/completions")]
-#[case(1, "/chat/completions", "chat_completion", "chat/completions")]
+#[case(
+    0,
+    "/v1/chat/completions",
+    "chat_completion",
+    "chat/completions",
+    false
+)]
+#[case(1, "/chat/completions", "chat_completion", "chat/completions", false)]
 #[case(
     2,
     "/engines/{model}/chat/completions",
     "chat_completion",
-    "chat/completions"
+    "chat/completions",
+    false
 )]
 #[case(
     3,
     "/openai/deployments/{model}/chat/completions",
     "chat_completion",
-    "chat/completions"
+    "chat/completions",
+    true
 )]
-#[case(4, "/v1/embeddings", "embeddings", "embeddings")]
-#[case(5, "/embeddings", "embeddings", "embeddings")]
-#[case(6, "/engines/{model}/embeddings", "embeddings", "embeddings")]
+#[case(4, "/v1/embeddings", "embeddings", "embeddings", false)]
+#[case(5, "/embeddings", "embeddings", "embeddings", false)]
+#[case(6, "/engines/{model}/embeddings", "embeddings", "embeddings", false)]
 #[case(
     7,
     "/openai/deployments/{model}/embeddings",
     "embeddings",
-    "embeddings"
+    "embeddings",
+    false
 )]
-#[case(8, "/v1/responses", "responses_api", "responses")]
-#[case(9, "/responses", "responses_api", "responses")]
-#[case(10, "/openai/v1/responses", "responses_api", "responses")]
+#[case(8, "/v1/responses", "responses_api", "responses", false)]
+#[case(9, "/responses", "responses_api", "responses", false)]
+#[case(10, "/openai/v1/responses", "responses_api", "responses", false)]
 fn openapi_inputs_list_the_eleven_post_routes(
     #[case] index: usize,
     #[case] path: &str,
     #[case] operation: &str,
     #[case] category: &str,
+    #[case] error_responses: bool,
 ) {
     let inputs = document_inputs("", "1.2.3");
     assert_eq!(inputs.routes.len(), 11);
@@ -49,7 +59,7 @@ fn openapi_inputs_list_the_eleven_post_routes(
     assert!(route.parameters.is_empty());
     assert!(route.request_body.is_none());
     assert!(route.summary.is_none());
-    assert!(!route.error_responses);
+    assert_eq!(route.error_responses, error_responses);
 }
 
 #[test]
@@ -168,4 +178,90 @@ fn openapi_document_carries_the_server_entry_only_for_a_non_empty_root_path(
         JsonTree::Text("/api".to_owned()),
     )]))]);
     assert_eq!(entries, Some(&expected));
+}
+
+#[rstest]
+#[case("400")]
+#[case("401")]
+#[case("403")]
+#[case("404")]
+#[case("408")]
+#[case("422")]
+#[case("429")]
+#[case("500")]
+#[case("503")]
+fn openapi_document_attaches_the_error_responses_to_the_deployments_route(#[case] status: &str) {
+    let document = build_document(&document_inputs("", "1.2.3"));
+    let Some(JsonTree::Object(paths)) = document.get("paths") else {
+        panic!("the document has paths");
+    };
+    let Some(JsonTree::Object(deployments)) =
+        paths.get("/openai/deployments/{model}/chat/completions")
+    else {
+        panic!("the document has the deployments chat path");
+    };
+    let Some(JsonTree::Object(operation)) = deployments.get("post") else {
+        panic!("the deployments chat path has a post operation");
+    };
+    let Some(JsonTree::Object(responses)) = operation.get("responses") else {
+        panic!("the deployments operation has responses");
+    };
+    let Some(JsonTree::Object(response)) = responses.get(status) else {
+        panic!("the deployments route has the {status} response");
+    };
+    let Some(JsonTree::Object(content)) = response.get("content") else {
+        panic!("the {status} response has content");
+    };
+    let Some(JsonTree::Object(media)) = content.get("application/json") else {
+        panic!("the {status} response is JSON");
+    };
+    let Some(JsonTree::Object(schema)) = media.get("schema") else {
+        panic!("the {status} response has a schema");
+    };
+    assert_eq!(
+        schema.get("$ref"),
+        Some(&JsonTree::Text(
+            "#/components/schemas/ErrorResponse".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn openapi_document_keeps_the_error_component_off_the_other_routes() {
+    let document = build_document(&document_inputs("", "1.2.3"));
+    let Some(JsonTree::Object(paths)) = document.get("paths") else {
+        panic!("the document has paths");
+    };
+    let Some(JsonTree::Object(deployments)) =
+        paths.get("/openai/deployments/{model}/chat/completions")
+    else {
+        panic!("the document has the deployments chat path");
+    };
+    let Some(JsonTree::Object(decorated)) = deployments.get("post") else {
+        panic!("the deployments chat path has a post operation");
+    };
+    let Some(JsonTree::Object(decorated_responses)) = decorated.get("responses") else {
+        panic!("the deployments operation has responses");
+    };
+    assert_eq!(decorated_responses.len(), 10);
+    let Some(JsonTree::Object(chat)) = paths.get("/v1/chat/completions") else {
+        panic!("the document has the plain chat path");
+    };
+    let Some(JsonTree::Object(plain)) = chat.get("post") else {
+        panic!("the plain chat path has a post operation");
+    };
+    let Some(JsonTree::Object(plain_responses)) = plain.get("responses") else {
+        panic!("the plain operation has responses");
+    };
+    assert_eq!(plain_responses.len(), 1);
+    let Some(JsonTree::Object(components)) = document.get("components") else {
+        panic!("the document has components");
+    };
+    let Some(JsonTree::Object(schemas)) = components.get("schemas") else {
+        panic!("the components have schemas");
+    };
+    assert!(matches!(
+        schemas.get("ErrorResponse"),
+        Some(JsonTree::Object(_))
+    ));
 }
