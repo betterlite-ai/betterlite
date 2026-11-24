@@ -18,7 +18,7 @@ pub(crate) struct Op;
 
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
-enum Operation {
+pub(crate) enum Operation {
     ServerInPath { paths: Vec<String> },
     OwnerFingerprint { calls: Vec<FingerprintCall> },
     InitializeDetection { bodies: Vec<String> },
@@ -30,7 +30,7 @@ enum Operation {
 // the UserAPIKeyAuth fields a case sets; construct hashes an api_key on both sides
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FingerprintCall {
+pub(crate) struct FingerprintCall {
     #[serde(default)]
     api_key: Option<String>,
     #[serde(default)]
@@ -44,9 +44,9 @@ struct FingerprintCall {
 fn header_map(pairs: &[(String, String)]) -> Result<HeaderMap, Box<HelperError>> {
     let mut map = HeaderMap::new();
     for (name, value) in pairs {
-        let name = HeaderName::from_bytes(name.as_bytes()).or_value_error()?;
-        let value = HeaderValue::from_bytes(value.as_bytes()).or_value_error()?;
-        map.append(name, value);
+        let header_name = HeaderName::from_bytes(name.as_bytes()).or_value_error()?;
+        let header_value = HeaderValue::from_bytes(value.as_bytes()).or_value_error()?;
+        map.append(header_name, header_value);
     }
     Ok(map)
 }
@@ -82,48 +82,65 @@ fn client_info_answer(body: &str) -> Value {
     }
 }
 
+fn path_answers(paths: &[String]) -> HelperResult {
+    let answers = paths
+        .iter()
+        .map(|path| servers_in_path(path))
+        .collect::<Vec<_>>();
+    Ok(serde_json::to_value(answers)?)
+}
+
+fn fingerprint_answers(calls: &[FingerprintCall]) -> HelperResult {
+    let answers = calls
+        .iter()
+        .map(fingerprint_answer)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(serde_json::to_value(answers)?)
+}
+
+fn initialize_answers(bodies: &[String]) -> HelperResult {
+    let answers = bodies
+        .iter()
+        .map(|body| is_initialize_request(body.as_bytes()))
+        .collect::<Vec<_>>();
+    Ok(serde_json::to_value(answers)?)
+}
+
+fn client_info_answers(bodies: &[String]) -> HelperResult {
+    let answers = bodies
+        .iter()
+        .map(|body| client_info_answer(body))
+        .collect::<Vec<_>>();
+    Ok(serde_json::to_value(answers)?)
+}
+
+fn method_scan_answers(texts: &[String]) -> HelperResult {
+    let answers = texts
+        .iter()
+        .map(|text| has_top_level_method(text))
+        .collect::<Vec<_>>();
+    Ok(serde_json::to_value(answers)?)
+}
+
+fn forwarded_answers(headers: &[Vec<(String, String)>]) -> HelperResult {
+    let answers = headers
+        .iter()
+        .map(|pairs| header_map(pairs).map(|map| forwarded_authorization(&map)))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(serde_json::to_value(answers)?)
+}
+
 impl Helper for Op {
     type Input = Operation;
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Operation::ServerInPath { paths } => Ok(serde_json::to_value(
-                paths
-                    .iter()
-                    .map(|path| servers_in_path(path))
-                    .collect::<Vec<_>>(),
-            )?),
-            Operation::OwnerFingerprint { calls } => Ok(serde_json::to_value(
-                calls
-                    .iter()
-                    .map(fingerprint_answer)
-                    .collect::<Result<Vec<_>, _>>()?,
-            )?),
-            Operation::InitializeDetection { bodies } => Ok(serde_json::to_value(
-                bodies
-                    .iter()
-                    .map(|body| is_initialize_request(body.as_bytes()))
-                    .collect::<Vec<_>>(),
-            )?),
-            Operation::ClientInfo { bodies } => Ok(serde_json::to_value(
-                bodies
-                    .iter()
-                    .map(|body| client_info_answer(body))
-                    .collect::<Vec<_>>(),
-            )?),
-            Operation::TopLevelMethodScan { texts } => Ok(serde_json::to_value(
-                texts
-                    .iter()
-                    .map(|text| has_top_level_method(text))
-                    .collect::<Vec<_>>(),
-            )?),
-            Operation::ForwardedAuthorization { headers } => {
-                let answers = headers
-                    .iter()
-                    .map(|pairs| header_map(pairs).map(|map| forwarded_authorization(&map)))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(serde_json::to_value(answers)?)
-            }
+            Operation::ServerInPath { paths } => path_answers(paths),
+            Operation::OwnerFingerprint { calls } => fingerprint_answers(calls),
+            Operation::InitializeDetection { bodies } => initialize_answers(bodies),
+            Operation::ClientInfo { bodies } => client_info_answers(bodies),
+            Operation::TopLevelMethodScan { texts } => method_scan_answers(texts),
+            Operation::ForwardedAuthorization { headers } => forwarded_answers(headers),
         }
     }
 }
