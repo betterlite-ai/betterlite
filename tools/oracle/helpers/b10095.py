@@ -64,22 +64,24 @@ class Mmap(Protocol):
     def close(self) -> None: ...
 
 
-class MmapModule(ModuleType):
-    MmapedDict: Callable[[str], Mmap]
-
-
 class Collector(Protocol):
     def merge(self, files: Sequence[str], *, accumulate: bool) -> Iterable[Metric]: ...
 
 
-def mmap_module() -> MmapModule:
-    module = MmapModule("prometheus_client.mmap_dict")
+class PrometheusModule(ModuleType):
+    MmapedDict: Callable[[str], Mmap]
+    MultiProcessCollector: Callable[[CollectorRegistry, str], Collector]
+
+
+def prometheus_module() -> PrometheusModule:
+    module = PrometheusModule("prometheus_client")
     module.MmapedDict = MmapedDict
+    module.MultiProcessCollector = MultiProcessCollector
     return module
 
 
 def write_files(directory: Path, input_value: Input) -> list[Path]:
-    module = mmap_module()
+    module = prometheus_module()
     paths: list[Path] = []
     for spec in input_value["files"]:
         path = directory / spec["name"]
@@ -166,8 +168,9 @@ def run(input_value: Input) -> MergeAnswer | ScrapeAnswer:
         directory = Path(folder)
         paths = write_files(directory, input_value)
         files = [used_hex(path) for path in paths]
+        module = prometheus_module()
         registry = CollectorRegistry()
-        collector: Collector = MultiProcessCollector(registry, str(directory))
+        collector: Collector = module.MultiProcessCollector(registry, str(directory))
         if input_value["call"] == "merge":
             merged = list(collector.merge([str(path) for path in paths], accumulate=True))
             return {"files": files, "families": families_out(merged)}
