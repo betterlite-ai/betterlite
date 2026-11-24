@@ -919,13 +919,15 @@ def test_error_upstream(server: PassthroughServer) -> None:
 def test_error_stream_truncated(server: PassthroughServer) -> None:
     asked = llm_passthrough_route(**call_for(STREAM_BODY, server.base, TRUNCATED_ENDPOINT))
     first, failure = chunks_then_failure(stream_of(asked))
-    assert first and TRUNCATED_FRAME.startswith(first)
+    assert first
+    assert TRUNCATED_FRAME.startswith(first)
     assert failure.status_code == SERVER_ERROR
 
 
 def test_error_truncated_async(server: PassthroughServer) -> None:
     first, status = asyncio.run(atruncated_stream(server))
-    assert first and TRUNCATED_FRAME.startswith(first)
+    assert first
+    assert TRUNCATED_FRAME.startswith(first)
     assert status == SERVER_ERROR
 
 
