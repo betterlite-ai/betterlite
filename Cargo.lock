@@ -4255,6 +4255,7 @@ dependencies = [
  "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-tokenizer",
+ "betterlite-vertex",
  "bytes",
  "chrono",
  "futures-util",
