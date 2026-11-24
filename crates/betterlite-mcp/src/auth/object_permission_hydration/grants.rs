@@ -41,8 +41,11 @@ pub async fn toolset_tools_for_server<Reads>(
 where
     Reads: ObjectPermissionReads,
 {
-    let grants = toolset_tool_permissions(reads, permission, requires_fresh_policy).await?;
-    Ok(grants.get(server_id).cloned())
+    Ok(
+        toolset_tool_permissions(reads, permission, requires_fresh_policy)
+            .await?
+            .remove(server_id),
+    )
 }
 
 #[must_use]

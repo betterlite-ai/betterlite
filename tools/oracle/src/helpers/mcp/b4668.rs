@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::future::{Future, ready};
 
-use betterlite_mcp::auth::object_permission_hydration::error::EntitlementError;
+use betterlite_mcp::auth::object_permission_hydration::error::{
+    EntitlementError, UnloadableEntitlementError,
+};
 use betterlite_mcp::auth::object_permission_hydration::grants::{
     toolset_tool_permissions, toolset_tools_for_server, union_tool_grants,
 };
@@ -182,12 +184,15 @@ async fn answer(input: &Input) -> HelperResult {
             read,
             row,
         } => {
+            let reads = ScriptedReads {
+                read: *read,
+                row: row.clone(),
+            };
             named_answer(
+                &reads,
                 principal,
                 object_permission_id,
                 *requires_fresh_policy,
-                *read,
-                row.as_ref(),
             )
             .await
         }
@@ -204,27 +209,22 @@ async fn answer(input: &Input) -> HelperResult {
 }
 
 async fn named_answer(
+    reads: &ScriptedReads,
     principal: &str,
     object_permission_id: &str,
     requires_fresh_policy: bool,
-    read: ReadKind,
-    row: Option<&ObjectPermission>,
 ) -> Value {
-    let reads = ScriptedReads {
-        read,
-        row: row.cloned(),
-    };
-    match load_named_object_permission(
-        &reads,
-        principal,
-        object_permission_id,
-        requires_fresh_policy,
+    answered(
+        load_named_object_permission(
+            reads,
+            principal,
+            object_permission_id,
+            requires_fresh_policy,
+        )
+        .await
+        .map(|loaded| row_view(&loaded))
+        .map_err(EntitlementError::from),
     )
-    .await
-    {
-        Ok(loaded) => outcome(row_view(&loaded), None, false),
-        Err(raised) => outcome(Value::Null, Some(UNLOADABLE), raised.source().is_some()),
-    }
 }
 
 async fn toolset_answer(
@@ -246,13 +246,25 @@ async fn toolset_answer(
             .await
             .map(|grants| json!(grants)),
     };
+    answered(answer)
+}
+
+fn answered(answer: Result<Value, EntitlementError<Fault>>) -> Value {
     match answer {
         Ok(value) => outcome(value, None, false),
-        Err(EntitlementError::Read { .. }) => outcome(Value::Null, Some(FAULT), false),
-        Err(EntitlementError::Unloadable(raised)) => {
-            outcome(Value::Null, Some(UNLOADABLE), raised.source().is_some())
-        }
+        Err(raised) => failure(&raised),
     }
+}
+
+fn failure(raised: &EntitlementError<Fault>) -> Value {
+    match raised {
+        EntitlementError::Read { .. } => outcome(Value::Null, Some(FAULT), false),
+        EntitlementError::Unloadable(inner) => unloadable_outcome(inner),
+    }
+}
+
+fn unloadable_outcome(raised: &UnloadableEntitlementError<Fault>) -> Value {
+    outcome(Value::Null, Some(UNLOADABLE), raised.source().is_some())
 }
 
 fn union_answer(direct: &Option<Vec<String>>, via_toolsets: &Option<Vec<String>>) -> Value {

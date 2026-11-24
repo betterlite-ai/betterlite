@@ -1,6 +1,8 @@
 use std::error::Error as _;
 
-use super::super::principal::{agent_object_permission, agent_object_permission_id};
+use super::super::principal::{
+    NamedPrincipal, agent_object_permission_id, named_object_permission,
+};
 use super::super::reads::CachedLink;
 use super::super::record::McpAuth;
 use super::{FakeReads, Scripted, expected, row};
@@ -114,7 +116,7 @@ async fn agent_id_answers_none_on_a_cache_row_or_write_fault() {
 async fn agent_permission_is_none_without_an_agent_or_a_database() {
     let reads = FakeReads::standard();
     assert!(
-        agent_object_permission(&reads, &McpAuth::default())
+        named_object_permission(&reads, &McpAuth::default(), NamedPrincipal::Agent)
             .await
             .unwrap()
             .is_none()
@@ -130,7 +132,7 @@ async fn agent_permission_is_none_without_an_agent_or_a_database() {
         ..McpAuth::default()
     };
     assert!(
-        agent_object_permission(&offline, &auth)
+        named_object_permission(&offline, &auth, NamedPrincipal::Agent)
             .await
             .unwrap()
             .is_none()
@@ -146,7 +148,7 @@ async fn agent_permission_is_none_when_the_agent_links_none() {
         ..McpAuth::default()
     };
     assert!(
-        agent_object_permission(&reads, &auth)
+        named_object_permission(&reads, &auth, NamedPrincipal::Agent)
             .await
             .unwrap()
             .is_none()
@@ -176,7 +178,9 @@ async fn agent_permission_loads_the_linked_row_with_the_fresh_flag() {
         ..McpAuth::default()
     };
     assert_eq!(
-        agent_object_permission(&reads, &auth).await.unwrap(),
+        named_object_permission(&reads, &auth, NamedPrincipal::Agent)
+            .await
+            .unwrap(),
         Some(row("op-agent"))
     );
     assert_eq!(
@@ -199,7 +203,9 @@ async fn agent_permission_is_unloadable_when_the_named_row_is_absent_or_unreadab
         cached: Scripted::Value(Some(CachedLink::Id(String::from("op-agent")))),
         ..FakeReads::standard()
     };
-    let error = agent_object_permission(&absent, &auth).await.unwrap_err();
+    let error = named_object_permission(&absent, &auth, NamedPrincipal::Agent)
+        .await
+        .unwrap_err();
     assert!(error.to_string().contains("agent \"a1\""));
     assert!(error.source().is_none());
 
@@ -208,7 +214,7 @@ async fn agent_permission_is_unloadable_when_the_named_row_is_absent_or_unreadab
         permission: Scripted::Fault,
         ..FakeReads::standard()
     };
-    let fault = agent_object_permission(&unreadable, &auth)
+    let fault = named_object_permission(&unreadable, &auth, NamedPrincipal::Agent)
         .await
         .unwrap_err();
     assert!(fault.source().is_some());

@@ -3,8 +3,7 @@ use std::error::Error as _;
 use super::super::error::{EntitlementError, UnloadableEntitlementError};
 use super::super::hydration::load_named_object_permission;
 use super::super::principal::{
-    end_user_object_permission, key_object_permission_hydrated, org_object_permission,
-    team_object_permission,
+    NamedPrincipal, key_object_permission_hydrated, named_object_permission, team_object_permission,
 };
 use super::super::reads::{EndUserEntitlement, ObjectPermission, OrgPermissionLink};
 use super::super::record::McpAuth;
@@ -224,7 +223,7 @@ async fn key_permission_loads_the_named_row_with_the_fresh_flag() {
 async fn org_permission_is_none_without_an_org_a_database_or_a_named_row() {
     let reads = FakeReads::standard();
     assert!(
-        org_object_permission(&reads, &McpAuth::default())
+        named_object_permission(&reads, &McpAuth::default(), NamedPrincipal::Org)
             .await
             .unwrap()
             .is_none()
@@ -240,7 +239,7 @@ async fn org_permission_is_none_without_an_org_a_database_or_a_named_row() {
         ..FakeReads::standard()
     };
     assert!(
-        org_object_permission(&offline, &auth)
+        named_object_permission(&offline, &auth, NamedPrincipal::Org)
             .await
             .unwrap()
             .is_none()
@@ -249,7 +248,7 @@ async fn org_permission_is_none_without_an_org_a_database_or_a_named_row() {
 
     let unnamed = FakeReads::standard();
     assert!(
-        org_object_permission(&unnamed, &auth)
+        named_object_permission(&unnamed, &auth, NamedPrincipal::Org)
             .await
             .unwrap()
             .is_none()
@@ -273,7 +272,9 @@ async fn org_permission_loads_the_named_row_with_the_fresh_flag() {
         ..McpAuth::default()
     };
     assert_eq!(
-        org_object_permission(&reads, &auth).await.unwrap(),
+        named_object_permission(&reads, &auth, NamedPrincipal::Org)
+            .await
+            .unwrap(),
         Some(row("op-org"))
     );
     assert_eq!(
@@ -296,7 +297,9 @@ async fn org_permission_is_unloadable_when_the_named_row_is_absent_or_unreadable
         org: Scripted::Value(OrgPermissionLink::Named(String::from("op-org"))),
         ..FakeReads::standard()
     };
-    let error = org_object_permission(&absent, &auth).await.unwrap_err();
+    let error = named_object_permission(&absent, &auth, NamedPrincipal::Org)
+        .await
+        .unwrap_err();
     assert!(matches!(&error, EntitlementError::Unloadable(_)));
     assert!(error.to_string().contains("op-org"));
 
@@ -305,7 +308,9 @@ async fn org_permission_is_unloadable_when_the_named_row_is_absent_or_unreadable
         permission: Scripted::Fault,
         ..FakeReads::standard()
     };
-    let fault = org_object_permission(&unreadable, &auth).await.unwrap_err();
+    let fault = named_object_permission(&unreadable, &auth, NamedPrincipal::Org)
+        .await
+        .unwrap_err();
     assert!(matches!(&fault, EntitlementError::Unloadable(_)));
     assert!(fault.source().is_some());
 }
@@ -320,7 +325,9 @@ async fn org_permission_propagates_a_link_read_fault() {
         org_id: Some(String::from("o1")),
         ..McpAuth::default()
     };
-    let error = org_object_permission(&reads, &auth).await.unwrap_err();
+    let error = named_object_permission(&reads, &auth, NamedPrincipal::Org)
+        .await
+        .unwrap_err();
     assert!(matches!(&error, EntitlementError::Read { .. }));
 }
 
@@ -328,7 +335,7 @@ async fn org_permission_propagates_a_link_read_fault() {
 async fn end_user_permission_is_none_without_an_id_a_row_or_a_named_permission() {
     let reads = FakeReads::standard();
     assert!(
-        end_user_object_permission(&reads, &McpAuth::default())
+        named_object_permission(&reads, &McpAuth::default(), NamedPrincipal::EndUser)
             .await
             .unwrap()
             .is_none()
@@ -341,7 +348,7 @@ async fn end_user_permission_is_none_without_an_id_a_row_or_a_named_permission()
     };
     let absent = FakeReads::standard();
     assert!(
-        end_user_object_permission(&absent, &auth)
+        named_object_permission(&absent, &auth, NamedPrincipal::EndUser)
             .await
             .unwrap()
             .is_none()
@@ -356,7 +363,7 @@ async fn end_user_permission_is_none_without_an_id_a_row_or_a_named_permission()
         ..FakeReads::standard()
     };
     assert!(
-        end_user_object_permission(&unnamed, &auth)
+        named_object_permission(&unnamed, &auth, NamedPrincipal::EndUser)
             .await
             .unwrap()
             .is_none()
@@ -375,7 +382,7 @@ async fn end_user_permission_swallows_a_lookup_fault() {
         ..McpAuth::default()
     };
     assert!(
-        end_user_object_permission(&reads, &auth)
+        named_object_permission(&reads, &auth, NamedPrincipal::EndUser)
             .await
             .unwrap()
             .is_none()
@@ -398,7 +405,9 @@ async fn end_user_permission_prefers_the_loaded_relation() {
         ..McpAuth::default()
     };
     assert_eq!(
-        end_user_object_permission(&reads, &auth).await.unwrap(),
+        named_object_permission(&reads, &auth, NamedPrincipal::EndUser)
+            .await
+            .unwrap(),
         Some(row("op-relation"))
     );
     assert_eq!(reads.calls(), expected(&["end_user_entitlement:eu"]));
@@ -420,7 +429,9 @@ async fn end_user_permission_loads_the_named_row() {
         ..McpAuth::default()
     };
     assert_eq!(
-        end_user_object_permission(&reads, &auth).await.unwrap(),
+        named_object_permission(&reads, &auth, NamedPrincipal::EndUser)
+            .await
+            .unwrap(),
         Some(row("op-named"))
     );
     assert_eq!(
@@ -442,7 +453,7 @@ async fn end_user_permission_is_unloadable_when_the_named_row_is_absent_or_unrea
         })),
         ..FakeReads::standard()
     };
-    let error = end_user_object_permission(&absent, &auth)
+    let error = named_object_permission(&absent, &auth, NamedPrincipal::EndUser)
         .await
         .unwrap_err();
     assert!(error.to_string().contains("end user \"eu\""));
@@ -456,7 +467,7 @@ async fn end_user_permission_is_unloadable_when_the_named_row_is_absent_or_unrea
         permission: Scripted::Fault,
         ..FakeReads::standard()
     };
-    let fault = end_user_object_permission(&unreadable, &auth)
+    let fault = named_object_permission(&unreadable, &auth, NamedPrincipal::EndUser)
         .await
         .unwrap_err();
     assert!(fault.source().is_some());

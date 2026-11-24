@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::{Ready, ready};
 use std::sync::Mutex;
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -35,6 +35,10 @@ impl<T: Clone> Scripted<T> {
         }
     }
 }
+
+type Reply<T> = Ready<Result<T, StoreDown>>;
+type Permission = Option<ObjectPermission>;
+type LinkedId = Option<String>;
 
 struct FakeReads {
     database: bool,
@@ -76,8 +80,17 @@ impl FakeReads {
     fn calls(&self) -> Vec<String> {
         self.log.lock().unwrap().clone()
     }
+
+    fn answer<T: Clone>(&self, entry: String, script: &Scripted<T>) -> Reply<T> {
+        self.record(entry);
+        ready(script.resolve())
+    }
 }
 
+#[expect(
+    refining_impl_trait_internal,
+    reason = "the fake answers ready futures, and the refined type never leaves this test module"
+)]
 impl ObjectPermissionReads for FakeReads {
     type Error = StoreDown;
 
@@ -91,91 +104,67 @@ impl ObjectPermissionReads for FakeReads {
         self.ttl
     }
 
-    fn cached_link(
-        &self,
-        key: &str,
-    ) -> impl Future<Output = Result<Option<CachedLink>, Self::Error>> + Send {
-        self.record(format!("cached_link:{key}"));
-        ready(self.cached.resolve())
+    fn cached_link(&self, key: &str) -> Reply<Option<CachedLink>> {
+        self.answer(format!("cached_link:{key}"), &self.cached)
     }
 
-    fn store_link(
-        &self,
-        key: &str,
-        value: &str,
-        ttl: f64,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+    fn store_link(&self, key: &str, value: &str, ttl: f64) -> Reply<()> {
         self.record(format!("store_link:{key}={value}@{ttl}"));
-        let outcome = if self.store_fault {
+        ready(if self.store_fault {
             Err(StoreDown)
         } else {
             Ok(())
-        };
-        ready(outcome)
+        })
     }
 
-    fn permission(
-        &self,
-        object_permission_id: &str,
-        check_db_only: bool,
-    ) -> impl Future<Output = Result<Option<ObjectPermission>, Self::Error>> + Send {
-        self.record(format!("permission:{object_permission_id}:{check_db_only}"));
-        ready(self.permission.resolve())
+    fn permission(&self, object_permission_id: &str, check_db_only: bool) -> Reply<Permission> {
+        self.answer(
+            format!("permission:{object_permission_id}:{check_db_only}"),
+            &self.permission,
+        )
     }
 
-    fn team_permission(
-        &self,
-        team_id: &str,
-        check_db_only: bool,
-    ) -> impl Future<Output = Result<Option<ObjectPermission>, Self::Error>> + Send {
-        self.record(format!("team_permission:{team_id}:{check_db_only}"));
-        ready(self.team.resolve())
+    fn team_permission(&self, team_id: &str, check_db_only: bool) -> Reply<Permission> {
+        self.answer(
+            format!("team_permission:{team_id}:{check_db_only}"),
+            &self.team,
+        )
     }
 
-    fn org_object_permission_link(
-        &self,
-        org_id: &str,
-    ) -> impl Future<Output = Result<OrgPermissionLink, Self::Error>> + Send {
-        self.record(format!("org_object_permission_link:{org_id}"));
-        ready(self.org.resolve())
+    fn org_object_permission_link(&self, org_id: &str) -> Reply<OrgPermissionLink> {
+        self.answer(format!("org_object_permission_link:{org_id}"), &self.org)
     }
 
-    fn end_user_entitlement(
-        &self,
-        end_user_id: &str,
-    ) -> impl Future<Output = Result<Option<EndUserEntitlement>, Self::Error>> + Send {
-        self.record(format!("end_user_entitlement:{end_user_id}"));
-        ready(self.end_user.resolve())
+    fn end_user_entitlement(&self, end_user_id: &str) -> Reply<Option<EndUserEntitlement>> {
+        self.answer(
+            format!("end_user_entitlement:{end_user_id}"),
+            &self.end_user,
+        )
     }
 
-    fn user_object_permission_link(
-        &self,
-        user_id: &str,
-        check_db_only: bool,
-    ) -> impl Future<Output = Result<Option<String>, Self::Error>> + Send {
-        self.record(format!(
-            "user_object_permission_link:{user_id}:{check_db_only}"
-        ));
-        ready(self.user_link.resolve())
+    fn user_object_permission_link(&self, user_id: &str, check_db_only: bool) -> Reply<LinkedId> {
+        self.answer(
+            format!("user_object_permission_link:{user_id}:{check_db_only}"),
+            &self.user_link,
+        )
     }
 
-    fn agent_object_permission_link(
-        &self,
-        agent_id: &str,
-    ) -> impl Future<Output = Result<Option<String>, Self::Error>> + Send {
-        self.record(format!("agent_object_permission_link:{agent_id}"));
-        ready(self.agent_link.resolve())
+    fn agent_object_permission_link(&self, agent_id: &str) -> Reply<LinkedId> {
+        self.answer(
+            format!("agent_object_permission_link:{agent_id}"),
+            &self.agent_link,
+        )
     }
 
     fn resolve_toolset_grants(
         &self,
         toolset_ids: &[String],
         check_db_only: bool,
-    ) -> impl Future<Output = Result<BTreeMap<String, Vec<String>>, Self::Error>> + Send {
-        self.record(format!(
-            "resolve_toolset_grants:{toolset_ids:?}:{check_db_only}"
-        ));
-        ready(self.toolset.resolve())
+    ) -> Reply<BTreeMap<String, Vec<String>>> {
+        self.answer(
+            format!("resolve_toolset_grants:{toolset_ids:?}:{check_db_only}"),
+            &self.toolset,
+        )
     }
 }
 

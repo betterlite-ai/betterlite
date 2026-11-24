@@ -6,7 +6,7 @@ use thiserror::Error;
 use super::reads::ObjectPermission;
 
 pub const MCP_ALL_TOOLS_WILDCARD: &str = "*";
-pub const AGENT_NO_MCP_PERMISSION_SENTINEL: &str = "__agent_no_mcp_permission__";
+pub const AGENT_NO_PERMISSION_SENTINEL: &str = "__agent_no_mcp_permission__";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct McpAuth {
