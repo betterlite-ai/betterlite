@@ -133,18 +133,18 @@ impl NativeDisk {
         })
     }
 
-    // ast-grep-ignore: no-one-line-functions - DiskCache.disconnect is a no-op at the pin
     #[expect(
         clippy::missing_const_for_fn,
         clippy::unnecessary_wraps,
         clippy::unused_self,
         reason = "DiskCache.disconnect is a no-op at the pin"
     )]
+    // ast-grep-ignore: no-one-line-functions - DiskCache.disconnect is a no-op at the pin
     fn close(&self) -> PyResult<()> {
         Ok(())
     }
 
-    // ast-grep-ignore: no-one-line-functions - the awaitable of an immediate answer is the whole behavior
+    // ast-grep-ignore: no-padded-one-line-functions - the awaitable of an immediate answer is the whole behavior
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let closed = self.close();
         future_into_py(py, async move { closed })

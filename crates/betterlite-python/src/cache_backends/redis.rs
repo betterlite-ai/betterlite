@@ -157,7 +157,7 @@ impl NativeRedis {
             Ok(alive)
         })
     }
-
+    // ast-grep-ignore: no-padded-one-line-functions - the disconnect future is the whole call
     fn close(&self, py: Python<'_>) {
         let cache = Arc::clone(&self.cache);
         py.detach(|| get_runtime().block_on(cache.admin.disconnect()));
