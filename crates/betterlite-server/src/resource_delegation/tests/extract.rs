@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::mcp_permission_ids::team::ALL_PROXY_MCP_SERVERS;
 use crate::resource_delegation::requested::{
     requested_access_groups, requested_search_tools, requested_server_ids, requested_toolsets,
     requested_vector_stores,
@@ -50,6 +51,10 @@ fn extractor_contents() {
             r#"{"mcp_servers": ["no-mcp-servers", "srv-a", "srv-a"], "mcp_tool_permissions": {"no-mcp-servers": [], "srv-b": ["t"]}}"#
         ),
         string_set(&["no-mcp-servers", "srv-a", "srv-b"])
+    );
+    assert_eq!(
+        server_ids(r#"{"mcp_servers": ["all-proxy-mcpservers"]}"#),
+        string_set(&[ALL_PROXY_MCP_SERVERS])
     );
     assert_eq!(
         groups(r#"{"mcp_access_groups": ["", "group-a", "group-a"]}"#),
