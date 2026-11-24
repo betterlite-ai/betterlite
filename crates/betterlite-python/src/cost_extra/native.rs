@@ -12,6 +12,8 @@ use crate::cost_extra::error::{
     batch_error, image_error, realtime_error, rerank_error, transcription_error, video_error,
 };
 
+mod tests;
+
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeCostExtra {
     engine: Engine,

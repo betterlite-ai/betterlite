@@ -19,6 +19,8 @@ use crate::cost_extra::convert::UsageSource;
 use crate::cost_extra::convert::{CollectUsageRequest, CombineUsageRequest, PartitionUsageRequest};
 use crate::cost_extra::error::RerankFailure;
 
+mod tests;
+
 const QUERY_RATE: &str = "input_cost_per_query";
 const TOKEN_RATE: &str = "input_cost_per_token";
 const JINA_PROVIDER: &str = "jina_ai";
