@@ -1,0 +1,46 @@
+kind: helper
+name: tags-key-fallback-empty-list
+call:
+  b3630:
+    routes: []
+    tags:
+      - metadata:
+          tags: []
+          user_api_key_auth_metadata:
+            tags: []
+      - metadata:
+          tags:
+            - 1
+            - 2
+          user_api_key_auth_metadata:
+            tags: []
+      - metadata:
+          user_api_key_auth_metadata:
+            tags: []
+      - metadata:
+          user_api_key_auth_metadata: {}
+      - metadata:
+          user_api_key_auth_metadata:
+            tags: "key"
+      - metadata:
+          user_api_key_auth_metadata: "key"
+      - metadata:
+          user_api_key_auth_metadata: null
+      - metadata: {}
+      - metadata:
+          tags: []
+      - metadata:
+          user_api_key_auth_metadata:
+            tags:
+              - 1
+      - metadata:
+          tags: null
+          user_api_key_auth_metadata:
+            tags: []
+    models: []
+    ids: []
+    costing: []
+    speeds: []
+env: {}
+compare:
+  ignore: []
