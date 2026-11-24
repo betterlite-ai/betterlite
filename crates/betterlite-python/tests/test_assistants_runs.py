@@ -740,7 +740,7 @@ def test_stream_first_read_waits(server: RunServer) -> None:
     assert reference_first(STREAMS.run_thread_stream(**server.stream_arguments())) == expected
 
 
-def test_stream_handler_check() -> None:
+def test_stream_argument_checks() -> None:
     with pytest.raises(UnsupportedCallArgumentError, match="event_handler"):
         main.run_thread_stream(**BARE_STREAM_ARGUMENTS, event_handler=FAKE_HANDLER)
     with pytest.raises(UnsupportedCallArgumentError, match="event_handler"):
@@ -753,6 +753,10 @@ def test_stream_handler_check() -> None:
         main.run_thread_stream(**BARE_STREAM_ARGUMENTS, stream=True)
     with pytest.raises(TypeError, match="stream"):
         STREAMS.run_thread_stream(**BARE_STREAM_ARGUMENTS, stream=True)
+    with pytest.raises(KeyError, match="custom_llm_provider"):
+        main.run_thread_stream()
+    with pytest.raises(KeyError, match="custom_llm_provider"):
+        main.arun_thread_stream()
 
 
 def test_stream_failure_first_read(server: RunServer) -> None:
