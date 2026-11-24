@@ -1,0 +1,42 @@
+kind: helper
+name: backend-close-and-disconnect
+call:
+  responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.created"}'
+    request_data: {}
+calls:
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.failed"}'
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames: []
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"unknown"}'
+      - '{"type":"response.output_text.delta","delta":"x"}'
+      - not json
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames:
+      - '{"type":"response.create","input":"one"}'
+      - '{"type":"response.create","input":"two"}'
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.completed"}'
+    request_data: {}
+env: {}
+compare:
+  ignore: []
