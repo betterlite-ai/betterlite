@@ -96,12 +96,12 @@ pub(crate) fn rule_for_request(request: &Request<Body>) -> Arc<KeyBudgetRule> {
         .map_or_else(|| Arc::new(KeyBudgetRule::default()), Arc::clone)
 }
 
-fn settings_for_request(request: &Request<Body>) -> Result<Arc<Settings>, AuthenticationFailure> {
-    request
-        .extensions()
-        .get::<Arc<ServerState>>()
-        .map(|state| Arc::clone(&state.auth_key_budgets.settings))
-        .ok_or(AuthenticationFailure::Missing)
+// a router mounted without the proxy state has no loaded section, so the pinned defaults apply
+fn settings_for_request(request: &Request<Body>) -> Arc<Settings> {
+    request.extensions().get::<Arc<ServerState>>().map_or_else(
+        || Arc::new(Settings::default()),
+        |state| Arc::clone(&state.auth_key_budgets.settings),
+    )
 }
 
 pub(crate) fn stage_input(
@@ -114,7 +114,7 @@ pub(crate) fn stage_input(
     Ok(KeyBudgetStageInput {
         context,
         rule: rule_for_request(request),
-        settings: settings_for_request(request)?,
+        settings: settings_for_request(request),
     })
 }
 

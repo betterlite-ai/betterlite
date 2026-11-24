@@ -10,6 +10,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
+use axum::middleware;
 use axum::routing::post;
 use betterlite_auth::auth_key_budgets::alerts::{BudgetAlert, BudgetAlertKind, BudgetAlertSink};
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
@@ -19,6 +20,7 @@ use betterlite_auth::request_quota_view::RequestQuotaViewExt as _;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::auth_key_budgets::Settings;
+use betterlite_config::sections::auth_route_patterns::Settings as RoutePatternSettings;
 use betterlite_config::types::Config;
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use chrono::{DateTime, TimeZone as _, Utc};
@@ -30,6 +32,7 @@ use super::{KeyBudgetRule, KeyBudgetStageInput, prefetch};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
+use crate::auth::auth_route_patterns::{AuthSettings, stage as auth_route_patterns_stage};
 use crate::routes;
 use crate::routes::tests::state_for;
 
@@ -200,6 +203,30 @@ fn stage_is_registered() {
         dispatch(AuthBackend::AuthKeyBudgets, &wrong_stage, &master_key),
         Err(StageFailure::Authentication(_))
     ));
+}
+
+#[tokio::test]
+async fn master_key_request_without_server_state_reaches_the_handler() {
+    let auth = AuthSettings {
+        master_key: Some(SecretString::from(MASTER_KEY.to_owned())),
+        routes: RoutePatternSettings {
+            public_routes: Vec::new(),
+        },
+    };
+    let reached = Arc::new(AtomicBool::new(false));
+    let application =
+        Router::new()
+            .route(MODEL_ROUTE, post(mark_called))
+            .layer(middleware::from_fn_with_state(
+                auth,
+                auth_route_patterns_stage,
+            ));
+    let response = application
+        .oneshot(request_to(&reached))
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(reached.load(Ordering::Acquire));
 }
 
 async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static str {
