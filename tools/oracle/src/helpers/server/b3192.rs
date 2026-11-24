@@ -59,8 +59,14 @@ impl Helper for Op {
                 responses,
                 resolutions,
             } => autorouter_answer(url, *local_only, responses, *resolutions),
-            Input::ScorerDefaults => scorer_answer(),
-            Input::FusePresets => fuse_answer(),
+            Input::ScorerDefaults => {
+                let defaults = ComplexityScorerDefaults::shipped().or_config_error()?;
+                Ok(serde_json::to_value(defaults)?)
+            }
+            Input::FusePresets => {
+                let catalog = get_fuse_presets().or_config_error()?;
+                Ok(serde_json::to_value(catalog.as_ref())?)
+            }
         }
     }
 }
@@ -92,16 +98,6 @@ fn autorouter_answer(
         urls,
     };
     Ok(serde_json::to_value(answer)?)
-}
-
-fn scorer_answer() -> HelperResult {
-    let defaults = ComplexityScorerDefaults::shipped().or_config_error()?;
-    Ok(serde_json::to_value(defaults)?)
-}
-
-fn fuse_answer() -> HelperResult {
-    let catalog = get_fuse_presets().or_config_error()?;
-    Ok(serde_json::to_value(catalog.as_ref())?)
 }
 
 #[derive(Clone, Default)]
