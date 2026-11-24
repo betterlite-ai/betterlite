@@ -1,6 +1,7 @@
+use regex::Regex;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::budget_primitives::throttle::{percentage, should_throttle};
 use crate::current_spend::{SpendQuery, WindowDescriptors};
@@ -14,8 +15,7 @@ use super::{Admission, KeyBudgetError};
 pub const BUDGET_EXCEEDED_STATUS: u16 = 422;
 
 // _MASKED_KEY_NAME_RE, anchored because LiteLLM calls fullmatch
-const MASKED_KEY_PREFIX: &str = "sk-...";
-const MASKED_KEY_SUFFIX_CHARS: usize = 4;
+const MASKED_KEY_NAME: &str = r"^sk-\.\.\.(?:[^\s\x00-\x1f\x7f-\x9f]{4})?$";
 
 // the budgets a request enforces: the token's values, or the nonfinite ones its Decimal fields cannot hold
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -24,24 +24,14 @@ pub struct KeyBudgets {
     pub soft_budget: Option<Money>,
 }
 
-impl KeyBudgets {
-    #[must_use]
-    pub fn from_auth(auth: &UserAPIKeyAuth) -> Self {
-        Self {
-            max_budget: auth.view.token.max_budget.map(Money::Finite),
-            soft_budget: auth.view.soft_budget.map(Money::Finite),
-        }
-    }
-}
-
 // the BudgetExceededError fields a caller can read: current_cost, max_budget, entity type and id
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 #[error("{message}")]
 pub struct Denial {
     pub current_cost: Decimal,
     pub max_budget: Decimal,
     pub entity_type: String,
-    pub entity_id: String,
+    pub entity_id: Option<SecretString>,
     pub message: String,
     pub status_code: u16,
 }
@@ -120,7 +110,7 @@ fn denial(auth: &UserAPIKeyAuth, spend: Decimal, max_budget: Decimal) -> Denial 
         current_cost: spend,
         max_budget,
         entity_type: "key".to_owned(),
-        entity_id: token_text(auth),
+        entity_id: auth.view.token.token.clone(),
         message: format!(
             "Budget has been exceeded! Key={} Current cost: {spend}, Max budget: {max_budget}",
             key_descriptor(auth)
@@ -144,15 +134,5 @@ fn key_descriptor(auth: &UserAPIKeyAuth) -> String {
 }
 
 fn is_masked_key_name(name: &str) -> bool {
-    let Some(suffix) = name.strip_prefix(MASKED_KEY_PREFIX) else {
-        return false;
-    };
-    if suffix.is_empty() {
-        return true;
-    }
-    let characters: Vec<char> = suffix.chars().take(MASKED_KEY_SUFFIX_CHARS + 1).collect();
-    characters.len() == MASKED_KEY_SUFFIX_CHARS
-        && characters
-            .iter()
-            .all(|character| !character.is_whitespace() && !character.is_control())
+    Regex::new(MASKED_KEY_NAME).is_ok_and(|pattern| pattern.is_match(name))
 }

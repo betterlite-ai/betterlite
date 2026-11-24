@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
+use thiserror::Error;
 use tracing::debug;
 
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -12,18 +13,25 @@ use super::email::{merge_alert_email_configs, min_digit_threshold};
 use super::key_budget::KeyBudgets;
 use super::money::Money;
 
+// LiteLLM's merge raises AttributeError on a truthy non-mapping; betterlite names the field and returns the auth error instead
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+pub enum AlertError {
+    #[error("max_budget_alert_emails must be a mapping of thresholds to recipients")]
+    NotAMapping,
+}
+
 // _virtual_key_max_budget_alert_check: a merged map alerts at its lowest digit threshold even past the maximum; otherwise the legacy fraction alerts only strictly below it
 pub fn max_budget_alert_check(
     auth: &UserAPIKeyAuth,
     budgets: &KeyBudgets,
     admission: &Admission<'_>,
-) {
+) -> Result<(), AlertError> {
     let Some(max_budget) = budgets.max_budget else {
-        return;
+        return Ok(());
     };
     let spend = auth.view.token.spend;
     if spend <= Decimal::ZERO {
-        return;
+        return Ok(());
     }
     let fields = KeyAlertFields {
         auth,
@@ -33,7 +41,7 @@ pub fn max_budget_alert_check(
         team_alias: auth.view.team_alias.as_deref(),
     };
     let Some(config) =
-        merge_alert_email_configs(admission.global_alert_emails, per_key_config(auth))
+        merge_alert_email_configs(admission.global_alert_emails, per_key_config(auth)?)
     else {
         legacy_alert(
             &fields,
@@ -42,22 +50,38 @@ pub fn max_budget_alert_check(
             admission.alert_fraction,
             admission.alerts,
         );
-        return;
+        return Ok(());
     };
     mapped_alert(&fields, spend, max_budget, config, admission.alerts);
+    Ok(())
 }
 
-fn per_key_config(auth: &UserAPIKeyAuth) -> Option<&BTreeMap<String, JsonData>> {
-    match auth.view.token.metadata.0.get("max_budget_alert_emails") {
-        Some(JsonData::Object(fields)) => Some(fields),
-        Some(
-            JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::String(_)
-            | JsonData::Array(_),
-        )
-        | None => None,
+// `if not config` in LiteLLM: the JSON values Python reads as false
+fn is_falsey(value: &JsonData) -> bool {
+    match value {
+        JsonData::Null => true,
+        JsonData::Bool(flag) => !*flag,
+        JsonData::Number(number) => number.as_f64().is_some_and(|value| value == 0.0),
+        JsonData::String(text) => text.is_empty(),
+        JsonData::Array(items) => items.is_empty(),
+        JsonData::Object(fields) => fields.is_empty(),
+    }
+}
+
+fn per_key_config(
+    auth: &UserAPIKeyAuth,
+) -> Result<Option<&BTreeMap<String, JsonData>>, AlertError> {
+    let config = auth.view.token.metadata.0.get("max_budget_alert_emails");
+    let Some(value) = config.filter(|value| !is_falsey(value)) else {
+        return Ok(None);
+    };
+    match value {
+        JsonData::Object(fields) => Ok(Some(fields)),
+        JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Array(_) => Err(AlertError::NotAMapping),
     }
 }
 

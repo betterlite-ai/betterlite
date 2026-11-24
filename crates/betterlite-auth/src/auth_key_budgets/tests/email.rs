@@ -6,7 +6,6 @@ use rstest::rstest;
 use crate::auth_key_budgets::email::{
     alert_recipients, merge_alert_email_configs, normalize_alert_emails, parse_email_list,
 };
-use crate::auth_key_budgets::key_budget::KeyBudgets;
 use crate::auth_key_budgets::max_alert::max_budget_alert_check;
 use crate::auth_key_budgets::money::Money;
 use crate::auth_key_budgets::team_member::{
@@ -96,7 +95,7 @@ fn key_map_min_digit_threshold() {
         r#"{"token":"sk-map","spend":50,"max_budget":100,"metadata":{"max_budget_alert_emails":{"90":["high@x"],"50":["low@x"]}}}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     let alerts = sink.take();
     assert_eq!(alerts.len(), 1);
     let config = alerts[0].max_budget_alert_emails.as_ref().unwrap();
@@ -107,7 +106,7 @@ fn key_map_min_digit_threshold() {
         r#"{"token":"sk-map","spend":49,"max_budget":100,"metadata":{"max_budget_alert_emails":{"90":["high@x"],"50":["low@x"]}}}"#,
     );
     let below_budgets = effective_budgets(&below, now()).unwrap();
-    max_budget_alert_check(&below, &below_budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&below, &below_budgets, &admission(&reader, Some(&sink))).unwrap();
     assert!(sink.take().is_empty());
 }
 
@@ -119,7 +118,7 @@ fn invalid_key_threshold_no_alert() {
         r#"{"token":"sk-nodigit","spend":99,"max_budget":100,"metadata":{"max_budget_alert_emails":{"abc":["a@x"],"eighty":["b@x"]}}}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     assert!(sink.take().is_empty());
 }
 
@@ -131,7 +130,7 @@ fn key_threshold_outside_range_kept() {
         r#"{"token":"sk-big","spend":160,"max_budget":100,"metadata":{"max_budget_alert_emails":{"150":["a@x"]}}}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     let alerts = sink.take();
     assert_eq!(alerts.len(), 1);
     assert_eq!(
@@ -143,7 +142,7 @@ fn key_threshold_outside_range_kept() {
         r#"{"token":"sk-zero-pct","spend":1,"max_budget":100,"metadata":{"max_budget_alert_emails":{"0":["a@x"]}}}"#,
     );
     let zero_budgets = effective_budgets(&zero, now()).unwrap();
-    max_budget_alert_check(&zero, &zero_budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&zero, &zero_budgets, &admission(&reader, Some(&sink))).unwrap();
     assert_eq!(sink.take().len(), 1);
 
     let huge = "9".repeat(400);
@@ -152,7 +151,7 @@ fn key_threshold_outside_range_kept() {
     );
     let huge_auth = key(&fields);
     let huge_budgets = effective_budgets(&huge_auth, now()).unwrap();
-    max_budget_alert_check(&huge_auth, &huge_budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&huge_auth, &huge_budgets, &admission(&reader, Some(&sink))).unwrap();
     assert!(sink.take().is_empty());
 }
 
@@ -168,7 +167,7 @@ fn mapped_alert_at_or_over_max(#[case] spend: i64) {
     );
     let auth = key(&fields);
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     let alerts = sink.take();
     assert_eq!(alerts.is_empty(), spend < 100_i64);
     if spend >= 100_i64 {
@@ -187,23 +186,23 @@ fn max_alert_nonfinite_budget(#[case] maximum: Money, #[case] mapped_alerts: usi
     let auth = key(
         r#"{"token":"sk-nonfinite-alert","spend":100,"metadata":{"max_budget_alert_emails":{"100":["a@x"]}}}"#,
     );
-    let mut budgets = KeyBudgets::from_auth(&auth);
+    let mut budgets = effective_budgets(&auth, now()).unwrap();
     budgets.max_budget = Some(maximum);
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     assert_eq!(sink.take().len(), mapped_alerts);
 
     let zero_pct = key(
         r#"{"token":"sk-zero-pct","spend":5,"metadata":{"max_budget_alert_emails":{"0":["a@x"]}}}"#,
     );
-    let mut zero_budgets = KeyBudgets::from_auth(&zero_pct);
+    let mut zero_budgets = effective_budgets(&zero_pct, now()).unwrap();
     zero_budgets.max_budget = Some(Money::NegativeInfinity);
-    max_budget_alert_check(&zero_pct, &zero_budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&zero_pct, &zero_budgets, &admission(&reader, Some(&sink))).unwrap();
     assert_eq!(sink.take().len(), 1);
 
     let legacy = key(r#"{"token":"sk-legacy-inf","spend":100}"#);
-    let mut legacy_budgets = KeyBudgets::from_auth(&legacy);
+    let mut legacy_budgets = effective_budgets(&legacy, now()).unwrap();
     legacy_budgets.max_budget = Some(maximum);
-    max_budget_alert_check(&legacy, &legacy_budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&legacy, &legacy_budgets, &admission(&reader, Some(&sink))).unwrap();
     assert!(sink.take().is_empty());
 }
 
@@ -217,7 +216,7 @@ fn legacy_fraction_boundary(#[case] spend: i64, #[case] expected: usize) {
     let fields = format!(r#"{{"token":"sk-legacy","spend":{spend},"max_budget":100}}"#);
     let auth = key(&fields);
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     assert_eq!(sink.take().len(), expected);
 }
 
@@ -230,7 +229,7 @@ fn legacy_max_excluded(#[case] spend: i64) {
     let fields = format!(r#"{{"token":"sk-legacy-max","spend":{spend},"max_budget":100}}"#);
     let auth = key(&fields);
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     assert!(sink.take().is_empty());
 }
 
@@ -242,7 +241,7 @@ fn mapped_threshold_exact_decimal() {
         r#"{"token":"sk-tenth","spend":0.08,"max_budget":0.1,"metadata":{"max_budget_alert_emails":{"80":["a@x"]}}}"#,
     );
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     assert_eq!(
         sink.take().len(),
         1,
@@ -251,7 +250,7 @@ fn mapped_threshold_exact_decimal() {
 
     let legacy = key(r#"{"token":"sk-tenth-legacy","spend":0.08,"max_budget":0.1}"#);
     let legacy_budgets = effective_budgets(&legacy, now()).unwrap();
-    max_budget_alert_check(&legacy, &legacy_budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&legacy, &legacy_budgets, &admission(&reader, Some(&sink))).unwrap();
     assert_eq!(
         sink.take().len(),
         1,
@@ -290,7 +289,7 @@ fn non_ascii_digit_thresholds_dropped() {
     );
     let auth = key(&fields);
     let budgets = effective_budgets(&auth, now()).unwrap();
-    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink)));
+    max_budget_alert_check(&auth, &budgets, &admission(&reader, Some(&sink))).unwrap();
     assert!(
         sink.take().is_empty(),
         "Arabic-Indic digits are not the ASCII digits a threshold key uses"
@@ -441,7 +440,7 @@ fn key_alert_uses_global_emails() {
     let budgets = effective_budgets(&key_auth, now()).unwrap();
     let mut inputs = admission(&reader, Some(&sink));
     inputs.global_alert_emails = Some(&global);
-    max_budget_alert_check(&key_auth, &budgets, &inputs);
+    max_budget_alert_check(&key_auth, &budgets, &inputs).unwrap();
     let key_alerts = sink.take();
     assert_eq!(key_alerts.len(), 1);
     assert_eq!(
@@ -484,7 +483,7 @@ fn member_no_global_merge() {
     assert_eq!(alert.team_alias.as_deref(), Some("team-a"));
     assert_eq!(alert.organization_id.as_deref(), Some("org-1"));
     assert_eq!(alert.user_email.as_deref(), Some("owner@x"));
-    assert_eq!(alert.token, None);
+    assert!(alert.token.is_none());
     assert_eq!(alert.key_alias, None);
     assert_eq!(alert.soft_budget, None);
 }

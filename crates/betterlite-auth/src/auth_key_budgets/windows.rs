@@ -56,19 +56,24 @@ pub async fn virtual_key_multi_budget_check(
             && spend >= maximum
         {
             return Err(KeyBudgetError::Denied(window_denial(
-                &token, &duration, spend, maximum,
+                auth, &duration, spend, maximum,
             )));
         }
     }
     Ok(())
 }
 
-fn window_denial(token: &str, duration: &str, spend: Decimal, maximum: Decimal) -> Denial {
+fn window_denial(
+    auth: &UserAPIKeyAuth,
+    duration: &str,
+    spend: Decimal,
+    maximum: Decimal,
+) -> Denial {
     Denial {
         current_cost: spend,
         max_budget: maximum,
         entity_type: "key".to_owned(),
-        entity_id: token.to_owned(),
+        entity_id: auth.view.token.token.clone(),
         message: format!(
             "ExceededBudget: Key over {duration} budget. Spend=${}, Limit=${}",
             format_scale(spend, 4),

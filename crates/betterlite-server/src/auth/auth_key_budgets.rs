@@ -14,6 +14,7 @@ use betterlite_auth::auth_key_budgets::{Admission, KeyBudgetError, admit, effect
 use betterlite_auth::budget_primitives::window_start::DurationParser;
 use betterlite_auth::current_spend::SpendQuery;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_config::sections::auth_key_budgets::Settings;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -22,12 +23,10 @@ use crate::auth::auth_identity::AuthContext;
 use crate::auth::current_spend::spend_failure_exception;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
-use crate::state::auth_key_budgets::KeyBudgetSettings;
 
 mod tests;
 
 // what the auth service resolved before this stage: the caller's key, the collaborators the checks read, and the clock
-#[derive(Default)]
 pub struct KeyBudgetRule {
     pub auth: Option<UserAPIKeyAuth>,
     pub user_email: Option<String>,
@@ -35,8 +34,23 @@ pub struct KeyBudgetRule {
     pub alerts: Option<Arc<dyn BudgetAlertSink>>,
     pub durations: Option<Arc<dyn DurationParser + Send + Sync>>,
     pub throttle_pct: Option<f64>,
-    pub now: Option<DateTime<Utc>>,
+    pub clock: fn() -> DateTime<Utc>,
     pub applied: Mutex<Option<UserAPIKeyAuth>>,
+}
+
+impl Default for KeyBudgetRule {
+    fn default() -> Self {
+        Self {
+            auth: None,
+            user_email: None,
+            reader: None,
+            alerts: None,
+            durations: None,
+            throttle_pct: None,
+            clock: Utc::now,
+            applied: Mutex::new(None),
+        }
+    }
 }
 
 impl fmt::Debug for KeyBudgetRule {
@@ -52,7 +66,6 @@ impl fmt::Debug for KeyBudgetRule {
                 &self.applied.try_lock().is_ok_and(|key| key.is_some()),
             )
             .field("throttle_pct", &self.throttle_pct)
-            .field("now", &self.now)
             .finish()
     }
 }
@@ -72,7 +85,7 @@ impl KeyBudgetRule {
 pub struct KeyBudgetStageInput {
     pub context: AuthContext,
     pub rule: Arc<KeyBudgetRule>,
-    pub settings: Arc<KeyBudgetSettings>,
+    pub settings: Arc<Settings>,
 }
 
 // the authentication service inserts the rule once it resolved the caller's key; without one the stage is inert
@@ -83,11 +96,12 @@ pub(crate) fn rule_for_request(request: &Request<Body>) -> Arc<KeyBudgetRule> {
         .map_or_else(|| Arc::new(KeyBudgetRule::default()), Arc::clone)
 }
 
-fn settings_for_request(request: &Request<Body>) -> Arc<KeyBudgetSettings> {
-    request.extensions().get::<Arc<ServerState>>().map_or_else(
-        || Arc::new(KeyBudgetSettings::default()),
-        |state| Arc::clone(&state.auth_key_budgets.settings),
-    )
+fn settings_for_request(request: &Request<Body>) -> Result<Arc<Settings>, AuthenticationFailure> {
+    request
+        .extensions()
+        .get::<Arc<ServerState>>()
+        .map(|state| Arc::clone(&state.auth_key_budgets.settings))
+        .ok_or(AuthenticationFailure::Missing)
 }
 
 pub(crate) fn stage_input(
@@ -100,7 +114,7 @@ pub(crate) fn stage_input(
     Ok(KeyBudgetStageInput {
         context,
         rule: rule_for_request(request),
-        settings: settings_for_request(request),
+        settings: settings_for_request(request)?,
     })
 }
 
@@ -109,7 +123,7 @@ pub(crate) async fn prefetch(stage: &KeyBudgetStageInput) -> Result<(), Box<Prox
     let Some(auth) = stage.rule.auth.as_ref() else {
         return Ok(());
     };
-    let now = stage.rule.now.unwrap_or_else(Utc::now);
+    let now = (stage.rule.clock)();
     let budgets = effective_budgets(auth, now)
         .map_err(|error| Box::new(authentication_exception(&error.to_string())))?;
     let mut checked = auth.clone();
@@ -121,7 +135,7 @@ pub(crate) async fn prefetch(stage: &KeyBudgetStageInput) -> Result<(), Box<Prox
         reader,
         alerts: stage.rule.alerts.as_deref(),
         durations,
-        global_alert_emails: stage.settings.global_alert_emails.as_ref(),
+        global_alert_emails: stage.settings.default_alert_emails.as_ref(),
         alert_fraction: Money::from_f64(stage.settings.alert_fraction),
         throttle_pct: stage.rule.throttle_pct,
         now,
@@ -142,7 +156,9 @@ fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
     match error {
         KeyBudgetError::Denied(denial) => budget_exceeded_exception(denial),
         KeyBudgetError::Spend(failure) => spend_failure_exception(failure),
-        KeyBudgetError::Window(failure) => authentication_exception(&failure.to_string()),
+        KeyBudgetError::Window(_) | KeyBudgetError::Alert(_) => {
+            authentication_exception(&error.to_string())
+        }
     }
 }
 

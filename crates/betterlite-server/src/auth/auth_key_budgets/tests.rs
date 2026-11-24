@@ -18,6 +18,7 @@ use betterlite_auth::current_spend::{BUDGET_UNVERIFIABLE_DETAIL, SpendQuery};
 use betterlite_auth::request_quota_view::RequestQuotaViewExt as _;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::auth_key_budgets::Settings;
 use betterlite_config::types::Config;
 use betterlite_db::budget_permission_rows::JsonData;
 use chrono::{DateTime, TimeZone as _, Utc};
@@ -31,7 +32,6 @@ use crate::auth::auth_identity::{
 };
 use crate::routes;
 use crate::routes::tests::state_for;
-use crate::state::auth_key_budgets::KeyBudgetSettings;
 
 // a recognized route, so the auth chain runs before the marking handler
 const MODEL_ROUTE: &str = "/v1/files";
@@ -72,7 +72,7 @@ fn rule(fields: &str) -> KeyBudgetRule {
         alerts: None,
         durations: None,
         throttle_pct: None,
-        now: Some(now()),
+        clock: now,
         applied: Mutex::new(None),
     }
 }
@@ -162,7 +162,7 @@ fn stage_is_registered() {
     assert_eq!(settings.alert_fraction.to_bits(), 0.5_f64.to_bits());
     assert_eq!(
         settings
-            .global_alert_emails
+            .default_alert_emails
             .as_ref()
             .expect("the global map loads")
             .len(),
@@ -280,6 +280,27 @@ async fn invalid_expiry_is_unauthorized() {
 }
 
 #[tokio::test]
+async fn malformed_alert_emails_is_unauthorized() {
+    let (status, body, reached) = run_request(
+        &config_with_master_key(),
+        Arc::new(rule(
+            r#"{"token":"sk-bad-alerts","spend":1,"max_budget":10,"metadata":{"max_budget_alert_emails":"owner@example.com"}}"#,
+        )),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(body.contains("\"type\":\"auth_error\""), "{body}");
+    assert!(
+        body.contains(
+            "Authentication Error, max_budget_alert_emails must be a mapping of thresholds to recipients"
+        ),
+        "{body}"
+    );
+    assert!(body.contains("\"code\":\"401\""), "{body}");
+    assert!(!reached);
+}
+
+#[tokio::test]
 async fn unverifiable_spend_is_unavailable() {
     let unverifiable = Arc::new(KeyBudgetRule {
         reader: Some(Arc::new(UnverifiableReader)),
@@ -356,7 +377,7 @@ async fn prefetch_records_the_checked_key() {
     let stage = KeyBudgetStageInput {
         context: master_context(&master_key),
         rule: Arc::clone(&budget_rule),
-        settings: Arc::new(KeyBudgetSettings::default()),
+        settings: Arc::new(Settings::default()),
     };
     prefetch(&stage)
         .await

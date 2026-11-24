@@ -2,6 +2,8 @@
 mod fixtures;
 
 use std::collections::BTreeMap;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
 
 use betterlite_auth::auth_key_budgets::email::merge_alert_email_configs;
 use betterlite_auth::auth_key_budgets::expiry::TempBudgetError;
@@ -14,6 +16,8 @@ use betterlite_auth::request_quota_view::RequestQuotaViewExt as _;
 use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use chrono::{DateTime, Utc};
+use jiff::tz::TimeZoneDatabase;
+use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -32,37 +36,24 @@ pub(crate) struct Input {
     calls: Vec<Call>,
 }
 
+// serde reads a missing Option field as None, so only the function has to be present
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Call {
     function: Function,
-    #[serde(default)]
     token: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
     spends: Option<Vec<JsonData>>,
-    #[serde(default)]
     now: Option<String>,
-    #[serde(default)]
     throttle_pct: Option<f64>,
-    #[serde(default)]
     global_cfg: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
     user_email: Option<String>,
-    #[serde(default)]
     per_key_cfg: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
     team_id: Option<String>,
-    #[serde(default)]
     team_alias: Option<String>,
-    #[serde(default)]
     team_metadata: Option<BTreeMap<String, JsonData>>,
-    #[serde(default)]
     organization_id: Option<String>,
-    #[serde(default)]
     user_id: Option<String>,
-    #[serde(default)]
     spend: Option<JsonData>,
-    #[serde(default)]
     max_budget: Option<JsonData>,
 }
 
@@ -121,10 +112,14 @@ async fn admit_value(call: &Call) -> Result<Value, Failure> {
         .spends
         .as_deref()
         .ok_or(Failure::Missing("the spend reads"))?;
-    let reader = ScriptedSpend::new(spends.to_vec());
+    let reader = ScriptedSpend {
+        spends: spends.to_vec(),
+        next: AtomicUsize::new(0),
+        reads: Mutex::new(Vec::new()),
+    };
     let recorder = Recorder::default();
     let budgets = effective_budgets(&auth, now)?;
-    let durations = CaseDurations::from_env();
+    let durations = CaseDurations(TimeZoneDatabase::from_env());
     let admission = Admission {
         reader: &reader,
         alerts: Some(&recorder),
@@ -205,12 +200,15 @@ fn auth_of(call: &Call) -> Result<UserAPIKeyAuth, Failure> {
 
 // BudgetExceededError's caller-visible fields, with the status litellm.budget_exceeded_status_code defaults to
 fn denial_json(denial: &Denial) -> Value {
+    let entity_id = denial.entity_id.as_ref().map_or(Value::Null, |entity| {
+        Value::String(entity.expose_secret().to_owned())
+    });
     json!({
         "status": denial.status_code,
         "current_cost": decimal_json(denial.current_cost),
         "max_budget": decimal_json(denial.max_budget),
         "entity_type": denial.entity_type,
-        "entity_id": denial.entity_id,
+        "entity_id": entity_id,
     })
 }
 

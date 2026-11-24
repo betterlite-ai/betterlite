@@ -17,24 +17,17 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use secrecy::ExposeSecret as _;
 use serde_json::{Number, Value, json};
 
 // the spend reads the case scripts, recorded the way LiteLLM's get_current_spend receives them
 pub(crate) struct ScriptedSpend {
-    spends: Vec<JsonData>,
-    next: AtomicUsize,
-    reads: Mutex<Vec<Value>>,
+    pub(crate) spends: Vec<JsonData>,
+    pub(crate) next: AtomicUsize,
+    pub(crate) reads: Mutex<Vec<Value>>,
 }
 
 impl ScriptedSpend {
-    pub(crate) const fn new(spends: Vec<JsonData>) -> Self {
-        Self {
-            spends,
-            next: AtomicUsize::new(0),
-            reads: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(crate) fn take(&self) -> Vec<Value> {
         let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
         take(&mut *reads)
@@ -85,13 +78,7 @@ impl BudgetAlertSink for Recorder {
 }
 
 // LiteLLM's own duration parser, which resolves the window suffixes the budget limits carry
-pub(crate) struct CaseDurations(TimeZoneDatabase);
-
-impl CaseDurations {
-    pub(crate) fn from_env() -> Self {
-        Self(TimeZoneDatabase::from_env())
-    }
-}
+pub(crate) struct CaseDurations(pub(crate) TimeZoneDatabase);
 
 impl DurationParser for CaseDurations {
     fn seconds(&self, spec: &str, now: DateTime<Utc>) -> Option<i64> {
@@ -137,13 +124,16 @@ fn isoformat(moment: &NaiveDateTime) -> String {
 }
 
 fn alert_json(alert: &BudgetAlert) -> Value {
+    let token = alert.token.as_ref().map_or(Value::Null, |token| {
+        Value::String(token.expose_secret().to_owned())
+    });
     json!({
         "type": alert_kind_name(alert.kind),
         "info": {
             "spend": decimal_json(alert.spend),
             "max_budget": money_json(alert.max_budget),
             "soft_budget": money_json(alert.soft_budget),
-            "token": alert.token,
+            "token": token,
             "customer_id": Value::Null,
             "user_id": alert.user_id,
             "team_id": alert.team_id,

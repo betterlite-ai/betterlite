@@ -14,6 +14,7 @@ use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use chrono::{DateTime, FixedOffset, TimeZone as _, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use secrecy::ExposeSecret as _;
 use tokio::sync::oneshot;
 use tokio_util::task::TaskTracker;
 
@@ -22,7 +23,6 @@ use crate::current_spend::SpendQuery;
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
 use super::alerts::{BudgetAlert, BudgetAlertKind, BudgetAlertSink, EventGroup};
-use super::key_budget::KeyBudgets;
 use super::money::Money;
 use super::spend::{SpendReadError, SpendReader};
 use super::windows::WindowError;
@@ -295,7 +295,14 @@ async fn equal_max_denied() {
         panic!("spend at the maximum must be denied");
     };
     assert_eq!(denial.entity_type, "key");
-    assert_eq!(denial.entity_id, "sk-equal");
+    assert_eq!(
+        denial
+            .entity_id
+            .as_ref()
+            .map(|token| token.expose_secret().to_owned()),
+        Some("sk-equal".to_owned())
+    );
+    assert!(!format!("{denial:?}").contains("sk-equal"));
     assert_eq!(denial.status_code, 422_u16);
     assert_eq!(denial.current_cost, dec(5));
     assert_eq!(denial.max_budget, dec(5));
@@ -312,7 +319,7 @@ async fn equal_max_denied() {
 #[tokio::test]
 async fn nonfinite_max_not_denied(#[case] maximum: Money) {
     let mut auth = key(r#"{"token":"sk-nonfinite","spend":0}"#);
-    let mut budgets = KeyBudgets::from_auth(&auth);
+    let mut budgets = effective_budgets(&auth, now()).unwrap();
     budgets.max_budget = Some(maximum);
     let reader = ScriptedReader::new([dec(10)]);
     admit(&mut auth, &budgets, &admission(&reader, None))
@@ -392,6 +399,45 @@ async fn masked_name_regex(#[case] key_name: &str, #[case] expected: &str) {
     assert_eq!(denial.message, expected);
 }
 
+#[rstest]
+#[case::absent(None, true)]
+#[case::null(Some("null"), true)]
+#[case::false_flag(Some("false"), true)]
+#[case::zero(Some("0"), true)]
+#[case::empty_string(Some(r#""""#), true)]
+#[case::empty_array(Some("[]"), true)]
+#[case::empty_object(Some("{}"), true)]
+#[case::mapping(Some(r#"{"80":["owner@example.com"]}"#), true)]
+#[case::true_flag(Some("true"), false)]
+#[case::nonzero_number(Some("0.5"), false)]
+#[case::text(Some(r#""owner@example.com""#), false)]
+#[case::nonempty_array(Some(r#"["owner@example.com"]"#), false)]
+#[tokio::test]
+async fn alert_config_rejects_truthy_non_mappings(
+    #[case] alert_config: Option<&str>,
+    #[case] accepted: bool,
+) {
+    let metadata = alert_config.map_or_else(
+        || r#"{"token":"sk-alert-config","spend":5,"max_budget":100}"#.to_owned(),
+        |config| {
+            format!(
+                r#"{{"token":"sk-alert-config","spend":5,"max_budget":100,"metadata":{{"max_budget_alert_emails":{config}}}}}"#
+            )
+        },
+    );
+    let mut auth = key(&metadata);
+    let budgets = effective_budgets(&auth, now()).unwrap();
+    let reader = ScriptedReader::new([dec(5)]);
+    let result = admit(&mut auth, &budgets, &admission(&reader, None)).await;
+    match result {
+        Ok(()) => assert!(accepted, "a false value or a mapping must be accepted"),
+        Err(KeyBudgetError::Alert(_)) => {
+            assert!(!accepted, "a truthy non-mapping must name the field");
+        }
+        Err(other) => panic!("the config must not reach another check: {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn each_call_info_field() {
     let reader = ScriptedReader::new([dec(2)]);
@@ -410,7 +456,14 @@ async fn each_call_info_field() {
     assert_eq!(alert.spend, dec(2));
     assert_eq!(alert.max_budget, Some(money(10)));
     assert_eq!(alert.soft_budget, Some(money(4)));
-    assert_eq!(alert.token.as_deref(), Some("sk-info"));
+    assert_eq!(
+        alert
+            .token
+            .as_ref()
+            .map(|token| token.expose_secret().to_owned()),
+        Some("sk-info".to_owned())
+    );
+    assert!(!format!("{alert:?}").contains("sk-info"));
     assert_eq!(alert.user_id.as_deref(), Some("user-1"));
     assert_eq!(alert.team_id.as_deref(), Some("team-1"));
     assert_eq!(alert.team_alias, None);
@@ -525,7 +578,13 @@ async fn first_window_stops() {
         "ExceededBudget: Key over 1m budget. Spend=$7.0000, Limit=$5.00"
     );
     assert_eq!(denial.entity_type, "key");
-    assert_eq!(denial.entity_id, "sk-first");
+    assert_eq!(
+        denial
+            .entity_id
+            .as_ref()
+            .map(|token| token.expose_secret().to_owned()),
+        Some("sk-first".to_owned())
+    );
     assert_eq!(denial.status_code, 422_u16);
     assert_eq!(reader.queries().len(), 1);
 }

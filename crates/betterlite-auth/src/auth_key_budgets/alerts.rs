@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
-use secrecy::ExposeSecret as _;
+use secrecy::SecretString;
 
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
@@ -22,13 +22,13 @@ pub enum BudgetAlertKind {
 }
 
 // the CallInfo LiteLLM builds for a budget alert; a nonfinite budget stays nonfinite instead of being rounded
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct BudgetAlert {
     pub kind: BudgetAlertKind,
     pub spend: Decimal,
     pub max_budget: Option<Money>,
     pub soft_budget: Option<Money>,
-    pub token: Option<String>,
+    pub token: Option<SecretString>,
     pub user_id: Option<String>,
     pub team_id: Option<String>,
     pub team_alias: Option<String>,
@@ -72,10 +72,7 @@ impl KeyAlertFields<'_> {
             spend,
             max_budget: self.max_budget,
             soft_budget: self.soft_budget,
-            token: token
-                .token
-                .as_ref()
-                .map(|secret| secret.expose_secret().to_owned()),
+            token: token.token.clone(),
             user_id: token.user_id.clone(),
             team_id: token.team_id.clone(),
             team_alias: self.team_alias.map(str::to_owned),
