@@ -36,7 +36,6 @@ use crate::sse_data_generator::types::{
 use crate::sse_error_frames::SseFailure;
 use crate::stream_chunks::StreamItem;
 
-#[cfg(test)]
 mod tests;
 
 const MEDIA_TYPE: &str = "text/event-stream";
