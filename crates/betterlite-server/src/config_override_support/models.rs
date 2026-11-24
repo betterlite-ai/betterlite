@@ -8,9 +8,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
 pub enum OverrideKind {
+    #[strum(serialize = "hashicorp_vault")]
     HashicorpVault,
+    #[strum(serialize = "cyberark")]
     CyberArk,
 }
 
