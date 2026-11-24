@@ -91,7 +91,12 @@ pub(crate) fn call(input: &CallInput) -> HelperResult {
     let transport = PlannedTransport::new(&input.reply)?;
     let runtime = Builder::new_current_thread().enable_all().build()?;
     let outcome = runtime.block_on(tool.call(&arguments, &context, &transport));
-    let request = transport.take().map(|sent| request_json(&sent));
+    let request = transport
+        .requests
+        .lock()
+        .ok()
+        .and_then(|mut requests| requests.pop())
+        .map(|sent| request_json(&sent));
     let (result, error) = match outcome {
         Ok(output) => (Some(output_json(output)), None),
         Err(failure) => (None, Some(error_json(&failure))),
@@ -197,11 +202,6 @@ impl PlannedTransport {
             body: reply.body.clone(),
             requests: Mutex::new(Vec::new()),
         })
-    }
-
-    fn take(&self) -> Option<OpenApiRequest> {
-        let mut requests = self.requests.lock().ok()?;
-        requests.pop()
     }
 }
 

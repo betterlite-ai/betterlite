@@ -251,7 +251,7 @@ async fn a_non_utf8_body_is_an_error() {
 #[tokio::test]
 async fn a_utf8_body_with_multibyte_text_is_fine() {
     assert_eq!(
-        reply(200, "caf\u{e9}".as_bytes()).await.unwrap(),
-        OpenApiToolOutput::Text("caf\u{e9}".to_owned())
+        reply(200, "\u{e9}\u{fc}".as_bytes()).await.unwrap(),
+        OpenApiToolOutput::Text("\u{e9}\u{fc}".to_owned())
     );
 }
