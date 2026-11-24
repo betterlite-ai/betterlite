@@ -108,7 +108,7 @@ def dispatch(input_value: Input) -> AnswerValue:
 def load_named(call: LoadNamedCall) -> RowView:
     token = UserAPIKeyAuth(requires_fresh_policy=call["requires_fresh_policy"])
     # the loader imports get_object_permission when it runs, so the stub is in place before the call
-    auth_checks.get_object_permission = ScriptedRead(call["read"], call["row"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3982
+    auth_checks.get_object_permission = ScriptedRead(call["read"], call["row"])  # pyright: ignore[reportAttributeAccessIssue, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3982
     loaded = asyncio.run(
         MCPRequestHandler._load_named_object_permission(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2796
             call["principal"], call["object_permission_id"], StubClient(), token
