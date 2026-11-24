@@ -29,7 +29,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L12-L33
   - what: "A caller that passes client or shared_session not None gets UnsupportedCallArgument, and azure_ad_token_provider is refused the same way, where LiteLLM lets that client or token provider make the request."
     why: "A Python httpx client or callable cannot cross into the Rust session, and an azure container call is unsupported here."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L190-L200
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L248-L268
   - what: "An extra_query value must be a string or an integer, so a float, boolean, null, list or object fails the call with a RuntimeError that names the parameter, where LiteLLM hands any value to httpx."
     why: "The Rust query type holds text and integers, which covers what the OpenAI API and a working setup send, and another type is an error that names the field."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L194-L207
