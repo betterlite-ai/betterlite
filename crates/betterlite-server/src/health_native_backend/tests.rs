@@ -5,6 +5,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_ocr::json::{Json as OcrJson, Object as OcrObject};
 use betterlite_ocr::ocr_error::OcrError;
@@ -31,6 +32,7 @@ mod support;
 
 const OCR_ANSWER: &[u8] =
     br##"{"pages":[{"index":0,"markdown":"# Title"}],"usage_info":{"pages_processed":1}}"##;
+const OCR_REJECTION: &[u8] = br#"{"message":"invalid api key"}"#;
 
 fn healthy(outcome: HealthCheckOutcome) -> HealthCheckResponse {
     match outcome {
@@ -471,7 +473,7 @@ fn backend_ocr_request_requires_a_model() {
 
 #[tokio::test]
 async fn backend_ocr_probe_passes_the_arguments_through_aocr() {
-    let server = MockServer::start(OCR_ANSWER).await;
+    let server = MockServer::start(200, OCR_ANSWER).await;
     let probe = OcrProbe { client: ocr_client };
     let parameters = mode_parameters(&[
         ("model", text("mistral-ocr-latest")),
@@ -517,6 +519,11 @@ async fn error_chat_keeps_the_owner_error_and_does_not_retry() {
         .await
         .expect_err("the chat call fails");
     assert_eq!(error.to_string(), "the provider is down");
+    let HealthProbeError::Backend { class, .. } = &error else {
+        panic!("the chat failure is a backend error");
+    };
+    assert!(matches!(class, ErrorClass::Authentication(_)));
+    assert_eq!(class.metadata().status_code, 401);
     let source = StdError::source(&error).expect("the owner error is the source");
     assert!(source.downcast_ref::<CallError>().is_some());
     assert_eq!(harness.chat.calls(), 1);
@@ -545,19 +552,67 @@ async fn error_completion_keeps_the_owner_error_as_source() {
 
 #[tokio::test]
 async fn error_ocr_probe_keeps_the_aocr_error_as_source() {
+    let server = MockServer::start(401, OCR_REJECTION).await;
     let probe = OcrProbe { client: ocr_client };
+    let api_base = format!("{}/v1", server.base);
     let call = OcrCall {
         parameters: mode_parameters(&[
             ("model", text("mistral-ocr-latest")),
+            ("api_base", text(&api_base)),
             ("custom_llm_provider", text("mistral")),
         ]),
         document: document("data:application/pdf;base64,YWJj"),
-        api_key: None,
+        api_key: Some(SecretString::from("sk-test")),
         logging: None,
     };
     let error = probe.ocr(call).await.expect_err("the provider is rejected");
     let source = StdError::source(&error).expect("the aocr error is the source");
     assert!(source.downcast_ref::<OcrError>().is_some());
+    let HealthProbeError::Backend { class, .. } = &error else {
+        panic!("the ocr failure is a backend error");
+    };
+    assert!(matches!(class, ErrorClass::Authentication(_)));
+    assert_eq!(class.metadata().status_code, 401);
+    let sent = server.requests().await;
+    assert_eq!(sent.len(), 1);
+}
+
+#[tokio::test]
+async fn error_ocr_probe_maps_each_provider_status_to_its_class() {
+    let probe = OcrProbe { client: ocr_client };
+    for status in [401_u16, 403, 404, 408, 422, 429, 500, 502, 503, 504] {
+        let server = MockServer::start(status, OCR_REJECTION).await;
+        let api_base = format!("{}/v1", server.base);
+        let call = OcrCall {
+            parameters: mode_parameters(&[
+                ("model", text("mistral-ocr-latest")),
+                ("api_base", text(&api_base)),
+                ("custom_llm_provider", text("mistral")),
+            ]),
+            document: document("data:application/pdf;base64,YWJj"),
+            api_key: Some(SecretString::from("sk-test")),
+            logging: None,
+        };
+        let error = probe.ocr(call).await.expect_err("the provider is rejected");
+        let HealthProbeError::Backend { class, .. } = &error else {
+            panic!("the ocr failure is a backend error");
+        };
+        match status {
+            401 => assert!(matches!(class, ErrorClass::Authentication(_))),
+            403 => assert!(matches!(class, ErrorClass::PermissionDenied(_))),
+            404 => assert!(matches!(class, ErrorClass::NotFound(_))),
+            408 | 504 => assert!(matches!(class, ErrorClass::Timeout(_))),
+            422 => assert!(matches!(class, ErrorClass::BadRequest(_))),
+            429 => assert!(matches!(class, ErrorClass::RateLimit(_))),
+            500 => assert!(matches!(class, ErrorClass::InternalServer(_))),
+            502 => assert!(matches!(class, ErrorClass::BadGateway(_))),
+            503 => assert!(matches!(class, ErrorClass::ServiceUnavailable(_))),
+            _ => panic!("unexpected status {status}"),
+        }
+        assert_eq!(class.metadata().status_code, status);
+        let sent = server.requests().await;
+        assert_eq!(sent.len(), 1);
+    }
 }
 
 #[test]

@@ -8,6 +8,8 @@ use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
+use betterlite_error::error::ErrorClass;
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
@@ -108,7 +110,12 @@ impl FakeChat {
     }
 
     pub(super) fn fail(&self, message: &str) {
-        *self.failure.lock().unwrap() = Some(CallError::from(plain_error(message)));
+        let class = ErrorClass::Authentication(Box::new(ResponseDetails::for_provider(
+            String::from(message),
+            None,
+            "openai",
+        )));
+        *self.failure.lock().unwrap() = Some(CallError::from(class));
     }
 
     pub(super) fn calls(&self) -> usize {
@@ -566,7 +573,7 @@ pub(super) struct MockServer {
 }
 
 impl MockServer {
-    pub(super) async fn start(body: &'static [u8]) -> Self {
+    pub(super) async fn start(status: u16, body: &'static [u8]) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("the mock server binds");
@@ -575,7 +582,7 @@ impl MockServer {
             .expect("the mock server has an address");
         let mut tasks = JoinSet::new();
         let answer = body.to_vec();
-        tasks.spawn(serve(listener, answer));
+        tasks.spawn(serve(listener, status, answer));
         Self {
             base: format!("http://{address}"),
             tasks,
@@ -591,11 +598,16 @@ impl MockServer {
     }
 }
 
-async fn serve(listener: TcpListener, answer: Vec<u8>) -> Vec<String> {
+async fn serve(listener: TcpListener, status: u16, answer: Vec<u8>) -> Vec<String> {
     let (mut socket, _) = listener.accept().await.expect("the mock server accepts");
     let request = read_request(&mut socket).await;
+    let reason = match status {
+        200 => "OK",
+        401 => "Unauthorized",
+        _ => "Error",
+    };
     let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
         answer.len()
     );
     socket

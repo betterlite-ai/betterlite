@@ -1,6 +1,11 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
+use betterlite_error::error::details::{
+    ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
+};
+use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_models::decisions::Json;
 use betterlite_ocr::json::{Json as OcrJson, Object as OcrObject};
 use betterlite_ocr::ocr_error::OcrError;
@@ -8,7 +13,6 @@ use betterlite_ocr::ocr_http::OcrClient;
 use betterlite_ocr::ocr_input::LiteLLMOcrRequest;
 use betterlite_ocr::ocr_input::wire::{OcrWireRequest, decode_request_input};
 use betterlite_ocr::ocr_route::aocr;
-use betterlite_sdk::call_wrapper::error::plain_error;
 use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 
@@ -102,9 +106,63 @@ fn parameter_failure(key: &str, source: serde_json::Error) -> HealthProbeError {
 
 fn ocr_failure(error: OcrError) -> HealthProbeError {
     let message = error.to_string();
+    let class = ocr_class(&message, error.http_status_code());
     HealthProbeError::Backend {
-        class: plain_error(&message),
+        class,
         message,
         source: Box::new(error),
+    }
+}
+
+// the class LiteLLM's exception mapper raises for a native failure carrying this status
+fn ocr_class(message: &str, status: Option<u16>) -> ErrorClass {
+    let context = ErrorContext {
+        message: String::from(message),
+        model: None,
+        provider: None,
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    };
+    let Some(code) = status else {
+        return ErrorClass::ApiConnection(Box::new(context));
+    };
+    match code {
+        401 => {
+            ErrorClass::Authentication(Box::new(ResponseDetails::with_status(context, Some(401))))
+        }
+        403 => {
+            ErrorClass::PermissionDenied(Box::new(ResponseDetails::with_status(context, Some(403))))
+        }
+        404 => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(context, Some(404)))),
+        408 => ErrorClass::Timeout(Box::new(TimeoutDetails {
+            context,
+            original_status: TimeoutStatus(408),
+        })),
+        429 => ErrorClass::RateLimit(Box::new(RateLimitDetails {
+            context,
+            category: RateLimitCategory::VendorRateLimit,
+            dimension: None,
+            headers: BTreeMap::new(),
+        })),
+        500 => ErrorClass::InternalServer(Box::new(context)),
+        502 => ErrorClass::BadGateway(Box::new(context)),
+        503 => ErrorClass::ServiceUnavailable(Box::new(context)),
+        504 => ErrorClass::Timeout(Box::new(TimeoutDetails {
+            context,
+            original_status: TimeoutStatus(504),
+        })),
+        other => {
+            if (400..=499).contains(&other) {
+                ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, Some(other))))
+            } else {
+                ErrorClass::Api(Box::new(ApiDetails {
+                    context,
+                    status: other,
+                }))
+            }
+        }
     }
 }
