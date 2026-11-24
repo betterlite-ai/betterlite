@@ -107,10 +107,8 @@ impl ContainerAccess for FakeAccess {
         provider: &str,
     ) -> Result<ContainerIdentity, ContainerOwnershipError> {
         let subject = caller.principal.subject.as_str();
-        self.events
-            .lock()
-            .unwrap()
-            .push(format!("check:{container_id}:{subject}:{provider}"));
+        let event = format!("check:{container_id}:{subject}:{provider}");
+        self.events.lock().unwrap().push(event);
         if self.deny {
             return Err(ContainerOwnershipError::Forbidden);
         }
@@ -123,13 +121,14 @@ impl ContainerAccess for FakeAccess {
         original_container_id: &str,
         provider: &str,
     ) -> Result<ContainerForwardingParams, ContainerOwnershipError> {
-        self.events.lock().unwrap().push(format!(
-            "forward:{container_id}:{original_container_id}:{provider}"
-        ));
-        if self.refuse_forwarding {
+        let event = ["forward", container_id, original_container_id, provider].join(":");
+        self.events.lock().unwrap().push(event);
+        let forwarding = self.forwarding.clone();
+        let refused = self.refuse_forwarding;
+        if refused {
             return Err(ContainerOwnershipError::NoIdentityScope);
         }
-        Ok(self.forwarding.clone())
+        Ok(forwarding)
     }
 }
 
