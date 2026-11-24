@@ -3,11 +3,10 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::stored_cipher::DbCipher;
-use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue, StoredValue};
-use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 
 use crate::cache_settings::parse::parse_stored_settings;
+use crate::env_value_codec::decrypt_env;
 
 mod tests;
 
@@ -15,12 +14,6 @@ pub(crate) const CACHE_CONFIG_ROW_ID: &str = "cache_config";
 
 const SELECT_SETTINGS_SQL: &str =
     "SELECT cache_settings::text FROM \"LiteLLM_CacheConfig\" WHERE id = $1";
-
-// LiteLLM's decrypt_value_helper(return_original_value=True) keeps a value it cannot open exactly as stored.
-const DECRYPT_POLICY: DecryptPolicy = DecryptPolicy {
-    log: FailureLog::Error,
-    value: FailureValue::Original,
-};
 
 // B726 has no cache config repository of its own, so the read seam lives here; the Postgres adapter is its production side.
 #[async_trait]
@@ -59,21 +52,8 @@ pub(crate) async fn saved_settings(
     let Ok(Some(stored)) = source.cache_settings().await else {
         return Map::new();
     };
-    let Ok(mut settings) = parse_stored_settings(&stored) else {
+    let Ok(settings) = parse_stored_settings(&stored) else {
         return Map::new();
     };
-    for (field, value) in &mut settings {
-        decrypt_setting(value, field, cipher);
-    }
-    settings
-}
-
-fn decrypt_setting(value: &mut Value, field: &str, cipher: &DbCipher) {
-    let Value::String(text) = value else {
-        return;
-    };
-    let stored = StoredValue::<()>::Text(SecretString::from(text.clone()));
-    if let Some(StoredValue::Text(opened)) = cipher.decrypt_value(stored, field, DECRYPT_POLICY) {
-        opened.expose_secret().clone_into(text);
-    }
+    decrypt_env(&settings, cipher)
 }
