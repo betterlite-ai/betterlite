@@ -1,17 +1,14 @@
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 from litellm.proxy.common_utils.proxy_rate_limit_error import ProxyRateLimitError
-from litellm.proxy.hooks.batch_enqueued_tokens import (
-    BatchEnqueuedTokenReservation,
-    BatchEnqueuedTokenScope,
-)
+from litellm.proxy.hooks.batch_enqueued_tokens import BatchEnqueuedTokenReservation
 from litellm.proxy.hooks.batch_rate_limiter import BatchFileUsage
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitDescriptor,
-    RateLimitDescriptorRateLimitObject,
+    RateLimitDescriptorRateLimitObject as RateLimitFields,
     RateLimitResponse,
     RateLimitStatus,
-    ReservationAwareIncrementOperation,
+    ReservationAwareIncrementOperation as RefundOperation,
 )
 from pydantic import JsonValue, TypeAdapter
 
@@ -104,7 +101,7 @@ class Call(TypedDict):
     requested_model: str | None
     window_start: int | None
     tokens: int
-    reservation_windows: list[WindowSpec]
+    reservation_windows: NotRequired[list[WindowSpec]]
 
 
 class ScopeView(TypedDict):
@@ -187,14 +184,6 @@ class ErrorFields(Protocol):
     llm_provider: str
 
 
-def scope_view(scope: BatchEnqueuedTokenScope) -> ScopeView:
-    return {"key": scope.key, "value": scope.value, "limit": scope.limit}
-
-
-def scope_of(scope: ScopeSpec) -> BatchEnqueuedTokenScope:
-    return BatchEnqueuedTokenScope(key=scope["key"], value=scope["value"], limit=scope["limit"])
-
-
 def status_of(raw: StatusSpec) -> RateLimitStatus:
     fields: dict[str, JsonValue] = {
         "code": raw["code"],
@@ -210,20 +199,21 @@ def status_of(raw: StatusSpec) -> RateLimitStatus:
 
 
 def response_of(raw: ResponseSpec) -> RateLimitResponse:
+    windows: list[tuple[str, str, Backend]] = []
     held = raw.get("reservation_windows")
-    windows = [] if held is None else held
+    if held is not None:
+        windows = [
+            (window["counter_key"], window["window_start"], window["backend"]) for window in held
+        ]
     return {
         "overall_code": raw["overall_code"],
         "statuses": [status_of(status) for status in raw["statuses"]],
-        "reservation_windows": frozenset(
-            (window["counter_key"], window["window_start"], window["backend"])
-            for window in windows
-        ),
+        "reservation_windows": frozenset(windows),
     }
 
 
 def descriptor_view(descriptor: RateLimitDescriptor) -> DescriptorView:
-    rate_limit: RateLimitDescriptorRateLimitObject | None = descriptor.get("rate_limit")
+    rate_limit: RateLimitFields | None = descriptor.get("rate_limit")
     if rate_limit is None:
         return {"key": descriptor["key"], "value": descriptor["value"], "rate_limit": None}
     return {
@@ -238,7 +228,7 @@ def descriptor_view(descriptor: RateLimitDescriptor) -> DescriptorView:
     }
 
 
-def operation_view(operation: ReservationAwareIncrementOperation) -> OperationView:
+def operation_view(operation: RefundOperation) -> OperationView:
     return {
         "key": operation["key"],
         "increment_value": operation["increment_value"],
@@ -252,7 +242,10 @@ def operation_view(operation: ReservationAwareIncrementOperation) -> OperationVi
 def reservation_view(reservation: BatchEnqueuedTokenReservation) -> ReservationView:
     return {
         "tokens": reservation.tokens,
-        "scopes": [scope_view(scope) for scope in reservation.scopes],
+        "scopes": [
+            {"key": scope.key, "value": scope.value, "limit": scope.limit}
+            for scope in reservation.scopes
+        ],
         "backend": reservation.backend,
         "owner": reservation.owner,
     }
@@ -270,5 +263,3 @@ def error_view(error: ProxyRateLimitError) -> ErrorView:
         "model": fields.model,
         "llm_provider": fields.llm_provider,
     }
-
-
