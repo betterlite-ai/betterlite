@@ -96,17 +96,24 @@ fn model_info_lookup_gpt_5_and_o_series_parameters() {
     assert!(o3.iter().any(|name| name == "tools"));
     assert!(!o3.iter().any(|name| name == "logprobs"));
     assert!(!o3.iter().any(|name| name == "parallel_tool_calls"));
-    for (bare, prefixed) in [(gpt_5, "openai/gpt-5"), (o3, "openai/o3")] {
-        assert!(bare.iter().any(|name| name == "user"));
-        let mut without_user = bare;
-        without_user.retain(|name| name != "user");
-        let found = parameter_names(&fields(
-            &get_runtime()
-                .block_on(model_info(&runtime, &query(prefixed)))
-                .unwrap(),
-        ));
-        assert_eq!(found, without_user);
-    }
+    assert!(gpt_5.iter().any(|name| name == "user"));
+    let mut gpt_5_without_user = gpt_5;
+    gpt_5_without_user.retain(|name| name != "user");
+    let prefixed_gpt_5 = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/gpt-5")))
+            .unwrap(),
+    ));
+    assert_eq!(prefixed_gpt_5, gpt_5_without_user);
+    assert!(o3.iter().any(|name| name == "user"));
+    let mut o3_without_user = o3;
+    o3_without_user.retain(|name| name != "user");
+    let prefixed_o3 = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/o3")))
+            .unwrap(),
+    ));
+    assert_eq!(prefixed_o3, o3_without_user);
 }
 
 #[test]
