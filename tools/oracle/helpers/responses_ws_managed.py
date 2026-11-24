@@ -8,10 +8,8 @@ from litellm.exceptions import RateLimitError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.responses.dispatch import aresponses as real_aresponses
-from litellm.responses.streaming_iterator import (
-    ManagedResponsesWebSocketHandler as Handler,
-    ProjectQuotaCallback,
-)
+from litellm.responses.streaming_iterator import ManagedResponsesWebSocketHandler as Handler
+from litellm.responses.streaming_iterator import ProjectQuotaCallback
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -70,15 +68,15 @@ class Input(TypedDict):
     sink: SinkRow
 
 
-class ScriptedFailure(Exception):
+class ScriptedError(Exception):
     pass
 
 
-class SerializerFailure(Exception):
+class SerializerError(Exception):
     pass
 
 
-class ClientDisconnected(Exception):
+class ClientDisconnectedError(Exception):
     pass
 
 
@@ -104,7 +102,7 @@ class Socket:
         self.recorder.sends += 1
         attempt = self.recorder.sends
         if attempt == self.recorder.fails_at:
-            raise ScriptedFailure(self.recorder.fail_message)
+            raise ScriptedError(self.recorder.fail_message)
         self.recorder.frames.append(data)
 
     async def receive_text(self) -> str:
@@ -113,7 +111,7 @@ class Socket:
             frame = self.recorder.incoming[self.recorder.incoming_index]
             self.recorder.incoming_index += 1
             return frame
-        raise ClientDisconnected(self.recorder.disconnect)
+        raise ClientDisconnectedError(self.recorder.disconnect)
 
 
 class FakeChunk:
@@ -129,7 +127,7 @@ class FakeChunk:
 class BrokenChunk:
     def model_dump_json(self, *, exclude_none: bool = True) -> str:
         del exclude_none
-        raise SerializerFailure(SERIALIZE_MESSAGE)
+        raise SerializerError(SERIALIZE_MESSAGE)
 
 
 def chunk_of(row: ChunkRow) -> JsonValue | FakeChunk | BrokenChunk:
@@ -155,7 +153,7 @@ class FakeStream:
 
     async def __anext__(self) -> JsonValue | FakeChunk | BrokenChunk:
         if self.script["raise_after"] == self.index:
-            raise ScriptedFailure(self.script["raise_message"])
+            raise ScriptedError(self.script["raise_message"])
         if self.index < len(self.script["chunks"]):
             row = self.script["chunks"][self.index]
             self.index += 1
@@ -176,12 +174,12 @@ class ScriptedResponses:
         self.recorder.trace.append("provider")
         self.recorder.calls.append({"model": model, "kwargs": call})
         if self.index >= len(self.scripts):
-            raise ScriptedFailure(SCRIPT_EXHAUSTED)
+            raise ScriptedError(SCRIPT_EXHAUSTED)
         script = self.scripts[self.index]
         self.index += 1
         failure = script["fail"]
         if failure is not None:
-            raise ScriptedFailure(failure)
+            raise ScriptedError(failure)
         return FakeStream(self.recorder, script)
 
 
@@ -211,7 +209,7 @@ class ScriptedQuota(ProjectQuotaCallback):
         if kind == "rate_limit":
             raise RateLimitError(self.row["message"], llm_provider="", model="")
         if kind == "internal":
-            raise ScriptedFailure(self.row["message"])
+            raise ScriptedError(self.row["message"])
 
 
 class Capture(logging.Handler):
@@ -234,7 +232,9 @@ class Probe(Handler):
         return history
 
 
-def build_handler(setup: Setup, socket: Socket, recorder: Recorder, quota: QuotaRow | None) -> Probe:
+def build_handler(
+    setup: Setup, socket: Socket, recorder: Recorder, quota: QuotaRow | None
+) -> Probe:
     extra = OBJECTS.validate_python(setup["kwargs"])
     callbacks: list[ProjectQuotaCallback] | None = None
     if quota is not None:
