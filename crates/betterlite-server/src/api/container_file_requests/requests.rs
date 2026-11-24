@@ -170,11 +170,11 @@ fn upload_data(converted: FileData) -> ContainerFormData {
     converted
         .into_iter()
         .map(|(name, value)| {
-            let converted = match value {
+            let form_value = match value {
                 FileDataValue::Unchanged(field) => ContainerFormValue::Field(field),
                 FileDataValue::Files(files) => ContainerFormValue::Tuples(files),
             };
-            (name, converted)
+            (name, form_value)
         })
         .collect()
 }
