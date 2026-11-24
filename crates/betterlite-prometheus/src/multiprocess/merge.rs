@@ -77,7 +77,7 @@ fn read_file(families: &mut Families, path: &Path) -> Result<(), MultiprocessErr
         }
     };
     for entry in decode_db_file(&bytes)? {
-        add_entry(families, path, &parts, file_type, entry)?;
+        add_entry(families, path, &parts, file_type, &entry)?;
     }
     Ok(())
 }
@@ -87,14 +87,13 @@ fn add_entry(
     path: &Path,
     parts: &[&str],
     file_type: &str,
-    entry: DbEntry,
+    entry: &DbEntry,
 ) -> Result<(), MultiprocessError> {
     let KeyParts(metric_name, sample_name, labels, help) = serde_json::from_str(&entry.key)
         .map_err(|source| MultiprocessError::InvalidKey { source })?;
     let family = family_or_create(families, &metric_name, &help, file_type)?;
     let mut label_pairs: Vec<(String, String)> = labels.into_iter().collect();
-    let mut timestamp = None;
-    if file_type == "gauge" {
+    let timestamp = if file_type == "gauge" {
         let Some(mode) = parts.get(1).copied() else {
             return Err(MultiprocessError::InvalidFileName {
                 path: path.to_path_buf(),
@@ -111,8 +110,10 @@ fn add_entry(
         label_pairs.retain(|(label, _value)| label != "pid");
         label_pairs.push(("pid".to_owned(), pid.to_owned()));
         family.mode = Some(mode.to_owned());
-        timestamp = Some(entry.timestamp);
-    }
+        Some(entry.timestamp)
+    } else {
+        None
+    };
     family.samples.push(RawSample {
         name: sample_name,
         labels: label_pairs,

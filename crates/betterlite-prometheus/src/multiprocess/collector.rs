@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -40,14 +41,14 @@ impl MultiProcessCollector {
                 path: self.path.clone(),
                 source,
             })?;
-            let file_name = entry.file_name();
-            let Some(text) = file_name.to_str() else {
+            let path = entry.path();
+            let Some(text) = path.file_name().and_then(OsStr::to_str) else {
                 continue;
             };
-            if text.starts_with('.') || !text.ends_with(".db") {
+            if text.starts_with('.') || path.extension() != Some(OsStr::new("db")) {
                 continue;
             }
-            files.push(entry.path());
+            files.push(path);
         }
         merge(&files)
     }
