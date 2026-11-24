@@ -6,15 +6,15 @@ import threading
 from collections.abc import Coroutine
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, Protocol, TypeAlias, TypedDict, runtime_checkable
+from typing import ClassVar, Final, Protocol, TypedDict, runtime_checkable
 
 import httpx
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite import exceptions
-from betterlite._completion.arguments import TimeoutValues
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._endpoints.payload import CallValue
 from betterlite.ocr import aocr, ocr
 from betterlite.search import asearch, search, search_provider_cost_per_query
 
@@ -56,8 +56,6 @@ ERROR_BODY: Final[dict[str, JsonValue]] = {"message": "the provider refused"}
 BLOCKED_VALUE: Final = "an object Rust cannot take"
 DUMP: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
-CallArgument: TypeAlias = JsonValue | TimeoutValues
-
 
 @runtime_checkable
 class Dumpable(Protocol):
@@ -70,13 +68,14 @@ class ErrorFields(Protocol):
     status_code: int
 
 
+# litellm's OCR and search entrypoints take anything the caller passes, so the reference does too
 class ReferenceCall(Protocol):
-    def __call__(self, *args: CallArgument, **kwargs: CallArgument) -> Dumpable: ...
+    def __call__(self, *args: CallValue, **kwargs: CallValue) -> Dumpable: ...
 
 
 class ReferenceAsyncCall(Protocol):
     def __call__(
-        self, *args: CallArgument, **kwargs: CallArgument
+        self, *args: CallValue, **kwargs: CallValue
     ) -> Coroutine[None, None, Dumpable]: ...
 
 
@@ -204,7 +203,7 @@ def _parameters(signature: inspect.Signature) -> list[tuple[str, str]]:
     ]
 
 
-def error_fields(error: BaseException) -> ErrorFields:
+def error_fields(error: BaseException | ErrorFields) -> ErrorFields:
     match error:
         case ErrorFields():
             return error
@@ -267,11 +266,11 @@ def test_ocr_signature() -> None:
     )
 
 
-def test_ocr_signature_extra_args() -> None:
+def test_ocr_signature_missing_model() -> None:
     with pytest.raises(TypeError) as ours:
-        ocr(OCR_MODEL, OCR_DOCUMENT, "third")
+        ocr(document=OCR_DOCUMENT)
     with pytest.raises(TypeError) as theirs:
-        REFERENCE.ocr(OCR_MODEL, OCR_DOCUMENT, "third")
+        REFERENCE.ocr(document=OCR_DOCUMENT)
     ours_text = str(ours.value).replace("ocr()", "call()")
     theirs_text = str(theirs.value).replace("ocr()", "call()")
     assert ours_text == theirs_text
