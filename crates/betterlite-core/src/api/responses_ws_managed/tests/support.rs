@@ -446,18 +446,19 @@ pub(super) fn connection(model: &str, sink: ScriptedSink) -> Connection<Scripted
     }
 }
 
+fn deps() -> WsDeps {
+    WsDeps {
+        resolver: Arc::new(ScriptedResolver),
+        clock: Arc::new(|| NOW),
+        ids: Arc::new(|| WARMUP_ID.to_owned()),
+        serializer: Arc::new(serialize_chunk),
+    }
+}
+
 pub(super) fn handler(
     connection: Connection<ScriptedSink>,
 ) -> ManagedResponsesWebSocket<ScriptedSink> {
-    ManagedResponsesWebSocket::new(
-        connection,
-        WsDeps {
-            resolver: Arc::new(ScriptedResolver),
-            clock: Arc::new(|| NOW),
-            ids: Arc::new(|| WARMUP_ID.to_owned()),
-            serializer: Arc::new(serialize_chunk),
-        },
-    )
+    ManagedResponsesWebSocket::new(connection, deps())
 }
 
 pub(super) fn json(text: &str) -> Json {
