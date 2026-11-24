@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Final, Literal, TypedDict, TypeAlias, cast
+from typing import Final, Literal, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.models.team import LiteLLM_TeamTable
@@ -173,9 +173,8 @@ def _row_summary(row: LiteLLM_UserTable) -> JsonValue:
     organization_ids = (
         None if memberships is None else [member.organization_id for member in memberships]
     )
-    return _JSON.validate_python(
-        {"user_id": row.user_id, "teams": row.teams, "organization_ids": organization_ids}
-    )
+    summary = {"user_id": row.user_id, "teams": row.teams, "organization_ids": organization_ids}
+    return _JSON.validate_python(summary)
 
 
 async def _validate_answer(call: ValidateCall, effects: list[str]) -> JsonValue:
@@ -212,7 +211,8 @@ async def _teams_answer(call: TeamsCall, effects: list[str]) -> JsonValue:
         )
     )
     teams = await _fetch_user_team_objects(user, client)
-    return _JSON.validate_python([team.team_id for team in teams])
+    team_ids: list[str] = [team.team_id for team in teams]
+    return _JSON.validate_python(team_ids)
 
 
 def _projections_answer(call: ProjectionsCall) -> JsonValue:
@@ -241,7 +241,8 @@ async def _alias_scope_answer(call: AliasScopeCall, effects: list[str]) -> JsonV
         cast("list[object]", params),  # LiteLLM types query_params as list[object]: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6687-L6692
         parts,
     )
-    return _JSON.validate_python({"params": params, "where_parts": parts})
+    answer = {"params": params, "where_parts": parts}
+    return _JSON.validate_python(answer)
 
 
 def _error_of(
@@ -251,7 +252,7 @@ def _error_of(
     match outcome:
         case HTTPException():
             error["status"] = outcome.status_code
-        case ProxyException():
+        case ProxyException():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
             denial = RaisedProxy.model_validate(outcome, from_attributes=True)
             error["status"] = int(denial.code)
             error["error_type"] = denial.type
@@ -263,9 +264,9 @@ def _error_of(
 
 
 def _envelope(value: JsonValue, error: JsonValue, effects: list[str]) -> JsonValue:
-    return _JSON.validate_python(
-        {"value": value, "error": error, "warnings": [], "effects": effects}
-    )
+    warnings: list[str] = []
+    envelope = {"value": value, "error": error, "warnings": warnings, "effects": effects}
+    return _JSON.validate_python(envelope)
 
 
 async def _call_outcome(call: Call) -> JsonValue:
@@ -281,7 +282,7 @@ async def _call_outcome(call: Call) -> JsonValue:
                 value = _projections_answer(call)
             case "alias_scope":
                 value = await _alias_scope_answer(call, effects)
-    except (HTTPException, ProxyException, RuntimeError, ValidationError) as error:
+    except (HTTPException, ProxyException, RuntimeError, ValidationError) as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
         return _envelope(None, _error_of(error), effects)
     return _envelope(value, None, effects)
 
