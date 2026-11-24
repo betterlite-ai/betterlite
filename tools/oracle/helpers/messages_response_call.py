@@ -142,12 +142,11 @@ EXCEPTION_TYPE: Final[ExceptionTypeFn] = cast(ExceptionTypeFn, exception_mapping
 
 def mapped_error(error: Exception, model: str, provider: str) -> BaseException:
     try:
-        carried = EXCEPTION_TYPE(
+        return EXCEPTION_TYPE(
             model=model, original_exception=error, custom_llm_provider=provider
         )
     except APIError as mapped:
         return mapped
-    return carried
 
 
 def provider_label(call: Call) -> str:
