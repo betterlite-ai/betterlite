@@ -175,11 +175,12 @@ async def alist_containers(
     extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None,
     **kwargs: CallValue,
 ) -> ContainerListResponse:
-    return await alist_from_values(merged(kwargs, omit_none(
-        after=after, limit=limit, order=order, timeout=timeout,
-        custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
+    named: dict[str, CallValue] = {"after": after, "limit": limit, "order": order}
+    named |= omit_none(
+        timeout=timeout, custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
         extra_query=extra_query, extra_body=extra_body,
-    )))
+    )
+    return await alist_from_values(merged(kwargs, named))
 
 
 def retrieve_container(
@@ -205,12 +206,11 @@ async def aretrieve_container(
     extra_query: dict[str, JsonValue] | None = None,
     extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerObject:
-    return await aretrieve_from_values(
-        operation_values(
-            kwargs, container_id, timeout, None, None, None, custom_llm_provider,
-            extra_headers, extra_query, extra_body,
-        )
+    values = operation_values(
+        kwargs, container_id, timeout, None, None, None, custom_llm_provider,
+        extra_headers, extra_query, extra_body,
     )
+    return await aretrieve_from_values(values)
 
 
 def delete_container(
