@@ -69,6 +69,8 @@ impl ContainerConfigLookup for Configs {
 pub(crate) struct NoCosts;
 
 impl ContainerCosts for NoCosts {
+    // Decimal::ZERO is Decimal::default(), so no test can tell that mutant from this line
+    #[cfg_attr(test, mutants::skip)]
     fn code_interpreter_cost(&self, _sessions: u32, _provider: &str) -> Decimal {
         Decimal::ZERO
     }
