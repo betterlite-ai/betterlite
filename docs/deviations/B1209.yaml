@@ -3,4 +3,16 @@ deviations:
   - what: 'An empty access-group ID list still runs the batch query with an empty array, where LiteLLM returns an empty map before touching the database.'
     why: 'The early return only spared a query whose result is empty either way, so the branch was folded into the single query path; the mutant that removed it is equivalent and no test can kill it. Every returned value matches LiteLLM.'
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5448-L5449'
-kept_bugs: []
+kept_bugs:
+  - what: >-
+      A team_alias filter and the team_alias half of a search reach Postgres as unescaped ILIKE
+      patterns, so a percent or underscore in the filter text acts as a wildcard and a backslash
+      acts as LIKE's escape character.
+    why: >-
+      LiteLLM builds {"contains": team_alias, "mode": "insensitive"} and Prisma wraps the value
+      in percent signs without escaping, so a filter for "a_b" matches any single character
+      between a and b and a filter for "100%" matches every alias starting with 100. A proxy
+      that has always been filtered this way can rely on those matches, as B897 already decided
+      for the key list, so betterlite reproduces the pattern and the Postgres tests pin percent,
+      underscore and backslash behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5374-L5383

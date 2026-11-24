@@ -1,5 +1,4 @@
 use crate::key_query_plan::sql::{RenderedQuery, SqlValue};
-use crate::list_api::problem::escape_like;
 
 use super::conditions::{TeamListWhere, TeamListWhereClause};
 
@@ -39,15 +38,16 @@ fn node_sql(node: &TeamListWhere, params: &mut Vec<SqlValue>) -> String {
             column.wire(),
             bind(params, SqlValue::Text(text.clone()))
         ),
+        // Prisma's contains and startsWith reach Postgres unescaped, so % _ and \ stay LIKE metacharacters
         TeamListWhere::ContainsInsensitive(column, text) => format!(
-            "t.\"{}\" ILIKE {} ESCAPE '\\'",
+            "t.\"{}\" ILIKE {}",
             column.wire(),
-            bind(params, SqlValue::Text(format!("%{}%", escape_like(text))))
+            bind(params, SqlValue::Text(format!("%{text}%")))
         ),
         TeamListWhere::StartsWith(column, text) => format!(
-            "t.\"{}\" LIKE {} ESCAPE '\\'",
+            "t.\"{}\" LIKE {}",
             column.wire(),
-            bind(params, SqlValue::Text(format!("{}%", escape_like(text))))
+            bind(params, SqlValue::Text(format!("{text}%")))
         ),
         TeamListWhere::In(column, values) => format!(
             "t.\"{}\" = ANY({}::text[])",

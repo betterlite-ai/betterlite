@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
-use betterlite_db::postgres_store::session::PostgresStore;
-
 use crate::team_list_query::conditions::{
     TeamListColumn, TeamListScope, TeamListWhere, build_where_conditions,
 };
 
 use super::support::{
-    RecordingCache, database, deleted_team_insert, lookup, organization_insert, rejected,
-    searching, team_filters, team_insert, user_insert, user_store,
+    FailingStore, RecordingCache, database, deleted_team_insert, lookup, organization_insert,
+    rejected, searching, team_filters, team_insert, user_insert, user_store,
 };
 
 fn scope_seed() -> String {
@@ -101,29 +99,37 @@ async fn insensitive_alias() {
 fn wildcard_seed() -> String {
     [
         organization_insert("org-1"),
-        team_insert("wild-1", "50% off", Some("org-1"), &[], &[]),
-        team_insert("wild-2", "50x off", Some("org-1"), &[], &[]),
-        team_insert("wild-3", "a_b team", Some("org-1"), &[], &[]),
-        team_insert("wild-4", "axb team", Some("org-1"), &[], &[]),
+        team_insert("t-pct", "a%b", Some("org-1"), &[], &[]),
+        team_insert("t-x", "axb", Some("org-1"), &[], &[]),
+        team_insert("t-underscore", "a_b", Some("org-1"), &[], &[]),
+        team_insert("t-plain", "ab", Some("org-1"), &[], &[]),
+        team_insert("t-slash", "a\\b", Some("org-1"), &[], &[]),
     ]
     .concat()
 }
 
 #[tokio::test]
-async fn literal_wildcards_in_filters() {
+async fn alias_wildcards_are_patterns() {
     let fixture = database(&wildcard_seed()).await;
     let cache = Arc::new(RecordingCache::default());
     let no_database = lookup(&cache, None);
-    // Prisma escapes LIKE metacharacters, so a filter matches them literally
-    let percent = team_filters(None, Some("50%"), None, None);
+    // Prisma's contains reaches Postgres unescaped, so a percent matches any run of characters
+    let percent = team_filters(None, Some("a%b"), None, None);
     let percent_clause = build_where_conditions(&no_database, &percent, TeamListScope::default())
         .await
         .unwrap()
         .unwrap();
     assert_eq!(
         fixture.matching_team_ids(&percent_clause, false).await,
-        vec!["wild-1".to_owned()]
+        vec![
+            "t-pct".to_owned(),
+            "t-plain".to_owned(),
+            "t-slash".to_owned(),
+            "t-underscore".to_owned(),
+            "t-x".to_owned(),
+        ]
     );
+    // an underscore matches exactly one character, so the alias without one in between drops out
     let underscore = team_filters(None, Some("a_b"), None, None);
     let underscore_clause =
         build_where_conditions(&no_database, &underscore, TeamListScope::default())
@@ -132,24 +138,72 @@ async fn literal_wildcards_in_filters() {
             .unwrap();
     assert_eq!(
         fixture.matching_team_ids(&underscore_clause, false).await,
-        vec!["wild-3".to_owned()]
+        vec![
+            "t-pct".to_owned(),
+            "t-slash".to_owned(),
+            "t-underscore".to_owned(),
+            "t-x".to_owned(),
+        ]
+    );
+    // a backslash is LIKE's escape character, so \% finds the alias holding a percent sign
+    let escaped = team_filters(None, Some(r"a\%b"), None, None);
+    let escaped_clause = build_where_conditions(&no_database, &escaped, TeamListScope::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        fixture.matching_team_ids(&escaped_clause, false).await,
+        vec!["t-pct".to_owned()]
     );
     fixture.close().await;
 }
 
 #[tokio::test]
-async fn literal_wildcards_in_prefix_search() {
+async fn prefix_wildcards_are_patterns() {
     let fixture = database(&wildcard_seed()).await;
     let cache = Arc::new(RecordingCache::default());
     let no_database = lookup(&cache, None);
-    let prefixed = searching("a_", true);
+    // a prefix search is an exact match on team_id and a contains on the alias, both unescaped
+    let prefixed = searching("t-pc_", true);
     let prefix_clause = build_where_conditions(&no_database, &prefixed, TeamListScope::default())
         .await
         .unwrap()
         .unwrap();
     assert_eq!(
         fixture.matching_team_ids(&prefix_clause, false).await,
-        vec!["wild-3".to_owned()]
+        vec!["t-pct".to_owned()]
+    );
+    let percent = searching("t-p%", true);
+    let percent_clause = build_where_conditions(&no_database, &percent, TeamListScope::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        fixture.matching_team_ids(&percent_clause, false).await,
+        vec!["t-pct".to_owned(), "t-plain".to_owned()]
+    );
+    let alias = searching("a_", true);
+    let alias_clause = build_where_conditions(&no_database, &alias, TeamListScope::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        fixture.matching_team_ids(&alias_clause, false).await,
+        vec![
+            "t-pct".to_owned(),
+            "t-slash".to_owned(),
+            "t-underscore".to_owned(),
+            "t-x".to_owned(),
+        ]
+    );
+    let escaped = searching(r"a\%", true);
+    let escaped_clause = build_where_conditions(&no_database, &escaped, TeamListScope::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        fixture.matching_team_ids(&escaped_clause, false).await,
+        vec!["t-pct".to_owned()]
     );
     fixture.close().await;
 }
@@ -385,10 +439,13 @@ async fn missing_user_404() {
         "User not found, passed user_id=ghost"
     );
     // an ordinary read failure is the same ValueError and the same 404
-    let broken = PostgresStore { pool: None };
-    let failing = lookup(&cache, Some(user_store(&broken, &broken)));
+    let failing = lookup(&cache, Some(Arc::new(FailingStore)));
     let unreadable_rejection =
         rejected(build_where_conditions(&failing, &ghost, TeamListScope::default()).await);
     assert_eq!(unreadable_rejection.status(), 404);
+    assert_eq!(
+        unreadable_rejection.detail().error,
+        "User not found, passed user_id=ghost"
+    );
     fixture.close().await;
 }
