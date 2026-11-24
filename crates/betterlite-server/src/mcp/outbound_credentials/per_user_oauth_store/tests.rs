@@ -14,7 +14,7 @@ use betterlite_db::mcp_user_credentials::store::get_user_oauth_credential;
 use betterlite_db::mcp_user_credentials::store_user_oauth_credential;
 use betterlite_db::mcp_user_credentials::types::StoreOAuthCredential;
 use betterlite_db::oauth_token_resolution::ports::TokenResponse;
-use betterlite_db::oauth_token_resolution::{EnforceRequest, OauthBindingPort};
+use betterlite_db::oauth_token_resolution::{EnforceRequest, OauthBindingPort as _};
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_mcp::server_record::MCPServer;
 use chrono::TimeDelta;
@@ -23,17 +23,19 @@ use http::header::ACCEPT;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::task::JoinSet;
+use tokio::time::{sleep, timeout};
 
 use super::adapters::{DbCredentialPersist, DbCredentialReader, PooledTokenPost, refresh_request};
-use super::chain::{SharedBinding, StoreBuilder};
+use super::chain::{SharedBinding, StoreBuilder as _};
 use crate::mcp::outbound_credentials::authz_code_refresher::ports::{
-    CredentialPersist, PersistRequest, TokenEndpointPost,
+    CredentialPersist as _, PersistRequest, TokenEndpointPost as _,
 };
 use crate::mcp::outbound_credentials::v2_store::{
-    CredentialPayload, CredentialReader, CredentialValue,
+    CredentialPayload, CredentialReader as _, CredentialValue,
 };
 use crate::mcp::outbound_credentials::{
-    InvalidatableOAuthTokenStore, OAuthTokenStore, PER_USER_TOKEN_KEY_PREFIX, iso_to_epoch,
+    InvalidatableOAuthTokenStore as _, OAuthTokenStore as _, PER_USER_TOKEN_KEY_PREFIX,
+    iso_to_epoch,
 };
 use support::{
     DEADLINE, FailingRows, FakeRows, FixedWallClock, RecordingBinding, answer_with_array,
@@ -510,7 +512,7 @@ async fn store_lazy_waits_for_an_in_flight_local_fetch_before_replacing_the_chai
     tokio::pin!(second);
     let completed_early = tokio::select! {
         result = &mut second => Some(result),
-        () = tokio::time::sleep(Duration::from_millis(20)) => None,
+        () = sleep(Duration::from_millis(20)) => None,
     };
     assert!(
         completed_early.is_none(),
@@ -539,7 +541,7 @@ async fn store_lazy_invalidate_releases_its_local_fetch() {
     fixture.store.invalidate("user", "srv").await;
     fixture.redis.store(true, Ordering::Relaxed);
     fixture.builder_redis.store(true, Ordering::Relaxed);
-    let fetched = tokio::time::timeout(DEADLINE, fixture.store.fetch("user", "srv"))
+    let fetched = timeout(DEADLINE, fixture.store.fetch("user", "srv"))
         .await
         .expect("an invalidate releases its local fetch")
         .unwrap()

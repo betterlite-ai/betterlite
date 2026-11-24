@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -22,7 +23,7 @@ use super::ports::{
 };
 use super::{AuthorizationCodeRefresher, refresh_form};
 use crate::mcp::outbound_credentials::per_user_oauth_store::chain::SharedBinding;
-use crate::mcp::outbound_credentials::{OAuthToken, TokenRefresher, TokenStoreUnavailable};
+use crate::mcp::outbound_credentials::{OAuthToken, TokenRefresher as _, TokenStoreUnavailable};
 
 type FakeRefresher = AuthorizationCodeRefresher<
     Arc<FakeLookup>,
@@ -768,9 +769,9 @@ fn persist_request_debug_masks_the_access_token() {
 #[test]
 fn replays_the_refresh_grant_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/refresh_grant_body");
-    std::fs::read_dir(corpus)
+    fs::read_dir(corpus)
         .unwrap()
-        .map(|entry| std::fs::read(entry.unwrap().path()).unwrap())
+        .map(|entry| fs::read(entry.unwrap().path()).unwrap())
         .filter_map(|bytes| match serde_json::from_slice::<JsonValue>(&bytes) {
             Ok(JsonValue::Object(body)) => Some(body),
             Ok(
