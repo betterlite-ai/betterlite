@@ -10,9 +10,6 @@ pub mod save;
 pub mod state;
 pub mod target;
 
-#[cfg(test)]
-mod tests;
-
 use axum::Router;
 use axum::routing::get;
 
@@ -30,3 +27,5 @@ pub fn health_status_routes(state: HealthStatusState) -> Router {
         .route("/health/latest", get(latest::latest_health_checks_endpoint))
         .with_state(state)
 }
+
+mod tests;

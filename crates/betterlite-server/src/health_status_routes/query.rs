@@ -122,15 +122,16 @@ fn limit_parse_error(error: &ParseIntError) -> QueryIssue {
 }
 
 fn parse_offset(raw: &str) -> Result<i64, QueryIssue> {
-    match raw.trim().parse::<i64>() {
-        Ok(value) if value < DEFAULT_OFFSET => {
-            Err(issue("greater_than_equal", "offset", OFFSET_MINIMUM))
-        }
-        Ok(value) => Ok(value),
+    let value = match raw.trim().parse::<i64>() {
         // ge=0 holds for a value past i64, and reading past the end of the table is an empty page
-        Err(error) if error.kind() == &IntErrorKind::PosOverflow => Ok(i64::MAX),
-        Err(error) => Err(offset_parse_error(&error)),
+        Err(error) if error.kind() == &IntErrorKind::PosOverflow => return Ok(i64::MAX),
+        Err(error) => return Err(offset_parse_error(&error)),
+        Ok(value) => value,
+    };
+    if value < DEFAULT_OFFSET {
+        return Err(issue("greater_than_equal", "offset", OFFSET_MINIMUM));
     }
+    Ok(value)
 }
 
 fn offset_parse_error(error: &ParseIntError) -> QueryIssue {

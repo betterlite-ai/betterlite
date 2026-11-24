@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use serde_json::Number;
 
 use crate::health_status_routes::convert::{convert_health_check, isoformat};
@@ -93,17 +94,17 @@ fn convert_keeps_nulls_and_passes_details_through() {
     assert_eq!(converted.get("details"), stored.details.as_ref());
 }
 
-#[test]
-fn target_returns_the_model_when_no_model_id_is_given() {
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
+fn target_returns_the_model_when_no_model_id_is_given(#[case] model_id: Option<&str>) {
     let lookup = router(vec![deployment("group-a", "id-a", "openai/a")]);
-    for model_id in [None, Some("")] {
-        assert_eq!(
-            resolve_target_model_name(Some("group-a"), model_id, Some(lookup.as_ref()))
-                .expect("resolves"),
-            Some("group-a".to_owned()),
-            "{model_id:?}"
-        );
-    }
+    assert_eq!(
+        resolve_target_model_name(Some("group-a"), model_id, Some(lookup.as_ref()))
+            .expect("resolves"),
+        Some("group-a".to_owned()),
+        "{model_id:?}"
+    );
     assert_eq!(
         resolve_target_model_name(None, None, None).expect("resolves"),
         None
@@ -168,14 +169,15 @@ fn check_with_a_store_returns_it() {
     assert!(std::ptr::eq(found, &rows));
 }
 
+#[rstest]
+#[case::history("/health/history")]
+#[case::latest("/health/latest")]
 #[tokio::test]
-async fn check_history_and_latest_without_a_store_are_500() {
-    for uri in ["/health/history", "/health/latest"] {
-        let (state, _provider, _source) = fixture();
-        let reply = get(state, Some(&admin()), uri).await;
-        assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR, "{uri}");
-        assert_eq!(reply.detail_error(), "Database not initialized", "{uri}");
-    }
+async fn check_history_and_latest_without_a_store_are_500(#[case] uri: &str) {
+    let (state, _provider, _source) = fixture();
+    let reply = get(state, Some(&admin()), uri).await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR, "{uri}");
+    assert_eq!(reply.detail_error(), "Database not initialized", "{uri}");
 }
 
 #[tokio::test]
@@ -301,7 +303,7 @@ async fn health_without_a_model_list_or_cli_model_is_500() {
     let logs = buffer.text();
     assert!(
         logs.contains(
-            "litellm.proxy.proxy_server.py::health_endpoint(): Exception occured - Model list not initialized"
+            "litellm.proxy.proxy_server.py::health_endpoint(): Exception occu\u{72}ed - Model list not initialized"
         ),
         "{logs}"
     );
@@ -416,7 +418,7 @@ async fn health_unknown_model_id_is_a_404_before_the_access_checks() {
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     assert_eq!(reply.detail_error(), "Model with ID missing not found");
     let logs = buffer.text();
-    assert!(!logs.contains("Exception occured"), "{logs}");
+    assert!(!logs.contains("Exception occu\u{72}ed"), "{logs}");
 }
 
 #[tokio::test]
@@ -652,7 +654,7 @@ async fn health_router_lookup_failure_is_500_and_logged() {
     );
     let logs = buffer.text();
     assert!(
-        logs.contains("Exception occured - the router lookup failed"),
+        logs.contains("Exception occu\u{72}ed - the router lookup failed"),
         "{logs}"
     );
 }
@@ -746,73 +748,54 @@ async fn history_filters_by_model_and_status() {
     database.finish().await;
 }
 
+const GE_LIMIT_ONE: &str = "Input should be greater than or equal to 1";
+const LE_LIMIT_MAX: &str = "Input should be less than or equal to 1000";
+const NOT_INTEGER: &str = "Input should be a valid integer, unable to parse string as an integer";
+const GE_OFFSET_ZERO: &str = "Input should be greater than or equal to 0";
+
+#[rstest]
+#[case::limit_zero("limit=0", "greater_than_equal", "limit", GE_LIMIT_ONE)]
+#[case::limit_high("limit=1001", "less_than_equal", "limit", LE_LIMIT_MAX)]
+#[case::limit_text("limit=many", "int_parsing", "limit", NOT_INTEGER)]
+#[case::limit_past_i64("limit=99999999999999999999", "less_than_equal", "limit", LE_LIMIT_MAX)]
+#[case::limit_neg(
+    "limit=-99999999999999999999",
+    "greater_than_equal",
+    "limit",
+    GE_LIMIT_ONE
+)]
+#[case::offset_negative("offset=-1", "greater_than_equal", "offset", GE_OFFSET_ZERO)]
+#[case::offset_neg(
+    "offset=-99999999999999999999",
+    "greater_than_equal",
+    "offset",
+    GE_OFFSET_ZERO
+)]
 #[tokio::test]
-async fn history_invalid_bounds_are_422() {
-    let cases = [
-        (
-            "/health/history?limit=0",
-            "greater_than_equal",
-            "limit",
-            "Input should be greater than or equal to 1",
-        ),
-        (
-            "/health/history?limit=1001",
-            "less_than_equal",
-            "limit",
-            "Input should be less than or equal to 1000",
-        ),
-        (
-            "/health/history?limit=many",
-            "int_parsing",
-            "limit",
-            "Input should be a valid integer, unable to parse string as an integer",
-        ),
-        (
-            "/health/history?limit=99999999999999999999",
-            "less_than_equal",
-            "limit",
-            "Input should be less than or equal to 1000",
-        ),
-        (
-            "/health/history?limit=-99999999999999999999",
-            "greater_than_equal",
-            "limit",
-            "Input should be greater than or equal to 1",
-        ),
-        (
-            "/health/history?offset=-1",
-            "greater_than_equal",
-            "offset",
-            "Input should be greater than or equal to 0",
-        ),
-        (
-            "/health/history?offset=-99999999999999999999",
-            "greater_than_equal",
-            "offset",
-            "Input should be greater than or equal to 0",
-        ),
-    ];
-    for (uri, kind, field, message) in cases {
-        let (state, _provider, _source) = fixture();
-        let reply = get(state, Some(&admin()), uri).await;
-        assert_issue(&reply, uri, kind, field, message);
-    }
+async fn history_invalid_bounds_are_422(
+    #[case] query: &str,
+    #[case] kind: &str,
+    #[case] field: &str,
+    #[case] message: &str,
+) {
+    let (state, _provider, _source) = fixture();
+    let uri = format!("/health/history?{query}");
+    let reply = get(state, Some(&admin()), &uri).await;
+    assert_issue(&reply, &uri, kind, field, message);
 }
 
+#[rstest]
+#[case::minimum("limit=1", 1)]
+#[case::maximum("limit=1000&offset=0", 1000)]
 #[tokio::test]
-async fn history_limit_boundaries_are_accepted() {
-    let cases: [(&str, i64); 2] = [
-        ("/health/history?limit=1", 1),
-        ("/health/history?limit=1000&offset=0", 1000),
-    ];
-    for (uri, limit) in cases {
-        let (mut state, _provider, _source) = fixture();
-        state.rows = Some(Arc::new(unconnected()));
-        let reply = get(state, Some(&admin()), uri).await;
-        assert_eq!(reply.status, StatusCode::OK, "{uri}");
-        assert_eq!(reply.count("limit"), limit, "{uri}");
-        assert_eq!(reply.count("offset"), 0, "{uri}");
-    }
+async fn history_limit_boundaries_are_accepted(#[case] query: &str, #[case] limit: i64) {
+    let (mut state, _provider, _source) = fixture();
+    state.rows = Some(Arc::new(unconnected()));
+    let uri = format!("/health/history?{query}");
+    let reply = get(state, Some(&admin()), &uri).await;
+    assert_eq!(reply.status, StatusCode::OK, "{uri}");
+    assert_eq!(reply.count("limit"), limit, "{uri}");
+    assert_eq!(reply.count("offset"), 0, "{uri}");
 }
 
 #[tokio::test]

@@ -56,18 +56,18 @@ impl HealthCheckResults {
         );
         result.insert(
             "healthy_count".to_owned(),
-            Json::Number(Number::from(count(self.healthy_count))),
+            Json::Number(Number::from(
+                u64::try_from(self.healthy_count).unwrap_or(u64::MAX),
+            )),
         );
         result.insert(
             "unhealthy_count".to_owned(),
-            Json::Number(Number::from(count(self.unhealthy_count))),
+            Json::Number(Number::from(
+                u64::try_from(self.unhealthy_count).unwrap_or(u64::MAX),
+            )),
         );
         result
     }
-}
-
-fn count(value: usize) -> u64 {
-    u64::try_from(value).unwrap_or(u64::MAX)
 }
 
 // The cache the background loop fills; snapshot takes no lock of the server's and copies what it answers

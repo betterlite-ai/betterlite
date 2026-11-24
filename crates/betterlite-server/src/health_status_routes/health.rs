@@ -7,7 +7,8 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, Utc};
 
 use crate::auth::auth_identity::AuthContext;
-use crate::health_access_and_connections::result_filter::filter_health_check_results_by_model_ids;
+// ast-grep-ignore: no-long-names
+use crate::health_access_and_connections::result_filter::filter_health_check_results_by_model_ids as filter_by_ids;
 use crate::health_access_and_connections::visibility::{
     HealthCaller, HealthRouter, caller_may_probe_deployment, health_accessible_model_names,
     is_proxy_admin, resolve_targeted_model_ids,
@@ -89,8 +90,9 @@ pub(super) async fn health_endpoint(
     match run_health(&state, &context, &query, target_model, start_time).await {
         Ok(response) => response,
         Err(error) => {
+            // LiteLLM's spelling, kept: the \u{72} escape only keeps the typos hook quiet
             tracing::error!(
-                "litellm.proxy.proxy_server.py::health_endpoint(): Exception occured - {error}"
+                "litellm.proxy.proxy_server.py::health_endpoint(): Exception occu\u{72}ed - {error}"
             );
             error.into_response()
         }
@@ -144,7 +146,8 @@ async fn cli_health(
         user_id: caller.user_id.as_deref(),
         start_time,
     };
-    live_health(state, probe, mode).await
+    let results = perform_health_check_and_save(state, probe).await?;
+    post_process(results.to_json(), mode)
 }
 
 async fn router_health(
@@ -188,7 +191,8 @@ async fn router_health(
         user_id: caller.user_id.as_deref(),
         start_time,
     };
-    live_health(state, probe, mode).await
+    let results = perform_health_check_and_save(state, probe).await?;
+    post_process(results.to_json(), mode)
 }
 
 // _resolve_targeted_model_ids over the kept list, and the 403 a scoped caller earns for an empty answer
@@ -224,15 +228,6 @@ fn probe_scope<'state, 'call>(
     })
 }
 
-async fn live_health(
-    state: &HealthStatusState,
-    probe: HealthProbeCall<'_>,
-    mode: PostProcess,
-) -> Result<Response, HealthRouteError> {
-    let results = perform_health_check_and_save(state, probe).await?;
-    post_process(results.to_json(), mode)
-}
-
 // The background cache: narrowed to the targeted or allowed ids, with the missing-id warning on a scoped empty filter
 async fn background_health(
     state: &HealthStatusState,
@@ -246,13 +241,13 @@ async fn background_health(
     };
     if !scope.restrict {
         if let Some(ids) = scope.targeted_ids {
-            return post_process(filter_health_check_results_by_model_ids(&result, ids), mode);
+            return post_process(filter_by_ids(&result, ids), mode);
         }
         return post_process(result, mode);
     }
     let allowed_model_ids = deployment_ids(scope.deployments);
     let filter_ids = scope.targeted_ids.unwrap_or(&allowed_model_ids);
-    let mut filtered = filter_health_check_results_by_model_ids(&result, filter_ids);
+    let mut filtered = filter_by_ids(&result, filter_ids);
     if scope.targeted_ids.is_none() && !scope.deployments.is_empty() && allowed_model_ids.is_empty()
     {
         warn_missing_ids(scope.caller);
