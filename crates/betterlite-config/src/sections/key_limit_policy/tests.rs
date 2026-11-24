@@ -123,6 +123,16 @@ fn non_finite_budget_fails_the_load(#[case] value: &str) {
     );
 }
 
+// a finite budget past rust_decimal's range, such as 1e29, fails where LiteLLM keeps the float
+#[test]
+fn decimal_out_of_range_budget_fails_the_load() {
+    let source = "litellm_settings:\n  upperbound_key_generate_params:\n    max_budget: 1.0e29";
+    let error =
+        settings(source, &[]).expect_err("a budget past rust_decimal's range fails the load");
+    assert_eq!(error.category(), "invalid_scalar");
+    assert!(error.to_string().contains(KEY), "{error}");
+}
+
 #[test]
 fn missing_env_reference() {
     let missing = settings(
