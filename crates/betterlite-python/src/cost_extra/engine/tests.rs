@@ -368,7 +368,7 @@ fn cost_extra_engine_applies_the_batch_rates_and_the_regional_uplift() {
 
 #[test]
 fn cost_extra_engine_combines_usage_and_keeps_the_cache_aliases() {
-    let request: CombineUsageRequest = request(
+    let combined_request: CombineUsageRequest = request(
         r#"{"usages": [
             {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
              "prompt_tokens_details": {"text_tokens": 6, "cached_tokens": 4,
@@ -399,7 +399,7 @@ fn cost_extra_engine_combines_usage_and_keeps_the_cache_aliases() {
              "requests": 5}
         ]}"#,
     );
-    let combined = combine_usage(&request).expect("the usages combine");
+    let combined = combine_usage(&combined_request).expect("the usages combine");
     assert_eq!(combined.prompt_tokens, 30);
     assert_eq!(combined.completion_tokens, 12);
     assert_eq!(combined.total_tokens, 42);
