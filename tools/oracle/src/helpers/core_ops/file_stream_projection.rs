@@ -89,7 +89,12 @@ fn answer(call: &Call) -> Value {
             model,
             custom_llm_provider,
             details,
-        } => hidden_answer(file_id, model, custom_llm_provider, details),
+        } => hidden_answer(
+            file_id,
+            model.as_deref(),
+            custom_llm_provider.as_deref(),
+            details,
+        ),
     }
 }
 
@@ -117,8 +122,8 @@ fn projection_answer(params: &StreamingParamsCall<'_>, predicates: &[Option<Stri
 
 fn hidden_answer(
     file_id: &str,
-    model: &Option<String>,
-    custom_llm_provider: &Option<String>,
+    model: Option<&str>,
+    custom_llm_provider: Option<&str>,
     details: &Details,
 ) -> Value {
     let logger = Arc::new(CaptureLogger {
@@ -134,8 +139,8 @@ fn hidden_answer(
         FileStreamSetup {
             source: StreamSource::Sync(Box::new(EmptySource)),
             file_id: file_id.to_owned(),
-            model: model.clone(),
-            custom_llm_provider: custom_llm_provider.clone(),
+            model: model.map(str::to_owned),
+            custom_llm_provider: custom_llm_provider.map(str::to_owned),
             logger: Some(Arc::<CaptureLogger>::clone(&logger)),
         },
         Arc::new(WallClock),
@@ -165,18 +170,18 @@ fn snapshot_view(snapshot: &TrustedCredentials) -> Value {
 
 fn payload_view(payload: &StandardLoggingPayload) -> Value {
     let view = serde_json::to_value(payload).unwrap_or(Value::Null);
-    let hidden = &view["hidden_params"];
+    let hidden = view.get("hidden_params").cloned().unwrap_or(Value::Null);
     json!({
-        "id": view["id"],
-        "model": view["model"],
-        "api_base": view["api_base"],
-        "custom_llm_provider": view["custom_llm_provider"],
-        "status": view["status"],
+        "id": view.get("id").cloned(),
+        "model": view.get("model").cloned(),
+        "api_base": view.get("api_base").cloned(),
+        "custom_llm_provider": view.get("custom_llm_provider").cloned(),
+        "status": view.get("status").cloned(),
         "hidden": {
-            "api_base": hidden["api_base"],
-            "litellm_model_name": hidden["litellm_model_name"],
-            "response_cost": hidden["response_cost"],
+            "api_base": hidden.get("api_base").cloned(),
+            "litellm_model_name": hidden.get("litellm_model_name").cloned(),
+            "response_cost": hidden.get("response_cost").cloned(),
         },
-        "response": view["response"],
+        "response": view.get("response").cloned(),
     })
 }

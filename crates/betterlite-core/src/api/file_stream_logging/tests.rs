@@ -3,6 +3,7 @@
 use std::future::Future;
 use std::iter::from_fn;
 use std::ptr::{eq, from_ref};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -15,7 +16,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use chrono::{DateTime, FixedOffset};
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use serde_json::Number;
 use tokio::runtime::Builder;
 
@@ -76,17 +77,17 @@ where
 #[derive(Debug, Clone)]
 enum Call {
     Success(SuccessCall),
-    AsyncSuccess(SuccessCall),
+    AsyncSuccess,
     SyncCallbacks(SuccessCall),
     Failure(FailureCall),
-    AsyncFailure(FailureCall),
+    AsyncFailure,
 }
 
 #[derive(Default)]
 struct Counters {
-    closes: Arc<Mutex<usize>>,
-    acloses: Arc<Mutex<usize>>,
-    awaited: Arc<Mutex<usize>>,
+    closes: Arc<AtomicUsize>,
+    acloses: Arc<AtomicUsize>,
+    awaited: Arc<AtomicUsize>,
 }
 
 struct RecordingLogger {
@@ -96,9 +97,9 @@ struct RecordingLogger {
     base_api_base: String,
     base_provider: Option<String>,
     payload: bool,
-    fail_success: Mutex<Option<String>>,
+    fail_success: Option<String>,
     calls: Mutex<Vec<Call>>,
-    builds: Mutex<usize>,
+    builds: AtomicUsize,
 }
 
 impl RecordingLogger {
@@ -110,9 +111,9 @@ impl RecordingLogger {
             base_api_base: base_api_base.to_owned(),
             base_provider: base_provider.map(str::to_owned),
             payload: true,
-            fail_success: Mutex::new(None),
+            fail_success: None,
             calls: Mutex::new(Vec::new()),
-            builds: Mutex::new(0),
+            builds: AtomicUsize::new(0),
         }
     }
 
@@ -131,8 +132,8 @@ impl RecordingLogger {
         self
     }
 
-    fn failing_success(self, message: &str) -> Self {
-        *self.fail_success.lock().unwrap() = Some(message.to_owned());
+    fn failing_success(mut self, message: &str) -> Self {
+        self.fail_success = Some(message.to_owned());
         self
     }
 
@@ -141,7 +142,7 @@ impl RecordingLogger {
     }
 
     fn build_count(&self) -> usize {
-        *self.builds.lock().unwrap()
+        self.builds.load(Ordering::SeqCst)
     }
 
     fn record(&self, call: Call) {
@@ -165,7 +166,7 @@ impl FileStreamLogger for RecordingLogger {
         _start_time: DateTime<FixedOffset>,
         _end_time: DateTime<FixedOffset>,
     ) -> Option<StandardLoggingPayload> {
-        *self.builds.lock().unwrap() += 1;
+        let _count = self.builds.fetch_add(1, Ordering::SeqCst);
         if !self.payload {
             return None;
         }
@@ -178,18 +179,18 @@ impl FileStreamLogger for RecordingLogger {
     }
 
     fn success_handler(&self, call: SuccessCall) -> Result<(), CallbackFailure> {
-        if let Some(message) = self.fail_success.lock().unwrap().clone() {
+        if let Some(message) = self.fail_success.clone() {
             return Err(CallbackFailure { message });
         }
         self.record(Call::Success(call));
         Ok(())
     }
 
-    async fn async_success_handler(&self, call: SuccessCall) -> Result<(), CallbackFailure> {
-        if let Some(message) = self.fail_success.lock().unwrap().clone() {
+    async fn async_success_handler(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
+        if let Some(message) = self.fail_success.clone() {
             return Err(CallbackFailure { message });
         }
-        self.record(Call::AsyncSuccess(call));
+        self.record(Call::AsyncSuccess);
         Ok(())
     }
 
@@ -203,8 +204,8 @@ impl FileStreamLogger for RecordingLogger {
         Ok(())
     }
 
-    async fn async_failure_handler(&self, call: FailureCall) -> Result<(), CallbackFailure> {
-        self.record(Call::AsyncFailure(call));
+    async fn async_failure_handler(&self, _call: FailureCall) -> Result<(), CallbackFailure> {
+        self.record(Call::AsyncFailure);
         Ok(())
     }
 }
@@ -296,7 +297,7 @@ impl Scripted {
 
     fn pull(&mut self) -> Option<Result<Vec<u8>, SourceFailure>> {
         let item = self.items.get(self.index)?.clone();
-        self.index += 1;
+        self.index = self.index.saturating_add(1);
         Some(item)
     }
 }
@@ -307,7 +308,7 @@ impl SyncByteSource for Scripted {
     }
 
     fn close(&mut self) -> Option<CloseResult> {
-        *self.counters.closes.lock().unwrap() += 1;
+        let _count = self.counters.closes.fetch_add(1, Ordering::SeqCst);
         self.close_result.clone()
     }
 }
@@ -319,15 +320,13 @@ impl AsyncByteSource for Scripted {
     }
 
     async fn aclose(&mut self) -> Option<CloseResult> {
-        let Some(result) = self.aclose_result.clone() else {
-            return None;
-        };
-        *self.counters.acloses.lock().unwrap() += 1;
+        let result = self.aclose_result.clone()?;
+        let _count = self.counters.acloses.fetch_add(1, Ordering::SeqCst);
         Some(result)
     }
 
     fn close(&mut self) -> CloseCall<'_> {
-        *self.counters.closes.lock().unwrap() += 1;
+        let _count = self.counters.closes.fetch_add(1, Ordering::SeqCst);
         match &self.close_mode {
             AsyncClose::Absent => CloseCall::Absent,
             AsyncClose::Returned => CloseCall::Returned,
@@ -335,7 +334,7 @@ impl AsyncByteSource for Scripted {
                 let pending = result.clone();
                 let awaited = Arc::clone(&self.counters.awaited);
                 CloseCall::Awaitable(Box::pin(async move {
-                    *awaited.lock().unwrap() += 1;
+                    let _count = awaited.fetch_add(1, Ordering::SeqCst);
                     pending
                 }))
             }
@@ -433,10 +432,10 @@ fn streaming_projection_routes_credentials() {
     );
     assert!(!resolved.data.contains_key(TRUSTED_CREDENTIALS_KEY));
     let trusted = resolved.trusted_credentials.as_ref().unwrap();
-    let api_key = trusted.values.get("api_key").unwrap();
-    assert_eq!(api_key.expose_secret(), "k");
-    let provider = trusted.values.get("custom_llm_provider").unwrap();
-    assert_eq!(provider.expose_secret(), "openai");
+    let api_key = trusted.values.get("api_key");
+    assert_eq!(api_key.map(ExposeSecret::expose_secret), Some("k"));
+    let provider = trusted.values.get("custom_llm_provider");
+    assert_eq!(provider.map(ExposeSecret::expose_secret), Some("openai"));
     assert_eq!(data.get("model"), Some(&Json::Text(String::from("m"))));
     assert!(!data.contains_key("api_key"));
 }
@@ -462,11 +461,7 @@ fn streaming_projection_leaves_unrouted_input_alone(
         data: &data,
         should_route,
         original_file_id: Some("f"),
-        credentials: if with_credentials {
-            Some(&credentials)
-        } else {
-            None
-        },
+        credentials: with_credentials.then_some(&credentials),
     })
     .unwrap();
     assert_eq!(resolved.provider, "openai");
@@ -484,8 +479,8 @@ fn streaming_projection_rejects_a_bad_credential_provider(
 ) {
     let mut credentials = JsonObject::new();
     credentials.insert(String::from("api_key"), Json::Text(String::from("k")));
-    if let Some(provider) = provider {
-        credentials.insert(String::from("custom_llm_provider"), provider);
+    if let Some(text) = provider {
+        credentials.insert(String::from("custom_llm_provider"), text);
     }
     let mut data = JsonObject::new();
     data.insert(String::from("model"), Json::Text(String::from("m")));
@@ -515,8 +510,8 @@ fn streaming_projection_rejects_a_bad_file_id(
         Json::Text(String::from("openai")),
     );
     let mut data = JsonObject::new();
-    if let Some(file_id) = file_id {
-        data.insert(String::from("file_id"), file_id);
+    if let Some(value) = file_id {
+        data.insert(String::from("file_id"), value);
     }
     let Err(failure) = resolve_streaming_params(&StreamingParamsCall {
         custom_llm_provider: "openai",
@@ -708,7 +703,6 @@ fn stream_success_once_logs_one_sync_callback() {
     assert!(stream.logging.logging_completed);
     let mut iter = stream.sync_iter().unwrap();
     assert!(iter.next_chunk().is_none());
-    drop(iter);
     let calls = logger.calls();
     assert_eq!(calls.len(), 1);
     let Some(Call::Success(call)) = calls.first() else {
@@ -735,7 +729,7 @@ fn stream_success_once_logs_async_then_sync_callbacks() {
     );
     let calls = logger.calls();
     assert_eq!(calls.len(), 2);
-    assert!(matches!(calls.first(), Some(Call::AsyncSuccess(_))));
+    assert!(matches!(calls.first(), Some(Call::AsyncSuccess)));
     let Some(Call::SyncCallbacks(sync_call)) = calls.get(1) else {
         panic!("the second callback was not the sync one");
     };
@@ -769,10 +763,9 @@ fn stream_success_once_propagates_callback_errors_without_a_second_log() {
     assert_eq!(iter.next_chunk().unwrap().unwrap(), b"ab".to_vec());
     let failure = iter.next_chunk().unwrap().unwrap_err();
     assert!(
-        matches!(&failure, StreamError::Callback { failure } if failure.message == "callback broke")
+        matches!(&failure, StreamError::Callback { failure: callback } if callback.message == "callback broke")
     );
     assert!(iter.next_chunk().is_none());
-    drop(iter);
     assert!(stream.logging.logging_completed);
     assert_eq!(logger.calls().len(), 0);
 }
@@ -792,7 +785,7 @@ fn stream_success_once_propagates_async_callback_errors_without_a_second_log() {
         iter.next_chunk().await.unwrap().unwrap_err()
     });
     assert!(
-        matches!(&failure, StreamError::Callback { failure } if failure.message == "callback broke")
+        matches!(&failure, StreamError::Callback { failure: callback } if callback.message == "callback broke")
     );
     assert!(block_on(async { stream.async_iter().unwrap().next_chunk().await }).is_none());
     assert!(stream.logging.logging_completed);
@@ -837,7 +830,6 @@ fn stream_failure_once_logs_one_sync_failure() {
     };
     assert_eq!(exception, &broken("broken"));
     assert!(iter.next_chunk().is_none());
-    drop(iter);
     let calls = logger.calls();
     assert_eq!(calls.len(), 1);
     let Some(Call::Failure(call)) = calls.first() else {
@@ -871,7 +863,7 @@ fn stream_failure_once_runs_the_sync_then_async_failure_handler() {
     let calls = logger.calls();
     assert_eq!(calls.len(), 2);
     assert!(matches!(calls.first(), Some(Call::Failure(_))));
-    assert!(matches!(calls.get(1), Some(Call::AsyncFailure(_))));
+    assert!(matches!(calls.get(1), Some(Call::AsyncFailure)));
 }
 
 #[test]
@@ -886,7 +878,6 @@ fn stream_failure_once_skips_callbacks_for_a_cancellation() {
     let mut iter = stream.sync_iter().unwrap();
     let failure = iter.next_chunk().unwrap().unwrap_err();
     assert!(matches!(&failure, StreamError::Cancelled));
-    drop(iter);
     assert_eq!(logger.calls().len(), 0);
     assert!(!stream.logging.logging_completed);
 }
@@ -900,9 +891,9 @@ fn stream_failure_once_rejects_the_wrong_iteration_capability() {
         "File content stream does not support sync iteration"
     );
     let mut sync_only = file_stream(Scripted::new(Vec::new()), None, None, None);
-    let failure = sync_only.async_iter().err().unwrap();
+    let unsupported = sync_only.async_iter().err().unwrap();
     assert_eq!(
-        failure.to_string(),
+        unsupported.to_string(),
         "File content stream does not support async iteration"
     );
 }
@@ -920,16 +911,15 @@ fn explicit_close_suppresses_logging() {
     );
     let mut iter = stream.sync_iter().unwrap();
     assert_eq!(iter.next_chunk().unwrap().unwrap(), b"ab".to_vec());
-    drop(iter);
     assert!(!stream.close_completed);
     stream.close().unwrap();
     assert!(stream.close_completed);
     assert!(stream.logging.logging_completed);
-    assert_eq!(*counters.closes.lock().unwrap(), 1);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 1);
     assert!(drain_sync(&mut stream).is_empty());
     assert!(logger.calls().is_empty());
     stream.close().unwrap();
-    assert_eq!(*counters.closes.lock().unwrap(), 1);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -939,9 +929,9 @@ fn explicit_close_calls_the_underlying_close_once_even_when_it_raises() {
     let mut stream = file_stream(source, None, None, None);
     let failure = stream.close().unwrap_err();
     assert!(matches!(&failure, StreamError::Cleanup { .. }));
-    assert_eq!(*counters.closes.lock().unwrap(), 1);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 1);
     stream.close().unwrap();
-    assert_eq!(*counters.closes.lock().unwrap(), 1);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -953,8 +943,8 @@ fn explicit_close_prefers_aclose() {
     let mut stream = file_stream(source.asynchronous(), None, None, None);
     block_on(stream.aclose()).unwrap();
     assert!(stream.close_completed);
-    assert_eq!(*counters.acloses.lock().unwrap(), 1);
-    assert_eq!(*counters.closes.lock().unwrap(), 0);
+    assert_eq!(counters.acloses.load(Ordering::SeqCst), 1);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -965,8 +955,8 @@ fn explicit_close_awaits_a_non_null_close_result() {
     let mut stream = file_stream(source.asynchronous(), None, None, None);
     let failure = block_on(stream.aclose()).unwrap_err();
     assert!(matches!(&failure, StreamError::Cleanup { .. }));
-    assert_eq!(*counters.closes.lock().unwrap(), 1);
-    assert_eq!(*counters.awaited.lock().unwrap(), 1);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 1);
+    assert_eq!(counters.awaited.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -978,9 +968,9 @@ fn explicit_close_sync_calls_only_close() {
     let mut stream = file_stream(source.asynchronous(), None, None, None);
     stream.close().unwrap();
     assert!(stream.close_completed);
-    assert_eq!(*counters.acloses.lock().unwrap(), 0);
-    assert_eq!(*counters.closes.lock().unwrap(), 1);
-    assert_eq!(*counters.awaited.lock().unwrap(), 0);
+    assert_eq!(counters.acloses.load(Ordering::SeqCst), 0);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 1);
+    assert_eq!(counters.awaited.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -997,4 +987,14 @@ fn explicit_close_makes_async_iteration_unsupported() {
     let failure = stream.async_iter().err().unwrap();
     assert!(matches!(&failure, StreamError::UnsupportedAsync));
     assert!(drain_sync(&mut stream).is_empty());
+}
+
+#[test]
+fn explicit_close_treats_a_plain_close_result_as_done() {
+    let source = Scripted::new(Vec::new()).with_close(AsyncClose::Returned);
+    let counters = source.counters();
+    let mut stream = file_stream(source.asynchronous(), None, None, None);
+    block_on(stream.aclose()).unwrap();
+    assert!(stream.close_completed);
+    assert_eq!(counters.closes.load(Ordering::SeqCst), 1);
 }
