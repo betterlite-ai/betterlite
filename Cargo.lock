@@ -4227,6 +4227,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "betterlite-a2a",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4239,6 +4240,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-tokenizer",
