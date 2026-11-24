@@ -58,12 +58,6 @@ def configured_params(
     }
 
 
-# Every request is the operation's call record beside the module settings that record reads.
-def tuning_payload(body: dict[str, JsonValue]) -> CallPayload:
-    values: dict[str, JsonValue] = {**body, "settings": read_settings(SETTINGS)}
-    return to_call_payload(values)
-
-
 def create_payload(
     model: str,
     training_file: str,
@@ -95,8 +89,7 @@ def create_payload(
         "params": configured_params(kwargs, CREATE_PARAMS),
         "is_async": is_async,
     }
-    body: dict[str, JsonValue] = {"call": call}
-    return tuning_payload(body)
+    return to_call_payload({"call": call, "settings": read_settings(SETTINGS)})
 
 
 # The read calls differ only in their operation name and the fields that operation carries.
@@ -109,8 +102,7 @@ def read_payload(
 ) -> CallPayload:
     variant = f"a{operation}" if is_async else operation
     record: dict[str, JsonValue] = {variant: {**fields, **configured_params(kwargs, READ_PARAMS)}}
-    body: dict[str, JsonValue] = {"input": record}
-    return tuning_payload(body)
+    return to_call_payload({"input": record, "settings": read_settings(SETTINGS)})
 
 
 def cancel_payload(
@@ -130,5 +122,4 @@ def cancel_payload(
         "acancel_fine_tuning_job": is_async,
         "params": configured_params(kwargs, CANCEL_PARAMS),
     }
-    body: dict[str, JsonValue] = {"call": call}
-    return tuning_payload(body)
+    return to_call_payload({"call": call, "settings": read_settings(SETTINGS)})
