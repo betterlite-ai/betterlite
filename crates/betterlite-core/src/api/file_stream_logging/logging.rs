@@ -108,7 +108,7 @@ pub fn merged_hidden(
 #[must_use]
 pub fn hidden_api_base(hidden: &HiddenParams) -> Option<&str> {
     match &hidden.api_base {
-        HiddenField::Value(value) if !value.is_empty() => Some(value.as_str()),
-        HiddenField::Absent | HiddenField::Null | HiddenField::Value(_) => None,
+        HiddenField::Value(value) => Some(value.as_str()),
+        HiddenField::Absent | HiddenField::Null => None,
     }
 }

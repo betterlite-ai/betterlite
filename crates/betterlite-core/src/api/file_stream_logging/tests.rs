@@ -21,7 +21,7 @@ use super::handler::{
 };
 use super::logging::{CallbackFailure, FailureCall, FileStreamLogger, HiddenField, SuccessCall};
 use super::source::{
-    AsyncByteSource, CloseCall, CloseResult, SourceFailure, StreamError, StreamSource,
+    AsyncByteSource, CloseCall, CloseResult, EmptySource, SourceFailure, StreamError, StreamSource,
     SyncByteSource,
 };
 use super::{FileContentStreamingResponse, FileStreamSetup};
@@ -599,6 +599,21 @@ fn hidden_stream_metadata_syncs_api_base_once() {
 }
 
 #[test]
+fn hidden_stream_metadata_ignores_an_empty_api_base() {
+    let logger = Arc::new(RecordingLogger::new("", "base", None).with_api_base(Some("")));
+    let mut stream = sync_stream(
+        ScriptedSync::new(chunks(&[b"ab"]), None),
+        Some("m"),
+        None,
+        Some(logger),
+    );
+    drain_sync(&mut stream);
+    let payload = stream.standard_logging_object().unwrap();
+    assert_eq!(payload.api_base, "base");
+    assert!(payload.hidden_params.api_base.is_none());
+}
+
+#[test]
 fn hidden_stream_metadata_caches_an_existing_payload() {
     let logger = Arc::new(RecordingLogger::new("", "", None));
     let mut stream = sync_stream(
@@ -911,6 +926,12 @@ fn explicit_close_sync_calls_only_close() {
     assert_eq!(*counters.acloses.lock().unwrap(), 0);
     assert_eq!(*counters.closes.lock().unwrap(), 1);
     assert_eq!(*counters.awaited.lock().unwrap(), 0);
+}
+
+#[test]
+fn empty_source_has_no_close() {
+    let mut source = EmptySource;
+    assert!(source.close().is_none());
 }
 
 #[test]

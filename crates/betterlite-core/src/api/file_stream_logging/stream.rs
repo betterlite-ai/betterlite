@@ -4,7 +4,7 @@ use tokio::runtime::Handle;
 
 use super::FileContentStreamingResponse;
 use super::source::{
-    AsyncByteSource, CloseCall, CloseResult, EmptySource, StreamError, StreamSource, SyncByteSource,
+    AsyncByteSource, CloseResult, EmptySource, StreamError, StreamSource, SyncByteSource,
 };
 
 // The two close paths in one place: both flags are set before the source is taken, so a close never logs
@@ -19,8 +19,7 @@ impl FileContentStreamingResponse {
         match source {
             StreamSource::Sync(mut source) => sync_cleanup(source.close()),
             StreamSource::Async(mut source) => {
-                let pending = source.close();
-                drop_call(pending);
+                let _pending = source.close();
                 Ok(())
             }
         }
