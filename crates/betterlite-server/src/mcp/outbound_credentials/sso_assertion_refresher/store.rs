@@ -22,7 +22,6 @@ use crate::mcp::outbound_credentials::{RefreshCoordinator, RefreshStep, TokenKey
 pub const SINGLE_FLIGHT_KEY: &str = "sso_identity_assertion";
 pub const DEFAULT_EXPIRY_SKEW: Duration = Duration::from_secs(60);
 
-// B4656's coordinator needs a Clone error; the cause of a store outage is a boxed error, so its text is what crosses the flight.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[error("{detail}")]
 pub struct RenewalUnavailable {
@@ -64,16 +63,15 @@ where
 {
     // Built on first use and kept, because the Redis client is not wired at start; asked again while it answers None.
     fn coordinator(&self) -> RenewalCoordinator {
-        let chosen = {
-            let mut distributed = self
-                .distributed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if distributed.is_none() {
-                *distributed = self.factory.coordinator();
-            }
-            distributed.as_ref().cloned()
-        };
+        let mut distributed = self
+            .distributed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if distributed.is_none() {
+            *distributed = self.factory.coordinator();
+        }
+        let chosen = distributed.as_ref().cloned();
+        drop(distributed);
         chosen.unwrap_or_else(|| Arc::clone(&self.in_process))
     }
 
