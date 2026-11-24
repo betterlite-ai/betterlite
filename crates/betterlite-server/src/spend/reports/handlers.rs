@@ -13,7 +13,7 @@ use super::caller::ReportCaller;
 use super::dates::{SpendReportDates, spend_report_dates};
 use super::error::{DB_NOT_CONNECTED_ERROR, TextDetail, internal_error};
 use super::query::{ScopedReportQuery, decode_scoped_report_query};
-use super::scope::{ScopeColumn, resolve_scope};
+use super::scope::{ScopeCaller, ScopeColumn, resolve_scope};
 use super::store::{
     OrganizationReportRequest, ScopedReportError, ScopedReportHandle, ScopedReportRequest,
     ScopedReportStore, StoreOrgLookup,
@@ -34,7 +34,7 @@ pub(super) enum ReportRoute {
 #[derive(Clone, Copy)]
 struct RouteScope<'request> {
     requested: Option<&'request str>,
-    caller_value: Option<&'request str>,
+    caller_value: ScopeCaller<'request>,
     column: ScopeColumn,
     scope_name: &'static str,
 }
@@ -90,19 +90,19 @@ async fn dispatch_report(
     let request = match route {
         ReportRoute::Key => RouteScope {
             requested: hashed_key.as_deref(),
-            caller_value: caller.api_key.as_deref(),
+            caller_value: ScopeCaller::Key(caller.api_key.as_ref()),
             column: ScopeColumn::ApiKey,
             scope_name: "api_key",
         },
         ReportRoute::User => RouteScope {
             requested: query.internal_user_id.as_deref(),
-            caller_value: caller.org_caller.user_id.as_deref(),
+            caller_value: ScopeCaller::Value(caller.org_caller.user_id.as_deref()),
             column: ScopeColumn::User,
             scope_name: "internal_user_id",
         },
         ReportRoute::Team => RouteScope {
             requested: query.team_id.as_deref(),
-            caller_value: caller.team_id.as_deref(),
+            caller_value: ScopeCaller::Value(caller.team_id.as_deref()),
             column: ScopeColumn::TeamId,
             scope_name: "team_id",
         },

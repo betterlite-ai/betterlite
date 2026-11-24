@@ -151,10 +151,14 @@ async fn organization_rows(
     store: &PostgresStore,
     request: OrganizationReportRequest<'_>,
 ) -> Result<Vec<OrganizationKeySpend>, ScopedReportError> {
-    let teams = request.team_ids.to_vec();
     let query = Query {
         sql: ORGANIZATION_SPEND_REPORT_SQL,
-        parameters: vec![request.start, request.end, &request.organization_id, &teams],
+        parameters: vec![
+            request.start,
+            request.end,
+            &request.organization_id,
+            &request.team_ids,
+        ],
     };
     query_service::decoded_rows(store, &query).await
 }

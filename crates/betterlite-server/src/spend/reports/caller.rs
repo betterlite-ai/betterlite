@@ -1,6 +1,7 @@
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_core::api::request_principal_metadata::principal::logged_api_key;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 use crate::organization_create::caller::{MASTER_KEY_SUBJECT, OrgCaller};
@@ -8,10 +9,10 @@ use crate::organization_create::caller::{MASTER_KEY_SUBJECT, OrgCaller};
 const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 
 // user_api_key_dict: the identity the auth dependency publishes plus the key, team and org facts these reports read
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub(super) struct ReportCaller {
     pub(super) org_caller: OrgCaller,
-    pub(super) api_key: Option<String>,
+    pub(super) api_key: Option<SecretString>,
     pub(super) team_id: Option<String>,
     pub(super) org_id: Option<String>,
 }
@@ -39,7 +40,7 @@ impl ReportCaller {
         if principal.subject == MASTER_KEY_SUBJECT {
             return Ok(Self {
                 org_caller,
-                api_key: Some(MASTER_KEY_ALIAS.to_owned()),
+                api_key: Some(SecretString::from(MASTER_KEY_ALIAS)),
                 team_id: None,
                 org_id: None,
             });
@@ -64,7 +65,7 @@ impl ReportCaller {
             })?)?;
         Ok(Self {
             org_caller,
-            api_key: logged_api_key(&facts).map(str::to_owned),
+            api_key: logged_api_key(&facts).map(SecretString::from),
             team_id: view.team_id,
             org_id: view.org_id,
         })

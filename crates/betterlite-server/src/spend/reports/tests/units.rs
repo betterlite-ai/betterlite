@@ -1,9 +1,10 @@
 use chrono::{DateTime, Datelike as _, TimeZone as _, Timelike as _, Utc};
 use rstest::rstest;
+use secrecy::SecretString;
 
 use super::super::dates::{DateRangeError, SpendReportDates, spend_report_dates};
 use super::super::query::decode_scoped_report_query;
-use super::super::scope::{ScopeError, resolve_scope};
+use super::super::scope::{ScopeCaller, ScopeError, resolve_scope};
 
 fn midnight(year: i32, month: u32, day: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(year, month, day, 0, 0, 0).unwrap()
@@ -140,8 +141,48 @@ fn scope_resolution_clamps_non_admins(
     #[case] expected: Result<&str, ScopeError>,
 ) {
     assert_eq!(
-        resolve_scope(requested, caller_value, admin_view, "api_key"),
+        resolve_scope(
+            requested,
+            ScopeCaller::Value(caller_value),
+            admin_view,
+            "api_key"
+        ),
         expected.map(str::to_owned)
+    );
+}
+
+#[test]
+fn key_scopes_match_the_logged_key_only() {
+    let own = SecretString::from("sk-own");
+    assert_eq!(
+        resolve_scope(
+            Some("sk-own"),
+            ScopeCaller::Key(Some(&own)),
+            false,
+            "api_key"
+        ),
+        Ok("sk-own".to_owned())
+    );
+    assert_eq!(
+        resolve_scope(
+            Some("sk-other"),
+            ScopeCaller::Key(Some(&own)),
+            false,
+            "api_key"
+        ),
+        Err(ScopeError::Forbidden("api_key"))
+    );
+    assert_eq!(
+        resolve_scope(None, ScopeCaller::Key(Some(&own)), false, "api_key"),
+        Ok("sk-own".to_owned())
+    );
+    assert_eq!(
+        resolve_scope(Some("sk-any"), ScopeCaller::Key(None), true, "api_key"),
+        Ok("sk-any".to_owned())
+    );
+    assert_eq!(
+        resolve_scope(None, ScopeCaller::Key(None), false, "api_key"),
+        Err(ScopeError::Missing("api_key"))
     );
 }
 
