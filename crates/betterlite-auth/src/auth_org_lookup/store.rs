@@ -20,7 +20,7 @@ use crate::auth_read::table::{
 const ORG_BY_ID_SQL: &str = r#"SELECT (to_jsonb(o) || jsonb_build_object('models', COALESCE(to_jsonb(o.models), '[]'::jsonb)))::text FROM "LiteLLM_OrganizationTable" o WHERE o.organization_id = $1"#;
 const ORG_BY_ID_WITH_BUDGET_SQL: &str = r#"SELECT (to_jsonb(o) || jsonb_build_object('models', COALESCE(to_jsonb(o.models), '[]'::jsonb), 'litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object('allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = o.budget_id)))::text FROM "LiteLLM_OrganizationTable" o WHERE o.organization_id = $1"#;
 const ORG_BY_ALIAS_SQL: &str = r#"SELECT (to_jsonb(o) || jsonb_build_object('models', COALESCE(to_jsonb(o.models), '[]'::jsonb)))::text FROM "LiteLLM_OrganizationTable" o WHERE o.organization_alias = $1"#;
-const PROJECT_BY_ID_SQL: &str = r#"SELECT (to_jsonb(p) || jsonb_build_object('litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object('allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = p.budget_id)))::text FROM "LiteLLM_ProjectTable" p WHERE p.project_id = $1"#;
+const PROJECT_BY_ID_SQL: &str = r#"SELECT (to_jsonb(p) || jsonb_build_object('models', COALESCE(to_jsonb(p.models), '[]'::jsonb), 'litellm_budget_table', (SELECT to_jsonb(b) || jsonb_build_object('allowed_models', COALESCE(to_jsonb(b.allowed_models), '[]'::jsonb)) FROM "LiteLLM_BudgetTable" b WHERE b.budget_id = p.budget_id)))::text FROM "LiteLLM_ProjectTable" p WHERE p.project_id = $1"#;
 
 // the lookups read by key and by alias only, so the table's other actions are never wired
 const UNREAD: AuthReadError<Infallible> = AuthReadError::Repository(DbError::CreateNull);

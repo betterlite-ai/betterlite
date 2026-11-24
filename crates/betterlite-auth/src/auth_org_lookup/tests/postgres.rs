@@ -102,6 +102,10 @@ async fn assert_projects(database: &DatabaseOrgStore) {
     let project: CachedProject = serde_json::from_str(&text).unwrap();
     assert_eq!(project.project.project_id, "p1");
     assert_eq!(project.project.project_alias.as_deref(), Some("proj"));
+    assert!(
+        project.project.models.is_empty(),
+        "a null text[] reads as []"
+    );
     assert!(project.project.litellm_budget_table.is_some());
     assert_eq!(project.last_refreshed_at, None);
     assert_eq!(database.find_project("absent").await.unwrap(), None);
