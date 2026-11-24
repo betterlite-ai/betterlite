@@ -1,26 +1,24 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 // ast-grep-ignore: no-long-names
 use betterlite_core::api::file_stream_logging::handler::{
     StreamingParamsCall, resolve_streaming_request_params, should_stream_file_content,
 };
-use betterlite_core::api::file_stream_logging::logging::{
-    CallbackFailure, FailureCall, FileStreamLogger, SuccessCall,
-};
+use betterlite_core::api::file_stream_logging::logging::FileStreamLogger;
 use betterlite_core::api::file_stream_logging::source::{EmptySource, StreamSource};
 use betterlite_core::api::file_stream_logging::{FileContentStreamingResponse, FileStreamSetup};
 use betterlite_logging::fields::payload::StandardLoggingPayload;
-use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_models::controls::call_params::TrustedCredentials;
-use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use chrono::{DateTime, FixedOffset, Utc};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
+
+use fixtures::support::{CaptureLogger, WallClock, payload_fixture};
+
+mod fixtures;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -158,59 +156,6 @@ fn snapshot_view(snapshot: &TrustedCredentials) -> Value {
     json!(texts)
 }
 
-struct CaptureLogger {
-    api_base: Option<String>,
-    payload: Option<StandardLoggingPayload>,
-}
-
-#[async_trait]
-impl FileStreamLogger for CaptureLogger {
-    fn start_time(&self) -> Option<DateTime<FixedOffset>> {
-        None
-    }
-
-    fn details_api_base(&self) -> Option<String> {
-        self.api_base.clone()
-    }
-
-    fn build_payload(
-        &self,
-        _response: &Json,
-        _start_time: DateTime<FixedOffset>,
-        _end_time: DateTime<FixedOffset>,
-    ) -> Option<StandardLoggingPayload> {
-        self.payload.clone()
-    }
-
-    fn success_handler(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
-        Ok(())
-    }
-
-    async fn async_success_handler(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
-        Ok(())
-    }
-
-    fn success_sync_callbacks(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
-        Ok(())
-    }
-
-    fn failure_handler(&self, _call: FailureCall) -> Result<(), CallbackFailure> {
-        Ok(())
-    }
-
-    async fn async_failure_handler(&self, _call: FailureCall) -> Result<(), CallbackFailure> {
-        Ok(())
-    }
-}
-
-struct WallClock;
-
-impl SuccessClock for WallClock {
-    fn now(&self) -> DateTime<FixedOffset> {
-        Utc::now().fixed_offset()
-    }
-}
-
 fn payload_view(payload: &StandardLoggingPayload) -> Value {
     let view = serde_json::to_value(payload).unwrap_or(Value::Null);
     let hidden = &view["hidden_params"];
@@ -227,32 +172,4 @@ fn payload_view(payload: &StandardLoggingPayload) -> Value {
         },
         "response": view["response"],
     })
-}
-
-fn payload_fixture(id: &str, model: &str, api_base: &str) -> Option<StandardLoggingPayload> {
-    let payload = json!({
-        "id": id,
-        "trace_id": "trace-1",
-        "session_id": "session-1",
-        "call_type": "afile_content",
-        "response_cost": 0.0,
-        "status": "success",
-        "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"},
-        "total_tokens": 0,
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "startTime": 1767225600.0,
-        "endTime": 1767225601.0,
-        "completionStartTime": 1767225600.0,
-        "response_time": 1.0,
-        "model_map_information": {},
-        "model": model,
-        "api_base": api_base,
-        "metadata": {},
-        "saved_cache_cost": 0.0,
-        "request_tags": [],
-        "model_parameters": {},
-        "hidden_params": {},
-    });
-    serde_json::from_value(payload).ok()
 }
