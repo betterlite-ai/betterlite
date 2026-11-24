@@ -1,12 +1,13 @@
-pub(crate) mod body;
+pub mod body;
 pub(crate) mod error;
 pub(crate) mod evidence;
 pub(crate) mod findings;
 pub(crate) mod lenses;
-pub(crate) mod preview;
+pub mod preview;
 mod router;
 pub(crate) mod runs;
-pub(crate) mod workers;
+pub(crate) mod tests;
+pub mod workers;
 
 use axum::Router;
 use axum::routing::{delete, get, patch, post, put};

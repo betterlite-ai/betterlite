@@ -12,7 +12,7 @@ use crate::lens_access::lookup::{get_lens, lens_repository};
 use crate::lens_access::scope::{caller_key, user_scope};
 use crate::lens_access::state::LensRoutesState;
 use crate::lens_access::storage::source_reader;
-use crate::lens_admin_routes::body::content_query;
+use crate::lens_admin_routes::body::decode_content_query;
 use crate::lens_admin_routes::error::LensRouteError;
 
 pub(crate) async fn evidence_content<Db, Store>(
@@ -28,7 +28,7 @@ where
     let Some(Extension(context)) = caller else {
         return Err(LensRouteError::Unauthenticated);
     };
-    let query = content_query(raw)?;
+    let query = decode_content_query(raw.0.unwrap_or_default().as_bytes())?;
     let scope = user_scope(&caller_key(&context.principal)?, false)?;
     let repository = lens_repository(&state)?;
     let lens = get_lens(repository, &lens_id, &scope).await?;

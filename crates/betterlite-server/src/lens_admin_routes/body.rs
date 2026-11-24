@@ -1,7 +1,6 @@
 use std::num::ParseIntError;
 
 use axum::Json;
-use axum::extract::RawQuery;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use garde::{Report, Validate};
@@ -12,7 +11,7 @@ use thiserror::Error;
 use crate::search_tool_routes::body::{BodyError, decode_body};
 
 #[derive(Debug, Serialize)]
-pub(crate) struct Issue {
+pub struct Issue {
     #[serde(rename = "type")]
     pub(crate) kind: &'static str,
     pub(crate) loc: Vec<String>,
@@ -25,7 +24,7 @@ pub(crate) struct ValidationBody {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum BodyFailure {
+pub enum BodyFailure {
     #[error(transparent)]
     Json(#[from] BodyError),
     #[error("the request body fields are invalid")]
@@ -33,7 +32,7 @@ pub(crate) enum BodyFailure {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum QueryFailure {
+pub enum QueryFailure {
     #[error("the offset query parameter is not an integer")]
     Integer(#[source] ParseIntError),
     #[error("the offset query parameter is below zero")]
@@ -41,13 +40,13 @@ pub(crate) enum QueryFailure {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ContentQuery {
+pub struct ContentQuery {
     pub(crate) cursor: String,
     pub(crate) offset: i64,
 }
 
 // FastAPI validates the declared body and query before the handler, so both fail before any role check
-pub(crate) fn decode<Body>(bytes: &[u8]) -> Result<Body, BodyFailure>
+pub fn decode<Body>(bytes: &[u8]) -> Result<Body, BodyFailure>
 where
     Body: DeserializeOwned + Validate<Context = ()>,
 {
@@ -58,10 +57,10 @@ where
     }
 }
 
-pub(crate) fn content_query(raw: RawQuery) -> Result<ContentQuery, QueryFailure> {
+pub fn decode_content_query(raw: &[u8]) -> Result<ContentQuery, QueryFailure> {
     let mut cursor = String::new();
     let mut offset = None;
-    for (name, value) in form_urlencoded::parse(raw.0.unwrap_or_default().as_bytes()).into_owned() {
+    for (name, value) in form_urlencoded::parse(raw).into_owned() {
         match name.as_str() {
             "cursor" => cursor = value,
             "offset" => offset = Some(value),

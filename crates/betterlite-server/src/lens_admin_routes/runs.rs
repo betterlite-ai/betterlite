@@ -12,7 +12,7 @@ use crate::auth::auth_identity::AuthContext;
 use crate::lens_access::lookup::{get_lens, lens_repository, required};
 use crate::lens_access::model::validate_model;
 use crate::lens_access::state::{LensDatabase, LensRoutesState, LensStorage};
-use crate::lens_admin_routes::body::{content_query, decode};
+use crate::lens_admin_routes::body::{decode, decode_content_query};
 use crate::lens_admin_routes::error::{
     LensMutationError, LensRouteError, route_key_scope, update_failure,
 };
@@ -30,7 +30,7 @@ where
     Db: LensDatabase,
     Store: LensStorage,
 {
-    let query = content_query(raw)?;
+    let query = decode_content_query(raw.0.unwrap_or_default().as_bytes())?;
     let repository = accessible_repository(&state, caller, &lens_id, false).await?;
     let jobs = repository.jobs(&lens_id, query.offset).await?;
     let stripped = jobs

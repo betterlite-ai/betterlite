@@ -552,3 +552,10 @@ path = "fuzz_targets/health_connection_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "lens_admin_parsers"
+path = "fuzz_targets/lens_admin_parsers.rs"
+test = false
+doc = false
+bench = false

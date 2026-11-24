@@ -25,7 +25,7 @@ const DEFAULT_LOOKBACK_HOURS: u32 = 24;
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
-pub(crate) struct Preview {
+pub struct Preview {
     #[serde(default)]
     pub(crate) as_of: Option<DateTime<FixedOffset>>,
     #[serde(default)]
