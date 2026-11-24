@@ -10,6 +10,7 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_test_ports::refused_port::RefusedPort;
+use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
@@ -87,6 +88,40 @@ async fn sends_the_grant_form_with_an_accept_header_and_returns_the_body() {
     assert!(request.contains("content-type: application/x-www-form-urlencoded\r\n"));
     let GrantAnswer::Answered { status, body } = answer else {
         panic!("a 200 is an answer");
+    };
+    assert_eq!(status, 200);
+    assert_eq!(str::from_utf8(&body).unwrap(), "{\"id_token\":\"tok\"}");
+}
+
+#[rstest]
+#[case::temporary("307 Temporary Redirect")]
+#[case::permanent("308 Permanent Redirect")]
+#[tokio::test]
+async fn follows_a_redirect_at_the_token_endpoint(#[case] status_line: &str) {
+    let target = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_address = target.local_addr().unwrap();
+    let redirect = format!(
+        "HTTP/1.1 {status_line}\r\nlocation: http://{target_address}/moved\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let reply = response("HTTP/1.1 200 OK", "{\"id_token\":\"tok\"}");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve(listener, redirect));
+    tasks.spawn(serve(target, reply));
+    let answer = poster(TransportLimits::DEFAULT)
+        .post_form(
+            &format!("http://{address}/token"),
+            &form(),
+            &BTreeMap::new(),
+        )
+        .await;
+    let first = String::from_utf8(tasks.join_next().await.unwrap().unwrap()).unwrap();
+    let followed = String::from_utf8(tasks.join_next().await.unwrap().unwrap()).unwrap();
+    assert!(first.starts_with("POST /token HTTP/1.1\r\n"));
+    assert!(followed.starts_with("POST /moved HTTP/1.1\r\n"));
+    let GrantAnswer::Answered { status, body } = answer else {
+        panic!("the followed 200 is an answer");
     };
     assert_eq!(status, 200);
     assert_eq!(str::from_utf8(&body).unwrap(), "{\"id_token\":\"tok\"}");

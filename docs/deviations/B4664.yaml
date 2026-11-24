@@ -1,11 +1,8 @@
 task: B4664
 deviations:
-  - what: The refresh grant is posted by a hand-written HttpGrantFormPost over the pooled ProxiedClient, behind a raw RefreshGrantPost seam that hands back the status and the bytes of the reply.
-    why: The task text routes the grant through B4661's M2mTokenEndpointPost, but that poster parses the reply into the exchange leg's typed response, which carries only access_token, expires_in and scope; the id_token and the rotated refresh_token this task stores would be dropped before the refresher saw them. The raw seam keeps LiteLLM's HTTP shape (one form POST, the same auth headers, 4xx refusal versus outage) with the body intact.
+  - what: The refresh grant is posted by a hand-written HttpGrantFormPost over the pooled ProxiedClient, behind a raw RefreshGrantPost seam that hands back the status and the bytes of the reply; the form POST follows redirects through send_following and sends Accept application/json.
+    why: The task text routes the grant through B4661's M2mTokenEndpointPost, but that poster parses the reply into the exchange leg's typed response, which carries only access_token, expires_in and scope; the id_token and the rotated refresh_token this task stores would be dropped before the refresher saw them. The raw seam keeps LiteLLM's HTTP shape (one form POST, the same auth headers, 4xx refusal versus outage, and httpx's default redirect following) with the body intact; betterlite-http caps a redirect chain at 10 hops and refuses a TLS downgrade, userinfo and non-http(s) targets.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L207-L247
-  - what: The token-endpoint form POST also sends Accept application/json.
-    why: LiteLLM's post_form sends only the client-auth headers and relies on httpx's form content type. Asking for JSON states what the reply is parsed as and changes nothing an IdP is required to do.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L200-L205
   - what: A reply body over the pooled client's size cap is Unreachable instead of being read in full.
     why: LiteLLM's httpx edge reads any body size; the bounded-inputs rule and B173's pool cap every outbound reply.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L221-L225

@@ -50,7 +50,6 @@ pub trait RefreshTransport: Send + Sync {
     ) -> Result<RefreshResponseBody, RefreshFailure>;
 }
 
-// The raw POST seam: it hands back the status and body, because B4661's pool drops the id_token a renewal needs.
 #[async_trait]
 pub trait RefreshGrantPost: Send + Sync {
     async fn post_form(
@@ -87,7 +86,7 @@ where
 }
 
 // Only a 4xx is settled: a 429 included, because the IdP refusing this grant means the user signs in again, not that betterlite retries.
-fn map_answer(status: u16, body: &[u8]) -> Result<RefreshResponseBody, RefreshFailure> {
+pub fn map_answer(status: u16, body: &[u8]) -> Result<RefreshResponseBody, RefreshFailure> {
     match status {
         400..=499 => Err(RefreshFailure {
             kind: RefreshFailureKind::Rejected,
@@ -129,7 +128,7 @@ impl RefreshGrantPost for HttpGrantFormPost {
             tracing::warn!("ID-JAG refresh POST could not be built from the client auth");
             return GrantAnswer::Unreachable;
         };
-        let Ok(sent) = self.client.send(request).await else {
+        let Ok(sent) = self.client.send_following(request).await else {
             tracing::warn!("ID-JAG refresh POST to the IdP token endpoint failed");
             return GrantAnswer::Unreachable;
         };

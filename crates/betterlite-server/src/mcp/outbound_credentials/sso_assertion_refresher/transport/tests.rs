@@ -3,6 +3,8 @@
 mod http;
 
 use std::collections::{BTreeMap, VecDeque};
+use std::fs;
+use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -12,6 +14,7 @@ use rstest::rstest;
 use super::RefreshTransport as _;
 use super::{
     GrantAnswer, GrantPostTransport, NON_OBJECT_DETAIL, RefreshGrantPost, UNREACHABLE_DETAIL,
+    map_answer,
 };
 use crate::mcp::outbound_credentials::sso_assertion_refresher::failure::RefreshFailureKind;
 
@@ -246,4 +249,19 @@ fn a_body_answer_debug_hides_the_tokens() {
     let rendered = format!("{answer:?}");
     assert!(!rendered.contains("secret-token"));
     assert!(rendered.contains("status: 200"));
+}
+
+#[test]
+fn replays_the_sso_refresh_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/sso_refresh_response");
+    fs::read_dir(corpus)
+        .expect("the corpus directory is readable")
+        .map(|entry| fs::read(entry.expect("the corpus entry").path()).expect("the corpus file"))
+        .for_each(|bytes| match map_answer(200, &bytes) {
+            Ok(_body) => {}
+            Err(failure) => {
+                assert_eq!(failure.kind, RefreshFailureKind::Unavailable);
+                assert_eq!(failure.detail, NON_OBJECT_DETAIL);
+            }
+        });
 }
