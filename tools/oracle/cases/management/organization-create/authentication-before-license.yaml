@@ -16,8 +16,8 @@ compare:
   headers_present: []
   upstream_headers: []
   ignore:
-    - pointer: ""
+    - pointer: /error/message
       why: >-
-        The 400 no_db_connection body belongs to B052's authentication stage on both servers; this
-        case pins only that an unauthenticated organization call is refused before the enterprise
-        license guard, which MIT turns on.
+        Status, type no_db_connection, null param and code "400" match LiteLLM; the message wording
+        belongs to B052's authentication stage on both servers. This case pins that an unauthenticated
+        organization call is refused before the enterprise license guard, which MIT turns on.

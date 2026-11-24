@@ -29,10 +29,11 @@ pub const BUDGET_SCHEMA_FIELDS: [&str; 12] = [
     "temp_budget_expiry",
 ];
 
-// a request money value as Amount: a number that overflows f64 keeps the inf or -inf spelling
+// a request money value as Amount: a literal past f64's range keeps the inf or -inf spelling
 #[must_use]
 pub fn amount_of(number: &Number) -> Option<Amount> {
-    let value = number.as_f64()?;
+    // as_f64 hides a non-finite literal under arbitrary_precision; parsing the stored text keeps Python's inf for 1e400
+    let value: f64 = number.to_string().parse().ok()?;
     if value.is_nan() {
         return Some(Amount::Nan);
     }

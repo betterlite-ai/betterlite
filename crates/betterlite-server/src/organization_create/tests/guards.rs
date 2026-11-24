@@ -276,12 +276,12 @@ async fn create_role_matrix(
 #[case::max_budget_out_of_range(
     r#"{"organization_alias":"a","max_budget":1e30}"#,
     400,
-    "max_budget must be a number the budget table can store. Received: 1e30"
+    "max_budget must be a number the budget table can store. Received: 1e+30"
 )]
 #[case::temp_budget_out_of_range(
     r#"{"organization_alias":"a","temp_budget_increase":1e30}"#,
     400,
-    "temp_budget_increase must be a number the budget table can store. Received: 1e30"
+    "temp_budget_increase must be a number the budget table can store. Received: 1e+30"
 )]
 #[case::max_checked_before_soft(
     r#"{"organization_alias":"a","max_budget":-1,"soft_budget":-1}"#,
