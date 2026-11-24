@@ -125,6 +125,27 @@ async fn a_recovered_partial_usage_is_recorded_with_the_response_cost() {
     );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
     assert_eq!(harness.binder.calls(), 0);
+}
+
+#[tokio::test]
+async fn the_recovered_usage_handler_runs_off_the_reactor_thread() {
+    let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
+        .with_handler_reply(Ok(usage_outcome(2, 3, 5, 0.25)));
+    let lifecycle = harness.lifecycle(false);
+    let logging_obj = object(&[], IndexMap::new());
+    let context = stream_context(lifecycle.as_ref());
+    let body = json("{\"model\":\"gpt-4o\"}");
+    let failure = failure();
+    schedule_failure_logging(FailureSchedulingCall {
+        lifecycle: lifecycle.as_ref(),
+        logging_obj: Arc::clone(&logging_obj),
+        endpoint_type: EndpointType::OpenAi,
+        request_body: &body,
+        raw_bytes: &chunks(),
+        failure: &failure,
+        stream_context: Some(&context),
+    })
+    .await;
     let calls = harness.handler.calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].url_route, "/v1/messages");

@@ -12,7 +12,7 @@ use crate::passthrough_stream_lifecycle::support::{Harness, json, object, passth
 use crate::passthrough_stream_logging::build::StreamLoggingInput;
 use crate::passthrough_stream_logging::router::StreamLoggingRouter;
 use crate::passthrough_stream_logging::types::EndpointType;
-use crate::worker::{Admission, Callback, LoggingWorker, Rejection, WorkerSettings};
+use crate::worker::{Admission, Callback as _, LoggingWorker, Rejection, WorkerSettings};
 
 #[test]
 fn stream_jobs_name_their_kind() {

@@ -22,7 +22,32 @@ use super::fakes::PassThrough;
 use super::invalid;
 
 pub(super) fn logging_object() -> Result<Arc<StreamLoggingObject>, Box<HelperError>> {
-    let init = LoggingInit {
+    let mut correlation = CorrelationContext::default();
+    let setup = CorrelationSetup {
+        context: &mut correlation,
+        settings: CorrelationSettings::default(),
+    };
+    let redactor = Redactor::new(16).map_err(|error| invalid(&error.to_string()))?;
+    let mut logging = LoggingState::new(
+        logging_init()?,
+        setup,
+        &redactor,
+        || "trace-1".to_owned(),
+        || Duration::ZERO,
+    )
+    .map_err(|error| invalid(&error.to_string()))?;
+    logging.litellm_params = reservation_params();
+    Ok(Arc::new(StreamLoggingObject {
+        slot: Mutex::new(Some(StreamLoggingState {
+            logging,
+            correlation: CorrelationContext::default(),
+        })),
+        dispatch: Arc::new(PassThrough),
+    }))
+}
+
+fn logging_init() -> Result<LoggingInit, Box<HelperError>> {
+    Ok(LoggingInit {
         model: "gpt-4o".to_owned(),
         call_type: "pass_through_endpoint".to_owned(),
         start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
@@ -41,29 +66,7 @@ pub(super) fn logging_object() -> Result<Arc<StreamLoggingObject>, Box<HelperErr
         applied_guardrails: None,
         request_logging: RequestLoggingFlags::default(),
         callback_policy: CallbackPolicy::default(),
-    };
-    let mut correlation = CorrelationContext::default();
-    let setup = CorrelationSetup {
-        context: &mut correlation,
-        settings: CorrelationSettings::default(),
-    };
-    let redactor = Redactor::new(16).map_err(|error| invalid(&error.to_string()))?;
-    let mut logging = LoggingState::new(
-        init,
-        setup,
-        &redactor,
-        || "trace-1".to_owned(),
-        || Duration::ZERO,
-    )
-    .map_err(|error| invalid(&error.to_string()))?;
-    logging.litellm_params = reservation_params();
-    Ok(Arc::new(StreamLoggingObject {
-        slot: Mutex::new(Some(StreamLoggingState {
-            logging,
-            correlation: CorrelationContext::default(),
-        })),
-        dispatch: Arc::new(PassThrough),
-    }))
+    })
 }
 
 fn reservation_params() -> IndexMap<String, Json> {

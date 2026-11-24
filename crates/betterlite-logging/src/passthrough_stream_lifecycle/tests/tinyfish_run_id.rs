@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 
 use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;

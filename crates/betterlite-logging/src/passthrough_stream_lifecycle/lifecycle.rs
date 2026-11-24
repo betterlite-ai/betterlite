@@ -44,6 +44,7 @@ pub struct SuccessJobCall {
 }
 
 impl StreamLifecycle {
+    #[must_use]
     pub fn success_job(&self, call: SuccessJobCall) -> StreamLoggingJob {
         let input = StreamLoggingInput {
             logging_obj: call.logging_obj,

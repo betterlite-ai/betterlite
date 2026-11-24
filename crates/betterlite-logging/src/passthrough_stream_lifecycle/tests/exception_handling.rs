@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 
 use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;
@@ -54,8 +54,8 @@ async fn the_failure_is_scheduled_before_the_error_reaches_the_caller() {
         call,
         failing_chunks(vec![b"alpha".to_vec()], failure()),
     ));
-    assert!(stream.next().await.unwrap().is_ok());
-    assert!(stream.next().await.unwrap().is_err());
+    assert_eq!(stream.next().await.unwrap().unwrap(), b"alpha");
+    assert_eq!(stream.next().await.unwrap().unwrap_err(), failure());
     assert_eq!(harness.failure_dispatch.failures().len(), 1);
 }
 
@@ -74,7 +74,7 @@ async fn an_upstream_error_after_status_400_is_not_scheduled() {
             .collect()
             .await;
     assert_eq!(collected.len(), 2);
-    assert!(collected[1].is_err());
+    assert_eq!(collected[1].as_ref().unwrap_err(), &failure());
     assert!(harness.failure_dispatch.failures().is_empty());
     assert!(harness.queue.kinds().is_empty());
     assert_eq!(harness.binder.calls(), 0);
@@ -159,7 +159,7 @@ async fn an_error_before_any_chunk_logs_no_success() {
         .collect()
         .await;
     assert_eq!(collected.len(), 1);
-    assert!(collected[0].is_err());
+    assert_eq!(collected[0].as_ref().unwrap_err(), &failure());
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
     assert_eq!(harness.binder.calls(), 0);
     assert!(harness.route.calls().is_empty());

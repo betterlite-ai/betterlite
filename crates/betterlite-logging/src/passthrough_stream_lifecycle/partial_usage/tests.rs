@@ -28,24 +28,26 @@ fn context() -> PassThroughStreamContext {
     }
 }
 
-fn call(
-    harness: &Harness,
-    logging_obj: Arc<StreamLoggingObject>,
+struct Case {
     endpoint_type: EndpointType,
     request_body: Json,
     raw_bytes: Vec<Vec<u8>>,
     stream_context: Option<PassThroughStreamContext>,
-) -> PartialUsageCall {
+}
+
+fn call(harness: &Harness, logging_obj: Arc<StreamLoggingObject>, case: Case) -> PartialUsageCall {
+    let anthropic: Arc<dyn AnthropicPartialUsage> = Arc::clone(&harness.anthropic);
+    let clock: Arc<dyn SuccessClock> = Arc::clone(&harness.clock);
     PartialUsageCall {
         logging_obj,
         passthrough: passthrough(),
         providers: Arc::clone(&harness.providers),
-        anthropic: Arc::clone(&harness.anthropic) as Arc<dyn AnthropicPartialUsage>,
-        clock: Arc::clone(&harness.clock) as Arc<dyn SuccessClock>,
-        endpoint_type,
-        request_body,
-        raw_bytes,
-        stream_context,
+        anthropic,
+        clock,
+        endpoint_type: case.endpoint_type,
+        request_body: case.request_body,
+        raw_bytes: case.raw_bytes,
+        stream_context: case.stream_context,
     }
 }
 
@@ -58,13 +60,15 @@ fn an_anthropic_stream_delegates_to_the_anthropic_handler() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"]);
     let logging_obj = object(&[], IndexMap::new());
     let chunks = vec![b"event: message_start\n\n".to_vec()];
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::Anthropic,
-        body(),
-        chunks.clone(),
-        Some(context()),
+        Case {
+            endpoint_type: EndpointType::Anthropic,
+            request_body: body(),
+            raw_bytes: chunks.clone(),
+            stream_context: Some(context()),
+        },
     ));
     assert_eq!(
         *harness.anthropic.calls.lock().unwrap(),
@@ -79,13 +83,15 @@ fn an_anthropic_stream_delegates_to_the_anthropic_handler() {
 fn an_anthropic_stream_delegates_before_the_empty_bytes_check() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"]);
     let logging_obj = object(&[], IndexMap::new());
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::Anthropic,
-        body(),
-        Vec::new(),
-        None,
+        Case {
+            endpoint_type: EndpointType::Anthropic,
+            request_body: body(),
+            raw_bytes: Vec::new(),
+            stream_context: None,
+        },
     ));
     assert_eq!(
         *harness.anthropic.calls.lock().unwrap(),
@@ -100,13 +106,15 @@ fn no_stream_context_records_nothing() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
         .with_handler_reply(Ok(usage_outcome(10, 5, 15, 0.25)));
     let logging_obj = object(&[], IndexMap::new());
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::OpenAi,
-        body(),
-        vec![b"data: one\n\n".to_vec()],
-        None,
+        Case {
+            endpoint_type: EndpointType::OpenAi,
+            request_body: body(),
+            raw_bytes: vec![b"data: one\n\n".to_vec()],
+            stream_context: None,
+        },
     ));
     assert_eq!(harness.handler.called(), 0);
     assert_eq!(harness.clock.calls(), 0);
@@ -119,13 +127,15 @@ fn empty_raw_bytes_record_nothing() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
         .with_handler_reply(Ok(usage_outcome(10, 5, 15, 0.25)));
     let logging_obj = object(&[], IndexMap::new());
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::OpenAi,
-        body(),
-        Vec::new(),
-        Some(context()),
+        Case {
+            endpoint_type: EndpointType::OpenAi,
+            request_body: body(),
+            raw_bytes: Vec::new(),
+            stream_context: Some(context()),
+        },
     ));
     assert_eq!(harness.handler.called(), 0);
     assert_eq!(harness.clock.calls(), 0);
@@ -137,13 +147,15 @@ fn the_recovered_usage_and_cost_are_recorded() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
         .with_handler_reply(Ok(usage_outcome(10, 5, 15, 0.25)));
     let logging_obj = object(&[], IndexMap::new());
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::OpenAi,
-        body(),
-        vec![b"data: one\n\n".to_vec()],
-        Some(context()),
+        Case {
+            endpoint_type: EndpointType::OpenAi,
+            request_body: body(),
+            raw_bytes: vec![b"data: one\n\n".to_vec()],
+            stream_context: Some(context()),
+        },
     ));
     assert_eq!(harness.clock.calls(), 1);
     assert_eq!(recorded_usage(logging_obj.as_ref()), Some((10, 5, 15)));
@@ -163,13 +175,15 @@ fn a_response_without_usage_records_nothing() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
         .with_handler_reply(Ok(standard_outcome("done")));
     let logging_obj = object(&[], IndexMap::new());
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::OpenAi,
-        body(),
-        vec![b"data: one\n\n".to_vec()],
-        Some(context()),
+        Case {
+            endpoint_type: EndpointType::OpenAi,
+            request_body: body(),
+            raw_bytes: vec![b"data: one\n\n".to_vec()],
+            stream_context: Some(context()),
+        },
     ));
     assert_eq!(harness.handler.called(), 1);
     assert_eq!(harness.clock.calls(), 1);
@@ -182,13 +196,15 @@ fn a_response_without_a_cost_records_zero() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
         .with_handler_reply(Ok(usage_without_cost_outcome(3, 4, 7)));
     let logging_obj = object(&[], IndexMap::new());
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::OpenAi,
-        body(),
-        vec![b"data: one\n\n".to_vec()],
-        Some(context()),
+        Case {
+            endpoint_type: EndpointType::OpenAi,
+            request_body: body(),
+            raw_bytes: vec![b"data: one\n\n".to_vec()],
+            stream_context: Some(context()),
+        },
     ));
     assert_eq!(recorded_usage(logging_obj.as_ref()), Some((3, 4, 7)));
     assert_eq!(response_cost(logging_obj.as_ref()), Some(json("0.0")));
@@ -201,13 +217,15 @@ fn a_reconstruction_error_is_logged_with_the_endpoint_label() {
     ));
     let logging_obj = object(&[], IndexMap::new());
     let (logs, guard) = capture_logs();
-    record_partial_usage_failure(call(
+    record_partial_usage_failure(&call(
         &harness,
         Arc::clone(&logging_obj),
-        EndpointType::OpenAi,
-        body(),
-        vec![b"data: one\n\n".to_vec()],
-        Some(context()),
+        Case {
+            endpoint_type: EndpointType::OpenAi,
+            request_body: body(),
+            raw_bytes: vec![b"data: one\n\n".to_vec()],
+            stream_context: Some(context()),
+        },
     ));
     drop(guard);
     let text = logs.text();

@@ -1,25 +1,24 @@
+use std::mem::take;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
-use futures_util::{Stream, StreamExt};
+use futures_util::{Stream, StreamExt as _};
 use indexmap::IndexMap;
 
-// ast-grep-ignore: no-long-names
-use crate::passthrough_stream_logging::model::extract_model_for_cost_injection;
 use crate::passthrough_stream_logging::object::StreamLoggingObject;
-use crate::passthrough_stream_logging::sse_frames::split_complete_sse_frames;
 use crate::passthrough_stream_logging::types::EndpointType;
 use crate::worker::Admission;
 
+use self::frames::{inject_frames, resolve_injection_model, scan_tinyfish};
+
 use super::context::PassThroughStreamContext;
-use super::cost_injection::cost_injection_active;
 use super::failure::StreamFailure;
 use super::failure_scheduling::{FailureSchedulingCall, schedule_failure_logging};
 use super::first_token::stamp_first_chunk_if_needed;
 use super::lifecycle::{StreamLifecycle, SuccessJobCall};
 
-const RUN_ID_KEY: &[u8] = b"run_id";
+mod frames;
 
 // LiteLLM's chunk_processor arguments plus the status its completion and failure gates read
 pub struct ChunkProcessorCall {
@@ -41,137 +40,26 @@ where
     S: Stream<Item = Result<Vec<u8>, StreamFailure>> + Send + 'static,
 {
     async_stream::stream! {
-        let ChunkProcessorCall {
-            lifecycle,
-            logging_obj,
-            endpoint_type,
-            start_time,
-            url_route,
-            request_body,
-            status_code,
-        } = call;
-        let resolved_request_body = request_body.unwrap_or_else(|| Json::Object(IndexMap::new()));
-        let model_from_details = logging_obj
-            .read(&mut |state| match state.model_call_details.get("model") {
-                Some(Json::Text(model)) => Some(model.clone()),
-                Some(_) | None => None,
-            })
-            .flatten();
-        // ast-grep-ignore: no-long-names
-        let model_name = extract_model_for_cost_injection(
-            Some(&resolved_request_body),
-            model_from_details.as_deref(),
-            &url_route,
-            endpoint_type,
-        );
-        // Resolved once here, so the per-chunk branch below stays a plain check.
-        let injection_model: Option<String> = match &model_name {
-            Some(model) => {
-                if cost_injection_active(
-                    lifecycle.cost_injection_enabled,
-                    Some(model),
-                    endpoint_type,
-                    &url_route,
-                ) {
-                    Some(model.clone())
-                } else {
-                    None
-                }
-            }
-            None => None,
-        };
-        let mut finish = CompletionGuard {
-            parts: Some(GuardParts {
-                lifecycle: Arc::clone(&lifecycle),
-                logging_obj: Arc::clone(&logging_obj),
-                endpoint_type,
-                start_time,
-                url_route: url_route.clone(),
-                request_body: resolved_request_body.clone(),
-                status_code,
-                raw_bytes: Vec::new(),
-                logging_scheduled: false,
-            }),
-        };
-        let mut tinyfish_scan_active = endpoint_type == EndpointType::Tinyfish;
-        let mut tinyfish_pending: Vec<u8> = Vec::new();
-        let mut pending: Vec<u8> = Vec::new();
-        let mut chunks = Box::pin(chunks);
-        while let Some(item) = chunks.next().await {
+        let mut run = CompletionGuard::new(call);
+        let mut stream = Box::pin(chunks);
+        while let Some(item) = stream.next().await {
             let chunk = match item {
                 Ok(chunk) => chunk,
                 Err(failure) => {
-                    tracing::error!("Error in chunk_processor: {}", failure.message);
-                    if status_code < 400 {
-                        finish.mark_scheduled();
-                        let context = PassThroughStreamContext {
-                            success_handler: Arc::clone(&lifecycle.passthrough),
-                            url_route: url_route.clone(),
-                            start_time,
-                        };
-                        schedule_failure_logging(FailureSchedulingCall {
-                            lifecycle: lifecycle.as_ref(),
-                            logging_obj: Arc::clone(&logging_obj),
-                            endpoint_type,
-                            request_body: &resolved_request_body,
-                            raw_bytes: finish.raw_bytes(),
-                            failure: &failure,
-                            stream_context: Some(&context),
-                        })
-                        .await;
-                    }
+                    run.read_failure(&failure).await;
                     yield Err(failure);
                     return;
                 }
             };
-            finish.record(&chunk);
-            stamp_first_chunk_if_needed(&logging_obj, lifecycle.clock.as_ref());
-            match injection_model.as_deref() {
-                Some(model) => {
-                    pending.extend_from_slice(&chunk);
-                    let (complete, tail) = split_complete_sse_frames(&pending);
-                    let complete = complete.to_vec();
-                    let next_pending = tail.to_vec();
-                    pending = next_pending;
-                    if !complete.is_empty() {
-                        let transformed =
-                            lifecycle.cost_injection.inject(&complete, model, &logging_obj);
-                        yield Ok(transformed);
-                    }
-                }
-                None => {
-                    if tinyfish_scan_active {
-                        let mut reassembled = std::mem::take(&mut tinyfish_pending);
-                        reassembled.extend_from_slice(&chunk);
-                        let (complete, tail) = split_complete_sse_frames(&reassembled);
-                        if contains_run_id(complete)
-                            && let Some(run_id) =
-                                lifecycle.router.tinyfish.run_id_from_sse_frames(complete)
-                        {
-                            lifecycle.router.tinyfish.start_sse_run_billing(
-                                &run_id,
-                                &logging_obj,
-                                start_time,
-                            );
-                            tinyfish_scan_active = false;
-                        }
-                        tinyfish_pending = tail.to_vec();
-                    }
-                    yield Ok(chunk);
-                }
+            if let Some(output) = run.accept(chunk) {
+                yield Ok(output);
             }
         }
-        if !pending.is_empty() {
-            yield Ok(pending);
+        if let Some(tail) = run.take_tail() {
+            yield Ok(tail);
         }
-        finish.complete();
+        run.complete();
     }
-}
-
-fn contains_run_id(frames: &[u8]) -> bool {
-    frames
-        .windows(RUN_ID_KEY.len())
-        .any(|window| window == RUN_ID_KEY)
 }
 
 struct CompletionGuard {
@@ -188,26 +76,69 @@ struct GuardParts {
     status_code: u16,
     raw_bytes: Vec<Vec<u8>>,
     logging_scheduled: bool,
+    injection_model: Option<String>,
+    pending: Vec<u8>,
+    scan_active: bool,
+    scan_pending: Vec<u8>,
 }
 
 impl CompletionGuard {
+    fn new(call: ChunkProcessorCall) -> Self {
+        let resolved_request_body = call
+            .request_body
+            .unwrap_or_else(|| Json::Object(IndexMap::new()));
+        let injection_model = resolve_injection_model(
+            &call.lifecycle,
+            &call.logging_obj,
+            call.endpoint_type,
+            &call.url_route,
+            &resolved_request_body,
+        );
+        let scan_active = call.endpoint_type == EndpointType::Tinyfish;
+        Self {
+            parts: Some(GuardParts {
+                lifecycle: call.lifecycle,
+                logging_obj: call.logging_obj,
+                endpoint_type: call.endpoint_type,
+                start_time: call.start_time,
+                url_route: call.url_route,
+                request_body: resolved_request_body,
+                status_code: call.status_code,
+                raw_bytes: Vec::new(),
+                logging_scheduled: false,
+                injection_model,
+                pending: Vec::new(),
+                scan_active,
+                scan_pending: Vec::new(),
+            }),
+        }
+    }
+
     fn record(&mut self, chunk: &[u8]) {
         if let Some(parts) = self.parts.as_mut() {
             parts.raw_bytes.push(chunk.to_vec());
         }
     }
 
-    fn raw_bytes(&self) -> &[Vec<u8>] {
-        match self.parts.as_ref() {
-            Some(parts) => &parts.raw_bytes,
-            None => &[],
+    fn accept(&mut self, chunk: Vec<u8>) -> Option<Vec<u8>> {
+        self.record(&chunk);
+        let Some(parts) = self.parts.as_mut() else {
+            return None;
+        };
+        stamp_first_chunk_if_needed(&parts.logging_obj, parts.lifecycle.clock.as_ref());
+        if parts.injection_model.is_some() {
+            return inject_frames(parts, &chunk);
         }
+        scan_tinyfish(parts, &chunk);
+        Some(chunk)
     }
 
-    fn mark_scheduled(&mut self) {
-        if let Some(parts) = self.parts.as_mut() {
-            parts.logging_scheduled = true;
+    fn take_tail(&mut self) -> Option<Vec<u8>> {
+        let parts = self.parts.as_mut()?;
+        if parts.pending.is_empty() {
+            return None;
         }
+        Some(take(&mut parts.pending))
     }
 
     // The deferred branch of LiteLLM's try block: park the coroutine instead of enqueueing it now.
@@ -228,7 +159,7 @@ impl CompletionGuard {
             start_time: parts.start_time,
             url_route: parts.url_route.clone(),
             request_body: Some(parts.request_body.clone()),
-            raw_bytes: std::mem::take(&mut parts.raw_bytes),
+            raw_bytes: take(&mut parts.raw_bytes),
         });
         // bind_budget_reservation_to_callbacks(litellm_logging_obj.litellm_params)
         let binder = Arc::clone(&parts.lifecycle.binder);
@@ -236,6 +167,33 @@ impl CompletionGuard {
             .logging_obj
             .edit(&mut |state| binder.bind(&mut state.litellm_params));
         deferred.park(job);
+    }
+
+    async fn read_failure(&mut self, failure: &StreamFailure) {
+        let message = &failure.message;
+        tracing::error!("Error in chunk_processor: {message}");
+        let Some(parts) = self.parts.as_mut() else {
+            return;
+        };
+        if parts.status_code >= 400 {
+            return;
+        }
+        parts.logging_scheduled = true;
+        let context = PassThroughStreamContext {
+            success_handler: Arc::clone(&parts.lifecycle.passthrough),
+            url_route: parts.url_route.clone(),
+            start_time: parts.start_time,
+        };
+        schedule_failure_logging(FailureSchedulingCall {
+            lifecycle: parts.lifecycle.as_ref(),
+            logging_obj: Arc::clone(&parts.logging_obj),
+            endpoint_type: parts.endpoint_type,
+            request_body: &parts.request_body,
+            raw_bytes: &parts.raw_bytes,
+            failure,
+            stream_context: Some(&context),
+        })
+        .await;
     }
 }
 
@@ -255,10 +213,10 @@ impl Drop for CompletionGuard {
             start_time: parts.start_time,
             url_route: parts.url_route.clone(),
             request_body: Some(parts.request_body.clone()),
-            raw_bytes: std::mem::take(&mut parts.raw_bytes),
+            raw_bytes: take(&mut parts.raw_bytes),
         });
-        if let Admission::Rejected(_reason) = parts.lifecycle.queue.submit(job) {
-            tracing::error!("Error scheduling chunk_processor logging: the job was dropped");
+        if let Admission::Rejected(reason) = parts.lifecycle.queue.submit(job) {
+            tracing::error!("Error scheduling chunk_processor logging: {reason:?}");
             return;
         }
         let binder = Arc::clone(&parts.lifecycle.binder);

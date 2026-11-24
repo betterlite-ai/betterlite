@@ -47,7 +47,7 @@ pub struct PartialUsageCall {
 }
 
 // LiteLLM's _record_partial_usage_for_failure: a failed stream still logs the usage its chunks carry
-pub fn record_partial_usage_failure(call: PartialUsageCall) {
+pub fn record_partial_usage_failure(call: &PartialUsageCall) {
     if call.endpoint_type == EndpointType::Anthropic {
         call.anthropic.record_partial_usage(
             call.logging_obj.as_ref(),
@@ -62,18 +62,7 @@ pub fn record_partial_usage_failure(call: PartialUsageCall) {
     if call.raw_bytes.is_empty() {
         return;
     }
-    let input = StreamLoggingInput {
-        logging_obj: Arc::clone(&call.logging_obj),
-        passthrough: Arc::clone(&call.passthrough),
-        providers: Arc::clone(&call.providers),
-        url_route: stream_context.url_route.clone(),
-        request_body: Some(call.request_body.clone()),
-        endpoint_type: call.endpoint_type,
-        start_time: stream_context.start_time,
-        end_time: call.clock.now(),
-        raw_bytes: call.raw_bytes.clone(),
-        model: None,
-    };
+    let input = usage_input(call, stream_context);
     // ast-grep-ignore: no-long-names
     let output = match build_passthrough_logging_result(&input) {
         Ok(output) => output,
@@ -92,6 +81,24 @@ pub fn record_partial_usage_failure(call: PartialUsageCall) {
     call.logging_obj
         // ast-grep-ignore: no-long-names
         .edit(&mut |state| record_partial_usage_for_failure(state, &usage, cost));
+}
+
+fn usage_input(
+    call: &PartialUsageCall,
+    stream_context: &PassThroughStreamContext,
+) -> StreamLoggingInput {
+    StreamLoggingInput {
+        logging_obj: Arc::clone(&call.logging_obj),
+        passthrough: Arc::clone(&call.passthrough),
+        providers: Arc::clone(&call.providers),
+        url_route: stream_context.url_route.clone(),
+        request_body: Some(call.request_body.clone()),
+        endpoint_type: call.endpoint_type,
+        start_time: stream_context.start_time,
+        end_time: call.clock.now(),
+        raw_bytes: call.raw_bytes.clone(),
+        model: None,
+    }
 }
 
 // getattr(partial_response, "usage", None) and isinstance(usage, Usage): only the response models carry a Usage

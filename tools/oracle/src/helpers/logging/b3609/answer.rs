@@ -27,60 +27,84 @@ pub(super) fn answer(
     let params = logging_obj
         .read(&mut |state| state.litellm_params.clone())
         .unwrap_or_default();
-    let routes = recorder
-        .routes
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let route_calls = routes.len();
-    let route_bytes = routes.first().cloned();
-    drop(routes);
-    let completion = logging_obj
-        .read(&mut |state| state.completion_start_time.map(|value| value.to_rfc3339()))
-        .flatten();
-    let outcome = if driven.failure.is_some() {
-        "failed"
-    } else if driven.disconnected {
-        "disconnected"
-    } else {
-        "completed"
-    };
+    let (route_calls, route_bytes) = route_summary(recorder);
+    let result = outcome(&driven);
+    let completion = completion_start(logging_obj);
     json!({
         "yielded": driven.yielded,
-        "outcome": outcome,
-        "error": driven
-            .failure
-            .as_ref()
-            .map(|failure| format!("{}: {}", failure.class, failure.message)),
+        "outcome": result,
+        "error": driven.failure.as_ref().map(error_text),
         "completion_start_time": completion,
         "route_calls": route_calls,
         "route_raw_bytes": route_bytes,
         "queued_jobs": driven.queued_jobs,
         "deferred_jobs": driven.deferred_jobs,
-        "failures": recorder
-            .failures
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|failure| json!({
-                "class": failure.class,
-                "message": failure.message,
-                "traceback_tail": failure.traceback.lines().last().unwrap_or_default(),
-            }))
-            .collect::<Vec<_>>(),
+        "failures": failures(recorder),
         "partial_usage": partial_usage(&details),
-        "tinyfish_started": recorder
-            .started
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|(run_id, at)| json!([run_id, at.to_rfc3339()]))
-            .collect::<Vec<_>>(),
+        "tinyfish_started": tinyfish_started(recorder),
         "tinyfish_scans": *recorder
             .scans
             .lock()
             .unwrap_or_else(PoisonError::into_inner),
         "callback_bound": callback_bound(&params),
     })
+}
+
+fn completion_start(logging_obj: &StreamLoggingObject) -> Option<String> {
+    let value = logging_obj
+        .read(&mut |state| state.completion_start_time)
+        .flatten()?;
+    Some(value.to_rfc3339())
+}
+
+fn outcome(driven: &Driven) -> &'static str {
+    if driven.failure.is_some() {
+        "failed"
+    } else if driven.disconnected {
+        "disconnected"
+    } else {
+        "completed"
+    }
+}
+
+fn error_text(failure: &StreamFailure) -> String {
+    let class = &failure.class;
+    let message = &failure.message;
+    format!("{class}: {message}")
+}
+
+fn route_summary(recorder: &Recorder) -> (usize, Option<Vec<Vec<u8>>>) {
+    let routes = recorder
+        .routes
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    (routes.len(), routes.first().cloned())
+}
+
+fn failures(recorder: &Recorder) -> Vec<Value> {
+    recorder
+        .failures
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(|failure| {
+            json!({
+                "class": failure.class,
+                "message": failure.message,
+                "traceback_tail": failure.traceback.lines().last().unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+fn tinyfish_started(recorder: &Recorder) -> Vec<Value> {
+    recorder
+        .started
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(|(run_id, at)| json!([run_id, at.to_rfc3339()]))
+        .collect()
 }
 
 fn partial_usage(details: &IndexMap<String, Json>) -> Option<Value> {

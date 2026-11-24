@@ -5,35 +5,28 @@ mod logging;
 
 use std::mem::take;
 use std::pin::Pin;
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_lifecycle::chunk_processor::{
     ChunkProcessorCall, chunk_processor,
 };
-use betterlite_logging::passthrough_stream_lifecycle::cost_injection::StreamCostInjection;
-use betterlite_logging::passthrough_stream_lifecycle::failure::{
-    StreamFailure, StreamFailureDispatch,
-};
+use betterlite_logging::passthrough_stream_lifecycle::failure::StreamFailure;
 use betterlite_logging::passthrough_stream_lifecycle::lifecycle::StreamLifecycle;
-use betterlite_logging::passthrough_stream_lifecycle::partial_usage::AnthropicPartialUsage;
 use betterlite_logging::passthrough_stream_lifecycle::ports::{
-    DeferredStreamLogging, StreamLoggingQueue, StreamRoute,
+    DeferredStreamLogging, StreamLoggingJob,
 };
-use betterlite_logging::passthrough_stream_logging::router::{
-    AnthropicFrameProbe, StreamLoggingRouter,
-};
-use betterlite_logging::passthrough_stream_logging::tinyfish::TinyfishStreamBilling;
+use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
+use betterlite_logging::passthrough_stream_logging::router::StreamLoggingRouter;
 use betterlite_logging::passthrough_stream_logging::types::{
     CollectedChunksHandler, EndpointType, ProviderChunkHandlers,
 };
-use betterlite_logging::reservation_binding::ReservationBinder;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::DateTime;
 use futures_util::stream;
-use futures_util::{Stream, StreamExt};
+use futures_util::{Stream, StreamExt as _};
 use serde_json::Value;
 use tokio::runtime::Builder;
 
@@ -51,57 +44,107 @@ impl Helper for Op {
     }
 }
 
+struct Wiring {
+    lifecycle: Arc<StreamLifecycle>,
+    recorder: Arc<fakes::Recorder>,
+    logging_obj: Arc<StreamLoggingObject>,
+}
+
 async fn execute(input: &input::Input) -> HelperResult {
+    let wiring = build_wiring(input)?;
+    let mut source = Box::pin(chunk_processor(
+        processor_call(input, &wiring)?,
+        stream::iter(scripted_chunks(input)),
+    ));
+    let (yielded, failure, disconnected) = drive(input.disconnect_after, &mut source).await;
+    drop(source);
+    let queued_jobs = drain(&wiring.recorder.queued).await;
+    let deferred_jobs = drain(&wiring.recorder.parked).await;
+    let driven = answer::Driven {
+        yielded,
+        failure,
+        disconnected,
+        queued_jobs,
+        deferred_jobs,
+    };
+    Ok(answer::answer(
+        &wiring.logging_obj,
+        &wiring.recorder,
+        driven,
+    ))
+}
+
+fn build_wiring(input: &input::Input) -> Result<Wiring, Box<HelperError>> {
     let logging_obj = logging::logging_object()?;
-    let handler: Arc<dyn CollectedChunksHandler> = Arc::new(fakes::Handler);
-    let providers = Arc::new(ProviderChunkHandlers {
-        anthropic: Arc::clone(&handler),
-        vertex: Arc::clone(&handler),
-        gemini: Arc::clone(&handler),
-        openai: handler,
-    });
     let recorder = Arc::new(fakes::Recorder::new(
         input.tinyfish_poller,
         input.run_id.clone(),
     ));
     let shared = Arc::new(fakes::PassThrough);
-    let router = Arc::new(StreamLoggingRouter {
-        providers,
-        frames: Arc::clone(&shared) as Arc<dyn AnthropicFrameProbe>,
-        tinyfish: Arc::clone(&recorder) as Arc<dyn TinyfishStreamBilling>,
-    });
+    let deferred_job: Arc<dyn DeferredStreamLogging> = Arc::clone(&recorder);
+    let deferred = input.deferred.then_some(deferred_job);
     let lifecycle = Arc::new(StreamLifecycle {
-        router,
+        router: router(&recorder, &shared),
         passthrough: Arc::new(PassThroughEndpointLogging {
             injected_log_dispatch: None,
         }),
-        route: Arc::clone(&recorder) as Arc<dyn StreamRoute>,
-        cost_injection: Arc::clone(&recorder) as Arc<dyn StreamCostInjection>,
-        anthropic_partial_usage: shared as Arc<dyn AnthropicPartialUsage>,
-        failure_dispatch: Arc::clone(&recorder) as Arc<dyn StreamFailureDispatch>,
-        queue: Arc::clone(&recorder) as Arc<dyn StreamLoggingQueue>,
-        binder: Arc::clone(&recorder) as Arc<dyn ReservationBinder>,
-        deferred: if input.deferred {
-            Some(Arc::clone(&recorder) as Arc<dyn DeferredStreamLogging>)
-        } else {
-            None
-        },
-        clock: Arc::new(fakes::FixedClock(
-            DateTime::parse_from_rfc3339("2024-01-02T00:00:00+00:00")
-                .map_err(|error| invalid(&error.to_string()))?,
-        )),
-        cost_injection_enabled: input.cost_injection,
+        route: Arc::clone(&recorder),
+        cost_injection: Arc::clone(&recorder),
+        anthropic_partial_usage: Arc::clone(&shared),
+        failure_dispatch: Arc::clone(&recorder),
+        queue: Arc::clone(&recorder),
+        binder: Arc::clone(&recorder),
+        deferred,
+        clock: clock()?,
+        cost_injection_enabled: input.cost_injection.0,
     });
-    let call = ChunkProcessorCall {
-        lifecycle: Arc::clone(&lifecycle),
-        logging_obj: Arc::clone(&logging_obj),
+    Ok(Wiring {
+        lifecycle,
+        recorder,
+        logging_obj,
+    })
+}
+
+fn router(
+    recorder: &Arc<fakes::Recorder>,
+    shared: &Arc<fakes::PassThrough>,
+) -> Arc<StreamLoggingRouter> {
+    let handler: Arc<dyn CollectedChunksHandler> = Arc::new(fakes::Handler);
+    Arc::new(StreamLoggingRouter {
+        providers: Arc::new(ProviderChunkHandlers {
+            anthropic: Arc::clone(&handler),
+            vertex: Arc::clone(&handler),
+            gemini: Arc::clone(&handler),
+            openai: handler,
+        }),
+        frames: Arc::clone(shared),
+        tinyfish: Arc::clone(recorder),
+    })
+}
+
+fn clock() -> Result<Arc<fakes::FixedClock>, Box<HelperError>> {
+    let moment = DateTime::parse_from_rfc3339("2024-01-02T00:00:00+00:00")
+        .map_err(|error| invalid(&error.to_string()))?;
+    Ok(Arc::new(fakes::FixedClock(moment)))
+}
+
+fn processor_call(
+    input: &input::Input,
+    wiring: &Wiring,
+) -> Result<ChunkProcessorCall, Box<HelperError>> {
+    Ok(ChunkProcessorCall {
+        lifecycle: Arc::clone(&wiring.lifecycle),
+        logging_obj: Arc::clone(&wiring.logging_obj),
         endpoint_type: EndpointType::from(input.endpoint_type),
         start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
             .map_err(|error| invalid(&error.to_string()))?,
         url_route: input.url_route.clone(),
         request_body: request_body(input.request_body.as_ref())?,
         status_code: input.status_code,
-    };
+    })
+}
+
+fn scripted_chunks(input: &input::Input) -> Vec<Result<Vec<u8>, StreamFailure>> {
     let mut items: Vec<Result<Vec<u8>, StreamFailure>> =
         input.chunks.iter().cloned().map(Ok).collect();
     if let Some(spec) = &input.failure {
@@ -111,40 +154,16 @@ async fn execute(input: &input::Input) -> HelperResult {
             traceback: spec.traceback.clone(),
         }));
     }
-    let mut chunks = Box::pin(chunk_processor(call, stream::iter(items)));
-    let (yielded, failure, disconnected) = drive(input.disconnect_after, &mut chunks).await;
-    drop(chunks);
-    let queued = take(
-        &mut *recorder
-            .queued
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner),
-    );
-    let queued_jobs = queued.len();
+    items
+}
+
+async fn drain(jobs: &Mutex<Vec<StreamLoggingJob>>) -> usize {
+    let queued = take(&mut *jobs.lock().unwrap_or_else(PoisonError::into_inner));
+    let count = queued.len();
     for job in queued {
         job.work.await;
     }
-    let parked = take(
-        &mut *recorder
-            .parked
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner),
-    );
-    let deferred_jobs = parked.len();
-    for job in parked {
-        job.work.await;
-    }
-    Ok(answer::answer(
-        &logging_obj,
-        &recorder,
-        answer::Driven {
-            yielded,
-            failure,
-            disconnected,
-            queued_jobs,
-            deferred_jobs,
-        },
-    ))
+    count
 }
 
 async fn drive<S>(

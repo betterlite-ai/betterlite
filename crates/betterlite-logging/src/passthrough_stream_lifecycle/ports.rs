@@ -44,7 +44,7 @@ pub trait StreamLoggingQueue: Send + Sync {
 
 impl StreamLoggingQueue for LoggingWorker<StreamLoggingJob> {
     fn submit(&self, job: StreamLoggingJob) -> Admission {
-        LoggingWorker::enqueue(self, job)
+        Self::enqueue(self, job)
     }
 }
 

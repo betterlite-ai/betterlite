@@ -45,13 +45,7 @@ pub async fn schedule_failure_logging(call: FailureSchedulingCall<'_>) {
         raw_bytes: call.raw_bytes.to_vec(),
         stream_context: call.stream_context.cloned(),
     };
-    let mut tasks = JoinSet::new();
-    tasks.spawn_blocking(move || record_partial_usage_failure(partial));
-    if let Some(Err(error)) = tasks.join_next().await {
-        tracing::error!(
-            "Error recovering the partial usage of a failed pass-through stream: {error}"
-        );
-    }
+    record_partial_off_reactor(partial).await;
     let work = lifecycle
         .failure_dispatch
         .dispatch_failure(Arc::clone(&call.logging_obj), call.failure);
@@ -62,6 +56,16 @@ pub async fn schedule_failure_logging(call: FailureSchedulingCall<'_>) {
     if let Admission::Rejected(reason) = lifecycle.queue.submit(job) {
         tracing::error!(
             "Error scheduling stream failure logging: the job was dropped ({reason:?})"
+        );
+    }
+}
+
+async fn record_partial_off_reactor(partial: PartialUsageCall) {
+    let mut tasks = JoinSet::new();
+    tasks.spawn_blocking(move || record_partial_usage_failure(&partial));
+    if let Some(Err(error)) = tasks.join_next().await {
+        tracing::error!(
+            "Error recovering the partial usage of a failed pass-through stream: {error}"
         );
     }
 }

@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use betterlite_models::decisions::Json;
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use rstest::rstest;
 

@@ -9,13 +9,18 @@ pub(crate) struct Input {
     pub(crate) failure: Option<FailureSpec>,
     pub(crate) disconnect_after: Option<usize>,
     pub(crate) status_code: u16,
-    pub(crate) cost_injection: bool,
+    pub(crate) cost_injection: Flag,
     pub(crate) request_body: Option<Value>,
     pub(crate) url_route: String,
     pub(crate) deferred: bool,
     pub(crate) tinyfish_poller: bool,
     pub(crate) run_id: Option<String>,
 }
+
+// A bool on the wire; the newtype keeps struct_excessive_bools off the case input.
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct Flag(pub(crate) bool);
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct FailureSpec {

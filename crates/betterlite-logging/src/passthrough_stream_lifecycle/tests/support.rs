@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io::{Result as IoResult, Write};
+use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{ThreadId, current};
 use std::time::Duration;
@@ -47,16 +48,38 @@ use super::ports::{
     StreamWork,
 };
 
-pub fn time(text: &str) -> DateTime<FixedOffset> {
+pub(super) fn time(text: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(text).unwrap()
 }
 
-pub fn json(text: &str) -> Json {
+pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("valid JSON literal")
 }
 
-pub fn state(details: &[(&str, Json)]) -> LoggingState {
-    let init = LoggingInit {
+pub(super) fn state(details: &[(&str, Json)]) -> LoggingState {
+    let mut context = CorrelationContext::default();
+    let setup = CorrelationSetup {
+        context: &mut context,
+        settings: CorrelationSettings::default(),
+    };
+    let mut logging = LoggingState::new(
+        logging_init(),
+        setup,
+        &Redactor::new(16).expect("valid redactor"),
+        || "generated-trace".to_owned(),
+        || Duration::ZERO,
+    )
+    .expect("valid logging state");
+    for (key, value) in details {
+        logging
+            .model_call_details
+            .insert((*key).to_owned(), value.clone());
+    }
+    logging
+}
+
+fn logging_init() -> LoggingInit {
+    LoggingInit {
         model: "gpt-4o".to_owned(),
         call_type: "pass_through_endpoint".to_owned(),
         start_time: time("2024-01-01T00:00:00+00:00"),
@@ -74,29 +97,10 @@ pub fn state(details: &[(&str, Json)]) -> LoggingState {
         applied_guardrails: None,
         request_logging: RequestLoggingFlags::default(),
         callback_policy: CallbackPolicy::default(),
-    };
-    let mut context = CorrelationContext::default();
-    let setup = CorrelationSetup {
-        context: &mut context,
-        settings: CorrelationSettings::default(),
-    };
-    let mut logging = LoggingState::new(
-        init,
-        setup,
-        &Redactor::new(16).expect("valid redactor"),
-        || "generated-trace".to_owned(),
-        || Duration::ZERO,
-    )
-    .expect("valid logging state");
-    for (key, value) in details {
-        logging
-            .model_call_details
-            .insert((*key).to_owned(), value.clone());
     }
-    logging
 }
 
-pub fn object(
+pub(super) fn object(
     details: &[(&str, Json)],
     litellm_params: IndexMap<String, Json>,
 ) -> Arc<StreamLoggingObject> {
@@ -111,13 +115,13 @@ pub fn object(
     })
 }
 
-pub fn passthrough() -> Arc<PassThroughEndpointLogging> {
+pub(super) fn passthrough() -> Arc<PassThroughEndpointLogging> {
     Arc::new(PassThroughEndpointLogging {
         injected_log_dispatch: None,
     })
 }
 
-pub fn reservation_params() -> IndexMap<String, Json> {
+pub(super) fn reservation_params() -> IndexMap<String, Json> {
     let mut metadata = IndexMap::new();
     let mut reservation = IndexMap::new();
     reservation.insert("id".to_owned(), Json::Text("reservation-1".to_owned()));
@@ -130,19 +134,19 @@ pub fn reservation_params() -> IndexMap<String, Json> {
     params
 }
 
-pub fn model_details(logging_obj: &StreamLoggingObject) -> IndexMap<String, Json> {
+pub(super) fn model_details(logging_obj: &StreamLoggingObject) -> IndexMap<String, Json> {
     logging_obj
         .read(&mut |state| state.model_call_details.clone())
         .expect("the logging state is present")
 }
 
-pub fn litellm_params(logging_obj: &StreamLoggingObject) -> IndexMap<String, Json> {
+pub(super) fn litellm_params(logging_obj: &StreamLoggingObject) -> IndexMap<String, Json> {
     logging_obj
         .read(&mut |state| state.litellm_params.clone())
         .expect("the logging state is present")
 }
 
-pub fn callback_bound(logging_obj: &StreamLoggingObject) -> Option<Json> {
+pub(super) fn callback_bound(logging_obj: &StreamLoggingObject) -> Option<Json> {
     let params = litellm_params(logging_obj);
     let Json::Object(metadata) = params.get("metadata")? else {
         return None;
@@ -153,33 +157,37 @@ pub fn callback_bound(logging_obj: &StreamLoggingObject) -> Option<Json> {
     reservation.get("callback_bound").cloned()
 }
 
-pub fn recorded_usage(logging_obj: &StreamLoggingObject) -> Option<(i64, i64, i64)> {
+pub(super) fn recorded_usage(logging_obj: &StreamLoggingObject) -> Option<(i64, i64, i64)> {
     let details = model_details(logging_obj);
     let Some(Json::Object(usage)) = details.get("combined_usage_object") else {
         return None;
     };
-    let read = |key: &str| match usage.get(key) {
-        Some(Json::Number(number)) => number.as_i64(),
-        _ => None,
-    };
     Some((
-        read("prompt_tokens")?,
-        read("completion_tokens")?,
-        read("total_tokens")?,
+        usage_token(usage, "prompt_tokens")?,
+        usage_token(usage, "completion_tokens")?,
+        usage_token(usage, "total_tokens")?,
     ))
 }
 
-pub fn completion_start_time(logging_obj: &StreamLoggingObject) -> Option<String> {
-    logging_obj
-        .read(&mut |state| state.completion_start_time.map(|value| value.to_rfc3339()))
-        .flatten()
+fn usage_token(usage: &IndexMap<String, Json>, key: &str) -> Option<i64> {
+    let Some(Json::Number(number)) = usage.get(key) else {
+        return None;
+    };
+    number.as_i64()
 }
 
-pub fn response_cost(logging_obj: &StreamLoggingObject) -> Option<Json> {
+pub(super) fn completion_start_time(logging_obj: &StreamLoggingObject) -> Option<String> {
+    let value = logging_obj
+        .read(&mut |state| state.completion_start_time)
+        .flatten()?;
+    Some(value.to_rfc3339())
+}
+
+pub(super) fn response_cost(logging_obj: &StreamLoggingObject) -> Option<Json> {
     model_details(logging_obj).get("response_cost").cloned()
 }
 
-pub fn usage_outcome(prompt: i64, completion: i64, total: i64, cost: f64) -> HandlerOutcome {
+pub(super) fn usage_outcome(prompt: i64, completion: i64, total: i64, cost: f64) -> HandlerOutcome {
     let mut kwargs = PassThroughLoggingKwargs::default();
     let number = serde_json::Number::from_f64(cost).expect("a finite response cost");
     kwargs
@@ -193,7 +201,11 @@ pub fn usage_outcome(prompt: i64, completion: i64, total: i64, cost: f64) -> Han
     }
 }
 
-pub fn usage_without_cost_outcome(prompt: i64, completion: i64, total: i64) -> HandlerOutcome {
+pub(super) fn usage_without_cost_outcome(
+    prompt: i64,
+    completion: i64,
+    total: i64,
+) -> HandlerOutcome {
     HandlerOutcome {
         result: Some(PassThroughResponse::ModelResponse(model_response_body(
             prompt, completion, total,
@@ -208,7 +220,7 @@ fn model_response_body(prompt: i64, completion: i64, total: i64) -> Json {
     ))
 }
 
-pub fn standard_outcome(text: &str) -> HandlerOutcome {
+pub(super) fn standard_outcome(text: &str) -> HandlerOutcome {
     let body = json(&format!(r#"{{"response":"{text}"}}"#));
     HandlerOutcome {
         result: Some(PassThroughResponse::Standard(PassThroughResponseObject {
@@ -219,31 +231,31 @@ pub fn standard_outcome(text: &str) -> HandlerOutcome {
 }
 
 #[derive(Clone)]
-pub struct RecordedHandlerCall {
-    pub url_route: String,
-    pub request_body: Option<Json>,
-    pub endpoint_type: EndpointType,
-    pub start_time: DateTime<FixedOffset>,
-    pub end_time: DateTime<FixedOffset>,
-    pub lines: Vec<String>,
-    pub model: Option<String>,
-    pub thread: ThreadId,
+pub(super) struct RecordedHandlerCall {
+    pub(super) url_route: String,
+    pub(super) request_body: Option<Json>,
+    pub(super) endpoint_type: EndpointType,
+    pub(super) start_time: DateTime<FixedOffset>,
+    pub(super) end_time: DateTime<FixedOffset>,
+    pub(super) lines: Vec<String>,
+    pub(super) model: Option<String>,
+    pub(super) thread: ThreadId,
 }
 
 #[derive(Default)]
-pub struct RecordingHandler {
-    pub calls: Mutex<Vec<RecordedHandlerCall>>,
-    pub reply: Mutex<Option<Result<HandlerOutcome, HandlerError>>>,
+pub(super) struct RecordingHandler {
+    pub(super) calls: Mutex<Vec<RecordedHandlerCall>>,
+    pub(super) reply: Mutex<Option<Result<HandlerOutcome, HandlerError>>>,
 }
 
 impl RecordingHandler {
-    pub fn returning(reply: Result<HandlerOutcome, HandlerError>) -> Arc<Self> {
+    pub(super) fn returning(reply: Result<HandlerOutcome, HandlerError>) -> Arc<Self> {
         let handler = Self::default();
         *handler.reply.lock().unwrap_or_else(PoisonError::into_inner) = Some(reply);
         Arc::new(handler)
     }
 
-    pub fn called(&self) -> usize {
+    pub(super) fn called(&self) -> usize {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -275,7 +287,7 @@ impl CollectedChunksHandler for RecordingHandler {
     }
 }
 
-pub fn providers(handler: &Arc<dyn CollectedChunksHandler>) -> Arc<ProviderChunkHandlers> {
+pub(super) fn providers(handler: &Arc<dyn CollectedChunksHandler>) -> Arc<ProviderChunkHandlers> {
     Arc::new(ProviderChunkHandlers {
         anthropic: Arc::clone(handler),
         vertex: Arc::clone(handler),
@@ -284,21 +296,24 @@ pub fn providers(handler: &Arc<dyn CollectedChunksHandler>) -> Arc<ProviderChunk
     })
 }
 
-pub struct StepClock {
+pub(super) struct StepClock {
     values: Mutex<Vec<DateTime<FixedOffset>>>,
     calls: Mutex<usize>,
 }
 
 impl StepClock {
-    pub fn new(values: &[&str]) -> Arc<Self> {
-        let parsed = values.iter().map(|value| time(value)).collect();
+    pub(super) fn new(values: &[&str]) -> Arc<Self> {
+        let mut parsed = Vec::with_capacity(values.len());
+        for value in values {
+            parsed.push(time(value));
+        }
         Arc::new(Self {
             values: Mutex::new(parsed),
             calls: Mutex::new(0),
         })
     }
 
-    pub fn calls(&self) -> usize {
+    pub(super) fn calls(&self) -> usize {
         *self.calls.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -316,19 +331,19 @@ impl SuccessClock for StepClock {
 }
 
 #[derive(Default)]
-pub struct RecordingQueue {
-    pub jobs: Mutex<Vec<StreamLoggingJob>>,
-    pub rejecting: bool,
+pub(super) struct RecordingQueue {
+    pub(super) jobs: Mutex<Vec<StreamLoggingJob>>,
+    pub(super) rejecting: bool,
 }
 
 impl RecordingQueue {
-    pub fn kinds(&self) -> Vec<StreamJobKind> {
+    pub(super) fn kinds(&self) -> Vec<StreamJobKind> {
         let jobs = self.jobs.lock().unwrap_or_else(PoisonError::into_inner);
         job_kinds(&jobs)
     }
 
-    pub fn take_all(&self) -> Vec<StreamLoggingJob> {
-        std::mem::take(&mut *self.jobs.lock().unwrap_or_else(PoisonError::into_inner))
+    pub(super) fn take_all(&self) -> Vec<StreamLoggingJob> {
+        take(&mut *self.jobs.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
@@ -346,24 +361,27 @@ impl StreamLoggingQueue for RecordingQueue {
 }
 
 #[derive(Default)]
-pub struct RecordingDeferred {
-    pub parked: Mutex<Vec<StreamLoggingJob>>,
+pub(super) struct RecordingDeferred {
+    pub(super) parked: Mutex<Vec<StreamLoggingJob>>,
 }
 
 impl RecordingDeferred {
-    pub fn kinds(&self) -> Vec<StreamJobKind> {
+    pub(super) fn kinds(&self) -> Vec<StreamJobKind> {
         let jobs = self.parked.lock().unwrap_or_else(PoisonError::into_inner);
         job_kinds(&jobs)
     }
 
-    pub fn take_all(&self) -> Vec<StreamLoggingJob> {
-        std::mem::take(&mut *self.parked.lock().unwrap_or_else(PoisonError::into_inner))
+    pub(super) fn take_all(&self) -> Vec<StreamLoggingJob> {
+        take(&mut *self.parked.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
 fn job_kinds(jobs: &[StreamLoggingJob]) -> Vec<StreamJobKind> {
-    let kinds = jobs.iter().map(|job| job.kind);
-    kinds.collect()
+    let mut kinds = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        kinds.push(job.kind);
+    }
+    kinds
 }
 
 impl DeferredStreamLogging for RecordingDeferred {
@@ -376,23 +394,23 @@ impl DeferredStreamLogging for RecordingDeferred {
 }
 
 #[derive(Clone, Debug)]
-pub struct RecordedRoute {
-    pub url_route: String,
-    pub request_body: Option<Json>,
-    pub endpoint_type: EndpointType,
-    pub start_time: DateTime<FixedOffset>,
-    pub end_time: DateTime<FixedOffset>,
-    pub raw_bytes: Vec<Vec<u8>>,
-    pub model: Option<String>,
+pub(super) struct RecordedRoute {
+    pub(super) url_route: String,
+    pub(super) request_body: Option<Json>,
+    pub(super) endpoint_type: EndpointType,
+    pub(super) start_time: DateTime<FixedOffset>,
+    pub(super) end_time: DateTime<FixedOffset>,
+    pub(super) raw_bytes: Vec<Vec<u8>>,
+    pub(super) model: Option<String>,
 }
 
 #[derive(Default)]
-pub struct RecordingRoute {
-    pub inputs: Mutex<Vec<RecordedRoute>>,
+pub(super) struct RecordingRoute {
+    pub(super) inputs: Mutex<Vec<RecordedRoute>>,
 }
 
 impl RecordingRoute {
-    pub fn calls(&self) -> Vec<RecordedRoute> {
+    pub(super) fn calls(&self) -> Vec<RecordedRoute> {
         self.inputs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -420,12 +438,12 @@ impl StreamRoute for RecordingRoute {
 }
 
 #[derive(Default)]
-pub struct RecordingCostInjection {
-    pub calls: Mutex<Vec<(Vec<u8>, String)>>,
+pub(super) struct RecordingCostInjection {
+    pub(super) calls: Mutex<Vec<(Vec<u8>, String)>>,
 }
 
 impl RecordingCostInjection {
-    pub fn calls(&self) -> Vec<(Vec<u8>, String)> {
+    pub(super) fn calls(&self) -> Vec<(Vec<u8>, String)> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -451,8 +469,8 @@ impl StreamCostInjection for RecordingCostInjection {
 }
 
 #[derive(Default)]
-pub struct RecordingAnthropic {
-    pub calls: Mutex<Vec<(Json, Vec<Vec<u8>>)>>,
+pub(super) struct RecordingAnthropic {
+    pub(super) calls: Mutex<Vec<(Json, Vec<Vec<u8>>)>>,
 }
 
 impl AnthropicPartialUsage for RecordingAnthropic {
@@ -470,19 +488,19 @@ impl AnthropicPartialUsage for RecordingAnthropic {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RecordedFailure {
-    pub class: String,
-    pub message: String,
-    pub traceback: String,
+pub(super) struct RecordedFailure {
+    pub(super) class: String,
+    pub(super) message: String,
+    pub(super) traceback: String,
 }
 
 #[derive(Default)]
-pub struct RecordingFailureDispatch {
-    pub failures: Mutex<Vec<RecordedFailure>>,
+pub(super) struct RecordingFailureDispatch {
+    pub(super) failures: Mutex<Vec<RecordedFailure>>,
 }
 
 impl RecordingFailureDispatch {
-    pub fn failures(&self) -> Vec<RecordedFailure> {
+    pub(super) fn failures(&self) -> Vec<RecordedFailure> {
         self.failures
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -509,12 +527,12 @@ impl StreamFailureDispatch for RecordingFailureDispatch {
 }
 
 #[derive(Default)]
-pub struct RecordingBinder {
-    pub calls: Mutex<usize>,
+pub(super) struct RecordingBinder {
+    pub(super) calls: Mutex<usize>,
 }
 
 impl RecordingBinder {
-    pub fn calls(&self) -> usize {
+    pub(super) fn calls(&self) -> usize {
         *self.calls.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -527,15 +545,15 @@ impl ReservationBinder for RecordingBinder {
 }
 
 #[derive(Default)]
-pub struct RecordingTinyfish {
-    pub poller: bool,
-    pub run_id: Option<String>,
-    pub scans: Mutex<Vec<Vec<u8>>>,
-    pub started: Mutex<Vec<(String, DateTime<FixedOffset>)>>,
+pub(super) struct RecordingTinyfish {
+    pub(super) poller: bool,
+    pub(super) run_id: Option<String>,
+    pub(super) scans: Mutex<Vec<Vec<u8>>>,
+    pub(super) started: Mutex<Vec<(String, DateTime<FixedOffset>)>>,
 }
 
 impl RecordingTinyfish {
-    pub fn started(&self) -> Vec<(String, DateTime<FixedOffset>)> {
+    pub(super) fn started(&self) -> Vec<(String, DateTime<FixedOffset>)> {
         self.started
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -578,7 +596,7 @@ impl TinyfishStreamBilling for RecordingTinyfish {
 }
 
 #[derive(Default)]
-pub struct FakeProbe;
+pub(super) struct FakeProbe;
 
 impl AnthropicFrameProbe for FakeProbe {
     fn is_message_stop(&self, _frames: &[u8]) -> bool {
@@ -590,32 +608,33 @@ impl AnthropicFrameProbe for FakeProbe {
     }
 }
 
-pub struct NoSuccessDispatch;
+pub(super) struct NoSuccessDispatch;
 
 #[async_trait]
 impl StreamSuccessDispatch for NoSuccessDispatch {
     async fn dispatch_success(&self, _call: StreamSuccessCall<'_>) {}
 }
 
-pub struct Harness {
-    pub clock: Arc<StepClock>,
-    pub queue: Arc<RecordingQueue>,
-    pub deferred: Option<Arc<RecordingDeferred>>,
-    pub binder: Arc<RecordingBinder>,
-    pub route: Arc<RecordingRoute>,
-    pub cost_injection: Arc<RecordingCostInjection>,
-    pub anthropic: Arc<RecordingAnthropic>,
-    pub failure_dispatch: Arc<RecordingFailureDispatch>,
-    pub tinyfish: Arc<RecordingTinyfish>,
-    pub handler: Arc<RecordingHandler>,
-    pub providers: Arc<ProviderChunkHandlers>,
-    pub probe: Arc<FakeProbe>,
-    pub injection_override: Option<Arc<dyn StreamCostInjection>>,
+pub(super) struct Harness {
+    pub(super) clock: Arc<StepClock>,
+    pub(super) queue: Arc<RecordingQueue>,
+    pub(super) deferred: Option<Arc<RecordingDeferred>>,
+    pub(super) binder: Arc<RecordingBinder>,
+    pub(super) route: Arc<RecordingRoute>,
+    pub(super) cost_injection: Arc<RecordingCostInjection>,
+    pub(super) anthropic: Arc<RecordingAnthropic>,
+    pub(super) failure_dispatch: Arc<RecordingFailureDispatch>,
+    pub(super) tinyfish: Arc<RecordingTinyfish>,
+    pub(super) handler: Arc<RecordingHandler>,
+    pub(super) providers: Arc<ProviderChunkHandlers>,
+    pub(super) probe: Arc<FakeProbe>,
+    pub(super) injection_override: Option<Arc<dyn StreamCostInjection>>,
 }
 
 impl Harness {
-    pub fn new(values: &[&str]) -> Self {
+    pub(super) fn new(values: &[&str]) -> Self {
         let handler = RecordingHandler::returning(Ok(HandlerOutcome::default()));
+        let collected: Arc<dyn CollectedChunksHandler> = Arc::clone(&handler);
         Self {
             clock: StepClock::new(values),
             queue: Arc::new(RecordingQueue::default()),
@@ -626,30 +645,34 @@ impl Harness {
             anthropic: Arc::new(RecordingAnthropic::default()),
             failure_dispatch: Arc::new(RecordingFailureDispatch::default()),
             tinyfish: Arc::new(RecordingTinyfish::default()),
-            providers: providers(&(Arc::clone(&handler) as Arc<dyn CollectedChunksHandler>)),
+            providers: providers(&collected),
             handler,
             probe: Arc::new(FakeProbe),
             injection_override: None,
         }
     }
 
-    pub fn with_handler_reply(mut self, reply: Result<HandlerOutcome, HandlerError>) -> Self {
+    pub(super) fn with_handler_reply(
+        mut self,
+        reply: Result<HandlerOutcome, HandlerError>,
+    ) -> Self {
         self.handler = RecordingHandler::returning(reply);
-        self.providers = providers(&(Arc::clone(&self.handler) as Arc<dyn CollectedChunksHandler>));
+        let collected: Arc<dyn CollectedChunksHandler> = Arc::clone(&self.handler);
+        self.providers = providers(&collected);
         self
     }
 
-    pub fn with_injection(mut self, injection: Arc<dyn StreamCostInjection>) -> Self {
+    pub(super) fn with_injection(mut self, injection: Arc<dyn StreamCostInjection>) -> Self {
         self.injection_override = Some(injection);
         self
     }
 
-    pub fn with_deferred(mut self) -> Self {
+    pub(super) fn with_deferred(mut self) -> Self {
         self.deferred = Some(Arc::new(RecordingDeferred::default()));
         self
     }
 
-    pub fn with_rejecting_queue(mut self) -> Self {
+    pub(super) fn with_rejecting_queue(mut self) -> Self {
         self.queue = Arc::new(RecordingQueue {
             jobs: Mutex::new(Vec::new()),
             rejecting: true,
@@ -657,7 +680,7 @@ impl Harness {
         self
     }
 
-    pub fn with_tinyfish(mut self, poller: bool, run_id: Option<&str>) -> Self {
+    pub(super) fn with_tinyfish(mut self, poller: bool, run_id: Option<&str>) -> Self {
         self.tinyfish = Arc::new(RecordingTinyfish {
             poller,
             run_id: run_id.map(str::to_owned),
@@ -667,18 +690,18 @@ impl Harness {
         self
     }
 
-    pub fn deferred_handle(&self) -> &Arc<RecordingDeferred> {
+    pub(super) fn deferred_handle(&self) -> &Arc<RecordingDeferred> {
         self.deferred
             .as_ref()
             .expect("the harness has deferred logging")
     }
 
-    pub fn lifecycle(&self, cost_injection_enabled: bool) -> Arc<StreamLifecycle> {
-        let cost_injection: Arc<dyn StreamCostInjection> = match &self.injection_override {
-            Some(injection) => Arc::clone(injection),
-            None => Arc::clone(&self.cost_injection),
-        };
-        Arc::new(StreamLifecycle {
+    pub(super) fn lifecycle(&self, cost_injection_enabled: bool) -> Arc<StreamLifecycle> {
+        let mut cost_injection: Arc<dyn StreamCostInjection> = Arc::clone(&self.cost_injection);
+        if let Some(injection) = &self.injection_override {
+            cost_injection = Arc::clone(injection);
+        }
+        let mut lifecycle = StreamLifecycle {
             router: Arc::new(StreamLoggingRouter {
                 providers: Arc::clone(&self.providers),
                 frames: Arc::clone(&self.probe),
@@ -691,17 +714,19 @@ impl Harness {
             failure_dispatch: Arc::clone(&self.failure_dispatch),
             queue: Arc::clone(&self.queue),
             binder: Arc::clone(&self.binder),
-            deferred: self
-                .deferred
-                .as_ref()
-                .map(|deferred| deferred.clone() as Arc<dyn DeferredStreamLogging>),
+            deferred: None,
             clock: Arc::clone(&self.clock),
             cost_injection_enabled,
-        })
+        };
+        if let Some(parked) = &self.deferred {
+            let job: Arc<dyn DeferredStreamLogging> = Arc::clone(parked);
+            lifecycle.deferred = Some(job);
+        }
+        Arc::new(lifecycle)
     }
 }
 
-pub fn processor_call(
+pub(super) fn processor_call(
     lifecycle: Arc<StreamLifecycle>,
     logging_obj: Arc<StreamLoggingObject>,
     endpoint_type: EndpointType,
@@ -717,13 +742,13 @@ pub fn processor_call(
     }
 }
 
-pub fn ok_chunks(
+pub(super) fn ok_chunks(
     items: Vec<Vec<u8>>,
 ) -> impl Stream<Item = Result<Vec<u8>, StreamFailure>> + Send + 'static {
     stream::iter(items.into_iter().map(Ok).collect::<Vec<_>>())
 }
 
-pub fn failing_chunks(
+pub(super) fn failing_chunks(
     items: Vec<Vec<u8>>,
     failure: StreamFailure,
 ) -> impl Stream<Item = Result<Vec<u8>, StreamFailure>> + Send + 'static {
@@ -732,7 +757,7 @@ pub fn failing_chunks(
     stream::iter(all)
 }
 
-pub fn failure() -> StreamFailure {
+pub(super) fn failure() -> StreamFailure {
     StreamFailure {
         class: "ScriptedReadError".to_owned(),
         message: "the upstream read failed".to_owned(),
@@ -741,10 +766,10 @@ pub fn failure() -> StreamFailure {
 }
 
 #[derive(Clone, Default)]
-pub struct Captured(pub Arc<Mutex<Vec<u8>>>);
+pub(super) struct Captured(pub(super) Arc<Mutex<Vec<u8>>>);
 
 impl Captured {
-    pub fn text(&self) -> String {
+    pub(super) fn text(&self) -> String {
         let bytes = self
             .0
             .lock()
@@ -776,7 +801,7 @@ impl<'writer> MakeWriter<'writer> for Captured {
     }
 }
 
-pub fn capture_logs() -> (Captured, DefaultGuard) {
+pub(super) fn capture_logs() -> (Captured, DefaultGuard) {
     let captured = Captured::default();
     let writer = captured.clone();
     let subscriber = fmt()

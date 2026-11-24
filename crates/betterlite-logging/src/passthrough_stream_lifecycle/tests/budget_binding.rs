@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 
 use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;
 use crate::passthrough_stream_lifecycle::support::{
-    Harness, callback_bound, failing_chunks, failure, json, object, ok_chunks, processor_call,
-    reservation_params,
+    Harness, callback_bound, capture_logs, failing_chunks, failure, json, object, ok_chunks,
+    processor_call, reservation_params,
 };
 use crate::passthrough_stream_logging::types::EndpointType;
 
@@ -76,7 +76,7 @@ async fn a_disconnect_binds_after_the_partial_enqueue() {
         call,
         ok_chunks(vec![b"alpha".to_vec(), b"beta".to_vec()]),
     ));
-    assert!(stream.next().await.unwrap().is_ok());
+    assert_eq!(stream.next().await.unwrap().unwrap(), b"alpha");
     drop(stream);
     assert_eq!(harness.binder.calls(), 1);
     assert_eq!(callback_bound(logging_obj.as_ref()), Some(json("true")));
@@ -92,12 +92,19 @@ async fn a_rejected_partial_enqueue_never_binds() {
         Arc::clone(&logging_obj),
         EndpointType::OpenAi,
     );
+    let (logs, guard) = capture_logs();
     let mut stream = Box::pin(chunk_processor(
         call,
         ok_chunks(vec![b"alpha".to_vec(), b"beta".to_vec()]),
     ));
-    assert!(stream.next().await.unwrap().is_ok());
+    assert_eq!(stream.next().await.unwrap().unwrap(), b"alpha");
     drop(stream);
+    drop(guard);
     assert_eq!(harness.binder.calls(), 0);
     assert!(callback_bound(logging_obj.as_ref()).is_none());
+    let text = logs.text();
+    assert!(
+        text.contains("Error scheduling chunk_processor logging: QueueFull"),
+        "{text}"
+    );
 }
