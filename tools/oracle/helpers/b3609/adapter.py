@@ -132,7 +132,7 @@ async def execute(input_value: Input) -> JsonValue:
             FIXED_START,
             PassThroughEndpointLogging(),
             input_value["url_route"],
-            route_streaming_logging=RECORDER.route,  # type: ignore[arg-type, misc]  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L147
+            route_streaming_logging=RECORDER.route,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L147
         ),
     )
     yielded = await drive(stream, input_value["disconnect_after"])
