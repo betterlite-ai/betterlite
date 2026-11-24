@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-tool-registry-re-register-position
+call:
+  b4680:
+    function: list_tools
+    tool_names: [alpha, beta, alpha, gamma, beta]
+    prefix: null
+    mcp_tools: null
+env: {}
+compare: {ignore: []}
