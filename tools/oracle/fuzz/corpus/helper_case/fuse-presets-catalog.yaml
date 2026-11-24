@@ -1,0 +1,7 @@
+kind: helper
+name: fuse-presets-catalog
+call:
+  b10087:
+    function: catalog
+env: {}
+compare: {ignore: []}
