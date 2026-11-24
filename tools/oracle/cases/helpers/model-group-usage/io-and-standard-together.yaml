@@ -1,0 +1,41 @@
+kind: helper
+name: io-and-standard-together
+call:
+  model_group_usage:
+    {
+      "function": "remaining",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/gpt-4o"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group": "g",
+      "now": 3660,
+      "group_info": {
+        "tpm": 100,
+        "rpm": null,
+        "itpm": 10,
+        "otpm": null
+      },
+      "cache": {
+        "mode": "values",
+        "values": [
+          2,
+          3
+        ]
+      },
+      "response": null,
+      "request_kwargs": null,
+      "metadata": null,
+      "litellm_metadata": null,
+      "team_id": null,
+      "candidates": null
+    }
+env: {}
+compare: {ignore: []}

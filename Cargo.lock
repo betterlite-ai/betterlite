@@ -4478,6 +4478,7 @@ dependencies = [
  "async-trait",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
