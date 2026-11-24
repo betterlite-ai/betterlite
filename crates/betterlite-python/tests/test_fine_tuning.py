@@ -24,9 +24,9 @@ from tuning_server import (
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeTuningError
 from betterlite.exceptions import AuthenticationError
+from betterlite.fine_tuning._calls import HYPERPARAMETERS_DEFAULT
 from betterlite.fine_tuning._page import FineTuningJobPage
 from betterlite.fine_tuning.main import (
-    HYPERPARAMETERS_DEFAULT,
     acancel_fine_tuning_job,
     acreate_fine_tuning_job,
     alist_fine_tuning_jobs,
@@ -202,24 +202,24 @@ async def flagged_results(base: str) -> list[str]:
     match created:
         case LiteLLMFineTuningJob():
             raise AssertionError("the flagged create answered with a job")
-        case Awaitable() as pending:
-            results.append((await pending).id)
+        case Awaitable() as created_pending:
+            results.append((await created_pending).id)
     retrieved = retrieve_fine_tuning_job(
         JOB_ID, aretrieve_fine_tuning_job=True, api_base=base, api_key=GOOD_KEY
     )
     match retrieved:
         case LiteLLMFineTuningJob():
             raise AssertionError("the flagged retrieve answered with a job")
-        case Awaitable() as pending:
-            results.append((await pending).id)
+        case Awaitable() as retrieved_pending:
+            results.append((await retrieved_pending).id)
     listed = list_fine_tuning_jobs(
         alist_fine_tuning_jobs=True, api_base=base, api_key=GOOD_KEY
     )
     match listed:
         case FineTuningJobPage():
             raise AssertionError("the flagged list answered with a page")
-        case Awaitable() as pending:
-            page = await pending
+        case Awaitable() as listed_pending:
+            page = await listed_pending
             results.append(",".join(job.id for job in page.data))
     cancelled = cancel_fine_tuning_job(
         JOB_ID, acancel_fine_tuning_job=True, api_base=base, api_key=GOOD_KEY
@@ -227,8 +227,8 @@ async def flagged_results(base: str) -> list[str]:
     match cancelled:
         case LiteLLMFineTuningJob():
             raise AssertionError("the flagged cancel answered with a job")
-        case Awaitable() as pending:
-            results.append((await pending).status)
+        case Awaitable() as cancelled_pending:
+            results.append((await cancelled_pending).status)
     return results
 
 
