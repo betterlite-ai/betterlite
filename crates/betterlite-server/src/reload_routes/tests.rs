@@ -46,7 +46,12 @@ async fn oneshot_rejects_a_non_admin_on_every_write_route() {
         Some("internal_user"),
     )
     .await;
-    assert!(harness.store().snapshot().written_intervals.is_empty());
+    let state = harness.store().snapshot();
+    assert!(state.written_intervals.is_empty());
+    assert!(state.beta_writes.is_empty());
+    assert_eq!(state.beta_deletes, 0);
+    assert_eq!(state.cleared, 0);
+    assert_eq!(harness.beta.reloads(), 0);
 }
 
 #[rstest]
@@ -143,15 +148,11 @@ async fn oneshot_rejects_a_non_admin_before_the_hours_check(
 async fn oneshot_rejects_a_non_admin_before_the_database_check() {
     let mut harness = Harness::new();
     harness.store = None;
-    let (status, _) = send(
-        &harness,
-        Some(key_with("internal_user")),
-        Method::POST,
-        COST_MAP_RELOAD,
-    )
-    .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    let caller = key_with("internal_user");
+    every_route_answer(&harness, &caller, &WRITES, Some("internal_user")).await;
+    every_route_answer(&harness, &caller, &READS, Some("internal_user")).await;
     assert_eq!(harness.catalog.reloads(), 0);
+    assert_eq!(harness.beta.reloads(), 0);
 }
 
 #[rstest]
@@ -463,13 +464,14 @@ async fn oneshot_answers_a_cost_map_status_for_a_schedule_without_an_interval() 
 }
 
 #[rstest]
-#[case::local(local_provenance(), "local")]
-#[case::remote(reloaded_provenance(), "remote")]
-#[case::env_forced(env_forced_provenance(), "local")]
+#[case::local(local_provenance(), "local", false)]
+#[case::remote(reloaded_provenance(), "remote", false)]
+#[case::env_forced(env_forced_provenance(), "local", true)]
 #[tokio::test]
 async fn oneshot_answers_the_cost_map_source(
     #[case] provenance: CatalogProvenance,
     #[case] source: &str,
+    #[case] env_forced: bool,
 ) {
     let mut harness = Harness::new();
     harness.catalog = FakeCatalog::with_current(snapshot(provenance, 0));
@@ -477,6 +479,7 @@ async fn oneshot_answers_the_cost_map_source(
     assert_eq!(status, StatusCode::OK);
     let reply = parsed(&text);
     assert_eq!(reply["source"], source);
+    assert_eq!(reply["is_env_forced"], env_forced);
     assert_eq!(reply["model_count"], 0_i32);
 }
 
@@ -499,6 +502,20 @@ async fn oneshot_answers_every_cost_map_source_field() {
         parsed(&text),
         parsed(
             r#"{"source": "local", "url": "https://example.test/cost.json", "is_env_forced": false, "fallback_reason": "HTTP 503 from https://example.test/cost.json", "loaded_at": "2026-11-23T09:00:00+00:00", "source_revision": "rev-9", "etag": null, "model_count": 12}"#
+        )
+    );
+}
+
+#[tokio::test]
+async fn oneshot_answers_every_remote_cost_map_source_field() {
+    let mut harness = Harness::new();
+    harness.catalog = FakeCatalog::with_current(snapshot(reloaded_provenance(), 3));
+    let (status, text) = send(&harness, Some(master()), Method::GET, COST_MAP_SOURCE).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        parsed(&text),
+        parsed(
+            r#"{"source": "remote", "url": "https://example.test/cost.json", "is_env_forced": false, "fallback_reason": null, "loaded_at": "2026-11-23T12:00:00+00:00", "source_revision": "rev-1", "etag": "etag-1", "model_count": 3}"#
         )
     );
 }
@@ -732,7 +749,7 @@ async fn oneshot_answers_a_beta_status_the_pod_never_reloaded() {
 )]
 #[case::timedelta_overflow(
     json_data(r#"{"interval_hours": 9223372036854775807, "force_reload": false}"#),
-    at(11, 0, 0)
+    at(13, 0, 0)
 )]
 #[tokio::test]
 async fn oneshot_answers_a_beta_status_whose_next_run_overflows(
