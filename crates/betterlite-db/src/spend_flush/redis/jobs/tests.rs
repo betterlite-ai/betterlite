@@ -20,10 +20,13 @@ use crate::spend_flush::redis::fakes::tests::{
 use crate::spend_flush::redis::jobs::{
     DailyTagSpendError, DailyTagSpendFlush, SPEND_JOB_RETRIES, SpendUpdateJob, UpdateSpendJobError,
 };
-use crate::spend_flush::redis::leader::dispatch::SpendUpdateTransactionHandler;
+use crate::spend_flush::redis::leader::dispatch::{
+    SpendUpdateError, SpendUpdateTransactionHandler,
+};
 use crate::spend_flush::redis::tags::{DailyTagCommit, MemoryTagFlush, TagCommitFailure};
 use crate::spend_flush::service::ServiceFuture;
 use crate::spend_log_storage::rows::writer::NoSpendLogFailureSink;
+use crate::spend_queues::entity::EntityType;
 
 #[tokio::test]
 async fn update_spend_runs_the_balance_dispatch_then_the_logs_job() {
@@ -237,17 +240,15 @@ async fn the_adapters_retry_count_reaches_the_memory_tag_commit() {
 }
 
 #[tokio::test]
-async fn the_memory_branch_commits_with_the_adapters_retry_count() {
+async fn the_memory_branch_retries_the_entity_commit_with_the_adapters_count() {
     let events = Arc::new(Events::default());
-    let writer = Arc::new(FakeDailyWriter::new(
-        Arc::clone(&events),
-        vec![ChunkStep::Fail(SpendFailure::NotSent); 4],
-    ));
+    let writer = Arc::new(FakeDailyWriter::new(Arc::clone(&events), Vec::new()));
     let pause = Arc::new(CountingPause::default());
     let parts = parts_with_pause(Arc::clone(&writer), Arc::clone(&pause));
     let queues = spend_queues();
-    queues.add_daily_user("2026-01-02", "1").await;
+    queues.add_entity(EntityType::User, "u-memory", "2").await;
     let entity_writer = FakeEntityWriter::new(Arc::clone(&events));
+    entity_writer.fail_with(SpendFailure::Deadlock);
     let cache = FakeCache::new(Arc::clone(&events));
     let window = FakeWindow::new(Arc::clone(&events));
     let discovery = FakeDiscovery::new(Arc::clone(&events));
@@ -287,19 +288,20 @@ async fn the_memory_branch_commits_with_the_adapters_retry_count() {
     };
     let redis = recording_pass("redis", Arc::clone(&events), false);
 
-    SpendUpdateTransactionHandler::select(false, &redis, &flush)
+    let error = SpendUpdateTransactionHandler::select(false, &redis, &flush)
         .commit_spend_updates(SPEND_JOB_RETRIES)
         .await
-        .unwrap();
+        .unwrap_err();
+    assert!(matches!(error, SpendUpdateError::Memory(_)));
 
     let entries = events.entries();
     let attempts = entries
         .iter()
-        .filter(|event| event.starts_with("daily User"))
+        .filter(|event| event.starts_with("entity user_list_transactions"))
         .count();
     assert_eq!(
         attempts, 4,
-        "the handler's retry count reaches the memory daily commit"
+        "the handler's retry count reaches the memory entity commit"
     );
     assert_eq!(pause.delays().len(), 3);
     assert!(

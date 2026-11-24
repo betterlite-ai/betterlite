@@ -139,7 +139,7 @@ where
                 return Err(error);
             }
             Err(error) => tracing::error!(
-                "Spend tracking - failed to commit daily tag spend updates from Redis to DB. Re-Queuing to Redis for retry on next tick. Error: {error}"
+                "Spend tracking - failed to commit daily tag spend updates from Redis to DB. Re-queuing to Redis for retry on next tick. Error: {error}"
             ),
         }
         self.lease.release(DAILY_TAG_SPEND_JOB_NAME).await;

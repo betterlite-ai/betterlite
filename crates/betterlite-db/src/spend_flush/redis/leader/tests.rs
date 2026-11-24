@@ -210,8 +210,14 @@ async fn a_partial_entity_commit_restores_only_the_uncommitted_tables() {
         daily_parts: &parts,
         window: &window,
     };
+    let (logs, _guard) = captured_logs();
     flusher.commit_from_redis(SPEND_JOB_RETRIES).await.unwrap();
 
+    assert!(
+        logs.text()
+            .contains("Spend tracking - committing spend updates from Redis to DB"),
+        "the holder reports the counts of the aggregate it popped"
+    );
     assert_eq!(
         writer.written(),
         vec![
@@ -527,4 +533,25 @@ async fn the_handlers_retry_count_reaches_the_redis_daily_commit() {
         1,
         "the whole map goes back after an exhausted retryable failure"
     );
+}
+
+#[tokio::test]
+async fn the_handlers_retry_count_reaches_the_redis_entity_commit() {
+    let fixture = RedisFixture::start().await.unwrap();
+    let case = LeaderCase::new(&fixture, Vec::new()).await;
+    case.entity_writer.fail_with(SpendFailure::Deadlock);
+    case.queues
+        .add_entity(EntityType::User, "u-retry", "2")
+        .await;
+
+    case.flush().await.unwrap();
+
+    let attempts = case
+        .events
+        .entries()
+        .iter()
+        .filter(|event| event.starts_with("entity user_list_transactions"))
+        .count();
+    assert_eq!(attempts, 4, "three retries make four entity attempts");
+    assert_eq!(case.pause.delays().len(), 3);
 }

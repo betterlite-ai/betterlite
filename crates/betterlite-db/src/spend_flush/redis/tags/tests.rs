@@ -9,6 +9,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use crate::daily_spend_sql::entities::DailySpendEntity;
 use crate::gateway_request_tracking::test_support::captured_logs;
 use crate::queues::pod_lock::PodLockManager;
 use crate::queues::pod_lock::cache::RedisLockCache;
@@ -18,15 +19,18 @@ use crate::redis_spend::codec::decode_daily_batch;
 use crate::redis_spend::keys::REDIS_DAILY_TAG_BUFFER_KEY;
 use crate::redis_spend::publication::RedisSpendPublisher;
 use crate::spend_commit::policy::SpendFailure;
-use crate::spend_flush::daily::DailyCommitParts;
+use crate::spend_flush::daily::{DailyCommitParts, DailyFlushError};
 use crate::spend_flush::fakes::tests::{ChunkStep, Events, FakeDailyError, FakeDailyWriter};
 use crate::spend_flush::redis::fakes::tests::{
-    CountingPause, buffer as redis_buffer, cache_for, daily_queue, daily_row, length,
-    parts_with_pause, pod, push, range, raw, redis_publisher,
+    CountingPause, UnreachableLists, buffer as redis_buffer, cache_for, daily_queue, daily_row,
+    length, parts_with_pause, pod, publisher_over, push, range, raw, redis_publisher,
 };
 use crate::spend_flush::redis::jobs::SPEND_JOB_RETRIES;
-use crate::spend_flush::redis::tags::{RedisTagFlush, TagFlushError};
+use crate::spend_flush::redis::tags::{
+    DailyTagCommit, MemoryTagFlush, RedisTagFlush, TagCommitFailure, TagFlushError,
+};
 use crate::spend_flush::redis::{DAILY_TAG_SPEND_JOB_NAME, DB_SPEND_UPDATE_JOB_NAME};
+use crate::spend_queues::SpendQueueError;
 use crate::spend_queues::daily::DailySpendUpdateQueue;
 
 // One pod's tag flusher over a live Redis: its own tag queue, publisher, buffer and lease, and the fake writer its commit drives.
@@ -304,5 +308,71 @@ async fn the_adapters_retry_count_reaches_the_tag_commit() {
         length(&mut connection, REDIS_DAILY_TAG_BUFFER_KEY).await,
         1,
         "the whole map goes back after an exhausted retryable failure"
+    );
+}
+
+#[tokio::test]
+async fn a_shutdown_during_a_memory_tag_commit_propagates_as_a_cancellation() {
+    let queue = Arc::new(daily_queue(100, 1000, 100));
+    queue
+        .add_update(daily_row("day-1", "1.5", 1))
+        .await
+        .unwrap();
+    let events = Arc::new(Events::default());
+    let writer = Arc::new(FakeDailyWriter::new(
+        Arc::clone(&events),
+        vec![ChunkStep::WaitThenCommit],
+    ));
+    let pause = Arc::new(CountingPause::default());
+    let parts = parts_with_pause(Arc::clone(&writer), Arc::clone(&pause));
+    let commits = TaskTracker::new();
+    let shutdown = CancellationToken::new();
+    let flusher = MemoryTagFlush {
+        queue: &queue,
+        parts: &parts,
+        commits: &commits,
+        shutdown: &shutdown,
+    };
+    let interrupt = async {
+        writer.entered().notified().await;
+        shutdown.cancel();
+        yield_now().await;
+        writer.release().notify_one();
+    };
+
+    let (outcome, ()) = tokio::join!(flusher.commit_daily_tag_spend(SPEND_JOB_RETRIES), interrupt);
+
+    let error = outcome.unwrap_err();
+    assert!(matches!(error, DailyFlushError::Cancelled { .. }));
+    assert!(
+        error.is_cancelled(),
+        "the adapter must let a shutdown cancellation escape"
+    );
+}
+
+#[test]
+fn a_queued_daily_tag_failure_is_not_a_shutdown_cancellation() {
+    let error = DailyFlushError::Queue {
+        entity: DailySpendEntity::Tag,
+        source: SpendQueueError::CostOverflow,
+    };
+    assert!(
+        !error.is_cancelled(),
+        "only a commit the shutdown cancelled counts as one"
+    );
+}
+
+#[tokio::test]
+async fn a_tracked_commit_cancelled_by_its_phase_leaves_nothing_to_restore() {
+    let lists = Arc::new(UnreachableLists::default());
+    let publisher = publisher_over(&lists);
+    let settled = Ok((daily_row("day-1", "1.5", 1), Err(FakeDailyError::Cancelled)));
+
+    super::restore_interrupted_tag::<FakeDailyWriter>(&publisher, settled).await;
+
+    assert_eq!(
+        lists.push_attempts(),
+        0,
+        "a commit the phase cancelled kept every row it had left"
     );
 }
