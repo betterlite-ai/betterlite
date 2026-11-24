@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_user_lookup::cache::UserCache;
+use betterlite_auth::auth_user_lookup::error::UserLookupError;
 use betterlite_auth::auth_user_lookup::lookup::UserLookupRequest;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::team_repository::decoder::TeamRecord;
@@ -12,13 +13,13 @@ use betterlite_db::team_repository::decoder::TeamRecord;
 use super::{AdminScope, InvitationScope as _};
 use crate::management_admins::ports::{AdminUserReads, TeamReadError, TeamReads, UserReadError};
 
-// the proxy admin and the userless caller both leave the ports alone, so a read here fails the test
+// the proxy admin and the userless caller both leave the ports alone; a read here answers an error the admin check turns into a refusal
 struct NoUsers;
 
 #[async_trait]
 impl AdminUserReads for NoUsers {
     fn fresh_cache(&self) -> Result<Arc<dyn UserCache>, UserReadError> {
-        panic!("this caller reaches no user read")
+        Err(UserReadError::Lookup(UserLookupError::NoDatabase))
     }
 
     async fn user_object(

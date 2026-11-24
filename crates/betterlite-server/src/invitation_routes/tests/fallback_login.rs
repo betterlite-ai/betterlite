@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use betterlite_config::sections::login_form::Settings;
 use tower::ServiceExt as _;
@@ -26,7 +26,7 @@ async fn fetch(router: &Router) -> (StatusCode, String, String) {
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_owned();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("a body");
     let text = String::from_utf8(bytes.to_vec()).expect("utf8");

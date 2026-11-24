@@ -10,8 +10,8 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
 use super::support::{
-    FakeScope, FakeStore, internal_user, invitation_router, key_caller, master, org_admin, parse,
-    platform_admin, platform_viewer, record, router_for, send, userless_admin,
+    FakeScope, FakeStore, ScopeRights, internal_user, invitation_router, key_caller, master,
+    org_admin, parse, platform_admin, platform_viewer, record, router_for, send, userless_admin,
 };
 use crate::invitation_routes::state::{
     InvitationDatabase, InvitationRouteState, InvitationScope, QueueRouteState,
@@ -33,7 +33,7 @@ fn setup(
 }
 
 fn open_scope() -> FakeScope {
-    FakeScope::new(true, true)
+    FakeScope::new(ScopeRights::Open)
 }
 
 #[rstest]
@@ -53,7 +53,7 @@ async fn invitation_routes_need_a_caller(
     #[case] body: &str,
 ) {
     let (_, _, router) = setup(Vec::new(), open_scope());
-    let (status, _, text) = send(&router, method, uri, body, None).await;
+    let (status, _, text) = Box::pin(send(&router, method, uri, body, None)).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
     assert!(parse(&text)["error"]["message"].is_string(), "{uri}");
 }
@@ -61,13 +61,13 @@ async fn invitation_routes_need_a_caller(
 #[tokio::test]
 async fn new_invitation_requires_the_database() {
     let router = router_for(InvitationRouteState::default());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         r#"{"user_id":"alice"}"#,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let body = parse(&text);
@@ -79,14 +79,14 @@ async fn new_invitation_requires_the_database() {
 
 #[tokio::test]
 async fn new_invitation_refuses_a_caller_without_admin_privileges() {
-    let (store, scope, router) = setup(Vec::new(), FakeScope::new(false, false));
-    let (status, _, text) = send(
+    let (store, scope, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Refused));
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         r#"{"user_id":"alice"}"#,
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let body = parse(&text);
@@ -109,14 +109,14 @@ async fn new_invitation_refuses_a_caller_without_admin_privileges() {
 
 #[tokio::test]
 async fn new_invitation_by_a_proxy_admin_skips_the_scope_checks() {
-    let (store, scope, router) = setup(Vec::new(), FakeScope::new(false, false));
-    let (status, _, text) = send(
+    let (store, scope, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Refused));
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         r#"{"user_id":"alice"}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(parse(&text)["id"], "fresh-id");
@@ -131,14 +131,14 @@ async fn new_invitation_by_a_proxy_admin_skips_the_scope_checks() {
 
 #[tokio::test]
 async fn new_invitation_by_the_master_key_has_no_actor() {
-    let (store, scope, router) = setup(Vec::new(), FakeScope::new(false, false));
-    let (status, _, _) = send(
+    let (store, scope, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Refused));
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         r#"{"user_id":"alice"}"#,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(scope.calls().is_empty());
@@ -149,13 +149,13 @@ async fn new_invitation_by_the_master_key_has_no_actor() {
 #[tokio::test]
 async fn new_invitation_by_an_org_admin_checks_the_target() {
     let (store, scope, router) = setup(Vec::new(), open_scope());
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         r#"{"user_id":"alice"}"#,
         Some(org_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -174,14 +174,14 @@ async fn new_invitation_by_an_org_admin_checks_the_target() {
 
 #[tokio::test]
 async fn new_invitation_refuses_a_target_outside_the_scope() {
-    let (store, scope, router) = setup(Vec::new(), FakeScope::new(true, false));
-    let (status, _, text) = send(
+    let (store, scope, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Privileged));
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         r#"{"user_id":"outsider"}"#,
         Some(org_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -209,13 +209,13 @@ async fn new_invitation_refuses_a_target_outside_the_scope() {
 async fn new_invitation_reports_a_missing_invitee() {
     let (store, _, router) = setup(Vec::new(), open_scope());
     store.rows.lock().expect("the store lock").create_error = Some(InvitationError::UserMissing);
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         r#"{"user_id":"ghost"}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -228,13 +228,13 @@ async fn new_invitation_reports_a_missing_invitee() {
 #[tokio::test]
 async fn new_invitation_rejects_a_body_without_user_id() {
     let (_, _, router) = setup(Vec::new(), open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         "{}",
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     let issue = &parse(&text)["detail"][0];
@@ -246,13 +246,13 @@ async fn new_invitation_rejects_a_body_without_user_id() {
 #[tokio::test]
 async fn new_invitation_rejects_broken_json() {
     let (_, _, router) = setup(Vec::new(), open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/new",
         "{",
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(parse(&text)["detail"][0]["type"], "json_invalid");
@@ -261,13 +261,13 @@ async fn new_invitation_rejects_broken_json() {
 #[tokio::test]
 async fn info_requires_the_invitation_id() {
     let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info",
         "",
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     let issue = &parse(&text)["detail"][0];
@@ -279,13 +279,13 @@ async fn info_requires_the_invitation_id() {
 #[tokio::test]
 async fn info_requires_an_admin_view() {
     let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -297,13 +297,13 @@ async fn info_requires_an_admin_view() {
 #[tokio::test]
 async fn info_answers_a_platform_viewer() {
     let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(platform_viewer()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(parse(&text)["id"], "inv-1");
@@ -316,13 +316,13 @@ async fn info_answers_a_platform_viewer() {
 #[tokio::test]
 async fn info_answers_a_platform_admin() {
     let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(parse(&text)["id"], "inv-1");
@@ -332,13 +332,13 @@ async fn info_answers_a_platform_admin() {
 async fn info_answers_a_key_with_an_admin_view() {
     let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
     let caller = key_caller(r#"{"user_role":"proxy_admin","user_id":"key-user"}"#);
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(caller),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(parse(&text)["id"], "inv-1");
@@ -347,13 +347,13 @@ async fn info_answers_a_key_with_an_admin_view() {
 #[tokio::test]
 async fn info_reports_a_missing_row() {
     let (_, _, router) = setup(Vec::new(), open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=ghost",
         "",
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -366,13 +366,13 @@ async fn info_reports_a_missing_row() {
 async fn info_reports_a_store_failure() {
     let (store, _, router) = setup(Vec::new(), open_scope());
     store.rows.lock().expect("the store lock").read_error = Some(DbError::NoDbConnected);
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -384,13 +384,13 @@ async fn info_reports_a_store_failure() {
 #[tokio::test]
 async fn info_requires_the_database() {
     let router = router_for(InvitationRouteState::default());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
@@ -399,13 +399,13 @@ async fn info_requires_the_database() {
 #[tokio::test]
 async fn info_checks_the_database_before_the_admin_view() {
     let router = router_for(InvitationRouteState::default());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
@@ -424,13 +424,13 @@ async fn info_reports_a_database_it_cannot_reach() {
         }),
         queue: QueueRouteState::default(),
     });
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "GET",
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -442,13 +442,13 @@ async fn info_reports_a_database_it_cannot_reach() {
 #[tokio::test]
 async fn update_needs_a_user_id() {
     let (store, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"inv-1","is_accepted":true}"#,
         Some(userless_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -468,13 +468,13 @@ async fn update_needs_a_user_id() {
 #[tokio::test]
 async fn update_accepts_the_invitation_from_the_master_key() {
     let (store, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"inv-1","is_accepted":true}"#,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(parse(&text)["updated_by"], "default_user_id");
@@ -487,13 +487,13 @@ async fn update_accepts_the_invitation_from_the_master_key() {
 #[tokio::test]
 async fn update_accepts_the_invitation() {
     let (store, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"inv-1","is_accepted":true}"#,
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(parse(&text)["is_accepted"].as_bool().expect("a bool"));
@@ -508,13 +508,13 @@ async fn update_accepts_the_invitation() {
 #[tokio::test]
 async fn update_reports_a_missing_row() {
     let (_, _, router) = setup(Vec::new(), open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"ghost","is_accepted":false}"#,
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -527,13 +527,13 @@ async fn update_reports_a_missing_row() {
 async fn update_reports_a_store_failure() {
     let (store, _, router) = setup(Vec::new(), open_scope());
     store.rows.lock().expect("the store lock").update_error = Some(DbError::NoDbConnected);
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"inv-1","is_accepted":true}"#,
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -545,13 +545,13 @@ async fn update_reports_a_store_failure() {
 #[tokio::test]
 async fn update_requires_the_database() {
     let router = router_for(InvitationRouteState::default());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"inv-1","is_accepted":true}"#,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
@@ -570,13 +570,13 @@ async fn update_reports_a_database_it_cannot_reach() {
         }),
         queue: QueueRouteState::default(),
     });
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"inv-1","is_accepted":true}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -588,13 +588,13 @@ async fn update_reports_a_database_it_cannot_reach() {
 #[tokio::test]
 async fn update_rejects_a_body_without_is_accepted() {
     let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/update",
         r#"{"invitation_id":"inv-1"}"#,
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
@@ -607,15 +607,15 @@ async fn update_rejects_a_body_without_is_accepted() {
 async fn delete_lets_a_proxy_admin_delete_another_admins_invitation() {
     let (store, scope, router) = setup(
         vec![record("inv-1", "alice", "someone-else")],
-        FakeScope::new(false, false),
+        FakeScope::new(ScopeRights::Refused),
     );
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(parse(&text)["id"], "inv-1");
@@ -630,15 +630,15 @@ async fn delete_lets_a_proxy_admin_delete_another_admins_invitation() {
 async fn delete_lets_an_org_admin_delete_their_own_invitation() {
     let (store, _, router) = setup(
         vec![record("inv-1", "alice", "org-admin")],
-        FakeScope::new(true, false),
+        FakeScope::new(ScopeRights::Privileged),
     );
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(org_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -651,15 +651,15 @@ async fn delete_lets_an_org_admin_delete_their_own_invitation() {
 async fn delete_refuses_another_admins_invitation() {
     let (store, _, router) = setup(
         vec![record("inv-1", "alice", "other-admin")],
-        FakeScope::new(true, false),
+        FakeScope::new(ScopeRights::Privileged),
     );
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(org_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(
@@ -680,15 +680,15 @@ async fn delete_refuses_another_admins_invitation() {
 async fn delete_refuses_a_caller_without_admin_privileges() {
     let (store, _, router) = setup(
         vec![record("inv-1", "alice", "member")],
-        FakeScope::new(false, false),
+        FakeScope::new(ScopeRights::Refused),
     );
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(internal_user()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -707,14 +707,14 @@ async fn delete_refuses_a_caller_without_admin_privileges() {
 
 #[tokio::test]
 async fn delete_reports_a_missing_row_before_the_ownership_check() {
-    let (_, _, router) = setup(Vec::new(), FakeScope::new(true, false));
-    let (status, _, text) = send(
+    let (_, _, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Privileged));
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"ghost"}"#,
         Some(org_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -725,14 +725,14 @@ async fn delete_reports_a_missing_row_before_the_ownership_check() {
 
 #[tokio::test]
 async fn delete_reports_a_missing_row_on_the_delete() {
-    let (_, _, router) = setup(Vec::new(), FakeScope::new(false, false));
-    let (status, _, text) = send(
+    let (_, _, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Refused));
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"ghost"}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -743,15 +743,15 @@ async fn delete_reports_a_missing_row_on_the_delete() {
 
 #[tokio::test]
 async fn delete_reports_a_store_failure() {
-    let (store, _, router) = setup(Vec::new(), FakeScope::new(false, false));
+    let (store, _, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Refused));
     store.rows.lock().expect("the store lock").delete_error = Some(DbError::NoDbConnected);
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -763,13 +763,13 @@ async fn delete_reports_a_store_failure() {
 #[tokio::test]
 async fn delete_requires_the_database() {
     let router = router_for(InvitationRouteState::default());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
@@ -788,13 +788,13 @@ async fn delete_reports_a_database_it_cannot_reach() {
         }),
         queue: QueueRouteState::default(),
     });
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
@@ -807,15 +807,15 @@ async fn delete_reports_a_database_it_cannot_reach() {
 async fn delete_by_a_proxy_admin_skips_the_ownership_check() {
     let (store, _, router) = setup(
         vec![record("inv-1", "alice", "someone-else")],
-        FakeScope::new(true, false),
+        FakeScope::new(ScopeRights::Privileged),
     );
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(platform_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(

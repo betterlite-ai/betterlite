@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -39,22 +40,22 @@ fn replacement(code: i64) -> ProxyException {
         error_type: ProxyErrorTypes::AuthError.to_string(),
         param: Some("None".to_owned()),
         code: ExceptionCode::Status(code),
-        headers: std::collections::BTreeMap::new(),
+        headers: BTreeMap::new(),
         openai_code: None,
-        provider_specific_fields: std::collections::BTreeMap::new(),
+        provider_specific_fields: BTreeMap::new(),
     })
 }
 
 #[tokio::test]
 async fn queue_without_a_router_answers_500() {
     let router = queue_router(QueueRouteState::default());
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     let body = parse(&text);
@@ -68,13 +69,13 @@ async fn queue_without_a_router_answers_500() {
 async fn queue_refuses_a_body_without_a_priority() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         r#"{"model":"m","messages":[]}"#,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["error"]["message"], NO_PRIORITY);
@@ -93,13 +94,13 @@ async fn queue_refuses_a_body_without_a_priority() {
 async fn queue_refuses_every_priority_a_byte_cannot_hold(#[case] body: &str) {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         body,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(parse(&text)["error"]["message"], NO_PRIORITY, "{body}");
@@ -113,13 +114,13 @@ async fn queue_refuses_every_priority_a_byte_cannot_hold(#[case] body: &str) {
 async fn queue_accepts_the_edges_of_a_byte_priority(#[case] priority: i64, #[case] header: &str) {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, headers, _) = send(
+    let (status, headers, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(priority),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers["x-litellm-priority"], header);
@@ -130,22 +131,18 @@ async fn queue_builds_the_request_like_litellm() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
     let body = r#"{"model":"body-model","messages":[{"role":"user","content":"hi"}],"priority":5,"metadata":{"team":"x"},"stream":false,"user":"given","_litellm_strip_stream_usage":false}"#;
-    let headers = [
-        ("content-type", "application/json"),
-        ("host", "proxy.test"),
-        ("authorization", "Bearer secret"),
-        ("x-dup", "a"),
-        ("x-dup", "b"),
-    ];
-    let (status, _, _) = send_with(
-        &router,
-        "POST",
-        "/queue/chat/completions?model=query-model",
-        body,
-        Some(key_caller(key_fields())),
-        &headers,
-    )
-    .await;
+    let request = Request::builder()
+        .method("POST")
+        .uri("/queue/chat/completions?model=query-model")
+        .header("content-type", "application/json")
+        .header("host", "proxy.test")
+        .header("authorization", "Bearer secret")
+        .header("x-dup", "a")
+        .header("x-dup", "b")
+        .extension(key_caller(key_fields()))
+        .body(Body::from(body.to_owned()))
+        .expect("a request");
+    let (status, _, _) = send_with(&router, request).await;
     assert_eq!(status, StatusCode::OK);
     let seen = completion.seen();
     assert_eq!(seen["model"], "query-model");
@@ -179,7 +176,7 @@ fn assert_metadata(seen: &JsonMap) {
     assert_eq!(seen["metadata"]["user_api_key_hash"], "plain-key");
     assert_eq!(
         seen["metadata"]["user_api_key_metadata"],
-        json!({"keep": true})
+        parse(r#"{"keep": true}"#)
     );
     assert_eq!(seen["metadata"]["headers"]["host"], "proxy.test");
     assert_eq!(seen["metadata"]["headers"]["x-dup"], "a, b");
@@ -206,13 +203,13 @@ async fn queue_replaces_a_metadata_that_is_not_an_object() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
     let body = r#"{"model":"m","priority":1,"messages":[],"metadata":"text"}"#;
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         body,
         Some(key_caller(key_fields())),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     let seen = completion.seen();
@@ -246,13 +243,13 @@ async fn queue_takes_the_user_from_the_key_when_the_body_has_none() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
     let body = r#"{"model":"m","priority":1,"user":null}"#;
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         body,
         Some(key_caller(key_fields())),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(completion.seen()["user"], "key-user");
@@ -262,13 +259,13 @@ async fn queue_takes_the_user_from_the_key_when_the_body_has_none() {
 async fn queue_leaves_the_user_unset_for_an_identityless_call() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(userless_admin()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(completion.seen().get("user").is_none());
@@ -278,13 +275,13 @@ async fn queue_leaves_the_user_unset_for_an_identityless_call() {
 async fn queue_fills_the_master_keys_user_with_the_proxy_admin_name() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(completion.seen()["user"], "default_user_id");
@@ -294,13 +291,13 @@ async fn queue_fills_the_master_keys_user_with_the_proxy_admin_name() {
 async fn queue_carries_the_master_keys_alias_and_user_id_in_metadata() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     let seen = completion.seen();
@@ -338,7 +335,7 @@ async fn queue_prefers_the_configured_models_in_order(
         || "/queue/chat/completions".to_owned(),
         |model| format!("/queue/chat/completions?model={model}"),
     );
-    let (status, _, _) = send(&router, "POST", &uri, &chat_body(1), Some(master())).await;
+    let (status, _, _) = Box::pin(send(&router, "POST", &uri, &chat_body(1), Some(master()))).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(completion.seen()["model"], expected, "{uri}");
 }
@@ -349,13 +346,13 @@ async fn queue_logs_a_session_token_as_its_alias() {
     let router = queue_router(queue_state(&scheduler(), &completion, None));
     let fields =
         r#"{"token":"tok","is_session_token":true,"key_alias":"alias-1","user_id":"key-user"}"#;
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(key_caller(fields)),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(completion.seen()["metadata"]["user_api_key"], "alias-1");
@@ -370,19 +367,19 @@ async fn queue_applies_only_truthy_cli_overrides() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let mut state = queue_state(&scheduler(), &completion, None);
     state.overrides = CliOverrides {
-        temperature: Some(0.5),
-        request_timeout: Some(0.0),
+        temperature: Some(0.5_f64),
+        request_timeout: Some(0.0_f64),
         max_tokens: Some(100),
         api_base: Some(String::new()),
     };
     let router = queue_router(state);
-    let (status, _, _) = send(
+    let (status, _, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         r#"{"model":"m","priority":1,"messages":[],"request_timeout":30}"#,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     let seen = completion.seen();
@@ -398,13 +395,13 @@ async fn queue_answers_a_non_streaming_completion() {
         r#"{"id":"resp-1","object":"chat.completion"}"#,
     ))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, headers, text) = send(
+    let (status, headers, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(7),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers["x-litellm-priority"], "7");
@@ -424,13 +421,13 @@ async fn queue_reports_a_provider_failure() {
     let hook_handle: Arc<FakeHook> = Arc::clone(&hook);
     let failure_hook: Arc<dyn QueueFailureHook> = hook_handle;
     let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -452,13 +449,13 @@ async fn queue_lets_the_failure_hook_replace_the_error() {
     let hook = Arc::new(FakeHook::new(Some(replacement(403))));
     let failure_hook: Arc<dyn QueueFailureHook> = hook;
     let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(parse(&text)["error"]["message"], "replaced");
@@ -469,13 +466,13 @@ async fn queue_lets_the_failure_hook_replace_the_error() {
 async fn queue_refuses_a_non_object_answer_from_a_non_streaming_call() {
     let completion = Arc::new(FakeCompletion::new(Reply::Stream));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -490,13 +487,13 @@ async fn queue_streams_the_completion() {
     let completion = Arc::new(FakeCompletion::streaming(items));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
     let body = r#"{"model":"m","priority":3,"messages":[],"stream":true}"#;
-    let (status, headers, text) = send(
+    let (status, headers, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         body,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers["content-type"], "text/event-stream; charset=utf-8");
@@ -515,13 +512,13 @@ async fn queue_reports_a_streaming_call_without_a_stream() {
     let completion = Arc::new(FakeCompletion::new(Reply::Stream));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
     let body = r#"{"model":"m","priority":1,"messages":[],"stream":true}"#;
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         body,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -554,13 +551,13 @@ async fn queue_reports_a_stream_failure_to_the_hook() {
     let failure_hook: Arc<dyn QueueFailureHook> = hook_handle;
     let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
     let body = r#"{"model":"m","priority":1,"messages":[],"stream":true}"#;
-    let (status, headers, _) = send(
+    let (status, headers, _) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         body,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(headers["content-type"], "text/event-stream; charset=utf-8");
@@ -584,13 +581,13 @@ async fn queue_lets_the_stream_hook_replace_the_failure() {
     let failure_hook: Arc<dyn QueueFailureHook> = hook_handle;
     let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
     let body = r#"{"model":"m","priority":1,"messages":[],"stream":true}"#;
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         body,
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(hook.call_count(), 1);
@@ -606,20 +603,20 @@ async fn queue_lets_the_stream_hook_replace_the_failure() {
 async fn queue_reports_a_body_it_cannot_read() {
     let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
     let router = queue_router(queue_state(&scheduler(), &completion, None));
-    let (status, _, text) = send(
+    let (status, _, text) = Box::pin(send(
         &router,
         "POST",
         "/queue/chat/completions",
         "{",
         Some(master()),
-    )
+    ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let message = parse(&text)["error"]["message"].clone();
     assert!(
         message
             .as_str()
-            .is_some_and(|text| text.starts_with("Authentication Error, ")),
+            .is_some_and(|answer| answer.starts_with("Authentication Error, ")),
         "{message}"
     );
     assert!(completion.calls().is_empty());

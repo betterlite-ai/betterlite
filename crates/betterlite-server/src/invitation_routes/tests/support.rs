@@ -120,28 +120,24 @@ pub(super) async fn send(
     body: &str,
     who: Option<AuthContext>,
 ) -> (StatusCode, HeaderMap, String) {
-    let headers = [("content-type", "application/json"), ("host", "proxy.test")];
-    send_with(router, method, uri, body, who, &headers).await
-}
-
-pub(super) async fn send_with(
-    router: &Router,
-    method: &str,
-    uri: &str,
-    body: &str,
-    who: Option<AuthContext>,
-    headers: &[(&str, &str)],
-) -> (StatusCode, HeaderMap, String) {
-    let mut builder = Request::builder().method(method).uri(uri);
-    for (name, value) in headers {
-        builder = builder.header(*name, *value);
-    }
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("host", "proxy.test");
     if let Some(context) = who {
         builder = builder.extension(context);
     }
     let request = builder
         .body(Body::from(body.to_owned()))
         .expect("a request");
+    send_with(router, request).await
+}
+
+pub(super) async fn send_with(
+    router: &Router,
+    request: Request<Body>,
+) -> (StatusCode, HeaderMap, String) {
     let response = router.clone().oneshot(request).await.expect("a response");
     let status = response.status();
     let response_headers = response.headers().clone();
@@ -188,12 +184,14 @@ type Found = Result<Option<InvitationRecord>, InvitationStoreError>;
 #[async_trait]
 impl InvitationStore for FakeStore {
     async fn create(&self, user_id: &str, actor_user_id: Option<&str>) -> Created {
-        let mut rows = self.rows.lock().expect("the store lock");
-        if let Some(error) = rows.create_error.take() {
-            return Err(InvitationStoreError::Create(error));
+        {
+            let mut rows = self.rows.lock().expect("the store lock");
+            if let Some(error) = rows.create_error.take() {
+                return Err(InvitationStoreError::Create(error));
+            }
+            rows.created
+                .push((user_id.to_owned(), actor_user_id.map(str::to_owned)));
         }
-        rows.created
-            .push((user_id.to_owned(), actor_user_id.map(str::to_owned)));
         Ok(record(
             "fresh-id",
             user_id,
@@ -210,18 +208,20 @@ impl InvitationStore for FakeStore {
     }
 
     async fn update(&self, invitation_id: &str, is_accepted: bool, updated_by: &str) -> Found {
-        let mut rows = self.rows.lock().expect("the store lock");
-        if let Some(error) = rows.update_error.take() {
-            return Err(InvitationStoreError::Update(error));
-        }
-        rows.updated
-            .push((invitation_id.to_owned(), is_accepted, updated_by.to_owned()));
-        let found = rows.records.get_mut(invitation_id);
-        Ok(found.map(|row| {
-            row.is_accepted = is_accepted;
-            row.updated_by = updated_by.to_owned();
-            row.clone()
-        }))
+        let found = {
+            let mut rows = self.rows.lock().expect("the store lock");
+            if let Some(error) = rows.update_error.take() {
+                return Err(InvitationStoreError::Update(error));
+            }
+            rows.updated
+                .push((invitation_id.to_owned(), is_accepted, updated_by.to_owned()));
+            rows.records.get_mut(invitation_id).map(|row| {
+                row.is_accepted = is_accepted;
+                row.updated_by = updated_by.to_owned();
+                row.clone()
+            })
+        };
+        Ok(found)
     }
 
     async fn delete(&self, invitation_id: &str) -> Found {
@@ -234,6 +234,12 @@ impl InvitationStore for FakeStore {
     }
 }
 
+pub(super) enum ScopeRights {
+    Open,
+    Privileged,
+    Refused,
+}
+
 pub(super) struct FakeScope {
     pub(super) privileged: bool,
     pub(super) can_invite: bool,
@@ -241,7 +247,12 @@ pub(super) struct FakeScope {
 }
 
 impl FakeScope {
-    pub(super) fn new(privileged: bool, can_invite: bool) -> Self {
+    pub(super) fn new(rights: ScopeRights) -> Self {
+        let (privileged, can_invite) = match rights {
+            ScopeRights::Open => (true, true),
+            ScopeRights::Privileged => (true, false),
+            ScopeRights::Refused => (false, false),
+        };
         Self {
             privileged,
             can_invite,
@@ -350,8 +361,8 @@ impl FakeCompletion {
     }
 }
 
-pub(super) fn failure(message: &str) -> Box<ErrorClass> {
-    Box::new(ErrorClass::Unclassified(Box::new(ErrorContext {
+pub(super) fn failure(message: &str) -> ErrorClass {
+    ErrorClass::Unclassified(Box::new(ErrorContext {
         message: message.to_owned(),
         model: None,
         provider: None,
@@ -360,7 +371,7 @@ pub(super) fn failure(message: &str) -> Box<ErrorClass> {
         body_type: None,
         body_param: None,
         body_code: None,
-    })))
+    }))
 }
 
 #[async_trait]
@@ -382,20 +393,20 @@ impl QueueCompletion for FakeCompletion {
             (reply, state.items.take())
         };
         match reply {
-            Reply::Failure(message) => Err(failure(&message)),
+            Reply::Failure(message) => Err(Box::new(failure(&message))),
             Reply::Stream => Ok(QueueAnswer {
                 response: headers::Response::Stream,
                 stream: None,
             }),
             Reply::Object(body) => {
-                let stream = items.map(|items| StreamSource {
-                    items: stream::iter(items).boxed(),
+                let source = items.map(|queued| StreamSource {
+                    items: stream::iter(queued).boxed(),
                     hidden: JsonObject::new(),
                     snapshot: None,
                 });
                 Ok(QueueAnswer {
                     response: headers::Response::Object(body),
-                    stream,
+                    stream: source,
                 })
             }
         }

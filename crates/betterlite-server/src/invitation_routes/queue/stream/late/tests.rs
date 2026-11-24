@@ -31,7 +31,8 @@ impl QueueFailureHook for RecordingHook {
         _exception: &ProxyException,
         _request_data: &JsonMap,
     ) -> Option<ProxyException> {
-        *self.calls.lock().expect("the hook lock") += 1;
+        let mut calls = self.calls.lock().expect("the hook lock");
+        *calls = calls.saturating_add(1);
         None
     }
 }
@@ -66,9 +67,8 @@ async fn a_late_failure_runs_the_hook_and_keeps_its_none() {
         caller: principal(),
         data: JsonMap::new(),
     };
-    let answered = match late.late_failure(&failure()).await {
-        Ok(answered) => answered,
-        Err(_raised) => panic!("the test hook answers without raising"),
+    let Ok(answered) = late.late_failure(&failure()).await else {
+        panic!("the test hook answers without raising");
     };
     assert!(answered.is_none());
     assert_eq!(hook.calls(), 1);
