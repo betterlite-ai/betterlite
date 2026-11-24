@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Final, Literal, TypeAlias
 
 from pydantic import JsonValue
@@ -15,38 +14,6 @@ UPLOAD: Final = "upload_container_file"
 Provider: TypeAlias = Literal["openai", "azure", "azure_text"]
 
 
-def list_from_values(values: Mapping[str, CallValue]) -> ContainerFileListResponse:
-    answer = call_native(
-        NativeContainerFileSession("{}").call, call_payload(LIST, values),
-        NativeContainerFileError,
-    )
-    return ContainerFileListResponse.model_validate(answer)
-
-
-async def alist_from_values(values: Mapping[str, CallValue]) -> ContainerFileListResponse:
-    answer = await acall_native(
-        NativeContainerFileSession("{}").acall, call_payload(LIST, values),
-        NativeContainerFileError,
-    )
-    return ContainerFileListResponse.model_validate(answer)
-
-
-def upload_from_values(values: Mapping[str, CallValue]) -> ContainerFileObject:
-    answer = call_native(
-        NativeContainerFileSession("{}").call, call_payload(UPLOAD, values),
-        NativeContainerFileError,
-    )
-    return ContainerFileObject.model_validate(answer)
-
-
-async def aupload_from_values(values: Mapping[str, CallValue]) -> ContainerFileObject:
-    answer = await acall_native(
-        NativeContainerFileSession("{}").acall, call_payload(UPLOAD, values),
-        NativeContainerFileError,
-    )
-    return ContainerFileObject.model_validate(answer)
-
-
 def list_container_files(
     container_id: str, after: str | None = None, limit: int | None = None,
     order: str | None = None, timeout: float | TimeoutValues = DEFAULT_TIMEOUT,
@@ -61,7 +28,11 @@ def list_container_files(
         custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
         extra_query=extra_query, extra_body=extra_body,
     ))
-    return list_from_values(values)
+    answer = call_native(
+        NativeContainerFileSession("{}").call, call_payload(LIST, values),
+        NativeContainerFileError,
+    )
+    return ContainerFileListResponse.model_validate(answer)
 
 
 async def alist_container_files(
@@ -71,12 +42,15 @@ async def alist_container_files(
     extra_query: dict[str, JsonValue] | None = None,
     extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerFileListResponse:
-    values = merged(kwargs, omit_none(
-        container_id=container_id, after=after, limit=limit, order=order, timeout=timeout,
-        custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
-        extra_query=extra_query, extra_body=extra_body,
+    return ContainerFileListResponse.model_validate(await acall_native(
+        NativeContainerFileSession("{}").acall,
+        call_payload(LIST, merged(kwargs, omit_none(
+            container_id=container_id, after=after, limit=limit, order=order, timeout=timeout,
+            custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
+            extra_query=extra_query, extra_body=extra_body,
+        ))),
+        NativeContainerFileError,
     ))
-    return await alist_from_values(values)
 
 
 def upload_container_file(
@@ -86,12 +60,16 @@ def upload_container_file(
     extra_query: dict[str, JsonValue] | None = None,
     extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerFileObject:
-    values = merged(kwargs, omit_none(
-        container_id=container_id, file=file, timeout=timeout, api_key=api_key,
-        api_base=api_base, api_version=api_version, custom_llm_provider=custom_llm_provider,
-        extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body,
+    named: dict[str, CallValue] = {
+        "container_id": container_id, "file": file, "timeout": timeout, "api_key": api_key,
+        "api_base": api_base, "api_version": api_version,
+        "custom_llm_provider": custom_llm_provider, "extra_headers": extra_headers,
+        "extra_query": extra_query, "extra_body": extra_body,
+    }
+    return ContainerFileObject.model_validate(call_native(
+        NativeContainerFileSession("{}").call, call_payload(UPLOAD, merged(kwargs, named)),
+        NativeContainerFileError,
     ))
-    return upload_from_values(values)
 
 
 async def aupload_container_file(
@@ -100,9 +78,12 @@ async def aupload_container_file(
     extra_query: dict[str, JsonValue] | None = None,
     extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> ContainerFileObject:
-    values = merged(kwargs, omit_none(
-        container_id=container_id, file=file, timeout=timeout,
-        custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
-        extra_query=extra_query, extra_body=extra_body,
-    ))
-    return await aupload_from_values(values)
+    values = merged(kwargs, {
+        "container_id": container_id, "file": file, "timeout": timeout,
+        "custom_llm_provider": custom_llm_provider, "extra_headers": extra_headers,
+        "extra_query": extra_query, "extra_body": extra_body,
+    })
+    return ContainerFileObject.model_validate(
+        await acall_native(NativeContainerFileSession("{}").acall,
+                           call_payload(UPLOAD, values), NativeContainerFileError)
+    )
