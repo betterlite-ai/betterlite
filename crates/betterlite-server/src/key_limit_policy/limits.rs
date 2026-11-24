@@ -127,9 +127,8 @@ fn check_models(
     Ok(())
 }
 
-// team_parent_limits/allocation.rs carries the same four steps, private and typed to team rows and
-// TeamLimitError; sharing them means a pub(crate) widening of a module outside this task's scope,
-// so the key path keeps its own port of the LiteLLM loop.
+// team_parent_limits/allocation.rs runs the same four steps privately for team rows and its error type, so sharing needs a scope change.
+
 // a request map with entries wins; an absent or empty one falls back to the request metadata
 fn requested_limits(
     field_value: Option<&BTreeMap<String, JsonData>>,
