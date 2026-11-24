@@ -10,7 +10,7 @@ use betterlite_lens::sources::storage::Storage;
 use betterlite_lens::state::transitions::can_access;
 use chrono::{DateTime, Utc};
 use garde::Validate;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -48,7 +48,7 @@ pub(crate) struct WorkerName {
 #[derive(Serialize)]
 pub(crate) struct RegisteredWorker {
     pub(crate) worker: Worker,
-    pub(crate) token: SecretString,
+    pub(crate) token: String,
 }
 
 fn default_name() -> String {
@@ -69,9 +69,9 @@ where
         let (_, scope) = route_key_scope::<Store>(caller, true)?;
         validate_key(state.keys.as_ref(), Some(&request.analysis_key_id)).await?;
         let encoded = URL_SAFE_NO_PAD.encode(state.ids.random_bytes(TOKEN_BYTES));
-        let token = format!("lens-{encoded}");
+        let token = SecretString::from(format!("lens-{encoded}"));
         let worker = Worker {
-            analysis_key_id: Some(request.analysis_key_id.clone()),
+            analysis_key_id: Some(request.analysis_key_id),
             id: state.ids.new_id(),
             name: request.name,
             scope,
@@ -79,11 +79,11 @@ where
             revoked: false,
         };
         let repository = lens_repository(&state)?;
-        let digest = hex::encode(Sha256::digest(token.as_bytes()));
+        let digest = hex::encode(Sha256::digest(token.expose_secret().as_bytes()));
         repository.save_worker(&worker, Some(&digest)).await?;
         Ok(Json(RegisteredWorker {
             worker,
-            token: SecretString::from(token),
+            token: token.expose_secret().to_owned(),
         }))
     }
 

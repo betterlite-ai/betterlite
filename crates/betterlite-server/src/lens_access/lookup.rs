@@ -30,7 +30,7 @@ where
         .map_err(LensAccessError::Repository)?;
     match found {
         Some(lens) if can_access(scope, &lens.scope) => Ok(lens),
-        Some(_lens) | None => Err(LensAccessError::LensNotFound),
+        Some(_) | None => Err(LensAccessError::LensNotFound),
     }
 }
 

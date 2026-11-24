@@ -17,8 +17,9 @@ use betterlite_db::lens_repository::repository::LensRepository;
 use betterlite_lens::models::finding::Finding;
 use betterlite_lens::models::job::{Job, JobStatus, Lens, Worker};
 use betterlite_lens::models::settings::LensSettings;
+use betterlite_lens::sources::parameters::Parameters;
 use betterlite_lens::sources::storage::{
-    ContentParameters, EvidenceParameters, Parameters, SampleParameters, Storage,
+    ContentParameters, EvidenceParameters, SampleParameters, Storage,
 };
 use chrono::{DateTime, TimeDelta, Utc};
 use serde::Serialize;
@@ -265,7 +266,10 @@ fn record<T>(cell: &Mutex<Vec<T>>, lock: &str, value: T) {
     cell.lock().expect(lock).push(value);
 }
 
-fn rows<T: Serialize>(items: &Mutex<Vec<T>>, lock: &str) -> Vec<Row> {
+fn rows<T>(items: &Mutex<Vec<T>>, lock: &str) -> Vec<Row>
+where
+    T: Serialize,
+{
     let guard = items.lock().expect(lock);
     guard.iter().map(encoded).collect()
 }
@@ -630,7 +634,10 @@ fn text_arg(args: &[SqlBind], index: usize) -> Option<&str> {
     Some(value.as_str())
 }
 
-fn encoded<T: Serialize>(value: &T) -> Row {
+fn encoded<T>(value: &T) -> Row
+where
+    T: Serialize,
+{
     Row {
         data: serde_json::to_string(value).expect("the stored record encodes"),
     }
@@ -696,21 +703,21 @@ impl Harness {
     }
 
     pub(crate) fn state(&self) -> LensRoutesState<FakeDatabase, FakeStorage> {
-        let models = self
+        let models: Option<Arc<dyn ModelNames>> = self
             .catalog
             .as_ref()
-            .map(|catalog| Arc::clone(catalog) as Arc<dyn ModelNames>);
+            .map(|catalog| -> Arc<dyn ModelNames> { Arc::clone(catalog) });
         LensRoutesState {
             repository: Some(Arc::new(LensRepository {
                 database: self.database.clone(),
             })),
             storage: self.storage.clone(),
             models,
-            keys: Arc::clone(&self.resolver) as Arc<dyn KeyResolver>,
+            keys: Arc::clone(&self.resolver),
             clock: Arc::new(FixedClock {
                 now: self.clock.now,
             }),
-            ids: Arc::clone(&self.ids) as Arc<dyn IdSource>,
+            ids: Arc::clone(&self.ids),
         }
     }
 
@@ -811,7 +818,10 @@ pub(crate) fn execution_id(parts: &[&str]) -> String {
     URL_SAFE.encode(serde_json::to_vec(parts).expect("the execution parts encode"))
 }
 
-pub(crate) fn body_json<T: Serialize>(value: &T) -> String {
+pub(crate) fn body_json<T>(value: &T) -> String
+where
+    T: Serialize,
+{
     serde_json::to_string(value).expect("the test body encodes")
 }
 

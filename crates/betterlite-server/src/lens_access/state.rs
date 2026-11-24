@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use betterlite_db::lens_repository::database::Database;
 use betterlite_db::lens_repository::repository::LensRepository;
-use betterlite_lens::sources::storage::{
-    ContentParameters, EvidenceParameters, Parameters, SampleParameters, Storage,
-};
+use betterlite_lens::sources::parameters::Parameters;
+use betterlite_lens::sources::storage::Storage;
+use betterlite_lens::sources::storage::{ContentParameters, EvidenceParameters, SampleParameters};
 use chrono::{DateTime, Utc};
 
 use crate::lens_billing::key_validation::KeyResolver;

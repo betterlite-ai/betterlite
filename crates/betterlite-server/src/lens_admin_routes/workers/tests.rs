@@ -152,7 +152,7 @@ async fn register_rejects_a_key_that_is_not_sixty_four_hex_characters() {
 
 #[tokio::test]
 async fn register_rejects_a_blocked_key() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.resolver = Arc::new(Resolver::new().answering(Answer::Blocked));
     let body = format!(r#"{{"analysis_key_id":"{}"}}"#, key_id());
     let reply = call(
@@ -171,7 +171,7 @@ async fn register_rejects_a_blocked_key() {
 
 #[tokio::test]
 async fn register_rejects_a_session_token() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.resolver = Arc::new(Resolver::new().answering(Answer::Session));
     let body = format!(r#"{{"analysis_key_id":"{}"}}"#, key_id());
     let reply = call(
@@ -189,7 +189,7 @@ async fn register_rejects_a_session_token() {
 
 #[tokio::test]
 async fn register_keeps_the_resolvers_401_for_a_missing_key() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.resolver = Arc::new(Resolver::new().answering(Answer::Missing));
     let body = format!(r#"{{"analysis_key_id":"{}"}}"#, key_id());
     let reply = call(

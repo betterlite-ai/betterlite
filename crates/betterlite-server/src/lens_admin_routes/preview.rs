@@ -38,7 +38,7 @@ pub(crate) struct Preview {
     pub(crate) lookback_hours: u32,
 }
 
-fn default_lookback_hours() -> u32 {
+const fn default_lookback_hours() -> u32 {
     DEFAULT_LOOKBACK_HOURS
 }
 
