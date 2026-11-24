@@ -21,44 +21,36 @@ pub(super) async fn parameter_handoff() {
     assert_eq!(handoff.contexts(), vec![String::from("ctx")]);
     named_provider().await;
     given_text().await;
-    null_text().await;
 }
 
-// A caller's own text wins over text_format, which the conversion then leaves unread
+// A caller's own text wins over text_format, while an explicit null text counts as absent and converts the format
 async fn given_text() {
-    let call = support::call_from(
-        r#"{"model":"openai/gpt-4o","input":"hello","text":{"format":{"type":"text"}},"text_format":{"type":"json_object"}}"#,
-    );
-    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
-    let resolver = ScriptedResolver::default();
-    support::drive(&resolver, None, &handoff, &call)
-        .await
-        .expect("the wrapper answers");
-    let calls = handoff.calls();
-    assert_eq!(
-        calls[0].text,
-        Some(support::json(r#"{"format":{"type":"text"}}"#))
-    );
-    assert_eq!(calls[0].text_format, None);
-}
-
-// An explicit null text takes the default, so text_format still converts; both null filters keep parity with the sync entry
-async fn null_text() {
-    let mut call = support::call_from(
-        r#"{"model":"openai/gpt-4o","input":"hello","text_format":{"type":"json_object"}}"#,
-    );
-    call.text = Some(Json::Null);
-    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
-    let resolver = ScriptedResolver::default();
-    support::drive(&resolver, None, &handoff, &call)
-        .await
-        .expect("the wrapper answers");
-    let calls = handoff.calls();
-    assert_eq!(
-        calls[0].text,
-        Some(support::json(r#"{"format":{"type":"json_object"}}"#))
-    );
-    assert_eq!(calls[0].text_format, None);
+    let cases = [
+        (
+            r#"{"model":"openai/gpt-4o","input":"hello","text":{"format":{"type":"text"}},"text_format":{"type":"json_object"}}"#,
+            false,
+            r#"{"format":{"type":"text"}}"#,
+        ),
+        (
+            r#"{"model":"openai/gpt-4o","input":"hello","text_format":{"type":"json_object"}}"#,
+            true,
+            r#"{"format":{"type":"json_object"}}"#,
+        ),
+    ];
+    for (input, nulled, expected) in cases {
+        let mut call = support::call_from(input);
+        if nulled {
+            call.text = Some(Json::Null);
+        }
+        let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
+        let resolver = ScriptedResolver::default();
+        support::drive(&resolver, None, &handoff, &call)
+            .await
+            .expect("the wrapper answers");
+        let calls = handoff.calls();
+        assert_eq!(calls[0].text, Some(support::json(expected)), "{input}");
+        assert_eq!(calls[0].text_format, None);
+    }
 }
 
 // A caller-named provider is forwarded as given, and detection never sees the model
