@@ -86,7 +86,7 @@ fn error_result(message: String) -> CallToolResult {
     }
 }
 
-const fn tool_outcome(output: OpenApiToolOutput) -> ToolOutcome {
+fn tool_outcome(output: OpenApiToolOutput) -> ToolOutcome {
     match output {
         OpenApiToolOutput::Text(text) => ToolOutcome::Text(TextResult { text }),
         OpenApiToolOutput::Json {
