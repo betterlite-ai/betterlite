@@ -1,0 +1,17 @@
+kind: helper
+name: native-prefix-entries
+call:
+  b10062:
+    native_redirect_uris: 'myapp://host/cb*, myapp://host/oauth/*, deep://h/*'
+    uris:
+      - 'myapp://host/cb'
+      - 'myapp://host/cb/'
+      - 'myapp://host/cb/x'
+      - 'myapp://host/cb/x-2'
+      - 'myapp://host/oauth/x'
+      - 'myapp://host/oauth/'
+      - 'deep://h/anything'
+      - 'deep://h/'
+      - 'MYAPP://HOST/CB/X'
+env: {}
+compare: {ignore: []}

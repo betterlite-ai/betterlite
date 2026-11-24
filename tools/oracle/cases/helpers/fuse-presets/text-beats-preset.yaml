@@ -1,0 +1,10 @@
+kind: helper
+name: text-beats-preset
+call:
+  b10087:
+    function: resolve
+    text: A hand-written profile for this deployment.
+    preset_id: gpt-6-astra-v1
+    kind: model
+env: {}
+compare: {ignore: []}

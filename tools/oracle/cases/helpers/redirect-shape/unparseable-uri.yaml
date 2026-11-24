@@ -1,0 +1,14 @@
+kind: helper
+name: unparseable-uri
+call:
+  b10062:
+    native_redirect_uris: null
+    uris:
+      - 'http://[::1/cb'
+      - 'http://[127.0.0.1]/cb'
+      - 'http://[gg::1]/cb'
+      - 'http://[v1.]/cb'
+      - 'http://[v.zz]/cb'
+      - 'http://[::1]x/cb'
+env: {}
+compare: {ignore: []}
