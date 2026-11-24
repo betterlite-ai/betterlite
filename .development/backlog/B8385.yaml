@@ -1,14 +1,14 @@
 id: B8385
 milestone: M8 platform
 title: Periodic cost map and Anthropic beta header reloads
-status: todo
+status: done
 depends_on: [B10054, B10055, B194, B959, B4145, B8397]
 file: tasks/B8385-periodic-reloads.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3089
