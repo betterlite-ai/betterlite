@@ -3,8 +3,6 @@ use betterlite_config::loader::ConfigError;
 use betterlite_core::api::container_create_list::error::ContainerOpFailure as CollectionFailure;
 use betterlite_core::api::container_resource_ops::error::ContainerOpFailure as ResourceFailure;
 use betterlite_core::cost::completion::lookup::LookupError;
-use betterlite_env::EnvError;
-use betterlite_http::error::HttpError;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::catalog::CatalogError;
 use betterlite_redact::error::RedactionError;
@@ -13,22 +11,14 @@ use pyo3::types::PyType;
 use pyo3::{Py, PyErr, Python};
 
 use super::convert::{ConvertError, NativeContainerPayload};
+use crate::completion::error::SessionError as CompletionSessionError;
 
-// A failure outside the provider call: the session could not be built or its settings read
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {
     #[error(transparent)]
     Json(#[from] ConvertError),
-    #[error("the proxy environment could not be read: {source}")]
-    Proxy {
-        #[source]
-        source: EnvError,
-    },
-    #[error("the outbound http client could not be built: {source}")]
-    Client {
-        #[source]
-        source: HttpError,
-    },
+    #[error(transparent)]
+    Completion(#[from] CompletionSessionError),
     #[error("the openai credentials could not be read: {source}")]
     Settings {
         #[source]
@@ -61,7 +51,6 @@ pub(crate) enum SessionError {
     },
 }
 
-// A native method answers the class LiteLLM's exception_type would raise, or a local failure it never saw
 #[derive(Debug)]
 pub(crate) enum SessionFailure {
     Raised(Box<NativeContainerPayload>),
@@ -79,7 +68,6 @@ impl SessionFailure {
     }
 }
 
-// The error text is the JSON payload raise_native_error parses, so the Python class is LiteLLM's
 pub(crate) fn native_error(
     py: Python<'_>,
     error_type: &Py<PyType>,

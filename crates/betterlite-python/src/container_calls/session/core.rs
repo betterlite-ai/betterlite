@@ -18,6 +18,7 @@ use betterlite_openai::api::container_contracts::records::ContainerObject;
 use betterlite_openai::containers::costs::ContainerCosts;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_sdk::call_wrapper::ports::{IdSource, WrapperClock};
 use secrecy::SecretString;
 use serde::Serialize;
 
@@ -27,6 +28,7 @@ use super::super::convert::{
 use super::super::error::{SessionError, SessionFailure};
 use super::super::stack;
 use super::super::transport::Source;
+use crate::completion::setup::outbound_client;
 
 pub(super) mod asynchronous;
 
@@ -42,7 +44,6 @@ type CollectionPieces = (stack::Configs, Mutex<LoggingState>, CollectionHandler)
 type ResourceHandler = ContainerResourceHandler<Source, stack::NoPreCall>;
 type OperationPieces = (stack::Configs, Mutex<LoggingState>, ResourceHandler);
 
-// The two collection operations as one shape: each names the logging call it makes and carries the id and timeout it logs
 enum CollectionCall<'call> {
     Create(&'call ContainerCreateCall),
     List(&'call ContainerListCall),
@@ -71,20 +72,21 @@ impl CollectionCall<'_> {
     }
 }
 
-// the logging call type LiteLLM's retrieve and delete name
 const fn resource_call_type(delete: bool) -> &'static str {
     if delete { DELETE } else { RETRIEVE }
 }
 
-// Everything one Python container session owns: the openai credentials, the cost map and the client every call goes through
 pub(crate) struct SessionCore {
     settings: Settings,
     env_api_key: Option<SecretString>,
     costs: Arc<dyn ContainerCosts>,
     client: ProxiedClient,
     request_timeout_seconds: f64,
+    request_timeout: Duration,
     redactor: Redactor,
     decoder: stack::Decoder,
+    ids: Arc<dyn IdSource>,
+    clock: Arc<dyn WrapperClock>,
 }
 
 impl SessionCore {
@@ -94,13 +96,16 @@ impl SessionCore {
         let settings = Raw::default()
             .convert(&environment)
             .map_err(|source| SessionError::Settings { source })?;
-        let request_timeout = RequestTimeout::resolve(&environment)
+        let resolved_timeout = RequestTimeout::resolve(&environment)
             .map_err(|source| SessionError::Timeout { source })?;
+        let seconds = resolved_timeout.seconds;
+        let request_timeout = Duration::try_from_secs_f64(seconds)
+            .map_err(|source| ConvertError::Timeout { seconds, source })?;
         let env_api_key = environment
             .get("OPENAI_API_KEY")
             .filter(|key| !key.is_empty())
             .map(|key| SecretString::from(key.as_str()));
-        let client = stack::outbound_client(&environment)?;
+        let client = outbound_client(&environment)?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
             .map_err(|source| SessionError::Redact { source })?;
         let costs = Arc::new(stack::CatalogCosts::new(&environment)?);
@@ -109,13 +114,15 @@ impl SessionCore {
             env_api_key,
             costs,
             client,
-            request_timeout_seconds: request_timeout.seconds,
+            request_timeout_seconds: seconds,
+            request_timeout,
             redactor,
             decoder: stack::Decoder,
+            ids: Arc::new(stack::SessionIds),
+            clock: Arc::new(stack::SessionClock::new()),
         })
     }
 
-    // the operation the request text names, through the steps LiteLLM's four functions take
     pub(crate) fn call(&self, wire: &CallWire) -> Result<String, SessionFailure> {
         match wire.operation.as_str() {
             CREATE => self.collection(wire, &CollectionCall::Create(&wire.arguments.create()?)),
@@ -128,7 +135,6 @@ impl SessionCore {
         }
     }
 
-    // LiteLLM's create_container and list_containers: the mock, the handler's call, then the encoded reply
     fn collection(
         &self,
         wire: &CallWire,
@@ -145,7 +151,6 @@ impl SessionCore {
         }
     }
 
-    // retrieve_container and delete_container share their request; only the handler method differs
     fn resource(&self, wire: &CallWire, delete: bool) -> Result<String, SessionFailure> {
         let extra_query = query_values(wire.arguments.extra_query.as_ref())?;
         let timeout = requested_timeout(wire.arguments.timeout)?;
@@ -162,14 +167,19 @@ impl SessionCore {
         }
     }
 
-    // the pieces every create or list call shares, with the call type and call id its logging object takes
     fn collection_pieces(
         &self,
         wire: &CallWire,
         call: &CollectionCall<'_>,
     ) -> Result<CollectionPieces, SessionFailure> {
         let configs = self.configs(wire);
-        let logging = stack::logging_state(call.call_type(), call.call_id(), &self.redactor)?;
+        let logging = stack::logging_state(
+            call.call_type(),
+            call.call_id(),
+            &self.redactor,
+            self.ids.as_ref(),
+            self.clock.as_ref(),
+        )?;
         let source = Source {
             client: self.client.clone(),
             deadline: self.deadline(call.timeout())?,
@@ -181,7 +191,6 @@ impl SessionCore {
         Ok((configs, logging, handler))
     }
 
-    // the collaborators the collection operations read, over the logging object of this call
     const fn deps<'deps>(&'deps self, log: &'deps Mutex<LoggingState>) -> ContainerCallDeps<'deps> {
         ContainerCallDeps {
             logging: log,
@@ -190,7 +199,6 @@ impl SessionCore {
         }
     }
 
-    // the config the call resolves against, the logging object and the handler its blocking or async form asks
     fn operation_stack(
         &self,
         wire: &CallWire,
@@ -198,7 +206,13 @@ impl SessionCore {
         call_type: &str,
     ) -> Result<OperationPieces, SessionFailure> {
         let configs = self.configs(wire);
-        let logging = stack::logging_state(call_type, request.litellm_call_id, &self.redactor)?;
+        let logging = stack::logging_state(
+            call_type,
+            request.litellm_call_id,
+            &self.redactor,
+            self.ids.as_ref(),
+            self.clock.as_ref(),
+        )?;
         let source = Source {
             client: self.client.clone(),
             deadline: self.operation_deadline(request.timeout),
@@ -243,25 +257,22 @@ impl SessionCore {
 
     // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured request timeout
     fn deadline(&self, requested: Option<f64>) -> Result<Duration, SessionFailure> {
-        let seconds = match requested {
-            Some(given) if given > 0.0_f64 => given,
-            Some(_) | None => self.request_timeout_seconds,
+        let positive = requested.filter(|given| *given > 0.0_f64);
+        let Some(seconds) = positive else {
+            return Ok(self.request_timeout);
         };
         Duration::try_from_secs_f64(seconds)
             .map_err(|source| SessionFailure::from(ConvertError::Timeout { seconds, source }))
     }
 
-    fn operation_deadline(&self, given: Option<Duration>) -> Duration {
+    const fn operation_deadline(&self, given: Option<Duration>) -> Duration {
         match given {
             Some(timeout) if !timeout.is_zero() => timeout,
-            Some(_) | None => {
-                Duration::try_from_secs_f64(self.request_timeout_seconds).unwrap_or(Duration::ZERO)
-            }
+            Some(_) | None => self.request_timeout,
         }
     }
 }
 
-// the created container as LiteLLM returns it: the record plus the hidden params its create transform set
 fn encode_created(container: &ContainerObject) -> Result<String, SessionFailure> {
     let answer = CreatedAnswer {
         container,

@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
-use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::openai_credentials::Settings;
-use betterlite_config::types::ProxyTrust;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_core::api::container_file_endpoints::handler::{
     ContainerConfigLookup, ContainerIdDecoder, DecodedContainerCall,
@@ -17,7 +15,6 @@ use betterlite_core::containers::container_request_parameters::{
     decode_managed_container_id_for_request,
 };
 use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::pre_call::PreCall;
 use betterlite_logging::logging_state::correlation::{
@@ -42,7 +39,8 @@ use betterlite_openai::containers::costs::ContainerCosts;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::Redactor;
-use chrono::Utc;
+use betterlite_sdk::call_wrapper::ports::{IdSource, WrapperClock};
+use chrono::{DateTime, FixedOffset, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
@@ -50,16 +48,6 @@ use uuid::Uuid;
 
 use super::error::SessionError;
 
-// the outbound client honours the proxy variables of the environment the session was built from
-pub(crate) fn outbound_client(
-    environment: &BTreeMap<String, String>,
-) -> Result<ProxiedClient, SessionError> {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
-        .map_err(|source| SessionError::Proxy { source })?;
-    ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| SessionError::Client { source })
-}
-
-// LiteLLM's manager answers a container config for openai and for no other provider here
 pub(crate) struct Configs {
     openai: OpenAiContainerConfig,
 }
@@ -89,7 +77,6 @@ impl ContainerConfigLookup for Configs {
     }
 }
 
-// get_cost_for_code_interpreter over the bundled price map; a lookup that fails reads as free, as LiteLLM's None does
 pub(crate) struct CatalogCosts {
     lookup: CatalogLookup,
 }
@@ -131,7 +118,6 @@ impl Debug for CatalogCosts {
     }
 }
 
-// B3361's managed id, read through the JSON map the request parameters store
 pub(crate) struct Decoder;
 
 impl ContainerIdDecoder for Decoder {
@@ -163,7 +149,6 @@ pub(crate) const fn params_field() -> ContainerFieldTypeError {
     }
 }
 
-// LiteLLM's container calls log through their logging object and run no custom pre-call hook
 pub(crate) struct NoPreCall;
 
 impl PreCallHook for NoPreCall {
@@ -172,11 +157,43 @@ impl PreCallHook for NoPreCall {
     }
 }
 
-// one logging object per call, as the @client wrapper makes one for every container call it wraps
+// the session's uuid4 source and its clock: utcnow for the logged start, monotonic from the session's start
+pub(crate) struct SessionIds;
+
+impl IdSource for SessionIds {
+    fn next_call_id(&self) -> String {
+        Uuid::new_v4().to_string()
+    }
+}
+
+pub(crate) struct SessionClock {
+    started: Instant,
+}
+
+impl SessionClock {
+    pub(crate) fn new() -> Self {
+        Self {
+            started: Instant::now(),
+        }
+    }
+}
+
+impl WrapperClock for SessionClock {
+    fn now(&self) -> DateTime<FixedOffset> {
+        Utc::now().fixed_offset()
+    }
+
+    fn monotonic(&self) -> Duration {
+        self.started.elapsed()
+    }
+}
+
 pub(crate) fn logging_state(
     call_type: &str,
     call_id: Option<&str>,
     redactor: &Redactor,
+    ids: &dyn IdSource,
+    clock: &dyn WrapperClock,
 ) -> Result<Mutex<LoggingState>, SessionError> {
     let mut context = CorrelationContext::default();
     let setup = CorrelationSetup {
@@ -184,22 +201,27 @@ pub(crate) fn logging_state(
         settings: CorrelationSettings::default(),
     };
     let state = LoggingState::new(
-        init(call_type, call_id),
+        init(call_type, call_id, ids, clock),
         setup,
         redactor,
-        || Uuid::new_v4().to_string(),
+        || ids.next_call_id(),
         Duration::default,
     )
     .map_err(|source| SessionError::Logging { source })?;
     Ok(Mutex::new(state))
 }
 
-pub(crate) fn init(call_type: &str, call_id: Option<&str>) -> LoggingInit {
+pub(crate) fn init(
+    call_type: &str,
+    call_id: Option<&str>,
+    ids: &dyn IdSource,
+    clock: &dyn WrapperClock,
+) -> LoggingInit {
     LoggingInit {
         model: String::new(),
         call_type: call_type.to_owned(),
-        start_time: Utc::now().fixed_offset(),
-        litellm_call_id: call_id.map_or_else(|| Uuid::new_v4().to_string(), str::to_owned),
+        start_time: clock.now(),
+        litellm_call_id: call_id.map_or_else(|| ids.next_call_id(), str::to_owned),
         function_id: String::new(),
         messages: None,
         stream: None,

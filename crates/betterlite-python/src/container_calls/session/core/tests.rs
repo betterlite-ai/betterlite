@@ -25,7 +25,7 @@ use super::super::NativeContainerSession;
 use super::asynchronous;
 use super::{CollectionCall, SessionCore, encode, encode_created, resource_call_type};
 use crate::container_calls::convert::{CallWire, ConvertError, NativeContainerPayload, parse};
-use crate::container_calls::error::{SessionFailure, native_error};
+use crate::container_calls::error::{SessionError, SessionFailure, native_error};
 use crate::container_calls::stack;
 
 const CONTAINER: &str = r#"{"id":"cntr_1","object":"container","created_at":1,"status":"running",
@@ -203,10 +203,20 @@ fn params_field_names_the_litellm_params() {
 
 #[test]
 fn init_carries_the_call_type_and_the_call_id() {
-    let given = stack::init("create_container", Some("call_1"));
+    let given = stack::init(
+        "create_container",
+        Some("call_1"),
+        &stack::SessionIds,
+        &stack::SessionClock::new(),
+    );
     assert_eq!(given.call_type, "create_container");
     assert_eq!(given.litellm_call_id, "call_1");
-    let generated = stack::init("list_containers", None);
+    let generated = stack::init(
+        "list_containers",
+        None,
+        &stack::SessionIds,
+        &stack::SessionClock::new(),
+    );
     assert_eq!(generated.call_type, "list_containers");
     assert!(!generated.litellm_call_id.is_empty());
 }
@@ -256,7 +266,21 @@ fn configs_answer_only_for_openai() {
         Arc::new(FreeCosts),
     );
     assert!(configs.container_config(ProviderId::Openai).is_some());
+    // the azure container config is not ported yet, so both azure ids answer no config
+    assert!(configs.container_config(ProviderId::Azure).is_none());
+    assert!(configs.container_config(ProviderId::AzureText).is_none());
     assert!(configs.container_config(ProviderId::Anthropic).is_none());
+}
+
+#[test]
+fn build_refuses_a_request_timeout_that_is_not_a_duration() {
+    let Err(error) = SessionCore::build(r#"{"environment":{"REQUEST_TIMEOUT":"-5"}}"#) else {
+        panic!("a negative request timeout has no duration");
+    };
+    assert!(matches!(
+        error,
+        SessionError::Json(ConvertError::Timeout { .. })
+    ));
 }
 
 #[test]

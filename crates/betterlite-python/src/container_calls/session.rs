@@ -9,7 +9,6 @@ use super::convert::{CallWire, parse};
 
 mod core;
 
-// litellm.containers.main's module-level entry points, one session owning the client every call goes through
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeContainerSession {
     core: Arc<SessionCore>,
@@ -39,7 +38,6 @@ impl NativeContainerSession {
         answer.map_err(|failure| failure.into_pyerr(py, &self.error_type))
     }
 
-    // the async twin hands back a coroutine that awaits the same core call
     fn acall<'py>(
         &self,
         py: Python<'py>,

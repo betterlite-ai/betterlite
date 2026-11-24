@@ -8,7 +8,6 @@ use super::{
     resource_call_type,
 };
 
-// the async twin of the blocking call: the same steps through the async handler and the operations' async forms
 pub(crate) async fn acall(core: &SessionCore, wire: &CallWire) -> Result<String, SessionFailure> {
     match wire.operation.as_str() {
         CREATE => {
@@ -28,7 +27,6 @@ pub(crate) async fn acall(core: &SessionCore, wire: &CallWire) -> Result<String,
     }
 }
 
-// LiteLLM's acreate_container and alist_containers, through the async handler
 async fn acollection(
     core: &SessionCore,
     wire: &CallWire,
@@ -47,7 +45,6 @@ async fn acollection(
     }
 }
 
-// LiteLLM's aretrieve_container and adelete_container: the async handler keeps the provider's own id
 async fn aresource(
     core: &SessionCore,
     wire: &CallWire,

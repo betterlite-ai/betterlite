@@ -17,7 +17,8 @@ use betterlite_openai::containers::container_file_http::transport::{
 };
 use pyo3_async_runtimes::tokio::get_runtime;
 
-// One outbound client and the deadline a call keeps when it names no timeout of its own
+mod tests;
+
 #[derive(Clone)]
 pub(crate) struct Source {
     pub(crate) client: ProxiedClient,
@@ -60,7 +61,6 @@ impl CollectionClientSource for Source {
     type Blocking = BlockingTransport;
     type Asynchronous = AsyncTransport;
 
-    // the collection traits ask the same two questions of the one source, so the first impl answers both
     fn blocking_client(
         &self,
         ssl_verify: Option<&SslVerify>,
@@ -80,7 +80,6 @@ impl BlockingClient for BlockingTransport {
     }
 }
 
-// the blocking collection call polls once, so the whole exchange happens here and the future is already finished
 impl CollectionTransport for BlockingTransport {
     fn send(&self, request: &CollectionRequest) -> impl Future<Output = CollectionReply> + Send {
         let deadline = request.timeout.unwrap_or(self.deadline);

@@ -18,14 +18,12 @@ use serde::{Deserialize, Serialize};
 
 mod tests;
 
-// The session text: absent means the process environment, the snapshot LiteLLM reads its globals from at import.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SessionWire {
     pub(crate) environment: Option<BTreeMap<String, String>>,
 }
 
-// The one text a native method takes: the operation it names, the call's arguments and the globals they fall back to.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct CallWire {
@@ -35,7 +33,6 @@ pub(crate) struct CallWire {
     pub(crate) arguments: Arguments,
 }
 
-// litellm.api_base, litellm.api_key, litellm.openai_key and litellm.organization, read at call time.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SettingsWire {
@@ -45,7 +42,6 @@ pub(crate) struct SettingsWire {
     pub(crate) organization: Option<String>,
 }
 
-// Every keyword the eight functions declare, with the rest of a caller's keyword arguments kept whole.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct Arguments {
@@ -61,7 +57,6 @@ pub(crate) struct Arguments {
     pub(crate) api_key: Option<SecretString>,
     pub(crate) api_base: Option<String>,
     pub(crate) api_version: Option<String>,
-    // the declared default is "openai"
     pub(crate) custom_llm_provider: Option<String>,
     pub(crate) extra_headers: Option<BTreeMap<String, String>>,
     pub(crate) extra_query: Option<IndexMap<String, Json>>,
@@ -73,7 +68,6 @@ pub(crate) struct Arguments {
     pub(crate) extra: IndexMap<String, Json>,
 }
 
-// Both collection calls carry the same twelve keywords under the same names, so one template spells them
 macro_rules! collection_arguments {
     ($call:ident, $arguments:expr, { $($own:ident: $value:expr),* $(,)? }) => {
         $call {
@@ -99,7 +93,6 @@ macro_rules! collection_arguments {
 }
 
 impl Arguments {
-    // create_container's keywords, in the shape B3369's operation takes them
     pub(crate) fn create(&self) -> Result<ContainerCreateCall, ConvertError> {
         Ok(collection_arguments!(ContainerCreateCall, self, {
             name: self.name.clone().unwrap_or_default(),
@@ -108,7 +101,6 @@ impl Arguments {
         }))
     }
 
-    // list_containers' keywords: a limit and an order the caller did not set stay absent from the query
     pub(crate) fn list(&self) -> Result<ContainerListCall, ConvertError> {
         Ok(collection_arguments!(ContainerListCall, self, {
             after: self.after.clone(),
@@ -117,7 +109,6 @@ impl Arguments {
         }))
     }
 
-    // retrieve_container's and delete_container's keywords, with the timeout the operation resolves itself
     pub(crate) fn operation_request<'request>(
         &'request self,
         extra_query: Option<&'request IndexMap<String, ParamValue>>,
@@ -142,7 +133,6 @@ impl Arguments {
     }
 }
 
-// The timeout a caller gave, left for the operation to resolve: LiteLLM's `timeout or DEFAULT_REQUEST_TIMEOUT` reads both none and zero
 pub(crate) fn requested_timeout(given: Option<f64>) -> Result<Option<Duration>, ConvertError> {
     let Some(seconds) = given else {
         return Ok(None);
@@ -176,7 +166,6 @@ pub(crate) fn query_values(
     Ok(Some(converted))
 }
 
-// The Json values B3369 and B3370 read for litellm_metadata, which they type as the JSON model
 fn json_values(metadata: &IndexMap<String, Json>) -> IndexMap<String, JsonValue> {
     let mut values = IndexMap::with_capacity(metadata.len());
     for (name, value) in metadata {
@@ -196,7 +185,6 @@ fn json_value(value: &Json) -> JsonValue {
     }
 }
 
-// The created container as Python sees it: LiteLLM's record plus the hidden params its create transform set.
 #[derive(Debug, Serialize)]
 pub(crate) struct CreatedAnswer<'answer> {
     #[serde(flatten)]
@@ -205,7 +193,6 @@ pub(crate) struct CreatedAnswer<'answer> {
     pub(crate) hidden_params: &'answer Object,
 }
 
-// The JSON text a NativeContainerError carries: LiteLLM's exception name and the fields its class keeps.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct NativeContainerPayload {
     #[serde(rename = "type")]
@@ -262,7 +249,6 @@ pub(crate) enum ConvertError {
     Operation { operation: String },
 }
 
-// the one boundary every native method crosses: the text into the shape that method takes
 pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
 where
     T: Deserialize<'text>,
