@@ -66,13 +66,12 @@ STREAM_CHUNKS: Final[list[dict[str, JsonValue]]] = [
 FAILURE_TEXT: Final = "backend is down"
 
 
-# Stands in for the time module, so the streaming delay is observed without slowing the test.
+# Stands in for the timer, so the streaming delay is observed without slowing the test.
 class Sleeper:
     def __init__(self) -> None:
         self.delays: list[float] = []
 
-    # ast-grep-ignore: no-one-line-functions
-    def sleep(self, seconds: float) -> None:
+    def __call__(self, seconds: float) -> None:
         self.delays.append(seconds)
 
 
@@ -549,10 +548,10 @@ def test_cache_ops_skip_write() -> None:
     assert backend.values == {}
 
 
-def test_cache_ops_streaming(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cache_ops_streaming() -> None:
     sleeper = Sleeper()
-    monkeypatch.setattr(operations, "time", sleeper)
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
+    ours.timer = sleeper
     assert list(ours.generate_streaming_content(STREAM_TEXT)) == STREAM_CHUNKS
     assert sleeper.delays == [operations.CACHED_STREAMING_CHUNK_DELAY] * len(STREAM_CHUNKS)
     assert list(reference.generate_streaming_content(STREAM_TEXT)) == STREAM_CHUNKS

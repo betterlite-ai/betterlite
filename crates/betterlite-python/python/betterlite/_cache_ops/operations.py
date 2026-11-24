@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Final
 
 from pydantic import JsonValue
@@ -33,6 +33,8 @@ class CacheOperations:
     supported_call_types: list[CachingSupportedCallTypes] | None
     redis_flush_size: int | None
     semantic_cache_scope: str
+    # The pause between cached chunks; a caller can hand in another one.
+    timer: Callable[[float], None] = time.sleep
 
     # ast-grep-ignore: no-one-line-functions - the key request is one call into the wire
     def get_cache_key(self, **kwargs: JsonValue) -> str:
@@ -114,7 +116,7 @@ class CacheOperations:
         for index in range(0, len(content), _CHUNK_SIZE):
             text = content[index : index + _CHUNK_SIZE]
             yield {"choices": [{"delta": {"role": "assistant", "content": text}}]}
-            time.sleep(CACHED_STREAMING_CHUNK_DELAY)
+            self.timer(CACHED_STREAMING_CHUNK_DELAY)
 
     async def ping(self) -> bool | None:
         match self.cache:
