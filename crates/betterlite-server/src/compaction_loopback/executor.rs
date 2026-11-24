@@ -24,30 +24,11 @@ mod tests;
 const MAX_CHILD_BODY_BYTES: usize = 4 * 1024 * 1024;
 
 pub struct LoopbackExecutor {
-    app: Router,
-    parent_uri: Uri,
-    root_path: String,
-    headers: HeaderMap,
-    peer: Option<SocketAddr>,
-}
-
-impl LoopbackExecutor {
-    #[must_use]
-    pub const fn new(
-        app: Router,
-        parent_uri: Uri,
-        root_path: String,
-        headers: HeaderMap,
-        peer: Option<SocketAddr>,
-    ) -> Self {
-        Self {
-            app,
-            parent_uri,
-            root_path,
-            headers,
-            peer,
-        }
-    }
+    pub(crate) app: Router,
+    pub(crate) parent_uri: Uri,
+    pub(crate) root_path: String,
+    pub(crate) headers: HeaderMap,
+    pub(crate) peer: Option<SocketAddr>,
 }
 
 #[async_trait]

@@ -10,24 +10,25 @@ use super::child_headers;
 fn the_five_transport_headers_are_dropped_in_any_letter_case() {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer sk-test"));
+    // from_static rejects uppercase custom names, so the wire bytes go through from_bytes
     headers.insert(
-        HeaderName::from_static("Content-Length"),
+        HeaderName::from_bytes(b"Content-Length").unwrap(),
         HeaderValue::from_static("42"),
     );
     headers.insert(
-        HeaderName::from_static("X-LiteLLM-Call-Id"),
+        HeaderName::from_bytes(b"X-LiteLLM-Call-Id").unwrap(),
         HeaderValue::from_static("call-1"),
     );
     headers.insert(
-        HeaderName::from_static("X-LiteLLM-Num-Retries"),
+        HeaderName::from_bytes(b"X-LiteLLM-Num-Retries").unwrap(),
         HeaderValue::from_static("2"),
     );
     headers.insert(
-        HeaderName::from_static("X-LiteLLM-Timeout"),
+        HeaderName::from_bytes(b"X-LiteLLM-Timeout").unwrap(),
         HeaderValue::from_static("30"),
     );
     headers.insert(
-        HeaderName::from_static("X-LiteLLM-Stream-Timeout"),
+        HeaderName::from_bytes(b"X-LiteLLM-Stream-Timeout").unwrap(),
         HeaderValue::from_static("60"),
     );
     let child = child_headers(&headers, false);
@@ -43,12 +44,15 @@ fn the_redaction_opt_out_follows_the_logging_flag(#[case] name: &'static str) {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer sk-test"));
     headers.insert(
-        HeaderName::from_static(name),
+        HeaderName::from_bytes(name.as_bytes()).unwrap(),
         HeaderValue::from_static("true"),
     );
     let kept = child_headers(&headers, false);
     let kept_names: Vec<&str> = kept.keys().map(HeaderName::as_str).collect();
-    assert_eq!(kept_names, vec!["authorization", name]);
+    assert_eq!(
+        kept_names,
+        vec!["authorization", "litellm-disable-message-redaction"]
+    );
     let dropped = child_headers(&headers, true);
     let dropped_names: Vec<&str> = dropped.keys().map(HeaderName::as_str).collect();
     assert_eq!(dropped_names, vec!["authorization"]);

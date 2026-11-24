@@ -116,13 +116,13 @@ fn executor_with(
     headers: HeaderMap,
     peer: Option<SocketAddr>,
 ) -> LoopbackExecutor {
-    LoopbackExecutor::new(
-        router(recorder),
-        Uri::from_static(parent_uri),
-        String::new(),
+    LoopbackExecutor {
+        app: router(recorder),
+        parent_uri: Uri::from_static(parent_uri),
+        root_path: String::new(),
         headers,
         peer,
-    )
+    }
 }
 
 fn executor_of(status: StatusCode, body: Vec<u8>) -> (LoopbackExecutor, Arc<Recorder>) {
