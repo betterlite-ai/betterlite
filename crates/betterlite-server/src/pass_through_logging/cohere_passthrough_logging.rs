@@ -1,3 +1,4 @@
+use std::mem::take;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -144,7 +145,7 @@ impl CoherePassthroughLogger {
         let result = converted::<_, Json>(&response).map_err(PassthroughLoggingError::payload)?;
         Ok(PassthroughOutcome {
             result: Some(PassThroughResponse::Embedding(result)),
-            kwargs: std::mem::take(&mut input.kwargs),
+            kwargs: take(&mut input.kwargs),
         })
     }
 }
