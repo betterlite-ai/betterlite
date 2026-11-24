@@ -39,6 +39,7 @@ betterlite-redis = { path = "../betterlite-redis" }
 betterlite-sdk = { path = "../betterlite-sdk" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+betterlite-vertex = { path = "../betterlite-vertex" }
 bytes = "1.12.1"
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }

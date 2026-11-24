@@ -1,0 +1,17 @@
+kind: helper
+name: batch_limit_descriptors-seed
+call:
+  batch_limit_descriptors:
+    settings: {}
+    principal: {}
+    calls:
+      - function: file_bound_model
+        data:
+          input_file_id: file-original
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: 8
+        min_configured_otpm_limit: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+task: B7844
+deviations:
+  - what: "`client` or `shared_session` in kwargs raises `UnsupportedCallArgument` when it is not None, where LiteLLM sends the request through the httpx client or session the caller passed."
+    why: A Python HTTP client cannot drive the Rust call, and ignoring it would send a request past the caller's proxy or TLS settings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L560
+  - what: A non-stream result is a plain dict loaded from the response text, where LiteLLM returns Google's provider response object.
+    why: The provider response types are not part of betterlite's Python surface; the dict equals the object's model_dump, as tests compare them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L363-L381
+  - what: Proxy auth headers from litellm.proxy_auth are added to every generate-content request's headers, where LiteLLM's generate-content path merges only the caller's extra_headers.
+    why: B6040's proxy_headers rides every family's request so a proxy that authenticates its upstreams keeps working for this call too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11641-L11642
+  - what: A model that is neither Gemini nor Vertex fails with the native error naming the chat completion adapter, where LiteLLM converts the call to a chat completion and runs it.
+    why: The adapter is B3489's Rust path and its executor is not part of the Python package, so a Python session has nothing to run it through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L348-L360
+  - what: Every call builds a fresh native session, reading the process environment and building the HTTP client pool again, where LiteLLM reuses its cached httpx clients.
+    why: The session is the only handle the native methods take, and caching it in Python would pin the environment snapshot of the first call instead of reading the settings at call time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11615-L11619
+  - what: A litellm_logging_obj in kwargs is dropped, and no success or failure callback fires for a Python generate-content call.
+    why: The native call logs into a session with no callbacks, sentry or logger function, and B6040's payload builder drops every logger function the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L371
+  - what: "A `logger_fn` in kwargs is dropped with a LiteLLM warning, where LiteLLM calls it with the response or the error."
+    why: The native call runs in Rust with no Python logging object, and B6040's payload builder drops a logger function the same way for every family.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1400-L1403
+  - what: A file value in contents raises a ValueError from the payload builder instead of being sent to the provider.
+    why: A generate-content request has no file part; B6040 encodes files as markers with their bytes beside the text, and the native call refuses those markers before any request is made.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L334-L357
+kept_bugs:
+  - what: "A provider 400 whose body is Google's invalid-key message raises BadRequestError on the sync generate-content entry points but AuthenticationError on the async ones, because only the async functions call get_llm_provider before exception_type runs and so reach the Vertex branch's API-key phrase rule."
+    why: A working setup catches whichever class its entry point raises, so betterlite keeps LiteLLM's split between sync and async instead of making the four functions agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L421-L424
