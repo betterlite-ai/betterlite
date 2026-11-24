@@ -82,7 +82,7 @@ pub fn row(request_id: &str, user: Option<&str>, team_id: Option<&str>) -> Spend
 pub fn metadata_row(request_id: &str, metadata: &str) -> SpendLogListRow {
     let mut built = row(request_id, Some("alice"), None);
     built.metadata = Some(JsonData::String(metadata.to_owned()));
-    built.request_tags = Some(JsonData::String(String::from(r#"["tag"]"#)));
+    built.request_tags = Some(JsonData::String(String::from("[\"tag\"]")));
     built
 }
 

@@ -135,6 +135,20 @@ async fn an_internal_user_reads_their_own_rows_behind_one_predicate() {
 }
 
 #[tokio::test]
+async fn an_explicit_user_filter_stays_an_extra_intersection() {
+    let fixture = Fixture::with_rows(Vec::new());
+    let (reply, events) = fixture
+        .call(&format!("{UI}&user_id=bob"), Some(&internal("alice")))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let query = query_event(&events, "rows");
+    assert!(query.contains(r#""user" = $3"#));
+    assert!(query.contains(r#""user" = $4"#));
+    assert!(query.contains(r#"Text("bob")"#));
+    assert!(query.contains(r#"MaybeText(Some("alice"))"#));
+}
+
+#[tokio::test]
 async fn permitted_teams_expand_the_read_to_an_or_clause() {
     let mut fixture = Fixture::with_rows(vec![row("r1", Some("alice"), Some("team-1"))]);
     fixture.permitted = vec![String::from("team-1")];
