@@ -184,14 +184,13 @@ type Found = Result<Option<InvitationRecord>, InvitationStoreError>;
 #[async_trait]
 impl InvitationStore for FakeStore {
     async fn create(&self, user_id: &str, actor_user_id: Option<&str>) -> Created {
-        {
-            let mut rows = self.rows.lock().expect("the store lock");
-            if let Some(error) = rows.create_error.take() {
-                return Err(InvitationStoreError::Create(error));
-            }
-            rows.created
-                .push((user_id.to_owned(), actor_user_id.map(str::to_owned)))
-        };
+        let mut rows = self.rows.lock().expect("the store lock");
+        if let Some(error) = rows.create_error.take() {
+            return Err(InvitationStoreError::Create(error));
+        }
+        rows.created
+            .push((user_id.to_owned(), actor_user_id.map(str::to_owned)));
+        drop(rows);
         Ok(record(
             "fresh-id",
             user_id,
