@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
@@ -54,10 +56,13 @@ fn request_list_keeps_the_named_arguments_out_of_kwargs() {
     );
     assert!(call.extra.contains_key("litellm_call_id"));
     assert!(!call.extra.contains_key("extra_body"));
-    let request = call.list_request(None);
-    assert_eq!(request.container_id, "cntr_1");
-    assert_eq!(request.limit, Some(3));
-    assert_eq!(request.extra_body, None);
+    let converted = match call.endpoint_call(None) {
+        Ok(converted) => converted,
+        Err(error) => panic!("the call should convert: {error}"),
+    };
+    assert_eq!(converted.container_id.as_deref(), Some("cntr_1"));
+    assert_eq!(converted.limit, Some(3));
+    assert_eq!(converted.extra.len(), 2);
 }
 
 #[test]
@@ -96,7 +101,7 @@ fn request_endpoint_call_defaults_the_provider_and_reads_the_call_id() {
         Ok(call) => call,
         Err(error) => panic!("the request should parse: {error}"),
     };
-    let converted = match call.endpoint_call() {
+    let converted = match call.endpoint_call(None) {
         Ok(converted) => converted,
         Err(error) => panic!("the call should convert: {error}"),
     };
@@ -115,7 +120,7 @@ fn request_endpoint_call_keeps_the_mock_and_the_timeout() {
         Ok(call) => call,
         Err(error) => panic!("the request should parse: {error}"),
     };
-    let converted = match call.endpoint_call() {
+    let converted = match call.endpoint_call(None) {
         Ok(converted) => converted,
         Err(error) => panic!("the call should convert: {error}"),
     };
@@ -127,16 +132,22 @@ fn request_endpoint_call_keeps_the_mock_and_the_timeout() {
 
 #[test]
 fn request_absent_or_null_call_id_answers_none() {
-    let absent = arguments("{}");
-    assert_eq!(absent.call_id().ok(), Some(None));
-    let null = arguments(r#"{"litellm_call_id": null}"#);
-    assert_eq!(null.call_id().ok(), Some(None));
+    let absent = match arguments("{}").endpoint_call(None) {
+        Ok(converted) => converted,
+        Err(error) => panic!("the call should convert: {error}"),
+    };
+    assert_eq!(absent.litellm_call_id, None);
+    let null = match arguments(r#"{"litellm_call_id": null}"#).endpoint_call(None) {
+        Ok(converted) => converted,
+        Err(error) => panic!("the call should convert: {error}"),
+    };
+    assert_eq!(null.litellm_call_id, None);
 }
 
 #[test]
 fn error_negative_timeout_names_the_seconds() {
     let call = arguments(r#"{"timeout": -1}"#);
-    let Err(error) = call.endpoint_call() else {
+    let Err(error) = call.endpoint_call(None) else {
         panic!("a negative timeout is not a duration");
     };
     assert!(matches!(error, ConvertError::Timeout { seconds, .. } if seconds == -1.0_f64));
@@ -173,7 +184,7 @@ fn error_unknown_blob() {
 #[test]
 fn error_call_id_of_the_wrong_type() {
     let call = arguments(r#"{"litellm_call_id": 3}"#);
-    let Err(error) = call.call_id() else {
+    let Err(error) = call.endpoint_call(None) else {
         panic!("a number is not a call id");
     };
     assert!(matches!(error, ConvertError::Field { name } if name == "litellm_call_id"));

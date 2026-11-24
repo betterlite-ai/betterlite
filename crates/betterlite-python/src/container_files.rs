@@ -3,8 +3,8 @@ mod core;
 mod error;
 mod stack;
 mod transport;
-mod uploads;
 
+use std::future::Future;
 use std::sync::Arc;
 
 use pyo3::prelude::*;
@@ -12,7 +12,9 @@ use pyo3::types::{PyAny, PyType};
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use self::convert::{CallWire, parse};
-use self::core::SessionCore;
+use self::core::{Fallible, SessionCore, json_text, raw_bytes};
+
+type Awaitable<'py> = PyResult<Bound<'py, PyAny>>;
 
 // litellm.containers.main's file list and upload plus endpoint_factory.py's three generated calls
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -36,6 +38,20 @@ pub(crate) struct NativeContainerFileSession {
     error_type: Py<PyType>,
 }
 
+// the awaitable half of a call: the work is a future already, and only the native error needs the GIL
+fn await_answer<'py, T, F>(py: Python<'py>, error_type: Py<PyType>, work: F) -> Awaitable<'py>
+where
+    T: for<'any> IntoPyObject<'any> + Send + 'static,
+    F: Future<Output = Fallible<T>> + Send + 'static,
+{
+    future_into_py(py, async move {
+        let answer = work.await;
+        Python::attach(|attached| {
+            answer.map_err(|failure| failure.into_pyerr(attached, &error_type))
+        })
+    })
+}
+
 #[pymethods]
 impl NativeContainerFileSession {
     #[new]
@@ -55,25 +71,8 @@ impl NativeContainerFileSession {
     // list and upload answer JSON; the file bytes the caller sent sit beside the request text
     fn call(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
         let wire: CallWire = parse(request)?;
-        py.detach(|| self.core.call(&wire, &mut blobs))
+        py.detach(|| self.core.call(&wire, blobs))
             .map_err(|failure| failure.into_pyerr(py, &self.error_type))
-    }
-
-    fn acall<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-        blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let wire: CallWire = parse(request)?;
-        let core = Arc::clone(&self.core);
-        let error_type = self.error_type.clone_ref(py);
-        future_into_py(py, async move {
-            let answer = core.acall(&wire, &mut blobs).await;
-            Python::attach(|attached| {
-                answer.map_err(|failure| failure.into_pyerr(attached, &error_type))
-            })
-        })
     }
 
     // retrieve_container_file_content answers the provider's bytes as they came
@@ -83,15 +82,21 @@ impl NativeContainerFileSession {
             .map_err(|failure| failure.into_pyerr(py, &self.error_type))
     }
 
-    fn acontent<'py>(&self, py: Python<'py>, request: &str) -> PyResult<Bound<'py, PyAny>> {
+    fn acall<'py>(&self, py: Python<'py>, request: &str, blobs: Vec<Vec<u8>>) -> Awaitable<'py> {
         let wire: CallWire = parse(request)?;
         let core = Arc::clone(&self.core);
-        let error_type = self.error_type.clone_ref(py);
-        future_into_py(py, async move {
-            let answer = core.acontent(&wire).await;
-            Python::attach(|attached| {
-                answer.map_err(|failure| failure.into_pyerr(attached, &error_type))
-            })
+        let work = async move {
+            let answer = core.dispatch(&wire, blobs).await?;
+            json_text(answer, &wire)
+        };
+        await_answer(py, self.error_type.clone_ref(py), work)
+    }
+
+    fn acontent<'py>(&self, py: Python<'py>, request: &str) -> Awaitable<'py> {
+        let wire: CallWire = parse(request)?;
+        let core = Arc::clone(&self.core);
+        await_answer(py, self.error_type.clone_ref(py), async move {
+            raw_bytes(core.dispatch(&wire, Vec::new()).await?, &wire)
         })
     }
 }

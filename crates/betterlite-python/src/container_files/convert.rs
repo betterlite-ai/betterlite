@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_core::api::container_file_endpoints::call::{ContainerFileCall, DEFAULT_PROVIDER};
-use betterlite_core::api::container_file_list::ContainerFileListRequest;
-use betterlite_core::api::container_file_upload::ContainerFileUploadRequest;
 use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::ContainerFileUpload;
@@ -46,8 +44,7 @@ pub(crate) struct SettingsWire {
     pub(crate) organization: Option<String>,
 }
 
-// The keywords one file call takes, named the way Python names them; every other keyword stays in extra
-// and becomes the kwargs LiteLLM's own functions read.
+// The keywords one file call names, typed as Python passes them; every other keyword becomes the kwargs LiteLLM reads
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct Arguments {
@@ -72,47 +69,6 @@ pub(crate) struct Arguments {
 }
 
 impl Arguments {
-    pub(crate) fn list_request<'args>(
-        &'args self,
-        extra_query: Option<&'args IndexMap<String, ParamValue>>,
-    ) -> ContainerFileListRequest<'args> {
-        ContainerFileListRequest {
-            container_id: self.container_id.as_deref().unwrap_or_default(),
-            after: self.after.as_deref(),
-            limit: self.limit,
-            order: self.order.as_deref(),
-            timeout: self.timeout,
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.as_deref(),
-            api_version: self.api_version.as_deref(),
-            custom_llm_provider: self.custom_llm_provider.as_deref(),
-            extra_headers: self.extra_headers.as_ref(),
-            extra_query,
-            extra_body: None,
-            kwargs: &self.extra,
-        }
-    }
-
-    pub(crate) fn upload_request<'args>(
-        &'args self,
-        file: &'args ContainerFileUpload,
-        extra_query: Option<&'args IndexMap<String, ParamValue>>,
-    ) -> ContainerFileUploadRequest<'args> {
-        ContainerFileUploadRequest {
-            container_id: self.container_id.as_deref().unwrap_or_default(),
-            file,
-            timeout: self.timeout,
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.as_deref(),
-            api_version: self.api_version.as_deref(),
-            custom_llm_provider: self.custom_llm_provider.as_deref(),
-            extra_headers: self.extra_headers.as_ref(),
-            extra_query,
-            extra_body: None,
-            kwargs: &self.extra,
-        }
-    }
-
     // Python sends one $file marker, and its bytes are moved out of the call's blobs
     pub(crate) fn upload(
         &self,
@@ -134,14 +90,25 @@ impl Arguments {
         })
     }
 
-    pub(crate) fn endpoint_call(&self) -> Result<ContainerFileCall, ConvertError> {
+    pub(crate) fn endpoint_call(
+        &self,
+        file: Option<ContainerFileUpload>,
+    ) -> Result<ContainerFileCall, ConvertError> {
+        // LiteLLM only reads this keyword out of kwargs, and logging names it as the call id
+        let call_id = match self.extra.get(CALL_ID) {
+            None | Some(Json::Null) => None,
+            Some(Json::Text(text)) => Some(text.clone()),
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+                return Err(ConvertError::Field { name: CALL_ID });
+            }
+        };
         Ok(ContainerFileCall {
             container_id: self.container_id.clone(),
             file_id: self.file_id.clone(),
             after: self.after.clone(),
             limit: self.limit,
             order: self.order.clone(),
-            file: None,
+            file,
             timeout: requested_timeout(self.timeout)?,
             api_key: self.api_key.clone(),
             api_base: self.api_base.clone(),
@@ -154,20 +121,9 @@ impl Arguments {
             extra_query: query_values(self.extra_query.as_ref())?,
             extra_body: None,
             mock_response: self.extra.get(MOCK).cloned(),
-            litellm_call_id: self.call_id()?,
+            litellm_call_id: call_id,
             extra: self.extra.clone(),
         })
-    }
-
-    // LiteLLM only reads this keyword out of kwargs, and logging names it as the call id
-    pub(crate) fn call_id(&self) -> Result<Option<String>, ConvertError> {
-        match self.extra.get(CALL_ID) {
-            None | Some(Json::Null) => Ok(None),
-            Some(Json::Text(text)) => Ok(Some(text.clone())),
-            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-                Err(ConvertError::Field { name: CALL_ID })
-            }
-        }
     }
 }
 

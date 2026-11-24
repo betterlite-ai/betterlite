@@ -6,9 +6,7 @@ use betterlite_config::loader::startup::process_environment;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::{Raw, Settings};
 use betterlite_core::api::container_file_endpoints::ContainerFileEndpoints;
-use betterlite_core::api::container_file_endpoints::call::DEFAULT_TIMEOUT_SECONDS;
-use betterlite_core::api::container_file_list::{ContainerFileListDeps, list_container_files};
-use betterlite_core::api::container_file_upload::{ContainerFileUploadDeps, upload_container_file};
+use betterlite_core::api::container_file_endpoints::call::ContainerFileCall;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::containers::container_file_http::{
@@ -20,30 +18,32 @@ use betterlite_sdk::call_wrapper::ports::{IdSource, WrapperClock};
 use secrecy::SecretString;
 use serde::Serialize;
 
-use super::convert::{CallWire, ConvertError, SessionWire, parse, query_values};
+use super::convert::{CallWire, ConvertError, SessionWire, parse};
 use super::error::{SessionError, SessionFailure, binary, json_answer};
 use super::stack;
 use super::transport::Source;
-use super::uploads::Uploads;
 use crate::completion::setup::outbound_client;
 
-mod asynchronous;
+const LIST: &str = "list_container_files";
+const UPLOAD: &str = "upload_container_file";
+const RETRIEVE: &str = "retrieve_container_file";
+const DELETE: &str = "delete_container_file";
+const CONTENT: &str = "retrieve_container_file_content";
 
-// The five operations the Python functions send: main.py's two and endpoint_factory.py's three
-pub(crate) const LIST: &str = "list_container_files";
-pub(crate) const UPLOAD: &str = "upload_container_file";
-pub(crate) const RETRIEVE: &str = "retrieve_container_file";
-pub(crate) const DELETE: &str = "delete_container_file";
-pub(crate) const CONTENT: &str = "retrieve_container_file_content";
+type EndpointCatalog<'deps> = ContainerFileEndpoints<
+    'deps,
+    GenericContainerHandler<Source, stack::NoPreCall>,
+    stack::Decoder,
+    stack::Configs,
+>;
 
-// LiteLLM's declared timeout default of 600 seconds, before `timeout or DEFAULT_REQUEST_TIMEOUT`
-const DECLARED_TIMEOUT_SECONDS: f64 = 600.0;
-
-// list and upload answer JSON; the content endpoint answers the provider's bytes
+// list, upload, retrieve and delete answer JSON; the content endpoint answers the provider's bytes
 pub(crate) enum Answer {
     Json(String),
     Bytes(Vec<u8>),
 }
+
+pub(crate) type Fallible<T> = Result<T, SessionFailure>;
 
 pub(crate) struct SessionCore {
     settings: Settings,
@@ -55,6 +55,33 @@ pub(crate) struct SessionCore {
     decoder: stack::Decoder,
     ids: Arc<dyn IdSource>,
     clock: Arc<dyn WrapperClock>,
+}
+
+// one call's arguments and the stack pieces the catalog call reads them through
+struct Prepared {
+    call: ContainerFileCall,
+    configs: stack::Configs,
+    logging: Mutex<LoggingState>,
+    handler: GenericContainerHandler<Source, stack::NoPreCall>,
+}
+
+impl Prepared {
+    fn advance(&self, core: &SessionCore, wire: &CallWire) -> Fallible<ContainerFileReply> {
+        Ok(self.catalog(core)?.container_file_call(
+            &wire.operation,
+            &self.call,
+            &self.logging,
+            core.request_timeout_seconds,
+        )?)
+    }
+
+    fn catalog<'prepared>(
+        &'prepared self,
+        core: &'prepared SessionCore,
+    ) -> Fallible<EndpointCatalog<'prepared>> {
+        ContainerFileEndpoints::new(&self.handler, &core.decoder, &self.configs, &core.redactor)
+            .map_err(|source| SessionFailure::from(SessionError::Catalog { source }))
+    }
 }
 
 impl SessionCore {
@@ -89,187 +116,104 @@ impl SessionCore {
         })
     }
 
-    pub(crate) fn call(
-        &self,
-        wire: &CallWire,
-        blobs: &mut [Vec<u8>],
-    ) -> Result<String, SessionFailure> {
-        match self.dispatch(wire, blobs)? {
-            Answer::Json(text) => Ok(text),
-            Answer::Bytes(_bytes) => Err(binary(wire)),
-        }
+    pub(crate) fn call(&self, wire: &CallWire, blobs: Vec<Vec<u8>>) -> Fallible<String> {
+        let prepared = self.prepare(wire, blobs)?;
+        let reply = prepared.advance(self, wire)?;
+        json_text(answer(reply)?, wire)
     }
 
-    pub(crate) fn content(&self, wire: &CallWire) -> Result<Vec<u8>, SessionFailure> {
-        match self.dispatch(wire, &mut [])? {
-            Answer::Bytes(bytes) => Ok(bytes),
-            Answer::Json(_text) => Err(json_answer(wire)),
-        }
+    pub(crate) fn content(&self, wire: &CallWire) -> Fallible<Vec<u8>> {
+        let prepared = self.prepare(wire, Vec::new())?;
+        let reply = prepared.advance(self, wire)?;
+        raw_bytes(answer(reply)?, wire)
     }
 
-    pub(crate) async fn acall(
-        &self,
-        wire: &CallWire,
-        blobs: &mut [Vec<u8>],
-    ) -> Result<String, SessionFailure> {
-        match asynchronous::dispatch(self, wire, blobs).await? {
-            Answer::Json(text) => Ok(text),
-            Answer::Bytes(_bytes) => Err(binary(wire)),
-        }
-    }
-
-    pub(crate) async fn acontent(&self, wire: &CallWire) -> Result<Vec<u8>, SessionFailure> {
-        match asynchronous::dispatch(self, wire, &mut []).await? {
-            Answer::Bytes(bytes) => Ok(bytes),
-            Answer::Json(_text) => Err(json_answer(wire)),
-        }
-    }
-
-    fn dispatch(&self, wire: &CallWire, blobs: &mut [Vec<u8>]) -> Result<Answer, SessionFailure> {
-        match wire.operation.as_str() {
-            LIST => self.list(wire),
-            UPLOAD => self.upload(wire, blobs),
-            RETRIEVE => self.endpoint(wire, RETRIEVE),
-            DELETE => self.endpoint(wire, DELETE),
-            CONTENT => self.endpoint(wire, CONTENT),
-            other => Err(SessionFailure::from(ConvertError::Operation {
-                operation: other.to_owned(),
-            })),
-        }
-    }
-
-    fn list(&self, wire: &CallWire) -> Result<Answer, SessionFailure> {
-        let arguments = &wire.arguments;
-        let extra_query = query_values(arguments.extra_query.as_ref())?;
-        let request = arguments.list_request(extra_query.as_ref());
-        let configs = self.configs(wire);
-        let logging = self.logging_state(LIST, arguments.call_id()?.as_deref())?;
-        let source = Source {
-            client: self.client.clone(),
-            deadline: self.deadline(arguments.timeout)?,
-        };
-        let deps = list_deps(&self.redactor, &logging, self.request_timeout_seconds);
-        let response = list_container_files(&source, &stack::NoPreCall, &configs, deps, &request)?;
-        Ok(Answer::Json(encode(&response)?))
-    }
-
-    fn upload(&self, wire: &CallWire, blobs: &mut [Vec<u8>]) -> Result<Answer, SessionFailure> {
-        let arguments = &wire.arguments;
-        let file = arguments.upload(blobs)?;
-        let extra_query = query_values(arguments.extra_query.as_ref())?;
-        let request = arguments.upload_request(&file, extra_query.as_ref());
-        let configs = self.configs(wire);
-        let logging = self.logging_state(UPLOAD, arguments.call_id()?.as_deref())?;
-        let source = Source {
-            client: self.client.clone(),
-            deadline: self.deadline(arguments.timeout)?,
-        };
-        let uploads = Uploads {
-            configs: &configs,
-            source,
-        };
-        let deps = upload_deps(&self.redactor, &logging, self.request_timeout_seconds);
-        let object = upload_container_file(&uploads, deps, &request)?;
-        Ok(Answer::Json(encode(&object)?))
-    }
-
-    // endpoint_factory.py's three functions: the catalog names the path, the method and the answer type
-    fn endpoint(&self, wire: &CallWire, name: &str) -> Result<Answer, SessionFailure> {
-        let call = wire.arguments.endpoint_call()?;
-        let configs = self.configs(wire);
-        let logging = self.logging_state(name, call.litellm_call_id.as_deref())?;
-        let source = Source {
-            client: self.client.clone(),
-            deadline: self.endpoint_deadline(call.timeout),
-        };
-        let handler: GenericContainerHandler<Source, stack::NoPreCall> = GenericContainerHandler {
-            clients: source,
-            logging: stack::NoPreCall,
-        };
-        let endpoints =
-            ContainerFileEndpoints::new(&handler, &self.decoder, &configs, &self.redactor)
-                .map_err(|source| SessionError::Catalog { source })?;
-        let reply =
-            endpoints.container_file_call(name, &call, &logging, self.request_timeout_seconds)?;
+    // the awaited path: the same catalog call, with the handler's async transport under it
+    pub(crate) async fn dispatch(&self, wire: &CallWire, blobs: Vec<Vec<u8>>) -> Fallible<Answer> {
+        let prepared = self.prepare(wire, blobs)?;
+        let reply = prepared
+            .catalog(self)?
+            .acontainer_file_call(
+                &wire.operation,
+                &prepared.call,
+                &prepared.logging,
+                self.request_timeout_seconds,
+            )
+            .await?;
         answer(reply)
     }
 
-    fn logging_state(
-        &self,
-        call_type: &str,
-        call_id: Option<&str>,
-    ) -> Result<Mutex<LoggingState>, SessionFailure> {
-        stack::logging_state(
-            call_type,
-            call_id,
+    // every operation goes through the endpoint catalog; an upload's file bytes move out first
+    fn prepare(&self, wire: &CallWire, mut blobs: Vec<Vec<u8>>) -> Fallible<Prepared> {
+        let file = match wire.operation.as_str() {
+            LIST | RETRIEVE | DELETE | CONTENT => None,
+            UPLOAD => Some(wire.arguments.upload(&mut blobs)?),
+            other => {
+                return Err(SessionFailure::from(ConvertError::Operation {
+                    operation: other.to_owned(),
+                }));
+            }
+        };
+        let call = wire
+            .arguments
+            .endpoint_call(file)
+            .map_err(SessionFailure::from)?;
+        let logging = stack::logging_state(
+            &wire.operation,
+            call.litellm_call_id.as_deref(),
             &self.redactor,
             self.ids.as_ref(),
             self.clock.as_ref(),
         )
-        .map_err(SessionFailure::from)
-    }
-
-    fn configs(&self, wire: &CallWire) -> stack::Configs {
+        .map_err(SessionFailure::from)?;
+        // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured one
+        let deadline = match call.timeout {
+            Some(timeout) if !timeout.is_zero() => timeout,
+            Some(_) | None => self.request_timeout,
+        };
+        let handler = GenericContainerHandler {
+            clients: Source {
+                client: self.client.clone(),
+                deadline,
+            },
+            logging: stack::NoPreCall,
+        };
         let globals = LiteLlmGlobals {
             api_base: wire.settings.api_base.clone(),
             api_key: wire.settings.api_key.clone(),
             openai_key: wire.settings.openai_key.clone(),
             organization: wire.settings.organization.clone(),
         };
-        stack::Configs::new(
+        let configs = stack::Configs::new(
             self.settings.clone(),
             globals,
             self.env_api_key.clone(),
             Arc::new(stack::NoCosts),
-        )
-    }
-
-    // `timeout or DEFAULT_REQUEST_TIMEOUT`: an explicit zero takes REQUEST_TIMEOUT, an absent one takes 600
-    fn deadline(&self, given: Option<f64>) -> Result<Duration, ConvertError> {
-        let declared = given.unwrap_or(DECLARED_TIMEOUT_SECONDS);
-        let seconds = if declared == 0.0_f64 {
-            self.request_timeout_seconds
-        } else {
-            declared
-        };
-        Duration::try_from_secs_f64(seconds)
-            .map_err(|source| ConvertError::Timeout { seconds, source })
-    }
-
-    // the generated functions pass `timeout or DEFAULT_REQUEST_TIMEOUT` to the handler, and it never sends it
-    fn endpoint_deadline(&self, given: Option<Duration>) -> Duration {
-        match given {
-            Some(timeout) if !timeout.is_zero() => timeout,
-            Some(_zero) | None => self.request_timeout,
-        }
+        );
+        Ok(Prepared {
+            call,
+            configs,
+            logging,
+            handler,
+        })
     }
 }
 
-pub(crate) const fn list_deps<'deps>(
-    redactor: &'deps Redactor,
-    logging: &'deps Mutex<LoggingState>,
-    request_timeout_seconds: f64,
-) -> ContainerFileListDeps<'deps> {
-    ContainerFileListDeps {
-        logging,
-        redactor,
-        request_timeout_seconds,
+pub(crate) fn json_text(answer: Answer, wire: &CallWire) -> Fallible<String> {
+    match answer {
+        Answer::Json(text) => Ok(text),
+        Answer::Bytes(_bytes) => Err(binary(wire)),
     }
 }
 
-pub(crate) const fn upload_deps<'deps>(
-    redactor: &'deps Redactor,
-    logging: &'deps Mutex<LoggingState>,
-    request_timeout_seconds: f64,
-) -> ContainerFileUploadDeps<'deps> {
-    ContainerFileUploadDeps {
-        logging,
-        redactor,
-        request_timeout_seconds,
+pub(crate) fn raw_bytes(answer: Answer, wire: &CallWire) -> Fallible<Vec<u8>> {
+    match answer {
+        Answer::Bytes(bytes) => Ok(bytes),
+        Answer::Json(_text) => Err(json_answer(wire)),
     }
 }
 
-pub(crate) fn answer(reply: ContainerFileReply) -> Result<Answer, SessionFailure> {
+fn answer(reply: ContainerFileReply) -> Fallible<Answer> {
     match reply {
         ContainerFileReply::Bytes(bytes) => Ok(Answer::Bytes(bytes)),
         ContainerFileReply::File(object) => Ok(Answer::Json(encode(&object)?)),
@@ -279,7 +223,7 @@ pub(crate) fn answer(reply: ContainerFileReply) -> Result<Answer, SessionFailure
     }
 }
 
-pub(crate) fn encode<T>(value: &T) -> Result<String, SessionFailure>
+fn encode<T>(value: &T) -> Fallible<String>
 where
     T: Serialize,
 {

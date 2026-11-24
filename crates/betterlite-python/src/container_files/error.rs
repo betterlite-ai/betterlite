@@ -1,11 +1,8 @@
 use betterlite_config::env_integer::timeout::TimeoutError;
 use betterlite_config::loader::ConfigError;
 use betterlite_core::api::container_file_endpoints::error::ContainerFileFailureError;
-use betterlite_core::api::container_file_list::error::ContainerFileListFailure;
-use betterlite_core::api::container_file_upload::error::ContainerFileUploadFailure;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_openai::api::container_contracts::catalog::CatalogError;
-use betterlite_openai::containers::container_file_http::ContainerFileHttpError;
 use betterlite_redact::error::RedactionError;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::PyType;
@@ -73,18 +70,6 @@ pub(crate) fn native_error(
     match serde_json::to_string(payload) {
         Ok(text) => PyErr::from_type(error_type.bind(py).clone(), text),
         Err(_encoding) => PyRuntimeError::new_err(message),
-    }
-}
-
-impl From<ContainerFileListFailure> for SessionFailure {
-    fn from(failure: ContainerFileListFailure) -> Self {
-        Self::Raised(Box::new(NativeFilePayload::from_class(&failure.class)))
-    }
-}
-
-impl From<ContainerFileUploadFailure<ContainerFileHttpError>> for SessionFailure {
-    fn from(failure: ContainerFileUploadFailure<ContainerFileHttpError>) -> Self {
-        Self::Raised(Box::new(NativeFilePayload::from_class(&failure.class)))
     }
 }
 
