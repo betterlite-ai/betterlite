@@ -1,0 +1,129 @@
+kind: helper
+name: outbound-credentials-adapter-dispatch
+call:
+  b4667:
+    function: to_server_spec
+    server:
+      server_id: srv-1
+      name: Server One
+      transport: http
+      url: https://mcp.example.com/mcp
+calls:
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: api_key
+        authentication_token: shared-token
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: bearer_token
+        authentication_token: "Bearer abc"
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: token
+        authentication_token: "token abc"
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: authorization
+        authentication_token: "Bearer abc"
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: basic
+        authentication_token: "user:pass"
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: bearer_token
+        authentication_token: "  Bearer abc  "
+        upstream_token_header: X-Upstream-Token
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: api_key
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: api_key
+        authentication_token: shared-token
+        is_byok: true
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: true_passthrough
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth_delegate
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: aws_sigv4
+        aws_region_name: us-east-1
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: none
+        oauth_passthrough: true
+        extra_headers: [Authorization]
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: stdio
+        auth_type: bearer_token
+        authentication_token: "Bearer abc"
+env: {}
+compare: {ignore: []}

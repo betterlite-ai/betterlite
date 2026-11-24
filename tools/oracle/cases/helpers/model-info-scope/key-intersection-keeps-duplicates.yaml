@@ -1,0 +1,24 @@
+kind: helper
+name: model-info-scope-key-intersection-keeps-duplicates
+call:
+  model_info_scope:
+    function: direct_access
+    model_list:
+      - model_name: shared
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: s1, access_groups: [ag-1]}
+      - model_name: shared
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: s2, access_groups: [ag-1]}
+    model_group_alias: {}
+    key_models: [shared]
+    user: {user_id: alice, teams: [], models: [shared, shared]}
+    all_models: []
+    grant: []
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
+env: {}
+compare: {ignore: []}
