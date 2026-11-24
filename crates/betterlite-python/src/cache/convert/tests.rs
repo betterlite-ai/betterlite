@@ -158,7 +158,7 @@ fn cache_result_envelope_holds_the_timestamp_and_the_response() {
     .unwrap();
     let answer: PreparedAnswer = serde_json::from_str(&text).unwrap();
     assert_eq!(answer.cache_key, "key");
-    assert_eq!(answer.cached_data.timestamp, 12.5_f64);
+    assert!((answer.cached_data.timestamp - 12.5_f64).abs() < f64::EPSILON);
     assert_eq!(
         answer.cached_data.response,
         CacheValue::Text("hi".to_owned())
