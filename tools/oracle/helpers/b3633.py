@@ -178,18 +178,16 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     response = httpx.Response(
         input_value["status_code"], content=input_value["body"].encode()
     )
-    outcome = OUTCOME.validate_python(
-        Handler.batch_creation_handler(  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L896-L907
-            httpx_response=response,
-            logging_obj=logging_obj,
-            url_route=input_value["url_route"],
-            result=input_value["body"],
-            start_time=start,
-            end_time=start,
-            cache_hit=False,
-            request_body=input_value["request_body"],
-        )
-    )
+    outcome = OUTCOME.validate_python(Handler.batch_creation_handler(  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L896-L907
+        httpx_response=response,
+        logging_obj=logging_obj,
+        url_route=input_value["url_route"],
+        result=input_value["body"],
+        start_time=start,
+        end_time=start,
+        cache_hit=False,
+        request_body=input_value["request_body"],
+    ))
     return {
         "result": result_value(outcome.result),
         "kwargs": kwargs_value(outcome.kwargs, input_value["request_metadata"]),
