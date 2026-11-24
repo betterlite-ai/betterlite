@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::private_json::safe_json::safe_json_loads;
@@ -17,7 +18,7 @@ fn replays_the_config_override_corpus(#[files("fuzz/corpus/config_override/*")] 
     kinds.into_iter().for_each(|kind| {
         drop(decode_config_override(&bytes, kind));
     });
-    if let Ok(text) = std::str::from_utf8(&bytes) {
+    if let Ok(text) = from_utf8(&bytes) {
         let stored = JsonValue::String(text.to_owned());
         kinds.into_iter().for_each(|kind| {
             drop(decode_stored_override(&stored, kind));

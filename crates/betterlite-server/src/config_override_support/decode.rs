@@ -97,8 +97,10 @@ fn object_or_shape_error(
 ) -> Result<JsonMap, StoredOverrideError> {
     match value {
         JsonValue::Object(object) => Ok(object),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
-            Err(StoredOverrideError::NotAnObject { kind })
-        }
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_) => Err(StoredOverrideError::NotAnObject { kind }),
     }
 }

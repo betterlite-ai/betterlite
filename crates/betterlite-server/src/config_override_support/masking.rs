@@ -19,7 +19,7 @@ pub fn mask_sensitive_fields(kind: OverrideKind, config: &JsonMap) -> JsonMap {
     config
         .iter()
         .map(|(name, value)| {
-            let masked = match value {
+            let output = match value {
                 JsonValue::String(text) if sensitive.contains(name.as_str()) => {
                     JsonValue::String(masker.mask_value(text))
                 }
@@ -30,7 +30,7 @@ pub fn mask_sensitive_fields(kind: OverrideKind, config: &JsonMap) -> JsonMap {
                 | JsonValue::Array(_)
                 | JsonValue::Object(_) => value.clone(),
             };
-            (name.clone(), masked)
+            (name.clone(), output)
         })
         .collect()
 }

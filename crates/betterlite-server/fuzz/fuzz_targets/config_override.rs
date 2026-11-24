@@ -1,5 +1,7 @@
 #![no_main]
 
+use std::str::from_utf8;
+
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_server::config_override_support::decode::{
     decode_config_override, decode_stored_override,
@@ -12,7 +14,7 @@ fuzz_target!(|data: &[u8]| {
     kinds.into_iter().for_each(|kind| {
         drop(decode_config_override(data, kind));
     });
-    if let Ok(text) = std::str::from_utf8(data) {
+    if let Ok(text) = from_utf8(data) {
         let stored = JsonValue::String(text.to_owned());
         kinds.into_iter().for_each(|kind| {
             drop(decode_stored_override(&stored, kind));
