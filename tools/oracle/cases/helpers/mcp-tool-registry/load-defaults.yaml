@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-tool-registry-load-defaults
+call:
+  b4680:
+    function: load_from_config
+    tool_names: []
+    prefix: null
+    mcp_tools:
+      - {name: defaulted, description: default schema, handler: builtins.len}
+calls:
+  - b4680:
+      function: load_from_config
+      tool_names: []
+      prefix: null
+      mcp_tools:
+        - name: explicit
+          description: explicit schema
+          handler: builtins.len
+          input_schema:
+            type: object
+            properties:
+              city:
+                type: string
+          unknown_key: ignored
+env: {}
+compare: {ignore: []}

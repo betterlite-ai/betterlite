@@ -1,0 +1,29 @@
+kind: helper
+name: retain_alias_and_no_mcp_servers
+call:
+  mcp_permission_ids:
+    function: cleanup
+    object_permission:
+      mcp_servers: ["alias-a", "stale", "no-mcp-servers", "alias-a", "srv-1"]
+      mcp_tool_permissions:
+        alias-a: ["t1"]
+        stale: ["x"]
+    identifiers:
+      alias-a: ["srv-1"]
+      srv-1: ["srv-1"]
+      stale: []
+calls:
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission:
+        mcp_servers: ["no-mcp-servers"]
+        mcp_tool_permissions: {}
+      identifiers: {}
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission:
+        mcp_servers: ["srv-1", "srv-1"]
+        models: ["m"]
+      identifiers: {"srv-1": ["srv-1"]}
+env: {}
+compare: {ignore: []}
