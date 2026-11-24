@@ -385,6 +385,35 @@ async fn credential_fallbacks() -> Vec<Option<String>> {
     ]
 }
 
+async fn call_credentials_reach_resolution() -> (String, Option<String>, Option<String>) {
+    let mut entry = Entry::new();
+    entry.resolution.echo_request = true;
+    entry.api_base = Some(String::from("wss://caller.test"));
+    entry.api_key = Some(String::from("sk-call"));
+    let request = entry.request().await;
+    (request.model, request.api_base, request.api_key)
+}
+
+async fn api_base_precedence() -> Vec<Option<String>> {
+    let mut entry = Entry::new();
+    entry.resolution.api_base = Some(String::from("wss://dynamic.test"));
+    entry.kwargs = object(r#"{"api_base":"wss://kwarg.test"}"#);
+    entry.globals.api_base = Some(String::from("https://global.test"));
+    let dynamic = entry.request().await;
+    entry.resolution.api_base = None;
+    let from_kwargs = entry.request().await;
+    entry.kwargs = Event::new();
+    let from_globals = entry.request().await;
+    entry.globals.api_base = None;
+    let absent = entry.request().await;
+    vec![
+        dynamic.api_base,
+        from_kwargs.api_base,
+        from_globals.api_base,
+        absent.api_base,
+    ]
+}
+
 async fn provider_configs() -> (Option<ResponsesApiConfig>, Option<ResponsesApiConfig>) {
     let mut entry = Entry::new();
     entry.configs.native = true;
@@ -405,6 +434,19 @@ async fn metadata_and_credentials() {
     assert_eq!(merged.api_base.as_deref(), Some("wss://dynamic.test"));
     assert_eq!(merged.api_key.as_deref(), Some("sk-dynamic"));
     assert_eq!(merged.custom_llm_provider.as_deref(), Some("openai"));
+    let (model, base, key) = call_credentials_reach_resolution().await;
+    assert_eq!(model, "gpt-4o");
+    assert_eq!(base.as_deref(), Some("wss://caller.test"));
+    assert_eq!(key.as_deref(), Some("sk-call"));
+    assert_eq!(
+        api_base_precedence().await,
+        vec![
+            Some(String::from("wss://dynamic.test")),
+            Some(String::from("wss://kwarg.test")),
+            Some(String::from("https://global.test")),
+            None,
+        ]
+    );
     let (fallback, neither) = guardrail_precedence().await;
     assert_eq!(fallback, object(r#"{"guardrails":["fallback"]}"#));
     assert!(neither.is_empty());
@@ -690,6 +732,7 @@ async fn invalid_utf8_sends_nothing() {
 }
 
 async fn client_termination_closes_backend() {
+    let (captured, _guard) = capture_traces();
     let mut client = TestClient::new(Vec::new());
     client.yield_first = true;
     let mut backend = ScriptedBackend::new();
@@ -710,6 +753,11 @@ async fn client_termination_closes_backend() {
         .expect("the stored failure comes back");
     assert_eq!(failure.metadata().status_code, 500);
     assert!(logging.effects().contains(&String::from("failure")));
+    assert!(
+        captured
+            .text()
+            .contains("Responses WS client_to_backend ended")
+    );
 }
 
 #[tokio::test]
@@ -831,6 +879,7 @@ fn assert_failure_usage(logging: &RecordingLogging) {
         lock(&logging.charged).clone(),
         vec![(Some(String::from("flex")), None)]
     );
+    assert_eq!(lock(&logging.failure_prefers_async).clone(), vec![true]);
 }
 
 fn assert_failure_mapping(logging: &RecordingLogging, failure: &ErrorClass) {
@@ -875,6 +924,7 @@ async fn success_dispatches_only() {
         .unwrap();
     relay.log_messages().await.unwrap();
     assert_eq!(logging.effects(), texts(&["success"]));
+    assert_eq!(lock(&logging.success_prefers_async).clone(), vec![true]);
     assert!(lock(&logging.partial).is_empty());
 }
 

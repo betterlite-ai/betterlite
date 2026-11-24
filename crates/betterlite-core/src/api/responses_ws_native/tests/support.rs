@@ -317,9 +317,11 @@ pub(super) struct RecordingLogging {
     pub(super) pre_calls: Mutex<Vec<(String, String)>>,
     pub(super) inputs: Mutex<Vec<Vec<Event>>>,
     pub(super) success: Mutex<Vec<Vec<Event>>>,
+    pub(super) success_prefers_async: Mutex<Vec<bool>>,
     pub(super) partial: Mutex<Vec<(Usage, f64)>>,
     pub(super) charged: Mutex<Vec<(Option<String>, Option<f64>)>>,
     pub(super) failures: Mutex<Vec<ErrorClass>>,
+    pub(super) failure_prefers_async: Mutex<Vec<bool>>,
     pub(super) tracebacks: Mutex<Vec<String>>,
     pub(super) reported: Option<f64>,
 }
@@ -353,9 +355,10 @@ impl WsNativeLogging for RecordingLogging {
         lock(&self.inputs).push(messages.to_vec());
     }
 
-    fn dispatch_success(&self, messages: Vec<Event>) {
+    fn dispatch_success(&self, messages: Vec<Event>, prefer_async: bool) {
         lock(&self.effects).push(String::from("success"));
         lock(&self.success).push(messages);
+        lock(&self.success_prefers_async).push(prefer_async);
     }
 
     fn response_cost(&self, billing: &RealtimeBilling) -> Option<f64> {
@@ -369,9 +372,10 @@ impl WsNativeLogging for RecordingLogging {
         lock(&self.partial).push((usage.clone(), response_cost));
     }
 
-    fn dispatch_failure(&self, exception: ErrorClass, traceback: String) {
+    fn dispatch_failure(&self, exception: ErrorClass, traceback: String, prefer_async: bool) {
         lock(&self.effects).push(String::from("failure"));
         lock(&self.failures).push(exception);
+        lock(&self.failure_prefers_async).push(prefer_async);
         lock(&self.tracebacks).push(traceback);
     }
 }
@@ -382,6 +386,7 @@ pub(super) struct FakeResolution {
     pub(super) provider: Option<String>,
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<String>,
+    pub(super) echo_request: bool,
 }
 
 impl FakeResolution {
@@ -395,12 +400,21 @@ impl FakeResolution {
             provider: Some(provider),
             api_base: None,
             api_key: None,
+            echo_request: false,
         }
     }
 }
 
 impl NativeWsResolution for FakeResolution {
-    fn resolve(&self, _request: &ResolutionRequest<'_>) -> Result<WsResolved, ResolutionError> {
+    fn resolve(&self, request: &ResolutionRequest<'_>) -> Result<WsResolved, ResolutionError> {
+        if self.echo_request {
+            return Ok(WsResolved {
+                model: request.model.to_owned(),
+                provider: self.provider.clone(),
+                api_base: request.api_base.map(str::to_owned),
+                api_key: request.api_key.cloned(),
+            });
+        }
         Ok(WsResolved {
             model: self.model.clone(),
             provider: self.provider.clone(),
