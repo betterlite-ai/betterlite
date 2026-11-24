@@ -148,7 +148,7 @@ async fn save_environment_section(
         JsonValue::Null => return Ok(()),
         JsonValue::Object(entries) => entries
             .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
+            .map(|(key, entry)| (key.clone(), entry.clone()))
             .collect(),
         JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_) => {
             return Err(ConfigStateError::InvalidSetting {
@@ -175,7 +175,7 @@ fn section_values(
     match value {
         JsonValue::Object(entries) => Ok(entries
             .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
+            .map(|(key, entry)| (key.clone(), entry.clone()))
             .collect()),
         JsonValue::Null
         | JsonValue::Bool(_)

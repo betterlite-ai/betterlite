@@ -95,10 +95,9 @@ fn resolved_environment_value(value: &JsonValue, environment: &dyn EnvironmentLo
         return value.clone();
     }
     let name = text.replace(ENVIRONMENT_PREFIX, "");
-    match environment.lookup(&name) {
-        Some(secret) => secret_value(&secret),
-        None => JsonValue::Null,
-    }
+    environment
+        .lookup(&name)
+        .map_or(JsonValue::Null, |secret| secret_value(&secret))
 }
 
 // get_secret reads os.environ and str_to_bool turns only true and false into a bool
