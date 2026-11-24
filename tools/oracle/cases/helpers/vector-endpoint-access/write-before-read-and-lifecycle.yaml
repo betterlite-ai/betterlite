@@ -1,0 +1,20 @@
+kind: helper
+name: vector-endpoint-access-write-before-read-and-lifecycle
+call:
+  vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: POST, path: /indexes/analyze-x/docs/index, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+calls:
+  - vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: POST, path: /indexes/analyze-x/docs/index, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: POST, path: /indexes/analyze-x/docs/search, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: DELETE, path: /indexes/idx, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: PUT, path: /indexes/idx, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: PATCH, path: /indexes/idx, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: POST, path: /indexes, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: azure_ai, id: idx, method: DELETE, path: /indexes/idx, app_root_path: null, root_path: null, user_role: proxy_admin, key_metadata: null, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: cohere, id: idx, method: DELETE, path: /indexes/idx, app_root_path: null, root_path: null, user_role: proxy_admin, key_metadata: null, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: cohere, id: idx, method: POST, path: /indexes/idx/docs/search, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: openai, id: idx, method: GET, path: /embeddings/idx, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: openai, id: idx, method: POST, path: /vector_stores, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: openai, id: idx, method: POST, path: /vector_stores, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: store, provider: openai, id: idx, method: GET, path: /v1/vector_stores/idx/search, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+env: {}
+compare: {ignore: []}
