@@ -20,11 +20,11 @@ use betterlite_redact::structured::Payload;
 use rstest::rstest;
 
 use crate::support::{
-    FIXED_MINUTE, Failure, FakeRouter, GatedCache, KEY_HASH, KEYLESS_FIXTURE, MINUTE_KEY, MODEL,
-    NEXT_MINUTE, NEXT_MINUTE_LABEL, NUMBER_KEY_FIXTURE, PLAIN_KEY_FIXTURE, PROD_KEY_FIXTURE,
-    RecordingCache, SetWrite, cache_counting, cache_over, clock_at, default_policy,
-    failing_harness, handler_over, harness_with, harness_without_router, number, post_call,
-    principal, prod_reservation, request,
+    FIXED_MINUTE, FailingWriteCache, Failure, FakeRouter, GatedCache, KEY_HASH, KEYLESS_FIXTURE,
+    MINUTE_KEY, MODEL, NEXT_MINUTE, NEXT_MINUTE_LABEL, NUMBER_KEY_FIXTURE, PLAIN_KEY_FIXTURE,
+    PROD_KEY_FIXTURE, RecordingCache, SetWrite, cache_counting, cache_over, clock_at,
+    default_policy, failing_harness, handler_over, harness_with, harness_without_router, number,
+    post_call, principal, prod_reservation, request,
 };
 
 #[tokio::test]
@@ -394,6 +394,31 @@ async fn pre_call_returns_without_waiting_for_the_set_write() {
     handler.tasks.wait().await;
     assert_eq!(
         gated.set_writes(),
+        vec![SetWrite {
+            key: String::from(MINUTE_KEY),
+            values: vec![String::from(KEY_HASH)],
+            ttl: 60,
+        }]
+    );
+}
+
+// the set add fails inside its task: the request already passed, and the failed write is still attempted
+#[tokio::test]
+async fn failed_set_write_does_not_refuse_the_request() {
+    let cache = FailingWriteCache::default();
+    let port: Arc<dyn MinuteSetCache> = Arc::new(cache.clone());
+    let router = FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0)));
+    let llm_router: Option<Arc<dyn DynamicLimitRouter>> = Some(Arc::new(router));
+    let handler = handler_over(port, llm_router, default_policy());
+    let key = principal(PLAIN_KEY_FIXTURE);
+    handler
+        .async_pre_call_hook(&request(Some(MODEL), &key))
+        .await
+        .expect("a failed registration write does not refuse the request");
+    handler.tasks.close();
+    handler.tasks.wait().await;
+    assert_eq!(
+        cache.attempts(),
         vec![SetWrite {
             key: String::from(MINUTE_KEY),
             values: vec![String::from(KEY_HASH)],

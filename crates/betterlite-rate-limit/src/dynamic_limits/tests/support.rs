@@ -197,6 +197,45 @@ impl MinuteSetCache for GatedCache {
     }
 }
 
+// a cache whose set add always fails, recording each attempt so the test can see the task ran
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FailingWriteCache {
+    attempts: Arc<Mutex<Vec<SetWrite>>>,
+}
+
+impl FailingWriteCache {
+    pub(crate) fn attempts(&self) -> Vec<SetWrite> {
+        self.attempts
+            .lock()
+            .expect("the test cache's lock is not poisoned")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl MinuteSetCache for FailingWriteCache {
+    async fn async_get_cache(&self, _key: &str) -> Result<Option<Vec<String>>, CacheReadError> {
+        Ok(None)
+    }
+
+    async fn async_set_cache_sadd(
+        &self,
+        key: &str,
+        values: &[String],
+        ttl: i64,
+    ) -> Result<(), CacheWriteError> {
+        self.attempts
+            .lock()
+            .expect("the test cache's lock is not poisoned")
+            .push(SetWrite {
+                key: key.to_owned(),
+                values: values.to_vec(),
+                ttl,
+            });
+        Err(CacheWriteError)
+    }
+}
+
 // a Router whose three reads answer from fields the test sets, recording what was asked
 #[derive(Clone, Debug)]
 pub(crate) struct FakeRouter {
