@@ -35,11 +35,11 @@ from genai_server import (
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
+import betterlite
 from betterlite._completion import arguments
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints.payload import LOGGER_FN_DROPPED, CallValue
 from betterlite._endpoints.proxy import ProxyAuthProvider
-from betterlite._genai import arguments as genai_arguments
 from betterlite._genai.arguments import fill_settings, session_settings
 from betterlite._genai.stream import GenaiStream
 from betterlite.exceptions import BadRequestError
@@ -270,10 +270,11 @@ def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     expected: dict[str, str] = {"api_key": GOOD_KEY}
     assert session_settings() == "{}"
+    our_key = betterlite.api_key
     their_key = litellm.api_key
     try:
+        betterlite.api_key = GOOD_KEY
         litellm.api_key = GOOD_KEY
-        genai_arguments.settings_seam["api_key"] = GOOD_KEY
         assert session_settings() == json.dumps(expected)
         with GenaiServer() as server:
             answers = [
@@ -288,16 +289,18 @@ def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
             ]
             keys = [recorded_header(server, index, API_KEY_HEADER) for index in (FIRST, SECOND)]
     finally:
+        betterlite.api_key = our_key
         litellm.api_key = their_key
-        genai_arguments.settings_seam.clear()
     assert answers[FIRST] == answers[SECOND]
     assert keys == [GOOD_KEY, GOOD_KEY]
 
 
 def test_optional_vertex_settings() -> None:
-    genai_arguments.settings_seam["vertex_project"] = VERTEX_PROJECT
-    genai_arguments.settings_seam["vertex_location"] = VERTEX_LOCATION
+    our_project = betterlite.vertex_project
+    our_location = betterlite.vertex_location
     try:
+        betterlite.vertex_project = VERTEX_PROJECT
+        betterlite.vertex_location = VERTEX_LOCATION
         forwarded: dict[str, CallValue] = {"api_base": None, "vertex_location": None}
         fill_settings(forwarded)
         explicit: dict[str, CallValue] = {"vertex_project": CALL_PROJECT, "vertex_location": None}
@@ -305,7 +308,8 @@ def test_optional_vertex_settings() -> None:
         empty: dict[str, CallValue] = {"vertex_project": ""}
         fill_settings(empty)
     finally:
-        genai_arguments.settings_seam.clear()
+        betterlite.vertex_project = our_project
+        betterlite.vertex_location = our_location
     assert forwarded == {
         "api_base": None,
         "vertex_project": VERTEX_PROJECT,

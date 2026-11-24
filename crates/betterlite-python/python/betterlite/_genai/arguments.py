@@ -21,16 +21,11 @@ class SessionSettings(TypedDict):
 
 SESSION: Final[TypeAdapter[SessionSettings]] = TypeAdapter(SessionSettings)
 
-# typed seam for the untyped betterlite globals: api_key, vertex_project, vertex_location
-settings_seam: dict[str, str | None] = {}
-
 
 # litellm.api_key is the studio key LiteLLM reads after GOOGLE_API_KEY and GEMINI_API_KEY
 def session_settings() -> str:
     settings = SESSION.validate_python(read_settings(SESSION_SETTINGS))
     api_key = settings["api_key"]
-    if api_key is None:
-        api_key = settings_seam.get("api_key")
     if api_key is None:
         return "{}"
     payload: dict[str, str] = {"api_key": api_key}
@@ -42,8 +37,6 @@ def fill_settings(forwarded: dict[str, CallValue]) -> None:
     settings = read_settings(FALLBACK_SETTINGS)
     for name in FALLBACK_SETTINGS:
         value = settings[name]
-        if value is None:
-            value = settings_seam.get(name)
         if value is not None and forwarded.get(name) is None:
             forwarded[name] = value
 
