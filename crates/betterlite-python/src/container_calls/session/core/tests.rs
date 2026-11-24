@@ -233,8 +233,12 @@ fn init_carries_the_call_type_and_the_call_id() {
 #[test]
 fn session_clock_counts_the_time_since_it_was_built() {
     let clock = stack::SessionClock::new();
-    get_runtime().block_on(sleep(Duration::from_millis(2)));
-    assert!(clock.monotonic() > Duration::ZERO);
+    // the timer registers when it is first polled, so the sleep starts inside the runtime
+    get_runtime().block_on(async {
+        let started = clock.monotonic();
+        sleep(Duration::from_millis(2)).await;
+        assert!(clock.monotonic() > started);
+    });
 }
 
 #[test]
