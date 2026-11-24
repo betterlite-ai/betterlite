@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::future::{Future, ready};
 
-use betterlite_mcp::auth::object_permission_hydration::error::{
-    EntitlementError, UnloadableEntitlementError,
-};
+use betterlite_mcp::auth::object_permission_hydration::error::EntitlementError;
 use betterlite_mcp::auth::object_permission_hydration::grants::{
     toolset_tool_permissions, toolset_tools_for_server, union_tool_grants,
 };
@@ -52,15 +50,13 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Error)]
-#[error("{message}")]
-struct Fault {
-    message: String,
-}
-
-fn unscripted() -> Fault {
-    Fault {
-        message: "this read is not part of the case".to_owned(),
-    }
+enum Fault {
+    #[error("this read is not part of the case")]
+    Unscripted,
+    #[error("referenced object permission does not exist")]
+    MissingRow,
+    #[error("the object permission read failed")]
+    ReadFailed,
 }
 
 // A fresh dispatch process has no database, so the real toolset resolver answers no grants for every id.
@@ -84,7 +80,7 @@ impl ObjectPermissionReads for ScriptedReads {
         &self,
         _key: &str,
     ) -> impl Future<Output = Result<Option<CachedLink>, Self::Error>> + Send {
-        ready(Err(unscripted()))
+        ready(Err(Fault::Unscripted))
     }
 
     fn store_link(
@@ -93,7 +89,7 @@ impl ObjectPermissionReads for ScriptedReads {
         _value: &str,
         _ttl: f64,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        ready(Err(unscripted()))
+        ready(Err(Fault::Unscripted))
     }
 
     // get_object_permission answers None for a missing row or a swallowed fault unless the policy must be fresh
@@ -105,15 +101,11 @@ impl ObjectPermissionReads for ScriptedReads {
         let answer = match self.read {
             ReadKind::Loaded => match &self.row {
                 Some(row) => Ok(Some(row.clone())),
-                None => Err(unscripted()),
+                None => Err(Fault::Unscripted),
             },
             ReadKind::Missing | ReadKind::Unreadable if !check_db_only => Ok(None),
-            ReadKind::Missing => Err(Fault {
-                message: "referenced object permission does not exist".to_owned(),
-            }),
-            ReadKind::Unreadable => Err(Fault {
-                message: "the object permission read failed".to_owned(),
-            }),
+            ReadKind::Missing => Err(Fault::MissingRow),
+            ReadKind::Unreadable => Err(Fault::ReadFailed),
         };
         ready(answer)
     }
@@ -123,21 +115,21 @@ impl ObjectPermissionReads for ScriptedReads {
         _team_id: &str,
         _check_db_only: bool,
     ) -> impl Future<Output = Result<Option<ObjectPermission>, Self::Error>> + Send {
-        ready(Err(unscripted()))
+        ready(Err(Fault::Unscripted))
     }
 
     fn org_object_permission_link(
         &self,
         _org_id: &str,
     ) -> impl Future<Output = Result<OrgPermissionLink, Self::Error>> + Send {
-        ready(Err(unscripted()))
+        ready(Err(Fault::Unscripted))
     }
 
     fn end_user_entitlement(
         &self,
         _end_user_id: &str,
     ) -> impl Future<Output = Result<Option<EndUserEntitlement>, Self::Error>> + Send {
-        ready(Err(unscripted()))
+        ready(Err(Fault::Unscripted))
     }
 
     fn user_object_permission_link(
@@ -145,14 +137,14 @@ impl ObjectPermissionReads for ScriptedReads {
         _user_id: &str,
         _check_db_only: bool,
     ) -> impl Future<Output = Result<Option<String>, Self::Error>> + Send {
-        ready(Err(unscripted()))
+        ready(Err(Fault::Unscripted))
     }
 
     fn agent_object_permission_link(
         &self,
         _agent_id: &str,
     ) -> impl Future<Output = Result<Option<String>, Self::Error>> + Send {
-        ready(Err(unscripted()))
+        ready(Err(Fault::Unscripted))
     }
 
     fn resolve_toolset_grants(
@@ -200,11 +192,15 @@ async fn answer(input: &Input) -> HelperResult {
             row,
             requires_fresh_policy,
             server_id,
-        } => toolset_answer(row, *requires_fresh_policy, server_id.as_deref()).await,
+        } => toolset_answer(row.as_ref(), *requires_fresh_policy, server_id.as_deref()).await,
         Input::Union {
             direct,
             via_toolsets,
-        } => union_answer(direct, via_toolsets),
+        } => json!({
+            "value": union_tool_grants(direct.as_deref(), via_toolsets.as_deref()),
+            "raised": None::<&str>,
+            "caused": false,
+        }),
     })
 }
 
@@ -228,7 +224,7 @@ async fn named_answer(
 }
 
 async fn toolset_answer(
-    row: &Option<ObjectPermission>,
+    row: Option<&ObjectPermission>,
     requires_fresh_policy: bool,
     server_id: Option<&str>,
 ) -> Value {
@@ -237,12 +233,10 @@ async fn toolset_answer(
         row: None,
     };
     let answer = match server_id {
-        Some(server) => {
-            toolset_tools_for_server(&reads, row.as_ref(), server, requires_fresh_policy)
-                .await
-                .map(|tools| json!(tools))
-        }
-        None => toolset_tool_permissions(&reads, row.as_ref(), requires_fresh_policy)
+        Some(server) => toolset_tools_for_server(&reads, row, server, requires_fresh_policy)
+            .await
+            .map(|tools| json!(tools)),
+        None => toolset_tool_permissions(&reads, row, requires_fresh_policy)
             .await
             .map(|grants| json!(grants)),
     };
@@ -250,32 +244,14 @@ async fn toolset_answer(
 }
 
 fn answered(answer: Result<Value, EntitlementError<Fault>>) -> Value {
-    match answer {
-        Ok(value) => outcome(value, None, false),
-        Err(raised) => failure(&raised),
-    }
-}
-
-fn failure(raised: &EntitlementError<Fault>) -> Value {
-    match raised {
-        EntitlementError::Read { .. } => outcome(Value::Null, Some(FAULT), false),
-        EntitlementError::Unloadable(inner) => unloadable_outcome(inner),
-    }
-}
-
-fn unloadable_outcome(raised: &UnloadableEntitlementError<Fault>) -> Value {
-    outcome(Value::Null, Some(UNLOADABLE), raised.source().is_some())
-}
-
-fn union_answer(direct: &Option<Vec<String>>, via_toolsets: &Option<Vec<String>>) -> Value {
-    outcome(
-        json!(union_tool_grants(
-            direct.as_deref(),
-            via_toolsets.as_deref()
-        )),
-        None,
-        false,
-    )
+    let (value, raised, caused) = match answer {
+        Ok(found) => (found, None, false),
+        Err(EntitlementError::Read { .. }) => (Value::Null, Some(FAULT), false),
+        Err(EntitlementError::Unloadable(inner)) => {
+            (Value::Null, Some(UNLOADABLE), inner.source().is_some())
+        }
+    };
+    json!({"value": value, "raised": raised, "caused": caused})
 }
 
 fn row_view(row: &ObjectPermission) -> Value {
@@ -283,8 +259,4 @@ fn row_view(row: &ObjectPermission) -> Value {
         "object_permission_id": &row.object_permission_id,
         "mcp_toolsets": &row.mcp_toolsets,
     })
-}
-
-fn outcome(value: Value, raised: Option<&str>, caused: bool) -> Value {
-    json!({"value": value, "raised": raised, "caused": caused})
 }
