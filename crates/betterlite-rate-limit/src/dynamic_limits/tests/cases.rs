@@ -53,7 +53,7 @@ async fn minute_key_reads_the_utc_hour_and_minute() {
     let cache = cache_over(&recording);
     assert_eq!(cache.async_get_cache(MODEL).await, Ok(None));
     let later = DynamicRateLimiterCache {
-        cache: Arc::clone(&recording),
+        cache: Arc::<RecordingCache>::clone(&recording),
         clock: clock_at(NEXT_MINUTE),
     };
     assert_eq!(later.async_get_cache(MODEL).await, Ok(None));
@@ -420,7 +420,7 @@ async fn missing_model_passes_and_writes_nothing() {
 #[tokio::test]
 async fn pre_call_returns_without_waiting_for_the_set_write() {
     let gated = Arc::new(RecordingCache::gated());
-    let port: Arc<dyn MinuteSetCache> = Arc::clone(&gated);
+    let port: Arc<dyn MinuteSetCache> = Arc::<RecordingCache>::clone(&gated);
     let router = FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0)));
     let llm_router: Option<Arc<dyn DynamicLimitRouter>> = Some(Arc::new(router));
     let handler = handler_over(port, llm_router, default_policy());

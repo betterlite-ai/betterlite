@@ -53,7 +53,7 @@ pub(crate) fn clock_at(seconds: u64) -> Arc<dyn LimiterClock> {
 
 pub(crate) fn cache_over(recording: &Arc<RecordingCache>) -> DynamicRateLimiterCache {
     DynamicRateLimiterCache {
-        cache: Arc::clone(recording),
+        cache: Arc::<RecordingCache>::clone(recording),
         clock: clock_at(FIXED_INSTANT),
     }
 }
@@ -340,7 +340,7 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) fn handler(&self) -> DynamicRateLimitHandler {
-        let cache: Arc<dyn MinuteSetCache> = Arc::clone(&self.cache);
+        let cache: Arc<dyn MinuteSetCache> = Arc::<RecordingCache>::clone(&self.cache);
         let llm_router: Option<Arc<dyn DynamicLimitRouter>> = if self.with_router {
             Some(Arc::new(self.router.clone()))
         } else {
