@@ -1,0 +1,40 @@
+kind: helper
+name: auth-key-budgets-temporary-expiry-forms
+call:
+  auth_key_budgets:
+    calls:
+      - function: temp_update
+        token:
+          token: sk-basic
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 10
+            temp_budget_expiry: "20260616T130000+0200"
+        now: "2026-06-01T12:00:00Z"
+      - function: temp_update
+        token:
+          token: sk-basic
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 10
+            temp_budget_expiry: "2026-06-15T130000.5"
+        now: "2026-06-01T12:00:00Z"
+      - function: temp_update
+        token:
+          token: sk-basic
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 10
+            temp_budget_expiry: "20260616"
+        now: "2026-06-01T12:00:00Z"
+      - function: temp_update
+        token:
+          token: sk-zulu
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 10
+            temp_budget_expiry: "2026-06-15T13:00:00Z"
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

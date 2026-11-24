@@ -1,0 +1,15 @@
+kind: helper
+name: auth-key-budgets-soft-budget-alert-only
+call:
+  auth_key_budgets:
+    calls:
+      - function: admit
+        token:
+          token: sk-soft
+          spend: 5.0
+          soft_budget: 5.0
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

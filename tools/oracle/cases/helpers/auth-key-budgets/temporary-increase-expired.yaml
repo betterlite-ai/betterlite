@@ -1,0 +1,32 @@
+kind: helper
+name: auth-key-budgets-temporary-increase-expired
+call:
+  auth_key_budgets:
+    calls:
+      - function: temp_update
+        token:
+          token: sk-temp
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 30.0
+            temp_budget_expiry: "2026-05-31T00:00:00Z"
+        now: "2026-06-01T12:00:00Z"
+      - function: temp_update
+        token:
+          token: sk-temp
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 30.0
+            temp_budget_expiry: "2026-06-02T00:00:00Z"
+        now: "2026-06-01T12:00:00Z"
+      - function: temp_update
+        token:
+          token: sk-temp
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 30.0
+            temp_budget_expiry: "2026-06-01T12:00:00Z"
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

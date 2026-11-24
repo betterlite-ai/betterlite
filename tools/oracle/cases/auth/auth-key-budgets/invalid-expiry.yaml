@@ -1,0 +1,17 @@
+kind: helper
+name: auth-key-budgets-auth-invalid-expiry
+call:
+  auth_key_budgets:
+    calls:
+      - function: admit
+        token:
+          token: sk-bad-auth
+          max_budget: 100.0
+          metadata:
+            temp_budget_increase: 30.0
+            temp_budget_expiry: not-a-date
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []
