@@ -46,6 +46,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::health_check_entry::HealthCheckEntry;
@@ -541,11 +542,11 @@ impl MockServer {
     }
 
     pub(super) async fn requests(mut self) -> Vec<String> {
-        self.tasks
-            .join_next()
+        let joined = timeout(Duration::from_secs(10), self.tasks.join_next())
             .await
-            .expect("the server task runs")
-            .expect("the server task does not panic")
+            .expect("the provider call arrives")
+            .expect("the server task runs");
+        joined.expect("the server task does not panic")
     }
 }
 
