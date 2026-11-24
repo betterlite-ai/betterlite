@@ -3,7 +3,7 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Callable, Coroutine, Iterator
+from collections.abc import Callable, Coroutine, Iterator, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -489,16 +489,27 @@ def test_signature_refuses_client() -> None:
         main.arun_thread_stream(**BARE_STREAM_ARGUMENTS, client=FAKE_CLIENT)
 
 
+def compare_add_message(server: RunServer, arguments: Mapping[str, JsonValue]) -> None:
+    reference = answer_of(LITELLM.add_message("openai", THREAD_ID, "user", "hello", **arguments))
+    ours = answer_of(main.add_message("openai", THREAD_ID, "user", "hello", **arguments))
+    matched_calls(server, 1)
+    dump_pair(ours, reference)
+
+
+def compare_run_thread(server: RunServer, arguments: Mapping[str, JsonValue]) -> _runs.Run:
+    reference = answer_of(LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **arguments))
+    ours = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **arguments))
+    matched_calls(server, 2)
+    dump_pair(ours, reference)
+    return ours
+
+
 def test_calls_add_message(server: RunServer) -> None:
     args = server.connection()
     cases: list[dict[str, JsonValue]] = [MESSAGE_ARGUMENTS, {}]
     for extra in cases:
-        reference = answer_of(
-            LITELLM.add_message("openai", THREAD_ID, "user", "hello", **extra, **args)
-        )
-        ours = answer_of(main.add_message("openai", THREAD_ID, "user", "hello", **extra, **args))
-        matched_calls(server, 1)
-        dump_pair(ours, reference)
+        merged: dict[str, JsonValue] = {**extra, **args}
+        compare_add_message(server, merged)
 
 
 def test_calls_completed_status(server: RunServer) -> None:
@@ -527,17 +538,10 @@ def test_calls_get_messages(server: RunServer) -> None:
 
 def test_calls_run_thread(server: RunServer) -> None:
     args = server.connection()
-    reference = answer_of(
-        LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args)
-    )
-    ours = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args))
-    matched_calls(server, 2)
-    dump_pair(ours, reference)
-    assert JSON.validate_json(ours.model_dump_json()) == RUN
-    reference_plain = answer_of(LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **args))
-    ours_plain = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **args))
-    matched_calls(server, 2)
-    dump_pair(ours_plain, reference_plain)
+    merged: dict[str, JsonValue] = {**RUN_OPTIONS, **args}
+    run = compare_run_thread(server, merged)
+    assert JSON.validate_json(run.model_dump_json()) == RUN
+    compare_run_thread(server, args)
 
 
 # betterlite's globals are unannotated, so this stands in for the reader, as test_google_genai does
@@ -555,19 +559,14 @@ class SettingsSnapshot:
 
 def test_calls_module_globals(server: RunServer) -> None:
     original = settings_module.module_settings
-    snapshot = SettingsSnapshot({"api_key": GOOD_KEY, "api_base": server.url})
-    settings_module.module_settings = snapshot
+    settings_module.module_settings = SettingsSnapshot(
+        {"api_key": GOOD_KEY, "api_base": server.url}
+    )
     litellm.api_key = GOOD_KEY
     litellm.api_base = server.url
     try:
-        reference = answer_of(LITELLM.add_message("openai", THREAD_ID, "user", "hello"))
-        ours = answer_of(main.add_message("openai", THREAD_ID, "user", "hello"))
-        matched_calls(server, 1)
-        dump_pair(ours, reference)
-        reference_run = answer_of(LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID))
-        ours_run = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID))
-        matched_calls(server, 2)
-        dump_pair(ours_run, reference_run)
+        compare_add_message(server, {})
+        compare_run_thread(server, {})
     finally:
         settings_module.module_settings = original
         litellm.api_key = litellm.api_base = None
