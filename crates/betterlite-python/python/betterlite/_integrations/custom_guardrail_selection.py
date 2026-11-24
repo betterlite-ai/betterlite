@@ -51,16 +51,7 @@ class GuardrailSelection(GuardrailState):
         self, data: dict[str, JsonValue]
     ) -> list[str]:
         value = self._get_admin_metadata(data).get("opted_out_global_guardrails")
-        names: list[str] = []
-        if value is None:
-            return names
-        for item in value:
-            match item:
-                case str():
-                    names.append(item)
-                case bool() | int() | float() | list() | dict() | None:
-                    pass
-        return names
+        return [] if value is None else value
 
     def _is_valid_response_type(self, result: JsonValue) -> bool:
         return result is not None

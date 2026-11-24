@@ -102,7 +102,7 @@ class RecordContext(TypedDict):
 
 class AdminMetadata(TypedDict, total=False):
     disable_global_guardrails: bool | None
-    opted_out_global_guardrails: list[JsonValue] | None
+    opted_out_global_guardrails: list[str] | None
 
 
 class RequestMetadata(TypedDict, total=False):
