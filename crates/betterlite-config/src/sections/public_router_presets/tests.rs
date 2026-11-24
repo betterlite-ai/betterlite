@@ -51,6 +51,12 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Settings, C
     false,
     "http://presets.test/catalog.json"
 )]
+#[case::url_settings_environment_reference(
+    "litellm_settings:\n  autorouter_presets_url: os.environ/PRESETS_URL\n",
+    &[("PRESETS_URL", "http://mirror.test/catalog.json")],
+    false,
+    "http://mirror.test/catalog.json"
+)]
 fn loads_router_preset_settings(
     #[case] source: &str,
     #[case] environment: &[(&str, &str)],
@@ -68,6 +74,18 @@ fn rejects_a_url_of_the_wrong_type() {
     assert!(
         error.to_string().contains("autorouter_presets_url"),
         "{error}"
+    );
+}
+
+#[test]
+fn rejects_an_environment_reference_that_names_no_variable() {
+    let source = "litellm_settings:\n  autorouter_presets_url: os.environ/PRESETS_URL\n";
+    let error = load(source, &[]).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("PRESETS_URL"), "{message}");
+    assert!(
+        message.contains("litellm_settings.autorouter_presets_url"),
+        "{message}"
     );
 }
 
