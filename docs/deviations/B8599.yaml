@@ -21,9 +21,12 @@ deviations:
   - what: 'The first-byte keepalive on /queue/chat/completions reads the global sse_keepalive_ping_interval_seconds, not a deployment keepalive_seconds.'
     why: "The completion port exposes a healthy-deployment count and the call, not the router's deployment list, so the per-deployment override cannot be resolved here."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1136-L1144
-  - what: 'A non-streaming failure of POST /queue/chat/completions answers the replacement post_call_failure_hook returns; LiteLLM''s queue route calls the hook and discards its return, so the original error is answered.'
-    why: "The hook''s docstring says a callback can return an HTTPException to transform the error response, and /chat/completions and this route''s streamed path both use the hook''s answer; dropping it on the plain failure is an oversight no working setup can rely on."
+  - what: 'A non-streaming or pre-first-byte failure of POST /queue/chat/completions answers the replacement post_call_failure_hook returns; LiteLLM''s queue route calls the hook and discards its return, so the original error is answered.'
+    why: "The hook's docstring says a callback can return an HTTPException to transform the error response, and /chat/completions and this route's keepalive late-failure path both use the hook's answer; dropping it before the first byte is an oversight no working setup can rely on."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16866-L16869
+  - what: 'A streamed failure that post_call_failure_hook replaces ends the stream without an error frame; LiteLLM''s data generator discards the hook''s return and writes a frame built from the original streamed error.'
+    why: "The hook's answer winning is the point of a replacement, and serializing the original would show provider detail a callback meant to hide; betterlite's generator aborts a stream whose failure hook returns a replacement, so a replaced stream ends instead of carrying LiteLLM's original-error frame."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10061-L10069
   - what: 'POST /queue/chat/completions without a router answers the detail text "No models configured on proxy", not the {"error": ...} dict LiteLLM puts in the message field.'
     why: 'LiteLLM raises HTTPException(500, detail={"error": ...}) and its handler copies that detail into ProxyException.message, which is declared str; docs/compatibility.md keeps output to the declared types and plain JSON, with the 500 status, auth_error type and "None" param unchanged.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16870-L16876
