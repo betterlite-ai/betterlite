@@ -86,31 +86,20 @@ where
     E: StdError + Send + Sync + 'static,
 {
     fn into_response(self) -> Response {
-        match self {
-            Self::Unauthenticated => unauthenticated(),
-            Self::Body(error) => error.into_response(),
-            Self::Query(error) => error.into_response(),
-            Self::Access(error) => detail_response(error.status(), error.detail()),
-            Self::Key(error) => {
-                let status = StatusCode::from_u16(error.status())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                detail_response(status, error.detail())
-            }
-            Self::Repository(error) => server_error(&error),
-            Self::Mutation(error) => server_error(&error),
-            Self::Source(error) => server_error(&error),
-        }
+        let (status, detail) = match self {
+            Self::Unauthenticated => return unauthenticated(),
+            Self::Body(error) => return error.into_response(),
+            Self::Query(error) => return error.into_response(),
+            Self::Access(error) => (error.status(), error.detail()),
+            Self::Key(error) => (
+                StatusCode::from_u16(error.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                error.detail(),
+            ),
+            // a failure that is not one of LiteLLM's refusals: a 500 that names the whole cause chain
+            Self::Repository(error) => (StatusCode::INTERNAL_SERVER_ERROR, failure_text(&error)),
+            Self::Mutation(error) => (StatusCode::INTERNAL_SERVER_ERROR, failure_text(&error)),
+            Self::Source(error) => (StatusCode::INTERNAL_SERVER_ERROR, failure_text(&error)),
+        };
+        (status, Json(DetailBody { detail })).into_response()
     }
-}
-
-fn detail_response(status: StatusCode, detail: String) -> Response {
-    (status, Json(DetailBody { detail })).into_response()
-}
-
-// a failure that is not one of LiteLLM's refusals: a 500 that names the whole cause chain
-fn server_error<E>(error: &E) -> Response
-where
-    E: StdError + 'static,
-{
-    detail_response(StatusCode::INTERNAL_SERVER_ERROR, failure_text(error))
 }

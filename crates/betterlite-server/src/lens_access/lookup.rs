@@ -34,6 +34,7 @@ where
     }
 }
 
+// ast-grep-ignore: no-one-line-functions - B4505 imports this fixed path to turn a lost update into a 409
 pub(crate) fn required(lens: Option<Lens>) -> Result<Lens, LensAccessError> {
     lens.ok_or(LensAccessError::ConcurrentChange)
 }
