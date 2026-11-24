@@ -18,6 +18,7 @@ use betterlite_core::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError,
 };
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
@@ -692,6 +693,22 @@ fn error_a_decode_failure_is_a_validation_error() {
         },
     }));
     assert_eq!(failure.kind, "APIResponseValidationError");
+}
+
+#[test]
+fn error_a_transport_failure_is_a_connection_error() {
+    let failure = failure_of(wire_failure(WireError::Transport {
+        source: Box::new(TransportError::Closed),
+    }));
+    assert_eq!(failure.kind, "APIConnectionError");
+}
+
+#[test]
+fn error_a_missing_azure_base_is_a_python_value_error() {
+    assert!(matches!(
+        wire_failure(WireError::MissingAzureBase),
+        Raised::Python(_)
+    ));
 }
 
 #[test]
