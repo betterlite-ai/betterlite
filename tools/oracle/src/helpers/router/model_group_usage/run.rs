@@ -1,25 +1,21 @@
-use std::time::SystemTime;
-
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::model_group_lookups::access_groups::AccessGroups;
 use betterlite_router::model_group_usage::access_filter::{
-    AccessFilterRequest, KeyGrants, filter_deployments_by_model_access_groups,
+    AccessFilterRequest, KeyGrants, filter_by_access_groups,
 };
-use betterlite_router::model_group_usage::remaining::get_remaining_model_group_usage;
+use betterlite_router::model_group_usage::remaining::group_remaining_usage;
 use betterlite_router::model_group_usage::response_headers::{
     ResponseHeadersRequest, set_response_headers,
 };
-use betterlite_router::model_group_usage::usage::{
-    get_model_group_io_token_usage, get_model_group_usage,
-};
+use betterlite_router::model_group_usage::usage::{UsageSeries, group_counter_totals};
 use betterlite_router::remaining_usage_headers::RemainingUsage;
 use betterlite_router::router_core::headers::Response;
 use serde::Serialize;
 use serde_json::Value;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 use super::cache::{FixedMetadata, ScriptedCache, moment};
 use super::error::Failure;
@@ -57,112 +53,74 @@ struct FilterOutput {
     ids: Vec<String>,
 }
 
-// Router(model_list=...) once, then the one owned method the case names, answered on the case's clock.
+// Router(model_list=...) once, then the one owned method the case names, answered on the case's clock and cache.
 pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
     let snapshot = Snapshot::build(&input.model_list)?;
     let cache = ScriptedCache::new(&input.cache);
-    let moment = moment(input.now)?;
+    let time = moment(input.now)?;
     let runtime = Builder::new_current_thread().build()?;
     match input.function {
-        Function::Usage => usage_answer(input, &snapshot, &cache, moment, &runtime),
-        Function::IoUsage => io_answer(input, &snapshot, &cache, moment, &runtime),
-        Function::Remaining => remaining_answer(input, &snapshot, &cache, moment, &runtime),
-        Function::Response => response_answer(input, &snapshot, &cache, moment, &runtime),
+        Function::Usage => {
+            let rows = snapshot.rows(group_of(input, "usage")?);
+            let (tpm, rpm) = runtime.block_on(group_counter_totals(
+                UsageSeries::Standard,
+                Some(&rows),
+                &cache,
+                time,
+            ))?;
+            Ok(serde_json::to_value(UsageOutput {
+                tpm,
+                rpm,
+                reads: cache.reads(),
+            })?)
+        }
+        Function::IoUsage => {
+            let rows = snapshot.rows(group_of(input, "io_usage")?);
+            let (itpm, otpm) = runtime.block_on(group_counter_totals(
+                UsageSeries::IoToken,
+                Some(&rows),
+                &cache,
+                time,
+            ))?;
+            Ok(serde_json::to_value(IoOutput {
+                itpm,
+                otpm,
+                reads: cache.reads(),
+            })?)
+        }
+        Function::Remaining => {
+            let group = group_of(input, "remaining")?;
+            let rows = snapshot.rows(group);
+            let headers = runtime.block_on(group_remaining_usage(
+                group,
+                Some(&rows),
+                &fixed_metadata(input),
+                &cache,
+                time,
+            ))?;
+            Ok(serde_json::to_value(RemainingOutput {
+                headers,
+                reads: cache.reads(),
+            })?)
+        }
+        Function::Response => {
+            let rows = input.model_group.as_ref().map(|group| snapshot.rows(group));
+            let returned = runtime.block_on(set_response_headers(ResponseHeadersRequest {
+                response: response_body(input.response.as_ref()),
+                model_group: input.model_group.as_deref(),
+                request_kwargs: input.request_kwargs.as_ref(),
+                model_list: rows.as_deref(),
+                metadata: &fixed_metadata(input),
+                cache: &cache,
+                now: time,
+            }))?;
+            Ok(serde_json::to_value(ResponseOutput {
+                response: returned_body(returned)?,
+                reads: cache.reads(),
+            })?)
+        }
         Function::Filter => filter_answer(input, &snapshot),
     }
-}
-
-// Router.get_model_group_usage: the tpm and rpm sums plus the key lists the read asked for.
-fn usage_answer(
-    input: &Input,
-    snapshot: &Snapshot,
-    cache: &ScriptedCache,
-    moment: SystemTime,
-    runtime: &Runtime,
-) -> Result<Value, Failure> {
-    let group = group_of(input, "usage")?;
-    let rows = snapshot.rows(group);
-    let usage = runtime.block_on(get_model_group_usage(Some(rows.as_slice()), cache, moment))?;
-    Ok(serde_json::to_value(UsageOutput {
-        tpm: usage.tpm,
-        rpm: usage.rpm,
-        reads: cache.reads(),
-    })?)
-}
-
-// Router.get_model_group_io_token_usage: the itpm and otpm sums over the same one read.
-fn io_answer(
-    input: &Input,
-    snapshot: &Snapshot,
-    cache: &ScriptedCache,
-    moment: SystemTime,
-    runtime: &Runtime,
-) -> Result<Value, Failure> {
-    let group = group_of(input, "io_usage")?;
-    let rows = snapshot.rows(group);
-    let usage = runtime.block_on(get_model_group_io_token_usage(
-        Some(rows.as_slice()),
-        cache,
-        moment,
-    ))?;
-    Ok(serde_json::to_value(IoOutput {
-        itpm: usage.itpm,
-        otpm: usage.otpm,
-        reads: cache.reads(),
-    })?)
-}
-
-// Router.get_remaining_model_group_usage: the header map and the reads behind it, in write order.
-fn remaining_answer(
-    input: &Input,
-    snapshot: &Snapshot,
-    cache: &ScriptedCache,
-    moment: SystemTime,
-    runtime: &Runtime,
-) -> Result<Value, Failure> {
-    let group = group_of(input, "remaining")?;
-    let rows = snapshot.rows(group);
-    let metadata = FixedMetadata {
-        info: group_info(input.group_info.as_ref()),
-    };
-    let headers = runtime.block_on(get_remaining_model_group_usage(
-        group,
-        Some(rows.as_slice()),
-        &metadata,
-        cache,
-        moment,
-    ))?;
-    Ok(serde_json::to_value(RemainingOutput {
-        headers,
-        reads: cache.reads(),
-    })?)
-}
-
-// Router.set_response_headers: the returned response body, hidden params and headers included.
-fn response_answer(
-    input: &Input,
-    snapshot: &Snapshot,
-    cache: &ScriptedCache,
-    moment: SystemTime,
-    runtime: &Runtime,
-) -> Result<Value, Failure> {
-    let metadata = FixedMetadata {
-        info: group_info(input.group_info.as_ref()),
-    };
-    let rows = input.model_group.as_ref().map(|group| snapshot.rows(group));
-    let returned = runtime.block_on(set_response_headers(ResponseHeadersRequest {
-        response: response_body(input.response.as_ref()),
-        model_group: input.model_group.as_deref(),
-        request_kwargs: input.request_kwargs.as_ref(),
-        model_list: rows.as_deref(),
-        metadata: &metadata,
-        cache,
-        now: moment,
-    }))?;
-    Ok(serde_json::to_value(ResponseOutput {
-        response: returned_body(returned)?,
-        reads: cache.reads(),
-    })?)
 }
 
 // Router._filter_deployments_by_model_access_groups: the ids of the candidates the grants leave.
@@ -187,10 +145,10 @@ fn filtered_candidates(input: &Input, snapshot: &Snapshot) -> Result<Vec<Deploym
         routing_groups: &snapshot.groups,
         inferred_provider: &no_inferred,
     };
-    Ok(filter_deployments_by_model_access_groups(
+    Ok(filter_by_access_groups(
         AccessFilterRequest {
             model: group,
-            deployments: &candidates,
+            deployments: candidates.as_slice(),
             metadata: metadata.as_ref(),
             litellm_metadata: litellm_metadata.as_ref(),
             team_id: input.team_id.as_deref(),
@@ -224,6 +182,12 @@ fn grants_of(principal: &PrincipalInput) -> KeyGrants {
     KeyGrants {
         models: principal.models.clone(),
         team_models: principal.team_models.clone(),
+    }
+}
+
+fn fixed_metadata(input: &Input) -> FixedMetadata {
+    FixedMetadata {
+        info: group_info(input.group_info.as_ref()),
     }
 }
 
