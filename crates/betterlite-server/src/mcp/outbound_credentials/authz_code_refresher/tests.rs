@@ -591,6 +591,27 @@ async fn an_omitted_refresh_token_is_carried_forward() {
 }
 
 #[tokio::test]
+async fn the_answers_scope_replaces_the_stored_scopes() {
+    let harness = fixture(
+        Some(oauth_server(Some("https://idp.test/token"), None)),
+        Some(answer(&[
+            ("access_token", text("fresh")),
+            ("scope", text("read write")),
+        ])),
+        vec![Ok(None)],
+    );
+    let outcome = refresh(&harness, &stored_token(Some("stored"), &["old"]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(outcome.scopes, vec!["read".to_owned(), "write".to_owned()]);
+    assert_eq!(
+        harness.persist.calls()[0].scopes,
+        Some(vec!["read".to_owned(), "write".to_owned()])
+    );
+}
+
+#[tokio::test]
 async fn an_omitted_scope_keeps_the_stored_scopes() {
     let harness = fixture(
         Some(oauth_server(Some("https://idp.test/token"), None)),
