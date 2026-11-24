@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_models::decisions::Json;
 use futures_util::StreamExt;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;
 use crate::passthrough_stream_lifecycle::cost_injection::{
@@ -94,21 +95,18 @@ fn vertex_allows_only_the_raw_predict_routes() {
     ));
 }
 
-#[test]
-fn other_endpoints_never_allow_injection() {
-    for endpoint_type in [
-        EndpointType::Gemini,
-        EndpointType::Tinyfish,
-        EndpointType::Generic,
-        EndpointType::Decisions,
-    ] {
-        assert!(!cost_injection_active(
-            true,
-            Some("gpt-4o"),
-            endpoint_type,
-            VERTEX_URL
-        ));
-    }
+#[rstest]
+#[case(EndpointType::Gemini)]
+#[case(EndpointType::Tinyfish)]
+#[case(EndpointType::Generic)]
+#[case(EndpointType::Decisions)]
+fn other_endpoints_never_allow_injection(#[case] endpoint_type: EndpointType) {
+    assert!(!cost_injection_active(
+        true,
+        Some("gpt-4o"),
+        endpoint_type,
+        VERTEX_URL
+    ));
 }
 
 #[tokio::test]

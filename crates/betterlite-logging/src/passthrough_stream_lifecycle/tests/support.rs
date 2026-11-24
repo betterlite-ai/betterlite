@@ -323,12 +323,8 @@ pub struct RecordingQueue {
 
 impl RecordingQueue {
     pub fn kinds(&self) -> Vec<StreamJobKind> {
-        self.jobs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|job| job.kind)
-            .collect()
+        let jobs = self.jobs.lock().unwrap_or_else(PoisonError::into_inner);
+        job_kinds(&jobs)
     }
 
     pub fn take_all(&self) -> Vec<StreamLoggingJob> {
@@ -356,17 +352,18 @@ pub struct RecordingDeferred {
 
 impl RecordingDeferred {
     pub fn kinds(&self) -> Vec<StreamJobKind> {
-        self.parked
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|job| job.kind)
-            .collect()
+        let jobs = self.parked.lock().unwrap_or_else(PoisonError::into_inner);
+        job_kinds(&jobs)
     }
 
     pub fn take_all(&self) -> Vec<StreamLoggingJob> {
         std::mem::take(&mut *self.parked.lock().unwrap_or_else(PoisonError::into_inner))
     }
+}
+
+fn job_kinds(jobs: &[StreamLoggingJob]) -> Vec<StreamJobKind> {
+    let kinds = jobs.iter().map(|job| job.kind);
+    kinds.collect()
 }
 
 impl DeferredStreamLogging for RecordingDeferred {
@@ -660,20 +657,10 @@ impl Harness {
         self
     }
 
-    pub fn with_poller(mut self, poller: bool) -> Self {
+    pub fn with_tinyfish(mut self, poller: bool, run_id: Option<&str>) -> Self {
         self.tinyfish = Arc::new(RecordingTinyfish {
             poller,
-            run_id: None,
-            scans: Mutex::new(Vec::new()),
-            started: Mutex::new(Vec::new()),
-        });
-        self
-    }
-
-    pub fn with_run_id(mut self, run_id: &str) -> Self {
-        self.tinyfish = Arc::new(RecordingTinyfish {
-            poller: self.tinyfish.poller,
-            run_id: Some(run_id.to_owned()),
+            run_id: run_id.map(str::to_owned),
             scans: Mutex::new(Vec::new()),
             started: Mutex::new(Vec::new()),
         });

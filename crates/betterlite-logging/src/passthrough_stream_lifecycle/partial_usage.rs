@@ -12,9 +12,9 @@ use crate::logging_success::ports::SuccessClock;
 use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use crate::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use crate::passthrough_logging_state::response::PassThroughResponse;
-use crate::passthrough_stream_logging::build::{
-    StreamLoggingInput, build_passthrough_logging_result,
-};
+use crate::passthrough_stream_logging::build::StreamLoggingInput;
+// ast-grep-ignore: no-long-names
+use crate::passthrough_stream_logging::build::build_passthrough_logging_result;
 use crate::passthrough_stream_logging::object::StreamLoggingObject;
 use crate::passthrough_stream_logging::types::{EndpointType, ProviderChunkHandlers};
 
@@ -74,10 +74,10 @@ pub fn record_partial_usage_failure(call: PartialUsageCall) {
         raw_bytes: call.raw_bytes.clone(),
         model: None,
     };
+    // ast-grep-ignore: no-long-names
     let output = match build_passthrough_logging_result(&input) {
         Ok(output) => output,
         Err(error) => {
-            // ast-grep-ignore: no-long-names
             tracing::warn!(
                 "Could not recover the partial usage of a failed {} pass-through stream: {error}",
                 endpoint_value(call.endpoint_type)
@@ -90,6 +90,7 @@ pub fn record_partial_usage_failure(call: PartialUsageCall) {
     };
     let cost = response_cost(&output.kwargs);
     call.logging_obj
+        // ast-grep-ignore: no-long-names
         .edit(&mut |state| record_partial_usage_for_failure(state, &usage, cost));
 }
 

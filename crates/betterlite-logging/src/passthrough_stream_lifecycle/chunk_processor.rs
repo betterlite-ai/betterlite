@@ -5,6 +5,7 @@ use chrono::{DateTime, FixedOffset};
 use futures_util::{Stream, StreamExt};
 use indexmap::IndexMap;
 
+// ast-grep-ignore: no-long-names
 use crate::passthrough_stream_logging::model::extract_model_for_cost_injection;
 use crate::passthrough_stream_logging::object::StreamLoggingObject;
 use crate::passthrough_stream_logging::sse_frames::split_complete_sse_frames;
@@ -53,9 +54,10 @@ where
         let model_from_details = logging_obj
             .read(&mut |state| match state.model_call_details.get("model") {
                 Some(Json::Text(model)) => Some(model.clone()),
-                _ => None,
+                Some(_) | None => None,
             })
             .flatten();
+        // ast-grep-ignore: no-long-names
         let model_name = extract_model_for_cost_injection(
             Some(&resolved_request_body),
             model_from_details.as_deref(),
@@ -64,29 +66,33 @@ where
         );
         // Resolved once here, so the per-chunk branch below stays a plain check.
         let injection_model: Option<String> = match &model_name {
-            Some(model)
+            Some(model) => {
                 if cost_injection_active(
                     lifecycle.cost_injection_enabled,
                     Some(model),
                     endpoint_type,
                     &url_route,
-                ) =>
-            {
-                Some(model.clone())
+                ) {
+                    Some(model.clone())
+                } else {
+                    None
+                }
             }
-            _ => None,
+            None => None,
         };
-        let mut finish = CompletionGuard::start(GuardParts {
-            lifecycle: Arc::clone(&lifecycle),
-            logging_obj: Arc::clone(&logging_obj),
-            endpoint_type,
-            start_time,
-            url_route: url_route.clone(),
-            request_body: resolved_request_body.clone(),
-            status_code,
-            raw_bytes: Vec::new(),
-            logging_scheduled: false,
-        });
+        let mut finish = CompletionGuard {
+            parts: Some(GuardParts {
+                lifecycle: Arc::clone(&lifecycle),
+                logging_obj: Arc::clone(&logging_obj),
+                endpoint_type,
+                start_time,
+                url_route: url_route.clone(),
+                request_body: resolved_request_body.clone(),
+                status_code,
+                raw_bytes: Vec::new(),
+                logging_scheduled: false,
+            }),
+        };
         let mut tinyfish_scan_active = endpoint_type == EndpointType::Tinyfish;
         let mut tinyfish_pending: Vec<u8> = Vec::new();
         let mut pending: Vec<u8> = Vec::new();
@@ -185,10 +191,6 @@ struct GuardParts {
 }
 
 impl CompletionGuard {
-    fn start(parts: GuardParts) -> Self {
-        Self { parts: Some(parts) }
-    }
-
     fn record(&mut self, chunk: &[u8]) {
         if let Some(parts) = self.parts.as_mut() {
             parts.raw_bytes.push(chunk.to_vec());
@@ -228,7 +230,11 @@ impl CompletionGuard {
             request_body: Some(parts.request_body.clone()),
             raw_bytes: std::mem::take(&mut parts.raw_bytes),
         });
-        parts.lifecycle.bind_reservation(parts.logging_obj.as_ref());
+        // bind_budget_reservation_to_callbacks(litellm_logging_obj.litellm_params)
+        let binder = Arc::clone(&parts.lifecycle.binder);
+        parts
+            .logging_obj
+            .edit(&mut |state| binder.bind(&mut state.litellm_params));
         deferred.park(job);
     }
 }
@@ -255,6 +261,9 @@ impl Drop for CompletionGuard {
             tracing::error!("Error scheduling chunk_processor logging: the job was dropped");
             return;
         }
-        parts.lifecycle.bind_reservation(parts.logging_obj.as_ref());
+        let binder = Arc::clone(&parts.lifecycle.binder);
+        parts
+            .logging_obj
+            .edit(&mut |state| binder.bind(&mut state.litellm_params));
     }
 }

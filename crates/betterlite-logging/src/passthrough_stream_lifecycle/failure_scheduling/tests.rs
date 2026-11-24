@@ -46,7 +46,7 @@ fn chunks() -> Vec<Vec<u8>> {
 
 #[tokio::test]
 async fn a_tinyfish_poller_owns_the_failure_row() {
-    let harness = Harness::new(&["2024-01-01T00:00:02+00:00"]).with_poller(true);
+    let harness = Harness::new(&["2024-01-01T00:00:02+00:00"]).with_tinyfish(true, None);
     let lifecycle = harness.lifecycle(false);
     let logging_obj = object(&[], IndexMap::new());
     let context = stream_context(lifecycle.as_ref());

@@ -62,9 +62,4 @@ impl StreamLifecycle {
             work: Arc::clone(&self.route).route(input),
         }
     }
-
-    // bind_budget_reservation_to_callbacks(litellm_logging_obj.litellm_params)
-    pub fn bind_reservation(&self, logging_obj: &StreamLoggingObject) {
-        logging_obj.edit(&mut |state| self.binder.bind(&mut state.litellm_params));
-    }
 }

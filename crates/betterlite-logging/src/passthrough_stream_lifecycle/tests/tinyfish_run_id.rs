@@ -21,7 +21,7 @@ async fn run(harness: &Harness, endpoint_type: EndpointType, chunks: Vec<Vec<u8>
 
 #[tokio::test]
 async fn a_run_id_in_a_complete_frame_starts_the_billing() {
-    let harness = Harness::new(&["2024-01-01T00:00:05+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:05+00:00"]).with_tinyfish(false, Some("run-1"));
     run(
         &harness,
         EndpointType::Tinyfish,
@@ -39,7 +39,7 @@ async fn a_run_id_in_a_complete_frame_starts_the_billing() {
 
 #[tokio::test]
 async fn the_scan_halts_after_the_run_id_is_found() {
-    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
     run(
         &harness,
         EndpointType::Tinyfish,
@@ -54,7 +54,7 @@ async fn the_scan_halts_after_the_run_id_is_found() {
 
 #[tokio::test]
 async fn an_incomplete_frame_is_never_scanned() {
-    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
     run(
         &harness,
         EndpointType::Tinyfish,
@@ -66,7 +66,7 @@ async fn an_incomplete_frame_is_never_scanned() {
 
 #[tokio::test]
 async fn a_complete_frame_without_a_run_id_is_not_parsed() {
-    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
     run(
         &harness,
         EndpointType::Tinyfish,
@@ -78,7 +78,7 @@ async fn a_complete_frame_without_a_run_id_is_not_parsed() {
 
 #[tokio::test]
 async fn the_scan_continues_until_the_run_id_appears() {
-    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
     run(
         &harness,
         EndpointType::Tinyfish,
@@ -96,7 +96,7 @@ async fn the_scan_continues_until_the_run_id_appears() {
 
 #[tokio::test]
 async fn a_run_id_split_across_chunks_is_found_once_reassembled() {
-    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
     run(
         &harness,
         EndpointType::Tinyfish,
@@ -111,7 +111,7 @@ async fn a_run_id_split_across_chunks_is_found_once_reassembled() {
 
 #[tokio::test]
 async fn the_whole_stream_still_reaches_the_logging_route() {
-    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
     let chunks = vec![
         b"data: {\"value\":1}\n\n".to_vec(),
         b"data: {\"run_id\":\"run-1\"}\n\n".to_vec(),
@@ -124,7 +124,7 @@ async fn the_whole_stream_still_reaches_the_logging_route() {
 
 #[tokio::test]
 async fn a_non_tinyfish_endpoint_never_scans() {
-    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_run_id("run-1");
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
     run(
         &harness,
         EndpointType::OpenAi,
