@@ -183,24 +183,20 @@ impl ErrorPayload {
                 model,
                 debug_info,
                 retries,
-            } => Self::detailed(
-                Self::base(message.to_owned()),
-                model.as_deref(),
-                debug_info.as_deref(),
-                retries,
-            ),
+            } => {
+                let payload = Self::base(message.to_owned());
+                Self::detailed(payload, model.as_deref(), debug_info.as_deref(), retries)
+            }
             A2AError::Connection {
                 message,
                 model,
                 debug_info,
                 retries,
                 ..
-            } => Self::detailed(
-                Self::connection(message.to_owned(), url),
-                model.as_deref(),
-                debug_info.as_deref(),
-                retries,
-            ),
+            } => {
+                let payload = Self::connection(message.to_owned(), url);
+                Self::detailed(payload, model.as_deref(), debug_info.as_deref(), retries)
+            }
             A2AError::AgentCard {
                 message,
                 status_code,
@@ -216,12 +212,10 @@ impl ErrorPayload {
                 base_url,
                 model,
                 original_error,
-            } => Self::localhost(
-                localhost_url,
-                base_url,
-                model.as_deref(),
-                original_error.as_deref(),
-            ),
+            } => {
+                let original = original_error.as_deref();
+                Self::localhost(localhost_url, base_url, model.as_deref(), original)
+            }
         }
     }
 
