@@ -151,7 +151,7 @@ class ScriptedLogging(Logging):
         prompt_id: str | None = None,
         tools: list[dict[str, JsonValue]] | None = None,
     ) -> bool:
-        runs = super().should_run_prompt_management_hooks(
+        runs = super().should_run_prompt_management_hooks(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1012  # noqa: E501
             non_default_params=non_default_params, prompt_id=prompt_id, tools=tools
         )
         self.recording["checks"] += 1

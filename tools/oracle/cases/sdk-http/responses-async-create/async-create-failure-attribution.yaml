@@ -18,6 +18,8 @@ call:
             optional_params: {}
       - model: openai/gpt-4o
         input: hello
+      - model: no-such-model
+        input: hello
 upstream:
   - status: 401
     headers: {content-type: application/json}
@@ -34,3 +36,5 @@ compare:
   ignore:
     - pointer: /responses_async_create/value/runs/1/failure/message
       why: litellm prints the provider body verbatim while betterlite keeps the bounded exception message
+    - pointer: /responses_async_create/value/runs/2/failure/message
+      why: litellm appends its "Pass model as E.g." provider guidance while betterlite keeps the resolution sentence
