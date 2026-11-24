@@ -20,7 +20,6 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
-use tokio::runtime::Runtime;
 
 mod tests;
 
@@ -76,42 +75,41 @@ impl Helper for Op {
 
     fn run(input: &Input) -> HelperResult {
         match input {
-            Input::ParameterStringNormalization(store) => normalized(&store.vector_store),
-            Input::CanUserAccessVectorStore(fields) => access(fields),
-            Input::FilterListableVectorStores(fields) => listing(fields),
+            Input::ParameterStringNormalization(store) => Ok(serde_json::to_value(
+                normalize_litellm_params(&store.vector_store),
+            )
+            .or_value_error()?),
+            Input::CanUserAccessVectorStore(fields) => {
+                let scripted = Scripted {
+                    world: &fields.world,
+                };
+                let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
+                    .or_value_error()?;
+                let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+                let allowed = runtime
+                    .block_on(
+                        policy(&scripted).can_user_access_vector_store(&fields.vector_store, &auth),
+                    )
+                    .map_err(|error| denied(&error))?;
+                Ok(json!(allowed))
+            }
+            Input::FilterListableVectorStores(fields) => {
+                let scripted = Scripted {
+                    world: &fields.world,
+                };
+                let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
+                    .or_value_error()?;
+                let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+                let listable = runtime
+                    .block_on(
+                        policy(&scripted)
+                            .filter_listable_vector_stores(&fields.vector_stores, &auth),
+                    )
+                    .map_err(|error| denied(&error))?;
+                Ok(json!(listable))
+            }
         }
     }
-}
-
-fn normalized(vector_store: &ManagedVectorStore) -> HelperResult {
-    let store = normalize_litellm_params(vector_store);
-    Ok(serde_json::to_value(store).or_value_error()?)
-}
-
-fn access(fields: &AccessInput) -> HelperResult {
-    let scripted = Scripted {
-        world: &fields.world,
-    };
-    let checker = policy(&scripted);
-    let auth = fields.world.credential()?;
-    let executor = runtime()?;
-    let allowed = executor
-        .block_on(checker.can_user_access_vector_store(&fields.vector_store, &auth))
-        .map_err(|error| denied(&error))?;
-    Ok(json!(allowed))
-}
-
-fn listing(fields: &ListInput) -> HelperResult {
-    let scripted = Scripted {
-        world: &fields.world,
-    };
-    let checker = policy(&scripted);
-    let auth = fields.world.credential()?;
-    let executor = runtime()?;
-    let listable = executor
-        .block_on(checker.filter_listable_vector_stores(&fields.vector_stores, &auth))
-        .map_err(|error| denied(&error))?;
-    Ok(json!(listable))
 }
 
 fn policy<'access, 'world>(
@@ -122,11 +120,6 @@ fn policy<'access, 'world>(
         teams: scripted,
         session_teams: scripted,
     }
-}
-
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    Ok(runtime)
 }
 
 fn denied(error: &VectorStoreAccessError) -> Box<HelperError> {
@@ -142,12 +135,6 @@ fn denied(error: &VectorStoreAccessError) -> Box<HelperError> {
 
 struct Scripted<'world> {
     world: &'world WorldInput,
-}
-
-impl WorldInput {
-    fn credential(&self) -> Result<UserAPIKeyAuth, Box<HelperError>> {
-        UserAPIKeyAuth::construct(AuthInput::Dict(self.auth.clone())).or_value_error()
-    }
 }
 
 #[async_trait]

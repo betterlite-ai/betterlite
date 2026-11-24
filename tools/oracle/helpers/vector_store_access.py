@@ -1,21 +1,22 @@
 import asyncio
 import sys
-from types import ModuleType, SimpleNamespace
-from typing import Final, Literal, TypeAlias, TypedDict
+from datetime import datetime
+from types import ModuleType
+from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
-from litellm.proxy._types import LiteLLM_ObjectPermissionBase, LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.utils import PrismaClient
 from litellm.proxy.vector_store_endpoints.utils import (
     _normalize_litellm_params,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L25-L37
     can_user_access_vector_store,
     filter_listable_vector_stores,
 )
-from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import NotRequired, override
+from typing_extensions import override
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -32,12 +33,33 @@ class TeamRow(TypedDict):
     object_permission_id: NotRequired[str | None]
 
 
+class UserRow(TypedDict):
+    user_id: str
+    teams: list[str]
+
+
+# LiteLLM_ManagedVectorStore's fields with JSON named instead of Any, so mypy can read them
+class Store(TypedDict, total=False):
+    vector_store_id: str
+    custom_llm_provider: str
+    vector_store_name: str | None
+    vector_store_description: str | None
+    vector_store_metadata: dict[str, JsonValue] | str | None
+    created_at: datetime | None
+    updated_at: datetime | None
+    litellm_credential_name: str | None
+    litellm_params: dict[str, JsonValue] | None
+    team_id: str | None
+    user_id: str | None
+    is_config: bool
+
+
 # the credential fields the grant reads, as UserAPIKeyAuth's constructor takes them
 class Auth(TypedDict):
     user_id: NotRequired[str | None]
     team_id: NotRequired[str | None]
     user_role: NotRequired[LitellmUserRoles | None]
-    object_permission: NotRequired[LiteLLM_ObjectPermissionBase | None]
+    object_permission: NotRequired[LiteLLM_ObjectPermissionTable | None]
     object_permission_id: NotRequired[str | None]
     team_object_permission: NotRequired[LiteLLM_ObjectPermissionTable | None]
     team_object_permission_id: NotRequired[str | None]
@@ -54,17 +76,17 @@ class World(TypedDict):
 
 class NormalizeCall(TypedDict):
     function: Literal["parameter_string_normalization"]
-    vector_store: LiteLLM_ManagedVectorStore
+    vector_store: Store
 
 
 class AccessCall(World):
     function: Literal["can_user_access_vector_store"]
-    vector_store: LiteLLM_ManagedVectorStore
+    vector_store: Store
 
 
 class ListCall(World):
     function: Literal["filter_listable_vector_stores"]
-    vector_stores: list[LiteLLM_ManagedVectorStore]
+    vector_stores: list[Store]
 
 
 Call: TypeAlias = NormalizeCall | AccessCall | ListCall
@@ -89,12 +111,16 @@ class Table:
 
 
 # every table this policy reads is empty: a row it cannot find in the cache is absent
+class Database(PrismaWrapper):
+    def __init__(self) -> None:
+        self.litellm_objectpermissiontable = Table()
+        self.litellm_teamtable = Table()
+        self.litellm_usertable = Table()
+
+
 class Client(PrismaClient):
     def __init__(self) -> None:
-        names = ("litellm_objectpermissiontable", "litellm_teamtable", "litellm_usertable")
-        tables = SimpleNamespace(**{name: Table() for name in names})
-        self.db = tables
-        self.writer = tables
+        self.db = Database()
 
 
 # log_db_metrics schedules a task on this object after each bounded read
@@ -115,14 +141,14 @@ class ProxyServer(ModuleType):
 
 def seeded(call: World) -> dict[str, JsonValue]:
     values: dict[str, JsonValue] = {}
-    for permission_id, row in call["object_permissions"].items():
-        values[f"object_permission_id:{permission_id}"] = JSON.validate_python(row)
-    for team_id, row in call["teams"].items():
-        values[f"team_id:{team_id}"] = JSON.validate_python(row)
+    for permission_id, permission in call["object_permissions"].items():
+        values[f"object_permission_id:{permission_id}"] = JSON.validate_python(permission)
+    for team_id, team in call["teams"].items():
+        values[f"team_id:{team_id}"] = JSON.validate_python(team)
     user_id = call["auth"].get("user_id")
     if user_id is not None:
         values[user_id] = JSON.validate_python(
-            {"user_id": user_id, "teams": call["user_teams"]}
+            UserRow(user_id=user_id, teams=call["user_teams"])
         )
     return values
 
@@ -146,14 +172,17 @@ async def allowed(call: AccessCall) -> JsonValue:
 async def listable(call: ListCall) -> JsonValue:
     install(call)
     auth = UserAPIKeyAuth(**call["auth"])
-    listed = await filter_listable_vector_stores(call["vector_stores"], auth)
-    return JSON.validate_python(list(listed))
+    return JSON.validate_python(
+        list(await filter_listable_vector_stores(call["vector_stores"], auth))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L246-L253
+    )
 
 
 def run(input_value: Call) -> JsonValue:
     match input_value["function"]:
         case "parameter_string_normalization":
-            return JSON.validate_python(_normalize_litellm_params(input_value["vector_store"]))
+            return JSON.validate_python(
+                _normalize_litellm_params(input_value["vector_store"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L25-L37
+            )
         case "can_user_access_vector_store":
             return asyncio.run(allowed(input_value))
         case "filter_listable_vector_stores":
