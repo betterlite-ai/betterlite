@@ -172,8 +172,7 @@ impl TextSession {
             mock: MockSettings::default(),
             mock_chat,
             mock_embedding,
-            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-                .map_err(|error| raised(Raised::InternalServer, error.to_string(), None, None))?,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
             bundled_catalog: Arc::clone(&self.catalog),
         })
     }

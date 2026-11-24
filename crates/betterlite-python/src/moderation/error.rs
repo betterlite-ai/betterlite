@@ -74,6 +74,13 @@ pub(crate) fn raised(
     CallFailure(Box::new(class))
 }
 
+// a redaction pattern that will not compile leaves the module unusable, not the request wrong
+impl From<RedactionError> for CallFailure {
+    fn from(source: RedactionError) -> Self {
+        raised(Raised::InternalServer, source.to_string(), None, None)
+    }
+}
+
 pub(crate) fn class_error(class: &ErrorClass) -> PyErr {
     let payload = NativeTextErrorPayload::from_class(class);
     match serde_json::to_string(&payload) {

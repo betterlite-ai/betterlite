@@ -4,7 +4,7 @@ use super::{
     CompletionPrompt, ModerationArguments, TextArguments, TextCallWire, body, chat_messages,
     completion_request, moderation_model, prompt,
 };
-use crate::moderation::error::{CallFacts, convert_failure};
+use crate::moderation::error::{CallFacts, CallFailure, convert_failure};
 use crate::moderation::session::Entry;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_openai::moderation_request::ModerationInput;
@@ -209,4 +209,15 @@ fn error_payload_carries_no_status_for_a_plain_exception() {
     );
     let payload = super::NativeTextErrorPayload::from_class(&class);
     assert!(payload.status_code.is_none());
+}
+
+#[test]
+fn error_redaction_failure_is_an_internal_server() {
+    let redaction = match Redactor::new(usize::MAX) {
+        Ok(_) => panic!("an impossible repetition count must not compile"),
+        Err(error) => error,
+    };
+    let payload = super::NativeTextErrorPayload::from_class(&CallFailure::from(redaction).0);
+    assert_eq!(payload.kind, "InternalServerError");
+    assert_eq!(payload.status_code, Some(500));
 }
