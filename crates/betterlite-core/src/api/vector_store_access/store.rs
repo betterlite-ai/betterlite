@@ -27,13 +27,10 @@ impl ManagedVectorStore {
     // `vector_store.get("vector_store_id") or ""`: only text names a store, anything else compares as ""
     #[must_use]
     pub fn grant_id(&self) -> &str {
-        match self.0.get("vector_store_id") {
-            Some(Json::Text(text)) => text.as_str(),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => "",
+        if let Some(Json::Text(text)) = self.0.get("vector_store_id") {
+            return text.as_str();
         }
+        ""
     }
 
     // `vector_store.get("team_id") is None`: only a missing or null team id is the teamless case

@@ -42,7 +42,12 @@ impl World {
     fn with_database() -> Self {
         Self {
             database: true,
-            ..Self::default()
+            permissions: BTreeMap::new(),
+            failing: BTreeSet::new(),
+            teams: BTreeMap::new(),
+            user_teams: Vec::new(),
+            read_permissions: Mutex::new(Vec::new()),
+            read_teams: Mutex::new(Vec::new()),
         }
     }
 
@@ -55,16 +60,6 @@ impl World {
 
     fn fail(&mut self, object_permission_id: &str) {
         self.failing.insert(object_permission_id.to_owned());
-    }
-
-    fn team(
-        &mut self,
-        team_id: &str,
-        permission_id: Option<&str>,
-        inline: Option<(&str, &[&str])>,
-    ) {
-        self.teams
-            .insert(team_id.to_owned(), team_row(team_id, permission_id, inline));
     }
 
     fn permission_reads(&self) -> Vec<String> {
@@ -321,7 +316,8 @@ fn parameter_string_normalization() {
 fn decoder_reads_only_an_object_within_the_json_limit() {
     let limits = ApiLimits {
         max_json_bytes: 8,
-        ..ApiLimits::default()
+        max_event_bytes: 1024 * 1024,
+        max_items: 64 * 1024,
     };
     assert_eq!(
         decode_vector_store_access(br#"{"":""}"#, limits).unwrap(),
@@ -570,9 +566,14 @@ async fn proxy_admin_viewer_is_not_an_admin() {
 async fn dashboard_effective_teams() {
     let mut world = World::with_database();
     world.user_teams = vec!["a".to_owned(), "b".to_owned()];
-    world.team("a", None, Some(("a_perm", &["vs_a"])));
+    world.teams.insert(
+        "a".to_owned(),
+        team_row("a", None, Some(("a_perm", &["vs_a"]))),
+    );
     world.allow("p_b", &["vs_b"]);
-    world.team("b", Some("p_b"), None);
+    world
+        .teams
+        .insert("b".to_owned(), team_row("b", Some("p_b"), None));
     let access = policy(&world);
     let caller = auth(&[
         ("team_id", data_text(UI_SESSION_TOKEN_TEAM_ID)),
@@ -605,8 +606,13 @@ async fn dashboard_effective_teams() {
 async fn dashboard_contexts_clear_and_replace_team_fields() {
     let mut world = World::with_database();
     world.user_teams = vec!["a".to_owned(), "b".to_owned()];
-    world.team("a", None, Some(("a_perm", &["vs_a"])));
-    world.team("b", Some("p_b"), None);
+    world.teams.insert(
+        "a".to_owned(),
+        team_row("a", None, Some(("a_perm", &["vs_a"]))),
+    );
+    world
+        .teams
+        .insert("b".to_owned(), team_row("b", Some("p_b"), None));
     let access = policy(&world);
     let caller = auth(&[
         ("team_id", data_text(UI_SESSION_TOKEN_TEAM_ID)),
