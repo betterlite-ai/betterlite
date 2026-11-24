@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use betterlite_db::team_repository::decoder::TeamRecord;
 use betterlite_db::team_rows::archived::LiteLLMDeletedTeamTable;
@@ -6,7 +7,6 @@ use betterlite_db::team_rows::member::Member;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::team_list_query::TeamListQueryError;
 // ast-grep-ignore: no-long-names - the production operation keeps LiteLLM's function name
 use betterlite_server::team_list_query::response::convert_teams_to_response_models;
 use betterlite_server::team_request_contracts::team_list::{TeamListEntry, TeamListItem};
@@ -42,7 +42,10 @@ impl Helper for Op {
     }
 }
 
-fn invalid(error: TeamListQueryError) -> Box<HelperError> {
+fn invalid<Error>(error: Error) -> Box<HelperError>
+where
+    Error: Display,
+{
     Box::new(HelperError {
         class: "ValidationError".to_owned(),
         status: None,
