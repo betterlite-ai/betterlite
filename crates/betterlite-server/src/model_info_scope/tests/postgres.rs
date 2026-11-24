@@ -59,6 +59,7 @@ const INSERT_MODEL_SQL: &str = r#"INSERT INTO "LiteLLM_ProxyModelTable" (model_i
 const INSERT_USER_SQL: &str = r#"INSERT INTO "LiteLLM_UserTable" (user_id, teams, models) VALUES ($1, ($2::text)::jsonb, ($3::text)::jsonb)"#;
 const INSERT_TEAM_SQL: &str = r#"INSERT INTO "LiteLLM_TeamTable" (team_id, models, access_group_ids) VALUES ($1, ($2::text)::jsonb, ($3::text)::jsonb)"#;
 const INSERT_GROUP_SQL: &str = r#"INSERT INTO "LiteLLM_AccessGroupTable" (access_group_id, access_group_name, access_model_names) VALUES ($1, $1, ($2::text)::jsonb)"#;
+const INSERT_NULL_GROUP_SQL: &str = r#"INSERT INTO "LiteLLM_AccessGroupTable" (access_group_id, access_group_name, access_model_names) VALUES ($1, $1, NULL)"#;
 const SET_TEAM_MODELS_SQL: &str =
     r#"UPDATE "LiteLLM_TeamTable" SET models = ($1::text)::jsonb WHERE team_id = $2"#;
 const DROP_USER_SQL: &str = r#"DROP TABLE "LiteLLM_UserTable""#;
@@ -347,6 +348,31 @@ async fn missing_access_group() {
     .unwrap();
     assert_eq!(found.get("base-1"), Some(&team_list(&["team-alpha"])));
     assert_eq!(found.get("group-1"), Some(&team_list(&["team-alpha"])));
+    db.close().await;
+}
+
+// LiteLLM's access group model declares access_model_names non-optional, so a NULL column fails there; betterlite reads it as empty.
+#[tokio::test]
+async fn null_access_model_names() {
+    let db = Database::start().await;
+    seed_team(&db, "team-alpha", Some(&["base"]), Some(&["ag-1"])).await;
+    db.execute(INSERT_NULL_GROUP_SQL, &[&"ag-1"]).await;
+    let rows = vec![
+        identified("base", "base-1"),
+        identified("group-model", "group-1"),
+    ];
+    let lookup = snapshot(&rows);
+    let selection = TeamSelection::Ids(team_list(&["team-alpha"]));
+    let found = get_all_team_models(
+        &selection,
+        &db.reads(),
+        &lookup.lookup(),
+        &AccessGroups::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(found.get("base-1"), Some(&team_list(&["team-alpha"])));
+    assert_eq!(found.get("group-1"), None);
     db.close().await;
 }
 
