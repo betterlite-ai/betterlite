@@ -264,11 +264,11 @@ fn openai_capabilities(
     if listed.is_catalog_model(model) {
         capabilities.insert(OpenAiCapability::CatalogModel);
     }
-    let entry = catalog
+    let found = catalog
         .lookup
         .get(model)
         .and_then(|canonical| catalog.entries.get(canonical.as_ref()));
-    let Some(entry) = entry else {
+    let Some(entry) = found else {
         return capabilities;
     };
     let fields = &entry.fields.capabilities;
