@@ -33,6 +33,7 @@ from batch_limit_counters_records import (
     LimiterCallView,
     LimiterScript,
     ReplySpec,
+    ScopeView,
     StoreCallView,
     descriptor_view,
 )
@@ -86,15 +87,10 @@ class ScriptedStore:
         litellm_parent_otel_span: Span | None = None,
     ) -> BatchEnqueuedTokenOutcome:
         del litellm_parent_otel_span
-        self._trace.store_calls.append(
-            {
-                "tokens": tokens,
-                "scopes": [
-                    {"key": scope.key, "value": scope.value, "limit": scope.limit}
-                    for scope in scopes
-                ],
-            }
-        )
+        scopes_view: list[ScopeView] = [
+            {"key": scope.key, "value": scope.value, "limit": scope.limit} for scope in scopes
+        ]
+        self._trace.store_calls.append({"tokens": tokens, "scopes": scopes_view})
         if not self._replies:
             return BatchEnqueuedTokenReservation(tokens=tokens, scopes=scopes)
         reply = self._replies.pop(0)

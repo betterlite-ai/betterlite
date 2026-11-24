@@ -240,12 +240,13 @@ def operation_view(operation: RefundOperation) -> OperationView:
 
 
 def reservation_view(reservation: BatchEnqueuedTokenReservation) -> ReservationView:
+    scopes: list[ScopeView] = [
+        {"key": scope.key, "value": scope.value, "limit": scope.limit}
+        for scope in reservation.scopes
+    ]
     return {
         "tokens": reservation.tokens,
-        "scopes": [
-            {"key": scope.key, "value": scope.value, "limit": scope.limit}
-            for scope in reservation.scopes
-        ],
+        "scopes": scopes,
         "backend": reservation.backend,
         "owner": reservation.owner,
     }
