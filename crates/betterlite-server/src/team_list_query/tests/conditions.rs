@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use crate::team_list_query::conditions::{
-    TeamListColumn, TeamListScope, TeamListWhere, build_where_conditions,
+    TeamListColumn, TeamListFilters, TeamListScope, TeamListWhere, build_where_conditions,
 };
 
 use super::support::{
-    FailingStore, RecordingCache, database, deleted_team_insert, lookup, organization_insert,
-    rejected, searching, team_filters, team_insert, user_insert, user_store,
+    FailingStore, Fixture, RecordingCache, database, deleted_team_insert, lookup,
+    organization_insert, rejected, searching, team_filters, team_insert, user_insert, user_store,
 };
 
 fn scope_seed() -> String {
@@ -108,19 +108,24 @@ fn wildcard_seed() -> String {
     .concat()
 }
 
-#[tokio::test]
-async fn alias_wildcards_are_patterns() {
-    let fixture = database(&wildcard_seed()).await;
+// the team ids a filter matches, rendered through the production where clause against the seed
+async fn matched_ids(fixture: &Fixture, filters: &TeamListFilters) -> Vec<String> {
     let cache = Arc::new(RecordingCache::default());
     let no_database = lookup(&cache, None);
-    // Prisma's contains reaches Postgres unescaped, so a percent matches any run of characters
-    let percent = team_filters(None, Some("a%b"), None, None);
-    let percent_clause = build_where_conditions(&no_database, &percent, TeamListScope::default())
+    let clause = build_where_conditions(&no_database, filters, TeamListScope::default())
         .await
         .unwrap()
         .unwrap();
+    fixture.matching_team_ids(&clause, false).await
+}
+
+#[tokio::test]
+async fn alias_wildcards_are_patterns() {
+    let fixture = database(&wildcard_seed()).await;
+    // Prisma's contains reaches Postgres unescaped, so a percent matches any run of characters
+    let percent = team_filters(None, Some("a%b"), None, None);
     assert_eq!(
-        fixture.matching_team_ids(&percent_clause, false).await,
+        matched_ids(&fixture, &percent).await,
         vec![
             "t-pct".to_owned(),
             "t-plain".to_owned(),
@@ -131,13 +136,8 @@ async fn alias_wildcards_are_patterns() {
     );
     // an underscore matches exactly one character, so the alias without one in between drops out
     let underscore = team_filters(None, Some("a_b"), None, None);
-    let underscore_clause =
-        build_where_conditions(&no_database, &underscore, TeamListScope::default())
-            .await
-            .unwrap()
-            .unwrap();
     assert_eq!(
-        fixture.matching_team_ids(&underscore_clause, false).await,
+        matched_ids(&fixture, &underscore).await,
         vec![
             "t-pct".to_owned(),
             "t-slash".to_owned(),
@@ -147,12 +147,8 @@ async fn alias_wildcards_are_patterns() {
     );
     // a backslash is LIKE's escape character, so \% finds the alias holding a percent sign
     let escaped = team_filters(None, Some(r"a\%b"), None, None);
-    let escaped_clause = build_where_conditions(&no_database, &escaped, TeamListScope::default())
-        .await
-        .unwrap()
-        .unwrap();
     assert_eq!(
-        fixture.matching_team_ids(&escaped_clause, false).await,
+        matched_ids(&fixture, &escaped).await,
         vec!["t-pct".to_owned()]
     );
     fixture.close().await;
@@ -161,34 +157,20 @@ async fn alias_wildcards_are_patterns() {
 #[tokio::test]
 async fn prefix_wildcards_are_patterns() {
     let fixture = database(&wildcard_seed()).await;
-    let cache = Arc::new(RecordingCache::default());
-    let no_database = lookup(&cache, None);
-    // a prefix search is an exact match on team_id and a contains on the alias, both unescaped
+    // a prefix search is a startsWith on team_id and a contains on the alias, both unescaped
     let prefixed = searching("t-pc_", true);
-    let prefix_clause = build_where_conditions(&no_database, &prefixed, TeamListScope::default())
-        .await
-        .unwrap()
-        .unwrap();
     assert_eq!(
-        fixture.matching_team_ids(&prefix_clause, false).await,
+        matched_ids(&fixture, &prefixed).await,
         vec!["t-pct".to_owned()]
     );
     let percent = searching("t-p%", true);
-    let percent_clause = build_where_conditions(&no_database, &percent, TeamListScope::default())
-        .await
-        .unwrap()
-        .unwrap();
     assert_eq!(
-        fixture.matching_team_ids(&percent_clause, false).await,
+        matched_ids(&fixture, &percent).await,
         vec!["t-pct".to_owned(), "t-plain".to_owned()]
     );
     let alias = searching("a_", true);
-    let alias_clause = build_where_conditions(&no_database, &alias, TeamListScope::default())
-        .await
-        .unwrap()
-        .unwrap();
     assert_eq!(
-        fixture.matching_team_ids(&alias_clause, false).await,
+        matched_ids(&fixture, &alias).await,
         vec![
             "t-pct".to_owned(),
             "t-slash".to_owned(),
@@ -197,12 +179,8 @@ async fn prefix_wildcards_are_patterns() {
         ]
     );
     let escaped = searching(r"a\%", true);
-    let escaped_clause = build_where_conditions(&no_database, &escaped, TeamListScope::default())
-        .await
-        .unwrap()
-        .unwrap();
     assert_eq!(
-        fixture.matching_team_ids(&escaped_clause, false).await,
+        matched_ids(&fixture, &escaped).await,
         vec!["t-pct".to_owned()]
     );
     fixture.close().await;
