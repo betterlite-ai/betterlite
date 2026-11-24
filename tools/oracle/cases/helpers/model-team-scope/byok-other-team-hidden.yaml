@@ -1,0 +1,38 @@
+kind: helper
+name: model-team-scope-byok-other-team-hidden
+call:
+  model_team_scope:
+    function: byok_row_outside_caller_teams
+    model_info: {id: row-1, team_id: team-beta}
+    allowed_team_ids: [team-alpha]
+    team_models: []
+    access_groups: {}
+    caller: null
+    user: null
+calls:
+  - model_team_scope:
+      function: byok_row_outside_caller_teams
+      model_info: {id: row-1, team_id: team-beta}
+      allowed_team_ids: [team-alpha, team-beta]
+      team_models: []
+      access_groups: {}
+      caller: null
+      user: null
+  - model_team_scope:
+      function: byok_row_outside_caller_teams
+      model_info: {id: row-1, team_id: team-beta}
+      allowed_team_ids: null
+      team_models: []
+      access_groups: {}
+      caller: null
+      user: null
+  - model_team_scope:
+      function: byok_row_outside_caller_teams
+      model_info: {id: row-1}
+      allowed_team_ids: []
+      team_models: []
+      access_groups: {}
+      caller: null
+      user: null
+env: {}
+compare: {ignore: []}

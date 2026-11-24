@@ -1,0 +1,22 @@
+kind: helper
+name: model-team-scope-group-expansion-order-and-duplicates
+call:
+  model_team_scope:
+    function: team_models_resolve_to_names
+    model_info: {}
+    allowed_team_ids: null
+    team_models: [group-1, named-model, group-2, group-1]
+    access_groups: {group-1: [access-a, access-b, access-a], group-2: []}
+    caller: null
+    user: null
+calls:
+  - model_team_scope:
+      function: team_models_resolve_to_names
+      model_info: {}
+      allowed_team_ids: null
+      team_models: [named-model, named-model, group-2]
+      access_groups: {group-1: [access-a], group-2: []}
+      caller: null
+      user: null
+env: {}
+compare: {ignore: []}
