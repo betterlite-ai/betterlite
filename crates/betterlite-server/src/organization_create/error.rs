@@ -51,20 +51,26 @@ pub enum OrganizationCreateError {
     #[error("the caller identity could not be read")]
     Caller(#[source] serde_json::Error),
     #[error("the database request failed: {0}")]
-    Database(String),
+    Database(#[source] TableError),
+    #[error("the budget lookup failed: {0}")]
+    BudgetRepository(#[source] BudgetRepositoryError),
     #[error("the stored row could not be read: {0}")]
-    Row(String),
+    Row(#[source] serde_json::Error),
+    #[error("the created row is not an object")]
+    NotAnObject,
+    #[error("the created row has no {name} column")]
+    MissingColumn { name: &'static str },
 }
 
 impl From<TableError> for OrganizationCreateError {
     fn from(error: TableError) -> Self {
-        Self::Database(error.to_string())
+        Self::Database(error)
     }
 }
 
 impl From<BudgetRepositoryError> for OrganizationCreateError {
     fn from(error: BudgetRepositoryError) -> Self {
-        Self::Database(error.to_string())
+        Self::BudgetRepository(error)
     }
 }
 
@@ -151,7 +157,10 @@ impl IntoResponse for OrganizationCreateError {
             | Self::Encoding(_)
             | Self::Caller(_)
             | Self::Database(_)
-            | Self::Row(_) => unhandled(&self),
+            | Self::BudgetRepository(_)
+            | Self::Row(_)
+            | Self::NotAnObject
+            | Self::MissingColumn { .. } => unhandled(&self),
         }
     }
 }

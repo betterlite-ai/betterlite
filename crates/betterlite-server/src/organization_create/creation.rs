@@ -70,8 +70,8 @@ pub async fn create_organization(
     let metadata = partition_metadata(&request, &mut fields);
     let organization = organization_row(&request, &fields, metadata.as_ref(), &actor)?;
     let record = jsonify_object(&organization, &SerdeJsonEncoder);
-    let logged = serde_json::to_string_pretty(&record)
-        .map_err(|error| OrganizationCreateError::Database(error.to_string()))?;
+    let logged =
+        serde_json::to_string_pretty(&record).map_err(OrganizationCreateError::Encoding)?;
     tracing::info!("new_organization_row: {logged}");
     let created = organization_store.create_organization(record).await?;
     let row = organization_row_of(&created)?;
@@ -124,17 +124,13 @@ async fn attach_budget(
     Ok(organization_store.find_budget(budget_id).await?)
 }
 
-fn string_column(row: &JsonData, name: &str) -> Result<String, OrganizationCreateError> {
+fn string_column(row: &JsonData, name: &'static str) -> Result<String, OrganizationCreateError> {
     let JsonData::Object(fields) = row else {
-        return Err(OrganizationCreateError::Row(String::from(
-            "the created row is not an object",
-        )));
+        return Err(OrganizationCreateError::NotAnObject);
     };
     match fields.get(name) {
         Some(JsonData::String(value)) => Ok(value.clone()),
-        _ => Err(OrganizationCreateError::Row(format!(
-            "the created row has no {name}"
-        ))),
+        _ => Err(OrganizationCreateError::MissingColumn { name }),
     }
 }
 
@@ -205,7 +201,7 @@ fn check_models(
 pub fn organization_row_of(created: &JsonData) -> Result<OrganizationRow, OrganizationCreateError> {
     serde_json::to_value(created)
         .and_then(serde_json::from_value::<OrganizationRow>)
-        .map_err(|error| OrganizationCreateError::Row(error.to_string()))
+        .map_err(OrganizationCreateError::Row)
 }
 
 // NewOrganizationResponse from the stored row, with the budget table the include would return
