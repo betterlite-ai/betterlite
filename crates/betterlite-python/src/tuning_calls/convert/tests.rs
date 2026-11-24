@@ -26,6 +26,7 @@ use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use pyo3::prelude::*;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
 
@@ -361,51 +362,52 @@ fn request_retrieve_appends_the_job_id() {
     );
 }
 
-#[test]
-fn request_retrieve_quotes_a_slash_and_a_query() {
+#[rstest]
+#[case::slash("a/b", "a%2Fb")]
+#[case::question("a?b=c", "a%3Fb%3Dc")]
+fn request_retrieve_quotes_a_slash_and_a_query(#[case] job_id: &str, #[case] encoded: &str) {
     let key = SecretString::from("sk-test");
     let timeout = openai_timeout();
-    for (job_id, encoded) in [("a/b", "a%2Fb"), ("a?b=c", "a%3Fb%3Dc")] {
-        let call = OpenAiReadCall {
-            values: ReadValues {
-                is_async: false,
-                operation: ReadOperation::Retrieve { job_id },
-                timeout: &timeout,
-                max_retries: None,
-            },
-            api_base: "http://127.0.0.1:9/v1".to_owned(),
-            api_key: Some(&key),
-            api_version: None,
-            organization: None,
-        };
-        let request = request_of(WireCall::OpenAiRead(&call));
-        let expected = format!("http://127.0.0.1:9/v1/fine_tuning/jobs/{encoded}");
-        assert_eq!(request.url.as_str(), expected.as_str());
-        assert!(request.query.is_empty());
-    }
+    let call = OpenAiReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::Retrieve { job_id },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    };
+    let request = request_of(WireCall::OpenAiRead(&call));
+    let expected = format!("http://127.0.0.1:9/v1/fine_tuning/jobs/{encoded}");
+    assert_eq!(request.url.as_str(), expected.as_str());
+    assert!(request.query.is_empty());
 }
 
-#[test]
-fn request_retrieve_rejects_an_empty_or_dot_job_id() {
+#[rstest]
+#[case::empty("")]
+#[case::dot(".")]
+#[case::dot_dot("..")]
+fn request_retrieve_rejects_an_empty_or_dot_job_id(#[case] job_id: &str) {
     let key = SecretString::from("sk-test");
     let timeout = openai_timeout();
-    for job_id in ["", ".", ".."] {
-        let call = OpenAiReadCall {
-            values: ReadValues {
-                is_async: false,
-                operation: ReadOperation::Retrieve { job_id },
-                timeout: &timeout,
-                max_retries: None,
-            },
-            api_base: "http://127.0.0.1:9/v1".to_owned(),
-            api_key: Some(&key),
-            api_version: None,
-            organization: None,
-        };
-        let error = request_for(WireCall::OpenAiRead(&call), None)
-            .expect_err("the id cannot be one path segment");
-        assert!(matches!(error, WireError::JobId(_)));
-    }
+    let call = OpenAiReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::Retrieve { job_id },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    };
+    let error = request_for(WireCall::OpenAiRead(&call), None)
+        .expect_err("the id cannot be one path segment");
+    assert!(matches!(error, WireError::JobId(_)));
 }
 
 #[test]
@@ -484,52 +486,53 @@ fn request_cancel_posts_without_a_body() {
     );
 }
 
-#[test]
-fn request_cancel_quotes_a_slash_and_a_query() {
+#[rstest]
+#[case::slash("a/b", "a%2Fb")]
+#[case::question("a?b=c", "a%3Fb%3Dc")]
+fn request_cancel_quotes_a_slash_and_a_query(#[case] job_id: &str, #[case] encoded: &str) {
     let key = SecretString::from("sk-test");
     let timeout = openai_timeout();
-    for (job_id, encoded) in [("a/b", "a%2Fb"), ("a?b=c", "a%3Fb%3Dc")] {
-        let call = OpenAiFineTuningCancel {
-            values: FineTuningCancelValues {
-                is_async: false,
-                job_id,
-                timeout: &timeout,
-                max_retries: None,
-            },
-            api_base: "http://127.0.0.1:9/v1".to_owned(),
-            api_key: Some(&key),
-            api_version: None,
-            organization: None,
-            client: None,
-        };
-        let request = request_of(WireCall::OpenAiCancel(&call));
-        let expected = format!("http://127.0.0.1:9/v1/fine_tuning/jobs/{encoded}/cancel");
-        assert_eq!(request.url.as_str(), expected.as_str());
-    }
+    let call = OpenAiFineTuningCancel {
+        values: FineTuningCancelValues {
+            is_async: false,
+            job_id,
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+        client: None,
+    };
+    let request = request_of(WireCall::OpenAiCancel(&call));
+    let expected = format!("http://127.0.0.1:9/v1/fine_tuning/jobs/{encoded}/cancel");
+    assert_eq!(request.url.as_str(), expected.as_str());
 }
 
-#[test]
-fn request_cancel_rejects_an_empty_or_dot_job_id() {
+#[rstest]
+#[case::empty("")]
+#[case::dot(".")]
+#[case::dot_dot("..")]
+fn request_cancel_rejects_an_empty_or_dot_job_id(#[case] job_id: &str) {
     let key = SecretString::from("sk-test");
     let timeout = openai_timeout();
-    for job_id in ["", ".", ".."] {
-        let call = OpenAiFineTuningCancel {
-            values: FineTuningCancelValues {
-                is_async: false,
-                job_id,
-                timeout: &timeout,
-                max_retries: None,
-            },
-            api_base: "http://127.0.0.1:9/v1".to_owned(),
-            api_key: Some(&key),
-            api_version: None,
-            organization: None,
-            client: None,
-        };
-        let error = request_for(WireCall::OpenAiCancel(&call), None)
-            .expect_err("the id cannot be one path segment");
-        assert!(matches!(error, WireError::JobId(_)));
-    }
+    let call = OpenAiFineTuningCancel {
+        values: FineTuningCancelValues {
+            is_async: false,
+            job_id,
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+        client: None,
+    };
+    let error = request_for(WireCall::OpenAiCancel(&call), None)
+        .expect_err("the id cannot be one path segment");
+    assert!(matches!(error, WireError::JobId(_)));
 }
 
 #[test]
