@@ -1,0 +1,11 @@
+kind: helper
+name: responses_poll_frame-literal
+call:
+  responses_poll_frame:
+    frames:
+      - "data: {\"type\":\"response.completed\"}\n\n"
+      - "data:{\"type\":\"x\"}\n\n"
+      - "data: [DONE]\n\n"
+      - "data: {split"
+env: {}
+compare: {ignore: []}
