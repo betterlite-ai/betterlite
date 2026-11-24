@@ -143,6 +143,9 @@ impl KeyLimitReads for FakeReads {
     }
 }
 
+// the cache trait's fallible answer, so each NoProjects signature stays one line
+type CacheAnswer<T> = Result<T, AuthCacheError>;
+
 struct NoProjects;
 
 #[async_trait]
@@ -151,20 +154,15 @@ impl OrgCache for NoProjects {
         &self,
         _key: &str,
         _local_only: bool,
-    ) -> Result<Option<OrganizationTable>, AuthCacheError> {
+    ) -> CacheAnswer<Option<OrganizationTable>> {
         Ok(None)
     }
 
-    async fn write_org(
-        &self,
-        _key: &str,
-        _org: &OrganizationTable,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    async fn write_org(&self, _key: &str, _org: &OrganizationTable, _ttl: f64) -> CacheAnswer<()> {
         Ok(())
     }
 
-    async fn read_project(&self, _key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
+    async fn read_project(&self, _key: &str) -> CacheAnswer<Option<CachedProject>> {
         Ok(None)
     }
 
@@ -173,7 +171,7 @@ impl OrgCache for NoProjects {
         _key: &str,
         _project: &CachedProject,
         _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    ) -> CacheAnswer<()> {
         Ok(())
     }
 

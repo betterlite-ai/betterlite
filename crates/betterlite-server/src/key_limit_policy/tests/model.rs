@@ -12,32 +12,13 @@ use crate::team_parent_limits::error::RateLimit;
 
 use super::support::{generate, keys, object, rejected, text_detail};
 
-fn rpm_ceilings(
+fn ceilings(
     stored: Option<&BTreeMap<String, JsonData>>,
+    field: &'static str,
+    limit: RateLimit,
     aggregate: Option<i64>,
 ) -> ModelCeilings {
-    model_ceilings(
-        stored,
-        MODEL_RPM_FIELD,
-        RateLimit::Rpm,
-        Entity::Team,
-        aggregate,
-    )
-    .unwrap()
-}
-
-fn tpm_ceilings(
-    stored: Option<&BTreeMap<String, JsonData>>,
-    aggregate: Option<i64>,
-) -> ModelCeilings {
-    model_ceilings(
-        stored,
-        MODEL_TPM_FIELD,
-        RateLimit::Tpm,
-        Entity::Team,
-        aggregate,
-    )
-    .unwrap()
+    model_ceilings(stored, field, limit, Entity::Team, aggregate).unwrap()
 }
 
 fn allocation(limit: RateLimit, allocated: i128, requested: i64, ceiling: i64) -> Rejection {
@@ -56,8 +37,8 @@ fn model_top_level_precedence() {
     let request = generate(
         r#"{"model_rpm_limit": {"gpt-4": 4}, "metadata": {"model_rpm_limit": {"gpt-4": 50}}}"#,
     );
-    let rpm = rpm_ceilings(None, Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(None, MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 8, 4, 10));
 }
@@ -67,8 +48,8 @@ fn empty_top_level_falls_back() {
     let stored = keys(r#"[{"token": "k1", "metadata": {"model_rpm_limit": {"gpt-4": 8}}}]"#);
     let request =
         generate(r#"{"model_rpm_limit": {}, "metadata": {"model_rpm_limit": {"gpt-4": 4}}}"#);
-    let rpm = rpm_ceilings(None, Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(None, MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 8, 4, 10));
 }
@@ -79,8 +60,8 @@ fn model_totals() {
         r#"[{"token": "k1", "metadata": {"model_rpm_limit": {"gpt-4": 3, "gpt-3.5": 1}}}, {"token": "k2", "metadata": {"model_rpm_limit": {"gpt-4": 2}}}]"#,
     );
     let request = generate(r#"{"model_rpm_limit": {"gpt-4": 6}}"#);
-    let rpm = rpm_ceilings(None, Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(None, MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 5, 6, 10));
 }
@@ -89,8 +70,8 @@ fn model_totals() {
 fn model_absent_entry_starts_at_zero() {
     let stored = keys(r#"[{"token": "k1", "metadata": {"model_rpm_limit": {"gpt-4": 9}}}]"#);
     let request = generate(r#"{"model_rpm_limit": {"claude-4": 10}}"#);
-    let rpm = rpm_ceilings(None, Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(None, MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     result.unwrap();
 }
@@ -100,12 +81,12 @@ fn global_model_ceiling() {
     let stored = keys(r#"[{"token": "k1", "metadata": {"model_rpm_limit": {"gpt-4": 8}}}]"#);
     let request = generate(r#"{"model_rpm_limit": {"gpt-4": 4}}"#);
     let metadata = object(r#"{"model_rpm_limit": {"gpt-4": 3}}"#);
-    let rpm = rpm_ceilings(Some(&metadata), Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 8, 4, 10));
     let stored = keys(r#"[{"token": "k1"}]"#);
-    let rpm = rpm_ceilings(Some(&metadata), None);
+    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 0, 4, 3));
 }
@@ -115,10 +96,10 @@ fn model_ceiling_zero_ignored() {
     let metadata = object(r#"{"model_rpm_limit": {"gpt-4": 0}}"#);
     let request = generate(r#"{"model_rpm_limit": {"gpt-4": 5}}"#);
     let stored = keys(r#"[{"token": "k1"}]"#);
-    let rpm = rpm_ceilings(Some(&metadata), Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm).unwrap();
-    let rpm = rpm_ceilings(Some(&metadata), None);
+    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
     check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm).unwrap();
 }
 
@@ -127,8 +108,8 @@ fn model_ceiling_negative() {
     let metadata = object(r#"{"model_rpm_limit": {"gpt-4": -1}}"#);
     let request = generate(r#"{"model_rpm_limit": {"gpt-4": 0}}"#);
     let stored = keys(r#"[{"token": "k1"}]"#);
-    let rpm = rpm_ceilings(Some(&metadata), None);
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 0, 0, -1));
 }
@@ -138,8 +119,8 @@ fn model_null_ceiling_ignored() {
     let metadata = object(r#"{"model_rpm_limit": {"gpt-4": null}}"#);
     let request = generate(r#"{"model_rpm_limit": {"gpt-4": 5}}"#);
     let stored = keys(r#"[{"token": "k1"}]"#);
-    let rpm = rpm_ceilings(Some(&metadata), None);
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm).unwrap();
 }
 
@@ -148,8 +129,8 @@ fn model_rpm_before_tpm() {
     let stored = keys(r#"[{"token": "k1"}]"#);
     let request =
         generate(r#"{"model_rpm_limit": {"gpt-4": 11}, "model_tpm_limit": {"gpt-4": 11}}"#);
-    let rpm = rpm_ceilings(None, Some(10));
-    let tpm = tpm_ceilings(None, Some(10));
+    let rpm = ceilings(None, MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, Some(10));
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 0, 11, 10));
     let request = generate(r#"{"model_tpm_limit": {"gpt-4": 11}}"#);
@@ -161,8 +142,8 @@ fn model_rpm_before_tpm() {
 fn model_limits_skipped_without_request() {
     let stored = keys(r#"[{"token": "k1", "metadata": {"model_rpm_limit": "broken"}}]"#);
     let request = generate(r#"{"rpm_limit": 5}"#);
-    let rpm = rpm_ceilings(None, Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(None, MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm).unwrap();
 }
 
@@ -170,8 +151,8 @@ fn model_limits_skipped_without_request() {
 fn model_limit_decode_error() {
     let stored = keys(r#"[{"token": "k1"}]"#);
     let request = generate(r#"{"model_rpm_limit": {"gpt-4": "lots"}}"#);
-    let rpm = rpm_ceilings(None, Some(10));
-    let tpm = tpm_ceilings(None, None);
+    let rpm = ceilings(None, MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
+    let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     match result {
         Err(KeyLimitError::ModelLimits { field, .. }) => assert_eq!(field, "model_rpm_limit"),
