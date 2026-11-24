@@ -43,7 +43,7 @@ impl InvitationStoreError {
     pub fn message(&self) -> String {
         match self {
             Self::Create(error) => error.message(),
-            other => other.to_string(),
+            Self::Read(error) | Self::Update(error) | Self::Delete(error) => error.to_string(),
         }
     }
 }

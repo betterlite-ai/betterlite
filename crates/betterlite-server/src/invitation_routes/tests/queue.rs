@@ -481,7 +481,7 @@ async fn queue_lets_the_stream_hook_replace_the_failure() {
     let items = vec![Err(stream_failure())];
     let completion = Arc::new(FakeCompletion::streaming(items));
     let hook = Arc::new(FakeHook::new(Some(replacement(429))));
-    let failure_hook: Arc<dyn QueueFailureHook> = hook;
+    let failure_hook: Arc<dyn QueueFailureHook> = Arc::clone(&hook);
     let router = queue_router(queue_state(&scheduler(), &completion, Some(failure_hook)));
     let body = r#"{"model":"m","priority":1,"messages":[],"stream":true}"#;
     let (status, _, text) = send(
@@ -493,7 +493,13 @@ async fn queue_lets_the_stream_hook_replace_the_failure() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert!(text.contains("replaced"), "{text}");
+    assert_eq!(hook.call_count(), 1);
+    assert_eq!(
+        hook.seen(),
+        vec![("upstream broke".to_owned(), "500".to_owned())]
+    );
+    // a hook that replaces the failure ends the stream instead of writing the original frame, as the raised replacement does
+    assert!(!text.contains("upstream broke"), "{text}");
 }
 
 #[tokio::test]
