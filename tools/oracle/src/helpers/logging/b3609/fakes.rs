@@ -36,7 +36,7 @@ impl CollectedChunksHandler for Handler {
     fn handle(&self, _call: &CollectedChunksCall<'_>) -> Result<HandlerOutcome, HandlerError> {
         let body: Json = serde_json::from_value(json!({
             "id": "chatcmpl-1",
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            "usage": {"prompt_tokens": 10_u32, "completion_tokens": 5_u32, "total_tokens": 15_u32},
         }))
         .map_err(HandlerError::leaf)?;
         let mut kwargs = PassThroughLoggingKwargs::default();
@@ -189,7 +189,8 @@ impl TinyfishStreamBilling for Recorder {
 
     fn run_id_from_sse_frames(&self, _frames: &[u8]) -> Option<String> {
         let mut scan_count = self.scans.lock().unwrap_or_else(PoisonError::into_inner);
-        *scan_count += 1;
+        *scan_count = scan_count.saturating_add(1);
+        drop(scan_count);
         self.run_id.clone()
     }
 

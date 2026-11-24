@@ -19,7 +19,7 @@ pub(super) struct Driven {
 pub(super) fn answer(
     logging_obj: &StreamLoggingObject,
     recorder: &Recorder,
-    driven: Driven,
+    driven: &Driven,
 ) -> Value {
     let details = logging_obj
         .read(&mut |state| state.model_call_details.clone())
@@ -28,7 +28,7 @@ pub(super) fn answer(
         .read(&mut |state| state.litellm_params.clone())
         .unwrap_or_default();
     let (route_calls, route_bytes) = route_summary(recorder);
-    let result = outcome(&driven);
+    let result = outcome(driven);
     let completion = completion_start(logging_obj);
     json!({
         "yielded": driven.yielded,
@@ -98,15 +98,13 @@ fn failures(recorder: &Recorder) -> Vec<Value> {
 }
 
 fn tinyfish_started(recorder: &Recorder) -> Vec<Value> {
-    let started = recorder
+    recorder
         .started
         .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let mut values = Vec::with_capacity(started.len());
-    for (run_id, at) in started.iter() {
-        values.push(json!([run_id, at.to_rfc3339()]));
-    }
-    values
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(|(run_id, at)| json!([run_id, at.to_rfc3339()]))
+        .collect()
 }
 
 fn partial_usage(details: &IndexMap<String, Json>) -> Option<Value> {

@@ -177,7 +177,9 @@ impl StreamCostInjection for ClearingInjection {
         _model_name: &str,
         logging_obj: &StreamLoggingObject,
     ) -> Vec<u8> {
-        *self.calls.lock().unwrap() += 1;
+        let mut calls = self.calls.lock().unwrap();
+        *calls = calls.saturating_add(1);
+        drop(calls);
         logging_obj.edit(&mut |state| {
             state.model_call_details.shift_remove("model");
         });

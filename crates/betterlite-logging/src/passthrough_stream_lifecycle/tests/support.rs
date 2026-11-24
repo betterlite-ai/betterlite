@@ -326,7 +326,9 @@ impl StepClock {
 
 impl SuccessClock for StepClock {
     fn now(&self) -> DateTime<FixedOffset> {
-        *self.calls.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        *calls = calls.saturating_add(1);
+        drop(calls);
         let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
         if values.len() > 1 {
             values.remove(0)
@@ -545,7 +547,9 @@ impl RecordingBinder {
 
 impl ReservationBinder for RecordingBinder {
     fn bind(&self, litellm_params: &mut IndexMap<String, Json>) {
-        *self.calls.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        *calls = calls.saturating_add(1);
+        drop(calls);
         stamp_callback_bound(litellm_params, true);
     }
 }
@@ -704,11 +708,12 @@ impl Harness {
     }
 
     pub(super) fn lifecycle(&self, cost_injection_enabled: bool) -> Arc<StreamLifecycle> {
-        let mut cost_injection: Arc<dyn StreamCostInjection> =
-            Arc::<RecordingCostInjection>::clone(&self.cost_injection);
-        if let Some(injection) = &self.injection_override {
-            cost_injection = Arc::clone(injection);
-        }
+        let cost_injection: Arc<dyn StreamCostInjection> =
+            if let Some(injection) = &self.injection_override {
+                Arc::clone(injection)
+            } else {
+                Arc::<RecordingCostInjection>::clone(&self.cost_injection)
+            };
         let mut lifecycle = StreamLifecycle {
             router: Arc::new(StreamLoggingRouter {
                 providers: Arc::clone(&self.providers),
@@ -753,7 +758,7 @@ pub(super) fn processor_call(
 pub(super) fn ok_chunks(
     items: Vec<Vec<u8>>,
 ) -> impl Stream<Item = Result<Vec<u8>, StreamFailure>> + Send + 'static {
-    stream::iter(items.into_iter().map(Ok).collect::<Vec<_>>())
+    stream::iter(items.into_iter().map(Ok))
 }
 
 pub(super) fn failing_chunks(

@@ -30,7 +30,8 @@ async fn a_run_id_in_a_complete_frame_starts_the_billing() {
         &harness,
         EndpointType::Tinyfish,
         vec![b"data: {\"run_id\":\"run-1\"}\n\n".to_vec()],
-    );
+    )
+    .await;
     assert_eq!(
         harness.tinyfish.started(),
         vec![("run-1".to_owned(), time("2024-01-01T00:00:00+00:00"))]
@@ -51,7 +52,8 @@ async fn the_scan_halts_after_the_run_id_is_found() {
             b"data: {\"run_id\":\"run-1\"}\n\n".to_vec(),
             b"data: {\"run_id\":\"run-2\"}\n\n".to_vec(),
         ],
-    );
+    )
+    .await;
     assert_eq!(harness.tinyfish.scans.lock().unwrap().len(), 1);
     assert_eq!(harness.tinyfish.started().len(), 1);
 }
@@ -63,7 +65,8 @@ async fn an_incomplete_frame_is_never_scanned() {
         &harness,
         EndpointType::Tinyfish,
         vec![b"data: {\"run_id\":\"run-1\"}".to_vec()],
-    );
+    )
+    .await;
     assert!(harness.tinyfish.scans.lock().unwrap().is_empty());
     assert!(harness.tinyfish.started().is_empty());
 }
@@ -75,7 +78,8 @@ async fn a_complete_frame_without_a_run_id_is_not_parsed() {
         &harness,
         EndpointType::Tinyfish,
         vec![b"data: {\"value\":1}\n\n".to_vec()],
-    );
+    )
+    .await;
     assert!(harness.tinyfish.scans.lock().unwrap().is_empty());
     assert!(harness.tinyfish.started().is_empty());
 }
@@ -90,7 +94,8 @@ async fn the_scan_continues_until_the_run_id_appears() {
             b"data: {\"value\":1}\n\n".to_vec(),
             b"data: {\"run_id\":\"run-1\"}\n\n".to_vec(),
         ],
-    );
+    )
+    .await;
     assert_eq!(
         harness.tinyfish.scans.lock().unwrap().clone(),
         vec![b"data: {\"run_id\":\"run-1\"}\n\n".to_vec()]
@@ -105,7 +110,8 @@ async fn a_run_id_split_across_chunks_is_found_once_reassembled() {
         &harness,
         EndpointType::Tinyfish,
         vec![b"data: {\"run_".to_vec(), b"id\":\"run-1\"}\n\n".to_vec()],
-    );
+    )
+    .await;
     assert_eq!(
         harness.tinyfish.scans.lock().unwrap().clone(),
         vec![b"data: {\"run_id\":\"run-1\"}\n\n".to_vec()]
@@ -120,7 +126,7 @@ async fn the_whole_stream_still_reaches_the_logging_route() {
         b"data: {\"value\":1}\n\n".to_vec(),
         b"data: {\"run_id\":\"run-1\"}\n\n".to_vec(),
     ];
-    run(&harness, EndpointType::Tinyfish, chunks.clone());
+    run(&harness, EndpointType::Tinyfish, chunks.clone()).await;
     let job = harness.queue.take_all().into_iter().next().unwrap();
     job.work.await;
     assert_eq!(harness.route.calls()[0].raw_bytes, chunks);
@@ -133,7 +139,8 @@ async fn a_non_tinyfish_endpoint_never_scans() {
         &harness,
         EndpointType::OpenAi,
         vec![b"data: {\"run_id\":\"run-1\"}\n\n".to_vec()],
-    );
+    )
+    .await;
     assert!(harness.tinyfish.scans.lock().unwrap().is_empty());
     assert!(harness.tinyfish.started().is_empty());
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Success]);

@@ -70,7 +70,7 @@ async fn execute(input: &input::Input) -> HelperResult {
     Ok(answer::answer(
         &wiring.logging_obj,
         &wiring.recorder,
-        driven,
+        &driven,
     ))
 }
 
@@ -207,8 +207,8 @@ where
 
 fn request_body(value: Option<&Value>) -> Result<Option<Json>, Box<HelperError>> {
     value
-        .map(|value| {
-            serde_json::from_value(value.clone()).map_err(|error| invalid(&error.to_string()))
+        .map(|body| {
+            serde_json::from_value(body.clone()).map_err(|error| invalid(&error.to_string()))
         })
         .transpose()
 }
