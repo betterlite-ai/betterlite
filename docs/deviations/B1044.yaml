@@ -1,0 +1,6 @@
+task: B1044
+deviations:
+  - what: An output cap outside i64, or a cap times the candidate count above i64::MAX, gives the no-cap floor estimate or a saturated i64::MAX token count, where LiteLLM's Python int keeps the exact value.
+    why: betterlite counts tokens and limits in i64, so a value beyond it has no exact representation and the estimate stays bounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L486
+kept_bugs: []

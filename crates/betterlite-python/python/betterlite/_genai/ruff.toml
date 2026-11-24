@@ -1,0 +1,6 @@
+extend = "../../../ruff.toml"
+line-length = 100
+src = ["../../../python"]
+
+[lint.per-file-ignores]
+"*.py" = ["ASYNC109", "PLR0913", "PLR0917"] # LiteLLM's four generate-content signatures keep all ten parameters, the async ones included

@@ -1,0 +1,70 @@
+task: B7890
+deviations:
+  - what: The routes return a betterlite PassthroughResponse with status_code, headers, content, text, json() and raise_for_status() instead of an httpx.Response, and reading .request raises RuntimeError because no httpx.Request is built.
+    why: The wheel does not depend on httpx, so the response is the same object the rest of the wheel raises and reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L592-L595
+  - what: PassthroughResponse.raise_for_status raises betterlite's APIError with the response text and status where an httpx.Response raises httpx.HTTPStatusError.
+    why: The raised class is the one every other error in the wheel uses, and the status and body text are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L592-L595
+  - what: get_merged_query_parameters takes any object whose str() is the URL text, where LiteLLM's parameter is annotated httpx.URL.
+    why: The wheel does not depend on httpx; an httpx.URL reads the same through str().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L32-L39
+  - what: >-
+      get_merged_query_parameters refuses a URL text whose special scheme has no host, such as
+      "http:?q=1", with a ValueError, where LiteLLM accepts that httpx.URL and merges the query it
+      carries.
+    why: >-
+      The merge parses the URL text with the url crate, whose http parser rejects an empty host,
+      while httpx's parser accepts it and LiteLLM reads only the URL's query.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L39
+  - what: This task has no helper oracle cases.
+    why: The functions call a native session, so pytest compares both packages against one local server.
+    link: ""
+  - what: Both routes raise betterlite's APIError built from the native payload where the synchronous route raises provider_config.get_error_class (BaseLLMException, an openai.APIError subclass) and the asynchronous route re-raises the raw httpx.HTTPStatusError unchanged.
+    why: The native call maps an upstream status before Python sees the reply, and one error path for both routes keeps the class stable for callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L351-L354
+  - what: A provider_config or litellm_logging_obj keyword raises UnsupportedCallArgument instead of using the Python provider config or logging object the caller passed.
+    why: The provider config and the logging state are Rust values behind the native call, so neither Python object can cross.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L305-L309
+  - what: resolve_pass_through_request_timeout does not read general_settings.pass_through_request_timeout from a loaded litellm.proxy.proxy_server module.
+    why: betterlite's proxy is a Rust server and there is no Python proxy module to read the setting from, so the 600 second default stands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L30-L39
+  - what: resolve_llm_passthrough_timeout does not consult get_configured_request_timeout(), the litellm.request_timeout global, before the 600 second default.
+    why: betterlite keeps no Python global settings object; the native resolver takes the configured timeout as absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L78
+  - what: Duplicate upstream header names collapse to one value because betterlite's Headers is a case-insensitive mapping, where httpx keeps every repeat such as two set-cookie headers.
+    why: The whole wheel reads headers through the same mapping, so the pass-through shares it.
+    link: ""
+  - what: The streaming wrappers offer iteration, status_code, headers and close/aclose only, without the Generator and AsyncGenerator send, throw, asend and athrow methods, and the asynchronous wrapper is already initialized when it is returned instead of raising RuntimeError before its first await.
+    why: Spend collection runs in the native relay, so Python only iterates bytes and closes the relay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L87-L105
+  - what: A request_query_params value that is not text is refused by the native request, where LiteLLM hands the dict to urlencode and a list value becomes its repr.
+    why: B8690's native wire carries request_query_params as text pairs; refusing says which field is wrong instead of sending a query string no provider parses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L484-L491
+  - what: data must be a JSON object, and params given as str or bytes is parsed into name and value pairs and re-encoded, so its byte-exact text can differ from the string httpx would append.
+    why: The native request encodes data as form fields and params as pairs; a raw body goes through content instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: A CookieJar becomes name and value pairs, so domain, path, expiry and secure attributes do not cross.
+    why: The native request builds one Cookie header from the pairs.
+    link: ""
+  - what: content bytes are sent with Content-Type application/octet-stream, where httpx sends content with no Content-Type header.
+    why: The native wire labels a raw body with its byte type, so an upstream that requires a content type still accepts the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: >-
+      content given as an iterable or async iterable of bytes is joined into one body before the
+      call, so the provider sees a Content-Length instead of httpx's Transfer-Encoding: chunked, and
+      the whole body is held in memory before the request starts.
+    why: >-
+      The native wire carries content as bytes, so both routes gather the iterable before the call;
+      the bytes the provider receives are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: A files tuple of four items, whose last item maps per-part headers, raises TypeError from to_call_payload instead of sending those headers on the multipart part.
+    why: The $file marker carries a filename, a blob and a content type only, which is B6040's refusal for the same tuple, so the fourth item has nowhere to go on the wire.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: params given as a multi-valued mapping such as httpx.QueryParams sends only the first value of each repeated name, where httpx sends every pair.
+    why: A mapping is read through items(), which a multi-valued mapping defines as one value per key; the route has no multi_items method to ask.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L530-L540
+  - what: A stream that fails after its first chunk closes the relay and raises betterlite's APIError with the synthesized 500, where LiteLLM closes the response and re-raises the transport error unchanged, such as httpx.RemoteProtocolError.
+    why: The native relay carries the failure as the same APIError payload every other native failure uses, so the call and the iteration raise one class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L234-L246
+kept_bugs: []
