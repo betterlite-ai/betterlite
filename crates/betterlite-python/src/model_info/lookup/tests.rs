@@ -5,7 +5,8 @@ use betterlite_models::model_metadata_resolution::error::ADD_MODEL_URL;
 use indexmap::IndexMap;
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use super::{is_openai_model, max_tokens, model_info, provider_info};
+use super::openai_params::is_openai_model;
+use super::{max_tokens, model_info, provider_info};
 use crate::model_info::convert::{self, ModelQuery, ProviderQuery, RuntimeEntries};
 use crate::model_info::error::ModelInfoError;
 use crate::model_info::state::Runtime;
