@@ -4,7 +4,7 @@ import datetime as dt
 import os
 import sys
 from collections.abc import AsyncIterator, Coroutine, Iterator
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 import httpx
 import litellm
