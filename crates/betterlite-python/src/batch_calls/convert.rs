@@ -10,7 +10,9 @@ use betterlite_core::api::batch_provider_read::call::BatchProviderReadCall;
 use betterlite_openai::batches::records::BatchObject;
 use pyo3::PyErr;
 use pyo3::exceptions::PyValueError;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use serde_with::{As, FromIntoRef};
 
 pub(crate) mod request;
 mod tests;
@@ -23,19 +25,32 @@ pub(crate) struct SessionWire {
     pub(crate) settings: ModuleSettings,
 }
 
-// the module globals a batch call reads, under the names betterlite exposes them; the secrets stay text
-// here because the section parsers turn them into SecretString, which its serde rules never write out
+// the module globals a batch call reads, under the names betterlite exposes them
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct ModuleSettings {
     pub(crate) api_base: Option<String>,
-    pub(crate) api_key: Option<String>,
-    pub(crate) openai_key: Option<String>,
-    pub(crate) azure_key: Option<String>,
+    #[serde(serialize_with = "As::<Option<FromIntoRef<ExposedSecret>>>::serialize")]
+    pub(crate) api_key: Option<SecretString>,
+    #[serde(serialize_with = "As::<Option<FromIntoRef<ExposedSecret>>>::serialize")]
+    pub(crate) openai_key: Option<SecretString>,
+    #[serde(serialize_with = "As::<Option<FromIntoRef<ExposedSecret>>>::serialize")]
+    pub(crate) azure_key: Option<SecretString>,
     pub(crate) api_version: Option<String>,
     pub(crate) organization: Option<String>,
     pub(crate) vertex_project: Option<String>,
     pub(crate) vertex_location: Option<String>,
+}
+
+// serde's adapter builds this private, non-Debug value only while the module settings are serialized
+#[derive(Serialize)]
+#[serde(transparent)]
+struct ExposedSecret(String);
+
+impl From<&SecretString> for ExposedSecret {
+    fn from(secret: &SecretString) -> Self {
+        Self(secret.expose_secret().to_owned())
+    }
 }
 
 // the section parsers own the fallback chains and the os.environ/ references, so the module values go back through them
