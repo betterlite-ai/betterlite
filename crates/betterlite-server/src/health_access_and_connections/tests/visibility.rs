@@ -10,7 +10,7 @@ use crate::health_access_and_connections::visibility::{
     is_proxy_admin, resolve_targeted_model_ids,
 };
 
-use super::support::{deployment, failing_router, fake_router, team_deployment, text};
+use super::support::{deployment, failing_router, fake_router, object, team_deployment, text};
 
 fn caller(
     role: Option<&str>,
@@ -250,6 +250,16 @@ fn a_model_id_wins_and_a_model_name_reaches_the_routed_rows() {
     };
     assert_eq!(
         resolve_targeted_model_ids(&[unnamed], Some("gpt"), None, None),
+        Some(BTreeSet::new())
+    );
+    let blank_id = DeploymentSpec {
+        model_name: "gpt".to_owned(),
+        litellm_params: JsonObject::new(),
+        model_info: object(vec![("id", text(""))]),
+        extra: JsonObject::new(),
+    };
+    assert_eq!(
+        resolve_targeted_model_ids(&[blank_id], Some("gpt"), None, None),
         Some(BTreeSet::new())
     );
 }
