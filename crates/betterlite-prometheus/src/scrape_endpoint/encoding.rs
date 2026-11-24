@@ -248,7 +248,17 @@ fn created_text(created: SystemTime) -> String {
 }
 
 pub(super) fn sample_line(sample: &FamilySample) -> String {
-    let labels = label_text(&sample.labels);
+    let mut sorted = sample.labels.clone();
+    sorted.sort_by(|left, right| left.0.cmp(&right.0));
+    let pairs: Vec<String> = sorted
+        .iter()
+        .map(|(name, value)| format!("{name}=\"{}\"", escaped_label_value(value)))
+        .collect();
+    let labels = if pairs.is_empty() {
+        String::new()
+    } else {
+        format!("{{{}}}", pairs.join(","))
+    };
     format!("{}{labels} {}\n", sample.name, sample.value)
 }
 
@@ -259,19 +269,6 @@ pub(super) fn escape_help(help: &str, escape_quote: bool) -> String {
     } else {
         escaped
     }
-}
-
-fn label_text(labels: &[(String, String)]) -> String {
-    let mut sorted = labels.to_vec();
-    sorted.sort_by(|left, right| left.0.cmp(&right.0));
-    let pairs: Vec<String> = sorted
-        .iter()
-        .map(|(name, value)| format!("{name}=\"{}\"", escaped_label_value(value)))
-        .collect();
-    if pairs.is_empty() {
-        return String::new();
-    }
-    format!("{{{}}}", pairs.join(","))
 }
 
 fn escaped_label_value(value: &str) -> String {
