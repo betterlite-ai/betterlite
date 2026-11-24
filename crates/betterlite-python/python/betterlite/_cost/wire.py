@@ -61,14 +61,16 @@ class CompletionRequestWire(TypedDict, total=False):
     request_model: str | None
     response: ResponseWire | None
 
-class BreakdownWire(TypedDict, total=False):
+class BreakdownTotalsWire(TypedDict):
     input_cost: float
-    cache_read_cost: float
-    cache_creation_cost: float
     output_cost: float
-    reasoning_cost: float
     total_cost: float
     tool_usage_cost: float
+
+class BreakdownWire(BreakdownTotalsWire, total=False):
+    cache_read_cost: float
+    cache_creation_cost: float
+    reasoning_cost: float
     guardrail_cost: float
     additional_costs: dict[str, JsonValue]
     original_cost: float
@@ -90,7 +92,7 @@ class RatesWire(TypedDict):
     cache_creation_input_token_cost_above_1hr: float  # ast-grep-ignore: no-long-names
     output_cost_per_reasoning_token: float  # ast-grep-ignore: no-long-names
 
-class CostAnswerWire(TypedDict, total=False):
+class CostAnswerWire(TypedDict):
     cost: float
     breakdown: BreakdownWire | None
     billed_token_rates: RatesWire | None
@@ -111,7 +113,7 @@ def text_value(value: JsonValue) -> str | None:
     match value:
         case str():
             return value
-        case int() | float() | bool() | None | list() | Mapping():
+        case int() | float() | None | list() | Mapping():
             return None
 
 def object_value(value: InitValue) -> dict[str, JsonValue] | None:
@@ -120,7 +122,7 @@ def object_value(value: InitValue) -> dict[str, JsonValue] | None:
             return value.model_dump()
         case Mapping():
             return JSON_OBJECT.validate_python(value)
-        case str() | int() | float() | bool() | None | Sequence():
+        case str() | int() | float() | None | Sequence():
             return None
 
 def number_value(value: JsonValue) -> float | None:
