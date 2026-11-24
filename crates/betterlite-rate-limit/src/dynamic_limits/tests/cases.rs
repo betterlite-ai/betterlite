@@ -21,10 +21,11 @@ use rstest::rstest;
 use tokio::time::timeout;
 
 use crate::support::{
-    FIXED_MINUTE, Failure, FakeRouter, KEY_HASH, KEYLESS_FIXTURE, MINUTE_KEY, MODEL, NEXT_MINUTE,
-    NEXT_MINUTE_LABEL, NUMBER_KEY_FIXTURE, PLAIN_KEY_FIXTURE, PROD_KEY_FIXTURE, RecordingCache,
-    SetWrite, cache_counting, cache_over, clock_at, default_policy, failing_harness, handler_over,
-    harness_with, harness_without_router, number, post_call, principal, prod_reservation, request,
+    FIXED_MINUTE, Failure, FakeRouter, Fault, KEY_HASH, KEYLESS_FIXTURE, MINUTE_KEY, MODEL,
+    NEXT_MINUTE, NEXT_MINUTE_LABEL, NUMBER_KEY_FIXTURE, PLAIN_KEY_FIXTURE, PROD_KEY_FIXTURE,
+    RecordingCache, SetWrite, cache_counting, cache_over, clock_at, default_policy,
+    failing_harness, handler_over, harness_with, harness_without_router, number, post_call,
+    principal, prod_reservation, request,
 };
 
 #[tokio::test]
@@ -420,7 +421,7 @@ async fn missing_model_passes_and_writes_nothing() {
 
 #[tokio::test]
 async fn pre_call_returns_without_waiting_for_the_set_write() {
-    let gated = Arc::new(RecordingCache::gated());
+    let gated = Arc::new(RecordingCache::new(Fault::None, Some(Arc::default())));
     let port: Arc<dyn MinuteSetCache> = Arc::<RecordingCache>::clone(&gated);
     let router = FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0)));
     let llm_router: Option<Arc<dyn DynamicLimitRouter>> = Some(Arc::new(router));
@@ -447,7 +448,7 @@ async fn pre_call_returns_without_waiting_for_the_set_write() {
 // the set add fails inside its task: the request already passed, and the failed write is still attempted
 #[tokio::test]
 async fn failed_set_write_does_not_refuse_the_request() {
-    let cache = RecordingCache::failing_writes();
+    let cache = RecordingCache::new(Fault::Write, None);
     let port: Arc<dyn MinuteSetCache> = Arc::new(cache.clone());
     let router = FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0)));
     let llm_router: Option<Arc<dyn DynamicLimitRouter>> = Some(Arc::new(router));

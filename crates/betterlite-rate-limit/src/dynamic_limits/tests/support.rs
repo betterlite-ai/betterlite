@@ -66,6 +66,15 @@ pub(crate) struct SetWrite {
     pub(crate) ttl: i64,
 }
 
+// which of the cache's calls fails, or None for a cache that answers both
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum Fault {
+    #[default]
+    None,
+    Read,
+    Write,
+}
+
 // a minute-set cache that keeps its sets and records every read and write, able to fail a read, fail a write or hold a write until released
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RecordingCache {
@@ -73,50 +82,25 @@ pub(crate) struct RecordingCache {
     reads: Arc<Mutex<Vec<String>>>,
     writes: Arc<Mutex<Vec<SetWrite>>>,
     gate: Option<Arc<Notify>>,
-    read_fails: bool,
-    write_fails: bool,
+    fault: Fault,
 }
 
 impl RecordingCache {
+    // a cache with the named fault, and a gate that holds its set add until the test releases it
+    pub(crate) fn new(fault: Fault, gate: Option<Arc<Notify>>) -> Self {
+        Self {
+            sets: Arc::default(),
+            reads: Arc::default(),
+            writes: Arc::default(),
+            gate,
+            fault,
+        }
+    }
+
     pub(crate) fn holding(key: &str, values: &[&str]) -> Self {
         let cache = Self::default();
         cache.store(key, values);
         cache
-    }
-
-    pub(crate) fn failing_reads() -> Self {
-        Self {
-            sets: Arc::default(),
-            reads: Arc::default(),
-            writes: Arc::default(),
-            gate: None,
-            read_fails: true,
-            write_fails: false,
-        }
-    }
-
-    // a cache whose set add waits for release, so a hook that awaited the write could never return
-    pub(crate) fn gated() -> Self {
-        Self {
-            sets: Arc::default(),
-            reads: Arc::default(),
-            writes: Arc::default(),
-            gate: Some(Arc::default()),
-            read_fails: false,
-            write_fails: false,
-        }
-    }
-
-    // a cache whose set add always fails, still recording the attempt so the test can see the task ran
-    pub(crate) fn failing_writes() -> Self {
-        Self {
-            sets: Arc::default(),
-            reads: Arc::default(),
-            writes: Arc::default(),
-            gate: None,
-            read_fails: false,
-            write_fails: true,
-        }
     }
 
     pub(crate) fn release(&self) {
@@ -164,7 +148,7 @@ impl RecordingCache {
 impl MinuteSetCache for RecordingCache {
     async fn async_get_cache(&self, key: &str) -> Result<Option<Vec<String>>, CacheReadError> {
         self.lock_reads().push(key.to_owned());
-        if self.read_fails {
+        if self.fault == Fault::Read {
             return Err(CacheReadError);
         }
         Ok(self.lock_sets().get(key).cloned())
@@ -184,7 +168,7 @@ impl MinuteSetCache for RecordingCache {
             values: values.to_vec(),
             ttl,
         });
-        if self.write_fails {
+        if self.fault == Fault::Write {
             return Err(CacheWriteError);
         }
         self.lock_sets()
@@ -426,7 +410,7 @@ pub(crate) fn failing_harness(failure: Failure) -> Harness {
         Failure::InfoRead => router.info = Err(RouterReadError::GroupInfo),
         Failure::UsageRead => router.usage = Err(RouterReadError::GroupUsage),
         Failure::MissingRouter => with_router = false,
-        Failure::CacheRead => cache = Arc::new(RecordingCache::failing_reads()),
+        Failure::CacheRead => cache = Arc::new(RecordingCache::new(Fault::Read, None)),
         Failure::NoActiveProjects => cache = cache_holding(&[]),
         Failure::InfiniteWeight => {
             cache = cache_holding(&[KEY_HASH]);
