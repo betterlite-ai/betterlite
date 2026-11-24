@@ -1,0 +1,27 @@
+kind: sdk_http
+name: sdk-http-response-chat-dispatch-post-stream-and-failure
+env: {}
+call:
+  response_chat_dispatch:
+    runs:
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+      - acompletion: true
+        kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+upstream:
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      error: {message: bad key, type: invalid_api_key, param: null, code: invalid_api_key}
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      error: {message: bad key, type: invalid_api_key, param: null, code: invalid_api_key}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /response_chat_dispatch/value/runs/0/failure/message
+      why: LiteLLM prefixes the exception with its module name and betterlite keeps the mapper's message
+    - pointer: /response_chat_dispatch/value/runs/1/failure/message
+      why: LiteLLM prefixes the exception with its module name and betterlite keeps the mapper's message

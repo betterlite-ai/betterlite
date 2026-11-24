@@ -1,0 +1,164 @@
+use std::collections::BTreeMap;
+
+use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_core::api::chat_response_stream::source::AsyncChunkStream;
+use betterlite_core::api::messages_stream_split::errors::StreamFailure;
+use betterlite_core::api::response_chat_dispatch::error::DispatchError;
+use betterlite_core::api::response_chat_dispatch::handler::{acompletion, completion};
+use betterlite_core::api::response_chat_dispatch::input::{BridgeCall, ModelResponseSeed};
+use betterlite_core::api::response_chat_dispatch::port::BridgeOutput;
+use betterlite_models::decisions::Json;
+use betterlite_redact::secret::Redactor;
+use indexmap::IndexMap;
+
+use super::execution::{ExecutionFailure, RealExecution, env_flags};
+use super::fixtures::Fixture;
+use super::projection::{StreamViews, response_view};
+use crate::sdk_http::error::SdkHttpError;
+use crate::sdk_http::result::Failure;
+
+pub(super) async fn execute(
+    call: &super::Call,
+    api_base: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<super::Outcome, SdkHttpError> {
+    let mut runs = Vec::with_capacity(call.runs.len());
+    for run in &call.runs {
+        runs.push(run_once(run, api_base, env).await?);
+    }
+    Ok(super::Outcome { runs })
+}
+
+struct RunSpec {
+    kwargs: IndexMap<String, Json>,
+    acompletion: bool,
+}
+
+impl RunSpec {
+    fn parse(run: &Json, api_base: &str) -> Result<Self, SdkHttpError> {
+        let Json::Object(fields) = run else {
+            return Err(invalid("a run is an object"));
+        };
+        let mut kwargs = match fields.get("kwargs") {
+            Some(Json::Object(kwargs)) => kwargs.clone(),
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+            | None => return Err(invalid("a run needs a kwargs object")),
+        };
+        inject_api_base(&mut kwargs, api_base);
+        let acompletion = match fields.get("acompletion") {
+            Some(Json::Bool(flag)) => *flag,
+            Some(
+                Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
+            )
+            | None => false,
+        };
+        Ok(Self {
+            kwargs,
+            acompletion,
+        })
+    }
+}
+
+// The caller never hands betterlite an api_base argument, so the mock origin joins the SDK params
+fn inject_api_base(kwargs: &mut IndexMap<String, Json>, api_base: &str) {
+    if let Some(Json::Object(params)) = kwargs.get_mut("litellm_params") {
+        params.insert(String::from("api_base"), Json::Text(api_base.to_owned()));
+    }
+}
+
+async fn run_once(
+    run: &Json,
+    api_base: &str,
+    env: &BTreeMap<String, String>,
+) -> Result<super::RunOutcome, SdkHttpError> {
+    let spec = RunSpec::parse(run, api_base)?;
+    let fixture = Fixture::new("completion")?;
+    let execution = RealExecution { api_base, env };
+    let unit = ();
+    let call = BridgeCall {
+        kwargs: &spec.kwargs,
+        model_response: ModelResponseSeed::default(),
+        logging: fixture.state,
+        client: Some(&unit),
+        limits: ApiLimits::default(),
+        reasoning_auto_summary: env_flags(env).1,
+        post_stream: None,
+    };
+    let returned = if spec.acompletion {
+        acompletion(&execution, call).await
+    } else {
+        completion(&execution, call).await
+    };
+    match returned {
+        Ok(output) => project(output).await,
+        Err(error) => Ok(super::RunOutcome {
+            result: None,
+            stream: None,
+            failure: Some(failure_of(&error, &fixture.redactor)),
+        }),
+    }
+}
+
+async fn project(output: BridgeOutput) -> Result<super::RunOutcome, SdkHttpError> {
+    match output {
+        BridgeOutput::Response(response) => Ok(super::RunOutcome {
+            result: Some(response_view(&response)),
+            stream: None,
+            failure: None,
+        }),
+        BridgeOutput::Chat(_chat) => Err(invalid("the bridge never passes a chat answer through")),
+        BridgeOutput::Stream(stream) => Ok(super::RunOutcome {
+            result: None,
+            stream: Some(drain(stream).await?),
+            failure: None,
+        }),
+    }
+}
+
+async fn drain(mut stream: Box<dyn AsyncChunkStream + Send>) -> Result<Json, SdkHttpError> {
+    let mut views = StreamViews::default();
+    while let Some(chunk) = stream.next_chunk().await.map_err(stream_error)? {
+        views.push(&chunk);
+    }
+    Ok(views.finish())
+}
+
+fn stream_error(failure: StreamFailure) -> SdkHttpError {
+    match failure {
+        StreamFailure::Reported {
+            status_code,
+            message,
+        } => invalid(&format!(
+            "the responses stream reported {status_code}: {message}"
+        )),
+        StreamFailure::Unclassified { text } => invalid(&text),
+    }
+}
+
+fn failure_of(error: &DispatchError<ExecutionFailure>, redactor: &Redactor) -> Failure {
+    match error {
+        DispatchError::Provider(source) => source.failure(redactor),
+        DispatchError::Input(_)
+        | DispatchError::Request(_)
+        | DispatchError::Transform(_)
+        | DispatchError::Translate(_)
+        | DispatchError::Json(_)
+        | DispatchError::Mock { .. }
+        | DispatchError::Completion { .. }
+        | DispatchError::UnexpectedPayload
+        | DispatchError::MissingCompletedResponse
+        | DispatchError::Stream { .. }
+        | DispatchError::PostStream(_) => Failure {
+            class: String::from("ValueError"),
+            status: 0,
+            kind: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: error.to_string(),
+        },
+    }
+}
+
+fn invalid(message: &str) -> SdkHttpError {
+    SdkHttpError::Invalid(message.to_owned())
+}
