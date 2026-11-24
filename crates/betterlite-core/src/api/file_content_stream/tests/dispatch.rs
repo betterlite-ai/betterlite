@@ -132,7 +132,7 @@ async fn buffered_content_dispatch_generic_configs(#[case] provider: ProviderId)
         id: None,
     };
     let mut call = content_call(&kwargs);
-    call.custom_llm_provider = Some(provider.to_owned());
+    call.custom_llm_provider = Some(<&'static str>::from(provider).to_owned());
     let context = http_context(ClientKind::Asynchronous, Some(&trusted));
     run(&read, ContentEntry::Sync, &call, context)
         .await
@@ -263,7 +263,8 @@ async fn buffered_content_dispatch_provider_errors_survive(#[case] status: u16) 
     call.custom_llm_provider = Some(String::from("openai"));
     let failure = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(
         matches!(&failure, FileContentError::Dispatch(FakeFailure(answered)) if *answered == status)
     );
@@ -281,12 +282,14 @@ async fn content_reply_kinds_are_checked() {
     call.custom_llm_provider = Some(String::from("openai"));
     let buffered = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(buffered, FileContentError::Reply));
     call.stream = true;
     let streamed = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(streamed, FileContentError::Reply));
 }
 #[tokio::test]

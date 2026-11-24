@@ -48,7 +48,8 @@ async fn file_content_defaults_sync_provider_is_none() {
     let kwargs = ContentKwargs::default();
     let failure = run(&read, ContentEntry::Sync, &content_call(&kwargs), bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(
         &failure,
         FileContentError::UnknownProvider { provider } if provider == "None"
@@ -88,7 +89,8 @@ async fn file_content_defaults_resolution_errors_keep_the_declared_provider() {
     call.custom_llm_provider = Some(String::from("cohere"));
     let failure = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(
         &failure,
         FileContentError::Unsupported { provider } if provider == "cohere"
@@ -97,7 +99,8 @@ async fn file_content_defaults_resolution_errors_keep_the_declared_provider() {
     unresolved.model = Some("no-such-model");
     let swallowed = run(&read, ContentEntry::Sync, &unresolved, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(
         &swallowed,
         FileContentError::UnknownProvider { provider } if provider == "None"
@@ -277,7 +280,8 @@ async fn file_content_defaults_bad_text_fails_before_the_provider(#[case] provid
     call.custom_llm_provider = Some(provider.to_owned());
     let failure = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(&failure, FileContentError::Timeout(_)));
     assert_eq!(failure.bad_request().map(|_request| 400_u16), None);
     assert_eq!(sent(&read), Vec::new());

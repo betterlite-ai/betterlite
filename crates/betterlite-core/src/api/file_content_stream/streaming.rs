@@ -21,8 +21,8 @@ use super::error::FileContentError;
 use super::plan::known_provider;
 use super::service::{COMPATIBLE_PROVIDERS, ContentCredentials, ContentInputs, Reply, Selection};
 use super::target::{
-    CallerClient, ContentOperation, ContentReply, ContentTarget, FileContentDispatch,
-    StreamIdentity, SuppliedSdk,
+    CallerClient, ContentLogging as _, ContentOperation, ContentReply, ContentTarget,
+    FileContentDispatch, StreamIdentity, SuppliedSdk,
 };
 use super::{ContentAnswer, ContentCall, ContentContext, FileContentStream, StreamedContent};
 

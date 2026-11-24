@@ -10,7 +10,8 @@ async fn unsupported_file_content() {
     call.custom_llm_provider = Some(String::from("cohere"));
     let failure = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(
         &failure,
         FileContentError::Unsupported { provider } if provider == "cohere"
@@ -39,7 +40,8 @@ async fn unsupported_file_content_unknown_provider_text() {
     call.custom_llm_provider = Some(String::from("bogus"));
     let failure = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(
         &failure,
         FileContentError::UnknownProvider { provider } if provider == "'bogus'"
@@ -60,6 +62,7 @@ async fn unsupported_file_content_stream_flag_does_not_change_the_branch() {
     call.stream = true;
     let failure = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(failure, FileContentError::Unsupported { .. }));
 }

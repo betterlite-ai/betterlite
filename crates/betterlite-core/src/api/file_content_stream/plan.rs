@@ -6,7 +6,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
 use chrono::{DateTime, FixedOffset};
 
-use crate::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
+use crate::api::fine_tuning_read::ReadTimeout;
 use crate::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutValue, resolve_fine_tuning_timeout,
 };

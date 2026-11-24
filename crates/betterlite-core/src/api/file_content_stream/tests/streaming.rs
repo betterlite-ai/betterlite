@@ -38,7 +38,7 @@ async fn streaming_logging_identity_keeps_a_supplied_object() {
     call.custom_llm_provider = Some(String::from("openai"));
     call.stream = true;
     let context = logging_context(&logger);
-    let mut content = answered_streamed(
+    let mut body = answered_streamed(
         run(&read, ContentEntry::Async, &call, context)
             .await
             .unwrap(),
@@ -53,14 +53,14 @@ async fn streaming_logging_identity_keeps_a_supplied_object() {
         )]
     );
     assert_eq!(
-        content.headers.get("x-file").map(String::as_str),
+        body.headers.get("x-file").map(String::as_str),
         Some("capture")
     );
-    assert_eq!(drained(&mut content).await, vec![vec![0, 255]]);
+    assert_eq!(drained(&mut body).await, vec![vec![0, 255]]);
     assert_eq!(logger.successes(), 1);
     assert_eq!(logger.failures(), 0);
     assert_eq!(logger.success_times(), vec![(started(), started())]);
-    assert_eq!(content.exit.get(), Some(&StreamExit::Completed));
+    assert_eq!(body.exit.get(), Some(&StreamExit::Completed));
 }
 
 #[rstest]
@@ -182,7 +182,8 @@ async fn streaming_logging_identity_precedes_the_vertex_error() {
     let context = logging_context(&logger);
     let failure = run(&read, ContentEntry::Sync, &call, context)
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(failure, FileContentError::SyncVertexStreaming));
     assert_eq!(
         logger.identities(),
@@ -206,12 +207,12 @@ async fn sdk_stream_selection_compatible(#[case] provider: &str) {
     call.stream = true;
     call.chunk_size = 3;
     let context = sdk_context(SuppliedSdk::OpenAi);
-    let mut content = answered_streamed(
+    let mut body = answered_streamed(
         run(&read, ContentEntry::Async, &call, context)
             .await
             .unwrap(),
     );
-    assert_eq!(drained(&mut content).await, vec![vec![0, 255]]);
+    assert_eq!(drained(&mut body).await, vec![vec![0, 255]]);
     let record = sent(&read).pop().unwrap();
     assert_eq!(record.chunk_size, NonZeroUsize::new(3));
     assert!(matches!(
@@ -333,7 +334,8 @@ async fn sdk_stream_selection_sync_vertex_rejects_the_placeholder() {
     call.stream = true;
     let failure = run(&read, ContentEntry::Sync, &call, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert_eq!(
         failure.to_string(),
         "Streaming 'file_content' for vertex_ai is only supported through 'afile_content'."
@@ -368,7 +370,11 @@ async fn sdk_stream_selection_unreachable_helper_branch_is_still_built() {
             timeout: None,
         },
     };
-    let failure = read.streamed(&call, &selection, bare()).await.unwrap_err();
+    let failure = read
+        .streamed(&call, &selection, bare())
+        .await
+        .err()
+        .unwrap();
     assert!(matches!(
         &failure,
         FileContentError::UnsupportedStreaming { provider } if provider == "cohere"
@@ -404,7 +410,8 @@ async fn sdk_stream_selection_vertex_without_a_config_is_unsupported() {
     let failure = unconfigured
         .streamed(&call, &selection, bare())
         .await
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(
         &failure,
         FileContentError::UnsupportedStreaming { provider } if provider == "vertex_ai"

@@ -68,7 +68,7 @@ where
         if call.stream && should_stream_file_content(selection.provider.as_deref()) {
             return self.streamed(call, &selection, context).await;
         }
-        let target = self.target(call, &selection, context)?;
+        let target = self.buffered_target(call, &selection, context)?;
         let reply = self
             .dispatch
             .content(
@@ -79,11 +79,11 @@ where
             )
             .await
             .map_err(FileContentError::Dispatch)?;
-        buffered_answer(reply)
+        buffered_answer::<Dispatch::Error>(reply)
     }
 
     // file_content's provider branch: the xai batch shortcut, then the provider's config, then the named fallbacks
-    fn target<'call>(
+    fn buffered_target<'call>(
         &self,
         call: &ContentCall<'call>,
         selection: &Selection,
@@ -203,7 +203,9 @@ where
 }
 
 // LiteLLM's FileContentRequest: the timeout stays out of it, since every handler passes its own deadline
-fn buffered_answer<D: FileContentDispatch>(reply: ContentReply) -> Reply<ContentAnswer, D> {
+fn buffered_answer<DispatchError>(
+    reply: ContentReply,
+) -> Result<ContentAnswer, FileContentError<DispatchError>> {
     match reply {
         ContentReply::Buffered(content) => Ok(ContentAnswer::Buffered(content)),
         ContentReply::Streamed(_stream) => Err(FileContentError::Reply),
