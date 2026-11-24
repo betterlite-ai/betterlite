@@ -125,9 +125,9 @@ async fn backend_completion_forwards_the_call() {
         ("model", text("gpt-3.5-turbo-instruct")),
         ("prompt", text("test")),
     ]);
-    let logging: Arc<dyn HealthProbeLogging> = Arc::new(probe_logging());
+    let handle: Arc<dyn HealthProbeLogging> = Arc::new(probe_logging());
     let mut probe = probe_call(parameters.clone());
-    probe.logging = Some(logging);
+    probe.logging = Some(handle);
     let reply = harness
         .backend()
         .completion(probe)

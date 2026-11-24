@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -132,13 +132,24 @@ impl FakeChat {
         request: RequestMap,
         logging: Option<&LoggingHandle>,
     ) -> Result<CallOutcome, CallError> {
-        self.calls.lock().unwrap().push(ChatCall {
-            request,
-            logging: logging.cloned(),
-        });
-        let failure = self.failure.lock().unwrap().clone();
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ChatCall {
+                request,
+                logging: logging.cloned(),
+            });
+        let failure = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         let Some(error) = failure else {
-            return Ok(self.response.lock().unwrap().clone());
+            return Ok(self
+                .response
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone());
         };
         Err(error)
     }
@@ -289,11 +300,22 @@ impl FakeOwner {
     }
 
     fn finish(&self, call: OwnerCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.calls.lock().unwrap().push(call);
-        let failure = self.failure.lock().unwrap().clone();
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
+        let failure = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         let Some(message) = failure else {
             return Ok(HealthProbeReply {
-                hidden_headers: self.headers.lock().unwrap().clone(),
+                hidden_headers: self
+                    .headers
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone(),
             });
         };
         Err(owner_failure(message))
