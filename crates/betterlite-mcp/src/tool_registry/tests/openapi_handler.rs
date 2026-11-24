@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::openapi_tools::output::OpenApiToolOutput;
 use crate::openapi_tools::request_headers::OpenApiCallContext;
 use crate::openapi_tools::tool::OpenApiToolError;
-use crate::tool_registry::handler::{ToolHandler, ToolHandlerError};
+use crate::tool_registry::handler::{ToolHandler as _, ToolHandlerError};
 use crate::tool_registry::openapi_handler::OpenApiToolHandler;
 
 use super::support::{FakeTransport, object, openapi_tool};

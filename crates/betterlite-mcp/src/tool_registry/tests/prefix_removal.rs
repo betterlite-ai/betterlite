@@ -34,7 +34,7 @@ fn the_prefix_is_a_plain_starts_with() {
 fn logs_each_removal_at_debug() {
     let loaded = registry(&["srv_a", "srv_b"]);
     let (logs, _guard) = capture_logs();
-    loaded.unregister_tools_with_prefix("srv_");
+    assert_eq!(loaded.unregister_tools_with_prefix("srv_"), 2);
     assert_eq!(
         logs.messages_at(Level::DEBUG),
         ["Unregistered MCP tool srv_a", "Unregistered MCP tool srv_b"]
