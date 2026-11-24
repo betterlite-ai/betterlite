@@ -97,7 +97,7 @@ class PluginListJson(TypedDict):
 
 
 class AgentHubRoute(Protocol):
-    async def __call__(self, request: Request) -> object: ...
+    async def __call__(self, request: Request) -> JsonValue: ...
 
 
 class McpHubRoute(Protocol):
