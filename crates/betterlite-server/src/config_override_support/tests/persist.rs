@@ -171,6 +171,11 @@ CREATE TABLE "LiteLLM_ConfigOverrides" (
 const SELECT_SQL: &str =
     r#"SELECT config_value::text FROM "LiteLLM_ConfigOverrides" WHERE config_type = $1"#;
 
+const SEED_UPDATED_AT_SQL: &str = r#"UPDATE "LiteLLM_ConfigOverrides" SET updated_at = TIMESTAMP '2000-01-01 00:00:00' WHERE config_type = $1"#;
+
+const SELECT_UPDATED_AT_SQL: &str =
+    r#"SELECT updated_at::text FROM "LiteLLM_ConfigOverrides" WHERE config_type = $1"#;
+
 async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["config-override-support-tests"])
         .url
@@ -217,6 +222,12 @@ async fn the_database_store_creates_and_updates_the_cyberark_row() {
         stored(&pool).await,
         value(r#"{"cyberark_account": "first"}"#)
     );
+    let client = pool.get().await.unwrap();
+    client
+        .execute(SEED_UPDATED_AT_SQL, &[&"cyberark"])
+        .await
+        .unwrap();
+    drop(client);
     store
         .upsert_config_override("cyberark", r#"{"cyberark_account": "second"}"#)
         .await
@@ -225,6 +236,14 @@ async fn the_database_store_creates_and_updates_the_cyberark_row() {
         stored(&pool).await,
         value(r#"{"cyberark_account": "second"}"#)
     );
+    let client = pool.get().await.unwrap();
+    let row = client
+        .query_one(SELECT_UPDATED_AT_SQL, &[&"cyberark"])
+        .await
+        .unwrap();
+    let updated_at: String = row.get(0);
+    assert_ne!(updated_at, "2000-01-01 00:00:00");
+    drop(client);
     close(fixture, pool).await;
 }
 
