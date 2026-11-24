@@ -17,7 +17,8 @@ use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
 use super::handler::{
-    StreamingParamsCall, resolve_streaming_request_params, should_stream_file_content,
+    StreamingParamsCall, StreamingParamsError, resolve_streaming_request_params,
+    should_stream_file_content,
 };
 use super::logging::{CallbackFailure, FailureCall, FileStreamLogger, HiddenField, SuccessCall};
 use super::source::{
@@ -206,20 +207,15 @@ fn payload_fixture(
     api_base: &str,
     provider: Option<&str>,
 ) -> StandardLoggingPayload {
-    let provider = match provider {
-        Some(text) => format!("\"{text}\""),
-        None => String::from("null"),
-    };
+    let provider = provider.map_or_else(|| String::from("null"), |text| format!("\"{text}\""));
     let text = format!(
-        r#"{{"id": "{id}", "trace_id": "trace-1", "session_id": "session-1",
-        "call_type": "afile_content", "response_cost": 0.0, "status": "success",
-        "status_fields": {{"llm_api_status": "success", "guardrail_status": "not_run"}},
+        r#"{{"id": "{id}", "trace_id": "trace-1", "session_id": "session-1", "call_type": "afile_content",
+        "response_cost": 0.0, "status": "success", "status_fields": {{"llm_api_status": "success", "guardrail_status": "not_run"}},
         "total_tokens": 0, "prompt_tokens": 0, "completion_tokens": 0,
         "startTime": 1767225600.0, "endTime": 1767225601.0, "completionStartTime": 1767225600.0,
-        "response_time": 1.0, "model_map_information": {{}}, "model": "{model}",
-        "api_base": "{api_base}", "custom_llm_provider": {provider}, "metadata": {{}},
-        "saved_cache_cost": 0.0, "request_tags": [], "model_parameters": {{}},
-        "hidden_params": {{}}, "response": {{"id": "{id}", "object": "file.content"}}}}"#
+        "response_time": 1.0, "model_map_information": {{}}, "model": "{model}", "api_base": "{api_base}",
+        "custom_llm_provider": {provider}, "metadata": {{}}, "saved_cache_cost": 0.0, "request_tags": [],
+        "model_parameters": {{}}, "hidden_params": {{}}, "response": {{"id": "{id}", "object": "file.content"}}}}"#
     );
     serde_json::from_str(&text).unwrap()
 }
@@ -501,6 +497,62 @@ fn streaming_projection_leaves_unrouted_input_alone(
     assert_eq!(resolved.file_id, "f");
     assert_eq!(resolved.data, data);
     assert!(resolved.trusted_credentials.is_none());
+}
+
+#[rstest]
+#[case::missing_provider(None, StreamingParamsError::MissingProvider)]
+#[case::provider_not_text(Some(Json::Bool(true)), StreamingParamsError::ProviderNotText)]
+fn streaming_projection_rejects_a_bad_credential_provider(
+    #[case] provider: Option<Json>,
+    #[case] expected: StreamingParamsError,
+) {
+    let mut credentials = JsonObject::new();
+    credentials.insert(String::from("api_key"), Json::Text(String::from("k")));
+    if let Some(provider) = provider {
+        credentials.insert(String::from("custom_llm_provider"), provider);
+    }
+    let mut data = JsonObject::new();
+    data.insert(String::from("model"), Json::Text(String::from("m")));
+    let Err(failure) = resolve_streaming_request_params(StreamingParamsCall {
+        custom_llm_provider: "openai",
+        file_id: "f",
+        data: &data,
+        should_route: true,
+        original_file_id: Some("f"),
+        credentials: Some(&credentials),
+    }) else {
+        panic!("the bad credential provider resolved");
+    };
+    assert_eq!(failure, expected);
+}
+
+#[rstest]
+#[case::missing_file_id(None, StreamingParamsError::MissingFileId)]
+#[case::file_id_not_text(Some(Json::Bool(true)), StreamingParamsError::FileIdNotText)]
+fn streaming_projection_rejects_a_bad_file_id(
+    #[case] file_id: Option<Json>,
+    #[case] expected: StreamingParamsError,
+) {
+    let mut credentials = JsonObject::new();
+    credentials.insert(
+        String::from("custom_llm_provider"),
+        Json::Text(String::from("openai")),
+    );
+    let mut data = JsonObject::new();
+    if let Some(file_id) = file_id {
+        data.insert(String::from("file_id"), file_id);
+    }
+    let Err(failure) = resolve_streaming_request_params(StreamingParamsCall {
+        custom_llm_provider: "openai",
+        file_id: "f",
+        data: &data,
+        should_route: true,
+        original_file_id: None,
+        credentials: Some(&credentials),
+    }) else {
+        panic!("the bad file id resolved");
+    };
+    assert_eq!(failure, expected);
 }
 
 #[rstest]
