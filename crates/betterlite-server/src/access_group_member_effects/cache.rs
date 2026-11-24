@@ -114,31 +114,27 @@ struct KeyCaches<'cache, Cache: ?Sized>(&'cache Cache);
 impl<Cache: MemberEffectCaches + ?Sized> CachePatchTarget for TeamCaches<'_, Cache> {
     type Object = LiteLLMTeamTableCachedObj;
 
-    fn cache_key(team_id: &str) -> String {
-        format!("team_id:{team_id}")
+    fn cache_key(id: &str) -> String {
+        format!("team_id:{id}")
     }
 
     async fn read(&self, cache_key: &str) -> Result<Option<Self::Object>, MemberEffectsError> {
         self.0.read_team(cache_key).await
     }
 
-    async fn store(
-        &self,
-        team_id: &str,
-        team: &mut Self::Object,
-    ) -> Result<(), MemberEffectsError> {
-        self.0.store_team(team_id, team).await
+    async fn store(&self, id: &str, object: &mut Self::Object) -> Result<(), MemberEffectsError> {
+        self.0.store_team(id, object).await
     }
 
-    fn groups(team: &Self::Object) -> Result<Option<Vec<String>>, MemberEffectsError> {
-        Ok(team.team.fields.base.access_group_ids.clone())
+    fn groups(object: &Self::Object) -> Result<Option<Vec<String>>, MemberEffectsError> {
+        Ok(object.team.fields.base.access_group_ids.clone())
     }
 
     fn with_groups(
-        team: &Self::Object,
+        object: &Self::Object,
         groups: Vec<String>,
     ) -> Result<Self::Object, MemberEffectsError> {
-        let mut patched = team.clone();
+        let mut patched = object.clone();
         patched.team.fields.base.access_group_ids = Some(groups);
         Ok(patched)
     }
@@ -147,27 +143,27 @@ impl<Cache: MemberEffectCaches + ?Sized> CachePatchTarget for TeamCaches<'_, Cac
 impl<Cache: MemberEffectCaches + ?Sized> CachePatchTarget for KeyCaches<'_, Cache> {
     type Object = UserAPIKeyAuth;
 
-    fn cache_key(token: &str) -> String {
-        token.to_owned()
+    fn cache_key(id: &str) -> String {
+        id.to_owned()
     }
 
-    async fn read(&self, token: &str) -> Result<Option<Self::Object>, MemberEffectsError> {
-        self.0.read_key(token).await
+    async fn read(&self, cache_key: &str) -> Result<Option<Self::Object>, MemberEffectsError> {
+        self.0.read_key(cache_key).await
     }
 
-    async fn store(&self, token: &str, auth: &mut Self::Object) -> Result<(), MemberEffectsError> {
-        self.0.store_key(token, auth).await
+    async fn store(&self, id: &str, object: &mut Self::Object) -> Result<(), MemberEffectsError> {
+        self.0.store_key(id, object).await
     }
 
-    fn groups(auth: &Self::Object) -> Result<Option<Vec<String>>, MemberEffectsError> {
-        key_groups(auth)
+    fn groups(object: &Self::Object) -> Result<Option<Vec<String>>, MemberEffectsError> {
+        key_groups(object)
     }
 
     fn with_groups(
-        auth: &Self::Object,
+        object: &Self::Object,
         groups: Vec<String>,
     ) -> Result<Self::Object, MemberEffectsError> {
-        key_with_groups(auth, groups)
+        key_with_groups(object, groups)
     }
 }
 
@@ -203,7 +199,8 @@ async fn patch_cached<Target>(
     patch: &MembershipPatch<'_>,
 ) -> Result<(), MemberEffectsError>
 where
-    Target: CachePatchTarget + ?Sized,
+    Target: CachePatchTarget + Send + Sync + ?Sized,
+    Target::Object: Send,
 {
     for id in patch.ids {
         let Some(object) = target.read(&Target::cache_key(id)).await? else {

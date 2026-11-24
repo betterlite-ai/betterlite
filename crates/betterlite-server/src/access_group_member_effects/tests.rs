@@ -642,23 +642,23 @@ async fn gateway_caches_patch_cached_objects() {
     let token = "0123456789abcdef".repeat(4);
     seed_gateway(&caches, &team, &token).await;
     let team_ids = groups(&["t1", "t-missing"]);
-    change_cached_membership(
+    Box::pin(change_cached_membership(
         &caches,
         CacheTarget::Team,
         &team_ids,
         "g1",
         MembershipChange::Add,
-    )
+    ))
     .await
     .expect("the team patch runs");
     let tokens = groups(&[token.as_str()]);
-    change_cached_membership(
+    Box::pin(change_cached_membership(
         &caches,
         CacheTarget::Key,
         &tokens,
         "g1",
         MembershipChange::Add,
-    )
+    ))
     .await
     .expect("the key patch runs");
     assert_team_patch(&caches).await;

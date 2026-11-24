@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use betterlite_auth::agent_policy::AgentResponse;
@@ -43,8 +44,38 @@ pub(super) fn key_auth(token: &str, groups: Option<Vec<String>>) -> UserAPIKeyAu
         ),
         ("team_id".to_owned(), JsonData::String("team-1".to_owned())),
         ("access_group_ids".to_owned(), groups_value(groups)),
+        ("end_user_max_budget".to_owned(), decimal_zero()),
+        ("last_refreshed_at".to_owned(), decimal_zero()),
+        ("max_budget".to_owned(), decimal_zero()),
+        ("organization_max_budget".to_owned(), decimal_zero()),
+        ("soft_budget".to_owned(), decimal_zero()),
+        ("team_max_budget".to_owned(), decimal_zero()),
+        ("team_member_spend".to_owned(), decimal_zero()),
+        ("team_soft_budget".to_owned(), decimal_zero()),
+        ("team_spend".to_owned(), decimal_zero()),
+        ("user_max_budget".to_owned(), decimal_zero()),
+        ("user_spend".to_owned(), decimal_zero()),
     ]);
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the test key auth")
+}
+
+// a cached key only decodes when its flattened optional decimals are present, since null fails the view
+fn decimal_zero() -> JsonData {
+    JsonData::Number(serde_json::Number::from(0_i64))
+}
+
+fn groups_value(groups: Option<Vec<String>>) -> JsonData {
+    groups.map_or(JsonData::Null, |ids| {
+        JsonData::Array(ids.into_iter().map(JsonData::String).collect())
+    })
+}
+
+fn groups_json(groups: Option<Vec<String>>) -> String {
+    let Some(ids) = groups else {
+        return "null".to_owned();
+    };
+    let listed: Vec<String> = ids.iter().map(|id| format!("\"{id}\"")).collect();
+    format!("[{}]", listed.join(","))
 }
 
 pub(super) fn agent(
@@ -59,48 +90,37 @@ pub(super) fn agent(
     serde_json::from_str(&text).expect("the test agent")
 }
 
-fn groups_value(groups: Option<Vec<String>>) -> JsonData {
-    match groups {
-        Some(groups) => JsonData::Array(groups.into_iter().map(JsonData::String).collect()),
-        None => JsonData::Null,
-    }
-}
-
-fn groups_json(groups: Option<Vec<String>>) -> String {
-    let Some(groups) = groups else {
-        return "null".to_owned();
-    };
-    let listed: Vec<String> = groups.iter().map(|id| format!("\"{id}\"")).collect();
-    format!("[{}]", listed.join(","))
-}
-
 #[derive(Clone)]
 pub(super) enum CachedFixture {
-    Team(LiteLLMTeamTableCachedObj),
-    Key(UserAPIKeyAuth),
+    Team(Box<LiteLLMTeamTableCachedObj>),
+    Key(Box<UserAPIKeyAuth>),
 }
 
 impl CachedFixture {
     fn cache_key(&self, id: &str) -> String {
         match self {
-            CachedFixture::Team(_) => format!("team_id:{id}"),
-            CachedFixture::Key(_) => id.to_owned(),
+            Self::Team(_) => format!("team_id:{id}"),
+            Self::Key(_) => id.to_owned(),
         }
     }
 
     fn into_team(self) -> Option<LiteLLMTeamTableCachedObj> {
         match self {
-            CachedFixture::Team(team) => Some(team),
-            CachedFixture::Key(_) => None,
+            Self::Team(team) => Some(*team),
+            Self::Key(_) => None,
         }
     }
 
     fn into_key(self) -> Option<UserAPIKeyAuth> {
         match self {
-            CachedFixture::Key(auth) => Some(auth),
-            CachedFixture::Team(_) => None,
+            Self::Key(auth) => Some(*auth),
+            Self::Team(_) => None,
         }
     }
+}
+
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().expect("the scripted fixture")
 }
 
 #[derive(Default)]
@@ -113,26 +133,27 @@ pub(super) struct ScriptedCaches {
 
 impl ScriptedCaches {
     pub(super) fn seed_team(&self, team_id: &str, team: LiteLLMTeamTableCachedObj) {
-        self.put(format!("team_id:{team_id}"), CachedFixture::Team(team));
+        self.put(
+            format!("team_id:{team_id}"),
+            CachedFixture::Team(Box::new(team)),
+        );
     }
 
     pub(super) fn seed_key(&self, token: &str, auth: UserAPIKeyAuth) {
-        self.put(token.to_owned(), CachedFixture::Key(auth));
+        self.put(token.to_owned(), CachedFixture::Key(Box::new(auth)));
     }
 
     pub(super) fn failing(&self, ids: &[&str]) {
-        let mut failing = self.failing.lock().expect("the failing stores");
+        let mut failing = locked(&self.failing);
         failing.extend(ids.iter().map(|id| String::from(*id)));
     }
 
     pub(super) fn reads(&self) -> Vec<String> {
-        self.reads.lock().expect("the recorded reads").clone()
+        locked(&self.reads).clone()
     }
 
     pub(super) fn written(&self) -> Vec<String> {
-        self.writes
-            .lock()
-            .expect("the recorded writes")
+        locked(&self.writes)
             .iter()
             .map(|(id, _entry)| id.clone())
             .collect()
@@ -148,70 +169,60 @@ impl ScriptedCaches {
     }
 
     fn put(&self, key: String, entry: CachedFixture) {
-        self.entries
-            .lock()
-            .expect("the scripted entries")
-            .insert(key, entry);
+        locked(&self.entries).insert(key, entry);
     }
 
     fn entry(&self, key: &str) -> Option<CachedFixture> {
-        let entries = self.entries.lock().expect("the scripted entries");
+        let entries = locked(&self.entries);
         entries.get(key).cloned()
     }
 
     fn record_read(&self, key: &str) {
-        self.reads
-            .lock()
-            .expect("the recorded reads")
-            .push(key.to_owned());
+        locked(&self.reads).push(key.to_owned());
     }
 
     fn store_entry(&self, id: &str, entry: CachedFixture) -> Result<(), MemberEffectsError> {
-        if self
-            .failing
-            .lock()
-            .expect("the failing stores")
-            .contains(id)
-        {
+        if locked(&self.failing).contains(id) {
             return Err(store_failure());
         }
-        self.writes
-            .lock()
-            .expect("the recorded writes")
-            .push((id.to_owned(), entry.clone()));
+        locked(&self.writes).push((id.to_owned(), entry.clone()));
         self.put(entry.cache_key(id), entry);
         Ok(())
     }
 }
 
 impl MemberEffectCaches for ScriptedCaches {
-    async fn read_team(
+    fn read_team(
         &self,
         key: &str,
-    ) -> Result<Option<LiteLLMTeamTableCachedObj>, MemberEffectsError> {
+    ) -> impl Future<Output = Result<Option<LiteLLMTeamTableCachedObj>, MemberEffectsError>> + Send
+    {
         self.record_read(key);
-        Ok(self.entry(key).and_then(CachedFixture::into_team))
+        ready(Ok(self.entry(key).and_then(CachedFixture::into_team)))
     }
 
-    async fn store_team(
+    fn store_team(
         &self,
         team_id: &str,
         team: &mut LiteLLMTeamTableCachedObj,
-    ) -> Result<(), MemberEffectsError> {
-        self.store_entry(team_id, CachedFixture::Team(team.clone()))
+    ) -> impl Future<Output = Result<(), MemberEffectsError>> + Send {
+        ready(self.store_entry(team_id, CachedFixture::Team(Box::new(team.clone()))))
     }
 
-    async fn read_key(&self, token: &str) -> Result<Option<UserAPIKeyAuth>, MemberEffectsError> {
+    fn read_key(
+        &self,
+        token: &str,
+    ) -> impl Future<Output = Result<Option<UserAPIKeyAuth>, MemberEffectsError>> + Send {
         self.record_read(token);
-        Ok(self.entry(token).and_then(CachedFixture::into_key))
+        ready(Ok(self.entry(token).and_then(CachedFixture::into_key)))
     }
 
-    async fn store_key(
+    fn store_key(
         &self,
         token: &str,
         auth: &mut UserAPIKeyAuth,
-    ) -> Result<(), MemberEffectsError> {
-        self.store_entry(token, CachedFixture::Key(auth.clone()))
+    ) -> impl Future<Output = Result<(), MemberEffectsError>> + Send {
+        ready(self.store_entry(token, CachedFixture::Key(Box::new(auth.clone()))))
     }
 }
 
@@ -239,33 +250,27 @@ pub(super) struct ScriptedRegistry {
 
 impl ScriptedRegistry {
     pub(super) fn seed(&self, agent: AgentResponse) {
-        self.agents
-            .lock()
-            .expect("the scripted agents")
-            .insert(agent.agent_name.clone(), agent);
+        locked(&self.agents).insert(agent.agent_name.clone(), agent);
     }
 
     pub(super) fn rejecting(&self, agent_name: &str) {
-        *self.reject.lock().expect("the rejected agent") = Some(agent_name.to_owned());
+        *locked(&self.reject) = Some(agent_name.to_owned());
     }
 
     pub(super) fn ops(&self) -> Vec<RegistryOp> {
-        self.ops.lock().expect("the recorded operations").clone()
+        locked(&self.ops).clone()
     }
 
     pub(super) fn agent(&self, agent_name: &str) -> Option<AgentResponse> {
-        let agents = self.agents.lock().expect("the scripted agents");
+        let agents = locked(&self.agents);
         agents.get(agent_name).cloned()
     }
 }
 
 impl AgentRegistryEffects for ScriptedRegistry {
     fn find(&self, agent_id: &str) -> Option<AgentResponse> {
-        self.ops
-            .lock()
-            .expect("the recorded operations")
-            .push(RegistryOp::Find(agent_id.to_owned()));
-        let agents = self.agents.lock().expect("the scripted agents");
+        locked(&self.ops).push(RegistryOp::Find(agent_id.to_owned()));
+        let agents = locked(&self.agents);
         agents
             .values()
             .find(|agent| agent.agent_id == agent_id)
@@ -273,38 +278,23 @@ impl AgentRegistryEffects for ScriptedRegistry {
     }
 
     fn deregister(&self, agent_name: &str) {
-        self.ops
-            .lock()
-            .expect("the recorded operations")
-            .push(RegistryOp::Deregister(agent_name.to_owned()));
-        self.agents
-            .lock()
-            .expect("the scripted agents")
-            .remove(agent_name);
+        locked(&self.ops).push(RegistryOp::Deregister(agent_name.to_owned()));
+        locked(&self.agents).remove(agent_name);
     }
 
     fn register(&self, agent: AgentResponse) -> Result<(), RegistrationRejected> {
-        self.ops
-            .lock()
-            .expect("the recorded operations")
-            .push(RegistryOp::Register {
-                agent_id: agent.agent_id.clone(),
-                agent_name: agent.agent_name.clone(),
-                groups: agent.access_group_ids.clone(),
-            });
-        let rejected = self
-            .reject
-            .lock()
-            .expect("the rejected agent")
+        locked(&self.ops).push(RegistryOp::Register {
+            agent_id: agent.agent_id.clone(),
+            agent_name: agent.agent_name.clone(),
+            groups: agent.access_group_ids.clone(),
+        });
+        let rejected = locked(&self.reject)
             .as_deref()
             .is_some_and(|name| name == agent.agent_name.as_str());
         if rejected {
             return Err(RegistrationRejected);
         }
-        self.agents
-            .lock()
-            .expect("the scripted agents")
-            .insert(agent.agent_name.clone(), agent);
+        locked(&self.agents).insert(agent.agent_name.clone(), agent);
         Ok(())
     }
 }
