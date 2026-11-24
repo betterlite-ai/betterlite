@@ -220,8 +220,13 @@ async fn admin_annotations() {
         team_row("other-gpt", "team-2", "team-beta"),
     ];
     let store = StubReads {
+        creators: BTreeMap::new(),
+        user: None,
         teams: vec![restricted("team-alpha", &[], &[])],
-        ..StubReads::default()
+        teams_fail: false,
+        groups: AccessGroupMap::new(),
+        groups_fail: false,
+        calls: Mutex::new(Vec::new()),
     };
     let admin = ScopeCaller {
         admin_view: true,
@@ -377,12 +382,16 @@ async fn creator_matches_anonymous_row() {
 #[tokio::test]
 async fn annotation_team_read_failure() {
     let store = StubReads {
+        creators: BTreeMap::new(),
         user: Some(UserScope {
             teams: team_list(&["team-alpha"]),
             models: Vec::new(),
         }),
+        teams: Vec::new(),
         teams_fail: true,
-        ..StubReads::default()
+        groups: AccessGroupMap::new(),
+        groups_fail: false,
+        calls: Mutex::new(Vec::new()),
     };
     let error = read_caller_rows(&caller(Some("alice"), &[]), &store)
         .await
@@ -394,13 +403,16 @@ async fn annotation_team_read_failure() {
 #[tokio::test]
 async fn annotation_group_read_failure() {
     let store = StubReads {
+        creators: BTreeMap::new(),
         user: Some(UserScope {
             teams: team_list(&["team-alpha"]),
             models: Vec::new(),
         }),
         teams: vec![restricted("team-alpha", &["gpt-4o"], &["ag-1"])],
+        teams_fail: false,
+        groups: AccessGroupMap::new(),
         groups_fail: true,
-        ..StubReads::default()
+        calls: Mutex::new(Vec::new()),
     };
     let error = read_caller_rows(&caller(Some("alice"), &[]), &store)
         .await
@@ -435,11 +447,16 @@ async fn team_models_join_user_deployments() {
         team_row("other-gpt", "t2", "team-beta"),
     ];
     let store = StubReads {
+        creators: BTreeMap::new(),
         user: Some(UserScope {
             teams: team_list(&["team-alpha"]),
             models: Vec::new(),
         }),
-        ..StubReads::default()
+        teams: Vec::new(),
+        teams_fail: false,
+        groups: AccessGroupMap::new(),
+        groups_fail: false,
+        calls: Mutex::new(Vec::new()),
     };
     let alice = caller(Some("alice"), &[]);
     let stored = read_user_models(rows.clone(), &alice, Some(&store))
@@ -478,11 +495,16 @@ async fn all_proxy_grant_marks_non_team_models() {
         team_row("team-gpt", "t1", "team-alpha"),
     ];
     let store = StubReads {
+        creators: BTreeMap::new(),
         user: Some(UserScope {
             teams: Vec::new(),
             models: vec![JsonData::String(String::from(ALL_PROXY_MODELS))],
         }),
-        ..StubReads::default()
+        teams: Vec::new(),
+        teams_fail: false,
+        groups: AccessGroupMap::new(),
+        groups_fail: false,
+        calls: Mutex::new(Vec::new()),
     };
     let alice = caller(Some("alice"), &[]);
     let reading = read_caller_rows(&alice, &store).await.unwrap();
@@ -507,11 +529,16 @@ async fn wildcard_key_keeps_the_user_grant() {
         team_row("team-gpt", "t1", "team-alpha"),
     ];
     let store = StubReads {
+        creators: BTreeMap::new(),
         user: Some(UserScope {
             teams: Vec::new(),
             models: vec![JsonData::String(String::from("team-gpt"))],
         }),
-        ..StubReads::default()
+        teams: Vec::new(),
+        teams_fail: false,
+        groups: AccessGroupMap::new(),
+        groups_fail: false,
+        calls: Mutex::new(Vec::new()),
     };
     let alice = caller(Some("alice"), &[ALL_PROXY_MODELS, "extra"]);
     let reading = read_caller_rows(&alice, &store).await.unwrap();
