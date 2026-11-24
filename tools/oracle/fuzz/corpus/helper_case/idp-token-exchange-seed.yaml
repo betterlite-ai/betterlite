@@ -1,0 +1,10 @@
+kind: helper
+name: idp-token-exchange-seed
+call:
+  b4663:
+    prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+    subject_token: header.payload.signature
+    authorizer: {kind: result, user_id: user-1, team_id: team-1}
+    cause: null
+env: {}
+compare: {ignore: []}
