@@ -210,7 +210,14 @@ async fn user_permission_answers_none_on_a_link_or_cache_fault() {
             .unwrap()
             .is_none()
     );
+}
 
+#[tokio::test]
+async fn user_permission_answers_none_when_the_cache_write_fails() {
+    let auth = McpAuth {
+        user_id: Some(String::from("u1")),
+        ..McpAuth::default()
+    };
     let write_fault = FakeReads {
         user_link: Scripted::Value(Some(String::from("op-user"))),
         store_fault: true,
