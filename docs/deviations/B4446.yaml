@@ -1,0 +1,33 @@
+task: B4446
+deviations:
+  - what: A request carrying a client connection field, api_base and base_url among them, is refused with 401 before any probe, even when general_settings.allow_client_side_credentials is true.
+    why: The task states B884's request-URL rejection overrides LiteLLM's opt-in URL behavior, so this route never lets a request choose the outbound host; LiteLLM would strip the config's connection fields and probe the request's own api_base under the opt-in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2181-L2188
+  - what: The same B884 scan runs over a request-supplied model_info and over its health_check_params map, so model_info.health_check_params.api_base is refused rather than applied.
+    why: _update_litellm_params_for_health_check merges health_check_params into the probe params with no URL check, and a request-supplied model_info reaches it whenever the router has no matching deployment, so without the scan the request would choose the outbound host.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2190-L2195
+  - what: A non-string litellm_params mode is removed and the probe runs with no mode instead of forwarding the raw value.
+    why: mode is a Literal of mode names in LiteLLM's own signature, so only a string can name a mode; a number would fail inside ahealth_check with a provider type error rather than probe without one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2207-L2207
+  - what: "A non-string model_info.team_id answers 500 with \"Failed to test connection: the model_info team_id must be a string\"; LiteLLM's pydantic Deployment validation raises inside its generic except, which gives the same status and envelope with pydantic's own text."
+    why: A value of the wrong type is an error that names the field (docs/compatibility), and the envelope stays LiteLLM's Failed to test connection 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2197-L2206
+  - what: The role in the non-team 403 is the snake_case role value, such as internal_user; LiteLLM interpolates the Python enum object, whose repr text docs/compatibility excludes.
+    why: The status and the error envelope match; only the rendered role text differs, and betterlite renders every role the same way in its other errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2162-L2168
+  - what: A body outside the schema answers 422 with betterlite's shared validation envelope, whose msg is serde's message rather than pydantic's.
+    why: docs/compatibility fixes the envelope; the status, the type values and the loc path follow FastAPI's, and the provider's own type is what rejected the body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2023-L2052
+  - what: A cached endpoint value that is not a list, or a row that is not an object, contributes no rows to the filtered result instead of raising.
+    why: The shared cache is built from typed rows by B4443, and the helper stays total over any Json it is given so a cache shape it cannot read narrows to nothing rather than leaking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1017-L1039
+  - what: A timed-out connection test result drops Python's exception object from run_with_timeout's error dict.
+    why: exception is not a display field, so the cleaned result a caller sees keeps exactly the fields LiteLLM shows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2212-L2220
+kept_bugs:
+  - what: A request may name any stored credential with litellm_credential_name and the health check resolves and probes with it, with only the model-call authorization in front.
+    why: LiteLLM documents this as the way to test a specific credential, and the task says to preserve the inheritance and mismatch behavior, so a working setup that names a credential keeps working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2089-L2093
+  - what: A request may override model and other provider params while inheriting the deployment's credentials, so an authorized caller can probe a different provider model with the deployment's key.
+    why: LiteLLM documents parameter overrides, and its own dashboard sends the provider model string and chosen overrides this way, so copying it keeps those callers working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2094-L2096

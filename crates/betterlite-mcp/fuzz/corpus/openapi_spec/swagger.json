@@ -1,0 +1,25 @@
+{
+  "swagger": "2.0",
+  "info": {"title": "Legacy", "version": "2.0.0"},
+  "host": "legacy.test",
+  "schemes": ["http", "https"],
+  "basePath": "/v2",
+  "paths": {
+    "/orders/{id}": {
+      "get": {
+        "operationId": "getOrder",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "type": "string"},
+          {"name": "verbose", "in": "query", "type": "boolean"}
+        ]
+      },
+      "put": {
+        "operationId": "replaceOrder",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true, "type": "string"},
+          {"name": "order", "in": "body", "schema": {"type": "object", "properties": {"total": {"type": "number"}}}}
+        ]
+      }
+    }
+  }
+}
