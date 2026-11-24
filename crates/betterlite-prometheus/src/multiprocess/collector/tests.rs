@@ -124,6 +124,15 @@ fn fails_when_a_listed_file_is_broken() {
 }
 
 #[test]
+fn fails_when_the_folder_cannot_be_listed() {
+    let dir = TempDir::new().unwrap();
+    let collector = MultiProcessCollector::new(dir.path()).unwrap();
+    fs::remove_dir_all(dir.path()).unwrap();
+    let error = collector.collect().unwrap_err();
+    assert!(matches!(error, MultiprocessError::List { .. }));
+}
+
+#[test]
 fn mark_process_dead_removes_only_the_live_files_of_that_pid() {
     let dir = TempDir::new().unwrap();
     write_live_files(dir.path(), 7);

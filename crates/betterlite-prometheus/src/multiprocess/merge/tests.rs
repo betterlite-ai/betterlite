@@ -400,6 +400,57 @@ fn fails_on_a_missing_counter_file_whose_second_part_starts_with_live() {
 }
 
 #[test]
+fn fails_on_a_file_name_that_does_not_name_a_gauge_pid() {
+    let dir = TempDir::new().unwrap();
+    let path = write_file(
+        dir.path(),
+        "gauge_1001.db",
+        &[entry("queue_length", "queue_length", &[], 1.0)],
+    );
+    let error = merge(&[path]).unwrap_err();
+    assert!(matches!(error, MultiprocessError::InvalidFileName { .. }));
+}
+
+#[test]
+fn fails_on_a_key_that_is_not_a_metric_key() {
+    let dir = TempDir::new().unwrap();
+    let path = write_file(
+        dir.path(),
+        "counter_1001.db",
+        &[DbEntry {
+            key: "not a key".to_owned(),
+            value: 1.0,
+            timestamp: 0.0,
+        }],
+    );
+    let error = merge(&[path]).unwrap_err();
+    assert!(matches!(error, MultiprocessError::InvalidKey { .. }));
+}
+
+#[test]
+fn fails_on_a_bucket_bound_that_is_not_a_float() {
+    let dir = TempDir::new().unwrap();
+    let path = write_file(
+        dir.path(),
+        "histogram_1001.db",
+        &[entry(
+            "request_latency",
+            "request_latency_bucket",
+            &[("le", "abc")],
+            1.0,
+        )],
+    );
+    let error = merge(&[path]).unwrap_err();
+    assert_eq!(
+        error,
+        MultiprocessError::InvalidBucketBound {
+            bound: "abc".to_owned(),
+        }
+    );
+    assert_eq!(error.to_string(), "the bucket bound abc is not a float");
+}
+
+#[test]
 fn fails_on_a_missing_gauge_file_whose_mode_is_not_live() {
     let dir = TempDir::new().unwrap();
     let missing = dir.path().join("gauge_all_1002.db");
