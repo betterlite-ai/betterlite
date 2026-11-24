@@ -49,11 +49,11 @@ fn cost_extra_request_malformed_text_is_an_error() {
     let failure = parse::<CombineUsageRequest>("{");
     assert!(matches!(failure, Err(ConvertError::Json { .. })));
     let wrong = parse::<CombineUsageRequest>(r#"{"usages": 3}"#);
-    assert!(wrong.is_err());
+    assert!(matches!(wrong, Err(ConvertError::Json { .. })));
 }
 
 #[test]
-fn cost_extra_request_every_method_shape_parses() {
+fn cost_extra_request_ocr_shapes_parse() {
     let ocr: OcrRequest = parse(
         r#"{"model": "mistral/mistral-ocr-latest", "custom_llm_provider": "mistral",
             "usage": {"credits": null, "pages_processed": 2, "pages_processed_annotation": null},
@@ -74,7 +74,10 @@ fn cost_extra_request_every_method_shape_parses() {
             .pages_processed_annotation,
         None
     );
+}
 
+#[test]
+fn cost_extra_request_search_shapes_parse() {
     let vector: VectorStoreRequest = parse(
         r#"{"model": "vertex_ai/search_api", "custom_llm_provider": "vertex_ai",
             "response": {"object": "vector_store.search_results.page", "search_query": "q",
@@ -95,7 +98,10 @@ fn cost_extra_request_every_method_shape_parses() {
             .flatten(),
         Some(1)
     );
+}
 
+#[test]
+fn cost_extra_request_media_shapes_parse() {
     let transcription: TranscriptionRequest =
         parse(r#"{"model": "whisper-1", "custom_llm_provider": null, "duration": 1.5}"#)
             .expect("the transcription parses");
@@ -106,7 +112,7 @@ fn cost_extra_request_every_method_shape_parses() {
             "size": "1024-x-1024", "model_info": null}"#,
     )
     .expect("the image parses");
-    assert_eq!(image.n, Some(1));
+    assert_eq!(image.n_images, Some(1));
 
     let video: VideoRequest = parse(
         r#"{"model": "veo-3.0-generate-001", "duration_seconds": 8,
@@ -114,7 +120,10 @@ fn cost_extra_request_every_method_shape_parses() {
     )
     .expect("the video parses");
     assert_eq!(video.video_resolution.as_deref(), Some("720p"));
+}
 
+#[test]
+fn cost_extra_request_realtime_shapes_parse() {
     let realtime: RealtimeCostWire = parse(
         r#"{"results": [], "combined_usage": {"prompt_tokens": 1, "completion_tokens": 2,
             "total_tokens": 3, "prompt_tokens_details": null,
@@ -125,13 +134,13 @@ fn cost_extra_request_every_method_shape_parses() {
     .expect("the realtime request parses");
     assert_eq!(realtime.litellm_model_name, "gpt-realtime");
 
-    let transcription: RealtimeTranscriptionWire = parse(
+    let realtime_transcription: RealtimeTranscriptionWire = parse(
         r#"{"results": [{"type": "session.created", "session": {"model": "gpt-4o-transcribe"}}],
             "custom_llm_provider": "openai", "litellm_model_name": "gpt-realtime",
             "custom_pricing_model": null}"#,
     )
     .expect("the realtime transcription request parses");
-    assert_eq!(transcription.results.len(), 1);
+    assert_eq!(realtime_transcription.results.len(), 1);
 
     let collect: CollectUsageRequest =
         parse(r#"{"source": "responses_ws", "results": []}"#).expect("collect parses");
@@ -156,7 +165,7 @@ fn cost_extra_request_usage_keeps_details_and_numeric_extras() {
     assert_eq!(
         usage
             .completion_tokens_details
-            .and_then(|details| details.reasoning_tokens),
+            .and_then(|completion| completion.reasoning_tokens),
         Some(3)
     );
     assert_eq!(

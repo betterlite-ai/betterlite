@@ -78,7 +78,8 @@ pub(crate) struct VectorStoreRequest {
     pub(crate) model: Option<String>,
     pub(crate) custom_llm_provider: Option<String>,
     // The search response carries no price of its own; LiteLLM reads only the model and provider.
-    pub(crate) response: Json,
+    #[serde(rename = "response")]
+    _response: Json,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,7 +104,8 @@ pub(crate) struct ImageRequest {
     pub(crate) model: String,
     pub(crate) custom_llm_provider: Option<String>,
     pub(crate) quality: Option<String>,
-    pub(crate) n: Option<i64>,
+    #[serde(rename = "n")]
+    pub(crate) n_images: Option<i64>,
     pub(crate) size: Option<String>,
     pub(crate) model_info: Option<PriceRecord>,
 }
@@ -177,7 +179,7 @@ pub(crate) struct RealtimeTranscriptionWire {
 
 calculator_request!(ImageRequest => DefaultImageCostRequest, wire {
     model: &wire.model, custom_llm_provider: wire.custom_llm_provider.as_deref(),
-    quality: wire.quality.as_deref(), n_images: wire.n, size: wire.size.as_deref(),
+    quality: wire.quality.as_deref(), n_images: wire.n_images, size: wire.size.as_deref(),
     model_info: wire.model_info.as_ref(),
 });
 

@@ -13,9 +13,8 @@ fn dec(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the fixture decimal parses")
 }
 
-#[test]
-fn cost_extra_support_prompt_extras_maps_every_prompt_detail() {
-    let details = PromptTokensDetails {
+fn prompt_fixture() -> PromptTokensDetails {
+    PromptTokensDetails {
         text_tokens: Some(1),
         audio_tokens: Some(2),
         image_tokens: Some(3),
@@ -36,7 +35,12 @@ fn cost_extra_support_prompt_extras_maps_every_prompt_detail() {
             audio_tokens: Some(15),
             image_tokens: Some(16),
         }),
-    };
+    }
+}
+
+#[test]
+fn cost_extra_support_prompt_extras_maps_every_prompt_detail() {
+    let details = prompt_fixture();
     let extras = prompt_extras(Some(&details));
     assert_eq!(extras.cache_write_tokens, Some(11));
     assert_eq!(extras.cache_creation_tokens, Some(12));

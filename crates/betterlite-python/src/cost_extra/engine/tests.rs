@@ -18,6 +18,7 @@ use crate::cost_extra::convert::{
 };
 use crate::cost_extra::engine::Engine;
 use crate::cost_extra::engine::support::{collect_usage, combine_usage, partition_usage};
+use crate::cost_extra::error::RerankFailure;
 
 const CATALOG: &str = r#"{
     "ocr-test": {
@@ -366,10 +367,7 @@ fn cost_extra_engine_applies_the_batch_rates_and_the_regional_uplift() {
     );
 }
 
-#[test]
-fn cost_extra_engine_combines_usage_and_keeps_the_cache_aliases() {
-    let combined_request: CombineUsageRequest = request(
-        r#"{"usages": [
+const COMBINED_USAGE_REQUEST: &str = r#"{"usages": [
             {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
              "prompt_tokens_details": {"text_tokens": 6, "cached_tokens": 4,
                                        "cache_creation_tokens": 3, "audio_tokens": null,
@@ -397,8 +395,11 @@ fn cost_extra_engine_combines_usage_and_keeps_the_cache_aliases() {
                                            "accepted_prediction_tokens": null,
                                            "rejected_prediction_tokens": null},
              "requests": 5}
-        ]}"#,
-    );
+        ]}"#;
+
+#[test]
+fn cost_extra_engine_combines_usage_and_keeps_the_cache_aliases() {
+    let combined_request: CombineUsageRequest = request(COMBINED_USAGE_REQUEST);
     let combined = combine_usage(&combined_request).expect("the usages combine");
     assert_eq!(combined.prompt_tokens, 30);
     assert_eq!(combined.completion_tokens, 12);
@@ -448,8 +449,8 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
                 "input_tokens": 3, "output_tokens": 1, "total_tokens": 4}}}
         ]}"#,
     );
-    let collected = collect_usage(&websocket).expect("the websocket events are read");
-    assert_eq!(collected.len(), 2);
+    let websocket_usage = collect_usage(&websocket).expect("the websocket events are read");
+    assert_eq!(websocket_usage.len(), 2);
 
     let partition: PartitionUsageRequest = request(
         r#"{"results": [
@@ -479,7 +480,10 @@ fn cost_extra_engine_prices_a_realtime_session() {
         .expect("the session is priced");
     assert_eq!(cost.0, dec("0.0014"));
     assert!(breakdown.is_some());
+}
 
+#[test]
+fn cost_extra_engine_adds_the_realtime_transcription_charge() {
     let transcribed: RealtimeCostWire = request(
         r#"{"results": [
             {"type": "transcription_session.created", "session": {"audio": {"input":
@@ -492,10 +496,10 @@ fn cost_extra_engine_prices_a_realtime_session() {
             "custom_llm_provider": "openai", "litellm_model_name": "realtime-test",
             "data_residency": null, "custom_pricing_model": null, "base_pricing_model": null}"#,
     );
-    let (cost, _breakdown) = engine()
+    let (charge, _breakdown) = engine()
         .realtime_cost(&transcribed)
         .expect("the session and its transcription are priced");
-    assert_eq!(cost.0, dec("0.00165"));
+    assert_eq!(charge.0, dec("0.00165"));
 }
 
 #[test]
@@ -522,10 +526,7 @@ fn cost_extra_engine_reports_a_missing_provider() {
     let request: RerankRequest =
         request(r#"{"model": "rerank-test", "custom_llm_provider": null, "billed_units": null}"#);
     let failure = engine().rerank_cost(&request);
-    assert!(matches!(
-        failure,
-        Err(crate::cost_extra::error::RerankFailure::Resolution { .. })
-    ));
+    assert!(matches!(failure, Err(RerankFailure::Resolution { .. })));
 }
 
 #[test]

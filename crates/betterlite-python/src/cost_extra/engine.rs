@@ -36,9 +36,6 @@ const VERTEX_PROVIDER: &str = "vertex_ai";
 const VERTEX_SEARCH_API: &str = "search_api";
 const VERTEX_SEARCH_MODEL: &str = "vertex_ai/search_api";
 const QUERY_RATE: &str = "input_cost_per_query";
-const TOKEN_RATE: &str = "input_cost_per_token";
-const JINA_PROVIDER: &str = "jina_ai";
-const VOYAGE_PROVIDER: &str = "voyage";
 
 // One extra-cost resource: the price map and the zone database every specialised calculator reads.
 pub(crate) struct Engine {

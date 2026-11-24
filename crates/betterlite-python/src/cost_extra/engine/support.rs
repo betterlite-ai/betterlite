@@ -85,9 +85,11 @@ pub(crate) fn collect_usage(
     }
 }
 
+pub(crate) type ServiceTiers = Vec<(Option<String>, Vec<Event>)>;
+
 pub(crate) fn partition_usage(
     request: &PartitionUsageRequest,
-) -> Result<Vec<(Option<String>, Vec<Event>)>, RealtimeCostError> {
+) -> Result<ServiceTiers, RealtimeCostError> {
     responses_ws::partition_by_service_tier(&request.results)
         .map(|tiers| tiers.into_iter().collect())
 }
@@ -101,11 +103,11 @@ pub(crate) fn rerank_price(
     let Some(units) = billed_units else {
         return Ok((Decimal::ZERO, Decimal::ZERO));
     };
-    let (key, units) = match provider {
+    let (key, counted) = match provider {
         JINA_PROVIDER | VOYAGE_PROVIDER => (TOKEN_RATE, units.total_tokens.flatten()),
         _ => (QUERY_RATE, units.search_units.flatten()),
     };
-    let (Some(rate), Some(count)) = (numeric(record, key)?, units) else {
+    let (Some(rate), Some(count)) = (numeric(record, key)?, counted) else {
         return Ok((Decimal::ZERO, Decimal::ZERO));
     };
     let cost = rate
@@ -130,8 +132,8 @@ pub(crate) fn numeric(
 }
 
 // The prompt details batch pricing reads besides the counters, spelled as batch_cost_calculator passes them.
-pub(crate) fn prompt_extras(details: Option<&PromptTokensDetails>) -> PromptExtras {
-    let Some(details) = details else {
+pub(crate) fn prompt_extras(provided: Option<&PromptTokensDetails>) -> PromptExtras {
+    let Some(details) = provided else {
         return PromptExtras::default();
     };
     PromptExtras {

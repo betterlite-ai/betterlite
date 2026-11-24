@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use super::NativeCostExtra;
 use crate::cost::convert::Amount;
+use crate::cost_extra::convert::usage::UsageWire;
 
 const SETTINGS: &str = r#"{"model_cost": {
     "ocr-test": {
@@ -61,14 +62,6 @@ const SETTINGS: &str = r#"{"model_cost": {
         "output_cost_per_token": 0.00002
     }
 }}"#;
-
-// The fields these tests read out of a usage answer; the rest of the object goes unread.
-#[derive(Debug, Deserialize)]
-struct TokensWire {
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
-}
 
 #[derive(Debug, Deserialize)]
 struct BreakdownWire {
@@ -269,7 +262,7 @@ fn cost_extra_native_answers_the_realtime_session_with_its_breakdown() {
 }
 
 #[test]
-fn cost_extra_native_combines_and_collects_usage() {
+fn cost_extra_native_combines_usage() {
     Python::initialize();
     Python::attach(|py| {
         let combined = NativeCostExtra::combine_usage(
@@ -282,11 +275,17 @@ fn cost_extra_native_combines_and_collects_usage() {
             ]}"#,
         )
         .expect("the usages combine");
-        let usage: TokensWire = serde_json::from_str(&combined).expect("the usage is JSON");
+        let usage: UsageWire = serde_json::from_str(&combined).expect("the usage is JSON");
         assert_eq!(usage.prompt_tokens, 30);
         assert_eq!(usage.completion_tokens, 12);
         assert_eq!(usage.total_tokens, 42);
+    });
+}
 
+#[test]
+fn cost_extra_native_collects_and_partitions_usage() {
+    Python::initialize();
+    Python::attach(|py| {
         let collected = NativeCostExtra::collect_usage(
             py,
             r#"{"source": "realtime", "results": [
@@ -296,8 +295,7 @@ fn cost_extra_native_combines_and_collects_usage() {
             ]}"#,
         )
         .expect("the events collect");
-        let usages: Vec<TokensWire> =
-            serde_json::from_str(&collected).expect("the usages are JSON");
+        let usages: Vec<UsageWire> = serde_json::from_str(&collected).expect("the usages are JSON");
         assert_eq!(usages.len(), 1);
         assert_eq!(usages[0].prompt_tokens, 100);
 

@@ -42,7 +42,8 @@ pub(crate) struct PromptDetailsWire {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct CachedDetailsWire {
-    pub(crate) text_tokens: Option<i64>,
+    #[serde(rename = "text_tokens")]
+    pub(crate) text: Option<i64>,
     pub(crate) audio_tokens: Option<i64>,
     pub(crate) image_tokens: Option<i64>,
 }
@@ -53,7 +54,8 @@ pub(crate) struct CompletionDetailsWire {
     pub(crate) audio_tokens: Option<i64>,
     pub(crate) image_tokens: Option<i64>,
     pub(crate) video_tokens: Option<i64>,
-    pub(crate) reasoning_tokens: Option<i64>,
+    #[serde(rename = "reasoning_tokens")]
+    pub(crate) reasoning: Option<i64>,
     pub(crate) accepted_prediction_tokens: Option<i64>,
     pub(crate) rejected_prediction_tokens: Option<i64>,
 }
@@ -68,7 +70,7 @@ pub(crate) enum UsageNumberView {
 }
 
 impl UsageNumberView {
-    fn number(&self) -> UsageNumber {
+    const fn number(&self) -> UsageNumber {
         match self {
             Self::Integer(value) => UsageNumber::Integer(*value),
             Self::Amount(value) => UsageNumber::Decimal(value.0),
@@ -87,14 +89,14 @@ impl From<&UsageNumber> for UsageNumberView {
     }
 }
 
-// The wire details and the model details name the same counters, so one field list drives both ways.
+// The wire details and the model details name the same counters; a pair renames the wire field.
 macro_rules! mirrored_details {
-    ($wire:ident <=> $details:ident { $($field:ident),+ $(,)? }) => {
+    ($wire:ident <=> $details:ident { $($name:ident => $field:ident),+ $(,)? }) => {
         impl From<&$wire> for $details {
-            fn from(wire: &$wire) -> Self { Self { $($field: wire.$field),+ } }
+            fn from(wire: &$wire) -> Self { Self { $($field: wire.$name),+ } }
         }
         impl From<&$details> for $wire {
-            fn from(details: &$details) -> Self { Self { $($field: details.$field),+ } }
+            fn from(details: &$details) -> Self { Self { $($name: details.$field),+ } }
         }
     };
 }
@@ -143,12 +145,14 @@ macro_rules! usage_bridge {
 }
 
 mirrored_details!(CachedDetailsWire <=> CachedTokensDetails {
-    text_tokens, audio_tokens, image_tokens,
+    text => text_tokens, audio_tokens => audio_tokens, image_tokens => image_tokens,
 });
 
 mirrored_details!(CompletionDetailsWire <=> CompletionTokensDetails {
-    text_tokens, audio_tokens, image_tokens, video_tokens, reasoning_tokens,
-    accepted_prediction_tokens, rejected_prediction_tokens,
+    text_tokens => text_tokens, audio_tokens => audio_tokens, image_tokens => image_tokens,
+    video_tokens => video_tokens, reasoning => reasoning_tokens,
+    accepted_prediction_tokens => accepted_prediction_tokens,
+    rejected_prediction_tokens => rejected_prediction_tokens,
 });
 
 mirrored_prompt_details!(
