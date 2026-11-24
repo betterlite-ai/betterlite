@@ -1,0 +1,12 @@
+kind: helper
+name: redirect-shape-web-uris
+call:
+  b10062:
+    native_redirect_uris: null
+    uris:
+      - 'https://host/cb#frag'
+      - 'http://127.0.0.1:8080/cb'
+      - 'https://@host/cb'
+      - 'https://host/cb'
+env: {}
+compare: {ignore: []}
