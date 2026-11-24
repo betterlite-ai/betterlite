@@ -48,9 +48,9 @@ class Message(ResponseObject):
 class MessagePage(ResponseObject):
     data: list[Message]
     first_id: str | None = None
-    has_more: bool
+    has_more: bool | None = None
     last_id: str | None = None
-    object: str
+    object: str | None = None
 
 
 class Run(ResponseObject):
@@ -149,6 +149,9 @@ def message_payload(
 
 
 def run_payload(arguments: Mapping[str, CallValue]) -> CallPayload:
+    # litellm's stream wrapper forwards stream to run_thread, which sets stream and rejects it
+    if "stream" in arguments:
+        raise TypeError("run_thread() got multiple values for keyword argument 'stream'")
     values = call_values(arguments["custom_llm_provider"], arguments["thread_id"], arguments)
     values["assistant_id"] = arguments["assistant_id"]
     values.update({name: arguments[name] for name in RUN_FIELDS if name in arguments})

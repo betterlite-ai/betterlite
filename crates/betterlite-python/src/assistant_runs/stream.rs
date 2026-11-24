@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use betterlite_azure::assistants::error::AssistantsRunError;
 use betterlite_core::api::assistant_run_sdk::error::AssistantRunError;
+use betterlite_openai::thread_runs::error::ThreadRunsError;
+use betterlite_openai::thread_runs::records::RunEvent;
 use betterlite_openai::thread_runs::stream::RunEventStream;
 use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
@@ -93,27 +95,32 @@ enum Step {
     Open(ProviderRunStream),
 }
 
+// Takes the step the state holds now, and a state holding neither part closes the stream.
 #[cfg_attr(test, mutants::skip)]
-async fn advance(
-    state: &Mutex<StreamState>,
-    provider: &str,
-    redactor: &Redactor,
-) -> PyResult<Option<String>> {
-    let step = {
-        let mut guard = state.lock().await;
-        if guard.closed {
-            return Ok(None);
-        }
-        if let Some(events) = guard.events.take() {
-            Step::Read(events)
-        } else if let Some(source) = guard.source.take() {
-            Step::Open(source)
-        } else {
-            guard.closed = true;
-            return Ok(None);
-        }
-    };
-    let (events, next) = match step {
+async fn pick_step(state: &Mutex<StreamState>) -> Option<Step> {
+    let mut guard = state.lock().await;
+    if guard.closed {
+        return None;
+    }
+    if let Some(events) = guard.events.take() {
+        return Some(Step::Read(events));
+    }
+    if let Some(source) = guard.source.take() {
+        return Some(Step::Open(source));
+    }
+    guard.closed = true;
+    None
+}
+
+// Reads the step's next event, opening the manager core built first.
+#[cfg_attr(test, mutants::skip)]
+async fn read_step(
+    step: Step,
+) -> (
+    Option<RunEventStream>,
+    Option<Result<RunEvent, ThreadRunsError>>,
+) {
+    match step {
         Step::Read(mut events) => {
             let next = events.next().await;
             (Some(events), next)
@@ -125,7 +132,19 @@ async fn advance(
             }
             Err(error) => (None, Some(Err(error))),
         },
+    }
+}
+
+#[cfg_attr(test, mutants::skip)]
+async fn advance(
+    state: &Mutex<StreamState>,
+    provider: &str,
+    redactor: &Redactor,
+) -> PyResult<Option<String>> {
+    let Some(step) = pick_step(state).await else {
+        return Ok(None);
     };
+    let (events, next) = read_step(step).await;
     let mut guard = state.lock().await;
     if guard.closed {
         return Ok(None);

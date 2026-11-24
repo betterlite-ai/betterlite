@@ -54,6 +54,7 @@ import betterlite
 import betterlite.exceptions as errors
 from betterlite import assistants as package
 from betterlite._completion.errors import UnsupportedCallArgumentError
+from betterlite._endpoints import settings as settings_module
 from betterlite.assistants import _runs, _utils, main
 
 BAD_REQUEST_STATUS: Final = 400
@@ -74,118 +75,79 @@ REREAD_CALLS: Final = 2
 STREAM_CALLS: Final = 3
 DENIED_BODY: Final[dict[str, JsonValue]] = {
     "error": {
-        "message": f"Incorrect API key provided: {BAD_KEY}.",
-        "type": "invalid_request_error",
-        "param": None,
-        "code": "invalid_api_key",
+        "message": f"Incorrect API key provided: {BAD_KEY}.", "type": "invalid_request_error",
+        "param": None, "code": "invalid_api_key",
     },
 }
 ATTACHMENTS: Final[list[JsonValue]] = [
     {"file_id": "file_1", "tools": [{"type": "code_interpreter"}]},
 ]
 MESSAGE: Final[dict[str, JsonValue]] = {
-    "id": MESSAGE_ID,
-    "assistant_id": ASSISTANT_ID,
-    "attachments": ATTACHMENTS,
-    "completed_at": CREATED + 1,
+    "id": MESSAGE_ID, "assistant_id": ASSISTANT_ID,
+    "attachments": ATTACHMENTS, "completed_at": CREATED + 1,
     "content": [{"type": "text", "text": {"value": "hello", "annotations": []}}],
-    "created_at": CREATED,
-    "incomplete_at": None,
-    "incomplete_details": None,
-    "metadata": {"k": "v"},
-    "object": "thread.message",
-    "role": "user",
-    "run_id": None,
-    "status": "completed",
+    "created_at": CREATED, "incomplete_at": None,
+    "incomplete_details": None, "metadata": {"k": "v"},
+    "object": "thread.message", "role": "user",
+    "run_id": None, "status": "completed",
     "thread_id": THREAD_ID,
 }
 MESSAGE_BARE: Final[dict[str, JsonValue]] = {
     name: value for name, value in MESSAGE.items() if name != "status"
 }
 MESSAGE_STARTED: Final[dict[str, JsonValue]] = {
-    **MESSAGE,
-    "completed_at": None,
-    "content": [],
-    "status": "in_progress",
+    **MESSAGE, "completed_at": None, "content": [], "status": "in_progress",
 }
 MESSAGE_DELTA: Final[dict[str, JsonValue]] = {
     "id": MESSAGE_ID,
     "object": "thread.message.delta",
     "delta": {
         "role": "assistant",
-        "content": [
-            {"index": 0, "type": "text", "text": {"value": "hello", "annotations": []}},
-        ],
+        "content": [{"index": 0, "type": "text", "text": {"value": "hello", "annotations": []}}],
     },
 }
 MESSAGE_PAGE: Final[dict[str, JsonValue]] = {
-    "object": "list",
-    "data": [MESSAGE],
-    "first_id": MESSAGE_ID,
-    "last_id": MESSAGE_ID,
-    "has_more": False,
+    "object": "list", "data": [MESSAGE], "first_id": MESSAGE_ID,
+    "last_id": MESSAGE_ID, "has_more": False,
 }
 RUN: Final[dict[str, JsonValue]] = {
-    "id": RUN_ID,
-    "assistant_id": ASSISTANT_ID,
-    "cancelled_at": None,
-    "completed_at": CREATED + 2,
-    "created_at": CREATED,
-    "expires_at": None,
-    "failed_at": None,
-    "incomplete_details": None,
-    "instructions": "be brief",
-    "last_error": None,
-    "max_completion_tokens": 100,
-    "max_prompt_tokens": 200,
-    "metadata": {"k": "v"},
-    "model": "gpt-4o-mini",
-    "object": "thread.run",
-    "parallel_tool_calls": True,
-    "required_action": None,
-    "response_format": "auto",
-    "started_at": CREATED + 1,
-    "status": "completed",
-    "thread_id": THREAD_ID,
-    "tool_choice": "auto",
-    "tools": [{"type": "code_interpreter"}],
+    "id": RUN_ID, "assistant_id": ASSISTANT_ID, "cancelled_at": None,
+    "completed_at": CREATED + 2, "created_at": CREATED, "expires_at": None,
+    "failed_at": None, "incomplete_details": None, "instructions": "be brief",
+    "last_error": None, "max_completion_tokens": 100, "max_prompt_tokens": 200,
+    "metadata": {"k": "v"}, "model": "gpt-4o-mini", "object": "thread.run",
+    "parallel_tool_calls": True, "required_action": None, "response_format": "auto",
+    "started_at": CREATED + 1, "status": "completed", "thread_id": THREAD_ID,
+    "tool_choice": "auto", "tools": [{"type": "code_interpreter"}],
     "truncation_strategy": {"type": "auto", "last_messages": None},
     "usage": {"completion_tokens": 1, "prompt_tokens": 2, "total_tokens": 3},
-    "temperature": 0.5,
-    "top_p": 0.75,
+    "temperature": 0.5, "top_p": 0.75,
 }
 RUN_QUEUED: Final[dict[str, JsonValue]] = {
-    **RUN,
-    "completed_at": None,
-    "started_at": None,
-    "status": "queued",
-    "usage": None,
+    **RUN, "completed_at": None, "started_at": None, "status": "queued", "usage": None,
 }
 STREAM_EVENTS: Final[list[tuple[str, JsonValue]]] = [
-    ("thread.run.created", RUN_QUEUED),
-    ("thread.message.created", MESSAGE_STARTED),
-    ("thread.message.delta", MESSAGE_DELTA),
-    ("thread.message.completed", MESSAGE),
+    ("thread.run.created", RUN_QUEUED), ("thread.message.created", MESSAGE_STARTED),
+    ("thread.message.delta", MESSAGE_DELTA), ("thread.message.completed", MESSAGE),
     ("thread.run.completed", RUN),
 ]
 EVENT_NAMES: Final[list[str]] = [name for name, _ in STREAM_EVENTS]
 ROUTES: Final[dict[tuple[str, str], dict[str, JsonValue]]] = {
     ("GET", MESSAGES_PATH): MESSAGE_PAGE,
+    ("GET", BARE_MESSAGES_PATH): {
+        "data": [MESSAGE], "first_id": MESSAGE_ID, "last_id": MESSAGE_ID,
+    },
     ("POST", MESSAGES_PATH): MESSAGE,
     ("POST", BARE_MESSAGES_PATH): MESSAGE_BARE,
     ("POST", RUNS_PATH): RUN_QUEUED,
     ("GET", RUN_PATH): RUN,
 }
 RUN_OPTIONS: Final[dict[str, JsonValue]] = {
-    "additional_instructions": "be kind",
-    "instructions": "be brief",
-    "metadata": {"k": "v"},
-    "model": "gpt-4o-mini",
-    "tools": [{"type": "code_interpreter"}],
+    "additional_instructions": "be kind", "instructions": "be brief", "metadata": {"k": "v"},
+    "model": "gpt-4o-mini", "tools": [{"type": "code_interpreter"}],
 }
 MESSAGE_ARGUMENTS: Final[dict[str, JsonValue]] = {
-    "attachments": ATTACHMENTS,
-    "metadata": {"k": "v"},
+    "attachments": ATTACHMENTS, "metadata": {"k": "v"},
 }
 BARE_STREAM_ARGUMENTS: Final[dict[str, str]] = {
     "custom_llm_provider": "openai",
@@ -469,35 +431,25 @@ async def async_closed_after_first(
 
 def test_signature_matches_litellm() -> None:
     assert shape(inspect.signature(main.add_message)) == shape(
-        inspect.signature(LITELLM.add_message)
-    )
+        inspect.signature(LITELLM.add_message))
     assert shape(inspect.signature(main.a_add_message)) == shape(
-        inspect.signature(LITELLM.a_add_message)
-    )
+        inspect.signature(LITELLM.a_add_message))
     assert shape(inspect.signature(main.get_messages)) == shape(
-        inspect.signature(LITELLM.get_messages)
-    )
+        inspect.signature(LITELLM.get_messages))
     assert shape(inspect.signature(main.aget_messages)) == shape(
-        inspect.signature(LITELLM.aget_messages)
-    )
+        inspect.signature(LITELLM.aget_messages))
     assert shape(inspect.signature(main.run_thread)) == shape(
-        inspect.signature(LITELLM.run_thread)
-    )
+        inspect.signature(LITELLM.run_thread))
     assert shape(inspect.signature(main.arun_thread)) == shape(
-        inspect.signature(LITELLM.arun_thread)
-    )
+        inspect.signature(LITELLM.arun_thread))
     assert shape(inspect.signature(main.run_thread_stream)) == shape(
-        inspect.signature(LITELLM.run_thread_stream)
-    )
+        inspect.signature(LITELLM.run_thread_stream))
     assert shape(inspect.signature(main.arun_thread_stream)) == shape(
-        inspect.signature(LITELLM.arun_thread_stream)
-    )
+        inspect.signature(LITELLM.arun_thread_stream))
     assert shape(inspect.signature(_utils.get_optional_params_add_message)) == shape(
-        inspect.signature(THEIR_UTILS.get_optional_params_add_message)
-    )
+        inspect.signature(THEIR_UTILS.get_optional_params_add_message))
     assert shape(inspect.signature(_utils.get_optional_params_image_gen)) == shape(
-        inspect.signature(THEIR_UTILS.get_optional_params_image_gen)
-    )
+        inspect.signature(THEIR_UTILS.get_optional_params_image_gen))
     assert inspect.iscoroutinefunction(main.a_add_message)
     assert inspect.iscoroutinefunction(main.aget_messages)
     assert inspect.iscoroutinefunction(main.arun_thread)
@@ -509,8 +461,10 @@ def test_signature_matches_litellm() -> None:
 def test_signature_stream_helpers(server: RunServer) -> None:
     sync_stream = main.run_thread_stream(**server.stream_arguments())
     async_stream = main.arun_thread_stream(**server.stream_arguments())
+    flagged = main.run_thread_stream(arun_thread=True, **server.stream_arguments())
     assert sync_stream_of(sync_stream) is sync_stream
     assert async_stream_of(async_stream) is async_stream
+    assert async_stream_of(flagged) is flagged
     assert not server.calls
     with sync_stream_of(sync_stream) as entered:
         assert entered is sync_stream
@@ -565,6 +519,10 @@ def test_calls_get_messages(server: RunServer) -> None:
     assert page_view(ours)["data"] == [MESSAGE]
     page = main.MessagePage.model_validate(MESSAGE_PAGE)
     assert [message.id for message in page.data] == [MESSAGE_ID]
+    reference_bare = page_of(LITELLM.get_messages("openai", "thread_bare", **args))
+    ours_bare = page_of(main.get_messages("openai", "thread_bare", **args))
+    matched_calls(server, 1)
+    assert page_view(ours_bare) == page_view(reference_bare)
 
 
 def test_calls_run_thread(server: RunServer) -> None:
@@ -580,6 +538,39 @@ def test_calls_run_thread(server: RunServer) -> None:
     ours_plain = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **args))
     matched_calls(server, 2)
     dump_pair(ours_plain, reference_plain)
+
+
+# betterlite's globals are unannotated, so this stands in for the reader, as test_google_genai does
+class SettingsSnapshot:
+    def __init__(self, values: dict[str, JsonValue]) -> None:
+        self.values = values
+
+    def __call__(self) -> dict[str, JsonValue]:
+        return {
+            "api_key": None, "api_base": None, "api_version": None,
+            "organization": None, "openai_key": None, "azure_key": None, "drop_params": False,
+            **self.values,
+        }
+
+
+def test_calls_module_globals(server: RunServer) -> None:
+    original = settings_module.module_settings
+    snapshot = SettingsSnapshot({"api_key": GOOD_KEY, "api_base": server.url})
+    settings_module.module_settings = snapshot
+    litellm.api_key = GOOD_KEY
+    litellm.api_base = server.url
+    try:
+        reference = answer_of(LITELLM.add_message("openai", THREAD_ID, "user", "hello"))
+        ours = answer_of(main.add_message("openai", THREAD_ID, "user", "hello"))
+        matched_calls(server, 1)
+        dump_pair(ours, reference)
+        reference_run = answer_of(LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID))
+        ours_run = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID))
+        matched_calls(server, 2)
+        dump_pair(ours_run, reference_run)
+    finally:
+        settings_module.module_settings = original
+        litellm.api_key = litellm.api_base = None
 
 
 def test_calls_handler_no_stream(server: RunServer) -> None:
