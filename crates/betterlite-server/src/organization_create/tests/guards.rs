@@ -1,9 +1,17 @@
-use axum::http::StatusCode;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+
+use axum::Router;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
+use tower::ServiceExt as _;
 
 use super::support::{Reply, TestApp, admin_caller, key_caller, master_caller, number, parsed};
+use crate::routes::router;
+use crate::routes::tests::{empty_config, state_for};
 
 const DEFAULT_BODY: &str = r#"{"organization_alias":"acme"}"#;
 // ast-grep-ignore: no-long-names
@@ -296,5 +304,41 @@ async fn native_organization_routes_without_license() {
         .await;
     assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
     assert!(!refused.detail_error().contains("Enterprise"));
+    app.close().await;
+}
+
+#[tokio::test]
+async fn production_router_rejects_creation_path() {
+    let application = router(
+        state_for(&empty_config()),
+        Arc::new(AtomicBool::new(false)),
+        Router::new(),
+        Router::new(),
+    );
+    let response = application
+        .oneshot(
+            Request::post("/organization/new")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    // the route-match gate does not admit the path, so the handler's mount is unreachable from the binary
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn create_nonfinite_literal_rejected() {
+    let app = TestApp::start().await;
+    let reply = app
+        .post(
+            master_caller(),
+            r#"{"organization_alias":"acme","max_budget":NaN}"#,
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // the body never becomes a request, so no budget or organization row is written
+    assert_eq!(app.database.budget_count().await, 0);
+    assert_eq!(app.database.organization_count().await, 0);
     app.close().await;
 }
