@@ -1,0 +1,3 @@
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-5-20250929"}}
+

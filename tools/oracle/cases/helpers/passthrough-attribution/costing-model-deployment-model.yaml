@@ -1,0 +1,45 @@
+kind: helper
+name: costing-model-deployment-model
+call:
+  b3630:
+    routes: []
+    tags: []
+    models: []
+    ids: []
+    costing:
+      - model: ""
+        details:
+          litellm_params:
+            model: "deployment"
+      - model: "unknown"
+        details:
+          litellm_params:
+            model: "deployment"
+            metadata:
+              model_group: "group"
+      - model: "unknown"
+        details:
+          litellm_params:
+            model: ""
+      - model: ""
+        details:
+          litellm_params:
+            model: "unknown"
+            metadata:
+              model_group: "group"
+      - model: "unknown"
+        details:
+          litellm_params:
+            model: "other"
+      - model: "unknown"
+        details:
+          litellm_params:
+            model: null
+      - model: "given"
+        details:
+          litellm_params:
+            model: "deployment"
+    speeds: []
+env: {}
+compare:
+  ignore: []

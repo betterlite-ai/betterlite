@@ -1,0 +1,57 @@
+kind: helper
+name: auth-org-lookup-project-cache-effects
+call:
+  auth_org_lookup:
+    function: project_object
+    database: true
+    target: p1
+    in_memory_ttl: 5.0
+    project_row:
+      project_id: p1
+      project_alias: research
+      budget_id: b2
+      models: [gpt-4o-mini]
+      litellm_budget_table: {budget_id: b2, max_budget: 25.0}
+    steps:
+      - {now: 1234.5, fail: []}
+      - {now: 9999.0, fail: []}
+calls:
+  - auth_org_lookup:
+      function: project_object
+      database: true
+      target: p1
+      in_memory_ttl: 5.0
+      cached_project:
+        project_id: p1
+        project_alias: research
+        last_refreshed_at: 7.5
+        litellm_budget_table: {budget_id: b2, max_budget: 25.0}
+      steps:
+        - {now: 1234.5, fail: []}
+  - auth_org_lookup:
+      function: project_object
+      database: true
+      target: p1
+      in_memory_ttl: 5.0
+      project_row: {project_id: p1, project_alias: research, budget_id: b2}
+      steps:
+        - {now: 100.0, fail: []}
+  - auth_org_lookup:
+      function: project_object
+      database: true
+      target: p1
+      in_memory_ttl: 5.0
+      project_row: {project_id: p1, project_alias: research, budget_id: b2}
+      steps:
+        - {now: 100.0, fail: [outage]}
+  - auth_org_lookup:
+      function: project_object
+      database: true
+      target: p1
+      in_memory_ttl: 5.0
+      project_row: {project_id: p1, project_alias: research, budget_id: b2}
+      steps:
+        - {now: 100.0, fail: [fault]}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}
