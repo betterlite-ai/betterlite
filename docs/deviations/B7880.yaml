@@ -19,7 +19,7 @@ deviations:
     why: "A Python callable cannot cross into the Rust session, and an azure container call is unsupported here, as this file records below."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L86
   - what: "An azure or azure_text container call fails with a 400 bad-request answer, where LiteLLM serves both ids with its AzureContainerConfig."
-    why: "The Azure container config is not ported, so B3369 and B3370 answer only openai; the config belongs to the task that owns the azure provider."
+    why: "The Azure container config is not ported, so B3369 and B3370 answer only openai; B547 owns the AzureContainerConfig implementation."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9741-L9743
   - what: "A call's ssl_verify is ignored: every container request verifies TLS with the session client's default policy, where LiteLLM builds the container client from litellm_params.ssl_verify."
     why: "The session builds one client at startup and the container transport carries no per-call TLS policy yet, so a call against a self-signed endpoint or a CA bundle fails the handshake."
