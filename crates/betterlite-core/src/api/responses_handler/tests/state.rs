@@ -45,7 +45,9 @@ fn state_new_copies_the_setup_arguments() {
 #[test]
 fn events_for_chunk_first_delta_synthesizes_start_events() {
     let mut state = interaction_state("gpt-4o");
-    let events = state.events_for_chunk(&delta_chunk("item_1", "hello"));
+    let events = state
+        .events_for_chunk(&delta_chunk("item_1", "hello"))
+        .expect("the chunk stays under the limits");
     assert_eq!(events.len(), 3);
     assert_eq!(events[0].event_type.as_deref(), Some("interaction.created"));
     assert_eq!(events[0].id.as_deref(), Some("item_1"));
@@ -65,10 +67,15 @@ fn events_for_chunk_first_delta_synthesizes_start_events() {
 fn events_for_chunk_later_delta_emits_only_the_delta() {
     let mut state = interaction_state("gpt-4o");
     assert_eq!(
-        state.events_for_chunk(&delta_chunk("item_1", "hell")).len(),
+        state
+            .events_for_chunk(&delta_chunk("item_1", "hell"))
+            .expect("the chunk stays under the limits")
+            .len(),
         3
     );
-    let events = state.events_for_chunk(&delta_chunk("item_1", "o"));
+    let events = state
+        .events_for_chunk(&delta_chunk("item_1", "o"))
+        .expect("the chunk stays under the limits");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type.as_deref(), Some("step.delta"));
     assert_eq!(
@@ -80,16 +87,36 @@ fn events_for_chunk_later_delta_emits_only_the_delta() {
 #[test]
 fn collected_text_accumulates_across_deltas() {
     let mut state = interaction_state("gpt-4o");
-    assert_eq!(state.events_for_chunk(&delta_chunk("item_1", "a")).len(), 3);
-    assert_eq!(state.events_for_chunk(&delta_chunk("item_1", "b")).len(), 1);
-    assert_eq!(state.events_for_chunk(&delta_chunk("item_1", "c")).len(), 1);
+    assert_eq!(
+        state
+            .events_for_chunk(&delta_chunk("item_1", "a"))
+            .expect("the chunk stays under the limits")
+            .len(),
+        3
+    );
+    assert_eq!(
+        state
+            .events_for_chunk(&delta_chunk("item_1", "b"))
+            .expect("the chunk stays under the limits")
+            .len(),
+        1
+    );
+    assert_eq!(
+        state
+            .events_for_chunk(&delta_chunk("item_1", "c"))
+            .expect("the chunk stays under the limits")
+            .len(),
+        1
+    );
     assert_eq!(state.collected_text, "abc");
 }
 
 #[test]
 fn events_for_chunk_delta_without_item_id_uses_the_fallback_id() {
     let mut state = interaction_state("gpt-4o");
-    let events = state.events_for_chunk(&delta_chunk("", "hi"));
+    let events = state
+        .events_for_chunk(&delta_chunk("", "hi"))
+        .expect("the chunk stays under the limits");
     assert_eq!(events[0].id.as_deref(), Some(fallback_id().as_str()));
     assert_eq!(
         state.interaction_id.as_deref(),
@@ -100,12 +127,16 @@ fn events_for_chunk_delta_without_item_id_uses_the_fallback_id() {
 #[test]
 fn events_for_chunk_created_sends_the_interaction_start_once() {
     let mut state = interaction_state("gpt-4o");
-    let events = state.events_for_chunk(&created_chunk("resp_1"));
+    let events = state
+        .events_for_chunk(&created_chunk("resp_1"))
+        .expect("the chunk stays under the limits");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type.as_deref(), Some("interaction.created"));
     assert_eq!(events[0].id.as_deref(), Some("resp_1"));
     assert_eq!(events[0].status.as_deref(), Some("in_progress"));
-    let again = state.events_for_chunk(&in_progress_chunk("resp_2"));
+    let again = state
+        .events_for_chunk(&in_progress_chunk("resp_2"))
+        .expect("the chunk stays under the limits");
     assert!(again.is_empty());
     assert_eq!(state.interaction_id.as_deref(), Some("resp_1"));
 }
@@ -113,7 +144,9 @@ fn events_for_chunk_created_sends_the_interaction_start_once() {
 #[test]
 fn events_for_chunk_in_progress_opens_the_interaction() {
     let mut state = interaction_state("gpt-4o");
-    let events = state.events_for_chunk(&in_progress_chunk("resp_9"));
+    let events = state
+        .events_for_chunk(&in_progress_chunk("resp_9"))
+        .expect("the chunk stays under the limits");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type.as_deref(), Some("interaction.created"));
     assert_eq!(events[0].id.as_deref(), Some("resp_9"));
@@ -122,8 +155,18 @@ fn events_for_chunk_in_progress_opens_the_interaction() {
 #[test]
 fn events_for_chunk_ignores_chunks_it_cannot_translate() {
     let mut state = interaction_state("gpt-4o");
-    assert!(state.events_for_chunk(&done_chunk()).is_empty());
-    assert!(state.events_for_chunk(&unknown_chunk()).is_empty());
+    assert!(
+        state
+            .events_for_chunk(&done_chunk())
+            .expect("the chunk stays under the limits")
+            .is_empty()
+    );
+    assert!(
+        state
+            .events_for_chunk(&unknown_chunk())
+            .expect("the chunk stays under the limits")
+            .is_empty()
+    );
     assert_eq!(state.collected_text, "");
     assert!(!state.sent_interaction_start.0);
 }
@@ -134,10 +177,13 @@ fn events_for_chunk_completed_closes_content_and_completes() {
     assert_eq!(
         state
             .events_for_chunk(&delta_chunk("item_1", "hello"))
+            .expect("the chunk stays under the limits")
             .len(),
         3
     );
-    let terminal = state.events_for_chunk(&completed_chunk("resp_1"));
+    let terminal = state
+        .events_for_chunk(&completed_chunk("resp_1"))
+        .expect("the chunk stays under the limits");
     assert_eq!(terminal.len(), 2);
     assert_eq!(terminal[0].event_type.as_deref(), Some("step.stop"));
     assert_eq!(
@@ -158,8 +204,16 @@ fn events_for_chunk_completed_closes_content_and_completes() {
 #[test]
 fn events_for_chunk_completed_without_content_skips_step_stop() {
     let mut state = interaction_state("gpt-4o");
-    assert_eq!(state.events_for_chunk(&created_chunk("resp_1")).len(), 1);
-    let terminal = state.events_for_chunk(&completed_chunk("resp_1"));
+    assert_eq!(
+        state
+            .events_for_chunk(&created_chunk("resp_1"))
+            .expect("the chunk stays under the limits")
+            .len(),
+        1
+    );
+    let terminal = state
+        .events_for_chunk(&completed_chunk("resp_1"))
+        .expect("the chunk stays under the limits");
     assert_eq!(terminal.len(), 1);
     assert_eq!(
         terminal[0].event_type.as_deref(),
@@ -171,7 +225,9 @@ fn events_for_chunk_completed_without_content_skips_step_stop() {
 #[test]
 fn events_for_chunk_created_without_an_id_uses_the_fallback_id() {
     let mut state = interaction_state("gpt-4o");
-    let events = state.events_for_chunk(&created_chunk(""));
+    let events = state
+        .events_for_chunk(&created_chunk(""))
+        .expect("the chunk stays under the limits");
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].id.as_deref(), Some(fallback_id().as_str()));
     assert_eq!(
@@ -183,7 +239,9 @@ fn events_for_chunk_created_without_an_id_uses_the_fallback_id() {
 #[test]
 fn events_for_chunk_completed_without_ids_uses_the_fallback_id() {
     let mut state = interaction_state("gpt-4o");
-    let terminal = state.events_for_chunk(&completed_chunk(""));
+    let terminal = state
+        .events_for_chunk(&completed_chunk(""))
+        .expect("the chunk stays under the limits");
     assert_eq!(terminal.len(), 1);
     assert_eq!(terminal[0].id.as_deref(), Some(fallback_id().as_str()));
 }
@@ -194,6 +252,7 @@ fn terminal_events_on_eof_flushes_stop_and_completion() {
     assert_eq!(
         state
             .events_for_chunk(&delta_chunk("item_1", "hello"))
+            .expect("the chunk stays under the limits")
             .len(),
         3
     );
@@ -217,14 +276,26 @@ fn terminal_events_on_eof_flushes_stop_and_completion() {
 #[test]
 fn terminal_events_on_eof_is_empty_after_a_completion() {
     let mut state = interaction_state("gpt-4o");
-    assert_eq!(state.events_for_chunk(&completed_chunk("resp_1")).len(), 1);
+    assert_eq!(
+        state
+            .events_for_chunk(&completed_chunk("resp_1"))
+            .expect("the chunk stays under the limits")
+            .len(),
+        1
+    );
     assert!(state.terminal_events_on_eof().is_empty());
 }
 
 #[test]
 fn terminal_events_on_eof_completes_an_interaction_without_content() {
     let mut state = interaction_state("gpt-4o");
-    assert_eq!(state.events_for_chunk(&created_chunk("resp_1")).len(), 1);
+    assert_eq!(
+        state
+            .events_for_chunk(&created_chunk("resp_1"))
+            .expect("the chunk stays under the limits")
+            .len(),
+        1
+    );
     let terminal = state.terminal_events_on_eof();
     assert_eq!(terminal.len(), 1);
     assert_eq!(

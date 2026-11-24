@@ -4,6 +4,21 @@ use super::support::{
     FakeError, Fixture, async_iterator, completed_chunk, created_chunk, delta_chunk, done_chunk,
     object, sync_iterator,
 };
+use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
+use crate::api::responses_handler::error::InteractionsStreamError;
+use crate::api::responses_handler::events::completion_event;
+use crate::api::responses_handler::state::InteractionsStreamStateError;
+
+// A fixture whose bounds are small enough for one delta to reach them.
+fn fixture_with_limits(json_bytes: usize, event_bytes: usize) -> Fixture {
+    let mut fixture = Fixture::new("gpt-4o");
+    fixture.limits = ApiLimits {
+        max_json_bytes: json_bytes,
+        max_event_bytes: event_bytes,
+        max_items: 64 * 1024,
+    };
+    fixture
+}
 
 fn expected_kinds() -> Vec<String> {
     [
@@ -91,7 +106,7 @@ fn sync_iterator_returns_the_upstream_error() {
     let (mut iterator, _pulls) = sync_iterator(&fixture, vec![Err(FakeError::Stream)]);
     assert!(matches!(
         iterator.next_event(),
-        Some(Err(FakeError::Stream))
+        Some(Err(InteractionsStreamError::Upstream(FakeError::Stream)))
     ));
 }
 
@@ -140,6 +155,61 @@ fn sync_iterator_completes_with_the_collected_text() {
             r#"{"type": "model_output", "content": [{"type": "text", "text": "hello"}]}"#
         )])
     );
+}
+
+#[test]
+fn sync_iterator_keeps_text_at_the_json_bound() {
+    let fixture = fixture_with_limits(5, 1024);
+    let (mut iterator, _pulls) = sync_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
+    let created = iterator
+        .next_event()
+        .expect("the interaction start")
+        .expect("five bytes fit a five-byte bound");
+    assert_eq!(created.event_type.as_deref(), Some("interaction.created"));
+}
+
+#[test]
+fn sync_iterator_returns_a_limit_error_past_the_json_bound() {
+    let fixture = fixture_with_limits(4, 1024);
+    let (mut iterator, _pulls) = sync_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
+    assert!(matches!(
+        iterator.next_event(),
+        Some(Err(InteractionsStreamError::State(
+            InteractionsStreamStateError::Limit(ApiLimitError::JsonTooLarge {
+                observed: 5,
+                limit: 4
+            })
+        )))
+    ));
+}
+
+#[test]
+fn sync_iterator_keeps_the_completion_at_the_event_bound() {
+    let completion = completion_event("item_1", "gpt-4o", "hello");
+    let encoded = serde_json::to_vec(&completion).expect("the completion encodes");
+    let fixture = fixture_with_limits(1024, encoded.len());
+    let (mut iterator, _pulls) = sync_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
+    let created = iterator
+        .next_event()
+        .expect("the interaction start")
+        .expect("the encoded completion fits its own size");
+    assert_eq!(created.event_type.as_deref(), Some("interaction.created"));
+}
+
+#[test]
+fn sync_iterator_returns_a_limit_error_past_the_event_bound() {
+    let completion = completion_event("item_1", "gpt-4o", "hello");
+    let observed = serde_json::to_vec(&completion)
+        .expect("the completion encodes")
+        .len();
+    let fixture = fixture_with_limits(1024, 8);
+    let (mut iterator, _pulls) = sync_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
+    let Err(InteractionsStreamError::State(InteractionsStreamStateError::Limit(error))) =
+        iterator.next_event().expect("the overflow is reported")
+    else {
+        panic!("an encoded completion past the event bound must be refused");
+    };
+    assert_eq!(error, ApiLimitError::EventTooLarge { observed, limit: 8 });
 }
 
 #[tokio::test]
@@ -195,7 +265,22 @@ async fn async_iterator_returns_the_upstream_error() {
     let (mut iterator, _pulls) = async_iterator(&fixture, vec![Err(FakeError::Stream)]);
     assert!(matches!(
         iterator.next_event().await,
-        Some(Err(FakeError::Stream))
+        Some(Err(InteractionsStreamError::Upstream(FakeError::Stream)))
+    ));
+}
+
+#[tokio::test]
+async fn async_iterator_returns_a_limit_error_past_the_json_bound() {
+    let fixture = fixture_with_limits(4, 1024);
+    let (mut iterator, _pulls) = async_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
+    assert!(matches!(
+        iterator.next_event().await,
+        Some(Err(InteractionsStreamError::State(
+            InteractionsStreamStateError::Limit(ApiLimitError::JsonTooLarge {
+                observed: 5,
+                limit: 4
+            })
+        )))
     ));
 }
 

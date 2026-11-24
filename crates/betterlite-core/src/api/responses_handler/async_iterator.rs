@@ -2,6 +2,7 @@ use std::error::Error as StdError;
 
 use betterlite_interactions::types::response::InteractionsStreamChunk;
 
+use super::error::InteractionsStreamError;
 use super::state::{InteractionsStreamState, IteratorSetup};
 use super::streams::AsyncResponsesEventStream;
 use crate::api::messages_response_events::StreamFlag;
@@ -30,7 +31,9 @@ where
         }
     }
 
-    pub async fn next_event(&mut self) -> Option<Result<InteractionsStreamChunk, Error>> {
+    pub async fn next_event(
+        &mut self,
+    ) -> Option<Result<InteractionsStreamChunk, InteractionsStreamError<Error>>> {
         if let Some(event) = self.state.pending_events.pop_front() {
             return Some(Ok(event));
         }
@@ -40,9 +43,12 @@ where
         while let Some(step) = self.upstream.next_event().await {
             let chunk = match step {
                 Ok(chunk) => chunk,
-                Err(error) => return Some(Err(error)),
+                Err(error) => return Some(Err(InteractionsStreamError::Upstream(error))),
             };
-            let events = self.state.events_for_chunk(&chunk);
+            let events = match self.state.events_for_chunk(&chunk) {
+                Ok(events) => events,
+                Err(error) => return Some(Err(InteractionsStreamError::State(error))),
+            };
             if events.is_empty() {
                 continue;
             }

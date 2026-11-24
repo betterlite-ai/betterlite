@@ -14,6 +14,7 @@ use jiff::tz::TimeZone;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_handler::async_iterator::InteractionsAsyncIterator;
 use crate::api::responses_handler::dispatch::{AsyncHandlerRequest, HandlerRequest};
 use crate::api::responses_handler::operation::{AsyncResponsesOperation, ResponsesOperation};
@@ -120,6 +121,7 @@ pub(super) struct Fixture {
     pub(super) metadata: Params,
     pub(super) zone: TimeZone,
     pub(super) ids: FixedIds,
+    pub(super) limits: ApiLimits,
 }
 
 impl Fixture {
@@ -134,6 +136,7 @@ impl Fixture {
             metadata: Params::new(),
             zone: TimeZone::UTC,
             ids: FixedIds,
+            limits: ApiLimits::default(),
         }
     }
 
@@ -145,18 +148,28 @@ impl Fixture {
             custom_llm_provider: self.custom_llm_provider.as_deref(),
             litellm_metadata: &self.metadata,
             ids: &self.ids,
+            limits: self.limits,
         }
     }
 
     pub(super) fn request(&self) -> HandlerRequest<'_> {
-        HandlerRequest::new(self.setup(), self.stream, &self.extras, &self.zone)
+        HandlerRequest {
+            setup: self.setup(),
+            stream: self.stream,
+            extras: &self.extras,
+            zone: &self.zone,
+        }
     }
 
     pub(super) fn async_request<'call>(
         &'call self,
         responses_request: &'call ResponsesRequest,
     ) -> AsyncHandlerRequest<'call> {
-        AsyncHandlerRequest::new(responses_request, self.setup(), &self.zone)
+        AsyncHandlerRequest {
+            responses_request,
+            setup: self.setup(),
+            zone: &self.zone,
+        }
     }
 }
 
