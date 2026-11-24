@@ -13,10 +13,11 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::skills::create::handler::CreateSkillHttpRequest;
 use betterlite_core::api::skills::get_delete::handler::{
-    SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler,
+    SkillHttpRequest, SkillsHandlerError, SkillsHttpHandler as _,
 };
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -118,8 +119,8 @@ fn create_with_an_empty_file_list_sends_json() {
     );
 }
 
-#[test]
-fn create_with_files_sends_multipart_parts_in_order() {
+// The multipart body a create with two files assembles: its fields first, then one part per file.
+fn multipart_create() -> (HeaderMap, Vec<MultipartPart>) {
     let request: CreateSkillRequest = serde_json::from_str(
         r#"{"display_title":"T","description":"D","flag":true,"count":3,"nothing":null,"nested":{"k":1},"list":[1],"files":[{"$file":{"name":"a.pdf","blob":0}},{"$file":{"name":"noext","blob":1}}]}"#,
     )
@@ -131,6 +132,12 @@ fn create_with_files_sends_multipart_parts_in_order() {
     let RequestBody::Multipart { parts, .. } = body else {
         panic!("files make a multipart body");
     };
+    (headers, parts)
+}
+
+#[test]
+fn create_with_files_sends_multipart_parts_in_order() {
+    let (headers, parts) = multipart_create();
     assert!(headers.get(CONTENT_TYPE).is_none());
     let names: Vec<&str> = parts.iter().map(|part| part.name.as_str()).collect();
     assert_eq!(

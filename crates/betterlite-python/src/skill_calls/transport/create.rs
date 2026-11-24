@@ -1,5 +1,4 @@
-use std::future::Future;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_anthropic::skills::wire::Skill;
 use betterlite_core::api::skills::create::handler::{
@@ -22,25 +21,23 @@ pub(in crate::skill_calls) struct CreateTransport {
 }
 
 impl SkillsCreateHttpHandler for CreateTransport {
-    fn create_skill(
+    async fn create_skill(
         &self,
         request: CreateSkillHttpRequest<'_>,
-    ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
-        async move {
-            let config = request.config;
-            let (headers, body) = create_body(&request, &self.blobs)?;
-            let call = Call {
-                method: Method::POST,
-                url: request.url,
-                headers,
-                query: Vec::new(),
-                body,
-                config,
-                after: request.timeout,
-                timeout_status: Some(408_u16),
-            };
-            answered(&self.client, call, CREATE_SKILL).await
-        }
+    ) -> Result<Skill, SkillsHandlerError> {
+        let config = request.config;
+        let (headers, body) = create_body(&request, &self.blobs)?;
+        let call = Call {
+            method: Method::POST,
+            url: request.url,
+            headers,
+            query: Vec::new(),
+            body,
+            config,
+            after: request.timeout,
+            timeout_status: Some(408_u16),
+        };
+        answered(&self.client, call, CREATE_SKILL).await
     }
 }
 
@@ -67,9 +64,7 @@ pub(super) fn create_body(
         })?;
         return Ok((headers, RequestBody::Json(encoded)));
     };
-    let mut owned = blobs
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut owned = blobs.lock().unwrap_or_else(PoisonError::into_inner);
     let resolved = convert::files(request.custom_llm_provider, files, owned.as_mut_slice())
         .map_err(|error| provider_failure(400, error.to_string(), false))?;
     drop(owned);
