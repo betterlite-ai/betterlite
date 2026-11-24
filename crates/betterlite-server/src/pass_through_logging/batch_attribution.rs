@@ -1,1 +1,99 @@
+use std::fmt::Display;
 
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use tokio::task::JoinError;
+
+#[must_use]
+pub fn optional_str(value: &Json) -> Option<&str> {
+    match value {
+        Json::Text(text) => Some(text),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+#[must_use]
+pub fn is_collection_route(url_route: &str, collection_suffix: &str) -> bool {
+    let path = url_route
+        .split_once('?')
+        .map_or(url_route, |(path, _query)| path);
+    path.trim_end_matches('/').ends_with(collection_suffix)
+}
+
+#[must_use]
+pub fn request_tags_from_metadata(
+    request_metadata: &IndexMap<String, Json>,
+) -> Option<Vec<String>> {
+    if let Some(tags) = sanitized_str_tuple(request_metadata.get("tags"))
+        && !tags.is_empty()
+    {
+        return Some(tags);
+    }
+    let key_metadata = request_metadata.get("user_api_key_auth_metadata")?;
+    let Json::Object(fields) = key_metadata else {
+        return None;
+    };
+    sanitized_str_tuple(fields.get("tags"))
+}
+
+pub fn log_batch_registration_result<E>(
+    finished: Result<Result<(), E>, JoinError>,
+    provider: &str,
+    unified_object_id: &str,
+    model_object_id: &str,
+    is_batch_create: bool,
+) where
+    E: Display,
+{
+    let consequence = if is_batch_create {
+        "its cost will not be tracked"
+    } else {
+        "its status and output file may be stale"
+    };
+    match finished {
+        Ok(Ok(())) => {
+            tracing::info!(
+                "Stored {provider} batch managed object with unified_object_id={unified_object_id}, batch_id={model_object_id}"
+            );
+        }
+        Ok(Err(error)) => {
+            tracing::error!(
+                "Failed to store {provider} batch managed object with unified_object_id={unified_object_id}, batch_id={model_object_id}; {consequence}: {error}"
+            );
+        }
+        Err(join_error) => {
+            let error = join_error_text(&join_error);
+            tracing::error!(
+                "Failed to store {provider} batch managed object with unified_object_id={unified_object_id}, batch_id={model_object_id}; {consequence}: {error}"
+            );
+        }
+    }
+}
+
+fn sanitized_str_tuple(value: Option<&Json>) -> Option<Vec<String>> {
+    let Some(Json::List(items)) = value else {
+        return None;
+    };
+    Some(
+        items
+            .iter()
+            .filter_map(optional_str)
+            .map(strip_null_bytes)
+            .collect(),
+    )
+}
+
+fn strip_null_bytes(text: &str) -> String {
+    text.chars()
+        .filter(|character| *character != '\0')
+        .collect()
+}
+
+fn join_error_text(join_error: &JoinError) -> String {
+    if join_error.is_cancelled() {
+        return "None".to_owned();
+    }
+    join_error.to_string()
+}
+
+mod tests;

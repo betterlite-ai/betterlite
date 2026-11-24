@@ -1,0 +1,23 @@
+kind: helper
+name: team-list-query-response-count-defaults
+call:
+  team_list_query:
+    teams:
+      - team_id: t1
+        team_alias: One
+        members_with_roles:
+          - {user_id: u1, role: user}
+          - {user_id: u2, role: admin}
+      - team_id: t2
+        team_alias: Two
+    use_deleted_table: false
+    keys_count_by_team:
+      t1: 3
+calls:
+  - team_list_query:
+      teams:
+        - team_id: t1
+          team_alias: One
+      use_deleted_table: false
+env: {}
+compare: {ignore: []}

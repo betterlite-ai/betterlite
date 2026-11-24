@@ -1,0 +1,33 @@
+kind: helper
+name: model-group-usage-usage
+call:
+  model_group_usage:
+    {
+      "function": "usage",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/gpt-4o"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group": "g",
+      "now": 0,
+      "group_info": null,
+      "cache": {
+        "mode": "missing",
+        "values": []
+      },
+      "response": null,
+      "request_kwargs": null,
+      "metadata": null,
+      "litellm_metadata": null,
+      "team_id": null,
+      "candidates": null
+    }
+env: {}
+compare: {ignore: []}
