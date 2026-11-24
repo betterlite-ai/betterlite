@@ -179,6 +179,11 @@ def test_signature_matches_litellm() -> None:
     assert inspect.iscoroutinefunction(aimage_generation)
 
 
+def test_lazy_edit_helper_is_not_imported() -> None:
+    module = importlib.import_module("betterlite._images.main")
+    assert not hasattr(module, "ImageEditRequestUtils")
+
+
 def test_generate_returns_the_image_response() -> None:
     with closing(ImageServer()) as server:
         response = image_generation(
