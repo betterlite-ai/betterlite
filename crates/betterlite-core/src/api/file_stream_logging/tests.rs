@@ -867,6 +867,7 @@ fn explicit_close_suppresses_logging() {
     let mut iter = stream.sync_iter().unwrap();
     assert_eq!(iter.next_chunk().unwrap().unwrap(), b"ab".to_vec());
     drop(iter);
+    assert!(!stream.close_completed());
     stream.close().unwrap();
     assert!(stream.close_completed());
     assert!(stream.logging_completed());
