@@ -7,9 +7,8 @@ from pydantic import JsonValue
 
 from b4667.answers import spec_answer, to_subject_answer
 from b4667.challenges import exchange_challenge_answer, user_challenge_answer
-from b4667.inputs import Input
 from b4667.resolution import resolver_answer
-from b4667.wire import SERVER_ADAPTER
+from b4667.wire import SERVER_ADAPTER, Input
 
 
 def run(input_value: Input) -> JsonValue:

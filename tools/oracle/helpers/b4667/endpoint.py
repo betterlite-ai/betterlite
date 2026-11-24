@@ -34,11 +34,12 @@ class FakeEndpoint(TokenEndpointClient):
         grant_params: Mapping[str, str],
         client_auth: ClientAuth,
     ) -> Result[ExchangedToken, CredError]:
+        params: dict[str, str] = dict(grant_params)
         self.calls.append(
             {
                 "endpoint": endpoint,
                 "client_id": client_id,
-                "params": JSON_ADAPTER.validate_python(dict(grant_params)),
+                "params": JSON_ADAPTER.validate_python(params),
                 "client_auth": client_auth_answer(client_auth),
             }
         )

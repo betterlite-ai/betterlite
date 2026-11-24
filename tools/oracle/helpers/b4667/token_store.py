@@ -3,7 +3,7 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.oauth_token_sto
     TokenStoreUnavailable,
 )
 
-from b4667.inputs import TokenStoreInput
+from b4667.wire import TokenStoreInput
 
 
 class FakeTokens:

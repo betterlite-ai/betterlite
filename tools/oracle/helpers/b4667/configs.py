@@ -26,6 +26,18 @@ from pydantic import JsonValue, SecretStr
 
 from b4667.wire import JSON_ADAPTER
 
+GrantConfig = (
+    AuthorizationCodeConfig
+    | ClientCredentialsConfig
+    | TokenExchangeConfig
+    | IdJagConfig
+)
+
+
+def config_scopes(config: GrantConfig) -> list[str]:
+    scopes: list[str] = list(config.scopes)
+    return scopes
+
 
 def config_answer(config: AuthConfig) -> dict[str, JsonValue]:
     match config:
@@ -50,19 +62,14 @@ def config_answer(config: AuthConfig) -> dict[str, JsonValue]:
     assert_never(config)
 
 
-def grant_config_answer(
-    config: AuthorizationCodeConfig
-    | ClientCredentialsConfig
-    | TokenExchangeConfig
-    | IdJagConfig,
-) -> dict[str, JsonValue]:
+def grant_config_answer(config: GrantConfig) -> dict[str, JsonValue]:
     match config:
         case AuthorizationCodeConfig():
             return with_header(
                 "authorization_code",
                 config,
                 {
-                    "scopes": JSON_ADAPTER.validate_python(list(config.scopes)),
+                    "scopes": JSON_ADAPTER.validate_python(config_scopes(config)),
                     "client_id": config.client_id,
                     "client_secret": secret_text(config.client_secret),
                     "authorization_url": config.authorization_url,
@@ -77,7 +84,7 @@ def grant_config_answer(
                     "client_id": config.client_id,
                     "client_secret": secret_text(config.client_secret),
                     "token_url": config.token_url,
-                    "scopes": JSON_ADAPTER.validate_python(list(config.scopes)),
+                    "scopes": JSON_ADAPTER.validate_python(config_scopes(config)),
                     "audience": config.audience,
                     "upstream_resource": config.upstream_resource,
                     "token_endpoint_auth_method": config.token_endpoint_auth_method,
@@ -95,7 +102,7 @@ def grant_config_answer(
                     "client_id": config.client_id,
                     "client_secret": secret_text(config.client_secret),
                     "token_endpoint_auth_method": config.token_endpoint_auth_method,
-                    "scopes": JSON_ADAPTER.validate_python(list(config.scopes)),
+                    "scopes": JSON_ADAPTER.validate_python(config_scopes(config)),
                 },
             )
         case IdJagConfig():
@@ -110,7 +117,7 @@ def grant_config_answer(
                     "subject_token_type": config.subject_token_type,
                     "audience": config.audience,
                     "resource": config.resource,
-                    "scopes": JSON_ADAPTER.validate_python(list(config.scopes)),
+                    "scopes": JSON_ADAPTER.validate_python(config_scopes(config)),
                 },
             )
     assert_never(config)

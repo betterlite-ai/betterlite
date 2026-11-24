@@ -8,8 +8,7 @@ from litellm.types.mcp_server.mcp_server_manager import MCPServer
 from pydantic import JsonValue
 
 from b4667.configs import config_answer
-from b4667.inputs import Principal
-from b4667.wire import JSON_ADAPTER, UPSTREAM_URL
+from b4667.wire import JSON_ADAPTER, UPSTREAM_URL, Principal
 
 
 def to_subject_answer(

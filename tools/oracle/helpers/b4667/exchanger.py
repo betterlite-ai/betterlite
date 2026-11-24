@@ -14,7 +14,7 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.types import (
 from pydantic import JsonValue
 
 from b4667.errors import error_from_tag
-from b4667.inputs import ExchangerInput
+from b4667.wire import ExchangerInput
 
 
 class FakeExchanger:

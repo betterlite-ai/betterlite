@@ -15,7 +15,7 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.types import (
 )
 from typing_extensions import override
 
-from b4667.inputs import CredentialsFake
+from b4667.wire import CredentialsFake
 
 
 class FakeCredentials(ClientCredentialsTokenSource):

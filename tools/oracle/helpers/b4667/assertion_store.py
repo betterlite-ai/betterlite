@@ -6,7 +6,7 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.sso_assertion_s
 )
 from pydantic import SecretStr
 
-from b4667.inputs import AssertionInput
+from b4667.wire import AssertionInput
 
 
 class FakeAssertions:

@@ -6,8 +6,8 @@ from b4667.assertion_store import build_assertion_store
 from b4667.credentials import build_credentials
 from b4667.endpoint import FakeEndpoint
 from b4667.exchanger import FakeExchanger, build_exchanger
-from b4667.inputs import CollaboratorsInput
 from b4667.token_store import build_token_store
+from b4667.wire import CollaboratorsInput
 
 
 def build_provider(

@@ -17,9 +17,8 @@ from pydantic import JsonValue, SecretStr
 
 from b4667.answers import success_record
 from b4667.errors import error_record
-from b4667.inputs import Action, ResolverCall
 from b4667.provider import build_provider
-from b4667.wire import JSON_ADAPTER, SERVER_ADAPTER
+from b4667.wire import JSON_ADAPTER, SERVER_ADAPTER, Action, ResolverCall
 
 
 async def resolve_actions(
