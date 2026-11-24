@@ -106,7 +106,7 @@ def dispatch(input_value: Input) -> AnswerValue:
 
 
 def load_named(call: LoadNamedCall) -> RowView:
-    # the before-validator drops requires_fresh_policy from constructor input, so a real caller sets the marker after
+    # the before-validator drops the marker from constructor input, so a caller sets it after
     token = UserAPIKeyAuth()
     token.requires_fresh_policy = call["requires_fresh_policy"]
     # the loader imports get_object_permission when it runs, so the stub is in place before the call
