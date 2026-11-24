@@ -81,6 +81,6 @@ fn ocr_refuses_a_file_document_without_a_file() {
     let call: OcrCall =
         serde_json::from_str(r#"{"model": "mistral-ocr-latest", "document": {"type": "file"}}"#)
             .expect("the ocr call parses");
-    let outcome = get_runtime().block_on(session().ocr(call, &[]));
+    let outcome = get_runtime().block_on(session().ocr(call, Vec::new()));
     let _failure = outcome.expect_err("the document is refused");
 }

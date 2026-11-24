@@ -123,11 +123,11 @@ impl SessionCore {
     pub(crate) async fn ocr(
         &self,
         call: OcrCall,
-        blobs: &[Vec<u8>],
+        blobs: Vec<Vec<u8>>,
     ) -> Result<String, NativeFailure> {
         let provider = provider_of(&call.model, call.custom_llm_provider.as_deref()).to_owned();
         let model = call.model.clone();
-        let document = resolve_document(&call.document, blobs)
+        let document = resolve_document(&call.document, &blobs)
             .map_err(|error| ocr::ocr_failure(self, &error, &model, &provider))?;
         let optional_params = ocr::consumed_params(self, &call, &model, &provider)?;
         let wire = OcrWireRequest {

@@ -54,7 +54,7 @@ impl NativeSearchSession {
     fn ocr(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
         let call: OcrCall =
             serde_json::from_str(request).map_err(|source| ConvertError::Json { source })?;
-        py.detach(|| get_runtime().block_on(self.core.ocr(call, &blobs)))
+        py.detach(|| get_runtime().block_on(self.core.ocr(call, blobs)))
             .map_err(NativeFailure::into_pyerr)
     }
 
