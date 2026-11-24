@@ -27,7 +27,43 @@ const HINT_WORDS: [&str; 11] = [
     "mismatched",
 ];
 
+const HOOK_LINES: usize = 20;
+
+// prek's summary lines name only the hook; the lines under a failed hook carry the file and line to fix
+fn hook_findings(output: &str) -> Vec<String> {
+    let mut hooks: Vec<String> = Vec::new();
+    let mut room: usize = 0;
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let status = trimmed.contains("...")
+            && ["Passed", "Failed", "Skipped"]
+                .iter()
+                .any(|word| trimmed.ends_with(word));
+        if status {
+            room = if trimmed.ends_with("Failed") {
+                hooks.push(trimmed.to_owned());
+                HOOK_LINES
+            } else {
+                0
+            };
+            continue;
+        }
+        let noise = trimmed.is_empty()
+            || trimmed.starts_with("- hook id:")
+            || trimmed.starts_with("- exit code:");
+        if room > 0 && !noise {
+            hooks.push(line.trim_end().to_owned());
+            room = room.saturating_sub(1);
+        }
+    }
+    hooks
+}
+
 fn hints(output: &str) -> Vec<String> {
+    let hooks = hook_findings(output);
+    if !hooks.is_empty() {
+        return hooks;
+    }
     let mut flagged: Vec<String> = Vec::new();
     let mut worded: Vec<String> = Vec::new();
     for line in output.lines() {

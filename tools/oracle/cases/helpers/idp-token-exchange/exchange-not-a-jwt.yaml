@@ -1,0 +1,26 @@
+kind: helper
+name: exchange-not-a-jwt
+call:
+  b4663:
+    prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+    subject_token: garbage
+    authorizer: {kind: result, user_id: user-1}
+    cause: null
+calls:
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload
+      authorizer: {kind: result, user_id: user-1}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: a.b.c.d
+      authorizer: {kind: result, user_id: user-1}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: ""
+      authorizer: {kind: result, user_id: user-1}
+      cause: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,26 @@
+kind: helper
+name: prometheus-scrape-restricted-total-and-bucket
+call:
+  b10090:
+    metrics:
+      - {kind: counter, name: litellm_requests_total, help: requests, labels: [model], buckets: []}
+      - {kind: histogram, name: litellm_latency_seconds, help: latency, labels: [], buckets: [0.5]}
+    updates:
+      - {metric: 0, labels: [gpt-4o], action: inc, value: 2}
+      - {metric: 1, labels: [], action: observe, value: 0.25}
+    accept: ""
+    accept_encoding: ""
+    names: [litellm_requests_total]
+calls:
+  - b10090:
+      metrics:
+        - {kind: counter, name: litellm_requests_total, help: requests, labels: [model], buckets: []}
+        - {kind: histogram, name: litellm_latency_seconds, help: latency, labels: [], buckets: [0.5]}
+      updates:
+        - {metric: 0, labels: [gpt-4o], action: inc, value: 2}
+        - {metric: 1, labels: [], action: observe, value: 0.25}
+      accept: ""
+      accept_encoding: ""
+      names: [litellm_latency_seconds_bucket]
+env: {}
+compare: {ignore: []}
