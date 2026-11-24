@@ -533,6 +533,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "session_inputs"
+path = "fuzz_targets/session_inputs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "message_start_field"
 path = "fuzz_targets/message_start_field.rs"
 test = false
