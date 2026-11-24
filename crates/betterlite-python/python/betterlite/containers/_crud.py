@@ -43,9 +43,9 @@ def call_payload(operation: str, values: Mapping[str, CallValue]) -> CallPayload
     kept = {name: given for name, given in arguments.items() if name not in BOOKKEEPING}
     payload: dict[str, CallValue] = {
         "arguments": kept, "settings": read_settings(SETTINGS), "operation": operation,
+        "client": values.get("client"), "logger_fn": values.get("logger_fn"),
+        "shared_session": values.get("shared_session"),
     }
-    for name in ("client", "logger_fn", "shared_session"):
-        payload[name] = values.get(name)
     return to_call_payload(payload)
 
 
