@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
 use betterlite_mcp::credential_contracts::auth_config::AuthConfig;
@@ -68,17 +68,17 @@ fn config_answer(config: &AuthConfig) -> Value {
         AuthConfig::AuthorizationCode(fields) => with_header(
             "authorization_code",
             &fields.header,
-            json!({"scopes": fields.scopes, "client_id": fields.client_id, "client_secret": secret_answer(fields.client_secret.as_ref()), "authorization_url": fields.authorization_url, "token_url": fields.token_url}),
+            json!({"scopes": fields.scopes, "client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "authorization_url": fields.authorization_url, "token_url": fields.token_url}),
         ),
         AuthConfig::ClientCredentials(fields) => with_header(
             "client_credentials",
             &fields.header,
-            json!({"client_id": fields.client_id, "client_secret": secret_answer(fields.client_secret.as_ref()), "token_url": fields.token_url, "scopes": fields.scopes, "audience": fields.audience, "upstream_resource": fields.upstream_resource, "token_endpoint_auth_method": auth_method_answer(fields.token_endpoint_auth_method)}),
+            json!({"client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "token_url": fields.token_url, "scopes": fields.scopes, "audience": fields.audience, "upstream_resource": fields.upstream_resource, "token_endpoint_auth_method": fields.token_endpoint_auth_method.map(TokenEndpointAuthMethod::as_str)}),
         ),
         AuthConfig::TokenExchange(fields) => with_header(
             "token_exchange",
             &fields.header,
-            json!({"profile": profile(fields.profile), "subject_token_type": fields.subject_token_type, "token_exchange_endpoint": fields.token_exchange_endpoint, "audience": fields.audience, "client_id": fields.client_id, "client_secret": secret_answer(fields.client_secret.as_ref()), "token_endpoint_auth_method": auth_method_answer(fields.token_endpoint_auth_method), "scopes": fields.scopes}),
+            json!({"profile": profile(fields.profile), "subject_token_type": fields.subject_token_type, "token_exchange_endpoint": fields.token_exchange_endpoint, "audience": fields.audience, "client_id": fields.client_id, "client_secret": fields.client_secret.as_ref().map(|secret| secret.expose_secret().to_owned()), "token_endpoint_auth_method": fields.token_endpoint_auth_method.map(TokenEndpointAuthMethod::as_str), "scopes": fields.scopes}),
         ),
         AuthConfig::IdJag(fields) => with_header(
             "id_jag",
@@ -116,7 +116,7 @@ fn aws_sigv4_answer(fields: &AwsSigV4Config) -> Value {
                     "kind": "static_keys",
                     "access_key_id": keys.access_key_id,
                     "secret_access_key": keys.secret_access_key.expose_secret(),
-                    "session_token": secret_answer(keys.session_token.as_ref()),
+                    "session_token": keys.session_token.as_ref().map(|secret| secret.expose_secret().to_owned()),
                 }),
                 AwsCredentialSource::AssumeRole(role) => json!({
                     "kind": "assume_role",
@@ -128,14 +128,6 @@ fn aws_sigv4_answer(fields: &AwsSigV4Config) -> Value {
             },
         },
     })
-}
-
-fn secret_answer(secret: Option<&SecretString>) -> Value {
-    json!(secret.map(|secret| secret.expose_secret().to_owned()))
-}
-
-fn auth_method_answer(method: Option<TokenEndpointAuthMethod>) -> Value {
-    json!(method.map(TokenEndpointAuthMethod::as_str))
 }
 
 fn with_header(kind: &str, header: &HeaderCarrier, fields: Value) -> Value {

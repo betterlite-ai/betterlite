@@ -129,13 +129,8 @@ enum Grant {
     TokenExchange,
 }
 
-fn oauth_spec(server: &MCPServer, resource: &str, grant: Grant) -> CredResult<Option<ServerSpec>> {
-    let config = oauth_config(server, grant)?;
-    Ok(Some(spec(server, resource, config)))
-}
-
 // Both OAuth grants carry the same client registration, so one match builds either.
-fn oauth_config(server: &MCPServer, grant: Grant) -> CredResult<AuthConfig> {
+fn oauth_spec(server: &MCPServer, resource: &str, grant: Grant) -> CredResult<Option<ServerSpec>> {
     let config = match grant {
         Grant::ClientCredentials => {
             let upstream = UpstreamServer {
@@ -172,13 +167,17 @@ fn oauth_config(server: &MCPServer, grant: Grant) -> CredResult<AuthConfig> {
             scopes: server.fields.scopes.clone().unwrap_or_default(),
         }),
     };
-    Ok(config)
+    Ok(Some(spec(server, resource, config)))
 }
 
 fn authorization_code(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
     let config = AuthorizationCodeConfig {
         header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
-        ..AuthorizationCodeConfig::default()
+        scopes: Vec::new(),
+        client_id: None,
+        client_secret: None,
+        authorization_url: None,
+        token_url: None,
     };
     Ok(Some(spec(
         server,
