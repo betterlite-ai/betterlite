@@ -8,7 +8,7 @@ use betterlite_auth::auth_org_lookup::organization::OrgLookup;
 use betterlite_auth::auth_org_lookup::ports::OrgCache;
 use betterlite_auth::auth_org_lookup::store::DatabaseOrgStore;
 use betterlite_auth::auth_prefetch::rows::CachedProject;
-use betterlite_auth::auth_user_lookup::store::{DatabaseUserStore, UserStore};
+use betterlite_auth::auth_user_lookup::store::DatabaseUserStore;
 use betterlite_config::sections::key_limit_policy::UpperboundKeyGenerateParams;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};

@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_auth::auth_model_patterns::{ALL_PROXY_MODELS, ALL_TEAM_MODELS};
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use secrecy::ExposeSecret as _;
