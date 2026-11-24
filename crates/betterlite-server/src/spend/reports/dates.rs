@@ -1,5 +1,7 @@
-use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use thiserror::Error;
+
+use crate::cache_activity_routes::date::parse_date;
 
 const MAX_RANGE_DAYS: i64 = 366;
 
@@ -37,44 +39,4 @@ pub(super) fn spend_report_dates(
         return Err(DateRangeError::TooLarge);
     }
     Ok(SpendReportDates { start, end })
-}
-
-// CPython strptime("%Y-%m-%d"): a four digit year, 1-2 digit month and day, no surrounding text.
-fn parse_date(value: &str) -> Option<DateTime<Utc>> {
-    let (year_text, remainder) = value.split_once('-')?;
-    let (month_text, day_text) = remainder.split_once('-')?;
-    let year = parse_year(year_text)?;
-    let month = parse_month(month_text)?;
-    let day = parse_day(day_text)?;
-    NaiveDate::from_ymd_opt(year, month, day).map(|date| date.and_time(NaiveTime::MIN).and_utc())
-}
-
-fn parse_year(value: &str) -> Option<i32> {
-    if value.len() != 4 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let year = value.parse::<i32>().ok()?;
-    (year >= 1_i32).then_some(year)
-}
-
-fn parse_month(value: &str) -> Option<u32> {
-    if value.len() > 2 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let month = value.parse::<u32>().ok()?;
-    (1_u32..=12).contains(&month).then_some(month)
-}
-
-// CPython's %d also takes one space before a single non-zero digit
-fn parse_day(value: &str) -> Option<u32> {
-    let digits = value.strip_prefix(' ').unwrap_or(value);
-    let width = if digits.len() == value.len() { 2 } else { 1 };
-    if digits.is_empty()
-        || digits.len() > width
-        || !digits.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return None;
-    }
-    let day = digits.parse::<u32>().ok()?;
-    (1_u32..=31).contains(&day).then_some(day)
 }
