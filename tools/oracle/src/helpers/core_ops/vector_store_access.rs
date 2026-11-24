@@ -11,11 +11,10 @@ use betterlite_auth::ui_session_identity::UiSessionTeams;
 use betterlite_core::api::vector_store_access::VectorStoreAccess;
 use betterlite_core::api::vector_store_access::auth::ObjectPermissionLookup;
 use betterlite_core::api::vector_store_access::error::VectorStoreAccessError;
-use betterlite_core::api::vector_store_access::store::{
-    ManagedVectorStore, normalize_litellm_params,
-};
+use betterlite_core::api::vector_store_access::store::normalize_litellm_params;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
+use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
@@ -34,19 +33,19 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct NormalizedStoreInput {
-    vector_store: ManagedVectorStore,
+    vector_store: LiteLlmManagedVectorStore,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct AccessInput {
-    vector_store: ManagedVectorStore,
+    vector_store: LiteLlmManagedVectorStore,
     #[serde(flatten)]
     world: WorldInput,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListInput {
-    vector_stores: Vec<ManagedVectorStore>,
+    vector_stores: Vec<LiteLlmManagedVectorStore>,
     #[serde(flatten)]
     world: WorldInput,
 }
@@ -76,10 +75,11 @@ impl Helper for Op {
 
     fn run(input: &Input) -> HelperResult {
         match input {
-            Input::ParameterStringNormalization(store) => Ok(serde_json::to_value(
-                normalize_litellm_params(&store.vector_store),
-            )
-            .or_value_error()?),
+            Input::ParameterStringNormalization(store) => {
+                let normalized = normalize_litellm_params(&store.vector_store)
+                    .map_err(|error| denied(&error))?;
+                Ok(serde_json::to_value(normalized).or_value_error()?)
+            }
             Input::CanUserAccessVectorStore(fields) => {
                 let scripted = Scripted {
                     world: &fields.world,
@@ -87,10 +87,13 @@ impl Helper for Op {
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
                     .or_value_error()?;
                 let runtime = Builder::new_current_thread().build()?;
+                let access = VectorStoreAccess {
+                    permissions: &scripted,
+                    teams: &scripted,
+                    session_teams: &scripted,
+                };
                 let allowed = runtime
-                    .block_on(
-                        policy(&scripted).can_user_access_vector_store(&fields.vector_store, &auth),
-                    )
+                    .block_on(access.can_user_access_vector_store(&fields.vector_store, &auth))
                     .map_err(|error| denied(&error))?;
                 Ok(json!(allowed))
             }
@@ -101,25 +104,17 @@ impl Helper for Op {
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
                     .or_value_error()?;
                 let runtime = Builder::new_current_thread().build()?;
+                let access = VectorStoreAccess {
+                    permissions: &scripted,
+                    teams: &scripted,
+                    session_teams: &scripted,
+                };
                 let listable = runtime
-                    .block_on(
-                        policy(&scripted)
-                            .filter_listable_vector_stores(&fields.vector_stores, &auth),
-                    )
+                    .block_on(access.filter_listable_vector_stores(&fields.vector_stores, &auth))
                     .map_err(|error| denied(&error))?;
                 Ok(json!(listable))
             }
         }
-    }
-}
-
-const fn policy<'access, 'world>(
-    scripted: &'access Scripted<'world>,
-) -> VectorStoreAccess<'access, Scripted<'world>, Scripted<'world>, Scripted<'world>> {
-    VectorStoreAccess {
-        permissions: scripted,
-        teams: scripted,
-        session_teams: scripted,
     }
 }
 

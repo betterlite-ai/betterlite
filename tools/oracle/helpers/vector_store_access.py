@@ -124,7 +124,7 @@ class Client(PrismaClient):
 
 
 # log_db_metrics schedules a task on this object after each bounded read
-class Board:
+class ProxyLogging:
     def __init__(self) -> None:
         self.service_logging_obj = self
 
@@ -135,7 +135,7 @@ class Board:
 
 class ProxyServer(ModuleType):
     prisma_client: Client | None = None
-    proxy_logging_obj: Board | None = None
+    proxy_logging_obj: ProxyLogging | None = None
     user_api_key_cache: UserApiKeyCache | None = None
 
 
@@ -155,7 +155,7 @@ def seeded(call: World) -> dict[str, JsonValue]:
 
 def install(call: World) -> None:
     server = ProxyServer(PROXY_MODULE)
-    server.proxy_logging_obj = Board()
+    server.proxy_logging_obj = ProxyLogging()
     server.user_api_key_cache = UserApiKeyCache(
         in_memory_cache=Memory(seeded(call)), default_in_memory_ttl=60.0
     )
