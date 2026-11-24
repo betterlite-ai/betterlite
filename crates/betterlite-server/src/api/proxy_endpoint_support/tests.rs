@@ -400,6 +400,7 @@ fn proxy_error_records(
     );
 }
 
+#[derive(Clone, Copy)]
 enum CallIdCase {
     Http,
     Failure,
@@ -488,9 +489,13 @@ fn submitted_recovery(
 }
 
 fn assert_recovery_reasons(writer: &PendingWriter, expected: bool) {
-    let reasons = writer.reasons.lock().unwrap();
+    let reasons = writer
+        .reasons
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     if expected {
-        assert_eq!(*reasons, [READ_ONLY_RECOVERY_REASON.to_owned()]);
+        assert_eq!(reasons, [READ_ONLY_RECOVERY_REASON.to_owned()]);
     } else {
         assert!(reasons.is_empty());
     }
@@ -589,7 +594,7 @@ fn recovery_precedes_the_diagnostics() {
     let (logs, _guard) = capture_logs();
     let (diagnostics, audit) = recording_diagnostics(&logs, false);
     let recovery = RecordingRecovery {
-        logs: logs.clone(),
+        logs,
         audit: Arc::clone(&audit),
         submitted: Mutex::new(Vec::new()),
     };
@@ -703,11 +708,13 @@ fn known_upload_model(
     assert!(matches!(error, LookupError::InvalidRow { index: 0 }));
 }
 
+type InferredProvider = Box<dyn Fn(&str) -> Option<String>>;
+
 struct RealCatalog {
     catalog: DeploymentCatalog,
     aliases: AliasMap,
     groups: RoutingGroupIndex,
-    provider: Box<dyn Fn(&str) -> Option<String>>,
+    provider: InferredProvider,
 }
 
 impl RealCatalog {
@@ -759,7 +766,7 @@ fn catalog_model_names_come_from_get_model_names() {
 #[tokio::test]
 async fn disconnect_limiter_hook() {
     missing_and_older_hooks_release_nothing().await;
-    v3_hook_awaits_the_release().await;
+    v3_hook_awaits_the_release();
     failing_release_propagates().await;
 }
 
@@ -784,7 +791,7 @@ async fn missing_and_older_hooks_release_nothing() {
     assert!(older.limiter.keys.lock().unwrap().is_empty());
 }
 
-async fn v3_hook_awaits_the_release() {
+fn v3_hook_awaits_the_release() {
     let key_a = principal("key_a");
     let hooks = ScriptedHooks {
         limiter: RecordingLimiter::new(false),
@@ -801,7 +808,10 @@ async fn v3_hook_awaits_the_release() {
     assert!(!hooks.limiter.released.load(Ordering::SeqCst));
 
     hooks.limiter.gate.add_permits(1);
-    release.await.expect("the release completes");
+    assert!(
+        matches!(release.as_mut().poll(&mut context), Poll::Ready(Ok(()))),
+        "the release completes once the limiter releases"
+    );
     assert!(hooks.limiter.released.load(Ordering::SeqCst));
     assert_eq!(*hooks.limiter.keys.lock().unwrap(), ["key_a".to_owned()]);
 }
