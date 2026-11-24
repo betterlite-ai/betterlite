@@ -76,7 +76,7 @@ async fn save_changed_section(
         Some(value) => section_values(section, value)?,
         None => BTreeMap::new(),
     };
-    let changes = changed_section_keys(&baseline_section, &new_section);
+    let changes = changed_section_keys::changed_section_keys(&baseline_section, &new_section);
     state.reject_config_owned_writes(section, &changes.changed)?;
     if changes.changed.is_empty() && changes.removed.is_empty() {
         return Ok(());
