@@ -32,12 +32,9 @@ const RETRIEVE: &str = "retrieve_container_file";
 const DELETE: &str = "delete_container_file";
 const CONTENT: &str = "retrieve_container_file_content";
 
-type EndpointCatalog<'deps> = ContainerFileEndpoints<
-    'deps,
-    GenericContainerHandler<Source, stack::NoPreCall>,
-    stack::Decoder,
-    stack::Configs,
->;
+type FileHandler = GenericContainerHandler<Source, stack::NoPreCall>;
+type EndpointCatalog<'deps> =
+    ContainerFileEndpoints<'deps, FileHandler, stack::Decoder, stack::Configs>;
 
 // list, upload, retrieve and delete answer JSON; the content endpoint answers the provider's bytes
 pub(crate) enum Answer {
@@ -64,7 +61,7 @@ struct Prepared {
     call: ContainerFileCall,
     configs: stack::Configs,
     logging: Mutex<LoggingState>,
-    handler: GenericContainerHandler<Source, stack::NoPreCall>,
+    handler: FileHandler,
 }
 
 impl Prepared {
@@ -168,7 +165,18 @@ impl SessionCore {
             self.clock.as_ref(),
         )
         .map_err(SessionFailure::from)?;
-        let handler = self.handler(call.timeout);
+        // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured one
+        let deadline = match call.timeout {
+            Some(timeout) if !timeout.is_zero() => timeout,
+            Some(_) | None => self.request_timeout,
+        };
+        let handler = GenericContainerHandler {
+            clients: Source {
+                client: self.client.clone(),
+                deadline,
+            },
+            logging: stack::NoPreCall,
+        };
         let configs = self.configs(wire);
         Ok(Prepared {
             call,
@@ -176,24 +184,6 @@ impl SessionCore {
             logging,
             handler,
         })
-    }
-
-    // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured one
-    fn handler(
-        &self,
-        requested: Option<Duration>,
-    ) -> GenericContainerHandler<Source, stack::NoPreCall> {
-        let deadline = match requested {
-            Some(timeout) if !timeout.is_zero() => timeout,
-            Some(_) | None => self.request_timeout,
-        };
-        GenericContainerHandler {
-            clients: Source {
-                client: self.client.clone(),
-                deadline,
-            },
-            logging: stack::NoPreCall,
-        }
     }
 
     fn configs(&self, wire: &CallWire) -> stack::Configs {
