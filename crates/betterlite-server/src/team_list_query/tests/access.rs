@@ -173,6 +173,21 @@ async fn foreign_org_403() {
 }
 
 #[tokio::test]
+async fn administered_org_allowed() {
+    let fixture = database(&org_admin_seed()).await;
+    let cache = Arc::new(RecordingCache::default());
+    let store = user_store(&fixture.store, &fixture.store);
+    let users = lookup(&cache, Some(store));
+    let caller = auth(r#"{"user_id":"u1","user_role":"internal_user"}"#);
+    // the same org filter passes when the caller administers the named organization
+    let access = enforce_v2_access(&users, &caller, None, Some("org-1"))
+        .await
+        .unwrap();
+    assert_eq!(access.org_admin_org_ids, Some(vec!["org-1".to_owned()]));
+    fixture.close().await;
+}
+
+#[tokio::test]
 async fn regular_other_user_401() {
     let fixture = database(&user_insert("u2", &[])).await;
     let cache = Arc::new(RecordingCache::default());
