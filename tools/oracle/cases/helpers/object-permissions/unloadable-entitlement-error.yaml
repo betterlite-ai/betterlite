@@ -1,0 +1,44 @@
+# A principal that names an object permission which cannot be loaded raises UnloadableEntitlementError,
+# while a row that declares no toolsets places no toolset restriction.
+kind: helper
+name: unloadable_entitlement_error
+call:
+  b4668:
+    function: load_named
+    principal: end user 'u-1'
+    object_permission_id: perm-missing
+    requires_fresh_policy: false
+    read: missing
+    row: null
+calls:
+  - b4668:
+      function: load_named
+      principal: agent 'a-1'
+      object_permission_id: perm-loaded
+      requires_fresh_policy: false
+      read: loaded
+      row: {object_permission_id: perm-loaded, mcp_toolsets: [ts-a]}
+  - b4668:
+      function: load_named
+      principal: org 'o-1'
+      object_permission_id: perm-loaded
+      requires_fresh_policy: true
+      read: loaded
+      row: {object_permission_id: perm-loaded}
+  - b4668:
+      function: toolset
+      row: null
+      requires_fresh_policy: false
+      server_id: null
+  - b4668:
+      function: toolset
+      row: {object_permission_id: perm-toolsets, mcp_toolsets: [ts-a]}
+      requires_fresh_policy: true
+      server_id: null
+  - b4668:
+      function: toolset
+      row: {object_permission_id: perm-toolsets, mcp_toolsets: [ts-a]}
+      requires_fresh_policy: false
+      server_id: srv-a
+env: {}
+compare: {ignore: []}
