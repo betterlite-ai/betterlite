@@ -21,10 +21,7 @@ use betterlite_router::router_core::headers;
 use betterlite_router::routing_timeouts::error::TimeoutError;
 use thiserror::Error;
 
-use super::super::state::{
-    QueueCompletion, QueueCompletionRequest, QueueFailureHook, QueueRouteState, QueueRouter,
-    timeout_plan,
-};
+use super::super::state::{QueueCompletion, QueueFailureHook, QueueRouter, timeout_plan};
 use super::request::QueueRequest;
 use crate::auth::auth_resource_grants::denial_response;
 use crate::sse_data_generator::types::StreamSource;
@@ -83,26 +80,19 @@ fn auth_error(message: String, status: StatusCode) -> ProxyException {
 
 // a full queue keeps the bound's own 429, and everything else is LiteLLM's 400 "Authentication Error"
 fn scheduler_exception(error: &SchedulerError) -> ProxyException {
-    match error {
-        SchedulerError::QueueFull { .. } => {
-            auth_error(error.to_string(), StatusCode::TOO_MANY_REQUESTS)
-        }
-        SchedulerError::Provider { error: cause, .. } => auth_error(
+    if let SchedulerError::QueueFull { .. } = error {
+        return auth_error(error.to_string(), StatusCode::TOO_MANY_REQUESTS);
+    }
+    if let SchedulerError::Provider { error: cause, .. } = error {
+        return auth_error(
             format!("Authentication Error, {}", class_message(cause)),
             StatusCode::BAD_REQUEST,
-        ),
-        SchedulerError::InvalidRequestId { .. }
-        | SchedulerError::Key { .. }
-        | SchedulerError::NotAQueue { .. }
-        | SchedulerError::EmptyQueue { .. }
-        | SchedulerError::Contended { .. }
-        | SchedulerError::TimedOut { .. }
-        | SchedulerError::Cancelled { .. }
-        | SchedulerError::Local { .. } => auth_error(
-            format!("Authentication Error, {error}"),
-            StatusCode::BAD_REQUEST,
-        ),
+        );
     }
+    auth_error(
+        format!("Authentication Error, {error}"),
+        StatusCode::BAD_REQUEST,
+    )
 }
 
 pub(super) struct QueuedCompletion<'call> {
@@ -129,12 +119,10 @@ impl ScheduledCall for QueuedCompletion<'_> {
     }
 
     async fn call(&self) -> Result<headers::Response, Box<ErrorClass>> {
-        let request = QueueCompletionRequest {
-            caller: self.caller,
-            data: self.data,
-            stream: self.stream,
-        };
-        let answer = self.completion.complete(request).await?;
+        let answer = self
+            .completion
+            .complete(self.caller, self.data, self.stream)
+            .await?;
         if let Some(source) = answer.stream {
             *self.source.lock().unwrap_or_else(PoisonError::into_inner) = Some(source);
         }
@@ -198,15 +186,6 @@ fn answer(outcome: ScheduleOutcome) -> Result<Response, QueueError> {
     };
     response.headers_mut().insert(PRIORITY_HEADER, value);
     Ok(response)
-}
-
-pub(super) async fn failure_response(
-    queue: &QueueRouteState,
-    caller: &Principal,
-    data: &JsonMap,
-    error: QueueError,
-) -> Response {
-    report(queue.failure.as_deref(), caller, data, error.exception()).await
 }
 
 pub(super) async fn report(

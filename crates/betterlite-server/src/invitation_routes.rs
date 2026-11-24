@@ -5,7 +5,6 @@ pub mod state;
 pub mod store;
 mod tests;
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::Json;
@@ -15,26 +14,18 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use betterlite_config::sections::login_form::Settings;
-use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
-use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use serde::Serialize;
 use thiserror::Error;
 
-use self::state::InvitationRouteState;
+use self::state::{InvitationDatabase, InvitationRouteState};
 use self::store::InvitationStoreError;
 use crate::auth::auth_identity::AuthContext;
 use crate::login_form::{LoginForm, should_hide_credentials_hint};
 use crate::search_tool_routes::body::BodyError;
 
 const INVITATION_ID: &str = "invitation_id";
-const INVITATION_MISSING: &str = "Invitation id does not exist in the database.";
-const INVITE_NOT_ALLOWED: &str =
-    "You can only create invitations for users in your organization or team.";
-const ORG_ADMIN_DELETE: &str = "Organization admins can only delete invitations they created.";
-const USER_UNIDENTIFIED: &str = "Unable to identify user id. Received=None";
 const FIELD_REQUIRED: &str = "Field required";
-const BODY_INVALID: &str = "the request body is not a valid invitation request";
 
 pub(crate) type Caller = Option<Extension<AuthContext>>;
 
@@ -78,6 +69,15 @@ pub fn public_routes(login: LoginPageState) -> Router {
         .with_state(Arc::new(login))
 }
 
+impl InvitationRouteState {
+    fn database(&self) -> Result<&InvitationDatabase, InvitationRouteError> {
+        match self.invitations.as_ref() {
+            Some(database) => Ok(database),
+            None => Err(InvitationRouteError::Database),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum InvitationRouteError {
     // BodyError carries the FastAPI validation body itself and has no Display of its own
@@ -97,6 +97,8 @@ pub enum InvitationRouteError {
     UserUnidentified,
     #[error("Organization admins can only delete invitations they created.")]
     OrgAdminDelete,
+    #[error("a key is required")]
+    Unauthenticated,
     #[error(transparent)]
     Store(InvitationStoreError),
 }
@@ -105,67 +107,40 @@ impl InvitationRouteError {
     #[must_use]
     pub fn message(&self) -> String {
         match self {
-            Self::Body(_error) => BODY_INVALID.to_owned(),
             Self::MissingInvitationId => FIELD_REQUIRED.to_owned(),
             Self::Database => CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
-            Self::NotAllowed { role } => {
-                format!(
-                    "{}, your role={role}",
-                    CommonProxyErrors::NotAllowedAccess.as_str()
-                )
-            }
-            Self::InviteNotAllowed => INVITE_NOT_ALLOWED.to_owned(),
-            Self::InvitationMissing => INVITATION_MISSING.to_owned(),
-            Self::UserUnidentified => USER_UNIDENTIFIED.to_owned(),
-            Self::OrgAdminDelete => ORG_ADMIN_DELETE.to_owned(),
+            Self::NotAllowed { role } => format!(
+                "{}, your role={role}",
+                CommonProxyErrors::NotAllowedAccess.as_str()
+            ),
             Self::Store(error) => error.message(),
+            other => other.to_string(),
         }
     }
 
     #[must_use]
     pub const fn status(&self) -> StatusCode {
         match self {
-            Self::Body(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::MissingInvitationId => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Database | Self::NotAllowed { .. } | Self::InviteNotAllowed => {
-                StatusCode::BAD_REQUEST
-            }
-            Self::InvitationMissing => StatusCode::BAD_REQUEST,
+            Self::Body(_) | Self::MissingInvitationId => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Database
+            | Self::NotAllowed { .. }
+            | Self::InviteNotAllowed
+            | Self::InvitationMissing => StatusCode::BAD_REQUEST,
             Self::UserUnidentified => StatusCode::INTERNAL_SERVER_ERROR,
             Self::OrgAdminDelete => StatusCode::FORBIDDEN,
+            Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             Self::Store(error) => error.status(),
         }
-    }
-
-    // LiteLLM's /invitation/new raises through handle_exception_on_proxy, which turns every failure into an internal_server_error ProxyException
-    #[must_use]
-    pub fn wrapped(&self) -> ProxyException {
-        ProxyException::new(ProxyExceptionInit {
-            message: self.message(),
-            error_type: ProxyErrorTypes::InternalServerError.to_string(),
-            param: None,
-            code: ExceptionCode::Status(i64::from(self.status().as_u16())),
-            headers: BTreeMap::new(),
-            openai_code: None,
-            provider_specific_fields: BTreeMap::new(),
-        })
     }
 }
 
 impl IntoResponse for InvitationRouteError {
     fn into_response(self) -> Response {
-        let status = self.status();
-        let message = self.message();
         match self {
             Self::Body(error) => error.into_response(),
             Self::MissingInvitationId => missing_query_parameter(),
-            Self::Database
-            | Self::NotAllowed { .. }
-            | Self::InviteNotAllowed
-            | Self::InvitationMissing
-            | Self::UserUnidentified
-            | Self::OrgAdminDelete
-            | Self::Store(_) => detail_response(status, message),
+            Self::Unauthenticated => unauthenticated(),
+            other => detail_response(other.status(), other.message()),
         }
     }
 }

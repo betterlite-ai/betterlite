@@ -65,14 +65,6 @@ pub struct InvitationDatabase {
     pub scope: Arc<dyn InvitationScope>,
 }
 
-// The request the queued route hands to B017's router call, one call per scheduled slot
-#[derive(Clone, Copy)]
-pub struct QueueCompletionRequest<'request> {
-    pub caller: &'request Principal,
-    pub data: &'request JsonMap,
-    pub stream: bool,
-}
-
 pub struct QueueAnswer {
     pub response: headers::Response,
     pub stream: Option<StreamSource>,
@@ -85,7 +77,9 @@ pub trait QueueCompletion: Send + Sync {
 
     async fn complete(
         &self,
-        request: QueueCompletionRequest<'_>,
+        caller: &Principal,
+        data: &JsonMap,
+        stream: bool,
     ) -> Result<QueueAnswer, Box<ErrorClass>>;
 }
 
@@ -146,7 +140,9 @@ pub struct InvitationRouteState {
 pub fn timeout_plan(timeouts: &RouterTimeouts, stream: bool) -> Result<TimeoutPlan, TimeoutError> {
     let request = RequestTimeouts {
         stream,
-        ..RequestTimeouts::default()
+        timeout: None,
+        request_timeout: None,
+        stream_timeout: None,
     };
     TimeoutPlan::new(
         Instant::now(),

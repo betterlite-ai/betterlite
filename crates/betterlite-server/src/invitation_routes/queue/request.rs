@@ -7,7 +7,7 @@ use betterlite_core::api::request_principal_metadata::principal::strip_callback_
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Object as JsonMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::scheduled::QueueError;
 use crate::invitation_routes::state::QueueRouteState;
@@ -122,8 +122,24 @@ fn key_view(caller: &Principal) -> KeyView {
 }
 
 // Router.schedule_acompletion receives all of this as keyword arguments, so every slot is written in LiteLLM's order
+#[derive(Serialize)]
+struct KeyMetadata<'key> {
+    user_api_key: Option<&'key str>,
+    user_api_key_hash: Option<&'key str>,
+    user_api_key_metadata: JsonValue,
+    headers: JsonMap,
+    user_api_key_alias: Option<&'key str>,
+    user_api_key_user_id: Option<&'key str>,
+    user_api_key_team_id: Option<&'key str>,
+    #[serde(rename = "user_api_key_object_permission_id")]
+    key_object_permission_id: Option<&'key str>,
+    #[serde(rename = "user_api_key_team_object_permission_id")]
+    team_object_permission_id: Option<&'key str>,
+    endpoint: &'key str,
+}
+
 fn write_metadata(data: &mut JsonMap, key: &KeyView, parts: &Parts, endpoint: &str) {
-    let existing = match data.remove("metadata") {
+    let mut bucket = match data.remove("metadata") {
         Some(JsonValue::Object(bucket)) => bucket,
         Some(
             JsonValue::Null
@@ -134,53 +150,25 @@ fn write_metadata(data: &mut JsonMap, key: &KeyView, parts: &Parts, endpoint: &s
         )
         | None => JsonMap::new(),
     };
-    let mut bucket = existing;
-    let logged =
-        logged_api_key(key).map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned()));
-    bucket.insert("user_api_key".to_owned(), logged.clone());
-    bucket.insert("user_api_key_hash".to_owned(), logged);
-    bucket.insert(
-        "user_api_key_metadata".to_owned(),
-        stripped_key_metadata(&key.metadata),
-    );
-    bucket.insert(
-        "headers".to_owned(),
-        JsonValue::Object(sanitized_headers(parts)),
-    );
-    bucket.insert(
-        "user_api_key_alias".to_owned(),
-        key.key_alias
-            .as_deref()
-            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
-    );
-    bucket.insert(
-        "user_api_key_user_id".to_owned(),
-        key.user_id
-            .as_deref()
-            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
-    );
-    bucket.insert(
-        "user_api_key_team_id".to_owned(),
-        key.team_id
-            .as_deref()
-            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
-    );
-    bucket.insert(
-        "user_api_key_object_permission_id".to_owned(),
-        key.object_permission_id
-            .as_deref()
-            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
-    );
-    bucket.insert(
-        "user_api_key_team_object_permission_id".to_owned(),
-        key.team_object_permission_id
-            .as_deref()
-            .map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned())),
-    );
-    bucket.insert(
-        "endpoint".to_owned(),
-        JsonValue::String(endpoint.to_owned()),
-    );
+    let mut headers = headers_object(&parts.headers);
+    headers.remove(AUTHORIZATION);
+    let logged = logged_api_key(key);
+    let entry = KeyMetadata {
+        user_api_key: logged,
+        user_api_key_hash: logged,
+        user_api_key_metadata: stripped_key_metadata(&key.metadata),
+        headers,
+        user_api_key_alias: key.key_alias.as_deref(),
+        user_api_key_user_id: key.user_id.as_deref(),
+        user_api_key_team_id: key.team_id.as_deref(),
+        key_object_permission_id: key.object_permission_id.as_deref(),
+        team_object_permission_id: key.team_object_permission_id.as_deref(),
+        endpoint,
+    };
+    let JsonValue::Object(fields) = serde_json::to_value(entry).unwrap_or_default() else {
+        return;
+    };
+    bucket.extend(fields);
     data.insert("metadata".to_owned(), JsonValue::Object(bucket));
 }
 
@@ -200,12 +188,6 @@ fn stripped_key_metadata(value: &JsonValue) -> JsonValue {
     };
     let stripped = strip_callback_config(&metadata);
     serde_json::to_value(&stripped).unwrap_or_else(|_error| JsonValue::Object(JsonMap::new()))
-}
-
-fn sanitized_headers(parts: &Parts) -> JsonMap {
-    let mut headers = headers_object(&parts.headers);
-    headers.remove(AUTHORIZATION);
-    headers
 }
 
 fn proxy_server_request(url: &str, parts: &Parts, body: &JsonMap) -> JsonValue {
@@ -243,17 +225,17 @@ fn headers_object(headers: &HeaderMap) -> JsonMap {
 
 fn request_url(parts: &Parts) -> String {
     let scheme = parts.uri.scheme_str().unwrap_or("http");
-    let authority = parts.uri.authority().map_or_else(
-        || {
+    let authority = parts
+        .uri
+        .authority()
+        .map(|authority| authority.as_str())
+        .or_else(|| {
             parts
                 .headers
                 .get(HOST)
                 .and_then(|value| value.to_str().ok())
-                .unwrap_or_default()
-                .to_owned()
-        },
-        |authority| authority.as_str().to_owned(),
-    );
+        })
+        .unwrap_or_default();
     let path = parts
         .uri
         .path_and_query()

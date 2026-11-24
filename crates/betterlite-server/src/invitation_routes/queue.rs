@@ -13,7 +13,7 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde::Deserialize;
 
 use self::request::{QueueRequest, build_request};
-use self::scheduled::{QueueError, failure_response, non_streaming};
+use self::scheduled::{QueueError, non_streaming, report};
 use self::stream::streamed;
 use super::Caller;
 use super::state::InvitationRouteState;
@@ -41,7 +41,8 @@ pub(super) async fn queue_chat_completions(
         Ok(bytes) => bytes,
         Err(error) => {
             let failure = QueueError::Message(error.to_string());
-            return failure_response(&state.queue, &context.principal, &empty, failure).await;
+            let hook = state.queue.failure.as_deref();
+            return report(hook, &context.principal, &empty, failure.exception()).await;
         }
     };
     let mut data = JsonMap::new();
@@ -53,7 +54,10 @@ pub(super) async fn queue_chat_completions(
     };
     match process(input, &bytes, &mut data).await {
         Ok(response) => response,
-        Err(error) => failure_response(&state.queue, input.caller, &data, error).await,
+        Err(error) => {
+            let hook = state.queue.failure.as_deref();
+            report(hook, input.caller, &data, error.exception()).await
+        }
     }
 }
 
