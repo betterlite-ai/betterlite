@@ -639,10 +639,9 @@ fn apply_billing(workers: &Mutex<Vec<Worker>>, id: &str, key_id: &str) -> Vec<Ro
 
 fn retire_worker(workers: &Mutex<Vec<Worker>>, id: &str) {
     let mut guard = workers.lock().expect("the worker lock");
-    let Some(worker) = guard.iter_mut().find(|worker| worker.id == id) else {
-        return;
-    };
-    worker.revoked = true;
+    if let Some(worker) = guard.iter_mut().find(|worker| worker.id == id) {
+        worker.revoked = true;
+    }
     drop(guard);
 }
 
