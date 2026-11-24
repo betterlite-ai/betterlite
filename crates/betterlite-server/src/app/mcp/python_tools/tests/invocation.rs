@@ -42,6 +42,30 @@ async fn calls_an_async_handler() {
 }
 
 #[tokio::test]
+async fn passes_a_nested_argument_unchanged() {
+    let fixture = fixture();
+    let source = "def echo(**kwargs):\n    return kwargs\n";
+    load_tool(&fixture, "b8871_nested_args", source, "echo").await;
+    let arguments = r#"{"options": {"limit": 2, "tags": ["a", null, true]}}"#;
+    let output = call(&fixture, "tool", arguments).await.unwrap();
+    let OpenApiToolOutput::Json {
+        value,
+        original_text,
+    } = output
+    else {
+        panic!("expected a structured result, got a text one");
+    };
+    assert_eq!(
+        original_text,
+        r#"{"options":{"limit":2,"tags":["a",null,true]}}"#
+    );
+    assert_eq!(
+        value,
+        prompt_json(r#"{"options": {"limit": 2, "tags": ["a", null, true]}}"#)
+    );
+}
+
+#[tokio::test]
 async fn rejects_an_unknown_keyword() {
     let fixture = fixture();
     let source = "def takes_city(city):\n    return city\n";
@@ -127,6 +151,23 @@ async fn keeps_a_returned_array() {
     };
     assert_eq!(original_text, r#"[1,"two"]"#);
     assert_eq!(value, prompt_json(r#"[1, "two"]"#));
+}
+
+#[tokio::test]
+async fn keeps_a_returned_null() {
+    let fixture = fixture();
+    let source = "def reply(**kwargs):\n    return None\n";
+    load_tool(&fixture, "b8871_null", source, "reply").await;
+    let output = call(&fixture, "tool", "{}").await.unwrap();
+    let OpenApiToolOutput::Json {
+        value,
+        original_text,
+    } = output
+    else {
+        panic!("expected a structured result, got a text one");
+    };
+    assert_eq!(original_text, "null");
+    assert_eq!(value, prompt_json("null"));
 }
 
 #[tokio::test]

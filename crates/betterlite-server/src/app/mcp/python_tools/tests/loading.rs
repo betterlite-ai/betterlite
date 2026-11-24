@@ -80,6 +80,12 @@ async fn a_duplicate_name_replaces_the_handler_without_reordering() {
 #[case::null_name("mcp_tools:\n  - {name: null, description: d, handler: b8871_ghost.missing}\n")]
 #[case::empty_name("mcp_tools:\n  - {name: '', description: d, handler: b8871_ghost.missing}\n")]
 #[case::missing_description("mcp_tools:\n  - {name: skipped, handler: b8871_ghost.missing}\n")]
+#[case::null_description(
+    "mcp_tools:\n  - {name: skipped, description: null, handler: b8871_ghost.missing}\n"
+)]
+#[case::empty_description(
+    "mcp_tools:\n  - {name: skipped, description: '', handler: b8871_ghost.missing}\n"
+)]
 #[case::missing_handler("mcp_tools:\n  - {name: skipped, description: d}\n")]
 #[case::empty_handler("mcp_tools:\n  - {name: skipped, description: d, handler: ''}\n")]
 #[tokio::test]
