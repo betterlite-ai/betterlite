@@ -59,7 +59,7 @@ impl TuningCore {
         let settings = self.settings_of(call.settings)?;
         let service = FineTuningCreate {
             dispatch,
-            settings: ResourceSdkSettings::from(&settings),
+            settings: resource_sdk(settings),
         };
         let job = service
             .create(&request)
@@ -185,5 +185,31 @@ impl NativeTuningSession {
     fn acancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: CancelCall = decode(raw)?;
         async_answer(py, &self.core, NativeCall::Cancel(Box::new(call)))
+    }
+}
+
+// The core create service reads ResourceSdkSettings, and every section field maps to the same one.
+fn resource_sdk(settings: Settings) -> ResourceSdkSettings {
+    ResourceSdkSettings {
+        api_base: settings.api_base,
+        api_version: settings.api_version,
+        api_key: settings.api_key,
+        openai_key: settings.openai_key,
+        azure_key: settings.azure_key,
+        azure_ad_token: settings.azure_ad_token,
+        organization: settings.organization,
+        vertex_project: settings.vertex_project,
+        vertex_location: settings.vertex_location,
+        openai_base_url: settings.openai_base_url,
+        openai_api_base: settings.openai_api_base,
+        openai_api_key: settings.openai_api_key,
+        openai_organization: settings.openai_organization,
+        azure_api_base: settings.azure_api_base,
+        azure_api_version: settings.azure_api_version,
+        azure_openai_api_key: settings.azure_openai_api_key,
+        azure_api_key: settings.azure_api_key,
+        vertexai_project: settings.vertexai_project,
+        vertexai_location: settings.vertexai_location,
+        vertexai_credentials: settings.vertexai_credentials,
     }
 }
