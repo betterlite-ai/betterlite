@@ -112,3 +112,9 @@ def _get_openai_compatible_provider_info(
     for name, value in fields:
         request[name] = TEXT.validate_python(value)
     return _send(NativeProviders(provider_settings()).openai_compatible_info, request)
+
+
+__all__ = [
+    "_get_openai_compatible_provider_info", "call_lookup", "declared_authenticating_provider",
+    "get_llm_provider", "inferred_provider", "is_registered_custom_provider",
+]
