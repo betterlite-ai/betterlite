@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_logging::passthrough_handler::types::StreamedResponse;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
+use betterlite_models::identity::provider_id::ProviderId;
 use rust_decimal::Decimal;
 
 use crate::pass_through_logging::base_passthrough_logging::tests::support::{
@@ -116,6 +117,11 @@ fn cohere_route_chat_goes_to_the_chat_handler() {
     ));
     assert_eq!(provider.seen(), ["command-r"]);
     assert!(tools.calls().is_empty());
+}
+
+#[test]
+fn cohere_route_provider_name_is_cohere() {
+    assert_eq!(CohereProvider.provider_name(), ProviderId::Cohere);
 }
 
 #[test]
