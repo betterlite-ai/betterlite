@@ -228,7 +228,7 @@ pub(crate) fn router_port(ids: &[&str]) -> Option<Arc<dyn RouterModelIds>> {
 }
 
 pub(crate) fn router_port_of(recording: &Arc<RecordingRouter>) -> Option<Arc<dyn RouterModelIds>> {
-    let port: Arc<dyn RouterModelIds> = Arc::clone(recording);
+    let port: Arc<dyn RouterModelIds> = Arc::<RecordingRouter>::clone(recording);
     Some(port)
 }
 
