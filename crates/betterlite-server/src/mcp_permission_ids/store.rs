@@ -17,7 +17,7 @@ pub async fn existing_object_permission_mcp_servers(
     object_permission_id: Option<&str>,
     client: Option<PrismaClient<'_>>,
 ) -> Result<Vec<String>, ExistingServersError> {
-    let Some(client) = client else {
+    let Some(pool) = client else {
         return Ok(Vec::new());
     };
     let Some(id) = object_permission_id else {
@@ -26,7 +26,7 @@ pub async fn existing_object_permission_mcp_servers(
     if id.is_empty() {
         return Ok(Vec::new());
     }
-    let table = ObjectPermissionRepository::new(Some(client), false)
+    let table = ObjectPermissionRepository::new(Some(pool), false)
         .table()
         .map_err(TableError::Database)?;
     let rows = table

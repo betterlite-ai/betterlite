@@ -14,9 +14,9 @@ pub enum GrantCleanupError {
 }
 
 #[derive(Clone, Copy)]
-enum InvalidItem<'a> {
+enum InvalidItem<'identifier> {
     ServerIdentifier,
-    ToolName { identifier: &'a str },
+    ToolName { identifier: &'identifier str },
 }
 
 #[must_use]

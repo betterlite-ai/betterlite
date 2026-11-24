@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::error::Error as StdError;
 
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
@@ -55,8 +55,7 @@ where
         .iter()
         .any(|server| server == ALL_PROXY_MCP_SERVERS)
     {
-        let guard = registry.read().await;
-        return Ok(guard.get_all_mcp_server_ids());
+        return Ok(registry.read().await.get_all_mcp_server_ids());
     }
     let access_groups = team_object_permission
         .mcp_access_groups
@@ -79,10 +78,7 @@ where
     let resolved = resolve_identifiers_to_ids(&identifiers, client, &registry_refs).await?;
     let mut allowed = flatten_resolved_mcp_server_ids(&resolved); // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
     for identifier in identifiers {
-        if resolved
-            .get(&identifier)
-            .is_none_or(|server_ids| server_ids.is_empty())
-        {
+        if resolved.get(&identifier).is_none_or(BTreeSet::is_empty) {
             allowed.insert(identifier);
         }
     }
@@ -120,7 +116,7 @@ fn is_falsey(value: &JsonData) -> bool {
             number.as_i64() == Some(0)
                 || number
                     .as_f64()
-                    .is_some_and(|value| zero_bits.contains(&value.to_bits()))
+                    .is_some_and(|float| zero_bits.contains(&float.to_bits()))
         }
         JsonData::String(text) => text.is_empty(),
         JsonData::Array(items) => items.is_empty(),

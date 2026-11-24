@@ -20,10 +20,12 @@ async fn allow_all_keys_snapshot() {
         ),
     ];
     let shared = registry(config, db);
+    let shared_registry = shared.read().await;
     assert_eq!(
-        allow_all_keys_server_ids(&shared.read().await),
+        allow_all_keys_server_ids(&shared_registry),
         string_set(&["cfg-flag", "db-flag"])
     );
     let empty = registry(Vec::new(), Vec::new());
-    assert!(allow_all_keys_server_ids(&empty.read().await).is_empty());
+    let empty_registry = empty.read().await;
+    assert!(allow_all_keys_server_ids(&empty_registry).is_empty());
 }
