@@ -669,6 +669,23 @@ async fn health_background_missing_ids_warns_and_adds_the_field() {
 }
 
 #[tokio::test]
+async fn health_background_restricted_caller_with_no_kept_deployments_gets_no_warning() {
+    let models = vec![deployment_with_info(
+        "b",
+        "id-b",
+        vec![("model", text("openai/b"))],
+        vec![("team_id", text("team-2"))],
+    )];
+    let (mut state, _provider, _source) = fixture();
+    serve(&mut state, models);
+    background(&mut state, vec![endpoint("b", "id-b")]);
+    let reply = get(state, Some(&team_user("[]", "team-1")), "/health").await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.count("healthy_count"), 0);
+    assert_eq!(reply.body.get("warnings"), None);
+}
+
+#[tokio::test]
 async fn health_router_lookup_failure_is_500_and_logged() {
     let (buffer, _guard) = capture_logs();
     let models = vec![deployment("a", "id-a", "openai/a")];
