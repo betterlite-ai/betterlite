@@ -143,7 +143,7 @@ fn the_config_base_keeps_everything_when_it_inherits_and_drops_connections_when_
 #[test]
 fn every_connection_field_is_dropped_by_name() {
     assert_eq!(CONFIG_CONNECTION_FIELDS.len(), 56);
-    let mut sorted = CONFIG_CONNECTION_FIELDS;
+    let mut sorted = CONFIG_CONNECTION_FIELDS.to_vec();
     sorted.sort_unstable();
     assert_eq!(sorted, CONFIG_CONNECTION_FIELDS);
     sorted.dedup();
