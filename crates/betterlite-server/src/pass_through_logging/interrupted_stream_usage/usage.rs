@@ -36,15 +36,15 @@ fn logging_usage(usage: &Usage) -> LoggingUsage {
             usage.cache_creation_input_tokens,
         ),
     ] {
-        if let Some(count) = count {
-            extras.insert(name.to_owned(), Json::Number(Number::from(count)));
+        if let Some(reported) = count {
+            extras.insert(name.to_owned(), Json::Number(Number::from(reported)));
         }
     }
-    for (name, text) in [
+    for (name, label) in [
         ("inference_geo", usage.inference_geo.as_deref()),
         ("speed", usage.speed.as_deref()),
     ] {
-        if let Some(text) = text {
+        if let Some(text) = label {
             extras.insert(name.to_owned(), Json::Text(text.to_owned()));
         }
     }
