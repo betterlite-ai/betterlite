@@ -32,7 +32,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_oracle_helper_api::error::{ErrorCode, HelperError, OrHelperError as _};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -207,7 +207,7 @@ fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> 
         },
         redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )
     .or_value_error()
 }

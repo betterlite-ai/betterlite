@@ -148,7 +148,7 @@ impl ModelMetadata for ScriptedMetadata {
 }
 
 enum AnswerPlan {
-    Response(ResponsesApiResponse),
+    Response(Box<ResponsesApiResponse>),
     Stream(Vec<ResponsesEvent>),
     Other(&'static str),
     Failure(CreateFailure),
@@ -185,9 +185,7 @@ impl ResponsesCreatePort for ScriptedPort {
             .push(call.clone());
         let plan = self.answer.lock().expect("the answer lock is free").take();
         match plan {
-            Some(AnswerPlan::Response(response)) => {
-                Ok(ResponsesAnswer::Response(Box::new(response)))
-            }
+            Some(AnswerPlan::Response(response)) => Ok(ResponsesAnswer::Response(response)),
             Some(AnswerPlan::Stream(events)) => Ok(ResponsesAnswer::Stream(ScriptedEvents {
                 events: VecDeque::from(events),
             })),
@@ -366,7 +364,9 @@ async fn run(
 }
 
 fn native() -> AnswerPlan {
-    AnswerPlan::Response(mock_responses_api_response(Some("hi")).expect("the mock response builds"))
+    AnswerPlan::Response(Box::new(
+        mock_responses_api_response(Some("hi")).expect("the mock response builds"),
+    ))
 }
 
 #[rstest]
@@ -436,8 +436,8 @@ async fn messages_responses_request(
     assert_eq!(call_result.call.max_output_tokens, Some(128));
     assert_eq!(call_result.call.instructions.as_deref(), Some("be helpful"));
     assert_eq!(call_result.call.user.as_deref(), Some("user_a"));
-    assert_eq!(call_result.call.temperature, Some(0.2));
-    assert_eq!(call_result.call.top_p, Some(0.9));
+    assert_eq!(call_result.call.temperature, Some(0.2_f64));
+    assert_eq!(call_result.call.top_p, Some(0.9_f64));
     assert_eq!(call_result.call.stream, None);
     assert_eq!(
         call_result.call.custom_llm_provider.as_deref(),
@@ -665,7 +665,12 @@ async fn native_responses_error_maps_a_translation_failure() {
         r#"{"id":"resp_b985_translate","created_at":1,"model":"gpt-4o","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"c1","name":"f","arguments":"[1,2]","status":"completed"}]}"#,
     )
     .expect("the response parses");
-    let fixture = fixture_with(true, Some("openai"), None, AnswerPlan::Response(response));
+    let fixture = fixture_with(
+        true,
+        Some("openai"),
+        None,
+        AnswerPlan::Response(Box::new(response)),
+    );
     let input = call_input(LISTED_REQUEST, r#"{"custom_llm_provider":"openai"}"#, false);
     let (result, _) = run(&fixture, &input).await;
     let error = result.err().expect("a translation failure fails the call");
