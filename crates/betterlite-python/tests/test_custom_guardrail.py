@@ -78,6 +78,15 @@ ADMIN_CASES = {
             "user_api_key_metadata": {"opted_out_global_guardrails": ["thread-out"]}
         }
     },
+    "admin_merge": {
+        "metadata": {
+            "user_api_key_team_metadata": {
+                "disable_global_guardrails": True,
+                "opted_out_global_guardrails": ["team-out"],
+            },
+            "user_api_key_metadata": {"disable_global_guardrails": False},
+        }
+    },
     "admin_null": {"metadata": {"user_api_key_metadata": {"disable_global_guardrails": None}}},
     "admin_absent": {},
     "requested_top": {"guardrails": ["probe"]},
