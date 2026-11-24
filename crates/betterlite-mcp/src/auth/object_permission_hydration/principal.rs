@@ -147,9 +147,9 @@ where
             Err(source) => return link_failure(source, check_db_only, user_id),
         };
         match cached {
-            Some(CachedLink::NoPermission) => return Ok(None),
-            Some(CachedLink::Id(id)) => return Ok(Some(id)),
-            Some(CachedLink::NotAPermissionLink) | None => {}
+            CachedLink::NoPermission => return Ok(None),
+            CachedLink::Id(id) => return Ok(Some(id)),
+            CachedLink::NoUsableLink => {}
         }
     }
     let linked = match reads
@@ -223,9 +223,9 @@ where
 {
     let cache_key = format!("agent_object_permission_id:{agent_id}");
     match reads.cached_link(&cache_key).await? {
-        Some(CachedLink::NoPermission) => return Ok(None),
-        Some(CachedLink::Id(id)) => return Ok(Some(id)),
-        Some(CachedLink::NotAPermissionLink) | None => {}
+        CachedLink::NoPermission => return Ok(None),
+        CachedLink::Id(id) => return Ok(Some(id)),
+        CachedLink::NoUsableLink => {}
     }
     let linked = reads.agent_object_permission_link(agent_id).await?;
     let object_permission_id = linked;

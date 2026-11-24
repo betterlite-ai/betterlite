@@ -88,7 +88,7 @@ async fn user_permission_loads_the_linked_row() {
 #[tokio::test]
 async fn user_permission_uses_a_cached_link_without_a_row_read() {
     let reads = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::Id(String::from("op-cached")))),
+        cached: Scripted::Value(CachedLink::Id(String::from("op-cached"))),
         permission: Scripted::Value(Some(row("op-cached"))),
         ..FakeReads::standard()
     };
@@ -113,7 +113,7 @@ async fn user_permission_uses_a_cached_link_without_a_row_read() {
 #[tokio::test]
 async fn user_permission_returns_none_for_the_cached_sentinel() {
     let reads = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::NoPermission)),
+        cached: Scripted::Value(CachedLink::NoPermission),
         user_link: Scripted::Fault,
         ..FakeReads::standard()
     };
@@ -136,8 +136,9 @@ async fn user_permission_returns_none_for_the_cached_sentinel() {
 #[tokio::test]
 async fn user_permission_treats_a_cached_non_string_as_a_miss() {
     let reads = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::NotAPermissionLink)),
+        cached: Scripted::Value(CachedLink::NoUsableLink),
         user_link: Scripted::Value(Some(String::from("op-user"))),
+        permission: Scripted::Value(Some(row("op-user"))),
         ..FakeReads::standard()
     };
     let auth = McpAuth {

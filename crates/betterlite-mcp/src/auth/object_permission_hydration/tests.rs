@@ -44,7 +44,7 @@ type LinkedId = Option<String>;
 struct FakeReads {
     database: bool,
     ttl: f64,
-    cached: Scripted<Option<CachedLink>>,
+    cached: Scripted<CachedLink>,
     store_fault: bool,
     permission: Scripted<Option<ObjectPermission>>,
     team: Scripted<Option<ObjectPermission>>,
@@ -61,7 +61,7 @@ impl FakeReads {
         Self {
             database: true,
             ttl: 12.5,
-            cached: Scripted::Value(None),
+            cached: Scripted::Value(CachedLink::NoUsableLink),
             store_fault: false,
             permission: Scripted::Value(None),
             team: Scripted::Value(None),
@@ -108,7 +108,7 @@ impl ObjectPermissionReads for FakeReads {
         self.ttl
     }
 
-    fn cached_link(&self, key: &str) -> Reply<Option<CachedLink>> {
+    fn cached_link(&self, key: &str) -> Reply<CachedLink> {
         self.answer(format!("cached_link:{key}"), &self.cached)
     }
 
@@ -175,16 +175,16 @@ impl ObjectPermissionReads for FakeReads {
 fn row(object_permission_id: &str) -> ObjectPermission {
     ObjectPermission {
         object_permission_id: String::from(object_permission_id),
-        mcp_servers: PermissionList(None),
-        mcp_access_groups: PermissionList(None),
+        mcp_servers: PermissionList(Some(Vec::new())),
+        mcp_access_groups: PermissionList(Some(Vec::new())),
         mcp_tool_permissions: None,
-        vector_stores: PermissionList(None),
-        agents: PermissionList(None),
-        agent_access_groups: PermissionList(None),
-        models: PermissionList(None),
+        vector_stores: PermissionList(Some(Vec::new())),
+        agents: PermissionList(Some(Vec::new())),
+        agent_access_groups: PermissionList(Some(Vec::new())),
+        models: PermissionList(Some(Vec::new())),
         mcp_toolsets: None,
-        blocked_tools: PermissionList(None),
-        search_tools: PermissionList(None),
+        blocked_tools: PermissionList(Some(Vec::new())),
+        search_tools: PermissionList(Some(Vec::new())),
         mcp_tool_search_enabled: None,
         skills: None,
     }

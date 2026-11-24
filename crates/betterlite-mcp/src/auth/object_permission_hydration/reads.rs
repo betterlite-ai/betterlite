@@ -10,7 +10,8 @@ pub type ObjectPermission = LiteLLMObjectPermissionTable;
 pub enum CachedLink {
     NoPermission,
     Id(String),
-    NotAPermissionLink,
+    // the adapter maps an empty cache entry and a cached value that is not a link to this one miss
+    NoUsableLink,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,11 +33,11 @@ pub trait ObjectPermissionReads: Send + Sync {
 
     fn management_ttl(&self) -> f64;
 
-    // the cached link holds either an id, the no-permission sentinel, or something a reader must treat as a miss
+    // the cache answers an id, the no-permission sentinel, or no usable link, and a reader re-reads the row on that miss
     fn cached_link(
         &self,
         key: &str,
-    ) -> impl Future<Output = Result<Option<CachedLink>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<CachedLink, Self::Error>> + Send;
 
     fn store_link(
         &self,

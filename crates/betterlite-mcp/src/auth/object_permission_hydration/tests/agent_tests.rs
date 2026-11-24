@@ -10,7 +10,7 @@ use super::{FakeReads, Scripted, expected, mcp_auth, row};
 #[tokio::test]
 async fn agent_id_prefers_a_cached_sentinel_or_id_over_the_row() {
     let sentinel = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::NoPermission)),
+        cached: Scripted::Value(CachedLink::NoPermission),
         agent_link: Scripted::Fault,
         ..FakeReads::standard()
     };
@@ -21,7 +21,7 @@ async fn agent_id_prefers_a_cached_sentinel_or_id_over_the_row() {
     );
 
     let cached = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::Id(String::from("op-agent")))),
+        cached: Scripted::Value(CachedLink::Id(String::from("op-agent"))),
         agent_link: Scripted::Fault,
         ..FakeReads::standard()
     };
@@ -70,7 +70,7 @@ async fn agent_id_caches_the_sentinel_when_the_agent_links_none() {
 #[tokio::test]
 async fn agent_id_treats_a_cached_non_string_as_a_miss() {
     let reads = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::NotAPermissionLink)),
+        cached: Scripted::Value(CachedLink::NoUsableLink),
         agent_link: Scripted::Value(Some(String::from("op-agent"))),
         ..FakeReads::standard()
     };
@@ -168,7 +168,7 @@ async fn agent_permission_is_none_when_the_agent_links_none() {
 #[tokio::test]
 async fn agent_permission_loads_the_linked_row_with_the_fresh_flag() {
     let reads = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::Id(String::from("op-agent")))),
+        cached: Scripted::Value(CachedLink::Id(String::from("op-agent"))),
         permission: Scripted::Value(Some(row("op-agent"))),
         ..FakeReads::standard()
     };
@@ -200,7 +200,7 @@ async fn agent_permission_is_unloadable_when_the_named_row_is_absent_or_unreadab
         ..mcp_auth()
     };
     let absent = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::Id(String::from("op-agent")))),
+        cached: Scripted::Value(CachedLink::Id(String::from("op-agent"))),
         ..FakeReads::standard()
     };
     let error = named_object_permission(&absent, &auth, NamedPrincipal::Agent)
@@ -210,7 +210,7 @@ async fn agent_permission_is_unloadable_when_the_named_row_is_absent_or_unreadab
     assert!(error.source().is_none());
 
     let unreadable = FakeReads {
-        cached: Scripted::Value(Some(CachedLink::Id(String::from("op-agent")))),
+        cached: Scripted::Value(CachedLink::Id(String::from("op-agent"))),
         permission: Scripted::Fault,
         ..FakeReads::standard()
     };

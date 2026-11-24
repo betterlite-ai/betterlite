@@ -79,7 +79,7 @@ impl ObjectPermissionReads for ScriptedReads {
     fn cached_link(
         &self,
         _key: &str,
-    ) -> impl Future<Output = Result<Option<CachedLink>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<CachedLink, Self::Error>> + Send {
         ready(Err(Fault::Unscripted))
     }
 
