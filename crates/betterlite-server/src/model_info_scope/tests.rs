@@ -5,6 +5,7 @@ use std::sync::Mutex;
 
 use axum::http::StatusCode;
 use betterlite_auth::auth_model_patterns::ALL_PROXY_MODELS;
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -403,6 +404,24 @@ async fn annotation_group_read_failure() {
     .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(matches!(error, ScopeError::AccessGroupRead(_)));
+}
+
+#[test]
+fn caller_key_models_come_from_the_auth() {
+    let mut fields = BTreeMap::new();
+    fields.insert(
+        String::from("user_id"),
+        JsonData::String(String::from("alice")),
+    );
+    fields.insert(
+        String::from("models"),
+        JsonData::List(vec![JsonData::String(String::from("gpt-4o"))]),
+    );
+    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
+    let scope = ScopeCaller::from_auth(&auth).unwrap();
+    assert_eq!(scope.user_id, Some(String::from("alice")));
+    assert_eq!(scope.key_models, vec![String::from("gpt-4o")]);
+    assert!(!scope.admin_view);
 }
 
 #[tokio::test]
