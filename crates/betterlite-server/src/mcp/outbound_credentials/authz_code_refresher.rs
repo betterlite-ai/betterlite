@@ -81,6 +81,8 @@ where
 impl<Lookup, Post, Persist, Binding, Clock>
     AuthorizationCodeRefresher<Lookup, Post, Persist, Binding, Clock>
 where
+    Post: TokenEndpointPost,
+    Persist: CredentialPersist,
     Binding:
         OauthBindingPort<Server = MCPServer, Ownership = RefreshOwnership, Denied = BindingDenied>,
 {

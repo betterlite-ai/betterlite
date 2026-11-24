@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -80,19 +80,19 @@ pub(super) fn pooled_client() -> Arc<ProxiedClient> {
     Arc::new(ProxiedClient::outbound(&policy).unwrap())
 }
 
-pub(super) fn answer_with_object() -> (StatusCode, String) {
-    (StatusCode::OK, String::from("{\"access_token\":\"fresh\"}"))
+pub(super) fn answer_with_object() -> Ready<(StatusCode, String)> {
+    ready((StatusCode::OK, String::from("{\"access_token\":\"fresh\"}")))
 }
 
-pub(super) fn answer_with_array() -> (StatusCode, String) {
-    (StatusCode::OK, String::from("[1, 2]"))
+pub(super) fn answer_with_array() -> Ready<(StatusCode, String)> {
+    ready((StatusCode::OK, String::from("[1, 2]")))
 }
 
-pub(super) fn answer_with_server_error() -> (StatusCode, String) {
-    (
+pub(super) fn answer_with_server_error() -> Ready<(StatusCode, String)> {
+    ready((
         StatusCode::INTERNAL_SERVER_ERROR,
         String::from("{\"access_token\":\"fresh\"}"),
-    )
+    ))
 }
 
 pub(super) async fn serving_token_endpoint(application: Router) -> (String, JoinSet<()>) {
@@ -570,8 +570,9 @@ pub(super) struct FakeBuilder {
 impl StoreBuilder for FakeBuilder {
     fn build(&self) -> BuiltStore {
         self.builds.fetch_add(1, Ordering::Relaxed);
+        let store: Arc<dyn InvalidatableOAuthTokenStore> = Arc::clone(&self.store);
         BuiltStore {
-            store: Arc::clone(&self.store),
+            store,
             uses_redis: self.uses_redis.load(Ordering::Relaxed),
         }
     }
