@@ -21,6 +21,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::NaiveDateTime;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::RwLock;
 use tokio_postgres::NoTls;
@@ -362,15 +363,16 @@ async fn skill_hub_defaults_every_missing_manifest_field() {
     assert_eq!(item.name, "bare");
 }
 
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
 #[tokio::test]
-async fn skill_hub_treats_an_absent_or_empty_manifest_as_empty() {
-    for manifest in [None, Some("")] {
-        let response = response_of(vec![row("empty", manifest)], false)
-            .await
-            .expect("the response builds");
-        assert!(response.plugins[0].source.is_empty());
-        assert!(response.plugins[0].version.is_none());
-    }
+async fn skill_hub_treats_an_absent_or_empty_manifest_as_empty(#[case] manifest: Option<&str>) {
+    let response = response_of(vec![row("empty", manifest)], false)
+        .await
+        .expect("the response builds");
+    assert!(response.plugins[0].source.is_empty());
+    assert!(response.plugins[0].version.is_none());
 }
 
 #[tokio::test]
@@ -383,15 +385,18 @@ async fn skill_hub_rejects_a_manifest_that_is_not_json() {
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
+#[rstest]
+#[case::array("[]")]
+#[case::text("\"text\"")]
+#[case::null("null")]
+#[case::number("3")]
 #[tokio::test]
-async fn skill_hub_rejects_a_manifest_that_is_not_an_object() {
-    for manifest in ["[]", "\"text\"", "null", "3"] {
-        let outcome = response_of(vec![row("bad", Some(manifest))], false).await;
-        assert!(
-            matches!(outcome, Err(ResourceHubsError::Manifest(_))),
-            "{manifest}"
-        );
-    }
+async fn skill_hub_rejects_a_manifest_that_is_not_an_object(#[case] manifest: &str) {
+    let outcome = response_of(vec![row("bad", Some(manifest))], false).await;
+    assert!(
+        matches!(outcome, Err(ResourceHubsError::Manifest(_))),
+        "{manifest}"
+    );
 }
 
 #[tokio::test]
@@ -448,31 +453,29 @@ async fn skill_hub_leaves_absent_timestamps_null() {
     assert!(body.contains(r#""updated_at":null"#), "{body}");
 }
 
+#[rstest]
+#[case::plugins("\"plugins\"")]
+#[case::count("\"count\":2")]
+#[case::id("\"id\"")]
+#[case::name("\"name\"")]
+#[case::version("\"version\":null")]
+#[case::description("\"description\":null")]
+#[case::source("\"source\":{}")]
+#[case::author("\"author\":null")]
+#[case::homepage("\"homepage\":null")]
+#[case::keywords("\"keywords\":null")]
+#[case::category("\"category\":null")]
+#[case::domain("\"domain\":null")]
+#[case::namespace("\"namespace\":null")]
+#[case::enabled("\"enabled\":true")]
 #[tokio::test]
-async fn skill_hub_reports_the_count_and_the_response_shape() {
+async fn skill_hub_reports_the_count_and_the_response_shape(#[case] key: &str) {
     let response = response_of(vec![row("one", Some("{}")), row("two", Some("{}"))], false)
         .await
         .expect("the response builds");
     assert_eq!(response.count, 2);
     let body = encoded(&response);
-    for key in [
-        "\"plugins\"",
-        "\"count\":2",
-        "\"id\"",
-        "\"name\"",
-        "\"version\":null",
-        "\"description\":null",
-        "\"source\":{}",
-        "\"author\":null",
-        "\"homepage\":null",
-        "\"keywords\":null",
-        "\"category\":null",
-        "\"domain\":null",
-        "\"namespace\":null",
-        "\"enabled\":true",
-    ] {
-        assert!(body.contains(key), "{key} missing from {body}");
-    }
+    assert!(body.contains(key), "{key} missing from {body}");
 }
 
 #[tokio::test]
