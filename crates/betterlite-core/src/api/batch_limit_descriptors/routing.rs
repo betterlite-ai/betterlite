@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
@@ -20,7 +18,7 @@ const MANAGED_FILE_PREFIX: &str = "litellm_proxy";
 // A router failure that is not one of get_credentials_for_model's two HTTPException branches
 #[derive(Debug, thiserror::Error)]
 #[error("the credential source failed to resolve model `{model_id}`")]
-pub struct BatchCredentialError<SourceError: Error + 'static> {
+pub struct BatchCredentialError<SourceError> {
     pub model_id: String,
     #[source]
     pub source: SourceError,
@@ -41,10 +39,10 @@ where
         }
         Err(CredentialLookupError::Source {
             model_id: failing,
-            source,
+            source: failing_source,
         }) => Err(BatchCredentialError {
             model_id: failing,
-            source,
+            source: failing_source,
         }),
     }
 }
@@ -111,8 +109,8 @@ where
     let Some(bound) = model.filter(|name| !name.is_empty()) else {
         return Ok(None);
     };
-    match credentials_for(service.credentials.as_ref(), bound)? {
-        Some(credentials) => Ok(provider_from(&credentials)),
-        None => Ok(None),
-    }
+    let Some(credentials) = credentials_for(service.credentials.as_ref(), bound)? else {
+        return Ok(None);
+    };
+    Ok(provider_from(&credentials))
 }

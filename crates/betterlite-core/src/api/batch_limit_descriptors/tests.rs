@@ -15,7 +15,9 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use super::BatchLimitDescriptors;
 use super::BatchLimitError;
 use super::answer::BatchLimitAnswer;
-use super::descriptors::{BatchLimitDescriptor, TPD_SUFFIX, TPD_WINDOW_SECONDS};
+use super::descriptors::{
+    BatchDescriptorIncrements, BatchLimitDescriptor, TPD_SUFFIX, TPD_WINDOW_SECONDS,
+};
 use crate::api::file_routing_ids::RoutingIdType;
 use crate::api::file_routing_ids::routing::encode_file_id_with_model;
 use support::{
@@ -52,33 +54,86 @@ fn single(answers: Vec<BatchLimitAnswer>) -> BatchLimitAnswer {
 }
 
 fn model_answer(answer: BatchLimitAnswer) -> Option<String> {
-    match answer {
-        BatchLimitAnswer::FileBoundModel { model } => model,
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let BatchLimitAnswer::FileBoundModel { model } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    model
 }
 
 fn routing_answer(answer: BatchLimitAnswer) -> Option<String> {
-    match answer {
-        BatchLimitAnswer::BatchRoutingModel { model } => model,
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let BatchLimitAnswer::BatchRoutingModel { model } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    model
 }
 
 fn skip_answer(answer: BatchLimitAnswer) -> (bool, Option<Vec<BatchLimitDescriptor>>) {
-    match answer {
-        BatchLimitAnswer::ShouldSkip { skip, descriptors } => (skip, descriptors),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let BatchLimitAnswer::ShouldSkip { skip, descriptors } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    (skip, descriptors)
 }
 
-fn answer_flag(answer: BatchLimitAnswer) -> bool {
-    match answer {
-        BatchLimitAnswer::ProjectHasIoLimits { has_limits } => has_limits,
-        BatchLimitAnswer::KeyRequiresAccessCheck { required } => required,
-        BatchLimitAnswer::HasApplicableLimits { applicable } => applicable,
-        other => panic!("unexpected answer {other:?}"),
-    }
+fn project_io_flag(answer: BatchLimitAnswer) -> bool {
+    let BatchLimitAnswer::ProjectHasIoLimits { has_limits } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    has_limits
+}
+
+fn access_check_flag(answer: BatchLimitAnswer) -> bool {
+    let BatchLimitAnswer::KeyRequiresAccessCheck { required } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    required
+}
+
+fn applicable_flag(answer: BatchLimitAnswer) -> bool {
+    let BatchLimitAnswer::HasApplicableLimits { applicable } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    applicable
+}
+
+fn descriptors_answer(answer: BatchLimitAnswer) -> Vec<BatchLimitDescriptor> {
+    let BatchLimitAnswer::CreateRateLimitDescriptors { descriptors } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    descriptors
+}
+
+fn project_io_answer(
+    answer: BatchLimitAnswer,
+) -> (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>) {
+    let BatchLimitAnswer::CreateProjectIoDescriptors {
+        descriptors,
+        increments,
+    } = answer
+    else {
+        panic!("unexpected answer {answer:?}");
+    };
+    (descriptors, increments)
+}
+
+fn tokens_answer(answer: BatchLimitAnswer) -> i64 {
+    let BatchLimitAnswer::EstimateOutputTokens { tokens } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    tokens
+}
+
+fn fetch_params_answer(answer: BatchLimitAnswer) -> (String, JsonObject) {
+    let BatchLimitAnswer::ResolveFetchParams { file_id, params } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    (file_id, params)
+}
+
+fn provider_answer(answer: BatchLimitAnswer) -> Option<String> {
+    let BatchLimitAnswer::ResolveBatchProvider { provider } = answer else {
+        panic!("unexpected answer {answer:?}");
+    };
+    provider
 }
 
 #[rstest]
@@ -146,36 +201,26 @@ fn project_io_descriptors() {
     );
     let calls = r#"[{"function": "create_project_io_descriptors", "per_model_usage": {"gpt": {"total_tokens": 10, "output_tokens": 3}, "claude": {"total_tokens": 7}}}, {"function": "project_has_io_limits"}]"#;
     let answers = run_calls(&service, principal, calls);
-    match &answers[0] {
-        BatchLimitAnswer::CreateProjectIoDescriptors {
-            descriptors,
-            increments,
-        } => {
-            let values: Vec<(&str, &str)> = descriptors
-                .iter()
-                .map(|entry| (entry.key.as_str(), entry.value.as_str()))
-                .collect();
-            assert_eq!(
-                values,
-                vec![
-                    (ITPM, "gpt:quota"),
-                    (OTPM, "gpt:quota"),
-                    (ITPM, "claude:quota"),
-                    (OTPM, "claude:quota"),
-                ]
-            );
-            let charges: Vec<(i64, i64)> = increments
-                .iter()
-                .map(|entry| (entry.requests, entry.tokens))
-                .collect();
-            assert_eq!(charges, vec![(0, 10), (0, 3), (0, 7), (0, 0)]);
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
-    match &answers[1] {
-        BatchLimitAnswer::ProjectHasIoLimits { has_limits } => assert!(*has_limits),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let (descriptors, increments) = project_io_answer(answers[0].clone());
+    let values: Vec<(&str, &str)> = descriptors
+        .iter()
+        .map(|entry| (entry.key.as_str(), entry.value.as_str()))
+        .collect();
+    assert_eq!(
+        values,
+        vec![
+            (ITPM, "gpt:quota"),
+            (OTPM, "gpt:quota"),
+            (ITPM, "claude:quota"),
+            (OTPM, "claude:quota"),
+        ]
+    );
+    let charges: Vec<(i64, i64)> = increments
+        .iter()
+        .map(|entry| (entry.requests, entry.tokens))
+        .collect();
+    assert_eq!(charges, vec![(0, 10), (0, 3), (0, 7), (0, 0)]);
+    assert!(project_io_flag(answers[1].clone()));
 }
 
 #[rstest]
@@ -196,7 +241,7 @@ fn project_io_descriptors() {
 fn project_io_has_limits(#[case] principal: &str, #[case] expected: bool) {
     let service = service(settings(None, None, None), empty_limiter(), None);
     let answer = single(run_calls(&service, principal, PROJECT_LIMITS_CALL));
-    assert_eq!(answer_flag(answer), expected);
+    assert_eq!(project_io_flag(answer), expected);
 }
 
 #[rstest]
@@ -233,10 +278,7 @@ fn max_output_estimate(#[case] entry: &str, #[case] candidates: i64, #[case] exp
         r#"[{{"function": "estimate_output_tokens", "entry": {entry}, "min_configured_otpm_limit": null}}]"#
     );
     let answer = single(run_calls(&service, "{}", &calls));
-    match answer {
-        BatchLimitAnswer::EstimateOutputTokens { tokens } => assert_eq!(tokens, expected),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    assert_eq!(tokens_answer(answer), expected);
 }
 
 #[test]
@@ -285,7 +327,7 @@ fn unsupported_model_skip_warning_is_silent(#[case] models: Option<Vec<String>>)
 fn key_requires_access_check(#[case] principal: &str, #[case] expected: bool) {
     let service = service(settings(None, None, None), empty_limiter(), None);
     let answer = single(run_calls(&service, principal, ACCESS_CHECK_CALL));
-    assert_eq!(answer_flag(answer), expected);
+    assert_eq!(access_check_flag(answer), expected);
 }
 
 fn base_descriptors() -> Vec<BatchLimitDescriptor> {
@@ -309,25 +351,21 @@ fn rate_limit_descriptors() {
         TPD_PRINCIPAL,
         r#"[{"function": "create_batch_rate_limit_descriptors", "data": {}}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::CreateRateLimitDescriptors { descriptors } => {
-            let keys: Vec<&str> = descriptors.iter().map(|entry| entry.key.as_str()).collect();
-            assert_eq!(
-                keys,
-                vec!["user", "api_key_tpd", "team_tpd", "end_user_tpd"]
-            );
-            let api_key = &descriptors[1];
-            assert_eq!(api_key.value, "key-batch");
-            assert_eq!(api_key.key, format!("api_key{TPD_SUFFIX}"));
-            let rate_limit = api_key.rate_limit.as_ref().expect("a rate limit");
-            assert_eq!(rate_limit.requests_per_unit, None);
-            assert_eq!(rate_limit.tokens_per_unit, Some(1000));
-            assert_eq!(rate_limit.window_size, Some(TPD_WINDOW_SECONDS));
-            let team_limit = descriptors[2].rate_limit.as_ref().expect("a rate limit");
-            assert_eq!(team_limit.tokens_per_unit, Some(0));
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let descriptors = descriptors_answer(answer);
+    let keys: Vec<&str> = descriptors.iter().map(|entry| entry.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec!["user", "api_key_tpd", "team_tpd", "end_user_tpd"]
+    );
+    let api_key = &descriptors[1];
+    assert_eq!(api_key.value, "key-batch");
+    assert_eq!(api_key.key, format!("api_key{TPD_SUFFIX}"));
+    let rate_limit = api_key.rate_limit.as_ref().expect("a rate limit");
+    assert_eq!(rate_limit.requests_per_unit, None);
+    assert_eq!(rate_limit.tokens_per_unit, Some(1000));
+    assert_eq!(rate_limit.window_size, Some(TPD_WINDOW_SECONDS));
+    let team_limit = descriptors[2].rate_limit.as_ref().expect("a rate limit");
+    assert_eq!(team_limit.tokens_per_unit, Some(0));
 }
 
 #[test]
@@ -342,17 +380,13 @@ fn rate_limit_descriptors_hash_the_api_key() {
         r#"{"api_key": "sk-batch-key", "tpd_limit": 1000}"#,
         r#"[{"function": "create_batch_rate_limit_descriptors", "data": {}}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::CreateRateLimitDescriptors { descriptors } => {
-            let tpd_key = format!("api_key{TPD_SUFFIX}");
-            let api_key = descriptors
-                .iter()
-                .find(|descriptor| descriptor.key == tpd_key)
-                .expect("the api key tpd descriptor");
-            assert_eq!(api_key.value, safe_hash_api_key("sk-batch-key"));
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let descriptors = descriptors_answer(answer);
+    let tpd_key = format!("api_key{TPD_SUFFIX}");
+    let api_key = descriptors
+        .iter()
+        .find(|descriptor| descriptor.key == tpd_key)
+        .expect("the api key tpd descriptor");
+    assert_eq!(api_key.value, safe_hash_api_key("sk-batch-key"));
 }
 
 #[test]
@@ -367,13 +401,9 @@ fn rate_limit_descriptors_without_tpd_limits() {
         r#"{"api_key": "key-batch"}"#,
         r#"[{"function": "create_batch_rate_limit_descriptors", "data": {}}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::CreateRateLimitDescriptors { descriptors } => {
-            let keys: Vec<&str> = descriptors.iter().map(|entry| entry.key.as_str()).collect();
-            assert_eq!(keys, vec!["api_key", "user", "team", "end_user"]);
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let descriptors = descriptors_answer(answer);
+    let keys: Vec<&str> = descriptors.iter().map(|entry| entry.key.as_str()).collect();
+    assert_eq!(keys, vec!["api_key", "user", "team", "end_user"]);
 }
 
 #[test]
@@ -388,13 +418,9 @@ fn rate_limit_descriptors_skip_empty_scope_values() {
         r#"{"api_key": "key-batch", "team_id": "", "team_tpd_limit": 700}"#,
         r#"[{"function": "create_batch_rate_limit_descriptors", "data": {}}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::CreateRateLimitDescriptors { descriptors } => {
-            let keys: Vec<&str> = descriptors.iter().map(|entry| entry.key.as_str()).collect();
-            assert_eq!(keys, vec!["api_key", "user", "team", "end_user"]);
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let descriptors = descriptors_answer(answer);
+    let keys: Vec<&str> = descriptors.iter().map(|entry| entry.key.as_str()).collect();
+    assert_eq!(keys, vec!["api_key", "user", "team", "end_user"]);
 }
 
 #[test]
@@ -432,7 +458,7 @@ fn has_applicable_limits(#[case] descriptors: &str, #[case] expected: bool) {
     let calls =
         format!(r#"[{{"function": "has_applicable_limits", "descriptors": {descriptors}}}]"#);
     let answer = single(run_calls(&service, "{}", &calls));
-    assert_eq!(answer_flag(answer), expected);
+    assert_eq!(applicable_flag(answer), expected);
 }
 
 fn skip_service(preset: &str) -> BatchLimitDescriptors<FakeLimiter, FakeCredentials> {
@@ -642,29 +668,18 @@ fn fetch_params_for_model_embedded_id() {
         r#"[{{"function": "resolve_batch_input_file_fetch_params", "file_id": "{file_id}", "custom_llm_provider": "azure", "data": {{"model": "top-model"}}}}]"#
     );
     let answer = single(run_calls(&service, "{}", &calls));
-    match answer {
-        BatchLimitAnswer::ResolveFetchParams { file_id, params } => {
-            assert_eq!(file_id, "file-original");
-            assert_eq!(
-                params.get("custom_llm_provider"),
-                Some(&Json::Text("openai".to_owned()))
-            );
-            assert_eq!(
-                params.get("model"),
-                Some(&Json::Text("bound-model".to_owned()))
-            );
-            assert_eq!(
-                params.get("api_key"),
-                Some(&Json::Text("secret".to_owned()))
-            );
-            assert_eq!(
-                params.get("aws_region_name"),
-                Some(&Json::Text("us-east-1".to_owned()))
-            );
-            assert_eq!(params.get("unrelated"), None);
-        }
-        other => panic!("unexpected answer {other:?}"),
+    let (resolved_file_id, params) = fetch_params_answer(answer);
+    assert_eq!(resolved_file_id, "file-original");
+    let expected = [
+        ("custom_llm_provider", "openai"),
+        ("model", "bound-model"),
+        ("api_key", "secret"),
+        ("aws_region_name", "us-east-1"),
+    ];
+    for (field, value) in expected {
+        assert_eq!(params.get(field), Some(&Json::Text(value.to_owned())));
     }
+    assert_eq!(params.get("unrelated"), None);
 }
 
 #[test]
@@ -684,20 +699,16 @@ fn fetch_params_for_plain_file_id_uses_the_request_model() {
         "{}",
         r#"[{"function": "resolve_batch_input_file_fetch_params", "file_id": "file-plain", "custom_llm_provider": "azure", "data": {"model": "top-model"}}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::ResolveFetchParams { file_id, params } => {
-            assert_eq!(file_id, "file-plain");
-            assert_eq!(
-                params.get("custom_llm_provider"),
-                Some(&Json::Text("vertex_ai".to_owned()))
-            );
-            assert_eq!(
-                params.get("model"),
-                Some(&Json::Text("top-model".to_owned()))
-            );
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let (resolved_file_id, params) = fetch_params_answer(answer);
+    assert_eq!(resolved_file_id, "file-plain");
+    assert_eq!(
+        params.get("custom_llm_provider"),
+        Some(&Json::Text("vertex_ai".to_owned()))
+    );
+    assert_eq!(
+        params.get("model"),
+        Some(&Json::Text("top-model".to_owned()))
+    );
 }
 
 #[test]
@@ -708,17 +719,13 @@ fn fetch_params_without_a_router_keeps_the_base_provider() {
         "{}",
         r#"[{"function": "resolve_batch_input_file_fetch_params", "file_id": "file-plain", "custom_llm_provider": "azure", "data": {"model": "top-model"}}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::ResolveFetchParams { file_id, params } => {
-            assert_eq!(file_id, "file-plain");
-            assert_eq!(params.len(), 1);
-            assert_eq!(
-                params.get("custom_llm_provider"),
-                Some(&Json::Text("azure".to_owned()))
-            );
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
+    let (resolved_file_id, params) = fetch_params_answer(answer);
+    assert_eq!(resolved_file_id, "file-plain");
+    assert_eq!(params.len(), 1);
+    assert_eq!(
+        params.get("custom_llm_provider"),
+        Some(&Json::Text("azure".to_owned()))
+    );
 }
 
 #[test]
@@ -738,12 +745,7 @@ fn resolve_batch_provider_reads_trusted_credentials() {
         "{}",
         r#"[{"function": "resolve_batch_provider", "model": "top-model"}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::ResolveBatchProvider { provider } => {
-            assert_eq!(provider.as_deref(), Some("bedrock"));
-        }
-        other => panic!("unexpected answer {other:?}"),
-    }
+    assert_eq!(provider_answer(answer).as_deref(), Some("bedrock"));
 }
 
 #[test]
@@ -775,10 +777,7 @@ fn resolve_batch_provider_skips_an_empty_model() {
         "{}",
         r#"[{"function": "resolve_batch_provider", "model": ""}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::ResolveBatchProvider { provider } => assert_eq!(provider, None),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    assert_eq!(provider_answer(answer), None);
     assert!(
         service
             .credentials
@@ -803,8 +802,5 @@ fn empty_provider_credential_is_absent() {
         "{}",
         r#"[{"function": "resolve_batch_provider", "model": "top-model"}]"#,
     ));
-    match answer {
-        BatchLimitAnswer::ResolveBatchProvider { provider } => assert_eq!(provider, None),
-        other => panic!("unexpected answer {other:?}"),
-    }
+    assert_eq!(provider_answer(answer), None);
 }
