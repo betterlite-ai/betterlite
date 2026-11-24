@@ -23,12 +23,12 @@ pub fn lookup_deployment(
     request_params: &JsonObject,
     request_model_info: Option<&JsonObject>,
 ) -> ModelLookup {
-    let Some(router) = router else {
+    let Some(lookup_router) = router else {
         return ModelLookup::default();
     };
     let model_name = text_value(request_params, "model");
     let request_model_id = request_model_info.and_then(|info| text_value(info, "id"));
-    match route_lookup(router, model_name, request_model_id) {
+    match route_lookup(lookup_router, model_name, request_model_id) {
         Ok(found) => found,
         Err(error) => {
             debug!(

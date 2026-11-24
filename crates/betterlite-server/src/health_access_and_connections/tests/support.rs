@@ -84,19 +84,19 @@ pub(super) fn failing_router() -> FakeRouter {
     }
 }
 
+fn team_allows(row: &DeploymentSpec, team_id: Option<&str>) -> bool {
+    match row.model_info.get("team_id") {
+        Some(Json::Text(owner)) => team_id == Some(owner.as_str()),
+        _ => true,
+    }
+}
+
 impl FakeRouter {
     fn guard(&self) -> Result<(), LookupFailure> {
         if self.fail {
             return Err(LookupFailure::Lookup(LookupError::InvalidRow { index: 0 }));
         }
         Ok(())
-    }
-
-    fn team_allows(&self, row: &DeploymentSpec, team_id: Option<&str>) -> bool {
-        match row.model_info.get("team_id") {
-            Some(Json::Text(owner)) => team_id == Some(owner.as_str()),
-            _ => true,
-        }
     }
 
     fn scoped(
@@ -109,7 +109,7 @@ impl FakeRouter {
             .deployments
             .iter()
             .filter(|row| model_name.is_none_or(|name| row.model_name == name))
-            .filter(|row| self.team_allows(row, team_id))
+            .filter(|row| team_allows(row, team_id))
             .cloned()
             .collect())
     }
@@ -183,12 +183,14 @@ impl ConnectionProbe for FakeProbe {
             .lock()
             .unwrap()
             .push((params.clone(), mode.map(str::to_owned)));
-        match &self.failure {
-            Some(message) => Err(ConnectionProbeError {
-                message: message.clone(),
-            }),
-            None => Ok(self.result.clone()),
-        }
+        self.failure.as_ref().map_or_else(
+            || Ok(self.result.clone()),
+            |message| {
+                Err(ConnectionProbeError {
+                    message: message.clone(),
+                })
+            },
+        )
     }
 }
 
@@ -367,7 +369,9 @@ pub(super) fn detail_error(body: &JsonObject) -> String {
             _ => panic!("the detail carries an error"),
         },
         Json::Text(message) => message.clone(),
-        _ => panic!("the detail is text or an object"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+            panic!("the detail is text or an object")
+        }
     }
 }
 

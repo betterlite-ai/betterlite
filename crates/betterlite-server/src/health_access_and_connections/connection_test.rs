@@ -169,10 +169,10 @@ async fn probe_authorized(
         caller.user_role.as_deref(),
     )
     .await?;
-    let probe_mode = match mode {
-        Some(named) => Some(named.as_str().to_owned()),
-        None => take_mode(&mut prepared),
-    };
+    let probe_mode = mode.map_or_else(
+        || take_mode(&mut prepared),
+        |named| Some(named.as_str().to_owned()),
+    );
     let result = state.probe.probe(&prepared, probe_mode.as_deref()).await?;
     Ok(respond(prepared, &result))
 }

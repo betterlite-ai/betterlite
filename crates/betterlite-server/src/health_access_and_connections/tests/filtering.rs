@@ -21,9 +21,8 @@ fn rows(entry: &JsonObject, key: &str) -> Vec<Json> {
     }
 }
 
-#[test]
-fn stripping_removes_the_routing_fields_from_each_object_row() {
-    let result = object(vec![
+fn result_with_routing_fields() -> JsonObject {
+    object(vec![
         (
             "healthy_endpoints",
             Json::List(vec![Json::Object(object(vec![
@@ -42,8 +41,12 @@ fn stripping_removes_the_routing_fields_from_each_object_row() {
             ]))]),
         ),
         ("healthy_count", Json::Number(Number::from(1_u64))),
-    ]);
-    let stripped = strip_admin_only_fields(&result);
+    ])
+}
+
+#[test]
+fn stripping_removes_the_routing_fields_from_each_object_row() {
+    let stripped = strip_admin_only_fields(&result_with_routing_fields());
     assert_eq!(
         rows(&stripped, "healthy_endpoints"),
         vec![Json::Object(object(vec![
@@ -59,6 +62,12 @@ fn stripping_removes_the_routing_fields_from_each_object_row() {
         stripped.get("healthy_count"),
         Some(&Json::Number(Number::from(1_u64)))
     );
+}
+
+#[test]
+fn stripping_leaves_the_source_rows_untouched() {
+    let result = result_with_routing_fields();
+    let stripped = strip_admin_only_fields(&result);
     assert_eq!(
         rows(&result, "healthy_endpoints"),
         vec![Json::Object(object(vec![
@@ -68,6 +77,10 @@ fn stripping_removes_the_routing_fields_from_each_object_row() {
             ("api_version", text("2024-01-01")),
             ("aws_bedrock_runtime_endpoint", text("https://bedrock")),
         ]))]
+    );
+    assert_ne!(
+        rows(&result, "healthy_endpoints"),
+        rows(&stripped, "healthy_endpoints")
     );
 }
 
@@ -114,9 +127,8 @@ fn stripping_keeps_a_non_object_row_untouched() {
     );
 }
 
-#[test]
-fn filtering_keeps_only_rows_with_a_non_empty_allowed_id() {
-    let results = object(vec![
+fn cached_health_results() -> JsonObject {
+    object(vec![
         (
             "healthy_endpoints",
             Json::List(vec![
@@ -144,8 +156,13 @@ fn filtering_keeps_only_rows_with_a_non_empty_allowed_id() {
         ),
         ("healthy_count", Json::Number(Number::from(99_u64))),
         ("extra", text("dropped")),
-    ]);
-    let filtered = filter_health_check_results_by_model_ids(&results, &names(&["d1"]));
+    ])
+}
+
+#[test]
+fn filtering_keeps_only_rows_with_a_non_empty_allowed_id() {
+    let filtered =
+        filter_health_check_results_by_model_ids(&cached_health_results(), &names(&["d1"]));
     assert_eq!(
         filtered,
         object(vec![
@@ -167,11 +184,21 @@ fn filtering_keeps_only_rows_with_a_non_empty_allowed_id() {
             ("unhealthy_count", Json::Number(Number::from(1_u64))),
         ])
     );
+}
+
+#[test]
+fn filtering_leaves_the_shared_results_untouched() {
+    let results = cached_health_results();
+    let filtered = filter_health_check_results_by_model_ids(&results, &names(&["d1"]));
     assert_eq!(
         results.get("healthy_count"),
         Some(&Json::Number(Number::from(99_u64)))
     );
     assert!(results.contains_key("extra"));
+    assert_ne!(
+        results.get("healthy_endpoints"),
+        filtered.get("healthy_endpoints")
+    );
 }
 
 #[test]

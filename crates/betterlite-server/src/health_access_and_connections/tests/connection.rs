@@ -161,9 +161,8 @@ async fn a_request_url_is_401_and_never_reaches_the_probe() {
     assert_eq!(error.get("type").cloned(), Some(text("auth_error")));
     assert_eq!(error.get("param").cloned(), Some(text("None")));
     assert_eq!(error.get("code").cloned(), Some(text("401")));
-    let message = match error.get("message") {
-        Some(Json::Text(message)) => message,
-        _ => panic!("the error carries a message"),
+    let Some(Json::Text(message)) = error.get("message") else {
+        panic!("the error carries a message");
     };
     assert!(message.starts_with(
         "Authentication Error, Rejected Request: api_base is not allowed in request body."

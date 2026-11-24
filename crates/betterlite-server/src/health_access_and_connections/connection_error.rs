@@ -149,8 +149,7 @@ impl IntoResponse for ConnectionError {
             Self::Probe(error) => failed_to_test(&error),
             Self::Encode(error) => failed_to_test(&error),
             Self::TeamIdType => failed_to_test(&TEAM_ID_DETAIL),
-            Self::Random(message) => failed_to_test(&message),
-            Self::Internal { message } => failed_to_test(&message),
+            Self::Random(message) | Self::Internal { message } => failed_to_test(&message),
         }
     }
 }

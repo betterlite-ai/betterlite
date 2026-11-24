@@ -205,9 +205,8 @@ fn with_a_router_a_team_public_name_is_in_scope() {
     ));
 }
 
-#[test]
-fn a_model_id_wins_and_a_model_name_reaches_the_routed_rows() {
-    let list = vec![
+fn routed_rows() -> Vec<DeploymentSpec> {
+    vec![
         deployment("gpt", "d1", Vec::new(), Vec::new()),
         deployment("gpt", "d2", Vec::new(), Vec::new()),
         deployment(
@@ -216,7 +215,12 @@ fn a_model_id_wins_and_a_model_name_reaches_the_routed_rows() {
             vec![("model", text("openai/alias"))],
             Vec::new(),
         ),
-    ];
+    ]
+}
+
+#[test]
+fn a_model_id_wins_and_matches_only_the_deployment_id() {
+    let list = routed_rows();
     assert_eq!(
         resolve_targeted_model_ids(&list, Some("gpt"), Some("d2"), None),
         Some(names(&["d2"]))
@@ -226,6 +230,15 @@ fn a_model_id_wins_and_a_model_name_reaches_the_routed_rows() {
         Some(BTreeSet::new())
     );
     assert_eq!(
+        resolve_targeted_model_ids(&list, Some("openai/alias"), None, None),
+        Some(names(&["d3"]))
+    );
+}
+
+#[test]
+fn a_model_name_reaches_the_routed_rows_and_a_blank_one_targets_nothing() {
+    let list = routed_rows();
+    assert_eq!(
         resolve_targeted_model_ids(&list, Some("gpt"), None, None),
         Some(names(&["d1", "d2"]))
     );
@@ -233,15 +246,15 @@ fn a_model_id_wins_and_a_model_name_reaches_the_routed_rows() {
         resolve_targeted_model_ids(&list, Some("gpt"), Some(""), None),
         Some(names(&["d1", "d2"]))
     );
-    assert_eq!(
-        resolve_targeted_model_ids(&list, Some("openai/alias"), None, None),
-        Some(names(&["d3"]))
-    );
     assert_eq!(resolve_targeted_model_ids(&list, None, None, None), None);
     assert_eq!(
         resolve_targeted_model_ids(&list, Some(""), None, None),
         None
     );
+}
+
+#[test]
+fn a_row_without_an_id_or_with_a_blank_one_is_not_targeted() {
     let unnamed = DeploymentSpec {
         model_name: "gpt".to_owned(),
         litellm_params: JsonObject::new(),

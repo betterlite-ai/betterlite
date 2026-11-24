@@ -184,11 +184,11 @@ pub fn health_accessible_model_names(
     {
         return Ok(None);
     }
-    let Some(router) = router else {
+    let Some(lookup_router) = router else {
         return Ok(Some(granted.into_iter().collect()));
     };
-    let names = router.get_model_names(caller.team_id.as_deref())?;
-    let groups = router.get_model_access_groups()?;
+    let names = lookup_router.get_model_names(caller.team_id.as_deref())?;
+    let groups = lookup_router.get_model_access_groups()?;
     let expanded = get_key_models(
         &caller.models,
         &caller.team_models,

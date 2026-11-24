@@ -146,7 +146,8 @@ fn every_connection_field_is_dropped_by_name() {
     let mut sorted = CONFIG_CONNECTION_FIELDS;
     sorted.sort_unstable();
     assert_eq!(sorted, CONFIG_CONNECTION_FIELDS);
-    assert!(sorted.windows(2).all(|pair| pair[0] != pair[1]));
+    sorted.dedup();
+    assert_eq!(sorted.len(), CONFIG_CONNECTION_FIELDS.len());
     let mut config: JsonObject = CONFIG_CONNECTION_FIELDS
         .iter()
         .map(|field| ((*field).to_owned(), text("value")))

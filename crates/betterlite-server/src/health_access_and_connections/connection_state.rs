@@ -89,9 +89,10 @@ impl ConnectionProbe for EntryProbe {
         params: &JsonObject,
         mode: Option<&str>,
     ) -> Result<JsonObject, ConnectionProbeError> {
-        let encoded = serde_json::to_value(params).map_err(encode_error)?;
-        let map = serde_json::from_value(encoded).map_err(encode_error)?;
-        let probe_params = HealthProbeParams::from_map(map).map_err(probe_error)?;
+        let encoded = serde_json::to_value(params).map_err(|source| encode_error(&source))?;
+        let map = serde_json::from_value(encoded).map_err(|source| encode_error(&source))?;
+        let probe_params =
+            HealthProbeParams::from_map(map).map_err(|source| probe_error(&source))?;
         let entry = Arc::clone(&self.entry);
         let probe_mode = mode.map(str::to_owned);
         let prompt = SELF_PROMPT.to_owned();
@@ -101,7 +102,7 @@ impl ConnectionProbe for EntryProbe {
                 .check_health(probe_params, probe_mode, Some(prompt), Some(input))
                 .await
         };
-        timed_probe(check, self.timeout).await
+        Box::pin(timed_probe(check, self.timeout)).await
     }
 }
 
@@ -122,8 +123,9 @@ where
 fn outcome_object(outcome: HealthCheckOutcome) -> Result<JsonObject, ConnectionProbeError> {
     match outcome {
         HealthCheckOutcome::Healthy(response) => {
-            let encoded = serde_json::to_value(&response).map_err(encode_error)?;
-            serde_json::from_value(encoded).map_err(encode_error)
+            let encoded =
+                serde_json::to_value(&response).map_err(|source| encode_error(&source))?;
+            serde_json::from_value(encoded).map_err(|source| encode_error(&source))
         }
         HealthCheckOutcome::Failed(failure) => failure_object(&failure),
     }
@@ -137,8 +139,11 @@ fn failure_object(failure: &HealthCheckFailure) -> Result<JsonObject, Connection
     if !missing_mode {
         let raw = match &failure.raw_request {
             Some(record) => {
-                let encoded = serde_json::to_value(record).map_err(encode_error)?;
-                Json::Object(serde_json::from_value(encoded).map_err(encode_error)?)
+                let encoded =
+                    serde_json::to_value(record).map_err(|source| encode_error(&source))?;
+                Json::Object(
+                    serde_json::from_value(encoded).map_err(|source| encode_error(&source))?,
+                )
             }
             None => Json::Null,
         };
@@ -153,13 +158,13 @@ fn timeout_object() -> JsonObject {
     result
 }
 
-fn encode_error(source: serde_json::Error) -> ConnectionProbeError {
+fn encode_error(source: &serde_json::Error) -> ConnectionProbeError {
     ConnectionProbeError {
         message: source.to_string(),
     }
 }
 
-fn probe_error(source: HealthProbeError) -> ConnectionProbeError {
+fn probe_error(source: &HealthProbeError) -> ConnectionProbeError {
     ConnectionProbeError {
         message: source.to_string(),
     }
