@@ -1,71 +1,30 @@
 task: B8599
 deviations:
-  - what: >-
-      POST /invitation/new answers with the plain error text, not Python's str() of the
-      {"error": ...} detail dict that handle_exception_on_proxy puts in the message.
-    why: >-
-      docs/compatibility.md does not port Python repr or str text. The status, the
-      internal_server_error type and the null param stay as LiteLLM has them.
+  - what: 'POST /invitation/new answers the plain error text, not Python str() of the {"error": ...} dict.'
+    why: 'docs/compatibility.md does not port Python repr or str text; status, internal_server_error type and null param stay.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8218-L8225
-  - what: >-
-      POST /invitation/update and POST /invitation/delete answer 400 with "Invitation id
-      does not exist in the database." when the row is gone.
-    why: >-
-      LiteLLM lets Prisma's P2025 escape the endpoint, so the client gets a bare 500. An
-      unknown id is a 4xx, and no working setup can rely on that 500; the info route
-      already answers the same 400 for a missing row.
+  - what: 'POST /invitation/update and /invitation/delete answer 400 "Invitation id does not exist in the database." for a missing row.'
+    why: "LiteLLM lets Prisma's P2025 escape as a bare 500; an unknown id is a 4xx, and the info route already answers that 400."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17859-L17876
-  - what: >-
-      A queued request whose priority is absent, not an integer, or outside 0..=255
-      answers 400 "Authentication Error, the request carries no priority between 0 and 255"
-      before it is scheduled.
-    why: >-
-      betterlite's FlowItem carries a u8 priority, so those values have no representation.
-      LiteLLM passes the value through and only fails when it is missing, from the Python
-      call signature.
+  - what: 'A queued request whose priority is missing, not an integer or outside 0..=255 answers 400 "Authentication Error, the request carries no priority between 0 and 255" before it is scheduled.'
+    why: "betterlite's FlowItem carries a u8 priority, so those values have no representation; LiteLLM passes them through and fails only on a missing value."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4395-L4414
-  - what: A full local scheduler queue answers 429 carrying the scheduler's own message.
-    why: >-
-      LiteLLM's scheduler has no bound on pending requests. betterlite's RequestScheduler
-      refuses the request past 1024 pending entries, and a full queue is a 429, not the 400
-      every other scheduling failure gets.
+  - what: 'A full local scheduler queue answers 429 with the scheduler message.'
+    why: "LiteLLM's scheduler is unbounded; betterlite refuses past 1024 pending entries and a full queue is a 429, not the 400 every other scheduling failure gets."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4414
-  - what: >-
-      metadata.user_api_key and metadata.user_api_key_hash carry the stored key hash when
-      the caller presented an sk- key.
-    why: >-
-      betterlite's auth hashes api_key and token before the route sees them, and the route
-      copies the stored value, which is what LiteLLM's key record holds as api_key.
+  - what: 'metadata.user_api_key and metadata.user_api_key_hash carry the stored key hash for an sk- key.'
+    why: 'auth hashes api_key and token before the route sees them, and the stored hash is what LiteLLM keeps in its key record as api_key.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1615
-  - what: >-
-      Duplicate request headers are joined with ", " and a non-UTF8 header value is skipped
-      in metadata.headers and proxy_server_request.headers.
-    why: >-
-      Python's dict(request.headers) keeps one value per name; betterlite keeps every value
-      the wire carried and folds repeats, so no header the request sent is lost.
+  - what: 'Duplicate request headers are joined with ", " and a non-UTF8 value is skipped in metadata.headers and proxy_server_request.headers.'
+    why: "Python's dict(request.headers) keeps one value per name; betterlite keeps every value the wire carried and folds repeats."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L377-L381
-  - what: >-
-      The first-byte keepalive on /queue/chat/completions uses the global
-      sse_keepalive_ping_interval_seconds; a deployment's keepalive_seconds is not read.
-    why: >-
-      The route's completion port exposes a healthy-deployment count and the call, not the
-      router's deployment list, so the per-deployment override cannot be resolved here.
+  - what: 'The first-byte keepalive on /queue/chat/completions reads the global sse_keepalive_ping_interval_seconds, not a deployment keepalive_seconds.'
+    why: "The completion port exposes a healthy-deployment count and the call, not the router's deployment list, so the per-deployment override cannot be resolved here."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1136-L1144
 kept_bugs:
-  - what: >-
-      The queued route copies LiteLLM's habit of placing the caller's key (here its stored
-      hash) into metadata.user_api_key and metadata.user_api_key_hash, which reaches
-      callback and spend logs.
-    why: >-
-      LiteLLM does this on purpose so logging callbacks can attribute spend to the key, and
-      a working setup relies on the field. It leaks a stable key identifier into every log
-      that records request metadata.
+  - what: 'The queued route copies LiteLLM by placing the key (here its stored hash) into metadata.user_api_key and metadata.user_api_key_hash, which reaches callback and spend logs.'
+    why: 'LiteLLM does it so logging callbacks attribute spend to the key and a working setup relies on the field; it leaks a stable key identifier into every log.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1615
-  - what: >-
-      Every failure of POST /invitation/new, a validation failure included, arrives as an
-      internal_server_error ProxyException.
-    why: >-
-      LiteLLM wraps the whole handler in handle_exception_on_proxy, so a client cannot tell
-      a 400 for a bad role from a server fault by the error type. Copied because callers
-      may switch on the type.
+  - what: 'Every failure of POST /invitation/new, a validation failure included, arrives as an internal_server_error ProxyException.'
+    why: 'LiteLLM wraps the handler in handle_exception_on_proxy, so a client cannot tell a bad-role 400 from a server fault by the type; copied because callers may switch on it.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17766-L17774
