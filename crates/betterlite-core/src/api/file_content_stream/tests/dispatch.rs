@@ -8,11 +8,9 @@ use super::*;
 async fn buffered_content_dispatch_compatible(#[case] provider: &str) {
     let env = Env::default();
     let resolution = env.resolution();
-    let settings = Settings {
-        openai_api_key: Some(SecretString::from("sk-settings")),
-        openai_organization: Some(String::from("org-settings")),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.openai_api_key = Some(SecretString::from("sk-settings"));
+    settings.openai_organization = Some(String::from("org-settings"));
     let read = service(&resolution, settings, &[]);
     let mut kwargs = ContentKwargs::default();
     kwargs.max_retries = Some(4);
@@ -52,11 +50,9 @@ async fn buffered_content_dispatch_compatible(#[case] provider: &str) {
 async fn buffered_content_dispatch_azure() {
     let env = Env::default();
     let resolution = env.resolution();
-    let settings = Settings {
-        azure_api_key: Some(SecretString::from("sk-azure")),
-        azure_api_version: Some(String::from("2024-06-01")),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.azure_api_key = Some(SecretString::from("sk-azure"));
+    settings.azure_api_version = Some(String::from("2024-06-01"));
     let read = service(&resolution, settings, &[]);
     let mut kwargs = ContentKwargs::default();
     kwargs.api_base = Some(String::from("https://azure.example"));
@@ -247,7 +243,7 @@ async fn buffered_content_dispatch_provider_errors_survive(#[case] status: u16) 
     assert!(
         matches!(&failure, FileContentError::Dispatch(FakeFailure(answered)) if *answered == status)
     );
-    assert_eq!(failure.status(), None);
+    assert_eq!(failure.bad_request().map(|_request| 400_u16), None);
     assert_eq!(sent(&read).len(), 1);
 }
 #[tokio::test]

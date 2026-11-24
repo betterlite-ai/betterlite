@@ -25,8 +25,7 @@ pub mod target;
 
 mod tests;
 
-// file_content or afile_content: afile_content's declared default provider is openai, and it is the
-// only entry that sets afile_content=true
+// afile_content declares provider openai by default and is the only entry with afile_content=true
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentEntry {
     Sync,
@@ -60,8 +59,7 @@ pub struct ContentKwargs {
     pub id: Option<String>,
 }
 
-// What only server code hands over: the trusted credential snapshot, the caller's client, the logging
-// state the generic handler logs through, and the logging object _file_content_logging_obj returns
+// Server-only inputs: trusted credentials, the caller's client, the handler's logging state and object
 pub struct ContentContext<'call, Client, Logging> {
     pub trusted: Option<&'call TrustedCredentials>,
     pub client: Option<CallerClient<'call, Client>>,
@@ -77,8 +75,7 @@ pub struct FileContentStream<'deps, Dispatch> {
     pub call_ids: fn() -> Uuid,
 }
 
-// The streamed branch's answer: the B1080 wrapper over the SDK stream, the provider's headers and the
-// exit the stream context was left in
+// The streamed answer: the B1080 wrapper, the provider's headers and the exit the stream left
 pub struct StreamedContent {
     pub response: FileContentStreamingResponse,
     pub headers: IndexMap<String, String>,

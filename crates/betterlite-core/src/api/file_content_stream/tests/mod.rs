@@ -133,16 +133,9 @@ struct Sent {
     chunk_size: Option<NonZeroUsize>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("provider status {0}")]
 struct FakeFailure(u16);
-
-impl std::fmt::Display for FakeFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "provider status {}", self.0)
-    }
-}
-
-impl std::error::Error for FakeFailure {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RecordedIdentity {
@@ -416,6 +409,32 @@ fn service<'deps>(
         resolution,
         clock: || DateTime::<FixedOffset>::parse_from_rfc3339(STARTED).unwrap(),
         call_ids: || Uuid::from_u128(1),
+    }
+}
+
+// every Settings field, named here once so a test sets only the ones it reads
+const fn default_settings() -> Settings {
+    Settings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        openai_base_url: None,
+        openai_api_base: None,
+        openai_api_key: None,
+        openai_organization: None,
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
     }
 }
 

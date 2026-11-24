@@ -13,7 +13,8 @@ use crate::api::vector_store_http_write::service::SuppliedClient;
 use super::error::FileContentError;
 use super::plan::{Plan, content_timeout, known_provider, resolved_provider};
 use super::target::{
-    AzureContent, CallerClient, CompatibleContent, ContentLogger, ContentMode, ContentOperation,
+    CallerClient, ContentLogger, ContentMode, ContentOperation, ContentTarget, GenericContent,
+    NewLogger, SuppliedSdk, XaiBatchContent,
 };
 use super::{
     ContentAnswer, ContentCall, ContentContext, ContentEntry, ContentKwargs, FileContentStream,
@@ -29,8 +30,7 @@ impl<Dispatch> FileContentStream<'_, Dispatch>
 where
     Dispatch: FileContentDispatch,
 {
-    // file_content, with afile_content as its asynchronous entry: the timeout, the model hint, then the
-    // streaming predicate before any provider branch
+    // file_content and afile_content: timeout, model hint, streaming predicate, then the provider branch
     pub async fn run<'call>(
         &self,
         entry: ContentEntry,

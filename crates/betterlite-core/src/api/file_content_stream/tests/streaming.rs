@@ -361,7 +361,7 @@ async fn sdk_stream_selection_sync_vertex_rejects_the_placeholder() {
     assert_eq!(placeholder.method, "FILE_CONTENT");
     assert_eq!(placeholder.llm_provider, "vertex_ai");
     assert_eq!(placeholder.url, "https://github.com/BerriAI/litellm");
-    assert_eq!(failure.status(), Some(400));
+    assert_eq!(failure.bad_request().map(|_request| 400_u16), Some(400));
     assert_eq!(sent(&read), Vec::new());
 }
 
@@ -394,7 +394,7 @@ async fn sdk_stream_selection_unreachable_helper_branch_is_still_built() {
         failure.to_string(),
         "LiteLLM doesn't support cohere for streaming 'file_content'. Supported providers are ['hosted_vllm', 'litellm_proxy', 'openai', 'vertex_ai']."
     );
-    assert_eq!(failure.status(), Some(400));
+    assert_eq!(failure.bad_request().map(|_request| 400_u16), Some(400));
     assert_eq!(sent(&read), Vec::new());
 
     let unconfigured = service(&resolution, Settings::default(), &[]);

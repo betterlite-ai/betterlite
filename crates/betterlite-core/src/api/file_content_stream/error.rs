@@ -51,8 +51,7 @@ impl<DispatchError> FileContentError<DispatchError>
 where
     DispatchError: Error + 'static,
 {
-    // Only the three rejected-provider branches carry LiteLLM's synthesized 400; a bad timeout or
-    // provider name is a ValueError, and a provider failure keeps its own status.
+    // Only rejected-provider branches carry the synthesized 400; a bad timeout or name is a ValueError
     #[must_use]
     pub fn bad_request(&self) -> Option<BadRequest<'_>> {
         let (llm_provider, method) = match self {
@@ -71,10 +70,5 @@ where
             method,
             url: UNSUPPORTED_URL,
         })
-    }
-
-    #[must_use]
-    pub fn status(&self) -> Option<u16> {
-        self.bad_request().map(|_request| 400_u16)
     }
 }

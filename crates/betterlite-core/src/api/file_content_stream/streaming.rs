@@ -31,8 +31,7 @@ impl<Dispatch> FileContentStream<'_, Dispatch>
 where
     Dispatch: FileContentDispatch,
 {
-    // file_content_streaming: the logging identity is written before the provider branch, and the
-    // returned iterator is wrapped by B1080
+    // file_content_streaming: write the identity, then the provider branch; B1080 wraps the iterator
     pub(super) async fn streamed<'call>(
         &self,
         call: &ContentCall<'call>,
@@ -55,7 +54,10 @@ where
         };
         let provider_name = provider.clone().unwrap_or_else(|| String::from("None"));
         logging.record_identity(&StreamIdentity {
-            model: normalized_model(call.model),
+            model: call
+                .model
+                .filter(|name| !name.is_empty())
+                .unwrap_or_default(),
             custom_llm_provider: &provider_name,
             api_base: call.kwargs.api_base.as_deref(),
         });
@@ -102,7 +104,10 @@ where
                 target,
                 ContentOperation::Streamed {
                     request: &request,
-                    chunk_size: stream_chunk_size(call.chunk_size),
+                    // httpx iter_bytes(chunk_size=0) raises, so a zero or unrepresentable size takes the default
+                    chunk_size: usize::try_from(call.chunk_size)
+                        .ok()
+                        .and_then(NonZeroUsize::new),
                 },
             )
             .await
@@ -131,16 +136,6 @@ where
             exit,
         })))
     }
-}
-
-// httpx iter_bytes(chunk_size=0) never advances, so a zero or unrepresentable size takes the SDK default
-fn stream_chunk_size(chunk_size: u64) -> Option<NonZeroUsize> {
-    usize::try_from(chunk_size).ok().and_then(NonZeroUsize::new)
-}
-
-// model or "", the value the logging object's model and its model_call_details["model"] both receive
-fn normalized_model(model: Option<&str>) -> &str {
-    model.filter(|name| !name.is_empty()).unwrap_or_default()
 }
 
 struct ContentClock(fn() -> DateTime<FixedOffset>);

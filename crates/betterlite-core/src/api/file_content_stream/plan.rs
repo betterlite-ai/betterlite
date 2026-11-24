@@ -107,8 +107,7 @@ pub(super) fn resolved_provider(
     }
 }
 
-// optional_params.timeout or request_timeout or 600, where zero and empty fall through; an httpx.Timeout
-// keeps its phases only for openai, azure and bedrock and otherwise reduces to its read phase or 600
+// timeout, then request_timeout, then 600; structured phases only for openai, azure and bedrock
 pub(super) fn content_timeout<DispatchError>(
     kwargs: &ContentKwargs,
     provider: Option<&str>,

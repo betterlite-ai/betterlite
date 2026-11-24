@@ -54,15 +54,16 @@ async fn file_content_defaults_sync_provider_is_none() {
         FileContentError::UnknownProvider { provider } if provider == "None"
     ));
     assert_eq!(failure.to_string(), "None is not a valid LlmProviders");
-    assert_eq!(failure.status(), None);
+    assert_eq!(failure.bad_request().map(|_request| 400_u16), None);
     assert_eq!(sent(&read), Vec::new());
 }
 
 #[tokio::test]
 async fn file_content_defaults_model_resolution_renames_the_provider() {
     let env = Env {
+        catalog: ModelCatalog::default(),
         names: BTreeSet::from([String::from("openai")]),
-        ..Env::default()
+        environment: BTreeMap::new(),
     };
     let resolution = env.resolution();
     let read = reader(&resolution);
@@ -251,6 +252,6 @@ async fn file_content_defaults_bad_text_fails_before_the_provider(#[case] provid
         .await
         .unwrap_err();
     assert!(matches!(&failure, FileContentError::Timeout(_)));
-    assert_eq!(failure.status(), None);
+    assert_eq!(failure.bad_request().map(|_request| 400_u16), None);
     assert_eq!(sent(&read), Vec::new());
 }

@@ -25,7 +25,7 @@ async fn unsupported_file_content() {
     assert_eq!(placeholder.body, "Unsupported provider");
     assert_eq!(placeholder.method, "CREATE_THREAD");
     assert_eq!(placeholder.url, "https://github.com/BerriAI/litellm");
-    assert_eq!(failure.status(), Some(400));
+    assert_eq!(failure.bad_request().map(|_request| 400_u16), Some(400));
     assert_eq!(sent(&read), Vec::new());
 }
 
@@ -45,7 +45,7 @@ async fn unsupported_file_content_unknown_provider_text() {
         FileContentError::UnknownProvider { provider } if provider == "'bogus'"
     ));
     assert_eq!(failure.to_string(), "'bogus' is not a valid LlmProviders");
-    assert_eq!(failure.status(), None);
+    assert_eq!(failure.bad_request().map(|_request| 400_u16), None);
     assert_eq!(sent(&read), Vec::new());
 }
 

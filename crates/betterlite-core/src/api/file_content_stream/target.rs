@@ -23,8 +23,7 @@ pub struct ContentMode {
     pub timeout: FineTuningTimeout,
 }
 
-// The OpenAI SDK classes a caller may hand over; the two Azure classes are separate so only the
-// OpenAI ones reach compatible streaming
+// The OpenAI SDK client classes; only the OpenAI one reaches compatible streaming
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SuppliedSdk {
     OpenAi,
