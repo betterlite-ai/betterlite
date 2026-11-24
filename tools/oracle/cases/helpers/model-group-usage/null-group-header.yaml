@@ -1,0 +1,35 @@
+kind: helper
+name: null-group-header
+call:
+  model_group_usage:
+    {
+      "function": "response",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/gpt-4o"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group": null,
+      "now": 3660,
+      "group_info": null,
+      "cache": {
+        "mode": "missing",
+        "values": []
+      },
+      "response": {
+        "id": "r"
+      },
+      "request_kwargs": null,
+      "metadata": null,
+      "litellm_metadata": null,
+      "team_id": null,
+      "candidates": null
+    }
+env: {}
+compare: {ignore: []}
