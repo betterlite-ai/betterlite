@@ -21,7 +21,8 @@ pub(super) fn handle(
     input: &BatchCreationInput<'_>,
     call_log: &mut LoggingState,
 ) -> Result<BatchCreationLogged, AnthropicBatchError> {
-    let body = parse_body(input.body)?;
+    let body: Json = serde_json::from_slice(input.body)
+        .map_err(|source| AnthropicBatchError::Parse { source })?;
     if !success_status(input.status_code, &body)? {
         let response_id = logging.ids.new_response_id();
         return Ok(creation_failed(
@@ -51,12 +52,6 @@ pub(super) fn handle(
         response_id: logging.ids.new_response_id(),
     };
     Ok(success_logged(input, &fields, call_log))
-}
-
-fn parse_body(body: &[u8]) -> Result<Json, AnthropicBatchError> {
-    let parsed: Json =
-        serde_json::from_slice(body).map_err(|source| AnthropicBatchError::Parse { source })?;
-    Ok(parsed)
 }
 
 fn success_status(status_code: u16, body: &Json) -> Result<bool, AnthropicBatchError> {

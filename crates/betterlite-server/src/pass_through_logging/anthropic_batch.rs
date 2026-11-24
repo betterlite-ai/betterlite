@@ -221,13 +221,12 @@ impl AnthropicBatchLogging {
             tracing::warn!("Router not available, using model name: {model_name}");
             return model_name.to_owned();
         };
-        let model_ids = router.model_ids(model_name);
-        let Some(model_id) = model_ids.first() else {
+        let Some(model_id) = router.model_ids(model_name).into_iter().next() else {
             tracing::warn!("Model not found in router, using model name: {model_name}");
             return model_name.to_owned();
         };
         tracing::info!("Found model ID in router: {model_id}");
-        model_id.clone()
+        model_id
     }
 }
 
