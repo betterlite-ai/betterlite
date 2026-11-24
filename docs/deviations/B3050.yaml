@@ -15,4 +15,7 @@ deviations:
   - what: A metadata.priority that is present but not a JSON string counts as no priority, so the default weight 1 applies. A JSON list or object makes LiteLLM's `priority not in litellm.priority_reservation` raise TypeError and fail the whole check open to five Nones; a number or bool is merely not found there, and both sides then keep weight 1.
     why: LiteLLM documents the priority as a string, so a working configuration never stores another type, and betterlite reads metadata as untyped JSON rather than reproducing Python's hashability rule.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L197
+  - what: The limit arithmetic runs in i64. A finite share past the i64 range stops at i64::MAX when positive and at i64::MIN when negative, which the clamp then zeroes, and total minus current saturates where Python would keep the larger integer.
+    why: Betterlite carries router limits and usage counts as i64 throughout, so a share beyond that range cannot be represented; the positive case carries the largest number a header can hold and the negative case still clamps to zero exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L136-L168
 kept_bugs: []
