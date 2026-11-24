@@ -278,6 +278,7 @@ def test_optional_matches_litellm() -> None:
 def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert session_settings() == "{}"
     snapshot = SettingsSnapshot(
         {"api_key": GOOD_KEY, "vertex_project": None, "vertex_location": None}
     )
