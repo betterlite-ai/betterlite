@@ -145,13 +145,15 @@ fn entry_capabilities(
     }
     let parallel = matched
         .and_then(|fields| fields.capabilities.tooling.supports_parallel_calls)
-        .or(bare.and_then(|fields| fields.capabilities.tooling.supports_parallel_calls));
+        .or_else(|| bare.and_then(|fields| fields.capabilities.tooling.supports_parallel_calls));
     if parallel == Some(true) {
         capabilities.insert(OpenAiCapability::ParallelToolCalls);
     }
     let none_effort = matched
         .and_then(|fields| fields.capabilities.reasoning.supports_none_reasoning_effort)
-        .or(bare.and_then(|fields| fields.capabilities.reasoning.supports_none_reasoning_effort));
+        .or_else(|| {
+            bare.and_then(|fields| fields.capabilities.reasoning.supports_none_reasoning_effort)
+        });
     if none_effort == Some(true) {
         capabilities.insert(OpenAiCapability::NoneReasoningEffort);
     }
