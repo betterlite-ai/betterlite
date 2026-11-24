@@ -6,7 +6,7 @@ deviations:
   - what: The token-endpoint form POST also sends Accept application/json.
     why: LiteLLM's post_form sends only the client-auth headers and relies on httpx's form content type. Asking for JSON states what the reply is parsed as and changes nothing an IdP is required to do.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L200-L205
-  - what: A reply body over the pooled client's size cap is Unreachable (detail BodyTooLarge) instead of being read in full.
+  - what: A reply body over the pooled client's size cap is Unreachable instead of being read in full.
     why: LiteLLM's httpx edge reads any body size; the bounded-inputs rule and B173's pool cap every outbound reply.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L221-L225
   - what: A 2xx body that is not a JSON object, whether it failed to parse or parsed to a non-object, is one Unavailable with the detail "the IdP token endpoint returned a non-object response".
