@@ -4,7 +4,7 @@ config: |-
     - model_name: ui-router
       litellm_params:
         model: auto_router/complexity_router
-        complexity_router_default_model: ui-model
+        # LiteLLM derives the default from the MEDIUM tier; betterlite refuses complexity_router_default_model
         complexity_router_config:
           tiers:
             SIMPLE: ui-model
