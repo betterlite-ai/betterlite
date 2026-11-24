@@ -13,23 +13,12 @@ use crate::sections::mcp_tools::{
     McpToolEntry, McpToolSettings, McpToolsError, McpToolsSection, decode_mcp_tools,
 };
 
-fn section(source: &str, lookup: &[(&str, &str)]) -> McpToolsSection {
-    ConfigLoader {
+fn load(source: &str, lookup: &[(&str, &str)]) -> Result<McpToolsSection, ConfigError> {
+    let config = ConfigLoader {
         lookup: populated(lookup),
     }
-    .load(source)
-    .unwrap()
-    .sections
-    .mcp_tools
-}
-
-fn load_error(source: &str, lookup: &[(&str, &str)]) -> ConfigError {
-    ConfigLoader {
-        lookup: populated(lookup),
-    }
-    .load(source)
-    .err()
-    .unwrap()
+    .load(source)?;
+    Ok(config.sections.mcp_tools)
 }
 
 fn populated(lookup: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -51,15 +40,16 @@ fn only_tool(loaded: &McpToolsSection) -> &McpToolSettings {
 #[case::null("mcp_tools: null\n")]
 #[case::empty_list("mcp_tools: []\n")]
 fn absent_or_empty_gives_no_entries(#[case] source: &str) {
-    assert!(section(source, &[]).entries.is_empty());
+    assert!(load(source, &[]).unwrap().entries.is_empty());
 }
 
 #[test]
 fn reads_a_tool_entry() {
-    let loaded = section(
+    let loaded = load(
         "mcp_tools:\n  - name: my_tool\n    description: A tool\n    input_schema:\n      type: object\n      properties:\n        x: {type: string}\n    handler: module.fn\n",
         &[],
-    );
+    )
+    .unwrap();
     let tool = only_tool(&loaded);
     assert_eq!(tool.name.as_deref(), Some("my_tool"));
     assert_eq!(tool.description.as_deref(), Some("A tool"));
@@ -89,7 +79,7 @@ fn reads_a_tool_entry() {
 
 #[test]
 fn resolves_environment_references() {
-    let loaded = section(
+    let loaded = load(
         "mcp_tools:\n  - name: os.environ/MCP_TOOL\n    description: os.environ/MCP_DESCRIPTION\n    handler: os.environ/MCP_HANDLER\n    input_schema:\n      type: object\n      properties:\n        city:\n          type: os.environ/MCP_TYPE\n",
         &[
             ("MCP_TOOL", "weather"),
@@ -97,7 +87,8 @@ fn resolves_environment_references() {
             ("MCP_HANDLER", "module.weather"),
             ("MCP_TYPE", "string"),
         ],
-    );
+    )
+    .unwrap();
     let tool = only_tool(&loaded);
     assert_eq!(tool.name.as_deref(), Some("weather"));
     assert_eq!(tool.description.as_deref(), Some("Weather tool"));
@@ -113,10 +104,11 @@ fn resolves_environment_references() {
 
 #[test]
 fn reports_an_unset_environment_reference() {
-    let ConfigError::MissingEnvironment { variable, path } = load_error(
+    let ConfigError::MissingEnvironment { variable, path } = load(
         "mcp_tools:\n  - name: os.environ/MCP_TOOL\n    description: d\n    handler: h\n",
         &[],
-    ) else {
+    )
+    .unwrap_err() else {
         panic!("expected a missing environment error");
     };
     assert_eq!(variable, "MCP_TOOL");
@@ -125,10 +117,12 @@ fn reports_an_unset_environment_reference() {
 
 #[test]
 fn reports_an_unset_environment_reference_inside_the_schema() {
-    let ConfigError::MissingEnvironment { variable, path } = load_error(
+    let ConfigError::MissingEnvironment { variable, path } = load(
         "mcp_tools:\n  - name: first\n    description: d\n    handler: h\n    input_schema:\n      properties:\n        city:\n          type: os.environ/MCP_TYPE\n",
         &[],
-    ) else {
+    )
+    .unwrap_err()
+    else {
         panic!("expected a missing environment error");
     };
     assert_eq!(variable, "MCP_TYPE");
@@ -137,10 +131,11 @@ fn reports_an_unset_environment_reference_inside_the_schema() {
 
 #[test]
 fn leaves_scalar_list_items_unresolved() {
-    let loaded = section(
+    let loaded = load(
         "mcp_tools:\n  - name: first\n    description: d\n    handler: h\n    input_schema:\n      anyOf:\n        - {type: os.environ/MCP_TYPE}\n        - plain\n      enum: [os.environ/LEFT_ALONE]\n",
         &[("MCP_TYPE", "string")],
-    );
+    )
+    .unwrap();
     let tool = only_tool(&loaded);
     let Some(Json::List(items)) = tool.input_schema.get("anyOf") else {
         panic!("expected an anyOf list");
@@ -164,10 +159,11 @@ fn leaves_scalar_list_items_unresolved() {
 
 #[test]
 fn keeps_non_mapping_entries() {
-    let loaded = section(
+    let loaded = load(
         "mcp_tools:\n  - name: first\n    description: d\n    handler: h\n  - just a string\n  - 5\n  - null\n  - [a]\n",
         &[],
-    );
+    )
+    .unwrap();
     let kinds: Vec<bool> = loaded
         .entries
         .iter()
@@ -181,7 +177,7 @@ fn keeps_non_mapping_entries() {
 #[case::null("mcp_tools:\n  - {name: first, description: d, handler: h, input_schema: null}\n", &[])]
 #[case::object("mcp_tools:\n  - name: first\n    description: d\n    handler: h\n    input_schema:\n      type: object\n", &["type"])]
 fn reads_the_input_schema(#[case] source: &str, #[case] keys: &[&str]) {
-    let loaded = section(source, &[]);
+    let loaded = load(source, &[]).unwrap();
     let tool = only_tool(&loaded);
     assert_eq!(
         tool.input_schema
@@ -194,10 +190,11 @@ fn reads_the_input_schema(#[case] source: &str, #[case] keys: &[&str]) {
 
 #[test]
 fn ignores_unknown_entry_keys() {
-    let loaded = section(
+    let loaded = load(
         "mcp_tools:\n  - name: first\n    description: d\n    handler: h\n    enabled: true\n    extra: {a: 1}\n",
         &[],
-    );
+    )
+    .unwrap();
     let tool = only_tool(&loaded);
     assert_eq!(tool.name.as_deref(), Some("first"));
 }
@@ -208,7 +205,7 @@ fn ignores_unknown_entry_keys() {
 #[case::number("mcp_tools: 5\n", false)]
 #[case::boolean("mcp_tools: true\n", true)]
 fn rejects_a_top_level_that_is_not_a_list(#[case] source: &str, #[case] value: bool) {
-    let ConfigError::InvalidScalar { path, value: found } = load_error(source, &[]) else {
+    let ConfigError::InvalidScalar { path, value: found } = load(source, &[]).unwrap_err() else {
         panic!("expected an invalid scalar for mcp_tools");
     };
     assert_eq!(path, "mcp_tools");
@@ -231,7 +228,7 @@ fn rejects_a_top_level_that_is_not_a_list(#[case] source: &str, #[case] value: b
 )]
 #[case::second_entry("mcp_tools:\n  - name: first\n  - name: [x]\n", "mcp_tools[1].name")]
 fn rejects_a_wrong_field_type(#[case] source: &str, #[case] path: &str) {
-    let ConfigError::InvalidScalar { path: found, .. } = load_error(source, &[]) else {
+    let ConfigError::InvalidScalar { path: found, .. } = load(source, &[]).unwrap_err() else {
         panic!("expected an invalid scalar naming the field");
     };
     assert_eq!(found, path);

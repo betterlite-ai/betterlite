@@ -50,7 +50,8 @@ impl Section for Raw {
         let Some(config) = self.mcp_tools else {
             return Ok(McpToolsSection::default());
         };
-        let values = match *config {
+        // LiteLLM resolves the whole config before it reads mcp_tools, so the references here go first
+        let values = match resolved_json(&config, KEY, lookup)? {
             Json::List(values) => values,
             Json::Null => return Ok(McpToolsSection::default()),
             other @ (Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
@@ -60,66 +61,38 @@ impl Section for Raw {
         let entries = values
             .into_iter()
             .enumerate()
-            .map(|(index, entry)| entry_settings(entry, index, lookup))
+            .map(|(index, entry)| entry_settings(entry, index))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(McpToolsSection { entries })
     }
 }
 
-fn entry_settings<L>(entry: Json, index: usize, lookup: &L) -> Result<McpToolEntry, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn entry_settings(entry: Json, index: usize) -> Result<McpToolEntry, ConfigError> {
     let Json::Object(fields) = entry else {
         return Ok(McpToolEntry::NotAMapping);
     };
+    let input_schema = match fields.get("input_schema") {
+        None | Some(Json::Null) => IndexMap::new(),
+        Some(Json::Object(schema)) => schema.clone(),
+        Some(other) => {
+            return Err(scalar_error(&format!("{KEY}[{index}].input_schema"), other));
+        }
+    };
     Ok(McpToolEntry::Tool(McpToolSettings {
-        name: optional_text(fields.get("name"), &format!("{KEY}[{index}].name"), lookup)?,
+        name: optional_text(fields.get("name"), &format!("{KEY}[{index}].name"))?,
         description: optional_text(
             fields.get("description"),
             &format!("{KEY}[{index}].description"),
-            lookup,
         )?,
-        input_schema: schema(
-            fields.get("input_schema"),
-            &format!("{KEY}[{index}].input_schema"),
-            lookup,
-        )?,
-        handler: optional_text(
-            fields.get("handler"),
-            &format!("{KEY}[{index}].handler"),
-            lookup,
-        )?,
+        input_schema,
+        handler: optional_text(fields.get("handler"), &format!("{KEY}[{index}].handler"))?,
     }))
 }
 
-fn optional_text<L>(
-    value: Option<&Json>,
-    path: &str,
-    lookup: &L,
-) -> Result<Option<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn optional_text(value: Option<&Json>, path: &str) -> Result<Option<String>, ConfigError> {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(resolve_string(text.clone(), path, lookup)?)),
-        Some(other) => Err(scalar_error(path, other)),
-    }
-}
-
-// null reads as the default empty schema, so a mapping keeps only an object here
-fn schema<L>(
-    value: Option<&Json>,
-    path: &str,
-    lookup: &L,
-) -> Result<IndexMap<String, Json>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match value {
-        None | Some(Json::Null) => Ok(IndexMap::new()),
-        Some(Json::Object(fields)) => resolved_fields(fields, path, lookup),
+        Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(other) => Err(scalar_error(path, other)),
     }
 }
@@ -152,9 +125,10 @@ where
         Json::Object(fields) => Ok(Json::Object(resolved_fields(fields, path, lookup)?)),
         Json::List(items) => {
             let mut resolved = Vec::with_capacity(items.len());
-            for item in items {
+            for (index, item) in items.iter().enumerate() {
                 if let Json::Object(fields) = item {
-                    resolved.push(Json::Object(resolved_fields(fields, path, lookup)?));
+                    let item_path = format!("{path}[{index}]");
+                    resolved.push(Json::Object(resolved_fields(fields, &item_path, lookup)?));
                 } else {
                     resolved.push(item.clone());
                 }

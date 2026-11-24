@@ -49,7 +49,9 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L112
   - what: >-
       An os.environ reference that no environment value resolves is a config error naming the
-      variable and the field, for name, description, handler and the strings inside input_schema.
+      variable and the field. The whole mcp_tools value is resolved before any entry is read, as
+      LiteLLM resolves the whole config, so this covers name, description, handler and every
+      string inside input_schema.
     why: >-
       LiteLLM resolves references through get_secret, which returns None for an unset variable: an
       unresolved name, description or handler makes the entry skip silently, and an unresolved
