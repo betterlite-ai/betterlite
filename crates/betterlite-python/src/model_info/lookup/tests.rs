@@ -157,6 +157,104 @@ fn model_info_lookup_reads_gpt_5_flags_from_a_runtime_entry() {
 }
 
 #[test]
+fn model_info_lookup_reads_capability_flags_from_a_prefixed_runtime_entry() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/o3":{"litellm_provider":"openai","mode":"chat","max_tokens":100000,"supports_function_calling":false,"supports_response_schema":true,"supports_tool_choice":true}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/o3")))
+            .unwrap(),
+    ));
+    assert!(!parameters.iter().any(|name| name == "tools"));
+    assert!(!parameters.iter().any(|name| name == "tool_choice"));
+    assert!(!parameters.iter().any(|name| name == "function_call"));
+    assert!(!parameters.iter().any(|name| name == "functions"));
+    assert!(parameters.iter().any(|name| name == "reasoning_effort"));
+    assert!(parameters.iter().any(|name| name == "response_format"));
+}
+
+#[test]
+fn model_info_lookup_reads_a_prefixed_entry_for_the_inferred_provider() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/o3":{"litellm_provider":"openai","supports_function_calling":false}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("o3")))
+            .unwrap(),
+    ));
+    assert!(!parameters.iter().any(|name| name == "tools"));
+    assert!(parameters.iter().any(|name| name == "response_format"));
+}
+
+#[test]
+fn model_info_lookup_falls_back_to_the_bare_entry_for_a_missing_flag() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/o3":{"litellm_provider":"openai","mode":"chat","max_tokens":100000}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/o3")))
+            .unwrap(),
+    ));
+    assert!(parameters.iter().any(|name| name == "tools"));
+    assert!(parameters.iter().any(|name| name == "tool_choice"));
+    assert!(parameters.iter().any(|name| name == "response_format"));
+}
+
+#[test]
+fn model_info_lookup_skips_a_prefixed_entry_for_another_provider() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/o3":{"litellm_provider":"azure","mode":"chat","max_tokens":100000,"supports_function_calling":false}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let openai_query = ModelQuery {
+        model: "o3".to_owned(),
+        custom_llm_provider: Some("openai".to_owned()),
+        api_base: None,
+        api_key: None,
+    };
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &openai_query))
+            .unwrap(),
+    ));
+    assert!(parameters.iter().any(|name| name == "tools"));
+    assert!(parameters.iter().any(|name| name == "response_format"));
+}
+
+#[test]
+fn model_info_lookup_reads_gpt_5_flags_from_a_prefixed_runtime_entry() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/gpt-5":{"litellm_provider":"openai","mode":"chat","max_tokens":4096,"supports_tool_choice":false,"supports_none_reasoning_effort":true}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/gpt-5")))
+            .unwrap(),
+    ));
+    assert!(!parameters.iter().any(|name| name == "tool_choice"));
+    assert!(parameters.iter().any(|name| name == "logprobs"));
+    assert!(parameters.iter().any(|name| name == "top_p"));
+    assert!(!parameters.iter().any(|name| name == "user"));
+}
+
+#[test]
 fn model_info_lookup_resolves_a_prefixed_bedrock_id() {
     let runtime = runtime();
     let model = "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0";
@@ -298,6 +396,23 @@ fn model_info_lookup_reads_the_provider_from_a_runtime_entry() {
         &state.entries,
         "acme-probe",
         None
+    ));
+}
+
+#[test]
+fn model_info_lookup_keeps_the_explicit_provider_over_a_conflicting_entry() {
+    let runtime = runtime();
+    let entries: RuntimeEntries =
+        convert::parse(r#"{"entries":{"gpt-4":{"litellm_provider":"azure"}},"removed":[]}"#)
+            .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let state = runtime.state();
+    let resolution = runtime.resolution(&state);
+    assert!(is_openai_model(
+        &resolution,
+        &state.entries,
+        "gpt-4",
+        Some("openai"),
     ));
 }
 

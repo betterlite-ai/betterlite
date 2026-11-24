@@ -284,6 +284,42 @@ def test_sync_capability_flags() -> None:
         get_model_info("gpt-4")
 
 
+def test_sync_prefixed_capability_flags() -> None:
+    model = "o3"
+    prefixed = "openai/o3"
+    ours_entry = dict(_MODEL_INFO.validate_python(betterlite.model_cost[model]))
+    theirs_entry = dict(_MODEL_INFO.validate_python(REFERENCE_COST.model_cost[model]))
+    ours_entry["supports_function_calling"] = False
+    theirs_entry["supports_function_calling"] = False
+    betterlite.model_cost[prefixed] = ours_entry
+    REFERENCE_COST.model_cost[prefixed] = theirs_entry
+    LOOKUP.get_model_info.cache_clear()
+    try:
+        prefixed_theirs = _MODEL_INFO.validate_python(LOOKUP.get_model_info(prefixed))
+        prefixed_ours = get_model_info(prefixed)
+        assert prefixed_ours == prefixed_theirs
+        assert prefixed_ours["supports_function_calling"] is False
+        prefixed_parameters = _PARAMETER_NAMES.validate_python(
+            prefixed_ours[UNSUPPORTED_PARAMS]
+        )
+        assert "tools" not in prefixed_parameters
+        assert "tool_choice" not in prefixed_parameters
+        assert "function_call" not in prefixed_parameters
+        assert "functions" not in prefixed_parameters
+        assert "reasoning_effort" in prefixed_parameters
+        bare_theirs = _MODEL_INFO.validate_python(LOOKUP.get_model_info(model))
+        bare_ours = get_model_info(model)
+        assert bare_ours == bare_theirs
+        bare_parameters = _PARAMETER_NAMES.validate_python(bare_ours[UNSUPPORTED_PARAMS])
+        assert "tools" not in bare_parameters
+        assert "reasoning_effort" in bare_parameters
+    finally:
+        del betterlite.model_cost[prefixed]
+        del REFERENCE_COST.model_cost[prefixed]
+        LOOKUP.get_model_info.cache_clear()
+        get_model_info("gpt-4")
+
+
 def test_reporter_local_shapes(
     server: ModelMapServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
