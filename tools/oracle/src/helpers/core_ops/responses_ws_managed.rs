@@ -2,6 +2,8 @@ mod fakes;
 mod handler;
 mod support;
 
+use std::mem::take;
+
 use betterlite_core::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 use betterlite_core::api::responses_ws_managed::provider::ResponsesStreaming;
 use betterlite_core::api::responses_ws_managed::run::{FrameSource, run};
@@ -17,7 +19,7 @@ use tracing_subscriber::registry;
 
 use self::fakes::ScriptedProvider;
 use self::handler::{Captured, build_handler};
-use self::support::{QuotaRow, ScriptRow, ScriptedSource, SinkRow};
+use self::support::{QuotaRow, ScriptRow, ScriptedSource, Shared, SinkRow, lock};
 
 #[derive(Deserialize)]
 struct Setup {
@@ -50,7 +52,7 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread()
             .build()
             .map_err(|source| support::helper_error("RuntimeError", source.to_string()))?;
-        let shared = support::recorder();
+        let shared = Shared::default();
         let sink = support::socket(&shared, &input.sink);
         let provider = ScriptedProvider::new(&shared, &input.scripts);
         let source = ScriptedSource::new(&shared, &input.frames, &input.disconnect);
@@ -58,12 +60,13 @@ impl Helper for Op {
         let captured = Captured::default();
         let subscriber = registry().with(captured.clone());
         runtime.block_on(
-            answer(&shared, &captured, &mut handler, &provider, source).with_subscriber(subscriber),
+            transcript(&shared, &captured, &mut handler, &provider, source)
+                .with_subscriber(subscriber),
         )
     }
 }
 
-async fn answer<Sink, Provider, Source>(
+async fn transcript<Sink, Provider, Source>(
     shared: &support::Shared,
     captured: &Captured,
     handler: &mut ManagedResponsesWebSocket<Sink>,
@@ -77,12 +80,13 @@ where
 {
     run(handler, provider, source).await;
     let frame_rows = support::frames(shared)?;
+    let (provider_calls, quota_calls) = support::recorded(shared);
     Ok(json!({
         "frames": frame_rows,
-        "provider_calls": support::calls(shared),
-        "quota_calls": support::quotas(shared),
+        "provider_calls": provider_calls,
+        "quota_calls": quota_calls,
         "history": support::history(handler),
-        "trace": support::trace(shared),
-        "diagnostics": captured.take(),
+        "trace": json!(lock(shared).trace),
+        "diagnostics": json!(take(&mut *lock(&captured.0))),
     }))
 }

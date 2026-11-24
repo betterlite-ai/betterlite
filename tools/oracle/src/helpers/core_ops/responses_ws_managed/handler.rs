@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::mem::take;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -10,7 +9,6 @@ use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamSuccessCall, StreamSuccessDispatch,
 };
 use secrecy::SecretString;
-use serde_json::{Value, json};
 use tracing::field::Visit;
 use tracing::{Event, Field, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer};
@@ -71,14 +69,7 @@ pub(super) fn build_handler(
 }
 
 #[derive(Clone, Default)]
-pub(super) struct Captured(Arc<Mutex<Vec<String>>>);
-
-impl Captured {
-    pub(super) fn take(&self) -> Value {
-        let mut messages = lock(&self.0);
-        json!(take(&mut *messages))
-    }
-}
+pub(super) struct Captured(pub(super) Arc<Mutex<Vec<String>>>);
 
 #[derive(Default)]
 struct Message(String);

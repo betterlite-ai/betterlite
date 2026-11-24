@@ -21,7 +21,8 @@ use indexmap::IndexMap;
 use super::support::{ChunkRow, QuotaRow, RecordedCall, RecordedQuota, ScriptRow, Shared, lock};
 
 const SCRIPT_EXHAUSTED: &str = "the case scripts no further provider call";
-const BROKEN_DUMP: &str = "chunk must be a JSON object";
+// the field name the error renders as "<field> must be a JSON object"
+const BROKEN_FIELD: &str = "chunk";
 
 struct TextDump(String);
 
@@ -35,7 +36,9 @@ struct BrokenDump;
 
 impl HasModelDumpJson for BrokenDump {
     fn model_dump_json(&self) -> Result<String, SyntheticEventsError> {
-        Err(SyntheticEventsError::NotAnObject { field: BROKEN_DUMP })
+        Err(SyntheticEventsError::NotAnObject {
+            field: BROKEN_FIELD,
+        })
     }
 }
 
@@ -163,7 +166,9 @@ impl ProjectQuotaCallback for ScriptedQuota {
         }
         match self.row.kind.as_str() {
             "rate_limit" => Err(rate_limited(&self.row.message)),
-            "internal" => Err(internal_server(&self.row.message)),
+            "internal" => Err(ErrorClass::InternalServer(Box::new(context(
+                &self.row.message,
+            )))),
             _accept => Ok(()),
         }
     }
@@ -189,10 +194,6 @@ fn rate_limited(message: &str) -> ErrorClass {
         dimension: None,
         headers: BTreeMap::new(),
     }))
-}
-
-fn internal_server(message: &str) -> ErrorClass {
-    ErrorClass::InternalServer(Box::new(context(message)))
 }
 
 pub(super) struct ScriptedResolver;

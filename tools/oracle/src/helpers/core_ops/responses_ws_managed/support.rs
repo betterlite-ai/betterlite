@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use betterlite_core::api::responses_ws_history::error::FrameSinkError;
@@ -60,12 +60,11 @@ pub(super) struct RecordedQuota {
 
 pub(super) type Shared = Arc<Mutex<Recorder>>;
 
-pub(super) fn recorder() -> Shared {
-    Arc::new(Mutex::new(Recorder::default()))
-}
-
 pub(super) fn lock<Value>(shared: &Mutex<Value>) -> MutexGuard<'_, Value> {
-    shared.lock().unwrap_or_else(PoisonError::into_inner)
+    match shared.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 pub(super) struct Socket {
@@ -144,19 +143,15 @@ pub(super) fn frames(shared: &Shared) -> Result<Value, Box<HelperError>> {
     Ok(Value::Array(parsed))
 }
 
-pub(super) fn calls(shared: &Shared) -> Value {
+// the provider calls first, the quota calls second, each in the order the handler made them
+pub(super) fn recorded(shared: &Shared) -> (Value, Value) {
     let recorder = lock(shared);
-    let rows: Vec<Value> = recorder
+    let calls: Vec<Value> = recorder
         .calls
         .iter()
         .map(|call| json!({"model": call.model, "kwargs": call.kwargs}))
         .collect();
-    Value::Array(rows)
-}
-
-pub(super) fn quotas(shared: &Shared) -> Value {
-    let recorder = lock(shared);
-    let rows: Vec<Value> = recorder
+    let quotas: Vec<Value> = recorder
         .quotas
         .iter()
         .map(|quota| {
@@ -167,11 +162,7 @@ pub(super) fn quotas(shared: &Shared) -> Value {
             })
         })
         .collect();
-    Value::Array(rows)
-}
-
-pub(super) fn trace(shared: &Shared) -> Value {
-    json!(lock(shared).trace)
+    (Value::Array(calls), Value::Array(quotas))
 }
 
 pub(super) fn history<Sink: FrameSink>(handler: &ManagedResponsesWebSocket<Sink>) -> Value {
