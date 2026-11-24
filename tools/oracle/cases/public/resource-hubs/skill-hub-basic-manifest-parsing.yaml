@@ -1,0 +1,15 @@
+kind: helper
+name: resource-hubs-skill-hub-basic-manifest-parsing
+call:
+  b3194:
+    function: skill_hub
+    plugins:
+      - id: plugin-alpha
+        name: alpha
+        manifest_json: '{"source": {"source": "github", "repo": "acme/alpha"}, "version": "1.2.3", "description": "an alpha plugin", "author": {"name": "Ada", "email": "ada@example.com"}, "homepage": "https://example.com/alpha", "keywords": ["alpha", "beta"], "category": "tools", "domain": "devtools", "namespace": "acme"}'
+        enabled: true
+        created_at: null
+        updated_at: null
+    table_error: false
+env: {}
+compare: {ignore: []}
