@@ -6,8 +6,8 @@ deviations:
   - what: TextCompletionStreamWrapper.__anext__ raises StopAsyncIteration when the stream ends.
     why: LiteLLM's __anext__ raises StopIteration from inside a coroutine, which an async for loop reports as an error rather than a normal end.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7384-L7398
-  - what: A token-id prompt routed to a chat provider is refused with a bare Exception whose message starts with "Unmapped prompt format".
-    why: LiteLLM wraps the token list as a user message's content, which an OpenAI chat endpoint rejects with its own 400; betterlite refuses before the request instead of sending a body no provider accepts.
+  - what: A token-id prompt routed to a chat provider without a mock is refused with a bare Exception whose message starts with "Unmapped prompt format".
+    why: LiteLLM wraps the token list as a user message's content, which an OpenAI chat endpoint rejects with its own 400; betterlite refuses before the request instead of sending a body no provider accepts. A mock answer follows LiteLLM and answers a token prompt only for openai, azure, azure_text, text-completion-codestral and text-completion-openai.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7642-L7649
   - what: A list of token lists is sent as one prompt to the resolved provider instead of one request per prompt.
     why: LiteLLM splits that prompt only on the huggingface branch, where a thread pool calls text_completion once per element and merges the choices; betterlite does not port the huggingface text branch in this task.
