@@ -1,7 +1,7 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator, Awaitable, Coroutine, Mapping
-from typing import Final, Protocol, TypeAlias, TypedDict
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
+from typing import Final, Protocol, TypeAlias, TypeVar, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -30,6 +30,7 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 A2AClientType: TypeAlias = NativeA2aClient
+_CallResult = TypeVar("_CallResult")
 
 
 class SDKClient(Protocol): ...
@@ -38,24 +39,35 @@ class SDKClient(Protocol): ...
 class SDKRequest(Protocol): ...
 
 
-class A2AStream(Protocol):
-    def anext_chunk(self) -> Awaitable[str | None]: ...
-
-    def aclose(self) -> Awaitable[None]: ...
-
-
 class CallField(TypedDict):
     api_base: str | None
     litellm_params: dict[str, JsonValue] | None
     agent_id: str | None
-    agent_extra_headers: dict[str, str] | None
+    agent_extra_headers: dict[str, JsonValue] | None
     metadata: JsonValue
+
+
+class ClientSettings(TypedDict):
+    base_url: str
+    timeout: float
+    extra_headers: dict[str, JsonValue] | None
+    streaming: bool
+    relative_card_path: str | None
 
 
 RequestValue: TypeAlias = (
     SendMessageRequest | SendStreamingMessageRequest | Mapping[str, JsonValue] | SDKRequest | None
 )
 ClientValue: TypeAlias = A2AClientType | SDKClient | None
+
+
+async def guarded(call: Awaitable[_CallResult]) -> _CallResult:
+    answer: _CallResult
+    try:
+        answer = await call
+    except NativeA2aError as error:
+        raise_native_error(error)
+    return answer
 
 
 # The @client wrapper's logging kwargs have no Python object here; the JSON ones cross into Rust
@@ -78,24 +90,31 @@ def text_kwarg(kwargs: Mapping[str, CallValue], name: str) -> str | None:
             return None
 
 
-def request_value(request: RequestValue) -> dict[str, JsonValue] | None:
-    match request:
-        case None:
-            return None
-        case SendMessageRequest() | SendStreamingMessageRequest():
-            return request.model_dump(mode="json", exclude_none=True)
-        case dict():
-            return request
-        case object():
-            raise UnsupportedA2AArgument("request")
+def headers_value(headers: dict[str, str] | None) -> dict[str, JsonValue] | None:
+    if headers is None:
+        return None
+    values: dict[str, JsonValue] = JSON_OBJECT.validate_python(headers)
+    return values
 
 
-def native_client(client: ClientValue) -> A2AClientType | None:
+def call_values(
+    request: RequestValue,
+    client: ClientValue,
+) -> tuple[dict[str, JsonValue] | None, A2AClientType | None]:
+    text: dict[str, JsonValue] | None = None
+    if request is not None:
+        match request:
+            case SendMessageRequest() | SendStreamingMessageRequest():
+                text = request.model_dump(mode="json", exclude_none=True)
+            case dict():
+                text = request
+            case object():
+                raise UnsupportedA2AArgument("request")
+    if client is None:
+        return text, None
     match client:
-        case None:
-            return None
         case NativeA2aClient():
-            return client
+            return text, client
         case object():
             raise UnsupportedA2AArgument("a2a_client")
 
@@ -108,14 +127,15 @@ def client_settings(
     streaming: bool,
     relative_card_path: str | None,
 ) -> str:
-    settings: dict[str, JsonValue] = {
-        "base_url": base_url,
-        "timeout": timeout,
-        "extra_headers": extra_headers,
-        "streaming": streaming,
-        "relative_card_path": relative_card_path,
-    }
-    return json.dumps(settings)
+    return json.dumps(
+        ClientSettings(
+            base_url=base_url,
+            timeout=timeout,
+            extra_headers=headers_value(extra_headers),
+            streaming=streaming,
+            relative_card_path=relative_card_path,
+        )
+    )
 
 
 def call_text(
@@ -145,23 +165,19 @@ async def asend_message(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI
     agent_extra_headers: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> LiteLLMSendMessageResponse:
-    client = native_client(a2a_client)
+    request_text, client = call_values(request, a2a_client)
     fields = CallField(
         api_base=api_base,
         litellm_params=litellm_params,
         agent_id=agent_id,
-        agent_extra_headers=agent_extra_headers,
+        agent_extra_headers=headers_value(agent_extra_headers),
         metadata=json_kwarg(kwargs, "metadata"),
     )
-    text = call_text(request_value(request), fields, kwargs)
-    answer: str
-    try:
-        if client is None:
-            answer = await send_message_direct(text)
-        else:
-            answer = await client.send_message(text)
-    except NativeA2aError as error:
-        raise_native_error(error)
+    text = call_text(request_text, fields, kwargs)
+    if client is None:
+        answer = await guarded(send_message_direct(text))
+    else:
+        answer = await guarded(client.send_message(text))
     data = JSON_OBJECT.validate_json(answer)
     # the native bridge adds the private bag LiteLLM's own response dump never carries
     _ = data.pop("_hidden_params", None)
@@ -180,30 +196,22 @@ async def asend_message_streaming(  # noqa: PLR0913, PLR0917  # https://github.c
     **kwargs: CallValue,
 ) -> AsyncIterator[SendStreamingMessageResponse]:
     _ = proxy_server_request
-    client = native_client(a2a_client)
+    request_text, client = call_values(request, a2a_client)
     fields = CallField(
         api_base=api_base,
         litellm_params=litellm_params,
         agent_id=agent_id,
-        agent_extra_headers=agent_extra_headers,
+        agent_extra_headers=headers_value(agent_extra_headers),
         metadata=metadata,
     )
-    text = call_text(request_value(request), fields, kwargs)
-    stream: A2AStream
-    try:
-        if client is None:
-            stream = await send_message_streaming_direct(text)
-        else:
-            stream = await client.send_message_streaming(text)
-    except NativeA2aError as error:
-        raise_native_error(error)
+    text = call_text(request_text, fields, kwargs)
+    if client is None:
+        stream = await guarded(send_message_streaming_direct(text))
+    else:
+        stream = await guarded(client.send_message_streaming(text))
     try:
         while True:
-            chunk: str | None
-            try:
-                chunk = await stream.anext_chunk()
-            except NativeA2aError as error:
-                raise_native_error(error)
+            chunk = await guarded(stream.anext_chunk())
             if chunk is None:
                 return
             yield SendStreamingMessageResponse.model_validate_json(chunk)
@@ -211,9 +219,9 @@ async def asend_message_streaming(  # noqa: PLR0913, PLR0917  # https://github.c
         await stream.aclose()
 
 
-async def create_a2a_client(  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767
+async def create_a2a_client(
     base_url: str,
-    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,
+    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767
     extra_headers: dict[str, str] | None = None,
     streaming: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L771
     relative_card_path: str | None = None,
@@ -225,17 +233,12 @@ async def create_a2a_client(  # noqa: ASYNC109  # https://github.com/BerriAI/lit
         streaming=streaming,
         relative_card_path=relative_card_path,
     )
-    client: A2AClientType
-    try:
-        client = await create_client(settings)
-    except NativeA2aError as error:
-        raise_native_error(error)
-    return client
+    return await guarded(create_client(settings))
 
 
-async def aget_agent_card(  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L848
+async def aget_agent_card(
     base_url: str,
-    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,
+    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L848
     extra_headers: dict[str, str] | None = None,
     relative_card_path: str | None = None,
 ) -> ResponseObject:
@@ -246,12 +249,8 @@ async def aget_agent_card(  # noqa: ASYNC109  # https://github.com/BerriAI/litel
         streaming=False,
         relative_card_path=relative_card_path,
     )
-    text: str
-    try:
-        text = await get_agent_card(settings)
-    except NativeA2aError as error:
-        raise_native_error(error)
-    return ResponseObject.model_validate_json(text)
+    card = await guarded(get_agent_card(settings))
+    return ResponseObject.model_validate_json(card)
 
 
 def send_message(
@@ -259,8 +258,10 @@ def send_message(
     request: RequestValue,
     **kwargs: CallValue,
 ) -> LiteLLMSendMessageResponse | Coroutine[None, None, LiteLLMSendMessageResponse]:
+    send: Callable[..., Awaitable[LiteLLMSendMessageResponse]] = asend_message
+    call = send(a2a_client=a2a_client, request=request, **kwargs)
     try:
         _ = asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(asend_message(a2a_client=a2a_client, request=request, **kwargs))
-    return asend_message(a2a_client=a2a_client, request=request, **kwargs)
+        return asyncio.run(call)
+    return call
