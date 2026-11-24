@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Literal, TypeAlias, TypeVar
+from typing import Literal, Self, TypeAlias, TypeVar
 
 from pydantic import JsonValue
 from typing_extensions import override
@@ -40,7 +40,7 @@ class GuardrailHooks(GuardrailRecording):
         return self.__class__.apply_guardrail is not GuardrailHooks.apply_guardrail
 
     async def guarded_apply_guardrail(
-        self, owner: _Owner, hook: ApplyGuardrailHook[_Owner], inputs: GenericGuardrailAPIInputs,
+        self, hook: ApplyGuardrailHook[Self], inputs: GenericGuardrailAPIInputs,
         request_data: dict[str, JsonValue], input_type: Literal["request", "response"],
         logging_obj: LiteLLMLoggingObj | None,
     ) -> GenericGuardrailAPIInputs:
@@ -50,7 +50,7 @@ class GuardrailHooks(GuardrailRecording):
         log_obj = fallback if logging_obj is None else logging_obj
         self._guardrail_self_recorded = False
         try:
-            response = await hook(owner, inputs, request_data, input_type, logging_obj)
+            response = await hook(self, inputs, request_data, input_type, logging_obj)
             if not (self.records_own_guardrail_information or self._guardrail_self_recorded):
                 now = datetime.now(tz=UTC)
                 self._process_response(

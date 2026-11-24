@@ -34,6 +34,8 @@ from betterlite.exceptions._process import (
 )
 from betterlite.types.guardrails.params import GuardrailEventHooks, Mode
 
+logger = LOGGER  # a local binding, not the import, is what ruff's blind-except check reads
+
 
 class GuardrailState(CustomLogger):
     timeout: float | None = None
@@ -91,7 +93,7 @@ class GuardrailState(CustomLogger):
             except ValueError as error:
                 if strict:
                     raise
-                LOGGER.warning(
+                logger.warning(
                     "Guardrail %s: unsupported event_hook %s (%s). "
                     "LITELLM_STRICT_GUARDRAIL_MODES=false, so startup continues.",
                     self.guardrail_name,
@@ -194,7 +196,7 @@ class GuardrailState(CustomLogger):
         try:
             cached = await cache.async_get_cache(key=key)
         except Exception:
-            LOGGER.warning("Guardrail %s: read cache failed", self.guardrail_name, exc_info=True)
+            logger.warning("Guardrail %s: read cache failed", self.guardrail_name, exc_info=True)
             return None
         return self._hash_set(cached)
 
@@ -206,7 +208,7 @@ class GuardrailState(CustomLogger):
             return None
         if self.mask_request_content or self.mask_response_content:
             if warn_masking:
-                LOGGER.warning(
+                logger.warning(
                     "Guardrail %s: only_scan_new_messages is ignored while masking is on",
                     self.guardrail_name,
                 )
@@ -243,7 +245,7 @@ class GuardrailState(CustomLogger):
                 key=key, value=merged, ttl=GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS
             )
         except Exception:
-            LOGGER.warning("Guardrail %s: write cache failed", self.guardrail_name, exc_info=True)
+            logger.warning("Guardrail %s: write cache failed", self.guardrail_name, exc_info=True)
 
     def should_route_on_sensitive_data(self) -> bool:
         return self.on_sensitive_data == "route" and self.sensitive_data_route_to_model is not None
