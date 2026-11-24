@@ -82,7 +82,10 @@ impl FakeReads {
         self.log.lock().unwrap().clone()
     }
 
-    fn answer<T: Clone>(&self, entry: String, script: &Scripted<T>) -> Reply<T> {
+    fn answer<T>(&self, entry: String, script: &Scripted<T>) -> Reply<T>
+    where
+        T: Clone,
+    {
         self.record(entry);
         ready(script.resolve())
     }

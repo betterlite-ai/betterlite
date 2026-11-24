@@ -22,7 +22,7 @@ const FAULT: &str = "fault";
 // The case scripts the named row read the way the pinned loader sees it: absent, unreadable, or loaded.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ReadKind {
+pub(crate) enum ReadKind {
     Missing,
     Unreadable,
     Loaded,
@@ -99,10 +99,10 @@ impl ObjectPermissionReads for ScriptedReads {
         check_db_only: bool,
     ) -> impl Future<Output = Result<Option<ObjectPermission>, Self::Error>> + Send {
         let answer = match self.read {
-            ReadKind::Loaded => match &self.row {
-                Some(row) => Ok(Some(row.clone())),
-                None => Err(Fault::Unscripted),
-            },
+            ReadKind::Loaded => self
+                .row
+                .as_ref()
+                .map_or(Err(Fault::Unscripted), |row| Ok(Some(row.clone()))),
             ReadKind::Missing | ReadKind::Unreadable if !check_db_only => Ok(None),
             ReadKind::Missing => Err(Fault::MissingRow),
             ReadKind::Unreadable => Err(Fault::ReadFailed),
