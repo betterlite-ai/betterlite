@@ -159,6 +159,24 @@ async fn permission_none_and_empty() {
         organization.get("object_permission_id"),
         Some(&JsonData::String(permission_id))
     );
+
+    // an explicit null inside object_permission is dropped like exclude_none, so the column default applies
+    let nulled = app
+        .post(
+            admin_caller(Some("u1")),
+            r#"{"organization_alias":"nulled","object_permission":{"vector_stores":null}}"#,
+        )
+        .await;
+    assert_eq!(nulled.status, StatusCode::OK);
+    let nulled_permission = app
+        .database
+        .permission_row(&nulled.text_field("object_permission_id"))
+        .await
+        .unwrap();
+    assert_eq!(
+        nulled_permission.get("vector_stores"),
+        Some(&JsonData::Array(Vec::new()))
+    );
     app.close().await;
 }
 
