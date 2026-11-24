@@ -9,12 +9,13 @@ use crate::credential_contracts::auth_spec::AuthResolution;
 use crate::credential_contracts::errors::{CredError, Unauthorized};
 use crate::credential_contracts::header_carrier::HeaderCarrier;
 use crate::credential_contracts::server_spec::ServerSpec;
+use crate::credentials::ResolvedAuth as _;
 
 use super::super::resolver::Collaborators;
 use super::super::resolver::source::resolve_with_source;
 use super::support::{
     FakeAssertions, FakeCredentials, FakeEndpoint, FakeExchanger, FakeTokens, applied, bearer,
-    failure, header, id_jag_spec, param, provider, spec, subject,
+    failure, header, id_jag_spec, param, provider, request, spec, subject,
 };
 
 #[derive(serde::Serialize)]
@@ -155,6 +156,31 @@ async fn api_key_static_source() {
         .unwrap();
     assert_eq!(auth.header_name(), Some("X-API-Key"));
     assert_eq!(header(&auth, "X-API-Key").as_deref(), Some("shared-token"));
+}
+
+#[tokio::test]
+async fn api_key_replaces_its_slot_and_keeps_other_headers() {
+    let auth = provider(Collaborators::default())
+        .resolve_credentials(&subject("", "", None), &api_key_spec())
+        .await
+        .unwrap();
+    let mut outgoing = request();
+    outgoing
+        .headers
+        .insert("x-api-key".to_owned(), "stale".to_owned());
+    outgoing
+        .headers
+        .insert("X-Trace".to_owned(), "keep".to_owned());
+    let applied = auth.authenticate(outgoing).unwrap();
+    assert_eq!(
+        applied.headers.get("X-API-Key").map(String::as_str),
+        Some("shared-token")
+    );
+    assert_eq!(
+        applied.headers.get("X-Trace").map(String::as_str),
+        Some("keep")
+    );
+    assert!(!applied.headers.contains_key("x-api-key"));
 }
 
 #[tokio::test]

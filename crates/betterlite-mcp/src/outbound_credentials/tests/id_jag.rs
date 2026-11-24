@@ -6,6 +6,7 @@ use crate::credential_contracts::errors::CredError;
 use crate::credential_contracts::server_spec::ServerSpec;
 
 use super::super::resolver::{Collaborators, UpstreamCredentialProvider};
+use super::super::token_cache::ExchangedTokenCache;
 use super::support::{
     FakeAssertions, FakeEndpoint, RecordedAuth, bearer, failure, param, provider, spec, subject,
 };
@@ -279,6 +280,57 @@ async fn id_jag_omits_absent_optional_parameters() {
         param(first, "subject_token_type"),
         Some("urn:ietf:params:oauth:token-type:id_token")
     );
+}
+
+#[tokio::test]
+async fn id_jag_drops_empty_optional_parameters() {
+    let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
+    let resolver = stored_assertion_resolver(endpoint.clone());
+    let server = spec(json!({
+        "server_id": "srv-1",
+        "name": "ID JAG",
+        "transport": "http",
+        "url": "https://mcp.example.com/mcp",
+        "auth_type": "oauth2_id_jag",
+        "token_exchange_endpoint": "https://idp.example.com/org/token",
+        "id_jag_resource_token_endpoint": "https://upstream.example.com/token",
+        "client_id": "client-1",
+        "client_secret": "secret-1",
+        "audience": "",
+        "id_jag_resource": "",
+        "scopes": []
+    }));
+    let _credential = resolver
+        .resolve_credentials(&subject("org-1", "user-1", None), &server)
+        .await
+        .unwrap();
+    let calls = endpoint.calls();
+    let first = &calls[0];
+    assert_eq!(param(first, "audience"), None);
+    assert_eq!(param(first, "resource"), None);
+}
+
+#[tokio::test]
+async fn id_jag_reuses_an_injected_token_cache() {
+    let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
+    let cache = Arc::new(ExchangedTokenCache::default());
+    let server = standard_spec();
+    let alice = subject("org-1", "user-1", None);
+    let first = provider(
+        Collaborators::default()
+            .with_exchanged_tokens(cache.clone())
+            .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
+            .with_token_endpoint(endpoint.clone()),
+    );
+    let _one = first.resolve_credentials(&alice, &server).await.unwrap();
+    let second = provider(
+        Collaborators::default()
+            .with_exchanged_tokens(cache)
+            .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
+            .with_token_endpoint(endpoint.clone()),
+    );
+    let _two = second.resolve_credentials(&alice, &server).await.unwrap();
+    assert_eq!(endpoint.calls().len(), 2);
 }
 
 #[tokio::test]

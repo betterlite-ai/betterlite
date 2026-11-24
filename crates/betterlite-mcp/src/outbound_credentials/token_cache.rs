@@ -97,7 +97,7 @@ impl ExchangedTokenCache {
         if let Some(existing) = state.guards.get(cache_key).and_then(Weak::upgrade) {
             return existing;
         }
-        state.guards.retain(|_, weak| weak.strong_count() > 0);
+        state.guards.retain(|_, weak| weak.upgrade().is_some());
         let guard = Arc::new(Guard {
             lock: AsyncMutex::new(()),
             generation: AtomicU64::new(0_u64),

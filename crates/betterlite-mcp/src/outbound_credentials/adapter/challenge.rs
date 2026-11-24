@@ -18,7 +18,7 @@ pub fn oauth_protected_resource_path(
     let prefix = if root_path == "/" { "" } else { root_path };
     let name = resource_name(server);
     let scalar = scalar_root_path.trim_end_matches('/');
-    let inserted = prefix.is_empty() || (!scalar.is_empty() && prefix == scalar);
+    let inserted = prefix.is_empty() || prefix == scalar;
     if inserted {
         return format!("/.well-known/oauth-protected-resource{prefix}/mcp/{name}");
     }
