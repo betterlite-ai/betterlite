@@ -66,13 +66,11 @@ impl ToolHandler for RecordingHandler {
         arguments: &'call Object,
         context: &'call OpenApiCallContext,
     ) -> HandlerFuture<'call> {
-        let arguments = arguments.clone();
-        let context = context.clone();
         let seen = Arc::clone(&self.seen);
         Box::pin(async move {
             seen.lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .push((arguments, context));
+                .push((arguments.clone(), context.clone()));
             Ok(OpenApiToolOutput::Text("recorded".to_owned()))
         })
     }
@@ -157,7 +155,7 @@ fn registry_with(handler: Arc<dyn ToolHandler>) -> ToolRegistry {
     registry
 }
 
-fn record<'call>(
+const fn record<'call>(
     server: &'call MCPServer,
     tool_name: &'call str,
     arguments: &'call Object,
