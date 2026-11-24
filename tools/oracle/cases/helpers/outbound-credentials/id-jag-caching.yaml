@@ -1,0 +1,58 @@
+kind: helper
+name: outbound-credentials-id-jag-caching
+call:
+  b4667:
+    function: credential_resolver
+    server:
+      server_id: srv-1
+      name: ID JAG
+      transport: http
+      url: https://mcp.example.com/mcp
+      auth_type: oauth2_id_jag
+      token_exchange_endpoint: https://idp.example.com/org/token
+      id_jag_resource_token_endpoint: https://upstream.example.com/token
+      client_id: client-1
+      client_secret: secret-1
+    subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+    collaborators:
+      assertion_store: {kind: stored, id_token: shared-id-token, expires_at_unix: 4102444800}
+      token_endpoint: [jag-1, bearer-1]
+    actions: [resolve, resolve, resolve_with_source, has_user_token]
+calls:
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-2, subject_id: user-2, inbound_token: null}
+      collaborators:
+        assertion_store: {kind: stored, id_token: other-id-token, expires_at_unix: 4102444800}
+        token_endpoint: [jag-2, bearer-2]
+      actions: [resolve, has_user_token, resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+        audience: api://upstream
+        scopes: [read]
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: inbound-id-token}
+      collaborators:
+        token_endpoint: [inbound-jag, inbound-bearer]
+      actions: [resolve, resolve_with_source]
+env: {}
+compare: {ignore: []}
