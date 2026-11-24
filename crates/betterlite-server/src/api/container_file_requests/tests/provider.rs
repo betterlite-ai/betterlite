@@ -85,11 +85,12 @@ async fn provider_upload_request_reads_the_pick() {
         .await
         .unwrap();
     assert_eq!(reply.body, json_reply().body);
+    // forwarding gets the provider check_access resolved, which the fake reports as openai
     assert_eq!(
         access.events(),
         [
             "check:cntr:alice:bedrock".to_owned(),
-            "forward:cntr:cntr-upstream:bedrock".to_owned()
+            "forward:cntr:cntr-upstream:openai".to_owned()
         ]
     );
 }
