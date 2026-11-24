@@ -8,7 +8,7 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
-use super::{SEP_986_URL, check_separator};
+use super::check_separator;
 
 #[derive(Clone, Default)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
@@ -70,7 +70,9 @@ fn invalid_separator_warns() {
     let contents = logs.contents();
     assert!(contents.contains("MCP_TOOL_PREFIX_SEPARATOR"));
     assert!(contents.contains("'/'"));
-    assert!(contents.contains(SEP_986_URL));
+    assert!(contents.contains(
+        "https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool-names"
+    ));
     assert_eq!(contents.matches("WARN").count(), 1);
 }
 
