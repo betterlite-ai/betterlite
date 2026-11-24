@@ -1,0 +1,10 @@
+kind: helper
+name: unknown-preset-with-text
+call:
+  b10087:
+    function: resolve
+    text: A hand-written profile for this deployment.
+    preset_id: gpt-6-astra-v9
+    kind: model
+env: {}
+compare: {ignore: []}
