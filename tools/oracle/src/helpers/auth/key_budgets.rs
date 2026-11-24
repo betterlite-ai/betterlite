@@ -157,35 +157,30 @@ fn temp_update_value(call: &Call) -> Result<Value, Failure> {
 
 // _team_member_max_budget_alert_check: a team's own map applies with no global merge
 fn team_member_value(call: &Call) -> Result<Value, Failure> {
-    let team_id = call
-        .team_id
-        .as_deref()
-        .ok_or(Failure::Missing("the team id"))?;
-    let user_id = call
-        .user_id
-        .as_deref()
-        .ok_or(Failure::Missing("the user id"))?;
-    let spend_input = call.spend.as_ref().ok_or(Failure::Missing("the spend"))?;
-    let max_budget_input = call
-        .max_budget
-        .as_ref()
-        .ok_or(Failure::Missing("the max budget"))?;
-    let spend = Money::from_json(spend_input)
-        .and_then(Money::finite_value)
-        .ok_or(Failure::Missing("a finite spend"))?;
-    let max_budget =
-        Money::from_json(max_budget_input).ok_or(Failure::Missing("the max budget"))?;
-    let recorder = Recorder::default();
     let alert = TeamMemberAlert {
-        team_id,
+        team_id: call
+            .team_id
+            .as_deref()
+            .ok_or(Failure::Missing("the team id"))?,
         team_alias: call.team_alias.as_deref(),
         team_metadata: call.team_metadata.as_ref(),
         organization_id: call.organization_id.as_deref(),
-        user_id,
+        user_id: call
+            .user_id
+            .as_deref()
+            .ok_or(Failure::Missing("the user id"))?,
         user_email: call.user_email.as_deref(),
-        spend,
-        max_budget,
+        spend: Money::from_json(call.spend.as_ref().ok_or(Failure::Missing("the spend"))?)
+            .and_then(Money::finite_value)
+            .ok_or(Failure::Missing("a finite spend"))?,
+        max_budget: Money::from_json(
+            call.max_budget
+                .as_ref()
+                .ok_or(Failure::Missing("the max budget"))?,
+        )
+        .ok_or(Failure::Missing("the max budget"))?,
     };
+    let recorder = Recorder::default();
     team_member_alert_check(&alert, Some(&recorder));
     Ok(json!({"alerts": recorder.take()}))
 }
