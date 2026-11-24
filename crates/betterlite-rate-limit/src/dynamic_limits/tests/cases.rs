@@ -21,9 +21,10 @@ use rstest::rstest;
 
 use crate::support::{
     FIXED_MINUTE, Failure, FakeRouter, GatedCache, KEY_HASH, KEYLESS_FIXTURE, MINUTE_KEY, MODEL,
-    NEXT_MINUTE, NEXT_MINUTE_LABEL, PLAIN_KEY_FIXTURE, PROD_KEY_FIXTURE, RecordingCache, SetWrite,
-    cache_counting, cache_over, clock_at, default_policy, failing_harness, handler_over,
-    harness_with, harness_without_router, number, post_call, principal, prod_reservation, request,
+    NEXT_MINUTE, NEXT_MINUTE_LABEL, NUMBER_KEY_FIXTURE, PLAIN_KEY_FIXTURE, PROD_KEY_FIXTURE,
+    RecordingCache, SetWrite, cache_counting, cache_over, clock_at, default_policy,
+    failing_harness, handler_over, harness_with, harness_without_router, number, post_call,
+    principal, prod_reservation, request,
 };
 
 #[tokio::test]
@@ -149,6 +150,22 @@ async fn zero_floor() {
     }
 }
 
+// int() has no bound in Python and i64 does: a share past the bound stops at it instead of failing open
+#[tokio::test]
+async fn overflow_saturates() {
+    let harness = harness_with(
+        FakeRouter::answering((Some(i64::MAX), Some(i64::MAX)), (Some(0), Some(0))),
+        Arc::default(),
+        prod_reservation(PriorityValue::Percent(2.0)),
+    );
+    let usage = harness
+        .handler()
+        .check_available_usage(MODEL, Some("prod"))
+        .await;
+    assert_eq!(usage.available_tpm, Some(i64::MAX));
+    assert_eq!(usage.available_rpm, Some(i64::MAX));
+}
+
 // every read failure, a missing router, a zero count and a non-finite share fail open to five Nones
 #[tokio::test]
 async fn exception_returns_nones() {
@@ -192,6 +209,26 @@ async fn error_detail_complete() {
     assert_eq!(
         rate_limit.detail,
         Payload::Object(once((String::from("error"), Payload::String(expected))).collect())
+    );
+}
+
+// an f-string renders a value LiteLLM could not compute as the word None, and the detail keeps that
+#[tokio::test]
+async fn error_detail_names_unknown_values() {
+    let harness = harness_with(
+        FakeRouter::answering((Some(0), None), (Some(0), Some(0))),
+        Arc::default(),
+        None,
+    );
+    let key = principal(PLAIN_KEY_FIXTURE);
+    let error = harness
+        .handler()
+        .async_pre_call_hook(&request(Some(MODEL), &key))
+        .await
+        .expect_err("a spent token share with no request limit refuses the request");
+    assert_eq!(
+        rejection(error).message,
+        format!("Key={KEY_HASH} over available TPM=0. Model TPM=0, Active keys=None")
     );
 }
 
@@ -363,6 +400,24 @@ async fn no_registration_when_both_quotas_are_unknown() {
 }
 
 #[tokio::test]
+async fn registration_runs_when_one_quota_is_known() {
+    let harness = harness_with(
+        FakeRouter::answering((Some(100), None), (Some(0), Some(0))),
+        Arc::default(),
+        None,
+    );
+    let handler = harness.handler();
+    let key = principal(PLAIN_KEY_FIXTURE);
+    handler
+        .async_pre_call_hook(&request(Some(MODEL), &key))
+        .await
+        .expect("a model group with only a token limit passes");
+    handler.tasks.close();
+    handler.tasks.wait().await;
+    assert_eq!(harness.cache.set_writes().len(), 1);
+}
+
+#[tokio::test]
 async fn registration_uses_the_default_key_without_an_identifier() {
     let harness = harness_with(
         FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0))),
@@ -469,6 +524,22 @@ async fn pre_call_reads_the_priority_from_key_metadata() {
         .async_pre_call_hook(&request(Some(MODEL), &plain))
         .await
         .expect("a key with no declared priority keeps the whole token");
+}
+
+// LiteLLM documents the priority as a string, so a number counts as no priority and the weight stays 1
+#[tokio::test]
+async fn a_non_text_priority_keeps_the_default_weight() {
+    let harness = harness_with(
+        FakeRouter::answering((Some(1), Some(100)), (Some(0), Some(0))),
+        cache_counting(Some(1)),
+        prod_reservation(PriorityValue::Percent(0.5)),
+    );
+    let key = principal(NUMBER_KEY_FIXTURE);
+    harness
+        .handler()
+        .async_pre_call_hook(&request(Some(MODEL), &key))
+        .await
+        .expect("a number priority names no reservation, so the whole token stays available");
 }
 
 #[tokio::test]

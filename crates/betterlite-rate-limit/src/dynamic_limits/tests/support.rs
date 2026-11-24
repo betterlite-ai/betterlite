@@ -32,6 +32,8 @@ pub(crate) const PLAIN_KEY_FIXTURE: &str = "{\"api_key\": \"key-hash\"}";
 pub(crate) const KEYLESS_FIXTURE: &str = "{\"is_session_token\": false}";
 pub(crate) const PROD_KEY_FIXTURE: &str =
     "{\"api_key\": \"key-hash\", \"metadata\": {\"priority\": \"prod\"}}";
+pub(crate) const NUMBER_KEY_FIXTURE: &str =
+    "{\"api_key\": \"key-hash\", \"metadata\": {\"priority\": 5}}";
 
 // the clock the cache reads, fixed so a minute key is the same on every run
 pub(crate) struct FixedClock(pub(crate) SystemTime);
