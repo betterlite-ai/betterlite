@@ -12,6 +12,7 @@ fn refusals_keep_litellms_statuses() {
         LensAccessError::AccessDenied.status(),
         StatusCode::FORBIDDEN
     );
+    assert_eq!(LensAccessError::ModelDenied.status(), StatusCode::FORBIDDEN);
     assert_eq!(
         LensAccessError::NoDatabase.status(),
         StatusCode::SERVICE_UNAVAILABLE
@@ -21,7 +22,35 @@ fn refusals_keep_litellms_statuses() {
         StatusCode::NOT_FOUND
     );
     assert_eq!(
+        LensAccessError::InvestigationNotFound.status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        LensAccessError::WorkerNotFound.status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        LensAccessError::ExecutionNotFound.status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[test]
+fn worker_refusals_keep_litellms_statuses() {
+    assert_eq!(
         LensAccessError::ConcurrentChange.status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        LensAccessError::WorkerRevoked.status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        LensAccessError::WorkerAccessRevoked.status(),
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        LensAccessError::WorkerRunning.status(),
         StatusCode::CONFLICT
     );
     assert_eq!(
@@ -35,23 +64,6 @@ fn refusals_keep_litellms_statuses() {
     assert_eq!(
         LensAccessError::UnknownModel.status(),
         StatusCode::BAD_REQUEST
-    );
-    assert_eq!(LensAccessError::ModelDenied.status(), StatusCode::FORBIDDEN);
-    assert_eq!(
-        LensAccessError::InvestigationNotFound.status(),
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        LensAccessError::ExecutionNotFound.status(),
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        LensAccessError::WorkerRevoked.status(),
-        StatusCode::CONFLICT
-    );
-    assert_eq!(
-        LensAccessError::WorkerRunning.status(),
-        StatusCode::CONFLICT
     );
 }
 

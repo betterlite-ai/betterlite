@@ -19,6 +19,7 @@ use crate::lens_access::lookup::lens_repository;
 use crate::lens_access::state::{LensDatabase, LensRoutesState, LensStorage};
 use crate::lens_admin_routes::body::decode;
 use crate::lens_admin_routes::error::{LensRouteError, route_key_scope};
+use crate::lens_billing::key_validation::validate_key;
 
 pub(crate) mod billing;
 
@@ -108,11 +109,11 @@ where
 }
 
 // the caller's repository and the worker named by the path, once their scope covers it
-async fn scoped_worker_for<'a, Db, Store>(
-    state: &'a LensRoutesState<Db, Store>,
+async fn scoped_worker_for<'state, Db, Store>(
+    state: &'state LensRoutesState<Db, Store>,
     caller: Option<Extension<AuthContext>>,
     worker_id: &str,
-) -> Result<(&'a LensRepository<Db>, Worker), LensRouteError<<Store as Storage>::Error>>
+) -> Result<(&'state LensRepository<Db>, Worker), LensRouteError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,

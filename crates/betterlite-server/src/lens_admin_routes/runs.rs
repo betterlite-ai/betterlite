@@ -77,12 +77,12 @@ where
 }
 
 // the repository, once the caller's scope covers this lens: every run route starts here
-async fn accessible_repository<'a, Db, Store>(
-    state: &'a LensRoutesState<Db, Store>,
+async fn accessible_repository<'state, Db, Store>(
+    state: &'state LensRoutesState<Db, Store>,
     caller: Option<Extension<AuthContext>>,
     lens_id: &str,
     write: bool,
-) -> Result<&'a LensRepository<Db>, LensRouteError<<Store as Storage>::Error>>
+) -> Result<&'state LensRepository<Db>, LensRouteError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,

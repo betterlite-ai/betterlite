@@ -22,132 +22,124 @@ fn key_id() -> String {
     "c".repeat(64)
 }
 
+const UPDATE_BODY: &str = r#"{"name":"Updated","model":"gpt-4o"}"#;
+const RESOLVED_BODY: &str = r#"{"status":"resolved"}"#;
+const PREVIEW_BODY: &str = r#"{"settings":{"name":"Nightly","model":"gpt-4o"}}"#;
+
+async fn status(harness: &Harness, method: &str, uri: &str, body: Option<&str>) -> StatusCode {
+    let caller = admin();
+    call(harness.app(), request(method, uri, Some(&caller), body))
+        .await
+        .status
+}
+
 #[tokio::test]
-async fn every_listed_route_answers() {
+async fn every_lens_route_answers() {
     let harness = seeded();
     let settings = settings_json("gpt-4o");
-    let update = r#"{"name":"Updated","model":"gpt-4o"}"#;
-    let preview = r#"{"settings":{"name":"Nightly","model":"gpt-4o"}}"#;
+    assert_eq!(status(&harness, "GET", "/lens", None).await, StatusCode::OK);
+    assert_eq!(
+        status(&harness, "POST", "/lens", Some(settings.as_str())).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "GET", "/lens/l1", None).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "PUT", "/lens/l1", Some(UPDATE_BODY)).await,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn every_discovery_route_answers() {
+    let harness = seeded();
+    assert_eq!(
+        status(&harness, "GET", "/lens/activity/available", None).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "GET", "/lens/agents", None).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "POST", "/lens/preview/sample", Some(PREVIEW_BODY)).await,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn every_run_route_answers() {
+    let harness = seeded();
+    assert_eq!(
+        status(&harness, "POST", "/lens/l1/runs", Some("{}")).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "GET", "/lens/l1/runs", None).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "GET", "/lens/l1/runs/j1", None).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "POST", "/lens/l1/cancel", None).await,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn every_worker_route_answers() {
+    let harness = seeded();
     let register = format!(r#"{{"analysis_key_id":"{}"}}"#, key_id());
     let billing = format!(r#"{{"analysis_key_id":"{}"}}"#, key_id());
-    let evidence = execution_id(&["traces", "team-1", "trace-1"]);
-    let caller = admin();
-    let statuses = [
-        call(harness.app(), request("GET", "/lens", Some(&caller), None))
-            .await
-            .status,
-        call(
-            harness.app(),
-            request("POST", "/lens", Some(&caller), Some(&settings)),
+    assert_eq!(
+        status(
+            &harness,
+            "POST",
+            "/lens/workers/register",
+            Some(register.as_str())
         )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("GET", "/lens/activity/available", Some(&caller), None),
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(
+            &harness,
+            "PUT",
+            "/lens/workers/w1/billing-key",
+            Some(billing.as_str())
         )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("GET", "/lens/agents", Some(&caller), None),
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "DELETE", "/lens/workers/w1", None).await,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn every_finding_and_evidence_route_answers() {
+    let harness = seeded();
+    let trace = execution_id(&["traces", "team-1", "trace-1"]);
+    let evidence = format!("/lens/l1/executions/{trace}");
+    assert_eq!(
+        status(
+            &harness,
+            "PATCH",
+            "/lens/l1/findings/f1",
+            Some(RESOLVED_BODY)
         )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("PUT", "/lens/l1", Some(&caller), Some(update)),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("POST", "/lens/l1/runs", Some(&caller), Some("{}")),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("GET", "/lens/l1", Some(&caller), None),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("GET", "/lens/l1/runs", Some(&caller), None),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("GET", "/lens/l1/runs/j1", Some(&caller), None),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("POST", "/lens/l1/cancel", Some(&caller), None),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request(
-                "PATCH",
-                "/lens/l1/findings/f1",
-                Some(&caller),
-                Some(r#"{"status":"resolved"}"#),
-            ),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("POST", "/lens/preview/sample", Some(&caller), Some(preview)),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request(
-                "POST",
-                "/lens/workers/register",
-                Some(&caller),
-                Some(&register),
-            ),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request(
-                "PUT",
-                "/lens/workers/w1/billing-key",
-                Some(&caller),
-                Some(&billing),
-            ),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request("DELETE", "/lens/workers/w1", Some(&caller), None),
-        )
-        .await
-        .status,
-        call(
-            harness.app(),
-            request(
-                "GET",
-                &format!("/lens/l1/executions/{evidence}"),
-                Some(&caller),
-                None,
-            ),
-        )
-        .await
-        .status,
-    ];
-    assert_eq!(statuses, [StatusCode::OK; 16]);
+        .await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        status(&harness, "GET", evidence.as_str(), None).await,
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]

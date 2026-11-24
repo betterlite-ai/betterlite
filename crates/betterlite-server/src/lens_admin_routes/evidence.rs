@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Extension, Path, RawQuery, State};
 use betterlite_db::lens_repository::database::Database;
 use betterlite_lens::models::execution::{Execution, ExecutionContent, ExecutionSource};
+use betterlite_lens::models::job::Lens;
 use betterlite_lens::sources::parse_execution::parse_execution;
 use betterlite_lens::sources::storage::Storage;
 
@@ -31,18 +32,34 @@ where
     let scope = user_scope(&caller_key(&context.principal)?, false)?;
     let repository = lens_repository(&state)?;
     let lens = get_lens(repository, &lens_id, &scope).await?;
-    let Ok((source_name, team, trace_id, trace_ref)) = parse_execution(&execution_id) else {
+    let Ok(parsed) = parse_execution(&execution_id) else {
         return Err(LensRouteError::Access(LensAccessError::ExecutionNotFound));
     };
+    let execution = named_execution(execution_id, &lens, parsed)?;
+    let reader = source_reader(state.storage.as_ref())?;
+    Ok(Json(
+        reader
+            .content(&lens.scope, &execution, &query.cursor, query.offset)
+            .await?,
+    ))
+}
+
+// the execution the activity preview would have listed for this id, once its team is covered
+fn named_execution(
+    execution_id: String,
+    lens: &Lens,
+    parsed: (String, String, String, String),
+) -> Result<Execution, LensAccessError> {
+    let (source_name, team, trace_id, trace_ref) = parsed;
     let (source, root_seen) = match source_name.as_str() {
         "traces" => (ExecutionSource::Traces, false),
         "requests" => (ExecutionSource::Requests, true),
-        _ => return Err(LensRouteError::Access(LensAccessError::ExecutionNotFound)),
+        _ => return Err(LensAccessError::ExecutionNotFound),
     };
     if !lens.scope.all_teams && team != lens.scope.team_id {
-        return Err(LensRouteError::Access(LensAccessError::ExecutionNotFound));
+        return Err(LensAccessError::ExecutionNotFound);
     }
-    let execution = Execution {
+    Ok(Execution {
         id: execution_id,
         source,
         trace_id: trace_id.clone(),
@@ -54,13 +71,7 @@ where
         root_seen,
         service: String::new(),
         metadata: Vec::new(),
-    };
-    let reader = source_reader(state.storage.as_ref())?;
-    Ok(Json(
-        reader
-            .content(&lens.scope, &execution, &query.cursor, query.offset)
-            .await?,
-    ))
+    })
 }
 
 mod tests;

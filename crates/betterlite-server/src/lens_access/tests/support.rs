@@ -360,8 +360,8 @@ type QueryAnswer = fn(&FakeDatabase, &[SqlBind]) -> Vec<Row>;
 // each fake query answers by the SQL fragment it carries, in the order the repository issues them
 const QUERY_ANSWERS: &[(&str, QueryAnswer)] = &[
     ("WITH previous", FakeDatabase::updated),
-    ("AS job", FakeDatabase::one_job),
     ("LIMIT 50 OFFSET", FakeDatabase::jobs),
+    ("AS job", FakeDatabase::one_job),
     ("VALUES ($1,0,$2::jsonb)", FakeDatabase::created),
     ("'{analysis_key_id}'", FakeDatabase::billing),
     ("'{revoked}'", FakeDatabase::revoked),
