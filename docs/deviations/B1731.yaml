@@ -1,0 +1,12 @@
+task: B1731
+deviations:
+  - what: A page value above the signed 64-bit range answers 422 int_parsing instead of being accepted as a Python arbitrary-precision int.
+    why: The page is stored as an i64; LiteLLM parses any Python integer and only fails later when the offset reaches the database. B1728 records the same boundary for the flat listing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4518-L4522
+  - what: A caller without a user id binds a NULL user into the expansion's count and its rows, so both report nothing; LiteLLM's Prisma count reads the same null user filter as IS NULL while its raw row query binds = NULL, so a session holding NULL-user rows reports a nonzero total with an empty page.
+    why: The task keeps the null user id bound rather than deleting the predicate, and one bound value governs both queries, so the total always describes the rows the page can return.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4578-L4587
+kept_bugs:
+  - what: A page whose offset is past the count window reports has_more true while next_session_cursor stays null, because an empty row list is longer than the negative page limit the cap leaves.
+    why: The pager keeps LiteLLM's comparison unchanged, since the UI reads has_more to decide whether to ask for another page and a working setup may depend on that answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3222-L3228

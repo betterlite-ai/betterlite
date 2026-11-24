@@ -1,0 +1,21 @@
+kind: helper
+name: vector-endpoint-access-index-grant-metadata
+call:
+  vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+calls:
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: write, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: write, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read]}]}, team_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [write]}]}}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: null, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: idx}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: {index_name: idx, index_permissions: [read]}}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: []}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [7, idx, null]}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [7, idx, null, {index_name: idx, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [{index_name: idx2, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [{index_name: "*", index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: read}]}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [READ]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: permission, index_name: idx, permission: read, key_metadata: {allowed_vector_store_indexes: [{index_name: idx}]}, team_metadata: null}
+env: {}
+compare: {ignore: []}
