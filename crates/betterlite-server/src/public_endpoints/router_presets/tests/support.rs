@@ -15,8 +15,8 @@ use tokio::task::yield_now;
 use tower::ServiceExt as _;
 
 use super::super::catalog::{BUNDLED_CATALOG, PresetCatalog, decode_catalog};
+use super::super::router_presets_routes;
 use super::super::service::AutorouterPresetService;
-use super::super::{router_presets_routes, routes_with};
 use crate::roi_github::transport::Transport;
 
 pub(super) const PRESETS_URL: &str = "http://presets.test/catalog.json";
@@ -110,7 +110,10 @@ pub(super) fn settings(url: &str, local_only: bool) -> Settings {
 }
 
 pub(super) fn app(script: &Script, settings: Settings) -> Router {
-    router_presets_routes(script.clone(), settings)
+    router_presets_routes(Arc::new(AutorouterPresetService::new(
+        script.clone(),
+        settings,
+    )))
 }
 
 pub(super) fn app_with_bundled(script: &Script, bundled: &'static str, local_only: bool) -> Router {
@@ -122,7 +125,7 @@ pub(super) fn app_with_bundled(script: &Script, bundled: &'static str, local_onl
         cache: AsyncMutex::new(None),
         fetch_lock: AsyncMutex::new(()),
     });
-    routes_with(service)
+    router_presets_routes(service)
 }
 
 pub(super) fn bundled_catalog() -> PresetCatalog {

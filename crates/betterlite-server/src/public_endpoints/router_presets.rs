@@ -12,7 +12,6 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
-use betterlite_config::sections::public_router_presets::Settings;
 use betterlite_router::fuse_presets::get_fuse_presets;
 
 use self::error::RouterPresetsError;
@@ -25,15 +24,8 @@ pub const AUTOROUTER_PRESETS_PATH: &str = "/public/autorouter_presets";
 pub const SCORER_DEFAULTS_PATH: &str = "/public/complexity_router/scorer_defaults";
 pub const FUSE_PRESETS_PATH: &str = "/public/complexity_router/fuse_presets";
 
-pub fn router_presets_routes<Client>(client: Client, settings: Settings) -> Router
-where
-    Client: Transport + 'static,
-{
-    let service = Arc::new(AutorouterPresetService::new(client, settings));
-    routes_with(service)
-}
-
-fn routes_with<Client>(service: Arc<AutorouterPresetService<Client>>) -> Router
+// one service behind all three paths keeps the catalog resolved once per app
+pub fn router_presets_routes<Client>(service: Arc<AutorouterPresetService<Client>>) -> Router
 where
     Client: Transport + 'static,
 {
