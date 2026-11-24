@@ -84,6 +84,17 @@ async fn a_303_turns_a_post_into_a_get_without_a_body() {
 }
 
 #[tokio::test]
+async fn a_303_keeps_a_head() {
+    let target = TestServer::start(|_| status(200)).await;
+    let location = target.url("/next");
+    let source = TestServer::start(move |_| redirect(303, &location)).await;
+    let mut request = get(&source.url("/start"));
+    request.method = Method::HEAD;
+    transport().send(request).await.unwrap();
+    assert_eq!(target.requests()[0].method, Method::HEAD);
+}
+
+#[tokio::test]
 async fn a_301_turns_a_post_into_a_get() {
     let target = TestServer::start(|_| ok_json("{}")).await;
     let location = target.url("/next");
