@@ -77,72 +77,66 @@ fn register_adds_the_batch_listing_classes() {
     });
 }
 
-// every sync session method runs its call and hands back the provider the payload asked for
+// every sync session error names the class, the provider and the model the payload asked for
 #[rstest]
-#[case::list_openai("list", LIST_OPENAI_REFUSED, "openai")]
-#[case::list_xai("list", LIST_XAI_REFUSED, "xai")]
-#[case::cancel_openai("cancel", CANCEL_OPENAI_REFUSED, "openai")]
-#[case::cancel_xai("cancel", CANCEL_XAI_REFUSED, "xai")]
-fn session_errors_name_the_provider_the_payload_asked_for(
-    #[case] method: &str,
-    #[case] payload: &str,
-    #[case] provider: &str,
-) {
-    Python::initialize();
-    Python::attach(|py| {
-        let module = PyModule::new(py, "probe").unwrap();
-        register(&module).unwrap();
-        let class = module.getattr("NativeBatchListSession").unwrap();
-        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
-        let error = session
-            .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
-            .unwrap_err();
-        let message = error.value(py).to_string();
-        assert!(
-            message.contains(r#""type":"APIConnectionError""#),
-            "{method}: {message}"
-        );
-        assert!(
-            message.contains(&format!(r#""llm_provider":"{provider}""#)),
-            "{method}: {message}"
-        );
-        assert!(message.contains(r#""model":null"#), "{method}: {message}");
-    });
-}
-
-// a provider LiteLLM branches on but this build has no executor for answers 400 with its name
-#[rstest]
-#[case::list_azure("list", r#"{"provider":"azure"}"#, "azure", None)]
-#[case::list_vertex("list", r#"{"provider":"vertex_ai"}"#, "vertex_ai", None)]
+#[case::list_openai_refused("list", LIST_OPENAI_REFUSED, "openai", "APIConnectionError", None)]
+#[case::list_xai_refused("list", LIST_XAI_REFUSED, "xai", "APIConnectionError", None)]
+#[case::cancel_openai_refused(
+    "cancel",
+    CANCEL_OPENAI_REFUSED,
+    "openai",
+    "APIConnectionError",
+    None
+)]
+#[case::cancel_xai_refused("cancel", CANCEL_XAI_REFUSED, "xai", "APIConnectionError", None)]
+#[case::list_azure("list", r#"{"provider":"azure"}"#, "azure", "BadRequestError", None)]
+#[case::list_vertex(
+    "list",
+    r#"{"provider":"vertex_ai"}"#,
+    "vertex_ai",
+    "BadRequestError",
+    None
+)]
 #[case::cancel_azure(
     "cancel",
     r#"{"cancel":{"batch_id":"batch-1","provider":"azure"}}"#,
     "azure",
+    "BadRequestError",
     None
 )]
 #[case::cancel_vertex(
     "cancel",
     r#"{"cancel":{"batch_id":"batch-1","provider":"vertex_ai"}}"#,
     "vertex_ai",
+    "BadRequestError",
     None
 )]
 #[case::cancel_bedrock(
     "cancel",
     r#"{"cancel":{"batch_id":"batch-1","provider":"bedrock"}}"#,
     "bedrock",
+    "BadRequestError",
     None
 )]
-#[case::list_unknown("list", r#"{"provider":"cohere"}"#, "cohere", Some("n/a"))]
+#[case::list_unknown(
+    "list",
+    r#"{"provider":"cohere"}"#,
+    "cohere",
+    "BadRequestError",
+    Some("n/a")
+)]
 #[case::cancel_unknown(
     "cancel",
     r#"{"cancel":{"batch_id":"batch-1","provider":"cohere"}}"#,
     "cohere",
+    "BadRequestError",
     Some("n/a")
 )]
-fn session_unwired_providers_answer_bad_requests(
+fn session_errors_name_the_provider_and_model(
     #[case] method: &str,
     #[case] payload: &str,
     #[case] provider: &str,
+    #[case] error_type: &str,
     #[case] model: Option<&str>,
 ) {
     Python::initialize();
@@ -155,19 +149,17 @@ fn session_unwired_providers_answer_bad_requests(
             .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
             .unwrap_err();
         let message = error.value(py).to_string();
-        assert!(
-            message.contains(r#""type":"BadRequestError""#),
-            "{method}: {message}"
-        );
-        assert!(
-            message.contains(&format!(r#""llm_provider":"{provider}""#)),
-            "{method}: {message}"
-        );
-        let expected = match model {
-            Some(name) => format!(r#""model":"{name}""#),
-            None => String::from(r#""model":null"#),
-        };
-        assert!(message.contains(&expected), "{method}: {message}");
+        let wanted = [
+            format!(r#""type":"{error_type}""#),
+            format!(r#""llm_provider":"{provider}""#),
+            model.map_or_else(
+                || String::from(r#""model":null"#),
+                |name| format!(r#""model":"{name}""#),
+            ),
+        ];
+        for part in wanted {
+            assert!(message.contains(&part), "{method}: {message}");
+        }
     });
 }
 

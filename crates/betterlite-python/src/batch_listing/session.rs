@@ -119,9 +119,10 @@ async fn list_answer(
     mode: CallMode,
 ) -> PyResult<String> {
     let provider = input.provider.name().to_owned();
-    core.list_with(input, mode)
-        .await
-        .map_err(|error| listing_error(&error, &provider, None))
+    match core.list_with(input, mode).await {
+        Ok(text) => Ok(text),
+        Err(error) => Err(listing_error(&error, &provider, None)),
+    }
 }
 
 async fn cancel_answer(

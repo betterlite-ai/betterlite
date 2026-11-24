@@ -6,7 +6,7 @@ use betterlite_core::api::batch_provider_cancel::{
     BatchCancelDispatch, CancelTarget, OpenAiCancelCall, XaiCancelCall,
 };
 use betterlite_core::api::batch_provider_list::call::{
-    BatchListProviderCall, BatchProviderListCall, OpenAiBatchListCall, XaiBatchListCall,
+    BatchListProviderCall, BatchProviderListCall, OpenAiBatchListCall,
 };
 use betterlite_core::api::batch_provider_list::{BatchListProvider, BatchListWindow};
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
@@ -62,9 +62,29 @@ impl ListTransport {
         let window = &call.window;
         match &call.provider {
             BatchListProviderCall::OpenAiCompatible(inner) => {
-                openai_list(self, inner, window, is_async).await
+                openai_list(self, inner, window, is_async)
+                    .await
+                    .map(ListAnswer::OpenAi)
             }
-            BatchListProviderCall::Xai(inner) => xai_list(self, inner, window).await,
+            // XAIBatchesHandler.list_batches
+            BatchListProviderCall::Xai(inner) => {
+                let timeout = duration_of(&window.timeout)?;
+                let batches = XaiBatches {
+                    transport: self.client.clone(),
+                    settings: self.xai.clone(),
+                    limits: self.limits,
+                };
+                let context = CallContext {
+                    api_base: inner.api_base.as_deref(),
+                    api_key: inner.api_key.as_ref(),
+                    timeout,
+                };
+                let page = batches
+                    .list_batches(context, window.after.as_deref(), window.limit)
+                    .await
+                    .map_err(xai_failure)?;
+                Ok(ListAnswer::Xai(page))
+            }
             BatchListProviderCall::Azure(_) => Err(DispatchFailure::Unsupported {
                 provider: BatchListProvider::Azure.name().to_owned(),
             }),
@@ -81,7 +101,7 @@ async fn openai_list(
     call: &OpenAiBatchListCall,
     window: &BatchListWindow,
     is_async: bool,
-) -> Result<ListAnswer, DispatchFailure> {
+) -> Result<BatchPage, DispatchFailure> {
     let connection = Connection {
         is_async,
         settings: ClientSettings {
@@ -93,35 +113,10 @@ async fn openai_list(
         },
         client: None,
     };
-    let page = openai_batches(&transport.client)
+    openai_batches(&transport.client)
         .list_batches(connection, window.after.as_deref(), window.limit)
         .await
-        .map_err(openai_failure)?;
-    Ok(ListAnswer::OpenAi(page))
-}
-
-// XAIBatchesHandler.list_batches
-async fn xai_list(
-    transport: &ListTransport,
-    call: &XaiBatchListCall,
-    window: &BatchListWindow,
-) -> Result<ListAnswer, DispatchFailure> {
-    let timeout = duration_of(&window.timeout)?;
-    let batches = XaiBatches {
-        transport: transport.client.clone(),
-        settings: transport.xai.clone(),
-        limits: transport.limits,
-    };
-    let context = CallContext {
-        api_base: call.api_base.as_deref(),
-        api_key: call.api_key.as_ref(),
-        timeout,
-    };
-    let page = batches
-        .list_batches(context, window.after.as_deref(), window.limit)
-        .await
-        .map_err(xai_failure)?;
-    Ok(ListAnswer::Xai(page))
+        .map_err(openai_failure)
 }
 
 // The five provider entry points cancel_batch dispatches to: the two executors this build has, and the rest named.
@@ -215,21 +210,18 @@ async fn xai_cancel(
 
 // an SDK status keeps the provider's message; every other SDK failure never reached it
 pub(crate) fn openai_failure(error: BatchesError) -> DispatchFailure {
-    match &error {
-        BatchesError::Sdk {
-            source: SdkError::Status {
-                status, message, ..
-            },
-        } => DispatchFailure::Status {
+    if let BatchesError::Sdk {
+        source: SdkError::Status {
+            status, message, ..
+        },
+    } = &error
+    {
+        return DispatchFailure::Status {
             status: *status,
             message: message.clone(),
-        },
-        BatchesError::NotInitialized
-        | BatchesError::NotAsync
-        | BatchesError::NotSync
-        | BatchesError::Sdk { .. }
-        | BatchesError::Invalid { .. } => DispatchFailure::Connection(error.to_string()),
+        };
     }
+    DispatchFailure::Connection(error.to_string())
 }
 
 pub(crate) fn xai_failure(error: XaiBatchesError) -> DispatchFailure {

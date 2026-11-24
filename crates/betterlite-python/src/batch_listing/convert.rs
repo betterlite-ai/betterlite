@@ -260,27 +260,27 @@ fn list_timeout(value: &JsonValue) -> Result<BatchListTimeoutValue, ConvertError
 }
 
 fn cancel_timeout(value: &JsonValue) -> Result<CancelTimeout, ConvertError> {
-    match value {
-        JsonValue::Number(number) => {
-            Ok(CancelTimeout::Plain(TimeoutValue::Number(seconds(number)?)))
-        }
-        JsonValue::Text(text) => Ok(CancelTimeout::Plain(TimeoutValue::String(text.clone()))),
-        JsonValue::Object(_) => {
-            let phases = phases_value(value)?;
-            Ok(CancelTimeout::Structured(StructuredTimeout {
-                connect: phases.connect,
-                read: phases.read,
-                write: phases.write,
-                pool: phases.pool,
-            }))
-        }
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) => {
-            Err(ConvertError::Shapes(CANCEL_SHAPES))
-        }
+    if let JsonValue::Object(_) = value {
+        let phases = phases_value(value)?;
+        return Ok(CancelTimeout::Structured(StructuredTimeout {
+            connect: phases.connect,
+            read: phases.read,
+            write: phases.write,
+            pool: phases.pool,
+        }));
     }
+    if let JsonValue::Number(number) = value {
+        return Ok(CancelTimeout::Plain(TimeoutValue::Number(seconds(number)?)));
+    }
+    if let JsonValue::Text(text) = value {
+        return Ok(CancelTimeout::Plain(TimeoutValue::String(text.clone())));
+    }
+    Err(ConvertError::Shapes(CANCEL_SHAPES))
 }
 
 fn phases_value(value: &JsonValue) -> Result<TimeoutPhases, ConvertError> {
-    let text = serde_json::to_string(value).map_err(|source| ConvertError::Write { source })?;
-    serde_json::from_str(&text).map_err(ConvertError::Phases)
+    serde_json::from_str(
+        &serde_json::to_string(value).map_err(|source| ConvertError::Write { source })?,
+    )
+    .map_err(ConvertError::Phases)
 }
