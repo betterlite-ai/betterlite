@@ -1,0 +1,25 @@
+kind: helper
+name: warmup-send-failure
+call:
+  responses_ws_managed:
+    setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "generate": false}'
+    disconnect: connection closed
+    scripts: []
+    quota: null
+    sink:
+      fails_at: 1
+      message: warmup send failed
+env: {}
+compare:
+  ignore:
+  - /value/diagnostics/0
