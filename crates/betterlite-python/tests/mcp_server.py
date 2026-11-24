@@ -3,7 +3,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
-from typing import ClassVar, Self, TypedDict
+from typing import ClassVar, NotRequired, Self, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
@@ -21,11 +21,11 @@ SLOW = "slow"
 UNAUTHORIZED_MODE = "unauthorized"
 
 
-class Message(TypedDict, total=False):
+class Message(TypedDict):
     jsonrpc: str
-    id: int
     method: str
-    params: dict[str, JsonValue]
+    id: NotRequired[int]
+    params: NotRequired[dict[str, JsonValue]]
 
 
 class Recording:

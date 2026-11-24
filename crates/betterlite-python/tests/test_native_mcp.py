@@ -18,17 +18,35 @@ DENIED_CODE = -32602
 UPDATED_AUTH = "next-value"
 
 
-class Tool(TypedDict, total=False):
+class Tool(TypedDict):
+    name: str
+    description: str | None
+    inputSchema: dict[str, JsonValue] | None
+
+
+class OpenAiFunction(TypedDict):
     name: str
     description: str
-    inputSchema: dict[str, JsonValue]
+    parameters: dict[str, JsonValue]
+    strict: bool
+
+
+class OpenAiTool(TypedDict):
     type: str
-    function: dict[str, JsonValue]
+    function: OpenAiFunction
 
 
-class Page(TypedDict, total=False):
+class ResponsesTool(TypedDict):
+    name: str
+    description: str
+    parameters: dict[str, JsonValue]
+    strict: bool
+    type: str
+
+
+class Page(TypedDict):
     tools: list[Tool]
-    nextCursor: str
+    nextCursor: str | None
 
 
 class Prompt(TypedDict):
@@ -244,14 +262,19 @@ def test_transforms_shapes() -> None:
         "description": "finds things",
         "inputSchema": schema,
     }
-    openai = TypeAdapter(Tool).validate_json(_native.tool_to_openai(json.dumps(tool)))
-    responses = TypeAdapter(Tool).validate_json(_native.tool_to_responses(json.dumps(tool)))
+    openai = TypeAdapter(OpenAiTool).validate_json(
+        _native.tool_to_openai(json.dumps(tool))
+    )
+    responses = TypeAdapter(ResponsesTool).validate_json(
+        _native.tool_to_responses(json.dumps(tool))
+    )
     anthropic = TypeAdapter(dict[str, JsonValue]).validate_json(
         _native.tool_to_anthropic(json.dumps(tool))
     )
     assert openai["type"] == "function"
     assert openai["function"]["name"] == "search"
     assert responses["name"] == "search"
+    assert responses["type"] == "function"
     assert anthropic["name"] == "search"
 
 
@@ -301,7 +324,7 @@ def test_session_load_formats() -> None:
     with Server() as server:
         mcp, openai = asyncio.run(load_both(server))
     mcp_tools = TypeAdapter(list[Tool]).validate_json(mcp)
-    openai_tools = TypeAdapter(list[Tool]).validate_json(openai)
+    openai_tools = TypeAdapter(list[OpenAiTool]).validate_json(openai)
     assert [tool["name"] for tool in mcp_tools] == ["search", "fetch"]
     assert openai_tools[0]["type"] == "function"
 
