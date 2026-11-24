@@ -52,6 +52,9 @@ STRING_HEADER: Final[dict[str, JsonValue]] = {"additional_headers": {COST_HEADER
 EMPTY_PARAMS: Final[dict[str, JsonValue]] = {}
 EMPTY_HEADERS: Final[dict[str, JsonValue]] = {"additional_headers": {}}
 EMPTY_MESSAGES: Final[list[JsonValue]] = []
+CUSTOM_RATE: Final[dict[str, JsonValue]] = {
+    "input_cost_per_token": 0.5, "output_cost_per_token": 1.5,
+}
 MAPPING_USAGE: Final[dict[str, JsonValue]] = {
     "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
 }
@@ -249,12 +252,10 @@ def test_cost_per_token_cached() -> None:
 
 
 def test_cost_per_token_custom() -> None:
-    custom = {"input_cost_per_token": 0.5, "output_cost_per_token": 1.5}
-    ours = cost_per_token(CHAT_MODEL, 10, 5, custom_cost_per_token=custom)
+    ours = cost_per_token(CHAT_MODEL, 10, 5, custom_cost_per_token=CUSTOM_RATE)
     reference = PAIR.validate_python(REFERENCE.cost_per_token(
         model=CHAT_MODEL, prompt_tokens=10, completion_tokens=5,
-        custom_cost_per_token={"input_cost_per_token": 0.5, "output_cost_per_token": 1.5},
-    ))
+        custom_cost_per_token=CUSTOM_RATE))
     assert_pair_matches(ours, reference)
 
 
@@ -340,12 +341,10 @@ def test_completion_cost_embedding() -> None:
 
 
 def test_completion_cost_custom() -> None:
-    custom = {"input_cost_per_token": 0.5, "output_cost_per_token": 1.5}
-    ours = completion_cost(our_chat(CHAT_MODEL, 10, 5), custom_cost_per_token=custom)
+    ours = completion_cost(our_chat(CHAT_MODEL, 10, 5), custom_cost_per_token=CUSTOM_RATE)
     reference = FLOAT.validate_python(REFERENCE.completion_cost(
         completion_response=reference_chat(CHAT_MODEL, 10, 5),
-        custom_cost_per_token={"input_cost_per_token": 0.5, "output_cost_per_token": 1.5},
-    ))
+        custom_cost_per_token=CUSTOM_RATE))
     assert ours == pytest.approx(reference, rel=RELATIVE)
 
 
