@@ -328,9 +328,7 @@ pub fn logging() -> LoggingState {
 
 pub fn kwargs(model: &str, provider: &str) -> IndexMap<String, Json> {
     let text = format!(
-        r#"{{"model":{},"custom_llm_provider":{},"messages":[{{"role":"user","content":"hi"}}],"optional_params":{{}},"litellm_params":{{}},"headers":{{}},"model_response":{{}},"logging_obj":{{}}}}"#,
-        Json::Text(model.to_owned()),
-        Json::Text(provider.to_owned())
+        r#"{{"model":"{model}","custom_llm_provider":"{provider}","messages":[{{"role":"user","content":"hi"}}],"optional_params":{{}},"litellm_params":{{}},"headers":{{}},"model_response":{{}},"logging_obj":{{}}}}"#
     );
     let Json::Object(fields) = serde_json::from_str(&text).unwrap() else {
         panic!("the fixture kwargs are an object");

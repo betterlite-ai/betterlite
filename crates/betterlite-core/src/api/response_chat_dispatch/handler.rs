@@ -37,8 +37,10 @@ where
     Execution: ResponsesExecution<Client> + Sync,
     Client: ?Sized + Sync,
 {
-    let asynchronous = matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true)));
-    run(execution, call, asynchronous).await
+    if matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true))) {
+        return run(execution, call, true).await;
+    }
+    run(execution, call, false).await
 }
 
 async fn run<Execution, Client>(
@@ -239,6 +241,11 @@ async fn drain_cached<Source>(
 where
     Source: Error + 'static,
 {
-    while (cached.next_chunk().await?).is_some() {}
+    while cached
+        .next_chunk()
+        .await
+        .map_err(|failure| DispatchError::Stream { failure })?
+        .is_some()
+    {}
     Err(DispatchError::MissingCompletedResponse)
 }

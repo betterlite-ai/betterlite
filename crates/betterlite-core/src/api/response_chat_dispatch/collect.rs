@@ -16,19 +16,20 @@ pub async fn collect<Source>(
 where
     Source: std::error::Error + 'static,
 {
-    let mut completed: Option<Option<Json>> = None;
+    let mut completed = Terminal::Pending;
     while let Some(event_line) = events.next_event().await {
         let line = event_line.map_err(|failure| DispatchError::Stream { failure })?;
         if let DecodedEventLine::Event(event) = decode_event_line(&line, limits)?
-            && let Some(payload) = terminal_response(&event)
+            && let Some(terminal) = terminal_response(&event)
         {
-            completed = Some(payload);
+            completed = terminal;
         }
     }
     let stream_hidden = events.hidden_params().clone();
-    let Some(Some(payload)) = completed else {
+    let Terminal::Response(found) = completed else {
         return Err(DispatchError::MissingCompletedResponse);
     };
+    let payload = serde_json::from_value::<Json>(found)?;
     let existing_hidden = existing_hidden(&payload);
     Ok(BridgeResponse {
         payload: ResponsePayload::Dict(payload),
@@ -105,11 +106,20 @@ fn missing_defaults() -> [(&'static str, Value); 3] {
     ]
 }
 
-fn terminal_response(event: &Json) -> Option<Option<Json>> {
-    let Json::Object(fields) = event else {
+// The last terminal event decides the collected response, even when it carries none
+#[derive(Default)]
+enum Terminal {
+    #[default]
+    Pending,
+    WithoutResponse,
+    Response(Value),
+}
+
+fn terminal_response(event: &Value) -> Option<Terminal> {
+    let Value::Object(fields) = event else {
         return None;
     };
-    let Some(Json::Text(kind)) = fields.get("type") else {
+    let Some(Value::String(kind)) = fields.get("type") else {
         return None;
     };
     if !matches!(
@@ -119,8 +129,8 @@ fn terminal_response(event: &Json) -> Option<Option<Json>> {
         return None;
     }
     Some(match fields.get("response") {
-        Some(Json::Null) | None => None,
-        Some(response) => Some(response.clone()),
+        Some(Value::Null) | None => Terminal::WithoutResponse,
+        Some(response) => Terminal::Response(response.clone()),
     })
 }
 

@@ -55,9 +55,7 @@ impl RunSpec {
             )
             | None => false,
         };
-        if acompletion {
-            kwargs.insert(String::from("acompletion"), Json::Bool(true));
-        }
+        kwargs.insert(String::from("acompletion"), Json::Bool(acompletion));
         Ok(Self { kwargs })
     }
 }
