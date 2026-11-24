@@ -276,12 +276,4 @@ impl StreamLogging {
         let logged = self.log_failure_async(error.clone()).await;
         StreamError::from_failure(error, logged)
     }
-
-    fn finish_sync(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
-        self.log_success_sync().err().map(Err)
-    }
-
-    async fn finish_async(&mut self) -> Option<Result<Vec<u8>, StreamError>> {
-        self.log_success_async().await.err().map(Err)
-    }
 }

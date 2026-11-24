@@ -38,7 +38,7 @@ impl SyncIter<'_> {
         match self.source.next_chunk() {
             Some(Ok(chunk)) => Some(Ok(chunk)),
             Some(Err(failure)) => Some(Err(self.logging.fail_sync(failure))),
-            None => self.logging.finish_sync(),
+            None => self.logging.log_success_sync().err().map(Err),
         }
     }
 }
@@ -48,7 +48,7 @@ impl AsyncIter<'_> {
         match self.source.next_chunk().await {
             Some(Ok(chunk)) => Some(Ok(chunk)),
             Some(Err(failure)) => Some(Err(self.logging.fail_async(failure).await)),
-            None => self.logging.finish_async().await,
+            None => self.logging.log_success_async().await.err().map(Err),
         }
     }
 }
