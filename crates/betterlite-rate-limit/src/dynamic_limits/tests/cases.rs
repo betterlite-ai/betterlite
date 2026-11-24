@@ -255,11 +255,15 @@ async fn error_detail_complete() {
         None,
     );
     let key = principal(PLAIN_KEY_FIXTURE);
-    let error = harness
-        .handler()
+    let handler = harness.handler();
+    let error = handler
         .async_pre_call_hook(&request(Some(MODEL), &key))
         .await
         .expect_err("a spent token share and a spent request share both refuse the request");
+    handler.tasks.close();
+    handler.tasks.wait().await;
+    // the refused key never joins the minute set, so it cannot count itself as an active project
+    assert!(harness.cache.set_writes().is_empty());
     let rate_limit = rejection(error);
     let expected = format!("Key={KEY_HASH} over available TPM=0. Model TPM=0, Active keys=2");
     assert_eq!(rate_limit.message, expected);
@@ -349,6 +353,51 @@ async fn post_call_headers() {
     assert_eq!(
         headers.get("x-previous"),
         Some(&Json::Text(String::from("kept")))
+    );
+}
+
+// the post-call hook reads the priority from the key, so a reserved key gets half the model capacity
+#[tokio::test]
+async fn post_call_headers_use_the_key_priority() {
+    let router =
+        FakeRouter::answering((Some(100), Some(100)), (Some(0), Some(0))).with_model_info(MODEL);
+    let harness = harness_with(
+        router,
+        cache_counting(Some(1)),
+        Some(prod_reservation(PriorityValue::Percent(0.5))),
+    );
+    let key = principal(PROD_KEY_FIXTURE);
+    let mut headers = AdditionalHeaders::new();
+    harness
+        .handler()
+        .async_post_call_success_hook(&post_call("deployment-prod", &key), &mut headers)
+        .await;
+    assert_eq!(headers.get(PROJECT_TOKENS_HEADER), Some(&number(50)));
+    assert_eq!(headers.get(PROJECT_REQUESTS_HEADER), Some(&number(50)));
+    assert_eq!(headers.get(MODEL_TOKENS_HEADER), Some(&number(100)));
+    assert_eq!(headers.get(ACTIVE_PROJECTS_HEADER), Some(&number(1)));
+}
+
+// the six names as LiteLLM spells them, so renaming a constant fails here rather than on the wire
+#[test]
+fn header_names_match_litellm() {
+    assert_eq!(MODEL_GROUP_HEADER, "x-litellm-model_group");
+    assert_eq!(
+        PROJECT_TOKENS_HEADER,
+        "x-ratelimit-remaining-litellm-project-tokens"
+    );
+    assert_eq!(
+        PROJECT_REQUESTS_HEADER,
+        "x-ratelimit-remaining-litellm-project-requests"
+    );
+    assert_eq!(MODEL_TOKENS_HEADER, "x-ratelimit-remaining-model-tokens");
+    assert_eq!(
+        MODEL_REQUESTS_HEADER,
+        "x-ratelimit-remaining-model-requests"
+    );
+    assert_eq!(
+        ACTIVE_PROJECTS_HEADER,
+        "x-ratelimit-current-active-projects"
     );
 }
 
