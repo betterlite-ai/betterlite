@@ -24,8 +24,7 @@ where
     Router::new()
         .route(
             "/lens",
-            get(LensRoutesState::<Db, Store>::list_lenses)
-                .post(LensRoutesState::<Db, Store>::create_lens),
+            get(LensRoutesState::<Db, Store>::list_lenses).post(lenses::create_lens),
         )
         .route(
             "/lens/activity/available",
@@ -42,7 +41,7 @@ where
         )
         .route(
             "/lens/workers/{worker_id}/billing-key",
-            put(LensRoutesState::<Db, Store>::set_worker_billing),
+            put(workers::set_worker_billing),
         )
         .route(
             "/lens/workers/{worker_id}",
@@ -50,21 +49,18 @@ where
         )
         .route(
             "/lens/{lens_id}",
-            put(LensRoutesState::<Db, Store>::update_lens)
-                .get(LensRoutesState::<Db, Store>::read_lens),
+            put(LensRoutesState::<Db, Store>::update_lens).get(lenses::read_lens),
         )
         .route(
             "/lens/{lens_id}/runs",
-            get(runs::list_runs).post(LensRoutesState::<Db, Store>::run_lens),
+            get(LensRoutesState::<Db, Store>::list_runs)
+                .post(LensRoutesState::<Db, Store>::run_lens),
         )
         .route(
             "/lens/{lens_id}/runs/{job_id}",
             get(LensRoutesState::<Db, Store>::read_run),
         )
-        .route(
-            "/lens/{lens_id}/cancel",
-            post(LensRoutesState::<Db, Store>::cancel_lens),
-        )
+        .route("/lens/{lens_id}/cancel", post(runs::cancel_lens))
         .route(
             "/lens/{lens_id}/findings/{finding_id}",
             patch(findings::update_finding),

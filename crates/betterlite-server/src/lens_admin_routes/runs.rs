@@ -19,89 +19,47 @@ use crate::lens_admin_routes::error::{
     LensMutationError, LensRouteError, route_key_scope, update_failure,
 };
 
-pub(crate) async fn list_runs<Db, Store>(
-    State(state): State<LensRoutesState<Db, Store>>,
-    Path(lens_id): Path<String>,
-    caller: Option<Extension<AuthContext>>,
-    raw: RawQuery,
-) -> Result<Json<Vec<Job>>, LensRouteError<<Store as Storage>::Error>>
-where
-    Db: LensDatabase,
-    Store: LensStorage,
-{
-    Ok(Json(runs_page(&state, caller, lens_id, raw).await?))
-}
-
-async fn runs_page<Db, Store>(
-    state: &LensRoutesState<Db, Store>,
-    caller: Option<Extension<AuthContext>>,
-    lens_id: String,
-    raw: RawQuery,
-) -> Result<Vec<Job>, LensRouteError<<Store as Storage>::Error>>
-where
-    Db: LensDatabase,
-    Store: LensStorage,
-{
-    let query = content_query(raw)?;
-    let repository = state.accessible_repository(caller, &lens_id, false).await?;
-    let jobs = repository.jobs(&lens_id, query.offset).await?;
-    let stripped = jobs
-        .into_iter()
-        .map(|job| Job {
-            sample: None,
-            findings: None,
-            assessments: Vec::new(),
-            ..job
-        })
-        .collect();
-    Ok(stripped)
-}
-
 impl<Db, Store> LensRoutesState<Db, Store>
 where
     Db: LensDatabase,
     Store: LensStorage,
 {
+    pub(crate) async fn list_runs(
+        State(state): State<Self>,
+        Path(lens_id): Path<String>,
+        caller: Option<Extension<AuthContext>>,
+        raw: RawQuery,
+    ) -> Result<Json<Vec<Job>>, LensRouteError<<Store as Storage>::Error>> {
+        let query = content_query(raw)?;
+        let repository = state.accessible_repository(caller, &lens_id, false).await?;
+        let jobs = repository.jobs(&lens_id, query.offset).await?;
+        let stripped = jobs
+            .into_iter()
+            .map(|job| Job {
+                sample: None,
+                findings: None,
+                assessments: Vec::new(),
+                ..job
+            })
+            .collect();
+        Ok(Json(stripped))
+    }
+
     pub(crate) async fn run_lens(
         State(state): State<Self>,
         Path(lens_id): Path<String>,
         caller: Option<Extension<AuthContext>>,
         body: Bytes,
     ) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.queue_run(caller, lens_id, body).await?))
-    }
-
-    pub(crate) async fn read_run(
-        State(state): State<Self>,
-        Path((lens_id, job_id)): Path<(String, String)>,
-        caller: Option<Extension<AuthContext>>,
-    ) -> Result<Json<Job>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.run_of(caller, lens_id, job_id).await?))
-    }
-
-    pub(crate) async fn cancel_lens(
-        State(state): State<Self>,
-        Path(lens_id): Path<String>,
-        caller: Option<Extension<AuthContext>>,
-    ) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.cancel_now(caller, lens_id).await?))
-    }
-
-    async fn queue_run(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        lens_id: String,
-        body: Bytes,
-    ) -> Result<Lens, LensRouteError<<Store as Storage>::Error>> {
         let request: RunRequest = decode(&body)?;
         let (key, scope) = route_key_scope::<Store>(caller, true)?;
-        let repository = lens_repository(self)?;
+        let repository = lens_repository(&state)?;
         get_lens(repository, &lens_id, &scope).await?;
         if let Some(settings) = request.settings.as_ref() {
-            validate_model(settings, &key, self)?;
+            validate_model(settings, &key, &state)?;
         }
-        let now = self.clock.now();
-        let job_id = self.ids.new_id();
+        let now = state.clock.now();
+        let job_id = state.ids.new_id();
         let updated = repository
             .update(
                 &lens_id,
@@ -113,41 +71,21 @@ where
             )
             .await
             .map_err(update_failure)?;
-        Ok(required(updated)?)
+        Ok(Json(required(updated)?))
     }
 
-    async fn run_of(
-        &self,
+    pub(crate) async fn read_run(
+        State(state): State<Self>,
+        Path((lens_id, job_id)): Path<(String, String)>,
         caller: Option<Extension<AuthContext>>,
-        lens_id: String,
-        job_id: String,
-    ) -> Result<Job, LensRouteError<<Store as Storage>::Error>> {
-        let repository = self.accessible_repository(caller, &lens_id, false).await?;
-        let Some(job) = repository.job(&lens_id, &job_id).await? else {
-            return Err(LensRouteError::Access(
+    ) -> Result<Json<Job>, LensRouteError<<Store as Storage>::Error>> {
+        let repository = state.accessible_repository(caller, &lens_id, false).await?;
+        match repository.job(&lens_id, &job_id).await? {
+            Some(job) => Ok(Json(job)),
+            None => Err(LensRouteError::Access(
                 LensAccessError::InvestigationNotFound,
-            ));
-        };
-        Ok(job)
-    }
-
-    async fn cancel_now(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        lens_id: String,
-    ) -> Result<Lens, LensRouteError<<Store as Storage>::Error>> {
-        let repository = self.accessible_repository(caller, &lens_id, true).await?;
-        let now = self.clock.now();
-        let updated = repository
-            .update(
-                &lens_id,
-                |lens| cancelled(lens, now),
-                DEFAULT_ATTEMPTS,
-                false,
-            )
-            .await
-            .map_err(update_failure)?;
-        Ok(required(updated)?)
+            )),
+        }
     }
 
     // the repository, once the caller's scope covers this lens: every run route starts here
@@ -162,6 +100,29 @@ where
         get_lens(repository, lens_id, &scope).await?;
         Ok(repository)
     }
+}
+
+pub(crate) async fn cancel_lens<Db, Store>(
+    State(state): State<LensRoutesState<Db, Store>>,
+    Path(lens_id): Path<String>,
+    caller: Option<Extension<AuthContext>>,
+) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>>
+where
+    Db: LensDatabase,
+    Store: LensStorage,
+{
+    let now = state.clock.now();
+    let repository = state.accessible_repository(caller, &lens_id, true).await?;
+    let updated = repository
+        .update(
+            &lens_id,
+            |lens| cancelled(lens, now),
+            DEFAULT_ATTEMPTS,
+            false,
+        )
+        .await
+        .map_err(update_failure)?;
+    Ok(Json(required(updated)?))
 }
 
 fn cancelled(lens: Lens, now: DateTime<Utc>) -> Result<Lens, LensMutationError> {

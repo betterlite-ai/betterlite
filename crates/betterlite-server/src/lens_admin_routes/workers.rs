@@ -65,16 +65,26 @@ where
         caller: Option<Extension<AuthContext>>,
         body: Bytes,
     ) -> Result<Json<RegisteredWorker>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.register_from(caller, body).await?))
-    }
-
-    pub(crate) async fn set_worker_billing(
-        State(state): State<Self>,
-        Path(worker_id): Path<String>,
-        caller: Option<Extension<AuthContext>>,
-        body: Bytes,
-    ) -> Result<Json<Worker>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.billing_for(caller, worker_id, body).await?))
+        let request: WorkerName = decode(&body)?;
+        let (_, scope) = route_key_scope::<Store>(caller, true)?;
+        validate_key(state.keys.as_ref(), Some(&request.analysis_key_id)).await?;
+        let encoded = URL_SAFE_NO_PAD.encode(state.ids.random_bytes(TOKEN_BYTES));
+        let token = format!("lens-{encoded}");
+        let worker = Worker {
+            analysis_key_id: Some(request.analysis_key_id.clone()),
+            id: state.ids.new_id(),
+            name: request.name,
+            scope,
+            last_seen: DateTime::<Utc>::UNIX_EPOCH,
+            revoked: false,
+        };
+        let repository = lens_repository(&state)?;
+        let digest = hex::encode(Sha256::digest(token.as_bytes()));
+        repository.save_worker(&worker, Some(&digest)).await?;
+        Ok(Json(RegisteredWorker {
+            worker,
+            token: SecretString::from(token),
+        }))
     }
 
     pub(crate) async fn revoke_worker(
@@ -82,66 +92,8 @@ where
         Path(worker_id): Path<String>,
         caller: Option<Extension<AuthContext>>,
     ) -> Result<Json<bool>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.revoke_by(caller, worker_id).await?))
-    }
-
-    async fn register_from(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        body: Bytes,
-    ) -> Result<RegisteredWorker, LensRouteError<<Store as Storage>::Error>> {
-        let request: WorkerName = decode(&body)?;
         let (_, scope) = route_key_scope::<Store>(caller, true)?;
-        validate_key(self.keys.as_ref(), Some(&request.analysis_key_id)).await?;
-        let encoded = URL_SAFE_NO_PAD.encode(self.ids.random_bytes(TOKEN_BYTES));
-        let token = format!("lens-{encoded}");
-        let worker = Worker {
-            analysis_key_id: Some(request.analysis_key_id.clone()),
-            id: self.ids.new_id(),
-            name: request.name,
-            scope,
-            last_seen: DateTime::<Utc>::UNIX_EPOCH,
-            revoked: false,
-        };
-        let digest = hex::encode(Sha256::digest(token.as_bytes()));
-        let repository = lens_repository(self)?;
-        repository.save_worker(&worker, Some(&digest)).await?;
-        Ok(RegisteredWorker {
-            worker,
-            token: SecretString::from(token),
-        })
-    }
-
-    async fn billing_for(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        worker_id: String,
-        body: Bytes,
-    ) -> Result<Worker, LensRouteError<<Store as Storage>::Error>> {
-        let request: WorkerBilling = decode(&body)?;
-        let (_, scope) = route_key_scope::<Store>(caller, true)?;
-        let repository = lens_repository(self)?;
-        let worker = scoped_worker::<Db, Store>(repository, &scope, &worker_id).await?;
-        if worker.revoked {
-            return Err(LensRouteError::Access(LensAccessError::WorkerRevoked));
-        }
-        validate_key(self.keys.as_ref(), Some(&request.analysis_key_id)).await?;
-        let updated = repository
-            .set_worker_billing(&worker.id, &request.analysis_key_id)
-            .await?;
-        let Some(updated) = updated else {
-            return Err(LensRouteError::Access(LensAccessError::WorkerAccessRevoked));
-        };
-        Ok(updated)
-    }
-
-    async fn revoke_by(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        worker_id: String,
-    ) -> Result<bool, LensRouteError<<Store as Storage>::Error>> {
-        let (_, scope) = route_key_scope::<Store>(caller, true)?;
-        let repository = lens_repository(self)?;
+        let repository = lens_repository(&state)?;
         let worker = scoped_worker::<Db, Store>(repository, &scope, &worker_id).await?;
         let lenses = repository.lenses().await?;
         let busy = lenses.iter().flat_map(|lens| lens.jobs.iter()).any(|job| {
@@ -151,8 +103,35 @@ where
             return Err(LensRouteError::Access(LensAccessError::WorkerRunning));
         }
         repository.revoke_worker(&worker.id).await?;
-        Ok(true)
+        Ok(Json(true))
     }
+}
+
+pub(crate) async fn set_worker_billing<Db, Store>(
+    State(state): State<LensRoutesState<Db, Store>>,
+    Path(worker_id): Path<String>,
+    caller: Option<Extension<AuthContext>>,
+    body: Bytes,
+) -> Result<Json<Worker>, LensRouteError<<Store as Storage>::Error>>
+where
+    Db: LensDatabase,
+    Store: LensStorage,
+{
+    let request: WorkerBilling = decode(&body)?;
+    let (_, scope) = route_key_scope::<Store>(caller, true)?;
+    let repository = lens_repository(&state)?;
+    let worker = scoped_worker::<Db, Store>(repository, &scope, &worker_id).await?;
+    if worker.revoked {
+        return Err(LensRouteError::Access(LensAccessError::WorkerRevoked));
+    }
+    validate_key(state.keys.as_ref(), Some(&request.analysis_key_id)).await?;
+    let updated = repository
+        .set_worker_billing(&worker.id, &request.analysis_key_id)
+        .await?;
+    let Some(updated) = updated else {
+        return Err(LensRouteError::Access(LensAccessError::WorkerAccessRevoked));
+    };
+    Ok(Json(updated))
 }
 
 // the worker named by the path, when the caller's scope covers it, else LiteLLM's 404

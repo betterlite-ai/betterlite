@@ -9,7 +9,6 @@ use betterlite_lens::models::settings::{LensSettings, Scope};
 use betterlite_lens::sources::activity_availability::ActivityAvailability;
 use betterlite_lens::sources::storage::Storage;
 use betterlite_lens::state::transitions::{can_access, queue_job};
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
 use crate::auth::auth_identity::AuthContext;
@@ -31,37 +30,41 @@ where
         State(state): State<Self>,
         caller: Option<Extension<AuthContext>>,
     ) -> Result<Json<LensList>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.visible_list(caller).await?))
-    }
-
-    pub(crate) async fn create_lens(
-        State(state): State<Self>,
-        caller: Option<Extension<AuthContext>>,
-        body: Bytes,
-    ) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.create_from(caller, body).await?))
+        let (_, scope) = route_key_scope::<Store>(caller, false)?;
+        let repository = lens_repository(&state)?;
+        let mut lenses = repository.lenses().await?;
+        lenses.retain(|lens| can_access(&scope, &lens.scope));
+        let mut workers = repository.workers().await?;
+        workers.retain(|worker| can_access(&scope, &worker.scope));
+        Ok(Json(LensList {
+            lenses,
+            workers,
+            tracing_enabled: state.storage.is_some(),
+        }))
     }
 
     pub(crate) async fn activity_available(
         State(state): State<Self>,
         caller: Option<Extension<AuthContext>>,
     ) -> Result<Json<ActivityAvailability>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.activity(caller).await?))
+        let (_, scope) = route_key_scope::<Store>(caller, false)?;
+        if state.storage.is_none() {
+            return Ok(Json(ActivityAvailability::default()));
+        }
+        let reader = source_reader(state.storage.as_ref())?;
+        Ok(Json(reader.availability(&scope).await?))
     }
 
     pub(crate) async fn list_agents(
         State(state): State<Self>,
         caller: Option<Extension<AuthContext>>,
     ) -> Result<Json<Vec<String>>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.agent_names(caller).await?))
-    }
-
-    pub(crate) async fn read_lens(
-        State(state): State<Self>,
-        Path(lens_id): Path<String>,
-        caller: Option<Extension<AuthContext>>,
-    ) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.read_one(caller, lens_id).await?))
+        let (_, scope) = route_key_scope::<Store>(caller, false)?;
+        let Some(storage) = state.storage.as_ref() else {
+            return Ok(Json(Vec::new()));
+        };
+        let reader = source_reader(Some(storage))?;
+        Ok(Json(reader.agents(&scope).await?))
     }
 
     pub(crate) async fn update_lens(
@@ -70,91 +73,10 @@ where
         caller: Option<Extension<AuthContext>>,
         body: Bytes,
     ) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>> {
-        Ok(Json(state.update_from(caller, lens_id, body).await?))
-    }
-
-    async fn visible_list(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-    ) -> Result<LensList, LensRouteError<<Store as Storage>::Error>> {
-        let (_, scope) = route_key_scope::<Store>(caller, false)?;
-        let repository = lens_repository(self)?;
-        let lenses = repository.lenses().await?;
-        let workers = repository.workers().await?;
-        let allowed_lenses = lenses
-            .into_iter()
-            .filter(|lens| can_access(&scope, &lens.scope))
-            .collect();
-        let allowed_workers = workers
-            .into_iter()
-            .filter(|worker| can_access(&scope, &worker.scope))
-            .collect();
-        Ok(LensList {
-            lenses: allowed_lenses,
-            workers: allowed_workers,
-            tracing_enabled: self.storage.is_some(),
-        })
-    }
-
-    async fn create_from(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        body: Bytes,
-    ) -> Result<Lens, LensRouteError<<Store as Storage>::Error>> {
         let (settings, key, scope) = decoded_scope::<Store>(caller, &body)?;
-        validate_model(&settings, &key, self)?;
-        let now = self.clock.now();
-        let lens = new_lens(scope, settings, now, self.ids.new_id());
-        let queued = queue_job(&lens, now, self.ids.new_id(), &RunRequest::default())
-            .map_err(LensMutationError::from)?;
-        let repository = lens_repository(self)?;
-        Ok(repository.create(queued).await?)
-    }
-
-    async fn activity(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-    ) -> Result<ActivityAvailability, LensRouteError<<Store as Storage>::Error>> {
-        let (_, scope) = route_key_scope::<Store>(caller, false)?;
-        if self.storage.is_none() {
-            return Ok(ActivityAvailability::default());
-        }
-        let reader = source_reader(self.storage.as_ref())?;
-        Ok(reader.availability(&scope).await?)
-    }
-
-    async fn agent_names(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-    ) -> Result<Vec<String>, LensRouteError<<Store as Storage>::Error>> {
-        let (_, scope) = route_key_scope::<Store>(caller, false)?;
-        let Some(storage) = self.storage.as_ref() else {
-            return Ok(Vec::new());
-        };
-        let reader = source_reader(Some(storage))?;
-        Ok(reader.agents(&scope).await?)
-    }
-
-    async fn read_one(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        lens_id: String,
-    ) -> Result<Lens, LensRouteError<<Store as Storage>::Error>> {
-        let (_, scope) = route_key_scope::<Store>(caller, false)?;
-        let repository = lens_repository(self)?;
-        Ok(get_lens(repository, &lens_id, &scope).await?)
-    }
-
-    async fn update_from(
-        &self,
-        caller: Option<Extension<AuthContext>>,
-        lens_id: String,
-        body: Bytes,
-    ) -> Result<Lens, LensRouteError<<Store as Storage>::Error>> {
-        let (settings, key, scope) = decoded_scope::<Store>(caller, &body)?;
-        let repository = lens_repository(self)?;
+        let repository = lens_repository(&state)?;
         get_lens(repository, &lens_id, &scope).await?;
-        validate_model(&settings, &key, self)?;
+        validate_model(&settings, &key, &state)?;
         let updated = repository
             .update(
                 &lens_id,
@@ -164,8 +86,54 @@ where
             )
             .await
             .map_err(update_failure)?;
-        Ok(required(updated)?)
+        Ok(Json(required(updated)?))
     }
+}
+
+pub(crate) async fn create_lens<Db, Store>(
+    State(state): State<LensRoutesState<Db, Store>>,
+    caller: Option<Extension<AuthContext>>,
+    body: Bytes,
+) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>>
+where
+    Db: LensDatabase,
+    Store: LensStorage,
+{
+    let (settings, key, scope) = decoded_scope::<Store>(caller, &body)?;
+    validate_model(&settings, &key, &state)?;
+    let now = state.clock.now();
+    let lens = Lens {
+        id: state.ids.new_id(),
+        scope,
+        settings,
+        revision: 1,
+        version: 0,
+        created_at: now,
+        next_run_at: now,
+        last_scan_at: None,
+        jobs: Vec::new(),
+        findings: Vec::new(),
+        budget_month: now.format("%Y-%m").to_string(),
+        spent: Decimal::ZERO,
+    };
+    let queued = queue_job(&lens, now, state.ids.new_id(), &RunRequest::default())
+        .map_err(LensMutationError::from)?;
+    let repository = lens_repository(&state)?;
+    Ok(Json(repository.create(queued).await?))
+}
+
+pub(crate) async fn read_lens<Db, Store>(
+    State(state): State<LensRoutesState<Db, Store>>,
+    Path(lens_id): Path<String>,
+    caller: Option<Extension<AuthContext>>,
+) -> Result<Json<Lens>, LensRouteError<<Store as Storage>::Error>>
+where
+    Db: LensDatabase,
+    Store: LensStorage,
+{
+    let (_, scope) = route_key_scope::<Store>(caller, false)?;
+    let repository = lens_repository(&state)?;
+    Ok(Json(get_lens(repository, &lens_id, &scope).await?))
 }
 
 fn decoded_scope<Store>(
@@ -178,23 +146,6 @@ where
     let settings: LensSettings = decode(body)?;
     let (key, scope) = route_key_scope::<Store>(caller, true)?;
     Ok((settings, key, scope))
-}
-
-fn new_lens(scope: Scope, settings: LensSettings, now: DateTime<Utc>, id: String) -> Lens {
-    Lens {
-        id,
-        scope,
-        settings,
-        revision: 1,
-        version: 0,
-        created_at: now,
-        next_run_at: now,
-        last_scan_at: None,
-        jobs: Vec::new(),
-        findings: Vec::new(),
-        budget_month: now.format("%Y-%m").to_string(),
-        spent: Decimal::ZERO,
-    }
 }
 
 fn with_settings(lens: Lens, settings: LensSettings) -> Result<Lens, LensMutationError> {
