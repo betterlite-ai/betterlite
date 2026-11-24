@@ -4,11 +4,12 @@ mod partition_switch;
 mod queue;
 pub mod retention;
 mod tests;
+mod writer;
 use self::cold_storage::custom_logger;
 use self::queue::{logs_url, max_bytes};
+use self::writer::{disable_spend_logs, max_budget};
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 use betterlite_db::spend_flush::monitor::SpendMonitorSettings;
@@ -142,38 +143,6 @@ impl Section for Raw {
             cold_storage_custom_logger: custom_logger(&litellm.cold_storage_custom_logger)?,
         })
     }
-}
-// proxy_server's disable_spend_logs starts False, general_settings replaces it only when the key is there, and an explicit null is neither False nor True.
-fn disable_spend_logs(configured: &Option<Option<JsonValue>>) -> Result<Option<bool>, ConfigError> {
-    match configured {
-        None => Ok(Some(false)),
-        Some(None) => Ok(None),
-        Some(Some(JsonValue::Bool(flag))) => Ok(Some(*flag)),
-        Some(Some(
-            JsonValue::Null
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        )) => Err(ConfigError::InvalidScalar {
-            path: DISABLE_SPEND_LOGS_PATH.to_owned(),
-            value: false,
-        }),
-    }
-}
-
-// litellm takes max_budget as a number or an os.environ reference; an absent one leaves zero
-fn max_budget<L>(configured: Option<JsonValue>, lookup: &L) -> Result<Decimal, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let amount = resolve_number(
-        configured.map(budget_number).transpose()?,
-        MAX_BUDGET_PATH,
-        lookup,
-        parse_money,
-    )?;
-    Ok(amount.unwrap_or(Decimal::ZERO))
 }
 pub fn load_spend_storage_policy<L>(source: &str, lookup: &L) -> Result<Settings, ConfigError>
 where
