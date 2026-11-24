@@ -15,6 +15,9 @@ deviations:
   - what: The recovery has no separate "response has no usage" branch; both assembled response variants always carry a usage record, so only the absent or empty output text guard can fire there.
     why: B2227's chat and text responses both hold a usage record, so a guard for a missing one would be unreachable code.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L377-L385
+  - what: build_streaming_response_for_logging and record_partial_usage_for_failure take one more argument after the pinned ones, an InterruptedStreamServices holding the cost service and the token counter.
+    why: LiteLLM reaches litellm.completion_cost and token_counter as module globals; the generic bounds still need an instance to call, and the no-module-state rule forbids a global, so the caller passes them in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L207-L251
 kept_bugs:
   - what: An interrupted stream that fell back to a usage-only response keeps the message_start output_tokens placeholder, because the usage-only response carries empty message content and the recovery finds no output text to re-count.
     why: The fallback exists to keep a log row for a stream that could not be reconstructed, and a deployment that sees it still gets the raw output_tokens rather than a reconstructed guess; B3631 builds that response and the umbrella keeps the behavior.
