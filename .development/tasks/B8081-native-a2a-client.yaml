@@ -49,6 +49,9 @@ description: >-
   B8083 reuses it.
 scope:
   paths:
+  - crates/betterlite-a2a/src/send/bridge.rs
+  - crates/betterlite-a2a/src/client.rs
+  - crates/betterlite-a2a/src/send/tests/bridge.rs
   - crates/betterlite-python/src/a2a.rs
   - crates/betterlite-python/src/a2a/**
   - crates/betterlite-python/python/betterlite/_native_a2a.pyi

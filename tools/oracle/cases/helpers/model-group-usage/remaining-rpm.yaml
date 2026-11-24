@@ -1,0 +1,52 @@
+kind: helper
+name: remaining-rpm
+call:
+  model_group_usage:
+    {
+      "function": "remaining",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/gpt-4o"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        },
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "azure/gpt-4o"
+          },
+          "model_info": {
+            "id": "b"
+          }
+        }
+      ],
+      "model_group": "g",
+      "now": 3660,
+      "group_info": {
+        "tpm": null,
+        "rpm": 100,
+        "itpm": null,
+        "otpm": null
+      },
+      "cache": {
+        "mode": "values",
+        "values": [
+          null,
+          null,
+          10,
+          20
+        ]
+      },
+      "response": null,
+      "request_kwargs": null,
+      "metadata": null,
+      "litellm_metadata": null,
+      "team_id": null,
+      "candidates": null
+    }
+env: {}
+compare: {ignore: []}

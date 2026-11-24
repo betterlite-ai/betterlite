@@ -1,0 +1,17 @@
+kind: helper
+name: team-list-query-dump-fallback-and-malformed-roster
+call:
+  team_list_query:
+    teams:
+      - team_id: raw-1
+        team_alias: Raw
+        members_with_roles: not-a-list
+      - team_id: raw-2
+        members_with_roles: null
+      - team_id: raw-3
+        members_with_roles: {}
+    use_deleted_table: false
+    keys_count_by_team:
+      raw-1: 2
+env: {}
+compare: {ignore: []}

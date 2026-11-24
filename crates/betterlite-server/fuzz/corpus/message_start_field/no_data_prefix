@@ -1,0 +1,4 @@
+event: message_start
+data{"type":"message_start","message":{"model":"colonless"}}
+ data: {"type":"message_start","message":{"model":"indented"}}
+data: {"type": "message_start", "message": {"model": "trimmed"}}
