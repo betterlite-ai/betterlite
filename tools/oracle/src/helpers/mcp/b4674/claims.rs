@@ -93,7 +93,10 @@ async fn scenario_results(scenario: &ClaimScenario) -> Vec<String> {
 }
 
 fn seeded_store(scenario: &ClaimScenario) -> MemoryClaimStore {
-    let store = MemoryClaimStore::new(Box::new(FrozenClock));
+    let store = MemoryClaimStore {
+        clock: Box::new(FrozenClock),
+        entries: Mutex::new(HashMap::new()),
+    };
     for key in &scenario.seed_keys {
         let _seeded = store.increment(key, scenario.ttl);
     }

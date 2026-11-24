@@ -29,7 +29,10 @@ fn clock_arc(seconds: i64) -> Arc<AtomicI64> {
 
 fn local_store(seconds: i64) -> (MemoryClaimStore, Arc<AtomicI64>) {
     let ticker = clock_arc(seconds);
-    let store = MemoryClaimStore::new(Box::new(FixedClock(Arc::clone(&ticker))));
+    let store = MemoryClaimStore {
+        clock: Box::new(FixedClock(Arc::clone(&ticker))),
+        entries: Mutex::new(HashMap::new()),
+    };
     (store, ticker)
 }
 

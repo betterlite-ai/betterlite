@@ -59,25 +59,17 @@ impl ClaimClock for SystemClaimClock {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ClaimRecord {
+pub struct ClaimRecord {
     count: u64,
     expires_at: i64,
 }
 
 pub struct MemoryClaimStore {
-    clock: Box<dyn ClaimClock>,
-    entries: Mutex<HashMap<String, ClaimRecord>>,
+    pub clock: Box<dyn ClaimClock>,
+    pub entries: Mutex<HashMap<String, ClaimRecord>>,
 }
 
 impl MemoryClaimStore {
-    #[must_use]
-    pub fn new(clock: Box<dyn ClaimClock>) -> Self {
-        Self {
-            clock,
-            entries: Mutex::new(HashMap::new()),
-        }
-    }
-
     #[must_use]
     pub fn increment(&self, key: &str, ttl_seconds: i64) -> u64 {
         let now = self.clock.now_seconds();
