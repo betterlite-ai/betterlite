@@ -149,7 +149,10 @@ fn store_renews_an_expiring_row() {
         answer["assertion"]["id_token"],
         answer["writes"][0]["assertion"]["id_token"]
     );
-    assert!(answer["assertion"]["expires_at_ms"].as_i64() == Some((TOKEN + 3_600_i64) * 1_000_i64));
+    assert_eq!(
+        answer["assertion"]["expires_at_ms"].as_i64(),
+        Some((TOKEN + 3_600_i64) * 1_000_i64)
+    );
 }
 
 #[test]

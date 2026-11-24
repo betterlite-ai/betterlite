@@ -17,6 +17,7 @@ use crate::mcp::outbound_credentials::sso_assertion_refresher::failure::RefreshF
 
 const TOKEN_ENDPOINT: &str = "https://idp.example/token";
 
+#[derive(Clone)]
 struct SentPost {
     url: String,
     form: BTreeMap<String, String>,

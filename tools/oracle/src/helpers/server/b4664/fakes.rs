@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -105,12 +106,15 @@ impl Harness {
 }
 
 impl SsoAssertionStore for Harness {
-    async fn fetch(
+    fn fetch(
         &self,
         user_id: &str,
-    ) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable> {
+    ) -> impl Future<Output = Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>> + Send
+    {
         let stored = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(stored.get(user_id).cloned())
+        let found = stored.get(user_id).cloned();
+        drop(stored);
+        ready(Ok(found))
     }
 }
 
