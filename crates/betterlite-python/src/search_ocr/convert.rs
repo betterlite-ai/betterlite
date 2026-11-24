@@ -216,10 +216,10 @@ fn marker_document(
     let Some(OcrJson::Number(index)) = marker.get("blob") else {
         return Err(OcrError::InvalidRequest(UNSUPPORTED_FILE.to_owned()));
     };
-    let Some(index) = index.as_u64().and_then(|value| usize::try_from(value).ok()) else {
+    let Some(offset) = index.as_u64().and_then(|value| usize::try_from(value).ok()) else {
         return Err(OcrError::InvalidRequest(UNSUPPORTED_FILE.to_owned()));
     };
-    let Some(bytes) = blobs.get(index) else {
+    let Some(bytes) = blobs.get(offset) else {
         return Err(OcrError::InvalidRequest(UNSUPPORTED_FILE.to_owned()));
     };
     let content_type = optional_text(marker, "content_type");

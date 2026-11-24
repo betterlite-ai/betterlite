@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::Neg as _;
 use std::sync::Arc;
 
 use betterlite_config::loader::startup::process_environment;
@@ -176,8 +177,8 @@ async fn cost_answer(
     .await;
     match outcome {
         Ok((input, output)) if call.number_of_queries.is_negative() => Ok(CostAnswer::Cost {
-            input_cost: -input,
-            output_cost: -output,
+            input_cost: input.neg(),
+            output_cost: output.neg(),
         }),
         Ok((input, output)) => Ok(CostAnswer::Cost {
             input_cost: input,

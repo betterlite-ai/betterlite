@@ -68,7 +68,7 @@ impl NativeSearchSession {
 }
 
 // An awaitable entry hands the loop the coroutine its closure builds and raises a failed call in it.
-fn awaited<'py, F, Fut>(py: Python<'py>, answer: F) -> Coroutine<'py>
+fn awaited<F, Fut>(py: Python<'_>, answer: F) -> Coroutine<'_>
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = Result<String, NativeFailure>> + Send + 'static,
