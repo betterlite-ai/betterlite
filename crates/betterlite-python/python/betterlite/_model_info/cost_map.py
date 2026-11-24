@@ -26,11 +26,6 @@ class CostMapOptions(TypedDict, total=False):
     client: _CostMapClient
 
 
-class RefetchOptions(CostMapOptions, total=False):
-    timeout: int
-    max_attempts: int
-
-
 class CostMapProvenance(TypedDict):
     source_revision: str | None
     etag: str | None
@@ -127,14 +122,13 @@ def get_model_cost_map(
 
 async def refetch_model_cost_map(
     url: str,
-    **options: Unpack[RefetchOptions],
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    **options: Unpack[CostMapOptions],
 ) -> ModelCostMapReloadResult:
     _reject_injected_options(options, asyncio.sleep)
-    timeout = options.get("timeout")
-    max_attempts = options.get("max_attempts")
-    limit = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
-    attempts = DEFAULT_MAX_ATTEMPTS if max_attempts is None else max_attempts
-    text = await catalog_state.native.reload_async(_reload_request(url, float(limit), attempts))
+    request = _reload_request(url, float(timeout), max_attempts)
+    text = await catalog_state.native.reload_async(request)
     return _reload_result(text)
 
 

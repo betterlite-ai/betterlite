@@ -3,6 +3,7 @@ import importlib
 import random
 import re
 from collections.abc import Iterator, Mapping
+from datetime import datetime
 from typing import Final, Protocol
 
 import pytest
@@ -248,13 +249,19 @@ def test_reporter_local_shapes(
     assert COST_MAP.get_model_cost_map_loaded_at() is not None
 
 
+def test_reporter_loaded_at_micros() -> None:
+    text = _TEXT.validate_python(get_model_cost_map_source_info()["loaded_at"])
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+00:00", text)
+    assert datetime.fromisoformat(text).utcoffset() is not None
+
+
 def test_reload_good_body(
     server: ModelMapServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv(LOCAL_MAP_ENV, raising=False)
     url = server.url + GOOD_PATH
     theirs = _MODEL_INFO.validate_python(REFERENCE.get_model_cost_map(url))
-    ours = get_model_cost_map(url)
+    ours = get_model_cost_map(url, 5, 3)
     assert ours == theirs
     info = get_model_cost_map_source_info()
     assert info["source"] == "remote"
@@ -295,7 +302,7 @@ def test_reload_retry_then_good(
     their_url = server.url + RETRY_LITELLM_PATH
     our_url = server.url + RETRY_BETTERLITE_PATH
     theirs = asyncio.run(REFETCH.refetch_model_cost_map(their_url))
-    ours = asyncio.run(refetch_model_cost_map(our_url))
+    ours = asyncio.run(refetch_model_cost_map(our_url, 5, 3))
     match ours:
         case ModelCostMapReloaded():
             assert theirs.model_cost_map == ours.model_cost_map

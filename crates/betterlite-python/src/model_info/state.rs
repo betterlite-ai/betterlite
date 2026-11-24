@@ -18,7 +18,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::source::{CatalogProvenance, SourceKind};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::value::RawValue;
@@ -135,7 +135,10 @@ impl Runtime {
     }
     pub(crate) fn source_json(&self) -> Result<String, ModelInfoError> {
         let state = self.state();
-        let loaded_at = state.provenance.loaded_at.map(|value| value.to_rfc3339());
+        let loaded_at = state
+            .provenance
+            .loaded_at
+            .map(|value| value.to_rfc3339_opts(SecondsFormat::Micros, false));
         let info = SourceInfo {
             source: match state.provenance.kind {
                 SourceKind::Local => "local",

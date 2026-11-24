@@ -4,7 +4,7 @@ use betterlite_config::loader::startup::process_environment;
 use betterlite_models::decisions::Json;
 use betterlite_models::fetch_policy::revision::git_blob_id;
 use betterlite_models::source::{CatalogProvenance, SourceKind};
-use chrono::Utc;
+use chrono::{SecondsFormat, Utc};
 use http::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
@@ -45,7 +45,10 @@ fn model_info_state_reports_the_bundled_source() {
     let Json::Text(loaded_at) = info.get("loaded_at").unwrap() else {
         panic!("loaded_at is not ISO text");
     };
-    assert!(loaded_at.ends_with('Z') || loaded_at.contains('+'));
+    // Python 3.10's datetime.fromisoformat reads 3 or 6 fractional digits, never Rust's 9
+    let (_, fraction) = loaded_at.split_once('.').unwrap();
+    assert_eq!(fraction.len(), "123456+00:00".len());
+    assert!(loaded_at.ends_with("+00:00"));
     assert_eq!(runtime.state().generation, 0);
 }
 
@@ -82,7 +85,9 @@ fn model_info_state_reports_a_remote_source() {
     assert_eq!(info.get("etag"), Some(&Json::Text("etag-1".to_owned())));
     assert_eq!(
         info.get("loaded_at"),
-        Some(&Json::Text(loaded_at.to_rfc3339()))
+        Some(&Json::Text(
+            loaded_at.to_rfc3339_opts(SecondsFormat::Micros, false)
+        ))
     );
 }
 
