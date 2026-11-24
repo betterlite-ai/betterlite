@@ -20,7 +20,8 @@ use crate::lens_access::lookup::lens_repository;
 use crate::lens_access::state::{LensDatabase, LensRoutesState, LensStorage};
 use crate::lens_admin_routes::body::decode;
 use crate::lens_admin_routes::error::{LensRouteError, route_key_scope};
-use crate::lens_billing::key_validation::validate_key;
+
+pub(crate) mod billing;
 
 const TOKEN_BYTES: usize = 40;
 const WORKER_NAME: &str = "Lens worker";
@@ -95,9 +96,7 @@ where
     Db: LensDatabase,
     Store: LensStorage,
 {
-    let (_, scope) = route_key_scope::<Store>(caller, true)?;
-    let repository = lens_repository(&state)?;
-    let worker = scoped_worker::<Db, Store>(repository, &scope, &worker_id).await?;
+    let (repository, worker) = scoped_worker_for(&state, caller, &worker_id).await?;
     let lenses = repository.lenses().await?;
     let busy = lenses.iter().flat_map(|lens| lens.jobs.iter()).any(|job| {
         job.status == JobStatus::Running && job.worker_id.as_deref() == Some(worker.id.as_str())
@@ -109,31 +108,20 @@ where
     Ok(Json(true))
 }
 
-pub(crate) async fn set_worker_billing<Db, Store>(
-    State(state): State<LensRoutesState<Db, Store>>,
-    Path(worker_id): Path<String>,
+// the caller's repository and the worker named by the path, once their scope covers it
+async fn scoped_worker_for<'a, Db, Store>(
+    state: &'a LensRoutesState<Db, Store>,
     caller: Option<Extension<AuthContext>>,
-    body: Bytes,
-) -> Result<Json<Worker>, LensRouteError<<Store as Storage>::Error>>
+    worker_id: &str,
+) -> Result<(&'a LensRepository<Db>, Worker), LensRouteError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
 {
-    let request: WorkerBilling = decode(&body)?;
     let (_, scope) = route_key_scope::<Store>(caller, true)?;
-    let repository = lens_repository(&state)?;
-    let worker = scoped_worker::<Db, Store>(repository, &scope, &worker_id).await?;
-    if worker.revoked {
-        return Err(LensRouteError::Access(LensAccessError::WorkerRevoked));
-    }
-    validate_key(state.keys.as_ref(), Some(&request.analysis_key_id)).await?;
-    let updated = repository
-        .set_worker_billing(&worker.id, &request.analysis_key_id)
-        .await?;
-    let Some(patched) = updated else {
-        return Err(LensRouteError::Access(LensAccessError::WorkerAccessRevoked));
-    };
-    Ok(Json(patched))
+    let repository = lens_repository(state)?;
+    let worker = scoped_worker::<Db, Store>(repository, &scope, worker_id).await?;
+    Ok((repository, worker))
 }
 
 // the worker named by the path, when the caller's scope covers it, else LiteLLM's 404

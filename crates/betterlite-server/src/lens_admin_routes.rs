@@ -26,12 +26,12 @@ where
     let agent_list = get(LensState::<Db, Store>::list_agents);
     let sample_preview = post(preview::preview_sample);
     let worker_register = post(workers::register_worker);
-    let worker_billing = put(workers::set_worker_billing);
+    let worker_billing = put(workers::billing::set_worker_billing);
     let worker_revoke = delete(workers::revoke_worker);
     let lens_detail = put(LensState::<Db, Store>::update_lens).get(lenses::read_lens);
     let run_collection = get(runs::list_runs).post(runs::run_lens);
-    let run_detail = get(runs::read_run);
-    let lens_cancel = post(runs::cancel_lens);
+    let run_detail = get(runs::read::read_run);
+    let lens_cancel = post(runs::cancel::cancel_lens);
     let finding_patch = patch(findings::update_finding);
     let execution_content = get(evidence::evidence_content);
     Router::new()
