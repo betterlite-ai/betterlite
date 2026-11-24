@@ -27,7 +27,7 @@ use crate::spend_flush::redis::fakes::tests::{
 };
 use crate::spend_flush::redis::jobs::SPEND_JOB_RETRIES;
 use crate::spend_flush::redis::tags::{
-    DailyTagCommit, MemoryTagFlush, RedisTagFlush, TagCommitFailure, TagFlushError,
+    DailyTagCommit as _, MemoryTagFlush, RedisTagFlush, TagCommitFailure as _, TagFlushError,
 };
 use crate::spend_flush::redis::{DAILY_TAG_SPEND_JOB_NAME, DB_SPEND_UPDATE_JOB_NAME};
 use crate::spend_queues::SpendQueueError;

@@ -141,10 +141,6 @@ impl RetryPause for CountingPause {
 }
 
 // The daily commit parts one case reads: the writer under test, a fixed clock and jitter, and the retry pause the test inspects.
-pub(crate) fn parts<Writer>(writer: Arc<Writer>) -> Arc<DailyCommitParts<Writer>> {
-    parts_with_pause(writer, Arc::new(CountingPause::default()))
-}
-
 pub(crate) fn parts_with_pause<Writer>(
     writer: Arc<Writer>,
     pause: Arc<CountingPause>,
@@ -401,7 +397,8 @@ impl UnreachableLists {
     }
 
     fn count_push(&self) {
-        *self.pushes.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        let mut pushes = self.pushes.lock().unwrap_or_else(PoisonError::into_inner);
+        *pushes = pushes.saturating_add(1);
     }
 
     fn failed_push(&self, operation: &'static str) -> SpendListFuture<'_, i64> {
