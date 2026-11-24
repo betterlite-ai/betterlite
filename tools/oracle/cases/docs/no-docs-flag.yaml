@@ -6,7 +6,8 @@ env:
 request:
   method: GET
   path: /
-  headers: {}
+  headers:
+    Authorization: Bearer oracle-master
   body: null
 upstream: []
 compare:
