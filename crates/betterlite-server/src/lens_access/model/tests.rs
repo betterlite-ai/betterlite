@@ -21,9 +21,8 @@ fn a_configured_model_passes() {
 fn without_a_catalog_the_model_is_unknown() {
     let harness = Harness::new().without_catalog();
     let admin = auth_key(Some("proxy_admin"), None, &[]);
-    let error = validate_model(&settings("gpt-4o"), &admin, &harness.state())
-        .err()
-        .expect("no catalog");
+    let error =
+        validate_model(&settings("gpt-4o"), &admin, &harness.state()).expect_err("no catalog");
     assert_eq!(error.status(), StatusCode::BAD_REQUEST);
     assert_eq!(error.detail(), UNKNOWN);
 }
@@ -33,8 +32,7 @@ fn an_unconfigured_model_is_unknown() {
     let harness = Harness::new();
     let admin = auth_key(Some("proxy_admin"), None, &[]);
     let error = validate_model(&settings("not-deployed"), &admin, &harness.state())
-        .err()
-        .expect("the model is unknown");
+        .expect_err("the model is unknown");
     assert_eq!(error.status(), StatusCode::BAD_REQUEST);
     assert_eq!(error.detail(), UNKNOWN);
 }
@@ -44,8 +42,7 @@ fn a_non_admin_key_without_the_model_is_denied() {
     let harness = Harness::new();
     let key = auth_key(Some("team"), Some("team-1"), &["another-model"]);
     let error = validate_model(&settings("gpt-4o"), &key, &harness.state())
-        .err()
-        .expect("the key lacks the model");
+        .expect_err("the key lacks the model");
     assert_eq!(error.status(), StatusCode::FORBIDDEN);
     assert_eq!(error.detail(), DENIED);
 }
@@ -79,9 +76,8 @@ fn the_selection_is_validated_before_the_model() {
     let admin = auth_key(Some("proxy_admin"), None, &[]);
     let broken = execution_id(&["logs", "team-1", "trace-1"]);
     let chosen = settings_with_ids(&[broken.as_str()]);
-    let error = validate_model(&chosen, &admin, &harness.state())
-        .err()
-        .expect("the selection fails first");
+    let error =
+        validate_model(&chosen, &admin, &harness.state()).expect_err("the selection fails first");
     assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 

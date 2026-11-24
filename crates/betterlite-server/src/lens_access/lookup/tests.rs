@@ -27,8 +27,7 @@ async fn a_missing_lens_is_not_found() {
     let harness = Harness::new();
     let error = get_lens(&repository(&harness), "missing", &all_teams_scope())
         .await
-        .err()
-        .expect("a missing lens fails");
+        .expect_err("a missing lens fails");
     assert_eq!(error.status(), StatusCode::NOT_FOUND);
     assert_eq!(error.detail(), "Lens not found");
 }
@@ -49,8 +48,7 @@ async fn another_teams_lens_is_not_found() {
     harness.database.seed_lens(lens_in_team("l1", "team-1"));
     let error = get_lens(&repository(&harness), "l1", &team_scope("team-2"))
         .await
-        .err()
-        .expect("another team's lens is hidden");
+        .expect_err("another team's lens is hidden");
     assert_eq!(error.status(), StatusCode::NOT_FOUND);
     assert_eq!(error.detail(), "Lens not found");
 }
@@ -61,14 +59,13 @@ async fn a_team_scope_cannot_read_an_all_teams_lens() {
     harness.database.seed_lens(lens_with("l1", true));
     let error = get_lens(&repository(&harness), "l1", &team_scope("team-1"))
         .await
-        .err()
-        .expect("the all-teams lens is hidden");
+        .expect_err("the all-teams lens is hidden");
     assert_eq!(error.status(), StatusCode::NOT_FOUND);
 }
 
 #[test]
 fn required_turns_none_into_a_conflict() {
-    let error = required(None).err().expect("no lens is a conflict");
+    let error = required(None).expect_err("no lens is a conflict");
     assert_eq!(error.status(), StatusCode::CONFLICT);
     assert_eq!(
         error.detail(),
@@ -104,8 +101,7 @@ async fn a_repository_failure_is_reported_as_a_500() {
     harness.database.corrupted();
     let error = get_lens(&repository(&harness), "l1", &all_teams_scope())
         .await
-        .err()
-        .expect("the corrupt record fails");
+        .expect_err("the corrupt record fails");
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(!error.detail().is_empty());
 }

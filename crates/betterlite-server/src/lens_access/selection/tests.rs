@@ -23,7 +23,7 @@ fn traces_and_requests_ids_pass() {
 #[test]
 fn a_broken_id_is_rejected() {
     let chosen = settings_with_ids(&["not base64 at all"]);
-    let error = validate_selection(&chosen).err().expect("the id is broken");
+    let error = validate_selection(&chosen).expect_err("the id is broken");
     assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error.detail(), INVALID);
 }
@@ -32,9 +32,7 @@ fn a_broken_id_is_rejected() {
 fn an_unknown_source_is_rejected() {
     let logs = execution_id(&["logs", "team-1", "trace-1"]);
     let chosen = settings_with_ids(&[logs.as_str()]);
-    let error = validate_selection(&chosen)
-        .err()
-        .expect("the source is unknown");
+    let error = validate_selection(&chosen).expect_err("the source is unknown");
     assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error.detail(), INVALID);
 }
@@ -43,6 +41,6 @@ fn an_unknown_source_is_rejected() {
 fn an_id_with_the_wrong_element_count_is_rejected() {
     let short = execution_id(&["traces", "team-1"]);
     let chosen = settings_with_ids(&[short.as_str()]);
-    let error = validate_selection(&chosen).err().expect("the id is short");
+    let error = validate_selection(&chosen).expect_err("the id is short");
     assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }

@@ -159,8 +159,10 @@ pub(crate) struct Ids {
 impl IdSource for Ids {
     fn new_id(&self) -> String {
         let mut counter = self.counter.lock().expect("the id counter lock");
-        *counter += 1;
-        format!("id-{counter}")
+        let next = counter.wrapping_add(1_u64);
+        *counter = next;
+        drop(counter);
+        format!("id-{next}")
     }
 
     fn random_bytes(&self, count: usize) -> Vec<u8> {
@@ -487,6 +489,7 @@ impl FakeDatabase {
             return count(0);
         }
         *stored = serde_json::from_str(data).expect("the updated lens decodes");
+        drop(lenses);
         count(1)
     }
 
@@ -505,7 +508,9 @@ impl FakeDatabase {
             .iter()
             .filter(|lens| lens.id == id)
             .flat_map(|lens| lens.jobs.iter())
-            .map(encoded);
+            .map(encoded)
+            .collect::<Vec<_>>();
+        drop(lenses);
         let archived = self
             .archived
             .lock()
@@ -513,7 +518,7 @@ impl FakeDatabase {
             .iter()
             .map(encoded)
             .collect::<Vec<_>>();
-        own.chain(archived).collect()
+        own.into_iter().chain(archived).collect()
     }
 
     fn one_job(&self, args: &[SqlBind]) -> Vec<Row> {
@@ -524,13 +529,15 @@ impl FakeDatabase {
             return Vec::new();
         };
         let lenses = self.lenses.lock().expect("the lens lock");
-        let own = lenses
+        let found = lenses
             .iter()
             .filter(|lens| lens.id == lens_id)
             .flat_map(|lens| lens.jobs.iter())
-            .find(|job| job.id == job_id);
-        if let Some(job) = own {
-            return vec![encoded(job)];
+            .find(|job| job.id == job_id)
+            .map(encoded);
+        drop(lenses);
+        if let Some(row) = found {
+            return vec![row];
         }
         self.archived
             .lock()
@@ -598,10 +605,12 @@ impl FakeDatabase {
 
 fn lens_rows(lenses: &Mutex<Vec<Lens>>, id: &str) -> Vec<Row> {
     let guard = lenses.lock().expect("the lens lock");
-    let mut matched = Vec::new();
-    for lens in guard.iter().filter(|lens| lens.id == id) {
-        matched.push(encoded(lens));
-    }
+    let matched = guard
+        .iter()
+        .filter(|lens| lens.id == id)
+        .map(encoded)
+        .collect();
+    drop(guard);
     matched
 }
 
@@ -611,6 +620,7 @@ fn replace_worker(workers: &Mutex<Vec<Worker>>, id: &str, data: &str) {
         return;
     };
     *worker = serde_json::from_str(data).expect("the worker decodes");
+    drop(guard);
 }
 
 fn apply_billing(workers: &Mutex<Vec<Worker>>, id: &str, key_id: &str) -> Vec<Row> {
@@ -622,7 +632,9 @@ fn apply_billing(workers: &Mutex<Vec<Worker>>, id: &str, key_id: &str) -> Vec<Ro
         return Vec::new();
     }
     worker.analysis_key_id = Some(key_id.to_owned());
-    vec![encoded(worker)]
+    let rows = vec![encoded(worker)];
+    drop(guard);
+    rows
 }
 
 fn retire_worker(workers: &Mutex<Vec<Worker>>, id: &str) {
@@ -631,6 +643,7 @@ fn retire_worker(workers: &Mutex<Vec<Worker>>, id: &str) {
         return;
     };
     worker.revoked = true;
+    drop(guard);
 }
 
 fn text_arg(args: &[SqlBind], index: usize) -> Option<&str> {
@@ -670,7 +683,7 @@ impl Database for FakeDatabase {
         args: &'database [SqlBind],
     ) -> ExecuteFuture<'database> {
         let rows = self.answer(query, args);
-        Box::pin(ready(Ok(if rows.is_empty() { 0 } else { 1 })))
+        Box::pin(ready(Ok(u64::from(!rows.is_empty()))))
     }
 }
 
