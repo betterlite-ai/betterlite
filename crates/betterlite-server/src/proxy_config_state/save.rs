@@ -26,10 +26,10 @@ pub async fn save_config(
     include_env_vars: bool,
     database: Option<&dyn ConfigStateDatabase>,
 ) -> Result<(), ConfigStateError> {
-    let Some(database) = database.filter(|_| state.store_model_in_db_enabled()) else {
+    let Some(backed) = database.filter(|_| state.store_model_in_db_enabled()) else {
         return write_config_file(state, &new_config.values).await;
     };
-    save_config_to_database(state, new_config, include_env_vars, database).await
+    save_config_to_database(state, new_config, include_env_vars, backed).await
 }
 
 async fn save_config_to_database(
@@ -101,7 +101,7 @@ pub async fn save_environment_variables(
     updates: &BTreeMap<String, Option<String>>,
     database: Option<&dyn ConfigStateDatabase>,
 ) -> Result<(), ConfigStateError> {
-    let Some(database) = database.filter(|_| state.store_model_in_db_enabled()) else {
+    let Some(backed) = database.filter(|_| state.store_model_in_db_enabled()) else {
         return Ok(());
     };
     let mut values = BTreeMap::new();
@@ -119,11 +119,9 @@ pub async fn save_environment_variables(
     let sealed = if values.is_empty() {
         values
     } else {
-        database.seal_environment(&values)?
+        backed.seal_environment(&values)?
     };
-    database
-        .merge_environment_variables(&sealed, &deleted)
-        .await
+    backed.merge_environment_variables(&sealed, &deleted).await
 }
 
 async fn write_config_file(

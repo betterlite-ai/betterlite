@@ -38,16 +38,16 @@ fn a_replaced_snapshot_keeps_the_callers_next_change_out() {
 #[test]
 fn a_config_given_only_values_has_no_baseline() {
     let config = ConfigWithBaseline::from_values(support::values(&[("a", json!(1))]));
-    assert!(config.baseline().is_none());
+    assert!(config.baseline.as_ref().is_none());
     assert_eq!(config.values, support::values(&[("a", json!(1))]));
 }
 
 #[test]
-fn updating_the_baseline_keeps_the_values_and_reports_the_new_baseline() {
-    let mut config = ConfigWithBaseline::from_values(support::values(&[("a", json!(1))]));
+fn a_config_with_a_baseline_keeps_the_values_and_carries_the_baseline() {
     let baseline = support::values(&[("a", json!(2))]);
-    config.update_baseline(baseline.clone());
-    assert_eq!(config.baseline(), Some(&baseline));
+    let config =
+        ConfigWithBaseline::with_baseline(support::values(&[("a", json!(1))]), baseline.clone());
+    assert_eq!(config.baseline.as_ref(), Some(&baseline));
     assert_eq!(config.values, support::values(&[("a", json!(1))]));
 }
 

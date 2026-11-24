@@ -28,8 +28,7 @@ pub(crate) fn values(pairs: &[(&str, JsonValue)]) -> BTreeMap<String, JsonValue>
         .collect()
 }
 
-// The in-memory ConfigStateDatabase save_config writes to: it keeps the rows, records every call and
-// seals an environment value by tagging it, so a test can see what was written and what was skipped.
+// The in-memory ConfigStateDatabase: it keeps the rows, records every call and seals an environment value by tagging it
 #[derive(Default)]
 pub(crate) struct MemoryDatabase {
     sections: Mutex<BTreeMap<String, BTreeMap<String, JsonValue>>>,
