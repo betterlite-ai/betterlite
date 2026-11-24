@@ -609,6 +609,27 @@ async fn an_omitted_scope_keeps_the_stored_scopes() {
 }
 
 #[tokio::test]
+async fn a_whitespace_only_scope_keeps_the_stored_scopes() {
+    let harness = fixture(
+        Some(oauth_server(Some("https://idp.test/token"), None)),
+        Some(answer(&[
+            ("access_token", text("fresh")),
+            ("scope", text("   ")),
+        ])),
+        vec![Ok(None)],
+    );
+    let outcome = refresh(&harness, &stored_token(Some("stored"), &["read"]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(outcome.scopes, vec!["read".to_owned()]);
+    assert_eq!(
+        harness.persist.calls()[0].scopes,
+        Some(vec!["read".to_owned()])
+    );
+}
+
+#[tokio::test]
 async fn empty_scopes_persist_as_none_and_return_empty() {
     let harness = fixture(
         Some(oauth_server(Some("https://idp.test/token"), None)),
@@ -770,10 +791,10 @@ fn read_grant_body_reads_the_grant_fields() {
 
 #[test]
 fn grant_body_debug_masks_the_access_token() {
-    let grant = read_grant_body(&answer(&[("access_token", text("fresh"))])).unwrap();
+    let grant = read_grant_body(&answer(&[("access_token", text("zzz-secret-zzz"))])).unwrap();
     let debug = format!("{grant:?}");
     assert!(debug.contains("access_token: \"***\""));
-    assert!(!debug.contains("fresh"));
+    assert!(!debug.contains("zzz-secret-zzz"));
 }
 
 #[test]
@@ -781,7 +802,7 @@ fn persist_request_debug_masks_the_access_token() {
     let request = PersistRequest {
         user_id: "user",
         server_id: "srv",
-        access_token: "fresh",
+        access_token: "zzz-secret-zzz",
         refresh_token: Some("rotated"),
         expires_in: Some(60),
         scopes: None,
@@ -789,7 +810,7 @@ fn persist_request_debug_masks_the_access_token() {
     };
     let debug = format!("{request:?}");
     assert!(debug.contains("access_token: \"***\""));
-    assert!(!debug.contains("fresh"));
+    assert!(!debug.contains("zzz-secret-zzz"));
 }
 
 #[test]

@@ -191,7 +191,12 @@ where
             .rotated_refresh
             .as_deref()
             .or(token.refresh_token.as_deref());
-        let scopes = grant.scopes.clone().unwrap_or_else(|| token.scopes.clone());
+        // LiteLLM's "or token.scopes": an all-whitespace scope string parses to an empty tuple, which is falsy.
+        let scopes = grant
+            .scopes
+            .clone()
+            .filter(|scopes| !scopes.is_empty())
+            .unwrap_or_else(|| token.scopes.clone());
         let request = PersistRequest {
             user_id: call.user_id,
             server_id: call.server_id,
