@@ -42,6 +42,12 @@ pub(super) fn server_record(value: &Value) -> Result<MCPServer, Box<HelperError>
         .map_err(|error| helper_error("InvalidInput", error.to_string()))
 }
 
+// The case's answer is plain JSON, so it becomes the token response the way the HTTP adapter reads a body.
+pub(super) fn token_response(value: &Value) -> Result<TokenResponse, Box<HelperError>> {
+    serde_json::from_str(&value.to_string())
+        .map_err(|error| helper_error("InvalidInput", error.to_string()))
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct TokenInput {
     pub(super) access_token: String,

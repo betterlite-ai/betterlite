@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_db::oauth_token_resolution::ports::TokenResponse;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_server::mcp::outbound_credentials::authz_code_refresher::AuthorizationCodeRefresher;
 use betterlite_server::mcp::outbound_credentials::per_user_oauth_store::chain::SharedBinding;
@@ -10,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::support::{
     FixedClock, FixedLookup, RecordingPersist, ScriptedBinding, ScriptedPost, TokenInput,
-    TokenOutput, ValidatorAnswer, helper_error, runtime, server_record,
+    TokenOutput, ValidatorAnswer, helper_error, runtime, server_record, token_response,
 };
 
 #[derive(Debug, Deserialize)]
@@ -20,7 +19,7 @@ pub(crate) struct RefreshInput {
     pub(super) server: Option<Value>,
     pub(super) token: TokenInput,
     #[serde(default)]
-    pub(super) post_answer: Option<TokenResponse>,
+    pub(super) post_answer: Option<Value>,
     #[serde(default)]
     pub(super) validators: Vec<ValidatorAnswer>,
     pub(super) now: f64,
@@ -32,8 +31,12 @@ pub(super) fn refresh(input: &RefreshInput) -> HelperResult {
         None => None,
     };
     let binding = Arc::new(ScriptedBinding::new(input.validators.clone(), Vec::new()));
+    let answer = match &input.post_answer {
+        Some(value) => Some(token_response(value)?),
+        None => None,
+    };
     let post = Arc::new(ScriptedPost {
-        answer: input.post_answer.clone(),
+        answer,
         calls: Mutex::new(Vec::new()),
     });
     let persist = Arc::new(RecordingPersist::default());
