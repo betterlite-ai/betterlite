@@ -74,3 +74,11 @@ path = "fuzz_targets/mcp_sealed_code.rs"
 test = false
 doc = false
 bench = false
+
+
+[[bin]]
+name = "openapi_spec"
+path = "fuzz_targets/openapi_spec.rs"
+test = false
+doc = false
+bench = false
