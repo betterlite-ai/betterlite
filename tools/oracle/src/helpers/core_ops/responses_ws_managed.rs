@@ -1,3 +1,5 @@
+mod fakes;
+mod handler;
 mod support;
 
 use betterlite_core::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
@@ -13,7 +15,9 @@ use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
 
-use self::support::{Captured, QuotaRow, ScriptRow, ScriptedProvider, ScriptedSource, SinkRow};
+use self::fakes::ScriptedProvider;
+use self::handler::{Captured, build_handler};
+use self::support::{QuotaRow, ScriptRow, ScriptedSource, SinkRow};
 
 #[derive(Deserialize)]
 struct Setup {
@@ -50,7 +54,7 @@ impl Helper for Op {
         let sink = support::socket(&shared, &input.sink);
         let provider = ScriptedProvider::new(&shared, &input.scripts);
         let source = ScriptedSource::new(&shared, &input.frames, &input.disconnect);
-        let mut handler = support::build_handler(&input.setup, sink, &shared, input.quota.as_ref());
+        let mut handler = build_handler(&input.setup, sink, &shared, input.quota.as_ref());
         let captured = Captured::default();
         let subscriber = registry().with(captured.clone());
         runtime.block_on(
