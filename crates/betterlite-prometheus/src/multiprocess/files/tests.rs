@@ -52,6 +52,15 @@ fn grows_the_file_while_entries_do_not_fit() {
     assert_eq!(decode_db_file(&bytes).unwrap(), entries);
 }
 
+#[test]
+fn keeps_the_page_when_the_entries_fill_it_exactly() {
+    let key = "k".repeat(65504);
+    let entries = vec![entry(&key, 1.0, 2.0)];
+    let bytes = encode_db_file(&entries);
+    assert_eq!(bytes.len(), 65536);
+    assert_eq!(decode_db_file(&bytes).unwrap(), entries);
+}
+
 #[rstest]
 #[case(0, 4)]
 #[case(3, 1)]
@@ -70,6 +79,18 @@ fn pads_key_lengths_around_the_alignment(#[case] key_length: usize, #[case] padd
 fn reads_a_file_with_no_entries() {
     let bytes = [8_u8, 0, 0, 0, 0, 0, 0, 0];
     assert!(decode_db_file(&bytes).unwrap().is_empty());
+}
+
+#[test]
+fn reads_a_key_that_ends_at_the_used_length() {
+    let mut bytes = vec![12_u8, 0, 0, 0, 0, 0, 0, 0];
+    bytes.extend_from_slice(&4_i32.to_le_bytes());
+    bytes.extend_from_slice(b"abcd");
+    bytes.extend_from_slice(&[b' '; 8]);
+    bytes.extend_from_slice(&1.5_f64.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+    let entries = decode_db_file(&bytes).unwrap();
+    assert_eq!(entries, vec![entry("abcd", 1.5, 0.0)]);
 }
 
 #[test]

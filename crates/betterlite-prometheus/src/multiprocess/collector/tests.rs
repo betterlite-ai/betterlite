@@ -56,6 +56,18 @@ fn refuses_a_file() {
 }
 
 #[test]
+fn compares_errors_by_their_message() {
+    let first = MultiprocessError::InvalidType {
+        kind: "info".to_owned(),
+    };
+    let second = MultiprocessError::InvalidType {
+        kind: "info".to_owned(),
+    };
+    assert_eq!(first, second);
+    assert_ne!(first, MultiprocessError::Corrupted);
+}
+
+#[test]
 fn reads_every_db_file() {
     let dir = TempDir::new().unwrap();
     let _first = write_file(

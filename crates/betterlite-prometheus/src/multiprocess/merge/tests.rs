@@ -164,6 +164,36 @@ fn combines_a_gauge_without_its_pid(#[case] mode: &str, #[case] value: f64) {
     assert_eq!(family.samples, vec![sample("queue_length", &[], value)]);
 }
 
+#[test]
+fn combines_a_gauge_without_dropping_its_other_labels() {
+    let dir = TempDir::new().unwrap();
+    let first = write_file(
+        dir.path(),
+        "gauge_min_1001.db",
+        &[entry(
+            "queue_length",
+            "queue_length",
+            &[("model", "a")],
+            5.0,
+        )],
+    );
+    let second = write_file(
+        dir.path(),
+        "gauge_min_1002.db",
+        &[entry(
+            "queue_length",
+            "queue_length",
+            &[("model", "a")],
+            3.0,
+        )],
+    );
+    let families = merge(&[first, second]).unwrap();
+    assert_eq!(
+        families.first().unwrap().samples,
+        vec![sample("queue_length", &[("model", "a")], 3.0)]
+    );
+}
+
 #[rstest]
 #[case("mostrecent")]
 #[case("livemostrecent")]
@@ -182,6 +212,44 @@ fn keeps_the_value_with_the_greatest_timestamp(#[case] mode: &str) {
         families.first().unwrap().samples,
         vec![sample("queue_length", &[], 2.0)]
     );
+}
+
+#[test]
+fn min_keeps_the_first_of_two_equal_values() {
+    let dir = TempDir::new().unwrap();
+    let first = write_file(
+        dir.path(),
+        "gauge_min_1001.db",
+        &[entry("queue_length", "queue_length", &[], 0.0)],
+    );
+    let second = write_file(
+        dir.path(),
+        "gauge_min_1002.db",
+        &[entry("queue_length", "queue_length", &[], -0.0)],
+    );
+    let families = merge(&[first, second]).unwrap();
+    let samples = &families.first().unwrap().samples;
+    assert_eq!(samples.len(), 1);
+    assert!(samples.first().unwrap().value.is_sign_positive());
+}
+
+#[test]
+fn max_keeps_the_first_of_two_equal_values() {
+    let dir = TempDir::new().unwrap();
+    let first = write_file(
+        dir.path(),
+        "gauge_max_1001.db",
+        &[entry("queue_length", "queue_length", &[], 0.0)],
+    );
+    let second = write_file(
+        dir.path(),
+        "gauge_max_1002.db",
+        &[entry("queue_length", "queue_length", &[], -0.0)],
+    );
+    let families = merge(&[first, second]).unwrap();
+    let samples = &families.first().unwrap().samples;
+    assert_eq!(samples.len(), 1);
+    assert!(samples.first().unwrap().value.is_sign_positive());
 }
 
 #[test]
@@ -247,6 +315,46 @@ fn accumulates_histogram_buckets_with_their_count_and_sum() {
             sample("request_latency_bucket", &[("le", "1.0")], 3.0),
             sample("request_latency_bucket", &[("le", "+Inf")], 8.0),
             sample("request_latency_count", &[], 8.0),
+        ]
+    );
+}
+
+#[test]
+fn accumulates_buckets_whose_bounds_compare_equal() {
+    let dir = TempDir::new().unwrap();
+    let first = write_file(
+        dir.path(),
+        "histogram_1001.db",
+        &[
+            entry(
+                "request_latency",
+                "request_latency_bucket",
+                &[("le", "0.0")],
+                2.0,
+            ),
+            entry("request_latency", "request_latency_sum", &[], 1.0),
+        ],
+    );
+    let second = write_file(
+        dir.path(),
+        "histogram_1002.db",
+        &[
+            entry(
+                "request_latency",
+                "request_latency_bucket",
+                &[("le", "-0.0")],
+                1.0,
+            ),
+            entry("request_latency", "request_latency_sum", &[], 0.5),
+        ],
+    );
+    let families = merge(&[first, second]).unwrap();
+    assert_eq!(
+        families.first().unwrap().samples,
+        vec![
+            sample("request_latency_sum", &[], 1.5),
+            sample("request_latency_bucket", &[("le", "0.0")], 3.0),
+            sample("request_latency_count", &[], 3.0),
         ]
     );
 }
