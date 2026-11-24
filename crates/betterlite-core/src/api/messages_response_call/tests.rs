@@ -57,6 +57,14 @@ fn value(text: &str) -> JsonValue {
     serde_json::from_str(text).expect("the test value parses")
 }
 
+fn json_text(value: Option<&Json>) -> Option<&str> {
+    match value {
+        Some(Json::Text(text)) => Some(text.as_str()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    }
+}
+
 fn cost() -> ModelCostMap {
     ModelCostMap::parse(b"{}").expect("the empty model map parses")
 }
@@ -531,10 +539,10 @@ async fn normalizes_reasoning_effort(
         .call
         .reasoning
         .expect("a thinking request carries effort");
-    let effort = reasoning
-        .as_object()
-        .and_then(|fields| fields.get("effort"))
-        .and_then(Json::as_str);
+    let effort = match &reasoning {
+        Json::Object(fields) => json_text(fields.get("effort")),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    };
     assert_eq!(
         effort,
         Some(expected),
@@ -615,18 +623,16 @@ async fn stream_responses_adapter() {
         panic!("a streaming call returns the wrapper");
     };
     let chunk = first_chunk(&mut stream).await;
-    let fields = chunk.as_object().expect("the chunk is an object");
+    let Json::Object(fields) = chunk else {
+        panic!("the chunk is an object");
+    };
+    assert_eq!(json_text(fields.get("type")), Some("message_start"));
+    let Some(Json::Object(message)) = fields.get("message") else {
+        panic!("message_start carries the message");
+    };
+    assert_eq!(json_text(message.get("id")), Some(MESSAGE_ID));
     assert_eq!(
-        fields.get("type").and_then(Json::as_str),
-        Some("message_start")
-    );
-    let message = fields
-        .get("message")
-        .and_then(Json::as_object)
-        .expect("message_start carries the message");
-    assert_eq!(message.get("id").and_then(Json::as_str), Some(MESSAGE_ID));
-    assert_eq!(
-        message.get("model").and_then(Json::as_str),
+        json_text(message.get("model")),
         Some("gpt-4o"),
         "the wrapper reports the provider's own model id"
     );

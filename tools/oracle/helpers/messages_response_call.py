@@ -29,7 +29,7 @@ RESPONSE: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIRes
 
 class Request(TypedDict):
     model: str
-    messages: list[dict[str, JsonValue]]
+    messages: JsonValue
     max_tokens: int
     system: NotRequired[str]
     temperature: NotRequired[float]
@@ -39,7 +39,7 @@ class Request(TypedDict):
     output_format: NotRequired[dict[str, JsonValue]]
     metadata: NotRequired[dict[str, JsonValue]]
     tool_choice: NotRequired[dict[str, JsonValue]]
-    tools: NotRequired[list[dict[str, JsonValue]]]
+    tools: NotRequired[JsonValue]
     context_management: NotRequired[dict[str, JsonValue]]
 
 
@@ -47,7 +47,7 @@ class Forwarded(TypedDict):
     custom_llm_provider: NotRequired[str]
     api_base: NotRequired[str]
     prompt_cache_key: NotRequired[str]
-    include: NotRequired[list[str]]
+    include: NotRequired[JsonValue]
 
 
 class Call(TypedDict):
