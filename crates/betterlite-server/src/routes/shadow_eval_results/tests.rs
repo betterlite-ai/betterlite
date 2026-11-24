@@ -59,7 +59,18 @@ async fn answered_serializes_the_read_into_the_json_body() {
     StatusCode::FORBIDDEN
 )]
 #[case::unprocessable(
-    ShadowResultsRouteError::Query(ShadowQueryError::Invalid { parameter: "limit" }),
+    ShadowResultsRouteError::Query(ShadowQueryError::Invalid {
+        parameter: "limit",
+        kind: "int_parsing",
+        msg: "Input should be a valid integer, unable to parse string as an integer"
+    }),
+    StatusCode::UNPROCESSABLE_ENTITY
+)]
+#[case::over_limit(
+    ShadowResultsRouteError::Query(ShadowQueryError::TooLarge {
+        bytes: 2,
+        limit: 1
+    }),
     StatusCode::UNPROCESSABLE_ENTITY
 )]
 #[case::filter_pair(ShadowResultsRouteError::FilterPair, StatusCode::BAD_REQUEST)]
@@ -79,4 +90,21 @@ fn a_failure_answers_with_its_own_status(
 ) {
     let response = failure(&error);
     assert_eq!(response.status(), status);
+}
+
+// LiteLLM's public_validation_errors keeps the pydantic type, loc and msg of each rejected parameter
+#[tokio::test]
+async fn an_invalid_query_answers_the_pydantic_validation_body() {
+    let error = ShadowResultsRouteError::Query(ShadowQueryError::Invalid {
+        parameter: "limit",
+        kind: "int_parsing",
+        msg: "Input should be a valid integer, unable to parse string as an integer",
+    });
+    let response = failure(&error);
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        String::from_utf8(body.to_vec()).unwrap(),
+        r#"{"detail":[{"type":"int_parsing","loc":["query","limit"],"msg":"Input should be a valid integer, unable to parse string as an integer"}]}"#,
+    );
 }

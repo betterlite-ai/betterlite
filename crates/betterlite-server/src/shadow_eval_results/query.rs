@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::shadow_eval_models::ShadowEvalTargetType;
+use crate::shadow_result_aggregation::targets::parse_target_type;
 
 // the byte bound the read applies before decoding, so an oversized query never reaches the parser
 pub const MAX_SHADOW_QUERY_BYTES: usize = 0x0010_0000;
@@ -22,8 +23,13 @@ pub struct ShadowQuery {
 pub enum ShadowQueryError {
     #[error("the shadow eval query has {bytes} bytes, past the {limit}-byte limit")]
     TooLarge { bytes: usize, limit: usize },
+    // the pydantic error type and message the validation body carries for the parameter
     #[error("the query parameter {parameter} is invalid")]
-    Invalid { parameter: &'static str },
+    Invalid {
+        parameter: &'static str,
+        kind: &'static str,
+        msg: &'static str,
+    },
 }
 
 // Bound first, decode second; a repeated parameter keeps its last value, as Starlette reads a scalar
@@ -38,14 +44,21 @@ pub fn decode_shadow_query(raw: &[u8]) -> Result<ShadowQuery, ShadowQueryError> 
     for (name, value) in form_urlencoded::parse(raw) {
         values.insert(name.into_owned(), value.into_owned());
     }
+    // FastAPI validates in the endpoint's parameter order, so target_type fails before limit
+    let target_type = values
+        .get("target_type")
+        .map(|raw_type| {
+            parse_target_type(raw_type).map_err(|_error| ShadowQueryError::Invalid {
+                parameter: "target_type",
+                kind: "literal_error",
+                msg: "Input should be 'key', 'team' or 'user'",
+            })
+        })
+        .transpose()?;
     let limit = match values.get("limit") {
         Some(raw_limit) => parse_limit(raw_limit)?,
         None => DEFAULT_SHADOW_LIMIT,
     };
-    let target_type = values
-        .get("target_type")
-        .map(|raw_type| parse_target_type(raw_type))
-        .transpose()?;
     Ok(ShadowQuery {
         target_type,
         target_id: values.get("target_id").cloned(),
@@ -54,23 +67,31 @@ pub fn decode_shadow_query(raw: &[u8]) -> Result<ShadowQuery, ShadowQueryError> 
 }
 
 fn parse_limit(raw: &str) -> Result<i64, ShadowQueryError> {
-    let parsed = raw
-        .trim()
-        .parse::<i64>()
-        .map_err(|_error| ShadowQueryError::Invalid { parameter: "limit" })?;
-    if (MIN_SHADOW_LIMIT..=MAX_SHADOW_LIMIT).contains(&parsed) {
-        return Ok(parsed);
+    let Ok(parsed) = raw.trim().parse::<i64>() else {
+        return Err(limit_error(
+            "int_parsing",
+            "Input should be a valid integer, unable to parse string as an integer",
+        ));
+    };
+    if parsed < MIN_SHADOW_LIMIT {
+        return Err(limit_error(
+            "greater_than_equal",
+            "Input should be greater than or equal to 1",
+        ));
     }
-    Err(ShadowQueryError::Invalid { parameter: "limit" })
+    if parsed > MAX_SHADOW_LIMIT {
+        return Err(limit_error(
+            "less_than_equal",
+            "Input should be less than or equal to 200",
+        ));
+    }
+    Ok(parsed)
 }
 
-fn parse_target_type(raw: &str) -> Result<ShadowEvalTargetType, ShadowQueryError> {
-    match raw {
-        "key" => Ok(ShadowEvalTargetType::Key),
-        "team" => Ok(ShadowEvalTargetType::Team),
-        "user" => Ok(ShadowEvalTargetType::User),
-        _other => Err(ShadowQueryError::Invalid {
-            parameter: "target_type",
-        }),
+const fn limit_error(kind: &'static str, msg: &'static str) -> ShadowQueryError {
+    ShadowQueryError::Invalid {
+        parameter: "limit",
+        kind,
+        msg,
     }
 }

@@ -14,11 +14,11 @@ use crate::plugin_routes::routes::{Identity, caller_identity};
 use crate::shadow_eval_results::access::require_viewer;
 use crate::shadow_eval_results::error::ShadowResultsRouteError;
 use crate::shadow_eval_results::postgres::store_from_state;
-use crate::shadow_eval_results::query::decode_shadow_query;
+use crate::shadow_eval_results::query::{ShadowQueryError, decode_shadow_query};
 use crate::shadow_eval_results::service::{get_shadow_eval_job, list_shadow_eval_jobs};
 use crate::shadow_result_aggregation::postgres::PgShadowResults;
 use crate::state::ServerState;
-use crate::tracing_routes::router::unauthenticated;
+use crate::tracing_routes::router::{ValidationBody, ValidationIssue, unauthenticated};
 
 const VIEW_ACTION: &str = "view shadow evals";
 
@@ -113,6 +113,21 @@ fn viewer_store<'state>(
 }
 
 fn failure(error: &ShadowResultsRouteError) -> Response {
+    if let ShadowResultsRouteError::Query(ShadowQueryError::Invalid {
+        parameter,
+        kind,
+        msg,
+    }) = error
+    {
+        let body = ValidationBody {
+            detail: vec![ValidationIssue {
+                kind: *kind,
+                loc: vec!["query".to_owned(), (*parameter).to_owned()],
+                msg: *msg,
+            }],
+        };
+        return (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response();
+    }
     let status = match error.status_code() {
         400 => StatusCode::BAD_REQUEST,
         403 => StatusCode::FORBIDDEN,

@@ -442,7 +442,7 @@ fn list_store() -> FakeStore {
     expected_status: None,
 })]
 #[case::viewer_accepts_the_view_only_admin(Behavior::Viewer {
-    user_role: Some("proxy_admin_view_only"),
+    user_role: Some("proxy_admin_viewer"),
     store: true,
     expected_status: None,
 })]
@@ -642,6 +642,19 @@ fn padded(bytes: usize) -> Vec<u8> {
     raw
 }
 
+// the pydantic issue FastAPI's validation body carries for one rejected query parameter
+const fn invalid(
+    parameter: &'static str,
+    kind: &'static str,
+    msg: &'static str,
+) -> ShadowQueryError {
+    ShadowQueryError::Invalid {
+        parameter,
+        kind,
+        msg,
+    }
+}
+
 #[rstest]
 #[case::query_defaults_to_fifty(Boundary::Query { raw: Vec::new(), expected: Some(query(None, None, DEFAULT_SHADOW_LIMIT)) })]
 #[case::query_reads_every_parameter(Boundary::Query {
@@ -671,12 +684,13 @@ fn padded(bytes: usize) -> Vec<u8> {
     raw: b"limit=3&".to_vec(),
     expected: Some(query(None, None, 3)),
 })]
-#[case::query_rejects_zero_limit(Boundary::QueryError { raw: b"limit=0".to_vec(), error: ShadowQueryError::Invalid { parameter: "limit" } })]
-#[case::query_rejects_a_limit_over_two_hundred(Boundary::QueryError { raw: b"limit=201".to_vec(), error: ShadowQueryError::Invalid { parameter: "limit" } })]
-#[case::query_rejects_an_empty_limit(Boundary::QueryError { raw: b"limit=".to_vec(), error: ShadowQueryError::Invalid { parameter: "limit" } })]
-#[case::query_rejects_a_fractional_limit(Boundary::QueryError { raw: b"limit=1.5".to_vec(), error: ShadowQueryError::Invalid { parameter: "limit" } })]
-#[case::query_rejects_an_unknown_target_type(Boundary::QueryError { raw: b"target_type=org".to_vec(), error: ShadowQueryError::Invalid { parameter: "target_type" } })]
-#[case::query_rejects_an_empty_target_type(Boundary::QueryError { raw: b"target_type=".to_vec(), error: ShadowQueryError::Invalid { parameter: "target_type" } })]
+#[case::query_rejects_zero_limit(Boundary::QueryError { raw: b"limit=0".to_vec(), error: invalid("limit", "greater_than_equal", "Input should be greater than or equal to 1") })]
+#[case::query_rejects_a_limit_over_two_hundred(Boundary::QueryError { raw: b"limit=201".to_vec(), error: invalid("limit", "less_than_equal", "Input should be less than or equal to 200") })]
+#[case::query_rejects_an_empty_limit(Boundary::QueryError { raw: b"limit=".to_vec(), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_a_fractional_limit(Boundary::QueryError { raw: b"limit=1.5".to_vec(), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_an_unknown_target_type(Boundary::QueryError { raw: b"target_type=org".to_vec(), error: invalid("target_type", "literal_error", "Input should be 'key', 'team' or 'user'") })]
+#[case::query_rejects_an_empty_target_type(Boundary::QueryError { raw: b"target_type=".to_vec(), error: invalid("target_type", "literal_error", "Input should be 'key', 'team' or 'user'") })]
+#[case::query_reports_target_type_before_an_invalid_limit(Boundary::QueryError { raw: b"target_type=org&limit=0".to_vec(), error: invalid("target_type", "literal_error", "Input should be 'key', 'team' or 'user'") })]
 #[case::query_rejects_one_byte_past_the_bound(Boundary::QueryError { raw: padded(MAX_SHADOW_QUERY_BYTES + 1), error: ShadowQueryError::TooLarge { bytes: MAX_SHADOW_QUERY_BYTES + 1, limit: MAX_SHADOW_QUERY_BYTES } })]
 #[case::list_rejects_a_type_without_an_id(Boundary::Pair { target_type: Some(Key), target_id: None })]
 #[case::list_rejects_an_id_without_a_type(Boundary::Pair { target_type: None, target_id: Some("k1") })]

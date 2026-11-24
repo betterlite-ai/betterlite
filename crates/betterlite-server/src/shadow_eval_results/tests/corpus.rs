@@ -17,7 +17,11 @@ fn replays_the_shadow_q_corpus(#[files("fuzz/corpus/shadow_q/*")] path: PathBuf)
     } else {
         assert_eq!(
             parsed.unwrap_err(),
-            ShadowQueryError::Invalid { parameter: "limit" }
+            ShadowQueryError::Invalid {
+                parameter: "limit",
+                kind: "greater_than_equal",
+                msg: "Input should be greater than or equal to 1",
+            }
         );
     }
 }

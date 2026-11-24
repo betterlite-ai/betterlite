@@ -3,6 +3,9 @@ deviations:
   - what: The shadow_q query parser refuses a query past 1048576 bytes before decoding it and reports the byte count and limit, while LiteLLM hands the query string straight to FastAPI's parameter binder.
     why: The source has no equivalent byte bound at this parser boundary, and bounded-inputs requires a finite limit. The declared query types and their 1..200 limit still apply unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1802-L1895
+  - what: An invalid query reports one detail entry, the first parameter FastAPI validates (target_type before limit), where LiteLLM's RequestValidationError carries one entry per rejected parameter.
+    why: The typed query decoder stops at the first rejected parameter, so a request with both an invalid target_type and an invalid limit answers a single pydantic issue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2047
   - what: Start validation reads the configured deployments through the typed Config, which keeps only model_name, the fixed litellm_params fields and model_info.id, so a strategy router's tier and default arms are not enumerated and a judge that is one of those arms is not rejected as LiteLLM rejects it.
     why: complexity_router_config and the other strategy-router keys live in the raw YAML that the section views claim, not in LiteLlmParams, so the router view B357 installs cannot see them; carrying them needs a config change outside this task's scope.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1078-L1103
