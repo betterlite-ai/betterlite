@@ -12,6 +12,7 @@ pub(super) async fn failure_attribution() {
     null_completed().await;
     null_pending().await;
     detection().await;
+    missing_provider().await;
     authentication().await;
     redacted().await;
 }
@@ -65,6 +66,34 @@ async fn detection() {
     assert_eq!(requests[0].custom_llm_provider, None);
     assert_eq!(requests[0].api_base, None);
     assert_eq!(error.provider, "openai");
+}
+
+// LiteLLM's get_llm_provider raises BadRequestError/400 for a model no provider can place, before any HTTP
+async fn missing_provider() {
+    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
+    let resolver = ScriptedResolver::default();
+    let call = support::call_from(r#"{"model":"no-such-model","input":"hello"}"#);
+    let error = match support::drive(&resolver, None, &handoff, &call).await {
+        Ok(_created) => panic!("the wrapper fails"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        *error.cause,
+        AsyncCreateCause::ProviderResolution(_)
+    ));
+    assert_eq!(error.provider, "");
+    assert_eq!(error.model, "no-such-model");
+    let mapped = support::failure(&error);
+    assert_eq!(mapped.class, "BadRequestError");
+    assert_eq!(mapped.status, 400);
+    assert_eq!(mapped.kind, None);
+    assert_eq!(mapped.param, None);
+    assert_eq!(mapped.code, None);
+    assert_eq!(
+        mapped.message,
+        "litellm.BadRequestError: LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=no-such-model"
+    );
+    assert!(handoff.calls().is_empty());
 }
 
 // A provider 401 becomes the SDK AuthenticationError without the body's type, param or code

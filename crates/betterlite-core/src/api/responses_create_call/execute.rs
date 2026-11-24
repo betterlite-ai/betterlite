@@ -7,7 +7,7 @@ use crate::api::responses_create::bridge::Created;
 use crate::api::responses_create::error::CreateError;
 use crate::api::responses_provider_selection::ParameterMap;
 
-use super::error::AsyncCreateError;
+use super::error::{AsyncCreateCause, AsyncCreateError};
 use super::prepare::PreparedCall;
 
 // LiteLLM's isinstance(response, ResponsesAPIResponse) branch: encode the id with the deployment model_id, stamp the provider
@@ -17,16 +17,17 @@ pub(super) fn identity<Context>(
 ) -> Result<Created<Context>, AsyncCreateError> {
     match created {
         Created::Responses(mut stamped) => {
-            let affinity = affinity_metadata(&prepared.call.kwargs).map_err(|error| {
-                AsyncCreateError::create(error, &prepared.provider, &prepared.model)
-            })?;
+            let affinity =
+                affinity_metadata(&prepared.call.kwargs).map_err(|error| AsyncCreateError {
+                    cause: Box::new(AsyncCreateCause::Create(error)),
+                    provider: prepared.provider.clone(),
+                    model: prepared.model.clone(),
+                })?;
             rewrite_typed_response(&mut stamped.response, Some(&prepared.provider), &affinity)
-                .map_err(|error| {
-                    AsyncCreateError::create(
-                        CreateError::Rewrite(error),
-                        &prepared.provider,
-                        &prepared.model,
-                    )
+                .map_err(|error| AsyncCreateError {
+                    cause: Box::new(AsyncCreateCause::Create(CreateError::Rewrite(error))),
+                    provider: prepared.provider.clone(),
+                    model: prepared.model.clone(),
                 })?;
             stamped.hidden.insert(
                 String::from("custom_llm_provider"),

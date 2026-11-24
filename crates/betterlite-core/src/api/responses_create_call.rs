@@ -10,7 +10,7 @@ use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_create_http::service::LogContext;
 
 use self::deps::{AsyncCreateDeps, CreateReturn, SyncHandoff};
-use self::error::AsyncCreateError;
+use self::error::{AsyncCreateCause, AsyncCreateError};
 
 // LiteLLM's aresponses: it converts the arguments, runs the async prompt hook and awaits the sync answer once
 pub async fn aresponses<Context, Handoff>(
@@ -30,13 +30,17 @@ where
         CreateReturn::Completed(outcome) => Ok(outcome),
         CreateReturn::Pending(pending) => pending.await,
     };
-    let outcome = awaited
-        .map_err(|error| AsyncCreateError::create(error, &prepared.provider, &prepared.model))?;
+    let outcome = awaited.map_err(|error| AsyncCreateError {
+        cause: Box::new(AsyncCreateCause::Create(error)),
+        provider: prepared.provider.clone(),
+        model: prepared.model.clone(),
+    })?;
     match outcome {
         Some(created) => execute::identity(created, &prepared),
-        None => Err(AsyncCreateError::null_response(
-            prepared.provider,
-            prepared.model,
-        )),
+        None => Err(AsyncCreateError {
+            cause: Box::new(AsyncCreateCause::NullResponse),
+            provider: prepared.provider,
+            model: prepared.model,
+        }),
     }
 }

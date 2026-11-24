@@ -25,7 +25,7 @@ use crate::api::responses_provider_selection::provider_config::{
 use crate::api::responses_provider_selection::resolution::ModelResolver;
 
 use super::deps::{AsyncCreateDeps, AsyncPromptPort};
-use super::error::AsyncCreateError;
+use super::error::{AsyncCreateCause, AsyncCreateError};
 use super::prepare::PreparedCall;
 
 pub(super) async fn prompted(
@@ -41,24 +41,36 @@ pub(super) async fn prompted(
         non_default_params: &kwargs,
     };
     if !port.runs_prompt_hooks(&hook) {
-        return Ok(PreparedCall::settled(converted, provider, &call.model));
+        return Ok(PreparedCall {
+            call: converted,
+            provider,
+            model: call.model.clone(),
+        });
     }
-    let original = transcode(&call.input).map_err(|error| {
-        AsyncCreateError::create(CreateError::from(error), &provider, &call.model)
+    let original = transcode(&call.input).map_err(|error| AsyncCreateError {
+        cause: Box::new(AsyncCreateCause::Create(CreateError::from(error))),
+        provider: provider.clone(),
+        model: call.model.clone(),
     })?;
-    let client_input = input_to_chat_messages(Some(&original)).map_err(|error| {
-        AsyncCreateError::create(
-            CreateError::Prompt(PromptError::Merge(error)),
-            &provider,
-            &call.model,
-        )
-    })?;
+    let client_input =
+        input_to_chat_messages(Some(&original)).map_err(|error| AsyncCreateError {
+            cause: Box::new(AsyncCreateCause::Create(CreateError::Prompt(
+                PromptError::Merge(error),
+            ))),
+            provider: provider.clone(),
+            model: call.model.clone(),
+        })?;
     let bridged = bridges(deps.lookup, call, &provider, &kwargs);
     let answer = match run_hook(port, call, &mut kwargs, &client_input, bridged).await {
         Ok(answer) => answer,
         Err(error) => {
-            let cause = CreateError::Prompt(PromptError::Manager(error));
-            return Err(AsyncCreateError::create(cause, &provider, &call.model));
+            return Err(AsyncCreateError {
+                cause: Box::new(AsyncCreateCause::Create(CreateError::Prompt(
+                    PromptError::Manager(error),
+                ))),
+                provider: provider.clone(),
+                model: call.model.clone(),
+            });
         }
     };
     let state = Answer {
@@ -174,25 +186,27 @@ struct Answer<'call> {
 
 impl Answer<'_> {
     fn input(&self) -> Result<ResponsesInput, AsyncCreateError> {
-        let original = transcode(&self.call.input).map_err(|error| {
-            AsyncCreateError::create(CreateError::from(error), &self.provider, &self.merged.model)
+        let original = transcode(&self.call.input).map_err(|error| AsyncCreateError {
+            cause: Box::new(AsyncCreateCause::Create(CreateError::from(error))),
+            provider: self.provider.clone(),
+            model: self.merged.model.clone(),
         })?;
         let merged = match merge_prompt_management_input(&original, &self.merged.messages) {
             Ok(outcome) => outcome.input,
             Err(error) => {
-                return Err(AsyncCreateError::create(
-                    CreateError::Prompt(PromptError::Merge(error)),
-                    &self.provider,
-                    &self.merged.model,
-                ));
+                return Err(AsyncCreateError {
+                    cause: Box::new(AsyncCreateCause::Create(CreateError::Prompt(
+                        PromptError::Merge(error),
+                    ))),
+                    provider: self.provider.clone(),
+                    model: self.merged.model.clone(),
+                });
             }
         };
-        transcode(&merged).map_err(|error| {
-            AsyncCreateError::create(
-                CreateError::Rewrite(error),
-                &self.provider,
-                &self.merged.model,
-            )
+        transcode(&merged).map_err(|error| AsyncCreateError {
+            cause: Box::new(AsyncCreateCause::Create(CreateError::Rewrite(error))),
+            provider: self.provider.clone(),
+            model: self.merged.model.clone(),
         })
     }
 
@@ -265,10 +279,10 @@ fn swapped_provider(
         Err(PromptError::Swap(PromptSwapError::CredentialBoundary(error))) => {
             Err(AsyncCreateError::boundary(error))
         }
-        Err(error) => Err(AsyncCreateError::create(
-            CreateError::Prompt(error),
-            requested,
-            swapped_model,
-        )),
+        Err(error) => Err(AsyncCreateError {
+            cause: Box::new(AsyncCreateCause::Create(CreateError::Prompt(error))),
+            provider: requested.to_owned(),
+            model: swapped_model.to_owned(),
+        }),
     }
 }

@@ -17,6 +17,7 @@ const USER: &str = r#"{"role":"user","content":"hello"}"#;
 pub(super) async fn async_prompt_hooks() {
     runs_once().await;
     no_logging_object().await;
+    ineligible_logging_object().await;
 }
 
 pub(super) async fn prompt_outcomes() {
@@ -99,6 +100,30 @@ async fn no_logging_object() {
         Some(&support::value("\"p\""))
     );
     assert!(!calls[0].kwargs.contains_key(ASYNC_PROMPT_MERGED_PARAMS));
+    assert_eq!(resolver.requests().len(), 1);
+}
+
+// An ineligible logging object's false verdict leaves prompt_id and the input for the sync entry
+async fn ineligible_logging_object() {
+    let call = support::call_from(PROMPT);
+    let answer = support::answer("openai/gpt-4o-mini", &[SYSTEM, USER]);
+    let port = ScriptedPort::answering(false, PortAnswer::Answer(answer));
+    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
+    let resolver = ScriptedResolver::default();
+    support::drive(&resolver, Some(&port), &handoff, &call)
+        .await
+        .expect("the call answers");
+    assert_eq!(port.checks(), 1);
+    assert_eq!(port.checked_prompt_ids(), vec![Some(String::from("p"))]);
+    assert!(port.records().is_empty());
+    let calls = handoff.calls();
+    assert_eq!(calls[0].model, "openai/gpt-4o");
+    assert_eq!(
+        calls[0].kwargs.get("prompt_id"),
+        Some(&support::value("\"p\""))
+    );
+    assert!(!calls[0].kwargs.contains_key(ASYNC_PROMPT_MERGED_PARAMS));
+    assert_eq!(support::input_json(&calls[0]), support::json("\"hello\""));
     assert_eq!(resolver.requests().len(), 1);
 }
 

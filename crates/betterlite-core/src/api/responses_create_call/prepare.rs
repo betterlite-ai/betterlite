@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use betterlite_models::controls::call_params::CallParams;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolutionError;
 
 use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_create::error::CreateError;
@@ -13,7 +14,7 @@ use crate::api::responses_provider_selection::prefixes::normalize_openai_chat_mo
 use crate::api::responses_provider_selection::resolution::{ModelResolver, resolve_model_provider};
 
 use super::deps::AsyncCreateDeps;
-use super::error::AsyncCreateError;
+use super::error::{AsyncCreateCause, AsyncCreateError};
 use super::hook::prompted;
 
 // The sync call aresponses hands on: converted text, the trusted async flag, the merged prompt and the provider it resolved
@@ -23,27 +24,23 @@ pub(super) struct PreparedCall {
     pub(super) model: String,
 }
 
-impl PreparedCall {
-    #[must_use]
-    pub(super) fn settled(call: ResponsesCreateCall, provider: String, model: &str) -> Self {
-        Self {
-            call,
-            provider,
-            model: model.to_owned(),
-        }
-    }
-}
-
 pub(super) async fn prepare(
     deps: &AsyncCreateDeps<'_>,
     call: &ResponsesCreateCall,
 ) -> Result<PreparedCall, AsyncCreateError> {
     let mut converted = convert(call)?;
-    let provider = initial_provider(deps.resolver, call)
-        .map_err(|error| AsyncCreateError::create(error, "", &call.model))?;
+    let provider = initial_provider(deps.resolver, call).map_err(|error| AsyncCreateError {
+        cause: Box::new(AsyncCreateCause::ProviderResolution(error)),
+        provider: String::new(),
+        model: call.model.clone(),
+    })?;
     converted.custom_llm_provider = Some(provider.clone());
     let Some(port) = deps.prompts else {
-        return Ok(PreparedCall::settled(converted, provider, &call.model));
+        return Ok(PreparedCall {
+            call: converted,
+            provider,
+            model: call.model.clone(),
+        });
     };
     prompted(deps, call, converted, provider, port).await
 }
@@ -51,8 +48,11 @@ pub(super) async fn prepare(
 // LiteLLM converts text_format to text, then sends aresponses=True on to the sync entry
 fn convert(call: &ResponsesCreateCall) -> Result<ResponsesCreateCall, AsyncCreateError> {
     let mut converted = call.clone();
-    let text =
-        response_text(call).map_err(|error| AsyncCreateError::create(error, "", &call.model))?;
+    let text = response_text(call).map_err(|error| AsyncCreateError {
+        cause: Box::new(AsyncCreateCause::Create(error)),
+        provider: String::new(),
+        model: call.model.clone(),
+    })?;
     converted.text = text;
     converted.text_format = None;
     converted
@@ -83,7 +83,7 @@ fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError
 fn initial_provider(
     resolver: &dyn ModelResolver,
     call: &ResponsesCreateCall,
-) -> Result<String, CreateError> {
+) -> Result<String, ResolutionError> {
     if let Some(named) = &call.custom_llm_provider {
         return Ok(named.clone());
     }

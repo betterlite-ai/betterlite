@@ -1,5 +1,7 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
-use betterlite_error::error::{ErrorClass, class_message};
+use betterlite_error::error::details::ResponseDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
+use betterlite_models::resolution::ResolutionError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
@@ -8,13 +10,16 @@ use crate::api::decisions_send::error::visible_message;
 use crate::api::responses_create::error::{CreateError, CreateFailure};
 use crate::api::responses_provider_selection::error::CredentialBoundaryError;
 
-// The local cause LiteLLM's aresponses raises for a null answer, raised again as a bare ValueError
+// The causes aresponses raises itself, each reaching exception_type with its own class
 #[derive(Debug, Error)]
 pub enum AsyncCreateCause {
     #[error(transparent)]
     Create(#[from] CreateError),
     #[error("{0}")]
     CredentialBoundary(CredentialBoundaryError),
+    // get_llm_provider raises BadRequestError before any HTTP, and exception_type hands it back unchanged
+    #[error("{0}")]
+    ProviderResolution(ResolutionError),
     #[error("Got an unexpected None response from the Responses API: None")]
     NullResponse,
 }
@@ -29,14 +34,6 @@ pub struct AsyncCreateError {
 }
 
 impl AsyncCreateError {
-    pub(super) fn create(error: CreateError, provider: &str, model: &str) -> Self {
-        Self {
-            cause: Box::new(AsyncCreateCause::Create(error)),
-            provider: provider.to_owned(),
-            model: model.to_owned(),
-        }
-    }
-
     // LiteLLM raises BadRequestError(model=swapped, llm_provider=swapped) and exception_type hands it back unchanged
     pub(super) fn boundary(error: CredentialBoundaryError) -> Self {
         let provider = error.provider.clone();
@@ -48,30 +45,16 @@ impl AsyncCreateError {
         }
     }
 
-    pub(super) fn null_response(provider: String, model: String) -> Self {
-        Self {
-            cause: Box::new(AsyncCreateCause::NullResponse),
-            provider,
-            model,
-        }
-    }
-
     #[must_use]
     pub fn sdk_failure(&self, redactor: &Redactor) -> CreateFailure {
         match self.cause.as_ref() {
             AsyncCreateCause::Create(error) => {
                 error.sdk_failure(&self.provider, &self.model, redactor)
             }
-            AsyncCreateCause::CredentialBoundary(error) => {
-                let class = error.class();
-                CreateFailure {
-                    class: class_name(&class),
-                    status: class.metadata().status_code,
-                    kind: None,
-                    param: None,
-                    code: None,
-                    message: redactor.redact_string(&visible_message(&class)),
-                }
+            AsyncCreateCause::CredentialBoundary(error) => class_failure(&error.class(), redactor),
+            AsyncCreateCause::ProviderResolution(error) => {
+                let class = provider_resolution_class(error, &self.model);
+                class_failure(&class, redactor)
             }
             AsyncCreateCause::NullResponse => {
                 let class = null_response_class(&self.provider, &self.model, redactor);
@@ -86,6 +69,35 @@ impl AsyncCreateError {
             }
         }
     }
+}
+
+// Every class built here reaches the caller with its kind's public prefix, as exception_type prints it
+fn class_failure(class: &ErrorClass, redactor: &Redactor) -> CreateFailure {
+    CreateFailure {
+        class: class_name(class),
+        status: class.metadata().status_code,
+        kind: None,
+        param: None,
+        code: None,
+        message: redactor.redact_string(&visible_message(class)),
+    }
+}
+
+// get_llm_provider's BadRequestError names the model and leaves the provider empty, since neither local is filled yet
+fn provider_resolution_class(error: &ResolutionError, model: &str) -> ErrorClass {
+    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+        ErrorContext {
+            message: error.to_string(),
+            model: Some(model.to_owned()),
+            provider: Some(String::new()),
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        },
+        None,
+    )))
 }
 
 // A bare ValueError has no status, so exception_type's last resort answers APIConnectionError with bounded text
