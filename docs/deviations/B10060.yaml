@@ -1,0 +1,9 @@
+task: B10060
+deviations:
+  - what: prepare_data_with_credentials returns the trusted snapshot as TrustedCredentials instead of storing it in data under _litellm_internal_model_credentials; with include true it also drops a caller-supplied copy of that key rather than overwriting it with a read-only mapping.
+    why: a JsonObject cannot carry a typed value and betterlite-models' RequestCall refuses that key from a request, so the caller hands the snapshot to the call as betterlite_models::controls::call_params::TrustedCredentials, the type the file read targets already take.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L638-L640
+  - what: The snapshot holds every text credential, model and custom_llm_provider included, but leaves out object and list credentials such as vertex_credentials, aws_session_tags and bedrock_tags, where LiteLLM's MappingProxyType carries them unchanged.
+    why: TrustedCredentials holds SecretString values, and the snapshot's readers at the pin read text fields only (cloud_storage_security.py L123, bedrock files transformation.py L193), so a non-text credential has no reader to serve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L640
+kept_bugs: []

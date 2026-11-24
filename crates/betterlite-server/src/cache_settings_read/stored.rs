@@ -10,23 +10,16 @@ use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_redis::config_sync::publish::redis_config_change_publisher;
-use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue, StoredValue};
-use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::view::carries_value;
 use crate::cache_settings::parse::{ParseStoredSettingsError, parse_stored_settings};
+use crate::env_value_codec::decrypt_env;
 
 pub const CACHE_CONFIG_ROW_ID: &str = "cache_config";
 
 const SELECT_SQL: &str = r#"SELECT cache_settings::text FROM "LiteLLM_CacheConfig" WHERE id = $1"#;
-
-// decrypt_value_helper(return_original_value=True): a value that does not decrypt stays as stored.
-const KEEP_ORIGINAL: DecryptPolicy = DecryptPolicy {
-    log: FailureLog::Debug,
-    value: FailureValue::Original,
-};
 
 #[derive(Debug, Error)]
 pub enum StoredSettingsError {
@@ -87,13 +80,7 @@ pub fn stored_from_raw(
         return Ok(Map::new());
     }
     let parsed = parse_stored_settings(raw)?;
-    Ok(parsed
-        .into_iter()
-        .map(|(field, value)| {
-            let decrypted = decrypt_value(cipher, &field, value);
-            (field, decrypted)
-        })
-        .collect())
+    Ok(decrypt_env(&parsed, cipher))
 }
 
 pub async fn stored_settings(
@@ -104,18 +91,6 @@ pub async fn stored_settings(
         return Ok(Map::new());
     };
     stored_from_raw(&raw, cipher)
-}
-
-fn decrypt_value(cipher: &DbCipher, field: &str, value: Value) -> Value {
-    let Value::String(text) = value else {
-        return value;
-    };
-    let stored = StoredValue::Text(SecretString::from(text));
-    match cipher.decrypt_value(stored, field, KEEP_ORIGINAL) {
-        Some(StoredValue::Text(plain)) => Value::String(plain.expose_secret().to_owned()),
-        Some(StoredValue::Other(other)) => other,
-        None => Value::Null,
-    }
 }
 
 mod tests;
