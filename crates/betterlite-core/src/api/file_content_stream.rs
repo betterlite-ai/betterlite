@@ -20,6 +20,7 @@ use self::target::CallerClient;
 pub mod error;
 mod plan;
 mod service;
+mod streaming;
 pub mod target;
 
 mod tests;
