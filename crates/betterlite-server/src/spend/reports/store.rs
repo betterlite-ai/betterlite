@@ -8,7 +8,7 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::team_repository::repository::{TeamDatabase, TeamQueryError, TeamRepository};
 use chrono::{DateTime, Utc};
 
-use crate::organization_create::access::{DatabaseUserLookup, OrgAccessError, OrgUserLookup as _};
+use crate::organization_create::access::{DatabaseUserLookup, OrgAccessError, OrgUserLookup};
 
 use super::query_service;
 use super::rows::{DailyTeamSpend, OrganizationKeySpend, ScopedKeySpend};

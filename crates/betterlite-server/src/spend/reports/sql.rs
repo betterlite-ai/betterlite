@@ -32,23 +32,26 @@ pub(super) fn scoped_spend_report_sql(column: ScopeColumn) -> String {
                 sl.api_key,
                 sl.model
         )
-        SELECT
-            api_key,
-            SUM(model_cost) AS total_cost,
-            SUM(model_input_tokens) AS total_input_tokens,
-            SUM(model_output_tokens) AS total_output_tokens,
-            jsonb_agg(jsonb_build_object(
-                'model', model,
-                'total_cost', model_cost,
-                'total_input_tokens', model_input_tokens,
-                'total_output_tokens', model_output_tokens
-            )) AS model_details
-        FROM
-            SpendByModelApiKey
-        GROUP BY
-            api_key
+        SELECT row_to_json(report_row)::text
+        FROM (
+            SELECT
+                api_key,
+                SUM(model_cost) AS total_cost,
+                SUM(model_input_tokens) AS total_input_tokens,
+                SUM(model_output_tokens) AS total_output_tokens,
+                jsonb_agg(jsonb_build_object(
+                    'model', model,
+                    'total_cost', model_cost,
+                    'total_input_tokens', model_input_tokens,
+                    'total_output_tokens', model_output_tokens
+                )) AS model_details
+            FROM
+                SpendByModelApiKey
+            GROUP BY
+                api_key
+        ) AS report_row
         ORDER BY
-            total_cost DESC;
+            report_row.total_cost DESC;
     "#
     )
 }
@@ -80,24 +83,27 @@ pub(super) const ORGANIZATION_SPEND_REPORT_SQL: &str = r#"
             sl.team_id,
             sl.model
     )
-    SELECT
-        api_key,
-        SUM(model_cost) AS total_cost,
-        SUM(model_input_tokens) AS total_input_tokens,
-        SUM(model_output_tokens) AS total_output_tokens,
-        jsonb_agg(jsonb_build_object(
-            'team_id', team_id,
-            'model', model,
-            'total_cost', model_cost,
-            'total_input_tokens', model_input_tokens,
-            'total_output_tokens', model_output_tokens
-        )) AS model_details
-    FROM
-        SpendByModelApiKey
-    GROUP BY
-        api_key
+    SELECT row_to_json(report_row)::text
+    FROM (
+        SELECT
+            api_key,
+            SUM(model_cost) AS total_cost,
+            SUM(model_input_tokens) AS total_input_tokens,
+            SUM(model_output_tokens) AS total_output_tokens,
+            jsonb_agg(jsonb_build_object(
+                'team_id', team_id,
+                'model', model,
+                'total_cost', model_cost,
+                'total_input_tokens', model_input_tokens,
+                'total_output_tokens', model_output_tokens
+            )) AS model_details
+        FROM
+            SpendByModelApiKey
+        GROUP BY
+            api_key
+    ) AS report_row
     ORDER BY
-        total_cost DESC;
+        report_row.total_cost DESC;
 "#;
 
 // get_spend_by_team: one row per day, each day's teams grouped with their per-model, per-key spend
@@ -126,32 +132,35 @@ pub(super) const SPEND_BY_TEAM_SQL: &str = r#"
             sl.model,
             sl.api_key
     )
-        SELECT
-            to_char(group_by_day, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS group_by_day,
-            jsonb_agg(jsonb_build_object(
-                'team_name', team_name,
-                'total_spend', total_spend,
-                'metadata', metadata
-            )) AS teams
+        SELECT row_to_json(report_row)::text
         FROM (
             SELECT
-                group_by_day,
-                team_name,
-                SUM(model_api_spend) AS total_spend,
+                to_char(group_by_day, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS group_by_day,
                 jsonb_agg(jsonb_build_object(
-                    'model', model,
-                    'api_key', api_key,
-                    'spend', model_api_spend,
-                    'total_tokens', model_api_tokens
-                )) AS metadata
-            FROM
-                SpendByModelApiKey
+                    'team_name', team_name,
+                    'total_spend', total_spend,
+                    'metadata', metadata
+                )) AS teams
+            FROM (
+                SELECT
+                    group_by_day,
+                    team_name,
+                    SUM(model_api_spend) AS total_spend,
+                    jsonb_agg(jsonb_build_object(
+                        'model', model,
+                        'api_key', api_key,
+                        'spend', model_api_spend,
+                        'total_tokens', model_api_tokens
+                    )) AS metadata
+                FROM
+                    SpendByModelApiKey
+                GROUP BY
+                    group_by_day,
+                    team_name
+            ) AS aggregated
             GROUP BY
-                group_by_day,
-                team_name
-        ) AS aggregated
-        GROUP BY
-            group_by_day
+                group_by_day
+        ) AS report_row
         ORDER BY
-            group_by_day;
+            report_row.group_by_day;
 "#;
