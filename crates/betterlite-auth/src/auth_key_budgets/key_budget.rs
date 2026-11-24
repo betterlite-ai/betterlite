@@ -131,8 +131,5 @@ fn key_descriptor(auth: &UserAPIKeyAuth) -> String {
         .key_name
         .as_deref()
         .filter(|name| Regex::new(MASKED_KEY_NAME).is_ok_and(|pattern| pattern.is_match(name)));
-    match masked_name {
-        Some(name) => format!("{label} ({name})"),
-        None => label.to_owned(),
-    }
+    masked_name.map_or_else(|| label.to_owned(), |name| format!("{label} ({name})"))
 }
