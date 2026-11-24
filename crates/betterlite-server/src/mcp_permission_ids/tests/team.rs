@@ -150,17 +150,15 @@ async fn team_union_retains_unresolved() {
     )
     .await
     .unwrap();
-    assert_eq!(
-        allowed,
-        string_set(&[
-            "cfg-a",
-            "cfg-b",
-            "db-1",
-            "gone",
-            "db-from-group",
-            "ghost-tool"
-        ])
-    );
+    let expected = string_set(&[
+        "cfg-a",
+        "cfg-b",
+        "db-1",
+        "gone",
+        "db-from-group",
+        "ghost-tool",
+    ]);
+    assert_eq!(allowed, expected);
     database.close().await;
 }
 
