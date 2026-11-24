@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use async_trait::async_trait;
 use betterlite_streaming::stream_chunk_shaping::records::{
@@ -14,7 +14,7 @@ use betterlite_streaming::streamed_response_assembly::response::{
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message as CountMessage;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::Number;
 
@@ -84,6 +84,7 @@ pub fn recover_with_fixed_count(
     })
 }
 
+#[must_use]
 pub fn clear_placeholder_cost(spec: &ChatSpec) -> ClearOutcome {
     let mut response = chat_response(spec);
     super::clear_placeholder_cost(&mut response);
@@ -94,29 +95,15 @@ pub fn clear_placeholder_cost(spec: &ChatSpec) -> ClearOutcome {
     }
 }
 
+#[must_use]
 pub fn chat_response(spec: &ChatSpec) -> Response {
-    let details = if spec.has_details {
-        Some(CompletionTokensDetails {
-            reasoning_tokens: None,
-            text_tokens: spec.text_tokens,
-            image_tokens: None,
-            audio_tokens: None,
-            extra: ShapedObject::new(),
-        })
-    } else {
-        None
-    };
-    let cost = spec
-        .cost
-        .as_deref()
-        .and_then(|text| Decimal::from_str(text).ok());
-    let mut hidden_params = ShapedObject::new();
-    if let Some(text) = &spec.hidden_response_cost
-        && let Some(hidden_amount) = Decimal::from_str(text).ok()
-        && let Some(number) = hidden_amount.to_f64().and_then(Number::from_f64)
-    {
-        hidden_params.insert("response_cost".to_owned(), ShapedValue::Number(number));
-    }
+    let details = spec.has_details.then_some(CompletionTokensDetails {
+        reasoning_tokens: None,
+        text_tokens: spec.text_tokens,
+        image_tokens: None,
+        audio_tokens: None,
+        extra: ShapedObject::new(),
+    });
     Response::Chat(Box::new(ChatResponse {
         id: "chatcmpl-b3632".to_owned(),
         object: "chat.completion".to_owned(),
@@ -126,38 +113,61 @@ pub fn chat_response(spec: &ChatSpec) -> Response {
         service_tier: None,
         choices: vec![ChatChoice {
             index: 0,
-            message: ChatMessage {
-                content: spec.content.clone(),
-                role: "assistant".to_owned(),
-                tool_calls: None,
-                function_call: None,
-                provider_specific_fields: None,
-                reasoning_content: None,
-                thinking_blocks: None,
-                annotations: None,
-                audio: None,
-                images: None,
-            },
+            message: chat_message(spec),
             finish_reason: "stop".to_owned(),
             provider_specific_fields: None,
         }],
-        usage: WireUsage {
-            prompt_tokens: spec.prompt_tokens,
-            completion_tokens: spec.completion_tokens,
-            total_tokens: spec.total_tokens,
-            cache_creation_input_tokens: None,
-            cache_read_input_tokens: None,
-            completion_tokens_details: details,
-            prompt_tokens_details: None,
-            server_tool_use: None,
-            cost,
-            inference_geo: None,
-            speed: None,
-        },
-        hidden_params,
+        usage: chat_usage(spec, details),
+        hidden_params: hidden_params(spec),
     }))
 }
 
+fn chat_message(spec: &ChatSpec) -> ChatMessage {
+    ChatMessage {
+        content: spec.content.clone(),
+        role: "assistant".to_owned(),
+        tool_calls: None,
+        function_call: None,
+        provider_specific_fields: None,
+        reasoning_content: None,
+        thinking_blocks: None,
+        annotations: None,
+        audio: None,
+        images: None,
+    }
+}
+
+fn chat_usage(spec: &ChatSpec, details: Option<CompletionTokensDetails>) -> WireUsage {
+    WireUsage {
+        prompt_tokens: spec.prompt_tokens,
+        completion_tokens: spec.completion_tokens,
+        total_tokens: spec.total_tokens,
+        cache_creation_input_tokens: None,
+        cache_read_input_tokens: None,
+        completion_tokens_details: details,
+        prompt_tokens_details: None,
+        server_tool_use: None,
+        cost: spec
+            .cost
+            .as_deref()
+            .and_then(|text| Decimal::from_str(text).ok()),
+        inference_geo: None,
+        speed: None,
+    }
+}
+
+fn hidden_params(spec: &ChatSpec) -> ShapedObject {
+    let mut hidden_params = ShapedObject::new();
+    if let Some(text) = &spec.hidden_response_cost
+        && let Some(hidden_amount) = Decimal::from_str(text).ok()
+        && let Some(number) = hidden_amount.to_f64().and_then(Number::from_f64)
+    {
+        hidden_params.insert("response_cost".to_owned(), ShapedValue::Number(number));
+    }
+    hidden_params
+}
+
+#[must_use]
 pub fn usage_summary(response: &Response) -> UsageSummary {
     match response {
         Response::Chat(chat) => UsageSummary {

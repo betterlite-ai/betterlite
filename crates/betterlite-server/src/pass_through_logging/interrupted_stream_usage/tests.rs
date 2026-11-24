@@ -66,7 +66,11 @@ const ERROR: &str = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\"
 
 // The stream a client disconnect leaves behind: the output so far and no terminal message_delta.
 fn cut_stream() -> Vec<Chunk> {
-    [START, TEXT_START, TEXT_DELTA].iter().map(chunk).collect()
+    [START, TEXT_START, TEXT_DELTA]
+        .iter()
+        .copied()
+        .map(chunk)
+        .collect()
 }
 
 fn completed_stream() -> Vec<Chunk> {
@@ -79,6 +83,7 @@ fn completed_stream() -> Vec<Chunk> {
         MESSAGE_STOP,
     ]
     .iter()
+    .copied()
     .map(chunk)
     .collect()
 }
@@ -116,6 +121,7 @@ fn interrupted_tail_cut_mid_content_block_delta_is_interrupted() {
 fn interrupted_tail_content_block_stop_is_interrupted() {
     let stream = [START, TEXT_DELTA, CONTENT_STOP]
         .iter()
+        .copied()
         .map(chunk)
         .collect::<Vec<_>>();
     assert!(stream_was_interrupted(&stream).expect("valid chunks"));

@@ -129,7 +129,7 @@ where
 {
     match block_on(counter.count_response_text(model, output)) {
         Ok(Ok(count)) => Some(count),
-        Ok(Err(_count_error)) | Err(_runtime_error) => {
+        Ok(Err(_)) | Err(_) => {
             tracing::warn!(
                 "Could not re-tokenize interrupted stream output; keeping placeholder completion token count."
             );

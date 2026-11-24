@@ -26,12 +26,9 @@ use betterlite_streaming::passthrough_reconstruction::legacy::{AssemblyRequest, 
 use betterlite_streaming::passthrough_reconstruction::response::assemble_response;
 use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
 use betterlite_streaming::stream_usage_assembly::wire::Usage as WireUsage;
-use betterlite_streaming::streamed_response_assembly::cost::{
-    CostError, CostInput, StreamCostCalculator, StreamLogging,
-};
+use betterlite_streaming::streamed_response_assembly::cost::{CostError, CostInput, StreamLogging};
 use betterlite_streaming::streamed_response_assembly::records::Chunk as EventChunk;
 use betterlite_streaming::streamed_response_assembly::response::Response;
-use betterlite_tokenizer::engine::error::EngineError;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use thiserror::Error;
@@ -100,20 +97,21 @@ where
 fn cost_response(input: &CostInput<'_>) -> Result<Json, CostError> {
     let mut fields = IndexMap::new();
     fields.insert("model".to_owned(), Json::Text(input.model.to_owned()));
-    let usage = serde_json::to_value(input.usage).map_err(cost_failure)?;
+    let usage = serde_json::to_value(input.usage).map_err(|source| cost_failure(&source))?;
     fields.insert(
         "usage".to_owned(),
-        serde_json::from_value(usage).map_err(cost_failure)?,
+        serde_json::from_value(usage).map_err(|source| cost_failure(&source))?,
     );
-    let hidden = serde_json::to_value(input.hidden_params).map_err(cost_failure)?;
+    let hidden =
+        serde_json::to_value(input.hidden_params).map_err(|source| cost_failure(&source))?;
     fields.insert(
         "_hidden_params".to_owned(),
-        serde_json::from_value(hidden).map_err(cost_failure)?,
+        serde_json::from_value(hidden).map_err(|source| cost_failure(&source))?,
     );
     Ok(Json::Object(fields))
 }
 
-fn cost_failure(source: serde_json::Error) -> CostError {
+fn cost_failure(source: &serde_json::Error) -> CostError {
     CostError {
         message: source.to_string(),
     }
@@ -146,7 +144,7 @@ impl EventChunkConverter for AnthropicChunkConverter {
     }
 }
 
-fn convert_failure(source: serde_json::Error) -> ConvertError<ConvertFailure> {
+const fn convert_failure(source: serde_json::Error) -> ConvertError<ConvertFailure> {
     ConvertError::Failed {
         source: ConvertFailure::Json(source),
     }
@@ -162,7 +160,7 @@ fn chunk_of(chunk: &StreamEventChunk, now: i64) -> Result<EventChunk, serde_json
         model: chunk.model.clone(),
         system_fingerprint: None,
         service_tier: None,
-        usage: chunk.usage.as_ref().map(serde_json::to_value).transpose()?,
+        usage: serde_json::from_value(serde_json::to_value(&chunk.usage)?)?,
         choices: serde_json::from_value(serde_json::to_value(&chunk.choices)?)?,
     })
 }
@@ -265,19 +263,15 @@ where
         model,
         costs: services.costs,
     };
-    let logging: &dyn StreamLogging = &cost_logging;
-    let no_costs = NoCosts;
-    let costs: &dyn StreamCostCalculator = &no_costs;
-    let counter: &dyn UsageTokenCounter = services.counter;
     let request = AssemblyRequest {
         chunks: &raw,
         converter: &mut converter,
         now,
     };
     let assembly_services = AssemblyServices {
-        costs,
-        counter,
-        logging: Some(logging),
+        costs: &NoCosts,
+        counter: services.counter,
+        logging: Some(&cost_logging),
         hooks: &hooks,
     };
     // Any failure of the reconstruction is what LiteLLM's except turns into the usage-only fallback.
