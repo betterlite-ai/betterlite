@@ -1,0 +1,15 @@
+kind: helper
+name: resource-hubs-skill-hub-manifest-parse-error-500
+call:
+  b3194:
+    function: skill_hub
+    plugins:
+      - id: plugin-broken
+        name: broken
+        manifest_json: not-json
+        enabled: true
+        created_at: null
+        updated_at: null
+    table_error: false
+env: {}
+compare: {ignore: []}
