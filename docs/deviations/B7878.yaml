@@ -29,10 +29,14 @@ deviations:
   - what: >-
       AuthenticationError, NotFoundError, PermissionDeniedError and UnprocessableEntityError carry type, param and
       code None, where the openai SDK error LiteLLM's sync functions raise reads them off the response body (the
-      test server's 401 gives type "invalid_request_error", param None and code "invalid_api_key").
+      test server's 401 gives type "invalid_request_error", param None and code "invalid_api_key"). RateLimitError
+      carries type "throttling_error" and code "429", and InternalServerError carries type "internal_server_error",
+      where that SDK error keeps the body's own values (a 429 body's type "requests" and code
+      "rate_limit_exceeded", a 500 body's type "server_error").
     why: >-
-      raise_native_error builds those four from a class whose constructor takes no body, and that module is outside
-      this task; the message, status_code, model and llm_provider match the reference error.
+      raise_native_error builds the first four from a class whose constructor takes no body, and betterlite's own
+      RateLimitError and InternalServerError post-init overwrite those fields; both modules are outside this task.
+      The message, status_code, model and llm_provider match the reference error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L126-L134
   - what: >-
       A provider failure of get_assistants or delete_assistant, and of their async twins, carries model "" because
