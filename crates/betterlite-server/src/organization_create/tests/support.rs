@@ -167,10 +167,12 @@ impl TestDatabase {
         }
     }
 
+    #[must_use]
     pub fn store(&self) -> Arc<PostgresStore> {
         Arc::new(self.store.clone())
     }
 
+    #[must_use]
     pub const fn prisma(&self) -> PrismaClient<'_> {
         PrismaClient {
             writer: &self.store,
@@ -341,6 +343,7 @@ pub struct Reply {
 }
 
 impl Reply {
+    #[must_use]
     pub fn object(&self) -> BTreeMap<String, JsonData> {
         let JsonData::Object(fields) = serde_json::from_str(&self.body).unwrap() else {
             panic!(
@@ -351,12 +354,14 @@ impl Reply {
         fields
     }
 
+    #[must_use]
     pub fn field(&self, name: &str) -> JsonData {
         self.object()
             .remove(name)
             .unwrap_or_else(|| panic!("the response has no {name}: {body}", body = self.body))
     }
 
+    #[must_use]
     pub fn text_field(&self, name: &str) -> String {
         let body = &self.body;
         let JsonData::String(text) = self.field(name) else {
@@ -365,10 +370,12 @@ impl Reply {
         text
     }
 
+    #[must_use]
     pub fn detail_error(&self) -> String {
         self.nested_text("detail", "error")
     }
 
+    #[must_use]
     pub fn detail_text(&self) -> String {
         let JsonData::String(text) = self.field("detail") else {
             panic!("detail is not a string: {body}", body = self.body);
@@ -376,6 +383,7 @@ impl Reply {
         text
     }
 
+    #[must_use]
     pub fn error_text(&self, name: &str) -> String {
         self.nested_text("error", name)
     }
@@ -428,6 +436,7 @@ fn key_fields(
     fields
 }
 
+#[must_use]
 pub fn key_caller(user_id: Option<&str>, role: Option<&str>, models: &[&str]) -> AuthContext {
     let fields = key_fields(user_id, role, models);
     let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
@@ -458,14 +467,17 @@ pub fn key_caller(user_id: Option<&str>, role: Option<&str>, models: &[&str]) ->
     }
 }
 
+#[must_use]
 pub fn admin_caller(user_id: Option<&str>) -> AuthContext {
     key_caller(user_id, Some("proxy_admin"), &[])
 }
 
+#[must_use]
 pub fn token_caller(user_id: &str, roles: &[Role]) -> AuthContext {
     jwt_principal(Some(user_id), roles)
 }
 
+#[must_use]
 pub fn role_only_caller(roles: &[Role]) -> AuthContext {
     jwt_principal(None, roles)
 }
@@ -501,6 +513,7 @@ fn jwt_principal(user_id: Option<&str>, roles: &[Role]) -> AuthContext {
     }
 }
 
+#[must_use]
 pub fn master_caller() -> AuthContext {
     AuthContext {
         principal: Principal {
@@ -529,6 +542,7 @@ pub struct RecordingView {
 }
 
 impl RecordingView {
+    #[must_use]
     pub fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
@@ -563,6 +577,7 @@ impl ModelAccessView for RecordingView {
 pub struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
 impl LogBuffer {
+    #[must_use]
     pub fn contents(&self) -> String {
         let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         String::from_utf8(bytes.clone()).unwrap()
@@ -591,6 +606,7 @@ impl MakeWriter<'_> for LogBuffer {
     }
 }
 
+#[must_use]
 pub fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = fmt()
@@ -603,10 +619,12 @@ pub fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
     (buffer, set_default(subscriber))
 }
 
+#[must_use]
 pub fn parsed(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap()
 }
 
+#[must_use]
 pub fn number(value: &JsonData) -> f64 {
     let JsonData::Number(number) = value else {
         panic!("the value is not a JSON number");
