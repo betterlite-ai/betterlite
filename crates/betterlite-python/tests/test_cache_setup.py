@@ -220,6 +220,16 @@ def test_cache_init_disk_directory(tmp_path: Path) -> None:
     assert backend.get_cache("missing") is None
 
 
+def test_cache_init_disk_default_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    backend = _require_disk(Cache(type="disk").cache)
+    backend.set_cache("key", CACHED)
+    assert backend.get_cache("key") == CACHED
+    assert (tmp_path / ".litellm_cache").is_dir()
+
+
 def test_init_unsupported_type() -> None:
     for cache_type in ("bogus", LiteLLMCacheType.S3, "redis-semantic"):
         with pytest.raises(NotImplementedError, match="cache type is not built yet"):
