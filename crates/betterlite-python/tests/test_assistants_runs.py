@@ -234,7 +234,7 @@ class RunServer(ThreadingHTTPServer):
         return {**BARE_STREAM_ARGUMENTS, **self.connection(key)}
 
 
-@pytest.fixture
+@pytest.fixture(autouse=False)
 def server() -> Iterator[RunServer]:
     running = RunServer()
     try:
