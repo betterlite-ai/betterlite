@@ -94,20 +94,24 @@ impl ObjectPermissionReads for ScriptedReads {
         ready(Err(unscripted()))
     }
 
+    // get_object_permission answers None for a missing row or a swallowed fault unless the policy must be fresh
     fn permission(
         &self,
         _object_permission_id: &str,
-        _check_db_only: bool,
+        check_db_only: bool,
     ) -> impl Future<Output = Result<Option<ObjectPermission>, Self::Error>> + Send {
         let answer = match self.read {
-            ReadKind::Missing => Ok(None),
-            ReadKind::Unreadable => Err(Fault {
-                message: "the object permission read failed".to_owned(),
-            }),
             ReadKind::Loaded => match &self.row {
                 Some(row) => Ok(Some(row.clone())),
                 None => Err(unscripted()),
             },
+            ReadKind::Missing | ReadKind::Unreadable if !check_db_only => Ok(None),
+            ReadKind::Missing => Err(Fault {
+                message: "referenced object permission does not exist".to_owned(),
+            }),
+            ReadKind::Unreadable => Err(Fault {
+                message: "the object permission read failed".to_owned(),
+            }),
         };
         ready(answer)
     }

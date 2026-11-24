@@ -1,6 +1,7 @@
 import asyncio
 from typing import Literal, NotRequired, TypedDict
 
+from fastapi import HTTPException
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
 from litellm.proxy._experimental.mcp_server.auth.user_api_key_auth_mcp import (
     MCPRequestHandler,
@@ -69,15 +70,21 @@ class ScriptedRead:
         self.read = read
         self.row = row
 
-    async def __call__(self, **_kwargs: JsonValue) -> LiteLLM_ObjectPermissionTable | None:
-        if self.read == "missing":
+    async def __call__(
+        self, *, check_db_only: bool = False, **_kwargs: JsonValue
+    ) -> LiteLLM_ObjectPermissionTable | None:
+        if self.read == "loaded":
+            fields = self.row
+            if fields is None:
+                raise ValueError("a loaded read needs a row")
+            return row_of(fields)
+        if not check_db_only:
             return None
-        if self.read == "unreadable":
-            raise RuntimeError("the object permission read failed")
-        fields = self.row
-        if fields is None:
-            raise ValueError("a loaded read needs a row")
-        return row_of(fields)
+        if self.read == "missing":
+            raise HTTPException(
+                status_code=403, detail="Referenced object permission does not exist"
+            )
+        raise RuntimeError("the object permission read failed")
 
 
 def run(input_value: Input) -> Outcome:

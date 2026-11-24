@@ -1,5 +1,5 @@
-# An unreadable named row raises UnloadableEntitlementError carrying the read fault as its cause,
-# while an absent row raises the same UnloadableEntitlementError without one.
+# A fresh policy makes a failed or absent named row read raise, and the loader carries that error
+# as the UnloadableEntitlementError's cause; a non-fresh read answers None and raises without one.
 kind: helper
 name: unloadable_entitlement_db_failure
 call:
