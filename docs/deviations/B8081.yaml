@@ -1,0 +1,36 @@
+task: B8081
+deviations:
+  - what: 'The native client handle holds no a2a SDK client, and a caller cannot pass an SDK client into a native call.'
+    why: 'The a2a-sdk is a Python library and the wheel has no dependency on it. The handle comes from create_client here.'
+    link: ''
+  - what: 'Every failure raises one NativeA2aError whose JSON `type` field names the LiteLLM exception class (A2AError, A2AConnectionError, A2AAgentCardError, A2AAgentCardDiscoveryError, A2ALocalhostURLError) or ValueError/RuntimeError.'
+    why: 'The wheel carries one exception type; B8083 rebuilds the per-type classes from that field.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L12-L160
+  - what: 'The error `message` has no "litellm.A2AError: " prefix.'
+    why: 'The task puts the prefix in the Python layer, so the native message stays unprefixed.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L31
+  - what: 'Transport and card failures carry betterlite''s own message wording; the discovery and localhost messages match LiteLLM exactly.'
+    why: 'B4800 states the transport failure text, and betterlite names its own components rather than httpx.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L520-L545
+  - what: 'A call whose litellm_params carries custom_llm_provider raises NativeA2aError type RuntimeError with "the A2A completion bridge is not available in the Python SDK".'
+    why: 'The bridge runs litellm.acompletion and the provider registry, which this wheel does not carry (B142 owns them).'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L480-L489
+  - what: 'The handle''s agent_card() returns the card resolved at creation with a localhost URL fixed, instead of fetching the card again.'
+    why: 'The task defines agent_card() as the stored card; the handle sends through its stored client and fetches nothing of its own.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/client.py#L81-L91
+  - what: 'litellm_call_id is accepted in the call JSON and ignored, and metadata reaches only the streaming entry point.'
+    why: 'B4814 has no slot for a call id, and the metadata field exists only on its stream call; the Python Logging object the ids feed does not exist in the wheel.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L404-L417
+  - what: 'The streaming success dispatch does nothing: no usage or cost reaches a logging object.'
+    why: 'LiteLLM sets them on the Logging object it builds for the stream, and the wheel has no such object.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L753-L764
+  - what: 'The error `failures` list holds {path, error} objects with the error as text, and `original_error` is text.'
+    why: 'JSON text has no exception objects; each error keeps the text LiteLLM would have shown.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L121-L123
+  - what: 'set_agent_card_url writes the top-level url only when the card already carries one.'
+    why: 'B4800 keeps absent fields absent; a card with neither a url nor an interface keeps no url where LiteLLM writes one.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L119-L127
+  - what: 'DEFAULT_A2A_AGENT_TIMEOUT is read when the call runs; an empty value counts as unset and a bad value is an A2AError that names the variable.'
+    why: 'docs/compatibility.md''s env rule, and LiteLLM parses the value once at import where a bad value stops the whole import.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L578
+kept_bugs: []

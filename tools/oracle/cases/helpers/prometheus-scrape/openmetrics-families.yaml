@@ -1,0 +1,23 @@
+kind: helper
+name: prometheus-scrape-openmetrics-families
+call:
+  b10090:
+    metrics:
+      - {kind: counter, name: litellm_requests_total, help: requests, labels: [model], buckets: []}
+      - {kind: gauge, name: litellm_in_flight, help: "in flight", labels: [model], buckets: []}
+      - {kind: histogram, name: litellm_latency_seconds, help: latency, labels: [api_key, model], buckets: [0.5, 2.0]}
+    updates:
+      - {metric: 0, labels: [gpt-4o], action: inc, value: 2}
+      - {metric: 1, labels: [gpt-4o], action: set, value: 3}
+      - {metric: 2, labels: [key-1, gpt-4o], action: observe, value: 0.25}
+      - {metric: 2, labels: [key-1, gpt-4o], action: observe, value: 1.5}
+    accept: application/openmetrics-text
+    accept_encoding: ""
+    names: []
+env: {}
+compare:
+  ignore:
+    - pointer: /value/lines/3/value
+      why: _created is the wall-clock time the series was created
+    - pointer: /value/lines/14/value
+      why: _created is the wall-clock time the series was created

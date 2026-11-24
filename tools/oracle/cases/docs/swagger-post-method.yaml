@@ -1,0 +1,15 @@
+name: docs-swagger-post-method
+config: |
+  model_list: []
+env: {}
+request:
+  method: POST
+  path: /swagger/swagger-ui.css
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [allow, content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []
