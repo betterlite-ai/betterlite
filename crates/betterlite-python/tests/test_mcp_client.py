@@ -529,7 +529,7 @@ def test_errors_swallowed_failure(mode: str, ours_prefix: str, theirs_prefix: st
         assert error_text(theirs_call).startswith(theirs_prefix)
 
 
-def test_errors_http_status_payload() -> None:
+def test_errors_http_status() -> None:
     native = NativeMcpError(native_payload("HTTPStatusError"))
     with pytest.raises(httpx2.HTTPStatusError) as caught:
         raise_native_error(native)
