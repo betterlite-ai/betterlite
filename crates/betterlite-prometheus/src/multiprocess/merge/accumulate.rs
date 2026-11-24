@@ -172,7 +172,8 @@ fn add_bucket(buckets: &mut Buckets, labels: Vec<(String, String)>, bound: f64, 
     let bounds = buckets.entry(labels).or_default();
     let mut found = false;
     for (existing, total) in bounds.iter_mut() {
-        if existing.partial_cmp(&bound) == Some(Ordering::Equal) {
+        let current = *existing;
+        if current.partial_cmp(&bound) == Some(Ordering::Equal) {
             *total = Add::add(*total, value);
             found = true;
         }
