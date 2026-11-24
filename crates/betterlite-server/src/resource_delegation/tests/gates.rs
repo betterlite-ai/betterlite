@@ -1,4 +1,6 @@
-use crate::resource_delegation::gates::{validate_search_tools, validate_vector_stores};
+use crate::resource_delegation::gates::{
+    validate_search_tools, validate_toolsets, validate_vector_stores,
+};
 
 use super::fixtures::{ceiling_grants, gate_detail, json, team_grants};
 
@@ -37,6 +39,22 @@ fn search_personal_duplicates() {
     validate_search_tools(Some(&denied), Some(&open_team), false).unwrap();
     let permissionless_team = team_grants("team-1", &[], None);
     validate_search_tools(Some(&denied), Some(&permissionless_team), false).unwrap();
+}
+
+#[test]
+fn toolsets_gate_reads_the_team_ceiling() {
+    let ceiling = team_grants("team-1", &[], Some(ceiling_grants(Some(&["t-a"]), None)));
+    let error = validate_toolsets(
+        Some(&json(r#"{"mcp_toolsets": ["t-a", "t-b"]}"#)),
+        Some(&ceiling),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(
+        gate_detail(error),
+        "Key requests MCP toolsets not allowed by team 'team-1': ['t-b']. Team allows: ['t-a']."
+    );
+    validate_toolsets(None, None, false).unwrap();
 }
 
 #[test]
