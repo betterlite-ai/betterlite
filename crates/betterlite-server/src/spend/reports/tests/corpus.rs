@@ -11,5 +11,6 @@ fn replays_the_scoped_report_query_corpus(
 ) {
     let bytes = fs::read(path).expect("corpus seed is readable");
     let decoded = decode_scoped_report_query(&bytes);
-    assert_eq!(decoded, decode_scoped_report_query(&bytes));
+    let again = decode_scoped_report_query(&bytes);
+    assert_eq!(decoded, again);
 }

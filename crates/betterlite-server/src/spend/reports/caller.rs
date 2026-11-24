@@ -3,9 +3,8 @@ use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_core::api::request_principal_metadata::principal::logged_api_key;
 use serde::{Deserialize, Serialize};
 
-use crate::organization_create::caller::OrgCaller;
+use crate::organization_create::caller::{MASTER_KEY_SUBJECT, OrgCaller};
 
-const MASTER_KEY_SUBJECT: &str = "master_key";
 const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 
 // user_api_key_dict: the identity the auth dependency publishes plus the key, team and org facts these reports read
