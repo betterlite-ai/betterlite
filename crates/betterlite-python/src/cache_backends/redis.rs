@@ -5,6 +5,8 @@ use betterlite_cache::configuration::settings::{
     DEFAULT_REDIS_MAJOR_VERSION, DEFAULT_REDIS_TTL_SECONDS,
 };
 use betterlite_config::loader::startup::process_environment;
+use betterlite_models::decisions::Json;
+use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::RedisCacheOptions;
 use betterlite_redis::redis_cache::connect::connect;
@@ -61,25 +63,12 @@ impl NativeRedis {
         Ok(())
     }
 
-    fn async_set<'py>(
-        &self,
-        py: Python<'py>,
-        key: &str,
-        value: &str,
-        ttl: Option<f64>,
-    ) -> AsyncAnswer<'py> {
+    // The pyo3 signature is the whole Python contract, so it stays on one line.
+    #[rustfmt::skip]
+    fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let json = convert::json_value(value)?;
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
-        future_into_py(py, async move {
-            error::backend_err(
-                cache
-                    .values
-                    .async_set_cache(Some(&owned), &json, ttl, false)
-                    .await,
-            )?;
-            Ok(())
-        })
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
+        future_into_py(py, store(cache, owned, json, ttl))
     }
 
     fn get(&self, key: &str) -> PyResult<Option<String>> {
@@ -91,14 +80,10 @@ impl NativeRedis {
     }
 
     fn async_get<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
         future_into_py(py, async move {
             let stored = error::backend_err(cache.async_get_cache(&owned).await)?;
-            stored
-                .map(convert::text_of_cached)
-                .transpose()
-                .map_err(PyErr::from)
+            answer_text(stored)
         })
     }
 
@@ -109,21 +94,11 @@ impl NativeRedis {
         convert::whole_text(counted).map_err(PyErr::from)
     }
 
-    fn async_increment<'py>(
-        &self,
-        py: Python<'py>,
-        key: &str,
-        value: f64,
-        ttl: Option<f64>,
-    ) -> AsyncAnswer<'py> {
+    #[rustfmt::skip]
+    fn async_increment<'py>(&self, py: Python<'py>, key: &str, value: f64, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let seconds = ttl.map(convert::whole_seconds).transpose()?;
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
-        future_into_py(py, async move {
-            let counted =
-                error::backend_err(cache.async_increment(&owned, value, seconds, false).await)?;
-            convert::number_text(counted).map_err(PyErr::from)
-        })
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
+        future_into_py(py, count(cache, owned, value, seconds))
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
@@ -145,21 +120,14 @@ impl NativeRedis {
         let cache = Arc::clone(&self.cache);
         let remaining = py.detach(|| get_runtime().block_on(cache.async_get_ttl(key)));
         let seconds = error::backend_err(remaining)?;
-        seconds
-            .map(convert::whole_text)
-            .transpose()
-            .map_err(PyErr::from)
+        whole_answer(seconds)
     }
 
     fn async_ttl<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
         future_into_py(py, async move {
             let seconds = error::backend_err(cache.async_get_ttl(&owned).await)?;
-            seconds
-                .map(convert::whole_text)
-                .transpose()
-                .map_err(PyErr::from)
+            whole_answer(seconds)
         })
     }
 
@@ -202,6 +170,37 @@ impl NativeRedis {
             cache.admin.disconnect().await;
             Ok(())
         })
+    }
+}
+
+async fn store(cache: Arc<RedisCache>, key: String, json: Json, ttl: Option<f64>) -> PyResult<()> {
+    let written = cache
+        .values
+        .async_set_cache(Some(&key), &json, ttl, false)
+        .await;
+    let _stored = error::backend_err(written)?;
+    Ok(())
+}
+
+fn answer_text(stored: Option<CachedValue>) -> PyResult<Option<String>> {
+    match stored {
+        Some(value) => convert::text_of_cached(value)
+            .map(Some)
+            .map_err(PyErr::from),
+        None => Ok(None),
+    }
+}
+
+async fn count(cache: Arc<RedisCache>, key: String, by: f64, ttl: Option<i64>) -> PyResult<String> {
+    let counted = error::backend_err(cache.async_increment(&key, by, ttl, false).await)?;
+    let text = convert::number_text(counted).map_err(PyErr::from)?;
+    Ok(text)
+}
+
+fn whole_answer(seconds: Option<i64>) -> PyResult<Option<String>> {
+    match seconds {
+        Some(value) => convert::whole_text(value).map(Some).map_err(PyErr::from),
+        None => Ok(None),
     }
 }
 

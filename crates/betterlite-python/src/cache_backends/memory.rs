@@ -4,11 +4,12 @@ use betterlite_cache::backend::memory::MemoryCacheOps as _;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::DEFAULT_MAX_SIZE_IN_MEMORY;
 use betterlite_cache::dual_cache::MemoryMaxSize as _;
+use betterlite_context::local_ttl_cache::CacheValue;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use super::convert;
-use super::error::{self, BackendHandleError};
+use super::error;
 use super::settings::MemorySettings;
 
 // Every async entry point hands Python the same awaitable of JSON text.
@@ -46,20 +47,12 @@ impl NativeMemory {
         Ok(())
     }
 
-    fn async_set<'py>(
-        &self,
-        py: Python<'py>,
-        key: &str,
-        value: &str,
-        ttl: Option<f64>,
-    ) -> AsyncAnswer<'py> {
+    // The pyo3 signature is the whole Python contract, so it stays on one line.
+    #[rustfmt::skip]
+    fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let cache_value = convert::cache_value(value)?;
-        let ops = Arc::clone(&self.ops);
-        let owned = key.to_owned();
-        future_into_py(py, async move {
-            error::backend_err(ops.set_cache(&owned, cache_value, ttl))?;
-            Ok(())
-        })
+        let (ops, owned) = (Arc::clone(&self.ops), key.to_owned());
+        future_into_py(py, async move { set_value(&ops, &owned, cache_value, ttl) })
     }
 
     fn get(&self, key: &str) -> PyResult<Option<String>> {
@@ -72,15 +65,10 @@ impl NativeMemory {
     }
 
     fn async_get<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
-        let ops = Arc::clone(&self.ops);
-        let owned = key.to_owned();
+        let (ops, owned) = (Arc::clone(&self.ops), key.to_owned());
         future_into_py(py, async move {
             let stored = error::backend_err(ops.get_cache(&owned))?;
-            stored
-                .as_ref()
-                .map(convert::text_of_value)
-                .transpose()
-                .map_err(PyErr::from)
+            answer_text(stored)
         })
     }
 
@@ -90,15 +78,9 @@ impl NativeMemory {
         convert::number_text(counted).map_err(PyErr::from)
     }
 
-    fn async_increment<'py>(
-        &self,
-        py: Python<'py>,
-        key: &str,
-        value: f64,
-        ttl: Option<f64>,
-    ) -> AsyncAnswer<'py> {
-        let ops = Arc::clone(&self.ops);
-        let owned = key.to_owned();
+    #[rustfmt::skip]
+    fn async_increment<'py>(&self, py: Python<'py>, key: &str, value: f64, ttl: Option<f64>) -> AsyncAnswer<'py> {
+        let (ops, owned) = (Arc::clone(&self.ops), key.to_owned());
         future_into_py(py, async move {
             let counted = error::backend_err(ops.increment_cache(&owned, value, ttl))?;
             convert::number_text(counted).map_err(PyErr::from)
@@ -124,25 +106,17 @@ impl NativeMemory {
 
     fn ttl(&self, key: &str) -> PyResult<Option<String>> {
         let entries = error::backend_err(self.ops.ttl_entries())?;
-        entries
-            .into_iter()
-            .find(|(name, _expiry)| name == key)
-            .map(|(_name, expiry)| convert::number_text(expiry))
-            .transpose()
-            .map_err(PyErr::from)
+        match entries.into_iter().find(|(name, _expiry)| name == key) {
+            Some((_name, expiry)) => convert::number_text(expiry).map(Some).map_err(PyErr::from),
+            None => Ok(None),
+        }
     }
 
     fn async_ttl<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
-        let ops = Arc::clone(&self.ops);
-        let owned = key.to_owned();
+        let (ops, owned) = (Arc::clone(&self.ops), key.to_owned());
         future_into_py(py, async move {
             let entries = error::backend_err(ops.ttl_entries())?;
-            entries
-                .into_iter()
-                .find(|(name, _expiry)| name == owned)
-                .map(|(_name, expiry)| convert::number_text(expiry))
-                .transpose()
-                .map_err(PyErr::from)
+            remaining_ttl(entries, &owned)
         })
     }
 
@@ -180,5 +154,26 @@ impl NativeMemory {
     // ast-grep-ignore: no-one-line-functions - the awaitable of an immediate answer is the whole behavior
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         future_into_py(py, async move { Ok(()) })
+    }
+}
+
+fn set_value(ops: &LocalMemoryOps, key: &str, value: CacheValue, ttl: Option<f64>) -> PyResult<()> {
+    error::backend_err(ops.set_cache(key, value, ttl))?;
+    Ok(())
+}
+
+fn answer_text(stored: Option<CacheValue>) -> PyResult<Option<String>> {
+    match stored {
+        Some(value) => convert::text_of_value(&value)
+            .map(Some)
+            .map_err(PyErr::from),
+        None => Ok(None),
+    }
+}
+
+fn remaining_ttl(entries: Vec<(String, f64)>, key: &str) -> PyResult<Option<String>> {
+    match entries.into_iter().find(|(name, _expiry)| name == key) {
+        Some((_name, expiry)) => convert::number_text(expiry).map(Some).map_err(PyErr::from),
+        None => Ok(None),
     }
 }

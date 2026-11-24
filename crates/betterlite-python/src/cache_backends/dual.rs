@@ -4,6 +4,7 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{
     CacheOptions, DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, Ttl,
 };
+use betterlite_models::decisions::Json;
 use betterlite_redis::redis_cache::RedisCache;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
@@ -15,11 +16,12 @@ use super::redis::NativeRedis;
 use super::settings::DualSettings;
 
 type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
+type MemoryDual = DualCache<LocalMemoryOps>;
 
 // DualCache over the memory tier and, when one was handed in, the Redis tier.
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeDual {
-    cache: Arc<DualCache<LocalMemoryOps>>,
+    cache: Arc<MemoryDual>,
     redis: Option<Arc<RedisCache>>,
 }
 
@@ -56,20 +58,12 @@ impl NativeDual {
         Ok(())
     }
 
-    fn async_set<'py>(
-        &self,
-        py: Python<'py>,
-        key: &str,
-        value: &str,
-        ttl: Option<f64>,
-    ) -> AsyncAnswer<'py> {
+    // The pyo3 signature is the whole Python contract, so it stays on one line.
+    #[rustfmt::skip]
+    fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let json = convert::json_value(value)?;
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
-        future_into_py(py, async move {
-            cache.async_set_cache(&owned, &json, options(ttl)).await;
-            Ok(())
-        })
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
+        future_into_py(py, store(cache, owned, json, ttl))
     }
 
     fn get(&self, key: &str) -> PyResult<Option<String>> {
@@ -82,16 +76,10 @@ impl NativeDual {
     }
 
     fn async_get<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
         future_into_py(py, async move {
-            cache
-                .async_get_cache(&owned, false)
-                .await
-                .as_ref()
-                .map(convert::text_of_json)
-                .transpose()
-                .map_err(PyErr::from)
+            let stored = cache.async_get_cache(&owned, false).await;
+            answer_json(stored)
         })
     }
 
@@ -101,22 +89,10 @@ impl NativeDual {
         convert::number_text(counted).map_err(PyErr::from)
     }
 
-    fn async_increment<'py>(
-        &self,
-        py: Python<'py>,
-        key: &str,
-        value: f64,
-        ttl: Option<f64>,
-    ) -> AsyncAnswer<'py> {
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
-        future_into_py(py, async move {
-            let counted = cache
-                .async_increment_cache(&owned, value, options(ttl))
-                .await
-                .ok_or_else(|| PyErr::from(BackendHandleError::IncrementUnavailable))?;
-            convert::number_text(counted).map_err(PyErr::from)
-        })
+    #[rustfmt::skip]
+    fn async_increment<'py>(&self, py: Python<'py>, key: &str, value: f64, ttl: Option<f64>) -> AsyncAnswer<'py> {
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
+        future_into_py(py, count(cache, owned, value, ttl))
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
@@ -142,8 +118,7 @@ impl NativeDual {
     }
 
     fn async_ttl<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
-        let cache = Arc::clone(&self.cache);
-        let owned = key.to_owned();
+        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
         future_into_py(py, async move {
             let ttl = error::backend_err(cache.async_get_ttl(&owned).await)?;
             text_of_ttl(ttl)
@@ -164,42 +139,33 @@ impl NativeDual {
     }
 
     fn ping(&self, py: Python<'_>) -> PyResult<bool> {
-        let Some(redis) = &self.redis else {
+        let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
             return Ok(true);
         };
-        let probe = Arc::clone(redis);
-        let alive = py.detach(|| get_runtime().block_on(probe.admin.ping(None)));
-        error::backend_err(alive)
+        error::backend_err(py.detach(|| get_runtime().block_on(tier.admin.ping(None))))
     }
 
     fn async_ping<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        let redis = self.redis.as_ref().map(Arc::clone);
+        let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
+            return future_into_py(py, async move { Ok(true) });
+        };
         future_into_py(py, async move {
-            let Some(tier) = redis else {
-                return Ok(true);
-            };
-            let alive = error::backend_err(tier.admin.ping(None).await)?;
-            Ok(alive)
+            error::backend_err(tier.admin.ping(None).await)
         })
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<()> {
-        let Some(redis) = &self.redis else {
+        let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
             return Ok(());
         };
-        let tier = Arc::clone(redis);
-        py.detach(|| get_runtime().block_on(tier.admin.disconnect()));
-        Ok(())
+        py.detach(|| get_runtime().block_on(close_tier(tier)))
     }
 
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        let redis = self.redis.as_ref().map(Arc::clone);
-        future_into_py(py, async move {
-            if let Some(tier) = redis {
-                tier.admin.disconnect().await;
-            }
-            Ok(())
-        })
+        let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
+            return future_into_py(py, async move { Ok(()) });
+        };
+        future_into_py(py, close_tier(tier))
     }
 }
 
@@ -217,4 +183,28 @@ fn text_of_ttl(ttl: Option<Ttl>) -> PyResult<Option<String>> {
     })
     .transpose()
     .map_err(PyErr::from)
+}
+
+async fn store(cache: Arc<MemoryDual>, key: String, json: Json, ttl: Option<f64>) -> PyResult<()> {
+    cache.async_set_cache(&key, &json, options(ttl)).await;
+    Ok(())
+}
+
+fn answer_json(stored: Option<Json>) -> PyResult<Option<String>> {
+    match stored {
+        Some(value) => convert::text_of_json(&value).map(Some).map_err(PyErr::from),
+        None => Ok(None),
+    }
+}
+
+async fn count(cache: Arc<MemoryDual>, key: String, by: f64, ttl: Option<f64>) -> PyResult<String> {
+    let Some(counted) = cache.async_increment_cache(&key, by, options(ttl)).await else {
+        return Err(PyErr::from(BackendHandleError::IncrementUnavailable));
+    };
+    convert::number_text(counted).map_err(PyErr::from)
+}
+
+async fn close_tier(tier: Arc<RedisCache>) -> PyResult<()> {
+    tier.admin.disconnect().await;
+    Ok(())
 }

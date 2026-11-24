@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_context::local_ttl_cache::CacheValue;
@@ -9,6 +8,7 @@ use serde_json::Number;
 
 use super::error::BackendHandleError;
 
+mod cached_value;
 mod tests;
 
 // the Redis decoder reads a JSON float into the Object arm of CachedValue as this one-key map
@@ -77,32 +77,7 @@ pub(crate) fn text_of_json(value: &Json) -> Result<String, BackendHandleError> {
 
 // ast-grep-ignore: no-one-line-functions - the Redis decoder's value reaches JSON text through this rebuild
 pub(crate) fn text_of_cached(value: CachedValue) -> Result<String, BackendHandleError> {
-    text_of_json(&json_from_cached(value))
-}
-
-// CachedValue mirrors JSON but has no Serialize impl, so the answer is rebuilt as Json first
-fn json_from_cached(value: CachedValue) -> Json {
-    match value {
-        CachedValue::Null => Json::Null,
-        CachedValue::Boolean(flag) => Json::Bool(flag),
-        CachedValue::Number(number) => Json::Number(number),
-        CachedValue::Text(text) => Json::Text(text),
-        CachedValue::Array(items) => Json::List(items.into_iter().map(json_from_cached).collect()),
-        CachedValue::Object(fields) => json_from_object(fields),
-    }
-}
-
-fn json_from_object(fields: BTreeMap<String, CachedValue>) -> Json {
-    if fields.len() == 1_usize
-        && let Some(CachedValue::Text(digits)) = fields.get(NUMBER_KEY)
-        && let Ok(number) = digits.parse::<Number>()
-    {
-        return Json::Number(number);
-    }
-    let converted = fields
-        .into_iter()
-        .map(|(key, entry)| (key, json_from_cached(entry)));
-    Json::Object(converted.collect())
+    text_of_json(&cached_value::json_from_cached(value))
 }
 
 pub(crate) fn number_text(value: f64) -> Result<String, BackendHandleError> {
