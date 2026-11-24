@@ -10,7 +10,7 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
 use super::support::{
-    FakeScope, FakeStore, internal_user, invitation_router, master, org_admin, parse,
+    FakeScope, FakeStore, internal_user, invitation_router, key_caller, master, org_admin, parse,
     platform_admin, platform_viewer, record, router_for, send, userless_admin,
 };
 use crate::invitation_routes::state::{
@@ -322,6 +322,22 @@ async fn info_answers_a_platform_admin() {
         "/invitation/info?invitation_id=inv-1",
         "",
         Some(platform_admin()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(parse(&text)["id"], "inv-1");
+}
+
+#[tokio::test]
+async fn info_answers_a_key_with_an_admin_view() {
+    let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
+    let caller = key_caller(r#"{"user_role":"proxy_admin","user_id":"key-user"}"#);
+    let (status, _, text) = send(
+        &router,
+        "GET",
+        "/invitation/info?invitation_id=inv-1",
+        "",
+        Some(caller),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
