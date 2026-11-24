@@ -1,4 +1,3 @@
-// get_spend_by_team_and_customer: both filters are equality predicates on bound values, grouped by day, team alias and customer
 pub(super) const TEAM_CUSTOMER_SQL: &str = r#"
     WITH SpendByModelApiKey AS (
         SELECT
