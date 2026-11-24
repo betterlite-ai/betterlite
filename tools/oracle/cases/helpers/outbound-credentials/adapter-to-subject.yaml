@@ -1,0 +1,26 @@
+kind: helper
+name: outbound-credentials-adapter-to-subject
+call:
+  b4667:
+    function: to_subject
+    principal: {org_id: org-1, team_id: team-1, user_id: user-1}
+    subject_token: inbound
+calls:
+  - b4667:
+      function: to_subject
+      principal: {org_id: null, team_id: team-1, user_id: user-1}
+      subject_token: null
+  - b4667:
+      function: to_subject
+      principal: {org_id: "", team_id: null, user_id: null}
+      subject_token: ""
+  - b4667:
+      function: to_subject
+      principal: null
+      subject_token: inbound
+  - b4667:
+      function: to_subject
+      principal: {org_id: org-1, team_id: null, user_id: user-1}
+      subject_token: null
+env: {}
+compare: {ignore: []}

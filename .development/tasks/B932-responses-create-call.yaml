@@ -30,6 +30,9 @@ description: >-
   90 adapters and 25 wiring, 495 under 540.
 scope:
   paths:
+  - crates/betterlite-core/src/api/responses_create/preparation.rs
+  - crates/betterlite-core/src/api/responses_provider_selection/prompting/apply.rs
+  - crates/betterlite-core/src/api/responses_provider_selection/prompting.rs
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_create_call.rs
   - crates/betterlite-core/src/api/responses_create_call/**

@@ -1,0 +1,12 @@
+task: B932
+deviations:
+  - what: "A null final response from the awaited sync execution fails with LiteLLM's exact cause text but keeps the existing bounded APIConnectionError message instead of LiteLLM's traceback text."
+    why: "Shared SDK diagnostics follow B184/B187, and the literal local cause is still asserted by async_create_failure_attribution."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L749-L761
+  - what: "text_format={type: json_object} is converted to text.format by the async entry and reaches the POST, while LiteLLM raises a KeyError and returns a 500 for the same argument."
+    why: "LiteLLM indexes text_format['json_schema'] for every object, so a valid json_object format fails before any provider sees it; B1078.yaml records the same difference for the shared conversion."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1050-L1067
+  - what: "A model no provider can place fails with LiteLLM's BadRequestError/400, but keeps only the resolution sentence instead of LiteLLM's trailing provider guidance."
+    why: "ResolutionError carries the bounded sentence shared by the provider-selection entry points; async_create_failure_attribution ignores the message pointer alone and asserts the exact text."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L541-L546
+kept_bugs: []
