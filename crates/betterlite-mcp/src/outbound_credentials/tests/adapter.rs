@@ -30,10 +30,10 @@ fn owned(extra: &str) -> ServerSpec {
 }
 
 fn api_key(spec: &ServerSpec) -> &ApiKeyConfig {
-    match &spec.config {
-        AuthConfig::ApiKey(config) => config,
-        other => panic!("expected api_key, got {}", other.kind()),
-    }
+    let AuthConfig::ApiKey(config) = &spec.config else {
+        panic!("expected api_key, got {}", spec.config.kind());
+    };
+    config
 }
 
 fn shared_value(config: &ApiKeyConfig) -> String {
@@ -44,26 +44,26 @@ fn shared_value(config: &ApiKeyConfig) -> String {
 }
 
 fn client_credentials(spec: &ServerSpec) -> &ClientCredentialsConfig {
-    match &spec.config {
-        AuthConfig::ClientCredentials(config) => config,
-        other => panic!("expected client_credentials, got {}", other.kind()),
-    }
+    let AuthConfig::ClientCredentials(config) = &spec.config else {
+        panic!("expected client_credentials, got {}", spec.config.kind());
+    };
+    config
 }
 
 fn token_exchange(spec: &ServerSpec) -> &TokenExchangeConfig {
-    match &spec.config {
-        AuthConfig::TokenExchange(config) => config,
-        other => panic!("expected token_exchange, got {}", other.kind()),
-    }
+    let AuthConfig::TokenExchange(config) = &spec.config else {
+        panic!("expected token_exchange, got {}", spec.config.kind());
+    };
+    config
 }
 
 fn id_jag_config(extra: &str) -> IdJagConfig {
     let encoded = format!("{}{extra}", ID_JAG_BASE);
     let spec = owned(&encoded);
-    match spec.config {
-        AuthConfig::IdJag(config) => config,
-        other => panic!("expected id_jag, got {}", other.kind()),
-    }
+    let AuthConfig::IdJag(config) = spec.config else {
+        panic!("expected id_jag, got {}", spec.config.kind());
+    };
+    config
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn client_credentials_carries_the_grant_fields() {
     let config = client_credentials(&spec);
     assert_eq!(config.client_id.as_deref(), Some("client-1"));
     assert_eq!(
-        config.client_secret.as_ref().map(|value| exposed(value)),
+        config.client_secret.as_ref().map(exposed),
         Some("secret-1".to_owned())
     );
     assert_eq!(
@@ -304,7 +304,7 @@ fn token_exchange_carries_the_obo_settings() {
     assert_eq!(config.subject_token_type, "urn:custom");
     assert_eq!(config.client_id.as_deref(), Some("client-1"));
     assert_eq!(
-        config.client_secret.as_ref().map(|value| exposed(value)),
+        config.client_secret.as_ref().map(exposed),
         Some("secret-1".to_owned())
     );
     assert_eq!(config.audience.as_deref(), Some("api://aud"));

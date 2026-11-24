@@ -5,18 +5,19 @@ use rstest::rstest;
 
 use crate::credential_contracts::errors::CredError;
 use crate::credentials::{AuthValue, McpAuthType, McpClient};
+use crate::server_record::MCPServer;
 
 use super::super::adapter::prepare::prepare_mcp_client;
 use super::support::{FailingAuth, client, client_with, secret, server_from};
 
-fn server_with(extra: &str) -> crate::server_record::MCPServer {
+fn server_with(extra: &str) -> MCPServer {
     let encoded = format!(
         r#"{{"server_id":"srv-1","name":"Server One","transport":"http","url":"https://mcp.example.com/mcp"{extra}}}"#
     );
     server_from(&encoded)
 }
 
-fn stdio_server(extra: &str) -> crate::server_record::MCPServer {
+fn stdio_server(extra: &str) -> MCPServer {
     let encoded =
         format!(r#"{{"server_id":"srv-1","name":"Server One","transport":"stdio"{extra}}}"#);
     server_from(&encoded)

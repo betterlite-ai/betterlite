@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::DateTime;
 use serde_json::json;
 
 use crate::credential_contracts::errors::CredError;
@@ -56,7 +57,7 @@ fn stored_assertion_resolver(endpoint: Arc<FakeEndpoint>) -> UpstreamCredentialP
 #[tokio::test]
 async fn id_jag_slot_key_principal_variance() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["a1", "a2", "b1", "b2", "c1", "c2"]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let server = standard_spec();
     let alice = subject("org-a", "user-1", None);
     let first = resolver.resolve_credentials(&alice, &server).await.unwrap();
@@ -82,7 +83,7 @@ async fn id_jag_slot_key_principal_variance() {
 #[tokio::test]
 async fn id_jag_slot_key_inbound_token_variance() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["a1", "a2", "b1", "b2", "c1", "c2"]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let server = standard_spec();
     let first = resolver
         .resolve_credentials(&subject("org-1", "user-1", Some("one")), &server)
@@ -111,7 +112,7 @@ async fn id_jag_slot_key_inbound_token_variance() {
 #[tokio::test]
 async fn id_jag_fingerprint_config_variance() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["a1", "a2", "b1", "b2", "c1", "c2"]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let narrow = id_jag_spec_with(
         "https://idp.example.com/org/token",
         "https://upstream.example.com/token",
@@ -143,7 +144,7 @@ async fn id_jag_fingerprint_config_variance() {
 #[tokio::test]
 async fn id_jag_fingerprint_includes_endpoints() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["a1", "a2", "b1", "b2", "c1", "c2"]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let first_server = standard_spec();
     let other_server = id_jag_spec_with(
         "https://idp.example.com/other/token",
@@ -177,7 +178,7 @@ async fn id_jag_fingerprint_includes_endpoints() {
 #[tokio::test]
 async fn id_jag_fingerprint_includes_client_auth() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["a1", "a2", "b1", "b2", "c1", "c2"]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let first_server = standard_spec();
     let other_server = id_jag_spec_with(
         "https://idp.example.com/org/token",
@@ -217,13 +218,13 @@ async fn id_jag_fingerprint_includes_client_auth() {
 #[tokio::test]
 async fn id_jag_subject_token_from_the_store() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
-    let future = chrono::DateTime::from_timestamp(4_102_444_800, 0).unwrap();
+    let future = DateTime::from_timestamp(4_102_444_800, 0).unwrap();
     let collaborators = Collaborators::default()
         .with_sso_assertion_store(Arc::new(FakeAssertions::storing(
             "stored-id-token",
             Some(future),
         )))
-        .with_token_endpoint(endpoint.clone());
+        .with_token_endpoint(Arc::clone(&endpoint));
     let resolver = provider(collaborators);
     let auth = resolver
         .resolve_credentials(&subject("org-1", "user-1", None), &standard_spec())
@@ -241,7 +242,7 @@ async fn id_jag_inbound_token_wins_over_the_store() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
     let collaborators = Collaborators::default()
         .with_sso_assertion_store(Arc::new(FakeAssertions::storing("stored-id-token", None)))
-        .with_token_endpoint(endpoint.clone());
+        .with_token_endpoint(Arc::clone(&endpoint));
     let resolver = provider(collaborators);
     let auth = resolver
         .resolve_credentials(
@@ -260,7 +261,7 @@ async fn id_jag_inbound_token_wins_over_the_store() {
 #[tokio::test]
 async fn id_jag_omits_absent_optional_parameters() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let server = id_jag_spec_with(
         "https://idp.example.com/org/token",
         "https://upstream.example.com/token",
@@ -285,7 +286,7 @@ async fn id_jag_omits_absent_optional_parameters() {
 #[tokio::test]
 async fn id_jag_drops_empty_optional_parameters() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&["jag", "bearer"]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let server = spec(json!({
         "server_id": "srv-1",
         "name": "ID JAG",
@@ -318,16 +319,16 @@ async fn id_jag_reuses_an_injected_token_cache() {
     let alice = subject("org-1", "user-1", None);
     let first = provider(
         Collaborators::default()
-            .with_exchanged_tokens(cache.clone())
+            .with_exchanged_tokens(Arc::clone(&cache))
             .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
-            .with_token_endpoint(endpoint.clone()),
+            .with_token_endpoint(Arc::clone(&endpoint)),
     );
     let _one = first.resolve_credentials(&alice, &server).await.unwrap();
     let second = provider(
         Collaborators::default()
             .with_exchanged_tokens(cache)
             .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
-            .with_token_endpoint(endpoint.clone()),
+            .with_token_endpoint(Arc::clone(&endpoint)),
     );
     let _two = second.resolve_credentials(&alice, &server).await.unwrap();
     assert_eq!(endpoint.calls().len(), 2);
@@ -336,7 +337,7 @@ async fn id_jag_reuses_an_injected_token_cache() {
 #[tokio::test]
 async fn id_jag_requires_an_identified_caller() {
     let endpoint = Arc::new(FakeEndpoint::tokens(&[]));
-    let resolver = stored_assertion_resolver(endpoint.clone());
+    let resolver = stored_assertion_resolver(Arc::clone(&endpoint));
     let error = failure(
         resolver
             .resolve_credentials(&subject("org-1", "", None), &standard_spec())
@@ -366,7 +367,7 @@ async fn id_jag_requires_a_stored_assertion() {
 
 #[tokio::test]
 async fn id_jag_rejects_an_expired_assertion() {
-    let expired_at = chrono::DateTime::from_timestamp(0, 0).unwrap();
+    let expired_at = DateTime::from_timestamp(0, 0).unwrap();
     let collaborators = Collaborators::default().with_sso_assertion_store(Arc::new(
         FakeAssertions::storing("id-token", Some(expired_at)),
     ));

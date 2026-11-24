@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::credential_contracts::errors::{CredError, Unauthorized};
+use crate::server_record::MCPServer;
+use crate::wire_compat::errors::HttpException;
 
 use super::super::adapter::challenge::{
     oauth_protected_resource_path, raise_token_exchange_challenge, raise_user_oauth_challenge,
@@ -10,22 +12,18 @@ use super::super::adapter::challenge::{
 use super::super::adapter::errors::raise_public;
 use super::support::server_from;
 
-fn server_with(extra: &str) -> crate::server_record::MCPServer {
+fn server_with(extra: &str) -> MCPServer {
     let encoded = format!(
         r#"{{"server_id":"srv-1","name":"Server One","transport":"http","url":"https://mcp.example.com/mcp"{extra}}}"#
     );
     server_from(&encoded)
 }
 
-fn path(
-    root_path: &str,
-    scalar_root_path: &str,
-    server: &crate::server_record::MCPServer,
-) -> String {
+fn path(root_path: &str, scalar_root_path: &str, server: &MCPServer) -> String {
     oauth_protected_resource_path(root_path, scalar_root_path, server)
 }
 
-fn challenge_header(exception: &crate::wire_compat::errors::HttpException) -> String {
+fn challenge_header(exception: &HttpException) -> String {
     let challenge = exception
         .headers
         .get("www-authenticate")
@@ -130,10 +128,7 @@ fn user_oauth_challenge_path_per_request() {
     );
 }
 
-fn token_exchange_challenge(
-    record: &crate::server_record::MCPServer,
-    claims: Option<&str>,
-) -> String {
+fn token_exchange_challenge(record: &MCPServer, claims: Option<&str>) -> String {
     let exception = raise_token_exchange_challenge(record, "/", "", claims);
     assert_eq!(exception.status_code, 401);
     assert_eq!(exception.detail, "Unauthorized");

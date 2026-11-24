@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
+use std::io::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -8,27 +9,37 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::credential_contracts::auth_config::id_jag::ClientAuth;
 use crate::credential_contracts::errors::{CredError, CredResult};
 use crate::credential_contracts::server_spec::{ServerSpec, Subject};
-use crate::credentials::{CredentialError, McpAuthType, McpClient, Request, ResolvedAuth};
+use crate::credentials::{
+    AuthValue, CredentialError, McpAuthType, McpClient, Request, ResolvedAuth,
+};
+use crate::server_record::MCPServer;
 use crate::sso_assertions::assertion::SsoIdentityAssertion;
 use crate::sso_assertions::read::{AssertionStoreUnavailable, SsoAssertionStore};
 
+use super::super::adapter::to_server_spec;
 use super::super::collaborators::{
-    BoxFuture, CredentialRequest, ExchangeRequest, ExchangedToken, OAuthToken, OAuthTokenStore,
-    TokenEndpointClient, TokenExchanger, TokenStoreUnavailable,
+    BoxFuture, ClientCredentialsSource, CredentialRequest, ExchangeRequest, ExchangedToken,
+    OAuthToken, OAuthTokenStore, TokenEndpointClient, TokenExchanger, TokenStoreUnavailable,
 };
 use super::super::resolver::{Collaborators, UpstreamCredentialProvider};
 
-pub(super) fn server_from(encoded: &str) -> crate::server_record::MCPServer {
+pub(super) fn server_from(encoded: &str) -> MCPServer {
     serde_json::from_str(encoded).expect("a valid server record")
 }
 
-pub(super) fn server<T: serde::Serialize>(raw: T) -> crate::server_record::MCPServer {
+pub(super) fn server<T>(raw: T) -> MCPServer
+where
+    T: serde::Serialize,
+{
     let encoded = serde_json::to_string(&raw).expect("server fixture json");
     server_from(&encoded)
 }
 
-pub(super) fn spec<T: serde::Serialize>(raw: T) -> ServerSpec {
-    let mapped = super::super::adapter::to_server_spec(&server(raw)).expect("adapter mapping");
+pub(super) fn spec<T>(raw: T) -> ServerSpec
+where
+    T: serde::Serialize,
+{
+    let mapped = to_server_spec(&server(raw)).expect("adapter mapping");
     mapped.expect("the mode is owned by the resolver")
 }
 
@@ -110,7 +121,7 @@ pub(super) fn id_jag_spec(client_secret: &str) -> ServerSpec {
 
 pub(super) fn client_with(
     auth_type: McpAuthType,
-    auth_value: Option<crate::credentials::AuthValue>,
+    auth_value: Option<AuthValue>,
     extra_headers: BTreeMap<String, String>,
 ) -> McpClient {
     McpClient::new(
@@ -125,14 +136,11 @@ pub(super) fn client_with(
     )
 }
 
-pub(super) fn client(
-    auth_type: McpAuthType,
-    auth_value: Option<crate::credentials::AuthValue>,
-) -> McpClient {
+pub(super) fn client(auth_type: McpAuthType, auth_value: Option<AuthValue>) -> McpClient {
     client_with(auth_type, auth_value, BTreeMap::new())
 }
 
-pub(super) fn provider(collaborators: Collaborators) -> UpstreamCredentialProvider {
+pub(super) const fn provider(collaborators: Collaborators) -> UpstreamCredentialProvider {
     UpstreamCredentialProvider { collaborators }
 }
 
@@ -164,14 +172,14 @@ impl FakeTokens {
         }
     }
 
-    pub(super) fn empty() -> Self {
+    pub(super) const fn empty() -> Self {
         Self {
             tokens: BTreeMap::new(),
             unavailable: false,
         }
     }
 
-    pub(super) fn unavailable() -> Self {
+    pub(super) const fn unavailable() -> Self {
         Self {
             tokens: BTreeMap::new(),
             unavailable: true,
@@ -324,7 +332,7 @@ impl FakeExchanger {
         }
     }
 
-    pub(super) fn failing(error: CredError) -> Self {
+    pub(super) const fn failing(error: CredError) -> Self {
         Self {
             token: None,
             error: Some(error),
@@ -404,7 +412,7 @@ impl FakeCredentials {
     }
 }
 
-impl super::super::collaborators::ClientCredentialsSource for FakeCredentials {
+impl ClientCredentialsSource for FakeCredentials {
     fn get<'call>(
         &'call self,
         _request: CredentialRequest<'call>,
@@ -422,7 +430,7 @@ impl super::super::collaborators::ClientCredentialsSource for FakeCredentials {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(exposed(failed_access_token));
-        let fresh = self.refetched.as_ref().map(SecretString::from);
+        let fresh = self.refetched.clone().map(SecretString::from);
         Box::pin(async move { fresh })
     }
 }
@@ -448,14 +456,14 @@ impl FakeAssertions {
         }
     }
 
-    pub(super) fn missing() -> Self {
+    pub(super) const fn missing() -> Self {
         Self {
             assertion: None,
             unavailable: false,
         }
     }
 
-    pub(super) fn unavailable() -> Self {
+    pub(super) const fn unavailable() -> Self {
         Self {
             assertion: None,
             unavailable: true,
@@ -481,6 +489,6 @@ impl SsoAssertionStore for FakeAssertions {
 }
 
 pub(super) fn store_unavailable() -> AssertionStoreUnavailable {
-    let cause = Box::new(std::io::Error::other("store down"));
+    let cause = Box::new(Error::other("store down"));
     AssertionStoreUnavailable { cause }
 }

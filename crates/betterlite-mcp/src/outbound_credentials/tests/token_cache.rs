@@ -2,6 +2,9 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use tokio::task::yield_now;
+use tokio::time::advance;
+
 use crate::credential_contracts::errors::CredResult;
 
 use super::super::collaborators::ExchangedToken;
@@ -38,7 +41,7 @@ async fn yielding_mint(
 ) -> CredResult<ExchangedToken> {
     started.store(1, Ordering::SeqCst);
     calls.fetch_add(1, Ordering::SeqCst);
-    tokio::task::yield_now().await;
+    yield_now().await;
     let token = ExchangedToken {
         access_token: secret(access_token),
         expires_in: None,
@@ -48,7 +51,7 @@ async fn yielding_mint(
 
 async fn wait_started(started: &AtomicUsize) {
     while started.load(Ordering::SeqCst) == 0 {
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
 }
 
@@ -102,13 +105,13 @@ async fn an_expired_token_is_recomputed() {
         .await
         .unwrap();
     assert_eq!(exposed(&first), "one");
-    tokio::time::advance(Duration::from_secs(59)).await;
+    advance(Duration::from_secs(59)).await;
     let cached = cache
         .get_or_compute("slot", "fp", minted("two", Some(120), &calls))
         .await
         .unwrap();
     assert_eq!(exposed(&cached), "one");
-    tokio::time::advance(Duration::from_secs(1)).await;
+    advance(Duration::from_secs(1)).await;
     let refreshed = cache
         .get_or_compute("slot", "fp", minted("three", Some(120), &calls))
         .await
@@ -126,13 +129,13 @@ async fn the_ttl_has_a_ten_second_floor() {
         .await
         .unwrap();
     assert_eq!(exposed(&first), "one");
-    tokio::time::advance(Duration::from_secs(9)).await;
+    advance(Duration::from_secs(9)).await;
     let cached = cache
         .get_or_compute("slot", "fp", minted("two", Some(30), &calls))
         .await
         .unwrap();
     assert_eq!(exposed(&cached), "one");
-    tokio::time::advance(Duration::from_secs(1)).await;
+    advance(Duration::from_secs(1)).await;
     let refreshed = cache
         .get_or_compute("slot", "fp", minted("three", Some(30), &calls))
         .await
@@ -150,13 +153,13 @@ async fn the_default_ttl_is_one_hour() {
         .await
         .unwrap();
     assert_eq!(exposed(&first), "one");
-    tokio::time::advance(Duration::from_secs(3599)).await;
+    advance(Duration::from_secs(3599)).await;
     let cached = cache
         .get_or_compute("slot", "fp", minted("two", None, &calls))
         .await
         .unwrap();
     assert_eq!(exposed(&cached), "one");
-    tokio::time::advance(Duration::from_secs(1)).await;
+    advance(Duration::from_secs(1)).await;
     let refreshed = cache
         .get_or_compute("slot", "fp", minted("three", None, &calls))
         .await
