@@ -533,6 +533,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "session_inputs"
+path = "fuzz_targets/session_inputs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "health_connection_body"
 path = "fuzz_targets/health_connection_body.rs"
 test = false

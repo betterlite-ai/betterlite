@@ -1,0 +1,16 @@
+kind: helper
+name: prometheus-scrape-restricted-created
+call:
+  b10090:
+    metrics:
+      - {kind: counter, name: litellm_requests_total, help: requests, labels: [model], buckets: []}
+    updates:
+      - {metric: 0, labels: [gpt-4o], action: inc, value: 1}
+    accept: ""
+    accept_encoding: ""
+    names: [litellm_requests_created]
+env: {}
+compare:
+  ignore:
+    - pointer: /value/lines/4/value
+      why: _created is the wall-clock time the series was created
