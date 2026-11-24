@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 async-trait = "0.1.92"
 betterlite-bedrock = { path = "../betterlite-bedrock" }
+betterlite-cache = { path = "../betterlite-cache" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
@@ -24,6 +25,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-redis = { path = "../betterlite-redis" }
 betterlite-sdk = { path = "../betterlite-sdk" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }

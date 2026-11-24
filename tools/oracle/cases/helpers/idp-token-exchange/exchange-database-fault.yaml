@@ -1,0 +1,26 @@
+kind: helper
+name: exchange-database-fault
+call:
+  b4663:
+    prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+    subject_token: header.payload.signature
+    authorizer: {kind: http, status: 401, detail: the IdP said no}
+    cause: {kind: transient, message: the database connection was refused}
+calls:
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: http, status: 401, detail: the IdP said no}
+      cause: {kind: faulted, message: the query engine binary is missing}
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: plain, message: the IdP said no}
+      cause: {kind: transient, message: the reconnect failed}
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: http, status: 401, detail: the IdP said no}
+      cause: {kind: faulted, message: the engine connection closed during the reconnect}
+env: {}
+compare: {ignore: []}
