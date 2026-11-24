@@ -81,7 +81,10 @@ fn model_info_request_reads_reload_values() {
 fn model_info_request_rejects_a_negative_timeout() {
     let query: ReloadQuery =
         parse(r#"{"url":"https://example.test/map.json","timeout":-1}"#).unwrap();
-    assert!(matches!(query.timeout(), Err(ModelInfoError::Value(_))));
+    assert!(matches!(
+        query.timeout(),
+        Err(ModelInfoError::Timeout { .. })
+    ));
 }
 
 #[test]

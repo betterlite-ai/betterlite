@@ -5,6 +5,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_models::fetch_policy::client::{CatalogClient, CatalogRequest};
 use betterlite_models::fetch_policy::response::FetchResponse;
@@ -42,11 +43,9 @@ impl ScriptedClient {
             .responses
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        responses.pop_front().unwrap_or_else(|| {
-            Err(FetchError::Transport(
-                "no scripted response is left".to_owned(),
-            ))
-        })
+        responses
+            .pop_front()
+            .unwrap_or_else(|| Err(FetchError::Transport(TransportError::Closed)))
     }
 
     fn calls(&self) -> u32 {

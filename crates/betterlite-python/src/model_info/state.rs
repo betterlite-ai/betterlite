@@ -191,7 +191,7 @@ pub(crate) fn catalog_settings(
 ) -> Result<catalog_source::Settings, ModelInfoError> {
     catalog_source::Raw::default()
         .convert(environment)
-        .map_err(|source| ModelInfoError::Value(source.to_string()))
+        .map_err(|source| ModelInfoError::Settings { source })
 }
 pub(crate) fn normalizers() -> NameNormalizers {
     NameNormalizers {

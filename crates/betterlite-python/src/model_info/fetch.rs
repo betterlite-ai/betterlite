@@ -3,11 +3,13 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::fetch_policy::client::{
     CatalogClient, CatalogClientError, CatalogRequest, FetchErrorKind,
 };
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
+use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use secrecy::ExposeSecret as _;
 use std::collections::BTreeMap;
@@ -23,9 +25,9 @@ pub(crate) struct HttpFetch {
 impl HttpFetch {
     pub(crate) fn new(environment: &BTreeMap<String, String>) -> Result<Self, ModelInfoError> {
         let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
-            .map_err(|source| ModelInfoError::Client(source.to_string()))?;
+            .map_err(|source| ModelInfoError::Proxy { source })?;
         let client = ProxiedClient::outbound(&Arc::new(policy))
-            .map_err(|source| ModelInfoError::Client(source.to_string()))?;
+            .map_err(|source| ModelInfoError::Client { source })?;
         Ok(Self { client })
     }
     async fn send(
@@ -34,8 +36,7 @@ impl HttpFetch {
         timeout: Duration,
         headers: HeaderMap,
     ) -> Result<FetchResponse, FetchError> {
-        let parsed =
-            Url::parse(url).map_err(|source| FetchError::InvalidUrl(source.to_string()))?;
+        let parsed = Url::parse(url).map_err(FetchError::InvalidUrl)?;
         let request = OutboundRequest {
             method: Method::GET,
             url: parsed,
@@ -48,7 +49,7 @@ impl HttpFetch {
             .client
             .send_buffered(request)
             .await
-            .map_err(|source| FetchError::Transport(source.to_string()))?;
+            .map_err(FetchError::Transport)?;
         Ok(FetchResponse::new(
             response.status,
             header_pairs(&response.headers),
@@ -70,11 +71,13 @@ pub(crate) fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FetchError {
     #[error("the URL {0} is not valid")]
-    InvalidUrl(String),
+    InvalidUrl(#[source] url::ParseError),
     #[error("the request failed: {0}")]
-    Transport(String),
-    #[error("a header is not valid: {0}")]
-    Header(String),
+    Transport(#[source] TransportError),
+    #[error("a header name is not valid: {0}")]
+    HeaderName(#[source] InvalidHeaderName),
+    #[error("a header value is not valid: {0}")]
+    HeaderValue(#[source] InvalidHeaderValue),
     #[error("no blocking HTTP client is available")]
     Blocking,
 }
@@ -82,7 +85,9 @@ impl CatalogClientError for FetchError {
     fn kind(&self) -> FetchErrorKind {
         match self {
             Self::InvalidUrl(_) => FetchErrorKind::InvalidUrl,
-            Self::Transport(_) | Self::Header(_) | Self::Blocking => FetchErrorKind::Transport,
+            Self::Transport(_) | Self::HeaderName(_) | Self::HeaderValue(_) | Self::Blocking => {
+                FetchErrorKind::Transport
+            }
         }
     }
 }
@@ -115,10 +120,10 @@ impl ModelInfoClient for HttpFetch {
         async move {
             let mut map = HeaderMap::new();
             for (name, value) in &headers {
-                let header_name = HeaderName::from_bytes(name.as_bytes())
-                    .map_err(|source| FetchError::Header(source.to_string()))?;
+                let header_name =
+                    HeaderName::from_bytes(name.as_bytes()).map_err(FetchError::HeaderName)?;
                 let header_value = HeaderValue::from_str(value.expose_secret())
-                    .map_err(|source| FetchError::Header(source.to_string()))?;
+                    .map_err(FetchError::HeaderValue)?;
                 map.insert(header_name, header_value);
             }
             client.send(&url, timeout, map).await

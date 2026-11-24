@@ -40,6 +40,21 @@ fn number(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
+fn parameter_names(info: &IndexMap<String, Json>) -> Vec<String> {
+    let Some(Json::List(names)) = info.get("supported_openai_params") else {
+        panic!("supported_openai_params is not a list");
+    };
+    names
+        .iter()
+        .map(|name| match name {
+            Json::Text(text) => text.clone(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                panic!("a supported parameter name is not text")
+            }
+        })
+        .collect()
+}
+
 #[test]
 fn model_info_lookup_returns_the_openai_entry() {
     let runtime = runtime();
@@ -57,6 +72,29 @@ fn model_info_lookup_returns_the_openai_entry() {
     };
     assert!(parameters.contains(&Json::Text("user".to_owned())));
     assert!(parameters.contains(&Json::Text("temperature".to_owned())));
+}
+
+#[test]
+fn model_info_lookup_gpt_5_and_o_series_parameters() {
+    let runtime = runtime();
+    let gpt_5 = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("gpt-5")))
+            .unwrap(),
+    ));
+    assert!(gpt_5.iter().any(|name| name == "reasoning_effort"));
+    assert!(gpt_5.iter().any(|name| name == "verbosity"));
+    assert!(!gpt_5.iter().any(|name| name == "logprobs"));
+    assert!(!gpt_5.iter().any(|name| name == "top_p"));
+    let o3 = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("o3")))
+            .unwrap(),
+    ));
+    assert!(o3.iter().any(|name| name == "reasoning_effort"));
+    assert!(o3.iter().any(|name| name == "tools"));
+    assert!(!o3.iter().any(|name| name == "logprobs"));
+    assert!(!o3.iter().any(|name| name == "parallel_tool_calls"));
 }
 
 #[test]

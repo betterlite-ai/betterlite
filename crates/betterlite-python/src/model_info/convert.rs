@@ -48,8 +48,9 @@ pub(crate) struct ReloadQuery {
 }
 impl ReloadQuery {
     pub(crate) fn timeout(&self) -> Result<Duration, ModelInfoError> {
-        Duration::try_from_secs_f64(self.timeout).map_err(|_error| {
-            ModelInfoError::Value(format!("timeout {} is not a duration", self.timeout))
+        Duration::try_from_secs_f64(self.timeout).map_err(|source| ModelInfoError::Timeout {
+            timeout: self.timeout,
+            source,
         })
     }
 }

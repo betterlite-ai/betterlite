@@ -2,30 +2,35 @@ use super::convert::{ModelQuery, ProviderQuery};
 use super::error::ModelInfoError;
 use super::fetch::HttpFetch;
 use super::state::{Runtime, State, normalizers};
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::entry::ModelFields;
 use betterlite_models::fireworks_catalog_metadata::{
     Catalog as FireworksCatalog, MODEL_COST_KEY_PREFIX,
 };
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::lookup::capabilities::{CapabilityFlag, CapabilityView};
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use betterlite_models::model_metadata_resolution::hf_config::{HF_CONFIG_BASE_URL, HfConfigClient};
 use betterlite_models::model_metadata_resolution::{
     MetadataEnvironment, MetadataRequest, get_model_info_helper,
 };
+use betterlite_models::params::CallType;
+use betterlite_models::params::capabilities::{
+    CapabilityQuery, ModelProjection, OpenAiCapability, OpenAiConfigTag, ParameterCapabilities,
+    supported_parameters,
+};
 use betterlite_models::provider_metadata_factory::adapters::ProviderSpecificModelInfo;
 use betterlite_models::provider_metadata_factory::selection::{MetadataQuery, get_provider_info};
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionRequest, resolve,
 };
-use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, OpenAiConfig, OpenAiSettings,
-};
+use betterlite_openai::openai_base_config::{CatalogCapabilities, ModelFamily, model_family};
 use betterlite_openai::text_completion_execution::catalog::CompletionCatalog;
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 pub(crate) async fn model_info(
     runtime: &Runtime,
     query: &ModelQuery,
@@ -221,22 +226,74 @@ fn openai_parameters(
         return None;
     }
     let completion = CompletionCatalog::new(&state.catalog);
-    let capabilities = CatalogCapabilities {
+    let catalog = CatalogCapabilities {
         chat_models: completion.chat_models,
         text_models: completion.text_models,
     };
-    let config = OpenAiConfig {
-        family: ConfigFamily::OpenAi,
-        api_key: None,
-        headers: BTreeMap::new(),
-        settings: OpenAiSettings::default(),
+    let capabilities = openai_capabilities(&state.catalog, model, &catalog);
+    let query = CapabilityQuery {
+        provider: ProviderId::Openai,
+        call_type: CallType::ChatCompletion,
+        config: config_tag(model, &catalog),
+        model: ModelProjection {
+            model,
+            capabilities: &capabilities,
+        },
+        base_model: None,
     };
-    Some(
-        config
-            .supported_params(model, &capabilities)
-            .into_iter()
-            .map(str::to_owned)
-            .collect(),
-    )
+    let ParameterCapabilities::Listed(names) = supported_parameters(&query) else {
+        return None;
+    };
+    Some(names.into_iter().map(str::to_owned).collect())
+}
+// LiteLLM picks the OpenAI config by family before it reads the parameter list, so gpt-5 and o-series differ from the base GPT list.
+fn config_tag(model: &str, catalog: &CatalogCapabilities) -> OpenAiConfigTag {
+    match model_family(model, catalog) {
+        ModelFamily::OSeries => OpenAiConfigTag::OSeries,
+        ModelFamily::GptReasoning => OpenAiConfigTag::Gpt5,
+        ModelFamily::Audio | ModelFamily::Gpt => OpenAiConfigTag::Gpt,
+        ModelFamily::Unknown => OpenAiConfigTag::UnknownModel,
+    }
+}
+fn openai_capabilities(
+    catalog: &ModelCatalog,
+    model: &str,
+    listed: &CatalogCapabilities,
+) -> BTreeSet<OpenAiCapability> {
+    let mut capabilities = BTreeSet::new();
+    if listed.is_catalog_model(model) {
+        capabilities.insert(OpenAiCapability::CatalogModel);
+    }
+    let entry = catalog
+        .lookup
+        .get(model)
+        .and_then(|canonical| catalog.entries.get(canonical.as_ref()));
+    let Some(entry) = entry else {
+        return capabilities;
+    };
+    let fields = &entry.fields.capabilities;
+    let view = CapabilityView::from_fields(fields);
+    for (flag, capability) in [
+        (
+            CapabilityFlag::FunctionCalling,
+            OpenAiCapability::FunctionCalling,
+        ),
+        (CapabilityFlag::ToolChoice, OpenAiCapability::ToolChoice),
+        (
+            CapabilityFlag::ResponseSchema,
+            OpenAiCapability::ResponseSchema,
+        ),
+    ] {
+        if view.get(flag) == Some(true) {
+            capabilities.insert(capability);
+        }
+    }
+    if fields.tooling.supports_parallel_calls == Some(true) {
+        capabilities.insert(OpenAiCapability::ParallelToolCalls);
+    }
+    if fields.reasoning.supports_none_reasoning_effort == Some(true) {
+        capabilities.insert(OpenAiCapability::NoneReasoningEffort);
+    }
+    capabilities
 }
 mod tests;

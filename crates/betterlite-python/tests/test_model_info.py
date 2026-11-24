@@ -50,6 +50,7 @@ VERTEX_MODEL: Final = "vertex_ai/gemini-3-pro-preview"
 FINE_TUNE_MODEL: Final = "ft:gpt-4o-2024-08-06"
 FIREWORKS_MODEL: Final = "fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct"
 FIXED_MODELS: Final = ("gpt-4", BEDROCK_MODEL, VERTEX_MODEL, FINE_TUNE_MODEL)
+REASONING_MODELS: Final = ("gpt-5", "o3")
 PARAMS_DIFFER: Final = frozenset({BEDROCK_MODEL, VERTEX_MODEL, FINE_TUNE_MODEL})
 UNSUPPORTED_PARAMS: Final = "supported_openai_params"
 PROBE_MAX_TOKENS: Final = 77
@@ -145,6 +146,12 @@ def test_lookup_fixed_models() -> None:
             assert without_params(ours) == without_params(theirs)
         else:
             assert ours == theirs
+
+
+def test_lookup_reasoning_models() -> None:
+    for model in REASONING_MODELS:
+        theirs = _MODEL_INFO.validate_python(REFERENCE.get_model_info(model))
+        assert get_model_info(model) == theirs
 
 
 def test_lookup_unmapped_model() -> None:
