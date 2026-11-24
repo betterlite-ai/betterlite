@@ -17,8 +17,8 @@ where
     Source: std::error::Error + 'static,
 {
     let mut completed: Option<Option<Json>> = None;
-    while let Some(line) = events.next_event().await {
-        let line = line.map_err(|failure| DispatchError::Stream { failure })?;
+    while let Some(event_line) = events.next_event().await {
+        let line = event_line.map_err(|failure| DispatchError::Stream { failure })?;
         if let DecodedEventLine::Event(event) = decode_event_line(&line, limits)?
             && let Some(payload) = terminal_response(&event)
         {

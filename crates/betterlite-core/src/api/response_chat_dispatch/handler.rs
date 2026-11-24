@@ -21,10 +21,11 @@ use crate::api::response_chat_request::request::build_request;
 use crate::api::response_chat_result::records::ModelResponse;
 use crate::api::response_chat_result::transform::{ResponseSource, transform_response};
 
-#[derive(Clone, Copy)]
-enum Mode {
-    Sync,
-    Async,
+// The answer a streaming caller receives: derived from the Responses events, replayed, or already a stream
+enum StreamSource {
+    Events(Box<dyn ResponsesEventStream>),
+    Chat(Json),
+    Cached(Box<dyn AsyncChunkStream + Send>),
 }
 
 // litellm.completion() past the router, whose Responses answer is transformed back into a chat response
@@ -36,28 +37,14 @@ where
     Execution: ResponsesExecution<Client> + Sync,
     Client: ?Sized + Sync,
 {
-    if matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true))) {
-        return acompletion(execution, call).await;
-    }
-    run(execution, call, Mode::Sync).await
-}
-
-// litellm.acompletion(), which reaches aresponses() without the caller's client
-pub async fn acompletion<Execution, Client>(
-    execution: &Execution,
-    call: BridgeCall<'_, Client>,
-) -> Result<BridgeOutput, DispatchError<Execution::Error>>
-where
-    Execution: ResponsesExecution<Client> + Sync,
-    Client: ?Sized + Sync,
-{
-    run(execution, call, Mode::Async).await
+    let asynchronous = matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true)));
+    run(execution, call, asynchronous).await
 }
 
 async fn run<Execution, Client>(
     execution: &Execution,
     call: BridgeCall<'_, Client>,
-    mode: Mode,
+    asynchronous: bool,
 ) -> Result<BridgeOutput, DispatchError<Execution::Error>>
 where
     Execution: ResponsesExecution<Client> + Sync,
@@ -75,10 +62,7 @@ where
     let mut input = super::input::input(kwargs)?;
     inject_stream(kwargs, &mut input.optional_params);
     let stream = resolve_stream_flag(&input.optional_params, &input.litellm_params);
-    let client = match mode {
-        Mode::Sync => client,
-        Mode::Async => None,
-    };
+    let request_client = if asynchronous { None } else { client };
     let mut request = build_request(
         ChatRequestInput {
             model: &input.model,
@@ -89,10 +73,12 @@ where
             reasoning_auto_summary,
         },
         &mut logging,
-        client,
+        request_client,
     )?;
     route(&mut request, &input);
-    let answer = execute(execution, &mut request, mode).await?;
+    let answer = execute(execution, &mut request, asynchronous)
+        .await
+        .map_err(DispatchError::Provider)?;
     let delivery = Delivery {
         logging: request.logging,
         limits,
@@ -103,20 +89,12 @@ where
     deliver(&input, model_response, &delivery, answer).await
 }
 
-// The bridge sets both on request_data rather than as arguments, so the spread never repeats a keyword
-fn route<Client: ?Sized>(request: &mut ResponsesChatRequest<'_, Client>, input: &Input) {
-    request.litellm_params.insert(
-        String::from("custom_llm_provider"),
-        Value::String(input.custom_llm_provider.clone()),
-    );
-    request.params.model = format!("{}/{}", input.custom_llm_provider, input.model);
-}
-
+// The bridge's sync and async entries take the same request, and only the execution differs
 async fn execute<Execution, Client>(
     execution: &Execution,
     request: &mut ResponsesChatRequest<'_, Client>,
-    mode: Mode,
-) -> Result<Answer, DispatchError<Execution::Error>>
+    asynchronous: bool,
+) -> Result<Answer, Execution::Error>
 where
     Execution: ResponsesExecution<Client> + Sync,
     Client: ?Sized + Sync,
@@ -128,11 +106,20 @@ where
         client: request.client,
         logging: &mut *request.logging,
     };
-    let answer = match mode {
-        Mode::Sync => execution.responses(call).await,
-        Mode::Async => execution.aresponses(call).await,
-    };
-    answer.map_err(DispatchError::Provider)
+    if asynchronous {
+        execution.aresponses(call).await
+    } else {
+        execution.responses(call).await
+    }
+}
+
+// The bridge sets both on request_data rather than as arguments, so the spread never repeats a keyword
+fn route<Client: ?Sized>(request: &mut ResponsesChatRequest<'_, Client>, input: &Input) {
+    request.litellm_params.insert(
+        String::from("custom_llm_provider"),
+        Value::String(input.custom_llm_provider.clone()),
+    );
+    request.params.model = format!("{}/{}", input.custom_llm_provider, input.model);
 }
 
 struct Delivery<'delivery> {
@@ -154,17 +141,29 @@ where
 {
     match answer {
         Answer::Response(response) => response_output(input, seed, delivery, response),
-        Answer::Chat(chat) => chat_output(input, delivery, chat),
-        Answer::Events(events) if delivery.stream => events_output(input, delivery, events),
-        Answer::Events(events) => collected(input, seed, delivery, events).await,
-        Answer::Cached(cached) if delivery.stream => post_process(
-            cached,
+        Answer::Chat(chat) if !delivery.stream => Ok(BridgeOutput::Chat(chat)),
+        Answer::Chat(chat) => stream_output(
             &input.model,
             &input.custom_llm_provider,
-            delivery.post_stream,
-        )
-        .map(BridgeOutput::Stream)
-        .map_err(DispatchError::PostStream),
+            delivery,
+            StreamSource::Chat(chat),
+        ),
+        Answer::Events(events) if delivery.stream => stream_output(
+            &input.model,
+            &input.custom_llm_provider,
+            delivery,
+            StreamSource::Events(events),
+        ),
+        Answer::Events(events) => {
+            let response = super::collect::collect(events, &delivery.limits).await?;
+            response_output(input, seed, delivery, response)
+        }
+        Answer::Cached(cached) if delivery.stream => stream_output(
+            &input.model,
+            &input.custom_llm_provider,
+            delivery,
+            StreamSource::Cached(cached),
+        ),
         Answer::Cached(mut cached) => drain_cached(&mut *cached).await,
     }
 }
@@ -205,68 +204,32 @@ where
     Ok(BridgeOutput::Response(Box::new(transformed)))
 }
 
-// A direct ModelResponse passes through, and streams only when the caller resolved a stream
-fn chat_output<Source>(
-    input: &Input,
+// _apply_post_stream_processing runs on whatever stream the bridge produced
+fn stream_output<Source: Error + 'static>(
+    model: &str,
+    provider: &str,
     delivery: &Delivery<'_>,
-    chat: Json,
-) -> Result<BridgeOutput, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
-    if !delivery.stream {
-        return Ok(BridgeOutput::Chat(chat));
-    }
-    let mock = MockStream::new(chat, &input.custom_llm_provider, &input.model)
-        .map_err(|source| DispatchError::Mock { source })?;
-    post_process(
-        Box::new(mock),
-        &input.model,
-        &input.custom_llm_provider,
-        delivery.post_stream,
-    )
-    .map(BridgeOutput::Stream)
-    .map_err(DispatchError::PostStream)
-}
-
-fn events_output<Source>(
-    input: &Input,
-    delivery: &Delivery<'_>,
-    events: Box<dyn ResponsesEventStream>,
-) -> Result<BridgeOutput, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
-    let stream: Box<dyn AsyncChunkStream + Send> = Box::new(TranslatedStream::new(
-        events,
-        &StreamConfig {
-            provider: &input.custom_llm_provider,
-            model: &input.model,
-            json_mode: delivery.json_mode,
-            limits: delivery.limits,
-        },
-    ));
-    post_process(
-        stream,
-        &input.model,
-        &input.custom_llm_provider,
-        delivery.post_stream,
-    )
-    .map(BridgeOutput::Stream)
-    .map_err(DispatchError::PostStream)
-}
-
-async fn collected<Source>(
-    input: &Input,
-    seed: ModelResponseSeed,
-    delivery: &Delivery<'_>,
-    events: Box<dyn ResponsesEventStream>,
-) -> Result<BridgeOutput, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
-    let response = super::collect::collect(events, &delivery.limits).await?;
-    response_output(input, seed, delivery, response)
+    source: StreamSource,
+) -> Result<BridgeOutput, DispatchError<Source>> {
+    let stream: Box<dyn AsyncChunkStream + Send> = match source {
+        StreamSource::Events(events) => Box::new(TranslatedStream::new(
+            events,
+            &StreamConfig {
+                provider,
+                model,
+                json_mode: delivery.json_mode,
+                limits: delivery.limits,
+            },
+        )),
+        StreamSource::Chat(chat) => Box::new(
+            MockStream::new(chat, provider, model)
+                .map_err(|error| DispatchError::Mock { source: error })?,
+        ),
+        StreamSource::Cached(cached) => cached,
+    };
+    post_process(stream, model, provider, delivery.post_stream)
+        .map(BridgeOutput::Stream)
+        .map_err(DispatchError::PostStream)
 }
 
 // A cached chat stream carries no completed Responses object, so a non-streaming caller gets the empty-stream error

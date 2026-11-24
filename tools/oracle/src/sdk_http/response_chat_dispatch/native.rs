@@ -4,7 +4,7 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::chat_response_stream::source::AsyncChunkStream;
 use betterlite_core::api::messages_stream_split::errors::StreamFailure;
 use betterlite_core::api::response_chat_dispatch::error::DispatchError;
-use betterlite_core::api::response_chat_dispatch::handler::{acompletion, completion};
+use betterlite_core::api::response_chat_dispatch::handler::completion;
 use betterlite_core::api::response_chat_dispatch::input::{BridgeCall, ModelResponseSeed};
 use betterlite_core::api::response_chat_dispatch::port::BridgeOutput;
 use betterlite_models::decisions::Json;
@@ -31,18 +31,21 @@ pub(super) async fn execute(
 
 struct RunSpec {
     kwargs: IndexMap<String, Json>,
-    acompletion: bool,
 }
 
 impl RunSpec {
     fn parse(run: &Json, api_base: &str) -> Result<Self, SdkHttpError> {
         let Json::Object(fields) = run else {
-            return Err(invalid("a run is an object"));
+            return Err(SdkHttpError::Invalid(String::from("a run is an object")));
         };
         let mut kwargs = match fields.get("kwargs") {
             Some(Json::Object(kwargs)) => kwargs.clone(),
             Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None => return Err(invalid("a run needs a kwargs object")),
+            | None => {
+                return Err(SdkHttpError::Invalid(String::from(
+                    "a run needs a kwargs object",
+                )));
+            }
         };
         inject_api_base(&mut kwargs, api_base);
         let acompletion = match fields.get("acompletion") {
@@ -52,10 +55,10 @@ impl RunSpec {
             )
             | None => false,
         };
-        Ok(Self {
-            kwargs,
-            acompletion,
-        })
+        if acompletion {
+            kwargs.insert(String::from("acompletion"), Json::Bool(true));
+        }
+        Ok(Self { kwargs })
     }
 }
 
@@ -84,12 +87,7 @@ async fn run_once(
         reasoning_auto_summary: env_flags(env).1,
         post_stream: None,
     };
-    let returned = if spec.acompletion {
-        acompletion(&execution, call).await
-    } else {
-        completion(&execution, call).await
-    };
-    match returned {
+    match completion(&execution, call).await {
         Ok(output) => project(output).await,
         Err(error) => Ok(super::RunOutcome {
             result: None,
@@ -106,7 +104,9 @@ async fn project(output: BridgeOutput) -> Result<super::RunOutcome, SdkHttpError
             stream: None,
             failure: None,
         }),
-        BridgeOutput::Chat(_chat) => Err(invalid("the bridge never passes a chat answer through")),
+        BridgeOutput::Chat(_chat) => Err(SdkHttpError::Invalid(String::from(
+            "the bridge never passes a chat answer through",
+        ))),
         BridgeOutput::Stream(stream) => Ok(super::RunOutcome {
             result: None,
             stream: Some(drain(stream).await?),
@@ -128,10 +128,10 @@ fn stream_error(failure: StreamFailure) -> SdkHttpError {
         StreamFailure::Reported {
             status_code,
             message,
-        } => invalid(&format!(
+        } => SdkHttpError::Invalid(format!(
             "the responses stream reported {status_code}: {message}"
         )),
-        StreamFailure::Unclassified { text } => invalid(&text),
+        StreamFailure::Unclassified { text } => SdkHttpError::Invalid(text),
     }
 }
 
@@ -157,8 +157,4 @@ fn failure_of(error: &DispatchError<ExecutionFailure>, redactor: &Redactor) -> F
             message: error.to_string(),
         },
     }
-}
-
-fn invalid(message: &str) -> SdkHttpError {
-    SdkHttpError::Invalid(message.to_owned())
 }

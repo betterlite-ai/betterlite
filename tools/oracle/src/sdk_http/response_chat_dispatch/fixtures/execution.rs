@@ -239,23 +239,17 @@ fn create_call(
 }
 
 fn text(value: Option<&Value>) -> Option<String> {
-    match value {
-        Some(Value::String(text)) => Some(text.clone()),
-        Some(
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_),
-        )
-        | None => None,
-    }
+    let Some(Value::String(text)) = value else {
+        return None;
+    };
+    Some(text.clone())
 }
 
 fn number(value: Option<&Value>) -> Option<f64> {
-    match value {
-        Some(Value::Number(number)) => number.as_f64(),
-        Some(
-            Value::Null | Value::Bool(_) | Value::String(_) | Value::Array(_) | Value::Object(_),
-        )
-        | None => None,
-    }
+    let Some(Value::Number(number)) = value else {
+        return None;
+    };
+    number.as_f64()
 }
 
 pub(crate) fn env_flags(env: &BTreeMap<String, String>) -> (bool, bool) {

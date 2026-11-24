@@ -50,8 +50,9 @@ pub struct Input {
 
 // validate_input_kwargs: the first field that is absent or of another type is the one ValueError names
 pub fn input(kwargs: &IndexMap<String, Json>) -> Result<Input, InputError> {
-    let model = text(kwargs, "model")?.to_owned();
-    let custom_llm_provider = text(kwargs, "custom_llm_provider")?.to_owned();
+    let model = text(kwargs.get("model"), "model")?.to_owned();
+    let custom_llm_provider =
+        text(kwargs.get("custom_llm_provider"), "custom_llm_provider")?.to_owned();
     let messages = messages(kwargs)?;
     let optional_params = object(kwargs, "optional_params")?.clone();
     let litellm_params = value_map(object(kwargs, "litellm_params")?)?;
@@ -68,30 +69,21 @@ pub fn input(kwargs: &IndexMap<String, Json>) -> Result<Input, InputError> {
     })
 }
 
-fn text<'call>(
-    kwargs: &'call IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<&'call str, InputError> {
-    match kwargs.get(field) {
-        Some(Json::Text(text)) => Ok(text),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(InputError::Required { field })
-        }
+fn text<'call>(value: Option<&'call Json>, field: &'static str) -> Result<&'call str, InputError> {
+    if let Some(Json::Text(text)) = value {
+        return Ok(text);
     }
+    Err(InputError::Required { field })
 }
 
 fn object<'call>(
     kwargs: &'call IndexMap<String, Json>,
     field: &'static str,
 ) -> Result<&'call IndexMap<String, Json>, InputError> {
-    match kwargs.get(field) {
-        Some(Json::Object(fields)) => Ok(fields),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(InputError::Required { field })
-        }
-    }
+    let Some(Json::Object(fields)) = kwargs.get(field) else {
+        return Err(InputError::Required { field });
+    };
+    Ok(fields)
 }
 
 fn messages(kwargs: &IndexMap<String, Json>) -> Result<Vec<HistoryMessage>, InputError> {
@@ -142,21 +134,12 @@ pub fn resolve_stream_flag(
     litellm_params: &IndexMap<String, Value>,
 ) -> bool {
     match optional_params.get("stream") {
-        Some(value) if !matches!(value, Json::Null) => json_truthy(value),
+        Some(value) if !matches!(value, Json::Null) => {
+            serde_json::to_value(value).is_ok_and(|converted| is_truthy(Some(&converted)))
+        }
         Some(Json::Null) | None => litellm_params
             .get("stream")
             .is_some_and(|value| is_truthy(Some(value))),
-    }
-}
-
-fn json_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
     }
 }
 

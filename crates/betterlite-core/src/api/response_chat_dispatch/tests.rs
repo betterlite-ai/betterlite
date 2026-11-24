@@ -8,6 +8,7 @@ use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::{Map, Value};
 
 use self::fixtures::support::{
@@ -16,7 +17,7 @@ use self::fixtures::support::{
     terminal_event, text_of,
 };
 use super::error::DispatchError;
-use super::handler::{acompletion, completion};
+use super::handler::completion;
 use super::input::{json_mode, resolve_stream_flag};
 use super::port::{Answer, BridgeOutput, BridgeResponse, ResponsePayload};
 use super::stream::{StreamConfig, TranslatedStream};
@@ -160,8 +161,8 @@ fn created_of(chunk: &Json) -> Option<Json> {
 
 fn optional_stream(value: Option<Json>) -> IndexMap<String, Json> {
     let mut fields = IndexMap::new();
-    if let Some(value) = value {
-        fields.insert(String::from("stream"), value);
+    if let Some(requested) = value {
+        fields.insert(String::from("stream"), requested);
     }
     fields
 }
@@ -172,51 +173,49 @@ fn sdk_stream(value: Value) -> IndexMap<String, Value> {
     fields
 }
 
-fn mandatory() -> [&'static str; 8] {
-    [
-        "model",
-        "custom_llm_provider",
-        "messages",
-        "optional_params",
-        "litellm_params",
-        "headers",
-        "model_response",
-        "logging_obj",
-    ]
+#[rstest]
+#[case::model("model")]
+#[case::custom_llm_provider("custom_llm_provider")]
+#[case::messages("messages")]
+#[case::optional_params("optional_params")]
+#[case::litellm_params("litellm_params")]
+#[case::headers("headers")]
+#[case::model_response("model_response")]
+#[case::logging_obj("logging_obj")]
+#[tokio::test]
+async fn validation_names_the_first_missing_field_and_reaches_no_provider(#[case] field: &str) {
+    let fields = without(kwargs("gpt-4o-mini", "openai"), field);
+    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let text = expect_error(completion(&execution, call(&fields)).await);
+    assert_eq!(text, format!("{field} is required"));
+    assert!(execution.observations().is_empty());
 }
 
 #[tokio::test]
-async fn validation_names_the_first_missing_field_and_reaches_no_provider() {
-    for field in mandatory() {
-        let fields = without(kwargs("gpt-4o-mini", "openai"), field);
-        let execution = FakeExecution::new(Answer::Chat(chat_body()));
-        let text = expect_error(completion(&execution, call(&fields)).await);
-        assert_eq!(text, format!("{field} is required"));
-        assert!(execution.observations().is_empty());
-    }
+async fn the_first_missing_field_is_the_one_named() {
     let fields = without(without(kwargs("gpt-4o-mini", "openai"), "model"), "headers");
     let text = expect_error(completion(&FakeExecution::failing(), call(&fields)).await);
     assert_eq!(text, "model is required");
 }
 
+#[rstest]
+#[case::model("model", Json::Number(serde_json::Number::from(5_i32)))]
+#[case::custom_llm_provider("custom_llm_provider", Json::Bool(true))]
+#[case::messages("messages", Json::Text(String::from("hi")))]
+#[case::optional_params("optional_params", Json::List(Vec::new()))]
+#[case::litellm_params("litellm_params", Json::Text(String::from("none")))]
+#[case::headers("headers", Json::Null)]
+#[case::model_response("model_response", Json::Text(String::from("chat")))]
+#[case::logging_obj("logging_obj", Json::Bool(false))]
 #[tokio::test]
-async fn validation_rejects_a_required_field_of_the_wrong_type() {
-    let wrong = [
-        ("model", Json::Number(serde_json::Number::from(5_i32))),
-        ("custom_llm_provider", Json::Bool(true)),
-        ("messages", Json::Text(String::from("hi"))),
-        ("optional_params", Json::List(Vec::new())),
-        ("litellm_params", Json::Text(String::from("none"))),
-        ("headers", Json::Null),
-        ("model_response", Json::Text(String::from("chat"))),
-        ("logging_obj", Json::Bool(false)),
-    ];
-    for (field, value) in wrong {
-        let fields = with(kwargs("gpt-4o-mini", "openai"), field, value);
-        let execution = FakeExecution::new(Answer::Chat(chat_body()));
-        let text = expect_error(completion(&execution, call(&fields)).await);
-        assert_eq!(text, format!("{field} is required"));
-    }
+async fn validation_rejects_a_required_field_of_the_wrong_type(
+    #[case] field: &str,
+    #[case] value: Json,
+) {
+    let fields = with(kwargs("gpt-4o-mini", "openai"), field, value);
+    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let text = expect_error(completion(&execution, call(&fields)).await);
+    assert_eq!(text, format!("{field} is required"));
 }
 
 #[tokio::test]
@@ -244,10 +243,14 @@ async fn a_message_that_is_not_an_object_is_rejected_by_the_mapping() {
 
 #[tokio::test]
 async fn empty_required_containers_are_accepted() {
-    let fields = kwargs("", "");
-    let fields = with(fields, "messages", Json::List(Vec::new()));
-    let fields = with(fields, "optional_params", Json::Object(IndexMap::new()));
-    let fields = with(fields, "headers", Json::Object(IndexMap::new()));
+    let base = kwargs("", "");
+    let with_messages = with(base, "messages", Json::List(Vec::new()));
+    let with_optional = with(
+        with_messages,
+        "optional_params",
+        Json::Object(IndexMap::new()),
+    );
+    let fields = with(with_optional, "headers", Json::Object(IndexMap::new()));
     let execution = FakeExecution::new(Answer::Chat(chat_body()));
     let output = expect_ok(completion(&execution, call(&fields)).await);
     assert_eq!(expect_chat(output), chat_body());
@@ -273,8 +276,9 @@ async fn sync_passes_the_client_while_async_omits_it() {
     let fields = kwargs("gpt-4o-mini", "openai");
     let synchronous = FakeExecution::new(Answer::Chat(chat_body()));
     expect_ok(completion(&synchronous, call(&fields)).await);
+    let async_fields = with(fields, "acompletion", Json::Bool(true));
     let asynchronous = FakeExecution::new(Answer::Chat(chat_body()));
-    expect_ok(acompletion(&asynchronous, call(&fields)).await);
+    expect_ok(completion(&asynchronous, call(&async_fields)).await);
     assert!(synchronous.observations()[0].client);
     assert!(!asynchronous.observations()[0].client);
     assert_eq!(synchronous.observations()[0].model, "openai/gpt-4o-mini");
@@ -284,27 +288,21 @@ async fn sync_passes_the_client_while_async_omits_it() {
     );
 }
 
+#[rstest]
+#[case::boolean_true(Json::Bool(true), false)]
+#[case::boolean_false(Json::Bool(false), true)]
+#[case::text_true(Json::Text(String::from("true")), true)]
+#[case::number_one(Json::Number(serde_json::Number::from(1_i32)), true)]
+#[case::null(Json::Null, true)]
 #[tokio::test]
-async fn only_a_boolean_true_acompletion_takes_the_async_path() {
-    let fields = with(
-        kwargs("gpt-4o-mini", "openai"),
-        "acompletion",
-        Json::Bool(true),
-    );
-    let asynchronous = FakeExecution::new(Answer::Chat(chat_body()));
-    expect_ok(completion(&asynchronous, call(&fields)).await);
-    assert!(!asynchronous.observations()[0].client);
-    for value in [
-        Json::Bool(false),
-        Json::Text(String::from("true")),
-        Json::Number(serde_json::Number::from(1_i32)),
-        Json::Null,
-    ] {
-        let fields = with(kwargs("gpt-4o-mini", "openai"), "acompletion", value);
-        let synchronous = FakeExecution::new(Answer::Chat(chat_body()));
-        expect_ok(completion(&synchronous, call(&fields)).await);
-        assert!(synchronous.observations()[0].client);
-    }
+async fn only_a_boolean_true_acompletion_takes_the_async_path(
+    #[case] value: Json,
+    #[case] keeps_client: bool,
+) {
+    let fields = with(kwargs("gpt-4o-mini", "openai"), "acompletion", value);
+    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    expect_ok(completion(&execution, call(&fields)).await);
+    assert_eq!(execution.observations()[0].client, keeps_client);
 }
 
 #[tokio::test]
@@ -329,17 +327,17 @@ async fn the_outer_stream_flag_only_adds_a_missing_optional_key() {
 
     let fields = optional_params(streaming(), r#"{"stream":false}"#);
     let retained = FakeExecution::new(events(frames(), &[]));
-    let output = expect_ok(completion(&retained, call(&fields)).await);
+    let retained_output = expect_ok(completion(&retained, call(&fields)).await);
     assert_eq!(retained.observations()[0].params_stream, None);
-    assert!(matches!(output, BridgeOutput::Response(_)));
+    assert!(matches!(retained_output, BridgeOutput::Response(_)));
 
-    let fields = with(
+    let text_stream = with(
         kwargs("gpt-4o-mini", "openai"),
         "stream",
         Json::Text(String::from("true")),
     );
     let not_injected = FakeExecution::new(Answer::Chat(chat_body()));
-    expect_ok(completion(&not_injected, call(&fields)).await);
+    expect_ok(completion(&not_injected, call(&text_stream)).await);
     assert_eq!(not_injected.observations()[0].params_stream, None);
 }
 
@@ -445,15 +443,16 @@ async fn a_collected_stream_becomes_a_chat_response() {
     );
 }
 
+#[rstest]
+#[case::incomplete("response.incomplete")]
+#[case::failed("response.failed")]
 #[tokio::test]
-async fn incomplete_and_failed_events_also_complete_a_stream() {
-    for kind in ["response.incomplete", "response.failed"] {
-        let execution = FakeExecution::new(events(vec![terminal_frame(kind, "hi")], &[]));
-        let record = expect_response(expect_ok(
-            completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
-        ));
-        assert_eq!(record.choices[0].message.content.as_deref(), Some("hi"));
-    }
+async fn incomplete_and_failed_events_also_complete_a_stream(#[case] kind: &str) {
+    let execution = FakeExecution::new(events(vec![terminal_frame(kind, "hi")], &[]));
+    let record = expect_response(expect_ok(
+        completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
+    ));
+    assert_eq!(record.choices[0].message.content.as_deref(), Some("hi"));
 }
 
 #[tokio::test]
@@ -467,8 +466,8 @@ async fn a_stream_without_a_completed_response_is_an_error() {
         vec![sse(r#"{"type":"response.completed","response":null}"#)],
         &[],
     ));
-    let text = expect_error(completion(&null_response, call(&fields)).await);
-    assert_eq!(text, "Stream ended without a completed response");
+    let null_text = expect_error(completion(&null_response, call(&fields)).await);
+    assert_eq!(null_text, "Stream ended without a completed response");
 }
 
 #[tokio::test]
@@ -494,13 +493,19 @@ async fn existing_hidden_params_win_over_the_stream_map() {
     assert_eq!(record.hidden_params.get("b"), Some(&Value::from("3")));
 }
 
+#[rstest]
+#[case::plain(false)]
+#[case::streaming(true)]
 #[tokio::test]
-async fn a_typed_responses_object_ignores_the_stream_flag() {
-    for fields in [kwargs("gpt-4o-mini", "openai"), streaming()] {
-        let execution = FakeExecution::new(Answer::Response(typed_response("hi")));
-        let record = expect_response(expect_ok(completion(&execution, call(&fields)).await));
-        assert_eq!(record.choices[0].message.content.as_deref(), Some("hi"));
-    }
+async fn a_typed_responses_object_ignores_the_stream_flag(#[case] stream_requested: bool) {
+    let fields = if stream_requested {
+        streaming()
+    } else {
+        kwargs("gpt-4o-mini", "openai")
+    };
+    let execution = FakeExecution::new(Answer::Response(typed_response("hi")));
+    let record = expect_response(expect_ok(completion(&execution, call(&fields)).await));
+    assert_eq!(record.choices[0].message.content.as_deref(), Some("hi"));
 }
 
 #[tokio::test]
@@ -653,9 +658,9 @@ async fn a_translated_stream_keeps_one_id_and_one_finish_reason() {
     .await;
     assert_eq!(joined(&chunks), "hello");
     assert_eq!(finishes(&chunks), vec![String::from("stop")]);
-    let ids = ids(&chunks);
-    assert!(!ids.is_empty());
-    assert!(ids.iter().all(|id| id == "resp_a"));
+    let identifiers = ids(&chunks);
+    assert!(!identifiers.is_empty());
+    assert!(identifiers.iter().all(|id| id == "resp_a"));
 }
 
 #[tokio::test]
@@ -781,8 +786,8 @@ async fn identical_chunks_stop_at_the_repeated_chunk_limit() {
         .chain(std::iter::repeat_with(|| delta_event("hello")).take(101))
         .chain(std::iter::once(sse(&terminal_event("hello"))))
         .collect();
-    let execution = FakeExecution::new(events(past_limit, &[]));
-    let mut stream = expect_stream(expect_ok(completion(&execution, call(&fields)).await));
+    let over_limit = FakeExecution::new(events(past_limit, &[]));
+    let mut stream = expect_stream(expect_ok(completion(&over_limit, call(&fields)).await));
     loop {
         match stream.next_chunk().await {
             Ok(Some(_)) => {}

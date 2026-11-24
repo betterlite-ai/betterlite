@@ -23,7 +23,6 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream::chunk::wrapper_view;
 use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::messages_stream_split::errors::StreamFailure;
-use crate::api::responses_to_chat_stream::records::ChatChunk;
 use crate::api::responses_to_chat_stream::stream::{
     ParsedChatLine, ResponsesChatStream, get_model_response_iterator,
 };
@@ -90,7 +89,9 @@ impl AsyncChunkStream for TranslatedStream {
                         .parse_line(&line, &self.limits)
                         .map_err(unclassified)?;
                     if let ParsedChatLine::Chunk(chunk) = parsed {
-                        push_chat(&mut self.wrapper, &mut self.pending, chunk)?;
+                        let value = serde_json::to_value(chunk).map_err(unclassified)?;
+                        let row = serde_json::from_value::<Json>(value).map_err(unclassified)?;
+                        push_json(&mut self.wrapper, &mut self.pending, row)?;
                     }
                 }
             }
@@ -103,7 +104,7 @@ pub struct MockStream {
     inner: ModelResponseIterator,
     wrapper: StreamWrapper,
     pending: VecDeque<Json>,
-    finished: bool,
+    filled: bool,
 }
 
 impl MockStream {
@@ -115,29 +116,29 @@ impl MockStream {
             inner: ModelResponseIterator::new(response, Some(identity))?,
             wrapper: wrapper(provider, model),
             pending: VecDeque::new(),
-            finished: false,
+            filled: false,
         })
+    }
+
+    // the replay is finite and synchronous, so every chunk goes through the wrapper once
+    fn fill(&mut self) -> Result<(), StreamFailure> {
+        if self.filled {
+            return Ok(());
+        }
+        while let Some(chunk) = self.inner.next() {
+            push_json(&mut self.wrapper, &mut self.pending, chunk)?;
+        }
+        close(&mut self.wrapper, &mut self.pending)?;
+        self.filled = true;
+        Ok(())
     }
 }
 
 #[async_trait]
 impl AsyncChunkStream for MockStream {
     async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
-        loop {
-            if let Some(chunk) = self.pending.pop_front() {
-                return Ok(Some(chunk));
-            }
-            if self.finished {
-                return Ok(None);
-            }
-            match self.inner.next() {
-                Some(chunk) => push_json(&mut self.wrapper, &mut self.pending, chunk)?,
-                None => {
-                    self.finished = true;
-                    close(&mut self.wrapper, &mut self.pending)?;
-                }
-            }
-        }
+        self.fill()?;
+        Ok(self.pending.pop_front())
     }
 }
 
@@ -157,37 +158,26 @@ fn wrapper(provider: &str, model: &str) -> StreamWrapper {
     )
 }
 
+fn field<'json>(response: &'json Json, name: &str) -> Option<&'json Json> {
+    match response {
+        Json::Object(fields) => fields.get(name),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    }
+}
+
 // B010 names the replayed chunk after the ModelResponse it came from
 fn text_field(response: &Json, name: &str) -> String {
-    let Json::Object(fields) = response else {
+    let Some(Json::Text(text)) = field(response, name) else {
         return String::new();
     };
-    match fields.get(name) {
-        Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => String::new(),
-    }
+    text.clone()
 }
 
 fn number_field(response: &Json, name: &str) -> i64 {
-    let Json::Object(fields) = response else {
+    let Some(Json::Number(number)) = field(response, name) else {
         return 0;
     };
-    match fields.get(name) {
-        Some(Json::Number(number)) => number.as_i64().unwrap_or_default(),
-        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
-        | None => 0,
-    }
-}
-
-fn push_chat(
-    wrapper: &mut StreamWrapper,
-    pending: &mut VecDeque<Json>,
-    chunk: ChatChunk,
-) -> Result<(), StreamFailure> {
-    let value = serde_json::to_value(&chunk).map_err(unclassified)?;
-    let json = serde_json::from_value::<JsonValue>(value).map_err(unclassified)?;
-    hold(pending, wrapper.push(&ProviderChunk::Json(Box::new(json))))
+    number.as_i64().unwrap_or_default()
 }
 
 fn push_json(
@@ -212,14 +202,17 @@ fn hold(
 
 // The wrapper's own end-of-stream chunk, for a stream that never sent a finish reason itself
 fn close(wrapper: &mut StreamWrapper, pending: &mut VecDeque<Json>) -> Result<(), StreamFailure> {
-    if let Some(chunk) = wrapper.finish() {
-        let chunk = chunk.map_err(unclassified)?;
+    if let Some(shaped) = wrapper.finish() {
+        let chunk = shaped.map_err(unclassified)?;
         pending.push_back(wrapper_view(&chunk).map_err(unclassified)?);
     }
     Ok(())
 }
 
-fn unclassified(error: impl Display) -> StreamFailure {
+fn unclassified<Message>(error: Message) -> StreamFailure
+where
+    Message: Display,
+{
     StreamFailure::Unclassified {
         text: error.to_string(),
     }
@@ -232,7 +225,7 @@ pub fn post_process(
     provider: &str,
     deps: Option<&PostStreamDeps<'_>>,
 ) -> Result<Box<dyn AsyncChunkStream + Send>, PostStreamError> {
-    let Some(deps) = deps else {
+    let Some(config_deps) = deps else {
         return Ok(stream);
     };
     let Ok(provider_id) = ProviderId::from_str(provider) else {
@@ -242,14 +235,16 @@ pub fn post_process(
     let request = ChatConfigRequest {
         model,
         provider: provider_id,
-        base_model: deps.base_model,
-        families: deps.families,
-        bedrock: deps.bedrock,
-        vertex: deps.vertex,
-        json_providers: deps.json_providers,
+        base_model: config_deps.base_model,
+        families: config_deps.families,
+        bedrock: config_deps.bedrock,
+        vertex: config_deps.vertex,
+        json_providers: config_deps.json_providers,
     };
     match select_chat_config(&request, &mut table) {
-        Ok(Some(selected)) => deps.processing.post_stream_processing(selected.tag, stream),
+        Ok(Some(selected)) => config_deps
+            .processing
+            .post_stream_processing(selected.tag, stream),
         Ok(None) | Err(ChatConfigError::MissingJsonRecord { .. }) => Ok(stream),
     }
 }

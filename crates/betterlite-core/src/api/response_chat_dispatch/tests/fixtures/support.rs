@@ -365,52 +365,44 @@ pub fn hidden(pairs: &[(&str, &str)]) -> Map<String, Value> {
         .collect()
 }
 
-pub fn text_of(chunk: &Json) -> Option<String> {
+fn choice<'json>(chunk: &'json Json) -> Option<&'json IndexMap<String, Json>> {
     let Json::Object(fields) = chunk else {
         return None;
     };
     let Json::List(choices) = fields.get("choices")? else {
         return None;
     };
-    let Json::Object(choice) = choices.first()? else {
+    let Json::Object(item) = choices.first()? else {
         return None;
     };
-    let Json::Object(delta) = choice.get("delta")? else {
-        return None;
-    };
-    match delta.get("content") {
+    Some(item)
+}
+
+fn text_member(fields: &IndexMap<String, Json>, name: &str) -> Option<String> {
+    match fields.get(name) {
         Some(Json::Text(text)) => Some(text.clone()),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
 }
 
+pub fn text_of(chunk: &Json) -> Option<String> {
+    let first = choice(chunk)?;
+    let Json::Object(delta) = first.get("delta")? else {
+        return None;
+    };
+    text_member(delta, "content")
+}
+
 pub fn finish_of(chunk: &Json) -> Option<String> {
-    let Json::Object(fields) = chunk else {
-        return None;
-    };
-    let Json::List(choices) = fields.get("choices")? else {
-        return None;
-    };
-    let Json::Object(choice) = choices.first()? else {
-        return None;
-    };
-    match choice.get("finish_reason") {
-        Some(Json::Text(reason)) => Some(reason.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    }
+    text_member(choice(chunk)?, "finish_reason")
 }
 
 pub fn id_of(chunk: &Json) -> Option<String> {
     let Json::Object(fields) = chunk else {
         return None;
     };
-    match fields.get("id") {
-        Some(Json::Text(id)) => Some(id.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    }
+    text_member(fields, "id")
 }
 
 pub fn responses_body(text: &str) -> String {

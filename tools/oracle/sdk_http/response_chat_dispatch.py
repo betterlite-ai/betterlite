@@ -38,7 +38,7 @@ class ResponseChatDispatchCall(BaseModel):
     runs: list[BridgeRun]
 
 
-# StreamingChoices and Delta keep their fields in pydantic's extra map, so a typed view is the boundary
+# StreamingChoices and Delta hide their fields in pydantic's extras, so a typed view reads them
 class StreamDelta(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -52,7 +52,7 @@ class StreamChoice(BaseModel):
     finish_reason: str | None = None
 
 
-# The logging object is read only by callbacks; the bridge passes the response model to the transform itself
+# Only callbacks read the logging object; the transform gets the response model itself
 def logging_object() -> Logging:
     return Logging(
         model="",
@@ -66,7 +66,7 @@ def logging_object() -> Logging:
     )
 
 
-# A run's empty placeholders become the two SDK objects the caller owns, and the mock origin joins the SDK params
+# A run's empty placeholders become the two SDK objects, and the mock origin joins the SDK params
 def call_kwargs(run: BridgeRun, api_base: str) -> dict[str, BridgeValue]:
     values: dict[str, BridgeValue] = {**run.kwargs}
     if values.get("model_response") == {}:
@@ -77,7 +77,7 @@ def call_kwargs(run: BridgeRun, api_base: str) -> dict[str, BridgeValue]:
     match values.get("litellm_params"):
         case dict() as params:
             params["api_base"] = api_base
-        case None | bool() | int() | float() | str() | list() | ModelResponse() | Logging():
+        case None | bool() | int() | float() | str() | list() | ModelResponse() | Logging():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L107-L155
             # the bridge's own validation rejects a litellm_params that is not an object
             pass
     return values
@@ -85,14 +85,14 @@ def call_kwargs(run: BridgeRun, api_base: str) -> dict[str, BridgeValue]:
 
 # litellm's bridge takes untyped kwargs and settles on a response, a stream or a coroutine of either
 def call_bridge(run: BridgeRun, api_base: str) -> Outcome:
-    return BRIDGE.completion(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L157-L164
+    return BRIDGE.completion(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L157-L164
         **call_kwargs(run, api_base)
     )
 
 
 def complete(run: BridgeRun, api_base: str) -> ModelResponse | CustomStreamWrapper:
     match call_bridge(run, api_base):
-        case ModelResponse() | CustomStreamWrapper() as settled:
+        case ModelResponse() | CustomStreamWrapper() as settled:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L157-L164
             return settled
         case object():
             raise TypeError("a sync completion returned a coroutine")
@@ -142,17 +142,17 @@ def stream_view(chunks: list[ModelResponseStream]) -> dict[str, JsonValue]:
 
 def settled_sync(run: BridgeRun, api_base: str) -> ModelResponse | dict[str, JsonValue]:
     match complete(run, api_base):
-        case ModelResponse() as response:
+        case ModelResponse() as response:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L218-L220
             return response
-        case CustomStreamWrapper() as stream:
-            return stream_view([chunk for chunk in stream])
+        case CustomStreamWrapper() as stream:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L251-L256
+            return stream_view(list(stream))
 
 
 async def settled_async(run: BridgeRun, api_base: str) -> ModelResponse | dict[str, JsonValue]:
     match await complete_async(run, api_base):
-        case ModelResponse() as response:
+        case ModelResponse() as response:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L314-L316
             return response
-        case CustomStreamWrapper() as stream:
+        case CustomStreamWrapper() as stream:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L347-L353
             return stream_view([chunk async for chunk in stream])
 
 
@@ -187,7 +187,7 @@ def run_outcome(run: BridgeRun, api_base: str) -> dict[str, JsonValue]:
     except (ValueError, openai.OpenAIError) as error:
         return {"result": None, "stream": None, "failure": failure(error)}
     match settled:
-        case ModelResponse() as response:
+        case ModelResponse() as response:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L204-L217
             return {"result": chat_view(response), "stream": None, "failure": None}
         case object():
             return {"result": None, "stream": JSON.validate_python(settled), "failure": None}
