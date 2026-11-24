@@ -160,7 +160,7 @@ async fn evaluate(call: &Call) -> HelperResult {
             project_id,
             project,
         } => {
-            let rows = project.as_slice();
+            let rows = project.as_slice().unwrap_or_default();
             check_project_key_limits(project_id, &request.parse()?, &FakeReads { rows }).await
         }
         Call::Organization {
