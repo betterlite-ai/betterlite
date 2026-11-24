@@ -4,7 +4,7 @@ use axum::http::{Method, StatusCode};
 use rstest::rstest;
 
 use super::support::{
-    PRESETS_URL, REMOTE_CATALOG, Script, app, bundled_catalog, get, parsed, reply, settings,
+    PRESETS_URL, REMOTE_CATALOG, Script, app, bundled_catalog, get, moved, parsed, reply, settings,
 };
 use crate::public_endpoints::router_presets::AUTOROUTER_PRESETS_PATH;
 use crate::public_endpoints::router_presets::catalog::decode_catalog;
@@ -69,4 +69,16 @@ async fn treats_only_2xx_answers_as_success(#[case] status: u16, #[case] remote:
         bundled_catalog()
     };
     assert_eq!(parsed(&body), expected);
+}
+
+#[tokio::test]
+async fn takes_the_bundled_fallback_instead_of_following_a_redirect() {
+    let script = Script::new(vec![
+        moved(302, "http://mirror.test/catalog.json"),
+        reply(200, REMOTE_CATALOG),
+    ]);
+    let router = app(&script, settings(PRESETS_URL, false));
+    let (_, _, body) = get(router, AUTOROUTER_PRESETS_PATH).await;
+    assert_eq!(parsed(&body), bundled_catalog());
+    assert_eq!(script.calls(), 1);
 }

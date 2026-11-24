@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
-use axum::http::{HeaderMap, Method, Request, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header};
 use betterlite_config::sections::public_router_presets::Settings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
@@ -40,6 +40,7 @@ pub(super) const REMOTE_CATALOG: &str = r#"{
 
 pub(super) enum Answer {
     Reply { status: u16, body: Vec<u8> },
+    Moved { status: u16, location: String },
     Closed,
 }
 
@@ -101,6 +102,19 @@ impl Transport for Script {
                 headers: HeaderMap::new(),
                 body,
             }),
+            Some(Answer::Moved { status, location }) => {
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    header::LOCATION,
+                    HeaderValue::try_from(location)
+                        .expect("the scripted Location is a header value"),
+                );
+                Ok(UpstreamResponse {
+                    status,
+                    headers,
+                    body: Vec::new(),
+                })
+            }
             Some(Answer::Closed) | None => Err(TransportError::Closed),
         }
     }
@@ -172,6 +186,13 @@ pub(super) fn reply(status: u16, body: &str) -> Answer {
     Answer::Reply {
         status,
         body: body.as_bytes().to_vec(),
+    }
+}
+
+pub(super) fn moved(status: u16, location: &str) -> Answer {
+    Answer::Moved {
+        status,
+        location: location.to_owned(),
     }
 }
 
