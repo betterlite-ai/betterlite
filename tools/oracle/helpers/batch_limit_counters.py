@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TypeAlias, TypedDict, cast
 
 from litellm.proxy._types import UserAPIKeyAuth
@@ -9,7 +9,12 @@ from litellm.proxy.hooks.batch_enqueued_tokens import (
     BatchEnqueuedTokenScope,
     BatchEnqueuedTokenStore,
 )
-from litellm.proxy.hooks.parallel_request_limiter_v3 import get_or_create_request_stash
+from litellm.proxy.hooks.batch_rate_limiter import BatchFileUsage
+from litellm.proxy.hooks.parallel_request_limiter_v3 import (
+    RateLimitDescriptor,
+    RateLimitStatus,
+    get_or_create_request_stash,
+)
 from litellm.proxy.utils import InternalUsageCache
 from pydantic import JsonValue, TypeAdapter
 
@@ -72,6 +77,14 @@ class RefundAnswer(TypedDict):
 Answer: TypeAlias = RejectionAnswer | ErrorAnswer | WindowAnswer | RefundAnswer
 
 
+EnqueuedRejectionRaiser: TypeAlias = Callable[
+    [BatchEnqueuedTokenOverLimit, Mapping[str, JsonValue], BatchFileUsage], None
+]
+RateRejectionRaiser: TypeAlias = Callable[
+    [RateLimitStatus, list[RateLimitDescriptor], BatchFileUsage, str, str | None, int | None], None
+]
+
+
 def rejection_answer(call: Call, error: ProxyRateLimitError) -> RejectionAnswer | ErrorAnswer:
     if call["function"] in ("raise_enqueued_limit_error", "raise_rate_limit_error"):
         return {"function": call["function"], "error": error_view(error)}
@@ -95,9 +108,9 @@ async def invoke(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> Answer
         return {"function": function, "rejection": None}
     if function == "raise_enqueued_limit_error":
         over_limit = call["over_limit"]
-        raise_enqueued: Callable[..., None] = hook._raise_enqueued_limit_error  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L591
+        raise_enqueued: EnqueuedRejectionRaiser = hook._raise_enqueued_limit_error  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L591
         raise_enqueued(
-            over_limit=BatchEnqueuedTokenOverLimit(
+            BatchEnqueuedTokenOverLimit(
                 scope=BatchEnqueuedTokenScope(
                     key=over_limit["scope"]["key"],
                     value=over_limit["scope"]["value"],
@@ -105,18 +118,18 @@ async def invoke(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> Answer
                 ),
                 enqueued=over_limit["enqueued"],
             ),
-            data=call["data"],
-            batch_usage=BATCH_USAGE.validate_python(call["batch_usage"]),
+            call["data"],
+            BATCH_USAGE.validate_python(call["batch_usage"]),
         )
     elif function == "raise_rate_limit_error":
-        raise_rate: Callable[..., None] = hook._raise_rate_limit_error  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L618
+        raise_rate: RateRejectionRaiser = hook._raise_rate_limit_error  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L618
         raise_rate(
             status_of(call["status"]),
             call["descriptors"],
             BATCH_USAGE.validate_python(call["batch_usage"]),
             call["limit_type"],
-            requested_model=call.get("requested_model"),
-            window_start=call.get("window_start"),
+            call.get("requested_model"),
+            call.get("window_start"),
         )
     elif function == "check_and_increment_batch_counters":
         await hook._check_and_increment_batch_counters(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L719
