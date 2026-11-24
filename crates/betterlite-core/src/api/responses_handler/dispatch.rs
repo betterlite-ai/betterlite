@@ -23,43 +23,11 @@ pub struct HandlerRequest<'call> {
     pub zone: &'call TimeZone,
 }
 
-impl<'call> HandlerRequest<'call> {
-    #[must_use]
-    pub const fn new(
-        setup: IteratorSetup<'call>,
-        stream: Option<bool>,
-        extras: &'call Params,
-        zone: &'call TimeZone,
-    ) -> Self {
-        Self {
-            setup,
-            stream,
-            extras,
-            zone,
-        }
-    }
-}
-
 // async_interactions_api_handler's arguments: the request the caller already built, the iterator parts and the zone; the provider comes from the request, as in LiteLLM's async branch.
 pub struct AsyncHandlerRequest<'call> {
     pub responses_request: &'call ResponsesRequest,
     pub setup: IteratorSetup<'call>,
     pub zone: &'call TimeZone,
-}
-
-impl<'call> AsyncHandlerRequest<'call> {
-    #[must_use]
-    pub const fn new(
-        responses_request: &'call ResponsesRequest,
-        setup: IteratorSetup<'call>,
-        zone: &'call TimeZone,
-    ) -> Self {
-        Self {
-            responses_request,
-            setup,
-            zone,
-        }
-    }
 }
 
 // What a handler hands back: a complete Interactions response, or the iterator over the synthesized events.
