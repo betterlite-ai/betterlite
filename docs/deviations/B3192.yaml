@@ -32,6 +32,14 @@ deviations:
       and every fetch failure still takes the bundled fallback.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L505-L515
   - what: >-
+      The auto-router preset fetch follows no redirect, so a 3xx answer with a Location is a failed fetch that serves
+      the bundled catalog, where LiteLLM's httpx client follows redirects and fetches the catalog the redirect lands on.
+    why: >-
+      betterlite's shared outbound transport refuses redirects so a credential is not replayed to a redirect target, and
+      B1655, B3492, B3493 and B3976 record the same limit for their calls; LiteLLM builds its httpx clients with
+      follow_redirects=True.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618-L625
+  - what: >-
       A null litellm_settings.autorouter_presets_url counts as absent, so the environment URL or the built-in default
       applies, where LiteLLM's settings loop assigns None to litellm.autorouter_presets_url and the fetch then fails
       into the bundled catalog.
@@ -47,4 +55,13 @@ deviations:
       Both bundled files are compiled in, so this response is unreachable with a shipped build; the status matches, and
       betterlite's internal errors keep one envelope.
     link: ""
+  - what: >-
+      An os.environ/ reference in litellm_settings.autorouter_presets_url that names an unset variable fails the config
+      load with an error naming the variable and the key, where LiteLLM resolves the reference to None, applies it as
+      litellm.autorouter_presets_url and serves the bundled catalog once the fetch with no URL fails.
+    why: >-
+      betterlite's config loader resolves every typed os.environ/ reference the same way and reports one it cannot
+      resolve, as sections::public_discovery does for blog_posts_url; a config that names an unset variable stops the
+      load instead of silently serving a fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
 kept_bugs: []
