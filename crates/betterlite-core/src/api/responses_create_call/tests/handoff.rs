@@ -1,4 +1,5 @@
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 
 use crate::api::responses_create::call::ResponsesCreateCall;
 
@@ -20,6 +21,7 @@ pub(super) async fn parameter_handoff() {
     assert_eq!(handoff.contexts(), vec![String::from("ctx")]);
     named_provider().await;
     given_text().await;
+    null_text().await;
 }
 
 // A caller's own text wins over text_format, which the conversion then leaves unread
@@ -36,6 +38,25 @@ async fn given_text() {
     assert_eq!(
         calls[0].text,
         Some(support::json(r#"{"format":{"type":"text"}}"#))
+    );
+    assert_eq!(calls[0].text_format, None);
+}
+
+// An explicit null text takes the default, so text_format still converts; both null filters keep parity with the sync entry
+async fn null_text() {
+    let mut call = support::call_from(
+        r#"{"model":"openai/gpt-4o","input":"hello","text_format":{"type":"json_object"}}"#,
+    );
+    call.text = Some(Json::Null);
+    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
+    let resolver = ScriptedResolver::default();
+    support::drive(&resolver, None, &handoff, &call)
+        .await
+        .expect("the wrapper answers");
+    let calls = handoff.calls();
+    assert_eq!(
+        calls[0].text,
+        Some(support::json(r#"{"format":{"type":"json_object"}}"#))
     );
     assert_eq!(calls[0].text_format, None);
 }

@@ -62,8 +62,16 @@ fn convert(call: &ResponsesCreateCall) -> Result<ResponsesCreateCall, AsyncCreat
 }
 
 fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError> {
-    let text_format = call.text_format.as_ref().map(json_value);
-    let given_text = call.text.as_ref().map(json_value);
+    let text_format = call
+        .text_format
+        .as_ref()
+        .filter(|value| **value != Json::Null)
+        .map(json_value);
+    let given_text = call
+        .text
+        .as_ref()
+        .filter(|value| **value != Json::Null)
+        .map(json_value);
     if given_text.is_none()
         && let Some(JsonValue::Object(fields)) = text_format.as_ref()
         && !matches!(fields.get("type"), Some(JsonValue::Text(kind)) if kind == "json_schema")
