@@ -13,7 +13,7 @@ use crate::organization_create::access::{DatabaseUserLookup, OrgAccessError, Org
 use super::query_service;
 use super::rows::{DailyTeamSpend, OrganizationKeySpend, ScopedKeySpend};
 use super::scope::ScopeColumn;
-use super::sql::{ORGANIZATION_SPEND_REPORT_SQL, scoped_spend_report_sql};
+use super::sql::{ORGANIZATION_SPEND_REPORT_SQL, SCOPED_REPORT_SQL_TEMPLATE, scope_column_sql};
 
 pub type ScopedReportHandle = Option<Arc<dyn ScopedReportStore>>;
 
@@ -96,7 +96,8 @@ impl ScopedReportStore for PostgresScopedReportStore {
         &self,
         request: ScopedReportRequest<'_>,
     ) -> Result<Vec<ScopedKeySpend>, ScopedReportError> {
-        let sql = scoped_spend_report_sql(request.column);
+        let sql =
+            SCOPED_REPORT_SQL_TEMPLATE.replace("{scope_column}", scope_column_sql(request.column));
         let query = Query {
             sql: &sql,
             parameters: vec![request.start, request.end, &request.value],

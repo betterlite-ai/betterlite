@@ -118,13 +118,13 @@ async fn key_reports_fall_back_to_the_hashed_logged_key(#[case] query: &str) {
 #[case::precomputed_hash("hash")]
 #[tokio::test]
 async fn key_reports_accept_their_own_key_and_hash_it(#[case] requested: &str) {
-    let requested = if requested == "hash" {
+    let api_key = if requested == "hash" {
         caller_hash()
     } else {
         requested.to_owned()
     };
     let store = Arc::new(fake_store());
-    let uri = scoped_call("key", &format!("api_key={requested}"));
+    let uri = scoped_call("key", &format!("api_key={api_key}"));
     let reply = call(&uri, Some(&owner()), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(

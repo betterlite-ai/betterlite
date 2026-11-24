@@ -48,13 +48,13 @@ pub(super) fn resolve_scope(
     scope_name: &'static str,
 ) -> Result<String, ScopeError> {
     if let Some(value) = requested.filter(|value| !value.is_empty()) {
-        if !caller_value.is_some_and(|own| own == value) && !admin_view {
+        if caller_value.is_none_or(|own| own != value) && !admin_view {
             return Err(ScopeError::Forbidden(scope_name));
         }
         return Ok(value.to_owned());
     }
-    match caller_value {
-        Some(own) => Ok(own.to_owned()),
-        None => Err(ScopeError::Missing(scope_name)),
-    }
+    let Some(own) = caller_value else {
+        return Err(ScopeError::Missing(scope_name));
+    };
+    Ok(own.to_owned())
 }
