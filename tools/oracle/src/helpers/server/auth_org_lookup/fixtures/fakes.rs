@@ -67,10 +67,13 @@ impl Script {
 
     fn store_failure(&self) -> Option<StoreFailure> {
         let board = self.board.lock().unwrap_or_else(PoisonError::into_inner);
-        if board.fail.iter().any(|script| script == "outage") {
+        let outage = board.fail.iter().any(|script| script == "outage");
+        let fault = board.fail.iter().any(|script| script == "fault");
+        drop(board);
+        if outage {
             return Some(Box::new(AuthReadError::Repository(DbError::NoDbConnected)));
         }
-        if board.fail.iter().any(|script| script == "fault") {
+        if fault {
             return Some(Box::new(AuthReadError::Repository(DbError::CreateNull)));
         }
         None
@@ -98,23 +101,24 @@ impl Script {
             .unwrap_or_else(PoisonError::into_inner)
             .events
             .push(format!("read {key}"));
-        let stored = map.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = stored.get(key);
-        found.cloned()
+        map.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
     }
 
     fn accept_write(&self, key: &str, entry: &Entry<'_>, ttl: f64) -> CacheWrite {
+        let mut board = self.board.lock().unwrap_or_else(PoisonError::into_inner);
+        if board
+            .fail
+            .iter()
+            .any(|script| script == &format!("write {key}"))
         {
-            let mut board = self.board.lock().unwrap_or_else(PoisonError::into_inner);
-            if board
-                .fail
-                .iter()
-                .any(|script| script == &format!("write {key}"))
-            {
-                return Err(cache_failure());
-            }
-            board.events.push(format!("write {key} ttl={ttl}"));
+            drop(board);
+            return Err(cache_failure());
         }
+        board.events.push(format!("write {key} ttl={ttl}"));
+        drop(board);
         match entry {
             Entry::Org(org) => {
                 let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
