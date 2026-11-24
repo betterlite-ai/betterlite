@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from typing import TypeAlias, TypedDict, cast
 
 from litellm.proxy._types import UserAPIKeyAuth
@@ -95,7 +96,8 @@ async def invoke(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> Answer
         return {"function": function, "rejection": None}
     if function == "raise_enqueued_limit_error":
         over_limit = call["over_limit"]
-        hook._raise_enqueued_limit_error(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L591
+        raise_enqueued: Callable[..., None] = hook._raise_enqueued_limit_error  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L591
+        raise_enqueued(
             over_limit=BatchEnqueuedTokenOverLimit(
                 scope=BatchEnqueuedTokenScope(
                     key=over_limit["scope"]["key"],
@@ -107,9 +109,9 @@ async def invoke(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> Answer
             data=call["data"],
             batch_usage=BATCH_USAGE.validate_python(call["batch_usage"]),
         )
-        raise AssertionError("_raise_enqueued_limit_error returned without raising")
     elif function == "raise_rate_limit_error":
-        hook._raise_rate_limit_error(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L618
+        raise_rate: Callable[..., None] = hook._raise_rate_limit_error  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L618
+        raise_rate(
             status_of(call["status"]),
             call["descriptors"],
             BATCH_USAGE.validate_python(call["batch_usage"]),
@@ -143,6 +145,7 @@ async def invoke(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> Answer
             windows,
         )
         return {"function": function, "operations": [operation_view(op) for op in operations]}
+    raise AssertionError("a batch rejection callable returned instead of raising")
 
 
 async def one(call: Call, hook: ScriptedHook, auth: UserAPIKeyAuth) -> tuple[Answer, bool]:
