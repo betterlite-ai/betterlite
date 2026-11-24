@@ -184,6 +184,9 @@ impl FileStreamLogger for RecordingLogger {
     }
 
     async fn async_success_handler(&self, call: SuccessCall) -> Result<(), CallbackFailure> {
+        if let Some(message) = self.fail_success.lock().unwrap().clone() {
+            return Err(CallbackFailure { message });
+        }
         self.record(Call::AsyncSuccess(call));
         Ok(())
     }
@@ -767,6 +770,28 @@ fn stream_success_once_propagates_callback_errors_without_a_second_log() {
     );
     assert!(iter.next_chunk().is_none());
     drop(iter);
+    assert!(stream.logging.logging_completed);
+    assert_eq!(logger.calls().len(), 0);
+}
+
+#[test]
+fn stream_success_once_propagates_async_callback_errors_without_a_second_log() {
+    let logger = Arc::new(RecordingLogger::new("", "", None).failing_success("callback broke"));
+    let mut stream = file_stream(
+        Scripted::new(chunks(&[b"ab"])).asynchronous(),
+        None,
+        None,
+        Some(Arc::clone(&logger)),
+    );
+    let failure = block_on(async {
+        let mut iter = stream.async_iter().unwrap();
+        assert_eq!(iter.next_chunk().await.unwrap().unwrap(), b"ab".to_vec());
+        iter.next_chunk().await.unwrap().unwrap_err()
+    });
+    assert!(
+        matches!(&failure, StreamError::Callback { failure } if failure.message == "callback broke")
+    );
+    assert!(block_on(async { stream.async_iter().unwrap().next_chunk().await }).is_none());
     assert!(stream.logging.logging_completed);
     assert_eq!(logger.calls().len(), 0);
 }
