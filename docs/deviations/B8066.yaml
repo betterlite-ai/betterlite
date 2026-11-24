@@ -30,6 +30,9 @@ deviations:
   - what: The cache switches keep betterlite.cache, set_verbose, default_in_memory_ttl, default_redis_ttl and default_redis_batch_cache_expiry on the caching package itself, so betterlite.caching carries them as well as betterlite; LiteLLM declares them on the litellm package only.
     why: betterlite's top package builds betterlite.cache with a star import of betterlite.caching, which needs the typed globals there to give the attribute a Cache | None type instead of the None the params module declares.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L402-L405
+  - what: betterlite.caching also exports CacheMode and BaseCache; LiteLLM's caching/__init__.py exports Cache and LiteLLMCacheType from caching.py and the backend classes, but neither of those two names.
+    why: The task names both among the package's exports, so a caller who builds or subclasses a cache imports them from the same package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/__init__.py#L1-L11
   - what: This task has no helper oracle cases.
     why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
     link: ""
