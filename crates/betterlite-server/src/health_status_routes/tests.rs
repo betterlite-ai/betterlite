@@ -15,10 +15,11 @@ use crate::health_status_routes::prisma::check_prisma_client;
 use crate::health_status_routes::save::perform_health_check_and_save;
 use crate::health_status_routes::target::resolve_target_model_name;
 use crate::health_status_routes::tests::support::{
-    FakeProvider, admin, assert_issue, background, capture_logs, database as open_database,
-    deployment, deployment_with_info, deployment_without_id, endpoint, failing_router, fixture,
-    get, insert_rows, instant, instant_with_fraction, key_context, latest_checks, object, probe,
-    render, router, row, serve, settle, team_user, text, text_field, unconnected, user,
+    FakeProvider, admin, assert_issue, background, capture_logs, cycle_catalog,
+    database as open_database, deployment, deployment_with_info, deployment_without_id, endpoint,
+    failing_router, fixture, get, insert_rows, instant, instant_with_fraction, key_context,
+    latest_checks, object, probe, render, router, row, serve, settle, team_user, text, text_field,
+    unconnected, user,
 };
 
 #[test]
@@ -213,6 +214,32 @@ async fn save_returns_the_lists_and_their_counts() {
             "unhealthy_count",
         ]
     );
+}
+
+#[tokio::test]
+async fn save_probes_the_dependency_the_catalog_resolves() {
+    let models = vec![
+        deployment_with_info(
+            "router",
+            "id-router",
+            vec![
+                ("model", text("auto_router/default")),
+                ("auto_router_default_model", text("dep")),
+            ],
+            Vec::new(),
+        ),
+        deployment("dep", "id-dep", "openai/dep"),
+    ];
+    let (mut state, provider, _source) = fixture();
+    state.cycle.catalog = Some(cycle_catalog(&models));
+    let mut call = probe(&models);
+    call.model_id = Some("id-router");
+    let outcome = perform_health_check_and_save(&state, call)
+        .await
+        .expect("the probe runs");
+    assert_eq!(provider.calls(), vec!["openai/dep".to_owned()]);
+    // the dependency probe leaves the display rows, so only the router it graded is healthy here
+    assert_eq!(outcome.healthy_count, 1);
 }
 
 #[tokio::test]

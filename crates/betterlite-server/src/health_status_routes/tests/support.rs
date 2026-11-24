@@ -23,9 +23,12 @@ use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_router::catalog_updates::catalog::{CatalogHandle, DeploymentCatalog};
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::model_catalog_lookup::error::LookupError;
 use betterlite_router::model_group_lookups::access_groups::AccessGroupMap;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use chrono::{DateTime, NaiveDateTime, TimeZone as _, Utc};
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
@@ -43,7 +46,8 @@ use crate::health_status_routes::error::HealthRouteError;
 use crate::health_status_routes::health_status_routes;
 use crate::health_status_routes::save::HealthProbeCall;
 use crate::health_status_routes::state::{
-    HealthCheckResults, HealthCycleState, HealthFlag, HealthResultsSource, HealthStatusState,
+    CycleCatalog, HealthCheckResults, HealthCycleState, HealthFlag, HealthResultsSource,
+    HealthStatusState,
 };
 use crate::model_deprecation::clock::UtcClock;
 
@@ -347,6 +351,20 @@ pub(crate) fn background(state: &mut HealthStatusState, healthy: Vec<JsonObject>
 pub(crate) fn serve(state: &mut HealthStatusState, deployments: Vec<DeploymentSpec>) {
     state.router = Some(router(deployments.clone()));
     state.deployments = Some(Arc::new(deployments));
+}
+
+// The router catalog a cycle reads for dependency probes, indexed by model name and id
+pub(crate) fn cycle_catalog(deployments: &[DeploymentSpec]) -> CycleCatalog {
+    let mut catalog = DeploymentCatalog::default();
+    for row in deployments {
+        catalog.push(row.clone());
+    }
+    CycleCatalog {
+        handle: Arc::new(CatalogHandle::from_pointee(catalog)),
+        aliases: Arc::new(AliasMap::new()),
+        routing_groups: Arc::new(RoutingGroupIndex::default()),
+        inferred_provider: Arc::new(|_: &str| None),
+    }
 }
 
 // Hand the pooled client back, then drain the tracker so a handed-off save reaches the table
