@@ -106,7 +106,7 @@ async fn a_failed_record_leaves_the_revision_unapplied() {
     assert_eq!(harness.checks.reloads.cost_map_loaded_at(), moment(4));
     assert_eq!(harness.checks.reloads.cost_map_applied_revision(), 0);
     assert!(logs.contents().contains(
-        "Error in _check_and_reload_model_cost_map: the model cost map reload run could not be recorded: the fake config repository refused the record_run call"
+        "Error in _check_and_reload_model_cost_map: the fake config repository refused the record_run call"
     ));
 }
 
@@ -120,6 +120,6 @@ async fn a_schedule_read_failure_is_logged_and_swallowed() {
     drop(guard);
     assert_eq!(harness.cost_map.calls(), 0);
     assert!(logs.contents().contains(
-        "Error in _check_and_reload_model_cost_map: the model cost map reload schedule could not be read: the fake config repository refused the read_schedule call"
+        "Error in _check_and_reload_model_cost_map: the fake config repository refused the read_schedule call"
     ));
 }
