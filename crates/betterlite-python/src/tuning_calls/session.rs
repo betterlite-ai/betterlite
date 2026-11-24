@@ -108,7 +108,10 @@ fn read_text(outcome: FineTuningReadOutcome) -> Result<String, Raised> {
 }
 
 // The request text of one call, decoded into the call type its method owns.
-fn decode<T: DeserializeOwned>(text: &str) -> PyResult<T> {
+fn decode<T>(text: &str) -> PyResult<T>
+where
+    T: DeserializeOwned,
+{
     match serde_json::from_str(text) {
         Ok(call) => Ok(call),
         Err(source) => Err(PyValueError::new_err(source.to_string())),
@@ -118,7 +121,7 @@ fn decode<T: DeserializeOwned>(text: &str) -> PyResult<T> {
 // The awaitable answer: the same call on the asyncio loop's runtime, handed back as a coroutine.
 fn async_answer(py: Python<'_>, core: Arc<TuningCore>, call: NativeCall) -> PyResult<Py<PyAny>> {
     let future = future_into_py(py, async move {
-        let text = core.execute(call).await.map_err(Raised::to_pyerr)?;
+        let text = core.execute(call).await.map_err(Raised::into_pyerr)?;
         Ok::<String, PyErr>(text)
     })?;
     Ok(future.unbind())
@@ -134,7 +137,7 @@ pub(crate) struct NativeTuningSession {
 impl NativeTuningSession {
     #[new]
     fn new() -> PyResult<Self> {
-        let core = TuningCore::build().map_err(Raised::to_pyerr)?;
+        let core = TuningCore::build().map_err(Raised::into_pyerr)?;
         Ok(Self {
             core: Arc::new(core),
         })
@@ -143,7 +146,7 @@ impl NativeTuningSession {
     fn create(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: CreateCall = decode(raw)?;
         py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Create(Box::new(call)))))
-            .map_err(Raised::to_pyerr)
+            .map_err(Raised::into_pyerr)
     }
 
     fn acreate(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
@@ -155,7 +158,7 @@ impl NativeTuningSession {
     fn retrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: ReadCall = decode(raw)?;
         py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Read(Box::new(call)))))
-            .map_err(Raised::to_pyerr)
+            .map_err(Raised::into_pyerr)
     }
 
     fn aretrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
@@ -167,7 +170,7 @@ impl NativeTuningSession {
     fn list(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: ReadCall = decode(raw)?;
         py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Read(Box::new(call)))))
-            .map_err(Raised::to_pyerr)
+            .map_err(Raised::into_pyerr)
     }
 
     fn alist(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
@@ -179,7 +182,7 @@ impl NativeTuningSession {
     fn cancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: CancelCall = decode(raw)?;
         py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Cancel(Box::new(call)))))
-            .map_err(Raised::to_pyerr)
+            .map_err(Raised::into_pyerr)
     }
 
     fn acancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {

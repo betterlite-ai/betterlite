@@ -27,6 +27,7 @@ const JSON_CONTENT: &str = "application/json";
 const DEFAULT_DEADLINE: Duration = Duration::from_secs(600);
 
 // One fine-tuning call the native side can send, whichever provider or operation named it.
+#[derive(Clone, Copy)]
 pub(crate) enum WireCall<'call> {
     OpenAiCreate(&'call OpenAiCreateCall),
     AzureCreate(&'call AzureCreateCall),
@@ -37,27 +38,31 @@ pub(crate) enum WireCall<'call> {
 }
 
 // The create target's two supported providers; the vertex gap stays the caller's to answer.
-pub(crate) fn create_call(target: &FineTuningCreateTarget) -> Result<WireCall<'_>, WireError> {
-    match target {
-        FineTuningCreateTarget::OpenAi(call) => Ok(WireCall::OpenAiCreate(call)),
-        FineTuningCreateTarget::Azure(call) => Ok(WireCall::AzureCreate(call)),
+pub(crate) const fn create_call(call: &FineTuningCreateTarget) -> Result<WireCall<'_>, WireError> {
+    match call {
+        FineTuningCreateTarget::OpenAi(inner) => Ok(WireCall::OpenAiCreate(inner)),
+        FineTuningCreateTarget::Azure(inner) => Ok(WireCall::AzureCreate(inner)),
         FineTuningCreateTarget::Vertex(_) => Err(WireError::Vertex),
     }
 }
 
-pub(crate) fn read_call<'call>(target: &'call ReadTarget<'call>) -> WireCall<'call> {
-    match target {
-        ReadTarget::OpenAi(call) => WireCall::OpenAiRead(call),
-        ReadTarget::Azure(call) => WireCall::AzureRead(call),
+pub(crate) const fn read_call<'call>(call: &'call ReadTarget<'call>) -> WireCall<'call> {
+    match call {
+        ReadTarget::OpenAi(inner) => WireCall::OpenAiRead(inner),
+        ReadTarget::Azure(inner) => WireCall::AzureRead(inner),
     }
 }
 
-pub(crate) fn cancel_call<'call>(target: &'call FineTuningCancelTarget<'call>) -> WireCall<'call> {
-    match target {
-        FineTuningCancelTarget::OpenAi(call) => WireCall::OpenAiCancel(call),
-        FineTuningCancelTarget::Azure(call) => WireCall::AzureCancel(call),
+pub(crate) const fn cancel_call<'call>(
+    call: &'call FineTuningCancelTarget<'call>,
+) -> WireCall<'call> {
+    match call {
+        FineTuningCancelTarget::OpenAi(inner) => WireCall::OpenAiCancel(inner),
+        FineTuningCancelTarget::Azure(inner) => WireCall::AzureCancel(inner),
     }
 }
+
+type OutboundResult = Result<OutboundRequest, WireError>;
 
 // The one request builder: every operation and provider fills the same outbound shape.
 pub(crate) fn request_for(
@@ -65,93 +70,91 @@ pub(crate) fn request_for(
     integrations: Option<&[Json]>,
 ) -> Result<(OutboundRequest, bool), WireError> {
     match call {
-        WireCall::OpenAiCreate(call) => Ok((
-            OutboundRequest {
-                method: Method::POST,
-                url: openai_jobs_url(&call.api_base, "")?,
-                query: Vec::new(),
-                headers: openai_headers(call.api_key.as_ref(), call.organization.as_deref(), true)?,
-                body: RequestBody::Json(create_body(&call.data, false, integrations)?),
-                deadline: deadline(&call.timeout),
-            },
-            false,
-        )),
-        WireCall::AzureCreate(call) => {
-            let (key, api_base, version) = azure_api(
-                call.api_key.as_ref(),
-                call.api_base.as_deref(),
-                call.api_version.as_deref(),
-            )?;
-            let mut headers = azure_headers(key, version)?;
-            headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT));
-            Ok((
-                OutboundRequest {
-                    method: Method::POST,
-                    url: azure_jobs_url(api_base, version, "")?,
-                    query: azure_query(version),
-                    headers,
-                    body: RequestBody::Json(create_body(&call.data, true, integrations)?),
-                    deadline: deadline(&call.timeout),
-                },
-                true,
-            ))
-        }
-        WireCall::OpenAiRead(call) => Ok((
-            OutboundRequest {
-                method: Method::GET,
-                url: openai_jobs_url(&call.api_base, &read_suffix(call.values.operation))?,
-                query: paging(call.values.operation),
-                headers: openai_headers(call.api_key, call.organization, false)?,
-                body: RequestBody::Empty,
-                deadline: deadline(call.values.timeout),
-            },
-            false,
-        )),
-        WireCall::AzureRead(call) => {
-            let (key, api_base, version) =
-                azure_api(call.api_key, call.api_base, call.api_version)?;
-            let mut query = azure_query(version);
-            query.extend(paging(call.values.operation));
-            Ok((
-                OutboundRequest {
-                    method: Method::GET,
-                    url: azure_jobs_url(api_base, version, &read_suffix(call.values.operation))?,
-                    query,
-                    headers: azure_headers(key, version)?,
-                    body: RequestBody::Empty,
-                    deadline: deadline(call.values.timeout),
-                },
-                true,
-            ))
-        }
-        WireCall::OpenAiCancel(call) => Ok((
-            OutboundRequest {
-                method: Method::POST,
-                url: openai_jobs_url(&call.api_base, &format!("/{}/cancel", call.values.job_id))?,
-                query: Vec::new(),
-                headers: openai_headers(call.api_key, call.organization, false)?,
-                body: RequestBody::Empty,
-                deadline: deadline(call.values.timeout),
-            },
-            false,
-        )),
-        WireCall::AzureCancel(call) => {
-            let (key, api_base, version) =
-                azure_api(call.api_key, call.api_base, call.api_version)?;
-            let suffix = format!("/{}/cancel", call.values.job_id);
-            Ok((
-                OutboundRequest {
-                    method: Method::POST,
-                    url: azure_jobs_url(api_base, version, &suffix)?,
-                    query: azure_query(version),
-                    headers: azure_headers(key, version)?,
-                    body: RequestBody::Empty,
-                    deadline: deadline(call.values.timeout),
-                },
-                true,
-            ))
-        }
+        WireCall::OpenAiCreate(inner) => Ok((openai_create(inner, integrations)?, false)),
+        WireCall::AzureCreate(inner) => Ok((azure_create(inner, integrations)?, true)),
+        WireCall::OpenAiRead(inner) => Ok((openai_read(inner)?, false)),
+        WireCall::AzureRead(inner) => Ok((azure_read(inner)?, true)),
+        WireCall::OpenAiCancel(inner) => Ok((openai_cancel(inner)?, false)),
+        WireCall::AzureCancel(inner) => Ok((azure_cancel(inner)?, true)),
     }
+}
+
+fn openai_create(call: &OpenAiCreateCall, integrations: Option<&[Json]>) -> OutboundResult {
+    Ok(OutboundRequest {
+        method: Method::POST,
+        url: openai_jobs_url(&call.api_base, "")?,
+        query: Vec::new(),
+        headers: openai_headers(call.api_key.as_ref(), call.organization.as_deref(), true)?,
+        body: RequestBody::Json(create_body(&call.data, false, integrations)?),
+        deadline: deadline(&call.timeout),
+    })
+}
+
+fn azure_create(call: &AzureCreateCall, integrations: Option<&[Json]>) -> OutboundResult {
+    let (key, api_base, version) = azure_api(
+        call.api_key.as_ref(),
+        call.api_base.as_deref(),
+        call.api_version.as_deref(),
+    )?;
+    let mut headers = azure_headers(key, version)?;
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT));
+    Ok(OutboundRequest {
+        method: Method::POST,
+        url: azure_jobs_url(api_base, version, "")?,
+        query: azure_query(version),
+        headers,
+        body: RequestBody::Json(create_body(&call.data, true, integrations)?),
+        deadline: deadline(&call.timeout),
+    })
+}
+
+fn openai_read(call: &OpenAiReadCall<'_>) -> OutboundResult {
+    Ok(OutboundRequest {
+        method: Method::GET,
+        url: openai_jobs_url(&call.api_base, &read_suffix(call.values.operation))?,
+        query: paging(call.values.operation),
+        headers: openai_headers(call.api_key, call.organization, false)?,
+        body: RequestBody::Empty,
+        deadline: deadline(call.values.timeout),
+    })
+}
+
+fn azure_read(call: &AzureReadCall<'_>) -> OutboundResult {
+    let (key, api_base, version) = azure_api(call.api_key, call.api_base, call.api_version)?;
+    let mut query = azure_query(version);
+    query.extend(paging(call.values.operation));
+    Ok(OutboundRequest {
+        method: Method::GET,
+        url: azure_jobs_url(api_base, version, &read_suffix(call.values.operation))?,
+        query,
+        headers: azure_headers(key, version)?,
+        body: RequestBody::Empty,
+        deadline: deadline(call.values.timeout),
+    })
+}
+
+fn openai_cancel(call: &OpenAiFineTuningCancel<'_>) -> OutboundResult {
+    Ok(OutboundRequest {
+        method: Method::POST,
+        url: openai_jobs_url(&call.api_base, &format!("/{}/cancel", call.values.job_id))?,
+        query: Vec::new(),
+        headers: openai_headers(call.api_key, call.organization, false)?,
+        body: RequestBody::Empty,
+        deadline: deadline(call.values.timeout),
+    })
+}
+
+fn azure_cancel(call: &AzureFineTuningCancel<'_>) -> OutboundResult {
+    let (key, api_base, version) = azure_api(call.api_key, call.api_base, call.api_version)?;
+    let suffix = format!("/{}/cancel", call.values.job_id);
+    Ok(OutboundRequest {
+        method: Method::POST,
+        url: azure_jobs_url(api_base, version, &suffix)?,
+        query: azure_query(version),
+        headers: azure_headers(key, version)?,
+        body: RequestBody::Empty,
+        deadline: deadline(call.values.timeout),
+    })
 }
 
 // The openai client's own headers: the bearer token, the organization, and JSON on a body-carrying call.
@@ -160,7 +163,7 @@ fn openai_headers(
     organization: Option<&str>,
     is_json: bool,
 ) -> Result<HeaderMap, WireError> {
-    let Some(key) = key else {
+    let Some(found_key) = key else {
         return Err(WireError::MissingOpenAiKey);
     };
     let mut headers = HeaderMap::new();
@@ -170,10 +173,10 @@ fn openai_headers(
     insert_header(
         &mut headers,
         "authorization",
-        &format!("Bearer {}", key.expose_secret()),
+        &format!("Bearer {}", found_key.expose_secret()),
     )?;
-    if let Some(organization) = organization {
-        insert_header(&mut headers, "openai-organization", organization)?;
+    if let Some(name) = organization {
+        insert_header(&mut headers, "openai-organization", name)?;
     }
     Ok(headers)
 }
@@ -184,13 +187,13 @@ fn azure_api<'call>(
     api_base: Option<&'call str>,
     api_version: Option<&'call str>,
 ) -> Result<(&'call SecretString, &'call str, &'call str), WireError> {
-    let Some(key) = key else {
+    let Some(found_key) = key else {
         return Err(WireError::MissingAzureKey);
     };
-    let Some(api_base) = api_base else {
+    let Some(found_base) = api_base else {
         return Err(WireError::MissingAzureBase);
     };
-    Ok((key, api_base, azure_version(api_version)))
+    Ok((found_key, found_base, azure_version(api_version)))
 }
 
 fn openai_jobs_url(api_base: &str, suffix: &str) -> Result<Url, WireError> {

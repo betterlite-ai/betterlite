@@ -52,7 +52,7 @@ fn accepted(response: UpstreamResponse) -> Result<UpstreamResponse, WireError> {
     if (200..300).contains(&response.status) {
         return Ok(response);
     }
-    Err(provider_error(response))
+    Err(provider_error(&response))
 }
 
 // The create call's loose integrations list rides beside the core record, which only takes objects.

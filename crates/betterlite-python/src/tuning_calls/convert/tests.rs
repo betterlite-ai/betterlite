@@ -39,14 +39,10 @@ fn openai_timeout() -> FineTuningTimeout {
 }
 
 fn data() -> FineTuneCreate {
-    let mut record = FineTuneCreate::default();
-    record.model = "gpt-4o-mini".to_owned();
-    record.training_file = "file-abc".to_owned();
-    record.seed = Some(0);
-    record.suffix = Some("trial".to_owned());
-    record.hyperparameters =
-        Some(serde_json::from_str(r#"{"n_epochs": 2}"#).expect("the sample map parses"));
-    record
+    serde_json::from_str(
+        r#"{"model":"gpt-4o-mini","training_file":"file-abc","hyperparameters":{"n_epochs":2},"seed":0,"suffix":"trial"}"#,
+    )
+    .expect("the sample record parses")
 }
 
 fn request_of(call: WireCall<'_>) -> OutboundRequest {
@@ -155,7 +151,7 @@ fn request_create_body_flattens_extra_body() {
     let mut record = data();
     record.extra.insert(
         "extra_body".to_owned(),
-        serde_json::json!({"trainingType": 5}),
+        serde_json::from_str(r#"{"trainingType": 5}"#).expect("the extra body parses"),
     );
     let body = body_of(&create_body(&record, false, None).unwrap());
     assert_eq!(
@@ -186,7 +182,7 @@ fn request_extra_body_overwrites_the_integrations_field() {
     let mut record = data();
     record.extra.insert(
         "extra_body".to_owned(),
-        serde_json::json!({"integrations": []}),
+        serde_json::from_str(r#"{"integrations": []}"#).expect("the extra body parses"),
     );
     let integrations = vec![Json::Text("wandb".to_owned())];
     let body = body_of(&create_body(&record, false, Some(&integrations)).unwrap());
@@ -419,9 +415,9 @@ fn request_cancel_posts_without_a_body() {
 fn request_cancel_keeps_the_structured_read_timeout() {
     let key = SecretString::from("sk-azure");
     let timeout = FineTuningTimeout::Structured(StructuredTimeout {
-        connect: Some(5.0),
-        read: Some(15.0),
-        write: Some(25.0),
+        connect: Some(5.0_f64),
+        read: Some(15.0_f64),
+        write: Some(25.0_f64),
         pool: None,
     });
     let call = AzureFineTuningCancel {
@@ -451,7 +447,7 @@ fn request_a_zero_timeout_falls_back_to_ten_minutes() {
         Duration::from_secs(600)
     );
     let only_connect = FineTuningTimeout::Structured(StructuredTimeout {
-        connect: Some(5.0),
+        connect: Some(5.0_f64),
         read: None,
         write: None,
         pool: None,
@@ -682,10 +678,10 @@ fn error_missing_credentials_name_the_environment_variable() {
     assert!(failure.message.starts_with("Missing credentials."));
     assert!(failure.message.contains("OPENAI_API_KEY"));
     assert!(failure.message.contains("OPENAI_ADMIN_KEY"));
-    let failure = failure_of(wire_failure(WireError::MissingAzureKey));
-    assert_eq!(failure.kind, "Exception");
-    assert!(failure.message.starts_with("Missing credentials."));
-    assert!(failure.message.contains("AZURE_OPENAI_API_KEY"));
+    let azure_failure = failure_of(wire_failure(WireError::MissingAzureKey));
+    assert_eq!(azure_failure.kind, "Exception");
+    assert!(azure_failure.message.starts_with("Missing credentials."));
+    assert!(azure_failure.message.contains("AZURE_OPENAI_API_KEY"));
 }
 
 #[test]
@@ -750,13 +746,17 @@ fn error_read_failures_keep_their_class() {
     )));
     assert_eq!(failure.kind, "BadRequestError");
     assert!(failure.message.contains("'create_batch'"));
-    let failure = failure_of(Raised::from(TuningFailure::Read(
+    let retrieve_failure = failure_of(Raised::from(TuningFailure::Read(
         FineTuningReadError::UnsupportedRetrieve {
             provider: "bedrock".to_owned(),
         },
     )));
-    assert_eq!(failure.kind, "BadRequestError");
-    assert!(failure.message.contains("'retrieve_fine_tuning_job'"));
+    assert_eq!(retrieve_failure.kind, "BadRequestError");
+    assert!(
+        retrieve_failure
+            .message
+            .contains("'retrieve_fine_tuning_job'")
+    );
 }
 
 #[test]
@@ -767,13 +767,13 @@ fn error_page_and_cancel_failures_keep_their_class() {
         },
     )));
     assert_eq!(failure.kind, "APIResponseValidationError");
-    let failure = failure_of(Raised::from(TuningFailure::Cancel(
+    let cancel_failure = failure_of(Raised::from(TuningFailure::Cancel(
         FineTuningCancelError::Unsupported {
             provider: "bedrock".to_owned(),
         },
     )));
-    assert_eq!(failure.kind, "BadRequestError");
-    assert_eq!(failure.status_code, Some(400));
+    assert_eq!(cancel_failure.kind, "BadRequestError");
+    assert_eq!(cancel_failure.status_code, Some(400));
 }
 
 #[test]
@@ -782,11 +782,11 @@ fn error_a_dispatched_failure_keeps_the_native_class() {
         FineTuningCreateError::Dispatch(WireError::MissingOpenAiKey),
     )));
     assert_eq!(failure.kind, "Exception");
-    let failure = failure_of(Raised::from(TuningFailure::Read(
+    let read_failure = failure_of(Raised::from(TuningFailure::Read(
         FineTuningReadError::Dispatch(WireError::MissingAzureKey),
     )));
-    assert_eq!(failure.kind, "Exception");
-    assert!(failure.message.contains("AZURE_OPENAI_API_KEY"));
+    assert_eq!(read_failure.kind, "Exception");
+    assert!(read_failure.message.contains("AZURE_OPENAI_API_KEY"));
 }
 
 #[test]

@@ -6,6 +6,7 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::fine_tuning::error::FineTuneError;
+use http::header::InvalidHeaderValue;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError};
@@ -52,7 +53,7 @@ pub(crate) enum WireError {
     Header {
         name: &'static str,
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the provider answered with status {status}")]
     Provider {
@@ -94,17 +95,17 @@ pub(crate) enum WireError {
 #[derive(Debug)]
 pub(crate) enum Raised {
     Failure(Box<Failure>),
-    Python(PyErr),
+    Python(Box<PyErr>),
 }
 
 impl Raised {
-    pub(crate) fn to_pyerr(self) -> PyErr {
+    pub(crate) fn into_pyerr(self) -> PyErr {
         match self {
             Self::Failure(failure) => match serde_json::to_string(&failure) {
                 Ok(text) => NativeTuningError::new_err(text),
                 Err(_encoding) => PyRuntimeError::new_err(failure.message),
             },
-            Self::Python(error) => error,
+            Self::Python(error) => *error,
         }
     }
 }

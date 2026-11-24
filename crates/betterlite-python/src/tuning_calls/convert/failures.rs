@@ -18,7 +18,7 @@ const AZURE_KEY_MESSAGE: &str = "Missing credentials. Please pass one of `api_ke
 const AZURE_BASE_MESSAGE: &str = "Must provide one of the `base_url` or `azure_endpoint` arguments, or the `AZURE_OPENAI_ENDPOINT` environment variable";
 const VERTEX_MESSAGE: &str = "the vertex_ai fine-tuning call is not implemented yet (B1384)";
 
-pub(crate) fn provider_error(response: UpstreamResponse) -> WireError {
+pub(crate) fn provider_error(response: &UpstreamResponse) -> WireError {
     let headers = response_headers(&response.headers);
     let body = match serde_json::from_slice::<Json>(&response.body) {
         Ok(value) => value,
@@ -122,34 +122,32 @@ pub(crate) fn wire_failure(source: WireError) -> Raised {
             body,
             headers,
         } => Raised::Failure(Box::new(provider_failure(status, body, headers))),
-        WireError::MissingAzureBase => {
-            Raised::Python(PyValueError::new_err(String::from(AZURE_BASE_MESSAGE)))
-        }
-        rest => Raised::Failure(Box::new(plain_failure(rest))),
+        WireError::MissingAzureBase => Raised::Python(Box::new(PyValueError::new_err(
+            String::from(AZURE_BASE_MESSAGE),
+        ))),
+        rest @ WireError::Body { .. }
+        | rest @ WireError::Encode { .. }
+        | rest @ WireError::Decode { .. }
+        | rest @ WireError::Url { .. }
+        | rest @ WireError::Header { .. }
+        | rest @ WireError::Transport { .. }
+        | rest @ WireError::Proxy { .. }
+        | rest @ WireError::Config { .. }
+        | rest @ WireError::Client { .. }
+        | rest @ WireError::MissingOpenAiKey
+        | rest @ WireError::MissingAzureKey
+        | rest @ WireError::Vertex => Raised::Failure(Box::new(plain_failure(&rest))),
     }
 }
 
 // The exception class and text of a failure that has no provider response to keep.
-fn plain_failure(source: WireError) -> Failure {
-    let text = match &source {
-        WireError::MissingOpenAiKey => String::from(OPENAI_KEY_MESSAGE),
-        WireError::MissingAzureKey => String::from(AZURE_KEY_MESSAGE),
-        WireError::Vertex => String::from(VERTEX_MESSAGE),
-        WireError::Body { .. }
-        | WireError::Encode { .. }
-        | WireError::Decode { .. }
-        | WireError::Url { .. }
-        | WireError::Header { .. }
-        | WireError::Provider { .. }
-        | WireError::Transport { .. }
-        | WireError::Proxy { .. }
-        | WireError::Config { .. }
-        | WireError::Client { .. }
-        | WireError::MissingAzureBase => source.to_string(),
-    };
-    let kind = match &source {
-        WireError::Transport { .. } => "APIConnectionError",
-        WireError::Decode { .. } => "APIResponseValidationError",
+fn plain_failure(source: &WireError) -> Failure {
+    let (kind, text) = match source {
+        WireError::MissingOpenAiKey => ("Exception", String::from(OPENAI_KEY_MESSAGE)),
+        WireError::MissingAzureKey => ("Exception", String::from(AZURE_KEY_MESSAGE)),
+        WireError::Vertex => ("Exception", String::from(VERTEX_MESSAGE)),
+        WireError::Transport { .. } => ("APIConnectionError", source.to_string()),
+        WireError::Decode { .. } => ("APIResponseValidationError", source.to_string()),
         WireError::Body { .. }
         | WireError::Encode { .. }
         | WireError::Url { .. }
@@ -158,10 +156,7 @@ fn plain_failure(source: WireError) -> Failure {
         | WireError::Proxy { .. }
         | WireError::Config { .. }
         | WireError::Client { .. }
-        | WireError::MissingOpenAiKey
-        | WireError::MissingAzureKey
-        | WireError::MissingAzureBase
-        | WireError::Vertex => "Exception",
+        | WireError::MissingAzureBase => ("Exception", source.to_string()),
     };
     failure(kind, text)
 }
@@ -176,47 +171,43 @@ pub(crate) enum TuningFailure {
 // One place maps every fine-tuning failure, so the create, read and cancel paths cannot drift apart.
 impl From<TuningFailure> for Raised {
     fn from(outcome: TuningFailure) -> Self {
+        let message = match &outcome {
+            TuningFailure::Create(error) => error.to_string(),
+            TuningFailure::Read(error) => error.to_string(),
+            TuningFailure::Cancel(error) => error.to_string(),
+        };
         match outcome {
-            TuningFailure::Create(error) => {
-                let message = error.to_string();
-                match error {
-                    FineTuningCreateError::Unsupported { provider } => {
-                        Raised::Failure(Box::new(unsupported_failure(&provider, message)))
-                    }
-                    FineTuningCreateError::Timeout(_) | FineTuningCreateError::Data(_) => {
-                        Raised::Python(PyValueError::new_err(message))
-                    }
-                    FineTuningCreateError::Dispatch(source) => wire_failure(source),
+            TuningFailure::Create(error) => match error {
+                FineTuningCreateError::Unsupported { provider } => {
+                    Self::Failure(Box::new(unsupported_failure(&provider, message)))
                 }
-            }
-            TuningFailure::Read(error) => {
-                let message = error.to_string();
-                match error {
-                    FineTuningReadError::Timeout(_) => {
-                        Raised::Python(PyValueError::new_err(message))
-                    }
-                    FineTuningReadError::UnsupportedList { provider }
-                    | FineTuningReadError::UnsupportedRetrieve { provider } => {
-                        Raised::Failure(Box::new(unsupported_failure(&provider, message)))
-                    }
-                    FineTuningReadError::Decode(_) | FineTuningReadError::Page { .. } => {
-                        Raised::Failure(Box::new(failure("APIResponseValidationError", message)))
-                    }
-                    FineTuningReadError::Dispatch(source) => wire_failure(source),
+                FineTuningCreateError::Timeout(_) | FineTuningCreateError::Data(_) => {
+                    Self::Python(Box::new(PyValueError::new_err(message)))
                 }
-            }
-            TuningFailure::Cancel(error) => {
-                let message = error.to_string();
-                match error {
-                    FineTuningCancelError::Timeout(_) => {
-                        Raised::Python(PyValueError::new_err(message))
-                    }
-                    FineTuningCancelError::Unsupported { provider } => {
-                        Raised::Failure(Box::new(unsupported_failure(&provider, message)))
-                    }
-                    FineTuningCancelError::Dispatch(source) => wire_failure(source),
+                FineTuningCreateError::Dispatch(source) => wire_failure(source),
+            },
+            TuningFailure::Read(error) => match error {
+                FineTuningReadError::Timeout(_) => {
+                    Self::Python(Box::new(PyValueError::new_err(message)))
                 }
-            }
+                FineTuningReadError::UnsupportedList { provider }
+                | FineTuningReadError::UnsupportedRetrieve { provider } => {
+                    Self::Failure(Box::new(unsupported_failure(&provider, message)))
+                }
+                FineTuningReadError::Decode(_) | FineTuningReadError::Page { .. } => {
+                    Self::Failure(Box::new(failure("APIResponseValidationError", message)))
+                }
+                FineTuningReadError::Dispatch(source) => wire_failure(source),
+            },
+            TuningFailure::Cancel(error) => match error {
+                FineTuningCancelError::Timeout(_) => {
+                    Self::Python(Box::new(PyValueError::new_err(message)))
+                }
+                FineTuningCancelError::Unsupported { provider } => {
+                    Self::Failure(Box::new(unsupported_failure(&provider, message)))
+                }
+                FineTuningCancelError::Dispatch(source) => wire_failure(source),
+            },
         }
     }
 }
