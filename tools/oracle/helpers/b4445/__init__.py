@@ -3,7 +3,7 @@ from typing import Final, TypedDict
 
 import litellm
 from fastapi import HTTPException
-from litellm.proxy.health_endpoints import _health_endpoints as health  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L615-L642
+from litellm.proxy.health_endpoints import _health_endpoints as health  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L615-L642
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -100,7 +100,7 @@ def convert_rows(value: ConvertInput) -> JsonValue:
     converted: list[JsonValue] = []
     for row in value["rows"]:
         record = CheckRecord(row)
-        item: dict[str, JsonValue] = health._convert_health_check_to_dict(record)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L615-L630
+        item: dict[str, JsonValue] = health._convert_health_check_to_dict(record)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L615-L630
         converted.append(item)
     return converted
 
@@ -108,22 +108,19 @@ def convert_rows(value: ConvertInput) -> JsonValue:
 def target_answer(case: Case) -> JsonValue:
     router = None if case["router"] is None else FakeRouter(case["router"])
     try:
-        model_name = health._health_endpoint_resolve_target_model_name(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1090-L1120
+        model_name = health._health_endpoint_resolve_target_model_name(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1090-L1120
             case["model"],
             case["model_id"],
             router,
         )
-    except HTTPException as error:
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1090-L1120
         detail = ERROR_DETAIL.validate_python(error.detail)
         return {"error": {"status": error.status_code, "detail": {"error": detail["error"]}}}
     return {"model_name": model_name}
 
 
 def resolve_targets(value: ResolveInput) -> JsonValue:
-    answers: list[JsonValue] = []
-    for case in value["cases"]:
-        answers.append(target_answer(case))
-    return answers
+    return [target_answer(case) for case in value["cases"]]
 
 
 def run(input_value: Input) -> JsonValue:
