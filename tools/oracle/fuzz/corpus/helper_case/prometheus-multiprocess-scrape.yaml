@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-multiprocess-corpus-scrape
+call:
+  b10095:
+    files:
+      - name: gauge_livesum_1001.db
+        entries:
+          - {metric: in_flight, sample: in_flight, labels: {}, help: In flight, value: 2.0, timestamp: 0.0}
+      - name: gauge_livesum_1002.db
+        entries:
+          - {metric: in_flight, sample: in_flight, labels: {}, help: In flight, value: 4.0, timestamp: 0.0}
+    call: scrape
+    accept: ""
+env: {}
+compare: {ignore: []}

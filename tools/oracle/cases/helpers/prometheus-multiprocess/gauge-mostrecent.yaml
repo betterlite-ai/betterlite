@@ -1,0 +1,30 @@
+kind: helper
+name: prometheus-multiprocess-gauge-mostrecent
+call:
+  b10095:
+    files:
+      - name: gauge_mostrecent_1001.db
+        entries:
+          - {metric: last_seen, sample: last_seen, labels: {}, help: Last seen, value: 1.0, timestamp: 5.0}
+      - name: gauge_mostrecent_1002.db
+        entries:
+          - {metric: last_seen, sample: last_seen, labels: {}, help: Last seen, value: 2.0, timestamp: 7.0}
+      - name: gauge_mostrecent_1003.db
+        entries:
+          - {metric: last_seen, sample: last_seen, labels: {}, help: Last seen, value: 3.0, timestamp: 7.0}
+      - name: gauge_mostrecent_1004.db
+        entries:
+          - {metric: last_seen, sample: last_seen, labels: {}, help: Last seen, value: 4.0, timestamp: 6.0}
+      - name: gauge_mostrecent_1005.db
+        entries:
+          - {metric: never_seen, sample: never_seen, labels: {}, help: Never seen, value: 9.0, timestamp: 0.0}
+      - name: gauge_livemostrecent_1002.db
+        entries:
+          - {metric: late, sample: late, labels: {}, help: Late, value: 6.0, timestamp: 0.0}
+      - name: gauge_livemostrecent_1003.db
+        entries:
+          - {metric: late, sample: late, labels: {}, help: Late, value: 5.0, timestamp: 3.0}
+    call: merge
+    accept: ""
+env: {}
+compare: {ignore: []}

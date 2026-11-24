@@ -1,0 +1,39 @@
+kind: helper
+name: prometheus-multiprocess-gauge-modes
+call:
+  b10095:
+    files:
+      - name: gauge_all_1001.db
+        entries:
+          - {metric: queue_length, sample: queue_length, labels: {model: a}, help: Queue length, value: 3.0, timestamp: 0.0}
+      - name: gauge_all_1002.db
+        entries:
+          - {metric: queue_length, sample: queue_length, labels: {model: a}, help: Queue length, value: 5.0, timestamp: 0.0}
+      - name: gauge_livesum_1001.db
+        entries:
+          - {metric: in_flight, sample: in_flight, labels: {}, help: In flight, value: 2.0, timestamp: 0.0}
+      - name: gauge_livesum_1002.db
+        entries:
+          - {metric: in_flight, sample: in_flight, labels: {}, help: In flight, value: 4.0, timestamp: 0.0}
+      - name: gauge_min_1001.db
+        entries:
+          - {metric: workers, sample: workers, labels: {}, help: Workers, value: 7.0, timestamp: 0.0}
+      - name: gauge_min_1002.db
+        entries:
+          - {metric: workers, sample: workers, labels: {}, help: Workers, value: 3.0, timestamp: 0.0}
+      - name: gauge_max_1001.db
+        entries:
+          - {metric: threads, sample: threads, labels: {}, help: Threads, value: 4.0, timestamp: 0.0}
+      - name: gauge_max_1002.db
+        entries:
+          - {metric: threads, sample: threads, labels: {}, help: Threads, value: 7.0, timestamp: 0.0}
+      - name: gauge_mostrecent_1001.db
+        entries:
+          - {metric: last_seen, sample: last_seen, labels: {}, help: Last seen, value: 1.0, timestamp: 5.0}
+      - name: gauge_mostrecent_1002.db
+        entries:
+          - {metric: last_seen, sample: last_seen, labels: {}, help: Last seen, value: 2.0, timestamp: 9.0}
+    call: merge
+    accept: ""
+env: {}
+compare: {ignore: []}
