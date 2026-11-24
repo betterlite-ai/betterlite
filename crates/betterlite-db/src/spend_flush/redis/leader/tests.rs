@@ -156,7 +156,7 @@ async fn a_partial_entity_commit_restores_only_the_uncommitted_tables() {
     assert!(
         leftover
             .team_member_list_transactions
-            .contains_key("t1::u1"),
+            .contains_key("team_id::t1::user_id::u1"),
         "a requeue-safe failure keeps the table in flight"
     );
     assert!(leftover.org_list_transactions.contains_key("o 1"));

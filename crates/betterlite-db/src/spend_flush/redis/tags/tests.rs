@@ -23,7 +23,7 @@ use crate::spend_flush::daily::{DailyCommitParts, DailyFlushError};
 use crate::spend_flush::fakes::tests::{ChunkStep, Events, FakeDailyError, FakeDailyWriter};
 use crate::spend_flush::redis::fakes::tests::{
     CountingPause, UnreachableLists, buffer as redis_buffer, cache_for, daily_queue, daily_row,
-    length, parts_with_pause, pod, publisher_over, push, range, raw, redis_publisher,
+    exists, length, parts_with_pause, pod, publisher_over, push, range, raw, redis_publisher,
 };
 use crate::spend_flush::redis::jobs::SPEND_JOB_RETRIES;
 use crate::spend_flush::redis::tags::{
@@ -116,7 +116,7 @@ async fn the_tag_flusher_commits_under_its_own_lock_while_the_main_spend_lock_is
         0
     );
     assert_eq!(
-        length(&mut connection, &lease_key(DB_SPEND_UPDATE_JOB_NAME)).await,
+        exists(&mut connection, &lease_key(DB_SPEND_UPDATE_JOB_NAME)).await,
         1,
         "the main spend job lease belongs to the other holder and stays held"
     );

@@ -265,6 +265,15 @@ pub(crate) async fn length(connection: &mut MultiplexedConnection, key: &str) ->
     cmd("LLEN").arg(key).query_async(connection).await.unwrap()
 }
 
+// Whether a key exists at all, for the keys the pod locks hold as strings rather than lists.
+pub(crate) async fn exists(connection: &mut MultiplexedConnection, key: &str) -> i64 {
+    cmd("EXISTS")
+        .arg(key)
+        .query_async(connection)
+        .await
+        .unwrap()
+}
+
 pub(crate) async fn range(
     connection: &mut MultiplexedConnection,
     key: &str,
@@ -600,7 +609,7 @@ pub(crate) fn entity_batch() -> SpendUpdateTransactions {
         .insert("t1".to_owned(), amount("1.5"));
     batch
         .team_member_list_transactions
-        .insert("t1::u1".to_owned(), amount("1.5"));
+        .insert("team_id::t1::user_id::u1".to_owned(), amount("1.5"));
     batch
         .org_list_transactions
         .insert("o 1".to_owned(), amount("1.5"));
