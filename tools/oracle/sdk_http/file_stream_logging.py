@@ -111,11 +111,13 @@ def async_stream(stream: Iterator[bytes] | AsyncIterator[bytes]) -> AsyncIterato
 async def run_case(call: FileStreamLoggingCall, api_base: str) -> Outcome:
     capture = Capture()
     logging_obj = logging_fixture(capture)
+    litellm_params: dict[str, JsonValue] = {"api_base": api_base}
+    headers: dict[str, str] = {}
     result = await HANDLER.async_retrieve_file_content_streaming(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5109-L5119
         file_content_request=FileContentRequest(file_id=call.file_id),
         provider_config=provider_config(),
-        litellm_params={"api_base": api_base},
-        headers={},
+        litellm_params=litellm_params,
+        headers=headers,
         logging_obj=logging_obj,
         chunk_size=call.chunk_size,
     )
