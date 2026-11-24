@@ -1,0 +1,12 @@
+kind: helper
+name: vector-index-admin-lifecycle-read-methods
+call:
+  b10071: {function: lifecycle, method: "GET", path: "/azure_ai/indexes/my-index", index_name: "my-index"}
+calls:
+  - b10071: {function: lifecycle, method: "HEAD", path: "/azure_ai/indexes/my-index", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "OPTIONS", path: "/indexes/my-index", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "GET", path: "/v1/indexes", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "PUT", path: "/indexes/", index_name: "my-index"}
+env: {}
+compare: {ignore: []}

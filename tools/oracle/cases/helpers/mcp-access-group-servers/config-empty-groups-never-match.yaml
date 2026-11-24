@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-access-group-servers-config-empty-groups-never-match
+call:
+  b10078:
+    servers:
+      - {server_id: absent, name: Absent, transport: http, access_groups: null}
+      - {server_id: empty, name: Empty, transport: http, access_groups: []}
+      - {server_id: blank, name: Blank, transport: http, access_groups: [""]}
+    access_groups: [team-a]
+calls:
+  - b10078:
+      servers:
+        - {server_id: absent, name: Absent, transport: http, access_groups: null}
+        - {server_id: empty, name: Empty, transport: http, access_groups: []}
+        - {server_id: blank, name: Blank, transport: http, access_groups: [""]}
+      access_groups: [""]
+env: {}
+compare: {ignore: []}

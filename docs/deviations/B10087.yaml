@@ -1,0 +1,13 @@
+task: B10087
+deviations:
+  - what: >-
+      resolve_fuse_profile takes an Option<&ProfileText> as its text rather than a raw str, so a text
+      that is empty once stripped or longer than 4000 characters is refused before the lookup and the
+      b10087 helper answers a ConfigError for it. LiteLLM returns whatever str it receives, unchanged,
+      whenever the preset id is absent or names a known preset.
+    why: >-
+      The task fixes the signature on the validated type, and B353 decodes llm_v2_config's
+      efficient_profile, capable_profile and harness through ProfileText before it calls the lookup, so a
+      working config reaches the lookup with a valid text, as LiteLLM's own LLMV2Config does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.py#L44-L52
+kept_bugs: []

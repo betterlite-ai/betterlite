@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-public-servers-database-record-wins
+call:
+  b10079:
+    function: is_public
+    server_id: shared
+    config_servers:
+      - {server_id: shared, name: Shared Config, transport: http, available_on_public_internet: true}
+    db_servers:
+      - {server_id: shared, name: Shared Database, transport: http, available_on_public_internet: false}
+    public_mcp_servers: []
+    public_hub_strict: false
+    public_ids: null
+env: {}
+compare: {ignore: []}
