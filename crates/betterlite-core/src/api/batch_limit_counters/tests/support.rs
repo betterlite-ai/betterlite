@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -54,6 +54,7 @@ pub(super) struct ScriptedLimiter {
     pub(super) responses: Arc<Mutex<VecDeque<Result<BatchCounterResponse, LimiterFailure>>>>,
     pub(super) calls: Arc<Mutex<Vec<(Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>)>>>,
     pub(super) base_calls: Arc<Mutex<u32>>,
+    project_usages: Arc<Mutex<Vec<IndexMap<String, BatchModelUsage>>>>,
 }
 
 impl ScriptedLimiter {
@@ -66,12 +67,21 @@ impl ScriptedLimiter {
             responses: Arc::new(Mutex::new(VecDeque::from(responses))),
             calls: Arc::default(),
             base_calls: Arc::default(),
+            project_usages: Arc::default(),
         }
     }
 
     pub(super) fn calls(&self) -> Vec<(Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>)> {
         let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.clone()
+    }
+
+    pub(super) fn project_usages(&self) -> Vec<IndexMap<String, BatchModelUsage>> {
+        let usages = self
+            .project_usages
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        usages.clone()
     }
 
     pub(super) fn base_calls(&self) -> u32 {
@@ -102,8 +112,12 @@ impl BatchCounterLimiter for ScriptedLimiter {
     fn project_io_descriptors(
         &self,
         _auth: &UserAPIKeyAuth,
-        _per_model_usage: &IndexMap<String, BatchModelUsage>,
+        per_model_usage: &IndexMap<String, BatchModelUsage>,
     ) -> (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>) {
+        self.project_usages
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(per_model_usage.clone());
         self.project.clone()
     }
 
@@ -440,6 +454,15 @@ pub(super) fn input(calls: Vec<BatchLimitCounterCall>) -> BatchLimitCountersInpu
     BatchLimitCountersInput {
         principal: BatchLimitPrincipal(BTreeMap::new()),
         calls,
+    }
+}
+
+// a call that answers without rejecting and touches no dependency
+pub(super) fn refund_call() -> BatchLimitCounterCall {
+    BatchLimitCounterCall::BuildTpdRefundOps {
+        descriptors: Vec::new(),
+        tokens: 0,
+        reservation_windows: BTreeSet::new(),
     }
 }
 

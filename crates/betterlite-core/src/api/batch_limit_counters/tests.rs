@@ -17,6 +17,7 @@ use crate::api::batch_limit_counters::records::{
 use crate::api::batch_limit_descriptors::descriptors::{
     BatchDescriptorIncrements, TPD_WINDOW_SECONDS,
 };
+use crate::api::batch_limit_descriptors::input::BatchModelUsage;
 
 use self::support::*;
 
@@ -740,6 +741,16 @@ async fn counter_partial_failure(#[case] limiter_fails: bool) {
         ]))
         .await
         .unwrap();
+    assert_eq!(
+        harness.limiter.project_usages(),
+        vec![IndexMap::from_iter([(
+            String::from("gpt-4o"),
+            BatchModelUsage {
+                total_tokens: 0,
+                output_tokens: 30,
+            },
+        )])]
+    );
     let calls = harness.limiter.calls();
     assert_eq!(harness.limiter.base_calls(), 1);
     assert_eq!(calls.len(), 1);
@@ -776,4 +787,43 @@ async fn counter_partial_failure(#[case] limiter_fails: bool) {
         vec![String::from("{api_key_tpd:sk-1}:window")]
     );
     assert!(harness.stash.operations().is_empty());
+}
+
+// rejection_stops_later_calls: a rejection ends the run, while a run without one answers every call
+#[tokio::test]
+async fn rejection_stops_later_calls() {
+    let harness = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    let all = harness
+        .service
+        .run(&input(vec![refund_call(), refund_call()]))
+        .await
+        .unwrap();
+    assert_eq!(all.answers.len(), 2);
+    let stopped = harness
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::RaiseRateLimitError {
+                status: status(
+                    BatchCounterCode::OverLimit,
+                    "api_key",
+                    Some("sk-1"),
+                    BatchCounterLimitType::Requests,
+                    5,
+                    0,
+                ),
+                descriptors: vec![descriptor("api_key", "sk-1", Some(WINDOW), Some(5), None)],
+                batch_usage: usage(120, 6, 0),
+                limit_type: String::from("requests"),
+                requested_model: None,
+                window_start: None,
+            },
+            refund_call(),
+        ]))
+        .await
+        .unwrap();
+    assert_eq!(stopped.answers.len(), 1);
 }
