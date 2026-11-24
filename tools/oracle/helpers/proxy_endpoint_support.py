@@ -74,12 +74,12 @@ class RecordAnswer(TypedDict):
     notice_logged: bool
 
 
-class NoticeMismatch(RuntimeError):
+class NoticeMismatchError(RuntimeError):
     pass
 
 
-# getattr(e, "status_code", None) must answer None for a failure without one, so it is set only when supplied
-class Failure(Exception):
+# status_code is set only when the case supplies one, so getattr answers None otherwise
+class FailureError(Exception):
     def __init__(self, message: str, status_code: int | None, param: str | None) -> None:
         super().__init__(message)
         if status_code is not None:
@@ -117,7 +117,7 @@ def caught_exception(spec: ExceptionSpec) -> tuple[Exception, dict[str, str]]:
         case "proxy":
             return proxy_value(spec)
         case "failure":
-            return Failure(spec["message"], spec["status_code"], spec["param"]), {}
+            return FailureError(spec["message"], spec["status_code"], spec["param"]), {}
 
 
 def observed_headers(owned: dict[str, str], litellm_call_id: str | None) -> dict[str, str]:
@@ -161,7 +161,7 @@ def record_answer(call: RecordCall) -> RecordAnswer:
     raised, owned = caught_exception(call["exception"])
     outcome = observed_record(raised, call["litellm_call_id"], owned)
     if outcome["notice_logged"] != call["notice"]:
-        raise NoticeMismatch("LiteLLM logged a notice the case did not script")
+        raise NoticeMismatchError("LiteLLM logged a notice the case did not script")
     return outcome
 
 

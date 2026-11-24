@@ -65,11 +65,8 @@ struct ScriptedDiagnostics {
 
 impl ProxyDiagnostics for ScriptedDiagnostics {
     fn bug_report_notice(&self, _failure: &FailureFacts<'_>) -> Option<String> {
-        if self.notice {
-            Some(format!("{NOTICE_PREFIX} scripted notice"))
-        } else {
-            None
-        }
+        self.notice
+            .then(|| format!("{NOTICE_PREFIX} scripted notice"))
     }
 }
 
@@ -93,6 +90,12 @@ impl Visit for Message {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.0 = value.to_owned();
         }
     }
 }

@@ -221,11 +221,11 @@ pub fn is_known_model(
     model: Option<&str>,
     router: Option<&dyn ModelNameCatalog>,
 ) -> Result<bool, LookupError> {
-    let (Some(model), Some(router)) = (model, router) else {
+    let (Some(name), Some(catalog)) = (model, router) else {
         return Ok(false);
     };
-    let names = router.model_names()?;
-    Ok(names.iter().any(|name| name == model))
+    let names = catalog.model_names()?;
+    Ok(names.iter().any(|known| known == name))
 }
 
 // ProxyLogging._arelease_max_parallel_requests_on_disconnect: only the v3 handler is awaited, never a retry

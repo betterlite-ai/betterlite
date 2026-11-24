@@ -126,11 +126,8 @@ impl ProxyDiagnostics for RecordingDiagnostics {
                 status_code: failure.status_code,
                 log_at_ask: self.logs.contents(),
             });
-        if self.notice {
-            Some(format!("{NOTICE_PREFIX} {DIAGNOSTIC_NOTICE}"))
-        } else {
-            None
-        }
+        self.notice
+            .then(|| format!("{NOTICE_PREFIX} {DIAGNOSTIC_NOTICE}"))
     }
 }
 
@@ -318,6 +315,16 @@ fn capture_logs() -> (LogBuffer, DefaultGuard) {
     (buffer, set_default(subscriber))
 }
 
+fn recording_diagnostics(logs: &LogBuffer, notice: bool) -> (RecordingDiagnostics, Arc<Audit>) {
+    let audit = Arc::new(Audit::default());
+    let diagnostics = RecordingDiagnostics {
+        logs: logs.clone(),
+        notice,
+        audit: Arc::clone(&audit),
+    };
+    (diagnostics, audit)
+}
+
 fn principal(api_key: &str) -> UserAPIKeyAuth {
     let fields = BTreeMap::from([("api_key".to_owned(), JsonData::String(api_key.to_owned()))]);
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the principal builds")
@@ -472,26 +479,41 @@ fn call_id_precedence(
     assert_eq!(record.headers, expected_headers);
 }
 
-#[rstest]
-#[case::read_only(Some(read_only_error()), true)]
-#[case::other_failure(Some(other_error()), false)]
-#[case::no_database(None, false)]
-#[tokio::test]
-async fn recovery_submission(#[case] database: Option<DbError>, #[case] expected: bool) {
+fn submitted_recovery(
+    database: Option<&DbError>,
+) -> (TaskTracker, Arc<PendingWriter>, ProxyException) {
     let tracker = TaskTracker::new();
     let writer = Arc::new(PendingWriter::default());
     let recovery = TrackedRecovery {
         tracker: tracker.clone(),
         writer: Arc::clone(&writer),
     };
-    let facts = failure_facts("boom", None, None, database.as_ref());
-
+    let facts = failure_facts("boom", None, None, database);
     let record = handle_exception_on_proxy(
         CaughtException::Failure(facts),
         None,
         &SilentDiagnostics,
         Some(&recovery),
     );
+    (tracker, writer, record)
+}
+
+fn assert_recovery_reasons(writer: &PendingWriter, expected: bool) {
+    let reasons = writer.reasons.lock().unwrap();
+    if expected {
+        assert_eq!(*reasons, [READ_ONLY_RECOVERY_REASON.to_owned()]);
+    } else {
+        assert!(reasons.is_empty());
+    }
+}
+
+#[rstest]
+#[case::read_only(Some(read_only_error()), true)]
+#[case::other_failure(Some(other_error()), false)]
+#[case::no_database(None, false)]
+#[tokio::test]
+async fn recovery_submission(#[case] database: Option<DbError>, #[case] expected: bool) {
+    let (tracker, writer, record) = submitted_recovery(database.as_ref());
 
     assert_eq!(record.code, "500");
     assert_eq!(
@@ -508,16 +530,8 @@ async fn recovery_submission(#[case] database: Option<DbError>, #[case] expected
     }
     tracker.close();
     tracker.wait().await;
-
     assert_eq!(writer.completed.load(Ordering::SeqCst), expected);
-    if expected {
-        assert_eq!(
-            *writer.reasons.lock().unwrap(),
-            [READ_ONLY_RECOVERY_REASON.to_owned()]
-        );
-    } else {
-        assert!(writer.reasons.lock().unwrap().is_empty());
-    }
+    assert_recovery_reasons(&writer, expected);
 }
 
 #[test]
@@ -531,12 +545,7 @@ fn diagnostics_order() {
 
 fn notice_logs_before_the_message_is_stripped() {
     let (logs, _guard) = capture_logs();
-    let audit = Arc::new(Audit::default());
-    let diagnostics = RecordingDiagnostics {
-        logs: logs.clone(),
-        notice: true,
-        audit: Arc::clone(&audit),
-    };
+    let (diagnostics, audit) = recording_diagnostics(&logs, true);
     let message = format!("boom\n{NOTICE_PREFIX} filed later");
 
     let record = handle_exception_on_proxy(
@@ -566,12 +575,7 @@ fn notice_logs_before_the_message_is_stripped() {
 
 fn status_failure_skips_the_notice() {
     let (logs, _guard) = capture_logs();
-    let audit = Arc::new(Audit::default());
-    let diagnostics = RecordingDiagnostics {
-        logs: logs.clone(),
-        notice: false,
-        audit: Arc::clone(&audit),
-    };
+    let (diagnostics, audit) = recording_diagnostics(&logs, false);
 
     let record = handle_exception_on_proxy(
         CaughtException::Failure(failure_facts("boom", Some(429), None, None)),
@@ -594,16 +598,11 @@ fn status_failure_skips_the_notice() {
 
 fn recovery_precedes_the_diagnostics() {
     let (logs, _guard) = capture_logs();
-    let audit = Arc::new(Audit::default());
+    let (diagnostics, audit) = recording_diagnostics(&logs, false);
     let recovery = RecordingRecovery {
         logs: logs.clone(),
         audit: Arc::clone(&audit),
         submitted: Mutex::new(Vec::new()),
-    };
-    let diagnostics = RecordingDiagnostics {
-        logs: logs.clone(),
-        notice: false,
-        audit: Arc::clone(&audit),
     };
     let database = read_only_error();
 
@@ -637,12 +636,7 @@ fn recovery_precedes_the_diagnostics() {
 
 fn existing_proxy_bypasses_the_diagnostics() {
     let (logs, _guard) = capture_logs();
-    let audit = Arc::new(Audit::default());
-    let diagnostics = RecordingDiagnostics {
-        logs: logs.clone(),
-        notice: true,
-        audit: Arc::clone(&audit),
-    };
+    let (diagnostics, audit) = recording_diagnostics(&logs, true);
     let message = format!("boom\n{NOTICE_PREFIX} filed later");
     let proxy = ProxyException::new(ProxyExceptionInit {
         message,
@@ -668,12 +662,7 @@ fn existing_proxy_bypasses_the_diagnostics() {
 
 fn http_failure_bypasses_the_diagnostics() {
     let (logs, _guard) = capture_logs();
-    let audit = Arc::new(Audit::default());
-    let diagnostics = RecordingDiagnostics {
-        logs: logs.clone(),
-        notice: true,
-        audit: Arc::clone(&audit),
-    };
+    let (diagnostics, audit) = recording_diagnostics(&logs, true);
 
     let record = handle_exception_on_proxy(
         CaughtException::Http(HttpFailure {
