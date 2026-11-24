@@ -108,10 +108,6 @@ const LINE_BOUNDARIES: [char; 10] = [
     '\n', '\r', '\u{0b}', '\u{0c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
 ];
 
-fn is_line_boundary(character: char) -> bool {
-    LINE_BOUNDARIES.contains(&character)
-}
-
 // str.strip whitespace at the pin, which char::is_whitespace does not match for \x1c to \x1f
 const fn is_strip_space(character: char) -> bool {
     matches!(
@@ -135,7 +131,7 @@ fn split_lines(text: &str) -> Vec<&str> {
     let mut start = 0_usize;
     let mut characters = text.char_indices().peekable();
     while let Some((index, character)) = characters.next() {
-        if !is_line_boundary(character) {
+        if !LINE_BOUNDARIES.contains(&character) {
             continue;
         }
         let end = if character == '\r'
