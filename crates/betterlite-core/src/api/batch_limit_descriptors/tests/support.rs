@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_config::sections::batch_limit_descriptors::Settings;
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use tracing::field::{Field, Visit};
@@ -23,11 +22,6 @@ use crate::api::request_destination::RequestData;
 
 pub(super) const ITPM: &str = "model_per_project_itpm";
 pub(super) const OTPM: &str = "model_per_project_otpm";
-
-pub(super) fn principal(fields: &str) -> UserAPIKeyAuth {
-    let map: BTreeMap<String, JsonData> = serde_json::from_str(fields).expect("the auth fixture");
-    UserAPIKeyAuth::construct(AuthInput::Dict(map)).expect("the auth fixture builds")
-}
 
 // A typed input assembled from two JSON fragments, as the case files spell them
 pub(super) fn input(principal_fields: &str, calls: &str) -> BatchLimitDescriptorsInput {
