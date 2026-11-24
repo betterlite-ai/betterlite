@@ -5,6 +5,7 @@ mod support;
 use std::collections::BTreeMap;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use betterlite_auth::resolved_key::credential::safe_hash_api_key;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
@@ -338,6 +339,31 @@ fn rate_limit_descriptors() {
 }
 
 #[test]
+fn rate_limit_descriptors_hash_the_api_key() {
+    let service = service(
+        settings(None, None, None),
+        limiter(base_descriptors(), Vec::new(), 1, 1024, false),
+        None,
+    );
+    let answer = single(run_calls(
+        &service,
+        r#"{"api_key": "sk-batch-key", "tpd_limit": 1000}"#,
+        r#"[{"function": "create_batch_rate_limit_descriptors", "data": {}}]"#,
+    ));
+    match answer {
+        BatchLimitAnswer::CreateRateLimitDescriptors { descriptors } => {
+            let tpd_key = format!("api_key{TPD_SUFFIX}");
+            let api_key = descriptors
+                .iter()
+                .find(|descriptor| descriptor.key == tpd_key)
+                .expect("the api key tpd descriptor");
+            assert_eq!(api_key.value, safe_hash_api_key("sk-batch-key"));
+        }
+        other => panic!("unexpected answer {other:?}"),
+    }
+}
+
+#[test]
 fn rate_limit_descriptors_without_tpd_limits() {
     let service = service(
         settings(None, None, None),
@@ -347,6 +373,27 @@ fn rate_limit_descriptors_without_tpd_limits() {
     let answer = single(run_calls(
         &service,
         r#"{"api_key": "key-batch"}"#,
+        r#"[{"function": "create_batch_rate_limit_descriptors", "data": {}}]"#,
+    ));
+    match answer {
+        BatchLimitAnswer::CreateRateLimitDescriptors { descriptors } => {
+            let keys: Vec<&str> = descriptors.iter().map(|entry| entry.key.as_str()).collect();
+            assert_eq!(keys, vec!["api_key", "user", "team", "end_user"]);
+        }
+        other => panic!("unexpected answer {other:?}"),
+    }
+}
+
+#[test]
+fn rate_limit_descriptors_skip_empty_scope_values() {
+    let service = service(
+        settings(None, None, None),
+        limiter(base_descriptors(), Vec::new(), 1, 1024, false),
+        None,
+    );
+    let answer = single(run_calls(
+        &service,
+        r#"{"api_key": "key-batch", "team_id": "", "team_tpd_limit": 700}"#,
         r#"[{"function": "create_batch_rate_limit_descriptors", "data": {}}]"#,
     ));
     match answer {
@@ -719,12 +766,39 @@ fn resolve_batch_provider_answers_none_without_a_router_or_model() {
         "{}",
         r#"[{"function": "resolve_batch_provider", "model": "top-model"}, {"function": "resolve_batch_provider", "model": null}]"#,
     );
-    for answer in answers {
-        match answer {
-            BatchLimitAnswer::ResolveBatchProvider { provider } => assert_eq!(provider, None),
-            other => panic!("unexpected answer {other:?}"),
-        }
+    assert_eq!(answers.len(), 2);
+    assert!(answers.iter().all(|answer| matches!(
+        answer,
+        BatchLimitAnswer::ResolveBatchProvider { provider: None }
+    )));
+}
+
+#[test]
+fn resolve_batch_provider_skips_an_empty_model() {
+    let mut models = BTreeMap::new();
+    models.insert("top-model".to_owned(), Some(support::credentials("openai")));
+    let service = service(
+        settings(None, None, None),
+        empty_limiter(),
+        Some(router(models, None, false)),
+    );
+    let answer = single(run_calls(
+        &service,
+        "{}",
+        r#"[{"function": "resolve_batch_provider", "model": ""}]"#,
+    ));
+    match answer {
+        BatchLimitAnswer::ResolveBatchProvider { provider } => assert_eq!(provider, None),
+        other => panic!("unexpected answer {other:?}"),
     }
+    assert!(
+        service
+            .credentials
+            .as_ref()
+            .expect("a router")
+            .asked()
+            .is_empty()
+    );
 }
 
 #[test]
