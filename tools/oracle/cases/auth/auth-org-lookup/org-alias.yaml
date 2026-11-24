@@ -1,0 +1,32 @@
+kind: helper
+name: auth-org-lookup-alias-cache-during-outage
+call:
+  auth_org_lookup:
+    function: org_alias
+    database: true
+    target: acme
+    in_memory_ttl: 5.0
+    cached_org:
+      organization_id: o1
+      organization_alias: acme
+      budget_id: b1
+      models: [gpt-4o]
+      created_by: ops
+      updated_by: ops
+    steps:
+      - {now: 100.0, fail: [outage]}
+calls:
+  # a cold alias writes both keys and the second request reads the alias key alone
+  - auth_org_lookup:
+      function: org_alias
+      database: true
+      target: acme
+      in_memory_ttl: 5.0
+      alias_rows:
+        - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+      steps:
+        - {now: 100.0, fail: []}
+        - {now: 101.0, fail: []}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}
