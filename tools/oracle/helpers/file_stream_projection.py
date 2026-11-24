@@ -169,9 +169,7 @@ def hidden_answer(call: HiddenCall) -> JsonValue:
     capture = Capture()
     details = call["details"]
     api_base = details.get("api_base")
-    kwargs: dict[str, str] | None = None
-    if api_base is not None:
-        kwargs = {"api_base": api_base}
+    kwargs: dict[str, str] | None = None if api_base is None else {"api_base": api_base}
     logging_obj = Logging(
         model=details["model"],
         messages=None,

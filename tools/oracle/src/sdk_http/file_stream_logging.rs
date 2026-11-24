@@ -102,10 +102,7 @@ async fn opened_stream(
     logger: Arc<dyn FileStreamLogger>,
 ) -> Result<FileContentStreamingResponse, SdkHttpError> {
     let opened = start_stream(call, api_base, env).await?;
-    let fail_after = match call.scenario {
-        Scenario::Fail => Some(1_usize),
-        Scenario::Drain | Scenario::Close => None,
-    };
+    let fail_after = (call.scenario == Scenario::Fail).then_some(1_usize);
     Ok(FileContentStreamingResponse::new(
         FileStreamSetup {
             source: StreamSource::Async(Box::new(FaultyStream {
@@ -130,12 +127,7 @@ async fn start_stream(
     let size = NonZeroUsize::new(call.chunk_size)
         .ok_or_else(|| SdkHttpError::Invalid(String::from(CHUNK_ERROR)))?;
     let client = files_client(api_base)?;
-    let request = FileContentRequest {
-        file_id: call.file_id.clone(),
-        extra_headers: IndexMap::new(),
-        extra_body: IndexMap::new(),
-        timeout: None,
-    };
+    let request = content_request(call);
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );
@@ -161,6 +153,15 @@ fn files_client(api_base: &str) -> Result<FilesClient, SdkHttpError> {
     let kind = get_openai_client(args, None, true)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
     select_client(kind, true).map_err(|error| SdkHttpError::Invalid(error.to_string()))
+}
+
+fn content_request(call: &Call) -> FileContentRequest {
+    FileContentRequest {
+        file_id: call.file_id.clone(),
+        extra_headers: IndexMap::new(),
+        extra_body: IndexMap::new(),
+        timeout: None,
+    }
 }
 
 async fn drain(
