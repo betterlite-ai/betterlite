@@ -24,6 +24,9 @@ deviations:
   - what: 'A non-streaming failure of POST /queue/chat/completions answers the replacement post_call_failure_hook returns; LiteLLM''s queue route calls the hook and discards its return, so the original error is answered.'
     why: "The hook''s docstring says a callback can return an HTTPException to transform the error response, and /chat/completions and this route''s streamed path both use the hook''s answer; dropping it on the plain failure is an oversight no working setup can rely on."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16866-L16869
+  - what: 'POST /queue/chat/completions without a router answers the detail text "No models configured on proxy", not the {"error": ...} dict LiteLLM puts in the message field.'
+    why: 'LiteLLM raises HTTPException(500, detail={"error": ...}) and its handler copies that detail into ProxyException.message, which is declared str; docs/compatibility.md keeps output to the declared types and plain JSON, with the 500 status, auth_error type and "None" param unchanged.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16870-L16876
 kept_bugs:
   - what: 'The queued route copies LiteLLM by placing the key (here its stored hash) into metadata.user_api_key and metadata.user_api_key_hash, which reaches callback and spend logs.'
     why: 'LiteLLM does it so logging callbacks attribute spend to the key and a working setup relies on the field; it leaks a stable key identifier into every log.'
