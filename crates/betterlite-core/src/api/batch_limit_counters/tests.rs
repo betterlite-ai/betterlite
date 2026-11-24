@@ -281,7 +281,7 @@ async fn batch_enqueued_limit(#[case] reply: StoreReplyKind, #[case] model: Opti
     };
     let harness = harness(
         ScriptedLimiter::default(),
-        ScriptedStore::with_replies(vec![Ok(store_reply)]),
+        ScriptedStore::with_reply(Ok(store_reply)),
         ScriptedCache::default(),
     );
     let result = harness

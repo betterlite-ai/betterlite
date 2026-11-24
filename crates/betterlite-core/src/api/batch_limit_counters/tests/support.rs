@@ -136,16 +136,14 @@ impl BatchCounterLimiter for ScriptedLimiter {
 
 #[derive(Clone, Default)]
 pub(super) struct ScriptedStore {
-    replies: Arc<Mutex<VecDeque<Result<BatchEnqueuedReserveResult, StoreFailure>>>>,
+    replies: Arc<Mutex<Vec<Result<BatchEnqueuedReserveResult, StoreFailure>>>>,
     calls: Arc<Mutex<Vec<(i64, Vec<BatchEnqueuedTokenScope>)>>>,
 }
 
 impl ScriptedStore {
-    pub(super) fn with_replies(
-        replies: Vec<Result<BatchEnqueuedReserveResult, StoreFailure>>,
-    ) -> Self {
+    pub(super) fn with_reply(reply: Result<BatchEnqueuedReserveResult, StoreFailure>) -> Self {
         Self {
-            replies: Arc::new(Mutex::new(VecDeque::from(replies))),
+            replies: Arc::new(Mutex::new(vec![reply])),
             calls: Arc::default(),
         }
     }
@@ -172,7 +170,7 @@ impl BatchEnqueuedSource for ScriptedStore {
             .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
+            .pop();
         ready(reply.unwrap_or_else(|| Ok(reserved(tokens, scopes))))
     }
 }
