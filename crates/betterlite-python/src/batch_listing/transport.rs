@@ -5,15 +5,15 @@ use betterlite_config::sections::xai_identity;
 use betterlite_core::api::batch_provider_cancel::{
     BatchCancelDispatch, CancelTarget, OpenAiCancelCall, XaiCancelCall,
 };
+use betterlite_core::api::batch_provider_list::BatchListProvider;
 use betterlite_core::api::batch_provider_list::call::{
-    BatchListProviderCall, BatchProviderListCall, OpenAiBatchListCall,
+    BatchListProviderCall, BatchListWindow, BatchProviderListCall, OpenAiBatchListCall,
 };
-use betterlite_core::api::batch_provider_list::{BatchListProvider, BatchListWindow};
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::batches::error::{BatchesError, SdkError};
-use betterlite_openai::batches::http::{HttpBatchesClient, HttpConstructor};
+use betterlite_openai::batches::http::HttpConstructor;
 use betterlite_openai::batches::records::{BatchObject, BatchPage, BatchQuery};
 use betterlite_openai::batches::sdk::{ClientSettings, Connection, Timeout, TimeoutPhases};
 use betterlite_openai::batches::{BatchOperation, BatchesApi};
