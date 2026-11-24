@@ -77,18 +77,6 @@ impl Database {
             .expect("the fixture query returns a row")
     }
 
-    pub(super) async fn query_opt(
-        &self,
-        statement: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Option<Row> {
-        self.client()
-            .await
-            .query_opt(statement, parameters)
-            .await
-            .expect("the fixture query runs")
-    }
-
     pub(super) async fn close(self) {
         self.pool.close();
         self.fixture
@@ -165,9 +153,10 @@ pub(super) async fn agent_groups(database: &Database, agent_id: &str) -> Option<
 }
 
 pub(super) async fn team_exists(database: &Database, team_id: &str) -> bool {
-    let statement = r#"SELECT 1 FROM "LiteLLM_TeamTable" WHERE "team_id" = $1"#;
+    let statement = r#"SELECT COUNT(*) FROM "LiteLLM_TeamTable" WHERE "team_id" = $1"#;
     let parameters: [&(dyn ToSql + Sync); 1] = [&team_id];
-    database.query_opt(statement, &parameters).await.is_some()
+    let row = database.query_one(statement, &parameters).await;
+    row.get::<_, i64>(0) > 0
 }
 
 pub(super) struct RejectingTx<'db, C> {

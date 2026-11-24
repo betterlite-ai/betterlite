@@ -117,7 +117,13 @@ fn updated_groups(
 ) -> Option<Vec<String>> {
     match change {
         MembershipChange::Add => groups_with_added(existing, access_group_id),
-        MembershipChange::Remove => groups_without_removed(existing, access_group_id),
+        MembershipChange::Remove => {
+            let groups = existing?;
+            if !groups.iter().any(|id| id.as_str() == access_group_id) {
+                return None;
+            }
+            Some(removed_groups(groups, access_group_id))
+        }
     }
 }
 
@@ -131,17 +137,6 @@ pub(super) fn groups_with_added(
     }
     groups.push(access_group_id.to_owned());
     Some(groups)
-}
-
-pub(super) fn groups_without_removed(
-    existing: Option<Vec<String>>,
-    access_group_id: &str,
-) -> Option<Vec<String>> {
-    let groups = existing?;
-    if !groups.iter().any(|id| id.as_str() == access_group_id) {
-        return None;
-    }
-    Some(removed_groups(groups, access_group_id))
 }
 
 pub(super) fn removed_groups(groups: Vec<String>, access_group_id: &str) -> Vec<String> {

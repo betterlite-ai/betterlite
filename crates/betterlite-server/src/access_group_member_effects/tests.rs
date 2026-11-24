@@ -35,8 +35,9 @@ fn groups(ids: &[&str]) -> Vec<String> {
     ids.iter().map(|id| String::from(*id)).collect()
 }
 
-async fn change_teams<C>(
+async fn change_rows<C>(
     tables: &PgAccessGroupTables<'_, C>,
+    target: MembershipTarget,
     ids: &[&str],
     access_group_id: &str,
     change: MembershipChange,
@@ -44,35 +45,9 @@ async fn change_teams<C>(
     C: GenericClient + Sync,
 {
     let listed = groups(ids);
-    change_membership(
-        tables,
-        MembershipTarget::Team,
-        &listed,
-        access_group_id,
-        change,
-    )
-    .await
-    .expect("the team change runs");
-}
-
-async fn change_keys<C>(
-    tables: &PgAccessGroupTables<'_, C>,
-    tokens: &[&str],
-    access_group_id: &str,
-    change: MembershipChange,
-) where
-    C: GenericClient + Sync,
-{
-    let listed = groups(tokens);
-    change_membership(
-        tables,
-        MembershipTarget::Key,
-        &listed,
-        access_group_id,
-        change,
-    )
-    .await
-    .expect("the key change runs");
+    change_membership(tables, target, &listed, access_group_id, change)
+        .await
+        .expect("the membership change runs");
 }
 
 #[tokio::test]
@@ -82,25 +57,44 @@ async fn assignment_missing_rows() {
     let tables = PgAccessGroupTables { client: &client };
     insert_team(&database, "t1", Some(&groups(&["g2"]))).await;
     insert_key(&database, "tok-1", Some(&groups(&["g2"]))).await;
-    change_teams(&tables, &["t1", "t-missing"], "g1", MembershipChange::Add).await;
-    change_keys(
+    change_rows(
         &tables,
+        MembershipTarget::Team,
+        &["t1", "t-missing"],
+        "g1",
+        MembershipChange::Add,
+    )
+    .await;
+    change_rows(
+        &tables,
+        MembershipTarget::Key,
         &["tok-1", "tok-missing"],
         "g1",
         MembershipChange::Add,
     )
     .await;
-    assert_eq!(
-        team_groups(&database, "t1").await,
-        Some(groups(&["g2", "g1"]))
-    );
-    assert_eq!(
-        key_groups(&database, "tok-1").await,
-        Some(groups(&["g2", "g1"]))
-    );
-    assert!(!team_exists(&database, "t-missing").await);
-    change_teams(&tables, &["t-missing"], "g1", MembershipChange::Remove).await;
+    assert_missing_rows_skipped(&database).await;
+    change_rows(
+        &tables,
+        MembershipTarget::Team,
+        &["t-missing"],
+        "g1",
+        MembershipChange::Remove,
+    )
+    .await;
     database.close().await;
+}
+
+async fn assert_missing_rows_skipped(database: &Database) {
+    assert_eq!(
+        team_groups(database, "t1").await,
+        Some(groups(&["g2", "g1"]))
+    );
+    assert_eq!(
+        key_groups(database, "tok-1").await,
+        Some(groups(&["g2", "g1"]))
+    );
+    assert!(!team_exists(database, "t-missing").await);
 }
 
 async fn seed_assignment_rows(database: &Database) {
@@ -117,38 +111,50 @@ async fn seed_assignment_rows(database: &Database) {
     age_row(database, "LiteLLM_VerificationToken", "token", "tok-absent").await;
 }
 
-async fn assert_assignment_rows(database: &Database) {
-    assert_eq!(team_groups(database, "t-null").await, Some(groups(&["g1"])));
+#[derive(Clone, Copy)]
+enum AssignedTable {
+    Team,
+    Key,
+}
+
+async fn assigned_groups(
+    database: &Database,
+    table: AssignedTable,
+    id: &str,
+) -> Option<Vec<String>> {
+    match table {
+        AssignedTable::Team => team_groups(database, id).await,
+        AssignedTable::Key => key_groups(database, id).await,
+    }
+}
+
+async fn assert_groups(database: &Database, table: AssignedTable, id: &str, expected: &[&str]) {
     assert_eq!(
-        team_groups(database, "t-present").await,
-        Some(groups(&["g1"]))
+        assigned_groups(database, table, id).await,
+        Some(groups(expected))
     );
+}
+
+async fn assert_assignment_rows(database: &Database) {
+    assert_groups(database, AssignedTable::Team, "t-null", &["g1"]).await;
+    assert_groups(database, AssignedTable::Team, "t-present", &["g1"]).await;
+    assert_groups(
+        database,
+        AssignedTable::Team,
+        "t-append",
+        &["g2", "g2", "g1"],
+    )
+    .await;
+    assert_groups(database, AssignedTable::Team, "t-order", &["g3", "g2"]).await;
+    assert_eq!(team_groups(database, "t-null-remove").await, None);
     assert_eq!(
         updated_at(database, "LiteLLM_TeamTable", "team_id", "t-present").await,
         seeded_at()
     );
-    assert_eq!(
-        team_groups(database, "t-append").await,
-        Some(groups(&["g2", "g2", "g1"]))
-    );
-    assert_eq!(
-        team_groups(database, "t-order").await,
-        Some(groups(&["g3", "g2"]))
-    );
-    assert_eq!(team_groups(database, "t-null-remove").await, None);
-    assert_eq!(
-        key_groups(database, "tok-null").await,
-        Some(groups(&["g1"]))
-    );
-    assert_eq!(
-        key_groups(database, "tok-present").await,
-        Some(groups(&["g2", "g1"]))
-    );
-    assert_eq!(key_groups(database, "tok-dup").await, Some(groups(&["g2"])));
-    assert_eq!(
-        key_groups(database, "tok-absent").await,
-        Some(groups(&["g2"]))
-    );
+    assert_groups(database, AssignedTable::Key, "tok-null", &["g1"]).await;
+    assert_groups(database, AssignedTable::Key, "tok-present", &["g2", "g1"]).await;
+    assert_groups(database, AssignedTable::Key, "tok-dup", &["g2"]).await;
+    assert_groups(database, AssignedTable::Key, "tok-absent", &["g2"]).await;
     assert_eq!(
         updated_at(database, "LiteLLM_VerificationToken", "token", "tok-absent").await,
         seeded_at()
@@ -161,29 +167,33 @@ async fn assignment_null_duplicate_and_order() {
     let client = database.client().await;
     let tables = PgAccessGroupTables { client: &client };
     seed_assignment_rows(&database).await;
-    change_teams(
+    change_rows(
         &tables,
+        MembershipTarget::Team,
         &["t-null", "t-present", "t-append"],
         "g1",
         MembershipChange::Add,
     )
     .await;
-    change_teams(
+    change_rows(
         &tables,
+        MembershipTarget::Team,
         &["t-order", "t-null-remove"],
         "g1",
         MembershipChange::Remove,
     )
     .await;
-    change_keys(
+    change_rows(
         &tables,
+        MembershipTarget::Key,
         &["tok-null", "tok-present"],
         "g1",
         MembershipChange::Add,
     )
     .await;
-    change_keys(
+    change_rows(
         &tables,
+        MembershipTarget::Key,
         &["tok-dup", "tok-absent"],
         "g1",
         MembershipChange::Remove,
@@ -360,6 +370,19 @@ fn agent_registry_effects_delegate() {
     assert_eq!(stored.agent_name, "one");
 }
 
+fn seed_cached(
+    caches: &ScriptedCaches,
+    teams: &[(&str, Option<&[&str]>)],
+    keys: &[(&str, Option<&[&str]>)],
+) {
+    for &(team_id, listed) in teams {
+        caches.seed_team(team_id, team_object(team_id, listed.map(groups)));
+    }
+    for &(token, listed) in keys {
+        caches.seed_key(token, key_auth(token, listed.map(groups)));
+    }
+}
+
 #[tokio::test]
 async fn cache_miss_no_refill() {
     let caches = ScriptedCaches::default();
@@ -374,7 +397,7 @@ async fn cache_miss_no_refill() {
     .await
     .expect("a missing team is skipped");
     assert_eq!(caches.reads(), groups(&["team_id:t1", "team_id:t2"]));
-    assert!(caches.team_writes().is_empty());
+    assert!(caches.written().is_empty());
     let tokens = groups(&["tok-1", "tok-2"]);
     change_cached_membership(
         &caches,
@@ -389,59 +412,52 @@ async fn cache_miss_no_refill() {
         caches.reads(),
         groups(&["team_id:t1", "team_id:t2", "tok-1", "tok-2"])
     );
-    assert!(caches.key_writes().is_empty());
+    assert!(caches.written().is_empty());
 }
 
-fn seed_add_entries(caches: &ScriptedCaches) {
-    caches.seed_team("t-null", team_object("t-null", None));
-    caches.seed_team("t-present", team_object("t-present", Some(groups(&["g1"]))));
-    caches.seed_team(
-        "t-other",
-        team_object("t-other", Some(groups(&["g2", "g2"]))),
-    );
-    caches.seed_key("tok-null", key_auth("tok-null", None));
-    caches.seed_key(
-        "tok-present",
-        key_auth("tok-present", Some(groups(&["g1"]))),
-    );
-    caches.seed_key(
-        "tok-other",
-        key_auth("tok-other", Some(groups(&["g2", "g2"]))),
-    );
-}
-
-fn assert_team_adds(caches: &ScriptedCaches) {
-    let writes = caches.team_writes();
-    assert_eq!(writes.len(), 2);
-    assert_eq!(writes[0].0, "t-null");
+fn assert_cache_adds(caches: &ScriptedCaches) {
     assert_eq!(
-        writes[0].1.team.fields.base.access_group_ids,
+        caches.written(),
+        groups(&["t-null", "t-other", "tok-null", "tok-other"])
+    );
+    let null_team = caches
+        .stored_team("t-null")
+        .expect("the null team is patched");
+    assert_eq!(
+        null_team.team.fields.base.access_group_ids,
         Some(groups(&["g1"]))
     );
     assert_eq!(
-        writes[0].1.team.fields.base.team_alias.as_deref(),
+        null_team.team.fields.base.team_alias.as_deref(),
         Some("alias-t-null")
     );
-    assert_eq!(writes[0].1.team.fields.base.tpm_limit, Some(7_i64));
-    assert_eq!(writes[1].0, "t-other");
+    assert_eq!(null_team.team.fields.base.tpm_limit, Some(7_i64));
+    let other_team = caches
+        .stored_team("t-other")
+        .expect("the other team is patched");
     assert_eq!(
-        writes[1].1.team.fields.base.access_group_ids,
+        other_team.team.fields.base.access_group_ids,
         Some(groups(&["g2", "g2", "g1"]))
     );
+    assert_added_keys(caches);
 }
 
-fn assert_key_adds(caches: &ScriptedCaches) {
-    let writes = caches.key_writes();
-    assert_eq!(writes.len(), 2);
-    assert_eq!(writes[0].0, "tok-null");
-    let null_view = key_view(&writes[0].1);
-    assert_eq!(null_view.access_group_ids, Some(groups(&["g1"])));
-    assert_eq!(null_view.user_id.as_deref(), Some("user-1"));
-    assert_eq!(null_view.key_alias.as_deref(), Some("key-one"));
-    assert_eq!(writes[1].0, "tok-other");
-    let other_view = key_view(&writes[1].1);
+fn assert_added_keys(caches: &ScriptedCaches) {
+    let null_key = key_view(
+        &caches
+            .stored_key("tok-null")
+            .expect("the null key is patched"),
+    );
+    assert_eq!(null_key.access_group_ids, Some(groups(&["g1"])));
+    assert_eq!(null_key.user_id.as_deref(), Some("user-1"));
+    assert_eq!(null_key.key_alias.as_deref(), Some("key-one"));
+    let other_key = key_view(
+        &caches
+            .stored_key("tok-other")
+            .expect("the other key is patched"),
+    );
     assert_eq!(
-        other_view.access_group_ids,
+        other_key.access_group_ids,
         Some(groups(&["g2", "g2", "g1"]))
     );
 }
@@ -449,7 +465,19 @@ fn assert_key_adds(caches: &ScriptedCaches) {
 #[tokio::test]
 async fn cache_add_null_existing_and_duplicate() {
     let caches = ScriptedCaches::default();
-    seed_add_entries(&caches);
+    seed_cached(
+        &caches,
+        &[
+            ("t-null", None),
+            ("t-present", Some(&["g1"])),
+            ("t-other", Some(&["g2", "g2"])),
+        ],
+        &[
+            ("tok-null", None),
+            ("tok-present", Some(&["g1"])),
+            ("tok-other", Some(&["g2", "g2"])),
+        ],
+    );
     let team_ids = groups(&["t-null", "t-present", "t-other"]);
     change_cached_membership(
         &caches,
@@ -470,46 +498,37 @@ async fn cache_add_null_existing_and_duplicate() {
     )
     .await
     .expect("the key add runs");
-    assert_team_adds(&caches);
-    assert_key_adds(&caches);
+    assert_cache_adds(&caches);
 }
 
-fn seed_remove_entries(caches: &ScriptedCaches) {
-    caches.seed_team(
-        "t-absent",
-        team_object("t-absent", Some(groups(&["g2", "g3"]))),
-    );
-    caches.seed_team("t-empty", team_object("t-empty", Some(Vec::new())));
-    caches.seed_team("t-null", team_object("t-null", None));
-    caches.seed_key(
-        "tok-dup",
-        key_auth("tok-dup", Some(groups(&["g1", "g2", "g1"]))),
-    );
-    caches.seed_key("tok-empty", key_auth("tok-empty", Some(Vec::new())));
-}
-
-fn assert_team_removals(caches: &ScriptedCaches) {
-    let writes = caches.team_writes();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].0, "t-absent");
+fn assert_cache_removals(caches: &ScriptedCaches) {
+    assert_eq!(caches.written(), groups(&["t-absent", "tok-dup"]));
+    let team = caches
+        .stored_team("t-absent")
+        .expect("the team is rewritten");
     assert_eq!(
-        writes[0].1.team.fields.base.access_group_ids,
+        team.team.fields.base.access_group_ids,
         Some(groups(&["g2", "g3"]))
     );
-}
-
-fn assert_key_removals(caches: &ScriptedCaches) {
-    let writes = caches.key_writes();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].0, "tok-dup");
-    let view = key_view(&writes[0].1);
-    assert_eq!(view.access_group_ids, Some(groups(&["g2"])));
+    let key = key_view(&caches.stored_key("tok-dup").expect("the key is rewritten"));
+    assert_eq!(key.access_group_ids, Some(groups(&["g2"])));
 }
 
 #[tokio::test]
 async fn cache_remove_nonempty_absent() {
     let caches = ScriptedCaches::default();
-    seed_remove_entries(&caches);
+    seed_cached(
+        &caches,
+        &[
+            ("t-absent", Some(&["g2", "g3"])),
+            ("t-empty", Some(&[])),
+            ("t-null", None),
+        ],
+        &[
+            ("tok-dup", Some(&["g1", "g2", "g1"])),
+            ("tok-empty", Some(&[])),
+        ],
+    );
     let team_ids = groups(&["t-absent", "t-empty", "t-null"]);
     change_cached_membership(
         &caches,
@@ -530,8 +549,7 @@ async fn cache_remove_nonempty_absent() {
     )
     .await
     .expect("the key remove runs");
-    assert_team_removals(&caches);
-    assert_key_removals(&caches);
+    assert_cache_removals(&caches);
 }
 
 #[tokio::test]
@@ -553,11 +571,10 @@ async fn cache_failure_stops_sequence() {
     .expect_err("the second store fails");
     assert!(matches!(error, MemberEffectsError::CacheWrite(_)));
     assert_eq!(caches.reads(), groups(&["team_id:t1", "team_id:t2"]));
-    let writes = caches.team_writes();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].0, "t1");
+    assert_eq!(caches.written(), groups(&["t1"]));
+    let stored = caches.stored_team("t1").expect("the first team is patched");
     assert_eq!(
-        writes[0].1.team.fields.base.access_group_ids,
+        stored.team.fields.base.access_group_ids,
         Some(groups(&["g9", "g1"]))
     );
 }

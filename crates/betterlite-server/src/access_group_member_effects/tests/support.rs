@@ -74,29 +74,50 @@ fn groups_json(groups: Option<Vec<String>>) -> String {
     format!("[{}]", listed.join(","))
 }
 
+#[derive(Clone)]
+pub(super) enum CachedFixture {
+    Team(LiteLLMTeamTableCachedObj),
+    Key(UserAPIKeyAuth),
+}
+
+impl CachedFixture {
+    fn cache_key(&self, id: &str) -> String {
+        match self {
+            CachedFixture::Team(_) => format!("team_id:{id}"),
+            CachedFixture::Key(_) => id.to_owned(),
+        }
+    }
+
+    fn into_team(self) -> Option<LiteLLMTeamTableCachedObj> {
+        match self {
+            CachedFixture::Team(team) => Some(team),
+            CachedFixture::Key(_) => None,
+        }
+    }
+
+    fn into_key(self) -> Option<UserAPIKeyAuth> {
+        match self {
+            CachedFixture::Key(auth) => Some(auth),
+            CachedFixture::Team(_) => None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct ScriptedCaches {
-    teams: Mutex<BTreeMap<String, LiteLLMTeamTableCachedObj>>,
-    keys: Mutex<BTreeMap<String, UserAPIKeyAuth>>,
+    entries: Mutex<BTreeMap<String, CachedFixture>>,
     reads: Mutex<Vec<String>>,
-    team_writes: Mutex<Vec<(String, LiteLLMTeamTableCachedObj)>>,
-    key_writes: Mutex<Vec<(String, UserAPIKeyAuth)>>,
+    writes: Mutex<Vec<(String, CachedFixture)>>,
     failing: Mutex<BTreeSet<String>>,
 }
 
 impl ScriptedCaches {
     pub(super) fn seed_team(&self, team_id: &str, team: LiteLLMTeamTableCachedObj) {
-        self.teams
-            .lock()
-            .expect("the scripted teams")
-            .insert(format!("team_id:{team_id}"), team);
+        self.put(format!("team_id:{team_id}"), CachedFixture::Team(team));
     }
 
     pub(super) fn seed_key(&self, token: &str, auth: UserAPIKeyAuth) {
-        self.keys
-            .lock()
-            .expect("the scripted keys")
-            .insert(token.to_owned(), auth);
+        self.put(token.to_owned(), CachedFixture::Key(auth));
     }
 
     pub(super) fn failing(&self, ids: &[&str]) {
@@ -108,18 +129,58 @@ impl ScriptedCaches {
         self.reads.lock().expect("the recorded reads").clone()
     }
 
-    pub(super) fn team_writes(&self) -> Vec<(String, LiteLLMTeamTableCachedObj)> {
-        self.team_writes
+    pub(super) fn written(&self) -> Vec<String> {
+        self.writes
             .lock()
-            .expect("the recorded team writes")
-            .clone()
+            .expect("the recorded writes")
+            .iter()
+            .map(|(id, _entry)| id.clone())
+            .collect()
     }
 
-    pub(super) fn key_writes(&self) -> Vec<(String, UserAPIKeyAuth)> {
-        self.key_writes
+    pub(super) fn stored_team(&self, team_id: &str) -> Option<LiteLLMTeamTableCachedObj> {
+        self.entry(&format!("team_id:{team_id}"))
+            .and_then(CachedFixture::into_team)
+    }
+
+    pub(super) fn stored_key(&self, token: &str) -> Option<UserAPIKeyAuth> {
+        self.entry(token).and_then(CachedFixture::into_key)
+    }
+
+    fn put(&self, key: String, entry: CachedFixture) {
+        self.entries
             .lock()
-            .expect("the recorded key writes")
-            .clone()
+            .expect("the scripted entries")
+            .insert(key, entry);
+    }
+
+    fn entry(&self, key: &str) -> Option<CachedFixture> {
+        let entries = self.entries.lock().expect("the scripted entries");
+        entries.get(key).cloned()
+    }
+
+    fn record_read(&self, key: &str) {
+        self.reads
+            .lock()
+            .expect("the recorded reads")
+            .push(key.to_owned());
+    }
+
+    fn store_entry(&self, id: &str, entry: CachedFixture) -> Result<(), MemberEffectsError> {
+        if self
+            .failing
+            .lock()
+            .expect("the failing stores")
+            .contains(id)
+        {
+            return Err(store_failure());
+        }
+        self.writes
+            .lock()
+            .expect("the recorded writes")
+            .push((id.to_owned(), entry.clone()));
+        self.put(entry.cache_key(id), entry);
+        Ok(())
     }
 }
 
@@ -128,12 +189,8 @@ impl MemberEffectCaches for ScriptedCaches {
         &self,
         key: &str,
     ) -> Result<Option<LiteLLMTeamTableCachedObj>, MemberEffectsError> {
-        self.reads
-            .lock()
-            .expect("the recorded reads")
-            .push(key.to_owned());
-        let teams = self.teams.lock().expect("the scripted teams");
-        Ok(teams.get(key).cloned())
+        self.record_read(key);
+        Ok(self.entry(key).and_then(CachedFixture::into_team))
     }
 
     async fn store_team(
@@ -141,32 +198,12 @@ impl MemberEffectCaches for ScriptedCaches {
         team_id: &str,
         team: &mut LiteLLMTeamTableCachedObj,
     ) -> Result<(), MemberEffectsError> {
-        if self
-            .failing
-            .lock()
-            .expect("the failing stores")
-            .contains(team_id)
-        {
-            return Err(store_failure());
-        }
-        self.team_writes
-            .lock()
-            .expect("the recorded team writes")
-            .push((team_id.to_owned(), team.clone()));
-        self.teams
-            .lock()
-            .expect("the scripted teams")
-            .insert(format!("team_id:{team_id}"), team.clone());
-        Ok(())
+        self.store_entry(team_id, CachedFixture::Team(team.clone()))
     }
 
     async fn read_key(&self, token: &str) -> Result<Option<UserAPIKeyAuth>, MemberEffectsError> {
-        self.reads
-            .lock()
-            .expect("the recorded reads")
-            .push(token.to_owned());
-        let keys = self.keys.lock().expect("the scripted keys");
-        Ok(keys.get(token).cloned())
+        self.record_read(token);
+        Ok(self.entry(token).and_then(CachedFixture::into_key))
     }
 
     async fn store_key(
@@ -174,23 +211,7 @@ impl MemberEffectCaches for ScriptedCaches {
         token: &str,
         auth: &mut UserAPIKeyAuth,
     ) -> Result<(), MemberEffectsError> {
-        if self
-            .failing
-            .lock()
-            .expect("the failing stores")
-            .contains(token)
-        {
-            return Err(store_failure());
-        }
-        self.key_writes
-            .lock()
-            .expect("the recorded key writes")
-            .push((token.to_owned(), auth.clone()));
-        self.keys
-            .lock()
-            .expect("the scripted keys")
-            .insert(token.to_owned(), auth.clone());
-        Ok(())
+        self.store_entry(token, CachedFixture::Key(auth.clone()))
     }
 }
 

@@ -13,6 +13,10 @@ use serde::Deserialize;
 use super::assignment::{MembershipChange, groups_with_added, removed_groups};
 use super::error::MemberEffectsError;
 
+pub type CachedTeam = LiteLLMTeamTableCachedObj;
+
+pub type StoreResult = Result<(), MemberEffectsError>;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheTarget {
     Team,
@@ -24,13 +28,13 @@ pub trait MemberEffectCaches: Send + Sync {
     fn read_team(
         &self,
         key: &str,
-    ) -> impl Future<Output = Result<Option<LiteLLMTeamTableCachedObj>, MemberEffectsError>> + Send;
+    ) -> impl Future<Output = Result<Option<CachedTeam>, MemberEffectsError>> + Send;
 
     fn store_team(
         &self,
         team_id: &str,
-        team: &mut LiteLLMTeamTableCachedObj,
-    ) -> impl Future<Output = Result<(), MemberEffectsError>> + Send;
+        team: &mut CachedTeam,
+    ) -> impl Future<Output = StoreResult> + Send;
 
     fn read_key(
         &self,
@@ -41,7 +45,7 @@ pub trait MemberEffectCaches: Send + Sync {
         &self,
         token: &str,
         auth: &mut UserAPIKeyAuth,
-    ) -> impl Future<Output = Result<(), MemberEffectsError>> + Send;
+    ) -> impl Future<Output = StoreResult> + Send;
 }
 
 pub struct GatewayMemberCaches<Tier: AuthCacheTier> {
@@ -50,21 +54,14 @@ pub struct GatewayMemberCaches<Tier: AuthCacheTier> {
 }
 
 impl<Tier: AuthCacheTier> MemberEffectCaches for GatewayMemberCaches<Tier> {
-    async fn read_team(
-        &self,
-        key: &str,
-    ) -> Result<Option<LiteLLMTeamTableCachedObj>, MemberEffectsError> {
+    async fn read_team(&self, key: &str) -> Result<Option<CachedTeam>, MemberEffectsError> {
         self.cache
-            .async_get_typed::<LiteLLMTeamTableCachedObj>(key, false)
+            .async_get_typed::<CachedTeam>(key, false)
             .await
             .map_err(MemberEffectsError::TeamPayload)
     }
 
-    async fn store_team(
-        &self,
-        team_id: &str,
-        team: &mut LiteLLMTeamTableCachedObj,
-    ) -> Result<(), MemberEffectsError> {
+    async fn store_team(&self, team_id: &str, team: &mut CachedTeam) -> StoreResult {
         self.invalidation
             .cache_team_object(team_id, team)
             .await
@@ -78,11 +75,7 @@ impl<Tier: AuthCacheTier> MemberEffectCaches for GatewayMemberCaches<Tier> {
             .map_err(MemberEffectsError::KeyAuth)
     }
 
-    async fn store_key(
-        &self,
-        token: &str,
-        auth: &mut UserAPIKeyAuth,
-    ) -> Result<(), MemberEffectsError> {
+    async fn store_key(&self, token: &str, auth: &mut UserAPIKeyAuth) -> StoreResult {
         self.invalidation
             .cache_key_object(token, auth)
             .await
@@ -178,6 +171,12 @@ impl<Cache: MemberEffectCaches + ?Sized> CachePatchTarget for KeyCaches<'_, Cach
     }
 }
 
+struct MembershipPatch<'a> {
+    ids: &'a [String],
+    access_group_id: &'a str,
+    change: MembershipChange,
+}
+
 pub async fn change_cached_membership<Cache>(
     cache: &Cache,
     target: CacheTarget,
@@ -188,29 +187,31 @@ pub async fn change_cached_membership<Cache>(
 where
     Cache: MemberEffectCaches + ?Sized,
 {
+    let patch = MembershipPatch {
+        ids,
+        access_group_id,
+        change,
+    };
     match target {
-        CacheTarget::Team => {
-            patch_membership(&TeamCaches(cache), ids, access_group_id, change).await
-        }
-        CacheTarget::Key => patch_membership(&KeyCaches(cache), ids, access_group_id, change).await,
+        CacheTarget::Team => patch_cached(&TeamCaches(cache), &patch).await,
+        CacheTarget::Key => patch_cached(&KeyCaches(cache), &patch).await,
     }
 }
 
-async fn patch_membership<Target>(
+async fn patch_cached<Target>(
     target: &Target,
-    ids: &[String],
-    access_group_id: &str,
-    change: MembershipChange,
+    patch: &MembershipPatch<'_>,
 ) -> Result<(), MemberEffectsError>
 where
     Target: CachePatchTarget + ?Sized,
 {
-    for id in ids {
+    for id in patch.ids {
         let Some(object) = target.read(&Target::cache_key(id)).await? else {
             continue;
         };
         let existing = Target::groups(&object)?;
-        let Some(groups) = cached_groups_after(existing, change, access_group_id) else {
+        let Some(groups) = cached_groups_after(existing, patch.change, patch.access_group_id)
+        else {
             continue;
         };
         let mut patched = Target::with_groups(&object, groups)?;
