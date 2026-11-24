@@ -1,0 +1,35 @@
+kind: helper
+name: health-status-routes-resolve-target
+call:
+  b4445:
+    function: resolve_target
+    cases:
+      - model: gpt-4
+        model_id: null
+        router: null
+      - model: gpt-4
+        model_id: ""
+        router: null
+      - model: null
+        model_id: dep-a
+        router: null
+      - model: gpt-4
+        model_id: dep-a
+        router:
+          deployments:
+            - {model_name: alpha, model_id: dep-a}
+            - {model_name: beta, model_id: dep-b}
+          fail: false
+      - model: gpt-4
+        model_id: missing
+        router:
+          deployments:
+            - {model_name: alpha, model_id: dep-a}
+          fail: false
+      - model: gpt-4
+        model_id: dep-a
+        router:
+          deployments: []
+          fail: true
+env: {}
+compare: {ignore: []}

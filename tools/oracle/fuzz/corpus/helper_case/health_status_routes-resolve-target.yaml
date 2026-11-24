@@ -1,0 +1,17 @@
+kind: helper
+name: health-status-routes-resolve-target-seed
+call:
+  b4445:
+    function: resolve_target
+    cases:
+      - model: gpt-4
+        model_id: dep-a
+        router:
+          deployments:
+            - {model_name: alpha, model_id: dep-a}
+          fail: false
+      - model: null
+        model_id: missing
+        router: null
+env: {}
+compare: {ignore: []}
