@@ -39,9 +39,13 @@ where
         Err(CredentialLookupError::RouterMissing | CredentialLookupError::ModelNotFound(_)) => {
             Ok(None)
         }
-        Err(CredentialLookupError::Source { model_id, source }) => {
-            Err(BatchCredentialError { model_id, source })
-        }
+        Err(CredentialLookupError::Source {
+            model_id: failing,
+            source,
+        }) => Err(BatchCredentialError {
+            model_id: failing,
+            source,
+        }),
     }
 }
 

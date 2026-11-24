@@ -53,7 +53,7 @@ pub struct BatchLimitDescriptors<Limiter, Credentials> {
 
 impl<Limiter, Credentials> BatchLimitDescriptors<Limiter, Credentials> {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         settings: Settings,
         limiter: Limiter,
         credentials: Option<Credentials>,

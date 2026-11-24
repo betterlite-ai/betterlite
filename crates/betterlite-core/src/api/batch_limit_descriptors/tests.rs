@@ -221,11 +221,7 @@ fn project_io_has_limits(#[case] principal: &str, #[case] expected: bool) {
 #[case::unparsable_cap(r#"{"body": {"max_tokens": "abc"}}"#, 1, 1024)]
 #[case::candidates_multiply(r#"{"body": {"max_tokens": 10}}"#, 3, 30)]
 #[case::floor_candidates_multiply(r#"{"body": {}}"#, 3, 3072)]
-#[case::huge_cap_saturates(
-    r#"{"body": {"max_tokens": 9223372036854775807}}"#,
-    3,
-    9223372036854775807
-)]
+#[case::huge_cap_saturates(r#"{"body": {"max_tokens": 9223372036854775807}}"#, 3, i64::MAX)]
 #[case::cap_beyond_i64_falls_back(r#"{"body": {"max_tokens": 9223372036854775808}}"#, 1, 1024)]
 fn max_output_estimate(#[case] entry: &str, #[case] candidates: i64, #[case] expected: i64) {
     let service = service(
