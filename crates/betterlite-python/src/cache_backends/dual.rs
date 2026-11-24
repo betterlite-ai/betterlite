@@ -95,8 +95,9 @@ impl NativeDual {
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - one count to text for both the sync and async callers
     fn increment(&self, key: &str, value: f64, ttl: Option<f64>) -> PyResult<String> {
-        let counted = error::to_py(self.cache.increment_cache(key, value, options(ttl)))?;
+        let counted = error::backend_err(self.cache.increment_cache(key, value, options(ttl)))?;
         convert::number_text(counted).map_err(PyErr::from)
     }
 
@@ -120,7 +121,7 @@ impl NativeDual {
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
         for key in &keys {
-            error::to_py(self.cache.delete_cache(key))?;
+            error::backend_err(self.cache.delete_cache(key))?;
         }
         Ok(())
     }
@@ -128,7 +129,7 @@ impl NativeDual {
     fn async_delete<'py>(&self, py: Python<'py>, keys: Vec<String>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            error::to_py(cache.async_delete_cache_keys(&keys).await)?;
+            error::backend_err(cache.async_delete_cache_keys(&keys).await)?;
             Ok(())
         })
     }
@@ -136,7 +137,7 @@ impl NativeDual {
     fn ttl(&self, py: Python<'_>, key: &str) -> PyResult<Option<String>> {
         let cache = Arc::clone(&self.cache);
         let remaining = py.detach(|| get_runtime().block_on(cache.async_get_ttl(key)));
-        let ttl = error::to_py(remaining)?;
+        let ttl = error::backend_err(remaining)?;
         text_of_ttl(ttl)
     }
 
@@ -144,20 +145,20 @@ impl NativeDual {
         let cache = Arc::clone(&self.cache);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            let ttl = error::to_py(cache.async_get_ttl(&owned).await)?;
+            let ttl = error::backend_err(cache.async_get_ttl(&owned).await)?;
             text_of_ttl(ttl)
         })
     }
 
     fn flush(&self) -> PyResult<()> {
-        error::to_py(self.cache.flush_cache())?;
+        error::backend_err(self.cache.flush_cache())?;
         Ok(())
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            error::to_py(cache.flush_cache())?;
+            error::backend_err(cache.flush_cache())?;
             Ok(())
         })
     }
@@ -168,7 +169,7 @@ impl NativeDual {
         };
         let probe = Arc::clone(redis);
         let alive = py.detach(|| get_runtime().block_on(probe.admin.ping(None)));
-        error::to_py(alive)
+        error::backend_err(alive)
     }
 
     fn async_ping<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
@@ -177,7 +178,7 @@ impl NativeDual {
             let Some(tier) = redis else {
                 return Ok(true);
             };
-            let alive = error::to_py(tier.admin.ping(None).await)?;
+            let alive = error::backend_err(tier.admin.ping(None).await)?;
             Ok(alive)
         })
     }

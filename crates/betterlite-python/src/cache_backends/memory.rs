@@ -31,7 +31,7 @@ impl NativeMemory {
         let item_kib = parsed
             .max_size_per_item
             .unwrap_or(DEFAULT_MAX_SIZE_PER_ITEM_KIB);
-        let ops = error::to_py(LocalMemoryOps::new(item_kib, clock))?;
+        let ops = error::backend_err(LocalMemoryOps::new(item_kib, clock))?;
         ops.set_max_size(
             parsed
                 .max_size_in_memory
@@ -42,7 +42,7 @@ impl NativeMemory {
 
     fn set(&self, key: &str, value: &str, ttl: Option<f64>) -> PyResult<()> {
         let cache_value = convert::cache_value(value)?;
-        error::to_py(self.ops.set_cache(key, cache_value, ttl))?;
+        error::backend_err(self.ops.set_cache(key, cache_value, ttl))?;
         Ok(())
     }
 
@@ -57,13 +57,13 @@ impl NativeMemory {
         let ops = Arc::clone(&self.ops);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            error::to_py(ops.set_cache(&owned, cache_value, ttl))?;
+            error::backend_err(ops.set_cache(&owned, cache_value, ttl))?;
             Ok(())
         })
     }
 
     fn get(&self, key: &str) -> PyResult<Option<String>> {
-        let stored = error::to_py(self.ops.get_cache(key))?;
+        let stored = error::backend_err(self.ops.get_cache(key))?;
         stored
             .as_ref()
             .map(convert::text_of_value)
@@ -75,7 +75,7 @@ impl NativeMemory {
         let ops = Arc::clone(&self.ops);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            let stored = error::to_py(ops.get_cache(&owned))?;
+            let stored = error::backend_err(ops.get_cache(&owned))?;
             stored
                 .as_ref()
                 .map(convert::text_of_value)
@@ -84,8 +84,9 @@ impl NativeMemory {
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - one count to text for both the sync and async callers
     fn increment(&self, key: &str, value: f64, ttl: Option<f64>) -> PyResult<String> {
-        let counted = error::to_py(self.ops.increment_cache(key, value, ttl))?;
+        let counted = error::backend_err(self.ops.increment_cache(key, value, ttl))?;
         convert::number_text(counted).map_err(PyErr::from)
     }
 
@@ -99,14 +100,14 @@ impl NativeMemory {
         let ops = Arc::clone(&self.ops);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            let counted = error::to_py(ops.increment_cache(&owned, value, ttl))?;
+            let counted = error::backend_err(ops.increment_cache(&owned, value, ttl))?;
             convert::number_text(counted).map_err(PyErr::from)
         })
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
         for key in &keys {
-            error::to_py(self.ops.delete_cache(key))?;
+            error::backend_err(self.ops.delete_cache(key))?;
         }
         Ok(())
     }
@@ -115,14 +116,14 @@ impl NativeMemory {
         let ops = Arc::clone(&self.ops);
         future_into_py(py, async move {
             for key in &keys {
-                error::to_py(ops.delete_cache(key))?;
+                error::backend_err(ops.delete_cache(key))?;
             }
             Ok(())
         })
     }
 
     fn ttl(&self, key: &str) -> PyResult<Option<String>> {
-        let entries = error::to_py(self.ops.ttl_entries())?;
+        let entries = error::backend_err(self.ops.ttl_entries())?;
         entries
             .into_iter()
             .find(|(name, _expiry)| name == key)
@@ -131,12 +132,11 @@ impl NativeMemory {
             .map_err(PyErr::from)
     }
 
-    // ast-grep-ignore: no-padded-one-line-functions - the sync and async entry points share this read
     fn async_ttl<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
         let ops = Arc::clone(&self.ops);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            let entries = error::to_py(ops.ttl_entries())?;
+            let entries = error::backend_err(ops.ttl_entries())?;
             entries
                 .into_iter()
                 .find(|(name, _expiry)| name == owned)
@@ -147,36 +147,37 @@ impl NativeMemory {
     }
 
     fn flush(&self) -> PyResult<()> {
-        error::to_py(self.ops.flush_cache())?;
+        error::backend_err(self.ops.flush_cache())?;
         Ok(())
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let ops = Arc::clone(&self.ops);
         future_into_py(py, async move {
-            error::to_py(ops.flush_cache())?;
+            error::backend_err(ops.flush_cache())?;
             Ok(())
         })
     }
 
     fn ping(&self) -> PyResult<bool> {
-        let _entries = error::to_py(self.ops.ttl_entries())?;
+        let _entries = error::backend_err(self.ops.ttl_entries())?;
         Ok(true)
     }
 
     fn async_ping<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let ops = Arc::clone(&self.ops);
         future_into_py(py, async move {
-            let _entries = error::to_py(ops.ttl_entries())?;
+            let _entries = error::backend_err(ops.ttl_entries())?;
             Ok(true)
         })
     }
 
-    // InMemoryCache.disconnect is a no-op at the pin, and so is the native tier's.
+    // ast-grep-ignore: no-one-line-functions - InMemoryCache.disconnect and the native tier are no-ops at the pin
     fn close(&self) -> PyResult<()> {
         Ok(())
     }
 
+    // ast-grep-ignore: no-one-line-functions - the awaitable of an immediate answer is the whole behavior
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         future_into_py(py, async move { Ok(()) })
     }

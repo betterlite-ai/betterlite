@@ -87,7 +87,7 @@ impl From<BackendHandleError> for PyErr {
 }
 
 // Every backend call converts its own error type through BackendHandleError into the Python exception.
-pub(crate) fn to_py<Value, Failure>(result: Result<Value, Failure>) -> PyResult<Value>
+pub(crate) fn backend_err<Value, Failure>(result: Result<Value, Failure>) -> PyResult<Value>
 where
     BackendHandleError: From<Failure>,
 {

@@ -48,7 +48,7 @@ impl NativeRedis {
             gate: Arc::new(QuietGate),
         };
         let environment = process_environment();
-        let cache = error::to_py(get_runtime().block_on(connect(options, &environment)))?;
+        let cache = error::backend_err(get_runtime().block_on(connect(options, &environment)))?;
         Ok(Self {
             cache: Arc::new(cache),
         })
@@ -72,7 +72,7 @@ impl NativeRedis {
         let cache = Arc::clone(&self.cache);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            error::to_py(
+            error::backend_err(
                 cache
                     .values
                     .async_set_cache(Some(&owned), &json, ttl, false)
@@ -83,7 +83,7 @@ impl NativeRedis {
     }
 
     fn get(&self, key: &str) -> PyResult<Option<String>> {
-        let stored = error::to_py(self.cache.values.get_cache(key))?;
+        let stored = error::backend_err(self.cache.values.get_cache(key))?;
         stored
             .map(convert::text_of_cached)
             .transpose()
@@ -94,7 +94,7 @@ impl NativeRedis {
         let cache = Arc::clone(&self.cache);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            let stored = error::to_py(cache.async_get_cache(&owned).await)?;
+            let stored = error::backend_err(cache.async_get_cache(&owned).await)?;
             stored
                 .map(convert::text_of_cached)
                 .transpose()
@@ -105,7 +105,7 @@ impl NativeRedis {
     // LiteLLM's sync increment is typed int and uses INCR; the counter slice keeps those whole numbers.
     fn increment(&self, key: &str, value: f64, ttl: Option<f64>) -> PyResult<String> {
         let whole = convert::whole_increment(value)?;
-        let counted = error::to_py(self.cache.counters.increment_cache(key, whole, ttl))?;
+        let counted = error::backend_err(self.cache.counters.increment_cache(key, whole, ttl))?;
         convert::whole_text(counted).map_err(PyErr::from)
     }
 
@@ -120,14 +120,15 @@ impl NativeRedis {
         let cache = Arc::clone(&self.cache);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            let counted = error::to_py(cache.async_increment(&owned, value, seconds, false).await)?;
+            let counted =
+                error::backend_err(cache.async_increment(&owned, value, seconds, false).await)?;
             convert::number_text(counted).map_err(PyErr::from)
         })
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
         for key in &keys {
-            error::to_py(self.cache.admin.delete_cache(key))?;
+            error::backend_err(self.cache.admin.delete_cache(key))?;
         }
         Ok(())
     }
@@ -135,7 +136,7 @@ impl NativeRedis {
     fn async_delete<'py>(&self, py: Python<'py>, keys: Vec<String>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            error::to_py(cache.admin.delete_cache_keys(&keys).await)?;
+            error::backend_err(cache.admin.delete_cache_keys(&keys).await)?;
             Ok(())
         })
     }
@@ -143,7 +144,7 @@ impl NativeRedis {
     fn ttl(&self, py: Python<'_>, key: &str) -> PyResult<Option<String>> {
         let cache = Arc::clone(&self.cache);
         let remaining = py.detach(|| get_runtime().block_on(cache.async_get_ttl(key)));
-        let seconds = error::to_py(remaining)?;
+        let seconds = error::backend_err(remaining)?;
         seconds
             .map(convert::whole_text)
             .transpose()
@@ -154,7 +155,7 @@ impl NativeRedis {
         let cache = Arc::clone(&self.cache);
         let owned = key.to_owned();
         future_into_py(py, async move {
-            let seconds = error::to_py(cache.async_get_ttl(&owned).await)?;
+            let seconds = error::backend_err(cache.async_get_ttl(&owned).await)?;
             seconds
                 .map(convert::whole_text)
                 .transpose()
@@ -163,27 +164,28 @@ impl NativeRedis {
     }
 
     fn flush(&self) -> PyResult<()> {
-        error::to_py(self.cache.admin.flush_cache())?;
+        error::backend_err(self.cache.admin.flush_cache())?;
         Ok(())
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            error::to_py(cache.admin.flush_cache())?;
+            error::backend_err(cache.admin.flush_cache())?;
             Ok(())
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - the sync probe keeps its failure and the async one asks the same question
     fn ping(&self) -> PyResult<bool> {
-        let alive = error::to_py(self.cache.admin.sync_ping(None))?;
+        let alive = error::backend_err(self.cache.admin.sync_ping(None))?;
         Ok(alive)
     }
 
     fn async_ping<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            let alive = error::to_py(cache.admin.ping(None).await)?;
+            let alive = error::backend_err(cache.admin.ping(None).await)?;
             Ok(alive)
         })
     }
