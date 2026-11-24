@@ -95,7 +95,9 @@ impl MemoryClaimStore {
             record.expires_at = expires_at;
         }
         record.count = record.count.saturating_add(1);
-        record.count
+        let count = record.count;
+        drop(entries);
+        count
     }
 
     pub fn read(&self, key: &str) -> Option<u64> {
@@ -167,6 +169,7 @@ fn claimed(counted: Result<u64, ClaimBackendError>) -> ClaimOutcome {
     }
 }
 
+#[must_use]
 pub fn claim_refusal(outcome: ClaimOutcome, replayed_error: OauthError) -> Option<OauthError> {
     match outcome {
         ClaimOutcome::First => None,

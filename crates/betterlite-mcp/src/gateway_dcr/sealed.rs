@@ -25,8 +25,8 @@ pub fn seal<P>(prefix: &str, payload: &P, cipher: &DbCipher) -> Result<String, S
 where
     P: Serialize,
 {
-    let payload = serde_json::to_string(payload).map_err(SealError::Serialize)?;
-    let stored = StoredValue::<Infallible>::Text(SecretString::from(payload));
+    let serialized = serde_json::to_string(payload).map_err(SealError::Serialize)?;
+    let stored = StoredValue::<Infallible>::Text(SecretString::from(serialized));
     let sealed = cipher
         .encrypt_value(stored, None)
         .map_err(SealError::Encrypt)?;
@@ -42,6 +42,7 @@ pub trait Sealable: DeserializeOwned {
     fn acceptable(&self) -> bool;
 }
 
+#[must_use]
 pub fn open_sealed<T>(value: &str, prefix: &str, cipher: &DbCipher, debug_key: &str) -> Option<T>
 where
     T: Sealable,
@@ -60,10 +61,11 @@ where
         StoredValue::Text(text) => text,
         StoredValue::Other(never) => match never {},
     };
-    let opened: T = serde_json::from_str(text.expose_secret()).ok()?;
-    opened.acceptable().then_some(opened)
+    let parsed: T = serde_json::from_str(text.expose_secret()).ok()?;
+    parsed.acceptable().then_some(parsed)
 }
 
+#[must_use]
 pub fn open_gateway_dcr_client(client_id: &str, cipher: &DbCipher) -> Option<GatewayDcrClient> {
     open_sealed(
         client_id,
