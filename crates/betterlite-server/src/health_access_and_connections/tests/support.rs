@@ -247,12 +247,12 @@ fn authorizer(teams: FakeTeams) -> Arc<ModelCallAuthorizer> {
 
 pub(super) fn state_with_router(
     router: Option<Arc<dyn HealthRouter>>,
-    probe: &Arc<FakeProbe>,
+    fake_probe: &Arc<FakeProbe>,
     teams: FakeTeams,
 ) -> TestConnectionState {
     let mut bundled = BundledCatalog::default();
     let models = bundled.get();
-    let probe: Arc<dyn ConnectionProbe> = Arc::clone(probe);
+    let probe: Arc<dyn ConnectionProbe> = Arc::<FakeProbe>::clone(fake_probe);
     TestConnectionState {
         router,
         probe,
@@ -304,9 +304,9 @@ pub(super) fn master_context() -> AuthContext {
     context("master_key", &[], SourceKey(None))
 }
 
-pub(super) fn key_context(fields: &str) -> AuthContext {
+pub(super) fn key_context(key_fields: &str) -> AuthContext {
     let fields: BTreeMap<String, JsonData> =
-        serde_json::from_str(fields).expect("the key fixture parses");
+        serde_json::from_str(key_fields).expect("the key fixture parses");
     let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key fixture builds");
     context("key-owner", &[], SourceKey(Some(key)))
 }

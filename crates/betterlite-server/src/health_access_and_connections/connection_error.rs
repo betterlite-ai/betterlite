@@ -67,8 +67,8 @@ pub enum ConnectionError {
 
 // can_user_make_model_call's three refusals, in the exact texts the model management endpoint raises
 #[must_use]
-pub fn model_call_rejection(error: ModelWriteError, role: Option<&str>) -> ConnectionError {
-    let (status, detail) = match &error {
+pub fn model_call_rejection(error: &ModelWriteError, role: Option<&str>) -> ConnectionError {
+    let (status, detail) = match error {
         ModelWriteError::ViewOnly => (
             StatusCode::FORBIDDEN,
             RejectionDetail::Message(VIEW_ONLY_DETAIL.to_owned()),

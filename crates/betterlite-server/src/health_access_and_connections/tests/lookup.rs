@@ -247,12 +247,12 @@ fn a_request_url_or_opt_in_only_field_is_refused_unless_the_opt_in_covers_it() {
     assert!(reject_banned_params(&model_list, true).is_err());
     let opt_in_only = object(vec![("user_config", Json::Object(JsonObject::new()))]);
     assert!(reject_banned_params(&opt_in_only, false).is_err());
-    assert!(reject_banned_params(&opt_in_only, true).is_ok());
+    reject_banned_params(&opt_in_only, true).unwrap();
     let clean = object(vec![
         ("model", text("gpt")),
         ("api_key", text("sk-request")),
     ]);
-    assert!(reject_banned_params(&clean, false).is_ok());
+    reject_banned_params(&clean, false).unwrap();
 }
 
 #[test]

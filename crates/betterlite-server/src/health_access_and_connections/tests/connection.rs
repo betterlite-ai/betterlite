@@ -70,14 +70,12 @@ fn status_of(body: &JsonObject) -> &str {
 
 #[test]
 fn a_rejection_renders_its_detail() {
-    let view_only = model_call_rejection(ModelWriteError::ViewOnly, None);
+    let view_only = model_call_rejection(&ModelWriteError::ViewOnly, None);
     assert_eq!(view_only.to_string(), VIEW_ONLY);
-    let missing = model_call_rejection(
-        ModelWriteError::TeamMissing {
-            team_id: "t9".to_owned(),
-        },
-        None,
-    );
+    let missing_error = ModelWriteError::TeamMissing {
+        team_id: "t9".to_owned(),
+    };
+    let missing = model_call_rejection(&missing_error, None);
     assert_eq!(missing.to_string(), "Team id=t9 does not exist in db");
 }
 
@@ -184,12 +182,12 @@ async fn the_client_credential_opt_in_still_refuses_urls() {
     assert!(probe.seen().is_empty());
 
     let allowed = FakeProbe::answering(JsonObject::new());
-    let mut connection = state(gpt_router(), &allowed, FakeTeams::holding(&["t1"]));
-    connection.allow_client_side_credentials = true;
-    let body =
+    let mut opted_in = state(gpt_router(), &allowed, FakeTeams::holding(&["t1"]));
+    opted_in.allow_client_side_credentials = true;
+    let allowed_body =
         r#"{"litellm_params": {"model": "gpt-4o", "user_config": {"team": "a"}}, "mode": "chat"}"#;
-    let reply = call(connection, Some(&master_context()), body).await;
-    assert_eq!(reply.status, StatusCode::OK);
+    let allowed_reply = call(opted_in, Some(&master_context()), allowed_body).await;
+    assert_eq!(allowed_reply.status, StatusCode::OK);
     let (params, _mode) = single_seen(&allowed);
     assert_eq!(
         params.get("user_config").cloned(),
@@ -341,8 +339,8 @@ async fn a_miss_or_a_router_failure_probes_the_request_params_only(
     let router: Option<Arc<dyn HealthRouter>> = if failing {
         Some(Arc::new(failing_router()))
     } else if with_router {
-        let router: Arc<dyn HealthRouter> = Arc::new(fake_router(gpt_router()));
-        Some(router)
+        let selected: Arc<dyn HealthRouter> = Arc::new(fake_router(gpt_router()));
+        Some(selected)
     } else {
         None
     };

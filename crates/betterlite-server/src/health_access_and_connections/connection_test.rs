@@ -1,8 +1,8 @@
-use axum::Json;
+use axum::Json as AxumJson;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Extension, Request, State};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use betterlite_auth::request_ban_catalog::RequestBanCatalog;
 use betterlite_models::decisions::Json;
@@ -106,14 +106,14 @@ async fn test_connection(
         }
         Err(BufferError::Unreadable(_reason)) => return unreadable_body_response(),
     };
-    match run_test(state, &context, &body).await {
-        Ok(response) => Json(response).into_response(),
+    match run_test(&state, &context, &body).await {
+        Ok(response) => AxumJson(response).into_response(),
         Err(error) => error.into_response(),
     }
 }
 
 async fn run_test(
-    state: TestConnectionState,
+    state: &TestConnectionState,
     context: &AuthContext,
     body: &Bytes,
 ) -> Result<TestConnectionResponse, ConnectionError> {
@@ -121,42 +121,59 @@ async fn run_test(
     if state.authorizer.is_none() {
         return Err(ConnectionError::Database);
     }
+    let caller = HealthCaller::from_context(context)?;
     let ConnectionTestRequest {
         mode,
         litellm_params,
         model_info,
     } = request;
+    let request_params = checked_params(state, litellm_params, model_info.as_ref())?;
+    probe_authorized(state, &request_params, model_info, &caller, mode).await
+}
+
+// the os.environ/ scan and B884's URL check on everything the request itself supplied
+fn checked_params(
+    state: &TestConnectionState,
+    litellm_params: Option<JsonObject>,
+    model_info: Option<&JsonObject>,
+) -> Result<JsonObject, ConnectionError> {
     let request_params = litellm_params.unwrap_or_default();
-    reject_request_fields(&request_params, model_info.as_ref())?;
+    reject_request_fields(&request_params, model_info)?;
     reject_connection_fields(
         &request_params,
-        model_info.as_ref(),
+        model_info,
         state.allow_client_side_credentials,
     )?;
-    let caller = HealthCaller::from_context(context)?;
+    Ok(request_params)
+}
+
+// the lookup and authorization on the final probe params, then one probe bounded by the health check timeout
+async fn probe_authorized(
+    state: &TestConnectionState,
+    request_params: &JsonObject,
+    model_info: Option<JsonObject>,
+    caller: &HealthCaller,
+    mode: Option<ConnectionMode>,
+) -> Result<TestConnectionResponse, ConnectionError> {
     let ModelLookup {
         config_params,
         model_info: loaded_model_info,
-    } = lookup_deployment(
-        state.router.as_deref(),
-        &request_params,
-        model_info.as_ref(),
-    );
+    } = lookup_deployment(state.router.as_deref(), request_params, model_info.as_ref());
     let resolved = loaded_model_info.or(model_info);
-    let mut prepared = prepare_params(&state, &config_params, &request_params, resolved.as_ref())?;
+    let mut prepared = prepare_params(state, &config_params, request_params, resolved.as_ref())?;
     let team_caller = caller.team_caller();
     authorize(
-        &state,
+        state,
         resolved.as_ref(),
         &team_caller,
         caller.user_role.as_deref(),
     )
     .await?;
-    let mode = match mode {
-        Some(mode) => Some(mode.as_str().to_owned()),
+    let probe_mode = match mode {
+        Some(named) => Some(named.as_str().to_owned()),
         None => take_mode(&mut prepared),
     };
-    let result = state.probe.probe(&prepared, mode.as_deref()).await?;
+    let result = state.probe.probe(&prepared, probe_mode.as_deref()).await?;
     Ok(respond(prepared, &result))
 }
 
@@ -232,7 +249,7 @@ async fn authorize(
     authorizer
         .authorize(caller, team_id)
         .await
-        .map_err(|error| model_call_rejection(error, role))
+        .map_err(|error| model_call_rejection(&error, role))
 }
 
 fn team_id_of(resolved_model_info: Option<&JsonObject>) -> Result<Option<&str>, ConnectionError> {

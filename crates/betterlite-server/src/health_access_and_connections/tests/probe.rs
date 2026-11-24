@@ -1,7 +1,7 @@
+use std::future::pending;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 
 use crate::health_access_and_connections::connection_state::{SELF_PROMPT, timed_probe};
 use crate::health_check_entry::{
@@ -109,8 +109,7 @@ async fn the_missing_mode_failure_leaves_the_raw_request_key_out() {
 
 #[tokio::test(start_paused = true)]
 async fn a_probe_over_the_timeout_is_the_timeout_result() {
-    let pending = std::future::pending::<HealthCheckOutcome>();
-    let result = timed_probe(pending, Duration::from_secs(60))
+    let result = timed_probe(pending::<HealthCheckOutcome>(), Duration::from_secs(60))
         .await
         .expect("a timeout result encodes");
     assert_eq!(result, object(vec![("error", text("Timeout exceeded"))]));

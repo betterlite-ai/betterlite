@@ -93,12 +93,12 @@ impl ConnectionProbe for EntryProbe {
         let map = serde_json::from_value(encoded).map_err(encode_error)?;
         let probe_params = HealthProbeParams::from_map(map).map_err(probe_error)?;
         let entry = Arc::clone(&self.entry);
-        let mode = mode.map(str::to_owned);
+        let probe_mode = mode.map(str::to_owned);
         let prompt = SELF_PROMPT.to_owned();
         let input = vec![SELF_PROMPT.to_owned()];
         let check = async move {
             entry
-                .check_health(probe_params, mode, Some(prompt), Some(input))
+                .check_health(probe_params, probe_mode, Some(prompt), Some(input))
                 .await
         };
         timed_probe(check, self.timeout).await
