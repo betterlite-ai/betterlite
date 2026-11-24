@@ -51,10 +51,9 @@ impl RuntimeEnvironment {
 
 impl EnvironmentLookup for RuntimeEnvironment {
     fn lookup(&self, name: &str) -> Option<String> {
-        match self.overlay.get(name) {
-            Some(value) => value.clone(),
-            None => self.boot.get(name).cloned(),
-        }
+        self.overlay
+            .get(name)
+            .map_or_else(|| self.boot.get(name).cloned(), |value| value.clone())
     }
 }
 

@@ -14,10 +14,9 @@ use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 use tokio_postgres::NoTls;
 
-use super::object;
+use super::{object, text, value};
 use crate::config_override_support::persist::{
     ConfigOverrideStore, ConfigOverrideStoreError, DatabaseConfigOverrideStore,
     PersistOverrideError, persist_cyberark_config,
@@ -81,23 +80,27 @@ async fn encrypts_every_value_and_upserts_the_cyberark_row() {
     let payload = persist_cyberark_config(
         &store,
         &cipher,
-        &object(json!({
-            "cyberark_api_base": "https://conjur.example.com",
-            "cyberark_api_key": "hunter2",
-            "refresh_interval": ""
-        })),
+        &object(
+            r#"{
+                "cyberark_api_base": "https://conjur.example.com",
+                "cyberark_api_key": "hunter2",
+                "refresh_interval": ""
+            }"#,
+        ),
     )
     .await
     .unwrap();
     assert_eq!(payload.len(), 3);
-    assert_ne!(payload.get("cyberark_api_key"), Some(&json!("hunter2")));
+    assert_ne!(payload.get("cyberark_api_key"), Some(&text("hunter2")));
     assert_eq!(
         decrypt_env(&payload, &cipher),
-        object(json!({
-            "cyberark_api_base": "https://conjur.example.com",
-            "cyberark_api_key": "hunter2",
-            "refresh_interval": ""
-        }))
+        object(
+            r#"{
+                "cyberark_api_base": "https://conjur.example.com",
+                "cyberark_api_key": "hunter2",
+                "refresh_interval": ""
+            }"#
+        )
     );
     let calls = store.calls();
     assert_eq!(calls.len(), 1);
@@ -115,12 +118,12 @@ async fn leaves_non_string_values_for_the_column() {
     let payload = persist_cyberark_config(
         &store,
         &cipher,
-        &object(json!({"cyberark_account": null, "refresh_interval": 60})),
+        &object(r#"{"cyberark_account": null, "refresh_interval": 60}"#),
     )
     .await
     .unwrap();
     assert_eq!(payload.get("cyberark_account"), Some(&JsonValue::Null));
-    assert_eq!(payload.get("refresh_interval"), Some(&json!(60)));
+    assert_eq!(payload.get("refresh_interval"), Some(&value("60")));
 }
 
 #[tokio::test]
@@ -129,7 +132,7 @@ async fn a_missing_signing_key_fails_before_the_store() {
     let error = persist_cyberark_config(
         &store,
         &cipher(None),
-        &object(json!({"cyberark_api_key": "hunter2"})),
+        &object(r#"{"cyberark_api_key": "hunter2"}"#),
     )
     .await
     .unwrap_err();
@@ -143,7 +146,7 @@ async fn a_store_failure_is_reported() {
     let error = persist_cyberark_config(
         &store,
         &cipher(Some("test-signing-key")),
-        &object(json!({"cyberark_account": "acct"})),
+        &object(r#"{"cyberark_account": "acct"}"#),
     )
     .await
     .unwrap_err();
@@ -210,12 +213,18 @@ async fn the_database_store_creates_and_updates_the_cyberark_row() {
         .upsert_config_override("cyberark", r#"{"cyberark_account": "first"}"#)
         .await
         .unwrap();
-    assert_eq!(stored(&pool).await, json!({"cyberark_account": "first"}));
+    assert_eq!(
+        stored(&pool).await,
+        value(r#"{"cyberark_account": "first"}"#)
+    );
     store
         .upsert_config_override("cyberark", r#"{"cyberark_account": "second"}"#)
         .await
         .unwrap();
-    assert_eq!(stored(&pool).await, json!({"cyberark_account": "second"}));
+    assert_eq!(
+        stored(&pool).await,
+        value(r#"{"cyberark_account": "second"}"#)
+    );
     close(fixture, pool).await;
 }
 

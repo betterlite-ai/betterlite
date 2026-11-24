@@ -74,7 +74,7 @@ pub struct CyberArkConfig {
     pub refresh_interval: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ConfigOverrideSettingsResponse {
     pub config_type: String,
     pub values: JsonMap,

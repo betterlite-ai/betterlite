@@ -89,8 +89,8 @@ pub async fn persist_cyberark_config<S, N, D>(
 ) -> Result<JsonMap, PersistOverrideError>
 where
     S: ConfigOverrideStore + ?Sized,
-    N: NonceSource,
-    D: SecretDiagnostics,
+    N: NonceSource + Send + Sync,
+    D: SecretDiagnostics + Send + Sync,
 {
     let encrypted = encrypt_env(config, cipher, None)?;
     let config_value = serde_json::to_string(&encrypted)?;

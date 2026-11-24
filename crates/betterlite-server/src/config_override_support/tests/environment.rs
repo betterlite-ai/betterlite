@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::EnvironmentLookup as _;
-use serde_json::json;
 
 use super::object;
 use crate::config_override_support::environment::{RuntimeEnvironment, project_environment};
@@ -13,12 +12,14 @@ use crate::config_override_support::models::OverrideKind;
 fn projects_mapped_values_and_removes_empty_or_missing_ones() {
     let batch = project_environment(
         OverrideKind::HashicorpVault,
-        &object(json!({
-            "vault_addr": "https://vault.example.com",
-            "vault_token": "",
-            "vault_namespace": null,
-            "client_cert": "cert.pem"
-        })),
+        &object(
+            r#"{
+                "vault_addr": "https://vault.example.com",
+                "vault_token": "",
+                "vault_namespace": null,
+                "client_cert": "cert.pem"
+            }"#,
+        ),
     );
     assert_eq!(batch.changes.len(), 13);
     assert_eq!(
@@ -38,11 +39,13 @@ fn projects_mapped_values_and_removes_empty_or_missing_ones() {
 fn stringifies_the_other_values_the_model_can_carry() {
     let vault = project_environment(
         OverrideKind::HashicorpVault,
-        &object(json!({
-            "approle_role_id": 7,
-            "vault_mount_name": true,
-            "vault_path_prefix": ["a", "b"]
-        })),
+        &object(
+            r#"{
+                "approle_role_id": 7,
+                "vault_mount_name": true,
+                "vault_path_prefix": ["a", "b"]
+            }"#,
+        ),
     );
     assert_eq!(
         vault.changes.get("HCP_VAULT_APPROLE_ROLE_ID"),
@@ -58,7 +61,7 @@ fn stringifies_the_other_values_the_model_can_carry() {
     );
     let cyberark = project_environment(
         OverrideKind::CyberArk,
-        &object(json!({"ssl_verify": false, "refresh_interval": 60})),
+        &object(r#"{"ssl_verify": false, "refresh_interval": 60}"#),
     );
     assert_eq!(cyberark.changes.len(), 8);
     assert_eq!(
@@ -87,26 +90,19 @@ fn applies_batches_over_boot_values_without_changing_earlier_snapshots() {
     let early = environment.snapshot();
     environment.apply(&project_environment(
         OverrideKind::HashicorpVault,
-        &object(json!({
-            "vault_addr": "https://runtime",
-            "vault_token": null
-        })),
+        &object(r#"{"vault_addr": "https://runtime", "vault_token": null}"#),
     ));
     let late = environment.snapshot();
     assert_eq!(
         early.values,
-        [
+        BTreeMap::from([
             ("HCP_VAULT_ADDR".to_owned(), "https://boot".to_owned()),
             ("HCP_VAULT_TOKEN".to_owned(), "boot-token".to_owned()),
-        ]
-        .into_iter()
-        .collect::<BTreeMap<_, _>>()
+        ])
     );
     assert_eq!(
         late.values,
-        [("HCP_VAULT_ADDR".to_owned(), "https://runtime".to_owned())]
-            .into_iter()
-            .collect::<BTreeMap<_, _>>()
+        BTreeMap::from([("HCP_VAULT_ADDR".to_owned(), "https://runtime".to_owned())])
     );
     assert_eq!(
         environment.lookup("HCP_VAULT_ADDR").as_deref(),

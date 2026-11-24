@@ -2,9 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::json;
+use betterlite_config::sections::settings::JsonValue;
 
-use super::object;
+use super::{object, text, value};
 use crate::config_override_support::environment::{EnvironmentSnapshot, RuntimeEnvironment};
 use crate::config_override_support::state::{
     ManagerKind, OverrideRuntimeState, SecretManagerControl, SecretManagerInitError,
@@ -82,7 +82,7 @@ fn clear_vault_removes_its_values_and_drops_an_active_vault() {
         ("CYBERARK_API_BASE", "https://conjur"),
     ]);
     let mut state = state();
-    state.vault_last_config = Some(json!({"vault_addr": "https://boot"}));
+    state.vault_last_config = Some(value(r#"{"vault_addr": "https://boot"}"#));
     let mut control = Control::new(Some(ManagerKind::HashicorpVault), None);
     clear_hashicorp_vault_state(&mut environment, &mut state, &mut control);
     assert_eq!(
@@ -98,7 +98,7 @@ fn clear_vault_removes_its_values_and_drops_an_active_vault() {
 fn clear_vault_leaves_another_active_manager_alone() {
     let mut environment = environment(&[("HCP_VAULT_ADDR", "https://boot")]);
     let mut state = state();
-    state.vault_last_config = Some(json!({}));
+    state.vault_last_config = Some(value("{}"));
     let mut control = Control::new(Some(ManagerKind::CyberArk), None);
     clear_hashicorp_vault_state(&mut environment, &mut state, &mut control);
     assert!(environment.snapshot().values.is_empty());
@@ -123,9 +123,9 @@ fn cyberark_boot_values_are_captured_once() {
     snapshot_cyberark_boot_env(&mut state, &second);
     let boot = state.cyberark_boot_env.unwrap();
     assert_eq!(boot.len(), 8);
-    assert_eq!(boot.get("cyberark_api_base"), Some(&json!("https://boot")));
-    assert_eq!(boot.get("cyberark_account"), Some(&json!(null)));
-    assert_eq!(boot.get("client_key"), Some(&json!(null)));
+    assert_eq!(boot.get("cyberark_api_base"), Some(&text("https://boot")));
+    assert_eq!(boot.get("cyberark_account"), Some(&JsonValue::Null));
+    assert_eq!(boot.get("client_key"), Some(&JsonValue::Null));
 }
 
 #[test]
@@ -135,16 +135,13 @@ fn restore_cyberark_applies_its_values_and_initializes_on_api_base() {
         ("CYBERARK_ACCOUNT", "old-account"),
     ]);
     let mut state = state();
-    state.vault_last_config = Some(json!({}));
+    state.vault_last_config = Some(value("{}"));
     let mut control = Control::new(None, None);
     restore_cyberark_runtime(
         &mut environment,
         &mut state,
         &mut control,
-        &object(json!({
-            "cyberark_api_base": "https://conjur",
-            "cyberark_api_key": "hunter2"
-        })),
+        &object(r#"{"cyberark_api_base": "https://conjur", "cyberark_api_key": "hunter2"}"#),
     );
     assert_eq!(control.calls, vec![Call::Initialize(ManagerKind::CyberArk)]);
     assert_eq!(control.active, Some(ManagerKind::CyberArk));
@@ -169,13 +166,13 @@ fn restore_cyberark_applies_its_values_and_initializes_on_api_base() {
 fn restore_falls_back_to_vault_after_dropping_an_active_cyberark() {
     let mut environment = environment(&[("HCP_VAULT_ADDR", "https://vault")]);
     let mut state = state();
-    state.vault_last_config = Some(json!({}));
+    state.vault_last_config = Some(value("{}"));
     let mut control = Control::new(Some(ManagerKind::CyberArk), Some(ManagerKind::CyberArk));
     restore_cyberark_runtime(
         &mut environment,
         &mut state,
         &mut control,
-        &object(json!({"cyberark_api_base": "https://conjur"})),
+        &object(r#"{"cyberark_api_base": "https://conjur"}"#),
     );
     assert_eq!(
         control.calls,
@@ -193,13 +190,13 @@ fn restore_falls_back_to_vault_after_dropping_an_active_cyberark() {
 fn restore_never_reinitializes_vault_without_an_active_cyberark() {
     let mut environment = environment(&[("HCP_VAULT_ADDR", "https://vault")]);
     let mut state = state();
-    state.vault_last_config = Some(json!({}));
+    state.vault_last_config = Some(value("{}"));
     let mut control = Control::new(None, Some(ManagerKind::CyberArk));
     restore_cyberark_runtime(
         &mut environment,
         &mut state,
         &mut control,
-        &object(json!({"cyberark_api_base": "https://conjur"})),
+        &object(r#"{"cyberark_api_base": "https://conjur"}"#),
     );
     assert_eq!(control.calls, vec![Call::Initialize(ManagerKind::CyberArk)]);
     assert_eq!(control.active, None);
@@ -210,13 +207,13 @@ fn restore_never_reinitializes_vault_without_an_active_cyberark() {
 fn restore_drops_cyberark_without_a_vault_address_to_return_to() {
     let mut environment = environment(&[]);
     let mut state = state();
-    state.vault_last_config = Some(json!({}));
+    state.vault_last_config = Some(value("{}"));
     let mut control = Control::new(Some(ManagerKind::CyberArk), None);
     restore_cyberark_runtime(
         &mut environment,
         &mut state,
         &mut control,
-        &object(json!({"cyberark_account": "acct"})),
+        &object(r#"{"cyberark_account": "acct"}"#),
     );
     assert_eq!(control.calls, vec![Call::Drop]);
     assert_eq!(control.active, None);
@@ -227,13 +224,13 @@ fn restore_drops_cyberark_without_a_vault_address_to_return_to() {
 fn restore_skips_vault_when_its_address_is_empty() {
     let mut environment = environment(&[("HCP_VAULT_ADDR", "")]);
     let mut state = state();
-    state.vault_last_config = Some(json!({}));
+    state.vault_last_config = Some(value("{}"));
     let mut control = Control::new(Some(ManagerKind::CyberArk), None);
     restore_cyberark_runtime(
         &mut environment,
         &mut state,
         &mut control,
-        &object(json!({"cyberark_account": "acct"})),
+        &object(r#"{"cyberark_account": "acct"}"#),
     );
     assert_eq!(control.calls, vec![Call::Drop]);
     assert_eq!(control.active, None);
@@ -244,12 +241,14 @@ fn restore_skips_vault_when_its_address_is_empty() {
 fn clear_cyberark_restores_boot_values_and_clears_its_marker() {
     let mut environment = environment(&[]);
     let mut state = state();
-    state.cyberark_last_config = Some(json!({"cyberark_api_base": "https://stored"}));
-    state.cyberark_boot_env = Some(object(json!({
-        "cyberark_api_base": "https://boot",
-        "cyberark_account": "acct",
-        "client_key": null
-    })));
+    state.cyberark_last_config = Some(value(r#"{"cyberark_api_base": "https://stored"}"#));
+    state.cyberark_boot_env = Some(object(
+        r#"{
+            "cyberark_api_base": "https://boot",
+            "cyberark_account": "acct",
+            "client_key": null
+        }"#,
+    ));
     let mut control = Control::new(None, None);
     clear_cyberark_state(&mut environment, &mut state, &mut control);
     assert_eq!(control.calls, vec![Call::Initialize(ManagerKind::CyberArk)]);
@@ -268,7 +267,7 @@ fn clear_cyberark_restores_boot_values_and_clears_its_marker() {
 fn clear_cyberark_without_boot_values_hands_back_to_vault() {
     let mut environment = environment(&[("HCP_VAULT_ADDR", "https://vault")]);
     let mut state = state();
-    state.cyberark_last_config = Some(json!({}));
+    state.cyberark_last_config = Some(value("{}"));
     let mut control = Control::new(Some(ManagerKind::CyberArk), None);
     clear_cyberark_state(&mut environment, &mut state, &mut control);
     assert_eq!(

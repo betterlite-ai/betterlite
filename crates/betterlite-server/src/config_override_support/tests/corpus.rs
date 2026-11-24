@@ -15,18 +15,18 @@ use crate::config_override_support::models::OverrideKind;
 fn replays_the_config_override_corpus(#[files("fuzz/corpus/config_override/*")] path: PathBuf) {
     let bytes = fs::read(&path).unwrap();
     let kinds = [OverrideKind::HashicorpVault, OverrideKind::CyberArk];
-    kinds.into_iter().for_each(|kind| {
+    for kind in kinds {
         drop(decode_config_override(&bytes, kind));
-    });
+    }
     if let Ok(text) = from_utf8(&bytes) {
         let stored = JsonValue::String(text.to_owned());
-        kinds.into_iter().for_each(|kind| {
+        for kind in kinds {
             drop(decode_stored_override(&stored, kind));
-        });
+        }
     }
-    if let Ok(value) = safe_json_loads(&bytes) {
-        kinds.into_iter().for_each(|kind| {
-            drop(decode_stored_override(&value, kind));
-        });
+    if let Ok(parsed) = safe_json_loads(&bytes) {
+        for kind in kinds {
+            drop(decode_stored_override(&parsed, kind));
+        }
     }
 }

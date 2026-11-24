@@ -1,7 +1,7 @@
 #![cfg(test)]
 
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
-use serde_json::json;
 
 use crate::config_override_support::models::{
     ConfigOverrideSettingsResponse, OverrideKind, field_schema,
@@ -16,39 +16,41 @@ fn kinds_name_themselves_as_litellm_config_types() {
 
 #[test]
 fn kinds_deserialize_from_litellm_config_type_names() {
-    let vault: OverrideKind = serde_json::from_value(json!("hashicorp_vault")).unwrap();
-    let cyberark: OverrideKind = serde_json::from_value(json!("cyberark")).unwrap();
+    let vault: OverrideKind = serde_json::from_str(r#""hashicorp_vault""#).unwrap();
+    let cyberark: OverrideKind = serde_json::from_str(r#""cyberark""#).unwrap();
     assert_eq!(vault, OverrideKind::HashicorpVault);
     assert_eq!(cyberark, OverrideKind::CyberArk);
     assert_eq!(
-        serde_json::to_value(OverrideKind::CyberArk).unwrap(),
-        json!("cyberark")
+        serde_json::to_string(&OverrideKind::CyberArk).unwrap(),
+        r#""cyberark""#
     );
-    serde_json::from_value::<OverrideKind>(json!("cyber_ark")).unwrap_err();
+    serde_json::from_str::<OverrideKind>(r#""cyber_ark""#).unwrap_err();
 }
 
 #[test]
 fn schema_reports_the_model_description_and_first_non_null_type() {
     let schema = field_schema(OverrideKind::CyberArk);
     assert_eq!(
-        schema.pointer("/description"),
-        Some(&json!(
-            "Configuration for CyberArk Conjur secret manager integration."
-        ))
+        schema.pointer("/description").and_then(JsonValue::as_str),
+        Some("Configuration for CyberArk Conjur secret manager integration.")
     );
     assert_eq!(
-        schema.pointer("/properties/cyberark_api_base/description"),
-        Some(&json!(
-            "The address of the CyberArk Conjur server (e.g., https://conjur.example.com)"
-        ))
+        schema
+            .pointer("/properties/cyberark_api_base/description")
+            .and_then(JsonValue::as_str),
+        Some("The address of the CyberArk Conjur server (e.g., https://conjur.example.com)")
     );
     assert_eq!(
-        schema.pointer("/properties/cyberark_api_base/type"),
-        Some(&json!("string"))
+        schema
+            .pointer("/properties/cyberark_api_base/type")
+            .and_then(JsonValue::as_str),
+        Some("string")
     );
     assert_eq!(
-        field_schema(OverrideKind::HashicorpVault).pointer("/properties/vault_token/type"),
-        Some(&json!("string"))
+        field_schema(OverrideKind::HashicorpVault)
+            .pointer("/properties/vault_token/type")
+            .and_then(JsonValue::as_str),
+        Some("string")
     );
 }
 
@@ -60,7 +62,13 @@ fn the_settings_response_reports_the_three_fields() {
         field_schema: field_schema(OverrideKind::CyberArk),
     };
     let encoded = serde_json::to_value(&response).unwrap();
-    assert_eq!(encoded.pointer("/config_type"), Some(&json!("cyberark")));
-    assert_eq!(encoded.pointer("/values"), Some(&json!({})));
+    assert_eq!(
+        encoded.pointer("/config_type").and_then(JsonValue::as_str),
+        Some("cyberark")
+    );
+    assert_eq!(
+        encoded.pointer("/values"),
+        Some(&JsonValue::Object(JsonMap::new()))
+    );
     assert!(encoded.pointer("/field_schema/properties").is_some());
 }

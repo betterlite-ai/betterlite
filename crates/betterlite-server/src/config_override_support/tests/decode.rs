@@ -2,9 +2,8 @@
 
 use betterlite_config::sections::settings::JsonValue;
 use rstest::rstest;
-use serde_json::json;
 
-use super::object;
+use super::{object, value};
 use crate::config_override_support::decode::{
     OverrideConfig, OverrideDecodeError, StoredOverrideError, decode_config_override,
     decode_stored_override,
@@ -20,10 +19,12 @@ fn reads_string_fields_and_ignores_unknown_ones() {
     .unwrap();
     assert_eq!(
         decoded.values,
-        object(json!({
-            "vault_addr": "https://vault.example.com:8200",
-            "vault_namespace": ""
-        }))
+        object(
+            r#"{
+                "vault_addr": "https://vault.example.com:8200",
+                "vault_namespace": ""
+            }"#
+        )
     );
     match decoded.config {
         OverrideConfig::HashicorpVault(model) => {
@@ -64,10 +65,12 @@ fn keeps_a_cyberark_body_out_of_the_vault_mapping() {
     let cyberark = decode_config_override(body, OverrideKind::CyberArk).unwrap();
     assert_eq!(
         cyberark.values,
-        object(json!({
-            "cyberark_api_base": "https://conjur.example.com",
-            "refresh_interval": "60"
-        }))
+        object(
+            r#"{
+                "cyberark_api_base": "https://conjur.example.com",
+                "refresh_interval": "60"
+            }"#
+        )
     );
     assert!(matches!(cyberark.config, OverrideConfig::CyberArk(_)));
     assert!(
@@ -83,12 +86,12 @@ fn stored_override_reads_json_text_and_parsed_objects() {
     let text = JsonValue::String(r#"{"vault_addr":"https://vault.example.com"}"#.to_owned());
     assert_eq!(
         decode_stored_override(&text, OverrideKind::HashicorpVault).unwrap(),
-        object(json!({"vault_addr": "https://vault.example.com"}))
+        object(r#"{"vault_addr": "https://vault.example.com"}"#)
     );
-    let parsed = json!({"vault_token": 5, "approle_role_id": null});
+    let parsed = value(r#"{"vault_token": 5, "approle_role_id": null}"#);
     assert_eq!(
         decode_stored_override(&parsed, OverrideKind::HashicorpVault).unwrap(),
-        object(json!({"vault_token": 5, "approle_role_id": null}))
+        object(r#"{"vault_token": 5, "approle_role_id": null}"#)
     );
 }
 
@@ -110,13 +113,13 @@ fn stored_override_turns_malformed_json_into_an_empty_mapping() {
 
 #[rstest]
 #[case::json_text_scalar(JsonValue::String("42".to_owned()))]
-#[case::number(json!(42))]
-#[case::array(json!([1]))]
-#[case::boolean(json!(true))]
+#[case::number(JsonValue::from(42_i32))]
+#[case::array(JsonValue::Array(vec![JsonValue::from(1_i32)]))]
+#[case::boolean(JsonValue::from(true))]
 #[case::null(JsonValue::Null)]
-fn stored_override_keeps_a_valid_non_object_as_a_shape_failure(#[case] value: JsonValue) {
+fn stored_override_keeps_a_valid_non_object_as_a_shape_failure(#[case] stored: JsonValue) {
     assert!(matches!(
-        decode_stored_override(&value, OverrideKind::CyberArk),
+        decode_stored_override(&stored, OverrideKind::CyberArk),
         Err(StoredOverrideError::NotAnObject { .. })
     ));
 }

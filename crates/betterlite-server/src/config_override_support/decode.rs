@@ -85,10 +85,10 @@ pub fn decode_stored_override(
     let JsonValue::String(text) = value else {
         return object_or_shape_error(value.clone(), kind);
     };
-    match safe_json_loads(text.as_bytes()) {
-        Ok(parsed) => object_or_shape_error(parsed, kind),
-        Err(_) => Ok(JsonMap::new()),
-    }
+    safe_json_loads(text.as_bytes()).map_or_else(
+        |_| Ok(JsonMap::new()),
+        |parsed| object_or_shape_error(parsed, kind),
+    )
 }
 
 fn object_or_shape_error(

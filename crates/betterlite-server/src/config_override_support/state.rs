@@ -98,12 +98,11 @@ pub fn restore_cyberark_runtime(
         .get("HCP_VAULT_ADDR")
         .cloned()
         .unwrap_or_default();
-    if !vault_addr.is_empty() {
-        if let Err(error) = control.initialize(ManagerKind::HashicorpVault) {
-            tracing::error!(
-                "Failed to reinitialize Hashicorp Vault after CyberArk rollback: {error}"
-            );
-        }
+    if vault_addr.is_empty() {
+        return;
+    }
+    if let Err(error) = control.initialize(ManagerKind::HashicorpVault) {
+        tracing::error!("Failed to reinitialize Hashicorp Vault after CyberArk rollback: {error}");
     }
 }
 
