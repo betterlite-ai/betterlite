@@ -76,8 +76,8 @@ fn flag<L>(value: Option<JsonValue>, path: &str, lookup: &L) -> Result<Option<bo
 where
     L: EnvironmentLookup,
 {
-    match value.filter(|value| !matches!(value, JsonValue::Null)) {
-        None => Ok(None),
+    match value {
+        None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Bool(flag)) => Ok(Some(flag)),
         Some(JsonValue::String(reference)) if reference.starts_with("os.environ/") => {
             let text = resolve_string(reference, path, lookup)?;
