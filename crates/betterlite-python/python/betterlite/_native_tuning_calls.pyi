@@ -1,4 +1,5 @@
-from collections.abc import Awaitable as _Awaitable, Sequence as _Sequence
+from collections.abc import Awaitable as _Awaitable
+from collections.abc import Sequence as _Sequence
 
 from betterlite._native_completion import NativeError as _NativeError
 
