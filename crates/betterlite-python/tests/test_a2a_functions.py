@@ -161,8 +161,7 @@ def test_card_headers_reach_agent() -> None:
 
 
 def test_card_helpers_match() -> None:
-    their_cards = litellm_cards
-    pair = (their_cards.AGENT_CARD_WELL_KNOWN_PATH, their_cards.PREV_AGENT_CARD_WELL_KNOWN_PATH)  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L20-L30
+    pair = (litellm_cards.AGENT_CARD_WELL_KNOWN_PATH, litellm_cards.PREV_AGENT_CARD_WELL_KNOWN_PATH)  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L20-L30
     assert card_resolver.AGENT_CARD_WELL_KNOWN_PATH == pair[0]
     assert card_resolver.PREV_AGENT_CARD_WELL_KNOWN_PATH == pair[1]
     assert card_resolver.FOUNDRY_AGENT_CARD_PATH == litellm_cards.FOUNDRY_AGENT_CARD_PATH
