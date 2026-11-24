@@ -75,7 +75,7 @@ struct Cause {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Input {
+pub(crate) struct Input {
     prerequisites: Prerequisites,
     subject_token: String,
     authorizer: Authorizer,
@@ -99,7 +99,7 @@ impl TokenExchangeInputs for CaseInputs<'_> {
 }
 
 struct CaseAuthorizer {
-    answer: Result<AuthorizedSubject, SubjectTokenDenial>,
+    answer: Result<AuthorizedSubject, Box<SubjectTokenDenial>>,
 }
 
 impl AuthorizeSubjectToken for CaseAuthorizer {
@@ -110,7 +110,7 @@ impl AuthorizeSubjectToken for CaseAuthorizer {
         _subject_token: &str,
         _context: &(),
     ) -> impl Future<Output = Result<AuthorizedSubject, SubjectTokenDenial>> + Send {
-        ready(self.answer.clone())
+        ready(self.answer.clone().map_err(|denial| *denial))
     }
 }
 
@@ -205,7 +205,8 @@ async fn answer(input: &Input, logs: &Logs) -> HelperResult {
     Ok(json!({"answer": body, "logs": logs.entries()}))
 }
 
-fn authorizer_answer(input: &Input) -> Result<AuthorizedSubject, SubjectTokenDenial> {
+// boxed to keep the error under result_large_err's 128-byte limit
+fn authorizer_answer(input: &Input) -> Result<AuthorizedSubject, Box<SubjectTokenDenial>> {
     match &input.authorizer {
         Authorizer::Result {
             user_id,
@@ -232,12 +233,12 @@ fn authorizer_answer(input: &Input) -> Result<AuthorizedSubject, SubjectTokenDen
     }
 }
 
-fn denial(source: DenialSource, reason: &str, cause: Option<&Cause>) -> SubjectTokenDenial {
-    SubjectTokenDenial {
+fn denial(source: DenialSource, reason: &str, cause: Option<&Cause>) -> Box<SubjectTokenDenial> {
+    Box::new(SubjectTokenDenial {
         source,
         reason: reason.to_owned(),
         database_cause: cause.map(database_cause),
-    }
+    })
 }
 
 fn database_cause(cause: &Cause) -> DbError {
