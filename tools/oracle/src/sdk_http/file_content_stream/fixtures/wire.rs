@@ -133,9 +133,9 @@ async fn generic_answer(
     let fixture = Fixture::new()?;
     let mut created;
     let state = match logger {
-        ContentLogger::Supplied(supplied) => supplied,
+        ContentLogger::Supplied(provided) => provided,
         ContentLogger::Created(new) => {
-            created = fixture.state(new)?;
+            created = fixture.state(&new)?;
             &mut created
         }
     };
@@ -169,7 +169,7 @@ fn content_source(
     }
 }
 
-fn operation_chunk_size(operation: &ContentOperation<'_>) -> Option<NonZeroUsize> {
+const fn operation_chunk_size(operation: &ContentOperation<'_>) -> Option<NonZeroUsize> {
     match operation {
         ContentOperation::Buffered { .. } => None,
         ContentOperation::Streamed { chunk_size, .. } => *chunk_size,
@@ -210,9 +210,8 @@ where
             retrieve_file_content(prepared, state).await?,
         ))),
         ContentOperation::Streamed { .. } => {
-            let size = chunk_size.unwrap_or_else(|| {
-                NonZeroUsize::new(DEFAULT_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN)
-            });
+            let fallback = NonZeroUsize::new(DEFAULT_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN);
+            let size = chunk_size.unwrap_or(fallback);
             Ok(ContentReply::Streamed(Box::new(
                 retrieve_content_streaming(prepared, size, state).await?,
             )))
@@ -221,10 +220,10 @@ where
 }
 
 // the config B2464's lookup hands the content handler for this branch
-fn content_config<'settings>(
+const fn content_config(
     config: FileProviderConfig,
-    settings: &'settings AnthropicSettings,
-) -> Result<AnthropicContent<'settings>, ContentWireError> {
+    settings: &AnthropicSettings,
+) -> Result<AnthropicContent<'_>, ContentWireError> {
     match config {
         FileProviderConfig::Anthropic => Ok(AnthropicContent { settings }),
         other @ (FileProviderConfig::GoogleAiStudio

@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_openai::files::records::FileContentRequest;
@@ -134,9 +136,9 @@ where
     ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
         let name = selection.provider.as_deref().unwrap_or_default();
         match name {
-            name if COMPATIBLE_PROVIDERS.contains(&name) => Ok(ContentTarget::Compatible(
-                self.plan(call.kwargs, selection.mode).compatible(None),
-            )),
+            compatible if COMPATIBLE_PROVIDERS.contains(&compatible) => Ok(
+                ContentTarget::Compatible(self.plan(call.kwargs, selection.mode).compatible(None)),
+            ),
             "azure" => Ok(ContentTarget::Azure(
                 self.plan(call.kwargs, selection.mode).azure(client),
             )),
@@ -205,7 +207,10 @@ where
 // LiteLLM's FileContentRequest: the timeout stays out of it, since every handler passes its own deadline
 fn buffered_answer<DispatchError>(
     reply: ContentReply,
-) -> Result<ContentAnswer, FileContentError<DispatchError>> {
+) -> Result<ContentAnswer, FileContentError<DispatchError>>
+where
+    DispatchError: Error + 'static,
+{
     match reply {
         ContentReply::Buffered(content) => Ok(ContentAnswer::Buffered(content)),
         ContentReply::Streamed(_stream) => Err(FileContentError::Reply),

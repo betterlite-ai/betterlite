@@ -118,11 +118,11 @@ pub(super) fn content_timeout<DispatchError>(
 where
     DispatchError: Error + 'static,
 {
-    let provider = provider.unwrap_or("None");
+    let named = provider.unwrap_or("None");
     let plain = match &kwargs.timeout {
         Some(ReadTimeout::Structured(phases)) => {
             let pieces = StructuredTimeout::try_from(phases)?;
-            return resolve_fine_tuning_timeout(None, provider, Some(pieces))
+            return resolve_fine_tuning_timeout(None, named, Some(pieces))
                 .map_err(FileContentError::Timeout);
         }
         Some(ReadTimeout::Plain(value)) => Some(value),
@@ -138,11 +138,11 @@ where
             TimeoutValue::String(text) => !text.is_empty(),
         };
         if given {
-            return resolve_fine_tuning_timeout(Some(&value), provider, None)
+            return resolve_fine_tuning_timeout(Some(&value), named, None)
                 .map_err(FileContentError::Timeout);
         }
     }
-    resolve_fine_tuning_timeout(None, provider, None).map_err(FileContentError::Timeout)
+    resolve_fine_tuning_timeout(None, named, None).map_err(FileContentError::Timeout)
 }
 
 // LlmProviders(custom_llm_provider): an unknown or missing name is a ValueError naming its repr

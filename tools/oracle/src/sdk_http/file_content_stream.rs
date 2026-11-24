@@ -38,12 +38,18 @@ pub mod outcome;
 #[path = "file_content_stream/fixtures/wire.rs"]
 mod wire;
 
-// SdkHttpCall holds a Call, so the case schema keeps the public path calls.rs names
-pub use self::cases::{Call, Function, Step, SuppliedKind};
+use self::cases::{Function, Step, SuppliedKind};
 
 // the header a supplied HTTPHandler's own client adds, so the wire shows whether the handler was used
 const HANDLER_HEADER: (&str, &str) = ("x-supplied-client", "http-handler");
 const DEFAULT_CHUNK_SIZE: u64 = 1024 * 1024;
+
+// the case schema's call; SdkHttpCall holds one, so it keeps the public path calls.rs names
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Call {
+    steps: Vec<Step>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -168,9 +174,8 @@ async fn run_step(
     };
     let answer = content.run(entry, &call, context).await;
     let recorded = logging
-        .as_ref()
-        .map(|logging| logging.identities())
-        .unwrap_or_default();
+        .as_deref()
+        .map_or_else(Vec::new, RecordingLogging::identities);
     match answer {
         Ok(ContentAnswer::Buffered(value)) => {
             Ok(StepOutcome::buffered(*value, identity(&recorded)))
@@ -183,7 +188,10 @@ async fn run_step(
 }
 
 // no case hands over a trusted snapshot, and the handler's own mode decides whether it is used
-fn caller<'call>(step: &Step, handler: &'call Handler) -> Option<CallerClient<'call, Handler>> {
+const fn caller<'call>(
+    step: &Step,
+    handler: &'call Handler,
+) -> Option<CallerClient<'call, Handler>> {
     match step.client {
         SuppliedKind::None => None,
         SuppliedKind::OpenaiSdk => Some(CallerClient::Sdk(SuppliedSdk::OpenAi)),

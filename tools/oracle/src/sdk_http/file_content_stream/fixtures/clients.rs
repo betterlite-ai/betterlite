@@ -64,7 +64,7 @@ fn compatible_credentials(
     match content.client {
         Some(SuppliedSdk::OpenAi) => (
             Some(SecretString::from(SUPPLIED_KEY)),
-            format!("{content.api_base}/{SUPPLIED_SUFFIX}"),
+            format!("{}/{SUPPLIED_SUFFIX}", content.api_base),
             None,
         ),
         Some(SuppliedSdk::Azure) | None => (
@@ -88,7 +88,7 @@ pub(super) async fn azure_answer(
         return Err(ContentWireError::Reply);
     };
     match call(&opened, client, AzureOperation::Content(request)).await? {
-        Reply::Content(content) => Ok(ContentReply::Buffered(Box::new(content))),
+        Reply::Content(binary) => Ok(ContentReply::Buffered(Box::new(binary))),
         Reply::Object(_) | Reply::Page(_) | Reply::Deleted(_) => Err(ContentWireError::Reply),
     }
 }

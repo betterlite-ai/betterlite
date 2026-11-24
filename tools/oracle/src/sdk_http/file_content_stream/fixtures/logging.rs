@@ -50,8 +50,11 @@ impl Fixture {
     // the object LiteLLM's logging class gets for a call that passed none
     pub(crate) fn state(&self, new: &NewLogger) -> Result<LoggingState, SdkHttpError> {
         let text = format!(
-            r#"{{"model":"","call_type":"{new.call_type}","start_time":"{}","litellm_call_id":"{new.litellm_call_id}","function_id":"{new.function_id}","litellm_trace_id":"trace-1"}}"#,
+            r#"{{"model":"","call_type":"{}","start_time":"{}","litellm_call_id":"{}","function_id":"{}","litellm_trace_id":"trace-1"}}"#,
+            new.call_type,
             new.start_time.to_rfc3339(),
+            new.litellm_call_id,
+            new.function_id,
         );
         let init: LoggingInit = serde_json::from_str(&text)
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
@@ -64,7 +67,7 @@ impl Fixture {
             setup,
             &self.redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .map_err(SdkHttpError::LoggingState)
     }
