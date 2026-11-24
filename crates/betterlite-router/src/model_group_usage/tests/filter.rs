@@ -114,6 +114,30 @@ fn direct_and_wildcard_grants_bypass_the_filter(#[case] models: &[&str]) {
     );
 }
 
+#[rstest]
+#[case::the_model_itself("group")]
+#[case::the_wildcard("*")]
+#[case::the_proxy_wildcard("all-proxy-models")]
+fn a_grant_named_like_an_access_group_still_bypasses_the_filter(#[case] token: &str) {
+    let rows = [
+        grouped("group", "a", &[token]),
+        grouped("group", "b", &["alpha"]),
+    ];
+    let world = World::new(&rows);
+    let principal = grants(&[token], &[]);
+    let request = AccessFilterRequest {
+        model: "group",
+        deployments: &rows,
+        metadata: Some(&principal),
+        litellm_metadata: None,
+        team_id: None,
+    };
+    assert_eq!(
+        filtered_ids(request, &AccessGroups::default(), &world),
+        ["a", "b"]
+    );
+}
+
 #[test]
 fn no_group_overlap_leaves_the_candidates_untouched() {
     let rows = [
