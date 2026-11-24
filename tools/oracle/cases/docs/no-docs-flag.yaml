@@ -1,0 +1,17 @@
+name: docs-no-docs-flag
+config: |
+  model_list: []
+env:
+  NO_DOCS: "true"
+request:
+  method: GET
+  path: /docs/oauth2-redirect
+  headers:
+    Authorization: Bearer oracle-master
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

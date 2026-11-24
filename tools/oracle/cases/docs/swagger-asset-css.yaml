@@ -1,0 +1,15 @@
+name: docs-swagger-asset-css
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /swagger/swagger-ui.css
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []
