@@ -124,7 +124,7 @@ async fn read_team_rows(
     let client = store
         .session()
         .await
-        .map_err(|source| ScopeError::TeamRead(Box::new(backend::<Infallible>(source))))?;
+        .map_err(|source| ScopeError::TeamRead(Box::new(source)))?;
     let rows = client
         .query(TEAMS_SQL, &[&team_ids])
         .await
@@ -146,7 +146,7 @@ async fn read_access_group_rows(
     let client = store
         .session()
         .await
-        .map_err(|source| ScopeError::AccessGroupRead(Box::new(backend::<Infallible>(source))))?;
+        .map_err(|source| ScopeError::AccessGroupRead(Box::new(source)))?;
     let rows = client
         .query(ACCESS_GROUPS_SQL, &[&access_group_ids])
         .await
@@ -166,24 +166,24 @@ async fn read_access_group_rows(
 }
 
 impl ScopeReads for PostgresScopeReads<'_> {
-    fn model_creator<'a>(
-        &'a self,
-        model_id: &'a str,
-    ) -> ScopeFuture<'a, Result<Option<ModelCreator>, ScopeError>> {
+    fn model_creator<'scope>(
+        &'scope self,
+        model_id: &'scope str,
+    ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>> {
         Box::pin(fetch_creator(self.client, model_id))
     }
 
-    fn user_scope<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> ScopeFuture<'a, Result<Option<UserScope>, ScopeError>> {
+    fn user_scope<'scope>(
+        &'scope self,
+        user_id: &'scope str,
+    ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>> {
         Box::pin(async move { read_user(read_store(self.client), user_id).await })
     }
 
-    fn team_scopes<'a>(
-        &'a self,
-        selection: &'a TeamSelection,
-    ) -> ScopeFuture<'a, Result<Vec<TeamScope>, ScopeError>> {
+    fn team_scopes<'scope>(
+        &'scope self,
+        selection: &'scope TeamSelection,
+    ) -> ScopeFuture<'scope, Result<Vec<TeamScope>, ScopeError>> {
         Box::pin(async move {
             let store = read_store(self.client);
             match selection {
@@ -193,10 +193,10 @@ impl ScopeReads for PostgresScopeReads<'_> {
         })
     }
 
-    fn access_group_models<'a>(
-        &'a self,
-        access_group_ids: &'a [String],
-    ) -> ScopeFuture<'a, Result<AccessGroupMap, ScopeError>> {
+    fn access_group_models<'scope>(
+        &'scope self,
+        access_group_ids: &'scope [String],
+    ) -> ScopeFuture<'scope, Result<AccessGroupMap, ScopeError>> {
         Box::pin(
             async move { read_access_group_rows(read_store(self.client), access_group_ids).await },
         )

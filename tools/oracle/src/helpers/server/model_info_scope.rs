@@ -41,84 +41,81 @@ fn caller(input: &Input) -> Result<ScopeCaller, Failure> {
 }
 
 fn answer(input: &Input) -> Result<Value, Failure> {
-    let runtime = Builder::new_current_thread().enable_all().build()?;
     match input.function {
-        Predicate::GrantResolution => {
-            let snapshot = fixture(input)?;
-            let groups = AccessGroups::default();
-            let ids = grant_deployment_ids(&input.grant, &snapshot.lookup(), &groups)?;
-            Ok(json!({"ids": ids}))
-        }
-        Predicate::DirectAccess => {
-            let user = input.user.as_ref().ok_or(Failure::MissingUser)?;
-            let snapshot = fixture(input)?;
-            let groups = AccessGroups::default();
-            let ids =
-                direct_access_models(&user.models, &input.key_models, &snapshot.lookup(), &groups)?;
-            Ok(json!({"ids": ids}))
-        }
-        Predicate::TeamModels => {
-            let snapshot = fixture(input)?;
-            let store = reads(input);
-            let groups = AccessGroups::default();
-            let selection = match &input.user_teams {
-                Some(UserTeams::Ids(ids)) => TeamSelection::Ids(ids.clone()),
-                Some(UserTeams::Star(marker)) if marker.as_str() == ALL_TEAMS => TeamSelection::All,
-                Some(UserTeams::Star(marker)) => {
-                    return Err(Failure::UnknownTeams(marker.clone()));
-                }
-                None => TeamSelection::All,
-            };
-            let found = runtime.block_on(get_all_team_models(
-                &selection,
-                &store,
-                &snapshot.lookup(),
-                &groups,
-            ))?;
-            Ok(team_map(&found))
-        }
-        Predicate::NonAdmin => {
-            let snapshot = fixture(input)?;
-            let store = reads(input);
-            let models = runtime.block_on(non_admin_all_models(
-                specs(&input.all_models),
-                &caller(input)?,
-                Some(&store),
-                &snapshot.lookup(),
-            ))?;
-            Ok(spec_ids(&models))
-        }
-        Predicate::Populate => {
-            let snapshot = fixture(input)?;
-            let store = reads(input);
-            let groups = AccessGroups::default();
-            let models = runtime.block_on(accessible_models(
-                specs(&input.all_models),
-                false,
-                &caller(input)?,
-                &store,
-                &snapshot.lookup(),
-                &groups,
-            ))?;
-            Ok(spec_ids(&models))
-        }
-        Predicate::TeamAndDirect => {
-            let snapshot = fixture(input)?;
-            let store = reads(input);
-            let groups = AccessGroups::default();
-            let models = runtime.block_on(accessible_models(
-                specs(&input.all_models),
-                true,
-                &caller(input)?,
-                &store,
-                &snapshot.lookup(),
-                &groups,
-            ))?;
-            Ok(spec_ids(&models))
-        }
-        Predicate::Filter => {
-            let kept = visible_models(specs(&input.all_models));
-            Ok(spec_ids(&kept))
-        }
+        Predicate::GrantResolution => grant_answer(input),
+        Predicate::DirectAccess => direct_answer(input),
+        Predicate::TeamModels => team_answer(input),
+        Predicate::NonAdmin => non_admin_answer(input),
+        Predicate::Populate => populate_answer(input, false),
+        Predicate::TeamAndDirect => populate_answer(input, true),
+        Predicate::Filter => Ok(spec_ids(&visible_models(specs(&input.all_models)))),
     }
+}
+
+fn grant_answer(input: &Input) -> Result<Value, Failure> {
+    let snapshot = fixture(input)?;
+    let groups = AccessGroups::default();
+    let ids = grant_deployment_ids(&input.grant, &snapshot.lookup(), &groups)?;
+    Ok(json!({"ids": ids}))
+}
+
+fn direct_answer(input: &Input) -> Result<Value, Failure> {
+    let user = input.user.as_ref().ok_or(Failure::MissingUser)?;
+    let snapshot = fixture(input)?;
+    let groups = AccessGroups::default();
+    let ids = direct_access_models(&user.models, &input.key_models, &snapshot.lookup(), &groups)?;
+    Ok(json!({"ids": ids}))
+}
+
+fn selection(input: &Input) -> Result<TeamSelection, Failure> {
+    match &input.user_teams {
+        Some(UserTeams::Ids(ids)) => Ok(TeamSelection::Ids(ids.clone())),
+        Some(UserTeams::Star(marker)) if marker.as_str() == ALL_TEAMS => Ok(TeamSelection::All),
+        Some(UserTeams::Star(marker)) => Err(Failure::UnknownTeams(marker.clone())),
+        None => Ok(TeamSelection::All),
+    }
+}
+
+fn team_answer(input: &Input) -> Result<Value, Failure> {
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    let snapshot = fixture(input)?;
+    let store = reads(input);
+    let groups = AccessGroups::default();
+    let team_selection = selection(input)?;
+    let found = runtime.block_on(get_all_team_models(
+        &team_selection,
+        &store,
+        &snapshot.lookup(),
+        &groups,
+    ))?;
+    Ok(team_map(&found))
+}
+
+fn non_admin_answer(input: &Input) -> Result<Value, Failure> {
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    let snapshot = fixture(input)?;
+    let store = reads(input);
+    let models = runtime.block_on(non_admin_all_models(
+        specs(&input.all_models),
+        &caller(input)?,
+        Some(&store),
+        &snapshot.lookup(),
+    ))?;
+    Ok(spec_ids(&models))
+}
+
+fn populate_answer(input: &Input, visible_only: bool) -> Result<Value, Failure> {
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    let snapshot = fixture(input)?;
+    let store = reads(input);
+    let groups = AccessGroups::default();
+    let models = runtime.block_on(accessible_models(
+        specs(&input.all_models),
+        visible_only,
+        &caller(input)?,
+        &store,
+        &snapshot.lookup(),
+        &groups,
+    ))?;
+    Ok(spec_ids(&models))
 }

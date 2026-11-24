@@ -5,7 +5,6 @@ use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
-use betterlite_models::decisions::Json;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_group_lookups::access_groups::AccessGroups;
@@ -15,7 +14,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
-use super::{caller, identified, ids, snapshot, team_list, team_row};
+use super::{assert_annotations, caller, identified, ids, snapshot, team_list, team_row};
 use crate::model_info_scope::compose::{
     TeamSelection, accessible_models, check_if_model_is_user_added, get_all_team_models,
     non_admin_all_models,
@@ -478,25 +477,8 @@ async fn stored_roster_annotates_models() {
     )
     .await
     .unwrap();
-    assert_eq!(
-        annotated[0].model_info.get("access_via_team_ids"),
-        Some(&super::team_ids(&[]))
-    );
-    assert_eq!(
-        annotated[0].model_info.get("direct_access"),
-        Some(&Json::Bool(true))
-    );
-    assert_eq!(
-        annotated[1].model_info.get("access_via_team_ids"),
-        Some(&super::team_ids(&["team-alpha"]))
-    );
-    assert_eq!(
-        annotated[1].model_info.get("direct_access"),
-        Some(&Json::Bool(false))
-    );
-    assert_eq!(
-        annotated[2].model_info.get("direct_access"),
-        Some(&Json::Bool(false))
-    );
+    assert_annotations(&annotated[0], true, Some(&[]));
+    assert_annotations(&annotated[1], false, Some(&["team-alpha"]));
+    assert_annotations(&annotated[2], false, Some(&[]));
     db.close().await;
 }

@@ -17,7 +17,7 @@ use super::teams::{
 };
 use crate::model_reload::dedupe::deduplicate_router_models;
 
-pub type ScopeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub type ScopeFuture<'scope, T> = Pin<Box<dyn Future<Output = T> + Send + 'scope>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelCreator {
@@ -37,25 +37,25 @@ pub enum TeamSelection {
 }
 
 pub trait ScopeReads: Send + Sync {
-    fn model_creator<'a>(
-        &'a self,
-        model_id: &'a str,
-    ) -> ScopeFuture<'a, Result<Option<ModelCreator>, ScopeError>>;
+    fn model_creator<'scope>(
+        &'scope self,
+        model_id: &'scope str,
+    ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>>;
 
-    fn user_scope<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> ScopeFuture<'a, Result<Option<UserScope>, ScopeError>>;
+    fn user_scope<'scope>(
+        &'scope self,
+        user_id: &'scope str,
+    ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>>;
 
-    fn team_scopes<'a>(
-        &'a self,
-        selection: &'a TeamSelection,
-    ) -> ScopeFuture<'a, Result<Vec<TeamScope>, ScopeError>>;
+    fn team_scopes<'scope>(
+        &'scope self,
+        selection: &'scope TeamSelection,
+    ) -> ScopeFuture<'scope, Result<Vec<TeamScope>, ScopeError>>;
 
-    fn access_group_models<'a>(
-        &'a self,
-        access_group_ids: &'a [String],
-    ) -> ScopeFuture<'a, Result<AccessGroupMap, ScopeError>>;
+    fn access_group_models<'scope>(
+        &'scope self,
+        access_group_ids: &'scope [String],
+    ) -> ScopeFuture<'scope, Result<AccessGroupMap, ScopeError>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,13 +150,12 @@ pub async fn get_all_team_models(
 }
 async fn annotate_user(
     annotated: &mut [DeploymentSpec],
-    user_id: Option<&str>,
     caller: &ScopeCaller,
     reads: &dyn ScopeReads,
     lookup: &CatalogLookup<'_>,
     access_groups: &AccessGroups,
 ) -> Result<(), ScopeError> {
-    let stored = match user_id {
+    let stored = match caller.user_id.as_deref() {
         Some(id) => reads.user_scope(id).await?,
         None => None,
     };
@@ -190,15 +189,7 @@ pub async fn accessible_models(
         let teams = get_all_team_models(&TeamSelection::All, reads, lookup, access_groups).await?;
         populate_team_access(&mut annotated, Some(&teams), &non_team_model_ids(lookup));
     } else {
-        annotate_user(
-            &mut annotated,
-            caller.user_id.as_deref(),
-            caller,
-            reads,
-            lookup,
-            access_groups,
-        )
-        .await?;
+        annotate_user(&mut annotated, caller, reads, lookup, access_groups).await?;
     }
     if visible_only {
         return Ok(visible_models(annotated));

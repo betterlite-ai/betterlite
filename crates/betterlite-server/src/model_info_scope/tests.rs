@@ -156,31 +156,31 @@ impl StubReads {
 }
 
 impl ScopeReads for StubReads {
-    fn model_creator<'a>(
-        &'a self,
-        model_id: &'a str,
-    ) -> ScopeFuture<'a, Result<Option<ModelCreator>, ScopeError>> {
+    fn model_creator<'scope>(
+        &'scope self,
+        model_id: &'scope str,
+    ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>> {
         Box::pin(async move { self.creator(model_id) })
     }
 
-    fn user_scope<'a>(
-        &'a self,
-        user_id: &'a str,
-    ) -> ScopeFuture<'a, Result<Option<UserScope>, ScopeError>> {
+    fn user_scope<'scope>(
+        &'scope self,
+        user_id: &'scope str,
+    ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>> {
         Box::pin(async move { self.user_row(user_id) })
     }
 
-    fn team_scopes<'a>(
-        &'a self,
-        selection: &'a TeamSelection,
-    ) -> ScopeFuture<'a, Result<Vec<TeamScope>, ScopeError>> {
+    fn team_scopes<'scope>(
+        &'scope self,
+        selection: &'scope TeamSelection,
+    ) -> ScopeFuture<'scope, Result<Vec<TeamScope>, ScopeError>> {
         Box::pin(async move { self.team_rows(selection) })
     }
 
-    fn access_group_models<'a>(
-        &'a self,
-        access_group_ids: &'a [String],
-    ) -> ScopeFuture<'a, Result<AccessGroupMap, ScopeError>> {
+    fn access_group_models<'scope>(
+        &'scope self,
+        access_group_ids: &'scope [String],
+    ) -> ScopeFuture<'scope, Result<AccessGroupMap, ScopeError>> {
         Box::pin(async move { self.group_rows(access_group_ids) })
     }
 }
@@ -260,7 +260,7 @@ async fn missing_user_annotations() {
         ),
         identified("gpt-4o-mini", "g2"),
     ];
-    let snapshot = snapshot(&rows);
+    let rows_snapshot = snapshot(&rows);
     let store = StubReads::default();
     let groups = AccessGroups::default();
     let annotated = accessible_models(
@@ -268,7 +268,7 @@ async fn missing_user_annotations() {
         false,
         &caller(Some("ghost"), &[]),
         &store,
-        &snapshot.lookup(),
+        &rows_snapshot.lookup(),
         &groups,
     )
     .await
@@ -276,22 +276,29 @@ async fn missing_user_annotations() {
     assert_eq!(annotated.len(), 2);
     assert_annotations(&annotated[0], false, Some(&["team-old"]));
     assert_annotations(&annotated[1], false, None);
-    let anonymous = vec![identified("gpt-4o-mini", "a1")];
-    let anonymous_snapshot = snapshot(&anonymous);
+    let visible = visible_models(annotated);
+    assert_eq!(ids(&visible), vec![Some("g1")]);
+    assert_calls(&store, &["user:ghost"]);
+}
+
+#[tokio::test]
+async fn anonymous_annotations() {
+    let rows = vec![identified("gpt-4o-mini", "a1")];
+    let lookup = snapshot(&rows);
+    let store = StubReads::default();
+    let groups = AccessGroups::default();
     let populated = accessible_models(
-        anonymous,
+        rows,
         false,
         &caller(None, &[]),
         &store,
-        &anonymous_snapshot.lookup(),
+        &lookup.lookup(),
         &groups,
     )
     .await
     .unwrap();
     assert_annotations(&populated[0], false, None);
-    let visible = visible_models(annotated);
-    assert_eq!(ids(&visible), vec![Some("g1")]);
-    assert_calls(&store, &["user:ghost"]);
+    assert_calls(&store, &[]);
 }
 
 #[test]
@@ -429,7 +436,7 @@ fn caller_key_models_come_from_the_auth() {
     );
     fields.insert(
         String::from("models"),
-        JsonData::List(vec![JsonData::String(String::from("gpt-4o"))]),
+        JsonData::Array(vec![JsonData::String(String::from("gpt-4o"))]),
     );
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
     let scope = ScopeCaller::from_auth(&auth).unwrap();
