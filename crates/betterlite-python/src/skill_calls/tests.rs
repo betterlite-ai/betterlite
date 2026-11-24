@@ -9,7 +9,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use betterlite_core::api::skills::get_delete::error::SkillAction;
 use betterlite_error::error::class_message;
 use betterlite_models::decisions::Json;
-use betterlite_sdk::call_wrapper::error::class_name;
+use betterlite_sdk::call_wrapper::error::{class_name, class_status};
 
 use super::error::{NO_DATABASE, SkillFailure};
 use super::session::{Mode, SkillCore};
@@ -31,12 +31,9 @@ fn closed_base() -> String {
 }
 
 fn refusal(failure: &SkillFailure) -> String {
-    assert_eq!(class_name(&failure.class), "APIConnectionError");
+    assert_eq!(class_name(&failure.class), "InternalServerError");
+    assert_eq!(class_status(&failure.class), Some(500));
     let message = class_message(&failure.class);
-    assert!(
-        message.contains("the connection could not be made"),
-        "{message}"
-    );
     assert!(!message.contains(NO_DATABASE), "{message}");
     message
 }

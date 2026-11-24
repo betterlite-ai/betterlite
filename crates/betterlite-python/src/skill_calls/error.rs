@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::env_integer::timeout::TimeoutError;
+use betterlite_config::loader::ConfigError;
 use betterlite_core::api::skills::get_delete::call::LITELLM_PROXY_PROVIDER;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::{ErrorClass, class_message};
+use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
 use pyo3::PyErr;
@@ -10,6 +13,7 @@ use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use serde::Serialize;
 
+use crate::completion::error::SessionError as CompletionSessionError;
 use crate::skill_calls::convert::RequestError;
 
 create_exception!(betterlite_native, NativeSkillError, PyException);
@@ -34,20 +38,26 @@ impl From<RequestError> for SkillFailure {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {
-    #[error("the settings are not a JSON object: {source}")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the skill session could not be built: {message}")]
-    Setup { message: String },
+    #[error("the settings are not a JSON object: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Client(#[from] CompletionSessionError),
+    #[error("the request timeout could not be resolved: {0}")]
+    Timeout(#[from] TimeoutError),
+    #[error("the anthropic credentials could not be read: {0}")]
+    Credentials(#[from] ConfigError),
+    #[error("the redactor could not be built: {0}")]
+    Redaction(#[from] RedactionError),
 }
 
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         match &error {
-            SessionError::Json { .. } => PyValueError::new_err(error.to_string()),
-            SessionError::Setup { .. } => PyRuntimeError::new_err(error.to_string()),
+            SessionError::Json(_) => PyValueError::new_err(error.to_string()),
+            SessionError::Client(_)
+            | SessionError::Timeout(_)
+            | SessionError::Credentials(_)
+            | SessionError::Redaction(_) => PyRuntimeError::new_err(error.to_string()),
         }
     }
 }

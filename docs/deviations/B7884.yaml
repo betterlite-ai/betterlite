@@ -27,4 +27,7 @@ deviations:
   - what: litellm_logging_obj is dropped from the payload and no Python logging object sees the call.
     why: It is LiteLLM's own runtime state and cannot cross into the Rust session, which writes the call's log itself.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L163
+  - what: An extra_headers name or value HTTP cannot carry is refused with a 400 BadRequestError naming extra_headers, where LiteLLM hands the dict to httpx and _handle_error turns httpx's local error into a synthesized 500 that exception_type reports as InternalServerError.
+    why: betterlite validates each header while it builds the request, so an unusable header never reaches the transport; a caller that sends its own unusable header cannot rely on the 500, and the 400 names the field at fault.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6080
 kept_bugs: []

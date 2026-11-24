@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -7,9 +6,7 @@ use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::skills::wire::{DeleteSkillResponse, ListSkillsResponse, Skill};
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_config::loader::startup::process_environment;
-use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::anthropic_credentials::Settings as CredentialSettings;
-use betterlite_config::types::ProxyTrust;
 use betterlite_context::core_settings::CoreSettings;
 use betterlite_core::api::skills::get_delete::call::{
     LITELLM_PROXY_PROVIDER, SkillCall, SkillRequest,
@@ -34,6 +31,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::completion::setup::outbound_client;
 use crate::skill_calls::convert;
 use crate::skill_calls::error::{SessionError, SkillFailure, no_database_failure};
 use crate::skill_calls::hosted::NoDatabaseSkills;
@@ -69,16 +67,6 @@ pub(super) enum Mode {
 #[serde(default)]
 struct SessionWire {
     environment: Option<BTreeMap<String, String>>,
-}
-
-// A settings error the session cannot start with; Python sees the message, never the source type.
-fn setup<E>(error: E) -> SessionError
-where
-    E: Display,
-{
-    SessionError::Setup {
-        message: error.to_string(),
-    }
 }
 
 // The pre-call update every service runs needs a logging state; the Python package registers no callbacks.
@@ -132,14 +120,12 @@ pub(super) struct SkillCore {
 
 impl SkillCore {
     pub(super) fn build(settings: &str) -> Result<Self, SessionError> {
-        let wire: SessionWire =
-            serde_json::from_str(settings).map_err(|source| SessionError::Json { source })?;
+        let wire: SessionWire = serde_json::from_str(settings)?;
         let environment = wire.environment.unwrap_or_else(process_environment);
-        let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &environment).map_err(setup)?;
-        let client = ProxiedClient::outbound(&Arc::new(policy)).map_err(setup)?;
-        let timeout = RequestTimeout::resolve(&environment).map_err(setup)?;
-        let credentials = CredentialSettings::resolve_environment(&environment).map_err(setup)?;
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(setup)?;
+        let client = outbound_client(&environment)?;
+        let timeout = RequestTimeout::resolve(&environment)?;
+        let credentials = CredentialSettings::resolve_environment(&environment)?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
         Ok(Self {
             http: HttpSkills {
                 client: client.clone(),
