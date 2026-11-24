@@ -743,6 +743,11 @@ def test_calls_content_match(server: PassthroughServer) -> None:
     for ours, reference in calls:
         assert ours["headers"]["content-type"] == OCTET_TYPE
         assert "content-type" not in reference["headers"]
+    # the iterable is buffered, so betterlite frames it with Content-Length where httpx chunks it
+    iterable_ours, iterable_reference = chunks
+    assert iterable_ours["headers"]["content-length"] == "2"
+    assert "transfer-encoding" not in iterable_ours["headers"]
+    assert iterable_reference["headers"]["transfer-encoding"] == "chunked"
 
 
 def test_calls_form_match(server: PassthroughServer) -> None:
