@@ -1,0 +1,36 @@
+kind: helper
+name: model-info-scope-truthy-access-annotations
+call:
+  model_info_scope:
+    function: filter
+    all_models:
+      - model_name: direct-true
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: a1, direct_access: true}
+      - model_name: team-ids
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: b1, access_via_team_ids: [team-a]}
+      - model_name: direct-false
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: c1, direct_access: false, access_via_team_ids: []}
+      - model_name: direct-true-empty-teams
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: d1, direct_access: true, access_via_team_ids: []}
+      - model_name: direct-false-team-ids
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: e1, direct_access: false, access_via_team_ids: [team-b]}
+      - model_name: bare
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: f1}
+    model_list: []
+    model_group_alias: {}
+    grant: []
+    key_models: []
+    user: null
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
+env: {}
+compare: {ignore: []}
