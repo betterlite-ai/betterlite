@@ -95,7 +95,7 @@ def _isolated_cache_state() -> Iterator[None]:
     LITELLM_SWITCHES.disable_cache()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=False)
 def redis_server() -> Iterator[FakeRedisServer]:
     server = FakeRedisServer()
     server.start()
