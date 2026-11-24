@@ -32,6 +32,13 @@ deviations:
       LiteLLM's _MCPHTTPClient wraps it and raises before the MCP client sees the body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L247-L251
   - what: >-
+      The HTTPStatusError text uses the http crate's canonical reason phrase; LiteLLM's httpx2 text uses the reason
+      phrase the server sent, or Python's http.HTTPStatus wording, so a few statuses read differently (413, 418, 422).
+    why: >-
+      The native transport keeps the status code and the headers, not the status line, so the reason phrase comes from
+      the standard table. The 401 case LiteLLM's callers act on reads the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L247-L251
+  - what: >-
       ssl_verify takes a bool, a CA bundle path or None and refuses every other value, an ssl.SSLContext included, and
       an unknown protocol_version raises ValueError rather than pydantic's ValidationError.
     why: >-
