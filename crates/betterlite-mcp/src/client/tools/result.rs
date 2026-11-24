@@ -151,15 +151,8 @@ where
 {
     match error {
         SessionError::Runtime(source) => {
-            if let Some(head) = status_head(source) {
-                let url = head
-                    .capture
-                    .as_ref()
-                    .map(|record| record.exchange.url.as_str());
-                return Failure {
-                    error_type: "HTTPStatusError",
-                    message: http_status_message(head.status, url),
-                };
+            if let Some(failure) = status_failure(source) {
+                return failure;
             }
             Failure {
                 error_type: short_type_name::<Source>(),
@@ -194,6 +187,21 @@ where
 }
 
 // httpx2's HTTPStatusError text, so a swallowed failure and a raised one read the same (client.py L249-L251)
+fn status_failure<Source>(source: &Arc<Source>) -> Option<Failure>
+where
+    Source: Error + Send + Sync + 'static,
+{
+    let head = status_head(source)?;
+    let url = head
+        .capture
+        .as_ref()
+        .map(|record| record.exchange.url.as_str());
+    Some(Failure {
+        error_type: "HTTPStatusError",
+        message: http_status_message(head.status, url),
+    })
+}
+
 #[must_use]
 pub fn http_status_message(status: u16, url: Option<&str>) -> String {
     let reason = StatusCode::from_u16(status)

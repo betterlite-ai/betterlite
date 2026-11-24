@@ -9,7 +9,6 @@ use tracing::warn;
 
 use crate::client::cleanup::http_client::{HttpResponse, ResponseHead};
 use crate::client::cleanup::recording::ResponseBody as _;
-use crate::client::http_transport::capture::CaptureRecord;
 use crate::client::http_transport::error::McpHttpError;
 use crate::client::http_transport::request::McpHttpRequest;
 use crate::client::http_transport::send::HttpBody;
@@ -94,7 +93,12 @@ async fn answer(
         return Ok(());
     }
     if status >= 400 {
-        return answer_error(core, status, &headers, capture, body, id).await;
+        let head = ResponseHead {
+            status,
+            headers,
+            capture,
+        };
+        return answer_error(core, head, body, id).await;
     }
     if initialize {
         note_session(core, &headers);
@@ -142,13 +146,11 @@ async fn push_json(
 }
 async fn answer_error(
     core: &StreamableCore,
-    status: u16,
-    headers: &HeaderMap,
-    capture: Option<CaptureRecord>,
+    head: ResponseHead,
     mut body: HttpBody,
     id: RequestId,
 ) -> Result<(), SdkError> {
-    if content_type(headers).starts_with("application/json")
+    if content_type(&head.headers).starts_with("application/json")
         && let Ok(content) = body.read_all().await
         && let Ok(JsonRpcMessage::Error(error)) =
             serde_json::from_slice::<RxJsonRpcMessage<RoleClient>>(&content)
@@ -157,13 +159,8 @@ async fn answer_error(
         return push(core, reply).await;
     }
     // LiteLLM's HTTP client raises HTTPStatusError for every POST error status but 404 (client.py L249-L251)
-    if status != 404 {
+    if head.status != 404 {
         drop(body.close().await);
-        let head = ResponseHead {
-            status,
-            headers: headers.clone(),
-            capture,
-        };
         return Err(SdkError::Http(Arc::new(McpHttpError::Status(Box::new(
             head,
         )))));
