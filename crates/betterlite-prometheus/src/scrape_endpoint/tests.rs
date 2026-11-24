@@ -43,13 +43,13 @@ fn gauge(name: &str, help: &str, labels: &[&str]) -> PrometheusMetric {
 }
 
 fn histogram(name: &str, help: &str, labels: &[&str], bounds: &[f64]) -> PrometheusMetric {
-    let bounds: Vec<Bucket> = bounds.iter().map(|bound| Bucket::Seconds(*bound)).collect();
+    let limits: Vec<Bucket> = bounds.iter().map(|bound| Bucket::Seconds(*bound)).collect();
     PrometheusMetric::new(
         CollectorKind::Histogram,
         name,
         help,
         labels,
-        prepare_buckets(&bounds).unwrap(),
+        prepare_buckets(&limits).unwrap(),
     )
 }
 
@@ -186,7 +186,7 @@ fn text_gauge_sorts_its_labels_by_name() {
 
 #[test]
 fn text_histogram_writes_cumulative_buckets_count_and_sum() {
-    let metric = histogram("latency", "latency help", &["model"], &[0.5, 2.0]);
+    let metric = histogram("latency", "latency help", &["model"], &[0.5_f64, 2.0_f64]);
     metric
         .labels(&[("model", "m")])
         .observe(MetricValue::Finite(Decimal::new(25, 2)));
@@ -205,7 +205,7 @@ fn text_histogram_writes_cumulative_buckets_count_and_sum() {
 
 #[test]
 fn text_histogram_omits_the_sum_for_a_negative_first_bound() {
-    let metric = histogram("delta", "delta help", &[], &[-1.0, 1.0]);
+    let metric = histogram("delta", "delta help", &[], &[-1.0_f64, 1.0_f64]);
     metric.labels(&[]).observe(finite(0));
     let body = body_text(&registry_with(metric), &request("", "", &[]));
     assert!(body.contains("delta_bucket{le=\"-1.0\"} 0.0\n"));
@@ -281,7 +281,7 @@ fn openmetrics_help_escapes_double_quotes() {
 
 #[test]
 fn openmetrics_histogram_keeps_the_registered_name() {
-    let metric = histogram("latency_total", "latency", &[], &[1.0]);
+    let metric = histogram("latency_total", "latency", &[], &[1.0_f64]);
     metric.labels(&[]).observe(finite(2));
     let body = body_text(
         &registry_with(metric),
@@ -467,7 +467,7 @@ fn restricted_created_alone_keeps_the_counter_header() {
 
 #[test]
 fn restricted_histogram_bucket_name_writes_only_buckets() {
-    let metric = histogram("latency", "latency", &[], &[0.5]);
+    let metric = histogram("latency", "latency", &[], &[0.5_f64]);
     metric
         .labels(&[])
         .observe(MetricValue::Finite(Decimal::new(25, 2)));
@@ -608,9 +608,7 @@ async fn coalesced_dropped_waiter_does_not_cancel_the_render() {
         .state
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .inflight
-        .get(&scrape)
-        .unwrap()
+        .inflight[&scrape]
         .id;
     drop(abandoned);
     let mut waiter = Box::pin(renderer.render(scrape.clone()));
@@ -619,9 +617,7 @@ async fn coalesced_dropped_waiter_does_not_cancel_the_render() {
         .state
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .inflight
-        .get(&scrape)
-        .unwrap()
+        .inflight[&scrape]
         .id;
     assert_eq!(same, id);
     let _released = release.send(());
@@ -761,7 +757,7 @@ async fn app_gzip_round_trips() {
         "gzip"
     );
     let compressed = join_frames(&frames(compressed_response).await);
-    let mut decoder = GzDecoder::new(&compressed[..]);
+    let mut decoder = GzDecoder::new(compressed.as_slice());
     let mut plain_body = Vec::new();
     decoder.read_to_end(&mut plain_body).unwrap();
     assert_eq!(plain_body, join_frames(&plain));

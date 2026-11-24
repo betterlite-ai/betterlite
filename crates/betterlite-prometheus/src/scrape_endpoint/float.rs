@@ -34,10 +34,9 @@ fn float_repr(value: f64) -> String {
     let Some((mantissa, exponent)) = debug.split_once('e') else {
         return debug;
     };
-    let (sign, digits) = match exponent.strip_prefix('-') {
-        Some(rest) => ('-', rest),
-        None => ('+', exponent),
-    };
+    let (sign, digits) = exponent
+        .strip_prefix('-')
+        .map_or(('+', exponent), |rest| ('-', rest));
     let padded = if digits.len() < 2 {
         format!("0{digits}")
     } else {

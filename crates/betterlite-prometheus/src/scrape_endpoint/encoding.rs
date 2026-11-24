@@ -209,7 +209,7 @@ fn histogram_samples(
     if description
         .buckets
         .first()
-        .is_none_or(|bound| bound.key() >= 0.0)
+        .is_none_or(|bound| bound.key() >= 0.0_f64)
     {
         samples.push(metric_sample(
             description,
