@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -21,7 +22,8 @@ const DB_NOT_CONNECTED: &str = CommonProxyErrors::DbNotConnectedError.as_str();
 
 fn assert_created_defaults(reply: &Reply) {
     assert_eq!(reply.field("models"), JsonData::Array(Vec::new()));
-    assert_eq!(reply.field("metadata"), JsonData::Null);
+    // the created row carries the metadata column's {} default, not a null
+    assert_eq!(reply.field("metadata"), JsonData::Object(BTreeMap::new()));
     assert_eq!(reply.field("object_permission"), JsonData::Null);
     assert_eq!(reply.field("object_permission_id"), JsonData::Null);
     assert_eq!(reply.field("users"), JsonData::Null);
@@ -176,8 +178,13 @@ async fn create_guard_order(#[case] case: GuardCase, #[case] status: u16, #[case
 async fn guard_app(case: &GuardCase) -> (TestApp, AuthContext, String) {
     match case {
         GuardCase::DatabaseMissing => {
+            // a non-admin caller proves the database check runs before the role check
             let app = TestApp::start_with(|state| state.database = None).await;
-            (app, master_caller(), String::from(DEFAULT_BODY))
+            (
+                app,
+                key_caller(Some("u1"), Some("internal_user"), &[]),
+                String::from(DEFAULT_BODY),
+            )
         }
         GuardCase::RoleBeforeRouter => {
             let app = TestApp::start_with(|state| state.router_configured = false).await;

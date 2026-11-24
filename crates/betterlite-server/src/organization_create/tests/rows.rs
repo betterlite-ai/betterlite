@@ -110,7 +110,8 @@ async fn organization_row_defaults() {
 
 fn assert_default_response(reply: &Reply) {
     assert_eq!(reply.field("models"), JsonData::Array(Vec::new()));
-    assert_eq!(reply.field("metadata"), JsonData::Null);
+    // the created row's metadata column defaults to an empty object
+    assert_eq!(reply.field("metadata"), JsonData::Object(BTreeMap::new()));
     assert_eq!(reply.field("users"), JsonData::Null);
     assert_eq!(
         reply.field("model_spend"),
@@ -194,7 +195,8 @@ async fn organization_failure_keeps_children() {
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(reply.error_text("message"), "Internal server error");
     // the budget and permission rows written earlier survive the failed organization insert
-    assert_eq!(app.database.budget_count().await, 1);
+    // (one of the two budget rows is the fixture's, referenced by the seeded organization)
+    assert_eq!(app.database.budget_count().await, 2);
     assert_eq!(app.database.permission_count().await, 1);
     assert_eq!(
         app.database.organization_ids().await,

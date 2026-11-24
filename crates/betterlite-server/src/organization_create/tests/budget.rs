@@ -70,9 +70,15 @@ fn field_set_contract() {
 
 #[test]
 fn budget_duration_omitted() {
-    let input = data(r#"{"max_budget":10,"created_by":"writer"}"#);
+    let input = data(
+        r#"{"max_budget":10,"budget_reset_at":"2001-02-03T04:05:06+00:00","created_by":"writer"}"#,
+    );
     let written = build_budget_write_data(&input, "actor", &ForbiddenReset).unwrap();
-    assert!(!written.contains_key(BUDGET_RESET_AT_FIELD));
+    // no duration was sent, so the supplied reset value is copied untouched
+    assert_eq!(
+        written.get(BUDGET_RESET_AT_FIELD),
+        Some(&JsonData::String(String::from("2001-02-03T04:05:06+00:00")))
+    );
     assert_eq!(written.get("max_budget"), Some(&parsed("10")));
     assert_eq!(
         written.get("created_by"),
@@ -90,8 +96,9 @@ fn budget_duration_omitted() {
 fn budget_duration_reset_and_clear() {
     let at: Timestamp = serde_json::from_str(r#""2026-02-03T04:05:06+00:00""#).unwrap();
     let expected = serde_json::from_value::<JsonData>(serde_json::to_value(at).unwrap()).unwrap();
+    // the recomputed reset overrides the value the request carried
     let written = build_budget_write_data(
-        &data(r#"{"budget_duration":"1d"}"#),
+        &data(r#"{"budget_duration":"1d","budget_reset_at":"2000-01-01T00:00:00+00:00"}"#),
         "actor",
         &FixedReset { at },
     )
@@ -108,11 +115,11 @@ fn budget_duration_reset_and_clear() {
     assert!(matches!(failed, Err(BudgetTransformError::Reset(_))));
 }
 
-// a sent nonstring or null duration clears the reset time without asking the calculator
+// a sent nonstring or null duration clears a supplied reset time without asking the calculator
 #[rstest]
-#[case::null(r#"{"budget_duration":null}"#)]
-#[case::number(r#"{"budget_duration":3600}"#)]
-#[case::boolean(r#"{"budget_duration":false}"#)]
+#[case::null(r#"{"budget_duration":null,"budget_reset_at":"2000-01-01T00:00:00+00:00"}"#)]
+#[case::number(r#"{"budget_duration":3600,"budget_reset_at":"2000-01-01T00:00:00+00:00"}"#)]
+#[case::boolean(r#"{"budget_duration":false,"budget_reset_at":"2000-01-01T00:00:00+00:00"}"#)]
 fn budget_duration_cleared(#[case] body: &str) {
     let cleared = build_budget_write_data(&data(body), "actor", &FailingReset).unwrap();
     assert_eq!(

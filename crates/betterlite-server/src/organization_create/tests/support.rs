@@ -71,7 +71,7 @@ CREATE TABLE "LiteLLM_ObjectPermissionTable" (
 CREATE TABLE "LiteLLM_OrganizationTable" (
     organization_id TEXT NOT NULL,
     organization_alias TEXT NOT NULL,
-    budget_id TEXT NOT NULL,
+    budget_id TEXT NOT NULL REFERENCES "LiteLLM_BudgetTable"(budget_id),
     spend DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     metadata JSONB DEFAULT '{}'::jsonb,
     models TEXT[] DEFAULT ARRAY[]::TEXT[],
@@ -117,6 +117,7 @@ const SEED_USER_SQL: &str =
 const SEED_MEMBERSHIP_SQL: &str = r#"INSERT INTO "LiteLLM_OrganizationMembership" (user_id, organization_id, user_role) VALUES ($1, $2, $3)"#;
 const SEED_BUDGET_SQL: &str = r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by) VALUES ($1, $2, 'seed', 'seed')"#;
 const SEED_ORGANIZATION_SQL: &str = r#"INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, created_by, updated_by) VALUES ($1, 'existing', 'existing-budget', 'seed', 'seed')"#;
+const SEED_ORGANIZATION_BUDGET_SQL: &str = r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by) VALUES ('existing-budget', 'seed', 'seed')"#;
 const SEED_MCP_SQL: &str =
     r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, alias, server_name) VALUES ($1, $2, $3)"#;
 const DROP_PERMISSION_TABLE_SQL: &str = r#"DROP TABLE "LiteLLM_ObjectPermissionTable""#;
@@ -198,6 +199,8 @@ impl TestDatabase {
     }
 
     pub(crate) async fn seed_organization(&self, organization_id: &str) {
+        // the seeded row's budget reference must resolve, as the production foreign key requires
+        self.execute(SEED_ORGANIZATION_BUDGET_SQL, &[]).await;
         self.execute(SEED_ORGANIZATION_SQL, &[&organization_id])
             .await;
     }

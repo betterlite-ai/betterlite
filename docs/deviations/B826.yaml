@@ -40,10 +40,11 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L458-L468
   - what: >-
       The created organization response carries litellm_budget_table and metadata as the objects
-      NewOrganizationResponse declares, projected from the request. LiteLLM serializes the created
-      budget row and the organization row through jsonify_object, so those mapping columns are stored,
-      and read back by the include, as JSON text; its response model declares dict for both, so a
-      creation that sends model_max_budget or metadata cannot satisfy the type it returns.
+      NewOrganizationResponse declares, projected from the request; a creation that sends no metadata
+      answers the empty object its column default holds. LiteLLM serializes the created budget row and
+      the organization row through jsonify_object, so those mapping columns are stored, and read back
+      by the include, as JSON text; its response model declares dict for both, so a creation that
+      sends model_max_budget or metadata cannot satisfy the type it returns.
     why: >-
       docs/compatibility.md ends parity at the declared types: every LiteLLM_BudgetTable mapping field
       and metadata is an object on the wire. No working setup can rely on a response that contradicts

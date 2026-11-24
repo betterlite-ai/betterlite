@@ -68,17 +68,17 @@ async fn explicit_budget_bypasses_create() {
         Some(&JsonData::String(String::from("seeded-budget")))
     );
 
-    // an empty id is a present id: no creation, and no budget table comes back for the dangling reference
+    // an empty id is a present id: no budget is created, and the dangling reference fails the foreign key
     let empty = app
         .post(
             admin_caller(Some("u1")),
             r#"{"organization_alias":"empty","budget_id":""}"#,
         )
         .await;
-    assert_eq!(empty.status, StatusCode::OK);
-    assert_eq!(empty.text_field("budget_id"), "");
-    assert_eq!(empty.field("litellm_budget_table"), JsonData::Null);
+    assert_eq!(empty.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(empty.error_text("message"), "Internal server error");
     assert_eq!(app.database.budget_count().await, 1);
+    assert_eq!(app.database.organization_count().await, 1);
     app.close().await;
 }
 

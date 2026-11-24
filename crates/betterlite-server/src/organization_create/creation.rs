@@ -221,7 +221,7 @@ pub fn response_of(
         organization_alias: row.organization_alias,
         budget_id: row.budget_id,
         spend: row.spend,
-        metadata,
+        metadata: Some(metadata.unwrap_or_default()),
         models: request.models.clone(),
         model_spend: BTreeMap::new(),
         created_by: row.created_by,
