@@ -3,6 +3,8 @@ use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_core::cost::recording::PortFailure;
+use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -10,6 +12,7 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_success::ports::StandardPayloadBuilder;
 use betterlite_logging::passthrough_handler::types::StreamedResponse;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -17,6 +20,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
@@ -25,6 +29,7 @@ use super::super::{
     PassthroughChatLogger, PassthroughLoggingError, PassthroughPayload, PassthroughPayloadInput,
     PassthroughProvider, UpstreamChatReply,
 };
+use crate::pass_through_logging::response_costing::{ResponseCostRequest, ResponseCostService};
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
 
 pub(crate) const START: &str = "2024-01-01T00:00:00+00:00";
@@ -89,10 +94,14 @@ pub(crate) fn logger(
     provider: &Arc<FakeProvider>,
     payload: &Arc<FakePayload>,
 ) -> PassthroughChatLogger {
-    PassthroughChatLogger::new(provider.clone(), payload.clone())
+    PassthroughChatLogger::new(
+        Arc::<FakeProvider>::clone(provider),
+        Arc::<FakePayload>::clone(payload),
+    )
 }
 
 // The provider as the handlers see it: the models it was asked about and the answers it gives.
+#[derive(Default)]
 pub(crate) struct FakeProvider {
     models: Mutex<Vec<String>>,
     chat: Mutex<Option<Json>>,
@@ -103,28 +112,22 @@ pub(crate) struct FakeProvider {
 impl FakeProvider {
     pub(crate) fn chat(response: Json) -> Self {
         Self {
-            models: Mutex::new(Vec::new()),
             chat: Mutex::new(Some(response)),
-            streamed: Mutex::new(None),
-            stream_fails: false,
+            ..Self::default()
         }
     }
 
     pub(crate) fn failing() -> Self {
         Self {
-            models: Mutex::new(Vec::new()),
-            chat: Mutex::new(None),
-            streamed: Mutex::new(None),
             stream_fails: true,
+            ..Self::default()
         }
     }
 
     pub(crate) fn streaming(streamed: Option<StreamedResponse>) -> Self {
         Self {
-            models: Mutex::new(Vec::new()),
-            chat: Mutex::new(None),
             streamed: Mutex::new(streamed),
-            stream_fails: false,
+            ..Self::default()
         }
     }
 
@@ -187,6 +190,7 @@ impl PassthroughProvider for FakeProvider {
 }
 
 // The payload collaborator as the handlers see it: the models it priced and the kwargs it answers with.
+#[derive(Default)]
 pub(crate) struct FakePayload {
     models: Mutex<Vec<String>>,
     call_ids: Mutex<Vec<String>>,
@@ -199,12 +203,8 @@ pub(crate) struct FakePayload {
 impl FakePayload {
     pub(crate) fn new(kwargs: ResponseLoggingKwargs) -> Self {
         Self {
-            models: Mutex::new(Vec::new()),
-            call_ids: Mutex::new(Vec::new()),
-            inputs: Mutex::new(Vec::new()),
-            end_user_bodies: Mutex::new(Vec::new()),
             kwargs,
-            end_user: None,
+            ..Self::default()
         }
     }
 
@@ -273,6 +273,69 @@ impl PassthroughPayload for FakePayload {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request_body.cloned());
         self.end_user.clone()
+    }
+}
+
+// B3630's cost port at a fixed price, recording the models it priced.
+pub(crate) struct FixedCost {
+    price: Decimal,
+    models: Mutex<Vec<String>>,
+}
+
+impl FixedCost {
+    pub(crate) fn new(price: Decimal) -> Self {
+        Self {
+            price,
+            models: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn models(&self) -> Vec<String> {
+        self.models
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl ResponseCostService for FixedCost {
+    fn completion_cost(&self, request: &ResponseCostRequest<'_>) -> Result<Decimal, PortFailure> {
+        self.models
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.model.to_owned());
+        Ok(self.price)
+    }
+}
+
+// The standard payload builder that records each response it is handed and builds nothing.
+#[derive(Default)]
+pub(crate) struct RecordingBuilder {
+    responses: Mutex<Vec<Json>>,
+}
+
+impl RecordingBuilder {
+    pub(crate) fn responses(&self) -> Vec<Json> {
+        self.responses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl StandardPayloadBuilder for RecordingBuilder {
+    fn build(
+        &self,
+        _state: &LoggingState,
+        response: &Json,
+        _start_time: DateTime<FixedOffset>,
+        _end_time: DateTime<FixedOffset>,
+    ) -> Option<StandardLoggingPayload> {
+        self.responses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(response.clone());
+        None
     }
 }
 

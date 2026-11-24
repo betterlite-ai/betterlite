@@ -166,30 +166,21 @@ pub enum PassthroughLoggingError {
 
 impl PassthroughLoggingError {
     #[must_use]
-    pub fn transform<E>(source: E) -> Self
-    where
-        E: Error + Send + Sync + 'static,
-    {
+    pub fn transform<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self::Transform {
             source: Box::new(source),
         }
     }
 
     #[must_use]
-    pub fn stream_build<E>(source: E) -> Self
-    where
-        E: Error + Send + Sync + 'static,
-    {
+    pub fn stream_build<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self::StreamBuild {
             source: Box::new(source),
         }
     }
 
     #[must_use]
-    pub fn payload<E>(source: E) -> Self
-    where
-        E: Error + Send + Sync + 'static,
-    {
+    pub fn payload<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self::Payload {
             source: Box::new(source),
         }

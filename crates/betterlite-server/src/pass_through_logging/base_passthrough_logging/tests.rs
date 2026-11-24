@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_config::sections::request_headers::Settings;
 use betterlite_logging::passthrough_handler::types::{NO_COMPLETE_RESPONSE, StreamedResponse};
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
@@ -7,11 +8,12 @@ use rust_decimal::Decimal;
 use tracing::Level;
 
 use super::support::{
-    END, FakePayload, FakeProvider, START, capture_logs, field, json_object, logger, logging_state,
-    object, timestamp,
+    END, FakePayload, FakeProvider, FixedCost, RecordingBuilder, START, capture_logs, field,
+    json_object, logger, logging_state, object, timestamp,
 };
 use super::{
-    CollectedChunksInput, PassthroughChatInput, PassthroughLoggingError, UpstreamChatReply,
+    CollectedChunksInput, PassthroughChatInput, PassthroughLoggingError, PassthroughPayload as _,
+    PassthroughPayloadInput, ResponsePayloadBuilder, UpstreamChatReply,
 };
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
 
@@ -276,6 +278,55 @@ fn chat_hands_the_call_log_to_the_payload() {
         })
         .expect("the chat handler succeeds");
     assert_eq!(payload.call_ids(), ["call-1"]);
+}
+
+#[test]
+fn chat_payload_builder_runs_the_response_payload_with_the_end_user() {
+    let cost = Arc::new(FixedCost::new(Decimal::new(5, 1)));
+    let builder = Arc::new(RecordingBuilder::default());
+    let production = ResponsePayloadBuilder::new(
+        Arc::<FixedCost>::clone(&cost),
+        Arc::<RecordingBuilder>::clone(&builder),
+        Settings::default(),
+        false,
+    );
+    let mut response = json_object(r#"{"choices": []}"#);
+    let mut state = logging_state();
+    let kwargs = production.build(PassthroughPayloadInput {
+        response: &mut response,
+        model: "command-r",
+        kwargs: ResponseLoggingKwargs {
+            passthrough_request_body: Some(object(r#"{"user": "alice"}"#)),
+            ..ResponseLoggingKwargs::default()
+        },
+        start_time: timestamp(START),
+        end_time: timestamp(END),
+        call_log: &mut state,
+    });
+    assert_eq!(cost.models(), ["command-r"]);
+    assert_eq!(builder.responses(), [json_object(r#"{"choices": []}"#)]);
+    assert_eq!(kwargs.response_cost, Some(Decimal::new(5, 1)));
+    assert_eq!(kwargs.model.as_deref(), Some("command-r"));
+    assert_eq!(
+        kwargs.litellm_params.get("proxy_server_request"),
+        Some(&json_object(r#"{"body": {"user": "alice"}}"#))
+    );
+}
+
+#[test]
+fn chat_payload_builder_reads_the_end_user_from_the_request_body() {
+    let production = ResponsePayloadBuilder::new(
+        Arc::new(FixedCost::new(Decimal::ZERO)),
+        Arc::new(RecordingBuilder::default()),
+        Settings::default(),
+        false,
+    );
+    assert_eq!(
+        production.end_user(Some(&object(r#"{"user": "bob"}"#))),
+        Some("bob".to_owned())
+    );
+    assert_eq!(production.end_user(Some(&object(r#"{"user": ""}"#))), None);
+    assert_eq!(production.end_user(None), None);
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_handler::types::StreamedResponse;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
@@ -7,15 +8,20 @@ use betterlite_models::identity::provider_id::ProviderId;
 use rust_decimal::Decimal;
 
 use crate::pass_through_logging::base_passthrough_logging::tests::support::{
-    FakePayload, FakeProvider, field, json_object, logging_state, object,
+    END, FakePayload, FakeProvider, RecordingBuilder, START, field, json_object, logging_state,
+    object, timestamp,
 };
 use crate::pass_through_logging::base_passthrough_logging::{
-    PassthroughLoggingError, PassthroughProvider, UpstreamChatReply,
+    PassthroughLoggingError, PassthroughProvider as _, UpstreamChatReply,
 };
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
 
 use super::chat::CohereProvider;
-use super::support::{FakeTools, call_log_detail, cohere_logger, input, json};
+use super::support::{
+    FakeTools, PricedCall, RecordingPricing, call_log_detail, cohere_logger, embedding_response,
+    input, json, production_tools,
+};
+use super::{CohereEmbeddingTools as _, EmbeddingDecodeInput, StandardObjectInput};
 
 pub(crate) mod support;
 
@@ -623,7 +629,7 @@ fn transformed(body: &str) -> Json {
 }
 
 #[test]
-fn cohere_chat_transforms_the_v2_reply_into_a_logged_model_response() {
+fn cohere_route_chat_transforms_the_v2_reply_into_a_logged_model_response() {
     let response = transformed(CHAT_REPLY);
     assert_eq!(
         field(&response, "object"),
@@ -677,7 +683,7 @@ fn cohere_chat_transforms_the_v2_reply_into_a_logged_model_response() {
 }
 
 #[test]
-fn cohere_chat_keeps_the_tool_call_reply_and_its_empty_annotations() {
+fn cohere_route_chat_keeps_the_tool_call_reply_and_its_empty_annotations() {
     let response = transformed(TOOL_REPLY);
     let Json::List(choices) = field(&response, "choices") else {
         panic!("choices is a list");
@@ -702,7 +708,7 @@ fn cohere_chat_keeps_the_tool_call_reply_and_its_empty_annotations() {
 }
 
 #[test]
-fn cohere_chat_omits_annotations_when_the_reply_has_none() {
+fn cohere_route_chat_omits_annotations_when_the_reply_has_none() {
     let response = transformed(PLAIN_REPLY);
     let Json::List(choices) = field(&response, "choices") else {
         panic!("choices is a list");
@@ -714,4 +720,152 @@ fn cohere_chat_omits_annotations_when_the_reply_has_none() {
         panic!("the message is an object");
     };
     assert!(!fields.contains_key("annotations"));
+}
+
+const EMBED_REPLY: &[u8] = br#"{"id": "embed-1", "embeddings": [[0.5, 0.25]], "meta": {"billed_units": {"input_tokens": 3}}}"#;
+
+#[test]
+fn cohere_embed_tools_decode_logs_the_reply_and_fills_the_response() {
+    let pricing = Arc::new(RecordingPricing::new(Decimal::ZERO));
+    let builder = Arc::new(RecordingBuilder::default());
+    let request = object(r#"{"model": "embed-english-v3.0", "texts": ["hello"]}"#);
+    let texts = [Json::Text("hello".to_owned())];
+    let mut state = logging_state();
+    let response = production_tools(&pricing, &builder)
+        .decode_embedding(
+            EmbeddingDecodeInput {
+                upstream_body: EMBED_REPLY,
+                request_body: &request,
+                model: "embed-english-v3.0",
+                input: &texts,
+            },
+            &mut state,
+        )
+        .expect("the embedding reply decodes");
+    assert_eq!(response.object, "list");
+    assert_eq!(response.model, "embed-english-v3.0");
+    assert_eq!(
+        response.data,
+        [json_object(
+            r#"{"object": "embedding", "index": 0, "embedding": [0.5, 0.25]}"#
+        )]
+    );
+    assert_eq!(response.usage.prompt_tokens, 3);
+    assert!(response.hidden_params.is_empty());
+    assert_eq!(
+        call_log_detail(&state, "log_event_type"),
+        Some(Json::Text("post_api_call".to_owned()))
+    );
+    assert_eq!(call_log_detail(&state, "input"), Some(json(r#"["hello"]"#)));
+    let Some(Json::Text(original)) = call_log_detail(&state, "original_response") else {
+        panic!("the parsed reply is logged as text");
+    };
+    assert!(original.contains("embed-1"));
+    let Some(arguments) = call_log_detail(&state, "additional_args") else {
+        panic!("the post_call arguments are logged");
+    };
+    assert_eq!(
+        field(&arguments, "complete_input_dict"),
+        &Json::Object(request)
+    );
+}
+
+#[test]
+fn cohere_embed_tools_decode_logs_the_reply_before_a_missing_embeddings_error() {
+    let pricing = Arc::new(RecordingPricing::new(Decimal::ZERO));
+    let builder = Arc::new(RecordingBuilder::default());
+    let request = object(r#"{"model": "embed-english-v3.0"}"#);
+    let mut state = logging_state();
+    let outcome = production_tools(&pricing, &builder).decode_embedding(
+        EmbeddingDecodeInput {
+            upstream_body: br#"{"id": "embed-2"}"#,
+            request_body: &request,
+            model: "embed-english-v3.0",
+            input: &[],
+        },
+        &mut state,
+    );
+    let Err(error) = outcome else {
+        panic!("a reply without embeddings fails the decode");
+    };
+    assert!(matches!(error, PassthroughLoggingError::Transform { .. }));
+    let Some(Json::Text(original)) = call_log_detail(&state, "original_response") else {
+        panic!("the parsed reply is logged before the error");
+    };
+    assert!(original.contains("embed-2"));
+}
+
+#[test]
+fn cohere_embed_tools_decode_rejects_a_text_that_is_not_a_string() {
+    let pricing = Arc::new(RecordingPricing::new(Decimal::ZERO));
+    let builder = Arc::new(RecordingBuilder::default());
+    let request = object(r#"{"model": "embed-english-v3.0"}"#);
+    let texts = [json("1")];
+    let mut state = logging_state();
+    let outcome = production_tools(&pricing, &builder).decode_embedding(
+        EmbeddingDecodeInput {
+            upstream_body: EMBED_REPLY,
+            request_body: &request,
+            model: "embed-english-v3.0",
+            input: &texts,
+        },
+        &mut state,
+    );
+    let Err(error) = outcome else {
+        panic!("a numeric text fails the decode");
+    };
+    assert!(matches!(error, PassthroughLoggingError::Transform { .. }));
+    assert_eq!(call_log_detail(&state, "original_response"), None);
+}
+
+#[test]
+fn cohere_embed_tools_price_the_embedding_as_a_cohere_aembedding() {
+    let pricing = Arc::new(RecordingPricing::new(Decimal::new(3, 4)));
+    let builder = Arc::new(RecordingBuilder::default());
+    let cost = production_tools(&pricing, &builder)
+        .embedding_cost(&embedding_response(), "embed-english-v3.0")
+        .expect("the embedding is priced");
+    assert_eq!(cost, Decimal::new(3, 4));
+    assert_eq!(
+        pricing.calls(),
+        [PricedCall {
+            model: "embed-english-v3.0".to_owned(),
+            provider: "cohere".to_owned(),
+            call_type: CallType::Aembedding,
+            response_model: Some("embed-model".to_owned()),
+        }]
+    );
+}
+
+#[test]
+fn cohere_embed_tools_hand_the_response_to_the_standard_object_builder() {
+    let pricing = Arc::new(RecordingPricing::new(Decimal::ZERO));
+    let builder = Arc::new(RecordingBuilder::default());
+    let mut response = embedding_response();
+    response
+        .hidden_params
+        .insert("response_cost".to_owned(), json("0.25"));
+    let kwargs = ResponseLoggingKwargs::default();
+    let mut state = logging_state();
+    production_tools(&pricing, &builder)
+        .standard_logging_object(
+            StandardObjectInput {
+                kwargs: &kwargs,
+                response: &response,
+                start_time: timestamp(START),
+                end_time: timestamp(END),
+            },
+            &mut state,
+        )
+        .expect("the standard object step succeeds");
+    let seen = builder.responses();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        field(&seen[0], "model"),
+        &Json::Text("embed-model".to_owned())
+    );
+    assert_eq!(
+        field(field(&seen[0], "_hidden_params"), "response_cost"),
+        &json("0.25")
+    );
 }

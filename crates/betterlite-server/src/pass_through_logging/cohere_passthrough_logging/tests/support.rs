@@ -1,21 +1,28 @@
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_core::openai_pricing::cost_error::CostError;
+use betterlite_core::openai_pricing::{CompletionCost, CompletionCostRequest, CostedResponse};
+use betterlite_core::routes::CallType;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::cohere_embedding::usage::CohereEmbeddingUsage;
+use betterlite_tokenizer::engine::Engine;
+use betterlite_tokenizer::engine::assets;
+use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use crate::pass_through_logging::base_passthrough_logging::tests::support::{
-    END, FakePayload, FakeProvider, START, json_object, timestamp,
+    END, FakePayload, FakeProvider, RecordingBuilder, START, json_object, timestamp,
 };
 use crate::pass_through_logging::base_passthrough_logging::{
     PassthroughChatInput, PassthroughChatLogger, PassthroughLoggingError, UpstreamChatReply,
 };
 use crate::pass_through_logging::response_payload::ResponseLoggingKwargs;
 
+use super::super::embedding::CohereEmbeddingLogging;
 use super::super::{
     CohereEmbeddingTools, CoherePassthroughLogger, EmbeddingDecodeInput, EmbeddingResponse,
     StandardObjectInput,
@@ -50,8 +57,11 @@ pub(crate) fn cohere_logger(
     tools: &Arc<FakeTools>,
 ) -> CoherePassthroughLogger {
     CoherePassthroughLogger::new(
-        PassthroughChatLogger::new(provider.clone(), payload.clone()),
-        tools.clone(),
+        PassthroughChatLogger::new(
+            Arc::<FakeProvider>::clone(provider),
+            Arc::<FakePayload>::clone(payload),
+        ),
+        Arc::<FakeTools>::clone(tools),
     )
 }
 
@@ -84,29 +94,27 @@ pub(crate) struct FakeTools {
     standard_seen: Mutex<Vec<bool>>,
     response: EmbeddingResponse,
     cost: Decimal,
-    fail_decode: bool,
-    fail_cost: bool,
-    fail_standard: bool,
+    failing_step: Option<&'static str>,
 }
 
 impl FakeTools {
     pub(crate) fn priced(cost: Decimal) -> Self {
-        Self::new(cost, false, false, false)
+        Self::new(cost, None)
     }
 
     pub(crate) fn failing_decode() -> Self {
-        Self::new(Decimal::new(25, 2), true, false, false)
+        Self::new(Decimal::new(25, 2), Some("decode"))
     }
 
     pub(crate) fn failing_cost() -> Self {
-        Self::new(Decimal::new(25, 2), false, true, false)
+        Self::new(Decimal::new(25, 2), Some("cost"))
     }
 
     pub(crate) fn failing_standard() -> Self {
-        Self::new(Decimal::new(25, 2), false, false, true)
+        Self::new(Decimal::new(25, 2), Some("standard"))
     }
 
-    fn new(cost: Decimal, fail_decode: bool, fail_cost: bool, fail_standard: bool) -> Self {
+    fn new(cost: Decimal, failing_step: Option<&'static str>) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
             texts: Mutex::new(Vec::new()),
@@ -114,9 +122,7 @@ impl FakeTools {
             standard_seen: Mutex::new(Vec::new()),
             response: embedding_response(),
             cost,
-            fail_decode,
-            fail_cost,
-            fail_standard,
+            failing_step,
         }
     }
 
@@ -148,11 +154,35 @@ impl FakeTools {
             .clone()
     }
 
-    fn record_call(&self, name: &'static str) {
+    // Records the call and fails it when it is the step this fake was told to fail.
+    fn step(&self, name: &'static str) -> Result<(), PassthroughLoggingError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(name);
+        if self.failing_step == Some(name) {
+            return Err(PassthroughLoggingError::transform(io::Error::other(
+                format!("the fake {name} step failed"),
+            )));
+        }
+        Ok(())
+    }
+
+    fn record_model(&self, model: &str) {
+        self.models
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(model.to_owned());
+    }
+}
+
+// The text a fake decode records for one input value; a value that is not text records as empty.
+fn recorded_text(value: &Json) -> String {
+    match value {
+        Json::Text(text) => text.clone(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            String::new()
+        }
     }
 }
 
@@ -162,30 +192,12 @@ impl CohereEmbeddingTools for FakeTools {
         input: EmbeddingDecodeInput<'_>,
         _call_log: &mut LoggingState,
     ) -> Result<EmbeddingResponse, PassthroughLoggingError> {
-        self.record_call("decode");
-        self.models
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(input.model.to_owned());
-        let texts = input
-            .input
-            .iter()
-            .map(|value| match value {
-                Json::Text(text) => text.clone(),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    String::new()
-                }
-            })
-            .collect();
+        self.record_model(input.model);
         self.texts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(texts);
-        if self.fail_decode {
-            return Err(PassthroughLoggingError::transform(io::Error::other(
-                "the fake decode failed",
-            )));
-        }
+            .push(input.input.iter().map(recorded_text).collect());
+        self.step("decode")?;
         Ok(self.response.clone())
     }
 
@@ -194,16 +206,8 @@ impl CohereEmbeddingTools for FakeTools {
         _response: &EmbeddingResponse,
         model: &str,
     ) -> Result<Decimal, PassthroughLoggingError> {
-        self.record_call("cost");
-        self.models
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(model.to_owned());
-        if self.fail_cost {
-            return Err(PassthroughLoggingError::transform(io::Error::other(
-                "the fake cost failed",
-            )));
-        }
+        self.record_model(model);
+        self.step("cost")?;
         Ok(self.cost)
     }
 
@@ -212,7 +216,6 @@ impl CohereEmbeddingTools for FakeTools {
         _input: StandardObjectInput<'_>,
         call_log: &mut LoggingState,
     ) -> Result<(), PassthroughLoggingError> {
-        self.record_call("standard");
         let carries = ["model", "custom_llm_provider", "response_cost"]
             .iter()
             .all(|key| call_log.model_call_details.contains_key(*key));
@@ -220,13 +223,73 @@ impl CohereEmbeddingTools for FakeTools {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(carries);
-        if self.fail_standard {
-            return Err(PassthroughLoggingError::payload(io::Error::other(
-                "the fake standard object failed",
-            )));
-        }
-        Ok(())
+        self.step("standard")
     }
+}
+
+// One priced request as B068's completion_cost receives it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PricedCall {
+    pub(crate) model: String,
+    pub(crate) provider: String,
+    pub(crate) call_type: CallType,
+    pub(crate) response_model: Option<String>,
+}
+
+// B068's pricing at a fixed price, recording every request it priced.
+pub(crate) struct RecordingPricing {
+    price: Decimal,
+    calls: Mutex<Vec<PricedCall>>,
+}
+
+impl RecordingPricing {
+    pub(crate) fn new(price: Decimal) -> Self {
+        Self {
+            price,
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn calls(&self) -> Vec<PricedCall> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl CompletionCost for RecordingPricing {
+    fn completion_cost(&self, request: &CompletionCostRequest<'_>) -> Result<Decimal, CostError> {
+        let response_model = match request.response {
+            CostedResponse::Embedding(embedding) => Some(embedding.model.clone()),
+            CostedResponse::Responses(_) => None,
+        };
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(PricedCall {
+                model: request.model.to_owned(),
+                provider: request.custom_llm_provider.to_owned(),
+                call_type: request.call_type,
+                response_model,
+            });
+        Ok(self.price)
+    }
+}
+
+// The production embedding tools over the fakes and the bundled cl100k tokenizer.
+pub(crate) fn production_tools(
+    pricing: &Arc<RecordingPricing>,
+    builder: &Arc<RecordingBuilder>,
+) -> CohereEmbeddingLogging {
+    let vocabulary = assets::bundled(Encoding::Cl100kBase).expect("the bundled cl100k vocabulary");
+    let engine = TiktokenEngine::from_bpe_file(Encoding::Cl100kBase, &vocabulary)
+        .expect("the cl100k engine builds");
+    CohereEmbeddingLogging::new(
+        Arc::<RecordingPricing>::clone(pricing),
+        Arc::<RecordingBuilder>::clone(builder),
+        Engine::Tiktoken(Arc::new(engine)),
+    )
 }
 
 // The keys write_call_log fills, read back from the call log.
