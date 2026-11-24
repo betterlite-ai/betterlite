@@ -141,9 +141,8 @@ class FakePrisma:
 
 
 def build_router(input_value: Input) -> Router:
-    aliases: dict[str, str | RouterModelGroupAliasItem] = {
-        alias: target for alias, target in input_value["model_group_alias"].items()
-    }
+    aliases: dict[str, str | RouterModelGroupAliasItem] = {}
+    aliases.update(input_value["model_group_alias"])
     return Router(model_list=input_value["model_list"], model_group_alias=aliases)
 
 
@@ -215,8 +214,9 @@ def direct_answer(input_value: Input) -> JsonValue:
     user = input_value["user"]
     if user is None:
         raise ValueError("the direct_access function needs a user row")
+    user_models: list[str] = [*user["models"]]
     user_object = LiteLLM_UserTable(
-        user_id=user["user_id"], teams=list(user["teams"]), models=list(user["models"])
+        user_id=user["user_id"], teams=list(user["teams"]), models=user_models
     )
     found = proxy_server.get_direct_access_models(
         user_db_object=user_object,
@@ -257,7 +257,8 @@ async def non_admin_answer(input_value: Input) -> JsonValue:
 
 
 def filter_answer(input_value: Input) -> JsonValue:
-    kept = cast(JsonValue, proxy_server._filter_models_to_user_accessible(input_value["all_models"]))  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14456-L14463
+    models = input_value["all_models"]
+    kept = cast(JsonValue, proxy_server._filter_models_to_user_accessible(models))  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14456-L14463
     return {"ids": row_ids(kept)}
 
 
