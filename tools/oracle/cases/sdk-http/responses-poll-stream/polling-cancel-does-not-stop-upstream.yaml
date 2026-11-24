@@ -1,0 +1,54 @@
+kind: sdk_http
+name: responses-poll-stream-cancel-does-not-stop-upstream
+env: {}
+call:
+  responses_poll_stream:
+    api_key: sk-b936
+    polling_id: litellm_poll_b936
+    data:
+      model: b936-test-model
+      input: Hello
+      stream: false
+      background: true
+    seed:
+      id: litellm_poll_b936
+      object: response
+      status: queued
+      created_at: 1735689600
+      output: []
+      metadata: {}
+      usage: null
+      error: null
+      incomplete_details: null
+      reasoning: null
+      tool_choice: null
+      tools: null
+      model: null
+      instructions: null
+      temperature: null
+      top_p: null
+      max_output_tokens: null
+      previous_response_id: null
+      text: null
+      truncation: null
+      parallel_tool_calls: null
+      user: null
+      store: null
+    clock_millis: [1000, 1000, 1000, 1000, 1250, 1250, 1250, 1250]
+    cancel_after_write: 1
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"type": "response.created", "response": {"id": "resp_b936", "created_at": 1735689600, "object": "response", "status": "in_progress", "output": []}, "sequence_number": 1}'
+      - '{"type": "response.output_item.added", "item": {"id": "m1", "type": "message", "role": "assistant", "status": "in_progress", "content": []}, "output_index": 0, "sequence_number": 2}'
+      - '{"type": "response.content_part.added", "item_id": "m1", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}, "sequence_number": 3}'
+      - '{"type": "response.output_text.delta", "item_id": "m1", "output_index": 0, "content_index": 0, "delta": "he", "sequence_number": 4}'
+      - '{"type": "response.output_text.delta", "item_id": "m1", "output_index": 0, "content_index": 0, "delta": "llo", "sequence_number": 5}'
+      - '{"type": "response.completed", "response": {"id": "resp_b936", "created_at": 1735689600, "object": "response", "status": "completed", "model": "b936-test-model", "output": [{"id": "m1", "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "hello", "annotations": []}]}], "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3}}, "sequence_number": 6}'
+      - '[DONE]'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
