@@ -8,6 +8,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use pyo3::prelude::*;
 
 use super::*;
+use crate::cache_backends::convert;
 
 const ITEM_KIB: i64 = 1024;
 
