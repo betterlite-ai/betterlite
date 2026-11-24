@@ -31,16 +31,16 @@ use crate::spend::visibility::error::VisibilityError;
 use crate::spend::visibility::owners::OwnerPair;
 use crate::team_access::caller::TeamCaller;
 
-pub type Events = Arc<Mutex<Vec<String>>>;
+pub(super) type Events = Arc<Mutex<Vec<String>>>;
 
-pub fn record(events: &Events, event: String) {
+pub(super) fn record(events: &Events, event: String) {
     events
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(event);
 }
 
-pub fn seen(events: &Events) -> Vec<String> {
+pub(super) fn seen(events: &Events) -> Vec<String> {
     events
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -48,7 +48,7 @@ pub fn seen(events: &Events) -> Vec<String> {
 }
 
 // the kind of each recorded event, in the order it ran
-pub fn kinds(events: &Events) -> Vec<String> {
+pub(super) fn kinds(events: &Events) -> Vec<String> {
     seen(events)
         .iter()
         .map(|event| {
@@ -59,18 +59,18 @@ pub fn kinds(events: &Events) -> Vec<String> {
         .collect()
 }
 
-pub fn query_event(events: &Events, kind: &str) -> String {
+pub(super) fn query_event(events: &Events, kind: &str) -> String {
     seen(events)
         .into_iter()
         .find(|event| event.starts_with(kind))
         .unwrap_or_default()
 }
 
-pub fn json(text: &str) -> JsonData {
+pub(super) fn json(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap()
 }
 
-pub fn row(request_id: &str, user: Option<&str>, team_id: Option<&str>) -> SpendLogListRow {
+pub(super) fn row(request_id: &str, user: Option<&str>, team_id: Option<&str>) -> SpendLogListRow {
     let user_field = user.map_or_else(String::new, |id| format!(r#","user":"{id}""#));
     let team_field = team_id.map_or_else(String::new, |id| format!(r#","team_id":"{id}""#));
     let text = format!(
@@ -79,7 +79,7 @@ pub fn row(request_id: &str, user: Option<&str>, team_id: Option<&str>) -> Spend
     serde_json::from_str(&text).unwrap()
 }
 
-pub fn metadata_row(request_id: &str, metadata: &str) -> SpendLogListRow {
+pub(super) fn metadata_row(request_id: &str, metadata: &str) -> SpendLogListRow {
     let mut built = row(request_id, Some("alice"), None);
     built.metadata = Some(JsonData::String(metadata.to_owned()));
     built.request_tags = Some(JsonData::String(String::from("[\"tag\"]")));
@@ -87,11 +87,11 @@ pub fn metadata_row(request_id: &str, metadata: &str) -> SpendLogListRow {
 }
 
 // the store answers the two list reads and records each SQL and its bound values
-pub struct FakeStore {
-    pub events: Events,
-    pub count: i64,
-    pub rows: Vec<SpendLogListRow>,
-    pub fails: bool,
+pub(super) struct FakeStore {
+    pub(super) events: Events,
+    pub(super) count: i64,
+    pub(super) rows: Vec<SpendLogListRow>,
+    pub(super) fails: bool,
 }
 
 impl FakeStore {
@@ -125,10 +125,10 @@ impl LogListStore for FakeStore {
 }
 
 // B1731's reads behind the delegated grouped page
-pub struct FakeSessions {
-    pub events: Events,
-    pub groups: Vec<SessionGroupRow>,
-    pub representatives: Vec<SpendLogListRow>,
+pub(super) struct FakeSessions {
+    pub(super) events: Events,
+    pub(super) groups: Vec<SessionGroupRow>,
+    pub(super) representatives: Vec<SpendLogListRow>,
 }
 
 #[async_trait]
@@ -171,9 +171,9 @@ impl SessionsStore for FakeSessions {
 
 // the two answers B1704 gives a test: an allowed owner pair and an allowed id precheck
 #[derive(Clone, Copy)]
-pub struct Answers {
-    pub owners: bool,
-    pub precheck: bool,
+pub(super) struct Answers {
+    pub(super) owners: bool,
+    pub(super) precheck: bool,
 }
 
 impl Default for Answers {
@@ -187,7 +187,7 @@ impl Default for Answers {
 
 // how the fixture wires the list store: answering, absent, or failing every read
 #[derive(Clone, Copy, Default)]
-pub enum StoreMode {
+pub(super) enum StoreMode {
     #[default]
     Ready,
     Missing,
@@ -195,11 +195,11 @@ pub enum StoreMode {
 }
 
 // B1704's checks with the answers a test pins down
-pub struct FakeScope {
-    pub events: Events,
-    pub permitted: Vec<String>,
-    pub teams: Vec<String>,
-    pub answers: Answers,
+pub(super) struct FakeScope {
+    pub(super) events: Events,
+    pub(super) permitted: Vec<String>,
+    pub(super) teams: Vec<String>,
+    pub(super) answers: Answers,
 }
 
 #[async_trait]
@@ -254,8 +254,8 @@ impl LogListScope for FakeScope {
     }
 }
 
-pub struct FakeEnricher {
-    pub events: Events,
+pub(super) struct FakeEnricher {
+    pub(super) events: Events,
 }
 
 #[async_trait]
@@ -270,20 +270,20 @@ impl SessionAggregateReader for FakeEnricher {
 }
 
 #[derive(Default)]
-pub struct Fixture {
-    pub store: StoreMode,
-    pub count: i64,
-    pub rows: Vec<SpendLogListRow>,
-    pub groups: Vec<SessionGroupRow>,
-    pub representatives: Vec<SpendLogListRow>,
-    pub permitted: Vec<String>,
-    pub teams: Vec<String>,
-    pub answers: Answers,
+pub(super) struct Fixture {
+    pub(super) store: StoreMode,
+    pub(super) count: i64,
+    pub(super) rows: Vec<SpendLogListRow>,
+    pub(super) groups: Vec<SessionGroupRow>,
+    pub(super) representatives: Vec<SpendLogListRow>,
+    pub(super) permitted: Vec<String>,
+    pub(super) teams: Vec<String>,
+    pub(super) answers: Answers,
 }
 
 impl Fixture {
     // a fixture with the store mode and count a test pins, and no rows, groups or teams yet
-    pub fn new(store: StoreMode, count: i64) -> Self {
+    pub(super) fn new(store: StoreMode, count: i64) -> Self {
         Self {
             store,
             count,
@@ -296,7 +296,7 @@ impl Fixture {
         }
     }
 
-    pub fn with_rows(rows: Vec<SpendLogListRow>) -> Self {
+    pub(super) fn with_rows(rows: Vec<SpendLogListRow>) -> Self {
         let count = i64::try_from(rows.len()).unwrap();
         let mut fixture = Self::new(StoreMode::Ready, count);
         fixture.rows = rows;
@@ -334,7 +334,7 @@ impl Fixture {
         }
     }
 
-    pub async fn call(&self, uri: &str, caller: Option<&Principal>) -> (Reply, Events) {
+    pub(super) async fn call(&self, uri: &str, caller: Option<&Principal>) -> (Reply, Events) {
         let events: Events = Events::default();
         let state = self.state(&events);
         let mut request = Request::builder()
@@ -357,23 +357,23 @@ impl Fixture {
     }
 }
 
-pub struct Reply {
-    pub status: StatusCode,
-    pub body: Vec<u8>,
+pub(super) struct Reply {
+    pub(super) status: StatusCode,
+    pub(super) body: Vec<u8>,
 }
 
 impl Reply {
-    pub fn json(&self) -> JsonData {
+    pub(super) fn json(&self) -> JsonData {
         serde_json::from_slice(&self.body).unwrap()
     }
 
-    pub fn text(&self) -> String {
+    pub(super) fn text(&self) -> String {
         String::from_utf8(self.body.clone()).unwrap()
     }
 }
 
 // the conditions a raw query produces without an authorization narrowing, for the SQL tests
-pub fn built_for(raw_query: &str, route: SpendLogRoute) -> BuiltConditions {
+pub(super) fn built_for(raw_query: &str, route: SpendLogRoute) -> BuiltConditions {
     let query = decode_spend_log_query(Some(raw_query));
     let prepared = query.prepare(route).unwrap();
     let choices = query.choices().unwrap();
@@ -387,7 +387,7 @@ pub fn built_for(raw_query: &str, route: SpendLogRoute) -> BuiltConditions {
     })
 }
 
-pub fn has(built: &BuiltConditions, fragment: &str) -> bool {
+pub(super) fn has(built: &BuiltConditions, fragment: &str) -> bool {
     built
         .conditions
         .iter()
@@ -420,10 +420,10 @@ fn principal(roles: Vec<Role>, user_id: Option<&str>) -> Principal {
     }
 }
 
-pub fn admin() -> Principal {
+pub(super) fn admin() -> Principal {
     principal(vec![Role::PlatformAdmin], Some("root"))
 }
 
-pub fn internal(user_id: &str) -> Principal {
+pub(super) fn internal(user_id: &str) -> Principal {
     principal(Vec::new(), Some(user_id))
 }

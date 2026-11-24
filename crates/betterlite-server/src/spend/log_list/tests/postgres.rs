@@ -10,7 +10,7 @@ use super::super::authz::{Authorization, ScopeClause};
 use super::super::conditions::{ConditionInputs, build_conditions};
 use super::super::order::order_clause;
 use super::super::page::{PageWindow, count_query, page_query};
-use super::super::store::{LogListStore, PostgresLogList};
+use super::super::store::{LogListStore as _, PostgresLogList};
 use crate::spend::log_query::decode_spend_log_query;
 use crate::spend::log_query::prepare::SpendLogRoute;
 use crate::spend::log_query::validate::SpendLogChoices;

@@ -51,7 +51,11 @@ impl From<VisibilityError> for LogListError {
     fn from(error: VisibilityError) -> Self {
         match error {
             VisibilityError::Forbidden { request_id } => Self::ForbiddenRequestId { request_id },
-            other => Self::Visibility(other),
+            other @ (VisibilityError::Database(_)
+            | VisibilityError::Team(_)
+            | VisibilityError::TeamList(_)
+            | VisibilityError::TeamRecord(_)
+            | VisibilityError::Users(_)) => Self::Visibility(other),
         }
     }
 }

@@ -185,11 +185,11 @@ async fn recheck_fetched_owners(
             team_id: row.team_id.clone(),
         })
         .collect();
-    let Some(scope) = scope else {
+    let Some(visibility) = scope else {
         return Err(LogListError::ForbiddenRequestId { request_id });
     };
     for owner in &owners {
-        if !scope.can_view_row_owner(caller, owner).await? {
+        if !visibility.can_view_row_owner(caller, owner).await? {
             return Err(LogListError::ForbiddenRequestId { request_id });
         }
     }

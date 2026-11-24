@@ -152,7 +152,7 @@ async fn permitted_teams_expand_the_read_to_an_or_clause() {
     let (reply, events) = fixture.call(UI, Some(&internal("alice"))).await;
     assert_eq!(reply.status, StatusCode::OK);
     let query = query_event(&events, "rows");
-    assert!(query.contains(r#"OR team_id = ANY($4::text[])"#));
+    assert!(query.contains("OR team_id = ANY($4::text[])"));
     assert!(query.contains(r#"Texts(["team-1"])"#));
 }
 
