@@ -74,7 +74,9 @@ fn configs_serve_openai_and_refuse_the_other_tags() {
 fn configs_resolve_the_module_api_base_globally() {
     let module_globals = LiteLlmGlobals {
         api_base: Some(String::from("http://127.0.0.1:9/v1")),
-        ..LiteLlmGlobals::default()
+        api_key: None,
+        openai_key: None,
+        organization: None,
     };
     let configs = Configs::new(OpenAiCredentialsSettings::default(), module_globals, None);
     let create = configs

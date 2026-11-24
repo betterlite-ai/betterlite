@@ -8,7 +8,7 @@ use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
 use super::convert::{ConvertError, CreateWire, SearchWire, parse};
 use super::error::raise;
-use super::session::{Pending, SessionCore};
+use super::session::{Pending, SessionCore, SystemClock, SystemIds};
 
 mod tests;
 
@@ -25,7 +25,7 @@ pub(crate) struct NativeVectorSearchSession {
 impl NativeVectorSearchSession {
     #[new]
     fn new(settings: &str) -> PyResult<Self> {
-        let core = SessionCore::build(settings)?;
+        let core = SessionCore::build(settings, Arc::new(SystemClock::new()), Arc::new(SystemIds))?;
         Ok(Self {
             core: Arc::new(core),
         })

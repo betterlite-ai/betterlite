@@ -19,6 +19,7 @@ from betterlite._endpoints.payload import (
     LOGGER,
     LOGGER_FN_DROPPED,
     REFUSED,
+    JsonContainer,
     is_json_container,
 )
 from betterlite._native import NativeVectorSearchError, NativeVectorSearchSession
@@ -89,18 +90,32 @@ def mock_vector_store_create_response(
 
 # a nonempty dict is the create mock, and a null, an empty one or any other value goes to HTTP
 def create_mock_answer(given: CallValue) -> VectorStoreCreateResponse | None:
-    if is_json_container(given) and isinstance(given, dict) and given:
-        return mock_vector_store_create_response(CREATE_RESPONSE.validate_python(given))
-    return None
+    if not is_json_container(given):
+        return None
+    match given:
+        case dict() as container if container:
+            return mock_vector_store_create_response(CREATE_RESPONSE.validate_python(container))
+        case object():
+            return None
 
 
 # a nonempty string or list is the search mock, and an empty or other value goes to HTTP
 def search_mock_answer(given: CallValue) -> VectorStoreSearchResponse | None:
-    if isinstance(given, str):
-        return mock_vector_store_search_response() if given else None
-    if is_json_container(given) and isinstance(given, list) and given:
-        return mock_vector_store_search_response(SEARCH_RESULTS.validate_python(given))
-    return None
+    if is_json_container(given):
+        return list_mock_answer(given)
+    match given:
+        case str() as text:
+            return mock_vector_store_search_response() if text else None
+        case object():
+            return None
+
+
+def list_mock_answer(given: JsonContainer) -> VectorStoreSearchResponse | None:
+    match given:
+        case list() as results if results:
+            return mock_vector_store_search_response(SEARCH_RESULTS.validate_python(results))
+        case object():
+            return None
 
 
 # LiteLLM's Python client and session cannot cross into the Rust transport, so they are named back

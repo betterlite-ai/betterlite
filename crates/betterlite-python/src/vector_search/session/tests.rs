@@ -54,7 +54,7 @@ impl IdSource for StepIds {
 
 #[test]
 fn a_session_reads_the_injected_clock_and_ids() {
-    let session = SessionCore::build_with(
+    let session = SessionCore::build(
         SESSION_TEXT,
         Arc::new(StepClock {
             next: AtomicU64::new(0),

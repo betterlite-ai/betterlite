@@ -75,12 +75,8 @@ pub(crate) struct SessionCore {
 }
 
 impl SessionCore {
-    pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
-        Self::build_with(text, Arc::new(SystemClock::new()), Arc::new(SystemIds))
-    }
-
     // The clock and the id source are fields so a test pins every time and id the session writes
-    fn build_with(
+    pub(crate) fn build(
         text: &str,
         clock: Arc<dyn WrapperClock>,
         ids: Arc<dyn IdSource>,
@@ -214,8 +210,7 @@ impl SessionCore {
     }
 }
 
-// LiteLLM reads the clock and uuid4 from its call wrapper; completion::ports holds the same pair for
-// the completion family, but that module is private to completion and this task cannot widen it.
+// LiteLLM's call wrapper supplies the clock and uuid4; completion::ports has the same pair but is private
 pub(crate) struct SystemClock {
     started: Instant,
 }
