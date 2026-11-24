@@ -64,6 +64,7 @@ pub trait BatchCounterLimiter: Send + Sync {
         per_model_usage: &IndexMap<String, BatchModelUsage>,
     ) -> (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>);
 
+    // ast-grep-ignore: no-long-names
     fn atomic_check_and_increment_by_n(
         &self,
         descriptors: &[BatchLimitDescriptor],
