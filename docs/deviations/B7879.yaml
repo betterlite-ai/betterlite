@@ -1,11 +1,8 @@
 task: B7879
 deviations:
 - what: "`run_thread_stream` and `arun_thread_stream` return betterlite stream managers of `AssistantStreamEvent` objects, not the OpenAI SDK's `AssistantStreamManager` and `AssistantEventHandler`."
-  why: The wheel does not depend on the OpenAI SDK. Iteration, `with`/`async with` and `on_event` work the same; the manager gives itself and calls the handler synchronously on both paths, and the SDK's `on_text_delta`-style handler callbacks and an early `close` do not exist.
+  why: The wheel does not depend on the OpenAI SDK. Iteration, `with`/`async with` and `on_event` work the same; the manager gives itself and calls the handler synchronously on both paths, and the SDK's `on_text_delta`-style handler callbacks do not exist.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1165-L1171
-- what: "This task has no helper oracle cases."
-  why: pytest compares both packages against one local server in crates/betterlite-python/tests/test_assistants_runs.py.
-  link: ""
 - what: "A provider failure from the sync `add_message`, `get_messages` or `run_thread` raises the betterlite exception named by LiteLLM's `exception_type`, where LiteLLM's sync path lets the raw OpenAI SDK exception through; the async calls map the same way in both."
   why: Every request runs in Rust and comes back as an error envelope that `raise_native_error` turns into the mapped class; B7878 records the same deviation for the assistant and thread calls.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L955-L965

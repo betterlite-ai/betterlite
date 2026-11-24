@@ -263,26 +263,12 @@ class AsyncAssistantStream:
         return event
 
 
-def stream_answer(
-    method: StreamMethod, payload: CallPayload, handler: EventHandler | None,
-) -> AssistantStream:
+def open_stream(method: StreamMethod, payload: CallPayload) -> NativeAssistantStream:
     session = run_session()
     try:
-        events = method(session, payload.text, payload.blobs)
+        return method(session, payload.text, payload.blobs)
     except NativeAssistantRunError as failure:
         raise_native_error(NativeError(str(failure)))
-    return AssistantStream(events, handler)
-
-
-def async_stream_answer(
-    method: StreamMethod, payload: CallPayload, handler: EventHandler | None,
-) -> AsyncAssistantStream:
-    session = run_session()
-    try:
-        events = method(session, payload.text, payload.blobs)
-    except NativeAssistantRunError as failure:
-        raise_native_error(NativeError(str(failure)))
-    return AsyncAssistantStream(events, handler)
 
 
 RunAnswer: TypeAlias = Run | Coroutine[None, None, Run] | AssistantStream | AsyncAssistantStream
@@ -365,9 +351,10 @@ def run_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
     if arguments.get("stream") is True:
         handler = checked_handler(event_handler)
         if arun is True:
-            return async_stream_answer(
-                NativeAssistantRunSession.arun_thread_stream, payload, handler)
-        return stream_answer(NativeAssistantRunSession.run_thread_stream, payload, handler)
+            events = open_stream(NativeAssistantRunSession.arun_thread_stream, payload)
+            return AsyncAssistantStream(events, handler)
+        events = open_stream(NativeAssistantRunSession.run_thread_stream, payload)
+        return AssistantStream(events, handler)
     if arun is True:
         return validated_aanswer(Run, NativeAssistantRunSession.arun_thread, payload)
     return validated_answer(Run, NativeAssistantRunSession.run_thread, payload)
@@ -413,5 +400,6 @@ async def arun_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     })
     payload = run_payload(custom_llm_provider, thread_id, assistant_id, arguments)
     if arguments.get("stream") is True:
-        return async_stream_answer(NativeAssistantRunSession.arun_thread_stream, payload, None)
+        events = open_stream(NativeAssistantRunSession.arun_thread_stream, payload)
+        return AsyncAssistantStream(events, None)
     return await validated_aanswer(Run, NativeAssistantRunSession.arun_thread, payload)

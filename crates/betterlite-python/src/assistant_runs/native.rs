@@ -17,10 +17,8 @@ use super::stream::NativeAssistantStream;
 // The attachment bytes Python passes with every call; the assistant calls never read them.
 type Blobs = Vec<Vec<u8>>;
 
-// What a coroutine-returning method hands back to Python.
 type ReplyObject<'py> = PyResult<Bound<'py, PyAny>>;
 
-// The JSON text a function returns, or the exception Python raises in its place.
 type Encoded = PyResult<String>;
 
 // litellm/assistants/main.py's message and run calls: one session per call, the eight functions as methods over it.

@@ -1,5 +1,9 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::resource_sdk_settings;
 use betterlite_core::api::assistant_messages::error::{
     MessageError, SetupError, failure as message_failure,
 };
@@ -40,6 +44,23 @@ fn request_settings_keeps_every_module_global() {
     assert_eq!(settings.organization.as_deref(), Some("org"));
     assert_eq!(openai_key, Some("sk-b"));
     assert_eq!(azure_key, Some("az"));
+}
+
+#[test]
+fn request_settings_replace_the_environment_values() {
+    let mut settings = resource_sdk_settings::Raw::default()
+        .convert(&BTreeMap::<String, String>::new())
+        .unwrap();
+    let text = r#"{"api_key":"sk-a","api_base":"http://base","api_version":"v1",
+        "organization":"org","openai_key":"sk-b","azure_key":"az"}"#;
+    let module: ModuleSettings = read("assistant session settings", text).unwrap();
+    module.apply(&mut settings);
+    assert_eq!(settings.api_base.as_deref(), Some("http://base"));
+    assert_eq!(settings.api_version.as_deref(), Some("v1"));
+    assert_eq!(settings.organization.as_deref(), Some("org"));
+    assert!(settings.api_key.is_some());
+    assert!(settings.openai_key.is_some());
+    assert!(settings.azure_key.is_some());
 }
 
 #[test]
@@ -170,6 +191,10 @@ fn error_message_error_names_the_model_an_unsupported_provider_answers() {
     assert_eq!(answer.status_code, Some(400));
     assert_eq!(answer.llm_provider.as_deref(), Some("bedrock"));
     assert_eq!(answer.model.as_deref(), Some("n/a"));
+    assert_eq!(
+        serde_json::to_string(&answer.body).unwrap(),
+        r#"{"type":null,"param":null}"#
+    );
 }
 
 #[test]
