@@ -44,6 +44,7 @@ description: >-
   Veo duration, an OpenAI batch usage with `data_residency="eu"`, and a realtime event list with cached audio.
 scope:
   paths:
+  - "crates/betterlite-python/src/cost.rs"
   - crates/betterlite-python/src/cost_extra.rs
   - crates/betterlite-python/src/cost_extra/**
   - crates/betterlite-python/python/betterlite/_native_cost_extra.pyi
