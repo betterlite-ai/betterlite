@@ -109,16 +109,6 @@ def batch_object(batch_id: str, status: str) -> dict[str, JsonValue]:
     }
 
 
-def page_object() -> dict[str, JsonValue]:
-    return {
-        "object": "list",
-        "data": [batch_object(BATCH_ID, "in_progress")],
-        "first_id": BATCH_ID,
-        "last_id": BATCH_ID,
-        "has_more": False,
-    }
-
-
 def cancelled_object() -> dict[str, JsonValue]:
     batch = batch_object(BATCH_ID, "cancelled")
     batch["cancelled_at"] = CANCELLED_AT
@@ -180,44 +170,50 @@ class _Handler(BaseHTTPRequestHandler):
     owner: ClassVar[ListServer]
 
     def do_GET(self) -> None:
-        parts = urlsplit(self.path)
-        query = dict(parse_qsl(parts.query))
-        self.record_call("GET", parts.path, parts.query, {})
-        if not self.authorized():
-            return
-        if parts.path != BATCH_PATH:
-            self.reply_error(NOT_FOUND, f"no batch list at {parts.path}")
-            return
-        if self.owner.xai:
-            self.reply(OK, {"batches": [xai_batch(None)], "pagination_token": None})
-            return
-        if query.get("after") == BAD_AFTER:
-            self.reply(BAD_REQUEST_STATUS, PROVIDER_ERROR)
-            return
-        if query.get("after") == BAD_SHAPE:
-            self.reply(UNPROCESSABLE_STATUS, PROVIDER_ERROR)
-            return
-        self.reply(OK, page_object())
+        self.serve({})
 
     def do_POST(self) -> None:
+        self.serve(self.read_body())
+
+    def serve(self, body: dict[str, JsonValue]) -> None:
         parts = urlsplit(self.path)
-        body = self.read_body()
-        self.record_call("POST", parts.path, parts.query, body)
+        query = dict(parse_qsl(parts.query))
+        self.record_call(self.command, parts.path, parts.query, body)
         if not self.authorized():
             return
-        if self.owner.xai and parts.path != f"{BATCH_PATH}/{BATCH_ID}:cancel":
-            self.reply_error(NOT_FOUND, f"no xai cancel at {parts.path}")
-            return
-        if self.owner.xai:
-            self.reply(OK, xai_batch(XAI_CANCELLED_TIME))
-            return
-        if parts.path == f"{BATCH_PATH}/{MISSING_ID}/cancel":
-            self.reply_error(NOT_FOUND, "no such batch")
-            return
-        if parts.path != f"{BATCH_PATH}/{BATCH_ID}/cancel":
-            self.reply_error(NOT_FOUND, f"no cancel at {parts.path}")
-            return
-        self.reply(OK, cancelled_object())
+        self.answer(parts.path, query)
+
+    def answer(self, path: str, query: dict[str, str]) -> None:
+        if self.command == "POST":
+            if self.owner.xai and path != f"{BATCH_PATH}/{BATCH_ID}:cancel":
+                self.reply_error(NOT_FOUND, f"no xai cancel at {path}")
+            elif self.owner.xai:
+                self.reply(OK, xai_batch(XAI_CANCELLED_TIME))
+            elif path == f"{BATCH_PATH}/{MISSING_ID}/cancel":
+                self.reply_error(NOT_FOUND, "no such batch")
+            elif path != f"{BATCH_PATH}/{BATCH_ID}/cancel":
+                self.reply_error(NOT_FOUND, f"no cancel at {path}")
+            else:
+                self.reply(OK, cancelled_object())
+        elif path != BATCH_PATH:
+            self.reply_error(NOT_FOUND, f"no batch list at {path}")
+        elif self.owner.xai:
+            self.reply(OK, {"batches": [xai_batch(None)], "pagination_token": None})
+        elif query.get("after") == BAD_AFTER:
+            self.reply(BAD_REQUEST_STATUS, PROVIDER_ERROR)
+        elif query.get("after") == BAD_SHAPE:
+            self.reply(UNPROCESSABLE_STATUS, PROVIDER_ERROR)
+        else:
+            self.reply(
+                OK,
+                {
+                    "object": "list",
+                    "data": [batch_object(BATCH_ID, "in_progress")],
+                    "first_id": BATCH_ID,
+                    "last_id": BATCH_ID,
+                    "has_more": False,
+                },
+            )
 
     def record_call(
         self, method: str, path: str, query: str, body: dict[str, JsonValue]
