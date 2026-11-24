@@ -108,7 +108,7 @@ async fn answer(
 async fn answer_body(
     core: &StreamableCore,
     headers: HeaderMap,
-    mut body: HttpBody,
+    body: HttpBody,
     id: RequestId,
 ) -> Result<(), SdkError> {
     let kind = content_type(&headers);
@@ -119,9 +119,7 @@ async fn answer_body(
         return read_events(core, body, &headers, id).await;
     }
     let message = format!("Unexpected content type: {kind}");
-    push_error(core, ErrorCode::INVALID_REQUEST, message, id).await?;
-    drop(body.close().await);
-    Ok(())
+    reject(core, body, ErrorCode::INVALID_REQUEST, message, id).await
 }
 // mcp catches only httpx2.StreamError and ValidationError here, so a read error ends its transport; betterlite answers the request (docs/deviations/B9652.yaml)
 async fn push_json(
@@ -170,7 +168,17 @@ async fn answer_error(
     } else {
         (ErrorCode::METHOD_NOT_FOUND, "Not Found")
     };
-    push_error(core, error_code, text.to_owned(), id).await?;
+    reject(core, body, error_code, text.to_owned(), id).await
+}
+
+async fn reject(
+    core: &StreamableCore,
+    mut body: HttpBody,
+    code: ErrorCode,
+    message: String,
+    id: RequestId,
+) -> Result<(), SdkError> {
+    push_error(core, code, message, id).await?;
     drop(body.close().await);
     Ok(())
 }

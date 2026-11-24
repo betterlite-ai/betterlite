@@ -191,7 +191,7 @@ fn status_failure<Source>(source: &Arc<Source>) -> Option<Failure>
 where
     Source: Error + Send + Sync + 'static,
 {
-    let head = status_head(source)?;
+    let head = status_head(source.as_ref())?;
     let url = head
         .capture
         .as_ref()
@@ -223,12 +223,8 @@ pub fn http_status_message(status: u16, url: Option<&str>) -> String {
 }
 
 // rmcp wraps a failed transport send in ServiceError::TransportSend, so the status error can sit under it
-fn status_head<Source>(source: &Arc<Source>) -> Option<&ResponseHead>
-where
-    Source: Error + Send + Sync + 'static,
-{
-    let dynamic: &(dyn Error + 'static) = source.as_ref();
-    let error = dynamic.downcast_ref::<SdkError>()?;
+fn status_head(source: &(dyn Error + 'static)) -> Option<&ResponseHead> {
+    let error = source.downcast_ref::<SdkError>()?;
     if let SdkError::Service(ServiceError::TransportSend(send_error)) = error
         && let Some(inner) = send_error.error.downcast_ref::<SdkError>()
     {
