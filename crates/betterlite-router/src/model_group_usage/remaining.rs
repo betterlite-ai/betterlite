@@ -30,10 +30,13 @@ where
         .await
         .map_err(GroupUsageError::Metadata)?;
     let mut headers = RemainingUsage::new();
-    let io_limits = info.as_ref().map_or(IoLimits::default(), |info| IoLimits {
-        itpm: info.itpm,
-        otpm: info.otpm,
-    });
+    let io_limits = match info.as_ref() {
+        Some(group) => IoLimits {
+            itpm: group.itpm,
+            otpm: group.otpm,
+        },
+        None => IoLimits::default(),
+    };
     if io_limits.itpm.is_some() || io_limits.otpm.is_some() {
         let (itpm, otpm) = group_counter_totals(UsageSeries::IoToken, model_list, cache, now)
             .await
@@ -60,8 +63,8 @@ async fn add_standard_headers<C>(
 where
     C: UsageCounterCache,
 {
-    let tpm_limit = info.and_then(|info| info.tpm);
-    let rpm_limit = info.and_then(|info| info.rpm);
+    let tpm_limit = info.and_then(|group| group.tpm);
+    let rpm_limit = info.and_then(|group| group.rpm);
     if tpm_limit.is_none() && rpm_limit.is_none() {
         return Ok(());
     }

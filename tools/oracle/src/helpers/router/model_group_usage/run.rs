@@ -145,14 +145,15 @@ fn filtered_candidates(input: &Input, snapshot: &Snapshot) -> Result<Vec<Deploym
         routing_groups: &snapshot.groups,
         inferred_provider: &no_inferred,
     };
+    let request = AccessFilterRequest {
+        model: group,
+        deployments: candidates.as_slice(),
+        metadata: metadata.as_ref(),
+        litellm_metadata: litellm_metadata.as_ref(),
+        team_id: input.team_id.as_deref(),
+    };
     Ok(filter_by_access_groups(
-        AccessFilterRequest {
-            model: group,
-            deployments: candidates.as_slice(),
-            metadata: metadata.as_ref(),
-            litellm_metadata: litellm_metadata.as_ref(),
-            team_id: input.team_id.as_deref(),
-        },
+        &request,
         &AccessGroups::default(),
         &lookup,
     )?)

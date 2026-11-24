@@ -74,11 +74,11 @@ fn series_keys(
 
 // Python's slice: a short answer keeps its source order and never regroups, and no answer sums to none on both sides.
 fn split_totals(values: Option<Vec<Option<Json>>>, first_len: usize) -> (Option<i64>, Option<i64>) {
-    let Some(values) = values else {
+    let Some(answers) = values else {
         return (None, None);
     };
-    let split = first_len.min(values.len());
-    let (first, second) = values.split_at(split);
+    let split = first_len.min(answers.len());
+    let (first, second) = answers.split_at(split);
     (total(first), total(second))
 }
 
@@ -95,11 +95,13 @@ fn total(values: &[Option<Json>]) -> Option<i64> {
 }
 
 fn counter(value: Option<&Json>) -> Option<i64> {
-    match value {
-        Some(Json::Bool(flag)) => Some(i64::from(u8::from(*flag))),
-        Some(Json::Number(number)) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|count| i64::try_from(count).ok())),
-        Some(Json::Text(_) | Json::List(_) | Json::Object(_) | Json::Null) | None => None,
+    let observed = value?;
+    match observed {
+        Json::Bool(flag) => Some(i64::from(u8::from(*flag))),
+        Json::Number(number) => match number.as_i64() {
+            Some(signed) => Some(signed),
+            None => i64::try_from(number.as_u64()?).ok(),
+        },
+        Json::Text(_) | Json::List(_) | Json::Object(_) | Json::Null => None,
     }
 }

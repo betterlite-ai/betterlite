@@ -87,6 +87,7 @@ impl BatchReads for RecordingCache {
     }
 
     fn async_resolve_batch_get(
+        &self,
         _declared: DeclaredBatchRead,
     ) -> impl Future<Output = Result<Vec<Option<Json>>, BatchReadsError>> + Send {
         ready(Ok(Vec::new()))
@@ -105,11 +106,12 @@ fn batch_read_options_match_the_router_defaults() {
         options: Mutex::new(Vec::new()),
     };
     let rows = [deployment("group", "a", "openai/gpt-4o")];
+    let counters = BatchCounters { cache: &cache };
     let usage = runtime()
         .block_on(group_counter_totals(
             UsageSeries::Standard,
             Some(&rows),
-            &cache,
+            &counters,
             now(),
         ))
         .expect("the usage read");
@@ -235,7 +237,7 @@ fn empty_batch() {
         ))
         .expect("the usage read");
     assert_eq!(usage, (None, None));
-    assert_eq!(cache.batches(), [Vec::new()]);
+    assert_eq!(cache.batches(), [Vec::<String>::new()]);
 }
 
 #[test]

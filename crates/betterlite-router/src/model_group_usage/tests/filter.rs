@@ -25,7 +25,7 @@ fn access_group_filter() {
         team_id: None,
     };
     assert_eq!(
-        filtered_ids(request, &AccessGroups::default(), &world),
+        filtered_ids(&request, &AccessGroups::default(), &world),
         ["a", "b"]
     );
 }
@@ -39,7 +39,7 @@ fn auth_metadata_precedence_prefers_the_request_metadata_principal() {
     let world = World::new(&rows);
     let direct = grants(&["group"], &[]);
     let grouped_only = grants(&["beta"], &[]);
-    let request = AccessFilterRequest {
+    let direct_request = AccessFilterRequest {
         model: "group",
         deployments: &rows,
         metadata: Some(&direct),
@@ -47,10 +47,10 @@ fn auth_metadata_precedence_prefers_the_request_metadata_principal() {
         team_id: None,
     };
     assert_eq!(
-        filtered_ids(request, &AccessGroups::default(), &world),
+        filtered_ids(&direct_request, &AccessGroups::default(), &world),
         ["a", "b"]
     );
-    let request = AccessFilterRequest {
+    let litellm_request = AccessFilterRequest {
         model: "group",
         deployments: &rows,
         metadata: None,
@@ -58,7 +58,7 @@ fn auth_metadata_precedence_prefers_the_request_metadata_principal() {
         team_id: None,
     };
     assert_eq!(
-        filtered_ids(request, &AccessGroups::default(), &world),
+        filtered_ids(&litellm_request, &AccessGroups::default(), &world),
         ["b"]
     );
 }
@@ -80,7 +80,7 @@ fn no_principal_or_grants_leaves_the_candidates_untouched(#[case] metadata: Opti
         team_id: None,
     };
     assert_eq!(
-        filtered_ids(request, &AccessGroups::default(), &world),
+        filtered_ids(&request, &AccessGroups::default(), &world),
         ["a", "b"]
     );
 }
@@ -110,7 +110,7 @@ fn direct_and_wildcard_grants_bypass_the_filter(#[case] models: &[&str]) {
         team_id: None,
     };
     assert_eq!(
-        filtered_ids(request, &AccessGroups::default(), &world),
+        filtered_ids(&request, &AccessGroups::default(), &world),
         ["a", "b"]
     );
 }
@@ -127,7 +127,7 @@ fn no_candidates_come_back_untouched() {
         litellm_metadata: None,
         team_id: None,
     };
-    assert!(filtered_ids(request, &AccessGroups::default(), &world).is_empty());
+    assert!(filtered_ids(&request, &AccessGroups::default(), &world).is_empty());
 }
 
 #[rstest]
@@ -149,7 +149,7 @@ fn a_grant_named_like_an_access_group_still_bypasses_the_filter(#[case] token: &
         team_id: None,
     };
     assert_eq!(
-        filtered_ids(request, &AccessGroups::default(), &world),
+        filtered_ids(&request, &AccessGroups::default(), &world),
         ["a", "b"]
     );
 }
@@ -170,7 +170,7 @@ fn no_group_overlap_leaves_the_candidates_untouched() {
         team_id: None,
     };
     assert_eq!(
-        filtered_ids(request, &AccessGroups::default(), &world),
+        filtered_ids(&request, &AccessGroups::default(), &world),
         ["a", "b"]
     );
 }
@@ -191,7 +191,7 @@ fn group_only_result_can_be_empty() {
         litellm_metadata: None,
         team_id: None,
     };
-    assert!(filtered_ids(request, &AccessGroups::default(), &world).is_empty());
+    assert!(filtered_ids(&request, &AccessGroups::default(), &world).is_empty());
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn an_unlisted_access_groups_value_is_rejected() {
         team_id: None,
     };
     let lookup = world.lookup();
-    let outcome = filter_by_access_groups(request, &AccessGroups::default(), &lookup);
+    let outcome = filter_by_access_groups(&request, &AccessGroups::default(), &lookup);
     assert!(matches!(
         outcome,
         Err(AccessGroupError::InvalidAccessGroups { model_name }) if model_name == "group"
@@ -218,7 +218,7 @@ fn an_unlisted_access_groups_value_is_rejected() {
 }
 
 fn filtered_ids(
-    request: AccessFilterRequest<'_>,
+    request: &AccessFilterRequest<'_>,
     access_groups: &AccessGroups,
     world: &World,
 ) -> Vec<String> {

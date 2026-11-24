@@ -25,31 +25,34 @@ pub struct AccessFilterRequest<'request> {
 
 // Restrict the candidates to the access groups the caller holds, and hand every unconstrained case back untouched.
 pub fn filter_by_access_groups(
-    request: AccessFilterRequest<'_>,
+    request: &AccessFilterRequest<'_>,
     access_groups: &AccessGroups,
     lookup: &CatalogLookup<'_>,
 ) -> Result<Vec<DeploymentSpec>, AccessGroupError> {
-    let AccessFilterRequest {
-        model,
-        deployments,
-        metadata,
-        litellm_metadata,
-        team_id,
-    } = request;
-    let Some(allowed) = constrained_grants(model, deployments, metadata, litellm_metadata) else {
-        return Ok(deployments.to_vec());
+    let Some(allowed) = constrained_grants(
+        request.model,
+        request.deployments,
+        request.metadata,
+        request.litellm_metadata,
+    ) else {
+        return Ok(request.deployments.to_vec());
     };
-    let groups = access_groups.get_model_access_groups(lookup, Some(model), None, team_id)?;
+    let groups = access_groups.get_model_access_groups(
+        lookup,
+        Some(request.model),
+        None,
+        request.team_id,
+    )?;
     let allowed_groups: BTreeSet<&str> = groups
         .keys()
         .map(String::as_str)
         .filter(|group| allowed.contains(group))
         .collect();
     if allowed_groups.is_empty() {
-        return Ok(deployments.to_vec());
+        return Ok(request.deployments.to_vec());
     }
     let mut filtered = Vec::new();
-    for deployment in deployments {
+    for deployment in request.deployments {
         if listed_in_allowed_group(deployment, &allowed_groups)? {
             filtered.push(deployment.clone());
         }

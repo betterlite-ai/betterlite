@@ -85,8 +85,8 @@ fn stamp_headers(
         );
         apply_decision_headers(headers, &routing);
     }
-    if let Some(remaining) = remaining {
-        apply_remaining_usage_headers(headers, remaining);
+    if let Some(usage) = remaining {
+        apply_remaining_usage_headers(headers, usage);
     }
 }
 
@@ -134,7 +134,7 @@ fn routing_value(value: &Json) -> RoutingValue {
         Json::Object(fields) => RoutingValue::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), routing_value(value)))
+                .map(|(key, field)| (key.clone(), routing_value(field)))
                 .collect(),
         ),
     }

@@ -159,13 +159,13 @@ fn a_parsed_response_gets_the_headers_on_its_hidden_params() {
         answer: Some(group_info(None, Some(10), None, None)),
     };
     let kwargs = object(vec![("metadata", bucket("a"))]);
-    let hidden = object(vec![(
+    let initial_hidden = object(vec![(
         "additional_headers",
         Json::Object(object(vec![("x-existing", text("kept"))])),
     )]);
     let returned = runtime()
         .block_on(set_response_headers(ResponseHeadersRequest {
-            response: Response::Attributed(hidden),
+            response: Response::Attributed(initial_hidden),
             model_group: Some("group"),
             request_kwargs: Some(&kwargs),
             model_list: Some(&rows),
