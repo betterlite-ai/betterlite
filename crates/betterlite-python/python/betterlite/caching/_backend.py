@@ -110,8 +110,3 @@ class _BackendCache(BaseCache, Generic[_HandleT]):
     @override
     async def disconnect(self) -> None:
         await self.native.async_close()
-
-    @override
-    async def test_connection(self) -> dict[str, JsonValue]:
-        alive = await self.native.async_ping()
-        return {"status": "success" if alive else "failed"}
