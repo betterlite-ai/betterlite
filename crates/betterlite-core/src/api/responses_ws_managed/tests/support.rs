@@ -83,16 +83,22 @@ pub(super) struct ScriptedSink {
 #[async_trait]
 impl FrameSink for ScriptedSink {
     async fn send_text(&self, frame: &str) -> Result<(), FrameSinkError> {
-        let mut recorder = lock(&self.shared);
-        recorder.sends = recorder.sends.saturating_add(1);
-        let attempt = recorder.sends;
+        let attempt = self.take_attempt();
         if Some(attempt) == self.fails_at {
             return Err(FrameSinkError {
                 message: "client send failed".to_owned(),
             });
         }
-        recorder.frames.push(frame.to_owned());
+        lock(&self.shared).frames.push(frame.to_owned());
         Ok(())
+    }
+}
+
+impl ScriptedSink {
+    fn take_attempt(&self) -> usize {
+        let mut recorder = lock(&self.shared);
+        recorder.sends = recorder.sends.saturating_add(1);
+        recorder.sends
     }
 }
 
@@ -231,6 +237,15 @@ impl ScriptedProvider {
     pub(super) fn idle(shared: &Shared) -> Self {
         Self::new(shared, Vec::new())
     }
+
+    fn record_call(&self, model: &str, call_kwargs: &IndexMap<String, Json>) {
+        let mut recorder = lock(&self.shared);
+        recorder.trace.push("provider".to_owned());
+        recorder.calls.push(RecordedCall {
+            model: model.to_owned(),
+            kwargs: call_kwargs.clone(),
+        });
+    }
 }
 
 #[async_trait]
@@ -242,14 +257,7 @@ impl ResponsesStreaming for ScriptedProvider {
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
     ) -> Result<ScriptedStream, ProviderCallError> {
-        {
-            let mut recorder = lock(&self.shared);
-            recorder.trace.push("provider".to_owned());
-            recorder.calls.push(RecordedCall {
-                model: model.to_owned(),
-                kwargs: call_kwargs.clone(),
-            });
-        }
+        self.record_call(model, call_kwargs);
         let Some(script) = lock(&self.scripts).pop_front() else {
             return Err(ProviderCallError {
                 message: "the test scripts no further provider call".to_owned(),
@@ -349,6 +357,21 @@ impl ScriptedQuota {
             failure,
         }
     }
+
+    fn record_quota(
+        &self,
+        requested_model: Option<&str>,
+        estimated_input_tokens: i64,
+        estimated_output_tokens: i64,
+    ) {
+        let mut recorder = lock(&self.shared);
+        recorder.trace.push("quota".to_owned());
+        recorder.quotas.push(RecordedQuota {
+            model: requested_model.map(str::to_owned),
+            input_tokens: estimated_input_tokens,
+            output_tokens: estimated_output_tokens,
+        });
+    }
 }
 
 #[async_trait]
@@ -360,15 +383,11 @@ impl ProjectQuotaCallback for ScriptedQuota {
         estimated_input_tokens: i64,
         estimated_output_tokens: i64,
     ) -> Result<(), ErrorClass> {
-        {
-            let mut recorder = lock(&self.shared);
-            recorder.trace.push("quota".to_owned());
-            recorder.quotas.push(RecordedQuota {
-                model: requested_model.map(str::to_owned),
-                input_tokens: estimated_input_tokens,
-                output_tokens: estimated_output_tokens,
-            });
-        }
+        self.record_quota(
+            requested_model,
+            estimated_input_tokens,
+            estimated_output_tokens,
+        );
         let Some(failure) = &self.failure else {
             return Ok(());
         };
@@ -475,15 +494,6 @@ pub(super) fn object(text: &str) -> IndexMap<String, Json> {
         Json::Object(fields) => fields,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             panic!("the fixture text is not an object: {text}")
-        }
-    }
-}
-
-pub(super) fn array(text: &str) -> Vec<Json> {
-    match json(text) {
-        Json::List(items) => items,
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            panic!("the fixture text is not an array: {text}")
         }
     }
 }

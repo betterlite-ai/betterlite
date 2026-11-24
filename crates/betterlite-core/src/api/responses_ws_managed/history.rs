@@ -16,13 +16,13 @@ pub fn save_turn_history<Sink>(
 where
     Sink: FrameSink,
 {
-    let Some(completed) = completed else {
+    let Some(turn) = completed else {
         return Ok(());
     };
-    let Some(response_id) = extract_response_id(completed) else {
+    let Some(response_id) = extract_response_id(turn) else {
         return Ok(());
     };
-    let output_messages = extract_output_messages(completed)?;
+    let output_messages = extract_output_messages(turn)?;
     let capacity = prior_history
         .len()
         .saturating_add(current_messages.len())

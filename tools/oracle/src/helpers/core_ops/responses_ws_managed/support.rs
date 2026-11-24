@@ -76,16 +76,22 @@ pub(super) struct Socket {
 #[async_trait]
 impl FrameSink for Socket {
     async fn send_text(&self, frame: &str) -> Result<(), FrameSinkError> {
-        let mut recorder = lock(&self.shared);
-        recorder.sends = recorder.sends.saturating_add(1);
-        let attempt = recorder.sends;
+        let attempt = self.take_attempt();
         if Some(attempt) == self.fails_at {
             return Err(FrameSinkError {
                 message: self.message.clone(),
             });
         }
-        recorder.frames.push(frame.to_owned());
+        lock(&self.shared).frames.push(frame.to_owned());
         Ok(())
+    }
+}
+
+impl Socket {
+    fn take_attempt(&self) -> usize {
+        let mut recorder = lock(&self.shared);
+        recorder.sends = recorder.sends.saturating_add(1);
+        recorder.sends
     }
 }
 

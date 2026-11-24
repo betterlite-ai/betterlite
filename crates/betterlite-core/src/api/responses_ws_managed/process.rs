@@ -71,7 +71,7 @@ where
 
 // the message a turn processes: invalid JSON is answered, a warmup is acknowledged, a refused frame is answered
 async fn accepted_message<Sink>(
-    handler: &mut ManagedResponsesWebSocket<Sink>,
+    handler: &ManagedResponsesWebSocket<Sink>,
     raw_message: &str,
 ) -> Result<Option<IndexMap<String, Json>>, ManagedTurnError>
 where
@@ -107,10 +107,9 @@ where
     let previous_response_id = optional_string(call_kwargs.shift_remove("previous_response_id"));
     let input = call_kwargs.get("input").cloned().unwrap_or(Json::Null);
     let current_messages = input_to_messages(&input);
-    let prior_history = match previous_response_id.as_deref() {
-        Some(previous) => get_history_messages(handler, previous),
-        None => Vec::new(),
-    };
+    let prior_history = previous_response_id
+        .as_deref()
+        .map_or_else(Vec::new, |previous| get_history_messages(handler, previous));
     apply_history(
         &mut call_kwargs,
         previous_response_id.as_deref(),

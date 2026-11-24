@@ -94,6 +94,15 @@ impl ScriptedProvider {
             scripts: Mutex::new(VecDeque::from(scripts.to_vec())),
         }
     }
+
+    fn record_call(&self, model: &str, call_kwargs: &IndexMap<String, Json>) {
+        let mut recorder = lock(&self.shared);
+        recorder.trace.push("provider".to_owned());
+        recorder.calls.push(RecordedCall {
+            model: model.to_owned(),
+            kwargs: call_kwargs.clone(),
+        });
+    }
 }
 
 #[async_trait]
@@ -105,14 +114,7 @@ impl ResponsesStreaming for ScriptedProvider {
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
     ) -> Result<ScriptedStream, ProviderCallError> {
-        {
-            let mut recorder = lock(&self.shared);
-            recorder.trace.push("provider".to_owned());
-            recorder.calls.push(RecordedCall {
-                model: model.to_owned(),
-                kwargs: call_kwargs.clone(),
-            });
-        }
+        self.record_call(model, call_kwargs);
         let Some(row) = lock(&self.scripts).pop_front() else {
             return Err(ProviderCallError {
                 message: SCRIPT_EXHAUSTED.to_owned(),
@@ -144,6 +146,21 @@ impl ScriptedQuota {
             row,
         }
     }
+
+    fn record_quota(
+        &self,
+        requested_model: Option<&str>,
+        estimated_input_tokens: i64,
+        estimated_output_tokens: i64,
+    ) {
+        let mut recorder = lock(&self.shared);
+        recorder.trace.push("quota".to_owned());
+        recorder.quotas.push(RecordedQuota {
+            model: requested_model.map(str::to_owned),
+            input_tokens: estimated_input_tokens,
+            output_tokens: estimated_output_tokens,
+        });
+    }
 }
 
 #[async_trait]
@@ -155,15 +172,11 @@ impl ProjectQuotaCallback for ScriptedQuota {
         estimated_input_tokens: i64,
         estimated_output_tokens: i64,
     ) -> Result<(), ErrorClass> {
-        {
-            let mut recorder = lock(&self.shared);
-            recorder.trace.push("quota".to_owned());
-            recorder.quotas.push(RecordedQuota {
-                model: requested_model.map(str::to_owned),
-                input_tokens: estimated_input_tokens,
-                output_tokens: estimated_output_tokens,
-            });
-        }
+        self.record_quota(
+            requested_model,
+            estimated_input_tokens,
+            estimated_output_tokens,
+        );
         match self.row.kind.as_str() {
             "rate_limit" => Err(rate_limited(&self.row.message)),
             "internal" => Err(ErrorClass::InternalServer(Box::new(context(
