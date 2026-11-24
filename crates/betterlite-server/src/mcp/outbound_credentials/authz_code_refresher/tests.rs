@@ -108,12 +108,9 @@ impl FakePersist {
     }
 }
 
-impl CredentialPersist for FakePersist {
-    fn persist(
-        &self,
-        request: &PersistRequest<'_>,
-    ) -> impl Future<Output = Result<(), TokenStoreUnavailable>> + Send {
-        self.calls.lock().unwrap().push(PersistRecord {
+impl From<&PersistRequest<'_>> for PersistRecord {
+    fn from(request: &PersistRequest<'_>) -> Self {
+        Self {
             user_id: request.user_id.to_owned(),
             server_id: request.server_id.to_owned(),
             access_token: request.access_token.to_owned(),
@@ -121,12 +118,21 @@ impl CredentialPersist for FakePersist {
             expires_in: request.expires_in,
             scopes: request.scopes.map(<[String]>::to_vec),
             identity_binding_proof: request.identity_binding_proof.map(str::to_owned),
-        });
-        ready(
-            self.failure
-                .as_ref()
-                .map_or(Ok(()), |error| Err(error.clone())),
-        )
+        }
+    }
+}
+
+impl CredentialPersist for FakePersist {
+    fn persist(
+        &self,
+        request: &PersistRequest<'_>,
+    ) -> impl Future<Output = Result<(), TokenStoreUnavailable>> + Send {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(PersistRecord::from(request));
+        let failure = self.failure.clone();
+        ready(failure.map_or(Ok(()), Err))
     }
 }
 
