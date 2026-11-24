@@ -8,7 +8,7 @@ use crate::cost::breakdown::Capture;
 use crate::cost::convert::{
     Amount, CostAnswer, RatesView, UsageAnswer, UsageRecord, UsageRequest, encode, parse,
 };
-use crate::cost::engine::Engine;
+use crate::cost::engine::{Engine, usage_object as usage_from_request};
 use crate::cost::error::{charge_error, native_error, payload, priced_error};
 use crate::cost::settings::{Settings, SettingsWire};
 
@@ -25,9 +25,9 @@ impl NativeCost {
     #[new]
     fn new(settings: &str) -> PyResult<Self> {
         let wire: SettingsWire = parse(settings)?;
-        let settings = Settings::build(wire)?;
+        let built = Settings::build(wire)?;
         Ok(Self {
-            engine: Engine { settings },
+            engine: Engine { settings: built },
         })
     }
 
@@ -54,11 +54,10 @@ impl NativeCost {
     }
 
     // LiteLLM's response mapping for get_usage_object: the usage, or JSON null when it carries none.
-    fn usage_object(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+    #[staticmethod]
+    fn usage_object(py: Python<'_>, request: &str) -> PyResult<String> {
         let wire: UsageRequest = parse(request)?;
-        let usage = self
-            .engine
-            .usage_object(&wire)
+        let usage = usage_from_request(&wire)
             .map_err(|error| native_error(py, payload(error.to_string())))?;
         encode(&UsageAnswer {
             usage: usage.as_ref().map(UsageRecord::from),

@@ -52,13 +52,13 @@ pub(crate) fn native_error(py: Python<'_>, payload: CostErrorPayload) -> PyErr {
         Ok(module) => module.getattr("NativeError"),
         Err(failure) => return failure,
     };
-    match class.and_then(|class| class.call1((text,))) {
+    match class.and_then(|found| found.call1((text,))) {
         Ok(value) => PyErr::from_value(value),
         Err(failure) => failure,
     }
 }
 
-pub(crate) fn payload(message: String) -> CostErrorPayload {
+pub(crate) const fn payload(message: String) -> CostErrorPayload {
     CostErrorPayload {
         kind: "Exception",
         message,
@@ -71,22 +71,27 @@ pub(crate) fn charge_error(
     error: &EngineError,
     request: &CompletionRequest,
 ) -> PyErr {
-    if let EngineError::Completion(CompletionCostError::Prepare(PrepareError::ModelMissing)) = error
-    {
+    if matches!(
+        error,
+        EngineError::Completion(CompletionCostError::Prepare(PrepareError::ModelMissing))
+    ) {
         return PyValueError::new_err(MODEL_MISSING);
     }
-    if let EngineError::Completion(CompletionCostError::Prepare(PrepareError::Counting(_))) = error
-    {
+    if matches!(
+        error,
+        EngineError::Completion(CompletionCostError::Prepare(PrepareError::Counting(_)))
+    ) {
         return native_error(py, payload(UNCOUNTED.to_owned()));
     }
-    let model = match request.model.as_deref() {
-        Some(found) => found,
-        None => request
-            .response
-            .as_ref()
-            .and_then(|response| response.model.as_deref())
-            .unwrap_or_default(),
-    };
+    let response_model = request
+        .response
+        .as_ref()
+        .and_then(|response| response.model.as_deref());
+    let model = request
+        .model
+        .as_deref()
+        .or(response_model)
+        .unwrap_or_default();
     priced_error(py, error, model, request.custom_llm_provider.as_deref())
 }
 
@@ -146,10 +151,11 @@ fn exception_error(py: Python<'_>, name: &str, message: String, model: Option<&s
     }
 }
 
-fn price_failure(error: &EngineError) -> Option<&CallPriceError> {
+const fn price_failure(error: &EngineError) -> Option<&CallPriceError> {
     match error {
-        EngineError::Price(found) => Some(found),
-        EngineError::Completion(CompletionCostError::Price(found)) => Some(found),
+        EngineError::Price(found) | EngineError::Completion(CompletionCostError::Price(found)) => {
+            Some(found)
+        }
         EngineError::Completion(_)
         | EngineError::Usage(_)
         | EngineError::Input(_)

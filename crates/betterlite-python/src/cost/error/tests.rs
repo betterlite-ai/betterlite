@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::ffi::CStr;
+
 use betterlite_core::cost::call_price::error::CallPriceError;
 use betterlite_core::cost::completion::error::CompletionCostError;
 use betterlite_core::cost::prepare::error::PrepareError;
@@ -15,9 +17,9 @@ use crate::cost::convert::{ConvertError, parse};
 use crate::cost::error::{EngineError, charge_error, native_error, payload, priced_error};
 use crate::cost::settings::SettingsError;
 
-const NATIVE_FAKE: &std::ffi::CStr = c"class NativeError(Exception):\n    pass\n";
+const NATIVE_FAKE: &CStr = c"class NativeError(Exception):\n    pass\n";
 
-const EXCEPTIONS_FAKE: &std::ffi::CStr = c"class ModelNotMappedError(Exception):\n    pass\n\nclass BadRequestError(Exception):\n    def __init__(self, message: str, model: str, llm_provider: str) -> None:\n        self.message = f\"litellm.BadRequestError: {message}\"\n        self.model = model\n        self.llm_provider = llm_provider\n        super().__init__(self.message)\n";
+const EXCEPTIONS_FAKE: &CStr = c"class ModelNotMappedError(Exception):\n    pass\n\nclass BadRequestError(Exception):\n    def __init__(self, message: str, model: str, llm_provider: str) -> None:\n        self.message = f\"litellm.BadRequestError: {message}\"\n        self.model = model\n        self.llm_provider = llm_provider\n        super().__init__(self.message)\n";
 
 // betterlite._native and betterlite.exceptions, so the raised class and its text can be read back.
 fn install_fakes(py: Python<'_>) {

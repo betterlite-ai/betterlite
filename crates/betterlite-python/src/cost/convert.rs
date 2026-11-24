@@ -23,13 +23,6 @@ pub(crate) const fn optional(amount: Option<Amount>) -> Option<Decimal> {
     }
 }
 
-pub(crate) const fn optional_unit(value: Option<i64>) -> Option<Option<i64>> {
-    match value {
-        Some(inner) => Some(Some(inner)),
-        None => None,
-    }
-}
-
 // The rates LiteLLM hands set_cost_breakdown, under the names its BilledTokenRates dataclass declares.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct RatesView {

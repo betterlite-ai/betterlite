@@ -109,48 +109,6 @@ impl Engine {
         Ok(completion_cost(&calculator, &args, clock, target).await?)
     }
 
-    // get_usage_object over the usage Python read off a response, typed by the kind that carried it.
-    pub(crate) fn usage_object(
-        &self,
-        request: &UsageRequest,
-    ) -> Result<Option<Usage>, EngineError> {
-        let Some(mapping) = request.usage.as_ref() else {
-            return Ok(None);
-        };
-        let kind = match request.kind {
-            Some(found) => found,
-            None => ResponseKind::Other,
-        };
-        let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
-        match kind {
-            ResponseKind::Transcription => {
-                let typed: TranscriptionUsage =
-                    serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
-                usage_answer(kind, BillingUsage::Transcription(&typed))
-            }
-            ResponseKind::DecisionsIr => {
-                let typed: DecisionsUsage =
-                    serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
-                usage_answer(kind, BillingUsage::DecisionsIr(&typed))
-            }
-            ResponseKind::DecisionsOpenAi => {
-                let typed: DecisionUsage =
-                    serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
-                usage_answer(kind, BillingUsage::DecisionsOpenAi(&typed))
-            }
-            ResponseKind::Chat
-            | ResponseKind::ChatStream
-            | ResponseKind::Embedding
-            | ResponseKind::Speech
-            | ResponseKind::Rerank
-            | ResponseKind::Image
-            | ResponseKind::TextCompletion
-            | ResponseKind::SendMessage
-            | ResponseKind::Responses
-            | ResponseKind::Other => usage_answer(kind, BillingUsage::Mapping(mapping)),
-        }
-    }
-
     fn calculator<'call>(
         &'call self,
         bound: &'call Bound<'call>,
@@ -212,6 +170,42 @@ impl Engine {
             },
             resolution: self.settings.lookup.resolution(),
         })
+    }
+}
+
+// get_usage_object over the usage Python read off a response, typed by the kind that carried it.
+pub(crate) fn usage_object(request: &UsageRequest) -> Result<Option<Usage>, EngineError> {
+    let Some(mapping) = request.usage.as_ref() else {
+        return Ok(None);
+    };
+    let kind = request.kind.unwrap_or(ResponseKind::Other);
+    let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
+    match kind {
+        ResponseKind::Transcription => {
+            let typed: TranscriptionUsage =
+                serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
+            usage_answer(kind, BillingUsage::Transcription(&typed))
+        }
+        ResponseKind::DecisionsIr => {
+            let typed: DecisionsUsage =
+                serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
+            usage_answer(kind, BillingUsage::DecisionsIr(&typed))
+        }
+        ResponseKind::DecisionsOpenAi => {
+            let typed: DecisionUsage =
+                serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
+            usage_answer(kind, BillingUsage::DecisionsOpenAi(&typed))
+        }
+        ResponseKind::Chat
+        | ResponseKind::ChatStream
+        | ResponseKind::Embedding
+        | ResponseKind::Speech
+        | ResponseKind::Rerank
+        | ResponseKind::Image
+        | ResponseKind::TextCompletion
+        | ResponseKind::SendMessage
+        | ResponseKind::Responses
+        | ResponseKind::Other => usage_answer(kind, BillingUsage::Mapping(mapping)),
     }
 }
 

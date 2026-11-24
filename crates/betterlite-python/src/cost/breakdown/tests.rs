@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
-use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
+use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget as _};
 use betterlite_models::billed_tokens::BilledTokenRates;
 use rust_decimal::Decimal;
 
@@ -55,6 +55,18 @@ fn cost_breakdown_records_every_charged_field() {
     assert_eq!(breakdown.output_cost, Some(dec("0.02")));
     assert_eq!(breakdown.total_cost, Some(dec("0.03")));
     assert_eq!(breakdown.tool_usage_cost, Some(dec("0.04")));
+    assert!(breakdown.guardrail_cost.is_none());
+    assert!(breakdown.extra.is_empty());
+    assert!(capture.rates.is_some());
+}
+
+#[test]
+fn cost_breakdown_records_the_adjustments_and_the_region() {
+    let mut capture = Capture::default();
+    capture
+        .set_cost_breakdown(&input())
+        .expect("the capture cannot fail");
+    let breakdown = capture.breakdown.expect("the breakdown is recorded");
     assert_eq!(breakdown.original_cost, Some(dec("0.1")));
     assert_eq!(breakdown.discount_percent, Some(dec("0.05")));
     assert_eq!(breakdown.discount_amount, Some(dec("0.005")));
@@ -64,9 +76,6 @@ fn cost_breakdown_records_every_charged_field() {
     assert_eq!(breakdown.service_tier.as_deref(), Some("flex"));
     assert_eq!(breakdown.data_residency.as_deref(), Some("eu"));
     assert_eq!(breakdown.vertex_location.as_deref(), Some("global"));
-    assert!(breakdown.guardrail_cost.is_none());
-    assert!(breakdown.extra.is_empty());
-    assert!(capture.rates.is_some());
 }
 
 #[test]

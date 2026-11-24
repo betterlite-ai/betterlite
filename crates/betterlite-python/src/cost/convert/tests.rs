@@ -12,9 +12,9 @@ use rust_decimal::Decimal;
 
 use betterlite_models::billed_tokens::BilledTokenRates;
 
-use crate::cost::billing::{CallRequest, CompletionRequest, ResponseWire};
+use crate::cost::billing::{CallRequest, CompletionRequest, RerankUnits, ResponseWire};
 use crate::cost::convert::{
-    Amount, CostAnswer, RatesView, UsageAnswer, UsageRecord, encode, optional, optional_unit, parse,
+    Amount, CostAnswer, RatesView, UsageAnswer, UsageRecord, encode, optional, parse,
 };
 
 fn dec(text: &str) -> Decimal {
@@ -103,16 +103,13 @@ fn cost_request_defaults_the_call_type_and_the_empty_counts() {
 #[test]
 fn cost_request_rejects_a_field_it_does_not_read() {
     let error = parse::<CallRequest>(r#"{"not_a_cost_field": 1}"#)
-        .err()
-        .expect("an unknown field is refused");
+        .expect_err("an unknown field is refused");
     assert!(error.to_string().contains("not_a_cost_field"));
 }
 
 #[test]
 fn cost_request_rejects_text_that_is_not_json() {
-    let error = parse::<CallRequest>("not json")
-        .err()
-        .expect("malformed text is refused");
+    let error = parse::<CallRequest>("not json").expect_err("malformed text is refused");
     assert!(error.to_string().contains("JSON"));
 }
 
@@ -188,30 +185,31 @@ fn cost_result_treats_a_response_without_a_kind_as_other() {
     assert!(matches!(response.billing_usage(), BillingUsage::Absent));
 }
 
+const COMPLETION_ARGUMENTS: &str = r#"{
+    "model": "gpt-4o",
+    "prompt": "hello",
+    "messages": [{"role": "user", "content": "hello"}],
+    "completion": "world",
+    "total_time": 1200.0,
+    "call_type": "completion",
+    "custom_llm_provider": "openai",
+    "region_name": "us-east-1",
+    "custom_cost_per_token": {"input_cost_per_token": 0.1, "output_cost_per_token": 0.2},
+    "custom_cost_per_second": 0.4,
+    "optional_params": {"temperature": 0},
+    "custom_pricing": true,
+    "base_model": "gpt-4o-2024",
+    "router_model_id": "deployment-1",
+    "service_tier": "flex",
+    "data_residency": "eu",
+    "vertex_location": "global",
+    "request_model": "gpt-4o-mini",
+    "response": {"kind": "chat", "usage": {"prompt_tokens": 1}}
+}"#;
+
 #[test]
 fn cost_result_reads_every_completion_argument() {
-    let text = r#"{
-        "model": "gpt-4o",
-        "prompt": "hello",
-        "messages": [{"role": "user", "content": "hello"}],
-        "completion": "world",
-        "total_time": 1200.0,
-        "call_type": "completion",
-        "custom_llm_provider": "openai",
-        "region_name": "us-east-1",
-        "custom_cost_per_token": {"input_cost_per_token": 0.1, "output_cost_per_token": 0.2},
-        "custom_cost_per_second": 0.4,
-        "optional_params": {"temperature": 0},
-        "custom_pricing": true,
-        "base_model": "gpt-4o-2024",
-        "router_model_id": "deployment-1",
-        "service_tier": "flex",
-        "data_residency": "eu",
-        "vertex_location": "global",
-        "request_model": "gpt-4o-mini",
-        "response": {"kind": "chat", "usage": {"prompt_tokens": 1}}
-    }"#;
-    let request: CompletionRequest = parse(text).expect("the request parses");
+    let request: CompletionRequest = parse(COMPLETION_ARGUMENTS).expect("the request parses");
     assert_eq!(request.model.as_deref(), Some("gpt-4o"));
     assert_eq!(request.prompt, "hello");
     assert_eq!(request.messages.len(), 1);
@@ -221,6 +219,11 @@ fn cost_result_reads_every_completion_argument() {
     assert_eq!(request.base_model.as_deref(), Some("gpt-4o-2024"));
     assert_eq!(request.vertex_location.as_deref(), Some("global"));
     assert!(request.response.is_some());
+}
+
+#[test]
+fn cost_result_charges_the_completion_arguments() {
+    let request: CompletionRequest = parse(COMPLETION_ARGUMENTS).expect("the request parses");
     let charge = request.charge();
     assert_eq!(charge.total_time, Some(dec("1200.0")));
     assert_eq!(charge.custom_cost_per_second, Some(dec("0.4")));
@@ -234,8 +237,14 @@ fn cost_result_reads_every_completion_argument() {
 fn cost_request_keeps_an_absent_amount_apart_from_a_zero_one() {
     assert_eq!(optional(None), None);
     assert_eq!(optional(Some(Amount(Decimal::ZERO))), Some(Decimal::ZERO));
-    assert_eq!(optional_unit(None), None);
-    assert_eq!(optional_unit(Some(0)), Some(Some(0)));
+    let absent = RerankUnits::default().billed();
+    assert_eq!(absent.search_units, None);
+    let zero = RerankUnits {
+        search_units: Some(0),
+        total_tokens: None,
+    }
+    .billed();
+    assert_eq!(zero.search_units, Some(Some(0)));
 }
 
 #[test]
@@ -271,14 +280,14 @@ fn cost_result_writes_the_usage_record_and_the_cost_answer() {
     let mut extra: IndexMap<String, Json> = IndexMap::new();
     extra.insert(
         "character_count".to_owned(),
-        Json::Number(serde_json::Number::from(12)),
+        Json::Number(serde_json::Number::from(12_i32)),
     );
-    let usage = Usage {
+    let filled = Usage {
         extras: extra,
         ..usage
     };
     let answer = UsageAnswer {
-        usage: Some(UsageRecord::from(&usage)),
+        usage: Some(UsageRecord::from(&filled)),
     };
     let text = encode(&answer).expect("the usage answer encodes");
     assert_eq!(
@@ -287,13 +296,13 @@ fn cost_result_writes_the_usage_record_and_the_cost_answer() {
     );
     let empty = UsageAnswer { usage: None };
     assert_eq!(encode(&empty).unwrap(), r#"{"usage":null}"#);
-    let answer = CostAnswer {
+    let cost_answer = CostAnswer {
         cost: Amount(dec("0.02")),
         breakdown: None,
         billed_token_rates: None,
     };
     assert_eq!(
-        encode(&answer).unwrap(),
+        encode(&cost_answer).unwrap(),
         r#"{"cost":0.02,"breakdown":null,"billed_token_rates":null}"#
     );
 }

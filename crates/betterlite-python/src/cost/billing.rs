@@ -1,4 +1,4 @@
-use betterlite_core::cost::call_price::CustomCostPerToken;
+use betterlite_core::cost::call_price::{CallPriceInput, CustomCostPerToken};
 use betterlite_core::cost::completion::args::{ChargeInputs, ResponseParts, ToolInputs};
 use betterlite_core::cost::image_dispatch::policy::ImageResponseView;
 use betterlite_core::cost::prepare::{CompletionBillingInput, ResponseView};
@@ -14,7 +14,7 @@ use betterlite_openai::api::rerank_contracts::records::RerankBilledUnits;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::cost::convert::{Amount, optional, optional_unit};
+use crate::cost::convert::{Amount, optional};
 
 // custom_cost_per_token as LiteLLM's CostPerToken declares it: two required rates and two cache rates.
 #[derive(Debug, Deserialize)]
@@ -52,10 +52,10 @@ pub(crate) struct RerankUnits {
 
 impl RerankUnits {
     #[must_use]
-    pub(crate) const fn billed(&self) -> RerankBilledUnits {
+    pub(crate) fn billed(&self) -> RerankBilledUnits {
         RerankBilledUnits {
-            search_units: optional_unit(self.search_units),
-            total_tokens: optional_unit(self.total_tokens),
+            search_units: self.search_units.map(Some),
+            total_tokens: self.total_tokens.map(Some),
         }
     }
 }
@@ -94,8 +94,8 @@ impl CallRequest {
         &'request self,
         usage: Option<&'request Usage>,
         rerank: Option<&'request RerankBilledUnits>,
-    ) -> betterlite_core::cost::call_price::CallPriceInput<'request> {
-        betterlite_core::cost::call_price::CallPriceInput {
+    ) -> CallPriceInput<'request> {
+        CallPriceInput {
             model: self.model.as_deref(),
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,

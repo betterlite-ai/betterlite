@@ -15,7 +15,7 @@ use betterlite_models::decisions::Json;
 use crate::cost::billing::{CallRequest, CompletionRequest};
 use crate::cost::breakdown::Capture;
 use crate::cost::convert::{UsageRequest, parse};
-use crate::cost::engine::Engine;
+use crate::cost::engine::{Engine, usage_object};
 use crate::cost::error::EngineError;
 use crate::cost::settings::{Settings, SettingsWire};
 
@@ -83,8 +83,7 @@ fn cost_per_token_refuses_a_model_it_cannot_price() {
     let request = call(r#"{"model": "no-such-model", "prompt_tokens": 1}"#);
     let error = engine()
         .cost_per_token(&request)
-        .err()
-        .expect("an unknown model fails");
+        .expect_err("an unknown model fails");
     assert!(matches!(error, EngineError::Price(_)));
 }
 
@@ -146,8 +145,7 @@ fn cost_charge_refuses_text_it_would_have_to_tokenize() {
     let mut capture = Capture::default();
     let error = get_runtime()
         .block_on(engine().charge(&request, &mut clock, Some(&mut capture)))
-        .err()
-        .expect("the uncounted text fails");
+        .expect_err("the uncounted text fails");
     assert!(matches!(
         error,
         EngineError::Completion(CompletionCostError::Prepare(PrepareError::Counting(_)))
@@ -164,8 +162,7 @@ fn cost_charge_refuses_messages_it_would_have_to_tokenize() {
     let mut capture = Capture::default();
     let error = get_runtime()
         .block_on(engine().charge(&request, &mut clock, Some(&mut capture)))
-        .err()
-        .expect("the uncounted messages fail");
+        .expect_err("the uncounted messages fail");
     assert!(matches!(
         error,
         EngineError::Completion(CompletionCostError::Prepare(PrepareError::Counting(_)))
@@ -189,19 +186,15 @@ fn cost_charge_prices_the_model_the_response_names_when_the_argument_has_none() 
 
 #[test]
 fn cost_usage_object_reads_the_supplied_usage_and_answers_none_without_one() {
-    let engine = engine();
     let request =
         call(r#"{"usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6}}"#);
-    let usage = engine
-        .usage_object(&UsageRequest {
-            usage: request.usage.clone(),
-            kind: None,
-        })
-        .expect("the usage reads");
+    let usage = usage_object(&UsageRequest {
+        usage: request.usage,
+        kind: None,
+    })
+    .expect("the usage reads");
     assert_eq!(usage.map(|found| found.total_tokens), Some(6));
-    let empty = engine
-        .usage_object(&UsageRequest::default())
-        .expect("an absent usage reads as none");
+    let empty = usage_object(&UsageRequest::default()).expect("an absent usage reads as none");
     assert!(empty.is_none());
 }
 
@@ -213,8 +206,7 @@ fn cost_usage_object_transforms_a_transcription_token_usage() {
                       "input_token_details": {"text_tokens": 3, "audio_tokens": 1}}}"#,
     )
     .expect("the usage request parses");
-    let usage = engine()
-        .usage_object(&request)
+    let usage = usage_object(&request)
         .expect("the usage reads")
         .expect("a token usage comes back");
     assert_eq!(usage.prompt_tokens, 3);
@@ -227,7 +219,7 @@ fn cost_usage_object_answers_none_for_a_transcription_duration() {
     let request: UsageRequest =
         parse(r#"{"kind": "transcription", "usage": {"type": "duration", "seconds": 2.5}}"#)
             .expect("the usage request parses");
-    let usage = engine().usage_object(&request).expect("the usage reads");
+    let usage = usage_object(&request).expect("the usage reads");
     assert!(usage.is_none());
 }
 
@@ -239,8 +231,7 @@ fn cost_usage_object_transforms_a_decisions_usage() {
                       "cached_tokens": 1, "cache_write_tokens": 1}}"#,
     )
     .expect("the usage request parses");
-    let usage = engine()
-        .usage_object(&request)
+    let usage = usage_object(&request)
         .expect("the usage reads")
         .expect("a decisions usage comes back");
     assert_eq!(usage.prompt_tokens, 4);
@@ -256,8 +247,7 @@ fn cost_usage_object_transforms_an_openai_decisions_usage() {
                       "input_tokens_details": {"cached_tokens": 1, "cache_write_tokens": 1}}}"#,
     )
     .expect("the usage request parses");
-    let usage = engine()
-        .usage_object(&request)
+    let usage = usage_object(&request)
         .expect("the usage reads")
         .expect("a decisions usage comes back");
     assert_eq!(usage.prompt_tokens, 4);
