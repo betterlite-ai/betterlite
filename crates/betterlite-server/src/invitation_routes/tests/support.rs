@@ -28,9 +28,10 @@ use crate::auth::auth_identity::AuthContext;
 use crate::invitation_routes::routes;
 use crate::invitation_routes::state::{
     InvitationDatabase, InvitationRouteState, InvitationScope, QueueAnswer, QueueCompletion,
-    QueueCompletionRequest, QueueFailureHook, QueueRouteState, QueueRouter,
+    QueueFailureHook, QueueRouteState, QueueRouter,
 };
 use crate::invitation_routes::store::{InvitationStore, InvitationStoreError};
+use crate::pre_call::rewrites::CliOverrides;
 use crate::routing::request_scheduler::build;
 use crate::sse_data_generator::types::{StreamFailure, StreamItem, StreamSource};
 use crate::user_invitation::{InvitationError, InvitationRecord};
@@ -180,13 +181,12 @@ impl FakeStore {
     }
 }
 
+type Created = Result<InvitationRecord, InvitationStoreError>;
+type Found = Result<Option<InvitationRecord>, InvitationStoreError>;
+
 #[async_trait]
 impl InvitationStore for FakeStore {
-    async fn create(
-        &self,
-        user_id: &str,
-        actor_user_id: Option<&str>,
-    ) -> Result<InvitationRecord, InvitationStoreError> {
+    async fn create(&self, user_id: &str, actor_user_id: Option<&str>) -> Created {
         let mut rows = self.rows.lock().expect("the store lock");
         if let Some(error) = rows.create_error.take() {
             return Err(InvitationStoreError::Create(error));
@@ -200,10 +200,7 @@ impl InvitationStore for FakeStore {
         ))
     }
 
-    async fn info(
-        &self,
-        invitation_id: &str,
-    ) -> Result<Option<InvitationRecord>, InvitationStoreError> {
+    async fn info(&self, invitation_id: &str) -> Found {
         let mut rows = self.rows.lock().expect("the store lock");
         if let Some(error) = rows.read_error.take() {
             return Err(InvitationStoreError::Read(error));
@@ -211,12 +208,7 @@ impl InvitationStore for FakeStore {
         Ok(rows.records.get(invitation_id).cloned())
     }
 
-    async fn update(
-        &self,
-        invitation_id: &str,
-        is_accepted: bool,
-        updated_by: &str,
-    ) -> Result<Option<InvitationRecord>, InvitationStoreError> {
+    async fn update(&self, invitation_id: &str, is_accepted: bool, updated_by: &str) -> Found {
         let mut rows = self.rows.lock().expect("the store lock");
         if let Some(error) = rows.update_error.take() {
             return Err(InvitationStoreError::Update(error));
@@ -231,10 +223,7 @@ impl InvitationStore for FakeStore {
         }))
     }
 
-    async fn delete(
-        &self,
-        invitation_id: &str,
-    ) -> Result<Option<InvitationRecord>, InvitationStoreError> {
+    async fn delete(&self, invitation_id: &str) -> Found {
         let mut rows = self.rows.lock().expect("the store lock");
         if let Some(error) = rows.delete_error.take() {
             return Err(InvitationStoreError::Delete(error));
@@ -376,11 +365,13 @@ impl QueueCompletion for FakeCompletion {
 
     async fn complete(
         &self,
-        request: QueueCompletionRequest<'_>,
+        _caller: &Principal,
+        data: &JsonMap,
+        stream: bool,
     ) -> Result<QueueAnswer, Box<ErrorClass>> {
         let (reply, items) = {
             let mut state = self.state.lock().expect("the completion lock");
-            state.calls.push((request.data.clone(), request.stream));
+            state.calls.push((data.clone(), stream));
             let reply = state.reply.take().unwrap_or(Reply::Object(object("{}")));
             (reply, state.items.take())
         };
@@ -469,8 +460,12 @@ pub(super) fn queue_state(
             scheduler: Arc::clone(scheduler),
             completion,
         }),
+        keepalive: None,
         failure,
-        ..QueueRouteState::default()
+        completion_model: None,
+        cli_model: None,
+        overrides: CliOverrides::default(),
+        timeouts: QueueRouteState::default().timeouts,
     }
 }
 

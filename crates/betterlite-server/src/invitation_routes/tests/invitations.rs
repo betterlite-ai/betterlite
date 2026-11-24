@@ -6,6 +6,7 @@ use axum::Router;
 use axum::http::StatusCode;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
+use rstest::rstest;
 
 use super::support::{
     FakeScope, FakeStore, internal_user, invitation_router, master, org_admin, parse,
@@ -31,25 +32,26 @@ fn open_scope() -> FakeScope {
     FakeScope::new(true, true)
 }
 
+#[rstest]
+#[case::new("POST", "/invitation/new", r#"{"user_id":"alice"}"#)]
+#[case::info("GET", "/invitation/info?invitation_id=inv-1", "")]
+#[case::update(
+    "POST",
+    "/invitation/update",
+    r#"{"invitation_id":"inv-1","is_accepted":true}"#
+)]
+#[case::delete("POST", "/invitation/delete", r#"{"invitation_id":"inv-1"}"#)]
+#[case::queue("POST", "/queue/chat/completions", r#"{"priority":1}"#)]
 #[tokio::test]
-async fn invitation_routes_need_a_caller() {
+async fn invitation_routes_need_a_caller(
+    #[case] method: &str,
+    #[case] uri: &str,
+    #[case] body: &str,
+) {
     let (_, _, router) = setup(Vec::new(), open_scope());
-    let cases = [
-        ("POST", "/invitation/new", r#"{"user_id":"alice"}"#),
-        ("GET", "/invitation/info?invitation_id=inv-1", ""),
-        (
-            "POST",
-            "/invitation/update",
-            r#"{"invitation_id":"inv-1","is_accepted":true}"#,
-        ),
-        ("POST", "/invitation/delete", r#"{"invitation_id":"inv-1"}"#),
-        ("POST", "/queue/chat/completions", r#"{"priority":1}"#),
-    ];
-    for (method, uri, body) in cases {
-        let (status, _, text) = send(&router, method, uri, body, None).await;
-        assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
-        assert!(parse(&text)["error"]["message"].is_string(), "{uri}");
-    }
+    let (status, _, text) = send(&router, method, uri, body, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
+    assert!(parse(&text)["error"]["message"].is_string(), "{uri}");
 }
 
 #[tokio::test]

@@ -44,11 +44,9 @@ async fn fallback_login_renders_the_form_without_the_banner() {
 
 #[tokio::test]
 async fn fallback_login_keeps_the_hint_hidden_when_the_settings_hide_it() {
-    let settings = Settings {
-        hide_default_credentials_hint: true,
-        ..Settings::default()
-    };
-    let (status, _, html) = fetch(&login_router(&settings)).await;
+    let mut login = LoginPageState::from_settings(&Settings::default());
+    login.hide_default_credentials_hint = true;
+    let (status, _, html) = fetch(&public_routes(login)).await;
     assert_eq!(status, StatusCode::OK);
     assert!(!html.contains("Default Credentials"));
     assert!(!html.contains(r#"<div class="deprecation-banner">"#));

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::http::StatusCode;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use rstest::rstest;
 use serde_json::json;
 
 use super::support::{
@@ -80,49 +81,46 @@ async fn queue_refuses_a_body_without_a_priority() {
     assert!(completion.calls().is_empty());
 }
 
+#[rstest]
+#[case::byte_overflow(r#"{"model":"m","priority":256}"#)]
+#[case::negative(r#"{"model":"m","priority":-1}"#)]
+#[case::float(r#"{"model":"m","priority":1.5}"#)]
+#[case::text(r#"{"model":"m","priority":"3"}"#)]
+#[case::null(r#"{"model":"m","priority":null}"#)]
 #[tokio::test]
-async fn queue_refuses_every_priority_a_byte_cannot_hold() {
-    let scheduler = scheduler();
-    for body in [
-        r#"{"model":"m","priority":256}"#,
-        r#"{"model":"m","priority":-1}"#,
-        r#"{"model":"m","priority":1.5}"#,
-        r#"{"model":"m","priority":"3"}"#,
-        r#"{"model":"m","priority":null}"#,
-    ] {
-        let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
-        let router = queue_router(queue_state(&scheduler, &completion, None));
-        let (status, _, text) = send(
-            &router,
-            "POST",
-            "/queue/chat/completions",
-            body,
-            Some(master()),
-        )
-        .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-        assert_eq!(parse(&text)["error"]["message"], NO_PRIORITY, "{body}");
-        assert!(completion.calls().is_empty(), "{body}");
-    }
+async fn queue_refuses_every_priority_a_byte_cannot_hold(#[case] body: &str) {
+    let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
+    let router = queue_router(queue_state(&scheduler(), &completion, None));
+    let (status, _, text) = send(
+        &router,
+        "POST",
+        "/queue/chat/completions",
+        body,
+        Some(master()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(parse(&text)["error"]["message"], NO_PRIORITY, "{body}");
+    assert!(completion.calls().is_empty(), "{body}");
 }
 
+#[rstest]
+#[case::zero(0_i64, "0")]
+#[case::maximum(255_i64, "255")]
 #[tokio::test]
-async fn queue_accepts_the_edges_of_a_byte_priority() {
-    let scheduler = scheduler();
-    for (priority, header) in [(0_i64, "0"), (255_i64, "255")] {
-        let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
-        let router = queue_router(queue_state(&scheduler, &completion, None));
-        let (status, headers, _) = send(
-            &router,
-            "POST",
-            "/queue/chat/completions",
-            &chat_body(priority),
-            Some(master()),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(headers["x-litellm-priority"], header);
-    }
+async fn queue_accepts_the_edges_of_a_byte_priority(#[case] priority: i64, #[case] header: &str) {
+    let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
+    let router = queue_router(queue_state(&scheduler(), &completion, None));
+    let (status, headers, _) = send(
+        &router,
+        "POST",
+        "/queue/chat/completions",
+        &chat_body(priority),
+        Some(master()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["x-litellm-priority"], header);
 }
 
 #[tokio::test]
@@ -226,34 +224,35 @@ async fn queue_leaves_the_user_unset_for_an_identityless_call() {
     assert!(completion.seen().get("user").is_none());
 }
 
+#[rstest]
+#[case::completion_model(
+    Some("completion-model"),
+    Some("cli-model"),
+    Some("cli-model"),
+    "completion-model"
+)]
+#[case::cli_model(None, Some("cli-model"), Some("cli-model"), "cli-model")]
+#[case::query(None, None, Some("query-model"), "query-model")]
+#[case::body(None, None, None, "body-model")]
 #[tokio::test]
-async fn queue_prefers_the_configured_models_in_order() {
-    let scheduler = scheduler();
-    let cases: [(Option<&str>, Option<&str>, Option<&str>, &str); 4] = [
-        (
-            Some("completion-model"),
-            Some("cli-model"),
-            Some("cli-model"),
-            "completion-model",
-        ),
-        (None, Some("cli-model"), Some("cli-model"), "cli-model"),
-        (None, None, Some("query-model"), "query-model"),
-        (None, None, None, "body-model"),
-    ];
-    for (completion_model, cli_model, query, expected) in cases {
-        let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
-        let mut state = queue_state(&scheduler, &completion, None);
-        state.completion_model = completion_model.map(str::to_owned);
-        state.cli_model = cli_model.map(str::to_owned);
-        let router = queue_router(state);
-        let uri = query.map_or_else(
-            || "/queue/chat/completions".to_owned(),
-            |model| format!("/queue/chat/completions?model={model}"),
-        );
-        let (status, _, _) = send(&router, "POST", &uri, &chat_body(1), Some(master())).await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(completion.seen()["model"], expected, "{uri}");
-    }
+async fn queue_prefers_the_configured_models_in_order(
+    #[case] completion_model: Option<&str>,
+    #[case] cli_model: Option<&str>,
+    #[case] query: Option<&str>,
+    #[case] expected: &str,
+) {
+    let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
+    let mut state = queue_state(&scheduler(), &completion, None);
+    state.completion_model = completion_model.map(str::to_owned);
+    state.cli_model = cli_model.map(str::to_owned);
+    let router = queue_router(state);
+    let uri = query.map_or_else(
+        || "/queue/chat/completions".to_owned(),
+        |model| format!("/queue/chat/completions?model={model}"),
+    );
+    let (status, _, _) = send(&router, "POST", &uri, &chat_body(1), Some(master())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(completion.seen()["model"], expected, "{uri}");
 }
 
 #[tokio::test]
