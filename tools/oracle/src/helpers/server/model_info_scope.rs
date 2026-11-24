@@ -6,8 +6,8 @@ use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::model_group_lookups::access_groups::AccessGroups;
 use betterlite_server::model_info_scope::annotate::visible_models;
 use betterlite_server::model_info_scope::compose::{
-    ScopeCaller, TeamSelection, accessible_models, get_all_team_models, non_admin_all_models,
-    read_caller_rows, read_team_models, read_user_models,
+    ScopeCaller, TeamSelection, get_all_team_models, non_admin_all_models, read_caller_rows,
+    read_team_models, read_user_models,
 };
 use betterlite_server::model_info_scope::grants::{direct_access_models, grant_deployment_ids};
 use serde_json::{Value, json};
@@ -103,10 +103,9 @@ fn populate(
     let record = input.caller.as_ref().ok_or(Failure::MissingCaller)?;
     let alice = ScopeCaller::from(record);
     let read = runtime.block_on(read_caller_rows(&alice, &reads(input)))?;
-    let models = accessible_models(
+    let models = alice.accessible_models(
         specs(&input.all_models),
         visible_only,
-        &alice,
         read,
         lookup,
         &AccessGroups::default(),

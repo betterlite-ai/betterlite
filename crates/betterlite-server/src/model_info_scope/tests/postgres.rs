@@ -18,8 +18,8 @@ use super::{
     assert_annotations, caller, identified, ids, snapshot, team_list, team_row, unnumbered,
 };
 use crate::model_info_scope::compose::{
-    ScopeReads, TeamSelection, accessible_models, get_all_team_models, non_admin_all_models,
-    read_caller_rows, read_team_models, read_user_models,
+    ScopeReads, TeamSelection, get_all_team_models, non_admin_all_models, read_caller_rows,
+    read_team_models, read_user_models,
 };
 use crate::model_info_scope::error::{ScopeDetail, ScopeError, USER_NOT_FOUND};
 use crate::model_info_scope::postgres::PostgresScopeReads;
@@ -156,22 +156,23 @@ async fn seed_creator(db: &Database, model_id: &str, created_by: Option<&str>) {
 }
 
 async fn seed_user(db: &Database, user_id: &str, teams: &[&str], models: &[&str]) {
-    let teams = json_list(teams);
-    let models = json_list(models);
-    db.execute(INSERT_USER_SQL, &[&user_id, &teams, &models])
+    let teams_json = json_list(teams);
+    let models_json = json_list(models);
+    db.execute(INSERT_USER_SQL, &[&user_id, &teams_json, &models_json])
         .await;
 }
 
 async fn seed_team(db: &Database, team_id: &str, models: Option<&[&str]>, groups: Option<&[&str]>) {
-    let models = models.map(json_list);
-    let groups = groups.map(json_list);
-    db.execute(INSERT_TEAM_SQL, &[&team_id, &models, &groups])
+    let models_json = models.map(json_list);
+    let groups_json = groups.map(json_list);
+    db.execute(INSERT_TEAM_SQL, &[&team_id, &models_json, &groups_json])
         .await;
 }
 
 async fn seed_group(db: &Database, group_id: &str, models: &[&str]) {
-    let models = json_list(models);
-    db.execute(INSERT_GROUP_SQL, &[&group_id, &models]).await;
+    let models_json = json_list(models);
+    db.execute(INSERT_GROUP_SQL, &[&group_id, &models_json])
+        .await;
 }
 
 #[tokio::test]
@@ -423,15 +424,15 @@ async fn stored_roster_annotates_models() {
     let reading = read_caller_rows(&alice, &db.reads()).await.unwrap();
     let annotated = {
         let lookup = snapshot(&rows);
-        accessible_models(
-            rows,
-            false,
-            &alice,
-            reading,
-            &lookup.lookup(),
-            &AccessGroups::default(),
-        )
-        .unwrap()
+        alice
+            .accessible_models(
+                rows,
+                false,
+                reading,
+                &lookup.lookup(),
+                &AccessGroups::default(),
+            )
+            .unwrap()
     };
     assert_annotations(&annotated[0], true, Some(&[]));
     assert_annotations(&annotated[1], false, Some(&["team-alpha"]));

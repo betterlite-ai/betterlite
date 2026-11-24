@@ -23,15 +23,15 @@ pub fn populate_team_access(
     team_models: Option<&TeamModelLists>,
     direct_ids: &[String],
 ) {
-    if let Some(team_models) = team_models {
+    if let Some(mapped) = team_models {
         for model in all_models.iter_mut() {
             let Some(model_id) = model.id().map(str::to_owned) else {
                 continue;
             };
-            if !team_eligible(&model.model_info, &model_id, team_models) {
+            if !team_eligible(&model.model_info, &model_id, mapped) {
                 continue;
             }
-            let team_ids = team_models.get(&model_id).cloned().unwrap_or_default();
+            let team_ids = mapped.get(&model_id).cloned().unwrap_or_default();
             model.model_info.insert(
                 "access_via_team_ids".to_owned(),
                 Json::List(team_ids.into_iter().map(Json::Text).collect()),

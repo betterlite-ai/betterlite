@@ -92,6 +92,40 @@ impl ScopeCaller {
             admin_view: user_api_key_has_admin_view(auth),
         })
     }
+
+    // _populate_team_access_on_models, then the filter get_all_team_and_direct_access_models applies: annotate from the caller's rows and keep what it can use when visible_only is set.
+    pub fn accessible_models(
+        &self,
+        annotated: Vec<DeploymentSpec>,
+        visible_only: bool,
+        rows: CallerRows,
+        lookup: &CatalogLookup<'_>,
+        access_groups: &AccessGroups,
+    ) -> Result<Vec<DeploymentSpec>, ScopeError> {
+        let mut models = annotated;
+        match rows {
+            CallerRows::Admin(teams) => {
+                let direct = non_team_model_ids(lookup);
+                let team_models = get_all_team_models(teams, lookup, access_groups)?;
+                populate_team_access(&mut models, Some(&team_models), &direct);
+            }
+            CallerRows::User {
+                models: granted,
+                teams,
+            } => {
+                let user_models = text_models(&granted, "user models")?;
+                let direct =
+                    direct_access_models(&user_models, &self.key_models, lookup, access_groups)?;
+                let team_models = get_all_team_models(teams, lookup, access_groups)?;
+                populate_team_access(&mut models, Some(&team_models), &direct);
+            }
+            CallerRows::Unresolved => populate_team_access(&mut models, None, &[]),
+        }
+        if visible_only {
+            return Ok(visible_models(models));
+        }
+        Ok(models)
+    }
 }
 
 // The rows whose stored created_by names the caller; a row without an id can never match.
@@ -143,9 +177,9 @@ pub fn non_admin_all_models(
     lookup: &CatalogLookup<'_>,
 ) -> Result<Vec<DeploymentSpec>, ScopeError> {
     let UserModels { mut models, user } = stored;
-    if let Some(user) = user {
+    if let Some(stored_user) = user {
         let deployed = lookup.get_model_list(None, None)?;
-        models.extend(check_if_model_is_team_model(&deployed, &user.teams));
+        models.extend(check_if_model_is_team_model(&deployed, &stored_user.teams));
     }
     Ok(deduplicate_router_models(&models))
 }
@@ -199,9 +233,8 @@ where
     Store: ScopeReads + ?Sized,
 {
     if caller.admin_view {
-        return Ok(CallerRows::Admin(
-            read_team_models(&TeamSelection::All, reads).await?,
-        ));
+        let teams = read_team_models(&TeamSelection::All, reads).await?;
+        return Ok(CallerRows::Admin(teams));
     }
     let Some(user_id) = caller.user_id.as_deref() else {
         return Ok(CallerRows::Unresolved);
@@ -214,40 +247,4 @@ where
         models: user.models,
         teams,
     })
-}
-
-// _populate_team_access_on_models, then the filter get_all_team_and_direct_access_models applies: annotate from the caller's rows and keep what it can use when visible_only is set.
-pub fn accessible_models(
-    annotated: Vec<DeploymentSpec>,
-    visible_only: bool,
-    caller: &ScopeCaller,
-    rows: CallerRows,
-    lookup: &CatalogLookup<'_>,
-    access_groups: &AccessGroups,
-) -> Result<Vec<DeploymentSpec>, ScopeError> {
-    let mut models = annotated;
-    match rows {
-        CallerRows::Admin(teams) => {
-            let direct = non_team_model_ids(lookup);
-            let team_models = get_all_team_models(teams, lookup, access_groups)?;
-            populate_team_access(&mut models, Some(&team_models), &direct);
-        }
-        CallerRows::User {
-            models: granted,
-            teams,
-        } => {
-            let user_models = text_models(&granted, "user models")?;
-            let direct =
-                direct_access_models(&user_models, &caller.key_models, lookup, access_groups)?;
-            let team_models = get_all_team_models(teams, lookup, access_groups)?;
-            populate_team_access(&mut models, Some(&team_models), &direct);
-        }
-        CallerRows::Unresolved => {
-            populate_team_access(&mut models, None, &[]);
-        }
-    }
-    if visible_only {
-        return Ok(visible_models(models));
-    }
-    Ok(models)
 }

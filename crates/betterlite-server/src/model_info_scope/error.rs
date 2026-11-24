@@ -63,14 +63,16 @@ impl ScopeError {
 
     #[must_use]
     pub fn detail(&self) -> ScopeDetail {
-        match self {
-            Self::DatabaseUnavailable => ScopeDetail::Error {
+        if let Self::DatabaseUnavailable = self {
+            return ScopeDetail::Error {
                 error: CommonProxyErrors::DbNotConnectedError.as_str(),
-            },
-            Self::UserNotFound => ScopeDetail::Error {
-                error: USER_NOT_FOUND,
-            },
-            other => ScopeDetail::Message(other.to_string()),
+            };
         }
+        if let Self::UserNotFound = self {
+            return ScopeDetail::Error {
+                error: USER_NOT_FOUND,
+            };
+        }
+        ScopeDetail::Message(self.to_string())
     }
 }
