@@ -372,10 +372,10 @@ fn transport_failure_keeps_the_provider_fields() {
             assert_eq!(body.param.as_deref(), Some("after"));
             assert_eq!(body.code.as_deref(), Some("invalid_cursor"));
         }
-        other @ DispatchFailure::Status { .. }
-        | other @ DispatchFailure::Connection(_)
-        | other @ DispatchFailure::Timeout(_)
-        | other @ DispatchFailure::Unsupported { .. } => {
+        other @ (DispatchFailure::Status { .. }
+        | DispatchFailure::Connection(_)
+        | DispatchFailure::Timeout(_)
+        | DispatchFailure::Unsupported { .. }) => {
             panic!("expected a provider status, got {other:?}")
         }
     }
@@ -401,10 +401,10 @@ fn transport_failure_keeps_a_partial_body() {
             assert_eq!(body.error_type, None);
             assert_eq!(body.param, None);
         }
-        other @ DispatchFailure::Status { .. }
-        | other @ DispatchFailure::Connection(_)
-        | other @ DispatchFailure::Timeout(_)
-        | other @ DispatchFailure::Unsupported { .. } => {
+        other @ (DispatchFailure::Status { .. }
+        | DispatchFailure::Connection(_)
+        | DispatchFailure::Timeout(_)
+        | DispatchFailure::Unsupported { .. }) => {
             panic!("expected a provider status, got {other:?}")
         }
     }
