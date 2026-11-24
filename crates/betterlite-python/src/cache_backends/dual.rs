@@ -46,6 +46,7 @@ impl NativeDual {
         };
         let redis_tier = redis.map(|handle| Arc::clone(&handle.cache));
         let cache = DualCache::new(Arc::clone(&memory.ops), redis_tier.clone(), dual_settings);
+        drop(memory);
         Ok(Self {
             cache: Arc::new(cache),
             redis: redis_tier,
@@ -96,8 +97,8 @@ impl NativeDual {
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
-        for key in &keys {
-            error::backend_err(self.cache.delete_cache(key))?;
+        for key in keys {
+            error::backend_err(self.cache.delete_cache(&key))?;
         }
         Ok(())
     }
@@ -191,10 +192,10 @@ async fn store(cache: Arc<MemoryDual>, key: String, json: Json, ttl: Option<f64>
 }
 
 fn answer_json(stored: Option<Json>) -> PyResult<Option<String>> {
-    match stored {
-        Some(value) => convert::text_of_json(&value).map(Some).map_err(PyErr::from),
-        None => Ok(None),
-    }
+    stored.map_or_else(
+        || Ok(None),
+        |value| convert::text_of_json(&value).map(Some).map_err(PyErr::from),
+    )
 }
 
 async fn count(cache: Arc<MemoryDual>, key: String, by: f64, ttl: Option<f64>) -> PyResult<String> {

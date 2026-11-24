@@ -102,8 +102,8 @@ impl NativeRedis {
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
-        for key in &keys {
-            error::backend_err(self.cache.admin.delete_cache(key))?;
+        for key in keys {
+            error::backend_err(self.cache.admin.delete_cache(&key))?;
         }
         Ok(())
     }
@@ -158,10 +158,9 @@ impl NativeRedis {
         })
     }
 
-    fn close(&self, py: Python<'_>) -> PyResult<()> {
+    fn close(&self, py: Python<'_>) {
         let cache = Arc::clone(&self.cache);
         py.detach(|| get_runtime().block_on(cache.admin.disconnect()));
-        Ok(())
     }
 
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
@@ -183,12 +182,14 @@ async fn store(cache: Arc<RedisCache>, key: String, json: Json, ttl: Option<f64>
 }
 
 fn answer_text(stored: Option<CachedValue>) -> PyResult<Option<String>> {
-    match stored {
-        Some(value) => convert::text_of_cached(value)
-            .map(Some)
-            .map_err(PyErr::from),
-        None => Ok(None),
-    }
+    stored.map_or_else(
+        || Ok(None),
+        |value| {
+            convert::text_of_cached(value)
+                .map(Some)
+                .map_err(PyErr::from)
+        },
+    )
 }
 
 async fn count(cache: Arc<RedisCache>, key: String, by: f64, ttl: Option<i64>) -> PyResult<String> {
@@ -198,10 +199,10 @@ async fn count(cache: Arc<RedisCache>, key: String, by: f64, ttl: Option<i64>) -
 }
 
 fn whole_answer(seconds: Option<i64>) -> PyResult<Option<String>> {
-    match seconds {
-        Some(value) => convert::whole_text(value).map(Some).map_err(PyErr::from),
-        None => Ok(None),
-    }
+    seconds.map_or_else(
+        || Ok(None),
+        |value| convert::whole_text(value).map(Some).map_err(PyErr::from),
+    )
 }
 
 struct QuietHooks;

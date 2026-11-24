@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use betterlite_cache::coordinator::AsyncCacheProtocol;
+use betterlite_cache::coordinator::AsyncCacheProtocol as _;
 use betterlite_cache::disk::DiskCache;
 use betterlite_context::local_ttl_cache::CacheValue;
 use pyo3::prelude::*;
@@ -77,8 +77,8 @@ impl NativeDisk {
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
-        for key in &keys {
-            error::backend_err(self.cache.delete_cache(key))?;
+        for key in keys {
+            error::backend_err(self.cache.delete_cache(&key))?;
         }
         Ok(())
     }
@@ -134,23 +134,32 @@ impl NativeDisk {
     }
 
     // ast-grep-ignore: no-one-line-functions - DiskCache.disconnect is a no-op at the pin
+    #[expect(
+        clippy::missing_const_for_fn,
+        clippy::unnecessary_wraps,
+        clippy::unused_self,
+        reason = "DiskCache.disconnect is a no-op at the pin"
+    )]
     fn close(&self) -> PyResult<()> {
         Ok(())
     }
 
     // ast-grep-ignore: no-one-line-functions - the awaitable of an immediate answer is the whole behavior
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        future_into_py(py, async move { Ok(()) })
+        let closed = self.close();
+        future_into_py(py, async move { closed })
     }
 }
 
 fn answer_text(stored: Option<CacheValue>) -> PyResult<Option<String>> {
-    match stored {
-        Some(value) => convert::text_of_value(&value)
-            .map(Some)
-            .map_err(PyErr::from),
-        None => Ok(None),
-    }
+    stored.map_or_else(
+        || Ok(None),
+        |value| {
+            convert::text_of_value(&value)
+                .map(Some)
+                .map_err(PyErr::from)
+        },
+    )
 }
 
 async fn count(cache: Arc<DiskCache>, key: String, by: f64, ttl: Option<f64>) -> PyResult<String> {

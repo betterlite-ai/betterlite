@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
@@ -39,7 +40,7 @@ fn backends_request_settings_reads_the_disk_directory() {
     let settings: DiskSettings = parse_settings(r#"{"disk_cache_dir": "/tmp/cache"}"#).unwrap();
     assert_eq!(
         settings.disk_cache_dir.as_deref(),
-        Some(std::path::Path::new("/tmp/cache"))
+        Some(Path::new("/tmp/cache"))
     );
 }
 
@@ -114,7 +115,7 @@ fn backends_result_cached_null_is_json_null() {
 
 #[test]
 fn backends_result_cached_number_is_json() {
-    let value = CachedValue::Number(Number::from(3));
+    let value = CachedValue::Number(Number::from(3_i32));
     assert_eq!(text_of_cached(value).unwrap(), "3");
 }
 
@@ -137,9 +138,7 @@ fn backends_result_cached_object_keeps_its_keys() {
 
 #[test]
 fn backends_result_json_round_trips_a_list() {
-    let mut items = Vec::new();
-    items.push(Json::Text("x".to_owned()));
-    items.push(Json::Null);
+    let items = vec![Json::Text("x".to_owned()), Json::Null];
     let text = text_of_json(&Json::List(items)).unwrap();
     assert_eq!(text, r#"["x",null]"#);
     let Json::List(restored) = json_value(&text).unwrap() else {

@@ -88,8 +88,8 @@ impl NativeMemory {
     }
 
     fn delete(&self, keys: Vec<String>) -> PyResult<()> {
-        for key in &keys {
-            error::backend_err(self.ops.delete_cache(key))?;
+        for key in keys {
+            error::backend_err(self.ops.delete_cache(&key))?;
         }
         Ok(())
     }
@@ -147,13 +147,20 @@ impl NativeMemory {
     }
 
     // ast-grep-ignore: no-one-line-functions - InMemoryCache.disconnect and the native tier are no-ops at the pin
+    #[expect(
+        clippy::missing_const_for_fn,
+        clippy::unnecessary_wraps,
+        clippy::unused_self,
+        reason = "InMemoryCache.disconnect and the native tier are no-ops at the pin"
+    )]
     fn close(&self) -> PyResult<()> {
         Ok(())
     }
 
     // ast-grep-ignore: no-one-line-functions - the awaitable of an immediate answer is the whole behavior
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        future_into_py(py, async move { Ok(()) })
+        let closed = self.close();
+        future_into_py(py, async move { closed })
     }
 }
 
@@ -163,12 +170,14 @@ fn set_value(ops: &LocalMemoryOps, key: &str, value: CacheValue, ttl: Option<f64
 }
 
 fn answer_text(stored: Option<CacheValue>) -> PyResult<Option<String>> {
-    match stored {
-        Some(value) => convert::text_of_value(&value)
-            .map(Some)
-            .map_err(PyErr::from),
-        None => Ok(None),
-    }
+    stored.map_or_else(
+        || Ok(None),
+        |value| {
+            convert::text_of_value(&value)
+                .map(Some)
+                .map_err(PyErr::from)
+        },
+    )
 }
 
 fn remaining_ttl(entries: Vec<(String, f64)>, key: &str) -> PyResult<Option<String>> {
