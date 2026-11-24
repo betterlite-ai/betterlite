@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::io;
+use std::str::from_utf8;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -13,6 +15,8 @@ use betterlite_http::proxy::transport_error::TransportError;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::yield_now;
 use tower::ServiceExt as _;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::super::catalog::{BUNDLED_CATALOG, PresetCatalog, decode_catalog};
 use super::super::router_presets_routes;
@@ -169,4 +173,50 @@ pub(super) fn reply(status: u16, body: &str) -> Answer {
         status,
         body: body.as_bytes().to_vec(),
     }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl LogBuffer {
+    pub(super) fn contents(&self) -> String {
+        let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        from_utf8(&bytes)
+            .expect("the captured log lines are UTF-8")
+            .to_owned()
+    }
+}
+
+impl io::Write for LogBuffer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for LogBuffer {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+pub(super) fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
+    let buffer = LogBuffer::default();
+    let subscriber = fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(level)
+        .with_writer(buffer.clone())
+        .finish();
+    (buffer, set_default(subscriber))
 }

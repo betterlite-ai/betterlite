@@ -3,8 +3,8 @@ use rstest::rstest;
 use serde::Deserialize;
 
 use super::support::{
-    Answer, PRESETS_URL, REMOTE_CATALOG, Script, app, app_with_bundled, bundled_catalog, get,
-    parsed, reply, settings,
+    Answer, PRESETS_URL, REMOTE_CATALOG, Script, app, app_with_bundled, bundled_catalog,
+    capture_logs, get, parsed, reply, settings,
 };
 use crate::public_endpoints::router_presets::AUTOROUTER_PRESETS_PATH;
 
@@ -45,6 +45,21 @@ async fn falls_back_to_the_bundled_catalog_when_the_remote_answers_with_an_error
     assert_eq!(response_status, StatusCode::OK);
     assert_eq!(parsed(&body), bundled_catalog());
     assert_eq!(script.calls(), 1);
+}
+
+#[tokio::test]
+async fn logs_a_warning_when_the_fetch_fails() {
+    let (logs, _guard) = capture_logs(tracing::Level::WARN);
+    let script = Script::new(vec![reply(503, "")]);
+    let router = app(&script, settings(PRESETS_URL, false));
+    let (_, _, body) = get(router, AUTOROUTER_PRESETS_PATH).await;
+    assert_eq!(parsed(&body), bundled_catalog());
+    let contents = logs.contents();
+    assert!(
+        contents.contains("failed to fetch auto-router presets"),
+        "{contents}"
+    );
+    assert!(contents.contains(PRESETS_URL), "{contents}");
 }
 
 #[tokio::test]
