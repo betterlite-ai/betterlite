@@ -147,7 +147,7 @@ def image_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
     return image_response(call_image(session.edit, payload))
 
 
-async def aimage_edit(  # noqa: ASYNC109, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L964
+async def aimage_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L964
     image: CallValue,
     model: CallValue,
     prompt: CallValue,
@@ -160,7 +160,7 @@ async def aimage_edit(  # noqa: ASYNC109, PLR0913, PLR0917  # https://github.com
     extra_headers: CallValue = None,
     extra_query: CallValue = None,
     extra_body: CallValue = None,
-    timeout: CallValue = None,
+    timeout: CallValue = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L964
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:

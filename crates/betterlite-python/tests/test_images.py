@@ -12,6 +12,7 @@ import pytest
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
+from betterlite._images import main as images_main
 from betterlite.exceptions import AuthenticationError, BadRequestError, UnsupportedParamsError
 from betterlite.main import (
     aimage_edit,
@@ -101,10 +102,6 @@ def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     return rows
 
 
-def image_body() -> dict[str, JsonValue]:
-    return dict(IMAGE_BODY)
-
-
 class ImageServer(ThreadingHTTPServer):
     daemon_threads = True
     calls: list[RecordedCall]
@@ -139,7 +136,7 @@ class ImageHandler(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != f"Bearer {GOOD_KEY}":
             self.reply(UNAUTHORIZED, AUTH_BODY)
             return
-        self.reply(OK, image_body())
+        self.reply(OK, dict(IMAGE_BODY))
 
     def reply(self, status: int, payload: dict[str, JsonValue]) -> None:
         encoded = json.dumps(payload).encode()
@@ -186,12 +183,12 @@ def test_signature_matches_litellm() -> None:
     assert inspect.iscoroutinefunction(aimage_generation)
 
 
-def test_lazy_edit_helper_is_not_imported() -> None:
-    module = importlib.import_module("betterlite._images.main")
-    assert not hasattr(module, "ImageEditRequestUtils")
+def test_lazy_edit_helper_absent() -> None:
+    with pytest.raises(AttributeError):
+        _ = images_main.ImageEditRequestUtils
 
 
-def test_generate_returns_the_image_response() -> None:
+def test_generate_returns_response() -> None:
     with closing(ImageServer()) as server:
         response = image_generation(
             prompt=PROMPT,
@@ -214,7 +211,7 @@ def test_generate_returns_the_image_response() -> None:
     assert response._hidden_params["model"] == DEFAULT_MODEL  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L233
 
 
-def test_generate_ignores_mock_response() -> None:
+def test_generate_ignores_mock() -> None:
     with closing(ImageServer()) as server:
         response = image_generation(
             prompt=PROMPT,
@@ -227,22 +224,23 @@ def test_generate_ignores_mock_response() -> None:
     assert response.data[0].b64_json == B64
 
 
-def test_async_generate_returns_the_image_response() -> None:
-    async def asked() -> tuple[ImageResponse, RecordedCall]:
-        with closing(ImageServer()) as server:
-            response = await aimage_generation(
-                prompt=PROMPT, api_base=server.url, api_key=GOOD_KEY,
-            )
-            call = server.calls[-1]
-        return response, call
+async def generate_call() -> tuple[ImageResponse, RecordedCall]:
+    with closing(ImageServer()) as server:
+        response = await aimage_generation(
+            prompt=PROMPT, api_base=server.url, api_key=GOOD_KEY,
+        )
+        call = server.calls[-1]
+    return response, call
 
-    response, call = asyncio.run(asked())
+
+def test_agenerate_returns_reply() -> None:
+    response, call = asyncio.run(generate_call())
     assert BODY.validate_json(call["body"])["model"] == DEFAULT_MODEL
     assert response.data[0].b64_json == B64
     assert response._hidden_params["model"] == DEFAULT_MODEL  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L233
 
 
-def test_edit_sends_files_in_order_with_their_types() -> None:
+def test_edit_sends_files_in_order() -> None:
     with closing(ImageServer()) as server:
         response = image_edit(
             image=[NamedFile(PNG_BYTES, "first.png"), NamedFile(JPEG_BYTES, "second.jpg")],
@@ -267,7 +265,7 @@ def test_edit_sends_files_in_order_with_their_types() -> None:
     assert response._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L792
 
 
-def test_edit_dall_e_2_rejects_two_images() -> None:
+def test_edit_rejects_two_images() -> None:
     images = [NamedFile(PNG_BYTES, "first.png"), NamedFile(JPEG_BYTES, "second.jpg")]
     with closing(ImageServer()) as server, pytest.raises(
         BadRequestError, match="DALL-E-2 only supports editing a single image"
@@ -279,7 +277,7 @@ def test_edit_dall_e_2_rejects_two_images() -> None:
     assert server.calls == []
 
 
-def test_variation_sends_the_named_image() -> None:
+def test_variation_sends_image() -> None:
     with closing(ImageServer()) as server:
         response = image_variation(
             image=NamedFile(JPEG_BYTES, "photo.jpg"),
@@ -296,24 +294,23 @@ def test_variation_sends_the_named_image() -> None:
     assert response._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L648
 
 
-def test_async_edit_sends_the_image() -> None:
-    async def asked() -> str | None:
-        with closing(ImageServer()) as server:
-            response = await aimage_edit(
+def test_aedit_sends_the_image() -> None:
+    with closing(ImageServer()) as server:
+        response = asyncio.run(
+            aimage_edit(
                 image=NamedFile(PNG_BYTES, "first.png"),
                 model=DEFAULT_MODEL,
                 prompt=PROMPT,
                 api_base=server.url,
                 api_key=GOOD_KEY,
             )
-            call = server.calls[-1]
-        assert call["path"] == EDITS_PATH
-        return response.data[0].b64_json
+        )
+        call = server.calls[-1]
+    assert call["path"] == EDITS_PATH
+    assert response.data[0].b64_json == B64
 
-    assert asyncio.run(asked()) == B64
 
-
-def test_edit_params_unsupported_image_config_fails() -> None:
+def test_edit_rejects_image_config() -> None:
     with closing(ImageServer()) as server, pytest.raises(UnsupportedParamsError) as caught:
         image_edit(
             image=NamedFile(PNG_BYTES, "first.png"),
@@ -327,7 +324,7 @@ def test_edit_params_unsupported_image_config_fails() -> None:
     assert server.calls == []
 
 
-def test_edit_params_unsupported_drop_params_drops_it() -> None:
+def test_edit_drop_params_drops() -> None:
     with closing(ImageServer()) as server:
         image_edit(
             image=NamedFile(PNG_BYTES, "first.png"),
@@ -342,7 +339,7 @@ def test_edit_params_unsupported_drop_params_drops_it() -> None:
     assert b"imageConfig" not in call["body"]
 
 
-def test_generate_provider_error_maps_to_the_class() -> None:
+def test_generate_error_maps_class() -> None:
     with closing(ImageServer()) as server, pytest.raises(AuthenticationError) as caught:
         image_generation(
             prompt=PROMPT,
@@ -360,12 +357,12 @@ def test_generate_provider_error_maps_to_the_class() -> None:
     assert cause.__class__.__name__ == "NativeImageError"
 
 
-def test_variation_error_for_an_unsupported_provider() -> None:
+def test_variation_bad_provider() -> None:
     with pytest.raises(ValueError, match="Invalid image variation provider"):
         image_variation(image=NamedFile(JPEG_BYTES, "photo.jpg"), model="vertex_ai/foo")
 
 
-def test_async_variation_is_awaitable() -> None:
+def test_avariation_awaitable() -> None:
     with closing(ImageServer()) as server:
         pending = aimage_variation(
             NamedFile(JPEG_BYTES, "photo.jpg"), api_base=server.url, api_key=GOOD_KEY,
