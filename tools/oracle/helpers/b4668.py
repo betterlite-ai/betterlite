@@ -150,4 +150,7 @@ def row_of(fields: RowFields | None) -> LiteLLM_ObjectPermissionTable | None:
 
 
 def row_view(row: LiteLLM_ObjectPermissionTable) -> RowView:
-    return {"object_permission_id": row.object_permission_id, "mcp_toolsets": row.mcp_toolsets}
+    return {
+        "object_permission_id": row.object_permission_id,
+        "mcp_toolsets": row.mcp_toolsets,
+    }
