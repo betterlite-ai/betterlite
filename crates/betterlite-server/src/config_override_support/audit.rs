@@ -97,5 +97,5 @@ fn config_snapshot(config: Option<&JsonMap>) -> String {
     let redacted = redact_config(config);
     let mut snapshot = JsonMap::new();
     snapshot.insert("config".to_owned(), JsonValue::Object(redacted));
-    snapshot.to_string()
+    JsonValue::Object(snapshot).to_string()
 }
