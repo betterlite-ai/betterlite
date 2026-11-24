@@ -345,3 +345,23 @@ fn session_call_answers_a_mocked_create() {
     .unwrap();
     assert!(answer.contains("cntr_1"));
 }
+
+#[test]
+fn session_call_raises_the_error_for_an_unknown_operation() {
+    Python::initialize();
+    let error = Python::attach(|py| {
+        let session = NativeContainerSession {
+            core: Arc::new(core()),
+            error_type: PyErr::new_type(py, c"probe.NativeContainerError", None, None, None)
+                .unwrap(),
+        };
+        session
+            .call(
+                py,
+                r#"{"operation":"close_container"}"#,
+                &py.None().into_bound(py).into_any(),
+            )
+            .unwrap_err()
+    });
+    assert!(error.to_string().contains("close_container"));
+}
