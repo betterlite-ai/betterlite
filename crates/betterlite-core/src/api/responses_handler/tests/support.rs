@@ -153,11 +153,15 @@ impl Fixture {
     }
 
     pub(super) fn request(&self) -> HandlerRequest<'_> {
+        let setup = self.setup();
+        let stream = self.stream;
+        let extras = &self.extras;
+        let zone = &self.zone;
         HandlerRequest {
-            setup: self.setup(),
-            stream: self.stream,
-            extras: &self.extras,
-            zone: &self.zone,
+            setup,
+            stream,
+            extras,
+            zone,
         }
     }
 
