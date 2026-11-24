@@ -1,4 +1,5 @@
 from collections.abc import Mapping, Sequence
+from typing import TypeAlias
 
 from pydantic import JsonValue
 
@@ -61,15 +62,18 @@ def hidden_object(value: InitValue) -> dict[str, JsonValue] | None:
             return None
 
 
+PrivateCarrier: TypeAlias = ResponseObject | DecisionsResponse | OpenAIDecisionResponse
+
+
 # pydantic keeps private attributes beside fields; ResponseObject reads only fields.
-def private_fields(response: ResponseObject) -> dict[str, JsonValue]:
+def private_fields(response: PrivateCarrier) -> dict[str, JsonValue]:
     private: dict[str, JsonValue] | None = response.__pydantic_private__
     if private is None:
         return {}
     return private
 
 
-# LiteLLM's hasattr(obj, "_hidden_params"), read from where pydantic keeps private attributes.
+# LiteLLM's hidden params, read from where pydantic keeps a private attribute.
 def hidden_params(response: JsonSource) -> dict[str, JsonValue] | None:
     match response:
         case ResponseObject():
@@ -80,11 +84,10 @@ def hidden_params(response: JsonSource) -> dict[str, JsonValue] | None:
             return None
 
 
+# LiteLLM's hasattr(obj, "_hidden_params"), answered from the private bag.
 def has_hidden_params(response: JsonSource) -> bool:
     match response:
-        case DecisionsResponse() | OpenAIDecisionResponse():
-            return True
-        case ResponseObject():
+        case DecisionsResponse() | OpenAIDecisionResponse() | ResponseObject():
             return "_hidden_params" in private_fields(response)
         case Dumpable() | Mapping():
             return False

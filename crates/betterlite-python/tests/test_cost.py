@@ -52,6 +52,12 @@ STRING_HEADER: Final[dict[str, JsonValue]] = {"additional_headers": {COST_HEADER
 EMPTY_PARAMS: Final[dict[str, JsonValue]] = {}
 EMPTY_HEADERS: Final[dict[str, JsonValue]] = {"additional_headers": {}}
 EMPTY_MESSAGES: Final[list[JsonValue]] = []
+MAPPING_USAGE: Final[dict[str, JsonValue]] = {
+    "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+}
+RESPONSE_API_USAGE: Final[dict[str, JsonValue]] = {
+    "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+}
 BREAKDOWN_KWARGS: Final[tuple[str, ...]] = (
     "input_cost",
     "output_cost",
@@ -280,14 +286,11 @@ def test_cost_per_token_seconds() -> None:
 
 
 def test_cost_per_token_region() -> None:
-    ours = cost_per_token(
-        model=REGION_MODEL, prompt_tokens=100, completion_tokens=10,
-        custom_llm_provider=BEDROCK, region_name=REGION,
-    )
+    ours = cost_per_token(model=REGION_MODEL, prompt_tokens=100, completion_tokens=10,
+                          custom_llm_provider=BEDROCK, region_name=REGION)
     reference = PAIR.validate_python(REFERENCE.cost_per_token(
         model=REGION_MODEL, prompt_tokens=100, completion_tokens=10,
-        custom_llm_provider=BEDROCK, region_name=REGION,
-    ))
+        custom_llm_provider=BEDROCK, region_name=REGION))
     assert_pair_matches(ours, reference)
 
 
@@ -428,8 +431,7 @@ def test_response_cost_computed() -> None:
                                     "completion", EMPTY_PARAMS)
     reference = FLOAT.validate_python(REFERENCE.response_cost_calculator(
         response_object=reference_chat(CHAT_MODEL, 10, 5), model=CHAT_MODEL,
-        custom_llm_provider=OPENAI, call_type="completion", optional_params=EMPTY_PARAMS,
-    ))
+        custom_llm_provider=OPENAI, call_type="completion", optional_params=EMPTY_PARAMS))
     assert ours == pytest.approx(reference, rel=RELATIVE)
 
 
@@ -523,23 +525,17 @@ def test_usage_object_absent() -> None:
 
 
 def test_usage_object_mapping() -> None:
-    usage: Final[dict[str, JsonValue]] = {
-        "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
-    }
     reference = USAGE_OR_NONE.validate_python(
-        REFERENCE.get_usage_object(usage), from_attributes=True,
+        REFERENCE.get_usage_object(MAPPING_USAGE), from_attributes=True,
     )
-    assert_usage_matches(get_usage_object(usage), reference)
+    assert_usage_matches(get_usage_object(MAPPING_USAGE), reference)
 
 
 def test_usage_object_response_api() -> None:
-    response: Final[dict[str, JsonValue]] = {
-        "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
-    }
     reference = USAGE_OR_NONE.validate_python(
-        REFERENCE.get_usage_object(response), from_attributes=True,
+        REFERENCE.get_usage_object(RESPONSE_API_USAGE), from_attributes=True,
     )
-    assert_usage_matches(get_usage_object(response), reference)
+    assert_usage_matches(get_usage_object(RESPONSE_API_USAGE), reference)
 
 
 def test_hidden_params_response() -> None:
