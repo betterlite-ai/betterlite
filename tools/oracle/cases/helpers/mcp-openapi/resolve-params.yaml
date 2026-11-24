@@ -1,0 +1,41 @@
+kind: helper
+name: mcp-openapi-resolve-params
+call:
+  b4683:
+    operation: resolve_params
+    spec_operation:
+      operationId: listPets
+      parameters:
+        - {name: id, in: path}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/missing'}
+        - {in: query}
+    path_item:
+      parameters:
+        - {name: id, in: path, description: path id}
+        - {name: limit, in: query, schema: {type: integer}}
+    components:
+      parameters:
+        page: {name: page, in: query, description: Page, schema: {type: integer}}
+calls:
+  - b4683:
+      operation: resolve_params
+      spec_operation:
+        parameters:
+          - {$ref: '#/definitions/Pet'}
+          - {$ref: '#/definitions/Pet', name: pet}
+      path_item: {}
+      components: {}
+  - b4683:
+      operation: resolve_params
+      spec_operation:
+        parameters:
+          - {name: id, in: path, schema: {type: string}}
+      path_item:
+        parameters:
+          - {name: id, in: path, description: shadowed}
+          - {name: id, in: query, description: kept}
+      components:
+        parameters: {}
+env: {}
+compare: {ignore: []}

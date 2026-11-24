@@ -1,0 +1,104 @@
+kind: helper
+name: mcp-openapi-call-upstream-errors
+call:
+  b4683:
+    operation: call
+    path: /pets
+    method: get
+    spec_operation: {}
+    base_url: https://api.example.com
+    headers: {}
+    server_label: null
+    relays_upstream_auth: false
+    auth_type: null
+    upstream_token_header: null
+    arguments: {}
+    auth_header: null
+    extra_headers: {}
+    resolved_auth_headers: {}
+    reply: {status: 500, headers: {}, body: secret}
+calls:
+  - b4683:
+      operation: call
+      path: /pets
+      method: get
+      spec_operation: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: true
+      auth_type: null
+      upstream_token_header: null
+      arguments: {}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply:
+        status: 401
+        headers:
+          www-authenticate: 'Basic realm="pets"'
+        body: nope
+  - b4683:
+      operation: call
+      path: /pets
+      method: get
+      spec_operation: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply:
+        status: 401
+        headers:
+          www-authenticate: 'Bearer realm="x"'
+        body: nope
+  - b4683:
+      operation: call
+      path: /pets
+      method: post
+      spec_operation:
+        requestBody:
+          content:
+            application/json: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: pets
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {body: {a: 1}}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 500, headers: {}, body: secret}
+  - b4683:
+      operation: call
+      path: /pets
+      method: post
+      spec_operation:
+        requestBody:
+          content:
+            application/json: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: pets
+      relays_upstream_auth: true
+      auth_type: null
+      upstream_token_header: null
+      arguments: {body: {a: 1}}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply:
+        status: 401
+        headers:
+          www-authenticate: 'Bearer realm="x"'
+        body: nope
+env: {}
+compare: {ignore: []}

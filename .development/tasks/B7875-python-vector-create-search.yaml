@@ -27,6 +27,7 @@ description: >-
   raises `UnsupportedCallArgument` naming it. No task plans a native Router handle, so this stays refused.
 scope:
   paths:
+  - "crates/betterlite-python/ruff.toml"
   - crates/betterlite-python/src/vector_search.rs
   - crates/betterlite-python/src/vector_search/**
   - crates/betterlite-python/python/betterlite/_native_vector_search.pyi
