@@ -162,8 +162,8 @@ def test_card_headers_reach_agent() -> None:
 
 def test_card_helpers_match() -> None:
     pair = (litellm_cards.AGENT_CARD_WELL_KNOWN_PATH, litellm_cards.PREV_AGENT_CARD_WELL_KNOWN_PATH)  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L20-L30
-    assert card_resolver.AGENT_CARD_WELL_KNOWN_PATH == pair[0]
-    assert card_resolver.PREV_AGENT_CARD_WELL_KNOWN_PATH == pair[1]
+    assert pair[0] == card_resolver.AGENT_CARD_WELL_KNOWN_PATH
+    assert pair[1] == card_resolver.PREV_AGENT_CARD_WELL_KNOWN_PATH
     assert card_resolver.FOUNDRY_AGENT_CARD_PATH == litellm_cards.FOUNDRY_AGENT_CARD_PATH
     for url in (None, "", "http://localhost:9/", "http://127.0.0.1:9/", "https://agent.example/"):
         assert card_resolver.is_localhost_or_internal_url(url) == (
