@@ -457,6 +457,15 @@ def test_errors_unknown_type() -> None:
     assert caught.value.__cause__ is native
 
 
+def test_errors_tool_result() -> None:
+    failure = ValueError("boom")
+    ours = dumped(MCPClient.error_tool_result(failure))
+    theirs = dumped(LiteLLMClient.error_tool_result(failure))
+    assert ours["isError"] is True
+    assert ours == theirs
+    assert error_text(ours) == "ValueError: boom"
+
+
 def test_errors_swallowed_result() -> None:
     with Server(mode=REFUSE) as server:
         ours, theirs = asyncio.run(both_swallowed_calls(server))

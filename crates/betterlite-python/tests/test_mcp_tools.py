@@ -30,7 +30,7 @@ from mcp import ClientSession
 from mcp.types import CallToolResult as TheirCallToolResult
 from mcp.types import Tool as TheirTool
 from mcp_server import Server
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
 from betterlite.experimental_mcp_client.client import MCPClient, MCPSession
 from betterlite.experimental_mcp_client.errors import UnsupportedMcpArgument
@@ -64,7 +64,6 @@ RICH_SCHEMA: Final[dict[str, JsonValue]] = {
     "title": "Search",
     "additionalProperties": True,
 }
-JSON_LIST: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 
 
 class Dumpable(Protocol):
@@ -94,17 +93,29 @@ def dumped(value: Dumpable) -> dict[str, JsonValue]:
     return value.model_dump(by_alias=True, exclude_none=True)
 
 
-async def our_tool_flow(session: MCPSession) -> list[JsonValue]:
+async def our_tool_flow(session: MCPSession) -> list[dict[str, JsonValue]]:
     tools = await load_mcp_tools(session)
     paged = await list_tools_with_pagination(session, LISTING_DEADLINE)
-    loaded = JSON_LIST.dump_python(tools, mode="json", by_alias=True, exclude_none=True)
-    assert loaded == JSON_LIST.dump_python(paged, mode="json", by_alias=True, exclude_none=True)
+    loaded: list[dict[str, JsonValue]] = []
+    for tool in tools:
+        match tool:
+            case Tool():
+                loaded.append(dumped(tool))
+            case object():
+                raise AssertionError("the mcp format listed an OpenAI tool")
+    assert loaded == [dumped(tool) for tool in paged]
     return loaded
 
 
-async def their_tool_flow(session: ClientSession) -> list[JsonValue]:
+async def their_tool_flow(session: ClientSession) -> list[dict[str, JsonValue]]:
     tools = await their_load_mcp_tools(session)
-    loaded = JSON_LIST.dump_python(tools, mode="json", by_alias=True, exclude_none=True)
+    loaded: list[dict[str, JsonValue]] = []
+    for tool in tools:
+        match tool:
+            case TheirTool():
+                loaded.append(dumped(tool))
+            case object():
+                raise AssertionError("the mcp format listed an OpenAI tool")
     return loaded
 
 
@@ -143,14 +154,35 @@ async def closed_message(session: MCPSession) -> str:
     raise AssertionError("a closed session answered a call")
 
 
-async def our_session_tools(server: Server) -> list[JsonValue]:
+async def our_session_tools(server: Server) -> list[dict[str, JsonValue]]:
     client = MCPClient(server_url=server.url)
     return await client.run_with_session(our_tool_flow)
 
 
-async def their_session_tools(server: Server) -> list[JsonValue]:
+async def their_session_tools(server: Server) -> list[dict[str, JsonValue]]:
     client = LiteLLMClient(server_url=server.url)
     return await client.run_with_session(their_tool_flow)
+
+
+async def our_openai_tool_flow(session: MCPSession) -> str:
+    tools = await load_mcp_tools(session, "openai")
+    assert len(tools) == TOOL_COUNT
+    return json.dumps(tools, sort_keys=True)
+
+
+async def their_openai_tool_flow(session: ClientSession) -> str:
+    tools = await their_load_mcp_tools(session, "openai")
+    return json.dumps(tools, sort_keys=True)
+
+
+async def our_openai_tools(server: Server) -> str:
+    client = MCPClient(server_url=server.url)
+    return await client.run_with_session(our_openai_tool_flow)
+
+
+async def their_openai_tools(server: Server) -> str:
+    client = LiteLLMClient(server_url=server.url)
+    return await client.run_with_session(their_openai_tool_flow)
 
 
 async def our_session_call(server: Server) -> dict[str, JsonValue]:
@@ -204,6 +236,13 @@ def test_session_load_mcp_tools() -> None:
         theirs = asyncio.run(their_session_tools(server))
     assert ours == theirs
     assert len(ours) == TOOL_COUNT
+
+
+def test_session_openai_tools() -> None:
+    with Server() as server:
+        ours = asyncio.run(our_openai_tools(server))
+        theirs = asyncio.run(their_openai_tools(server))
+    assert ours == theirs
 
 
 def test_session_openai_tool() -> None:
