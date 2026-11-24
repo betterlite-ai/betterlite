@@ -3,7 +3,7 @@ import json
 from typing import TypedDict
 
 import pytest
-from mcp_server import NORMAL, REFUSE, SLOW, UNAUTHORIZED_MODE, Server
+from mcp_server import INSTRUCTIONS, NORMAL, REFUSE, SLOW, UNAUTHORIZED_MODE, Server
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite import _native
@@ -16,6 +16,8 @@ FINGERPRINT_LENGTH = 64
 INTERNAL_ERROR = -32603
 DENIED_CODE = -32602
 UPDATED_AUTH = "next-value"
+DROP_POLLS = 1000
+DROP_POLL_SECONDS = 0.01
 
 
 class Tool(TypedDict):
@@ -200,9 +202,16 @@ async def load_both(server: Server) -> tuple[str, str]:
     return mcp, openai
 
 
-async def open_a_session(server: Server) -> _native.NativeMcpSession:
+async def drop_session_flow(server: Server) -> str | None:
     client = client_for(server)
-    return await client.open_session()
+    # the session handle is this statement's discarded result, so dropping it cancels its task
+    await client.open_session()
+    # drive records the instructions only after the dropped session's task has ended
+    for _ in range(DROP_POLLS):
+        if client.instructions() is not None:
+            break
+        await asyncio.sleep(DROP_POLL_SECONDS)
+    return client.instructions()
 
 
 def test_client_calls_pages() -> None:
@@ -331,9 +340,8 @@ def test_session_load_formats() -> None:
 
 def test_session_drop_closes() -> None:
     with Server() as server:
-        asyncio.run(open_a_session(server))
-        methods = server.record.methods
-    assert methods[0] == "initialize"
+        instructions = asyncio.run(drop_session_flow(server))
+    assert instructions == INSTRUCTIONS.strip()
 
 
 def test_errors_unauthorized() -> None:
