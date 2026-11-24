@@ -143,18 +143,17 @@ fn entry_capabilities(
             capabilities.insert(capability);
         }
     }
-    let parallel = matched
-        .and_then(|fields| fields.capabilities.tooling.supports_parallel_calls)
-        .or_else(|| bare.and_then(|fields| fields.capabilities.tooling.supports_parallel_calls));
-    if parallel == Some(true) {
+    let matched_parallel =
+        matched.and_then(|fields| fields.capabilities.tooling.supports_parallel_calls);
+    let bare_parallel = bare.and_then(|fields| fields.capabilities.tooling.supports_parallel_calls);
+    if matched_parallel.or(bare_parallel) == Some(true) {
         capabilities.insert(OpenAiCapability::ParallelToolCalls);
     }
-    let none_effort = matched
-        .and_then(|fields| fields.capabilities.reasoning.supports_none_reasoning_effort)
-        .or_else(|| {
-            bare.and_then(|fields| fields.capabilities.reasoning.supports_none_reasoning_effort)
-        });
-    if none_effort == Some(true) {
+    let matched_none_effort =
+        matched.and_then(|fields| fields.capabilities.reasoning.supports_none_reasoning_effort);
+    let bare_none_effort =
+        bare.and_then(|fields| fields.capabilities.reasoning.supports_none_reasoning_effort);
+    if matched_none_effort.or(bare_none_effort) == Some(true) {
         capabilities.insert(OpenAiCapability::NoneReasoningEffort);
     }
     capabilities
@@ -197,12 +196,14 @@ fn provider_matches(raw: &RawValue, provider: Option<&str>) -> bool {
     let Ok(fields) = serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(raw.get()) else {
         return false;
     };
-    let entry_provider = match fields.get("litellm_provider") {
-        None => EntryProvider::Unconstrained,
-        Some(value) => serde_json::from_str::<Option<&str>>(value.get())
-            .map_or(EntryProvider::NotText, |name| {
-                name.map_or(EntryProvider::Unconstrained, EntryProvider::Text)
-            }),
-    };
+    let entry_provider =
+        fields
+            .get("litellm_provider")
+            .map_or(EntryProvider::Unconstrained, |value| {
+                serde_json::from_str::<Option<&str>>(value.get())
+                    .map_or(EntryProvider::NotText, |name| {
+                        name.map_or(EntryProvider::Unconstrained, EntryProvider::Text)
+                    })
+            });
     check_provider_match(entry_provider, provider).unwrap_or(false)
 }
