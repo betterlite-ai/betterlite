@@ -275,6 +275,19 @@ async fn missing_user_annotations() {
     assert_eq!(annotated.len(), 2);
     assert_annotations(&annotated[0], false, Some(&["team-old"]));
     assert_annotations(&annotated[1], false, None);
+    let anonymous = vec![identified("gpt-4o-mini", "a1")];
+    let anonymous_snapshot = snapshot(&anonymous);
+    let populated = accessible_models(
+        anonymous,
+        false,
+        &caller(None, &[]),
+        &store,
+        &anonymous_snapshot.lookup(),
+        &groups,
+    )
+    .await
+    .unwrap();
+    assert_annotations(&populated[0], false, None);
     let visible = visible_models(annotated);
     assert_eq!(ids(&visible), vec![Some("g1")]);
     assert_calls(&store, &["user:ghost"]);

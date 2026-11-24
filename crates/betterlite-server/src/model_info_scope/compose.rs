@@ -150,13 +150,18 @@ pub async fn get_all_team_models(
 }
 async fn annotate_user(
     annotated: &mut [DeploymentSpec],
-    user_id: &str,
+    user_id: Option<&str>,
     caller: &ScopeCaller,
     reads: &dyn ScopeReads,
     lookup: &CatalogLookup<'_>,
     access_groups: &AccessGroups,
 ) -> Result<(), ScopeError> {
-    let Some(user) = reads.user_scope(user_id).await? else {
+    let stored = match user_id {
+        Some(id) => reads.user_scope(id).await?,
+        None => None,
+    };
+    let Some(user) = stored else {
+        populate_team_access(annotated, None, &[]);
         return Ok(());
     };
     let user_models = text_models(&user.models, "user models")?;
@@ -184,10 +189,10 @@ pub async fn accessible_models(
     if caller.admin_view {
         let teams = get_all_team_models(&TeamSelection::All, reads, lookup, access_groups).await?;
         populate_team_access(&mut annotated, Some(&teams), &non_team_model_ids(lookup));
-    } else if let Some(user_id) = caller.user_id.as_deref() {
+    } else {
         annotate_user(
             &mut annotated,
-            user_id,
+            caller.user_id.as_deref(),
             caller,
             reads,
             lookup,
