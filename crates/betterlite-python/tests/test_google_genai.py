@@ -298,25 +298,28 @@ def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_optional_vertex_settings() -> None:
     our_project = betterlite.vertex_project
     our_location = betterlite.vertex_location
+    given: list[dict[str, CallValue]] = [
+        {"api_base": None, "vertex_location": None},
+        {"vertex_project": CALL_PROJECT, "vertex_location": None},
+        {"vertex_project": ""},
+    ]
+    expected: list[dict[str, CallValue]] = [
+        {
+            "api_base": None, "vertex_project": VERTEX_PROJECT,
+            "vertex_location": VERTEX_LOCATION,
+        },
+        {"vertex_project": CALL_PROJECT, "vertex_location": VERTEX_LOCATION},
+        {"vertex_project": ""},
+    ]
     try:
         betterlite.vertex_project = VERTEX_PROJECT
         betterlite.vertex_location = VERTEX_LOCATION
-        forwarded: dict[str, CallValue] = {"api_base": None, "vertex_location": None}
-        fill_settings(forwarded)
-        explicit: dict[str, CallValue] = {"vertex_project": CALL_PROJECT, "vertex_location": None}
-        fill_settings(explicit)
-        empty: dict[str, CallValue] = {"vertex_project": ""}
-        fill_settings(empty)
+        for forwarded in given:
+            fill_settings(forwarded)
     finally:
         betterlite.vertex_project = our_project
         betterlite.vertex_location = our_location
-    assert forwarded == {
-        "api_base": None,
-        "vertex_project": VERTEX_PROJECT,
-        "vertex_location": VERTEX_LOCATION,
-    }
-    assert explicit == {"vertex_project": CALL_PROJECT, "vertex_location": VERTEX_LOCATION}
-    assert empty == {"vertex_project": ""}
+    assert given == expected
 
 
 def test_optional_proxy_headers() -> None:
