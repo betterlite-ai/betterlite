@@ -56,10 +56,7 @@ fn public_mcp_server(
         None => BTreeMap::new(),
     };
     info.insert(String::from("is_public"), JsonValue::Bool(true));
-    let listed = explicit.is_some_and(|ids| {
-        ids.iter()
-            .any(|listed_id| listed_id == &server.fields.server_id)
-    });
+    let listed = explicit.is_some_and(|ids| ids.contains(&server.fields.server_id));
     info.insert(String::from("is_public_explicit"), JsonValue::Bool(listed));
     Ok(PublicMcpServer {
         server_id: server.fields.server_id.clone(),

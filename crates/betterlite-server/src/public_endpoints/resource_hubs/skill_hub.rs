@@ -75,7 +75,7 @@ fn plugin_item(row: &PluginRow) -> Result<PluginListItem, ResourceHubsError> {
         domain,
         namespace,
     } = manifest_of(row.manifest_json.as_deref())?;
-    let source = match source {
+    let resolved_source = match source {
         None => BTreeMap::new(),
         Some(None) => return Err(ResourceHubsError::ManifestSource),
         Some(Some(entries)) => entries,
@@ -85,7 +85,7 @@ fn plugin_item(row: &PluginRow) -> Result<PluginListItem, ResourceHubsError> {
         name: row.name.clone(),
         version,
         description,
-        source,
+        source: resolved_source,
         author,
         homepage,
         keywords,

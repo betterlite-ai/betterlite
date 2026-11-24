@@ -60,11 +60,11 @@ pub fn public_agent_cards<R: AgentRegistryApi>(
     base_url: &str,
     root_path: &str,
 ) -> Result<Vec<AgentCard>, ResourceHubsError> {
-    let Some(groups) = groups else {
+    let Some(allowed) = groups else {
         return Ok(Vec::new());
     };
     let mut cards = Vec::new();
-    for agent in registry.get_public_agent_list(Some(groups)) {
+    for agent in registry.get_public_agent_list(Some(allowed)) {
         cards.push(public_agent_card(&agent, custom_urls, base_url, root_path)?);
     }
     Ok(cards)
