@@ -36,6 +36,7 @@ description: >-
   tools/oracle/cases/helpers/db-row-decrypt/.
 scope:
   paths:
+    - crates/betterlite-router/src/deployment_identity/params.rs
     - crates/betterlite-server/src/db_row_decrypt.rs
     - crates/betterlite-server/src/db_row_decrypt/**
     - tools/oracle/cases/helpers/db-row-decrypt/**

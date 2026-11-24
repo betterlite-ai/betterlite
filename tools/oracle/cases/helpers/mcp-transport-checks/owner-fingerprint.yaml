@@ -1,0 +1,37 @@
+kind: helper
+name: mcp-transport-checks-owner-fingerprint
+call:
+  b8724:
+    operation: owner_fingerprint
+    calls:
+      - api_key: sk-live-123
+        user_id: user-1
+        oauth2_headers:
+          - [Authorization, "Bearer oauth-token"]
+        client_ip: 10.0.0.1
+      - user_id: user-1
+        client_ip: 10.0.0.1
+      - oauth2_headers:
+          - [Authorization, "Bearer oauth-token"]
+        client_ip: 10.0.0.1
+      - oauth2_headers:
+          - [authorization, lower-token]
+        client_ip: 10.0.0.1
+      - oauth2_headers:
+          - [Authorization, ""]
+          - [authorization, lower-token]
+        client_ip: 10.0.0.1
+      - client_ip: 10.0.0.1
+      - api_key: custom-key
+      - api_key: a.b.c
+      - api_key: ""
+        user_id: ""
+        oauth2_headers:
+          - [Authorization, ""]
+        client_ip: ""
+      - oauth2_headers: []
+        client_ip: 10.0.0.1
+      - client_ip: " "
+      - api_key: " "
+env: {}
+compare: {ignore: []}

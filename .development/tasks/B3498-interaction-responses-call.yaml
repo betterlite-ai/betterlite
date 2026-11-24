@@ -16,6 +16,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-core/src/api/responses_transform/response.rs"
     - crates/betterlite-core/src/api/responses_handler.rs
     - crates/betterlite-core/src/api/responses_handler/**
   lint_tables: false
