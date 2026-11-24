@@ -210,6 +210,8 @@ impl AsyncByteSource for SdkContentStream {
             .map(|item| item.map_err(source_failure))
     }
 
+    // None falls through to close(), whose Absent answer is the same Ok(()) a returned result would be
+    #[cfg_attr(test, mutants::skip)]
     async fn aclose(&mut self) -> Option<CloseResult> {
         None
     }

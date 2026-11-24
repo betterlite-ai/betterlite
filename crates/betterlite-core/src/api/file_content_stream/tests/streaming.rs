@@ -44,6 +44,7 @@ async fn streaming_logging_identity_keeps_a_supplied_object() {
     assert_eq!(drained(&mut content).await, vec![vec![0, 255]]);
     assert_eq!(logger.successes(), 1);
     assert_eq!(logger.failures(), 0);
+    assert_eq!(logger.success_times(), vec![(started(), started())]);
     assert_eq!(content.exit.get(), Some(&StreamExit::Completed));
 }
 

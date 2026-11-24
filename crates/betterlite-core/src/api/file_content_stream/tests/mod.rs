@@ -63,6 +63,10 @@ use super::{
 const STARTED: &str = "2026-01-01T00:00:00+00:00";
 const GENERATED_ID: &str = "00000000-0000-0000-0000-000000000001";
 
+fn started() -> DateTime<FixedOffset> {
+    DateTime::<FixedOffset>::parse_from_rfc3339(STARTED).unwrap()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FakeConfig(ProviderId);
 
@@ -151,6 +155,7 @@ struct RecordingLogging {
     identities: Mutex<Vec<RecordedIdentity>>,
     successes: AtomicUsize,
     failures: AtomicUsize,
+    times: Mutex<Vec<(DateTime<FixedOffset>, DateTime<FixedOffset>)>>,
 }
 
 impl RecordingLogging {
@@ -164,6 +169,10 @@ impl RecordingLogging {
 
     fn failures(&self) -> usize {
         self.failures.load(Ordering::SeqCst)
+    }
+
+    fn success_times(&self) -> Vec<(DateTime<FixedOffset>, DateTime<FixedOffset>)> {
+        self.times.lock().unwrap().clone()
     }
 }
 
@@ -202,14 +211,17 @@ impl FileStreamLogger for RecordingLogging {
         None
     }
 
-    fn success_handler(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
+    fn success_handler(&self, call: SuccessCall) -> Result<(), CallbackFailure> {
+        self.times
+            .lock()
+            .unwrap()
+            .push((call.start_time, call.end_time));
         self.successes.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
-    async fn async_success_handler(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
-        self.successes.fetch_add(1, Ordering::SeqCst);
-        Ok(())
+    async fn async_success_handler(&self, call: SuccessCall) -> Result<(), CallbackFailure> {
+        self.success_handler(call)
     }
 
     fn success_sync_callbacks(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
