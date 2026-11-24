@@ -18,6 +18,9 @@ deviations:
   - what: The reconstruction of a failed stream's partial usage reads its end time from the stream's injected clock instead of LiteLLM's datetime.now(timezone.utc) at the moment of failure.
     why: Both values are the time the failure is handled; betterlite threads one SuccessClock through the success and failure paths, so the logged end time has one source and the tests can pin it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L112-L123
+  - what: The first-chunk completion stamp and the success job's end time read the stream's injected clock instead of LiteLLM's datetime.now().
+    why: The same SuccessClock supplies every timestamp the lifecycle logs, so a stream's completion, success and failure times share one source and the tests can pin each one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L64-L67
   - what: A rejected logging job logs the admission reason, where LiteLLM logs the exception raised while scheduling.
     why: betterlite's queue reports rejection as a value rather than raising; the log line keeps LiteLLM's prefix and states why the job was dropped.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L268-L275
