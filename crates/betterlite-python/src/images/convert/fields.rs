@@ -14,19 +14,6 @@ pub(crate) fn text(arguments: &RequestMap, name: &str) -> Result<Option<String>,
     }
 }
 
-pub(crate) fn number(arguments: &RequestMap, name: &str) -> Result<Option<f64>, ConvertError> {
-    match arguments.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(value)) => value
-            .as_f64()
-            .map(Some)
-            .ok_or_else(|| field(name, "a number")),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(field(name, "a number"))
-        }
-    }
-}
-
 pub(crate) fn boolean(arguments: &RequestMap, name: &str) -> Result<Option<bool>, ConvertError> {
     match arguments.get(name) {
         None | Some(Json::Null) => Ok(None),
@@ -89,28 +76,29 @@ fn merge_headers(
 }
 
 pub(crate) fn timeout(arguments: &RequestMap) -> Result<Option<Duration>, ConvertError> {
-    let Some(seconds) = number(arguments, "timeout")? else {
-        return Ok(None);
-    };
-    let duration =
-        Duration::try_from_secs_f64(seconds).map_err(|source| ConvertError::Timeout { source })?;
-    Ok(Some(duration))
+    match arguments.get("timeout") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Number(value)) => {
+            let seconds = value.as_f64().ok_or_else(|| field("timeout", "a number"))?;
+            Duration::try_from_secs_f64(seconds)
+                .map(Some)
+                .map_err(|source| ConvertError::Timeout { source })
+        }
+        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(field("timeout", "a number"))
+        }
+    }
 }
 
-pub(crate) fn generation_target(arguments: &RequestMap) -> Result<(String, String), ConvertError> {
-    let requested = text(arguments, "model")?;
-    let explicit = text(arguments, "custom_llm_provider")?;
-    resolve_target(
-        requested.as_deref().unwrap_or(DEFAULT_GENERATION_MODEL),
-        explicit.as_deref(),
-    )
+// the model and provider a call resolves to, with dall-e-2 and openai standing in when neither is given
+pub(crate) fn target(arguments: &RequestMap) -> Result<(String, String), ConvertError> {
+    let model = text(arguments, "model")?.unwrap_or_else(|| DEFAULT_GENERATION_MODEL.to_owned());
+    let provider = text(arguments, "custom_llm_provider")?;
+    Ok(resolve_target(&model, provider.as_deref()))
 }
 
 // get_llm_provider with an openai-only provider set: a prefix names the provider, otherwise openai
-pub(crate) fn resolve_target(
-    model: &str,
-    provider: Option<&str>,
-) -> Result<(String, String), ConvertError> {
+pub(crate) fn resolve_target(model: &str, provider: Option<&str>) -> (String, String) {
     let mut name = model;
     let mut found = provider;
     if let Some((prefix, rest)) = model.split_once('/')
@@ -122,7 +110,7 @@ pub(crate) fn resolve_target(
         }
     }
     let provider = found.map_or_else(|| OPENAI_PROVIDER.to_owned(), str::to_owned);
-    Ok((name.to_owned(), provider))
+    (name.to_owned(), provider)
 }
 
 pub(crate) fn field(name: &str, expected: &'static str) -> ConvertError {

@@ -1,6 +1,6 @@
-use super::convert::fields::text;
-use super::convert::{ConvertError, SessionWire, SettingsWire};
-use super::error::SessionError;
+use super::convert::fields::{headers, text, timeout};
+use super::convert::{ConvertError, DEFAULT_TIMEOUT, SettingsWire};
+use super::error::{CallFailure, SessionError, convert_failure_at};
 use crate::completion::setup::outbound_client;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::sections::openai_credentials::{
@@ -17,11 +17,12 @@ use betterlite_openai::image_generation::logging::{
 use betterlite_openai::image_variations::logging::{
     ImageVariationLogger, PostCallRecord as VariationPostCall, PreCallRecord as VariationPreCall,
 };
+use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_setup::RequestMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::BTreeMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // The process environment a session was built from, the outbound client and the redactor every failure goes through.
 pub(crate) struct ImageSession {
@@ -31,10 +32,8 @@ pub(crate) struct ImageSession {
 }
 
 impl ImageSession {
-    pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
-        let wire: SessionWire =
-            serde_json::from_str(text).map_err(|source| ConvertError::Json { source })?;
-        let environment = wire.environment.unwrap_or_else(process_environment);
+    pub(crate) fn build(_settings: &str) -> Result<Self, SessionError> {
+        let environment = process_environment();
         let client = outbound_client(&environment)?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
         Ok(Self {
@@ -45,7 +44,7 @@ impl ImageSession {
     }
 
     // get_openai_credentials over this session's environment, the payload settings and the call
-    pub(crate) fn credentials(
+    fn credentials(
         &self,
         settings: &SettingsWire,
         explicit: ExplicitCredentials,
@@ -57,24 +56,41 @@ impl ImageSession {
         };
         let globals = LiteLlmGlobals {
             api_base: settings.api_base.clone().filter(|value| !value.is_empty()),
-            api_key: settings
-                .api_key
-                .clone()
-                .filter(|value| !value.expose_secret().is_empty()),
-            openai_key: settings
-                .openai_key
-                .clone()
-                .filter(|value| !value.expose_secret().is_empty()),
+            api_key: present(settings.api_key.clone()),
+            openai_key: present(settings.openai_key.clone()),
             organization: None,
         };
         let env_api_key =
             first_text(&self.environment, &["OPENAI_API_KEY"]).map(SecretString::from);
         get_openai_credentials(explicit, globals, &configured, env_api_key)
     }
+}
 
-    pub(crate) fn drop_params(&self, settings: &SettingsWire) -> bool {
-        settings.drop_params.unwrap_or(false)
-    }
+// Everything a provider call shares: the caller's headers, its timeout and the resolved credentials.
+pub(crate) struct CallSetup {
+    pub(crate) headers: Headers,
+    pub(crate) timeout: Duration,
+    pub(crate) credentials: OpenAiCredentials,
+}
+
+pub(crate) fn call_setup(
+    session: &ImageSession,
+    arguments: &RequestMap,
+    settings: &SettingsWire,
+    model: &str,
+    provider: &str,
+) -> Result<CallSetup, CallFailure> {
+    let headers =
+        headers(arguments).map_err(|error| convert_failure_at(&error, model, provider))?;
+    let timeout =
+        timeout(arguments).map_err(|error| convert_failure_at(&error, model, provider))?;
+    let explicit = explicit_credentials(arguments)
+        .map_err(|error| convert_failure_at(&error, model, provider))?;
+    Ok(CallSetup {
+        headers,
+        timeout: timeout.unwrap_or(DEFAULT_TIMEOUT),
+        credentials: session.credentials(settings, explicit),
+    })
 }
 
 // Which entry point asked, because LiteLLM's sync and async clients differ in how they wrap an error.
@@ -104,17 +120,17 @@ pub(crate) fn now_seconds() -> i64 {
     }
 }
 
+fn present(value: Option<SecretString>) -> Option<SecretString> {
+    value.filter(|secret| !secret.expose_secret().is_empty())
+}
+
 fn first_text(environment: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
-    let mut found = None;
-    for name in names {
-        if let Some(value) = environment.get(*name)
-            && !value.is_empty()
-        {
-            found = Some(value.clone());
-            break;
-        }
-    }
-    found
+    names.iter().find_map(|name| {
+        environment
+            .get(*name)
+            .filter(|value| !value.is_empty())
+            .cloned()
+    })
 }
 
 // Python logs the calls it runs in Rust through LiteLLM's callbacks, which never cross the boundary.

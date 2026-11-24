@@ -1,7 +1,6 @@
 use super::convert::ConvertError;
 use crate::completion::error::SessionError as CompletionSessionError;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
-use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
@@ -123,6 +122,19 @@ impl From<SessionError> for PyErr {
     }
 }
 
+fn context(message: String, model: Option<String>, provider: Option<String>) -> ErrorContext {
+    ErrorContext {
+        message,
+        model,
+        provider,
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    }
+}
+
 // a local refusal LiteLLM reaches through ValueError, which its exception mapping turns into a
 // connection error when the call is inside a try block
 pub(crate) fn connection_failure(
@@ -130,45 +142,12 @@ pub(crate) fn connection_failure(
     model: Option<String>,
     provider: Option<String>,
 ) -> CallFailure {
-    let context = ErrorContext {
-        message: message.clone(),
-        model: model.clone(),
-        provider: provider.clone(),
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
-    };
-    CallFailure::from_class(
-        ErrorClass::ApiConnection(Box::new(context)),
-        message,
-        model,
-        provider,
-    )
-}
-
-pub(crate) fn bad_request(
-    message: String,
-    model: Option<String>,
-    provider: Option<String>,
-) -> CallFailure {
-    let context = ErrorContext {
-        message: message.clone(),
-        model: model.clone(),
-        provider: provider.clone(),
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
-    };
-    CallFailure::from_class(
-        ErrorClass::BadRequest(Box::new(ResponseDetails::<400>::from(context))),
-        message,
-        model,
-        provider,
-    )
+    let class = ErrorClass::ApiConnection(Box::new(context(
+        message.clone(),
+        model.clone(),
+        provider.clone(),
+    )));
+    CallFailure::from_class(class, message, model, provider)
 }
 
 // A provider answer is dispatched from its status and message exactly as LiteLLM's exception_type would.
@@ -198,32 +177,27 @@ pub(crate) fn provider_failure(
     )
 }
 
+// LiteLLM's local ValueErrors become connection errors, except the edit parameter check's own class
 pub(crate) fn convert_failure(
     error: &ConvertError,
     model: Option<String>,
     provider: Option<String>,
 ) -> CallFailure {
-    match error {
-        ConvertError::UnsupportedParams { .. } => CallFailure::from_class(
-            ErrorClass::UnsupportedParams(Box::new(ErrorContext {
-                message: error.to_string(),
-                model: model.clone(),
-                provider: provider.clone(),
-                max_retries: None,
-                num_retries: None,
-                body_type: None,
-                body_param: None,
-                body_code: None,
-            })),
-            error.to_string(),
-            model,
-            provider,
-        ),
-        ConvertError::Json { .. }
-        | ConvertError::Encode { .. }
-        | ConvertError::Field { .. }
-        | ConvertError::Timeout { .. }
-        | ConvertError::Files(_)
-        | ConvertError::Read { .. } => bad_request(error.to_string(), model, provider),
+    let message = error.to_string();
+    if matches!(
+        error,
+        ConvertError::UnsupportedParams { .. } | ConvertError::Unsupported(_)
+    ) {
+        let class = ErrorClass::UnsupportedParams(Box::new(context(
+            message.clone(),
+            model.clone(),
+            provider.clone(),
+        )));
+        return CallFailure::from_class(class, message, model, provider);
     }
+    connection_failure(message, model, provider)
+}
+
+pub(crate) fn convert_failure_at(error: &ConvertError, model: &str, provider: &str) -> CallFailure {
+    convert_failure(error, Some(model.to_owned()), Some(provider.to_owned()))
 }

@@ -1,10 +1,11 @@
 #![cfg(test)]
 
-use super::fields::{generation_target, headers, resolve_target, timeout};
+use super::fields::{headers, resolve_target, target, timeout};
 use super::options::{edit_options, generation_options};
-use super::{ConvertError, DEFAULT_CONTENT_TYPE, image_file, parse};
+use super::{ConvertError, DEFAULT_CONTENT_TYPE, image_file, mask_file, parse};
 use betterlite_models::decisions::Json;
 use betterlite_sdk::call_files::CallFile;
+use serde_json::Number;
 
 fn call(text: &str) -> (super::ImageCallWire, Vec<(String, CallFile)>) {
     let mut blobs = Vec::new();
@@ -17,26 +18,25 @@ fn edited(text: &str, drop: bool) -> Result<super::RequestMap, ConvertError> {
 }
 
 #[test]
-fn request_generation_target_defaults_to_dall_e_2_on_openai() {
+fn request_target_defaults_to_dall_e_2_on_openai() {
     let (wire, _files) = call(r#"{"prompt":"a cat"}"#);
-    let (model, provider) = generation_target(&wire.arguments).unwrap();
+    let (model, provider) = target(&wire.arguments).unwrap();
     assert_eq!(model, "dall-e-2");
     assert_eq!(provider, "openai");
 }
 
 #[test]
 fn request_generation_model_prefix_names_the_provider() {
-    let (model, provider) = resolve_target("openai/gpt-image-1", None).unwrap();
+    let (model, provider) = resolve_target("openai/gpt-image-1", None);
     assert_eq!(model, "gpt-image-1");
     assert_eq!(provider, "openai");
 }
 
 #[test]
 fn request_generation_options_keep_style_and_skip_control_names() {
-    let (wire, _files) = call(
-        r#"{"prompt":"a cat","style":"vivid","quality":"hd","timeout":30,"api_key":"sk-x","presentation":"plain"}"#,
-    );
-    let options = generation_options(&wire.arguments);
+    let (wire, _files) =
+        call(r#"{"prompt":"a cat","style":"vivid","quality":"hd","timeout":30,"api_key":"sk-x"}"#);
+    let options = generation_options(&wire.arguments, "dall-e-3", false).unwrap();
     assert!(!options.contains_key("prompt"));
     assert!(!options.contains_key("timeout"));
     assert!(!options.contains_key("api_key"));
@@ -48,10 +48,15 @@ fn request_generation_options_keep_style_and_skip_control_names() {
         options.get("quality"),
         Some(&Json::Text(String::from("hd")))
     );
-    assert_eq!(
-        options.get("presentation"),
-        Some(&Json::Text(String::from("plain")))
-    );
+}
+
+#[test]
+fn error_generation_unsupported_param_fails_without_drop() {
+    let (wire, _files) = call(r#"{"prompt":"a cat","style":"vivid"}"#);
+    let error = generation_options(&wire.arguments, "dall-e-2", false).unwrap_err();
+    assert!(error.to_string().contains("style"));
+    let options = generation_options(&wire.arguments, "dall-e-2", true).unwrap();
+    assert!(!options.contains_key("style"));
 }
 
 #[test]
@@ -65,7 +70,7 @@ fn request_edit_options_keep_the_declared_fields() {
         options.get("background"),
         Some(&Json::Text(String::from("transparent")))
     );
-    assert_eq!(options.get("n"), Some(&Json::Number(2.into())));
+    assert_eq!(options.get("n"), Some(&Json::Number(Number::from(2_u32))));
     assert_eq!(
         options.get("size"),
         Some(&Json::Text(String::from("1024x1024")))
@@ -128,6 +133,17 @@ fn request_unnamed_file_takes_the_image_name() {
     let image = image_file(&file, "image.png");
     assert_eq!(image.filename.as_deref(), Some("image.png"));
     assert_eq!(image.content_type.as_deref(), Some("image/png"));
+}
+
+#[test]
+fn request_unnamed_mask_takes_the_mask_name() {
+    let file = CallFile {
+        name: String::from("file"),
+        content_type: None,
+        bytes: vec![0_u8],
+    };
+    let mask = mask_file(&[(String::from("mask"), file)]).unwrap();
+    assert_eq!(mask.filename.as_deref(), Some("mask.png"));
 }
 
 #[test]
