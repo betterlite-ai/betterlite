@@ -27,8 +27,7 @@ class GenericGuardrailAPIInputs(TypedDict, total=False):
 
 # a guardrail receives and returns JSON, a LiteLLM object or the exception it caught
 GuardrailValue: TypeAlias = (
-    JsonValue | Dumpable | Exception | GenericGuardrailAPIInputs
-    | list["GuardrailValue"] | dict[str, "GuardrailValue"]
+    JsonValue | Dumpable | Exception | list["GuardrailValue"] | dict[str, "GuardrailValue"]
 )
 
 
@@ -133,7 +132,7 @@ class GuardrailCache(Protocol):
 class GuardrailSettingsOwner(Protocol):
     guardrail_name: str | None
     supported_event_hooks: list[GuardrailEventHooks] | None
-    event_hook: GuardrailEventHooks | list[GuardrailEventHooks] | Mode | None
+    event_hook: GuardrailEventHooks | str | list[GuardrailEventHooks] | Mode | None
     default_on: bool
     mask_request_content: bool
     mask_response_content: bool

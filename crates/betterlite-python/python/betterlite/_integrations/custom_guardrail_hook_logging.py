@@ -33,12 +33,19 @@ class GuardrailHook:
     def __init__(self, hook: ApplyGuardrailHook) -> None:
         self.hook = hook
 
+    def __call__(
+        self, owner: GuardrailHooks, inputs: GenericGuardrailAPIInputs,
+        request_data: dict[str, JsonValue], input_type: Literal["request", "response"],
+        logging_obj: LiteLLMLoggingObj | None = None,
+    ) -> Awaitable[GenericGuardrailAPIInputs]:
+        return self.hook(owner, inputs, request_data, input_type, logging_obj)
+
     def __get__(
         self, instance: GuardrailHooks | None, owner: type[GuardrailHooks] | None = None
-    ) -> ApplyGuardrailHook | GuardrailHookBinding:
+    ) -> GuardrailHook | GuardrailHookBinding:
         _ = owner
         if instance is None:
-            return self.hook
+            return self
         return GuardrailHookBinding(self.hook, instance)
 
 

@@ -1,4 +1,5 @@
 import hashlib
+import json
 from collections.abc import Mapping
 from typing import NoReturn
 
@@ -15,6 +16,7 @@ from betterlite._integrations.custom_guardrail_support import (
     json_projection,
     native_handle,
     render_message,
+    settings_of,
     strict_guardrail_modes,
     text_value,
 )
@@ -24,6 +26,7 @@ from betterlite._integrations.guardrail_types import (
     GuardrailConfigModel,
     GuardrailValue,
 )
+from betterlite._native import NativeGuardrail
 from betterlite.exceptions._process import (
     GuardrailRaisedException,
     ModifyResponseException,
@@ -39,13 +42,14 @@ class GuardrailState(CustomLogger):
     # ast-grep-ignore: no-long-names
     records_own_guardrail_information: bool = False
     _guardrail_self_recorded: bool = False
+    _native_cache: tuple[str, NativeGuardrail] | None = None
 
     @override
     def __init__(
         self,
         guardrail_name: str | None = None,
         supported_event_hooks: list[GuardrailEventHooks] | None = None,
-        event_hook: GuardrailEventHooks | list[GuardrailEventHooks] | Mode | None = None,
+        event_hook: GuardrailEventHooks | str | list[GuardrailEventHooks] | Mode | None = None,
         default_on: bool = False,
         mask_request_content: bool = False,
         mask_response_content: bool = False,
@@ -78,8 +82,7 @@ class GuardrailState(CustomLogger):
         self.run_in_parallel = run_in_parallel
         self.scan_raw_request = scan_raw_request
         self.only_scan_new_messages = only_scan_new_messages
-        if timeout is not None:
-            self.timeout = timeout
+        self.timeout = timeout
         strict = strict_guardrail_modes()
         hooks = self.supported_event_hooks
         if hooks:
@@ -95,15 +98,22 @@ class GuardrailState(CustomLogger):
                     self.event_hook,
                     error,
                 )
-        self._native = native_handle(self, strict=strict)
         super().__init__(**kwargs)
+
+    def _native(self) -> NativeGuardrail:
+        text = json.dumps(settings_of(self))
+        cached = self._native_cache
+        if cached is None or cached[0] != text:
+            cached = (text, native_handle(self, strict=False))
+            self._native_cache = cached
+        return cached[1]
 
     def uses_apply_guardrail_interface(self) -> bool:
         raise NotImplementedError
 
     def _validate_event_hook(
         self,
-        event_hook: GuardrailEventHooks | list[GuardrailEventHooks] | Mode | None,
+        event_hook: GuardrailEventHooks | str | list[GuardrailEventHooks] | Mode | None,
         supported_event_hooks: list[GuardrailEventHooks],
     ) -> None:
         _ = (event_hook, supported_event_hooks)
@@ -119,7 +129,7 @@ class GuardrailState(CustomLogger):
         if context is not None:
             for name, value in context.items():
                 texts[name] = str(value)
-        return render_message(self._native, default, texts)
+        return render_message(self._native(), default, texts)
 
     def raise_passthrough_exception(
         self,
@@ -147,9 +157,7 @@ class GuardrailState(CustomLogger):
 
     # ast-grep-ignore: no-long-names
     def raise_sensitive_data_route_exception(
-        self,
-        route_to_model: str,
-        request_data: dict[str, JsonValue],
+        self, route_to_model: str, request_data: dict[str, JsonValue],
         detection_info: dict[str, JsonValue] | None = None,
     ) -> NoReturn:
         session_id = self._get_session_id_from_request_data(request_data)
@@ -185,18 +193,14 @@ class GuardrailState(CustomLogger):
         key = self._scanned_texts_cache_key(session_id)
         try:
             cached = await cache.async_get_cache(key=key)
-        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as error:
+        except Exception as error:
             LOGGER.warning("Guardrail %s: read cache failed: %s", self.guardrail_name, error)
             return None
         return self._hash_set(cached)
 
     async def _scan_baseline(
-        self,
-        texts: list[str] | None,
-        request_data: dict[str, JsonValue],
-        cache: GuardrailCache,
-        *,
-        warn_masking: bool,
+        self, texts: list[str] | None, request_data: dict[str, JsonValue],
+        cache: GuardrailCache, *, warn_masking: bool,
     ) -> tuple[list[str], str, set[str]] | None:
         if not self.only_scan_new_messages or not texts:
             return None
@@ -238,7 +242,7 @@ class GuardrailState(CustomLogger):
                 # ast-grep-ignore: no-long-names
                 key=key, value=merged, ttl=GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS
             )
-        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as error:
+        except Exception as error:
             LOGGER.warning("Guardrail %s: write cache failed: %s", self.guardrail_name, error)
 
     def should_route_on_sensitive_data(self) -> bool:
@@ -246,8 +250,7 @@ class GuardrailState(CustomLogger):
 
     # ast-grep-ignore: no-long-names
     def handle_sensitive_data_detection(
-        self,
-        request_data: dict[str, JsonValue],
+        self, request_data: dict[str, JsonValue],
         detection_info: dict[str, JsonValue] | None = None,
     ) -> NoReturn:
         route = self.sensitive_data_route_to_model

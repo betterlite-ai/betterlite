@@ -31,7 +31,7 @@ class GuardrailSelection(GuardrailState):
     @override
     def _validate_event_hook(
         self,
-        event_hook: GuardrailEventHooks | list[GuardrailEventHooks] | Mode | None,
+        event_hook: GuardrailEventHooks | str | list[GuardrailEventHooks] | Mode | None,
         supported_event_hooks: list[GuardrailEventHooks],
     ) -> None:
         _ = (event_hook, supported_event_hooks)
@@ -148,17 +148,17 @@ class GuardrailSelection(GuardrailState):
     ) -> bool:
         if self._suppressed_by_auto_router_compression():
             return False
-        names = frozenset() if suppressed is None else suppressed
-        return selection_answer(self._native, data, event_type, names)
+        names: frozenset[str] = frozenset() if suppressed is None else suppressed
+        return selection_answer(self._native(), data, event_type, names)
 
     def _event_hook_is_event_type(self, event_type: GuardrailEventHooks) -> bool:
-        return event_hook_matches(self._native, event_type)
+        return event_hook_matches(self._native(), event_type)
 
     # ast-grep-ignore: no-long-names
     def get_guardrail_dynamic_request_body_params(
         self, request_data: dict[str, JsonValue]
     ) -> dict[str, JsonValue]:
-        params = dynamic_params(self._native, request_data)
+        params = dynamic_params(self._native(), request_data)
         if params:
             _ = self._validate_premium_user()
             LOGGER.warning(

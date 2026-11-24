@@ -206,6 +206,7 @@ def group_selection():
         instances = {
             "plain": base(guardrail_name="probe"),
             "pre": base(guardrail_name="probe", event_hook=hooks.pre_call),
+            "string": base(guardrail_name="probe", event_hook="pre_call"),
             "multi": base(guardrail_name="probe", event_hook=[hooks.pre_call, hooks.post_call]),
             "tagged": base(
                 guardrail_name="probe",
@@ -223,6 +224,7 @@ def group_selection():
             "metadata": {"metadata": {"guardrails": ["probe"]}},
             "thread": {"litellm_metadata": {"guardrails": ["probe"]}},
             "tag": {"metadata": {"tags": ["team"]}},
+            "logged": {"guardrails": ["probe"], "litellm_logging_obj": object()},
         }
         for instance_name, instance in instances.items():
             for data_name, data in datasets.items():
@@ -477,6 +479,35 @@ def group_records():
             )
         except Exception:
             pass
+
+        updated = base(guardrail_name="probe", event_hook=hooks.pre_call)
+        updated.update_in_memory_litellm_params(
+            types["params"](guardrail="probe", mode="pre_call")
+        )
+        updated_logging = FakeLogging()
+        updated.add_standard_logging_guardrail_information_to_request_data(
+            {"action": "allow"},
+            {"guardrails": ["probe"], "litellm_logging_obj": updated_logging},
+            "success",
+            event_type=hooks.pre_call,
+        )
+        written = normalize(updated_logging.litellm_params["metadata"]) or []
+
+        class BrokenCache:
+            async def async_get_cache(self, key):
+                raise RuntimeError("cache down")
+
+            async def async_set_cache(self, key, value, ttl):
+                raise RuntimeError("cache down")
+
+        scanning = base(
+            guardrail_name="probe", event_hook=hooks.pre_call, only_scan_new_messages=True
+        )
+        scanning_data = {"metadata": {"session_id": "s-1"}}
+        filtered = await scanning.filter_new_texts_for_session(
+            ["hello"], scanning_data, BrokenCache()
+        )
+        await scanning.mark_texts_scanned(["hello"], scanning_data, BrokenCache())
         return {
             "direct": direct,
             "result": result,
@@ -484,6 +515,8 @@ def group_records():
             "success": normalize(success_logging.litellm_params["metadata"]),
             "failure": normalize(failure_logging.litellm_params["metadata"]),
             "deny": normalize(deny_logging.litellm_params["metadata"]),
+            "updated": [entry["guardrail_status"] for entry in written],
+            "filtered": filtered,
         }
 
     for side, types in SIDES.items():

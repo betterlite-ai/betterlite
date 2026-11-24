@@ -16,13 +16,7 @@ from betterlite._integrations.custom_logger_types import (
 from betterlite._integrations.guardrail_types import OBJECT, GenericGuardrailAPIInputs
 from betterlite.types.litellm_params_state import JsonMap
 
-ApplyGuardrailHook: TypeAlias = Callable[
-    [
-        "GuardrailHooks", GenericGuardrailAPIInputs, dict[str, JsonValue],
-        Literal["request", "response"], LiteLLMLoggingObj | None,
-    ],
-    Awaitable[GenericGuardrailAPIInputs],
-]
+ApplyGuardrailHook: TypeAlias = Callable[..., Awaitable[GenericGuardrailAPIInputs]]
 
 
 class GuardrailHooks(GuardrailRecording):
@@ -52,8 +46,8 @@ class GuardrailHooks(GuardrailRecording):
             if not (self.records_own_guardrail_information or self._guardrail_self_recorded):
                 now = datetime.now(tz=UTC)
                 self._process_response(
-                    response, request_data, start.timestamp(), now.timestamp(),
-                    duration=(now - start).total_seconds(), event_type=None,
+                    OBJECT.validate_python(response), request_data, start.timestamp(),
+                    now.timestamp(), duration=(now - start).total_seconds(), event_type=None,
                     original_inputs=original_inputs,
                 )
         except Exception as error:

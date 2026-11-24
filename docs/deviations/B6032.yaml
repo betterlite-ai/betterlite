@@ -6,12 +6,12 @@ deviations:
   - what: Selection, violation-message rendering, advisory injection, response summarising and record building run in betterlite's Rust guardrail modules; the Python class only delegates.
     why: Rule port-the-behavior-not-the-shape puts the guardrail logic in Rust where the rest of betterlite reads it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1058-L1127
-  - what: A subclass's apply_guardrail is wrapped by a descriptor that writes the logs-guardrail-information marker on the descriptor and on the wrapped function; LiteLLM writes it on its wrapper function.
-    why: The repo bans nested functions, so the decorator's nested async wrapper cannot be ported; class access still returns the plain function, as LiteLLM's wrapped attribute does.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580-L1592
-  - what: Only apply_guardrail is wrapped, and a synchronous apply_guardrail is not supported; the hook call always returns an awaitable.
-    why: LiteLLM's proxy awaits apply_guardrail, so a sync override cannot run there either, and LiteLLM wraps no other method.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1671-L1678
+  - what: A subclass's apply_guardrail is wrapped by a descriptor that writes the logs-guardrail-information marker on the descriptor and on the wrapped function, where LiteLLM writes it on its wrapper function. The decorator dispatches only apply_guardrail's argument names and only an async hook, so it cannot wrap LiteLLM's other hook methods; the hook call always returns an awaitable.
+    why: The repo bans nested functions, so the decorator's nested async and sync wrappers and its per-name event-type inference cannot be ported; class access still returns a plain callable, as LiteLLM's wrapped attribute does, and LiteLLM's proxy awaits apply_guardrail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580-L1710
+  - what: is_guardrail_intervention does not treat fastapi's HTTPException with status 400, 403 or 422 as an intervention, so a guardrail that raises one records guardrail_failed_to_respond instead of guardrail_intervened.
+    why: fastapi is not a dependency of the betterlite wheel, so the module cannot import HTTPException to match it, and the lint lane refuses an import inside the function.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/exception_utils.py#L7-L12
   - what: apply_guardrail inputs are baselined as original_inputs on every call.
     why: LiteLLM only captures a keyword inputs argument; betterlite records the baseline for positional calls too, which never changes what LiteLLM records.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1560-L1578
