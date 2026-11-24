@@ -4,6 +4,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_router::deployment_identity::params::litellm_params;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue, StoredValue};
@@ -12,7 +13,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::convert::json_of;
 use super::error::DbRowDecryptError;
 use super::model_info::model_info_for;
-use super::params::litellm_params;
 use super::warnings::Warnings;
 
 // decrypt_value_helper's default "error" mode with return_original_value=True: the stored value stays.

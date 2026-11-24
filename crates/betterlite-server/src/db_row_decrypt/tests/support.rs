@@ -8,7 +8,6 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_db::stored_cipher::DbCipher;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
@@ -90,10 +89,6 @@ pub(crate) fn secret_lookup() -> SecretLookup {
 }
 
 pub(crate) fn row(text: &str) -> ProxyModelTable {
-    serde_json::from_str(text).unwrap()
-}
-
-pub(crate) fn object(text: &str) -> JsonObject {
     serde_json::from_str(text).unwrap()
 }
 

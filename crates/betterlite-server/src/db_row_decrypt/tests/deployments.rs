@@ -54,7 +54,17 @@ fn resolves_encrypted_and_plain_params() {
         params.get("api_base"),
         Some(&Json::Text("https://api.test".to_owned()))
     );
+    assert_eq!(
+        params.get("allow_client_keepalive_override"),
+        Some(&Json::Bool(false))
+    );
+    assert_eq!(params.get("use_in_pass_through"), Some(&Json::Bool(false)));
     assert_eq!(params.get("use_litellm_proxy"), Some(&Json::Bool(false)));
+    assert_eq!(params.get("use_xai_oauth"), Some(&Json::Bool(false)));
+    assert_eq!(
+        params.get("merge_reasoning_content_in_choices"),
+        Some(&Json::Bool(false))
+    );
     let info = info_of(deployment);
     assert_eq!(info.get("id"), Some(&Json::Text("dep-1".to_owned())));
     assert_eq!(info.get("db_model"), Some(&Json::Bool(true)));
@@ -158,4 +168,25 @@ fn normalizes_a_text_max_retries() {
         params_of(&deployments[0]).get("max_retries"),
         Some(&Json::Number(Number::from(3_i64)))
     );
+}
+
+#[test]
+fn drops_reserved_and_null_params_and_normalizes_drop_params() {
+    let rows = [row(
+        r#"{"model_id":"dep-1","model_name":"gpt","litellm_params":{"model":"m","self":1,"params":2,"__class__":3,"empty":null,"drop_params":"true"}}"#,
+    )];
+    let deployments = decrypt_model_rows(
+        &rows,
+        &cipher(),
+        &secret_lookup(),
+        &BTreeMap::new(),
+        &Warnings::default(),
+    )
+    .unwrap();
+    let params = params_of(&deployments[0]);
+    assert_eq!(params.get("self"), None);
+    assert_eq!(params.get("params"), None);
+    assert_eq!(params.get("__class__"), None);
+    assert_eq!(params.get("empty"), None);
+    assert_eq!(params.get("drop_params"), Some(&Json::Bool(true)));
 }

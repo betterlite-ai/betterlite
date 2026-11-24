@@ -7,6 +7,5 @@ pub mod rows;
 pub mod warnings;
 
 mod convert;
-mod params;
 
 mod tests;
