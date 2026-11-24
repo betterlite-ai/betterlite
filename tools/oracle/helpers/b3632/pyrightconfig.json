@@ -1,0 +1,7 @@
+{
+  "include": ["../b3632.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none",
+  "reportPrivateUsage": "none"
+}

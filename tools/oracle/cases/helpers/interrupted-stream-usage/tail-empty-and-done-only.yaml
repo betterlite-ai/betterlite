@@ -1,0 +1,12 @@
+kind: helper
+name: tail-empty-and-done-only
+call:
+  b3632:
+    tails:
+    - chunks:
+      - 646174613a205b444f4e455d0a0a
+    recovers: []
+    clears: []
+env: {}
+compare:
+  ignore: []
