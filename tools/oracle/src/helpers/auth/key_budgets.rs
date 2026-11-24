@@ -120,7 +120,7 @@ async fn admit_value(call: &Call) -> Result<Value, Failure> {
         .spends
         .as_deref()
         .ok_or(Failure::Missing("the spend reads"))?;
-    let reader = ScriptedSpend::new(spends);
+    let reader = ScriptedSpend::new(spends.to_vec());
     let recorder = Recorder::default();
     let budgets = effective_budgets(&auth, now)?;
     let durations = CaseDurations::from_env();

@@ -20,14 +20,14 @@ use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Number, Value, json};
 
 // the spend reads the case scripts, recorded the way LiteLLM's get_current_spend receives them
-pub(crate) struct ScriptedSpend<'script> {
-    spends: &'script [JsonData],
+pub(crate) struct ScriptedSpend {
+    spends: Vec<JsonData>,
     next: AtomicUsize,
     reads: Mutex<Vec<Value>>,
 }
 
-impl<'script> ScriptedSpend<'script> {
-    pub(crate) const fn new(spends: &'script [JsonData]) -> Self {
+impl ScriptedSpend {
+    pub(crate) const fn new(spends: Vec<JsonData>) -> Self {
         Self {
             spends,
             next: AtomicUsize::new(0),
@@ -42,7 +42,7 @@ impl<'script> ScriptedSpend<'script> {
 }
 
 #[async_trait]
-impl<'script> SpendReader for ScriptedSpend<'script> {
+impl SpendReader for ScriptedSpend {
     async fn read_spend(&self, query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
         let index = self.next.fetch_add(1, Ordering::SeqCst);
         self.reads
@@ -70,8 +70,7 @@ pub(crate) struct Recorder(Mutex<Vec<BudgetAlert>>);
 
 impl Recorder {
     pub(crate) fn take(&self) -> Vec<Value> {
-        let mut queued = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let alerts = take(&mut *queued);
+        let alerts = take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner));
         alerts.iter().map(alert_json).collect()
     }
 }

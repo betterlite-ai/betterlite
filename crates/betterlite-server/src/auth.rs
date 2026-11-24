@@ -93,7 +93,13 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    match auth_stage_loop::run_stages(request, master_key, failure_response).await {
+    match Box::pin(auth_stage_loop::run_stages(
+        request,
+        master_key,
+        failure_response,
+    ))
+    .await
+    {
         Ok((staged, authenticated, body)) => {
             auth_stage_loop::forward(staged, authenticated, body, next).await
         }

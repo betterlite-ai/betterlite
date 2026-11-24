@@ -40,9 +40,8 @@ pub struct KeyBudgetRule {
 }
 
 impl fmt::Debug for KeyBudgetRule {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("KeyBudgetRule")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyBudgetRule")
             .field("has_auth", &self.auth.is_some())
             .field("user_email", &self.user_email)
             .field("has_reader", &self.reader.is_some())
@@ -142,8 +141,8 @@ pub(crate) async fn prefetch(stage: &KeyBudgetStageInput) -> Result<(), Box<Prox
 fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
     match error {
         KeyBudgetError::Denied(denial) => budget_exceeded_exception(denial),
-        KeyBudgetError::Spend(error) => spend_failure_exception(error),
-        KeyBudgetError::Window(error) => authentication_exception(&error.to_string()),
+        KeyBudgetError::Spend(failure) => spend_failure_exception(failure),
+        KeyBudgetError::Window(failure) => authentication_exception(&failure.to_string()),
     }
 }
 

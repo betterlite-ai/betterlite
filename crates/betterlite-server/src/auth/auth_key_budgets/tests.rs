@@ -180,14 +180,14 @@ fn stage_is_registered() {
     );
 
     let master_key = SecretString::from(MASTER_KEY.to_owned());
-    let stage = KeyBudgetStageInput {
+    let budget_stage = KeyBudgetStageInput {
         context: master_context(&master_key),
         rule: Arc::new(rule(
             r#"{"token":"sk-registered","spend":1,"max_budget":10}"#,
         )),
         settings,
     };
-    let input = StageInput::AuthKeyBudgets(Box::new(stage));
+    let input = StageInput::AuthKeyBudgets(Box::new(budget_stage));
     let Ok(forwarded) = dispatch(AuthBackend::AuthKeyBudgets, &input, &master_key) else {
         panic!("the B732 constructor dispatches to the production key budget stage");
     };
@@ -338,15 +338,16 @@ async fn temporary_increase_applies() {
 
 #[tokio::test]
 async fn soft_alert_passes_without_denial() {
-    let sink = Arc::new(RecordingSink::default());
+    let recorder = Arc::new(RecordingSink::default());
+    let dispatched: Arc<dyn BudgetAlertSink> = Arc::clone(&recorder);
     let soft = Arc::new(KeyBudgetRule {
-        alerts: Some(Arc::clone(&sink)),
+        alerts: Some(dispatched),
         ..rule(r#"{"token":"sk-soft","spend":5,"soft_budget":5}"#)
     });
     let (status, _body, reached) = run_request(&config_with_master_key(), soft).await;
     assert_eq!(status, StatusCode::OK);
     assert!(reached);
-    let alerts = sink.take();
+    let alerts = recorder.take();
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].kind, BudgetAlertKind::SoftBudget);
 }
