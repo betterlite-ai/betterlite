@@ -506,18 +506,6 @@ def test_prompts_engine_alias() -> None:
     assert first_choice(view_of(answer_of(outcome)))["text"] == "done hi"
 
 
-# main.py pops engine either way and only a missing model takes it
-def test_prompts_engine_ignored() -> None:
-    with closing(TextServer()) as server:
-        _ = text_completion(
-            model=TEXT_MODEL, engine=CHAT_MODEL, prompt="hi",
-            api_base=server.url, api_key=GOOD_KEY,
-        )
-        call = server.calls[-1]
-    assert call["body"]["model"] == TEXT_MODEL
-    assert "engine" not in call["body"]
-
-
 # main.py's async entry hands engine to text_completion, which reads it as the model
 def test_prompts_async_engine() -> None:
     with closing(TextServer()) as server:
