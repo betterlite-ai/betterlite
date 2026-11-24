@@ -1,10 +1,12 @@
 import asyncio
 import os
+import sys
+from types import ModuleType
 from typing import Final, Literal, TypedDict
 
 import httpx
 import litellm
-from litellm.llms.custom_httpx.http_handler import get_async_httpx_client
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy.public_endpoints.public_endpoints import (
     get_complexity_scorer_defaults,
     get_public_autorouter_presets,
@@ -19,6 +21,7 @@ from litellm.types.proxy.public_endpoints.public_endpoints import (
 from pydantic import JsonValue, TypeAdapter
 
 LOCAL_ONLY_ENV: Final = "LITELLM_LOCAL_AUTOROUTER_PRESETS"
+HTTP_HANDLER_MODULE: Final = "litellm.llms.custom_httpx.http_handler"
 
 
 class RemoteResponse(TypedDict):
@@ -62,12 +65,16 @@ FUSE: Final[TypeAdapter[FusePresetCatalog]] = TypeAdapter(FusePresetCatalog)
 ANSWER: Final[TypeAdapter[AutorouterAnswer]] = TypeAdapter(AutorouterAnswer)
 
 
-class PresetResponder:
+class PresetClient:
     def __init__(self, responses: list[RemoteResponse]) -> None:
         self.responses = responses
         self.requests: list[str] = []
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    def __call__(self, llm_provider: httpxSpecialProvider) -> AsyncHTTPHandler:
+        transport = httpx.MockTransport(self.respond)
+        return AsyncHTTPHandler(client_alias=llm_provider, transport=transport)
+
+    def respond(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(str(request.url))
         index = min(len(self.requests) - 1, len(self.responses) - 1)
         response = self.responses[index]
@@ -76,27 +83,35 @@ class PresetResponder:
         )
 
 
+class HttpHandlerModule(ModuleType):
+    get_async_httpx_client: PresetClient | None = None
+
+
 async def autorouter_answer(call: AutorouterCall) -> JsonValue:
     litellm.autorouter_presets_url = call["url"]
     if call["local_only"]:
         os.environ[LOCAL_ONLY_ENV] = "true"
     else:
         os.environ.pop(LOCAL_ONLY_ENV, None)
-    handler = get_async_httpx_client(llm_provider=httpxSpecialProvider.UI)
-    responder = PresetResponder(call["responses"])
-    client = httpx.AsyncClient(transport=httpx.MockTransport(responder))
-    handler.client = client
+    client = PresetClient(call["responses"])
+    module = HttpHandlerModule(HTTP_HANDLER_MODULE)
+    module.get_async_httpx_client = client
+    saved = sys.modules.get(HTTP_HANDLER_MODULE)
+    sys.modules[HTTP_HANDLER_MODULE] = module
     try:
         presets = await get_public_autorouter_presets()
         for _ in range(call["resolutions"] - 1):
             presets = await get_public_autorouter_presets()
     finally:
-        await client.aclose()
+        if saved is None:
+            del sys.modules[HTTP_HANDLER_MODULE]
+        else:
+            sys.modules[HTTP_HANDLER_MODULE] = saved
     records = RECORDS.validate_python(presets)
     answer: AutorouterAnswer = {
         "presets": JSON.validate_json(RECORDS.dump_json(records)),
-        "requests": len(responder.requests),
-        "urls": responder.requests,
+        "requests": len(client.requests),
+        "urls": client.requests,
     }
     return JSON.validate_json(ANSWER.dump_json(answer))
 
