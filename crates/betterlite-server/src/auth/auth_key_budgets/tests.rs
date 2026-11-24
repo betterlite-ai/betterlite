@@ -20,7 +20,7 @@ use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::auth_key_budgets::Settings;
 use betterlite_config::types::Config;
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use chrono::{DateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
@@ -90,19 +90,26 @@ fn master_context(master_key: &SecretString) -> AuthContext {
 
 struct ScriptedReader {
     spends: Mutex<Vec<Decimal>>,
+    starts: Mutex<Vec<Option<Timestamp>>>,
 }
 
 impl ScriptedReader {
     fn new(spends: Vec<Decimal>) -> Arc<Self> {
         Arc::new(Self {
             spends: Mutex::new(spends),
+            starts: Mutex::new(Vec::new()),
         })
+    }
+
+    fn starts(&self) -> Vec<Option<Timestamp>> {
+        self.starts.lock().unwrap().clone()
     }
 }
 
 #[async_trait]
 impl SpendReader for ScriptedReader {
-    async fn read_spend(&self, _query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
+    async fn read_spend(&self, query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
+        self.starts.lock().unwrap().push(query.window.start);
         let mut spends = self.spends.lock().unwrap();
         assert!(!spends.is_empty(), "the reader ran out of scripted spends");
         Ok(spends.remove(0))
@@ -168,6 +175,11 @@ fn stage_is_registered() {
             .len(),
         1
     );
+
+    // the rule's debug output names the type and never the key it resolved
+    let debugged = rule(r#"{"token":"sk-debug","spend":1,"max_budget":10}"#);
+    assert!(format!("{debugged:?}").contains("KeyBudgetRule"));
+    assert!(!format!("{debugged:?}").contains("sk-debug"));
 
     let master_key = SecretString::from(MASTER_KEY.to_owned());
     let budget_stage = KeyBudgetStageInput {
@@ -362,6 +374,21 @@ async fn soft_alert_passes_without_denial() {
     let alerts = recorder.take();
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].kind, BudgetAlertKind::SoftBudget);
+}
+
+#[tokio::test]
+async fn missing_duration_parser_leaves_the_start_unset() {
+    let reader = ScriptedReader::new(vec![Decimal::from(1_i64)]);
+    let windowed = Arc::new(KeyBudgetRule {
+        reader: Some(Arc::clone(&reader)),
+        ..rule(
+            r#"{"token":"sk-no-duration","spend":0,"budget_limits":[{"budget_duration":"1m","max_budget":5}]}"#,
+        )
+    });
+    let (status, _body, reached) = run_request(&config_with_master_key(), windowed).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(reached);
+    assert_eq!(reader.starts(), vec![None]);
 }
 
 #[tokio::test]
