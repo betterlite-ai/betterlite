@@ -129,7 +129,7 @@ impl From<&ClientError> for A2AError {
 
 // httpx applies the configured timeout to connect and every read, and the pool's TLS policy carries user agent and ALPN
 #[rustfmt::skip]
-fn effective_client(pool: &ProxiedClient, tls: &TlsPolicy, timeout: Duration) -> Result<ProxiedClient, A2AError> {
+pub fn effective_client(pool: &ProxiedClient, tls: &TlsPolicy, timeout: Duration) -> Result<ProxiedClient, A2AError> {
     let limits = TransportLimits { connect_timeout: timeout, read_timeout: timeout, ..pool.limits };
     let builder = apply_policy(base_builder(), tls).map_err(|source| A2AError::Base { message: format!("the A2A TLS policy could not be applied: {source}"), model: None, debug_info: None, retries: RetryCounts::default() })?;
     let mut client = ProxiedClient::build(builder, &pool.policy, limits).map_err(|source| A2AError::Base { message: format!("the A2A HTTP client could not be built: {source}"), model: None, debug_info: None, retries: RetryCounts::default() })?;
@@ -140,7 +140,7 @@ fn effective_client(pool: &ProxiedClient, tls: &TlsPolicy, timeout: Duration) ->
 
 // LiteLLM's DEFAULT_A2A_AGENT_TIMEOUT is read from the environment when the caller gives no timeout
 #[rustfmt::skip]
-fn resolve_timeout(environment: &(dyn EnvironmentLookup + Sync), configured: Option<Duration>) -> Result<Duration, A2AError> {
+pub fn resolve_timeout(environment: &(dyn EnvironmentLookup + Sync), configured: Option<Duration>) -> Result<Duration, A2AError> {
     if let Some(timeout) = configured { return Ok(timeout); }
     let Some(raw) = environment.lookup(A2A_TIMEOUT_ENV).filter(|raw| !raw.is_empty()) else {
         return Ok(DEFAULT_A2A_AGENT_TIMEOUT);
