@@ -197,13 +197,7 @@ async fn a_failed_claim_queues_the_row_and_charges_on() {
 
 async fn log_dependent_counts(disable_spend_logs: Option<bool>) -> (usize, usize, usize) {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let settings = SpendWriterSettings {
-        disable_spend_updates: false,
-        disable_spend_logs,
-        max_budget: Decimal::ZERO,
-        proxy_budget_name: "litellm-proxy-budget".to_owned(),
-    };
-    let writer = harness.writer(settings);
+    let writer = harness.writer(claim_settings(disable_spend_logs));
     let names = vec!["lookup".to_owned()];
     let mut request = sample_request();
     request.response_names = &names;
