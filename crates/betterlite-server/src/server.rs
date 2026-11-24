@@ -214,12 +214,12 @@ pub(crate) fn application(
     };
     let application = stack.wrap(stacked);
     let prefixed = RootPaths::from_settings(&config.sections.request_root_paths);
-    let rooted = match prefixed {
+    let root_wrapped = match prefixed {
         Some(paths) => paths.wrap(application),
         None => application,
     };
     let scalar_root = config.sections.request_root_paths.server_root_path.clone();
-    Ok(native_compaction::install(rooted, scalar_root))
+    Ok(native_compaction::install(root_wrapped, scalar_root))
 }
 // the OpenAI-shaped error body every route renders, and the projections that fill it
 #[derive(serde::Serialize)]

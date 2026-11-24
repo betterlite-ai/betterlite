@@ -48,6 +48,14 @@ struct Shared {
     seen: Mutex<Vec<Seen>>,
 }
 
+impl Shared {
+    fn recorded(&self) -> Seen {
+        let mut seen = self.seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        seen.pop().expect("the child request was recorded")
+    }
+}
+
 #[derive(Default)]
 struct TargetRecorder {
     targets: Mutex<Vec<Option<Arc<LoopbackTarget>>>>,
@@ -151,12 +159,14 @@ async fn target_a_request_through_install_carries_the_target() {
     let installed = install(probe_router(Arc::clone(&recorder)), "/gateway".to_owned());
     let response = installed.oneshot(probe()).await.unwrap();
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    let mut targets = recorder.targets.lock().unwrap();
-    assert_eq!(targets.len(), 1);
-    let target = targets
-        .pop()
-        .expect("the probe request ran")
-        .expect("a request through install carries the target");
+    let target = {
+        let mut targets = recorder.targets.lock().unwrap();
+        assert_eq!(targets.len(), 1);
+        targets
+            .pop()
+            .expect("the probe request ran")
+            .expect("a request through install carries the target")
+    };
     assert_eq!(target.scalar_root, "/gateway");
 }
 
@@ -279,9 +289,7 @@ async fn executor_the_child_reaches_the_protocol_route_with_the_parent_auth_and_
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let seen = shared.seen.lock().unwrap();
-    assert_eq!(seen.len(), 1);
-    let child = seen.first().unwrap();
+    let child = shared.recorded();
     assert_eq!(child.path, path);
     assert_eq!(child.authorization.as_deref(), Some(PARENT_AUTH));
     assert_eq!(child.peer, Some(peer));
@@ -309,9 +317,7 @@ async fn executor_the_child_passes_a_server_root_paths_prefix() {
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let seen = shared.seen.lock().unwrap();
-    assert_eq!(seen.len(), 1);
-    let child = seen.first().unwrap();
+    let child = shared.recorded();
     assert_eq!(child.path, "/v1/chat/completions");
     assert_eq!(
         child.original.as_deref(),
@@ -341,8 +347,7 @@ async fn executor_the_child_uses_the_scalar_root_path_when_no_prefix_matches() {
         .unwrap();
     let response = app.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let seen = shared.seen.lock().unwrap();
-    let child = seen.first().expect("the child request was recorded");
+    let child = shared.recorded();
     assert_eq!(child.path, "/v1/chat/completions");
     assert_eq!(
         child.original.as_deref(),

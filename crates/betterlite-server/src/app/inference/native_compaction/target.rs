@@ -10,7 +10,6 @@ pub struct LoopbackTarget {
     pub(crate) scalar_root: String,
 }
 
-#[must_use]
 pub fn install(app: Router, scalar_root: String) -> Router {
     // the target is the stack from before this layer, so a child request carries no target of its own
     let target = Arc::new(LoopbackTarget {
