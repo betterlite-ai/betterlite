@@ -166,7 +166,6 @@ impl ErrorPayload {
     }
 
     pub(crate) fn from_a2a(error: &A2AError) -> Self {
-        let url = error.url().map(str::to_owned);
         match error {
             A2AError::Base {
                 message,
@@ -184,14 +183,14 @@ impl ErrorPayload {
                 retries,
                 ..
             } => {
-                let payload = Self::connection(message.to_owned(), url);
+                let payload = Self::connection(message.to_owned(), error.url().map(str::to_owned));
                 Self::detailed(payload, model.as_deref(), debug_info.as_deref(), retries)
             }
             A2AError::AgentCard {
                 message,
                 status_code,
                 ..
-            } => Self::agent_card(message, url, *status_code),
+            } => Self::agent_card(message, error.url().map(str::to_owned), *status_code),
             A2AError::AgentCardDiscovery {
                 base_url,
                 attempts,
