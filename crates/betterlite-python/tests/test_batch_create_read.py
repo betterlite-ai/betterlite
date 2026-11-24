@@ -1,6 +1,7 @@
 import asyncio
 import inspect
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable
+from typing import Final
 
 import pytest
 from batch_server import (
@@ -19,9 +20,11 @@ from batch_server import (
     NOT_FOUND,
     PROVIDER_ENDPOINT,
     WINDOW,
+    BatchDump,
     BatchServer,
     parameter_rows,
 )
+from pydantic import JsonValue, TypeAdapter
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeBatchError
@@ -33,10 +36,10 @@ from betterlite.batches._create_retrieve import (
     retrieve_batch,
 )
 from betterlite.exceptions import NotFoundError
-from betterlite.types.utils.base import InitValue
 
 # the reference call and ours, one each, per comparison
 CALLS_PER_COMPARISON = 2
+HIDDEN: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
 def made_batch(result: LiteLLMBatch | Awaitable[LiteLLMBatch]) -> LiteLLMBatch:
@@ -53,12 +56,10 @@ async def awaited_batch(pending: Awaitable[LiteLLMBatch]) -> LiteLLMBatch:
     return batch
 
 
-def hidden_of(value: InitValue) -> dict[str, InitValue]:
-    match value:
-        case Mapping():
-            return dict(value)
-        case object():
-            raise AssertionError("the batch carries no hidden parameters")
+def hidden_of(response: LiteLLMBatch | BatchDump) -> dict[str, JsonValue]:
+    private: dict[str, JsonValue] | None = response.__pydantic_private__
+    assert private is not None
+    return HIDDEN.validate_python(private["_hidden_params"])
 
 
 def native_cause(error: BaseException) -> NativeBatchError:
@@ -95,7 +96,7 @@ def test_create_matches_litellm() -> None:
             completion_window=WINDOW,
             endpoint=ENDPOINT,
             input_file_id=INPUT_FILE_ID,
-            metadata=METADATA,
+            metadata=dict(METADATA),
             model=MODEL,
             model_info=MODEL_INFO,
             api_base=server.url,
@@ -124,8 +125,8 @@ def test_create_matches_litellm() -> None:
     assert ours_call["body"].get("input_file_id") == INPUT_FILE_ID
     assert ours_call["body"].get("metadata") == METADATA
     assert ours_call["body"] == reference_call["body"]
-    hidden = hidden_of(made["_hidden_params"])
-    reference_hidden = hidden_of(reference["_hidden_params"])
+    hidden = hidden_of(made)
+    reference_hidden = hidden_of(reference)
     assert hidden["llm_provider"] == "openai"
     assert hidden["model_id"] == DEPLOYMENT_ID
     assert hidden["litellm_model_name"] == MODEL
@@ -135,7 +136,7 @@ def test_create_matches_litellm() -> None:
 def test_retrieve_matches_litellm() -> None:
     with BatchServer() as server:
         reference = LITELLM.retrieve_batch(
-            batch_id=BATCH_ID, metadata=METADATA, api_base=server.url, api_key=GOOD_KEY,
+            batch_id=BATCH_ID, metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY,
         )
         found = made_batch(
             retrieve_batch(
@@ -148,8 +149,8 @@ def test_retrieve_matches_litellm() -> None:
     assert found.status == "in_progress"
     assert ours_call["path"] == f"{BATCH_PATH}/{BATCH_ID}"
     assert reference_call["path"] == f"{BATCH_PATH}/{BATCH_ID}"
-    hidden = hidden_of(found["_hidden_params"])
-    reference_hidden = hidden_of(reference["_hidden_params"])
+    hidden = hidden_of(found)
+    reference_hidden = hidden_of(reference)
     assert hidden["llm_provider"] == "openai"
     assert hidden["model_id"] is None
     assert hidden["litellm_model_name"] is None
@@ -160,7 +161,7 @@ def test_retrieve_keeps_endpoint() -> None:
     # a proxy may answer with an endpoint outside BatchPath, and both sides hand it back unchanged
     with BatchServer(endpoint=PROVIDER_ENDPOINT) as server:
         reference = LITELLM.retrieve_batch(
-            batch_id=BATCH_ID, metadata=METADATA, api_base=server.url, api_key=GOOD_KEY,
+            batch_id=BATCH_ID, metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY,
         )
         found = made_batch(
             retrieve_batch(

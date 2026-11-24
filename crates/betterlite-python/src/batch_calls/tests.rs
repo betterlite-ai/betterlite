@@ -205,10 +205,8 @@ fn retrieve_with_answers_the_batch_and_hidden_params() {
     assert_eq!(view.hidden_params.llm_provider, "openai");
     assert_eq!(view.hidden_params.model_id, None);
     assert_eq!(view.hidden_params.litellm_model_name, None);
-    assert_eq!(
-        view.hidden_params.api_base.as_deref(),
-        Some("https://api.openai.com")
-    );
+    // retrieve carries no model and the default provider, so get_api_base reports null
+    assert_eq!(view.hidden_params.api_base, None);
 }
 
 #[test]

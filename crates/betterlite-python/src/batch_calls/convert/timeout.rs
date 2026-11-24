@@ -28,8 +28,7 @@ fn shape(value: &JsonValue, refusal: &'static str) -> Result<Shape, ConvertError
         JsonValue::Object(_) => {
             let text =
                 serde_json::to_string(value).map_err(|source| ConvertError::Write { source })?;
-            let http: HttpTimeout = serde_json::from_str(&text)
-                .map_err(|source| ConvertError::Timeout(source.to_string()))?;
+            let http: HttpTimeout = serde_json::from_str(&text).map_err(ConvertError::Phases)?;
             Ok(Shape::Phases(http))
         }
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) => {

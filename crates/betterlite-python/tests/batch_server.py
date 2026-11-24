@@ -137,6 +137,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class BatchDump(Protocol):
+    __pydantic_private__: dict[str, JsonValue] | None
     def model_dump(self) -> dict[str, JsonValue]: ...
     def __getitem__(self, key: str) -> JsonValue: ...
 

@@ -127,19 +127,19 @@ impl HiddenParams {
             // LiteLLM takes model_id from model_info.id, which the Python facade writes into this key after the call
             model_id: None,
             litellm_model_name: model.map(str::to_owned),
-            api_base: hidden_api_base(provider, given_api_base),
+            api_base: hidden_api_base(provider, model, given_api_base),
         }
     }
 }
 
 // set_hidden_params reports get_api_base over the call's own kwargs, never the deployment's resolved base
-fn hidden_api_base(provider: &str, given: Option<&str>) -> Option<String> {
+fn hidden_api_base(provider: &str, model: Option<&str>, given: Option<&str>) -> Option<String> {
     if let Some(api_base) = given {
         return Some(api_base.to_owned());
     }
-    match provider {
-        "openai" => Some(String::from(OPENAI_DEFAULT_BASE)),
-        "xai" => Some(String::from(XAI_DEFAULT_BASE)),
+    match (provider, model) {
+        ("openai", Some(_)) => Some(String::from(OPENAI_DEFAULT_BASE)),
+        ("xai", Some(_)) => Some(String::from(XAI_DEFAULT_BASE)),
         _ => None,
     }
 }
@@ -167,6 +167,8 @@ pub(crate) enum ConvertError {
     },
     #[error("the batch payload's optional_params.timeout is not usable: {0}")]
     Timeout(String),
+    #[error("the batch payload's optional_params.timeout is not usable: {0}")]
+    Phases(#[source] serde_json::Error),
     #[error("the batch payload's optional_params.timeout is not usable: expected {0}")]
     Shapes(&'static str),
 }

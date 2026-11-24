@@ -232,7 +232,8 @@ fn request_create_payload_refuses_a_bad_timeout() {
     assert!(wrong_error.to_string().contains("expected f64"));
     let huge = r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","optional_params":{"timeout":1e999}}"#;
     let huge_error = create_payload(huge).unwrap_err();
-    assert!(huge_error.to_string().contains("1e999"));
+    // serde_json stores the exponent with a sign, so the message names 1e+999
+    assert!(huge_error.to_string().contains("1e+999"));
 }
 
 #[test]
@@ -569,7 +570,7 @@ fn request_create_hidden_params_take_the_callers_api_base() {
 #[test]
 fn request_create_hidden_params_default_the_provider_base() {
     let openai: BatchProviderCreateInput = create_payload(
-        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"openai"}"#,
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"openai","model":"gpt-4o"}"#,
     )
     .unwrap();
     let hidden = HiddenParams::new(
@@ -578,8 +579,19 @@ fn request_create_hidden_params_default_the_provider_base() {
         openai.optional_params.api_base.as_deref(),
     );
     assert_eq!(hidden.api_base.as_deref(), Some("https://api.openai.com"));
+    // with no model and the default provider, get_api_base resolves nothing and reports null
+    let unmodeled: BatchProviderCreateInput = create_payload(
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"openai"}"#,
+    )
+    .unwrap();
+    let unmodeled_hidden = HiddenParams::new(
+        unmodeled.custom_llm_provider.as_str(),
+        unmodeled.model.as_deref(),
+        unmodeled.optional_params.api_base.as_deref(),
+    );
+    assert_eq!(unmodeled_hidden.api_base, None);
     let xai: BatchProviderCreateInput = create_payload(
-        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"xai"}"#,
+        r#"{"completion_window":"24h","endpoint":"/v1/chat/completions","input_file_id":"f","custom_llm_provider":"xai","model":"xai/grok-2"}"#,
     )
     .unwrap();
     let xai_hidden = HiddenParams::new(
@@ -619,7 +631,21 @@ fn request_read_hidden_params_take_the_callers_api_base() {
 
 #[test]
 fn request_read_hidden_params_default_the_provider_base() {
-    let xai = read_call("xai", None);
+    let openai = read_call("openai", None);
+    let openai_hidden = HiddenParams::new(
+        openai.provider.name(),
+        openai.model.as_deref(),
+        openai.optional_params.api_base.as_deref(),
+    );
+    assert_eq!(openai_hidden.api_base, None);
+    let unmodeled_xai = read_call("xai", None);
+    let unmodeled_xai_hidden = HiddenParams::new(
+        unmodeled_xai.provider.name(),
+        unmodeled_xai.model.as_deref(),
+        unmodeled_xai.optional_params.api_base.as_deref(),
+    );
+    assert_eq!(unmodeled_xai_hidden.api_base, None);
+    let xai = read_call("xai", Some("xai/grok-2"));
     let hidden = HiddenParams::new(
         xai.provider.name(),
         xai.model.as_deref(),
