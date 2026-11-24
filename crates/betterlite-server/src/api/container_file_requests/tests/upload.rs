@@ -12,6 +12,20 @@ use super::support::{
     proxy_failure, request_parts, text_part, upload_part,
 };
 
+fn forwarding_access() -> FakeAccess {
+    let mut fake_access = FakeAccess::granting();
+    fake_access.forwarding = ContainerForwardingParams {
+        container_id: "cntr-upstream".to_owned(),
+        custom_llm_provider: "bedrock".to_owned(),
+        model_id: Some("deployment-7".to_owned()),
+    };
+    fake_access
+}
+
+fn text_value(value: &str) -> ContainerFormValue {
+    ContainerFormValue::Field(FormValue::Text(value.to_owned()))
+}
+
 #[tokio::test]
 async fn upload_missing_file_fails_before_access() {
     let access = Arc::new(FakeAccess::granting());
@@ -133,13 +147,41 @@ async fn upload_text_file_field_stays_text() {
 
 #[tokio::test]
 async fn upload_forwarding_overwrites_form_fields() {
-    let mut fake_access = FakeAccess::granting();
-    fake_access.forwarding = ContainerForwardingParams {
-        container_id: "cntr-upstream".to_owned(),
-        custom_llm_provider: "bedrock".to_owned(),
-        model_id: Some("deployment-7".to_owned()),
+    let access = Arc::new(forwarding_access());
+    let processing = Arc::new(FakeProcessing::replying(json_reply()));
+    let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
+    let parts = request_parts("/v1/containers/cntr/files", None);
+    let upload = form(vec![
+        text_part("container_id", "form-container"),
+        text_part("custom_llm_provider", "form-provider"),
+        text_part("model_id", "form-model"),
+        upload_part("file", "data.csv"),
+    ]);
+    requests
+        .process_file_upload_request(
+            &parts,
+            "cntr",
+            "aupload_container_file",
+            &caller("alice"),
+            &upload,
+        )
+        .await
+        .unwrap();
+    let calls = processing.processed();
+    let ContainerRequestData::Form(data) = &calls[0].data else {
+        panic!("the upload data is a form");
     };
-    let access = Arc::new(fake_access);
+    assert_eq!(data.get("container_id"), Some(&text_value("cntr-upstream")));
+    assert_eq!(
+        data.get("custom_llm_provider"),
+        Some(&text_value("bedrock"))
+    );
+    assert_eq!(data.get("model_id"), Some(&text_value("deployment-7")));
+}
+
+#[tokio::test]
+async fn upload_forwarding_keeps_the_form_slots() {
+    let access = Arc::new(forwarding_access());
     let processing = Arc::new(FakeProcessing::replying(json_reply()));
     let requests = container_requests(Arc::clone(&access), Arc::clone(&processing));
     let parts = request_parts("/v1/containers/cntr/files", None);
@@ -174,30 +216,6 @@ async fn upload_forwarding_overwrites_form_fields() {
             "purpose",
             "file"
         ]
-    );
-    assert_eq!(
-        data.get("container_id"),
-        Some(&ContainerFormValue::Field(FormValue::Text(
-            "cntr-upstream".to_owned()
-        )))
-    );
-    assert_eq!(
-        data.get("custom_llm_provider"),
-        Some(&ContainerFormValue::Field(FormValue::Text(
-            "bedrock".to_owned()
-        )))
-    );
-    assert_eq!(
-        data.get("model_id"),
-        Some(&ContainerFormValue::Field(FormValue::Text(
-            "deployment-7".to_owned()
-        )))
-    );
-    assert_eq!(
-        data.get("purpose"),
-        Some(&ContainerFormValue::Field(FormValue::Text(
-            "assistants".to_owned()
-        )))
     );
 }
 

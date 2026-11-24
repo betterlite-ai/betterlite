@@ -15,6 +15,23 @@ use super::support::{
     file_upload_form, json_reply, request_parts,
 };
 
+fn native_adapter() -> OwnershipAccess<FakeObjects> {
+    let objects = FakeObjects::default();
+    objects.rows.lock().unwrap().insert(
+        "container:openai:cntr_native".to_owned(),
+        ContainerOwnerRow {
+            unified_object_id: None,
+            model_object_id: "container:openai:cntr_native".to_owned(),
+            file_purpose: "container".to_owned(),
+            created_by: Some("alice".to_owned()),
+        },
+    );
+    let clock: Clock = Arc::new(|| 1_000.0_f64);
+    OwnershipAccess {
+        ownership: ContainerOwnership::new(objects, clock).unwrap(),
+    }
+}
+
 #[tokio::test]
 async fn access_check_runs_before_forwarding_with_the_path_id() {
     let access = Arc::new(FakeAccess::granting());
@@ -135,20 +152,7 @@ async fn access_forwarding_failure_returns_as_is() {
 
 #[tokio::test]
 async fn access_adapter_checks_b3362_ownership() {
-    let objects = FakeObjects::default();
-    objects.rows.lock().unwrap().insert(
-        "container:openai:cntr_native".to_owned(),
-        ContainerOwnerRow {
-            unified_object_id: None,
-            model_object_id: "container:openai:cntr_native".to_owned(),
-            file_purpose: "container".to_owned(),
-            created_by: Some("alice".to_owned()),
-        },
-    );
-    let clock: Clock = Arc::new(|| 1_000.0_f64);
-    let adapter = OwnershipAccess {
-        ownership: ContainerOwnership::new(objects, clock).unwrap(),
-    };
+    let adapter = native_adapter();
     let identity = adapter
         .check_access("cntr_native", &caller("alice"), "openai")
         .await
