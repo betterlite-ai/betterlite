@@ -108,7 +108,13 @@ where
                 over_limit,
                 data,
                 batch_usage,
-            } => self.enqueued_rejection(over_limit, data, batch_usage),
+            } => {
+                let error =
+                    rejections::enqueued_error(over_limit, data, batch_usage, &self.attribution())?;
+                Ok(BatchLimitCounterAnswer::RaiseEnqueuedLimitError {
+                    error: Box::new(error),
+                })
+            }
             BatchLimitCounterCall::RaiseRateLimitError {
                 status,
                 descriptors,
@@ -138,7 +144,8 @@ where
                     .await
             }
             BatchLimitCounterCall::ReadTpdWindowStart { status } => {
-                self.read_window_start(status).await
+                let window_start = self.tpd_window_start(status).await?;
+                Ok(BatchLimitCounterAnswer::ReadTpdWindowStart { window_start })
             }
             BatchLimitCounterCall::BuildTpdRefundOps {
                 descriptors,

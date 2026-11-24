@@ -51,22 +51,13 @@ where
                     scope: over_limit.scope,
                     enqueued: over_limit.enqueued,
                 };
-                self.enqueued_rejection(&reached, data, batch_usage)
+                let error =
+                    rejections::enqueued_error(&reached, data, batch_usage, &self.attribution())?;
+                Ok(BatchLimitCounterAnswer::RaiseEnqueuedLimitError {
+                    error: Box::new(error),
+                })
             }
         }
-    }
-
-    // _raise_enqueued_limit_error itself: the callable as a direct case
-    pub(super) fn enqueued_rejection(
-        &self,
-        over_limit: &BatchEnqueuedLimitExceeded,
-        data: &RequestData,
-        batch_usage: &BatchFileUsage,
-    ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
-        let error = rejections::enqueued_error(over_limit, data, batch_usage, &self.attribution())?;
-        Ok(BatchLimitCounterAnswer::RaiseEnqueuedLimitError {
-            error: Box::new(error),
-        })
     }
 
     // _raise_rate_limit_error itself: the callable as a direct case
@@ -147,15 +138,7 @@ where
     }
 
     // _read_tpd_window_start: only a daily counter has a window key, and a value float cannot hold is absent
-    pub(super) async fn read_window_start(
-        &self,
-        status: &BatchCounterStatus,
-    ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
-        let window_start = self.tpd_window_start(status).await?;
-        Ok(BatchLimitCounterAnswer::ReadTpdWindowStart { window_start })
-    }
-
-    async fn tpd_window_start(
+    pub(super) async fn tpd_window_start(
         &self,
         status: &BatchCounterStatus,
     ) -> Result<Option<i64>, CountingFailure<Limiter, Store, Cache>> {
