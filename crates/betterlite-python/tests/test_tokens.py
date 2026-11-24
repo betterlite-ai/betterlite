@@ -1,21 +1,12 @@
 import asyncio
+import importlib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, Protocol
 
 import litellm
 import pytest
-from litellm.litellm_core_utils.token_counter import (
-    calculate_img_tokens,
-    get_image_dimensions,
-    get_image_type,
-    high_detail_image_token_upper_bound,
-    openai_tokenizer_encoding_name,
-    resize_image_high_res,
-    uses_legacy_message_accounting,
-)
-from litellm.litellm_core_utils.tokenizer import HuggingFace
-from litellm.types.utils import Message as LiteLLMMessage
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue
 
 import betterlite
 from betterlite import _native
@@ -91,15 +82,35 @@ IMAGE_MODES: Final[tuple[Literal["low", "high", "auto"], ...]] = ("low", "high",
 RESIZE_CASES: Final[list[tuple[int, int]]] = [(3000, 1000), (768, 768), (1000, 3000), (2000, 500)]
 
 
-class LiteLLMTokenizer(TypedDict):
-    type: str
-    tokenizer: HuggingFace
+# LiteLLM leaves these signatures open or unstubbed, so the calls pass through typed views.
+
+
+class TheirValues(Protocol):
+    def __getattr__(self, name: str) -> Callable[..., JsonValue]: ...
+
+
+class TheirSizes(Protocol):
+    def __getattr__(self, name: str) -> Callable[..., tuple[int, int]]: ...
+
+
+class TheirCodec(Protocol):
+    def __getattr__(self, name: str) -> Callable[..., list[int]]: ...
+
+
+class TheirMessages(Protocol):
+    def __getattr__(self, name: str) -> Callable[..., BaseModel]: ...
+
+
+their_helpers: TheirValues = importlib.import_module("litellm.litellm_core_utils.token_counter")
+their_sizes: TheirSizes = importlib.import_module("litellm.litellm_core_utils.token_counter")
+their_codec: TheirCodec = importlib.import_module("litellm.utils")
+their_messages: TheirMessages = importlib.import_module("litellm.types.utils")
 
 
 def test_counter_plain_text() -> None:
     for model in MODELS:
         ours = betterlite.token_counter(model=model, text=TEXT)
-        theirs: int = litellm.token_counter(model=model, text=TEXT)
+        theirs = their_helpers.token_counter(model=model, text=TEXT)
         assert ours == theirs, model
         assert ours == len(TEXT_IDS)
 
@@ -107,7 +118,7 @@ def test_counter_plain_text() -> None:
 def test_counter_list_text() -> None:
     parts = ["hello ", "world"]
     ours = betterlite.token_counter(model="gpt-4o", text=parts)
-    theirs: int = litellm.token_counter(model="gpt-4o", text=parts)
+    theirs = their_helpers.token_counter(model="gpt-4o", text=parts)
     assert ours == theirs
     assert ours == len(TEXT_IDS)
 
@@ -115,28 +126,30 @@ def test_counter_list_text() -> None:
 @pytest.mark.parametrize("message", ROLE_MESSAGES)
 def test_counter_message_roles(message: dict[str, JsonValue]) -> None:
     ours = betterlite.token_counter(model="gpt-4o", messages=[message])
-    theirs: int = litellm.token_counter(model="gpt-4o", messages=[message])
+    theirs = their_helpers.token_counter(model="gpt-4o", messages=[message])
     assert ours == theirs
 
 
 def test_counter_message_objects() -> None:
     ours = betterlite.token_counter(model="gpt-4o", messages=[Message(role="user", content=TEXT)])
-    theirs: int = litellm.token_counter(
-        model="gpt-4o", messages=[LiteLLMMessage(role="user", content=TEXT)]
+    theirs = their_helpers.token_counter(
+        model="gpt-4o", messages=[their_messages.Message(role="user", content=TEXT)]
     )
     assert ours == theirs
 
 
 def test_counter_tool_list() -> None:
     ours = betterlite.token_counter(model="gpt-4o", messages=PLAIN_MESSAGES, tools=TOOLS)
-    theirs: int = litellm.token_counter(model="gpt-4o", messages=PLAIN_MESSAGES, tools=TOOLS)
+    theirs = their_helpers.token_counter(
+        model="gpt-4o", messages=PLAIN_MESSAGES, tools=TOOLS
+    )
     assert ours == theirs
 
 
 @pytest.mark.parametrize("choice", TOOL_CHOICES)
 def test_counter_tool_choice(choice: dict[str, JsonValue] | str) -> None:
     ours = betterlite.token_counter(model="gpt-4o", messages=PLAIN_MESSAGES, tool_choice=choice)
-    theirs: int = litellm.token_counter(
+    theirs = their_helpers.token_counter(
         model="gpt-4o", messages=PLAIN_MESSAGES, tool_choice=choice
     )
     assert ours == theirs, choice
@@ -150,7 +163,7 @@ def test_counter_response_tokens() -> None:
             count_response_tokens=flag,
             tools=TOOLS,
         )
-        theirs: int = litellm.token_counter(
+        theirs = their_helpers.token_counter(
             model="gpt-4o",
             messages=PLAIN_MESSAGES,
             count_response_tokens=flag,
@@ -161,25 +174,25 @@ def test_counter_response_tokens() -> None:
 
 def test_counter_long_text() -> None:
     ours = betterlite.token_counter(model="gpt-4o", text=LONG_TEXT)
-    theirs: int = litellm.token_counter(model="gpt-4o", text=LONG_TEXT)
+    theirs = their_helpers.token_counter(model="gpt-4o", text=LONG_TEXT)
     assert ours == theirs
     assert ours > LONG_TEXT_MIN_TOKENS
 
 
 def test_counter_custom_tokenizer() -> None:
-    their_tokenizer: LiteLLMTokenizer = litellm.create_tokenizer(WORD_LEVEL)
+    their_tokenizer = litellm.create_tokenizer(WORD_LEVEL)
     ours = betterlite.token_counter(
         text=TEXT,
         custom_tokenizer=betterlite.create_tokenizer(WORD_LEVEL),
     )
-    their_count: int = litellm.token_counter(text=TEXT, custom_tokenizer=their_tokenizer)
+    their_count = their_helpers.token_counter(text=TEXT, custom_tokenizer=their_tokenizer)
     assert ours == their_count
     assert ours == len(TEXT.split())
 
 
 def test_counter_unknown_type() -> None:
     loaded = betterlite.create_tokenizer(WORD_LEVEL)
-    their_tokenizer: LiteLLMTokenizer = litellm.create_tokenizer(WORD_LEVEL)
+    their_tokenizer = litellm.create_tokenizer(WORD_LEVEL)
     unsupported: betterlite.CustomTokenizer = {
         "type": "nonsense",
         "tokenizer": loaded["tokenizer"],
@@ -187,7 +200,7 @@ def test_counter_unknown_type() -> None:
     with pytest.raises(ValueError, match="Unsupported tokenizer type"):
         betterlite.token_counter(text=TEXT, custom_tokenizer=unsupported)
     with pytest.raises(ValueError, match="Unsupported tokenizer type"):
-        litellm.token_counter(
+        their_helpers.token_counter(
             text=TEXT,
             custom_tokenizer={"type": "nonsense", "tokenizer": their_tokenizer["tokenizer"]},
         )
@@ -208,7 +221,7 @@ def test_counter_disabled() -> None:
     litellm.disable_token_counter = True
     try:
         ours = betterlite.token_counter(text=TEXT)
-        theirs: int = litellm.token_counter(text=TEXT)
+        theirs = their_helpers.token_counter(text=TEXT)
         assert ours == theirs == 0
     finally:
         betterlite.disable_token_counter = False
@@ -219,11 +232,11 @@ def test_counter_value_errors() -> None:
     with pytest.raises(ValueError, match="text and messages cannot both be set"):
         betterlite.token_counter(text=TEXT, messages=PLAIN_MESSAGES)
     with pytest.raises(ValueError, match="text and messages cannot both be set"):
-        litellm.token_counter(text=TEXT, messages=PLAIN_MESSAGES)
+        their_helpers.token_counter(text=TEXT, messages=PLAIN_MESSAGES)
     with pytest.raises(ValueError, match="Either text or messages must be provided"):
         betterlite.token_counter()
     with pytest.raises(ValueError, match="Either text or messages must be provided"):
-        litellm.token_counter()
+        their_helpers.token_counter()
     with pytest.raises(
         ValueError, match="tools or tool_choice cannot be set if using text"
     ):
@@ -231,19 +244,19 @@ def test_counter_value_errors() -> None:
     with pytest.raises(
         ValueError, match="tools or tool_choice cannot be set if using text"
     ):
-        litellm.token_counter(text=TEXT, tools=TOOLS)
+        their_helpers.token_counter(text=TEXT, tools=TOOLS)
 
 
 def test_counter_encoding_name() -> None:
     for model in (*MODELS, "gpt-4"):
         ours = betterlite.openai_tokenizer_encoding_name(model)
-        assert ours == openai_tokenizer_encoding_name(model), model
+        assert ours == their_helpers.openai_tokenizer_encoding_name(model), model
 
 
 def test_counter_legacy_accounting() -> None:
     for model in RUNTIME_MODELS:
         ours = betterlite.uses_legacy_message_accounting(model)
-        assert ours == uses_legacy_message_accounting(model), model
+        assert ours == their_helpers.uses_legacy_message_accounting(model), model
 
 
 def test_counter_offload() -> None:
@@ -254,7 +267,7 @@ def test_counter_offload() -> None:
 
 def test_codec_default_encoding() -> None:
     ours = betterlite.encode(text=TEXT)
-    their_ids: list[int] = litellm.encode(text=TEXT)
+    their_ids = their_codec.encode(text=TEXT)
     assert ours == their_ids
     assert ours == TEXT_IDS
     their_text: str = litellm.decode(tokens=TEXT_IDS)
@@ -263,7 +276,7 @@ def test_codec_default_encoding() -> None:
 
 def test_codec_ignores_model() -> None:
     ours = betterlite.encode(model="gpt-4o", text=TEXT)
-    their_ids: list[int] = litellm.encode(model="gpt-4o", text=TEXT)
+    their_ids = their_codec.encode(model="gpt-4o", text=TEXT)
     assert ours == their_ids
     assert ours == TEXT_IDS
 
@@ -277,9 +290,9 @@ def test_codec_ignores_skip_flag() -> None:
 
 def test_codec_custom_round_trip() -> None:
     tokenizer = betterlite.create_tokenizer(WORD_LEVEL)
-    their_tokenizer: LiteLLMTokenizer = litellm.create_tokenizer(WORD_LEVEL)
+    their_tokenizer = litellm.create_tokenizer(WORD_LEVEL)
     ours = betterlite.encode(text=TEXT, custom_tokenizer=tokenizer)
-    their_ids: list[int] = litellm.encode(text=TEXT, custom_tokenizer=their_tokenizer)
+    their_ids = their_codec.encode(text=TEXT, custom_tokenizer=their_tokenizer)
     assert ours == their_ids
     assert betterlite.decode(tokens=ours, custom_tokenizer=tokenizer) == TEXT
 
@@ -302,13 +315,14 @@ def test_codec_offline_hub(
 
 def test_image_type() -> None:
     for header, expected in HEADERS:
-        assert betterlite.get_image_type(header) == get_image_type(header) == expected
+        theirs = their_helpers.get_image_type(header)
+        assert betterlite.get_image_type(header) == theirs == expected
 
 
 def test_image_dimensions() -> None:
-    theirs: tuple[int, int] = get_image_dimensions(PNG_DATA)
+    theirs = their_sizes.get_image_dimensions(PNG_DATA)
     assert betterlite.get_image_dimensions(PNG_DATA) == theirs == PNG_SIZE
-    gif_theirs: tuple[int, int] = get_image_dimensions(GIF_DATA)
+    gif_theirs = their_sizes.get_image_dimensions(GIF_DATA)
     assert betterlite.get_image_dimensions(GIF_DATA) == gif_theirs == GIF_SIZE
 
 
@@ -319,7 +333,7 @@ def test_image_url_is_refused() -> None:
 
 def test_image_resize() -> None:
     for width, height in RESIZE_CASES:
-        theirs: tuple[int, int] = resize_image_high_res(width, height)
+        theirs = their_sizes.resize_image_high_res(width, height)
         assert betterlite.resize_image_high_res(width, height) == theirs, (width, height)
 
 
@@ -330,17 +344,17 @@ def test_image_tiles() -> None:
 
 
 def test_image_bound() -> None:
-    theirs: int = high_detail_image_token_upper_bound()
+    theirs = their_helpers.high_detail_image_token_upper_bound()
     ours = betterlite.high_detail_image_token_upper_bound()
     assert ours == theirs == PNG_HIGH_TOKENS
-    custom: int = high_detail_image_token_upper_bound(LARGE_BASE_TOKENS)
+    custom = their_helpers.high_detail_image_token_upper_bound(LARGE_BASE_TOKENS)
     ours_custom = betterlite.high_detail_image_token_upper_bound(LARGE_BASE_TOKENS)
     assert ours_custom == custom == LARGE_BASE_HIGH_TOKENS
 
 
 def test_image_tokens() -> None:
     for mode in IMAGE_MODES:
-        theirs: int = calculate_img_tokens(PNG_DATA, mode)
+        theirs = their_helpers.calculate_img_tokens(PNG_DATA, mode)
         assert betterlite.calculate_img_tokens(PNG_DATA, mode) == theirs, mode
     assert betterlite.calculate_img_tokens(PNG_DATA) == PNG_AUTO_TOKENS
     assert betterlite.calculate_img_tokens(PNG_DATA, "high") == PNG_HIGH_TOKENS
@@ -349,7 +363,7 @@ def test_image_tokens() -> None:
 
 
 def test_image_default_count() -> None:
-    theirs: int = calculate_img_tokens(PNG_DATA, use_default_image_token_count=True)
+    theirs = their_helpers.calculate_img_tokens(PNG_DATA, use_default_image_token_count=True)
     ours = betterlite.calculate_img_tokens(PNG_DATA, use_default_image_token_count=True)
     assert ours == theirs == DEFAULT_IMAGE_TOKENS
 
