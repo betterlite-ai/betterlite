@@ -110,7 +110,8 @@ pub(crate) enum Input {
     BaseUrl(BaseUrlInput),
     ResolveParams(ResolveParamsInput),
     ExtractParams(OperationInput),
-    InputSchema(OperationInput),
+    #[serde(rename = "input_schema")]
+    Schema(OperationInput),
     MergeHeaders(MergeHeadersInput),
-    Call(CallInput),
+    Call(Box<CallInput>),
 }

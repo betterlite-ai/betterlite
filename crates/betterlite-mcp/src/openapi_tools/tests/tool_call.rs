@@ -179,7 +179,7 @@ fn path_values_are_percent_encoded() {
 #[case::integer(r#"{"id":42}"#, "/items/42")]
 #[case::bool_true(r#"{"id":true}"#, "/items/True")]
 #[case::decimal(r#"{"id":1.5}"#, "/items/1.5")]
-#[case::non_ascii(r#"{"id":"ü"}"#, "/items/%C3%BC")]
+#[case::non_ascii(r#"{"id":"\u00fc"}"#, "/items/%C3%BC")]
 fn a_path_value_is_taken_as_text(#[case] args: &str, #[case] expected: &str) {
     let (request, _) = block_on(sent(&item_tool(), args));
     assert_eq!(request.url, format!("{BASE}{expected}"));
@@ -603,7 +603,7 @@ fn the_server_label_reaches_the_upstream_error() {
             .unwrap_err()
     });
     assert!(matches!(
-        error,
-        OpenApiToolError::UpstreamStatus { status: 500, ref server } if server == "petstore"
+        &error,
+        OpenApiToolError::UpstreamStatus { status: 500, server } if server == "petstore"
     ));
 }

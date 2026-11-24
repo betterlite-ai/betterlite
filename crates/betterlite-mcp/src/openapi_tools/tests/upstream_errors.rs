@@ -89,8 +89,8 @@ async fn a_status_of_400_is_an_upstream_status_without_the_body() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
-        OpenApiToolError::UpstreamStatus { status: 400, ref server } if server == "GET /pets"
+        &error,
+        OpenApiToolError::UpstreamStatus { status: 400, server } if server == "GET /pets"
     ));
     assert!(!error.to_string().contains("sensitive"));
 }
@@ -146,11 +146,11 @@ async fn a_relayed_401_carries_the_challenge() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        &error,
         OpenApiToolError::UpstreamAuth {
             status: 401,
-            www_authenticate: Some(ref challenge),
-            ref server,
+            www_authenticate: Some(challenge),
+            server,
         } if challenge == "Bearer realm=\"upstream\"" && server == "GET /pets"
     ));
 }
@@ -188,10 +188,10 @@ async fn repeated_challenge_headers_are_joined() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        &error,
         OpenApiToolError::UpstreamAuth {
-            www_authenticate: Some(ref challenge),
-            ref server,
+            www_authenticate: Some(challenge),
+            server,
             ..
         } if challenge == "Bearer a, Basic b" && server == "petstore"
     ));
@@ -209,9 +209,9 @@ async fn a_latin_1_challenge_is_decoded_byte_by_byte() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        &error,
         OpenApiToolError::UpstreamAuth {
-            www_authenticate: Some(ref challenge),
+            www_authenticate: Some(challenge),
             ..
         } if challenge == "Basic a\u{e9}b"
     ));
@@ -229,9 +229,9 @@ async fn a_utf8_challenge_is_decoded_as_utf8() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        &error,
         OpenApiToolError::UpstreamAuth {
-            www_authenticate: Some(ref challenge),
+            www_authenticate: Some(challenge),
             ..
         } if challenge == "Basic \u{e9}"
     ));
@@ -251,7 +251,7 @@ async fn a_non_utf8_body_is_an_error() {
 #[tokio::test]
 async fn a_utf8_body_with_multibyte_text_is_fine() {
     assert_eq!(
-        reply(200, "café".as_bytes()).await.unwrap(),
-        OpenApiToolOutput::Text("café".to_owned())
+        reply(200, "caf\u{e9}".as_bytes()).await.unwrap(),
+        OpenApiToolOutput::Text("caf\u{e9}".to_owned())
     );
 }

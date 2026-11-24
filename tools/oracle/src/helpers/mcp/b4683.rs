@@ -18,7 +18,7 @@ impl Helper for Op {
             Input::BaseUrl(value) => ops::base_url(value),
             Input::ResolveParams(value) => ops::resolve_params(value),
             Input::ExtractParams(value) => ops::extract_params(value),
-            Input::InputSchema(value) => ops::input_schema(value),
+            Input::Schema(value) => ops::input_schema(value),
             Input::MergeHeaders(value) => Ok(ops::merge_headers(value)),
             Input::Call(value) => ops::call(value),
         }

@@ -14,11 +14,11 @@ use tokio::task::JoinSet;
 const BODY_LIMIT: usize = 0x0010_0000;
 
 #[derive(Clone, Debug)]
-pub struct Recorded {
-    pub method: Method,
-    pub uri: String,
-    pub headers: HeaderMap,
-    pub body: Vec<u8>,
+pub(super) struct Recorded {
+    pub(super) method: Method,
+    pub(super) uri: String,
+    pub(super) headers: HeaderMap,
+    pub(super) body: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -27,14 +27,14 @@ struct ServerState {
     reply: Arc<dyn Fn(&Recorded) -> Response + Send + Sync>,
 }
 
-pub struct TestServer {
+pub(super) struct TestServer {
     address: SocketAddr,
     requests: Arc<Mutex<Vec<Recorded>>>,
     _tasks: JoinSet<()>,
 }
 
 impl TestServer {
-    pub async fn start<Reply>(reply: Reply) -> Self
+    pub(super) async fn start<Reply>(reply: Reply) -> Self
     where
         Reply: Fn(&Recorded) -> Response + Send + Sync + 'static,
     {
@@ -57,11 +57,11 @@ impl TestServer {
         }
     }
 
-    pub fn url(&self, path: &str) -> String {
+    pub(super) fn url(&self, path: &str) -> String {
         format!("http://{}{path}", self.address)
     }
 
-    pub fn requests(&self) -> Vec<Recorded> {
+    pub(super) fn requests(&self) -> Vec<Recorded> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -86,11 +86,11 @@ async fn record(State(state): State<ServerState>, request: IncomingRequest) -> R
     (state.reply)(&recorded)
 }
 
-pub fn ok_json(body: &str) -> Response {
+pub(super) fn ok_json(body: &str) -> Response {
     status_with_body(200, body)
 }
 
-pub fn status_with_body(status: u16, body: &str) -> Response {
+pub(super) fn status_with_body(status: u16, body: &str) -> Response {
     Response::builder()
         .status(StatusCode::from_u16(status).unwrap())
         .header(CONTENT_TYPE, "application/json")
@@ -98,14 +98,14 @@ pub fn status_with_body(status: u16, body: &str) -> Response {
         .unwrap()
 }
 
-pub fn status(status: u16) -> Response {
+pub(super) fn status(status: u16) -> Response {
     Response::builder()
         .status(StatusCode::from_u16(status).unwrap())
         .body(Body::empty())
         .unwrap()
 }
 
-pub fn redirect(status: u16, location: &str) -> Response {
+pub(super) fn redirect(status: u16, location: &str) -> Response {
     Response::builder()
         .status(StatusCode::from_u16(status).unwrap())
         .header(LOCATION, location)
@@ -113,7 +113,7 @@ pub fn redirect(status: u16, location: &str) -> Response {
         .unwrap()
 }
 
-pub fn header_value(recorded: &Recorded, name: &str) -> Option<String> {
+pub(super) fn header_value(recorded: &Recorded, name: &str) -> Option<String> {
     recorded
         .headers
         .get(name)

@@ -11,7 +11,7 @@ use http::Method;
 
 use crate::client::sessions::factory::RedirectGuard;
 use crate::openapi_tools::transport::{
-    OpenApiRequest, OpenApiTransport, OpenApiTransportError, ProxiedTransport,
+    OpenApiRequest, OpenApiTransport as _, OpenApiTransportError, ProxiedTransport,
 };
 
 use super::http_server::{TestServer, header_value, ok_json, redirect, status};

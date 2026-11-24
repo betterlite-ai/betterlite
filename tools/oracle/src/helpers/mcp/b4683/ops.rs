@@ -200,10 +200,8 @@ impl PlannedTransport {
     }
 
     fn take(&self) -> Option<OpenApiRequest> {
-        self.requests
-            .lock()
-            .ok()
-            .and_then(|mut requests| requests.pop())
+        let mut requests = self.requests.lock().ok()?;
+        requests.pop()
     }
 }
 

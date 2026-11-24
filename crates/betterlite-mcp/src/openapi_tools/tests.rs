@@ -36,13 +36,13 @@ fn replays_the_openapi_spec_corpus(#[files("fuzz/corpus/openapi_spec/*")] path: 
         &document,
         Some("https://example.test/api/openapi.json"),
     ));
-    for (path, path_item) in &document.paths {
+    for (tool_path, path_item) in &document.paths {
         for (method, operation) in &path_item.operations {
             let resolved = resolve_operation_params(operation, path_item, &document.components);
             drop(extract_parameters(&resolved));
             drop(build_input_schema(&resolved));
             let _tool = OpenApiTool::new(OpenApiToolConfig {
-                path: path.clone(),
+                path: tool_path.clone(),
                 method: method.clone(),
                 operation: resolved,
                 base_url: "https://example.test".to_owned(),

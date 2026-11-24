@@ -15,7 +15,7 @@ use super::support::json;
 #[case::plus("a+b", "a%2Bb")]
 #[case::apostrophe("a'b", "a%27b")]
 #[case::parentheses("(a)", "%28a%29")]
-#[case::non_ascii("ü", "%C3%BC")]
+#[case::non_ascii("\u{fc}", "%C3%BC")]
 #[case::single_dot(".", ".")]
 #[case::three_dots("...", "...")]
 #[case::dot_dot_inside_a_word("a..b", "a..b")]
