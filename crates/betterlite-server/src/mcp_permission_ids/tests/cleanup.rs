@@ -4,8 +4,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 
 use crate::mcp_permission_ids::cleanup::{
     GrantCleanupError, NO_MCP_SERVERS, dedupe_preserving_order,
-    drop_stale_object_permission_mcp_identifiers, drop_stale_object_permission_mcp_servers,
-    drop_stale_object_permission_mcp_tool_permissions, flatten_resolved_mcp_server_ids,
+    drop_stale_object_permission_mcp_identifiers, flatten_resolved_mcp_server_ids,
 };
 
 use super::fixtures::{identifier_sets, json, string_set, strings};
@@ -40,7 +39,7 @@ fn stored_identifiers_are_kept_not_resolved_ids() {
         ("srv-1", &["srv-1"]),
         ("stale", &[]),
     ]);
-    drop_stale_object_permission_mcp_servers(&mut permission, &identifiers).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut permission, &identifiers).unwrap();
     let kept = fields(permission);
     assert_eq!(
         kept.get("mcp_servers"),
@@ -52,7 +51,7 @@ fn stored_identifiers_are_kept_not_resolved_ids() {
 #[test]
 fn sentinel_survives_without_resolving() {
     let mut permission = json(r#"{"mcp_servers": ["no-mcp-servers"]}"#);
-    drop_stale_object_permission_mcp_servers(&mut permission, &identifier_sets(&[])).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut permission, &identifier_sets(&[])).unwrap();
     assert_eq!(permission, json(r#"{"mcp_servers": ["no-mcp-servers"]}"#));
     assert_eq!(NO_MCP_SERVERS, "no-mcp-servers");
 }
@@ -60,14 +59,14 @@ fn sentinel_survives_without_resolving() {
 #[test]
 fn non_string_server_entries_error() {
     let mut first = json(r#"{"mcp_servers": [7, "ok"]}"#);
-    let error = drop_stale_object_permission_mcp_servers(&mut first, &identifier_sets(&[]))
+    let error = drop_stale_object_permission_mcp_identifiers(&mut first, &identifier_sets(&[]))
         .expect_err("a number is not a server identifier");
     assert!(matches!(
         error,
         GrantCleanupError::ServerIdentifier { index: 0 }
     ));
     let mut second = json(r#"{"mcp_servers": ["ok", null]}"#);
-    let error = drop_stale_object_permission_mcp_servers(&mut second, &identifier_sets(&[]))
+    let error = drop_stale_object_permission_mcp_identifiers(&mut second, &identifier_sets(&[]))
         .expect_err("null is not a server identifier");
     assert!(matches!(
         error,
@@ -79,13 +78,13 @@ fn non_string_server_entries_error() {
 fn missing_or_wrong_shaped_servers_stay_untouched() {
     let identifiers = identifier_sets(&[("srv-a", &["id-a"])]);
     let mut absent = json(r#"{"models": ["m"]}"#);
-    drop_stale_object_permission_mcp_servers(&mut absent, &identifiers).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut absent, &identifiers).unwrap();
     assert_eq!(absent, json(r#"{"models": ["m"]}"#));
     let mut text = json(r#"{"mcp_servers": "srv-a"}"#);
-    drop_stale_object_permission_mcp_servers(&mut text, &identifiers).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut text, &identifiers).unwrap();
     assert_eq!(text, json(r#"{"mcp_servers": "srv-a"}"#));
     let mut nothing = json(r#"{"mcp_servers": null}"#);
-    drop_stale_object_permission_mcp_servers(&mut nothing, &identifiers).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut nothing, &identifiers).unwrap();
     assert_eq!(nothing, json(r#"{"mcp_servers": null}"#));
 }
 
@@ -100,7 +99,7 @@ fn stored_tool_permissions_keep_resolved_identifiers_and_dedupe_tools() {
         ("srv-c", &["id-c"]),
         ("stale", &[]),
     ]);
-    drop_stale_object_permission_mcp_tool_permissions(&mut permission, &identifiers).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut permission, &identifiers).unwrap();
     assert_eq!(
         permission,
         json(r#"{"mcp_tool_permissions": {"srv-a": ["t2", "t1"], "srv-b": [], "srv-c": []}}"#)
@@ -111,7 +110,7 @@ fn stored_tool_permissions_keep_resolved_identifiers_and_dedupe_tools() {
 fn non_string_tool_names_error() {
     let mut permission = json(r#"{"mcp_tool_permissions": {"srv-a": ["t1", 7]}}"#);
     let identifiers = identifier_sets(&[("srv-a", &["id-a"])]);
-    let error = drop_stale_object_permission_mcp_tool_permissions(&mut permission, &identifiers)
+    let error = drop_stale_object_permission_mcp_identifiers(&mut permission, &identifiers)
         .expect_err("a number is not a tool name");
     assert!(matches!(
         error,
@@ -123,10 +122,10 @@ fn non_string_tool_names_error() {
 fn wrong_shaped_tool_permissions_stay_untouched() {
     let identifiers = identifier_sets(&[("srv-a", &["id-a"])]);
     let mut array = json(r#"{"mcp_tool_permissions": []}"#);
-    drop_stale_object_permission_mcp_tool_permissions(&mut array, &identifiers).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut array, &identifiers).unwrap();
     assert_eq!(array, json(r#"{"mcp_tool_permissions": []}"#));
     let mut text = json(r#"{"mcp_tool_permissions": "srv-a"}"#);
-    drop_stale_object_permission_mcp_tool_permissions(&mut text, &identifiers).unwrap();
+    drop_stale_object_permission_mcp_identifiers(&mut text, &identifiers).unwrap();
     assert_eq!(text, json(r#"{"mcp_tool_permissions": "srv-a"}"#));
 }
 

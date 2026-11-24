@@ -2,7 +2,11 @@ from copy import deepcopy
 from typing import Literal, TypeAlias, TypedDict, cast
 
 from litellm.proxy._types import ObjectPermissionDict
-from litellm.proxy.management_helpers.object_permission_utils import _dedupe_preserving_order, _drop_stale_object_permission_mcp_identifiers, _flatten_resolved_mcp_server_ids  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L240-L428
+from litellm.proxy.management_helpers.object_permission_utils import (
+    _dedupe_preserving_order,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L240-L248
+    _drop_stale_object_permission_mcp_identifiers,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L408-L422
+    _flatten_resolved_mcp_server_ids,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L425-L428
+)
 from pydantic import JsonValue
 
 

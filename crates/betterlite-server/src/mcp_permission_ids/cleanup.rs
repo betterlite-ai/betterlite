@@ -13,6 +13,12 @@ pub enum GrantCleanupError {
     ToolName { identifier: String },
 }
 
+#[derive(Clone, Copy)]
+enum InvalidItem<'a> {
+    ServerIdentifier,
+    ToolName { identifier: &'a str },
+}
+
 #[must_use]
 pub fn dedupe_preserving_order(values: &[String]) -> Vec<String> {
     let mut seen = BTreeSet::new();
@@ -25,57 +31,66 @@ pub fn dedupe_preserving_order(values: &[String]) -> Vec<String> {
     result
 }
 
-// ast-grep-ignore: no-long-names - the LiteLLM function this task owns
-pub fn drop_stale_object_permission_mcp_servers(
-    object_permission: &mut JsonData,
+fn resolving(
+    identifier: &str,
     identifier_to_server_ids: &BTreeMap<String, BTreeSet<String>>,
-) -> Result<(), GrantCleanupError> {
-    let JsonData::Object(fields) = object_permission else {
-        return Ok(());
-    };
-    let Some(JsonData::Array(servers)) = fields.get("mcp_servers") else {
-        return Ok(());
-    };
-    // The stored grant keeps the caller's identifiers, since a shared database expands aliases per region
-    let mut kept = Vec::new();
-    for (index, server) in servers.iter().enumerate() {
-        let JsonData::String(identifier) = server else {
-            return Err(GrantCleanupError::ServerIdentifier { index });
-        };
-        let resolves = identifier_to_server_ids
-            .get(identifier)
-            .is_some_and(|server_ids| !server_ids.is_empty());
-        if identifier == NO_MCP_SERVERS || resolves {
-            kept.push(identifier.clone());
-        }
-    }
-    let deduped = dedupe_preserving_order(&kept);
-    let deduped_servers = JsonData::Array(deduped.into_iter().map(JsonData::String).collect());
-    fields.insert("mcp_servers".to_owned(), deduped_servers);
-    Ok(())
+) -> bool {
+    identifier_to_server_ids
+        .get(identifier)
+        .is_some_and(|server_ids| !server_ids.is_empty())
 }
 
-// ast-grep-ignore: no-long-names - the LiteLLM function this task owns
-pub fn drop_stale_object_permission_mcp_tool_permissions(
-    object_permission: &mut JsonData,
+fn string_values(
+    items: &[JsonData],
+    invalid_item: InvalidItem<'_>,
+) -> Result<Vec<String>, GrantCleanupError> {
+    let mut values = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let JsonData::String(value) = item else {
+            return Err(match invalid_item {
+                InvalidItem::ServerIdentifier => GrantCleanupError::ServerIdentifier { index },
+                InvalidItem::ToolName { identifier } => GrantCleanupError::ToolName {
+                    identifier: identifier.to_owned(),
+                },
+            });
+        };
+        values.push(value.clone());
+    }
+    Ok(values)
+}
+
+fn kept_server_identifiers(
+    servers: &[JsonData],
     identifier_to_server_ids: &BTreeMap<String, BTreeSet<String>>,
-) -> Result<(), GrantCleanupError> {
-    let JsonData::Object(fields) = object_permission else {
-        return Ok(());
-    };
-    let Some(JsonData::Object(granted)) = fields.get("mcp_tool_permissions") else {
-        return Ok(());
-    };
+) -> Result<Vec<String>, GrantCleanupError> {
+    let identifiers = string_values(servers, InvalidItem::ServerIdentifier)?;
+    Ok(identifiers
+        .into_iter()
+        .filter(|identifier| {
+            identifier.as_str() == NO_MCP_SERVERS || resolving(identifier, identifier_to_server_ids)
+        })
+        .collect())
+}
+
+fn kept_tool_grants(
+    granted: &BTreeMap<String, JsonData>,
+    identifier_to_server_ids: &BTreeMap<String, BTreeSet<String>>,
+) -> Result<BTreeMap<String, JsonData>, GrantCleanupError> {
     let mut kept = BTreeMap::new();
     for (identifier, tools) in granted {
-        let resolves = identifier_to_server_ids
-            .get(identifier)
-            .is_some_and(|server_ids| !server_ids.is_empty());
-        if !resolves {
+        if !resolving(identifier, identifier_to_server_ids) {
             continue;
         }
         let names = match tools {
-            JsonData::Array(items) => deduped_tool_names(items, identifier)?,
+            JsonData::Array(items) => {
+                let names = string_values(
+                    items,
+                    InvalidItem::ToolName {
+                        identifier: identifier.as_str(),
+                    },
+                )?;
+                dedupe_preserving_order(&names)
+            }
             JsonData::Null
             | JsonData::Bool(_)
             | JsonData::Number(_)
@@ -87,9 +102,7 @@ pub fn drop_stale_object_permission_mcp_tool_permissions(
             JsonData::Array(names.into_iter().map(JsonData::String).collect()),
         );
     }
-    let grants = JsonData::Object(kept);
-    fields.insert("mcp_tool_permissions".to_owned(), grants);
-    Ok(())
+    Ok(kept)
 }
 
 // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
@@ -97,11 +110,23 @@ pub fn drop_stale_object_permission_mcp_identifiers(
     object_permission: &mut JsonData,
     identifier_to_server_ids: &BTreeMap<String, BTreeSet<String>>,
 ) -> Result<(), GrantCleanupError> {
-    if !matches!(object_permission, JsonData::Object(fields) if !fields.is_empty()) {
+    let JsonData::Object(fields) = object_permission else {
+        return Ok(());
+    };
+    if fields.is_empty() {
         return Ok(());
     }
-    drop_stale_object_permission_mcp_servers(object_permission, identifier_to_server_ids)?; // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
-    drop_stale_object_permission_mcp_tool_permissions(object_permission, identifier_to_server_ids) // ast-grep-ignore: no-long-names - the LiteLLM function this task owns
+    if let Some(JsonData::Array(servers)) = fields.get("mcp_servers") {
+        let kept = kept_server_identifiers(servers, identifier_to_server_ids)?;
+        let deduped = dedupe_preserving_order(&kept);
+        let cleaned = JsonData::Array(deduped.into_iter().map(JsonData::String).collect());
+        fields.insert("mcp_servers".to_owned(), cleaned);
+    }
+    if let Some(JsonData::Object(granted)) = fields.get("mcp_tool_permissions") {
+        let cleaned = JsonData::Object(kept_tool_grants(granted, identifier_to_server_ids)?);
+        fields.insert("mcp_tool_permissions".to_owned(), cleaned);
+    }
+    Ok(())
 }
 
 #[must_use]
@@ -114,20 +139,4 @@ pub fn flatten_resolved_mcp_server_ids(
         server_ids.extend(ids.iter().cloned());
     }
     server_ids
-}
-
-fn deduped_tool_names(
-    items: &[JsonData],
-    identifier: &str,
-) -> Result<Vec<String>, GrantCleanupError> {
-    let mut names = Vec::new();
-    for item in items {
-        let JsonData::String(name) = item else {
-            return Err(GrantCleanupError::ToolName {
-                identifier: identifier.to_owned(),
-            });
-        };
-        names.push(name.clone());
-    }
-    Ok(dedupe_preserving_order(&names))
 }
