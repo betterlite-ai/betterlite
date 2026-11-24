@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use betterlite_core::api::container_ownership::ContainerOwnershipError;
+use betterlite_core::api::container_ownership::errors::ContainerOwnershipError;
 use betterlite_core::api::request_form::convert::ConvertError;
 use betterlite_core::api::request_form::values::FormError;
 
