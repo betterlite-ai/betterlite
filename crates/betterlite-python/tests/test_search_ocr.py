@@ -266,7 +266,7 @@ def test_ocr_signature() -> None:
     )
 
 
-def test_ocr_signature_missing_model() -> None:
+def test_ocr_signature_no_model() -> None:
     with pytest.raises(TypeError) as ours:
         ocr(document=OCR_DOCUMENT)
     with pytest.raises(TypeError) as theirs:
