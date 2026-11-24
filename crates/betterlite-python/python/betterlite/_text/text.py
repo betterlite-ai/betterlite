@@ -105,8 +105,8 @@ def text_completion(
     **kwargs: CallValue,
 ) -> TextCompletionResponse | TextCompletionStreamWrapper:
     # main.py reads engine as the model when the caller passed no model
-    engine = kwargs.pop("engine", None)
-    if isinstance(engine, str) and model is None:
+    engine = TEXT.validate_python(kwargs.pop("engine", None))
+    if engine is not None and model is None:
         model = engine
     named: dict[str, CallValue] = {
         "prompt": prompt, "model": model, "best_of": best_of, "echo": echo,
@@ -134,8 +134,8 @@ async def atext_completion(
     positional = dict(zip(NAMED_ARGUMENTS, args, strict=False))
     values: dict[str, CallValue] = {**kwargs, **positional}
     # main.py hands engine to text_completion, which reads it as the model when none was given
-    engine = values.pop("engine", None)
-    if isinstance(engine, str) and values.get("model") is None:
+    engine = TEXT.validate_python(values.pop("engine", None))
+    if engine is not None and values.get("model") is None:
         values["model"] = engine
     answer = await acall_native(
         NativeTextSession("{}").atext_completion, text_payload(values), NativeTextError
@@ -259,5 +259,7 @@ def text_from_chat(chat: ModelResponse) -> TextCompletionResponse:
     response["created"] = chat["created"]
     response["model"] = chat["model"]
     response["usage"] = chat.get("usage")
-    response["_hidden_params"] = HiddenParams.model_validate(chat.get("_hidden_params") or {})
+    hidden = chat.get("_hidden_params")
+    params = HiddenParams() if hidden is None else HiddenParams.model_validate(hidden)
+    response["_hidden_params"] = params
     return response

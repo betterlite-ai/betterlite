@@ -507,7 +507,7 @@ def test_prompts_engine_alias() -> None:
 
 
 # main.py's async entry hands engine to text_completion, which reads it as the model
-def test_prompts_async_engine_alias() -> None:
+def test_prompts_async_engine() -> None:
     with closing(TextServer()) as server:
         outcome = asyncio.run(
             atext_completion(
