@@ -27,6 +27,9 @@ deviations:
 - what: "An `event_handler` that is neither None nor an object with `on_event` raises `UnsupportedCallArgumentError` naming it before the call, where LiteLLM hands any value to the OpenAI SDK's stream manager."
   why: betterlite dispatches the events in Python, so the handler is checked where it is called; the task makes that class the answer for any other handler.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1239-L1252
+- what: "A `run_thread_stream` or `arun_thread_stream` call that omits `custom_llm_provider`, `thread_id` or `assistant_id` raises a `KeyError` naming the missing value, where LiteLLM's forwarded call raises the interpreter's `TypeError`."
+  why: The two stream helpers pass their keyword bag to the shared run call that builds the payload, instead of calling `run_thread` with its typed parameters, so the missing value surfaces while the payload is built.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1231-L1236
 kept_bugs:
 - what: "The message an invalid azure attachment raises is missing the closing backtick after `litellm.drop_params = True`."
   why: LiteLLM's own text lacks it, and caller code matching the text relies on it; betterlite copies the text byte for byte.

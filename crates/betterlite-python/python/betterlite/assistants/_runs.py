@@ -109,7 +109,8 @@ def payload_event(value: JsonValue) -> AssistantStreamEvent:
         case dict() as record if "event" in record:
             return AssistantStreamEvent.model_validate(record)
         case object() as payload:
-            return AssistantStreamEvent.model_validate({"event": "payload", "data": payload})
+            wrapped: dict[str, JsonValue] = {"event": "payload", "data": payload}
+            return AssistantStreamEvent.model_validate(wrapped)
 
 
 def stream_event(text: str, handler: EventHandler | None) -> AssistantStreamEvent:
@@ -120,7 +121,7 @@ def stream_event(text: str, handler: EventHandler | None) -> AssistantStreamEven
 
 
 def call_values(
-    provider: str, thread_id: str, arguments: Mapping[str, CallValue],
+    provider: CallValue, thread_id: CallValue, arguments: Mapping[str, CallValue],
 ) -> dict[str, CallValue]:
     values: dict[str, CallValue] = {
         "custom_llm_provider": provider,
@@ -147,12 +148,9 @@ def message_payload(
     return to_call_payload(values)
 
 
-def run_payload(
-    provider: str, thread_id: str, assistant_id: str,
-    arguments: Mapping[str, CallValue],
-) -> CallPayload:
-    values = call_values(provider, thread_id, arguments)
-    values["assistant_id"] = assistant_id
+def run_payload(arguments: Mapping[str, CallValue]) -> CallPayload:
+    values = call_values(arguments["custom_llm_provider"], arguments["thread_id"], arguments)
+    values["assistant_id"] = arguments["assistant_id"]
     values.update({name: arguments[name] for name in RUN_FIELDS if name in arguments})
     return to_call_payload(values)
 

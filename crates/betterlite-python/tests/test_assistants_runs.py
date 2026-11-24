@@ -234,7 +234,7 @@ class RunServer(ThreadingHTTPServer):
         return {**BARE_STREAM_ARGUMENTS, **self.connection(key)}
 
 
-@pytest.fixture()
+@pytest.fixture
 def server() -> Iterator[RunServer]:
     running = RunServer()
     try:
@@ -804,77 +804,78 @@ UTILS_FAILURES: Final[tuple[type[Exception], ...]] = (
     THEIR_ERRORS.UnsupportedParamsError,
     errors.UnsupportedParamsError,
 )
-ADD_MESSAGE_CASES: Final[dict[str, dict[str, JsonValue]]] = {
-    "openai_everything": {
+# the provider is its own value because it is the one argument the helper types as text
+ADD_MESSAGE_CASES: Final[dict[str, tuple[str, dict[str, JsonValue]]]] = {
+    "openai_everything": ("openai", {
         "role": "user", "content": "hi", "attachments": ATTACHMENTS, "metadata": {"k": "v"},
-        "custom_llm_provider": "openai",
-    },
-    "openai_extra_key": {
+    }),
+    "openai_extra_key": ("openai", {
         "role": "assistant", "content": "hi", "attachments": None, "metadata": None,
-        "custom_llm_provider": "openai", "extra_flag": True,
-    },
-    "azure_text": {
+        "extra_flag": True,
+    }),
+    "azure_text": ("azure", {
         "role": "user", "content": "hi", "attachments": None, "metadata": {"k": "v"},
-        "custom_llm_provider": "azure",
-    },
-    "azure_list_content": {
+    }),
+    "azure_list_content": ("azure", {
         "role": "user", "content": [{"type": "text", "text": "hi"}], "attachments": None,
-        "metadata": None, "custom_llm_provider": "azure",
-    },
-    "azure_plain_attachment": {
+        "metadata": None,
+    }),
+    "azure_plain_attachment": ("azure", {
         "role": "user", "content": "hi", "attachments": [{"text": "x"}], "metadata": None,
-        "custom_llm_provider": "azure",
-    },
-    "azure_attachments_not_a_list": {
+    }),
+    "azure_attachments_not_a_list": ("azure", {
         "role": "user", "content": "hi", "attachments": "nope", "metadata": None,
-        "custom_llm_provider": "azure",
-    },
-    "other_provider_extra_key": {
+    }),
+    "other_provider_extra_key": ("bedrock", {
         "role": "user", "content": "hi", "attachments": None, "metadata": None,
-        "custom_llm_provider": "bedrock", "extra_flag": 1,
-    },
+        "extra_flag": 1,
+    }),
 }  # fmt: skip
-IMAGE_CASES: Final[dict[str, dict[str, JsonValue]]] = {
-    "openai_everything": {
+IMAGE_CASES: Final[dict[str, tuple[str | None, dict[str, JsonValue]]]] = {
+    "openai_everything": ("openai", {
         "n": 2, "quality": "hd", "response_format": "url", "size": "1024x1024",
-        "style": "vivid", "user": "u1", "custom_llm_provider": "openai",
-    },
-    "openai_compatible_provider": {"n": 1, "size": "256x256", "custom_llm_provider": "groq"},
-    "azure_extra_key": {"n": 1, "custom_llm_provider": "azure", "extra_flag": "x"},
-    "bedrock_size": {"size": "512x768", "custom_llm_provider": "bedrock"},
-    "bedrock_size_and_count": {"size": "512x768", "n": 2, "custom_llm_provider": "bedrock"},
-    "bedrock_nothing": {"custom_llm_provider": "bedrock", "extra_flag": 1},
-    "vertex_count": {"n": 3, "custom_llm_provider": "vertex_ai"},
-    "vertex_count_and_size": {"n": 3, "size": "512x512", "custom_llm_provider": "vertex_ai"},
-    "unknown_provider": {"n": 3, "size": "512x512", "custom_llm_provider": "unknown"},
-    "no_provider": {"n": 3, "extra_flag": 1},
+        "style": "vivid", "user": "u1",
+    }),
+    "openai_compatible_provider": ("groq", {"n": 1, "size": "256x256"}),
+    "azure_extra_key": ("azure", {"n": 1, "extra_flag": "x"}),
+    "bedrock_size": ("bedrock", {"size": "512x768"}),
+    "bedrock_size_and_count": ("bedrock", {"size": "512x768", "n": 2}),
+    "bedrock_nothing": ("bedrock", {"extra_flag": 1}),
+    "vertex_count": ("vertex_ai", {"n": 3}),
+    "vertex_count_and_size": ("vertex_ai", {"n": 3, "size": "512x512"}),
+    "unknown_provider": ("unknown", {"n": 3, "size": "512x512"}),
+    "no_provider": (None, {"n": 3, "extra_flag": 1}),
 }  # fmt: skip
 
 
 @pytest.mark.parametrize("name", list(ADD_MESSAGE_CASES))
 def test_utils_add_message_matches(name: str) -> None:
-    case = ADD_MESSAGE_CASES[name]
+    provider, case = ADD_MESSAGE_CASES[name]
     compared_outcomes(
-        partial(_utils.get_optional_params_add_message, **case),
-        partial(THEIR_UTILS.get_optional_params_add_message, **case),
+        partial(_utils.get_optional_params_add_message, custom_llm_provider=provider, **case),
+        partial(THEIR_UTILS.get_optional_params_add_message, custom_llm_provider=provider, **case),
     )
 
 
 @pytest.mark.parametrize("name", list(IMAGE_CASES))
 def test_utils_image_gen_matches(name: str) -> None:
-    case = IMAGE_CASES[name]
+    provider, case = IMAGE_CASES[name]
     compared_outcomes(
-        partial(_utils.get_optional_params_image_gen, **case),
-        partial(THEIR_UTILS.get_optional_params_image_gen, **case),
+        partial(_utils.get_optional_params_image_gen, custom_llm_provider=provider, **case),
+        partial(THEIR_UTILS.get_optional_params_image_gen, custom_llm_provider=provider, **case),
     )
 
 
 def test_utils_both_outcomes() -> None:
-    list_content = ADD_MESSAGE_CASES["azure_list_content"]
-    rejected = utils_outcome(partial(_utils.get_optional_params_add_message, **list_content))
+    provider, list_case = ADD_MESSAGE_CASES["azure_list_content"]
+    rejected = utils_outcome(
+        partial(_utils.get_optional_params_add_message, custom_llm_provider=provider, **list_case)
+    )
     assert rejected["error"]
-    azure_text = ADD_MESSAGE_CASES["azure_text"]
-    accepted = utils_outcome(partial(_utils.get_optional_params_add_message, **azure_text))
+    provider, text_case = ADD_MESSAGE_CASES["azure_text"]
+    accepted = utils_outcome(
+        partial(_utils.get_optional_params_add_message, custom_llm_provider=provider, **text_case)
+    )
     assert accepted["ok"] == {"role": "user", "content": "hi", "metadata": {"k": "v"}}
 
 

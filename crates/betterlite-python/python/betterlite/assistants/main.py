@@ -1,4 +1,4 @@
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping
 
 from betterlite._endpoints.payload import CallValue, to_call_payload
 from betterlite._native import NativeAssistantRunSession
@@ -103,7 +103,6 @@ def run_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
     event_handler: EventHandler | CallValue = None, **kwargs: CallValue,
 ) -> RunAnswer:
     asynchronous = kwargs.get("arun_thread") is True
-    handler = checked_handler(event_handler)
     arguments = named_arguments(
         kwargs,
         {
@@ -115,15 +114,13 @@ def run_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
             "client": client,
         },
     )
-    payload = run_payload(custom_llm_provider, thread_id, assistant_id, arguments)
-    if stream is True:
-        native = open_stream(payload, asynchronous=asynchronous)
-        if asynchronous:
-            return AsyncAssistantStream(native, handler)
-        return AssistantStream(native, handler)
-    if asynchronous:
-        return validated_aanswer(Run, NativeAssistantRunSession.arun_thread, payload)
-    return validated_answer(Run, NativeAssistantRunSession.run_thread, payload)
+    values: dict[str, CallValue] = {
+        **arguments,
+        "custom_llm_provider": custom_llm_provider,
+        "thread_id": thread_id,
+        "assistant_id": assistant_id,
+    }
+    return run_answer(values, event_handler, stream=stream is True, asynchronous=asynchronous)
 
 
 async def arun_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1174
@@ -133,18 +130,9 @@ async def arun_thread(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     tools: CallValue = None, client: CallValue = None, **kwargs: CallValue,
 ) -> Run | AsyncAssistantStream:
     answer = run_thread(
-        custom_llm_provider,
-        thread_id,
-        assistant_id,
-        additional_instructions,
-        instructions,
-        metadata,
-        model,
-        stream,
-        tools,
-        client,
-        arun_thread=True,
-        **kwargs,
+        custom_llm_provider, thread_id, assistant_id,
+        additional_instructions, instructions, metadata, model, stream, tools, client,
+        arun_thread=True, **kwargs,
     )
     match answer:
         case AsyncAssistantStream() as opened:
@@ -163,18 +151,37 @@ def stream_answer(answer: RunAnswer) -> StreamAnswer:
             raise TypeError("run_thread answered no stream")
 
 
+# the entry points' arguments differ, so they share this call, not run_thread's signature
+def run_answer(
+    values: Mapping[str, CallValue], event_handler: EventHandler | CallValue, *,
+    stream: bool, asynchronous: bool,
+) -> RunAnswer:
+    # LiteLLM's run_thread(stream=...) call rejects a caller that passes stream as well
+    if "stream" in values:
+        raise TypeError("run_thread() got multiple values for keyword argument 'stream'")
+    handler = checked_handler(event_handler)
+    payload = run_payload(values)
+    if not stream:
+        if asynchronous:
+            return validated_aanswer(Run, NativeAssistantRunSession.arun_thread, payload)
+        return validated_answer(Run, NativeAssistantRunSession.run_thread, payload)
+    native = open_stream(payload, asynchronous=asynchronous)
+    if asynchronous:
+        return AsyncAssistantStream(native, handler)
+    return AssistantStream(native, handler)
+
+
 def run_thread_stream(
     *, event_handler: EventHandler | CallValue = None, **kwargs: CallValue,
 ) -> StreamAnswer:
-    handler = checked_handler(event_handler)
-    return stream_answer(run_thread(stream=True, event_handler=handler, **kwargs))
+    asynchronous = kwargs.get("arun_thread") is True
+    return stream_answer(run_answer(kwargs, event_handler, stream=True, asynchronous=asynchronous))
 
 
 def arun_thread_stream(
     *, event_handler: EventHandler | CallValue = None, **kwargs: CallValue,
 ) -> AsyncAssistantStream:
-    kwargs["arun_thread"] = True
-    match run_thread(stream=True, event_handler=event_handler, **kwargs):
+    match run_answer(kwargs, event_handler, stream=True, asynchronous=True):
         case AsyncAssistantStream() as opened:
             return opened
         case object():
