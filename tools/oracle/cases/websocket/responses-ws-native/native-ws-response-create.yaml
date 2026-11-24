@@ -1,0 +1,28 @@
+kind: helper
+name: native-ws-response-create
+call:
+  responses_ws_native:
+    first_message: '{"type":"response.create","input":"hello"}'
+    client_frames:
+      - '{"type":"response.create","input":"world"}'
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.completed"}'
+    request_data: {}
+calls:
+- responses_ws_native:
+    first_message: null
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.created"}'
+    request_data: {}
+- responses_ws_native:
+    first_message: '{"type":"response.create","input":"hello"}'
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.completed"}'
+    request_data: {}
+env: {}
+compare:
+  ignore: []

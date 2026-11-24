@@ -1,0 +1,36 @@
+task: B7874
+deviations:
+  - what: A non-None client or shared_session raises UnsupportedCallArgument, where LiteLLM forwards the Python client to its SDK handler.
+    why: A Python HTTP client cannot drive the Rust request path (B158); every endpoint family refuses the same two arguments, and test_error_client_is_refused proves this family does too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L239-L241
+  - what: "The six calls run the native tuning session directly instead of through LiteLLM's @client wrapper, which decorates them at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L76, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L153, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L333, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L371, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L640 and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L678, so a set litellm.success_callback or litellm.failure_callback does not fire, a set litellm.cache is not consulted, and litellm.max_budget is not enforced before the request."
+    why: betterlite has no Python call-wrapper path for this family, and list and alist carry no @client even in LiteLLM; wiring these six through one is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L76
+  - what: This task ships no helper oracle cases; the pytest checks run both packages against one local HTTP server and compare the recorded request and the returned job.
+    why: The fine-tuning calls need an HTTP server to answer them, and the case env the oracle caches cannot carry one.
+    link: ""
+  - what: A caller's hyperparameters mapping and the shared {} default are copied before use, where LiteLLM pops the Azure-only prompt_loss_weight key out of the caller's own mapping.
+    why: docs/compatibility.md excludes changes LiteLLM makes to a caller's dict. The wire body is the same, and test_default_hyperparameters proves the passed dict and the default keep their keys after an Azure create.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L178-L190
+  - what: A create call with no resolvable API key raises Exception carrying the openai SDK's own missing-credentials text (the one naming OPENAI_API_KEY and OPENAI_ADMIN_KEY), where LiteLLM builds the client and lets openai.OpenAIError propagate.
+    why: betterlite builds the request itself, so it keeps the message a working setup may match but not the client library's class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L77-L93
+  - what: An azure create with no resolvable api_key raises Exception carrying the AzureOpenAI client's own missing-credentials text, where LiteLLM builds the client and lets openai.OpenAIError propagate.
+    why: betterlite builds the request itself, so it keeps the message a working setup may match but not the client library's class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/fine_tuning/handler.py#L181-L204
+  - what: A 409 answer and any status outside 400, 401, 403, 404, 422, 429 and 5xx raise APIError, where the openai client raises ConflictError for 409 and APIStatusError elsewhere.
+    why: The family's error table predates this task and has no ConflictError entry; the status code and response body are still on the raised error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L100
+  - what: A structured timeout becomes one request deadline (read, then connect, write and pool), and no attempt is retried, where LiteLLM hands the httpx.Timeout and max_retries to the SDK client.
+    why: The Rust outbound request carries a single deadline, and the timeout resolution belongs to B2487.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L191-L194
+  - what: list_fine_tuning_jobs returns betterlite's FineTuningJobPage with the same object, data, has_more, first_id and last_id fields, where LiteLLM returns the openai SDK SyncCursorPage of openai FineTuningJob objects.
+    why: The page carries every field LiteLLM's page exposes and its items are LiteLLMFineTuningJob, the type the other three calls return; test_list_matches_litellm checks those fields and the wire request against LiteLLM's call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L583-L594
+  - what: custom_llm_provider="vertex_ai" on a create answers Exception naming B1384, where LiteLLM calls its Vertex fine-tuning API.
+    why: The Vertex provider calls belong to B1384; the Rust dispatch has no Vertex request shape yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L288-L315
+kept_bugs:
+  - what: An unsupported provider answers BadRequestError whose message says "for 'create_batch'" and whose model is "n/a", although the call is create_fine_tuning_job; the text, status, body and parameters are kept.
+    why: A working setup may match on that message, so the copy is deliberate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L316-L326
