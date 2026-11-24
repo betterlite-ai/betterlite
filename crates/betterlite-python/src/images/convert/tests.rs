@@ -180,6 +180,17 @@ fn request_unnamed_file_takes_the_image_name() {
 }
 
 #[test]
+fn request_empty_file_name_takes_the_image_name() {
+    let file = CallFile {
+        name: String::new(),
+        content_type: None,
+        bytes: vec![0_u8],
+    };
+    let image = image_file(&file, "image.png");
+    assert_eq!(image.filename.as_deref(), Some("image.png"));
+}
+
+#[test]
 fn request_unnamed_mask_takes_the_mask_name() {
     let file = CallFile {
         name: String::from("file"),
