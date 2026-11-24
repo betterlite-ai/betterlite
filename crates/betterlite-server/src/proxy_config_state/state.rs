@@ -89,7 +89,7 @@ impl ProxyConfigState {
             return Ok(());
         };
         let rejected = store.rejected_writes(changed);
-        self.refuse_config_owned(section, store, rejected)
+        self.refuse_config_owned(section, store, &rejected)
     }
 
     // A delete has no value to compare, so any key the file owns is refused
@@ -109,7 +109,7 @@ impl ProxyConfigState {
         }
         rejected.sort();
         rejected.dedup();
-        self.refuse_config_owned(section, store, rejected)
+        self.refuse_config_owned(section, store, &rejected)
     }
 
     // Both guards end at the same refusal; only the shadowed-value sentence reads the store
@@ -117,12 +117,12 @@ impl ProxyConfigState {
         &self,
         section: Section,
         store: &SettingsStore,
-        rejected: Vec<String>,
+        rejected: &[String],
     ) -> Result<(), ConfigStateError> {
         if rejected.is_empty() {
             return Ok(());
         }
-        Err(self.config_owned_error(section, &rejected, store))
+        Err(self.config_owned_error(section, rejected, store))
     }
 
     fn config_owned_error(
