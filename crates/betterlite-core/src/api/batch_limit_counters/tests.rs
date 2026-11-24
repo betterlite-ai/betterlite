@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use betterlite_error::rate_limit::{RateLimitCategory, RateLimitDimension};
 use indexmap::IndexMap;
@@ -10,8 +11,8 @@ use crate::api::batch_enqueued_reserve::ReservationBackend;
 use crate::api::batch_limit_counters::BatchLimitCountersError;
 use crate::api::batch_limit_counters::input::BatchLimitCounterCall;
 use crate::api::batch_limit_counters::records::{
-    BatchCounterCode, BatchCounterLimitType, BatchEnqueuedLimitExceeded, BatchLimitCounterAnswer,
-    BatchReservationBackend, BatchTpdRefundOperation, WindowStartValue,
+    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, BatchReservationBackend,
+    BatchTpdRefundOperation, WindowStartValue,
 };
 use crate::api::batch_limit_descriptors::descriptors::{
     BatchDescriptorIncrements, TPD_WINDOW_SECONDS,
@@ -332,33 +333,16 @@ async fn batch_enqueued_limit(#[case] reply: StoreReplyKind, #[case] model: Opti
     }
 
     // the direct callable reads data's model too, and an explicit null is not a model
-    for (fields, expected_model, expected_provider) in [
-        (data(Some("gpt-4o-mini")), "gpt-4o-mini", "openai"),
-        (null_model_data(), "", "litellm_proxy"),
-        (
-            data(Some("unknown-batch-model")),
-            "unknown-batch-model",
-            "litellm_proxy",
-        ),
-    ] {
-        let direct = harness
-            .service
-            .run(&input(vec![
-                BatchLimitCounterCall::RaiseEnqueuedLimitError {
-                    over_limit: BatchEnqueuedLimitExceeded {
-                        scope: scope("sk-1", 15),
-                        enqueued: 10,
-                    },
-                    data: fields,
-                    batch_usage: usage(30, 2, 0),
-                },
-            ]))
-            .await
-            .unwrap();
-        let direct_error = rejection(&direct.answers[0]);
-        assert_eq!(direct_error.model, expected_model);
-        assert_eq!(direct_error.llm_provider, expected_provider);
-    }
+    assert_direct_enqueued_model(&harness, data(Some("gpt-4o-mini")), "gpt-4o-mini", "openai")
+        .await;
+    assert_direct_enqueued_model(&harness, null_model_data(), "", "litellm_proxy").await;
+    assert_direct_enqueued_model(
+        &harness,
+        data(Some("unknown-batch-model")),
+        "unknown-batch-model",
+        "litellm_proxy",
+    )
+    .await;
 }
 
 // tpd_window_refund: a daily window's stored value truncates, and its refund op carries the window identity
@@ -735,7 +719,7 @@ async fn counter_partial_failure(#[case] limiter_fails: bool) {
                 WindowStartValue::Integer(1_699_980_000),
             ),
         ]),
-        ..ScriptedCache::default()
+        reads: Arc::default(),
     };
     let harness = harness(limiter, ScriptedStore::default(), cache);
     let mut per_model = IndexMap::new();

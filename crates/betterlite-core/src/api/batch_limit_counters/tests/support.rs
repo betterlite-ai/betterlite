@@ -22,8 +22,8 @@ use crate::api::batch_limit_counters::ports::{
 };
 use crate::api::batch_limit_counters::records::{
     BatchCounterCode, BatchCounterLimitType, BatchCounterResponse, BatchCounterStatus,
-    BatchFileUsage, BatchLimitCounterAnswer, BatchReservationBackend, BatchReservationWindow,
-    BatchTpdRefundOperation, WindowStartValue,
+    BatchEnqueuedLimitExceeded, BatchFileUsage, BatchLimitCounterAnswer, BatchReservationBackend,
+    BatchReservationWindow, BatchTpdRefundOperation, WindowStartValue,
 };
 use crate::api::batch_limit_descriptors::descriptors::{
     BatchDescriptorIncrements, BatchDescriptorRateLimit, BatchLimitDescriptor,
@@ -61,8 +61,11 @@ impl ScriptedLimiter {
         responses: Vec<Result<BatchCounterResponse, LimiterFailure>>,
     ) -> Self {
         Self {
+            base: Vec::new(),
+            project: (Vec::new(), Vec::new()),
             responses: Arc::new(Mutex::new(VecDeque::from(responses))),
-            ..Self::default()
+            calls: Arc::default(),
+            base_calls: Arc::default(),
         }
     }
 
@@ -143,7 +146,7 @@ impl ScriptedStore {
     ) -> Self {
         Self {
             replies: Arc::new(Mutex::new(VecDeque::from(replies))),
-            ..Self::default()
+            calls: Arc::default(),
         }
     }
 
@@ -184,7 +187,7 @@ impl ScriptedCache {
     pub(super) fn with_value(key: &str, value: WindowStartValue) -> Self {
         Self {
             values: BTreeMap::from([(String::from(key), value)]),
-            ..Self::default()
+            reads: Arc::default(),
         }
     }
 
@@ -476,6 +479,31 @@ pub(super) fn rejection(answer: &BatchLimitCounterAnswer) -> &ProxyRateLimitErro
             panic!("the answer is not a rejection")
         }
     }
+}
+
+pub(super) async fn assert_direct_enqueued_model(
+    harness: &Harness,
+    fields: RequestData,
+    expected_model: &str,
+    expected_provider: &str,
+) {
+    let answer = harness
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::RaiseEnqueuedLimitError {
+                over_limit: BatchEnqueuedLimitExceeded {
+                    scope: scope("sk-1", 15),
+                    enqueued: 10,
+                },
+                data: fields,
+                batch_usage: usage(30, 2, 0),
+            },
+        ]))
+        .await
+        .unwrap();
+    let error = rejection(&answer.answers[0]);
+    assert_eq!(error.model, expected_model);
+    assert_eq!(error.llm_provider, expected_provider);
 }
 
 #[derive(Clone, Copy)]
