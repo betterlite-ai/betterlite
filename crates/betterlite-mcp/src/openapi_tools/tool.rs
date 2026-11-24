@@ -19,7 +19,7 @@ use crate::static_credential::validate_static_credential;
 
 pub const DEFAULT_AUTH_HEADER: &str = "Authorization";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenApiToolConfig {
     pub path: String,
     pub method: String,
@@ -32,7 +32,7 @@ pub struct OpenApiToolConfig {
     pub upstream_token_header: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenApiTool {
     path: String,
     method: String,

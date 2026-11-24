@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::openapi_tools::tool::DEFAULT_AUTH_HEADER;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct OpenApiCallContext {
     pub auth_header: Option<String>,
     pub extra_headers: BTreeMap<String, String>,

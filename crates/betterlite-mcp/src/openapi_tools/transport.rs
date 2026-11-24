@@ -24,7 +24,7 @@ use crate::client::sessions::factory::RedirectGuard;
 // httpx's default max_redirects: the initial request plus up to twenty followed redirects
 pub const MAX_REDIRECTS: usize = 20;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenApiRequest {
     pub method: Method,
     pub url: String,
