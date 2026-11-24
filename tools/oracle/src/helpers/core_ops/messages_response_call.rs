@@ -1,4 +1,5 @@
 mod events;
+mod fixture;
 mod script;
 mod view;
 

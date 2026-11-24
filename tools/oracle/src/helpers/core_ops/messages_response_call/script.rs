@@ -4,18 +4,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_anthropic::stream_state::state::IdSource;
-use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::messages_reasoning_route::seams::{
-    ModelMetadata, ProviderLookup, ProviderResolution, ResolvedTarget,
-};
 use betterlite_core::api::messages_response_call::error::MessagesResponseCallError;
 use betterlite_core::api::messages_response_call::records::{
     MessagesResponseCallAnswer, MessagesResponseCallInput, MessagesResponseCallResult,
     ResponsesAnswer,
 };
-use betterlite_core::api::messages_response_call::seams::{
-    MessagesResponseCallSeams, ResponsesCreatePort, ResponsesIncludeSupport,
-};
+use betterlite_core::api::messages_response_call::seams::ResponsesCreatePort;
 use betterlite_core::api::messages_response_call::service::messages_response_call;
 use betterlite_core::api::messages_response_stream::source::{
     ResponsesEvent, ResponsesEventSource,
@@ -35,8 +29,6 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
-use betterlite_models::full_model_metadata::record::ModelInfo;
-use betterlite_models::model_metadata_resolution::names::ModelCostMap;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_oracle_helper_api::error::{ErrorCode, HelperError, OrHelperError as _};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -46,6 +38,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::events::EventSpec;
+use super::fixture::Scripts;
 use super::view::{CallView, Output, frame_value};
 
 // The production call plus the scripted seams: the provider capability, the metadata lookups and what litellm.aresponses answers.
@@ -87,83 +80,6 @@ enum AnswerPlan {
     Response(Box<ResponsesApiResponse>),
     Stream(VecDeque<ResponsesEvent>),
     Other(String),
-}
-
-// The three lookups the handler asks: the provider's Responses config, get_llm_provider and get_model_info.
-struct Scripts {
-    include: ScriptedInclude,
-    resolution: ScriptedResolution,
-    metadata: ScriptedMetadata,
-}
-
-impl Scripts {
-    fn new(input: &Input) -> Result<Self, Box<HelperError>> {
-        Ok(Self {
-            include: ScriptedInclude {
-                supported: input.include_supported,
-            },
-            resolution: ScriptedResolution {
-                provider: input.provider.clone(),
-            },
-            metadata: ScriptedMetadata {
-                info: input.model_info.clone(),
-                cost: ModelCostMap::parse(b"{}").or_value_error()?,
-            },
-        })
-    }
-
-    fn seams(&self) -> MessagesResponseCallSeams<'_> {
-        MessagesResponseCallSeams {
-            include: &self.include,
-            provider: &self.resolution,
-            metadata: &self.metadata,
-            redactor: None,
-            limits: ApiLimits::default(),
-        }
-    }
-}
-
-struct ScriptedInclude {
-    supported: bool,
-}
-
-impl ResponsesIncludeSupport for ScriptedInclude {
-    fn supports_include(&self, _provider: &str, _model: &str) -> bool {
-        self.supported
-    }
-}
-
-struct ScriptedResolution {
-    provider: Option<String>,
-}
-
-impl ProviderResolution for ScriptedResolution {
-    fn resolve(&self, lookup: &ProviderLookup<'_>) -> Option<ResolvedTarget> {
-        self.provider.as_ref().map(|provider| ResolvedTarget {
-            model: lookup.model.unwrap_or_default().to_owned(),
-            provider: provider.clone(),
-            api_base: None,
-        })
-    }
-}
-
-struct ScriptedMetadata {
-    info: Option<IndexMap<String, Json>>,
-    cost: ModelCostMap,
-}
-
-impl ModelMetadata for ScriptedMetadata {
-    fn model_info(
-        &self,
-        _model: Option<&str>,
-        _custom_llm_provider: Option<&str>,
-    ) -> Option<ModelInfo> {
-        self.info.clone().map(|fields| ModelInfo { fields })
-    }
-
-    fn model_cost(&self) -> &ModelCostMap {
-        &self.cost
-    }
 }
 
 struct ScriptedPort {
@@ -235,7 +151,11 @@ pub(super) async fn drive(input: &Input) -> Result<Output, Box<HelperError>> {
     let sink = Sink;
     let pre_post = environment(&redactor, &sink)?;
     let mut state = logging_state(&redactor)?;
-    let scripts = Scripts::new(input)?;
+    let scripts = Scripts::new(
+        input.include_supported,
+        input.provider.clone(),
+        input.model_info.clone(),
+    )?;
     let port = ScriptedPort {
         answer: Mutex::new(Some(input.answer.plan()?)),
     };
