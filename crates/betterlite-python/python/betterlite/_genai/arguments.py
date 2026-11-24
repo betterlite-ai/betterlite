@@ -4,7 +4,7 @@ from typing import Final, TypedDict
 
 from pydantic import TypeAdapter
 
-from betterlite._endpoints.payload import CallValue, LOGGER_FN, REFUSED
+from betterlite._endpoints.payload import LOGGER_FN, REFUSED, CallValue
 from betterlite._endpoints.proxy import proxy_headers
 from betterlite._endpoints.settings import read_settings
 

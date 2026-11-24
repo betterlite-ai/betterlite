@@ -37,7 +37,7 @@ from typing_extensions import override
 
 from betterlite._completion import arguments
 from betterlite._completion.errors import UnsupportedCallArgument
-from betterlite._endpoints.payload import CallValue, LOGGER_FN_DROPPED
+from betterlite._endpoints.payload import LOGGER_FN_DROPPED, CallValue
 from betterlite._endpoints.proxy import ProxyAuthProvider
 from betterlite._genai import arguments as genai_arguments
 from betterlite._genai.arguments import fill_settings, session_settings
@@ -98,6 +98,11 @@ def common_call(server_url: str, key: str = GOOD_KEY) -> CommonCall:
     )
 
 
+# a plain dict, because the reference protocols take **kwargs and reject a TypedDict unpack
+def reference_call(server_url: str, key: str = GOOD_KEY) -> dict[str, JsonValue]:
+    return {"model": PREFIXED_MODEL, "contents": CONTENTS, "api_base": server_url, "api_key": key}
+
+
 def signature_rows(signature: inspect.Signature) -> list[str]:
     rows: list[str] = []
     for parameter in signature.parameters.values():
@@ -149,19 +154,14 @@ def bad_request_payload(failure: BadRequestError) -> ErrorPayload:
 
 async def async_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     ours = await agenerate_content(**common_call(server_url))
-    reference = reference_dict(
-        await LITELLM_ASYNC.agenerate_content(
-            model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY
-        )
-    )
+    reference = reference_dict(await LITELLM_ASYNC.agenerate_content(**reference_call(server_url)))
     return ours, reference
 
 
 async def flagged_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     ours = generate_content(**common_call(server_url), agenerate_content=True)
     reference = LITELLM_ASYNC.generate_content(
-        model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY,
-        agenerate_content=True,
+        **reference_call(server_url), agenerate_content=True,
     )
     return await awaited_dict(ours), reference_dict(await reference)
 
@@ -171,9 +171,7 @@ async def async_streams(server_url: str) -> tuple[list[bytes], list[bytes]]:
     reference = [
         chunk
         async for chunk in await reference_stream_async(
-            LITELLM_ASYNC.agenerate_content_stream(
-                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY
-            )
+            LITELLM_ASYNC.agenerate_content_stream(**reference_call(server_url))
         )
     ]
     return ours, reference
@@ -182,8 +180,7 @@ async def async_streams(server_url: str) -> tuple[list[bytes], list[bytes]]:
 async def flagged_stream(server_url: str) -> tuple[list[bytes], list[bytes]]:
     ours = generate_content_stream(**common_call(server_url), agenerate_content_stream=True)
     reference = LITELLM_ASYNC.generate_content_stream(
-        model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY,
-        agenerate_content_stream=True,
+        **reference_call(server_url), agenerate_content_stream=True,
     )
     return (
         [chunk async for chunk in await awaited_stream(ours)],
@@ -201,9 +198,7 @@ async def close_async_stream(server_url: str) -> None:
 
 
 async def reference_bad_stream(server_url: str) -> None:
-    await LITELLM_ASYNC.agenerate_content_stream(
-        model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=BAD_KEY
-    )
+    await LITELLM_ASYNC.agenerate_content_stream(**reference_call(server_url, BAD_KEY))
 
 
 def test_signature_matches_litellm() -> None:
@@ -224,11 +219,7 @@ def test_signature_matches_litellm() -> None:
 def test_plain_matches_litellm() -> None:
     with GenaiServer() as server:
         ours = content_dict(generate_content(**common_call(server.url)))
-        reference = reference_dict(
-            LITELLM.generate_content(
-                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=GOOD_KEY
-            )
-        )
+        reference = reference_dict(LITELLM.generate_content(**reference_call(server.url)))
         paths = [call["path"] for call in server.calls]
         bodies = [call["body"] for call in server.calls]
         key = recorded_header(server, FIRST, API_KEY_HEADER)
@@ -256,7 +247,7 @@ def test_optional_matches_litellm() -> None:
         )
         reference = reference_dict(
             LITELLM.generate_content(
-                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=GOOD_KEY,
+                **reference_call(server.url),
                 config=CONFIG,
                 tools=TOOLS,
                 extra_body=EXTRA_BODY,
@@ -277,29 +268,30 @@ def test_optional_matches_litellm() -> None:
 def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    expected: dict[str, str] = {"api_key": GOOD_KEY}
     assert session_settings() == "{}"
     their_key = litellm.api_key
     try:
         litellm.api_key = GOOD_KEY
         genai_arguments.settings_seam["api_key"] = GOOD_KEY
-        assert session_settings() == json.dumps({"api_key": GOOD_KEY})
+        assert session_settings() == json.dumps(expected)
         with GenaiServer() as server:
-            ours = content_dict(
-                generate_content(model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url)
-            )
-            reference = reference_dict(
-                LITELLM.generate_content(
-                    model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url
-                )
-            )
-            key = recorded_header(server, FIRST, API_KEY_HEADER)
-            reference_key = recorded_header(server, SECOND, API_KEY_HEADER)
+            answers = [
+                content_dict(
+                    generate_content(model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url)
+                ),
+                reference_dict(
+                    LITELLM.generate_content(
+                        model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url
+                    )
+                ),
+            ]
+            keys = [recorded_header(server, index, API_KEY_HEADER) for index in (FIRST, SECOND)]
     finally:
         litellm.api_key = their_key
         genai_arguments.settings_seam.clear()
-    assert ours == reference
-    assert key == GOOD_KEY
-    assert reference_key == GOOD_KEY
+    assert answers[FIRST] == answers[SECOND]
+    assert keys == [GOOD_KEY, GOOD_KEY]
 
 
 def test_optional_vertex_settings() -> None:
@@ -357,11 +349,7 @@ def test_stream_matches_litellm() -> None:
     with GenaiServer() as server:
         ours = list(own_stream(generate_content_stream(**common_call(server.url))))
         reference = list(
-            reference_stream(
-                LITELLM.generate_content_stream(
-                    model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=GOOD_KEY
-                )
-            )
+            reference_stream(LITELLM.generate_content_stream(**reference_call(server.url)))
         )
         paths = [call["path"] for call in server.calls]
     assert ours == reference
@@ -390,9 +378,7 @@ def test_stream_error_class() -> None:
         with pytest.raises(BadRequestError) as awaited:
             asyncio.run(agenerate_content_stream(**common_call(server.url, BAD_KEY)))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
-            LITELLM.generate_content_stream(
-                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=BAD_KEY
-            )
+            LITELLM.generate_content_stream(**reference_call(server.url, BAD_KEY))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
             asyncio.run(reference_bad_stream(server.url))
         paths = [call["path"] for call in server.calls]
@@ -428,9 +414,7 @@ def test_error_class_and_cause() -> None:
         with pytest.raises(BadRequestError) as caught:
             generate_content(**common_call(server.url, BAD_KEY))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
-            LITELLM.generate_content(
-                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=BAD_KEY
-            )
+            LITELLM.generate_content(**reference_call(server.url, BAD_KEY))
     payload = bad_request_payload(caught.value)
     assert payload["type"] == "BadRequestError"
 
