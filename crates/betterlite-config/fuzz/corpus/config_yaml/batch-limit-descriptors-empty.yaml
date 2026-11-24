@@ -1,0 +1,4 @@
+general_settings:
+  disable_batch_input_file_rate_limiting: null
+  skip_batch_input_file_rate_limiting_for_providers: []
+  skip_batch_input_file_rate_limiting_for_models: []
