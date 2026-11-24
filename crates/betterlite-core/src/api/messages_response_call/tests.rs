@@ -398,6 +398,13 @@ fn native() -> AnswerPlan {
     "",
     ""
 )]
+#[case::deployment_duplicates_survive(
+    r#"{"custom_llm_provider":"openai","include":["extra.one","extra.one"]}"#,
+    true,
+    r#"["reasoning.encrypted_content","extra.one","extra.one"]"#,
+    "",
+    ""
+)]
 #[case::anthropic_messages_never_travels(
     r#"{"custom_llm_provider":"openai","anthropic_messages":true}"#,
     true,
