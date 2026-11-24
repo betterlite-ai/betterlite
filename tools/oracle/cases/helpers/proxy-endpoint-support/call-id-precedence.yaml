@@ -1,0 +1,34 @@
+kind: helper
+name: proxy-endpoint-support-call-id-precedence
+call:
+  proxy_endpoint_support:
+    calls:
+      # a ProxyException that already carries a call id keeps it, and its other headers survive
+      - function: record
+        exception: {kind: proxy, message: original message, error_type: invalid_request_error, param: purpose, code: 400, headers: {x-litellm-call-id: original, x-other: keep}}
+        litellm_call_id: new-id
+        notice: false
+      # without one, the supplied id is inserted next to the existing headers
+      - function: record
+        exception: {kind: proxy, message: original message, error_type: invalid_request_error, param: purpose, code: 400, headers: {x-other: keep}}
+        litellm_call_id: new-id
+        notice: false
+      # no supplied id leaves a ProxyException without that header
+      - function: record
+        exception: {kind: proxy, message: original message, error_type: invalid_request_error, param: purpose, code: 400, headers: {x-other: keep}}
+        litellm_call_id: null
+        notice: false
+      - function: record
+        exception: {kind: http, status_code: 404, detail: missing}
+        litellm_call_id: call-4
+        notice: false
+      - function: record
+        exception: {kind: http, status_code: 404, detail: missing}
+        litellm_call_id: null
+        notice: false
+      - function: record
+        exception: {kind: failure, message: boom, status_code: 500, param: null}
+        litellm_call_id: call-6
+        notice: false
+env: {}
+compare: {ignore: []}

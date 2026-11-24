@@ -1,0 +1,15 @@
+kind: helper
+name: proxy-endpoint-support-known-upload-model
+call:
+  proxy_endpoint_support:
+    calls:
+      # duplicate catalog entries stay distinct names, and only the exact name matches
+      - function: known_model
+        models: [model_a, model_a]
+        lookups: [model_a, Model_A, openai/model_a, null]
+      # an absent router answers false even for a name the catalog would list
+      - function: known_model
+        models: null
+        lookups: [model_a]
+env: {}
+compare: {ignore: []}
