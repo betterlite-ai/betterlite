@@ -1,0 +1,17 @@
+name: public-openapi-disabled
+config: |
+  model_list: []
+env:
+  NO_OPENAPI: "true"
+request:
+  method: GET
+  path: /openapi.json
+  headers:
+    Authorization: Bearer oracle-master
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

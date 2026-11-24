@@ -61,7 +61,6 @@ pub async fn get_supported_endpoints(
     }
 }
 
-// Awaits a future B003 integration task that merges this into the server's main router.
 pub fn providers_routes() -> Router {
     let endpoints: EndpointsState = Arc::new(load_bundled_endpoints());
     Router::new()

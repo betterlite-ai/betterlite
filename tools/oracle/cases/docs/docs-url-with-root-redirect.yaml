@@ -1,0 +1,17 @@
+name: docs-docs-url-with-root-redirect
+config: |
+  model_list: []
+env:
+  DOCS_URL: /docs
+  ROOT_REDIRECT_URL: /ui
+request:
+  method: GET
+  path: /
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [location]
+  headers_present: []
+  upstream_headers: []
+  ignore: []
