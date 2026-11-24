@@ -5,7 +5,9 @@ use futures_util::stream::BoxStream;
 
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::completion::CompletionPort;
-use crate::completion_bridge::dispatch::{A2AProviderDispatch, Buffered, Mode, Streamed, dispatch};
+use crate::completion_bridge::dispatch::{
+    A2AProviderDispatch, Buffered, CompletionError, Mode, Streamed,
+};
 use crate::completion_bridge::params::{BridgeCall, ParamsError, optional_text};
 use crate::logging_context::json_rpc_id_text;
 use crate::provider_selector::{A2AProviderConfig, get_provider_config};
@@ -44,13 +46,21 @@ where
         api_base: call.api_base.as_deref(),
         agent_extra_headers: call.agent_extra_headers.as_ref(),
     };
-    let answer = dispatch::<Buffered, C, P, S>(
-        &bridge_call,
-        bridge.completion,
-        bridge.providers,
-        &mut *bridge.source,
-    )
-    .await?;
+    // dispatch's Mode-generic future is not provably Send in the Python call (rust-lang/rust#100013)
+    let answer = match select_config(&bridge_call) {
+        Ok(Some(config)) => {
+            <Buffered as Mode<'_, C, P>>::provider(bridge.providers, config, &bridge_call).await
+        }
+        Ok(None) => {
+            <Buffered as Mode<'_, C, P>>::direct(
+                &bridge_call,
+                bridge.completion,
+                &mut *bridge.source,
+            )
+            .await
+        }
+        Err(error) => <Buffered as Mode<'_, C, P>>::failed(CompletionError::Params(error)),
+    }?;
     response_from_dict(&answer, &request_id).map_err(SendEntryError::<C::Error, P::Error>::from)
 }
 
