@@ -26,12 +26,12 @@ fn runtime_for(source: &str) -> TokensRuntime {
 
 fn selected(runtime: &TokensRuntime) -> TokenizerType {
     let (_, kind) = get_runtime()
-        .block_on(runtime.selector.select("claude-2", None))
+        .block_on(runtime.selector.select("claude-sonnet-4-5", None))
         .unwrap();
     kind
 }
 
-// claude-2 has a bundled hugging face tokenizer, so only the download flag decides this branch
+// the bundled catalog lists claude-sonnet-4-5 as anthropic without claude-3 in its name, so only the download flag decides this branch
 #[test]
 fn tokens_runtime_takes_the_download_flag_from_the_engines_section() {
     assert_eq!(selected(&runtime_for("{}")), TokenizerType::HuggingFace);
