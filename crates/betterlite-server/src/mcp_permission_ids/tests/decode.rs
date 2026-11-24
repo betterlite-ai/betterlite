@@ -43,6 +43,8 @@ fn decodes_a_stored_grant_object() {
 #[case::null(b"null")]
 #[case::number(b"7")]
 #[case::bool(b"true")]
+#[case::zero(b"0")]
+#[case::false_bool(b"false")]
 fn non_object_documents_are_refused(#[case] bytes: &[u8]) {
     assert!(matches!(
         decode_mcp_tool_grants_json(bytes),
