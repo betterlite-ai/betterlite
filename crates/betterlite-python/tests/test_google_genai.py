@@ -330,7 +330,7 @@ def test_optional_vertex_settings() -> None:
             "vertex_location": VERTEX_LOCATION,
         },
         {"vertex_project": CALL_PROJECT, "vertex_location": VERTEX_LOCATION},
-        {"vertex_project": ""},
+        {"vertex_project": "", "vertex_location": VERTEX_LOCATION},
     ]
     our_project = betterlite.vertex_project
     original = genai_arguments.read_settings
