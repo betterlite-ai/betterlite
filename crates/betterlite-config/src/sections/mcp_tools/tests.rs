@@ -93,7 +93,7 @@ fn keeps_non_mapping_entries() {
 }
 
 #[rstest]
-#[case::absent("mcp_tools:\n  - {name: first, description: d, handler: h}\n", &[] as &[&str])]
+#[case::absent("mcp_tools:\n  - {name: first, description: d, handler: h}\n", &[])]
 #[case::null("mcp_tools:\n  - {name: first, description: d, handler: h, input_schema: null}\n", &[])]
 #[case::object("mcp_tools:\n  - name: first\n    description: d\n    handler: h\n    input_schema:\n      type: object\n", &["type"])]
 fn reads_the_input_schema(#[case] source: &str, #[case] keys: &[&str]) {

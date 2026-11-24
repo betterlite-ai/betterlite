@@ -17,7 +17,7 @@ pub struct Raw {
     mcp_tools: Option<Box<Json>>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct McpToolsSection {
     pub entries: Vec<McpToolEntry>,
 }
@@ -25,13 +25,13 @@ pub struct McpToolsSection {
 // the sections! macro names every section's settings type Settings
 pub type Settings = McpToolsSection;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum McpToolEntry {
     Tool(McpToolSettings),
     NotAMapping,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct McpToolSettings {
     pub name: Option<String>,
     pub description: Option<String>,
