@@ -159,19 +159,12 @@ fn apply_embed_kwargs(
 ) {
     kwargs.response_cost = Some(cost);
     kwargs.model = Some(model.to_owned());
-    let Some(body) = kwargs
-        .passthrough_request_body
-        .as_ref()
-        .filter(|body| !body.is_empty())
-    else {
+    let Some(body) = kwargs.passthrough_request_body.as_ref() else {
         return;
     };
     let Some(user) = payload.end_user(Some(body)) else {
         return;
     };
-    if user.is_empty() {
-        return;
-    }
     let mut user_field = IndexMap::new();
     user_field.insert("user".to_owned(), Json::Text(user));
     let mut request = IndexMap::new();
@@ -224,14 +217,12 @@ pub(crate) fn unix_seconds() -> u64 {
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 
-// One serde round trip between the two JSON models this module reads and the wire type it logs.
+// One serde round trip through text, which keeps object keys in order: serde_json's Value sorts them.
 pub(crate) fn converted<T, U>(value: &T) -> Result<U, serde_json::Error>
 where
     T: Serialize + ?Sized,
     U: DeserializeOwned,
 {
-    match serde_json::to_value(value) {
-        Ok(encoded) => serde_json::from_value(encoded),
-        Err(error) => Err(error),
-    }
+    let encoded = serde_json::to_string(value)?;
+    serde_json::from_str(&encoded)
 }

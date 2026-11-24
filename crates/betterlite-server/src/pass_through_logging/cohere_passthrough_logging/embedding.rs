@@ -78,8 +78,9 @@ impl CohereEmbeddingTools for CohereEmbeddingLogging {
             &mut recorder,
         );
         // B1418 logs post_call before it fills the response, so the recorded call is replayed whatever the outcome.
-        replay(recorder.calls, call_log, &environment);
+        let replayed = replay(recorder.calls, call_log, &environment);
         let reply = decoded.map_err(PassthroughLoggingError::transform)?;
+        replayed?;
         logged_embedding(&reply)
     }
 
@@ -189,23 +190,32 @@ impl EmbeddingHooks for Recorder {
 }
 
 // The post_call LiteLLM makes inside _transform_response: input texts, the request data and the parsed reply.
-fn replay(calls: Vec<LoggedCall>, call_log: &mut LoggingState, environment: &PrePostEnv<'_>) {
+fn replay(
+    calls: Vec<LoggedCall>,
+    call_log: &mut LoggingState,
+    environment: &PrePostEnv<'_>,
+) -> Result<(), PassthroughLoggingError> {
     for call in calls {
+        let complete_input_dict =
+            converted::<_, JsonObject>(&call.body).map_err(PassthroughLoggingError::transform)?;
+        let original_response = converted::<_, Json>(&call.original_response)
+            .map_err(PassthroughLoggingError::transform)?;
         let additional_args = AdditionalArgs {
             api_base: None,
             headers: None,
-            complete_input_dict: Some(RawBody::Object(logged_object(&call.body))),
+            complete_input_dict: Some(RawBody::Object(complete_input_dict)),
             request_str: None,
             openai_sdk: None,
             passthrough: IndexMap::new(),
         };
         let logged = LoggedPostCall {
-            original_response: logged_json(&call.original_response),
+            original_response,
             input: Json::List(call.input.into_iter().map(Json::Text).collect()),
             additional_args,
         };
         post_call(call_log, &logged, environment);
     }
+    Ok(())
 }
 
 fn logged_embedding(
@@ -222,23 +232,4 @@ fn logged_embedding(
         usage: decoded.usage.clone(),
         hidden_params: IndexMap::new(),
     })
-}
-
-// B1418 speaks the prompts JSON model and B247 the decisions one; both are the same tree.
-fn logged_json(value: &PromptsJson) -> Json {
-    match value {
-        PromptsJson::Null => Json::Null,
-        PromptsJson::Bool(flag) => Json::Bool(*flag),
-        PromptsJson::Number(number) => Json::Number(number.clone()),
-        PromptsJson::Text(text) => Json::Text(text.clone()),
-        PromptsJson::List(items) => Json::List(items.iter().map(logged_json).collect()),
-        PromptsJson::Object(fields) => Json::Object(logged_object(fields)),
-    }
-}
-
-fn logged_object(fields: &PromptsObject) -> JsonObject {
-    fields
-        .iter()
-        .map(|(name, value)| (name.clone(), logged_json(value)))
-        .collect()
 }

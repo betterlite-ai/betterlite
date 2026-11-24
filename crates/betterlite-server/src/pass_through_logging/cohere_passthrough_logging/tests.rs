@@ -404,6 +404,38 @@ fn cohere_embed_skips_the_user_lookup_without_a_request_body() {
 }
 
 #[test]
+fn cohere_embed_keeps_the_kwargs_without_a_found_user() {
+    let tools = Arc::new(FakeTools::priced(Decimal::new(25, 2)));
+    let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
+    let body = object(r#"{"texts": ["a"]}"#);
+    let payload = Arc::new(FakePayload::new(ResponseLoggingKwargs::default()));
+    let request = object(r#"{"model": "command-r", "texts": ["a"]}"#);
+    let response = object("{}");
+    let kwargs = ResponseLoggingKwargs {
+        response_cost: None,
+        model: None,
+        litellm_params: object(r#"{"api_base": "https://api.cohere.ai"}"#),
+        standard_logging_object: None,
+        passthrough_request_body: Some(body.clone()),
+    };
+    let mut state = logging_state();
+    let outcome = cohere_logger(&provider, &payload, &tools)
+        .cohere_passthrough_handler(input(&request, &response, &mut state, "/v1/embed", kwargs))
+        .expect("the embed reply is logged");
+    assert_eq!(
+        outcome.kwargs.litellm_params.get("api_base"),
+        Some(&Json::Text("https://api.cohere.ai".to_owned()))
+    );
+    assert!(
+        !outcome
+            .kwargs
+            .litellm_params
+            .contains_key("proxy_server_request")
+    );
+    assert_eq!(payload.end_user_bodies(), [Some(body)]);
+}
+
+#[test]
 fn cohere_fallback_runs_the_chat_handler_after_a_decode_failure() {
     let tools = Arc::new(FakeTools::failing_decode());
     let provider = Arc::new(FakeProvider::chat(json_object(r#"{"choices": []}"#)));
