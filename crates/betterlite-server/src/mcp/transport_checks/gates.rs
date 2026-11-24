@@ -165,10 +165,6 @@ pub fn allowlist_from_settings(general_settings: &SettingsStore) -> Option<McpCl
     load_mcp_client_allowlist(&settings)
 }
 
-pub fn jwt_client_field_set(general_settings: &SettingsStore) -> bool {
-    allowlist_from_settings(general_settings).is_some_and(|allowlist| allowlist.jwt_field.is_some())
-}
-
 // reject_disallowed_mcp_client: the dashboard's own session is not a client application
 pub fn reject_disallowed_client(
     allowlist: Option<&McpClientAllowlist>,

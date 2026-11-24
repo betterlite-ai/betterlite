@@ -24,7 +24,7 @@ enum Operation {
     InitializeDetection { bodies: Vec<String> },
     ClientInfo { bodies: Vec<String> },
     TopLevelMethodScan { texts: Vec<String> },
-    ForwardedAuthorization { headers: Vec<(String, String)> },
+    ForwardedAuthorization { headers: Vec<Vec<(String, String)>> },
 }
 
 // the UserAPIKeyAuth fields a case sets; construct hashes an api_key on both sides
@@ -118,8 +118,11 @@ impl Helper for Op {
                     .collect::<Vec<_>>(),
             )?),
             Operation::ForwardedAuthorization { headers } => {
-                let map = header_map(headers)?;
-                Ok(serde_json::to_value(forwarded_authorization(&map))?)
+                let answers = headers
+                    .iter()
+                    .map(|pairs| header_map(pairs).map(|map| forwarded_authorization(&map)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(serde_json::to_value(answers)?)
             }
         }
     }

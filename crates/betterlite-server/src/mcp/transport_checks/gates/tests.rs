@@ -20,7 +20,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::{
-    allowlist_from_settings, jwt_client_field_set, proxy_error_to_http, reject_disallowed_client,
+    allowlist_from_settings, proxy_error_to_http, reject_disallowed_client,
     reject_disallowed_origin, unsupported_protocol_version, version_refusal,
 };
 
@@ -371,7 +371,11 @@ fn jwt_client_field_set_answers_from_the_allowlist(
     #[case] pairs: &[(&str, JsonValue)],
     #[case] expected: bool,
 ) {
-    assert_eq!(jwt_client_field_set(&store(pairs)), expected);
+    let found = allowlist_from_settings(&store(pairs));
+    assert_eq!(
+        found.is_some_and(|allowlist| allowlist.jwt_field.is_some()),
+        expected
+    );
 }
 
 #[test]

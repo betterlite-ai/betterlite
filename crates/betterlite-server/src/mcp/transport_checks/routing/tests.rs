@@ -122,9 +122,9 @@ fn a_session_id_may_hold_non_ascii_utf8() {
     let mut map = HeaderMap::new();
     map.append(
         "mcp-session-id",
-        HeaderValue::from_bytes("caf\u{e9}".as_bytes()).unwrap(),
+        HeaderValue::from_bytes("na\u{ef}ve".as_bytes()).unwrap(),
     );
-    assert_eq!(session_id_header(&map), Some("caf\u{e9}".to_owned()));
+    assert_eq!(session_id_header(&map), Some("na\u{ef}ve".to_owned()));
 }
 
 #[test]

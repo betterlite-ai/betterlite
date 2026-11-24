@@ -43,7 +43,7 @@ class TopLevelMethodQuery(TypedDict):
 
 class ForwardedAuthorizationQuery(TypedDict):
     operation: Literal["forwarded_authorization"]
-    headers: list[tuple[str, str]]
+    headers: list[list[tuple[str, str]]]
 
 
 Input: TypeAlias = (
@@ -70,7 +70,7 @@ def fingerprint_answer(call: FingerprintCall) -> str:
     oauth2_headers: dict[str, str] | None = None
     if configured is not None:
         oauth2_headers = dict(configured)
-    return server._owner_fingerprint_for(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1185
+    return server._owner_fingerprint_for(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1185
         auth,
         oauth2_headers,
         call.get("client_ip"),
@@ -78,7 +78,7 @@ def fingerprint_answer(call: FingerprintCall) -> str:
 
 
 def client_info_answer(body: str) -> JsonValue:
-    client = server._extract_initialize_client_info(body.encode("utf-8"))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1254
+    client = server._extract_initialize_client_info(body.encode("utf-8"))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1254
     if client is None:
         return None
     return {"name": client.name, "version": client.version}
@@ -89,37 +89,37 @@ def run(input_value: Input) -> JsonValue:
     match input_value["operation"]:
         case "server_in_path":
             return JSON.validate_python(
-                [
-                    server._get_mcp_servers_in_path(path)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1074
+                [  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1074
+                    server._get_mcp_servers_in_path(path)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1074
                     for path in input_value["paths"]
                 ]
             )
         case "owner_fingerprint":
             return JSON.validate_python(
-                [fingerprint_answer(call) for call in input_value["calls"]]
+                [fingerprint_answer(call) for call in input_value["calls"]]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1185
             )
         case "initialize_detection":
             return JSON.validate_python(
-                [
-                    server._is_initialize_request(body.encode("utf-8"))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1241
+                [  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1241
+                    server._is_initialize_request(body.encode("utf-8"))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1241
                     for body in input_value["bodies"]
                 ]
             )
         case "client_info":
             return JSON.validate_python(
-                [client_info_answer(body) for body in input_value["bodies"]]
+                [client_info_answer(body) for body in input_value["bodies"]]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1254
             )
         case "top_level_method_scan":
             return JSON.validate_python(
-                [
-                    server._jsonrpc_text_has_top_level_method(text)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L194
+                [  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L194
+                    server._jsonrpc_text_has_top_level_method(text)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L194
                     for text in input_value["texts"]
                 ]
             )
         case "forwarded_authorization":
             return JSON.validate_python(
-                [
-                    server._get_forwarded_auth_from_scope(header_scope(pairs))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1837
+                [  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1837
+                    server._get_forwarded_auth_from_scope(header_scope(pairs))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1837
                     for pairs in input_value["headers"]
                 ]
             )
