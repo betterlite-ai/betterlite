@@ -46,7 +46,7 @@ def store_for(config: proxy_server.ProxyConfig, section: Section) -> SettingsSto
     return None
 
 
-# reject_config_owned_writes: None when the store lets the write through, otherwise LiteLLM's 400 detail
+# reject_config_owned_writes: None when the store lets the write through, otherwise the 400 detail
 def owned_writes(input_value: Input) -> Answer:
     proxy_server.user_config_file_path = input_value["config_file_path"]
     config = proxy_server.ProxyConfig()

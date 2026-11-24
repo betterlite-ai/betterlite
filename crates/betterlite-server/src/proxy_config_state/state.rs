@@ -1,7 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use betterlite_config::sections::settings::{FieldSource, JsonValue, Section, SettingsStore};
+use betterlite_config::sections::settings::{
+    DbRow, FieldSource, JsonValue, Section, SettingsStore,
+};
 
 use super::error::{ConfigOwnedDetail, ConfigStateError};
 
@@ -54,16 +56,19 @@ impl ProxyConfigState {
         }
     }
 
-    pub(crate) const fn settings_store_mut(
+    // apply_db_row: the merge result reaches the section's store, and ui_settings has none
+    pub(crate) fn apply_section_row(
         &mut self,
         section: Section,
-    ) -> Option<&mut SettingsStore> {
+        row: DbRow,
+        values: BTreeMap<String, JsonValue>,
+    ) {
         match section {
-            Section::GeneralSettings => Some(&mut self.general_settings),
-            Section::RouterSettings => Some(&mut self.router_settings),
-            Section::LitellmSettings => Some(&mut self.litellm_settings),
-            Section::EnvironmentVariables => Some(&mut self.environment_variables),
-            Section::UiSettings => None,
+            Section::GeneralSettings => self.general_settings.apply_db_row(row, values),
+            Section::RouterSettings => self.router_settings.apply_db_row(row, values),
+            Section::LitellmSettings => self.litellm_settings.apply_db_row(row, values),
+            Section::EnvironmentVariables => self.environment_variables.apply_db_row(row, values),
+            Section::UiSettings => (),
         }
     }
 
@@ -84,10 +89,7 @@ impl ProxyConfigState {
             return Ok(());
         };
         let rejected = store.rejected_writes(changed);
-        if rejected.is_empty() {
-            return Ok(());
-        }
-        Err(self.config_owned_error(section, &rejected, store))
+        self.refuse_config_owned(section, store, rejected)
     }
 
     // A delete has no value to compare, so any key the file owns is refused
@@ -99,15 +101,27 @@ impl ProxyConfigState {
         let Some(store) = self.settings_store(section) else {
             return Ok(());
         };
-        let owned: BTreeSet<String> = keys
-            .iter()
-            .filter(|key| store.resolution(key.as_str()).source() == FieldSource::Config)
-            .cloned()
-            .collect();
-        if owned.is_empty() {
+        let mut rejected = Vec::new();
+        for key in keys {
+            if store.resolution(key.as_str()).source() == FieldSource::Config {
+                rejected.push(key.clone());
+            }
+        }
+        rejected.sort();
+        rejected.dedup();
+        self.refuse_config_owned(section, store, rejected)
+    }
+
+    // Both guards end at the same refusal; only the shadowed-value sentence reads the store
+    fn refuse_config_owned(
+        &self,
+        section: Section,
+        store: &SettingsStore,
+        rejected: Vec<String>,
+    ) -> Result<(), ConfigStateError> {
+        if rejected.is_empty() {
             return Ok(());
         }
-        let rejected: Vec<String> = owned.into_iter().collect();
         Err(self.config_owned_error(section, &rejected, store))
     }
 

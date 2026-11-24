@@ -202,9 +202,16 @@ async fn database_seal_environment_encrypts_every_value() {
         sealed.keys().collect::<Vec<&String>>(),
         values.keys().collect::<Vec<&String>>()
     );
-    for (key, value) in &values {
-        assert_ne!(sealed.get(key), Some(value), "{key} stays plaintext");
-    }
+    assert_ne!(
+        sealed.get("OPENAI_API_KEY"),
+        values.get("OPENAI_API_KEY"),
+        "OPENAI_API_KEY stays plaintext"
+    );
+    assert_ne!(
+        sealed.get("OTHER_KEY"),
+        values.get("OTHER_KEY"),
+        "OTHER_KEY stays plaintext"
+    );
     let Some(JsonValue::String(text)) = sealed.get("OPENAI_API_KEY") else {
         panic!("the sealed key stays a string");
     };

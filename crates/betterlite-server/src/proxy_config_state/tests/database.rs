@@ -4,8 +4,8 @@ use betterlite_config::sections::settings::{JsonValue, Section};
 use serde_json::json;
 
 use super::support;
+use crate::proxy_config_state::database::merge_section_values;
 use crate::proxy_config_state::database::postgres;
-use crate::proxy_config_state::database::{merge_environment_values, merge_section_values};
 use crate::proxy_config_state::error::ConfigStateError;
 
 fn keys(names: &[&str]) -> BTreeSet<String> {
@@ -30,17 +30,6 @@ fn the_section_merge_skips_a_row_that_already_matches() {
     assert_eq!(
         merge_section_values(&existing, &changed, &BTreeSet::new()),
         None
-    );
-}
-
-#[test]
-fn the_environment_merge_keeps_unnamed_keys_and_drops_deleted_ones() {
-    let existing = support::values(&[("keep", json!("old")), ("drop", json!("x"))]);
-    let sealed = support::values(&[("keep", json!("new")), ("add", json!("y"))]);
-    let merged = merge_environment_values(&existing, &sealed, &keys(&["drop"]));
-    assert_eq!(
-        merged,
-        support::values(&[("keep", json!("new")), ("add", json!("y"))])
     );
 }
 

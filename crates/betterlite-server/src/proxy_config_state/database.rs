@@ -44,6 +44,17 @@ pub trait ConfigStateDatabase: Send + Sync {
     ) -> Result<(), ConfigStateError>;
 }
 
+fn apply_section_edits(
+    merged: &mut BTreeMap<String, JsonValue>,
+    changed: &BTreeMap<String, JsonValue>,
+    removed: &BTreeSet<String>,
+) {
+    merged.retain(|key, _| !removed.contains(key));
+    for (key, value) in changed {
+        merged.insert(key.clone(), value.clone());
+    }
+}
+
 // _upsert_changed_config_section: the stored section minus removed keys plus changed ones, None when the row already holds that
 #[must_use]
 pub fn merge_section_values(
@@ -52,34 +63,8 @@ pub fn merge_section_values(
     removed: &BTreeSet<String>,
 ) -> Option<BTreeMap<String, JsonValue>> {
     let mut merged = existing.clone();
-    for key in removed {
-        merged.remove(key);
-    }
-    for (key, value) in changed {
-        merged.insert(key.clone(), value.clone());
-    }
-    if merged == *existing {
-        None
-    } else {
-        Some(merged)
-    }
-}
-
-// save_environment_variables: the named keys replace or delete, every other stored key stays
-#[must_use]
-pub fn merge_environment_values(
-    existing: &BTreeMap<String, JsonValue>,
-    sealed: &BTreeMap<String, JsonValue>,
-    deleted: &BTreeSet<String>,
-) -> BTreeMap<String, JsonValue> {
-    let mut merged = existing.clone();
-    for key in deleted {
-        merged.remove(key);
-    }
-    for (key, value) in sealed {
-        merged.insert(key.clone(), value.clone());
-    }
-    merged
+    apply_section_edits(&mut merged, changed, removed);
+    (merged != *existing).then_some(merged)
 }
 
 // The statements one transaction runs for these edits, so the same merge logic serves the row lock and a test double
@@ -134,8 +119,9 @@ where
         .stored_values(section)
         .await?
         .unwrap_or_default();
-    let merged = merge_environment_values(&existing, sealed, deleted);
-    transaction.write_values(section, &merged).await
+    let merged = merge_section_values(&existing, sealed, deleted);
+    let row = merged.unwrap_or(existing);
+    transaction.write_values(section, &row).await
 }
 
 pub struct DatabaseConfigState<'db> {

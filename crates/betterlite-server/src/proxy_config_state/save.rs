@@ -89,9 +89,7 @@ async fn save_changed_section(
     let Some(written) = database.merge_section(&write).await? else {
         return Ok(());
     };
-    if let Some(store) = state.settings_store_mut(section) {
-        store.apply_db_row(DbRow::from(section), written);
-    }
+    state.apply_section_row(section, DbRow::from(section), written);
     Ok(())
 }
 
@@ -212,8 +210,6 @@ fn merged_config(
     new_config: &BTreeMap<String, JsonValue>,
 ) -> BTreeMap<String, JsonValue> {
     let mut merged = baseline.clone();
-    for (key, value) in new_config {
-        merged.insert(key.clone(), value.clone());
-    }
+    merged.extend(new_config.clone());
     merged
 }

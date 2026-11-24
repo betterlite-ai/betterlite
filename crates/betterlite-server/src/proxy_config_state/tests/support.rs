@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use betterlite_config::sections::settings::{JsonValue, Section};
 
 use crate::proxy_config_state::database::{
-    ConfigStateDatabase, SectionWrite, merge_environment_values, merge_section_values,
+    ConfigStateDatabase, SectionWrite, merge_section_values,
 };
 use crate::proxy_config_state::error::ConfigStateError;
 use crate::proxy_config_state::state::ProxyConfigState;
@@ -134,11 +134,12 @@ impl ConfigStateDatabase for MemoryDatabase {
             .get(section.name())
             .cloned()
             .unwrap_or_default();
-        let merged = merge_environment_values(&existing, sealed, deleted);
+        let merged = merge_section_values(&existing, sealed, deleted);
+        let row = merged.unwrap_or(existing);
         self.sections
             .lock()
             .expect("sections")
-            .insert(section.name().to_owned(), merged);
+            .insert(section.name().to_owned(), row);
         self.invalidated
             .lock()
             .expect("invalidated")
