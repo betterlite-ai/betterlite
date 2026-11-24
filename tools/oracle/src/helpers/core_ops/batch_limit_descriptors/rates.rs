@@ -142,11 +142,11 @@ fn describe(descriptor: RateLimitDescriptor) -> BatchLimitDescriptor {
     BatchLimitDescriptor {
         key: descriptor.key,
         value: descriptor.value,
-        rate_limit: descriptor.rate_limit.map(limit_record),
+        rate_limit: descriptor.rate_limit.as_ref().map(limit_record),
     }
 }
 
-fn limit_record(limit: RateLimitDescriptorRateLimit) -> BatchDescriptorRateLimit {
+const fn limit_record(limit: &RateLimitDescriptorRateLimit) -> BatchDescriptorRateLimit {
     BatchDescriptorRateLimit {
         requests_per_unit: limit.requests_per_unit,
         tokens_per_unit: limit.tokens_per_unit,

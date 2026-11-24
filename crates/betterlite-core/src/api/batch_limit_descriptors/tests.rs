@@ -74,25 +74,25 @@ fn skip_answer(answer: BatchLimitAnswer) -> (bool, Option<Vec<BatchLimitDescript
     (skip, descriptors)
 }
 
-fn project_io_flag(answer: BatchLimitAnswer) -> bool {
+fn project_io_flag(answer: &BatchLimitAnswer) -> bool {
     let BatchLimitAnswer::ProjectHasIoLimits { has_limits } = answer else {
         panic!("unexpected answer {answer:?}");
     };
-    has_limits
+    *has_limits
 }
 
-fn access_check_flag(answer: BatchLimitAnswer) -> bool {
+fn access_check_flag(answer: &BatchLimitAnswer) -> bool {
     let BatchLimitAnswer::KeyRequiresAccessCheck { required } = answer else {
         panic!("unexpected answer {answer:?}");
     };
-    required
+    *required
 }
 
-fn applicable_flag(answer: BatchLimitAnswer) -> bool {
+fn applicable_flag(answer: &BatchLimitAnswer) -> bool {
     let BatchLimitAnswer::HasApplicableLimits { applicable } = answer else {
         panic!("unexpected answer {answer:?}");
     };
-    applicable
+    *applicable
 }
 
 fn descriptors_answer(answer: BatchLimitAnswer) -> Vec<BatchLimitDescriptor> {
@@ -115,11 +115,11 @@ fn project_io_answer(
     (descriptors, increments)
 }
 
-fn tokens_answer(answer: BatchLimitAnswer) -> i64 {
+fn tokens_answer(answer: &BatchLimitAnswer) -> i64 {
     let BatchLimitAnswer::EstimateOutputTokens { tokens } = answer else {
         panic!("unexpected answer {answer:?}");
     };
-    tokens
+    *tokens
 }
 
 fn fetch_params_answer(answer: BatchLimitAnswer) -> (String, JsonObject) {
@@ -220,7 +220,7 @@ fn project_io_descriptors() {
         .map(|entry| (entry.requests, entry.tokens))
         .collect();
     assert_eq!(charges, vec![(0, 10), (0, 3), (0, 7), (0, 0)]);
-    assert!(project_io_flag(answers[1].clone()));
+    assert!(project_io_flag(&answers[1]));
 }
 
 #[rstest]
@@ -241,7 +241,7 @@ fn project_io_descriptors() {
 fn project_io_has_limits(#[case] principal: &str, #[case] expected: bool) {
     let service = service(settings(None, None, None), empty_limiter(), None);
     let answer = single(run_calls(&service, principal, PROJECT_LIMITS_CALL));
-    assert_eq!(project_io_flag(answer), expected);
+    assert_eq!(project_io_flag(&answer), expected);
 }
 
 #[rstest]
@@ -278,7 +278,7 @@ fn max_output_estimate(#[case] entry: &str, #[case] candidates: i64, #[case] exp
         r#"[{{"function": "estimate_output_tokens", "entry": {entry}, "min_configured_otpm_limit": null}}]"#
     );
     let answer = single(run_calls(&service, "{}", &calls));
-    assert_eq!(tokens_answer(answer), expected);
+    assert_eq!(tokens_answer(&answer), expected);
 }
 
 #[test]
@@ -327,7 +327,7 @@ fn unsupported_model_skip_warning_is_silent(#[case] models: Option<Vec<String>>)
 fn key_requires_access_check(#[case] principal: &str, #[case] expected: bool) {
     let service = service(settings(None, None, None), empty_limiter(), None);
     let answer = single(run_calls(&service, principal, ACCESS_CHECK_CALL));
-    assert_eq!(access_check_flag(answer), expected);
+    assert_eq!(access_check_flag(&answer), expected);
 }
 
 fn base_descriptors() -> Vec<BatchLimitDescriptor> {
@@ -458,7 +458,7 @@ fn has_applicable_limits(#[case] descriptors: &str, #[case] expected: bool) {
     let calls =
         format!(r#"[{{"function": "has_applicable_limits", "descriptors": {descriptors}}}]"#);
     let answer = single(run_calls(&service, "{}", &calls));
-    assert_eq!(applicable_flag(answer), expected);
+    assert_eq!(applicable_flag(&answer), expected);
 }
 
 fn skip_service(preset: &str) -> BatchLimitDescriptors<FakeLimiter, FakeCredentials> {
