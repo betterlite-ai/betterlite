@@ -10,101 +10,66 @@ use serde_json::{Value, json};
 
 use super::{Action, Authority, BackendKind, ClaimScenario};
 
-const FIXED_NOW: i64 = 1_700_000_000;
-
-struct FixedClock(i64);
-
-impl ClaimClock for FixedClock {
+struct FrozenClock;
+impl ClaimClock for FrozenClock {
     fn now_seconds(&self) -> i64 {
-        self.0
+        0
     }
 }
 
-struct CountingBackend {
+struct Backend {
     ttl: i64,
+    fixed: Option<u64>,
+    faulty: bool,
     counts: Mutex<HashMap<String, u64>>,
 }
-
-impl CountingBackend {
-    fn new(ttl: i64) -> Self {
+impl Backend {
+    fn new(kind: BackendKind, ttl: i64) -> Self {
+        let (fixed, faulty) = match kind {
+            BackendKind::Counting => (None, false),
+            BackendKind::FixedZero => (Some(0), false),
+            BackendKind::FixedOne => (Some(1), false),
+            BackendKind::FixedTwo => (Some(2), false),
+            BackendKind::Faulty => (None, true),
+        };
         Self {
             ttl,
+            fixed,
+            faulty,
             counts: Mutex::new(HashMap::new()),
         }
     }
 }
-
-impl ClaimBackend for CountingBackend {
+impl ClaimBackend for Backend {
     fn increment(
         &self,
         key: &str,
         ttl_seconds: i64,
     ) -> impl Future<Output = Result<u64, ClaimBackendError>> + Send {
-        if ttl_seconds != self.ttl {
+        if self.faulty || ttl_seconds != self.ttl {
             return ready(Err(ClaimBackendError));
         }
-        let count = {
+        let Some(fixed) = self.fixed else {
             let mut counts = self.counts.lock().unwrap_or_else(PoisonError::into_inner);
             let count = counts.entry(key.to_owned()).or_insert(0);
             *count = count.saturating_add(1);
-            *count
+            return ready(Ok(*count));
         };
-        ready(Ok(count))
+        ready(Ok(fixed))
     }
 
     fn read(
         &self,
         key: &str,
     ) -> impl Future<Output = Result<Option<u64>, ClaimBackendError>> + Send {
-        let count = {
-            let counts = self.counts.lock().unwrap_or_else(PoisonError::into_inner);
-            counts.get(key).copied()
-        };
-        ready(Ok(count))
-    }
-}
-
-struct FixedBackend {
-    count: u64,
-    ttl: i64,
-}
-
-impl ClaimBackend for FixedBackend {
-    fn increment(
-        &self,
-        _key: &str,
-        ttl_seconds: i64,
-    ) -> impl Future<Output = Result<u64, ClaimBackendError>> + Send {
-        if ttl_seconds != self.ttl {
-            return ready(Err(ClaimBackendError));
+        match (self.faulty, self.fixed) {
+            (true, _fixed) => ready(Err(ClaimBackendError)),
+            (false, Some(fixed)) => ready(Ok(Some(fixed))),
+            (false, None) => {
+                let counts = self.counts.lock().unwrap_or_else(PoisonError::into_inner);
+                ready(Ok(counts.get(key).copied()))
+            }
         }
-        ready(Ok(self.count))
-    }
-
-    fn read(
-        &self,
-        _key: &str,
-    ) -> impl Future<Output = Result<Option<u64>, ClaimBackendError>> + Send {
-        ready(Ok(Some(self.count)))
-    }
-}
-
-struct FaultyBackend;
-
-impl ClaimBackend for FaultyBackend {
-    fn increment(
-        &self,
-        _key: &str,
-        _ttl_seconds: i64,
-    ) -> impl Future<Output = Result<u64, ClaimBackendError>> + Send {
-        ready(Err(ClaimBackendError))
-    }
-
-    fn read(
-        &self,
-        _key: &str,
-    ) -> impl Future<Output = Result<Option<u64>, ClaimBackendError>> + Send {
-        ready(Err(ClaimBackendError))
     }
 }
 
@@ -121,35 +86,17 @@ pub(super) async fn reports(scenarios: &[ClaimScenario]) -> Vec<Value> {
 }
 
 async fn local_results(scenario: &ClaimScenario) -> Vec<String> {
-    let store = MemoryClaimStore::new(Box::new(FixedClock(FIXED_NOW)));
+    let store = MemoryClaimStore::new(Box::new(FrozenClock));
     for key in &scenario.seed_keys {
         let _seeded = store.increment(key, scenario.ttl);
     }
     let authority = ClaimAuthority::Local(store);
-    guard_results::<FaultyBackend>(authority, scenario).await
+    guard_results::<Backend>(authority, scenario).await
 }
 
 async fn shared_results(scenario: &ClaimScenario) -> Vec<String> {
-    let ttl = scenario.ttl;
-    match scenario.backend {
-        BackendKind::Counting => {
-            let authority = ClaimAuthority::Shared(CountingBackend::new(ttl));
-            guard_results(authority, scenario).await
-        }
-        BackendKind::FixedZero => {
-            let authority = ClaimAuthority::Shared(FixedBackend { count: 0, ttl });
-            guard_results(authority, scenario).await
-        }
-        BackendKind::FixedOne => {
-            let authority = ClaimAuthority::Shared(FixedBackend { count: 1, ttl });
-            guard_results(authority, scenario).await
-        }
-        BackendKind::FixedTwo => {
-            let authority = ClaimAuthority::Shared(FixedBackend { count: 2, ttl });
-            guard_results(authority, scenario).await
-        }
-        BackendKind::Faulty => guard_results(ClaimAuthority::Shared(FaultyBackend), scenario).await,
-    }
+    let authority = ClaimAuthority::Shared(Backend::new(scenario.backend, scenario.ttl));
+    guard_results(authority, scenario).await
 }
 
 async fn guard_results<S: ClaimBackend>(

@@ -34,7 +34,6 @@ pub(crate) struct RegisterCall {
     token_exchange_available: bool,
     native_redirect_uris: Option<String>,
 }
-
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum SealPrefix {
@@ -43,7 +42,6 @@ enum SealPrefix {
     #[serde(rename = "none")]
     Bare,
 }
-
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum Wrap {
@@ -52,7 +50,6 @@ enum Wrap {
     Truncate,
     SwapPrefix,
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OpenScenario {
@@ -62,14 +59,12 @@ pub(crate) struct OpenScenario {
     wrap: Wrap,
     raw: Option<String>,
 }
-
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum Authority {
     Local,
     Shared,
 }
-
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum BackendKind {
@@ -79,21 +74,18 @@ enum BackendKind {
     FixedTwo,
     Faulty,
 }
-
 #[derive(Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum Action {
     Claim,
     Peek,
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ClaimStep {
     action: Action,
     key: String,
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ClaimScenario {
@@ -105,7 +97,6 @@ pub(crate) struct ClaimScenario {
     seed_keys: Vec<String>,
     steps: Vec<ClaimStep>,
 }
-
 pub(crate) struct Op;
 
 impl Helper for Op {

@@ -27,16 +27,15 @@ fn cases(folder: &str) -> Vec<(PathBuf, HelperCase)> {
 }
 
 fn seed_cases() -> Vec<(PathBuf, HelperCase)> {
-    let mut seeds: Vec<(PathBuf, HelperCase)> = cases("fuzz/corpus/helper_case")
-        .into_iter()
-        .filter(|(path, _case)| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("mcp-gateway-dcr-"))
-        })
-        .collect();
-    seeds.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut seeds = cases("fuzz/corpus/helper_case");
+    seeds.retain(|(path, _case)| seed_name(path));
     seeds
+}
+
+fn seed_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("mcp-gateway-dcr-"))
 }
 
 #[test]

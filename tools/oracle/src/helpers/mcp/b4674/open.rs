@@ -19,7 +19,14 @@ pub(super) fn reports(
 }
 
 fn report(scenario: &OpenScenario, cipher: &DbCipher) -> Result<Value, Box<HelperError>> {
-    let text = wrapped_text(scenario, cipher)?;
+    let text = match (&scenario.raw, &scenario.payload) {
+        (Some(raw), _) => wrapped(scenario.wrap, raw),
+        (None, Some(payload)) => {
+            let sealed = seal(prefix_of(scenario.prefix), payload, cipher).map_err(failure)?;
+            wrapped(scenario.wrap, &sealed)
+        }
+        (None, None) => return Err(failure("an open scenario needs a payload or raw text")),
+    };
     Ok(match open_gateway_dcr_client(&text, cipher) {
         Some(client) => json!({
             "name": scenario.name,
@@ -36,32 +43,20 @@ fn report(scenario: &OpenScenario, cipher: &DbCipher) -> Result<Value, Box<Helpe
     })
 }
 
-fn wrapped_text(scenario: &OpenScenario, cipher: &DbCipher) -> Result<String, Box<HelperError>> {
-    let text = raw_text(scenario, cipher)?;
-    Ok(match scenario.wrap {
-        Wrap::None => text,
-        Wrap::Tamper => tampered(&text),
+fn wrapped(wrap: Wrap, text: &str) -> String {
+    match wrap {
+        Wrap::None => text.to_owned(),
+        Wrap::Tamper => tampered(text),
         Wrap::Truncate => text
             .chars()
             .take(text.chars().count().saturating_sub(1))
             .collect(),
         Wrap::SwapPrefix => match text.strip_prefix(GATEWAY_DCR_CLIENT_ID_PREFIX) {
             Some(ciphertext) => format!("{GATEWAY_AUTH_CODE_PREFIX}{ciphertext}"),
-            None => text,
+            None => text.to_owned(),
         },
-    })
-}
-
-fn raw_text(scenario: &OpenScenario, cipher: &DbCipher) -> Result<String, Box<HelperError>> {
-    if let Some(raw) = &scenario.raw {
-        return Ok(raw.clone());
     }
-    let Some(payload) = &scenario.payload else {
-        return Err(failure("an open scenario needs a payload or raw text"));
-    };
-    seal(prefix_of(scenario.prefix), payload, cipher).map_err(failure)
 }
-
 const fn prefix_of(prefix: SealPrefix) -> &'static str {
     match prefix {
         SealPrefix::Client => GATEWAY_DCR_CLIENT_ID_PREFIX,
@@ -69,19 +64,10 @@ const fn prefix_of(prefix: SealPrefix) -> &'static str {
         SealPrefix::Bare => "",
     }
 }
-
 fn tampered(text: &str) -> String {
-    let middle = text.chars().count() / 2;
-    text.chars()
-        .enumerate()
-        .map(|(index, character)| {
-            if index != middle {
-                character
-            } else if character == 'A' {
-                'B'
-            } else {
-                'A'
-            }
-        })
-        .collect()
+    let mut characters: Vec<char> = text.chars().collect();
+    if let Some(character) = characters.get_mut(characters.len() / 2) {
+        *character = if *character == 'A' { 'B' } else { 'A' };
+    }
+    characters.into_iter().collect()
 }
