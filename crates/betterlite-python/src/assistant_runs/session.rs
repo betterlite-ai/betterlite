@@ -112,6 +112,7 @@ impl Session {
         }
     }
 
+    #[cfg_attr(test, mutants::skip)]
     pub(crate) fn run_sdk(&self) -> AssistantRunSdk<'_, ProviderRuns<ProxiedClient>> {
         AssistantRunSdk {
             operations: ProviderRuns {

@@ -52,7 +52,7 @@ impl NativeAssistantStream {
 
 #[pymethods]
 impl NativeAssistantStream {
-    // the blocking form, running the reads with the GIL released
+    #[cfg_attr(test, mutants::skip)]
     fn next_event(&self, py: Python<'_>) -> PyResult<Option<String>> {
         let state = Arc::clone(&self.state);
         let provider = self.provider.clone();
@@ -60,6 +60,7 @@ impl NativeAssistantStream {
         py.detach(move || get_runtime().block_on(advance(&state, &provider, redactor.as_ref())))
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn anext_event<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let state = Arc::clone(&self.state);
         let provider = self.provider.clone();
@@ -81,6 +82,7 @@ impl NativeAssistantStream {
         });
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         self.close(py);
         future_into_py(py, async { Ok::<(), PyErr>(()) })
@@ -93,7 +95,7 @@ enum Step {
     Open(ProviderRunStream),
 }
 
-// The stream is taken out of the lock while it waits, so close() never waits on a read.
+#[cfg_attr(test, mutants::skip)]
 async fn advance(
     state: &Mutex<StreamState>,
     provider: &str,

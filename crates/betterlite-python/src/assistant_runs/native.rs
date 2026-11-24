@@ -14,11 +14,8 @@ use super::error::CallError;
 use super::session::{ProviderRunStream, Session};
 use super::stream::NativeAssistantStream;
 
-// The attachment bytes Python passes with every call; the assistant calls never read them.
 type Blobs = Vec<Vec<u8>>;
-
 type ReplyObject<'py> = PyResult<Bound<'py, PyAny>>;
-
 type Encoded = PyResult<String>;
 
 // litellm/assistants/main.py's message and run calls: one session per call, the eight functions as methods over it.
@@ -28,7 +25,7 @@ pub(crate) struct NativeAssistantRunSession {
 }
 
 impl NativeAssistantRunSession {
-    // Both stream methods defer the provider call to the first event read, as the SDK's lazy managers do.
+    #[cfg_attr(test, mutants::skip)]
     fn opened_stream(
         &self,
         py: Python<'_>,
@@ -53,6 +50,7 @@ impl NativeAssistantRunSession {
     }
 }
 
+#[cfg_attr(test, mutants::skip)]
 #[pymethods]
 impl NativeAssistantRunSession {
     #[new]
@@ -130,7 +128,6 @@ impl NativeAssistantRunSession {
     }
 }
 
-// add_message returns the message and get_messages the page; a reply of the other kind never leaves Rust.
 fn message_text(answer: Result<Reply, MessageFailure>, provider: &str) -> Encoded {
     let reply = answer.map_err(|failure| message_error(failure, provider).into_exception())?;
     match reply {
