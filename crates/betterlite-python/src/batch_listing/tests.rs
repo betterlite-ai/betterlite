@@ -374,6 +374,28 @@ fn transport_failure_keeps_the_provider_fields() {
     }
 }
 
+// an error object that names only one of the three fields still reaches the exception
+#[test]
+fn transport_failure_keeps_a_partial_body() {
+    let sdk_status = SdkError::Status {
+        status: 400,
+        error_type: None,
+        param: None,
+        code: Some("invalid_cursor".to_owned()),
+        message: "bad cursor".to_owned(),
+    };
+    match openai_failure(&BatchesError::Sdk { source: sdk_status }) {
+        DispatchFailure::Status {
+            body: Some(body), ..
+        } => {
+            assert_eq!(body.code.as_deref(), Some("invalid_cursor"));
+            assert_eq!(body.error_type, None);
+            assert_eq!(body.param, None);
+        }
+        other => panic!("expected a provider status, got {other:?}"),
+    }
+}
+
 #[test]
 fn list_with_reports_a_core_timeout() {
     let input: BatchProviderListInput = parse(r#"{"provider":"openai","timeout":"abc"}"#).unwrap();
