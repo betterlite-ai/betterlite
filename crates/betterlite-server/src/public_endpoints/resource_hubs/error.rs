@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use betterlite_core::api::claude_plugin_policy::ClaudePluginPolicyError;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use serde::Serialize;

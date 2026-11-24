@@ -52,13 +52,16 @@ pub async fn agent_hub(
     Ok(Json(cards))
 }
 
-pub fn public_agent_cards<R: AgentRegistryApi>(
+pub fn public_agent_cards<R>(
     registry: &R,
     groups: Option<&[String]>,
     custom_urls: &CustomUrls,
     base_url: &str,
     root_path: &str,
-) -> Result<Vec<AgentCard>, ResourceHubsError> {
+) -> Result<Vec<AgentCard>, ResourceHubsError>
+where
+    R: AgentRegistryApi,
+{
     let Some(allowed) = groups else {
         return Ok(Vec::new());
     };
