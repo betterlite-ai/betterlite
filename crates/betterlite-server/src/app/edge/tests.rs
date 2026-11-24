@@ -227,6 +227,7 @@ async fn public_docs_paths_follow_the_docs_settings() {
 #[rstest]
 #[case("/")]
 #[case("/redoc")]
+#[case("/docs/oauth2-redirect")]
 #[tokio::test]
 async fn public_no_docs_and_no_redoc_remove_the_pages(#[case] path: &str) {
     let router = mounted(
