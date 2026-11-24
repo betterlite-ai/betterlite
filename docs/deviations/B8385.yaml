@@ -1,0 +1,8 @@
+task: B8385
+deviations:
+  - what: >-
+      The "Error parsing last reload time: {error}" warning and the reload it forces are not ported; the last beta headers reload time is a typed DateTime in B10055's PeriodicReloads, so no stored value can fail to parse.
+    why: >-
+      LiteLLM's last_anthropic_beta_headers_reload is a module global that only this check assigns, always as current_time.isoformat(), and the manual beta headers reload route assigns it the same way, so its fromisoformat call cannot fail and its except branch is unreachable there too. Keeping the instant as a DateTime keeps the interval comparison typed, and no input reaches the warning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8667-L8680
+kept_bugs: []
