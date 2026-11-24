@@ -711,32 +711,22 @@ fn interrupted_usage_copies_every_detail_count_into_the_recorded_usage() {
     );
 }
 
+fn assert_count(fields: &IndexMap<String, Json>, name: &str, expected: i64) {
+    assert_eq!(
+        fields.get(name),
+        Some(&Json::Number(Number::from(expected))),
+        "{name}"
+    );
+}
+
 fn assert_prompt_details(prompt: &IndexMap<String, Json>) {
-    assert_eq!(
-        prompt.get("cached_tokens"),
-        Some(&Json::Number(Number::from(7_i64)))
-    );
-    assert_eq!(
-        prompt.get("web_search_requests"),
-        Some(&Json::Number(Number::from(1_i64)))
-    );
-    assert_eq!(
-        prompt.get("google_maps_grounding_requests"),
-        Some(&Json::Number(Number::from(2_i64)))
-    );
-    assert_eq!(
-        prompt.get("cache_write_tokens"),
-        Some(&Json::Number(Number::from(3_i64)))
-    );
-    assert_eq!(
-        prompt.get("cache_creation_tokens"),
-        Some(&Json::Number(Number::from(4_i64)))
-    );
+    assert_count(prompt, "cached_tokens", 7);
+    assert_count(prompt, "web_search_requests", 1);
+    assert_count(prompt, "google_maps_grounding_requests", 2);
+    assert_count(prompt, "cache_write_tokens", 3);
+    assert_count(prompt, "cache_creation_tokens", 4);
     assert_cache_creation_details(prompt);
-    assert_eq!(
-        prompt.get("custom_prompt"),
-        Some(&Json::Number(Number::from(9_i64)))
-    );
+    assert_count(prompt, "custom_prompt", 9);
 }
 
 fn assert_cache_creation_details(prompt: &IndexMap<String, Json>) {
@@ -756,35 +746,17 @@ fn assert_cache_creation_details(prompt: &IndexMap<String, Json>) {
 }
 
 fn assert_completion_details(completion: &IndexMap<String, Json>) {
-    assert_eq!(
-        completion.get("reasoning_tokens"),
-        Some(&Json::Number(Number::from(1_i64)))
-    );
-    assert_eq!(
-        completion.get("text_tokens"),
-        Some(&Json::Number(Number::from(4_i64)))
-    );
-    assert_eq!(
-        completion.get("image_tokens"),
-        Some(&Json::Number(Number::from(0_i64)))
-    );
+    assert_count(completion, "reasoning_tokens", 1);
+    assert_count(completion, "text_tokens", 4);
+    assert_count(completion, "image_tokens", 0);
     assert!(completion.get("audio_tokens").is_none());
     assert_eq!(completion.get("custom_completion"), Some(&Json::Bool(true)));
 }
 
 fn assert_server_tool_use(server: &IndexMap<String, Json>) {
-    assert_eq!(
-        server.get("web_search_requests"),
-        Some(&Json::Number(Number::from(1_i64)))
-    );
-    assert_eq!(
-        server.get("tool_search_requests"),
-        Some(&Json::Number(Number::from(2_i64)))
-    );
-    assert_eq!(
-        server.get("browser_open_requests"),
-        Some(&Json::Number(Number::from(3_i64)))
-    );
+    assert_count(server, "web_search_requests", 1);
+    assert_count(server, "tool_search_requests", 2);
+    assert_count(server, "browser_open_requests", 3);
 }
 
 #[test]
