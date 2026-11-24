@@ -39,6 +39,19 @@ fn cost_charges_each_query_and_keeps_the_sign(
     assert_eq!(answer, encoded);
 }
 
+// litellm returns parallel_ai's price before multiplying, so the count's sign must not reach it
+#[test]
+fn cost_keeps_the_parallel_ai_price_when_the_count_is_negative() {
+    let text = r#"{"model": "parallel_ai/search", "custom_llm_provider": "parallel_ai", "number_of_queries": -1}"#;
+    let answer = cost(text);
+    let encoded = serde_json::to_string(&CostAnswer::Cost {
+        input_cost: Decimal::new(5_i64, 3),
+        output_cost: Decimal::ZERO,
+    })
+    .expect("the answer encodes");
+    assert_eq!(answer, encoded);
+}
+
 #[test]
 fn logging_state_names_the_search_call_after_its_provider() {
     let state = logging_state(&session(), "brave").expect("the logging state builds");
@@ -75,7 +88,15 @@ fn search_fails_for_an_unknown_provider() {
     )
     .expect("the search call parses");
     let outcome = get_runtime().block_on(session().search(call));
-    let _failure = outcome.expect_err("the provider is unknown");
+    match outcome.expect_err("the provider is unknown") {
+        NativeFailure::Class { class, message, .. } => {
+            assert!(matches!(class, ErrorClass::BadRequest(_)));
+            assert!(message.contains("Search is not supported for provider: nonesuch"));
+        }
+        failure @ (NativeFailure::Convert(_) | NativeFailure::Session(_)) => {
+            panic!("the failure is not a class: {failure:?}")
+        }
+    }
 }
 
 #[test]
@@ -84,5 +105,13 @@ fn ocr_refuses_a_file_document_without_a_file() {
         serde_json::from_str(r#"{"model": "mistral-ocr-latest", "document": {"type": "file"}}"#)
             .expect("the ocr call parses");
     let outcome = get_runtime().block_on(session().ocr(call, Vec::new()));
-    let _failure = outcome.expect_err("the document is refused");
+    match outcome.expect_err("the document is refused") {
+        NativeFailure::Class { class, message, .. } => {
+            assert!(matches!(class, ErrorClass::BadRequest(_)));
+            assert!(message.contains("must include a 'file' field"));
+        }
+        failure @ (NativeFailure::Convert(_) | NativeFailure::Session(_)) => {
+            panic!("the failure is not a class: {failure:?}")
+        }
+    }
 }

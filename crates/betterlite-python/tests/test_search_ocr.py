@@ -7,6 +7,7 @@ from collections.abc import Coroutine
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol, TypedDict, runtime_checkable
+from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 import pytest
@@ -55,6 +56,7 @@ OCR_BODY: Final[dict[str, JsonValue]] = {
 ERROR_BODY: Final[dict[str, JsonValue]] = {"message": "the provider refused"}
 BLOCKED_VALUE: Final = "an object Rust cannot take"
 DUMP: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 @runtime_checkable
@@ -105,6 +107,19 @@ class ReferenceCost(Protocol):
     def __getattr__(self, name: str) -> CostCall: ...
 
 
+# litellm keeps the provider's own payload in the response's private hidden params
+class NativeResponse(Protocol):
+    def get_provider_native_response(self) -> JsonValue: ...
+
+
+class NativeCall(Protocol):
+    def __call__(self, *args: CallValue, **kwargs: CallValue) -> NativeResponse: ...
+
+
+class ReferenceNative(Protocol):
+    def __getattr__(self, name: str) -> NativeCall: ...
+
+
 class OcrCall(TypedDict, total=False):
     model: str
     document: dict[str, JsonValue]
@@ -132,6 +147,7 @@ REFERENCE: Reference = importlib.import_module("litellm")
 REFERENCE_ASYNC: ReferenceAsync = importlib.import_module("litellm")
 REFERENCE_ERRORS: ReferenceErrors = importlib.import_module("litellm.exceptions")
 REFERENCE_COST: ReferenceCost = importlib.import_module("litellm.search.cost_calculator")
+REFERENCE_NATIVE: ReferenceNative = importlib.import_module("litellm")
 
 OCR_ERRORS: Final[dict[int, tuple[type[BaseException], type[BaseException]]]] = {
     RATE_LIMITED: (exceptions.RateLimitError, REFERENCE_ERRORS.RateLimitError),
@@ -201,6 +217,17 @@ def _parameters(signature: inspect.Signature) -> list[tuple[str, str]]:
         (parameter.name, str(parameter.kind))
         for parameter in signature.parameters.values()
     ]
+
+
+# the mock records the request line, so the query both packages sent is readable from it
+def query_parameters(path: str) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
+    for name, value in parse_qsl(urlsplit(path).query):
+        if name in grouped:
+            grouped[name].append(value)
+        else:
+            grouped[name] = [value]
+    return grouped
 
 
 def error_fields(error: BaseException | ErrorFields) -> ErrorFields:
@@ -284,6 +311,31 @@ def test_search_calls() -> None:
         assert ours == theirs
 
 
+def test_search_calls_parameters() -> None:
+    domains = ["example.test"]
+    with closing(SearchOcrServer(OK)) as server:
+        ours = search(
+            query="brave search", search_provider=SEARCH_PROVIDER, max_results=5,
+            search_domain_filter=domains, api_key=GOOD_KEY, api_base=server.url,
+            safesearch="strict",
+        )
+        theirs = REFERENCE.search(
+            query="brave search", search_provider=SEARCH_PROVIDER, max_results=5,
+            search_domain_filter=JSON.validate_python(domains), api_key=GOOD_KEY,
+            api_base=server.url, safesearch="strict",
+        )
+        recorded = list(server.calls)
+    assert DUMP.validate_json(ours.model_dump_json()) == DUMP.validate_json(
+        theirs.model_dump_json()
+    )
+    assert len(recorded) == 2
+    assert query_parameters(recorded[0][1]) == query_parameters(recorded[1][1])
+    ours_params = query_parameters(recorded[0][1])
+    assert ours_params["count"] == ["5"]
+    assert ours_params["safesearch"] == ["strict"]
+    assert "site:example.test" in ours_params["q"][0]
+
+
 def test_search_timeout_values() -> None:
     with closing(SearchOcrServer(OK)) as server:
         call = search_call(server)
@@ -308,6 +360,8 @@ def test_cost_calls() -> None:
         ("exa_ai/search", "exa_ai", 1, {"max_results": 1000}),
         ("dataforseo/search", "dataforseo", 2, None),
         ("parallel_ai/search", "parallel_ai", 1, None),
+        ("parallel_ai/search", "parallel_ai", -1, None),
+        ("parallel_ai/search", "parallel_ai", -1, {"mode": "fast"}),
     ]
     for model, provider, queries, optional_params in cases:
         ours = search_provider_cost_per_query(
@@ -339,6 +393,18 @@ def test_ocr_calls() -> None:
         ours = DUMP.validate_json(ocr(**call).model_dump_json())
         theirs = DUMP.validate_json(REFERENCE.ocr(**call).model_dump_json())
         assert ours == theirs
+
+
+def test_ocr_calls_native_format() -> None:
+    with closing(SearchOcrServer(OK)) as server:
+        call = ocr_call(server)
+        call["req_format"] = "native"
+        ours = ocr(**call).get_provider_native_response()
+        theirs = REFERENCE_NATIVE.ocr(**call).get_provider_native_response()
+    assert ours is not None
+    assert theirs is not None
+    assert DUMP.validate_python(ours) == OCR_BODY
+    assert DUMP.validate_python(theirs) == OCR_BODY
 
 
 def test_aocr_calls() -> None:

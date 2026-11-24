@@ -38,6 +38,7 @@ mod ocr;
 mod tests;
 
 const POOL_CAPACITY: usize = 4;
+const PARALLEL_AI_PROVIDER: &str = "parallel_ai";
 
 // Everything one Python session owns: the environment snapshot, the TLS policy and the HTTP clients every call goes through.
 pub(crate) struct SessionCore {
@@ -162,7 +163,7 @@ impl SessionCore {
     }
 }
 
-// the tiers charge per query, and a negative count keeps Python's sign on the pair
+// the tiers multiply the count and take Python's sign; litellm's parallel_ai price comes back before any multiplication
 async fn cost_answer(
     pricing: &CatalogPricing,
     call: CostCall,
@@ -175,8 +176,10 @@ async fn cost_answer(
         &call.optional_params,
     )
     .await;
+    let negated = call.number_of_queries.is_negative()
+        && call.custom_llm_provider.as_deref() != Some(PARALLEL_AI_PROVIDER);
     match outcome {
-        Ok((input, output)) if call.number_of_queries.is_negative() => Ok(CostAnswer::Cost {
+        Ok((input, output)) if negated => Ok(CostAnswer::Cost {
             input_cost: input.neg(),
             output_cost: output.neg(),
         }),

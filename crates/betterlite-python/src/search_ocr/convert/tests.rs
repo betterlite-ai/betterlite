@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    ConvertError, CostAnswer, CostCall, OcrCall, SearchCall, SessionWire, resolve_document,
+    ConvertError, CostAnswer, CostCall, OcrAnswer, OcrCall, SearchCall, SessionWire,
+    resolve_document,
 };
 use betterlite_core::search::SearchOptions;
 use betterlite_models::decisions::Json;
@@ -9,6 +10,7 @@ use betterlite_ocr::json::Json as OcrJson;
 use betterlite_ocr::ocr_document::OcrDocument;
 use betterlite_ocr::ocr_error::OcrError;
 use betterlite_ocr::ocr_input::OcrDocumentInput;
+use betterlite_ocr::response::OCRResponse;
 use std::collections::BTreeMap;
 
 fn ocr_json(text: &str) -> OcrJson {
@@ -226,6 +228,25 @@ fn request_session_wire_reads_an_absent_environment_as_none() {
             .map(String::as_str),
         Some("sk-test")
     );
+}
+
+// req_format=native hands the provider's own payload beside the normalized response, and Python reads it by that key
+#[test]
+fn request_ocr_answer_keeps_the_provider_native_response() {
+    let response: OCRResponse =
+        serde_json::from_str(r#"{"pages": [], "model": "mistral-ocr-latest"}"#)
+            .expect("the response decodes");
+    let native = ocr_json(r#"{"pages": [], "model": "mistral-ocr-latest"}"#);
+    let text = serde_json::to_string(&OcrAnswer {
+        response: &response,
+        provider_native_response: Some(&native),
+    })
+    .expect("the answer encodes");
+    let encoded: OcrJson = serde_json::from_str(&text).expect("the answer is JSON");
+    assert!(matches!(
+        &encoded,
+        OcrJson::Object(fields) if fields.get("provider_native_response") == Some(&native)
+    ));
 }
 
 #[test]
