@@ -50,7 +50,7 @@ fn copies_audit_fields_in_pydantic_datetime_form() {
 #[test]
 fn formats_a_naive_timestamp_without_a_zone() {
     let row = row(
-        r#"{"model_id":"dep-1","model_name":"gpt","litellm_params":{"model":"m"},
+        r#"{"model_id":"dep-1","model_name":"gpt","litellm_params":{"model":"m"},"model_info":{},
         "created_at":"2024-05-01T12:00:00","updated_at":"2024-05-01T12:00:00.500000"}"#,
     );
     let info = model_info_for(&row, false, &Warnings::default());

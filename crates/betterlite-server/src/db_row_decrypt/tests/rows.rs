@@ -24,7 +24,7 @@ const SCHEMA: &str = r#"
 const UNRELATED_SCHEMA: &str = r#"CREATE TABLE "Unrelated" (id text PRIMARY KEY);"#;
 
 const INSERT_ROW: &str = "INSERT INTO \"LiteLLM_ProxyModelTable\" \
-    (model_id, model_name, litellm_params) VALUES ($1, 'gpt', $2::jsonb)";
+    (model_id, model_name, litellm_params) VALUES ($1, 'gpt', $2::text::jsonb)";
 
 #[derive(Parser)]
 struct Environment {
