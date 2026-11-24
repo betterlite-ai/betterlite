@@ -230,7 +230,18 @@ fn openai_parameters(
         chat_models: completion.chat_models,
         text_models: completion.text_models,
     };
-    let capabilities = openai_capabilities(&state.catalog, model, &catalog);
+    // LiteLLM's supports_* helpers resolve the name through get_llm_provider, so a prefixed id reads the bare model's fields.
+    let resolved = resolve(
+        &ResolutionRequest {
+            model,
+            custom_llm_provider: provider,
+            api_base: None,
+            api_key: None,
+        },
+        resolution,
+    )
+    .map_or_else(|_error| model.to_owned(), |found| found.model);
+    let capabilities = openai_capabilities(&state.catalog, model, &resolved, &catalog);
     let query = CapabilityQuery {
         provider: ProviderId::Openai,
         call_type: CallType::ChatCompletion,
@@ -257,16 +268,17 @@ fn config_tag(model: &str, catalog: &CatalogCapabilities) -> OpenAiConfigTag {
 }
 fn openai_capabilities(
     catalog: &ModelCatalog,
-    model: &str,
+    given: &str,
+    resolved: &str,
     listed: &CatalogCapabilities,
 ) -> BTreeSet<OpenAiCapability> {
     let mut capabilities = BTreeSet::new();
-    if listed.is_catalog_model(model) {
+    if listed.is_catalog_model(given) {
         capabilities.insert(OpenAiCapability::CatalogModel);
     }
     let found = catalog
         .lookup
-        .get(model)
+        .get(resolved)
         .and_then(|canonical| catalog.entries.get(canonical.as_ref()));
     let Some(entry) = found else {
         return capabilities;

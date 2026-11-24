@@ -95,6 +95,17 @@ fn model_info_lookup_gpt_5_and_o_series_parameters() {
     assert!(o3.iter().any(|name| name == "tools"));
     assert!(!o3.iter().any(|name| name == "logprobs"));
     assert!(!o3.iter().any(|name| name == "parallel_tool_calls"));
+    for (bare, prefixed) in [(gpt_5, "openai/gpt-5"), (o3, "openai/o3")] {
+        assert!(bare.iter().any(|name| name == "user"));
+        let mut without_user = bare;
+        without_user.retain(|name| name != "user");
+        let found = parameter_names(&fields(
+            &get_runtime()
+                .block_on(model_info(&runtime, &query(prefixed)))
+                .unwrap(),
+        ));
+        assert_eq!(found, without_user);
+    }
 }
 
 #[test]
