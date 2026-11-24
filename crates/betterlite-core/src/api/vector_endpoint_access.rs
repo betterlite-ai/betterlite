@@ -181,10 +181,10 @@ pub fn store_endpoint_decision(
     if let Some(decision) = lifecycle(access, &route)? {
         return Ok(decision);
     }
-    match classify_endpoint(&endpoints, access.method, &route) {
-        Some(permission) => permitted(access, &grants, permission, Policy::Store),
-        None => Err(store_denied(access.vector_store_id)),
-    }
+    classify_endpoint(&endpoints, access.method, &route).map_or_else(
+        || Err(store_denied(access.vector_store_id)),
+        |permission| permitted(access, &grants, permission, Policy::Store),
+    )
 }
 
 // LiteLLM's is_allowed_to_call_vector_store_files_endpoint: an unmatched endpoint is not this policy's
