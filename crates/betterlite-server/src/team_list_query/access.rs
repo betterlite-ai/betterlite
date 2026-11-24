@@ -75,10 +75,7 @@ async fn org_admin_access(
     {
         return Err(TeamListQueryError::from(TeamListRejection::OrgScope));
     }
-    let is_own_query = match user_id {
-        None => true,
-        Some(wanted) => wanted == caller_user_id,
-    };
+    let is_own_query = user_id.is_none_or(|wanted| wanted == caller_user_id);
     let own_team_ids = if is_own_query {
         user_team_ids_from_db(lookup, caller_user_id).await?
     } else {
