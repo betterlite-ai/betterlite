@@ -61,19 +61,6 @@ pub(crate) struct BatchTransport {
 }
 
 impl BatchTransport {
-    // OpenAIBatchesAPI.create_batch over the shared pooled client
-    fn openai_create(
-        &self,
-        call: &ProviderBatchCall,
-    ) -> Result<BatchObject, BatchProviderCreateError> {
-        let request = batch_create(&call.body).map_err(|_source| INVALID_CALL)?;
-        let operation = BatchOperation::Create(&request);
-        blocking_create(
-            openai_batches(&self.client).batch(openai_connection(call), operation),
-            create_status,
-        )
-    }
-
     // XAIBatchesHandler.create_batch over the shared pooled client
     fn xai_create(
         &self,
@@ -101,7 +88,15 @@ impl BatchCreateTransport for BatchTransport {
         call: &BatchProviderCreateCall,
     ) -> Result<BatchObject, BatchProviderCreateError> {
         match call {
-            BatchProviderCreateCall::OpenAiCompatible(inner) => self.openai_create(inner),
+            // OpenAIBatchesAPI.create_batch is the short path, so it stays beside the dispatch
+            BatchProviderCreateCall::OpenAiCompatible(inner) => {
+                let request = batch_create(&inner.body).map_err(|_source| INVALID_CALL)?;
+                let operation = BatchOperation::Create(&request);
+                blocking_create(
+                    openai_batches(&self.client).batch(openai_connection(inner), operation),
+                    create_status,
+                )
+            }
             BatchProviderCreateCall::Xai(inner) => self.xai_create(inner),
             BatchProviderCreateCall::ProviderConfig(inner) => {
                 Err(BatchProviderCreateError::UnsupportedProvider {
