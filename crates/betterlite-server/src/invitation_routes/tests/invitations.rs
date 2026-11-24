@@ -508,6 +508,34 @@ async fn update_requires_the_database() {
 }
 
 #[tokio::test]
+async fn update_reports_a_database_it_cannot_reach() {
+    let scope: Arc<dyn InvitationScope> = Arc::new(open_scope());
+    let store = PostgresInvitations {
+        store: PostgresStore { pool: None },
+    };
+    let router = router_for(InvitationRouteState {
+        invitations: Some(InvitationDatabase {
+            invitations: Arc::new(store),
+            scope,
+        }),
+        queue: QueueRouteState::default(),
+    });
+    let (status, _, text) = send(
+        &router,
+        "POST",
+        "/invitation/update",
+        r#"{"invitation_id":"inv-1","is_accepted":true}"#,
+        Some(platform_admin()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        parse(&text)["detail"]["error"],
+        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
+    );
+}
+
+#[tokio::test]
 async fn update_rejects_a_body_without_is_accepted() {
     let (_, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
     let (status, _, text) = send(
@@ -695,6 +723,34 @@ async fn delete_requires_the_database() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
+}
+
+#[tokio::test]
+async fn delete_reports_a_database_it_cannot_reach() {
+    let scope: Arc<dyn InvitationScope> = Arc::new(open_scope());
+    let store = PostgresInvitations {
+        store: PostgresStore { pool: None },
+    };
+    let router = router_for(InvitationRouteState {
+        invitations: Some(InvitationDatabase {
+            invitations: Arc::new(store),
+            scope,
+        }),
+        queue: QueueRouteState::default(),
+    });
+    let (status, _, text) = send(
+        &router,
+        "POST",
+        "/invitation/delete",
+        r#"{"invitation_id":"inv-1"}"#,
+        Some(platform_admin()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        parse(&text)["detail"]["error"],
+        "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
+    );
 }
 
 #[tokio::test]
