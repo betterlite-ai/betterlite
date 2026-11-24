@@ -1,6 +1,6 @@
 task: B7844
 deviations:
-  - what: "`client` in kwargs raises `UnsupportedCallArgument` when it is not None, where LiteLLM hands a real httpx client to its handler and sends the request through it."
+  - what: "`client` or `shared_session` in kwargs raises `UnsupportedCallArgument` when it is not None, where LiteLLM sends the request through the httpx client or session the caller passed."
     why: A Python HTTP client cannot drive the Rust call, and ignoring it would send a request past the caller's proxy or TLS settings.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L560
   - what: A non-stream result is a plain dict loaded from the response text, where LiteLLM returns Google's provider response object.
@@ -18,6 +18,9 @@ deviations:
   - what: A litellm_logging_obj in kwargs is dropped, and no success or failure callback fires for a Python generate-content call.
     why: The native call logs into a session with no callbacks, sentry or logger function, and B6040's payload builder drops every logger function the same way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L371
+  - what: "A `logger_fn` in kwargs is dropped with a LiteLLM warning, where LiteLLM calls it with the response or the error."
+    why: The native call runs in Rust with no Python logging object, and B6040's payload builder drops a logger function the same way for every family.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1400-L1403
   - what: A file value in contents raises a ValueError from the payload builder instead of being sent to the provider.
     why: A generate-content request has no file part; B6040 encodes files as markers with their bytes beside the text, and the native call refuses those markers before any request is made.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L334-L357
