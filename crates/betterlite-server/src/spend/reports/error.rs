@@ -6,9 +6,10 @@ use serde::Serialize;
 
 pub(super) const DB_NOT_CONNECTED_ERROR: &str = CommonProxyErrors::DbNotConnectedError.as_str();
 
+// FastAPI renders an HTTPException with a string detail as {"detail": "..."}
 #[derive(Serialize)]
-struct TextDetail<'message> {
-    detail: &'message str,
+pub(super) struct TextDetail<'message> {
+    pub(super) detail: &'message str,
 }
 
 #[derive(Serialize)]
@@ -21,11 +22,6 @@ struct InternalMessage {
 #[derive(Serialize)]
 struct InternalBody {
     error: InternalMessage,
-}
-
-// FastAPI renders an HTTPException with a string detail as {"detail": "..."}
-pub(super) fn text_detail(status: StatusCode, message: &str) -> Response {
-    (status, Json(TextDetail { detail: message })).into_response()
 }
 
 // otel_unhandled_exception_handler renders an uncaught error as this one internal error body

@@ -8,7 +8,7 @@ use crate::organization_create::caller::{MASTER_KEY_SUBJECT, OrgCaller};
 const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 
 // user_api_key_dict: the identity the auth dependency publishes plus the key, team and org facts these reports read
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(super) struct ReportCaller {
     pub(super) org_caller: OrgCaller,
     pub(super) api_key: Option<String>,
@@ -16,7 +16,7 @@ pub(super) struct ReportCaller {
     pub(super) org_id: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(default)]
 struct KeyReportView {
     api_key: Option<String>,

@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 // the row shape _scoped_spend_report_sql returns for a key, user or team scope
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct ScopedKeySpend {
     pub api_key: String,
     #[serde(with = "rust_decimal::serde::arbitrary_precision")]
@@ -22,7 +22,7 @@ pub struct ModelSpend {
 }
 
 // the same row shape from _ORG_SPEND_REPORT_SQL, whose model details also carry the team
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct OrganizationKeySpend {
     pub api_key: String,
     #[serde(with = "rust_decimal::serde::arbitrary_precision")]
@@ -57,7 +57,7 @@ pub struct TeamSpend {
     pub metadata: Vec<TeamModelSpend>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct TeamModelSpend {
     pub model: String,
     pub api_key: String,

@@ -11,7 +11,7 @@ use crate::tracing_routes::router::unauthenticated;
 
 use super::caller::ReportCaller;
 use super::dates::{SpendReportDates, spend_report_dates};
-use super::error::{DB_NOT_CONNECTED_ERROR, internal_error, text_detail};
+use super::error::{DB_NOT_CONNECTED_ERROR, TextDetail, internal_error};
 use super::query::{ScopedReportQuery, decode_scoped_report_query};
 use super::scope::{ScopeColumn, resolve_scope};
 use super::store::{ScopedReportError, ScopedReportHandle, ScopedReportStore, StoreOrgLookup};
@@ -37,7 +37,13 @@ pub(super) async fn report_respond(
         return unauthenticated();
     };
     let Some(store) = handle.as_deref() else {
-        return text_detail(StatusCode::INTERNAL_SERVER_ERROR, DB_NOT_CONNECTED_ERROR);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(TextDetail {
+                detail: DB_NOT_CONNECTED_ERROR,
+            }),
+        )
+            .into_response();
     };
     let caller = match ReportCaller::from_principal(&context.principal) {
         Ok(caller) => caller,
@@ -57,8 +63,14 @@ pub(super) async fn report_respond(
 
 // _parse_spend_report_date_range: both boundaries are required and a failed parse is this one 400
 fn report_dates(query: &ScopedReportQuery) -> Result<SpendReportDates, Response> {
-    spend_report_dates(query.start_date.as_deref(), query.end_date.as_deref())
-        .map_err(|error| text_detail(StatusCode::BAD_REQUEST, &error.to_string()))
+    spend_report_dates(query.start_date.as_deref(), query.end_date.as_deref()).map_err(|error| {
+        let detail = error.to_string();
+        (
+            StatusCode::BAD_REQUEST,
+            Json(TextDetail { detail: &detail }),
+        )
+            .into_response()
+    })
 }
 
 // the key route hashes an sk- prefixed request parameter before it is compared with the caller's logged key
@@ -172,7 +184,13 @@ async fn organization_report(
         .as_deref()
         .filter(|value| !value.is_empty());
     let Some(target) = requested.or(caller.org_id.as_deref()) else {
-        return text_detail(StatusCode::BAD_REQUEST, NO_ORGANIZATION_DETAIL);
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(TextDetail {
+                detail: NO_ORGANIZATION_DETAIL,
+            }),
+        )
+            .into_response();
     };
     if let Err(error) =
         verify_org_access(target, &caller.org_caller, &StoreOrgLookup { store }).await

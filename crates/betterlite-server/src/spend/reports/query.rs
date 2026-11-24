@@ -7,7 +7,7 @@ const INTERNAL_USER_ID_PARAM: &str = "internal_user_id";
 const TEAM_ID_PARAM: &str = "team_id";
 const ORGANIZATION_ID_PARAM: &str = "organization_id";
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct ScopedReportQuery {
     pub start_date: Option<String>,
     pub end_date: Option<String>,

@@ -1,7 +1,8 @@
+use axum::Json;
 use axum::http::StatusCode;
-use axum::response::Response;
+use axum::response::{IntoResponse as _, Response};
 
-use super::error::text_detail;
+use super::error::TextDetail;
 
 // _SPEND_REPORT_SCOPE_COLUMNS: only these three columns may select a scoped report, and the value is always bound as $3
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -20,16 +21,21 @@ pub(super) enum ScopeError {
 impl ScopeError {
     pub(super) fn respond(self) -> Response {
         match self {
-            Self::Forbidden(scope_name) => text_detail(
-                StatusCode::FORBIDDEN,
-                &format!("Not authorized to view spend for a {scope_name} other than your own"),
-            ),
-            Self::Missing(scope_name) => text_detail(
-                StatusCode::BAD_REQUEST,
-                &format!(
+            Self::Forbidden(scope_name) => {
+                let detail =
+                    format!("Not authorized to view spend for a {scope_name} other than your own");
+                (StatusCode::FORBIDDEN, Json(TextDetail { detail: &detail })).into_response()
+            }
+            Self::Missing(scope_name) => {
+                let detail = format!(
                     "No {scope_name} associated with this API key; pass a {scope_name} query param"
-                ),
-            ),
+                );
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(TextDetail { detail: &detail }),
+                )
+                    .into_response()
+            }
         }
     }
 }
