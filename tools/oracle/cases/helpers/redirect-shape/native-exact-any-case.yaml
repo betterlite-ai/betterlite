@@ -1,0 +1,15 @@
+kind: helper
+name: native-exact-any-case
+call:
+  b10062:
+    native_redirect_uris: ' MyApp://Host/CB , MYAPP://host/cb ,, '
+    uris:
+      - 'myapp://host/cb'
+      - 'MYAPP://HOST/CB'
+      - 'MyApp://Host/CB'
+      - 'cursor://AnySphere.Cursor-MCP/OAuth/Callback'
+      # an empty query or an empty fragment is not a query or a fragment
+      - 'cursor://anysphere.cursor-mcp/oauth/callback#'
+      - 'cursor://anysphere.cursor-mcp/oauth/callback?'
+env: {}
+compare: {ignore: []}
