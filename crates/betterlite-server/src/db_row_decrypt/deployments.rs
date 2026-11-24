@@ -36,11 +36,11 @@ pub fn resolve_db_param(
     let Some(StoredValue::Text(opened)) = cipher.decrypt_value(stored, key, KEEP_ORIGINAL) else {
         return Ok(value.clone());
     };
-    let opened = opened.expose_secret();
-    if !opened.starts_with("os.environ/") {
-        return Ok(JsonData::String(opened.clone()));
+    let plaintext = opened.expose_secret();
+    if !plaintext.starts_with("os.environ/") {
+        return Ok(JsonData::String(plaintext.to_owned()));
     }
-    let resolved = secrets.get_secret_str(environment, opened, None)?;
+    let resolved = secrets.get_secret_str(environment, plaintext, None)?;
     Ok(resolved.map_or(JsonData::Null, |secret| {
         JsonData::String(secret.expose_secret().to_owned())
     }))
@@ -58,8 +58,8 @@ pub fn decrypt_model_rows(
     for row in rows {
         let mut resolved = JsonObject::new();
         for (key, value) in &row.fields.litellm_params.0 {
-            let value = resolve_db_param(key, value, cipher, secrets, environment)?;
-            resolved.insert(key.clone(), json_of(&value));
+            let decrypted = resolve_db_param(key, value, cipher, secrets, environment)?;
+            resolved.insert(key.clone(), json_of(&decrypted));
         }
         let params = match litellm_params(&resolved) {
             Ok(params) => params,

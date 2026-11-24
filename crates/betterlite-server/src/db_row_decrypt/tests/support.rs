@@ -37,16 +37,16 @@ pub(crate) fn cipher() -> DbCipher {
 }
 
 pub(crate) fn sealed(cipher: &DbCipher, text: &str) -> String {
-    let sealed = cipher
+    let stored = cipher
         .encrypt_value(
             StoredValue::<()>::Text(SecretString::from(text.to_owned())),
             None,
         )
         .unwrap();
-    let StoredValue::Text(sealed) = sealed else {
+    let StoredValue::Text(sealed) = stored else {
         panic!("a text value seals as text");
     };
-    sealed.expose_secret().clone()
+    sealed.expose_secret().to_owned()
 }
 
 struct NoOidcHttp;

@@ -24,7 +24,7 @@ pub fn decrypt_credential(item: &CredentialItem, cipher: &DbCipher) -> Credentia
                 let secret = StoredValue::<JsonData>::Text(SecretString::from(text.clone()));
                 match cipher.decrypt_value(secret, key, DROP_UNREADABLE) {
                     Some(StoredValue::Text(opened)) => {
-                        JsonData::String(opened.expose_secret().clone())
+                        JsonData::String(opened.expose_secret().to_owned())
                     }
                     Some(StoredValue::Other(_)) | None => stored.clone(),
                 }

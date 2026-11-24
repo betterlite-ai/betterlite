@@ -48,9 +48,9 @@ pub fn decrypt_and_export_env(
         };
         match cipher.decrypt_value(stored_value(value.clone()), key, policy) {
             Some(StoredValue::Text(text)) => {
-                let text = text.expose_secret().clone();
-                environment.insert(key.clone(), text.clone());
-                exported.insert(key.clone(), text);
+                let plaintext = text.expose_secret().to_owned();
+                environment.insert(key.clone(), plaintext.clone());
+                exported.insert(key.clone(), plaintext);
             }
             // decrypt_value_helper returns a non-string unchanged; os.environ takes None as absent and rejects the rest
             None | Some(StoredValue::Other(JsonValue::Null)) => {}
