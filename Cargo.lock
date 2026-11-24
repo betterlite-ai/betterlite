@@ -4266,6 +4266,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "temp-env",
  "tempfile",
  "thiserror",
