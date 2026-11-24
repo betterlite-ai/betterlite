@@ -6,11 +6,8 @@ use axum::response::{IntoResponse as _, Response};
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::database_faults::DbError;
-use betterlite_db::stored_cipher::DbCipher;
 use betterlite_openai::openai_base_config::Object as JsonMap;
-use betterlite_secrets::error::SecretError;
-use betterlite_secrets::secret_codec::StoredValue;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use super::CacheSettingsUpdateState;
@@ -26,6 +23,7 @@ use crate::cache_settings_read::view::carries_value;
 use crate::cache_settings_update::audit::{CacheSettingsAuditEntry, spawn_cache_settings_audit};
 use crate::cache_settings_update::manager::{CacheParams, CacheReinitError, REDIS_TYPE_FIELD};
 use crate::cache_settings_update::store::CacheConfigRepository;
+use crate::env_value_codec::{EnvValueCodecError, encrypt_env};
 
 const SUCCESS_MESSAGE: &str = "Cache settings updated successfully";
 
@@ -38,7 +36,7 @@ pub(super) enum UpdateError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Secret(#[from] SecretError),
+    Env(#[from] EnvValueCodecError),
     #[error(transparent)]
     Reinit(#[from] CacheReinitError),
 }
@@ -102,7 +100,7 @@ async fn store_settings(
     let before = stored_before(&raw)?;
     let saved = stored_from_raw(&raw, &state.cipher)?;
     let settings = resolve_cache_url_precedence(&merge_over_saved(incoming, &saved));
-    let encrypted = JsonValue::Object(encrypt_settings(&settings, &state.cipher)?);
+    let encrypted = JsonValue::Object(encrypt_env(&settings, &state.cipher, None)?);
     repository
         .upsert_cache_settings(&serde_json::to_string(&encrypted)?)
         .await?;
@@ -123,23 +121,6 @@ fn stored_before(raw: &JsonValue) -> Result<JsonMap, StoredSettingsError> {
         return Ok(JsonMap::new());
     }
     Ok(parse_stored_settings(raw)?)
-}
-
-fn encrypt_settings(settings: &JsonMap, cipher: &DbCipher) -> Result<JsonMap, UpdateError> {
-    let mut encrypted = settings.clone();
-    for value in encrypted.values_mut() {
-        let JsonValue::String(text) = value else {
-            continue;
-        };
-        let encrypted_value = cipher.encrypt_value(
-            StoredValue::<()>::Text(SecretString::from(text.clone())),
-            None,
-        )?;
-        if let StoredValue::Text(sealed) = encrypted_value {
-            *value = JsonValue::String(sealed.expose_secret().to_owned());
-        }
-    }
-    Ok(encrypted)
 }
 
 fn audit_entry(
