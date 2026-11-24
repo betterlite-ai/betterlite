@@ -78,8 +78,8 @@ fn parse_int_text(text: &str) -> Option<i64> {
             b'_' if after_underscore => return None,
             b'_' => after_underscore = true,
             digit @ b'0'..=b'9' => {
-                let digit = i64::from(digit).checked_sub(i64::from(b'0'))?;
-                value = value.checked_mul(10)?.checked_add(digit)?;
+                let numeric = i64::from(digit).checked_sub(i64::from(b'0'))?;
+                value = value.checked_mul(10)?.checked_add(numeric)?;
                 after_underscore = false;
             }
             _ => return None,

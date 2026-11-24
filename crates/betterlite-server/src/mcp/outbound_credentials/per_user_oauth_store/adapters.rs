@@ -169,7 +169,7 @@ impl<Table: CredentialRows> CredentialReader for DbCredentialReader<Table> {
             }),
             Some(table) => get_user_oauth_credential(table, &self.cipher, user_id, server_id)
                 .await
-                .map_err(unavailable)
+                .map_err(|error| unavailable(&error))
                 .map(|payload| payload.map(credential_payload)),
         }
     }
@@ -202,7 +202,7 @@ impl<Table: CredentialRows> CredentialPersist for DbCredentialPersist<Table> {
         };
         store_user_oauth_credential(table, &self.cipher, &stored, self.clock.now())
             .await
-            .map_err(unavailable)
+            .map_err(|error| unavailable(&error))
     }
 }
 
@@ -259,7 +259,7 @@ fn credential_proof(credential: &CredentialPayload) -> Option<&str> {
     }
 }
 
-fn unavailable(error: CredentialError) -> TokenStoreUnavailable {
+fn unavailable(error: &CredentialError) -> TokenStoreUnavailable {
     TokenStoreUnavailable {
         detail: error.to_string(),
     }
@@ -288,7 +288,7 @@ fn text_value(value: Option<&str>) -> CredentialValue {
 }
 
 fn scopes_value(scopes: Option<Vec<String>>) -> CredentialValue {
-    scopes.map_or(CredentialValue::Null, |scopes| {
-        CredentialValue::Array(scopes.into_iter().map(CredentialValue::Text).collect())
+    scopes.map_or(CredentialValue::Null, |items| {
+        CredentialValue::Array(items.into_iter().map(CredentialValue::Text).collect())
     })
 }

@@ -570,7 +570,8 @@ pub(super) struct FakeBuilder {
 impl StoreBuilder for FakeBuilder {
     fn build(&self) -> BuiltStore {
         self.builds.fetch_add(1, Ordering::Relaxed);
-        let store: Arc<dyn InvalidatableOAuthTokenStore> = Arc::clone(&self.store);
+        let fake_store: Arc<FakeStore> = Arc::clone(&self.store);
+        let store: Arc<dyn InvalidatableOAuthTokenStore> = fake_store;
         BuiltStore {
             store,
             uses_redis: self.uses_redis.load(Ordering::Relaxed),

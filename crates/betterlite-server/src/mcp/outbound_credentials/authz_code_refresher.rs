@@ -31,6 +31,13 @@ pub struct AuthorizationCodeRefresher<Lookup, Post, Persist, Binding, Clock> {
     pub clock: Clock,
 }
 
+// The user, server and presented refresh token that one refresh carries through its steps.
+struct RefreshCall<'call> {
+    user_id: &'call str,
+    server_id: &'call str,
+    refresh_token: &'call str,
+}
+
 #[async_trait]
 impl<Lookup, Post, Persist, Binding, Clock> TokenRefresher
     for AuthorizationCodeRefresher<Lookup, Post, Persist, Binding, Clock>
@@ -57,14 +64,16 @@ where
         let Some(token_url) = server.effective_token_url().filter(|url| !url.is_empty()) else {
             return Ok(None);
         };
-        let Some((grant, proof)) = self
-            .grant_for(server_id, &server, token_url, user_id, refresh_token)
-            .await
-        else {
+        let call = RefreshCall {
+            user_id,
+            server_id,
+            refresh_token,
+        };
+        let Some((grant, proof)) = self.grant_for(&call, &server, token_url).await else {
             return Ok(None);
         };
         let (new_refresh, scopes) = self
-            .persist_grant(user_id, server_id, &grant, token, proof.as_deref())
+            .persist_grant(&call, &grant, token, proof.as_deref())
             .await?;
         Ok(Some(OAuthToken {
             access_token: grant.access_token,
@@ -81,12 +90,14 @@ where
 impl<Lookup, Post, Persist, Binding, Clock>
     AuthorizationCodeRefresher<Lookup, Post, Persist, Binding, Clock>
 where
+    Lookup: ServerLookup,
     Post: TokenEndpointPost,
     Persist: CredentialPersist,
     Binding:
         OauthBindingPort<Server = MCPServer, Ownership = RefreshOwnership, Denied = BindingDenied>,
+    Clock: EpochClock,
 {
-    fn client_auth(&self, server: &MCPServer, server_id: &str) -> Option<TokenEndpointClientAuth> {
+    fn client_auth(server: &MCPServer, server_id: &str) -> Option<TokenEndpointClientAuth> {
         let upstream = UpstreamServer {
             upstream_resource: server.fields.upstream_resource.as_deref(),
             url: server.fields.url.as_deref(),
@@ -116,12 +127,7 @@ where
     }
 
     // The pre-check runs only for an enforced binding, before any network call, with an empty token response.
-    async fn precheck_binding(
-        &self,
-        server: &MCPServer,
-        user_id: &str,
-        refresh_token: &str,
-    ) -> bool {
+    async fn precheck_binding(&self, server: &MCPServer, call: &RefreshCall<'_>) -> bool {
         let Some(binding) = &server.fields.oauth_identity_binding else {
             return true;
         };
@@ -129,24 +135,22 @@ where
             return true;
         }
         let empty = TokenResponse::new();
-        self.enforce(server, user_id, refresh_token, &empty)
-            .await
-            .is_ok()
+        self.enforce(server, call, &empty).await.is_ok()
     }
 
     // The second check runs for every server; the port answers Ok(None) for an unbound or audit one.
     async fn enforce(
         &self,
         server: &MCPServer,
-        user_id: &str,
-        refresh_token: &str,
+        call: &RefreshCall<'_>,
         token_response: &TokenResponse,
     ) -> Result<Option<String>, BindingDenied> {
-        let ownership = RefreshOwnership::Presented(SecretString::from(refresh_token.to_owned()));
+        let ownership =
+            RefreshOwnership::Presented(SecretString::from(call.refresh_token.to_owned()));
         let request = EnforceRequest {
             server,
             token_response,
-            user_id: Some(user_id),
+            user_id: Some(call.user_id),
             grant_type: "refresh_token",
             ownership: Some(&ownership),
         };
@@ -156,35 +160,29 @@ where
     // The pre-check, the POST and the second check in order, each failure reading as no grant.
     async fn grant_for(
         &self,
-        server_id: &str,
+        call: &RefreshCall<'_>,
         server: &MCPServer,
         token_url: &str,
-        user_id: &str,
-        refresh_token: &str,
     ) -> Option<(GrantBody, Option<String>)> {
-        let client_auth = self.client_auth(server, server_id)?;
-        if !self.precheck_binding(server, user_id, refresh_token).await {
+        let client_auth = Self::client_auth(server, call.server_id)?;
+        if !self.precheck_binding(server, call).await {
             return None;
         }
-        let form = refresh_form(refresh_token, &client_auth.body);
+        let form = refresh_form(call.refresh_token, &client_auth.body);
         let headers = exposed(&client_auth.headers);
         let body = self
             .token_endpoint
             .post_form(token_url, &form, &headers)
             .await?;
         let grant = read_grant_body(&body)?;
-        let proof = self
-            .enforce(server, user_id, refresh_token, &body)
-            .await
-            .ok()?;
+        let proof = self.enforce(server, call, &body).await.ok()?;
         Some((grant, proof))
     }
 
     // Writes the grant and answers the refresh token and scopes the returned token carries.
     async fn persist_grant(
         &self,
-        user_id: &str,
-        server_id: &str,
+        call: &RefreshCall<'_>,
         grant: &GrantBody,
         token: &OAuthToken,
         proof: Option<&str>,
@@ -195,8 +193,8 @@ where
             .or(token.refresh_token.as_deref());
         let scopes = grant.scopes.clone().unwrap_or_else(|| token.scopes.clone());
         let request = PersistRequest {
-            user_id,
-            server_id,
+            user_id: call.user_id,
+            server_id: call.server_id,
             access_token: &grant.access_token,
             refresh_token,
             expires_in: grant.expires_in,
