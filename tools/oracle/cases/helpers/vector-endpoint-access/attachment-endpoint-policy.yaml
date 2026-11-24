@@ -1,0 +1,16 @@
+kind: helper
+name: vector-endpoint-access-attachment-endpoint-policy
+call:
+  vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /vector_stores/vs_a/files/file_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+calls:
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /vector_stores/vs_a/files/file_a/content, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: POST, path: /vector_stores/vs_a/files/file_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: POST, path: /vector_stores/vs_a/files, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: DELETE, path: /vector_stores/vs_a/files/file_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [write]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /vector_stores/vs_a/files/file_a, app_root_path: null, root_path: null, user_role: null, key_metadata: null, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /embeddings/vs_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: azure_ai, id: vs_a, method: GET, path: /embeddings/vs_a, app_root_path: null, root_path: null, user_role: null, key_metadata: {allowed_vector_store_indexes: [{index_name: vs_a, index_permissions: [read]}]}, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: openai, id: vs_a, method: GET, path: /embeddings/vs_a, app_root_path: null, root_path: null, user_role: proxy_admin, key_metadata: null, team_metadata: null}
+  - vector_endpoint_access: {function: files, provider: azure_ai, id: vs_a, method: GET, path: /embeddings/vs_a, app_root_path: null, root_path: null, user_role: proxy_admin, key_metadata: null, team_metadata: null}
+env: {}
+compare: {ignore: []}

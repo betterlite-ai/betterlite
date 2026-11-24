@@ -2989,6 +2989,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-db",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-http-fixture",
@@ -3515,6 +3516,10 @@ name = "betterlite-oracle-prometheus"
 version = "0.1.0"
 dependencies = [
  "betterlite-oracle-helper-api",
+ "betterlite-prometheus",
+ "flate2",
+ "rust_decimal",
+ "serde",
  "serde_json",
 ]
 
@@ -4018,9 +4023,15 @@ dependencies = [
 name = "betterlite-prometheus"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "flate2",
+ "futures-util",
+ "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
  "thiserror",
+ "tokio",
+ "tower",
  "tracing",
 ]
 
@@ -4216,6 +4227,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "betterlite-azure",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4223,10 +4235,12 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-tokenizer",
@@ -4717,6 +4731,7 @@ dependencies = [
  "mutants",
  "num-traits",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry_sdk",
  "pem",
  "percent-encoding",
