@@ -1,0 +1,26 @@
+kind: helper
+name: decrypt-keeps-unreadable
+call:
+  b10074:
+    salt_key: salt-one
+    master_key: null
+    general_settings:
+      encryption_algorithm: xsalsa20-poly1305
+    calls:
+      - operation: decrypt_env
+        values:
+          legacy: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj
+          sealed: "v2:gcm:AAECAwQFBgcICQoLu13Sfnjzb3vLfCPO7ClYdksHnW1L"
+          foreign: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXfuRp9WUvbNm7fn_PA-d4hvaoT58a
+          garbage: not-a-ciphertext
+          plain: hello there
+          port: 6379
+          nested:
+            password: plain
+          nodes:
+            - 127.0.0.1
+            - 7000
+        new_key: null
+env: {}
+compare:
+  ignore: []
