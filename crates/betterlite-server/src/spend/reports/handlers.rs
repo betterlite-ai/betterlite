@@ -154,13 +154,16 @@ async fn scoped_report(
         Ok(scope) => scope,
         Err(error) => return error.respond(),
     };
-    let request = ScopedReportRequest {
-        column,
-        start: &dates.start,
-        end: &dates.end,
-        value: &scope,
-    };
-    report_rows(store.scoped_report(request).await)
+    report_rows(
+        store
+            .scoped_report(ScopedReportRequest {
+                column,
+                start: &dates.start,
+                end: &dates.end,
+                value: &scope,
+            })
+            .await,
+    )
 }
 
 async fn organization_report(
