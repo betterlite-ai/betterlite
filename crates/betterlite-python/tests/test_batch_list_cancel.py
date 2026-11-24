@@ -278,42 +278,49 @@ def test_page_matches_litellm() -> None:
     assert dict(ours_call["query"]) == {"after": AFTER, "limit": str(LIMIT)}
 
 
-def test_page_defaults_omit_cursor_and_limit() -> None:
+def test_page_defaults() -> None:
     with ListServer() as server:
         reference = LITELLM.list_batches(api_base=server.url, api_key=GOOD_KEY)
         made = made_page(list_batches(api_base=server.url, api_key=GOOD_KEY))
-        assert len(server.calls) == CALLS_PER_COMPARISON
-        reference_call, ours_call = server.calls
-    assert made.model_dump() == reference.model_dump()
-    assert dict(ours_call["query"]) == dict(reference_call["query"]) == {}
-
-
-def test_page_keeps_limit_zero() -> None:
-    with ListServer() as server:
-        reference = LITELLM.list_batches(limit=0, api_base=server.url, api_key=GOOD_KEY)
-        made = made_page(list_batches(limit=0, api_base=server.url, api_key=GOOD_KEY))
-        assert len(server.calls) == CALLS_PER_COMPARISON
-        reference_call, ours_call = server.calls
-    assert made.model_dump() == reference.model_dump()
-    assert dict(ours_call["query"]) == dict(reference_call["query"]) == {"limit": "0"}
-
-
-def test_page_ignores_the_metadata_kwarg() -> None:
-    with ListServer() as server:
-        reference = LITELLM.list_batches(
-            metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY
+        nulled = LITELLM.list_batches(
+            after=None, limit=None, api_base=server.url, api_key=GOOD_KEY
         )
+        null_made = made_page(
+            list_batches(after=None, limit=None, api_base=server.url, api_key=GOOD_KEY)
+        )
+        zero = LITELLM.list_batches(limit=0, api_base=server.url, api_key=GOOD_KEY)
+        zero_made = made_page(list_batches(limit=0, api_base=server.url, api_key=GOOD_KEY))
+        calls = server.calls
+    assert [made.model_dump(), null_made.model_dump(), zero_made.model_dump()] == [
+        reference.model_dump(),
+        nulled.model_dump(),
+        zero.model_dump(),
+    ]
+    assert [dict(call["query"]) for call in calls[1::2]] == [{}, {}, {"limit": "0"}]
+    assert [dict(call["query"]) for call in calls[::2]] == [{}, {}, {"limit": "0"}]
+
+
+def test_page_drops_metadata() -> None:
+    with ListServer() as server:
+        reference = LITELLM.list_batches(api_base=server.url, api_key=GOOD_KEY)
+        # list_batches has no metadata parameter, so the kwarg arrives in **kwargs
         made = made_page(
             list_batches(metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY)
         )
-        assert len(server.calls) == CALLS_PER_COMPARISON
-        reference_call, ours_call = server.calls
+        listed = asyncio.run(
+            awaited_page(
+                alist_batches(metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY)
+            )
+        )
+        assert len(server.calls) == CALLS_PER_COMPARISON + 1
+        reference_call, ours_call, listed_call = server.calls
     assert made.model_dump() == reference.model_dump()
+    assert listed.model_dump() == reference.model_dump()
     assert dict(ours_call["query"]) == dict(reference_call["query"])
-    assert "metadata" not in dict(ours_call["query"])
+    assert dict(listed_call["query"]) == dict(reference_call["query"]) == {}
 
 
-def test_page_ignores_the_extra_headers_and_body() -> None:
+def test_page_drops_extras() -> None:
     with ListServer() as server:
         reference = LITELLM.list_batches(
             extra_headers=dict(EXTRA_HEADERS),
@@ -337,21 +344,6 @@ def test_page_ignores_the_extra_headers_and_body() -> None:
     assert "x-test" not in {name.lower() for name in reference_call["headers"]}
 
 
-def test_async_page_ignores_the_metadata_kwarg() -> None:
-    with ListServer() as server:
-        reference = LITELLM.list_batches(api_base=server.url, api_key=GOOD_KEY)
-        made = asyncio.run(
-            awaited_page(
-                alist_batches(metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY)
-            )
-        )
-        assert len(server.calls) == CALLS_PER_COMPARISON
-        reference_call, ours_call = server.calls
-    assert made.model_dump() == reference.model_dump()
-    assert dict(ours_call["query"]) == dict(reference_call["query"])
-    assert "metadata" not in dict(ours_call["query"])
-
-
 def test_page_coroutines() -> None:
     with ListServer() as server:
         reference = LITELLM.list_batches(api_base=server.url, api_key=GOOD_KEY)
@@ -365,7 +357,7 @@ def test_page_coroutines() -> None:
     assert direct_page.model_dump() == reference.model_dump()
 
 
-def test_page_error_keeps_the_class_and_cause() -> None:
+def test_page_error_class() -> None:
     with ListServer() as server, pytest.raises(AuthenticationError) as caught:
         list_batches(api_base=server.url, api_key="sk-wrong")
     cause = native_cause(caught.value)
@@ -406,8 +398,8 @@ def test_cancel_passes_the_model() -> None:
     assert hidden["api_base"] == server.url
 
 
-def test_cancel_infers_the_provider_from_the_model() -> None:
-    # LiteLLM sends azure/command-r to the openai branch, so the provider in the failure is openai
+def test_cancel_infers_provider() -> None:
+    # LiteLLM sends azure/command-r to the openai branch, so the failure names openai
     with pytest.raises(APIConnectionError) as caught:
         cancel_batch(
             batch_id=BATCH_ID,
@@ -421,22 +413,19 @@ def test_cancel_infers_the_provider_from_the_model() -> None:
 
 def test_cancel_coroutines() -> None:
     with ListServer() as server:
-        reference = LITELLM.cancel_batch(
-            batch_id=BATCH_ID, api_base=server.url, api_key=GOOD_KEY
-        )
         flagged = cancel_batch(
             batch_id=BATCH_ID, api_base=server.url, api_key=GOOD_KEY, acancel_batch=True
         )
-        assert inspect.isawaitable(flagged)
-        flagged_batch = asyncio.run(awaited_batch(flagged))
         direct = acancel_batch(batch_id=BATCH_ID, api_base=server.url, api_key=GOOD_KEY)
+        assert inspect.isawaitable(flagged)
         assert inspect.isawaitable(direct)
-        direct_batch = asyncio.run(awaited_batch(direct))
-    assert flagged_batch.model_dump() == reference.model_dump()
-    assert direct_batch.model_dump() == reference.model_dump()
+        through_flag = asyncio.run(awaited_batch(flagged))
+        through_direct = asyncio.run(awaited_batch(direct))
+    assert through_flag == through_direct
+    assert through_flag.status == "cancelled"
 
 
-def test_cancel_sends_the_extra_headers_and_body() -> None:
+def test_cancel_sends_extras() -> None:
     with ListServer() as server:
         reference = LITELLM.cancel_batch(
             batch_id=BATCH_ID,
@@ -461,7 +450,7 @@ def test_cancel_sends_the_extra_headers_and_body() -> None:
     assert ours_call["headers"].get("x-test") == "1"
 
 
-def test_cancel_ignores_the_metadata_kwarg() -> None:
+def test_cancel_drops_metadata() -> None:
     with ListServer() as server:
         reference = LITELLM.cancel_batch(
             batch_id=BATCH_ID, metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY
@@ -480,7 +469,7 @@ def test_cancel_ignores_the_metadata_kwarg() -> None:
     assert ours_call["body"] == reference_call["body"] == {}
 
 
-def test_cancel_error_keeps_the_class_and_cause() -> None:
+def test_cancel_error_class() -> None:
     with ListServer() as server, pytest.raises(NotFoundError) as caught:
         cancel_batch(batch_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
     cause = native_cause(caught.value)
@@ -488,7 +477,7 @@ def test_cancel_error_keeps_the_class_and_cause() -> None:
     assert caught.value.status_code == NOT_FOUND
 
 
-def test_cancel_refuses_a_client_and_a_session() -> None:
+def test_cancel_refuses_client() -> None:
     with pytest.raises(UnsupportedCallArgument) as refused:
         cancel_batch(batch_id=BATCH_ID, client=object())
     assert refused.value.argument == "client"
@@ -497,7 +486,7 @@ def test_cancel_refuses_a_client_and_a_session() -> None:
     assert session_refused.value.argument == "shared_session"
 
 
-def test_package_exports_the_ten_batch_names() -> None:
+def test_package_exports() -> None:
     expected = [
         "BatchPath",
         "LiteLLMBatch",
@@ -511,5 +500,5 @@ def test_package_exports_the_ten_batch_names() -> None:
         "retrieve_batch",
     ]
     assert batch_main.__all__ == expected
-    public = sorted(name for name in vars(batch_main) if not name.startswith("_"))
+    public = sorted(name for name in dir(batch_main) if not name.startswith("_"))
     assert public == sorted(expected)

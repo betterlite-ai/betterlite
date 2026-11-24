@@ -95,43 +95,42 @@ def cancel_values(
     return to_call_payload(values)
 
 
-# cancel_batch infers the provider from the model before it branches, and keeps the argument on any failure
+# the provider is inferred from the model before the branch, as LiteLLM's cancel_batch does
 def cancel_provider(model: str | None, provider: str) -> str:
     if model is None:
         return provider
     try:
         _, inferred, _, _ = get_llm_provider(model, provider)
-    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L956
+    except Exception:
         LOGGER.exception(
-            "litellm.batches.main.py::cancel_batch() - Error inferring custom_llm_provider - %s",
-            error,
+            "litellm.batches.main.py::cancel_batch() - Error inferring custom_llm_provider"
         )
         return provider
     return inferred
 
 
-def page_from(answer: JsonValue) -> BatchListPage:
+def batch_page(method: NativeCall, payload: CallPayload) -> BatchListPage:
+    answer = call_native(method, payload, NativeBatchListError)
     return PAGE.validate_python(answer)
 
 
-def batch_page(method: NativeCall, payload: CallPayload) -> BatchListPage:
-    return page_from(call_native(method, payload, NativeBatchListError))
-
-
 async def async_batch_page(method: AsyncNativeCall, payload: CallPayload) -> BatchListPage:
-    return page_from(await acall_native(method, payload, NativeBatchListError))
+    answer = await acall_native(method, payload, NativeBatchListError)
+    return PAGE.validate_python(answer)
 
 
 def cancelled_batch(
     method: NativeCall, payload: CallPayload, kwargs: Mapping[str, CallValue]
 ) -> LiteLLMBatch:
-    return batch_from(call_native(method, payload, NativeBatchListError), kwargs)
+    answer = call_native(method, payload, NativeBatchListError)
+    return batch_from(answer, kwargs)
 
 
 async def async_cancelled_batch(
     method: AsyncNativeCall, payload: CallPayload, kwargs: Mapping[str, CallValue]
 ) -> LiteLLMBatch:
-    return batch_from(await acall_native(method, payload, NativeBatchListError), kwargs)
+    answer = await acall_native(method, payload, NativeBatchListError)
+    return batch_from(answer, kwargs)
 
 
 def list_batches(
@@ -207,12 +206,19 @@ async def acancel_batch(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> LiteLLMBatch:
-    provider = cancel_provider(model, custom_llm_provider)
-    options: dict[str, CallValue] = {
+    # LiteLLM's wrapper hands cancel_batch acancel_batch=True, then awaits the coroutine it answers
+    kwargs["acancel_batch"] = True
+    pending = cancel_batch(
+        batch_id,
+        model,
+        custom_llm_provider,
+        metadata,
+        extra_headers,
+        extra_body,
         **kwargs,
-        "metadata": metadata,
-        "extra_headers": extra_headers,
-        "extra_body": extra_body,
-    }
-    payload = cancel_values(batch_id, model, provider, options)
-    return await async_cancelled_batch(listing_session().acancel, payload, kwargs)
+    )
+    match pending:
+        case LiteLLMBatch():
+            return pending
+        case Awaitable():
+            return await pending
