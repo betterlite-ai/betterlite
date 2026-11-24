@@ -267,20 +267,20 @@ fn sealed_optional_fields_are_absent_from_the_json() {
     assert!(text.contains(r#""state":"""#));
 
     let sealed_code = seal(GATEWAY_AUTH_CODE_PREFIX, &auth_code(), &cipher()).unwrap();
-    let text = plaintext(&sealed_code, GATEWAY_AUTH_CODE_PREFIX, &cipher());
-    assert!(text.contains(r#""resource_server_id":"srv-1""#));
-    assert!(text.contains(r#""audience":"proxy_api""#));
-    assert!(text.contains(r#""team_id":"team-1""#));
+    let code_text = plaintext(&sealed_code, GATEWAY_AUTH_CODE_PREFIX, &cipher());
+    assert!(code_text.contains(r#""resource_server_id":"srv-1""#));
+    assert!(code_text.contains(r#""audience":"proxy_api""#));
+    assert!(code_text.contains(r#""team_id":"team-1""#));
 
     let mut bare = auth_code();
     bare.resource_server_id = None;
     bare.audience = None;
     bare.team_id = None;
     let sealed_bare = seal(GATEWAY_AUTH_CODE_PREFIX, &bare, &cipher()).unwrap();
-    let text = plaintext(&sealed_bare, GATEWAY_AUTH_CODE_PREFIX, &cipher());
-    assert!(!text.contains("resource_server_id"));
-    assert!(!text.contains("audience"));
-    assert!(!text.contains("team_id"));
+    let bare_text = plaintext(&sealed_bare, GATEWAY_AUTH_CODE_PREFIX, &cipher());
+    assert!(!bare_text.contains("resource_server_id"));
+    assert!(!bare_text.contains("audience"));
+    assert!(!bare_text.contains("team_id"));
 }
 
 #[test]
@@ -321,13 +321,13 @@ fn replays_the_gateway_dcr_open_sealed_corpus() {
         .collect();
     paths.sort();
     assert!(!paths.is_empty(), "the corpus holds no seeds");
-    paths.iter().for_each(|path| {
+    for path in &paths {
         let bytes = fs::read(path).unwrap();
         let Ok(text) = str::from_utf8(&bytes) else {
-            return;
+            continue;
         };
         let _opened = open_gateway_dcr_client(text, &cipher());
-    });
+    }
     let opened = open_gateway_dcr_client(&corpus_file("client"), &cipher()).unwrap();
     assert_eq!(
         opened.redirect_uris,

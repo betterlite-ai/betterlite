@@ -99,7 +99,7 @@ fn rejects_a_missing_or_null_redirect_uris() {
 #[rstest]
 #[case::string(JsonValue::String("https://client.example/callback".to_owned()))]
 #[case::bool(JsonValue::Bool(true))]
-#[case::number(JsonValue::Number(Number::from(1)))]
+#[case::number(JsonValue::Number(Number::from(1_i32)))]
 #[case::object(JsonValue::Object(BTreeMap::new()))]
 fn rejects_a_redirect_uris_that_is_not_an_array(#[case] value: JsonValue) {
     let mut request = body(Vec::new());
@@ -135,7 +135,7 @@ fn rejects_a_non_string_item_before_looking_at_any_uri() {
 
 #[test]
 fn counts_the_uri_length_in_characters_not_bytes() {
-    let at_the_limit = uri_of_characters(256, '𐍈');
+    let at_the_limit = uri_of_characters(256, '\u{10348}');
     assert_eq!(at_the_limit.chars().count(), 256);
     assert!(at_the_limit.len() > 256);
     let accepted = registered(register(&body(vec![uri(&at_the_limit)])));
@@ -217,15 +217,8 @@ fn registers_a_public_client_and_drops_the_request_metadata() {
         "response_types".to_owned(),
         JsonValue::Array(vec![uri("token")]),
     );
-    let registration = register(&request);
-    assert_eq!(registration.status(), 201);
-    let client = registered(registration);
+    let client = registered(register(&request));
     assert!(client.client_id.starts_with(GATEWAY_DCR_CLIENT_ID_PREFIX));
-    assert_eq!(client.client_id_issued_at, now().timestamp());
-    assert_eq!(
-        client.redirect_uris,
-        vec!["https://client.example/callback".to_owned()]
-    );
     assert_eq!(client.token_endpoint_auth_method, "none");
     assert_eq!(
         client.grant_types,
@@ -233,16 +226,28 @@ fn registers_a_public_client_and_drops_the_request_metadata() {
     );
     assert_eq!(client.response_types, ["code"]);
     let text = serde_json::to_string(&client).unwrap();
+    assert!(!text.contains("client_name"));
+    assert!(!text.contains("client_secret_basic"));
+}
+
+#[test]
+fn a_registration_answers_the_public_client_body_exactly() {
+    let registration = register(&body(vec![uri("https://client.example/callback")]));
+    assert_eq!(registration.status(), 201);
+    let client = registered(registration);
+    assert_eq!(client.client_id_issued_at, now().timestamp());
     assert_eq!(
-        text,
+        client.redirect_uris,
+        vec!["https://client.example/callback".to_owned()]
+    );
+    assert_eq!(
+        serde_json::to_string(&client).unwrap(),
         format!(
             "{{\"client_id\":\"{}\",\"client_id_issued_at\":{},\"redirect_uris\":[\"https://client.example/callback\"],\"token_endpoint_auth_method\":\"none\",\"grant_types\":[\"authorization_code\",\"refresh_token\"],\"response_types\":[\"code\"]}}",
             client.client_id,
             now().timestamp()
         )
     );
-    assert!(!text.contains("client_name"));
-    assert!(!text.contains("client_secret_basic"));
 }
 
 #[test]
@@ -292,7 +297,7 @@ fn registers_the_issued_client_id_so_it_opens_to_the_sent_uris() {
 
 #[test]
 fn rejects_a_sealed_client_id_over_the_length_cap() {
-    let longest = uri_of_characters(256, '𐍈');
+    let longest = uri_of_characters(256, '\u{10348}');
     let error = refusal_of(register(&body(vec![
         uri(&longest),
         uri(&longest),

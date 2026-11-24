@@ -5,7 +5,7 @@ use rstest::rstest;
 use crate::gateway_dcr::models::{
     ConnectFlow, GatewayAuthCode, GatewayDcrClient, is_gateway_dcr_client_id,
 };
-use crate::gateway_dcr::sealed::Sealable;
+use crate::gateway_dcr::sealed::Sealable as _;
 use crate::types::SessionAudience;
 
 const CLIENT_ONE_URI: &str =
@@ -47,27 +47,23 @@ fn gateway_dcr_client_refuses_zero_and_five_redirect_uris_on_open() {
 
 #[test]
 fn gateway_dcr_client_rejects_unknown_fields() {
-    assert!(
-        serde_json::from_str::<GatewayDcrClient>(
-            r#"{"redirect_uris":["https://a.example/cb"],"iat":1,"extra":true}"#
-        )
-        .is_err()
-    );
-    assert!(
-        serde_json::from_str::<GatewayDcrClient>(r#"{"redirect_uris":["https://a.example/cb"]}"#)
-            .is_err()
-    );
+    serde_json::from_str::<GatewayDcrClient>(
+        r#"{"redirect_uris":["https://a.example/cb"],"iat":1,"extra":true}"#,
+    )
+    .unwrap_err();
+    serde_json::from_str::<GatewayDcrClient>(r#"{"redirect_uris":["https://a.example/cb"]}"#)
+        .unwrap_err();
 }
 
 #[test]
 fn gateway_dcr_client_rejects_a_sealed_auth_code() {
-    assert!(serde_json::from_str::<GatewayDcrClient>(AUTH_CODE_JSON).is_err());
-    assert!(serde_json::from_str::<GatewayDcrClient>(FLOW_JSON).is_err());
+    serde_json::from_str::<GatewayDcrClient>(AUTH_CODE_JSON).unwrap_err();
+    serde_json::from_str::<GatewayDcrClient>(FLOW_JSON).unwrap_err();
 }
 
 #[test]
 fn gateway_auth_code_rejects_a_sealed_client_record() {
-    assert!(serde_json::from_str::<GatewayAuthCode>(CLIENT_ONE_URI).is_err());
+    serde_json::from_str::<GatewayAuthCode>(CLIENT_ONE_URI).unwrap_err();
 }
 
 #[test]
@@ -102,17 +98,17 @@ fn connect_flow_reads_and_writes_the_optional_fields() {
     let opened = flow(FLOW_JSON);
     assert!(opened.resource_server_id.is_none());
     assert!(opened.audience.is_none());
-    let text = serde_json::to_string(&opened).unwrap();
-    assert!(!text.contains("resource_server_id"));
-    assert!(!text.contains("audience"));
+    let plain_text = serde_json::to_string(&opened).unwrap();
+    assert!(!plain_text.contains("resource_server_id"));
+    assert!(!plain_text.contains("audience"));
 
     let with_optionals = r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","state":"s","code_challenge":"c","jti":"j","exp":1,"resource_server_id":"srv-1","audience":"proxy_api"}"#;
-    let opened = flow(with_optionals);
-    assert_eq!(opened.resource_server_id.as_deref(), Some("srv-1"));
-    assert_eq!(opened.audience, Some(SessionAudience::ProxyApi));
-    let text = serde_json::to_string(&opened).unwrap();
-    assert!(text.contains(r#""resource_server_id":"srv-1""#));
-    assert!(text.contains(r#""audience":"proxy_api""#));
+    let optional = flow(with_optionals);
+    assert_eq!(optional.resource_server_id.as_deref(), Some("srv-1"));
+    assert_eq!(optional.audience, Some(SessionAudience::ProxyApi));
+    let optional_text = serde_json::to_string(&optional).unwrap();
+    assert!(optional_text.contains(r#""resource_server_id":"srv-1""#));
+    assert!(optional_text.contains(r#""audience":"proxy_api""#));
 }
 
 #[test]
@@ -122,29 +118,29 @@ fn gateway_auth_code_reads_and_writes_the_optional_fields() {
     assert_eq!(opened.iat, 1_700_000_000);
     assert_eq!(opened.exp, 1_700_000_120);
     assert!(opened.team_id.is_none());
-    let text = serde_json::to_string(&opened).unwrap();
-    assert!(!text.contains("team_id"));
-    assert!(!text.contains("resource_server_id"));
-    assert!(!text.contains("audience"));
+    let plain_text = serde_json::to_string(&opened).unwrap();
+    assert!(!plain_text.contains("team_id"));
+    assert!(!plain_text.contains("resource_server_id"));
+    assert!(!plain_text.contains("audience"));
 
     let with_team = r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"challenge-1","jti":"jti-1","iat":1,"exp":2,"team_id":"team-1"}"#;
-    let opened: GatewayAuthCode = serde_json::from_str(with_team).unwrap();
-    assert_eq!(opened.team_id.as_deref(), Some("team-1"));
+    let team_code: GatewayAuthCode = serde_json::from_str(with_team).unwrap();
+    assert_eq!(team_code.team_id.as_deref(), Some("team-1"));
 }
 
 #[test]
 fn gateway_auth_code_refuses_empty_required_fields_on_open() {
     let empty_challenge = r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"","jti":"jti-1","iat":1,"exp":2}"#;
-    let opened: GatewayAuthCode = serde_json::from_str(empty_challenge).unwrap();
-    assert!(!opened.acceptable());
+    let empty_code: GatewayAuthCode = serde_json::from_str(empty_challenge).unwrap();
+    assert!(!empty_code.acceptable());
     let complete = r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"c","jti":"jti-1","iat":1,"exp":2}"#;
-    let opened: GatewayAuthCode = serde_json::from_str(complete).unwrap();
-    assert!(opened.acceptable());
+    let complete_code: GatewayAuthCode = serde_json::from_str(complete).unwrap();
+    assert!(complete_code.acceptable());
 }
 
 #[test]
 fn gateway_auth_code_rejects_unknown_keys() {
-    assert!(serde_json::from_str::<GatewayAuthCode>(r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"c","jti":"jti-1","iat":1,"exp":2,"redirect_uris":[]}"#).is_err());
+    serde_json::from_str::<GatewayAuthCode>(r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"c","jti":"jti-1","iat":1,"exp":2,"redirect_uris":[]}"#).unwrap_err();
 }
 
 #[test]

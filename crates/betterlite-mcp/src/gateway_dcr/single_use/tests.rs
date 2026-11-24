@@ -48,13 +48,12 @@ impl ClaimBackend for CountingBackend {
         key: &str,
         _ttl_seconds: i64,
     ) -> impl Future<Output = Result<u64, ClaimBackendError>> + Send {
-        let count = {
-            let mut counts = self.counts.lock().unwrap();
-            let count = counts.entry(key.to_owned()).or_insert(0);
-            *count = count.saturating_add(1);
-            *count
-        };
-        ready(Ok(count))
+        let mut counts = self.counts.lock().unwrap();
+        let entry = counts.entry(key.to_owned()).or_insert(0);
+        *entry = entry.saturating_add(1);
+        let total = *entry;
+        drop(counts);
+        ready(Ok(total))
     }
 
     fn read(
