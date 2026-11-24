@@ -72,7 +72,7 @@ def model_row(row: ModelRowInput) -> ModelRow:
 def model_info_answer(proxy_config: ProxyConfig, rows: list[ModelRowInput]) -> JsonValue:
     infos: list[JsonValue] = []
     for row in rows:
-        info = proxy_config.get_model_info_with_id(model=model_row(row), db_model=False)
+        info = proxy_config.get_model_info_with_id(model=model_row(row), db_model=False)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7241-L7277
         infos.append(OBJECT.validate_json(info.model_dump_json(exclude_none=True)))
     return infos
 
@@ -82,7 +82,7 @@ def export_answer(proxy_config: ProxyConfig, call: ExportEnvCall) -> JsonValue:
         raise ValueError("the case env and the helper input disagree on LITELLM_SALT_KEY")
     os.environ.update(call["environment"])
     exported = OBJECT.validate_python(
-        proxy_config._decrypt_and_set_db_env_variables(call["values"], return_original_value=call["keep_original"])  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7585-L7612
+        proxy_config._decrypt_and_set_db_env_variables(call["values"], return_original_value=call["keep_original"])  # type: ignore[misc]  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7585-L7612
     )
     environment: dict[str, JsonValue] = {key: os.environ.get(key) for key in call["values"]}
     return {"exported": exported, "environment": environment}

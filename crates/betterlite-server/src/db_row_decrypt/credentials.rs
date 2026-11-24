@@ -44,8 +44,8 @@ pub fn decrypt_credential(item: &CredentialItem, cipher: &DbCipher) -> Credentia
     }
 }
 
-// ast-grep-ignore: no-one-line-functions - LiteLLM's load_credential_list is one config read whose values are already CredentialItems
 #[must_use]
+// ast-grep-ignore: no-one-line-functions - LiteLLM's load_credential_list is one config read whose values are already CredentialItems
 pub fn credential_list(config: &Config) -> Vec<CredentialItem> {
     config.sections.credential_list.credentials.clone()
 }

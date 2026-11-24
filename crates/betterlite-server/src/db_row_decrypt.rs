@@ -9,5 +9,4 @@ pub mod warnings;
 mod convert;
 mod params;
 
-#[cfg(test)]
 mod tests;
