@@ -635,6 +635,17 @@ fn cohere_stream_returns_the_decode_error() {
 }
 
 #[test]
+fn cohere_stream_returns_the_decode_error_for_a_data_prefixed_line() {
+    let provider = CohereProvider;
+    let chunks = [r#"data: {"text": "hello", "is_finished": false}"#.to_owned()];
+    let outcome = provider.build_complete_streaming_response(&chunks, "command-r");
+    let Err(error) = outcome else {
+        panic!("a line with the SSE prefix fails the build");
+    };
+    assert!(matches!(error, PassthroughLoggingError::StreamBuild { .. }));
+}
+
+#[test]
 fn cohere_stream_returns_the_missing_finish_reason_error() {
     let provider = CohereProvider;
     let chunks = [r#"{"is_finished": true}"#.to_owned()];
