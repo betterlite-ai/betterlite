@@ -1,5 +1,5 @@
 use super::super::error::{USER_POLICY_UNAVAILABLE_STATUS, UserPermissionError};
-use super::super::principal::{user_object_permission, user_object_permission_id};
+use super::super::principal::user_object_permission;
 use super::super::reads::CachedLink;
 use super::super::record::McpAuth;
 use super::{FakeReads, Scripted, expected, row};
