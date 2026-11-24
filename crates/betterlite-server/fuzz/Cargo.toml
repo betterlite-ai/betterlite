@@ -552,3 +552,10 @@ path = "fuzz_targets/health_connection_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "stream_interrupted"
+path = "fuzz_targets/stream_interrupted.rs"
+test = false
+doc = false
+bench = false
