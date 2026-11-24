@@ -6,7 +6,10 @@ use crate::batch_calls::error::DispatchFailure;
 // one shape for both executors: a provider status keeps its own message, anything else is a connection failure
 const fn failure(status: Option<u16>, message: String) -> DispatchFailure {
     match status {
-        Some(status) => DispatchFailure::Status { status, message },
+        Some(code) => DispatchFailure::Status {
+            status: code,
+            message,
+        },
         None => DispatchFailure::Connection(message),
     }
 }

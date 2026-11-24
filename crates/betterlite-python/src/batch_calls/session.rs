@@ -180,20 +180,18 @@ impl BatchOperation for CreateCall {
         (provider, input.model.clone())
     }
 
-    fn run(
+    async fn run(
         core: Arc<BatchCore>,
         input: Self::Input,
         mode: CallMode,
-    ) -> impl Future<Output = Result<String, BatchError>> + Send {
-        async move {
-            let transport = core.transport();
-            let mut tasks = JoinSet::new();
-            tasks.spawn_blocking(move || core.create_with(input, mode, transport));
-            match tasks.join_next().await {
-                Some(Ok(answer)) => answer,
-                Some(Err(join_error)) => Err(BatchError::Task(join_error.to_string())),
-                None => Err(BatchError::Task(TASK_WITHOUT_RESULT.to_owned())),
-            }
+    ) -> Result<String, BatchError> {
+        let transport = core.transport();
+        let mut tasks = JoinSet::new();
+        tasks.spawn_blocking(move || core.create_with(input, mode, transport));
+        match tasks.join_next().await {
+            Some(Ok(answer)) => answer,
+            Some(Err(join_error)) => Err(BatchError::Task(join_error.to_string())),
+            None => Err(BatchError::Task(TASK_WITHOUT_RESULT.to_owned())),
         }
     }
 }
@@ -206,15 +204,13 @@ impl BatchOperation for ReadCall {
         (provider, input.model.clone())
     }
 
-    fn run(
+    async fn run(
         core: Arc<BatchCore>,
         input: Self::Input,
         mode: CallMode,
-    ) -> impl Future<Output = Result<String, BatchError>> + Send {
-        async move {
-            let dispatch = core.dispatch();
-            core.retrieve_with(input, mode, dispatch).await
-        }
+    ) -> Result<String, BatchError> {
+        let dispatch = core.dispatch();
+        core.retrieve_with(input, mode, dispatch).await
     }
 }
 

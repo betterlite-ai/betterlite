@@ -200,10 +200,10 @@ fn request_create_payload_keeps_the_optional_params() {
     assert_eq!(
         input.optional_params.timeout,
         Some(RequestTimeout::Client(HttpTimeout {
-            connect: Some(1.0),
-            read: Some(30.0),
-            write: Some(2.0),
-            pool: Some(3.0),
+            connect: Some(1.0_f64),
+            read: Some(30.0_f64),
+            write: Some(2.0_f64),
+            pool: Some(3.0_f64),
         }))
     );
     assert_eq!(input.optional_params.max_retries, Some(2));
@@ -386,7 +386,7 @@ fn request_create_body_carries_the_typed_fields() {
             seconds: 60,
         })
     );
-    assert_eq!(request.timeout, Some(12.5));
+    assert_eq!(request.timeout, Some(12.5_f64));
     assert!(request.extra_headers.is_none());
     assert!(request.extra_body.is_none());
 }
@@ -438,7 +438,7 @@ fn request_query_carries_the_batch_id() {
         batch_id: Some("batch-1".to_owned()),
         extra_headers: Some(IndexMap::from([("h".to_owned(), "v".to_owned())])),
         extra_body: None,
-        timeout: Some(3.0),
+        timeout: Some(3.0_f64),
     })
     .unwrap();
     assert_eq!(request.batch_id, "batch-1");
@@ -451,7 +451,7 @@ fn request_query_carries_the_batch_id() {
             .map(String::as_str),
         Some("v")
     );
-    assert_eq!(request.timeout, Some(3.0));
+    assert_eq!(request.timeout, Some(3.0_f64));
     assert_eq!(
         batch_query(&BatchIdRequest::default()).unwrap_err(),
         BodyError::Missing { field: "batch_id" }
@@ -466,8 +466,8 @@ fn request_duration_follows_the_timeout_pieces() {
     );
     let read = TimeoutPhases {
         connect: None,
-        read: Some(5.0),
-        write: Some(9.0),
+        read: Some(5.0_f64),
+        write: Some(9.0_f64),
         pool: None,
     };
     assert_eq!(
@@ -480,17 +480,17 @@ fn request_duration_follows_the_timeout_pieces() {
     );
     assert_eq!(
         duration_of(&Timeout::Seconds(-1.0)).unwrap_err(),
-        DurationError::Invalid { seconds: -1.0 }
+        DurationError::Invalid { seconds: -1.0_f64 }
     );
     let negative_read = TimeoutPhases {
-        connect: Some(-2.0),
-        read: Some(-3.0),
+        connect: Some(-2.0_f64),
+        read: Some(-3.0_f64),
         write: None,
         pool: None,
     };
     assert_eq!(
         duration_of(&Timeout::Phases(negative_read)).unwrap_err(),
-        DurationError::Invalid { seconds: -3.0 }
+        DurationError::Invalid { seconds: -3.0_f64 }
     );
 }
 
@@ -846,7 +846,7 @@ fn error_read_payload_maps_a_request_failure() {
 
 #[test]
 fn error_read_payload_maps_a_timeout_failure() {
-    let failure = DispatchFailure::Timeout(DurationError::Invalid { seconds: -1.0 });
+    let failure = DispatchFailure::Timeout(DurationError::Invalid { seconds: -1.0_f64 });
     let payload = read_error_payload(&BatchProviderReadError::Dispatch(failure), "openai", None);
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));

@@ -282,7 +282,7 @@ fn transport_reports_a_bad_openai_body() {
 #[test]
 fn transport_reports_a_bad_xai_timeout() {
     let mut call = openai_call();
-    call.timeout = -1.0;
+    call.timeout = -1.0_f64;
     let outcome = transport().create(&BatchProviderCreateCall::Xai(call));
     assert!(matches!(
         outcome,
@@ -411,7 +411,10 @@ fn dispatch_failures_keep_the_provider_status() {
             assert_eq!(status, 400);
             assert_eq!(message, "bad");
         }
-        other => panic!("unexpected failure: {other}"),
+        other @ (DispatchFailure::Connection(_)
+        | DispatchFailure::Request(_)
+        | DispatchFailure::Timeout(_)
+        | DispatchFailure::Unsupported { .. }) => panic!("unexpected failure: {other}"),
     }
     let connection = DispatchFailure::from(BatchesError::NotInitialized);
     assert!(matches!(connection, DispatchFailure::Connection(_)));
