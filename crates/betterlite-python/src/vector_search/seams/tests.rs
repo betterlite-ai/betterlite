@@ -72,11 +72,11 @@ fn configs_serve_openai_and_refuse_the_other_tags() {
 
 #[test]
 fn configs_resolve_the_module_api_base_globally() {
-    let globals = LiteLlmGlobals {
+    let module_globals = LiteLlmGlobals {
         api_base: Some(String::from("http://127.0.0.1:9/v1")),
         ..LiteLlmGlobals::default()
     };
-    let configs = Configs::new(OpenAiCredentialsSettings::default(), globals, None);
+    let configs = Configs::new(OpenAiCredentialsSettings::default(), module_globals, None);
     let create = configs
         .create_config(VectorStoresConfigTag::OpenAI)
         .expect("openai has a create config");
