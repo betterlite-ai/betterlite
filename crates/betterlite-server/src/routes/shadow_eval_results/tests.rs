@@ -12,6 +12,7 @@ use tower::ServiceExt as _;
 
 use super::{ResultsState, answered, failure, routes, shadow_eval_read};
 use crate::auth::auth_identity::AuthContext;
+use crate::routes::shadow_eval_lifecycle::routes as lifecycle_routes;
 use crate::routes::tests::{empty_config, state_for};
 use crate::shadow_eval_results::error::ShadowResultsRouteError;
 use crate::shadow_eval_results::query::ShadowQueryError;
@@ -68,7 +69,7 @@ async fn an_unauthenticated_start_answers_401() {
 #[tokio::test]
 async fn get_on_the_start_path_reaches_the_detail_read() {
     let state = state_for(&empty_config());
-    let router = routes(&state).merge(crate::routes::shadow_eval_lifecycle::routes(&state));
+    let router = routes(&state).merge(lifecycle_routes(&state));
     let mut request = Request::builder()
         .uri("/auto_router/shadow_eval/start?limit=zero")
         .body(Body::empty())
@@ -87,7 +88,7 @@ async fn get_on_the_start_path_reaches_the_detail_read() {
 #[tokio::test]
 async fn get_on_the_list_path_rejects_an_invalid_limit() {
     let state = state_for(&empty_config());
-    let router = routes(&state).merge(crate::routes::shadow_eval_lifecycle::routes(&state));
+    let router = routes(&state).merge(lifecycle_routes(&state));
     let mut request = Request::builder()
         .uri("/auto_router/shadow_eval?limit=zero")
         .body(Body::empty())
