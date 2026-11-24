@@ -57,11 +57,17 @@ pub(crate) fn caller(role: Option<&str>, team: Option<&str>, models: &[&str]) ->
 
 pub(crate) fn auth_key(role: Option<&str>, team: Option<&str>, models: &[&str]) -> UserAPIKeyAuth {
     let mut fields = BTreeMap::new();
-    if let Some(role) = role {
-        fields.insert("user_role".to_owned(), JsonData::String(role.to_owned()));
+    if let Some(given_role) = role {
+        fields.insert(
+            "user_role".to_owned(),
+            JsonData::String(given_role.to_owned()),
+        );
     }
-    if let Some(team) = team {
-        fields.insert("team_id".to_owned(), JsonData::String(team.to_owned()));
+    if let Some(given_team) = team {
+        fields.insert(
+            "team_id".to_owned(),
+            JsonData::String(given_team.to_owned()),
+        );
     }
     if !models.is_empty() {
         let listed = models
@@ -706,18 +712,18 @@ impl Harness {
         let models: Option<Arc<dyn ModelNames>> = self
             .catalog
             .as_ref()
-            .map(|catalog| -> Arc<dyn ModelNames> { Arc::clone(catalog) });
+            .map(|catalog| -> Arc<dyn ModelNames> { Arc::<Catalog>::clone(catalog) });
         LensRoutesState {
             repository: Some(Arc::new(LensRepository {
                 database: self.database.clone(),
             })),
             storage: self.storage.clone(),
             models,
-            keys: Arc::clone(&self.resolver),
+            keys: Arc::<Resolver>::clone(&self.resolver),
             clock: Arc::new(FixedClock {
                 now: self.clock.now,
             }),
-            ids: Arc::clone(&self.ids),
+            ids: Arc::<Ids>::clone(&self.ids),
         }
     }
 

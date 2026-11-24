@@ -178,7 +178,7 @@ async fn a_lookback_outside_the_range_is_422() {
     .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     let too_long = window_body(8761, 0);
-    let reply = call(
+    let refused = call(
         harness.app(),
         request(
             "POST",
@@ -188,7 +188,7 @@ async fn a_lookback_outside_the_range_is_422() {
         ),
     )
     .await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]

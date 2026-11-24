@@ -59,10 +59,9 @@ where
     let reader = source_reader(state.storage.as_ref())?;
     let scope = user_scope(&caller_key(&context.principal)?, false)?;
     let clock_now = state.clock.now();
-    let now = match preview.as_of {
-        Some(as_of) => as_of.with_timezone(&Utc).min(clock_now),
-        None => clock_now,
-    };
+    let now = preview
+        .as_of
+        .map_or(clock_now, |as_of| as_of.with_timezone(&Utc).min(clock_now));
     let start = TimeDelta::try_hours(i64::from(preview.lookback_hours))
         .and_then(|lookback| now.checked_sub_signed(lookback))
         .ok_or(LensMutationError::Deadline)?;

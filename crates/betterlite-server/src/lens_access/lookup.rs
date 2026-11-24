@@ -10,10 +10,10 @@ use crate::lens_access::state::LensRoutesState;
 pub(crate) fn lens_repository<Db, Store>(
     state: &LensRoutesState<Db, Store>,
 ) -> Result<&LensRepository<Db>, LensAccessError> {
-    match state.repository.as_deref() {
-        Some(repository) => Ok(repository),
-        None => Err(LensAccessError::NoDatabase),
-    }
+    state
+        .repository
+        .as_deref()
+        .ok_or(LensAccessError::NoDatabase)
 }
 
 pub(crate) async fn get_lens<Db>(
@@ -35,10 +35,7 @@ where
 }
 
 pub(crate) fn required(lens: Option<Lens>) -> Result<Lens, LensAccessError> {
-    match lens {
-        Some(lens) => Ok(lens),
-        None => Err(LensAccessError::ConcurrentChange),
-    }
+    lens.ok_or(LensAccessError::ConcurrentChange)
 }
 
 mod tests;

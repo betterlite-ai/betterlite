@@ -80,12 +80,13 @@ where
         caller: Option<Extension<AuthContext>>,
     ) -> Result<Json<Job>, LensRouteError<<Store as Storage>::Error>> {
         let repository = state.accessible_repository(caller, &lens_id, false).await?;
-        match repository.job(&lens_id, &job_id).await? {
-            Some(job) => Ok(Json(job)),
-            None => Err(LensRouteError::Access(
+        repository
+            .job(&lens_id, &job_id)
+            .await?
+            .map(Json)
+            .ok_or(LensRouteError::Access(
                 LensAccessError::InvestigationNotFound,
-            )),
-        }
+            ))
     }
 
     // the repository, once the caller's scope covers this lens: every run route starts here

@@ -9,12 +9,11 @@ pub(crate) fn source_reader<Store>(
 where
     Store: Storage + Clone,
 {
-    match storage {
-        Some(storage) => Ok(SourceReader {
-            storage: storage.clone(),
-        }),
-        None => Err(LensAccessError::TracingDisabled),
-    }
+    storage
+        .map(|found| SourceReader {
+            storage: found.clone(),
+        })
+        .ok_or(LensAccessError::TracingDisabled)
 }
 
 mod tests;

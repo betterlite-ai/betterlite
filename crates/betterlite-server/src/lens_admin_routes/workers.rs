@@ -128,10 +128,10 @@ where
     let updated = repository
         .set_worker_billing(&worker.id, &request.analysis_key_id)
         .await?;
-    let Some(updated) = updated else {
+    let Some(patched) = updated else {
         return Err(LensRouteError::Access(LensAccessError::WorkerAccessRevoked));
     };
-    Ok(Json(updated))
+    Ok(Json(patched))
 }
 
 // the worker named by the path, when the caller's scope covers it, else LiteLLM's 404
@@ -148,10 +148,7 @@ where
     let found = workers
         .into_iter()
         .find(|worker| worker.id == worker_id && can_access(scope, &worker.scope));
-    match found {
-        Some(worker) => Ok(worker),
-        None => Err(LensRouteError::Access(LensAccessError::WorkerNotFound)),
-    }
+    found.ok_or(LensRouteError::Access(LensAccessError::WorkerNotFound))
 }
 
 mod tests;

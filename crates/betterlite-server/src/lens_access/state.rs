@@ -28,10 +28,10 @@ pub(crate) trait ModelNames: Send + Sync {
 }
 
 // the database and storage bounds every administration handler repeats, named once per trait
-pub(crate) trait LensDatabase: Database + 'static {}
+pub trait LensDatabase: Database + 'static {}
 impl<T: Database + 'static> LensDatabase for T {}
 
-pub(crate) trait LensStorage: Storage + Clone + Send + Sync + 'static {}
+pub trait LensStorage: Storage + Clone + Send + Sync + 'static {}
 impl<T: Storage + Clone + Send + Sync + 'static> LensStorage for T {}
 
 // the ports the administration routes and the worker routes read, built once by the mount
