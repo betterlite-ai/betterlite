@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 
 use betterlite_mcp::credential_contracts::errors::CredError;
 use betterlite_mcp::credential_contracts::server_spec::{ServerSpec, Subject};
@@ -49,7 +50,7 @@ pub(super) fn answer(
         collaborators: fixtures.collaborators,
     };
     let subject = subject.to_subject();
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_time()
         .build()
         .or_value_error()?;

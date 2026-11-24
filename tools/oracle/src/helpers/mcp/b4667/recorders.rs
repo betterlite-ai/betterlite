@@ -90,7 +90,7 @@ impl RecordingExchanger {
         }
     }
 
-    pub(super) fn failing(error: CredError) -> Self {
+    pub(super) const fn failing(error: CredError) -> Self {
         Self {
             token: None,
             error: Some(error),

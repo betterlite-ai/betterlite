@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::io::Error;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -204,7 +205,7 @@ impl SsoAssertionStore for StoredAssertions {
 
 fn store_unavailable() -> AssertionStoreUnavailable {
     AssertionStoreUnavailable {
-        cause: Box::new(std::io::Error::other("store down")),
+        cause: Box::new(Error::other("store down")),
     }
 }
 

@@ -4,7 +4,7 @@ mod recorders;
 mod resolve;
 mod tests;
 
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -109,6 +109,6 @@ fn subject_answer(principal: Option<&Principal>, subject_token: Option<&str>) ->
     json!({
         "tenant_id": subject.tenant_id,
         "subject_id": subject.subject_id,
-        "inbound_token": subject.inbound_token.as_ref().map(|token| token.expose_secret()),
+        "inbound_token": subject.inbound_token.as_ref().map(ExposeSecret::expose_secret),
     })
 }
