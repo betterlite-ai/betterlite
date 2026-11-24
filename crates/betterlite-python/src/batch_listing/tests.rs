@@ -328,41 +328,22 @@ fn transport_failures_follow_the_status() {
         code: None,
         message: "slow down".to_owned(),
     };
-    match openai_failure(&BatchesError::Sdk { source: sdk_status }) {
-        DispatchFailure::Status { status, message } => {
-            assert_eq!(status, 429);
-            assert_eq!(message, "slow down");
-        }
-        other @ DispatchFailure::Connection(_)
-        | other @ DispatchFailure::Timeout(_)
-        | other @ DispatchFailure::Unsupported { .. } => {
-            panic!("expected a status, got {other}");
-        }
-    }
-    match openai_failure(&BatchesError::NotInitialized) {
-        DispatchFailure::Connection(_) => {}
-        other @ DispatchFailure::Status { .. }
-        | other @ DispatchFailure::Timeout(_)
-        | other @ DispatchFailure::Unsupported { .. } => {
-            panic!("expected a connection failure, got {other}");
-        }
-    }
-    match xai_failure(&XaiBatchesError::MissingApiKey) {
-        DispatchFailure::Status { status, .. } => assert_eq!(status, 401),
-        other @ DispatchFailure::Connection(_)
-        | other @ DispatchFailure::Timeout(_)
-        | other @ DispatchFailure::Unsupported { .. } => {
-            panic!("expected a status, got {other}");
-        }
-    }
-    match xai_failure(&XaiBatchesError::InputFileRequired) {
-        DispatchFailure::Status { status, .. } => assert_eq!(status, 400),
-        other @ DispatchFailure::Connection(_)
-        | other @ DispatchFailure::Timeout(_)
-        | other @ DispatchFailure::Unsupported { .. } => {
-            panic!("expected a status, got {other}");
-        }
-    }
+    assert!(matches!(
+        openai_failure(&BatchesError::Sdk { source: sdk_status }),
+        DispatchFailure::Status { status: 429, message } if message == "slow down"
+    ));
+    assert!(matches!(
+        openai_failure(&BatchesError::NotInitialized),
+        DispatchFailure::Connection(_)
+    ));
+    assert!(matches!(
+        xai_failure(&XaiBatchesError::MissingApiKey),
+        DispatchFailure::Status { status: 401, .. }
+    ));
+    assert!(matches!(
+        xai_failure(&XaiBatchesError::InputFileRequired),
+        DispatchFailure::Status { status: 400, .. }
+    ));
 }
 
 #[test]
