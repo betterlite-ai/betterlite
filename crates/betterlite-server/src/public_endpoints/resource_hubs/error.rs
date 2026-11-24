@@ -22,8 +22,7 @@ pub enum ResourceHubsError {
     PluginPolicy(ClaudePluginPolicyError),
 }
 
-// The skill hub's except Exception wraps even an HTTPException into HTTPException(500, detail=str(e)), so every
-// failure answers {"detail": "<text>"}, never the {"detail": {"error": ...}} shape the unwrapped routes produce.
+// the skill route's except stringifies even its own HTTPException, so failures answer a string detail
 #[derive(Serialize)]
 struct DetailBody {
     detail: String,
