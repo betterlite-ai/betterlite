@@ -116,16 +116,7 @@ fn ocr_failure(error: OcrError) -> HealthProbeError {
 
 // the class LiteLLM's exception mapper raises for a native failure carrying this status
 fn ocr_class(message: &str, status: Option<u16>) -> ErrorClass {
-    let context = error_context(message);
-    let Some(code) = status else {
-        return ErrorClass::ApiConnection(Box::new(context));
-    };
-    class_for_status(code, context)
-}
-
-// the context a native OCR failure carries: the OcrError's own display text, nothing else
-fn error_context(message: &str) -> ErrorContext {
-    ErrorContext {
+    let context = ErrorContext {
         message: String::from(message),
         model: None,
         provider: None,
@@ -134,7 +125,11 @@ fn error_context(message: &str) -> ErrorContext {
         body_type: None,
         body_param: None,
         body_code: None,
-    }
+    };
+    let Some(code) = status else {
+        return ErrorClass::ApiConnection(Box::new(context));
+    };
+    class_for_status(code, context)
 }
 
 fn class_for_status(code: u16, context: ErrorContext) -> ErrorClass {
@@ -146,12 +141,23 @@ fn class_for_status(code: u16, context: ErrorContext) -> ErrorClass {
             ErrorClass::PermissionDenied(Box::new(ResponseDetails::with_status(context, Some(403))))
         }
         404 => ErrorClass::NotFound(Box::new(ResponseDetails::with_status(context, Some(404)))),
-        408 => timeout_class(context, 408),
-        429 => rate_limit_class(context),
+        408 => ErrorClass::Timeout(Box::new(TimeoutDetails {
+            context,
+            original_status: TimeoutStatus(408),
+        })),
+        429 => ErrorClass::RateLimit(Box::new(RateLimitDetails {
+            context,
+            category: RateLimitCategory::VendorRateLimit,
+            dimension: None,
+            headers: BTreeMap::new(),
+        })),
         500 => ErrorClass::InternalServer(Box::new(context)),
         502 => ErrorClass::BadGateway(Box::new(context)),
         503 => ErrorClass::ServiceUnavailable(Box::new(context)),
-        504 => timeout_class(context, 504),
+        504 => ErrorClass::Timeout(Box::new(TimeoutDetails {
+            context,
+            original_status: TimeoutStatus(504),
+        })),
         other if (400..=499).contains(&other) => {
             ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, Some(other))))
         }
@@ -160,20 +166,4 @@ fn class_for_status(code: u16, context: ErrorContext) -> ErrorClass {
             status: other,
         })),
     }
-}
-
-fn timeout_class(context: ErrorContext, status: u16) -> ErrorClass {
-    ErrorClass::Timeout(Box::new(TimeoutDetails {
-        context,
-        original_status: TimeoutStatus(status),
-    }))
-}
-
-fn rate_limit_class(context: ErrorContext) -> ErrorClass {
-    ErrorClass::RateLimit(Box::new(RateLimitDetails {
-        context,
-        category: RateLimitCategory::VendorRateLimit,
-        dimension: None,
-        headers: BTreeMap::new(),
-    }))
 }
