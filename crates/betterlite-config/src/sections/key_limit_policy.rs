@@ -41,6 +41,19 @@ enum RawText {
     Other(IgnoredAny),
 }
 
+impl RawText {
+    fn resolve<L>(self, field: &str, lookup: &L) -> Result<String, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let path = format!("{KEY}.{field}");
+        match self {
+            Self::Text(found) => resolve_string(found, &path, lookup),
+            Self::Other(_) => Err(ConfigError::InvalidScalar { path, value: false }),
+        }
+    }
+}
+
 // proxy/_types.py LiteLLM_UpperboundKeyGenerateParams, in its declaration order
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct UpperboundKeyGenerateParams {
@@ -60,7 +73,6 @@ pub struct UpperboundKeyGenerateParams {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
-    // ast-grep-ignore: no-long-names
     pub upperbound_key_generate_params: Option<UpperboundKeyGenerateParams>,
 }
 
@@ -71,59 +83,53 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let upperbound = self
-            .litellm_settings
-            .upperbound
-            .map(|raw| params(raw, lookup))
-            .transpose()?;
+        let Some(raw) = self.litellm_settings.upperbound else {
+            return Ok(Settings::default());
+        };
+        let params = UpperboundKeyGenerateParams {
+            max_budget: resolve_number(
+                raw.max_budget,
+                &format!("{KEY}.max_budget"),
+                lookup,
+                parse_money,
+            )?,
+            budget_duration: raw
+                .budget_duration
+                .map(|text| text.resolve("budget_duration", lookup))
+                .transpose()?,
+            duration: raw
+                .duration
+                .map(|text| text.resolve("duration", lookup))
+                .transpose()?,
+            max_parallel_requests: resolve_number(
+                raw.max_parallel_requests,
+                &format!("{KEY}.max_parallel_requests"),
+                lookup,
+                parse_i64,
+            )?,
+            tpm_limit: resolve_number(
+                raw.tpm_limit,
+                &format!("{KEY}.tpm_limit"),
+                lookup,
+                parse_i64,
+            )?,
+            rpm_limit: resolve_number(
+                raw.rpm_limit,
+                &format!("{KEY}.rpm_limit"),
+                lookup,
+                parse_i64,
+            )?,
+        };
         Ok(Settings {
-            // ast-grep-ignore: no-long-names
-            upperbound_key_generate_params: upperbound,
+            upperbound_key_generate_params: Some(params),
         })
     }
 }
 
-fn params<L>(raw: RawUpperbound, lookup: &L) -> Result<UpperboundKeyGenerateParams, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    Ok(UpperboundKeyGenerateParams {
-        max_budget: resolve_number(
-            raw.max_budget,
-            &format!("{KEY}.max_budget"),
-            lookup,
-            parse_money,
-        )?,
-        budget_duration: text(raw.budget_duration, "budget_duration", lookup)?,
-        duration: text(raw.duration, "duration", lookup)?,
-        max_parallel_requests: count(raw.max_parallel_requests, "max_parallel_requests", lookup)?,
-        tpm_limit: count(raw.tpm_limit, "tpm_limit", lookup)?,
-        rpm_limit: count(raw.rpm_limit, "rpm_limit", lookup)?,
-    })
-}
-
-fn count<L>(value: Option<RawNumber>, field: &str, lookup: &L) -> Result<Option<i64>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    resolve_number(value, &format!("{KEY}.{field}"), lookup, |number, path| {
-        number
-            .parse::<i64>()
-            .map_err(|source| ConfigError::InvalidInteger {
-                path: path.to_owned(),
-                source,
-            })
-    })
-}
-
-fn text<L>(value: Option<RawText>, field: &str, lookup: &L) -> Result<Option<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let path = format!("{KEY}.{field}");
-    match value {
-        None => Ok(None),
-        Some(RawText::Text(found)) => resolve_string(found, &path, lookup).map(Some),
-        Some(RawText::Other(_)) => Err(ConfigError::InvalidScalar { path, value: false }),
-    }
+fn parse_i64(text: &str, path: &str) -> Result<i64, ConfigError> {
+    text.parse::<i64>()
+        .map_err(|source| ConfigError::InvalidInteger {
+            path: path.to_owned(),
+            source,
+        })
 }
