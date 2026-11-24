@@ -105,11 +105,9 @@ def text_completion(
     **kwargs: CallValue,
 ) -> TextCompletionResponse | TextCompletionStreamWrapper:
     # main.py reads engine as the model when the caller passed no model
-    match kwargs.pop("engine", None):
-        case str() as engine if model is None:
-            model = engine
-        case object():
-            pass
+    engine = kwargs.pop("engine", None)
+    if isinstance(engine, str) and model is None:
+        model = engine
     named: dict[str, CallValue] = {
         "prompt": prompt, "model": model, "best_of": best_of, "echo": echo,
         "frequency_penalty": frequency_penalty, "logit_bias": logit_bias,
@@ -117,8 +115,7 @@ def text_completion(
         "presence_penalty": presence_penalty, "stop": stop, "stream": stream,
         "stream_options": stream_options, "suffix": suffix, "temperature": temperature,
         "top_p": top_p, "user": user, "api_base": api_base, "api_version": api_version,
-        "api_key": api_key, "model_list": model_list,
-        "custom_llm_provider": custom_llm_provider,
+        "api_key": api_key, "model_list": model_list, "custom_llm_provider": custom_llm_provider,
     }
     # main.py hands its own *args to completion; betterlite has none left for them
     _ = args
@@ -136,6 +133,10 @@ async def atext_completion(
     _ = model_from_arguments(args, kwargs)
     positional = dict(zip(NAMED_ARGUMENTS, args, strict=False))
     values: dict[str, CallValue] = {**kwargs, **positional}
+    # main.py hands engine to text_completion, which reads it as the model when none was given
+    engine = values.pop("engine", None)
+    if isinstance(engine, str) and values.get("model") is None:
+        values["model"] = engine
     answer = await acall_native(
         NativeTextSession("{}").atext_completion, text_payload(values), NativeTextError
     )
@@ -258,5 +259,5 @@ def text_from_chat(chat: ModelResponse) -> TextCompletionResponse:
     response["created"] = chat["created"]
     response["model"] = chat["model"]
     response["usage"] = chat.get("usage")
-    response["_hidden_params"] = HiddenParams.model_validate(chat.get("_hidden_params"))
+    response["_hidden_params"] = HiddenParams.model_validate(chat.get("_hidden_params") or {})
     return response

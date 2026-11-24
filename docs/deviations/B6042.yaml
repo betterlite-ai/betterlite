@@ -12,9 +12,12 @@ deviations:
   - what: A list of token lists is sent as one prompt to the resolved provider instead of one request per prompt.
     why: LiteLLM splits that prompt only on the huggingface branch, where a thread pool calls text_completion once per element and merges the choices; betterlite does not port the huggingface text branch in this task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7574-L7612
-  - what: The sync moderation request always names a model, defaulting to omni-moderation-latest.
-    why: LiteLLM omits model when the caller gives none and the OpenAI moderations API applies the same default, so the answer is the same while the wire body shows the model.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7784-L7787
+  - what: A text-completion keyword outside the provider parameters betterlite models is refused with UnsupportedParamsError 400.
+    why: LiteLLM moves every unknown non-None keyword into extra_body for OpenAI-compatible providers, so the server receives provider-specific fields; betterlite's transport sends only the parameters it models, and refusing names the field instead of dropping it silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5060-L5080
+  - what: A text completion that gives neither model nor engine is refused with BadRequestError 400.
+    why: LiteLLM's get_llm_provider raises a plain ValueError for a None model, which its sync entry lets out and its async entry maps to APIConnectionError with status 500; betterlite reports the missing model as the 400 a caller can act on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L174-L177
   - what: A moderation call without any API key raises a bare Exception naming the missing key before any request.
     why: LiteLLM builds its OpenAI client with a None key, whose own bare exception reports the missing key at construction time.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7770

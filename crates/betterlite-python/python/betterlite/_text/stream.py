@@ -77,7 +77,7 @@ class TextCompletionStreamWrapper:
             text=choice.delta.content,
             finish_reason=choice.finish_reason,
         )
-        converted["reasoning_content"] = choice.delta.reasoning_content
+        converted["reasoning_content"] = choice.delta.get("reasoning_content")
         response = TextCompletionResponse(
             id=chunk.id,
             created=chunk.created,

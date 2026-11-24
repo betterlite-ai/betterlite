@@ -82,19 +82,19 @@ class RecordedCall(TypedDict):
     body: dict[str, JsonValue]
 
 
-class ChoiceView(TypedDict, total=False):
+class ChoiceView(TypedDict):
     index: int
     text: str | None
     finish_reason: str | None
 
 
-class UsageView(TypedDict, total=False):
+class UsageView(TypedDict):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
 
 
-class ResponseView(TypedDict, total=False):
+class ResponseView(TypedDict):
     object: str
     model: str | None
     choices: list[ChoiceView]
@@ -140,7 +140,7 @@ def is_token(value: JsonValue) -> bool:
     match value:
         case int():
             return True
-        case bool() | str() | float() | None | list() | dict():
+        case str() | float() | None | list() | dict():
             return False
 
 
@@ -506,6 +506,21 @@ def test_prompts_engine_alias() -> None:
     assert first_choice(view_of(answer_of(outcome)))["text"] == "done hi"
 
 
+# main.py's async entry hands engine to text_completion, which reads it as the model
+def test_prompts_async_engine_alias() -> None:
+    with closing(TextServer()) as server:
+        outcome = asyncio.run(
+            atext_completion(
+                model=None, engine=TEXT_MODEL, prompt="hi", api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
+        call = server.calls[-1]
+    assert call["path"] == TEXT_PATH
+    assert call["body"]["model"] == TEXT_MODEL
+    assert first_choice(view_of(answer_of(outcome)))["text"] == "done hi"
+
+
 def test_prompts_text_endpoint() -> None:
     views, call = requested("hi", CHAT_MODEL, TEXT_PROVIDER)
     assert call["path"] == TEXT_PATH
@@ -549,6 +564,7 @@ def test_prompts_unknown_param() -> None:
     assert "api_type" in caught.value.message
 
 
+# betterlite reports a missing model as a 400 where LiteLLM's async entry raises APIConnectionError
 def test_prompts_async_model_none() -> None:
     with pytest.raises(BadRequestError) as caught:
         asyncio.run(atext_completion(model=None, prompt="hi"))
@@ -572,6 +588,17 @@ def test_prompts_mock_answer() -> None:
         )
         assert tool_server.calls == []
     assert first_choice(view_of(answer_of(tool_outcome)))["text"] == MOCK_DEFAULT
+
+
+# a mock answers a token prompt where the same prompt sent to a chat provider is refused
+def test_prompts_mock_token_prompt() -> None:
+    with closing(TextServer()) as server:
+        outcome = text_completion(
+            model=TEXT_MODEL, prompt=[1, 2], mock_response=MOCK_TEXT, api_base=server.url,
+            api_key=GOOD_KEY,
+        )
+        assert server.calls == []
+    assert first_choice(view_of(answer_of(outcome)))["text"] == MOCK_TEXT
 
 
 def test_prompts_mock_timeout() -> None:
