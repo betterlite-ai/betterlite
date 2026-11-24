@@ -193,7 +193,10 @@ where
 // The transform's kwargs: stream is always present, so the explicit argument wins over optional_params, and custom_llm_provider rides along when set.
 fn responses_extras(request: &HandlerRequest<'_>) -> Params {
     let mut extras = request.extras.clone();
-    extras.insert(String::from("stream"), stream_value(request.stream));
+    extras.insert(
+        String::from("stream"),
+        request.stream.map_or(JsonValue::Null, JsonValue::Bool),
+    );
     if let Some(provider) = request.setup.custom_llm_provider {
         extras.insert(
             String::from("custom_llm_provider"),
@@ -201,10 +204,6 @@ fn responses_extras(request: &HandlerRequest<'_>) -> Params {
         );
     }
     extras
-}
-
-fn stream_value(stream: Option<bool>) -> JsonValue {
-    stream.map_or(JsonValue::Null, JsonValue::Bool)
 }
 
 // LiteLLM's async path reads the provider back out of the built request instead of taking it as an argument.
