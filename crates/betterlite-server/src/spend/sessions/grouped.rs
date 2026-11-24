@@ -88,12 +88,14 @@ async fn fetch_window(
         Vec::new()
     } else {
         store
-            .session_groups(&page_query(&page_plan(
-                request,
-                cursor.cloned(),
-                limit,
+            .session_groups(&page_query(&GroupedPage {
+                conditions: request.conditions,
+                params: request.params.clone(),
+                cursor: cursor.cloned(),
+                descending: request.descending,
+                page_limit: limit,
                 offset,
-            )))
+            }))
             .await?
     };
     let fetched = i64::try_from(rows.len()).unwrap_or(i64::MAX);
@@ -104,22 +106,6 @@ async fn fetch_window(
         has_more: fetched > limit,
     };
     Ok((rows, window))
-}
-
-fn page_plan<'request>(
-    request: &'request GroupedSessionRequest<'_>,
-    cursor: Option<SessionCursor>,
-    limit: i64,
-    offset: i64,
-) -> GroupedPage<'request> {
-    GroupedPage {
-        conditions: request.conditions,
-        params: request.params.clone(),
-        cursor,
-        descending: request.descending,
-        page_limit: limit,
-        offset,
-    }
 }
 
 // the last visible group as the next page's position, only when an extra group proved the list continues
