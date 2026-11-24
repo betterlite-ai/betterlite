@@ -27,6 +27,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::cost_estimate_route::deployments::DeploymentSet;
 use crate::judge_targets::call::JudgeCall;
 use crate::judge_targets::error::JudgeDispatchError;
 use crate::judge_targets::sdk::JudgeSdk;
@@ -40,14 +41,13 @@ use crate::shadow_eval_lifecycle::stop::stop_shadow_eval_job;
 use crate::shadow_eval_models::job::ShadowJobResponse;
 use crate::shadow_eval_validation::request::StartShadowEvalRequest;
 use crate::shadow_eval_validation::router_view::{AnthropicCredentials, ShadowEvalRouter};
-use crate::shadow_eval_validation::start::ShadowCatalog;
 use crate::state::ServerState;
 use crate::tracing_routes::router::unauthenticated;
 
 // the database and the configured-deployment view start-time validation reads, resolved once when the router is built
 struct LifecycleDeps {
     store: PostgresShadowLifecycleStore,
-    catalog: Option<ShadowCatalog>,
+    deployments: Option<DeploymentSet>,
 }
 
 // what start-time model resolution and validation read, resolved once when the router is built
@@ -93,7 +93,7 @@ fn lifecycle_state(state: &Arc<ServerState>) -> LifecycleState {
             Arc::new(LifecycleDeps {
                 store,
                 // an unindexable model list is logged and leaves no router, so every start answers the unconfigured-400
-                catalog: ShadowCatalog::from_config(&state.config)
+                deployments: DeploymentSet::from_config(&state.config)
                     .inspect_err(|error| {
                         tracing::warn!(
                             %error,
@@ -262,11 +262,11 @@ fn start_deps<'deps>(
     let router = state
         .store
         .as_deref()
-        .and_then(|deps| deps.catalog.as_ref())
-        .map(|catalog| ShadowEvalRouter {
-            catalog: &catalog.catalog,
-            model_group_alias: &catalog.aliases,
-            routing_groups: &catalog.groups,
+        .and_then(|deps| deps.deployments.as_ref())
+        .map(|deployments| ShadowEvalRouter {
+            catalog: &deployments.catalog,
+            model_group_alias: &deployments.aliases,
+            routing_groups: &deployments.groups,
             inferred_provider: &INFERRED_PROVIDER,
         });
     StartDeps {
