@@ -384,7 +384,7 @@ enum Route {
 fn request_quotes_the_job_id_as_one_path_segment(
     #[case] route: Route,
     #[case] job_id: &str,
-    #[case] suffix: Option<&str>,
+    #[case] tail: Option<&str>,
 ) {
     let key = SecretString::from("sk-test");
     let timeout = openai_timeout();
@@ -417,7 +417,7 @@ fn request_quotes_the_job_id_as_one_path_segment(
         Route::Retrieve => WireCall::OpenAiRead(&read_call),
         Route::Cancel => WireCall::OpenAiCancel(&cancel_call),
     };
-    let Some(suffix) = suffix else {
+    let Some(suffix) = tail else {
         let error = request_for(call, None).expect_err("the id cannot be one path segment");
         assert!(matches!(error, WireError::JobId(_)));
         return;
