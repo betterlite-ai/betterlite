@@ -27,8 +27,8 @@ async fn metadata_field_partition() {
     }"#;
     let reply = app.post(admin_caller(Some("u1")), body).await;
     assert_eq!(reply.status, StatusCode::OK);
-    let expected =
-        parsed(r#"{"existing":1,"enable_prompt_caching":true,"model_rpm_limit":{"gpt-4":5}}"#);
+    // enable_prompt_caching is not a NewOrganizationRequest field, so the unknown input never becomes metadata
+    let expected = parsed(r#"{"existing":1,"model_rpm_limit":{"gpt-4":5}}"#);
     assert_eq!(reply.field("metadata"), expected);
 
     let organization = app
