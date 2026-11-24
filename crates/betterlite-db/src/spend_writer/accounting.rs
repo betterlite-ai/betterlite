@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 
 use betterlite_models::savings_pricing::context::SavingsPricingContext;
@@ -47,6 +47,16 @@ pub type AdmissionFuture<'call> =
 // The bounded handoff between update_database and the accounting worker; a full queue waits instead of dropping a charge.
 pub trait SpendAccountingAdmission: Send + Sync {
     fn admit(&self, work: SpendAccounting) -> AdmissionFuture<'_>;
+}
+
+// The accounting worker itself writes work that was already admitted, so its writer never admits a second time.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoSpendAccountingAdmission;
+
+impl SpendAccountingAdmission for NoSpendAccountingAdmission {
+    fn admit(&self, _work: SpendAccounting) -> AdmissionFuture<'_> {
+        Box::pin(ready(Err(SpendAccountingClosed)))
+    }
 }
 
 // The pricing, call-type and deployment lookups the daily builders read, supplied by the runtime that owns them.

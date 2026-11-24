@@ -1,0 +1,18 @@
+task: B070
+deviations:
+  - what: >-
+      A full accounting queue waits for capacity instead of starting a detached task per request,
+      and the runtime's shutdown drains the admitted work before it returns.
+    why: >-
+      The source starts an unbounded asyncio task per request, which the process can stop in the
+      middle of; bounded owned work keeps every admitted charge and lets one shutdown owner account
+      for what is still queued instead of losing it silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L569-L585
+kept_bugs:
+  - what: >-
+      A request whose user id is litellm-proxy-budget charges that user twice when
+      litellm_settings.max_budget is positive.
+    why: >-
+      _update_user_db starts from [user_id] and appends the proxy identity without deduplicating,
+      so a setup that uses the reserved id relies on the doubled charge; betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1199-L1204
