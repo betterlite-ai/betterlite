@@ -2,11 +2,13 @@
 
 use std::sync::Arc;
 
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{HeaderValue, Request, StatusCode};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use rstest::rstest;
 use serde_json::json;
+use tower::ServiceExt as _;
 
 use super::support::{
     FakeCompletion, FakeHook, Reply, key_caller, master, object, parse, queue_router, queue_state,
@@ -189,6 +191,46 @@ async fn queue_builds_the_request_like_litellm() {
         seen["metadata"]["user_api_key_team_object_permission_id"],
         "top-1"
     );
+}
+
+#[tokio::test]
+async fn queue_replaces_a_metadata_that_is_not_an_object() {
+    let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
+    let router = queue_router(queue_state(&scheduler(), &completion, None));
+    let body = r#"{"model":"m","priority":1,"messages":[],"metadata":"text"}"#;
+    let (status, _, _) = send(
+        &router,
+        "POST",
+        "/queue/chat/completions",
+        body,
+        Some(key_caller(key_fields())),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let seen = completion.seen();
+    assert!(seen["metadata"].is_object());
+    assert_eq!(seen["metadata"]["user_api_key"], "plain-key");
+}
+
+#[tokio::test]
+async fn queue_skips_a_header_value_that_is_not_utf8() {
+    let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
+    let router = queue_router(queue_state(&scheduler(), &completion, None));
+    let opaque = HeaderValue::from_bytes(b"\xff\xfe").expect("an opaque header value");
+    let request = Request::builder()
+        .method("POST")
+        .uri("/queue/chat/completions")
+        .header("content-type", "application/json")
+        .header("host", "proxy.test")
+        .header("x-opaque", opaque)
+        .extension(master())
+        .body(Body::from(chat_body(1)))
+        .expect("a request");
+    let response = router.oneshot(request).await.expect("a response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let seen = completion.seen();
+    assert!(seen["metadata"]["headers"].get("x-opaque").is_none());
+    assert_eq!(seen["metadata"]["headers"]["host"], "proxy.test");
 }
 
 #[tokio::test]

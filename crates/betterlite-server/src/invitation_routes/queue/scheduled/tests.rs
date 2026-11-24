@@ -7,9 +7,10 @@ use betterlite_auth::auth_identity::records::Principal;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_error::error::ErrorClass;
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use betterlite_router::request_scheduler::error::SchedulerError;
 use betterlite_router::request_scheduler::schedule::ScheduledCall as _;
 
-use super::QueuedCompletion;
+use super::{QueuedCompletion, scheduler_exception};
 use crate::invitation_routes::state::{QueueAnswer, QueueCompletion};
 
 struct FixedCompletion {
@@ -94,4 +95,20 @@ fn queued_completion_reports_no_healthy_deployment() {
     let data = request("gpt-test");
     let call = adapter(&completion, &caller, &data);
     assert_eq!(call.healthy_deployments(), 0);
+}
+
+#[test]
+fn a_full_scheduler_queue_answers_429() {
+    let error = SchedulerError::QueueFull {
+        model: "gpt-test".to_owned(),
+        limit: 1024,
+    };
+    let exception = scheduler_exception(&error);
+    assert_eq!(exception.code, "429");
+    assert_eq!(exception.error_type, "auth_error");
+    assert_eq!(exception.param.as_deref(), Some("None"));
+    assert_eq!(
+        exception.message,
+        "the scheduler queue for gpt-test holds the maximum of 1024 pending requests"
+    );
 }
