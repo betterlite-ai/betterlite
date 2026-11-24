@@ -272,6 +272,20 @@ fn scalar_query_values_use_wire_text() {
 }
 
 #[test]
+fn an_object_query_argument_goes_out_as_compact_json() {
+    let tool = tool(
+        "get",
+        "/pets",
+        r#"{"parameters":[{"name":"filter","in":"query"}]}"#,
+    );
+    let (request, _) = block_on(sent(&tool, r#"{"filter":{"a":1}}"#));
+    assert_eq!(
+        request.query,
+        vec![("filter".to_owned(), r#"{"a":1}"#.to_owned())]
+    );
+}
+
+#[test]
 fn an_argument_that_is_not_a_parameter_is_not_sent() {
     let tool = tool(
         "get",
