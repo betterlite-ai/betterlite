@@ -64,7 +64,10 @@ fn events_for_chunk_first_delta_synthesizes_start_events() {
 #[test]
 fn events_for_chunk_later_delta_emits_only_the_delta() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&delta_chunk("item_1", "hell"));
+    assert_eq!(
+        state.events_for_chunk(&delta_chunk("item_1", "hell")).len(),
+        3
+    );
     let events = state.events_for_chunk(&delta_chunk("item_1", "o"));
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type.as_deref(), Some("step.delta"));
@@ -77,9 +80,9 @@ fn events_for_chunk_later_delta_emits_only_the_delta() {
 #[test]
 fn collected_text_accumulates_across_deltas() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&delta_chunk("item_1", "a"));
-    state.events_for_chunk(&delta_chunk("item_1", "b"));
-    state.events_for_chunk(&delta_chunk("item_1", "c"));
+    assert_eq!(state.events_for_chunk(&delta_chunk("item_1", "a")).len(), 3);
+    assert_eq!(state.events_for_chunk(&delta_chunk("item_1", "b")).len(), 1);
+    assert_eq!(state.events_for_chunk(&delta_chunk("item_1", "c")).len(), 1);
     assert_eq!(state.collected_text, "abc");
 }
 
@@ -128,7 +131,12 @@ fn events_for_chunk_ignores_chunks_it_cannot_translate() {
 #[test]
 fn events_for_chunk_completed_closes_content_and_completes() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&delta_chunk("item_1", "hello"));
+    assert_eq!(
+        state
+            .events_for_chunk(&delta_chunk("item_1", "hello"))
+            .len(),
+        3
+    );
     let terminal = state.events_for_chunk(&completed_chunk("resp_1"));
     assert_eq!(terminal.len(), 2);
     assert_eq!(terminal[0].event_type.as_deref(), Some("step.stop"));
@@ -150,7 +158,7 @@ fn events_for_chunk_completed_closes_content_and_completes() {
 #[test]
 fn events_for_chunk_completed_without_content_skips_step_stop() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&created_chunk("resp_1"));
+    assert_eq!(state.events_for_chunk(&created_chunk("resp_1")).len(), 1);
     let terminal = state.events_for_chunk(&completed_chunk("resp_1"));
     assert_eq!(terminal.len(), 1);
     assert_eq!(
@@ -183,7 +191,12 @@ fn events_for_chunk_completed_without_ids_uses_the_fallback_id() {
 #[test]
 fn terminal_events_on_eof_flushes_stop_and_completion() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&delta_chunk("item_1", "hello"));
+    assert_eq!(
+        state
+            .events_for_chunk(&delta_chunk("item_1", "hello"))
+            .len(),
+        3
+    );
     let terminal = state.terminal_events_on_eof();
     assert_eq!(terminal.len(), 2);
     assert_eq!(terminal[0].event_type.as_deref(), Some("step.stop"));
@@ -204,14 +217,14 @@ fn terminal_events_on_eof_flushes_stop_and_completion() {
 #[test]
 fn terminal_events_on_eof_is_empty_after_a_completion() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&completed_chunk("resp_1"));
+    assert_eq!(state.events_for_chunk(&completed_chunk("resp_1")).len(), 1);
     assert!(state.terminal_events_on_eof().is_empty());
 }
 
 #[test]
 fn terminal_events_on_eof_completes_an_interaction_without_content() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&created_chunk("resp_1"));
+    assert_eq!(state.events_for_chunk(&created_chunk("resp_1")).len(), 1);
     let terminal = state.terminal_events_on_eof();
     assert_eq!(terminal.len(), 1);
     assert_eq!(

@@ -98,7 +98,7 @@ fn handler_without_a_stream_flag_clears_the_optional_params_stream() {
         .recorded()
         .expect("the operation is called");
     assert_eq!(recorded.stream, None);
-    assert!(recorded.passthrough.get("custom_llm_provider").is_none());
+    assert!(!recorded.passthrough.contains_key("custom_llm_provider"));
 }
 
 #[test]
@@ -107,9 +107,8 @@ fn handler_reports_a_response_that_cannot_be_transformed() {
     let operation = RecordingOperation::new(Ok(SyncResponsesAnswer::Complete(Box::new(response(
         r#"{"id": "resp_1", "created_at": 9223372036854775807, "output": []}"#,
     )))));
-    let error = match interactions_api_handler(&operation, &fixture.request(), ()) {
-        Ok(_) => panic!("the transform must refuse the created_at"),
-        Err(error) => error,
+    let Err(error) = interactions_api_handler(&operation, &fixture.request(), ()) else {
+        panic!("the transform must refuse the created_at")
     };
     assert!(matches!(error, InteractionsHandlerError::Transform(_)));
 }
@@ -121,9 +120,8 @@ fn handler_reports_a_request_that_cannot_be_transformed() {
     let operation = RecordingOperation::new(Ok(SyncResponsesAnswer::Complete(Box::new(response(
         MESSAGE_RESPONSE,
     )))));
-    let error = match interactions_api_handler(&operation, &fixture.request(), ()) {
-        Ok(_) => panic!("the transform must refuse the request"),
-        Err(error) => error,
+    let Err(error) = interactions_api_handler(&operation, &fixture.request(), ()) else {
+        panic!("the transform must refuse the request")
     };
     assert!(matches!(error, InteractionsHandlerError::Transform(_)));
     assert!(operation.recorder.recorded().is_none());
@@ -133,9 +131,8 @@ fn handler_reports_a_request_that_cannot_be_transformed() {
 fn handler_reports_a_failed_responses_call() {
     let fixture = Fixture::new("gpt-4o");
     let operation = RecordingOperation::new(Err(FakeError::Operation));
-    let error = match interactions_api_handler(&operation, &fixture.request(), ()) {
-        Ok(_) => panic!("the failed call must be reported"),
-        Err(error) => error,
+    let Err(error) = interactions_api_handler(&operation, &fixture.request(), ()) else {
+        panic!("the failed call must be reported")
     };
     assert!(matches!(
         error,
@@ -251,9 +248,8 @@ async fn async_handler_reports_a_failed_responses_call() {
     let responses_request = to_responses_request("gpt-4o", None, &Params::new(), &Params::new())
         .expect("the request should build");
     let request = fixture.async_request(&responses_request);
-    let error = match async_interactions_api_handler(&operation, &request, ()).await {
-        Ok(_) => panic!("the failed call must be reported"),
-        Err(error) => error,
+    let Err(error) = async_interactions_api_handler(&operation, &request, ()).await else {
+        panic!("the failed call must be reported")
     };
     assert!(matches!(
         error,

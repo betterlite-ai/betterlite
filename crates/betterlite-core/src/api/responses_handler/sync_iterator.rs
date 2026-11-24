@@ -12,7 +12,7 @@ where
     Error: StdError + Send + Sync + 'static,
 {
     pub state: Box<InteractionsStreamState>,
-    upstream: Box<dyn SyncResponsesEventStream<Error = Error>>,
+    pub upstream: Box<dyn SyncResponsesEventStream<Error = Error>>,
 }
 
 impl<Error> InteractionsSyncIterator<Error>

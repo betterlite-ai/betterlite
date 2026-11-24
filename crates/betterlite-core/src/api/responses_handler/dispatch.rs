@@ -25,7 +25,7 @@ pub struct HandlerRequest<'call> {
 
 impl<'call> HandlerRequest<'call> {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         setup: IteratorSetup<'call>,
         stream: Option<bool>,
         extras: &'call Params,
@@ -49,7 +49,7 @@ pub struct AsyncHandlerRequest<'call> {
 
 impl<'call> AsyncHandlerRequest<'call> {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         responses_request: &'call ResponsesRequest,
         setup: IteratorSetup<'call>,
         zone: &'call TimeZone,
@@ -85,7 +85,7 @@ where
     type Stream = Box<dyn SyncResponsesEventStream<Error = Error>>;
 
     fn wrap(stream: Self::Stream, setup: &IteratorSetup<'_>) -> Self {
-        InteractionsSyncIterator::new(stream, setup)
+        Self::new(stream, setup)
     }
 }
 
@@ -96,7 +96,7 @@ where
     type Stream = Box<dyn AsyncResponsesEventStream<Error = Error>>;
 
     fn wrap(stream: Self::Stream, setup: &IteratorSetup<'_>) -> Self {
-        InteractionsAsyncIterator::new(stream, setup)
+        Self::new(stream, setup)
     }
 }
 
@@ -204,21 +204,20 @@ fn responses_extras(request: &HandlerRequest<'_>) -> Params {
 }
 
 fn stream_value(stream: Option<bool>) -> JsonValue {
-    match stream {
-        Some(flag) => JsonValue::Bool(flag),
-        None => JsonValue::Null,
-    }
+    stream.map_or(JsonValue::Null, JsonValue::Bool)
 }
 
 // LiteLLM's async path reads the provider back out of the built request instead of taking it as an argument.
 fn request_provider(request: &ResponsesRequest) -> Option<&str> {
     match request.passthrough.get("custom_llm_provider") {
         Some(JsonValue::Text(provider)) => Some(provider.as_str()),
-        Some(JsonValue::Null)
-        | Some(JsonValue::Bool(_))
-        | Some(JsonValue::Number(_))
-        | Some(JsonValue::Array(_))
-        | Some(JsonValue::Object(_))
+        Some(
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_),
+        )
         | None => None,
     }
 }

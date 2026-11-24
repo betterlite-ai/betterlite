@@ -212,17 +212,20 @@ trait FakeIterator: Sized {
 
 impl FakeIterator for SyncIterator {
     fn from_fake(stream: FakeStream, setup: &IteratorSetup<'_>) -> Self {
-        InteractionsSyncIterator::new(Box::new(stream), setup)
+        Self::new(Box::new(stream), setup)
     }
 }
 
 impl FakeIterator for AsyncIterator {
     fn from_fake(stream: FakeStream, setup: &IteratorSetup<'_>) -> Self {
-        InteractionsAsyncIterator::new(Box::new(stream), setup)
+        Self::new(Box::new(stream), setup)
     }
 }
 
-fn fake_iterator<I: FakeIterator>(fixture: &Fixture, events: Events) -> (I, Pulls) {
+fn fake_iterator<I>(fixture: &Fixture, events: Events) -> (I, Pulls)
+where
+    I: FakeIterator,
+{
     let pulls = Arc::new(AtomicUsize::new(0));
     let stream = FakeStream::new(events, Arc::clone(&pulls));
     (I::from_fake(stream, &fixture.setup()), pulls)
