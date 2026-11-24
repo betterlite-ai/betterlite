@@ -18,7 +18,6 @@ use crate::spend_flush::redis::commit_daily;
 use crate::spend_flush::window::WindowSpendCommit;
 use crate::spend_queues::daily::DailySpendUpdate;
 use crate::spend_queues::entity::{SpendAmount, SpendUpdateTransactions};
-use crate::window_queue::WindowSpendTransaction;
 
 // Why the holder's commit stopped, with every cohort it did not finish still in the uncommitted record.
 #[derive(Debug, thiserror::Error)]

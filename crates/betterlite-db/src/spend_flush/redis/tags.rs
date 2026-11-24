@@ -206,7 +206,7 @@ where
             let publisher = Arc::clone(&self.publisher);
             self.queue.track_interrupted_commit(async move {
                 let settled = task.await;
-                restore_interrupted_tag(&publisher, settled).await;
+                restore_interrupted_tag::<Writer>(&publisher, settled).await;
             });
             return Err(TagFlushError::Cancelled);
         }
