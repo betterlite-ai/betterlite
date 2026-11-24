@@ -1,0 +1,106 @@
+kind: sdk_http
+name: responses-async-create-asynchronous-prompt-runs-once
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_async_create:
+    runs:
+      - model: openai/gpt-4o
+        input: hello
+        kwargs:
+          prompt_id: p
+          prompt_label: production
+          prompt_version: 2
+          prompt_variables: {name: Ada}
+        hook:
+          answer:
+            model: openai/gpt-4o-mini
+            messages:
+              - {role: system, content: Be brief.}
+              - {role: user, content: hello}
+            optional_params: {temperature: 0.2}
+      - model: openai/gpt-4o
+        input: hello
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_a
+      object: response
+      created_at: 1741476542
+      status: completed
+      error: null
+      incomplete_details: null
+      instructions: null
+      max_output_tokens: null
+      model: gpt-4o-2024-08-06
+      output:
+        - type: message
+          id: msg_a
+          status: completed
+          role: assistant
+          content:
+            - type: output_text
+              text: hello
+              annotations: []
+      parallel_tool_calls: true
+      previous_response_id: null
+      reasoning: {effort: null, summary: null}
+      store: true
+      temperature: 1.0
+      text: {format: {type: text}}
+      tool_choice: auto
+      tools: []
+      top_p: 1.0
+      truncation: disabled
+      usage:
+        input_tokens: 5
+        input_tokens_details: {cached_tokens: 0}
+        output_tokens: 2
+        output_tokens_details: {}
+        total_tokens: 7
+      user: null
+      metadata: {}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_b
+      object: response
+      created_at: 1741476543
+      status: completed
+      error: null
+      incomplete_details: null
+      instructions: null
+      max_output_tokens: null
+      model: gpt-4o-2024-08-06
+      output:
+        - type: message
+          id: msg_b
+          status: completed
+          role: assistant
+          content:
+            - type: output_text
+              text: again
+              annotations: []
+      parallel_tool_calls: true
+      previous_response_id: null
+      reasoning: {effort: null, summary: null}
+      store: true
+      temperature: 1.0
+      text: {format: {type: text}}
+      tool_choice: auto
+      tools: []
+      top_p: 1.0
+      truncation: disabled
+      usage:
+        input_tokens: 6
+        input_tokens_details: {cached_tokens: 0}
+        output_tokens: 3
+        output_tokens_details: {}
+        total_tokens: 9
+      user: null
+      metadata: {}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
