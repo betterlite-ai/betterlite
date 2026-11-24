@@ -51,24 +51,6 @@ pub struct BatchLimitDescriptors<Limiter, Credentials> {
     pub warned_unsupported_model_skip: AtomicBool,
 }
 
-impl<Limiter, Credentials> BatchLimitDescriptors<Limiter, Credentials> {
-    #[must_use]
-    pub const fn new(
-        settings: Settings,
-        limiter: Limiter,
-        credentials: Option<Credentials>,
-        limits: ApiLimits,
-    ) -> Self {
-        Self {
-            settings,
-            limiter,
-            credentials,
-            limits,
-            warned_unsupported_model_skip: AtomicBool::new(false),
-        }
-    }
-}
-
 impl<Limiter, Credentials> BatchLimitDescriptors<Limiter, Credentials>
 where
     Limiter: BatchLimiterSource,

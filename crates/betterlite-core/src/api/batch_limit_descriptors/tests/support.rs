@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -195,7 +196,13 @@ pub(super) fn service(
     limiter: FakeLimiter,
     credentials: Option<FakeCredentials>,
 ) -> BatchLimitDescriptors<FakeLimiter, FakeCredentials> {
-    BatchLimitDescriptors::new(settings, limiter, credentials, ApiLimits::default())
+    BatchLimitDescriptors {
+        settings,
+        limiter,
+        credentials,
+        limits: ApiLimits::default(),
+        warned_unsupported_model_skip: AtomicBool::new(false),
+    }
 }
 
 #[derive(Clone)]

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::batch_limit_descriptors::Settings;
@@ -99,12 +100,13 @@ impl Helper for Op {
             script,
             asked: Mutex::new(Vec::new()),
         });
-        let service = BatchLimitDescriptors::new(
-            input.settings.clone(),
-            RateLimitSource { window_size },
+        let service = BatchLimitDescriptors {
+            settings: input.settings.clone(),
+            limiter: RateLimitSource { window_size },
             credentials,
-            ApiLimits::default(),
-        );
+            limits: ApiLimits::default(),
+            warned_unsupported_model_skip: AtomicBool::new(false),
+        };
         let record = BatchLimitDescriptorsInput {
             principal: input.principal.clone(),
             calls: input.calls.clone(),
