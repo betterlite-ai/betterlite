@@ -217,28 +217,30 @@ fn authorizer_answer(input: &Input) -> Result<AuthorizedSubject, Box<SubjectToke
             team_id: team_id.clone(),
             agent_id: agent_id.clone(),
         }),
-        Authorizer::Http { status, detail } => Err(denial(
+        Authorizer::Http { status, detail } => Err(Box::new(denial(
             DenialSource::Http { status: *status },
             detail,
             input.cause.as_ref(),
-        )),
-        Authorizer::Proxy { code, message } => Err(denial(
+        ))),
+        Authorizer::Proxy { code, message } => Err(Box::new(denial(
             DenialSource::Proxy { code: code.clone() },
             message,
             input.cause.as_ref(),
-        )),
-        Authorizer::Plain { message } => {
-            Err(denial(DenialSource::Plain, message, input.cause.as_ref()))
-        }
+        ))),
+        Authorizer::Plain { message } => Err(Box::new(denial(
+            DenialSource::Plain,
+            message,
+            input.cause.as_ref(),
+        ))),
     }
 }
 
-fn denial(source: DenialSource, reason: &str, cause: Option<&Cause>) -> Box<SubjectTokenDenial> {
-    Box::new(SubjectTokenDenial {
+fn denial(source: DenialSource, reason: &str, cause: Option<&Cause>) -> SubjectTokenDenial {
+    SubjectTokenDenial {
         source,
         reason: reason.to_owned(),
         database_cause: cause.map(database_cause),
-    })
+    }
 }
 
 fn database_cause(cause: &Cause) -> DbError {
