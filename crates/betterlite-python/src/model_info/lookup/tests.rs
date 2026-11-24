@@ -117,6 +117,46 @@ fn model_info_lookup_gpt_5_and_o_series_parameters() {
 }
 
 #[test]
+fn model_info_lookup_reads_capability_flags_from_a_runtime_entry() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"o3":{"litellm_provider":"openai","mode":"chat","max_tokens":100000,"supports_function_calling":false,"supports_response_schema":true,"supports_tool_choice":true}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("o3")))
+            .unwrap(),
+    ));
+    assert!(!parameters.iter().any(|name| name == "tools"));
+    assert!(!parameters.iter().any(|name| name == "tool_choice"));
+    assert!(!parameters.iter().any(|name| name == "function_call"));
+    assert!(!parameters.iter().any(|name| name == "functions"));
+    assert!(parameters.iter().any(|name| name == "reasoning_effort"));
+    assert!(parameters.iter().any(|name| name == "response_format"));
+}
+
+#[test]
+fn model_info_lookup_reads_gpt_5_flags_from_a_runtime_entry() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"gpt-5-custom":{"litellm_provider":"openai","mode":"chat","max_tokens":4096,"supports_tool_choice":true,"supports_none_reasoning_effort":true}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("gpt-5-custom")))
+            .unwrap(),
+    ));
+    assert!(parameters.iter().any(|name| name == "tool_choice"));
+    assert!(parameters.iter().any(|name| name == "logprobs"));
+    assert!(parameters.iter().any(|name| name == "top_p"));
+    assert!(!parameters.iter().any(|name| name == "user"));
+}
+
+#[test]
 fn model_info_lookup_resolves_a_prefixed_bedrock_id() {
     let runtime = runtime();
     let model = "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0";

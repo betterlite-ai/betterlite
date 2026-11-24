@@ -1,4 +1,4 @@
-use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::entry::ModelFields;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::lookup::capabilities::{CapabilityFlag, CapabilityView};
 use betterlite_models::params::CallType;
@@ -42,7 +42,7 @@ pub(super) fn openai_parameters(
         resolution,
     )
     .map_or_else(|_error| model.to_owned(), |found| found.model);
-    let capabilities = openai_capabilities(&state.catalog, model, &resolved, &catalog);
+    let capabilities = openai_capabilities(&state.entries, model, &resolved, &catalog);
     let query = CapabilityQuery {
         provider: ProviderId::Openai,
         call_type: CallType::ChatCompletion,
@@ -94,7 +94,7 @@ fn config_tag(model: &str, catalog: &CatalogCapabilities) -> OpenAiConfigTag {
     }
 }
 fn openai_capabilities(
-    catalog: &ModelCatalog,
+    entries: &IndexMap<String, Box<RawValue>>,
     given: &str,
     resolved: &str,
     listed: &CatalogCapabilities,
@@ -103,15 +103,15 @@ fn openai_capabilities(
     if listed.is_catalog_model(given) {
         capabilities.insert(OpenAiCapability::CatalogModel);
     }
-    let found = catalog
-        .lookup
+    // LiteLLM's supports_* helpers read the model_cost entry, so a synced capability change counts.
+    let Some(fields) = entries
         .get(resolved)
-        .and_then(|canonical| catalog.entries.get(canonical.as_ref()));
-    let Some(entry) = found else {
+        .and_then(|raw| ModelFields::parse(raw).ok())
+        .map(|parsed| parsed.0)
+    else {
         return capabilities;
     };
-    let fields = &entry.fields.capabilities;
-    let view = CapabilityView::from_fields(fields);
+    let view = CapabilityView::from_fields(&fields.capabilities);
     for (flag, capability) in [
         (
             CapabilityFlag::FunctionCalling,
@@ -127,10 +127,10 @@ fn openai_capabilities(
             capabilities.insert(capability);
         }
     }
-    if fields.tooling.supports_parallel_calls == Some(true) {
+    if fields.capabilities.tooling.supports_parallel_calls == Some(true) {
         capabilities.insert(OpenAiCapability::ParallelToolCalls);
     }
-    if fields.reasoning.supports_none_reasoning_effort == Some(true) {
+    if fields.capabilities.reasoning.supports_none_reasoning_effort == Some(true) {
         capabilities.insert(OpenAiCapability::NoneReasoningEffort);
     }
     capabilities

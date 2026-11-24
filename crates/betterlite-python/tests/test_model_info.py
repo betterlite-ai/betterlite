@@ -58,6 +58,7 @@ PROBE_MAX_TOKENS: Final = 77
 REMOVAL_MAX_TOKENS: Final = 3
 ADOPT_MAX_TOKENS: Final = 5
 _MODEL_INFO: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+_PARAMETER_NAMES: Final[TypeAdapter[list[str]]] = TypeAdapter(list[str])
 _TEXT: Final[TypeAdapter[str]] = TypeAdapter(str)
 COST_MAP_MODULE: Final = "litellm.litellm_core_utils.get_model_cost_map"
 
@@ -68,6 +69,20 @@ class ReferenceCall(Protocol):
 
 class ReferenceModule(Protocol):
     def __getattr__(self, name: str) -> ReferenceCall: ...
+
+
+class LookupCall(Protocol):
+    def __call__(self, *args: JsonValue, **kwargs: JsonValue) -> JsonValue: ...
+
+    def cache_clear(self) -> None: ...
+
+
+class LookupModule(Protocol):
+    def __getattr__(self, name: str) -> LookupCall: ...
+
+
+class ModelCostModule(Protocol):
+    def __getattr__(self, name: str) -> dict[str, JsonValue]: ...
 
 
 class InfoCall(Protocol):
@@ -104,6 +119,8 @@ REFERENCE: ReferenceModule = importlib.import_module("litellm")
 COST_MAP: ReferenceModule = importlib.import_module(COST_MAP_MODULE)
 INFO: InfoModule = importlib.import_module(COST_MAP_MODULE)
 REFETCH: RefetchModule = importlib.import_module(COST_MAP_MODULE)
+LOOKUP: LookupModule = importlib.import_module("litellm")
+REFERENCE_COST: ModelCostModule = importlib.import_module("litellm")
 
 
 def without_params(info: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
@@ -235,6 +252,35 @@ def test_sync_generation() -> None:
         assert get_model_cost_mutation_generation() == moved
     finally:
         del betterlite.model_cost["sync-generation-probe"]
+        get_model_info("gpt-4")
+
+
+def test_sync_capability_flags() -> None:
+    model = "o3"
+    ours_original = betterlite.model_cost[model]
+    theirs_original = REFERENCE_COST.model_cost[model]
+    ours_entry = dict(_MODEL_INFO.validate_python(ours_original))
+    theirs_entry = dict(_MODEL_INFO.validate_python(theirs_original))
+    ours_entry["supports_function_calling"] = False
+    theirs_entry["supports_function_calling"] = False
+    betterlite.model_cost[model] = ours_entry
+    REFERENCE_COST.model_cost[model] = theirs_entry
+    LOOKUP.get_model_info.cache_clear()
+    try:
+        theirs = _MODEL_INFO.validate_python(LOOKUP.get_model_info(model))
+        ours = get_model_info(model)
+        assert ours == theirs
+        assert ours["supports_function_calling"] is False
+        parameters = _PARAMETER_NAMES.validate_python(ours[UNSUPPORTED_PARAMS])
+        assert "tools" not in parameters
+        assert "tool_choice" not in parameters
+        assert "function_call" not in parameters
+        assert "functions" not in parameters
+        assert "reasoning_effort" in parameters
+    finally:
+        betterlite.model_cost[model] = ours_original
+        REFERENCE_COST.model_cost[model] = theirs_original
+        LOOKUP.get_model_info.cache_clear()
         get_model_info("gpt-4")
 
 
