@@ -100,7 +100,7 @@ impl ResponsesIncludeSupport for ScriptedInclude {
 
 struct ScriptedResolution {
     provider: Option<String>,
-    lookups: Mutex<Vec<Option<String>>>,
+    lookups: Mutex<Vec<(Option<String>, Option<String>)>>,
 }
 
 impl ProviderResolution for ScriptedResolution {
@@ -108,7 +108,10 @@ impl ProviderResolution for ScriptedResolution {
         self.lookups
             .lock()
             .expect("the resolution lock is free")
-            .push(lookup.custom_llm_provider.map(str::to_owned));
+            .push((
+                lookup.model.map(str::to_owned),
+                lookup.custom_llm_provider.map(str::to_owned),
+            ));
         self.provider.as_ref().map(|provider| ResolvedTarget {
             model: lookup.model.unwrap_or_default().to_owned(),
             provider: provider.clone(),
@@ -325,11 +328,19 @@ impl Fixture {
             .clone()
     }
 
-    fn resolution_calls(&self) -> Vec<Option<String>> {
+    fn resolution_calls(&self) -> Vec<(Option<String>, Option<String>)> {
         self.resolution
             .lookups
             .lock()
             .expect("the resolution lock is free")
+            .clone()
+    }
+
+    fn metadata_calls(&self) -> Vec<(Option<String>, Option<String>)> {
+        self.metadata
+            .lookups
+            .lock()
+            .expect("the metadata lock is free")
             .clone()
     }
 }
@@ -365,6 +376,13 @@ fn native() -> AnswerPlan {
     r#"["reasoning.encrypted_content","extra.includable"]"#,
     "cache-key",
     "https://api.example.com"
+)]
+#[case::include_merge(
+    r#"{"custom_llm_provider":"openai","include":["extra.includable"]}"#,
+    true,
+    r#"["reasoning.encrypted_content","extra.includable"]"#,
+    "",
+    ""
 )]
 #[case::include_without_capability(
     r#"{"custom_llm_provider":"openai","prompt_cache_key":null}"#,
@@ -482,7 +500,7 @@ async fn encrypted_task_required(
     );
     let resolutions = fixture.resolution_calls();
     if hint.is_empty() {
-        assert_eq!(resolutions, vec![None]);
+        assert_eq!(resolutions, vec![(Some(model.to_owned()), None)]);
     } else {
         assert!(resolutions.is_empty(), "a named provider is used as given");
     }
@@ -516,18 +534,20 @@ async fn encrypted_task_required_refuses_an_unresolvable_provider() {
 }
 
 #[rstest]
-#[case::floor("max", None, "high")]
+#[case::floor("max", None, "high", true)]
 #[case::accepted(
     "max",
     Some(r#"{"supports_reasoning":true,"reasoning_effort_levels":["max","high"]}"#),
-    "max"
+    "max",
+    true
 )]
-#[case::unchained("low", None, "low")]
+#[case::unchained("low", None, "low", false)]
 #[tokio::test]
 async fn normalizes_reasoning_effort(
     #[case] requested: &str,
     #[case] info: Option<&str>,
     #[case] expected: &str,
+    #[case] expect_lookup: bool,
 ) {
     let request = format!(
         r#"{{"model":"gpt-4o","messages":[],"max_tokens":64,"thinking":{{"type":"adaptive"}},"output_config":{{"effort":"{requested}"}}}}"#
@@ -549,6 +569,19 @@ async fn normalizes_reasoning_effort(
         Some(expected),
         "LiteLLM lowers a tier the deployment does not accept"
     );
+    let lookups = fixture.metadata_calls();
+    if expect_lookup {
+        assert_eq!(
+            lookups,
+            vec![(Some(String::from("gpt-4o")), Some(String::from("openai")))],
+            "the lookup asks for the request model under the named provider"
+        );
+    } else {
+        assert!(
+            lookups.is_empty(),
+            "an unchained tier never reaches the model lookup"
+        );
+    }
 }
 
 #[rstest]
