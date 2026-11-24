@@ -9,12 +9,18 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+axum = { workspace = true, features = ["query"] }
+flate2 = "1.1.5"
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+indexmap = "2.14.2"
 rust_decimal.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
+tower = { workspace = true, features = ["util"] }
 
 [[test]]
 name = "collector_factory"

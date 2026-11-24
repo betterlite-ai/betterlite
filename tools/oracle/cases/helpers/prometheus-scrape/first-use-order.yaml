@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-scrape-first-use-order
+call:
+  b10090:
+    metrics:
+      - {kind: gauge, name: in_flight, help: "in flight", labels: [model], buckets: []}
+    updates:
+      - {metric: 0, labels: [c], action: set, value: 1}
+      - {metric: 0, labels: [a], action: set, value: 2}
+      - {metric: 0, labels: [b], action: set, value: 3}
+    accept: ""
+    accept_encoding: ""
+    names: []
+env: {}
+compare: {ignore: []}
