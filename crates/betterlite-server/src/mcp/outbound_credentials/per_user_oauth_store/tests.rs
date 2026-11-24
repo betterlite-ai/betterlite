@@ -531,6 +531,33 @@ async fn store_lazy_waits_for_an_in_flight_local_fetch_before_replacing_the_chai
 }
 
 #[tokio::test]
+async fn store_lazy_releases_a_cancelled_local_fetch() {
+    let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
+    fixture.chain.hold_first.store(true, Ordering::SeqCst);
+    let started = Arc::clone(&fixture.chain.started);
+    let shared = Arc::new(fixture.store);
+    let first = Arc::clone(&shared);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move { first.fetch("user", "srv").await });
+    started.notified().await;
+    tasks.shutdown().await;
+    fixture.chain.hold_first.store(false, Ordering::SeqCst);
+    fixture.redis.store(true, Ordering::Relaxed);
+    fixture.builder_redis.store(true, Ordering::Relaxed);
+    let fetched = timeout(DEADLINE, shared.fetch("user", "srv"))
+        .await
+        .expect("a cancelled local fetch releases its count")
+        .unwrap()
+        .unwrap();
+    assert_eq!(fetched.access_token, "fresh");
+    assert_eq!(
+        fixture.builds.load(Ordering::Relaxed),
+        2,
+        "the cancelled local chain is replaced by the redis one"
+    );
+}
+
+#[tokio::test]
 async fn store_lazy_invalidate_builds_a_chain_when_none_exists() {
     let fixture = lazy_fixture(None, Some(lazy_token("fresh", None)), true, false);
     fixture.store.invalidate("user", "srv").await;

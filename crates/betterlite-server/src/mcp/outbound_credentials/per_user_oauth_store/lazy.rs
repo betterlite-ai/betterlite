@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use betterlite_db::oauth_token_resolution::OauthBindingPort;
@@ -21,7 +22,22 @@ pub trait RedisAvailability: Send + Sync {
 struct LazyState {
     store: Option<Arc<dyn InvalidatableOAuthTokenStore>>,
     uses_redis: bool,
-    local_fetches: i64,
+}
+
+// LiteLLM's finally: the in-flight count drops however the fetch or invalidate ends, a cancelled caller included.
+struct LocalFetch<'store> {
+    store: Arc<dyn InvalidatableOAuthTokenStore>,
+    used_redis: bool,
+    local_fetches: &'store AtomicUsize,
+    notify: &'store Notify,
+}
+
+impl Drop for LocalFetch<'_> {
+    fn drop(&mut self) {
+        if !self.used_redis && self.local_fetches.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.notify.notify_waiters();
+        }
+    }
 }
 
 pub struct LazyPerUserOAuthTokenStore<Lookup, Binding, Builder, Availability> {
@@ -30,6 +46,7 @@ pub struct LazyPerUserOAuthTokenStore<Lookup, Binding, Builder, Availability> {
     store_builder: Builder,
     redis_available: Arc<Availability>,
     state: Mutex<LazyState>,
+    local_fetches: AtomicUsize,
     notify: Notify,
 }
 
@@ -87,11 +104,9 @@ where
             store.invalidate(user_id, server_id).await;
             return;
         }
-        let (store, uses_redis) = self.store_for_fetch().await;
-        store.invalidate(user_id, server_id).await;
-        if !uses_redis {
-            self.finish_local_fetch().await;
-        }
+        let local = self.store_for_fetch().await;
+        local.store.invalidate(user_id, server_id).await;
+        drop(local);
     }
 }
 
@@ -119,8 +134,8 @@ where
             state: Mutex::new(LazyState {
                 store: None,
                 uses_redis: false,
-                local_fetches: 0,
             }),
+            local_fetches: AtomicUsize::new(0),
             notify: Notify::new(),
         }
     }
@@ -133,11 +148,9 @@ where
         if let Some(store) = self.redis_store().await {
             return store.fetch(user_id, server_id).await;
         }
-        let (store, uses_redis) = self.store_for_fetch().await;
-        let result = store.fetch(user_id, server_id).await;
-        if !uses_redis {
-            self.finish_local_fetch().await;
-        }
+        let local = self.store_for_fetch().await;
+        let result = local.store.fetch(user_id, server_id).await;
+        drop(local);
         result
     }
 
@@ -151,19 +164,18 @@ where
     }
 
     // An in-process chain is replaced after its in-flight fetches finish, so one refresh token is redeemed once.
-    async fn store_for_fetch(&self) -> (Arc<dyn InvalidatableOAuthTokenStore>, bool) {
-        let mut state = self.state.lock().await;
+    async fn store_for_fetch(&self) -> LocalFetch<'_> {
         loop {
+            let mut notified = Box::pin(self.notify.notified());
+            notified.as_mut().enable();
+            let mut state = self.state.lock().await;
             if state.store.is_some()
                 && !state.uses_redis
                 && self.redis_available.is_available()
-                && state.local_fetches > 0
+                && self.local_fetches.load(Ordering::SeqCst) > 0
             {
-                let mut notified = Box::pin(self.notify.notified());
-                notified.as_mut().enable();
                 drop(state);
                 notified.await;
-                state = self.state.lock().await;
                 continue;
             }
             if state.store.is_none() || (!state.uses_redis && self.redis_available.is_available()) {
@@ -176,18 +188,15 @@ where
                 continue;
             };
             if !uses_redis {
-                state.local_fetches = state.local_fetches.saturating_add(1);
+                self.local_fetches.fetch_add(1, Ordering::SeqCst);
             }
             drop(state);
-            return (store, uses_redis);
-        }
-    }
-
-    async fn finish_local_fetch(&self) {
-        let mut state = self.state.lock().await;
-        state.local_fetches = state.local_fetches.saturating_sub(1);
-        if state.local_fetches == 0 {
-            self.notify.notify_waiters();
+            return LocalFetch {
+                store,
+                used_redis: uses_redis,
+                local_fetches: &self.local_fetches,
+                notify: &self.notify,
+            };
         }
     }
 }
