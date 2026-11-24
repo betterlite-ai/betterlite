@@ -16,6 +16,7 @@ use crate::shadow_eval_results::error::ShadowResultsRouteError;
 use crate::shadow_eval_results::postgres::store_from_state;
 use crate::shadow_eval_results::query::{ShadowQueryError, decode_shadow_query};
 use crate::shadow_eval_results::service::{get_shadow_eval_job, list_shadow_eval_jobs};
+use crate::shadow_eval_results::{DETAIL_PATH, LIST_PATH};
 use crate::shadow_result_aggregation::postgres::PgShadowResults;
 use crate::state::ServerState;
 use crate::tracing_routes::router::{ValidationBody, ValidationIssue, unauthenticated};
@@ -38,8 +39,8 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         store: store_from_state(state).map(Arc::new),
     });
     Router::new()
-        .route("/auto_router/shadow_eval", get(shadow_eval_read))
-        .route("/auto_router/shadow_eval/{job_id}", get(shadow_eval_read))
+        .route(LIST_PATH, get(shadow_eval_read))
+        .route(DETAIL_PATH, get(shadow_eval_read))
         .with_state(results)
 }
 

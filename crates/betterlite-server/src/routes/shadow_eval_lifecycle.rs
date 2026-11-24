@@ -39,6 +39,7 @@ use crate::shadow_eval_lifecycle::postgres::{PostgresShadowLifecycleStore, store
 use crate::shadow_eval_lifecycle::start::{StartCall, StartDeps, start_shadow_eval};
 use crate::shadow_eval_lifecycle::stop::stop_shadow_eval_job;
 use crate::shadow_eval_models::job::ShadowJobResponse;
+use crate::shadow_eval_results::{START_PATH, STOP_PATH};
 use crate::shadow_eval_validation::request::StartShadowEvalRequest;
 use crate::shadow_eval_validation::router_view::{AnthropicCredentials, ShadowEvalRouter};
 use crate::state::ServerState;
@@ -79,8 +80,8 @@ impl JudgeSdk for UnbuiltJudgeSdk {
 pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
     let lifecycle = Arc::new(lifecycle_state(state));
     Router::new()
-        .route("/auto_router/shadow_eval/start", post(start_route))
-        .route("/auto_router/shadow_eval/{job_id}/stop", post(stop_route))
+        .route(START_PATH, post(start_route))
+        .route(STOP_PATH, post(stop_route))
         .with_state(lifecycle)
 }
 

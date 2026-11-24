@@ -14,6 +14,7 @@ use serde::Serialize;
 
 use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
 use crate::router_settings::ROUTE_PATHS;
+use crate::shadow_eval_results::SHADOW_EVAL_ROUTES;
 
 mod tests;
 
@@ -48,6 +49,9 @@ pub fn admit(route: &str, method: &str) -> Result<(), RouteMatchError> {
         || auxiliary_routes::INFO_ROUTES.contains(&route)
         || route == CACHE_ACTIVITY_PATH
         || ROUTE_PATHS.contains(&route)
+        || SHADOW_EVAL_ROUTES
+            .iter()
+            .any(|pattern| route_matches_pattern(&RouteValue::Text(route), pattern))
         || classifier::is_mcp_discovery_route(route, Some(method))
         || ["/models/{model_id}", "/v1/models/{model_id}"]
             .iter()
