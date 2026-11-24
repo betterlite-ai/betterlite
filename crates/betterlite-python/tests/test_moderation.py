@@ -13,7 +13,6 @@ from typing_extensions import TypedDict
 
 from betterlite.exceptions import AuthenticationError
 from betterlite.main import amoderation, moderation
-from betterlite.types.llms.openai import OpenAIModerationResponse
 
 HOST: Final = "127.0.0.1"
 OK: Final = 200
@@ -195,10 +194,6 @@ def header_of(call: RecordedCall, name: str) -> str | None:
     return None
 
 
-def view_of(response: OpenAIModerationResponse) -> ModerationView:
-    return VIEW.validate_json(response.model_dump_json())
-
-
 def first_result(view: ModerationView) -> ResultView:
     results = view.get("results")
     assert results is not None
@@ -220,7 +215,7 @@ def asked(model: str | None = None) -> tuple[ModerationView, RecordedCall]:
     with closing(ModerationServer()) as server:
         response = moderation(input=INPUT_TEXT, model=model, api_base=server.url, api_key=GOOD_KEY)
         call = server.calls[-1]
-    return view_of(response), call
+    return VIEW.validate_json(response.model_dump_json()), call
 
 
 async def asked_async(model: str | None = None) -> tuple[ModerationView, RecordedCall]:
@@ -229,7 +224,7 @@ async def asked_async(model: str | None = None) -> tuple[ModerationView, Recorde
             input=INPUT_TEXT, model=model, api_base=server.url, api_key=GOOD_KEY,
         )
         call = server.calls[-1]
-    return view_of(response), call
+    return VIEW.validate_json(response.model_dump_json()), call
 
 
 def test_default_model_on_wire() -> None:
@@ -296,7 +291,7 @@ def test_async_returns_coroutine() -> None:
         pending = amoderation(input=INPUT_TEXT, api_base=server.url, api_key=GOOD_KEY)
         assert inspect.isawaitable(pending)
         response = asyncio.run(pending)
-    assert view_of(response)["id"] == MODERATION_ID
+    assert VIEW.validate_json(response.model_dump_json())["id"] == MODERATION_ID
 
 
 @pytest.mark.parametrize(

@@ -58,7 +58,7 @@ class TextCompletionStreamWrapper:
         # a usage-only chunk carries no choice, which LiteLLM's conversion reads as an error
         for chunk in self.completion_stream:
             if chunk.choices:
-                return self.convert_to_text_completion_object(chunk)
+                return self.completion_object(chunk)
         raise StopIteration
 
     def __aiter__(self) -> AsyncIterator[TextCompletionResponse]:
@@ -67,12 +67,10 @@ class TextCompletionStreamWrapper:
     async def __anext__(self) -> TextCompletionResponse:
         async for chunk in self.completion_stream:
             if chunk.choices:
-                return self.convert_to_text_completion_object(chunk)
+                return self.completion_object(chunk)
         raise StopAsyncIteration
 
-    def convert_to_text_completion_object(
-        self, chunk: ModelResponseStream
-    ) -> TextCompletionResponse:
+    def completion_object(self, chunk: ModelResponseStream) -> TextCompletionResponse:
         choice = chunk.choices[0]
         converted = TextChoices(
             index=choice.index,

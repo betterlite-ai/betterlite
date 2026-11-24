@@ -580,7 +580,7 @@ def test_prompts_mock_timeout() -> None:
     assert caught.value.status_code == TIMEOUT_STATUS
 
 
-def test_prompts_mock_timeout_without_a_timeout() -> None:
+def test_prompts_mock_no_timeout() -> None:
     with pytest.raises(BadRequestError) as caught:
         text_completion(model=TEXT_MODEL, prompt="hi", mock_timeout=True)
     assert caught.value.status_code == BAD_REQUEST

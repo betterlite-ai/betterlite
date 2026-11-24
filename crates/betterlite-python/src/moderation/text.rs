@@ -4,7 +4,7 @@ use super::convert::{
 use super::error::{
     CallFacts, CallFailure, Raised, RawSource, convert_failure, provider_failure, raised,
 };
-use super::session::{DeploymentFacts, TextSession, secret_text};
+use super::session::{DeploymentFacts, TextSession, declared, secret_text};
 use crate::completion::setup::global_credentials;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::deployment::ChatDeployment;
@@ -57,14 +57,20 @@ pub(crate) async fn call(
     if matches!(prompt(&arguments).refusal(), Some(PromptRefusal::Unmapped)) {
         return Err(convert_failure(ConvertError::Prompt, &facts));
     }
-    let deployment = session.deployment(&DeploymentFacts {
+    let declared_facts = DeploymentFacts {
         resolved: &resolved,
         arguments: &arguments,
         model: &model,
         provider: &provider,
         api_key,
         globals: &globals,
-    })?;
+    };
+    let deployment = session.resolved(
+        &declared(&declared_facts),
+        declared_facts.model,
+        declared_facts.provider,
+        declared_facts.globals,
+    )?;
     answer_for(session, &deployment, &arguments, &facts).await
 }
 

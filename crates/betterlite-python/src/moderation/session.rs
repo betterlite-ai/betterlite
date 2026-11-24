@@ -110,13 +110,6 @@ impl TextSession {
         }
     }
 
-    pub(crate) fn deployment(
-        &self,
-        facts: &DeploymentFacts<'_>,
-    ) -> Result<ChatDeployment, CallFailure> {
-        self.resolved(&declared(facts), facts.model, facts.provider, facts.globals)
-    }
-
     // moderation always calls the openai moderations endpoint; the model keeps no provider prefix of its own
     pub(crate) fn moderation_deployment(
         &self,
@@ -147,7 +140,7 @@ impl TextSession {
         self.resolved(&deployment, model, OPENAI_PROVIDER, &globals)
     }
 
-    fn resolved(
+    pub(crate) fn resolved(
         &self,
         deployment: &ModelDeployment,
         model: &str,
@@ -195,7 +188,7 @@ pub(crate) struct DeploymentFacts<'call> {
     pub(crate) globals: &'call GlobalCredentials,
 }
 
-fn declared(facts: &DeploymentFacts<'_>) -> ModelDeployment {
+pub(crate) fn declared(facts: &DeploymentFacts<'_>) -> ModelDeployment {
     let resolved_base = &facts.resolved.api_base;
     let api_base = resolved_base.clone().filter(|text| !text.is_empty());
     let resolved_key = &facts.resolved.api_key;
