@@ -25,6 +25,7 @@ use chrono::{DateTime, Offset as _, Utc};
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use secrecy::ExposeSecret as _;
 use tokio::sync::mpsc;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
@@ -266,6 +267,17 @@ pub(crate) fn registry_port(
     let (recording, received) = registry(outcome);
     let port: Option<Arc<dyn ManagedBatchRegistry>> = Some(recording);
     (port, received)
+}
+
+pub(crate) fn assert_registrant_identity(registrant: &BatchRegistrant) {
+    assert_eq!(registrant.user_id, Some("user-1".to_owned()));
+    assert_eq!(registrant.team_id, Some("team-1".to_owned()));
+    assert!(
+        registrant
+            .api_key
+            .as_ref()
+            .is_some_and(|key| key.expose_secret() == "sk-key")
+    );
 }
 
 pub(crate) fn assert_registrant_defaults(registrant: &BatchRegistrant) {

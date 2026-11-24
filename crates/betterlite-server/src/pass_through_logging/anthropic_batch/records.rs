@@ -118,8 +118,12 @@ pub(super) fn creation_errored(
     response_id: String,
     error: String,
 ) -> BatchCreationLogged {
-    let content = format!("Error creating batch job: {error}");
-    failed_logged(input, response_id, content, error_fields(&error))
+    failed_logged(
+        input,
+        response_id,
+        format!("Error creating batch job: {error}"),
+        error_fields(&error),
+    )
 }
 
 fn failed_fields(status_code: u16) -> IndexMap<String, Json> {

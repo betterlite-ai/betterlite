@@ -2,6 +2,7 @@ use betterlite_auth::user_roles::UserRole;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::batches::records::BatchObject;
 use rust_decimal::Decimal;
+use secrecy::SecretString;
 use tokio::runtime::Handle;
 
 use super::error::AnthropicBatchError;
@@ -69,8 +70,14 @@ fn store(
 fn registrant(request_metadata: &JsonObject) -> BatchRegistrant {
     BatchRegistrant {
         user_id: user_id_from(request_metadata),
-        api_key: metadata_text(request_metadata, "user_api_key").map(str::to_owned),
-        team_id: metadata_text(request_metadata, "user_api_key_team_id").map(str::to_owned),
+        api_key: request_metadata
+            .get("user_api_key")
+            .and_then(optional_str)
+            .map(|text| SecretString::from(text.to_owned())),
+        team_id: request_metadata
+            .get("user_api_key_team_id")
+            .and_then(optional_str)
+            .map(str::to_owned),
         team_alias: None,
         user_role: UserRole::Customer,
         user_email: None,
@@ -96,11 +103,4 @@ fn user_id_from(request_metadata: &JsonObject) -> Option<String> {
         None => Some(DEFAULT_USER_ID.to_owned()),
         Some(value) => optional_str(value).map(str::to_owned),
     }
-}
-
-fn metadata_text<'metadata>(
-    request_metadata: &'metadata JsonObject,
-    key: &str,
-) -> Option<&'metadata str> {
-    request_metadata.get(key).and_then(optional_str)
 }

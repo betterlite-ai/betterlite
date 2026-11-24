@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -125,7 +126,7 @@ impl BatchJobState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct BatchRegistration {
     pub unified_object_id: String,
     pub batch_object: BatchObject,
@@ -137,10 +138,10 @@ pub struct BatchRegistration {
     pub create_if_missing: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct BatchRegistrant {
     pub user_id: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub team_id: Option<String>,
     pub team_alias: Option<String>,
     pub user_role: UserRole,
@@ -190,8 +191,8 @@ impl AnthropicBatchLogging {
         }
     }
 
-    // ast-grep-ignore: no-long-names
     #[must_use]
+    // ast-grep-ignore: no-long-names
     pub fn get_actual_model_id_from_router(&self, model_name: &str) -> String {
         let Some(router) = self.router.as_ref() else {
             tracing::warn!("Router not available, using model name: {model_name}");

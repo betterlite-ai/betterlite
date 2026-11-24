@@ -18,9 +18,9 @@ use tokio::time::timeout;
 
 use self::support::{
     BATCH_ID, COLLECTION_ROUTE, CountingIds, Creation, ID_SCOPED_ROUTE, MODEL, RESPONSE_ID,
-    assert_registrant_defaults, batch_body, batch_object, capture_logs, field, handler,
-    handler_with_ids, message, metadata, provider_fields, registry_port, router, router_port, run,
-    start_time, text,
+    assert_registrant_defaults, assert_registrant_identity, batch_body, batch_object, capture_logs,
+    field, handler, handler_with_ids, message, metadata, provider_fields, registry_port, router,
+    router_port, run, start_time, text,
 };
 use super::{BatchJobState, RegistryError, RouterModelIds, unified_object_id};
 
@@ -472,9 +472,7 @@ async fn batch_collection_route_registers_managed_object() {
         Some(vec!["a".to_owned(), "b".to_owned()])
     );
     let registrant = &registration.registrant;
-    assert_eq!(registrant.user_id, Some("user-1".to_owned()));
-    assert_eq!(registrant.api_key, Some("sk-key".to_owned()));
-    assert_eq!(registrant.team_id, Some("team-1".to_owned()));
+    assert_registrant_identity(registrant);
     assert_registrant_defaults(registrant);
     timeout(Duration::from_secs(5), lines.recv())
         .await
@@ -498,7 +496,7 @@ async fn batch_registration_defaults_user_id_and_reads_null() {
         defaulted.registrant.user_id,
         Some("default-user".to_owned())
     );
-    assert_eq!(defaulted.registrant.api_key, None);
+    assert!(defaulted.registrant.api_key.is_none());
     assert_eq!(defaulted.registrant.team_id, None);
     assert_eq!(defaulted.request_tags, None);
     let (second_port, mut second_received) = registry_port(Ok(()));
