@@ -82,15 +82,12 @@ pub fn decode_stored_override(
     value: &JsonValue,
     kind: OverrideKind,
 ) -> Result<JsonMap, StoredOverrideError> {
-    match value {
-        JsonValue::Object(object) => Ok(object.clone()),
-        JsonValue::String(text) => match safe_json_loads(text.as_bytes()) {
-            Ok(parsed) => object_or_shape_error(parsed, kind),
-            Err(_) => Ok(JsonMap::new()),
-        },
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
-            object_or_shape_error(value.clone(), kind)
-        }
+    let JsonValue::String(text) = value else {
+        return object_or_shape_error(value.clone(), kind);
+    };
+    match safe_json_loads(text.as_bytes()) {
+        Ok(parsed) => object_or_shape_error(parsed, kind),
+        Err(_) => Ok(JsonMap::new()),
     }
 }
 
@@ -98,10 +95,8 @@ fn object_or_shape_error(
     value: JsonValue,
     kind: OverrideKind,
 ) -> Result<JsonMap, StoredOverrideError> {
-    match value {
-        JsonValue::Object(object) => Ok(object),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
-            Err(StoredOverrideError::NotAnObject { kind })
-        }
-    }
+    let JsonValue::Object(object) = value else {
+        return Err(StoredOverrideError::NotAnObject { kind });
+    };
+    Ok(object)
 }

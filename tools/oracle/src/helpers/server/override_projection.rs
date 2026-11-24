@@ -1,4 +1,4 @@
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::config_override_support::audit::redact_config;
 use betterlite_server::config_override_support::decode::decode_stored_override;
@@ -36,14 +36,15 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
             Function::Mask => {
-                let config = config_object(&input.config)?;
+                let config: JsonMap =
+                    serde_json::from_value(input.config.clone()).or_value_error()?;
                 serde_json::to_value(mask_sensitive_fields(input.kind, &config)).or_value_error()
             }
             Function::Audit => {
-                let config = if input.config.is_null() {
+                let config: Option<JsonMap> = if input.config.is_null() {
                     None
                 } else {
-                    Some(config_object(&input.config)?)
+                    Some(serde_json::from_value(input.config.clone()).or_value_error()?)
                 };
                 serde_json::to_value(redact_config(config.as_ref())).or_value_error()
             }
@@ -55,8 +56,4 @@ impl Helper for Op {
             }
         }
     }
-}
-
-fn config_object(value: &Value) -> Result<JsonMap, Box<HelperError>> {
-    serde_json::from_value(value.clone()).or_value_error()
 }

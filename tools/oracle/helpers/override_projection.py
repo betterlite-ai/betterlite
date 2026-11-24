@@ -32,7 +32,7 @@ class Input(TypedDict):
     function: Literal["mask", "audit", "schema", "project"]
     kind: str
     config: NotRequired[dict[str, JsonValue]]
-    raw: NotRequired[JsonValue]
+    raw: NotRequired[str | dict[str, JsonValue]]
 
 
 def config_of(input_value: Input) -> dict[str, JsonValue]:
@@ -42,7 +42,7 @@ def config_of(input_value: Input) -> dict[str, JsonValue]:
     return config
 
 
-def raw_of(input_value: Input) -> JsonValue:
+def raw_of(input_value: Input) -> str | dict[str, JsonValue]:
     raw = input_value.get("raw")
     if raw is None:
         raise ValueError("the project function needs a raw value")

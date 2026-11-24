@@ -13,7 +13,7 @@ fn masks_only_sensitive_string_values() {
         &object(json!({
             "vault_addr": "https://vault.example.com:8200",
             "vault_token": "hunter2-token",
-            "approle_secret_id": "secret-id-value",
+            "approle_secret_id": "hunter2-approle-key",
             "approle_role_id": 7,
             "client_cert": "cert-path",
             "client_key": "",
@@ -25,7 +25,7 @@ fn masks_only_sensitive_string_values() {
         object(json!({
             "vault_addr": "https://vault.example.com:8200",
             "vault_token": "hunt*****oken",
-            "approle_secret_id": "secr*******alue",
+            "approle_secret_id": "hunt***********-key",
             "approle_role_id": 7,
             "client_cert": "cert-path",
             "client_key": "",

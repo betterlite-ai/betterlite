@@ -1,5 +1,3 @@
-use std::fmt;
-
 use betterlite_config::config_override::{
     CYBERARK_DESCRIPTION, CYBERARK_FIELDS, HASHICORP_VAULT_DESCRIPTION, HASHICORP_VAULT_FIELDS,
     OverrideField,
@@ -8,8 +6,9 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum OverrideKind {
     HashicorpVault,
     CyberArk,
@@ -38,12 +37,6 @@ impl OverrideKind {
             Self::HashicorpVault => HASHICORP_VAULT_DESCRIPTION,
             Self::CyberArk => CYBERARK_DESCRIPTION,
         }
-    }
-}
-
-impl fmt::Display for OverrideKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
     }
 }
 

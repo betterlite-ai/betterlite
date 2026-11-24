@@ -46,15 +46,14 @@ impl ConfigOverrideAudit for AuditService {
 // Keys stay so an auditor sees which fields changed; every value is replaced.
 #[must_use]
 pub fn redact_config(config: Option<&JsonMap>) -> JsonMap {
-    config
-        .filter(|config| !config.is_empty())
-        .map(|config| {
-            config
-                .keys()
-                .map(|key| (key.clone(), JsonValue::String(AUDIT_REDACTED.to_owned())))
-                .collect()
-        })
-        .unwrap_or_default()
+    let Some(values) = config else {
+        return JsonMap::new();
+    };
+    let mut redacted = JsonMap::new();
+    for key in values.keys() {
+        redacted.insert(key.clone(), JsonValue::String(AUDIT_REDACTED.to_owned()));
+    }
+    redacted
 }
 
 #[must_use]
@@ -94,11 +93,8 @@ fn changed_by(
 }
 
 fn config_snapshot(config: Option<&JsonMap>) -> String {
-    [(
-        "config".to_owned(),
-        JsonValue::Object(redact_config(config)),
-    )]
-    .into_iter()
-    .collect::<JsonMap>()
-    .to_string()
+    let redacted = redact_config(config);
+    let mut snapshot = JsonMap::new();
+    snapshot.insert("config".to_owned(), JsonValue::Object(redacted));
+    snapshot.to_string()
 }
