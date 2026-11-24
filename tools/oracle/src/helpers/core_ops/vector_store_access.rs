@@ -20,6 +20,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
+use tokio::runtime::Builder;
 
 mod tests;
 
@@ -85,7 +86,7 @@ impl Helper for Op {
                 };
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
                     .or_value_error()?;
-                let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+                let runtime = Builder::new_current_thread().build()?;
                 let allowed = runtime
                     .block_on(
                         policy(&scripted).can_user_access_vector_store(&fields.vector_store, &auth),
@@ -99,7 +100,7 @@ impl Helper for Op {
                 };
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
                     .or_value_error()?;
-                let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+                let runtime = Builder::new_current_thread().build()?;
                 let listable = runtime
                     .block_on(
                         policy(&scripted)
@@ -112,7 +113,7 @@ impl Helper for Op {
     }
 }
 
-fn policy<'access, 'world>(
+const fn policy<'access, 'world>(
     scripted: &'access Scripted<'world>,
 ) -> VectorStoreAccess<'access, Scripted<'world>, Scripted<'world>, Scripted<'world>> {
     VectorStoreAccess {
@@ -161,12 +162,13 @@ impl TeamLoader for Scripted<'_> {
         &self,
         request: TeamRequest<'_>,
     ) -> Result<LiteLLMTeamTableCachedObj, TeamLookupError> {
-        match self.world.teams.get(request.team_id) {
-            Some(team) => Ok(team.clone()),
-            None => Err(TeamLookupError::TeamNotFound {
+        self.world
+            .teams
+            .get(request.team_id)
+            .cloned()
+            .ok_or_else(|| TeamLookupError::TeamNotFound {
                 team_id: request.team_id.to_owned(),
-            }),
-        }
+            })
     }
 }
 
