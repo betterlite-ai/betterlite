@@ -2,22 +2,20 @@ import importlib
 import inspect
 from collections.abc import Mapping, Sequence
 from inspect import Signature
-from typing import Final, Protocol, TypeAlias
+from typing import Final, NotRequired, Protocol, TypeAlias
 
 import pytest
 from litellm.types.utils import Usage as ReferenceUsage
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import NotRequired, TypedDict
+from typing_extensions import TypedDict
 
 from betterlite import completion_cost
 from betterlite._cost_extra import (
     BaseTokenUsageProcessor,
     RealtimeAPITokenUsageProcessor,
-    ResponsesWebSocketTokenUsageProcessor as WsUsageProcessor,
     batch_cost_calculator,
     default_image_cost_calculator,
     default_video_cost_calculator,
-    handle_realtime_stream_cost_calculation as realtime_stream_cost,
     handle_realtime_transcription_cost_calculation,
     ocr_batch_cost,
     ocr_cost,
@@ -25,9 +23,19 @@ from betterlite._cost_extra import (
     transcription_cost,
     vector_store_search_cost,
 )
+from betterlite._cost_extra import (
+    ResponsesWebSocketTokenUsageProcessor as WsUsageProcessor,
+)
+from betterlite._cost_extra import (
+    handle_realtime_stream_cost_calculation as realtime_stream_cost,
+)
 from betterlite.cost_calculator import (
     batch_cost_calculator as module_batch_cost_calculator,
+)
+from betterlite.cost_calculator import (
     completion_cost as module_completion_cost,
+)
+from betterlite.cost_calculator import (
     ocr_cost as module_ocr_cost,
 )
 from betterlite.ocr import OCRPage, OCRResponse, OCRUsageInfo
@@ -317,10 +325,8 @@ def reference_usage(prompt: int, completion: int, cached: int) -> ReferenceUsage
 
 def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
     dump = DUMP.validate_json(usage.model_dump_json())
-    prompt = dump["prompt_tokens_details"] if "prompt_tokens_details" in dump else None
-    completion = (
-        dump["completion_tokens_details"] if "completion_tokens_details" in dump else None
-    )
+    prompt = dump.get("prompt_tokens_details")
+    completion = dump.get("completion_tokens_details")
     cached = prompt["cached_tokens"] if prompt is not None and "cached_tokens" in prompt else 0
     prompt_audio = prompt["audio_tokens"] if prompt is not None and "audio_tokens" in prompt else 0
     completion_audio = (

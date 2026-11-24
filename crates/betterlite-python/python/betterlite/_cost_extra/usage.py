@@ -28,9 +28,7 @@ def collect_request(source: str, results: Sequence[Mapping[str, JsonValue]]) -> 
 class BaseTokenUsageProcessor:
     @staticmethod
     def combine_usage_objects(usage_objects: list[Usage]) -> Usage:
-        usages: list[JsonValue] = []
-        for usage in usage_objects:
-            usages.append(usage_wire(usage))
+        usages: list[JsonValue] = [usage_wire(usage) for usage in usage_objects]
         request: JsonObject = {"usages": usages}
         return native_answer(USAGE, ENGINE.combine_usage, request)
 
@@ -69,7 +67,8 @@ class ResponsesWebSocketTokenUsageProcessor(  # ast-grep-ignore: no-long-names
         results: Sequence[Mapping[str, JsonValue]],
     ) -> tuple[Usage, ...]:
         request = collect_request(RESPONSES_WS_SOURCE, results)
-        return tuple(native_answer(USAGES, ENGINE.collect_usage, request))
+        collected: list[Usage] = native_answer(USAGES, ENGINE.collect_usage, request)
+        return tuple(collected)
 
     @staticmethod
     def partition_results_by_service_tier(  # ast-grep-ignore: no-long-names
