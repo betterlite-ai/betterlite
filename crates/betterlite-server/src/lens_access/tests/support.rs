@@ -80,12 +80,14 @@ pub(crate) fn auth_key(role: Option<&str>, team: Option<&str>, models: &[&str]) 
 }
 
 pub(crate) fn settings(model: &str) -> LensSettings {
-    serde_json::from_str(&format!(r#"{{"name":"Nightly","model":"{model}"}}"#))
-        .expect("the test settings decode")
+    serde_json::from_str(&format!(
+        r#"{{"name":"Nightly","model":"{model}","context":"Watch the checkout flow"}}"#
+    ))
+    .expect("the test settings decode")
 }
 
 pub(crate) fn settings_json(model: &str) -> String {
-    format!(r#"{{"name":"Nightly","model":"{model}"}}"#)
+    format!(r#"{{"name":"Nightly","model":"{model}","context":"Watch the checkout flow"}}"#)
 }
 
 pub(crate) fn lens(id: &str) -> Lens {
@@ -99,28 +101,28 @@ pub(crate) fn settings_with_ids(ids: &[&str]) -> LensSettings {
         .collect::<Vec<_>>()
         .join(",");
     serde_json::from_str(&format!(
-        r#"{{"name":"Nightly","model":"gpt-4o","execution_ids":[{listed}]}}"#
+        r#"{{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow","execution_ids":[{listed}]}}"#
     ))
     .expect("the selection settings decode")
 }
 
 pub(crate) fn lens_in_team(id: &str, team: &str) -> Lens {
     serde_json::from_str(&format!(
-        r#"{{"id":"{id}","scope":{{"team_id":"{team}"}},"settings":{{"name":"Nightly","model":"gpt-4o"}},"created_at":"2026-01-01T00:00:00Z","next_run_at":"2026-01-01T00:00:00Z","budget_month":"2026-01"}}"#
+        r#"{{"id":"{id}","scope":{{"team_id":"{team}"}},"settings":{{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow"}},"created_at":"2026-01-01T00:00:00Z","next_run_at":"2026-01-01T00:00:00Z","budget_month":"2026-01"}}"#
     ))
     .expect("the team lens decodes")
 }
 
 pub(crate) fn lens_with(id: &str, all_teams: bool) -> Lens {
     serde_json::from_str(&format!(
-        r#"{{"id":"{id}","scope":{{"all_teams":{all_teams}}},"settings":{{"name":"Nightly","model":"gpt-4o"}},"created_at":"2026-01-01T00:00:00Z","next_run_at":"2026-01-01T00:00:00Z","budget_month":"2026-01"}}"#
+        r#"{{"id":"{id}","scope":{{"all_teams":{all_teams}}},"settings":{{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow"}},"created_at":"2026-01-01T00:00:00Z","next_run_at":"2026-01-01T00:00:00Z","budget_month":"2026-01"}}"#
     ))
     .expect("the test lens decodes")
 }
 
 pub(crate) fn job(id: &str, status: JobStatus) -> Job {
     let mut job: Job = serde_json::from_str(&format!(
-        r#"{{"id":"{id}","created_at":"2026-01-01T00:00:00Z","start":"2026-01-01T00:00:00Z","end":"2026-01-02T00:00:00Z","settings":{{"name":"Nightly","model":"gpt-4o"}},"revision":1}}"#
+        r#"{{"id":"{id}","created_at":"2026-01-01T00:00:00Z","start":"2026-01-01T00:00:00Z","end":"2026-01-02T00:00:00Z","settings":{{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow"}},"revision":1}}"#
     ))
     .expect("the test job decodes");
     job.status = status;

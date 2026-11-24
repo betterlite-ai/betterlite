@@ -22,9 +22,11 @@ fn key_id() -> String {
     "c".repeat(64)
 }
 
-const UPDATE_BODY: &str = r#"{"name":"Updated","model":"gpt-4o"}"#;
+const UPDATE_BODY: &str =
+    r#"{"name":"Updated","model":"gpt-4o","context":"Watch the checkout flow"}"#;
 const RESOLVED_BODY: &str = r#"{"status":"resolved"}"#;
-const PREVIEW_BODY: &str = r#"{"settings":{"name":"Nightly","model":"gpt-4o"}}"#;
+const PREVIEW_BODY: &str =
+    r#"{"settings":{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow"}}"#;
 
 async fn status(harness: &Harness, method: &str, uri: &str, body: Option<&str>) -> StatusCode {
     let caller = admin();

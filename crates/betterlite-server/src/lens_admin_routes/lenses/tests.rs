@@ -163,7 +163,7 @@ async fn update_lens_bumps_the_revision_and_keeps_the_jobs() {
     let mut seeded = lens("l1");
     seeded.jobs = vec![job("j1", JobStatus::Queued)];
     harness.database.seed_lens(seeded);
-    let body = r#"{"name":"Updated","model":"gpt-4o"}"#;
+    let body = r#"{"name":"Updated","model":"gpt-4o","context":"Watch the checkout flow"}"#;
     let reply = call(
         harness.app(),
         request("PUT", "/lens/l1", Some(&admin()), Some(body)),

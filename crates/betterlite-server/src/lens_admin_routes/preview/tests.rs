@@ -14,12 +14,14 @@ const TRACING_DISABLED: &str =
 
 fn window_body(lookback_hours: u32, offset: i64) -> String {
     format!(
-        r#"{{"settings":{{"name":"Nightly","model":"gpt-4o"}},"lookback_hours":{lookback_hours},"offset":{offset}}}"#
+        r#"{{"settings":{{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow"}},"lookback_hours":{lookback_hours},"offset":{offset}}}"#
     )
 }
 
 fn as_of_body(as_of: &str) -> String {
-    format!(r#"{{"settings":{{"name":"Nightly","model":"gpt-4o"}},"as_of":"{as_of}"}}"#)
+    format!(
+        r#"{{"settings":{{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow"}},"as_of":"{as_of}"}}"#
+    )
 }
 
 fn millis(at: DateTime<Utc>) -> i64 {
@@ -31,7 +33,7 @@ async fn a_broken_selection_is_422_before_anything_else() {
     let harness = Harness::new().without_storage();
     let logs = execution_id(&["logs", "team-1", "trace-1"]);
     let body = format!(
-        r#"{{"settings":{{"name":"Nightly","model":"gpt-4o","execution_ids":["{logs}"]}}}}"#
+        r#"{{"settings":{{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow","execution_ids":["{logs}"]}}}}"#
     );
     let reply = call(
         harness.app(),
@@ -99,7 +101,8 @@ async fn the_window_runs_from_the_clock() {
 #[tokio::test]
 async fn the_default_lookback_is_a_day() {
     let harness = Harness::new();
-    let body = r#"{"settings":{"name":"Nightly","model":"gpt-4o"}}"#;
+    let body =
+        r#"{"settings":{"name":"Nightly","model":"gpt-4o","context":"Watch the checkout flow"}}"#;
     let reply = call(
         harness.app(),
         request("POST", "/lens/preview/sample", Some(&admin()), Some(body)),
