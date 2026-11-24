@@ -94,16 +94,24 @@ pub struct FakeStore {
     pub fails: bool,
 }
 
-#[async_trait]
-impl LogListStore for FakeStore {
-    async fn count_matches(&self, query: &SessionQuery) -> Result<i64, ListStoreError> {
+impl FakeStore {
+    // each read records its SQL and its values, and answers the fixture's failure instead when one is asked for
+    fn record_read(&self, kind: &str, query: &SessionQuery) -> Result<(), ListStoreError> {
         record(
             &self.events,
-            format!("count {:?} {}", query.params, query.sql),
+            format!("{kind} {:?} {}", query.params, query.sql),
         );
         if self.fails {
             return Err(ListStoreError::Database(DbError::NoDbConnected));
         }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl LogListStore for FakeStore {
+    async fn count_matches(&self, query: &SessionQuery) -> Result<i64, ListStoreError> {
+        self.record_read("count", query)?;
         Ok(self.count)
     }
 
@@ -111,13 +119,7 @@ impl LogListStore for FakeStore {
         &self,
         query: &SessionQuery,
     ) -> Result<Vec<SpendLogListRow>, ListStoreError> {
-        record(
-            &self.events,
-            format!("rows {:?} {}", query.params, query.sql),
-        );
-        if self.fails {
-            return Err(ListStoreError::Database(DbError::NoDbConnected));
-        }
+        self.record_read("rows", query)?;
         Ok(self.rows.clone())
     }
 }
@@ -207,13 +209,15 @@ impl LogListScope for FakeScope {
         _caller: &TeamCaller,
         request_id: &str,
     ) -> Result<(), VisibilityError> {
+        let allowed = self.answers.precheck;
         record(&self.events, format!("precheck {request_id}"));
-        if self.answers.precheck {
-            return Ok(());
+        if allowed {
+            Ok(())
+        } else {
+            Err(VisibilityError::Forbidden {
+                request_id: request_id.to_owned(),
+            })
         }
-        Err(VisibilityError::Forbidden {
-            request_id: request_id.to_owned(),
-        })
     }
 
     async fn can_view_team(
@@ -221,8 +225,14 @@ impl LogListScope for FakeScope {
         _caller: &TeamCaller,
         team_id: &str,
     ) -> Result<bool, VisibilityError> {
+        let mut visible = false;
+        for allowed in &self.teams {
+            if allowed == team_id {
+                visible = true;
+            }
+        }
         record(&self.events, format!("team {team_id}"));
-        Ok(self.teams.iter().any(|allowed| allowed == team_id))
+        Ok(visible)
     }
 
     async fn visible_team_ids(&self, _caller: &TeamCaller) -> Vec<String> {
@@ -235,11 +245,12 @@ impl LogListScope for FakeScope {
         _caller: &TeamCaller,
         owner: &OwnerPair,
     ) -> Result<bool, VisibilityError> {
+        let visible = self.answers.owners;
         record(
             &self.events,
             format!("owner {:?} {:?}", owner.user, owner.team_id),
         );
-        Ok(self.answers.owners)
+        Ok(visible)
     }
 }
 
@@ -279,43 +290,40 @@ impl Fixture {
         }
     }
 
-    fn store_port(&self, events: &Events) -> Option<Arc<dyn LogListStore>> {
-        if matches!(self.store, StoreMode::Missing) {
-            return None;
-        }
-        let port: Arc<dyn LogListStore> = Arc::new(FakeStore {
-            events: Arc::clone(events),
-            count: self.count,
-            rows: self.rows.clone(),
-            fails: matches!(self.store, StoreMode::Failing),
-        });
-        Some(port)
-    }
-
-    fn scope_port(&self, events: &Events) -> Option<Arc<dyn LogListScope>> {
-        let port: Arc<dyn LogListScope> = Arc::new(FakeScope {
+    // the four handles every test wires, with the store and the scope answering what the fixture pins
+    fn state(&self, events: &Events) -> LogListState {
+        let store: Option<Arc<dyn LogListStore>> = match self.store {
+            StoreMode::Missing => None,
+            StoreMode::Ready | StoreMode::Failing => Some(Arc::new(FakeStore {
+                events: Arc::clone(events),
+                count: self.count,
+                rows: self.rows.clone(),
+                fails: matches!(self.store, StoreMode::Failing),
+            })),
+        };
+        let scope: Arc<dyn LogListScope> = Arc::new(FakeScope {
             events: Arc::clone(events),
             permitted: self.permitted.clone(),
             teams: self.teams.clone(),
             answers: self.answers,
         });
-        Some(port)
+        LogListState {
+            store,
+            sessions: Some(Arc::new(FakeSessions {
+                events: Arc::clone(events),
+                groups: self.groups.clone(),
+                representatives: self.representatives.clone(),
+            })),
+            scope: Some(scope),
+            enricher: Some(Arc::new(FakeEnricher {
+                events: Arc::clone(events),
+            })),
+        }
     }
 
     pub async fn call(&self, uri: &str, caller: Option<&Principal>) -> (Reply, Events) {
         let events: Events = Events::default();
-        let state = LogListState {
-            store: self.store_port(&events),
-            sessions: Some(Arc::new(FakeSessions {
-                events: Arc::clone(&events),
-                groups: self.groups.clone(),
-                representatives: self.representatives.clone(),
-            })),
-            scope: self.scope_port(&events),
-            enricher: Some(Arc::new(FakeEnricher {
-                events: Arc::clone(&events),
-            })),
-        };
+        let state = self.state(&events);
         let mut request = Request::builder()
             .method(Method::GET)
             .uri(uri)

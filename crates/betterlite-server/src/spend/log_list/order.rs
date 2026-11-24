@@ -30,14 +30,10 @@ pub const fn direction_sql(direction: SortDirection) -> &'static str {
 
 #[must_use]
 pub const fn nulls_sql(column: SortColumn) -> &'static str {
-    match column {
-        SortColumn::Spend
-        | SortColumn::TotalTokens
-        | SortColumn::StartTime
-        | SortColumn::EndTime
-        | SortColumn::RequestDurationMs
-        | SortColumn::Model => "",
-        SortColumn::TtftMs => " NULLS LAST",
+    if matches!(column, SortColumn::TtftMs) {
+        " NULLS LAST"
+    } else {
+        ""
     }
 }
 

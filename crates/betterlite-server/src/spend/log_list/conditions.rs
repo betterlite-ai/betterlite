@@ -41,20 +41,15 @@ pub fn build_conditions(inputs: &ConditionInputs<'_>) -> BuiltConditions {
     push_equality(&mut built, inputs.prepared);
     push_request_id(&mut built, inputs.prepared);
     push_scope(&mut built, &inputs.authorization.scope);
-    push_session_id(&mut built, inputs.query);
     // with group_by_session and no search the status is decided by the session's representative, not by every member row
     let status_deferred = inputs.query.filters.status_filter.is_some()
         && inputs.query.flags.group_by_session
         && inputs.query.filters.search.is_none();
-    if !status_deferred {
-        push_status(&mut built, inputs.query);
-    }
-    push_cache_hit(&mut built, inputs.choices);
-    push_span_type(&mut built, inputs.choices);
+    push_session_and_status(&mut built, inputs.query, status_deferred);
+    push_cache_and_span(&mut built, inputs.choices);
     push_health_checks(&mut built, inputs.query);
     push_spend_bounds(&mut built, inputs.prepared);
-    push_metadata(&mut built, inputs.prepared);
-    push_oauth(&mut built, inputs.query);
+    push_metadata_and_oauth(&mut built, inputs.prepared, inputs.query);
     if status_deferred {
         push_grouped_status(&mut built, inputs.query);
     }
@@ -155,18 +150,22 @@ fn escape_like(value: &str) -> String {
     escaped
 }
 
-fn push_session_id(built: &mut BuiltConditions, query: &SpendLogQuery) {
-    let Some(session_id) = &query.filters.session_id else {
+// session_id is a literal match with its wildcards escaped; a success status also matches NULL, and a deferred one waits for the representative
+fn push_session_and_status(
+    built: &mut BuiltConditions,
+    query: &SpendLogQuery,
+    status_deferred: bool,
+) {
+    if let Some(session_id) = &query.filters.session_id {
+        let index = built.params.len().saturating_add(1);
+        built.conditions.push(format!("session_id LIKE ${index}"));
+        built
+            .params
+            .push(SessionParam::Text(format!("%{}%", escape_like(session_id))));
+    }
+    if status_deferred {
         return;
-    };
-    let index = built.params.len().saturating_add(1);
-    built.conditions.push(format!("session_id LIKE ${index}"));
-    built
-        .params
-        .push(SessionParam::Text(format!("%{}%", escape_like(session_id))));
-}
-
-fn push_status(built: &mut BuiltConditions, query: &SpendLogQuery) {
+    }
     let Some(status) = query.filters.status_filter.as_deref() else {
         return;
     };
@@ -181,7 +180,7 @@ fn push_status(built: &mut BuiltConditions, query: &SpendLogQuery) {
     built.params.push(SessionParam::Text(status.to_owned()));
 }
 
-fn push_cache_hit(built: &mut BuiltConditions, choices: &SpendLogChoices) {
+fn push_cache_and_span(built: &mut BuiltConditions, choices: &SpendLogChoices) {
     match choices.cache_hit {
         Some(CacheHitFilter::Hit) => built
             .conditions
@@ -191,9 +190,6 @@ fn push_cache_hit(built: &mut BuiltConditions, choices: &SpendLogChoices) {
         )),
         None => {}
     }
-}
-
-fn push_span_type(built: &mut BuiltConditions, choices: &SpendLogChoices) {
     if let Some(condition) = choices.span_condition {
         built.conditions.push(condition.to_owned());
     }
@@ -231,7 +227,12 @@ fn push_spend_bounds(built: &mut BuiltConditions, prepared: &PreparedSpendLogQue
     }
 }
 
-fn push_metadata(built: &mut BuiltConditions, prepared: &PreparedSpendLogQuery) {
+// metadata LIKE filters keep their wildcards, and json.dumps writes the oauth stamp as lowercase true/false so a row without it matches neither value
+fn push_metadata_and_oauth(
+    built: &mut BuiltConditions,
+    prepared: &PreparedSpendLogQuery,
+    query: &SpendLogQuery,
+) {
     for filter in &prepared.metadata {
         let index = built.params.len().saturating_add(1);
         built.conditions.push(format!(
@@ -241,19 +242,14 @@ fn push_metadata(built: &mut BuiltConditions, prepared: &PreparedSpendLogQuery) 
         ));
         built.params.push(SessionParam::Text(filter.parameter()));
     }
-}
-
-// json.dumps writes the stamp as lowercase true/false, so a row without it matches neither value
-fn push_oauth(built: &mut BuiltConditions, query: &SpendLogQuery) {
-    let Some(flag) = query.flags.used_client_oauth_token else {
-        return;
-    };
-    let index = built.params.len().saturating_add(1);
-    built
-        .conditions
-        .push(format!("metadata->>'used_client_oauth_token' = ${index}"));
-    let text = if flag { "true" } else { "false" };
-    built.params.push(SessionParam::Text(text.to_owned()));
+    if let Some(flag) = query.flags.used_client_oauth_token {
+        let index = built.params.len().saturating_add(1);
+        built
+            .conditions
+            .push(format!("metadata->>'used_client_oauth_token' = ${index}"));
+        let text = if flag { "true" } else { "false" };
+        built.params.push(SessionParam::Text(text.to_owned()));
+    }
 }
 
 // the deferred status keeps the outcome of each session's representative, chosen after every other condition narrowed its rows
