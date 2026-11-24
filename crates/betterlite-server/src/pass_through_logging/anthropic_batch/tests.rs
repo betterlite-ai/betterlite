@@ -335,7 +335,8 @@ fn batch_non_200_leaves_call_log_alone() {
     let (port, mut received) = registry_port(Ok(()));
     let creation = Creation::new(500, batch_body(BATCH_ID), COLLECTION_ROUTE)
         .with_request_body(r#"{"model":"claude-x"}"#);
-    let (logged, call_log) = run(&handler(None, port), &creation);
+    let logging = handler(None, port);
+    let (logged, call_log) = run(&logging, &creation);
     assert_eq!(logged.kwargs.batch_job_state, BatchJobState::Failed);
     assert_eq!(call_log.model, "");
     assert_eq!(
@@ -462,7 +463,9 @@ async fn batch_collection_route_registers_managed_object() {
     const META: &str = r#"{"user_api_key_user_id":"user-1","user_api_key":"sk-key","user_api_key_team_id":"team-1","tags":["a","b"]}"#;
     let (port, mut received) = registry_port(Ok(()));
     let (capture, mut lines, _guard) = capture_logs("Stored Anthropic batch managed object");
-    let creation = Creation::success(MODEL).with_metadata(META);
+    let creation = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE)
+        .with_request_body(r#"{"model":"claude-x"}"#)
+        .with_metadata(META);
     let (logged, _) = run(&handler(None, port), &creation);
     let registration = timeout(Duration::from_secs(5), received.recv())
         .await
@@ -498,7 +501,8 @@ async fn batch_collection_route_registers_managed_object() {
 #[tokio::test]
 async fn batch_registration_defaults_user_id_and_reads_null() {
     let (port, mut received) = registry_port(Ok(()));
-    drop(run(&handler(None, port), &Creation::success(MODEL)));
+    let collection = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE);
+    drop(run(&handler(None, port), &collection));
     let defaulted = timeout(Duration::from_secs(5), received.recv())
         .await
         .expect("a registration arrives")
@@ -511,7 +515,8 @@ async fn batch_registration_defaults_user_id_and_reads_null() {
     assert_eq!(defaulted.registrant.team_id, None);
     assert_eq!(defaulted.request_tags, None);
     let (second_port, mut second_received) = registry_port(Ok(()));
-    let creation = Creation::success(MODEL).with_metadata(r#"{"user_api_key_user_id":null}"#);
+    let creation = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE)
+        .with_metadata(r#"{"user_api_key_user_id":null}"#);
     drop(run(&handler(None, second_port), &creation));
     let nulled = timeout(Duration::from_secs(5), second_received.recv())
         .await
