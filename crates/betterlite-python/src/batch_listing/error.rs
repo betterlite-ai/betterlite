@@ -8,7 +8,9 @@ use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use serde::Serialize;
 
 use super::convert::{ConvertError, SettingsError};
-use super::payload::{ErrorPayload, cancel_error_payload, dispatch_payload, list_error_payload};
+use super::payload::{
+    ErrorPayload, cancel_error_payload, dispatch_fields, error_payload, list_error_payload,
+};
 use super::transport::DurationError;
 
 create_exception!(betterlite_native, NativeBatchListError, PyException);
@@ -113,7 +115,9 @@ pub(crate) fn payload_for(
     match error {
         ListingError::List(inner) => Some(list_error_payload(inner, provider)),
         ListingError::Cancel(inner) => Some(cancel_error_payload(inner, provider, model)),
-        ListingError::Dispatch(failure) => Some(dispatch_payload(failure, provider, model)),
+        ListingError::Dispatch(failure) => {
+            Some(error_payload(dispatch_fields(failure), provider, model))
+        }
         ListingError::Encode { .. } => None,
     }
 }

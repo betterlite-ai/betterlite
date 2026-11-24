@@ -31,7 +31,7 @@ pub(crate) const fn class_for_status(status: u16) -> &'static str {
 }
 
 // the class, status, message and body one failure contributes to the envelope
-struct PayloadFields {
+pub(crate) struct PayloadFields {
     error_type: &'static str,
     status_code: Option<u16>,
     message: String,
@@ -48,7 +48,11 @@ fn status_fields(status: u16, message: String) -> PayloadFields {
     }
 }
 
-fn error_payload(fields: PayloadFields, provider: &str, model: Option<&str>) -> ErrorPayload {
+pub(crate) fn error_payload(
+    fields: PayloadFields,
+    provider: &str,
+    model: Option<&str>,
+) -> ErrorPayload {
     ErrorPayload {
         error_type: fields.error_type,
         message: fields.message,
@@ -98,7 +102,7 @@ pub(crate) fn cancel_error_payload(
     error_payload(fields, target_provider, target_model)
 }
 
-fn dispatch_fields(failure: &DispatchFailure) -> PayloadFields {
+pub(crate) fn dispatch_fields(failure: &DispatchFailure) -> PayloadFields {
     match failure {
         DispatchFailure::Status {
             status,
@@ -120,13 +124,4 @@ fn dispatch_fields(failure: &DispatchFailure) -> PayloadFields {
             status_fields(400, failure.to_string())
         }
     }
-}
-
-// a failure the transport answered with, under the provider and model the payload asked for
-pub(crate) fn dispatch_payload(
-    failure: &DispatchFailure,
-    provider: &str,
-    model: Option<&str>,
-) -> ErrorPayload {
-    error_payload(dispatch_fields(failure), provider, model)
 }
