@@ -61,7 +61,7 @@ fn error_report(error: &OauthError) -> Value {
     headers.sort();
     json!({
         "status": error.status,
-        "error": error.error.as_str(),
+        "error": <&'static str>::from(error.error),
         "error_description": error.description,
         "cache_headers": headers,
         "client_id_issued_at": null,

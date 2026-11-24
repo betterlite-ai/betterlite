@@ -76,26 +76,23 @@ impl ClaimBackend for Backend {
 pub(super) async fn reports(scenarios: &[ClaimScenario]) -> Vec<Value> {
     let mut reports = Vec::with_capacity(scenarios.len());
     for scenario in scenarios {
-        let results = match scenario.authority {
-            Authority::Local => local_results(scenario).await,
-            Authority::Shared => shared_results(scenario).await,
-        };
+        let results = scenario_results(scenario).await;
         reports.push(json!({"name": scenario.name, "results": results}));
     }
     reports
 }
 
-async fn local_results(scenario: &ClaimScenario) -> Vec<String> {
-    let store = MemoryClaimStore::new(Box::new(FrozenClock));
-    for key in &scenario.seed_keys {
-        let _seeded = store.increment(key, scenario.ttl);
-    }
-    let authority = ClaimAuthority::Local(store);
-    guard_results::<Backend>(authority, scenario).await
-}
-
-async fn shared_results(scenario: &ClaimScenario) -> Vec<String> {
-    let authority = ClaimAuthority::Shared(Backend::new(scenario.backend, scenario.ttl));
+async fn scenario_results(scenario: &ClaimScenario) -> Vec<String> {
+    let authority = match scenario.authority {
+        Authority::Local => {
+            let store = MemoryClaimStore::new(Box::new(FrozenClock));
+            for key in &scenario.seed_keys {
+                let _seeded = store.increment(key, scenario.ttl);
+            }
+            ClaimAuthority::Local(store)
+        }
+        Authority::Shared => ClaimAuthority::Shared(Backend::new(scenario.backend, scenario.ttl)),
+    };
     guard_results(authority, scenario).await
 }
 

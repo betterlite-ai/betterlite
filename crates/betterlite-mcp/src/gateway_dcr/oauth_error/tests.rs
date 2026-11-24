@@ -34,7 +34,7 @@ fn error() -> OauthError {
 #[case::temporarily_unavailable(OauthErrorCode::TemporarilyUnavailable, "temporarily_unavailable")]
 #[case::server_error(OauthErrorCode::ServerError, "server_error")]
 fn every_code_renders_its_snake_case_text(#[case] code: OauthErrorCode, #[case] text: &str) {
-    assert_eq!(code.as_str(), text);
+    assert_eq!(<&'static str>::from(code), text);
     assert_eq!(serialized(code), format!("\"{text}\""));
     assert_eq!(code.to_string(), text);
 }

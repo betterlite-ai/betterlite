@@ -23,12 +23,6 @@ pub enum OauthErrorCode {
     ServerError,
 }
 
-impl OauthErrorCode {
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        <&'static str>::from(self)
-    }
-}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OauthError {
     pub status: u16,

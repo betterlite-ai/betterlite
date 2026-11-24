@@ -25,7 +25,9 @@ from typing_extensions import override
 SALT: Final = "b4674-oracle-salt"
 NATIVE_ENV: Final = "MCP_TRUSTED_NATIVE_REDIRECT_URIS"
 CREATED: Final = 201
-PREFIXES: Final[dict[str, str]] = {"client": GATEWAY_DCR_CLIENT_ID_PREFIX, "code": GATEWAY_AUTH_CODE_PREFIX, "none": ""}
+PREFIXES: Final[dict[str, str]] = {
+    "client": GATEWAY_DCR_CLIENT_ID_PREFIX, "code": GATEWAY_AUTH_CODE_PREFIX, "none": "",
+}
 FIXED: Final[dict[str, float]] = {"fixed_zero": 0.0, "fixed_one": 1.0, "fixed_two": 2.0}
 CACHE_HEADERS: Final = ("cache-control", "pragma")
 ENC = cast(Callable[[str], str], encrypt_value_helper)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L126
@@ -108,7 +110,8 @@ class SharedCache:
             raise RuntimeError("the guard passed a different claim ttl")
         count = self.fixed
         if count is None:
-            count = self.counts.get(key, 0.0) + value
+            current = self.counts.get(key)
+            count = value if current is None else current + value
         self.counts[key] = count
         return count
 
@@ -154,9 +157,12 @@ def success_response_report(status: int, headers: JsonValue, body: bytes) -> dic
 
 
 def response_report(response: Response) -> dict[str, JsonValue]:
-    headers = JSON.validate_python(
-        sorted([name.lower(), value] for name, value in response.headers.items() if name.lower() in CACHE_HEADERS)
+    pairs: list[list[str]] = sorted(
+        [name.lower(), value]
+        for name, value in response.headers.items()
+        if name.lower() in CACHE_HEADERS
     )
+    headers = JSON.validate_python(pairs)
     body = bytes(response.body)
     if response.status_code != CREATED:
         return error_response_report(response.status_code, headers, body)
@@ -172,9 +178,10 @@ def register_report(call: RegisterCall) -> dict[str, JsonValue]:
     FrozenDatetime.instant = datetime.fromtimestamp(call["now"], UTC)
     gateway_dcr_flow.datetime = FrozenDatetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L426
     scope: dict[str, str] = {"type": "http", "path": "/register"}
+    request = Request(scope)
     try:
         response = asyncio.run(
-            register_aggregate_client(Request(scope), call["body"], call["token_exchange_available"])
+            register_aggregate_client(request, call["body"], call["token_exchange_available"])
         )
     finally:
         gateway_dcr_flow.datetime = datetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L46
@@ -205,7 +212,8 @@ def open_report(scenario: OpenScenario) -> dict[str, JsonValue]:
     report: dict[str, JsonValue] = {"name": scenario["name"], "opened": opened is not None}
     if opened is None:
         return report | {"redirect_uris": None, "iat": None}
-    return report | {"redirect_uris": JSON.validate_python(list(opened.redirect_uris)), "iat": opened.iat}
+    redirect_uris: list[str] = list(opened.redirect_uris)
+    return report | {"redirect_uris": JSON.validate_python(redirect_uris), "iat": opened.iat}
 
 
 async def claim_results(scenario: ClaimScenario) -> list[str]:
@@ -257,10 +265,9 @@ def claim_section(scenarios: list[ClaimScenario] | None) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     os.environ["LITELLM_SALT_KEY"] = SALT
-    return JSON.validate_python(
-        {
-            "register": register_section(input_value["register"]),
-            "open": open_section(input_value["open"]),
-            "claims": claim_section(input_value["claims"]),
-        }
-    )
+    answer: dict[str, JsonValue] = {
+        "register": register_section(input_value["register"]),
+        "open": open_section(input_value["open"]),
+        "claims": claim_section(input_value["claims"]),
+    }
+    return answer
