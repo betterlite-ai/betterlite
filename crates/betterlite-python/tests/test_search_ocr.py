@@ -7,7 +7,7 @@ from collections.abc import Coroutine
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol, TypedDict, runtime_checkable
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -219,17 +219,6 @@ def _parameters(signature: inspect.Signature) -> list[tuple[str, str]]:
     ]
 
 
-# the mock records the request line, so the query both packages sent is readable from it
-def query_parameters(path: str) -> dict[str, list[str]]:
-    grouped: dict[str, list[str]] = {}
-    for name, value in parse_qsl(urlsplit(path).query):
-        if name in grouped:
-            grouped[name].append(value)
-        else:
-            grouped[name] = [value]
-    return grouped
-
-
 def error_fields(error: BaseException | ErrorFields) -> ErrorFields:
     match error:
         case ErrorFields():
@@ -330,8 +319,8 @@ def test_search_calls_parameters() -> None:
     )
     # unpacking fails the test when either package sends anything but its one request
     first, second = recorded
-    ours_params = query_parameters(first[1])
-    assert ours_params == query_parameters(second[1])
+    ours_params = parse_qs(urlsplit(first[1]).query)
+    assert ours_params == parse_qs(urlsplit(second[1]).query)
     assert ours_params["count"] == ["5"]
     assert ours_params["safesearch"] == ["strict"]
     assert "site:example.test" in ours_params["q"][0]
