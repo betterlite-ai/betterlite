@@ -10,6 +10,9 @@ description: >-
   Python side, `python/betterlite/passthrough/main.py`, `utils.py`, `timeout_utils.py` and `__init__.py`. `llm_passthrough_route(*, method, endpoint, model, custom_llm_provider, api_base, api_key, request_query_params, request_headers, content, data, files, json, params, cookies, client, **kwargs)` returns a `PassthroughResponse` with `status_code`, `headers` and `content`/`text`/`json()`, or a stream of bytes when the upstream answers with a stream. The async function gives an async iterator of bytes and the sync function a plain iterator. `content`, `data`, `files`, `json`, `params` and `cookies` are converted to plain JSON or bytes before the native call. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
 scope:
   paths:
+  - crates/betterlite-core/src/api/passthrough_call/params.rs
+  - crates/betterlite-models/src/passthrough_policies/sdk_timeout.rs
+  - crates/betterlite-models/src/passthrough_policies/sdk_timeout/tests.rs
   - crates/betterlite-python/src/passthrough_calls.rs
   - crates/betterlite-python/src/passthrough_calls/**
   - crates/betterlite-python/python/betterlite/_native_passthrough_calls.pyi
@@ -75,4 +78,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 4

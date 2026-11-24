@@ -1,0 +1,4 @@
+litellm_settings:
+  api_base: os.environ/GLOBAL_BASE
+  api_key: os.environ/GLOBAL_KEY
+  openai_key: os.environ/OPENAI_KEY

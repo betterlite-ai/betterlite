@@ -1,0 +1,121 @@
+kind: helper
+name: outbound-credentials-adapter-id-jag
+call:
+  b4667:
+    function: to_server_spec
+    server:
+      server_id: srv-1
+      name: ID JAG
+      transport: http
+      url: https://mcp.example.com/mcp
+      auth_type: oauth2_id_jag
+      token_exchange_endpoint: https://idp.example.com/org/token
+      id_jag_resource_token_endpoint: https://upstream.example.com/token
+      client_id: client-1
+      client_secret: secret-1
+      audience: api://upstream
+      id_jag_resource: https://resource.example.com
+      scopes: [read, write]
+      upstream_token_header: X-Jag-Token
+calls:
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_private_key: private-key-pem
+        client_private_key_id: key-1
+        client_assertion_signing_alg: RS512
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_private_key: ""
+        client_secret: secret-1
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        client_id: client-1
+        client_secret: secret-1
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_secret: secret-1
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+        subject_token_type: urn:ietf:params:oauth:token-type:access_token
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+        subject_token_type: urn:ietf:params:oauth:token-type:saml2
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+        subject_token_type: ""
+env: {}
+compare: {ignore: []}
