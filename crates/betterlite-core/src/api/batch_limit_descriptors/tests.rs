@@ -645,11 +645,7 @@ fn provider_skip_reads_the_file_bound_model() {
 
 #[test]
 fn fetch_params_for_model_embedded_id() {
-    let mut credentials = JsonObject::new();
-    credentials.insert(
-        "custom_llm_provider".to_owned(),
-        Json::Text("openai".to_owned()),
-    );
+    let mut credentials = support::credentials("openai");
     credentials.insert("api_key".to_owned(), Json::Text("secret".to_owned()));
     credentials.insert(
         "aws_region_name".to_owned(),
@@ -670,16 +666,18 @@ fn fetch_params_for_model_embedded_id() {
     let answer = single(run_calls(&service, "{}", &calls));
     let (resolved_file_id, params) = fetch_params_answer(answer);
     assert_eq!(resolved_file_id, "file-original");
-    let expected = [
-        ("custom_llm_provider", "openai"),
-        ("model", "bound-model"),
-        ("api_key", "secret"),
-        ("aws_region_name", "us-east-1"),
-    ];
-    for (field, value) in expected {
-        assert_eq!(params.get(field), Some(&Json::Text(value.to_owned())));
-    }
-    assert_eq!(params.get("unrelated"), None);
+    let mut expected = JsonObject::new();
+    expected.insert(
+        "custom_llm_provider".to_owned(),
+        Json::Text("openai".to_owned()),
+    );
+    expected.insert("model".to_owned(), Json::Text("bound-model".to_owned()));
+    expected.insert("api_key".to_owned(), Json::Text("secret".to_owned()));
+    expected.insert(
+        "aws_region_name".to_owned(),
+        Json::Text("us-east-1".to_owned()),
+    );
+    assert_eq!(params, expected);
 }
 
 #[test]
