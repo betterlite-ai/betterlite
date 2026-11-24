@@ -568,7 +568,10 @@ async fn error_ocr_probe_keeps_the_aocr_error_as_source() {
     };
     let error = probe.ocr(call).await.expect_err("the provider is rejected");
     let source = StdError::source(&error).expect("the aocr error is the source");
-    assert!(source.downcast_ref::<OcrError>().is_some());
+    let ocr = source
+        .downcast_ref::<OcrError>()
+        .expect("the source is the aocr error");
+    assert_eq!(error.to_string(), ocr.to_string());
     let HealthProbeError::Backend { class, .. } = &error else {
         panic!("the ocr failure is a backend error");
     };
@@ -586,6 +589,7 @@ async fn error_ocr_probe_keeps_the_aocr_error_as_source() {
 #[case::unprocessable(422)]
 #[case::rate_limit(429)]
 #[case::internal_server(500)]
+#[case::not_implemented(501)]
 #[case::bad_gateway(502)]
 #[case::service_unavailable(503)]
 #[case::gateway_timeout(504)]
@@ -616,6 +620,7 @@ async fn error_ocr_probe_maps_each_provider_status_to_its_class(#[case] status: 
         422 => assert!(matches!(class, ErrorClass::BadRequest(_))),
         429 => assert!(matches!(class, ErrorClass::RateLimit(_))),
         500 => assert!(matches!(class, ErrorClass::InternalServer(_))),
+        501 => assert!(matches!(class, ErrorClass::Api(_))),
         502 => assert!(matches!(class, ErrorClass::BadGateway(_))),
         503 => assert!(matches!(class, ErrorClass::ServiceUnavailable(_))),
         _ => panic!("unexpected status {status}"),
