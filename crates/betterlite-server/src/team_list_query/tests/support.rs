@@ -45,9 +45,10 @@ pub(super) fn user(text: &str) -> LiteLLMUserTable {
 }
 
 // the rejected error a guard answers, so a test can read the status and the message
-pub(super) fn rejected<Answer: std::fmt::Debug>(
-    result: Result<Answer, TeamListQueryError>,
-) -> TeamListRejection {
+pub(super) fn rejected<Answer>(result: Result<Answer, TeamListQueryError>) -> TeamListRejection
+where
+    Answer: Debug,
+{
     match result {
         Err(TeamListQueryError::Rejected(rejection)) => rejection,
         other => panic!("expected a rejection, got {other:?}"),
