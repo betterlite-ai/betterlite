@@ -320,7 +320,7 @@ fn registry_snapshot_and_missing() {
         RegistryOp::Register {
             agent_id: "agent-two".to_owned(),
             agent_name: "two".to_owned(),
-            groups: Some(Vec::new()),
+            groups: Some(groups(&["g3"])),
         },
     ];
     assert_eq!(registry.ops(), expected);
