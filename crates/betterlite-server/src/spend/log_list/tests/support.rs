@@ -1,0 +1,408 @@
+use std::sync::{Arc, Mutex, PoisonError};
+
+use async_trait::async_trait;
+use axum::body::{Body, to_bytes};
+use axum::extract::Request;
+use axum::http::{Method, StatusCode};
+use betterlite_auth::auth_identity::records::{
+    CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
+};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
+use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::postgres_store::errors::DbError;
+use tower::ServiceExt as _;
+
+use crate::auth::auth_identity::AuthContext;
+use crate::spend::log_list::authz::{Authorization, ScopeClause};
+use crate::spend::log_list::conditions::{BuiltConditions, ConditionInputs, build_conditions};
+use crate::spend::log_list::scope::LogListScope;
+use crate::spend::log_list::store::{ListStoreError, LogListStore};
+use crate::spend::log_list::{LogListState, routes};
+use crate::spend::log_query::decode_spend_log_query;
+use crate::spend::log_query::prepare::SpendLogRoute;
+use crate::spend::log_results::projection::SpendLogListRow;
+use crate::spend::log_results::session::{
+    SessionAggregate, SessionAggregateError, SessionAggregateReader, SessionLookup,
+};
+use crate::spend::sessions::params::SessionQuery;
+use crate::spend::sessions::ports::{SessionGroupRow, SessionsStore, SessionsStoreError};
+use crate::spend::sessions::rows::SessionSpendRow;
+use crate::spend::visibility::error::VisibilityError;
+use crate::spend::visibility::owners::OwnerPair;
+use crate::team_access::caller::TeamCaller;
+
+pub type Events = Arc<Mutex<Vec<String>>>;
+
+pub fn record(events: &Events, event: String) {
+    events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(event);
+}
+
+pub fn seen(events: &Events) -> Vec<String> {
+    events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+// the kind of each recorded event, in the order it ran
+pub fn kinds(events: &Events) -> Vec<String> {
+    seen(events)
+        .iter()
+        .map(|event| {
+            event
+                .split_once(' ')
+                .map_or_else(|| event.clone(), |(kind, _)| kind.to_owned())
+        })
+        .collect()
+}
+
+pub fn query_event(events: &Events, kind: &str) -> String {
+    seen(events)
+        .into_iter()
+        .find(|event| event.starts_with(kind))
+        .unwrap_or_default()
+}
+
+pub fn json(text: &str) -> JsonData {
+    serde_json::from_str(text).unwrap()
+}
+
+pub fn row(request_id: &str, user: Option<&str>, team_id: Option<&str>) -> SpendLogListRow {
+    let user_field = user.map_or_else(String::new, |id| format!(r#","user":"{id}""#));
+    let team_field = team_id.map_or_else(String::new, |id| format!(r#","team_id":"{id}""#));
+    let text = format!(
+        r#"{{"request_id":"{request_id}","call_type":"acompletion","spend":0.5,"model":"gpt-4","startTime":"2025-01-02T00:00:00Z","endTime":"2025-01-02T00:00:01Z"{user_field}{team_field}}}"#
+    );
+    serde_json::from_str(&text).unwrap()
+}
+
+pub fn metadata_row(request_id: &str, metadata: &str) -> SpendLogListRow {
+    let mut built = row(request_id, Some("alice"), None);
+    built.metadata = Some(JsonData::String(metadata.to_owned()));
+    built.request_tags = Some(JsonData::String(String::from(r#"["tag"]"#)));
+    built
+}
+
+// the store answers the two list reads and records each SQL and its bound values
+pub struct FakeStore {
+    pub events: Events,
+    pub count: i64,
+    pub rows: Vec<SpendLogListRow>,
+    pub fails: bool,
+}
+
+#[async_trait]
+impl LogListStore for FakeStore {
+    async fn count_matches(&self, query: &SessionQuery) -> Result<i64, ListStoreError> {
+        record(
+            &self.events,
+            format!("count {:?} {}", query.params, query.sql),
+        );
+        if self.fails {
+            return Err(ListStoreError::Database(DbError::NoDbConnected));
+        }
+        Ok(self.count)
+    }
+
+    async fn list_rows(
+        &self,
+        query: &SessionQuery,
+    ) -> Result<Vec<SpendLogListRow>, ListStoreError> {
+        record(
+            &self.events,
+            format!("rows {:?} {}", query.params, query.sql),
+        );
+        if self.fails {
+            return Err(ListStoreError::Database(DbError::NoDbConnected));
+        }
+        Ok(self.rows.clone())
+    }
+}
+
+// B1731's reads behind the delegated grouped page
+pub struct FakeSessions {
+    pub events: Events,
+    pub groups: Vec<SessionGroupRow>,
+    pub representatives: Vec<SpendLogListRow>,
+}
+
+#[async_trait]
+impl SessionsStore for FakeSessions {
+    async fn session_groups(
+        &self,
+        query: &SessionQuery,
+    ) -> Result<Vec<SessionGroupRow>, SessionsStoreError> {
+        record(
+            &self.events,
+            format!("groups {:?} {}", query.params, query.sql),
+        );
+        Ok(self.groups.clone())
+    }
+
+    async fn session_group_count(&self, query: &SessionQuery) -> Result<i64, SessionsStoreError> {
+        record(&self.events, format!("group_count {}", query.sql));
+        Ok(i64::try_from(self.groups.len()).unwrap_or(0))
+    }
+
+    async fn session_representatives(
+        &self,
+        query: &SessionQuery,
+    ) -> Result<Vec<SpendLogListRow>, SessionsStoreError> {
+        record(&self.events, format!("representatives {}", query.sql));
+        Ok(self.representatives.clone())
+    }
+
+    async fn session_rows(
+        &self,
+        _query: &SessionQuery,
+    ) -> Result<Vec<SessionSpendRow>, SessionsStoreError> {
+        Ok(Vec::new())
+    }
+
+    async fn session_row_count(&self, _query: &SessionQuery) -> Result<i64, SessionsStoreError> {
+        Ok(0)
+    }
+}
+
+// the two answers B1704 gives a test: an allowed owner pair and an allowed id precheck
+#[derive(Clone, Copy)]
+pub struct Answers {
+    pub owners: bool,
+    pub precheck: bool,
+}
+
+impl Default for Answers {
+    fn default() -> Self {
+        Self {
+            owners: true,
+            precheck: true,
+        }
+    }
+}
+
+// how the fixture wires the list store: answering, absent, or failing every read
+#[derive(Clone, Copy, Default)]
+pub enum StoreMode {
+    #[default]
+    Ready,
+    Missing,
+    Failing,
+}
+
+// B1704's checks with the answers a test pins down
+pub struct FakeScope {
+    pub events: Events,
+    pub permitted: Vec<String>,
+    pub teams: Vec<String>,
+    pub answers: Answers,
+}
+
+#[async_trait]
+impl LogListScope for FakeScope {
+    async fn assert_can_view_lookup(
+        &self,
+        _caller: &TeamCaller,
+        request_id: &str,
+    ) -> Result<(), VisibilityError> {
+        record(&self.events, format!("precheck {request_id}"));
+        if self.answers.precheck {
+            return Ok(());
+        }
+        Err(VisibilityError::Forbidden {
+            request_id: request_id.to_owned(),
+        })
+    }
+
+    async fn can_view_team(
+        &self,
+        _caller: &TeamCaller,
+        team_id: &str,
+    ) -> Result<bool, VisibilityError> {
+        record(&self.events, format!("team {team_id}"));
+        Ok(self.teams.iter().any(|allowed| allowed == team_id))
+    }
+
+    async fn visible_team_ids(&self, _caller: &TeamCaller) -> Vec<String> {
+        record(&self.events, String::from("permitted"));
+        self.permitted.clone()
+    }
+
+    async fn can_view_row_owner(
+        &self,
+        _caller: &TeamCaller,
+        owner: &OwnerPair,
+    ) -> Result<bool, VisibilityError> {
+        record(
+            &self.events,
+            format!("owner {:?} {:?}", owner.user, owner.team_id),
+        );
+        Ok(self.answers.owners)
+    }
+}
+
+pub struct FakeEnricher {
+    pub events: Events,
+}
+
+#[async_trait]
+impl SessionAggregateReader for FakeEnricher {
+    async fn session_aggregates(
+        &self,
+        lookup: &SessionLookup,
+    ) -> Result<Vec<SessionAggregate>, SessionAggregateError> {
+        record(&self.events, format!("aggregate {:?}", lookup.session_ids));
+        Ok(Vec::new())
+    }
+}
+
+#[derive(Default)]
+pub struct Fixture {
+    pub store: StoreMode,
+    pub count: i64,
+    pub rows: Vec<SpendLogListRow>,
+    pub groups: Vec<SessionGroupRow>,
+    pub representatives: Vec<SpendLogListRow>,
+    pub permitted: Vec<String>,
+    pub teams: Vec<String>,
+    pub answers: Answers,
+}
+
+impl Fixture {
+    pub fn with_rows(rows: Vec<SpendLogListRow>) -> Self {
+        Self {
+            count: i64::try_from(rows.len()).unwrap(),
+            rows,
+            ..Self::default()
+        }
+    }
+
+    fn store_port(&self, events: &Events) -> Option<Arc<dyn LogListStore>> {
+        if matches!(self.store, StoreMode::Missing) {
+            return None;
+        }
+        let port: Arc<dyn LogListStore> = Arc::new(FakeStore {
+            events: Arc::clone(events),
+            count: self.count,
+            rows: self.rows.clone(),
+            fails: matches!(self.store, StoreMode::Failing),
+        });
+        Some(port)
+    }
+
+    fn scope_port(&self, events: &Events) -> Option<Arc<dyn LogListScope>> {
+        let port: Arc<dyn LogListScope> = Arc::new(FakeScope {
+            events: Arc::clone(events),
+            permitted: self.permitted.clone(),
+            teams: self.teams.clone(),
+            answers: self.answers,
+        });
+        Some(port)
+    }
+
+    pub async fn call(&self, uri: &str, caller: Option<&Principal>) -> (Reply, Events) {
+        let events: Events = Events::default();
+        let state = LogListState {
+            store: self.store_port(&events),
+            sessions: Some(Arc::new(FakeSessions {
+                events: Arc::clone(&events),
+                groups: self.groups.clone(),
+                representatives: self.representatives.clone(),
+            })),
+            scope: self.scope_port(&events),
+            enricher: Some(Arc::new(FakeEnricher {
+                events: Arc::clone(&events),
+            })),
+        };
+        let mut request = Request::builder()
+            .method(Method::GET)
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap();
+        if let Some(principal) = caller {
+            request.extensions_mut().insert(AuthContext {
+                principal: principal.clone(),
+            });
+        }
+        let response = routes(state).oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec();
+        (Reply { status, body }, events)
+    }
+}
+
+pub struct Reply {
+    pub status: StatusCode,
+    pub body: Vec<u8>,
+}
+
+impl Reply {
+    pub fn json(&self) -> JsonData {
+        serde_json::from_slice(&self.body).unwrap()
+    }
+
+    pub fn text(&self) -> String {
+        String::from_utf8(self.body.clone()).unwrap()
+    }
+}
+
+// the conditions a raw query produces without an authorization narrowing, for the SQL tests
+pub fn built_for(raw_query: &str, route: SpendLogRoute) -> BuiltConditions {
+    let query = decode_spend_log_query(Some(raw_query));
+    let prepared = query.prepare(route).unwrap();
+    let choices = query.choices().unwrap();
+    build_conditions(&ConditionInputs {
+        query: &query,
+        prepared: &prepared,
+        choices: &choices,
+        authorization: &Authorization {
+            scope: ScopeClause::None,
+        },
+    })
+}
+
+pub fn has(built: &BuiltConditions, fragment: &str) -> bool {
+    built
+        .conditions
+        .iter()
+        .any(|condition| condition.contains(fragment))
+}
+
+fn principal(roles: Vec<Role>, user_id: Option<&str>) -> Principal {
+    Principal {
+        principal_type: PrincipalType::Human,
+        subject: String::from("virtual-key"),
+        issuer: None,
+        audience: Vec::new(),
+        user: user_id.map(|id| UserIdentity {
+            id: id.to_owned(),
+            external_id: None,
+            user_name: None,
+            email: None,
+            display_name: None,
+        }),
+        organization: None,
+        teams: Vec::new(),
+        project: None,
+        end_user: None,
+        roles,
+        scopes: Vec::new(),
+        auth_method: AuthMethod::ApiKey,
+        credential_ref: CredentialRef::default(),
+        network: NetworkContext::default(),
+        source_key: SourceKey(None),
+    }
+}
+
+pub fn admin() -> Principal {
+    principal(vec![Role::PlatformAdmin], Some("root"))
+}
+
+pub fn internal(user_id: &str) -> Principal {
+    principal(Vec::new(), Some(user_id))
+}
