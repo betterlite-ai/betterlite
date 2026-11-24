@@ -341,6 +341,10 @@ async fn toolset_empty_ceiling_vs_subset() {
     check(Some(&mut empty_request), Some(&empty), &case, None)
         .await
         .unwrap();
+    let open = team_grants("team-1", &[], None);
+    check(Some(&mut json(requested)), Some(&open), &case, None)
+        .await
+        .unwrap();
     let ceiling = team_grants("team-1", &[], Some(ceiling_grants(Some(&["t-a"]), None)));
     let mut subset = json(r#"{"mcp_toolsets": ["t-a"]}"#);
     check(Some(&mut subset), Some(&ceiling), &case, None)
@@ -454,6 +458,24 @@ async fn unified_and_direct_team_grants() {
     check(Some(&mut granted), Some(&team), &case, None)
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn team_permission_absent_returns_unified_ids() {
+    let shared = registry(
+        vec![registry_server(
+            r#"{"server_id": "cfg-u", "name": "cfg-u", "transport": "http"}"#,
+        )],
+        Vec::new(),
+    );
+    let rows = FakeRows::silent();
+    let unified = FakeGroups::answering(&[("group-a", &["cfg-u", "ghost-name"])]);
+    let team = team_grants("team-1", &["group-a"], None);
+    let grant_reads = reads(&shared, None, &rows, Some(&unified));
+    let allowed = team_allowed_server_ids(Some(&team), &grant_reads)
+        .await
+        .unwrap();
+    assert_eq!(allowed, string_set(&["cfg-u", "ghost-name"]));
 }
 
 #[tokio::test]

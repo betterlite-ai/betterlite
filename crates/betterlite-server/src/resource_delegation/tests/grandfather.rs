@@ -80,6 +80,23 @@ async fn grandfather_resolved_only() {
 }
 
 #[tokio::test]
+async fn grandfather_stored_tool_text_keys() {
+    let database = TestDatabase::start().await;
+    let shared = registry(
+        vec![registry_server(
+            r#"{"server_id": "cfg-tool", "name": "cfg-tool", "transport": "http"}"#,
+        )],
+        Vec::new(),
+    );
+    let grants = tool_permission_grants(json(r#""{\"cfg-tool\": []}""#));
+    let resolved = grandfathered_server_ids(Some(&grants), Some(database.prisma()), &shared)
+        .await
+        .unwrap();
+    assert_eq!(resolved, string_set(&["cfg-tool"]));
+    database.close().await;
+}
+
+#[tokio::test]
 async fn grandfather_sentinels_removed() {
     let database = TestDatabase::start().await;
     let shared = registry(
