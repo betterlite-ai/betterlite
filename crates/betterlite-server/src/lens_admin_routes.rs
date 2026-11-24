@@ -25,13 +25,12 @@ where
     let activity_available = get(LensState::<Db, Store>::activity_available);
     let agent_list = get(LensState::<Db, Store>::list_agents);
     let sample_preview = post(preview::preview_sample);
-    let worker_register = post(LensState::<Db, Store>::register_worker);
+    let worker_register = post(workers::register_worker);
     let worker_billing = put(workers::set_worker_billing);
-    let worker_revoke = delete(LensState::<Db, Store>::revoke_worker);
+    let worker_revoke = delete(workers::revoke_worker);
     let lens_detail = put(LensState::<Db, Store>::update_lens).get(lenses::read_lens);
-    let run_collection =
-        get(LensState::<Db, Store>::list_runs).post(LensState::<Db, Store>::run_lens);
-    let run_detail = get(LensState::<Db, Store>::read_run);
+    let run_collection = get(runs::list_runs).post(runs::run_lens);
+    let run_detail = get(runs::read_run);
     let lens_cancel = post(runs::cancel_lens);
     let finding_patch = patch(findings::update_finding);
     let execution_content = get(evidence::evidence_content);
