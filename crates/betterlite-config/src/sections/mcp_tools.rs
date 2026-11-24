@@ -49,8 +49,8 @@ impl Section for Raw {
         let Some(config) = self.mcp_tools else {
             return Ok(McpToolsSection::default());
         };
-        let entries = match *config {
-            Json::List(entries) => entries,
+        let values = match *config {
+            Json::List(values) => values,
             Json::Null => return Ok(McpToolsSection::default()),
             other @ (Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
                 return Err(ConfigError::InvalidScalar {
@@ -59,7 +59,7 @@ impl Section for Raw {
                 });
             }
         };
-        let entries = entries
+        let entries = values
             .into_iter()
             .enumerate()
             .map(|(index, entry)| entry_settings(entry, index))

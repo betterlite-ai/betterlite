@@ -108,10 +108,10 @@ impl ToolRegistry {
         config_file_path: Option<&Path>,
         loader: &dyn ToolHandlerLoader,
     ) -> Result<(), ToolRegistryError> {
-        let Some(entries) = entries else {
+        let Some(configured) = entries else {
             return Err(ToolRegistryError::Missing);
         };
-        for entry in entries {
+        for entry in configured {
             let McpToolEntry::Tool(settings) = entry else {
                 return Err(ToolRegistryError::NotAMapping);
             };
