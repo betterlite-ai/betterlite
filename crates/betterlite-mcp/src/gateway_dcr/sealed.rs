@@ -42,7 +42,6 @@ pub trait Sealable: DeserializeOwned {
     fn acceptable(&self) -> bool;
 }
 
-#[must_use]
 pub fn open_sealed<T>(value: &str, prefix: &str, cipher: &DbCipher, debug_key: &str) -> Option<T>
 where
     T: Sealable,
@@ -65,7 +64,6 @@ where
     opened.acceptable().then_some(opened)
 }
 
-#[must_use]
 pub fn open_gateway_dcr_client(client_id: &str, cipher: &DbCipher) -> Option<GatewayDcrClient> {
     open_sealed(
         client_id,

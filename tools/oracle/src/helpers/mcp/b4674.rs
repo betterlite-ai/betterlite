@@ -4,6 +4,7 @@ mod register;
 mod tests;
 
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use betterlite_db::mcp_stored_contracts::JsonValue as DbJsonValue;
 use betterlite_db::stored_cipher::DbCipher;
@@ -127,7 +128,7 @@ impl Helper for Op {
 
 fn failure<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "HelperFailure".to_owned(),

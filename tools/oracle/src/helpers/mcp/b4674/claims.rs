@@ -84,20 +84,22 @@ pub(super) async fn reports(scenarios: &[ClaimScenario]) -> Vec<Value> {
 
 async fn scenario_results(scenario: &ClaimScenario) -> Vec<String> {
     let authority = match scenario.authority {
-        Authority::Local => {
-            let store = MemoryClaimStore::new(Box::new(FrozenClock));
-            for key in &scenario.seed_keys {
-                let _seeded = store.increment(key, scenario.ttl);
-            }
-            ClaimAuthority::Local(store)
-        }
+        Authority::Local => ClaimAuthority::Local(seeded_store(scenario)),
         Authority::Shared => ClaimAuthority::Shared(Backend::new(scenario.backend, scenario.ttl)),
     };
     guard_results(authority, scenario).await
 }
 
-async fn guard_results<S: ClaimBackend>(
-    authority: ClaimAuthority<S>,
+fn seeded_store(scenario: &ClaimScenario) -> MemoryClaimStore {
+    let store = MemoryClaimStore::new(Box::new(FrozenClock));
+    for key in &scenario.seed_keys {
+        let _seeded = store.increment(key, scenario.ttl);
+    }
+    store
+}
+
+async fn guard_results(
+    authority: ClaimAuthority<Backend>,
     scenario: &ClaimScenario,
 ) -> Vec<String> {
     let guard = SingleUseGuard::from(authority);

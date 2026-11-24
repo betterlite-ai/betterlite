@@ -123,7 +123,7 @@ fn plaintext(sealed: &str, prefix: &str, cipher: &DbCipher) -> String {
 }
 
 fn tampered(sealed: &str) -> String {
-    let (head, tail) = sealed.split_at(sealed.len() / 2);
+    let (head, tail) = sealed.split_at(sealed.len().div_euclid(2));
     let (changed, rest) = tail.split_at(1);
     let replacement = if changed == "A" { "B" } else { "A" };
     format!("{head}{replacement}{rest}")
@@ -165,9 +165,9 @@ fn open_rejects_a_tampered_ciphertext() {
 #[test]
 fn open_rejects_a_truncated_value() {
     let sealed = seal(GATEWAY_DCR_CLIENT_ID_PREFIX, &client(), &cipher()).unwrap();
-    let half = &sealed[..sealed.len() / 2];
+    let half = sealed.get(..sealed.len().div_euclid(2)).unwrap();
     assert!(open_gateway_dcr_client(half, &cipher()).is_none());
-    let missing_last = &sealed[..sealed.len() - 1];
+    let missing_last = sealed.get(..sealed.len().saturating_sub(1)).unwrap();
     assert!(open_gateway_dcr_client(missing_last, &cipher()).is_none());
 }
 

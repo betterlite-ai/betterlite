@@ -66,7 +66,7 @@ const fn prefix_of(prefix: SealPrefix) -> &'static str {
 }
 fn tampered(text: &str) -> String {
     let mut characters: Vec<char> = text.chars().collect();
-    if let Some(character) = characters.get_mut(characters.len() / 2) {
+    if let Some(character) = characters.get_mut(characters.len().div_euclid(2)) {
         *character = if *character == 'A' { 'B' } else { 'A' };
     }
     characters.into_iter().collect()

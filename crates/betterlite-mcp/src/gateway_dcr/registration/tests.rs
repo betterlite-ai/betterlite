@@ -80,7 +80,7 @@ fn message(redirect_uris: Vec<JsonValue>) -> String {
 
 fn uri_of_characters(total: usize, symbol: char) -> String {
     let prefix = "https://a.example/";
-    let fill = total - prefix.chars().count();
+    let fill = total.saturating_sub(prefix.chars().count());
     format!("{prefix}{}", symbol.to_string().repeat(fill))
 }
 

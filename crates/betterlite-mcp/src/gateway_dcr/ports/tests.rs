@@ -9,7 +9,11 @@ use crate::gateway_dcr::ports::{
 };
 use crate::gateway_dcr::subject_token::{ExchangeSubjectToken as _, RefusalCode};
 
-fn assert_send_sync<T: Send + Sync>() {}
+fn assert_send_sync<T>()
+where
+    T: Send + Sync,
+{
+}
 
 struct Teams;
 

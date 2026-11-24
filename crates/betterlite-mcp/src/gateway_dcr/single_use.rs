@@ -98,13 +98,12 @@ impl MemoryClaimStore {
         record.count
     }
 
-    #[must_use]
     pub fn read(&self, key: &str) -> Option<u64> {
         let now = self.clock.now_seconds();
         let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         match entries.get(key) {
             Some(record) if record.expires_at > now => Some(record.count),
-            Some(_expired) | None => None,
+            None | Some(_) => None,
         }
     }
 }
@@ -168,7 +167,6 @@ fn claimed(counted: Result<u64, ClaimBackendError>) -> ClaimOutcome {
     }
 }
 
-#[must_use]
 pub fn claim_refusal(outcome: ClaimOutcome, replayed_error: OauthError) -> Option<OauthError> {
     match outcome {
         ClaimOutcome::First => None,
