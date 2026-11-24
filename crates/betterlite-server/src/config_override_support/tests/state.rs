@@ -224,6 +224,23 @@ fn restore_drops_cyberark_without_a_vault_address_to_return_to() {
 }
 
 #[test]
+fn restore_skips_vault_when_its_address_is_empty() {
+    let mut environment = environment(&[("HCP_VAULT_ADDR", "")]);
+    let mut state = state();
+    state.vault_last_config = Some(json!({}));
+    let mut control = Control::new(Some(ManagerKind::CyberArk), None);
+    restore_cyberark_runtime(
+        &mut environment,
+        &mut state,
+        &mut control,
+        &object(json!({"cyberark_account": "acct"})),
+    );
+    assert_eq!(control.calls, vec![Call::Drop]);
+    assert_eq!(control.active, None);
+    assert_eq!(state.vault_last_config, None);
+}
+
+#[test]
 fn clear_cyberark_restores_boot_values_and_clears_its_marker() {
     let mut environment = environment(&[]);
     let mut state = state();

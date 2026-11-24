@@ -92,7 +92,13 @@ pub fn restore_cyberark_runtime(
     }
     control.drop_active_manager();
     state.vault_last_config = None;
-    if environment.snapshot().values.contains_key("HCP_VAULT_ADDR") {
+    let vault_addr = environment
+        .snapshot()
+        .values
+        .get("HCP_VAULT_ADDR")
+        .cloned()
+        .unwrap_or_default();
+    if !vault_addr.is_empty() {
         if let Err(error) = control.initialize(ManagerKind::HashicorpVault) {
             tracing::error!(
                 "Failed to reinitialize Hashicorp Vault after CyberArk rollback: {error}"
