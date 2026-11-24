@@ -1,0 +1,58 @@
+kind: helper
+name: key-limit-policy-upperbound-key-param
+call:
+  key_limit_policy:
+    check: upperbound
+    request: {kind: generate, body: {max_budget: 5.5, tpm_limit: 10}}
+    params: null
+    fill_defaults: true
+calls:
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {max_budget: 3.5}}
+      params: {}
+      fill_defaults: true
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {max_budget: 1.5, tpm_limit: 10}}
+      params:
+        max_budget: 10.5
+        budget_duration: "1d"
+        duration: "1h"
+        max_parallel_requests: 4
+        tpm_limit: 100
+        rpm_limit: 50
+      fill_defaults: true
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: update, body: {key: sk-abc}}
+      params:
+        max_budget: 10.5
+        budget_duration: "1d"
+        duration: "1h"
+        max_parallel_requests: 4
+        tpm_limit: 100
+        rpm_limit: 50
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {max_parallel_requests: 5}}
+      params: {max_parallel_requests: 4}
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {duration: "-1"}}
+      params: {duration: "1h"}
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {duration: "30m"}}
+      params: {duration: "1h"}
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {budget_duration: "2d"}}
+      params: {budget_duration: "1d"}
+      fill_defaults: false
+env: {}
+compare: {ignore: []}

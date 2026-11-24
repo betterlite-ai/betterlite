@@ -28,12 +28,7 @@ impl<'request> KeyLimitRequest<'request> {
 
     #[must_use]
     pub fn max_budget(&self) -> Option<Decimal> {
-        self.base()
-            .base
-            .max_budget
-            .as_ref()
-            .and_then(Option::as_ref)
-            .map(|amount| amount.0)
+        inner(&self.base().base.max_budget).map(|amount| amount.0)
     }
 
     #[must_use]
@@ -42,7 +37,7 @@ impl<'request> KeyLimitRequest<'request> {
             Self::Generate(request) => &request.generate.soft_budget,
             Self::Update(request) => &request.update.soft_budget,
         };
-        field.as_ref().and_then(Option::as_ref).copied()
+        inner(field).copied()
     }
 
     #[must_use]
@@ -67,62 +62,32 @@ impl<'request> KeyLimitRequest<'request> {
 
     #[must_use]
     pub fn duration(&self) -> Option<&str> {
-        self.base()
-            .base
-            .duration
-            .as_ref()
-            .and_then(Option::as_ref)
-            .map(String::as_str)
+        inner(&self.base().base.duration).map(String::as_str)
     }
 
     #[must_use]
     pub fn budget_duration(&self) -> Option<&str> {
-        self.base()
-            .base
-            .budget_duration
-            .as_ref()
-            .and_then(Option::as_ref)
-            .map(String::as_str)
+        inner(&self.base().base.budget_duration).map(String::as_str)
     }
 
     #[must_use]
     pub fn models(&self) -> Option<&[JsonData]> {
-        self.base()
-            .base
-            .models
-            .as_ref()
-            .and_then(Option::as_ref)
-            .map(Vec::as_slice)
+        inner(&self.base().base.models).map(Vec::as_slice)
     }
 
     #[must_use]
     pub fn metadata(&self) -> Option<&BTreeMap<String, JsonData>> {
-        self.base()
-            .base
-            .metadata
-            .as_ref()
-            .and_then(Option::as_ref)
-            .map(|payload| &payload.0)
+        inner(&self.base().base.metadata).map(|payload| &payload.0)
     }
 
     #[must_use]
     pub fn model_rpm_limit(&self) -> Option<&BTreeMap<String, JsonData>> {
-        self.base()
-            .base
-            .model_rpm_limit
-            .as_ref()
-            .and_then(Option::as_ref)
-            .map(|payload| &payload.0)
+        inner(&self.base().base.model_rpm_limit).map(|payload| &payload.0)
     }
 
     #[must_use]
     pub fn model_tpm_limit(&self) -> Option<&BTreeMap<String, JsonData>> {
-        self.base()
-            .base
-            .model_tpm_limit
-            .as_ref()
-            .and_then(Option::as_ref)
-            .map(|payload| &payload.0)
+        inner(&self.base().base.model_tpm_limit).map(|payload| &payload.0)
     }
 
     #[must_use]
@@ -139,13 +104,10 @@ impl<'request> KeyLimitRequest<'request> {
     #[must_use]
     pub fn update_key_hash(&self) -> Option<String> {
         match self {
-            Self::Update(request) => request
-                .base
-                .key_fields
-                .key
-                .as_ref()?
-                .as_ref()
-                .map(|key| hash_token_if_needed(key.expose_secret())),
+            Self::Update(request) => {
+                let key = inner(&request.base.key_fields.key)?;
+                Some(hash_token_if_needed(key.expose_secret()))
+            }
             Self::Generate(_) => None,
         }
     }
@@ -162,6 +124,11 @@ impl<'request> KeyLimitRequest<'request> {
             money("soft_budget", self.soft_budget().map(|amount| amount.0)),
         ]
     }
+}
+
+// the request fields are Option<Option<T>> because null and absent mean different writes
+fn inner<T>(field: &Option<Option<T>>) -> Option<&T> {
+    field.as_ref().and_then(Option::as_ref)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -3,17 +3,13 @@ use rstest::rstest;
 use crate::key_fields::shared::hash_token_if_needed;
 use crate::key_limit_policy::checks::check_team_key_limits;
 use crate::key_limit_policy::error::{Entity, Rejection};
-use crate::key_limit_policy::reads::KeyWhere;
 use crate::key_limit_policy::request::KeyLimitRequest;
 use crate::team_parent_limits::error::RateLimit;
 
 use super::support::{FakeReads, generate, keys, rejected, team, text_detail, update};
 
-fn team_query() -> Vec<KeyWhere> {
-    vec![KeyWhere {
-        team_id: Some("team-1".to_owned()),
-        organization_id: None,
-    }]
+fn team_query() -> Vec<(&'static str, String)> {
+    vec![("team_id", "team-1".to_owned())]
 }
 
 #[tokio::test]

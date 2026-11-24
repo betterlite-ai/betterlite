@@ -1,0 +1,29 @@
+kind: helper
+name: key-limit-policy-project-sentinels-and-budget
+call:
+  key_limit_policy:
+    check: project
+    request: {kind: generate, body: {models: [gpt-4]}}
+    project_id: proj-1
+    project: null
+calls:
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {models: [all-team-models, claude-4]}}
+      project_id: proj-1
+      project: {project_id: proj-1, models: [gpt-4]}
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {models: [all-proxy-models, claude-4]}}
+      project_id: proj-1
+      project: {project_id: proj-1, models: [gpt-4]}
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {models: [claude-4], max_budget: 11.5}}
+      project_id: proj-1
+      project: {project_id: proj-1, models: [gpt-4], litellm_budget_table: {budget_id: budget-1, max_budget: 10.5}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/detail/error
+      why: Python renders the model name and the allowed list with repr, betterlite with JSON text (docs/compatibility.md)

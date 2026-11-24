@@ -67,20 +67,35 @@ pub fn check_rate_limits(
 ) -> Result<(), Rejection> {
     let allocated_tpm = sum_limit(keys, |key| key.tpm_limit);
     let allocated_rpm = sum_limit(keys, |key| key.rpm_limit);
-    check_total(
-        RateLimit::Tpm,
-        entity,
-        request.tpm_limit(),
-        allocated_tpm,
-        tpm_ceiling,
-    )?;
-    check_total(
-        RateLimit::Rpm,
-        entity,
-        request.rpm_limit(),
-        allocated_rpm,
-        rpm_ceiling,
-    )
+    let limits = [
+        (
+            RateLimit::Tpm,
+            request.tpm_limit(),
+            allocated_tpm,
+            tpm_ceiling,
+        ),
+        (
+            RateLimit::Rpm,
+            request.rpm_limit(),
+            allocated_rpm,
+            rpm_ceiling,
+        ),
+    ];
+    for (limit, requested, allocated, ceiling) in limits {
+        let (Some(asked), Some(cap)) = (requested, ceiling) else {
+            continue;
+        };
+        if i128::from(asked).saturating_add(allocated) > i128::from(cap) {
+            return Err(Rejection::Allocation {
+                limit,
+                entity,
+                allocated,
+                requested: asked,
+                ceiling: cap,
+            });
+        }
+    }
+    Ok(())
 }
 
 // the aggregate ceiling binds first; a per-model zero or null ceiling is skipped as LiteLLM's truthiness test does
@@ -126,28 +141,6 @@ fn allocation(
     }
 }
 
-fn check_total(
-    limit: RateLimit,
-    entity: Entity,
-    requested: Option<i64>,
-    allocated: i128,
-    ceiling: Option<i64>,
-) -> Result<(), Rejection> {
-    let (Some(asked), Some(cap)) = (requested, ceiling) else {
-        return Ok(());
-    };
-    if i128::from(asked).saturating_add(allocated) > i128::from(cap) {
-        return Err(Rejection::Allocation {
-            limit,
-            entity,
-            allocated,
-            requested: asked,
-            ceiling: cap,
-        });
-    }
-    Ok(())
-}
-
 fn sum_limit(
     keys: &[LiteLLMVerificationToken],
     select: fn(&LiteLLMVerificationToken) -> Option<i64>,
@@ -165,7 +158,8 @@ fn requested_limits(
     field: &'static str,
 ) -> Result<Option<BTreeMap<String, i64>>, KeyLimitError> {
     if let Some(limits) = field_value.filter(|limits| !limits.is_empty()) {
-        return decode_value(limits, field).map(Some);
+        let stored = JsonData::Object(limits.clone());
+        return decode(Some(&stored), field);
     }
     let stored = request.metadata().and_then(|metadata| metadata.get(field));
     decode(stored, field)
@@ -187,15 +181,6 @@ fn allocated_by_model(
         }
     }
     Ok(allocated)
-}
-
-fn decode_value(
-    value: &BTreeMap<String, JsonData>,
-    field: &'static str,
-) -> Result<BTreeMap<String, i64>, KeyLimitError> {
-    serde_json::to_value(value)
-        .and_then(serde_json::from_value)
-        .map_err(|source| KeyLimitError::ModelLimits { field, source })
 }
 
 fn decode<T>(stored: Option<&JsonData>, field: &'static str) -> Result<Option<T>, KeyLimitError>

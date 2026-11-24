@@ -131,12 +131,11 @@ fn apply_money(
     match *value {
         Some(asked) if asked.0 > cap => Err(over(field, asked.0, cap)),
         Some(_) => Ok(()),
-        None => {
-            if fill_defaults {
-                *value = Some(Amount(cap));
-            }
+        None if fill_defaults => {
+            *value = Some(Amount(cap));
             Ok(())
         }
+        None => Ok(()),
     }
 }
 
@@ -152,12 +151,11 @@ fn apply_count(
     match *value {
         Some(asked) if asked > cap => Err(over(field, asked, cap)),
         Some(_) => Ok(()),
-        None => {
-            if fill_defaults {
-                *value = Some(cap);
-            }
+        None if fill_defaults => {
+            *value = Some(cap);
             Ok(())
         }
+        None => Ok(()),
     }
 }
 
@@ -191,7 +189,7 @@ fn apply_duration(
         )
     };
     if exceeds(asked_seconds, cap) {
-        return Err(KeyLimitError::from(over(field, &asked, cap_text)));
+        return Err(KeyLimitError::from(over(field, asked.as_str(), cap_text)));
     }
     Ok(())
 }
@@ -203,11 +201,7 @@ fn exceeds(asked: Option<i64>, cap: i64) -> bool {
     }
 }
 
-fn over<U, C>(field: &'static str, user_value: U, max_value: C) -> Rejection
-where
-    U: Display,
-    C: Display,
-{
+fn over<T: Display>(field: &'static str, user_value: T, max_value: T) -> Rejection {
     Rejection::Upperbound {
         field,
         user_value: user_value.to_string(),

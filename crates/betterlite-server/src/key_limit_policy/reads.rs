@@ -17,7 +17,7 @@ use betterlite_db::key_repository::table::columns::TokenColumn;
 use betterlite_db::key_repository::table::{TokenFilter, TokenTableError, TokenValue};
 use betterlite_db::key_repository::{TokenRepositoryError, VerificationTokenRepository};
 use betterlite_db::postgres_store::session::PostgresStore;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Error as JsonError;
 
 use crate::key_list_filters::postgres::PostgresTokenClient;
@@ -45,28 +45,6 @@ impl<'owner> KeyOwner<'owner> {
             Self::Organization(organization_id) => organization_id,
         }
     }
-
-    #[must_use]
-    pub fn where_clause(self) -> KeyWhere {
-        match self {
-            Self::Team(team_id) => KeyWhere {
-                team_id: Some(team_id.to_owned()),
-                organization_id: None,
-            },
-            Self::Organization(organization_id) => KeyWhere {
-                team_id: None,
-                organization_id: Some(organization_id.to_owned()),
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct KeyWhere {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub team_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub organization_id: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -41,8 +41,10 @@ pub enum Rejection {
     },
     #[error("Project not found, project_id={project_id}")]
     ProjectNotFound { project_id: String },
+    // the model name renders as JSON text, since Python's repr quotes it with apostrophes
     #[error(
-        "Model {model:?} not in project's allowed models. Project allowed models={allowed:?}. Project: {project_id}"
+        "Model {} not in project's allowed models. Project allowed models={allowed:?}. Project: {project_id}",
+        json_text(.model)
     )]
     ProjectModel {
         model: JsonData,
@@ -65,6 +67,20 @@ pub enum Rejection {
 
 // detail={"error": ...} for the guarded parameters and a bare string for the allocation and caller checks
 impl Rejection {
+    // the status each raised HTTPException carries in LiteLLM
+    #[must_use]
+    pub const fn status(&self) -> u16 {
+        match self {
+            Self::ProjectNotFound { .. } => 404,
+            Self::AssignWithoutUser | Self::NotMember { .. } => 403,
+            Self::NonFinite { .. }
+            | Self::Upperbound { .. }
+            | Self::Allocation { .. }
+            | Self::ProjectModel { .. }
+            | Self::ProjectBudget { .. } => 400,
+        }
+    }
+
     #[must_use]
     pub fn detail(&self) -> RejectionDetail {
         let message = self.to_string();
@@ -78,6 +94,14 @@ impl Rejection {
             | Self::ProjectModel { .. }
             | Self::ProjectBudget { .. } => RejectionDetail::Error { error: message },
         }
+    }
+}
+
+// a stored model name as the JSON string it is, not JsonData's variant debug
+fn json_text(value: &JsonData) -> String {
+    match value {
+        JsonData::String(text) => format!("{text:?}"),
+        other => format!("{other:?}"),
     }
 }
 

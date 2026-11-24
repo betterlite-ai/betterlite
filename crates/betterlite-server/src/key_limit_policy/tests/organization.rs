@@ -3,7 +3,6 @@ use betterlite_db::resource_rows::organization::OrganizationTable;
 use crate::key_fields::shared::hash_token_if_needed;
 use crate::key_limit_policy::checks::check_org_key_limits;
 use crate::key_limit_policy::error::KeyLimitError;
-use crate::key_limit_policy::reads::KeyWhere;
 use crate::key_limit_policy::request::KeyLimitRequest;
 
 use super::support::{FakeReads, generate, keys, organization, rejected, text_detail, update};
@@ -14,11 +13,8 @@ fn org(metadata: &str, budget: &str) -> OrganizationTable {
     ))
 }
 
-fn org_query() -> Vec<KeyWhere> {
-    vec![KeyWhere {
-        team_id: None,
-        organization_id: Some("org-1".to_owned()),
-    }]
+fn org_query() -> Vec<(&'static str, String)> {
+    vec![("organization_id", "org-1".to_owned())]
 }
 
 #[tokio::test]
@@ -40,11 +36,9 @@ async fn org_model_limits() {
 
 #[tokio::test]
 async fn org_type_metadata() {
-    let organization = org(
-        r#"{"rpm_limit_type": "guaranteed_throughput"}"#,
-        r#"{"budget_id": "budget-1", "rpm_limit": 10}"#,
-    );
-    let request = generate(r#"{"rpm_limit": 10}"#);
+    let organization = org("{}", r#"{"budget_id": "budget-1", "rpm_limit": 10}"#);
+    let request =
+        generate(r#"{"rpm_limit": 10, "metadata": {"rpm_limit_type": "guaranteed_throughput"}}"#);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 10}]"#);
     let result =
@@ -54,6 +48,21 @@ async fn org_type_metadata() {
         "Allocated RPM limit=10 + Key RPM limit=10 is greater than organization RPM limit=10"
     );
     assert_eq!(*reads.queries.lock().unwrap(), org_query());
+}
+
+#[tokio::test]
+async fn org_table_metadata_type_ignored() {
+    let organization = org(
+        r#"{"rpm_limit_type": "guaranteed_throughput"}"#,
+        r#"{"budget_id": "budget-1", "rpm_limit": 1}"#,
+    );
+    let request = generate(r#"{"rpm_limit": 100}"#);
+    let mut reads = FakeReads::default();
+    reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
+    check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads)
+        .await
+        .unwrap();
+    assert!(reads.queries.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

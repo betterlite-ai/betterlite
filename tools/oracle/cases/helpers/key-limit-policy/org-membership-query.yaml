@@ -1,0 +1,46 @@
+kind: helper
+name: key-limit-policy-org-membership-query
+call:
+  key_limit_policy:
+    check: assignment
+    caller_user_id: u1
+    organization_id: org-1
+    users:
+      - {user_id: u1, organization_memberships: [{organization_id: org-1}]}
+calls:
+  - key_limit_policy:
+      check: assignment
+      caller_user_id: null
+      organization_id: org-1
+      users: []
+  - key_limit_policy:
+      check: assignment
+      caller_user_id: u1
+      organization_id: org-1
+      users:
+        - {user_id: u1, organization_memberships: [{organization_id: org-2}]}
+  - key_limit_policy:
+      check: assignment
+      caller_user_id: u1
+      organization_id: org-1
+      users: []
+  - key_limit_policy:
+      check: assignment
+      caller_user_id: u1
+      organization_id: org-1
+      users:
+        - {user_id: u1, organization_memberships: [{organization_id: null}, {organization_id: org-1}]}
+  - key_limit_policy:
+      check: assignment
+      caller_user_id: u1
+      organization_id: org-1
+      users:
+        - {user_id: u1, organization_memberships: [{organization_id: null}]}
+  - key_limit_policy:
+      check: assignment
+      caller_user_id: proxy-admin
+      organization_id: org-1
+      users:
+        - {user_id: proxy-admin, organization_memberships: [{organization_id: org-2}]}
+env: {}
+compare: {ignore: []}

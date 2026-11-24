@@ -31,7 +31,7 @@ use crate::key_fields::request::GenerateKeyRequest;
 use crate::key_fields::update::UpdateKeyRequest;
 use crate::key_limit_policy::error::{KeyLimitError, Rejection};
 use crate::key_limit_policy::reads::{
-    KeyLimitReadError, KeyLimitReads, KeyOwner, KeyWhere, PostgresKeyLimitReads,
+    KeyLimitReadError, KeyLimitReads, KeyOwner, PostgresKeyLimitReads,
 };
 use crate::key_limit_policy::upperbound::TimeContext;
 use crate::team_parent_limits::error::RejectionDetail;
@@ -112,7 +112,7 @@ pub(super) struct FakeReads {
     pub(super) keys: Vec<LiteLLMVerificationToken>,
     pub(super) project: Option<CachedProject>,
     pub(super) memberships: BTreeSet<String>,
-    pub(super) queries: Mutex<Vec<KeyWhere>>,
+    pub(super) queries: Mutex<Vec<(&'static str, String)>>,
     pub(super) user_lookups: Mutex<Vec<String>>,
 }
 
@@ -122,7 +122,10 @@ impl KeyLimitReads for FakeReads {
         &self,
         owner: KeyOwner<'_>,
     ) -> Result<Vec<LiteLLMVerificationToken>, KeyLimitReadError> {
-        self.queries.lock().unwrap().push(owner.where_clause());
+        self.queries
+            .lock()
+            .unwrap()
+            .push((owner.column().name(), owner.id().to_owned()));
         Ok(self.keys.clone())
     }
 

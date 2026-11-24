@@ -1,0 +1,71 @@
+kind: helper
+name: key-limit-policy-upperbound-fill-and-validation
+call:
+  key_limit_policy:
+    check: upperbound
+    request: {kind: generate, body: {key_alias: fill-me}}
+    params:
+      max_budget: 10.5
+      budget_duration: "7d"
+      duration: "30d"
+      max_parallel_requests: 4
+      tpm_limit: 100
+      rpm_limit: 50
+    fill_defaults: true
+calls:
+  - key_limit_policy:
+      check: upperbound
+      request:
+        kind: generate
+        body:
+          max_budget: 10.5
+          max_parallel_requests: 4
+          tpm_limit: 100
+          rpm_limit: 50
+          duration: "720h"
+          budget_duration: "168h"
+      params:
+        max_budget: 10.5
+        budget_duration: "7d"
+        duration: "30d"
+        max_parallel_requests: 4
+        tpm_limit: 100
+        rpm_limit: 50
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {max_budget: 11.5}}
+      params: {max_budget: 10.5, duration: "30d"}
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: update, body: {key: sk-abc, duration: "31d"}}
+      params: {duration: "30d"}
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {rpm_limit: 51}}
+      params: {rpm_limit: 50}
+      fill_defaults: false
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: update, body: {key: sk-abc, max_budget: 1000.5, rpm_limit: 5}}
+      params: {max_budget: 10.5, rpm_limit: 50}
+      fill_defaults: true
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {}}
+      params: null
+      fill_defaults: true
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {soft_budget: 5.5}}
+      params: {max_budget: 1.5}
+      fill_defaults: true
+  - key_limit_policy:
+      check: upperbound
+      request: {kind: generate, body: {max_budget: 10.5, max_parallel_requests: 4}}
+      params: {max_budget: 10.5, max_parallel_requests: 4}
+      fill_defaults: true
+env: {}
+compare: {ignore: []}
