@@ -1,14 +1,14 @@
 use betterlite_context::non_default_params::Params;
 
 use super::support::{
-    SetupFixture, completed_chunk, created_chunk, delta_chunk, done_chunk, fallback_id,
+    Fixture, completed_chunk, created_chunk, delta_chunk, done_chunk, fallback_id,
     in_progress_chunk, interaction_state, object, params, unknown_chunk, value,
 };
 use crate::api::responses_handler::state::InteractionsStreamState;
 
 #[test]
 fn state_new_initializes_the_iterator_record() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let setup = fixture.setup();
     let state = InteractionsStreamState::new(&setup);
     assert_eq!(state.model, "gpt-4o");
@@ -28,7 +28,7 @@ fn state_new_initializes_the_iterator_record() {
 
 #[test]
 fn state_new_copies_the_setup_arguments() {
-    let mut fixture = SetupFixture::new("claude-3");
+    let mut fixture = Fixture::new("claude-3");
     fixture.input = Some(value(r#""hello""#));
     fixture.optional_params = params(r#"{"stream": true}"#);
     fixture.custom_llm_provider = Some(String::from("anthropic"));
@@ -64,13 +64,13 @@ fn events_for_chunk_first_delta_synthesizes_start_events() {
 #[test]
 fn events_for_chunk_later_delta_emits_only_the_delta() {
     let mut state = interaction_state("gpt-4o");
-    state.events_for_chunk(&delta_chunk("item_1", "hel"));
-    let events = state.events_for_chunk(&delta_chunk("item_1", "lo"));
+    state.events_for_chunk(&delta_chunk("item_1", "hell"));
+    let events = state.events_for_chunk(&delta_chunk("item_1", "o"));
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type.as_deref(), Some("step.delta"));
     assert_eq!(
         events[0].delta,
-        Some(object(r#"{"type": "text", "text": "lo"}"#))
+        Some(object(r#"{"type": "text", "text": "o"}"#))
     );
 }
 

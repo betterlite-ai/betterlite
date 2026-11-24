@@ -40,6 +40,13 @@ impl IdSource for FixedIds {
     }
 }
 
+pub(super) type Events = Vec<Result<UpstreamEvent, FakeError>>;
+pub(super) type Pulls = Arc<AtomicUsize>;
+pub(super) type SyncIterator = InteractionsSyncIterator<FakeError>;
+pub(super) type AsyncIterator = InteractionsAsyncIterator<FakeError>;
+type SyncAnswer = Result<SyncResponsesAnswer<FakeError>, FakeError>;
+type AsyncAnswer = Result<AsyncResponsesAnswer<FakeError>, FakeError>;
+
 pub(super) fn fallback_id() -> String {
     format!("interaction_{}", Uuid::from_u128(7).simple())
 }
@@ -102,42 +109,8 @@ fn envelope(event_type: &str, response_id: &str) -> UpstreamEvent {
     ))
 }
 
-// One fixture of the constructor arguments, borrowed into an IteratorSetup.
-pub(super) struct SetupFixture {
-    pub(super) model: String,
-    pub(super) input: Option<JsonValue>,
-    pub(super) optional_params: Params,
-    pub(super) custom_llm_provider: Option<String>,
-    pub(super) metadata: Params,
-    pub(super) ids: FixedIds,
-}
-
-impl SetupFixture {
-    pub(super) fn new(model: &str) -> Self {
-        Self {
-            model: model.to_owned(),
-            input: None,
-            optional_params: Params::new(),
-            custom_llm_provider: None,
-            metadata: Params::new(),
-            ids: FixedIds,
-        }
-    }
-
-    pub(super) fn setup(&self) -> IteratorSetup<'_> {
-        IteratorSetup {
-            model: &self.model,
-            request_input: self.input.as_ref(),
-            optional_params: &self.optional_params,
-            custom_llm_provider: self.custom_llm_provider.as_deref(),
-            litellm_metadata: &self.metadata,
-            ids: &self.ids,
-        }
-    }
-}
-
-// One fixture of the handler arguments, borrowed into a HandlerRequest or an AsyncHandlerRequest.
-pub(super) struct HandlerFixture {
+// One fixture of the handler and iterator arguments; each builder borrows the parts its entry point takes.
+pub(super) struct Fixture {
     pub(super) model: String,
     pub(super) input: Option<JsonValue>,
     pub(super) optional_params: Params,
@@ -149,7 +122,7 @@ pub(super) struct HandlerFixture {
     pub(super) ids: FixedIds,
 }
 
-impl HandlerFixture {
+impl Fixture {
     pub(super) fn new(model: &str) -> Self {
         Self {
             model: model.to_owned(),
@@ -164,111 +137,103 @@ impl HandlerFixture {
         }
     }
 
-    pub(super) fn request(&self) -> HandlerRequest<'_> {
-        HandlerRequest {
+    pub(super) fn setup(&self) -> IteratorSetup<'_> {
+        IteratorSetup {
             model: &self.model,
-            input: self.input.as_ref(),
+            request_input: self.input.as_ref(),
             optional_params: &self.optional_params,
             custom_llm_provider: self.custom_llm_provider.as_deref(),
-            stream: self.stream,
-            extras: &self.extras,
             litellm_metadata: &self.metadata,
-            zone: &self.zone,
             ids: &self.ids,
         }
+    }
+
+    pub(super) fn request(&self) -> HandlerRequest<'_> {
+        HandlerRequest::new(self.setup(), self.stream, &self.extras, &self.zone)
     }
 
     pub(super) fn async_request<'call>(
         &'call self,
         responses_request: &'call ResponsesRequest,
     ) -> AsyncHandlerRequest<'call> {
-        AsyncHandlerRequest {
-            responses_request,
-            model: &self.model,
-            input: self.input.as_ref(),
-            optional_params: &self.optional_params,
-            litellm_metadata: &self.metadata,
-            zone: &self.zone,
-            ids: &self.ids,
-        }
+        AsyncHandlerRequest::new(responses_request, self.setup(), &self.zone)
     }
 }
 
-pub(super) struct SyncFakeStream {
+struct FakeStream {
     events: VecDeque<Result<UpstreamEvent, FakeError>>,
-    pulls: Arc<AtomicUsize>,
+    pulls: Pulls,
 }
 
-impl SyncResponsesEventStream for SyncFakeStream {
-    type Error = FakeError;
+impl FakeStream {
+    fn new(events: Events, pulls: Pulls) -> Self {
+        Self {
+            events: VecDeque::from(events),
+            pulls,
+        }
+    }
 
-    fn next_event(&mut self) -> Option<Result<UpstreamEvent, FakeError>> {
+    fn pull(&mut self) -> Option<Result<UpstreamEvent, FakeError>> {
         self.pulls.fetch_add(1, Ordering::SeqCst);
         self.events.pop_front()
     }
 }
 
-pub(super) struct AsyncFakeStream {
-    inner: SyncFakeStream,
-}
-
-#[async_trait]
-impl AsyncResponsesEventStream for AsyncFakeStream {
+impl SyncResponsesEventStream for FakeStream {
     type Error = FakeError;
 
-    async fn next_event(&mut self) -> Option<Result<UpstreamEvent, FakeError>> {
-        self.inner.next_event()
+    fn next_event(&mut self) -> Option<Result<UpstreamEvent, FakeError>> {
+        self.pull()
     }
 }
 
-pub(super) fn sync_stream(
-    events: Vec<Result<UpstreamEvent, FakeError>>,
-) -> Box<dyn SyncResponsesEventStream<Error = FakeError>> {
-    Box::new(SyncFakeStream {
-        events: VecDeque::from(events),
-        pulls: Arc::new(AtomicUsize::new(0)),
-    })
+#[async_trait]
+impl AsyncResponsesEventStream for FakeStream {
+    type Error = FakeError;
+
+    async fn next_event(&mut self) -> Option<Result<UpstreamEvent, FakeError>> {
+        self.pull()
+    }
+}
+
+pub(super) fn sync_stream(events: Events) -> Box<dyn SyncResponsesEventStream<Error = FakeError>> {
+    Box::new(FakeStream::new(events, Arc::new(AtomicUsize::new(0))))
 }
 
 pub(super) fn async_stream(
-    events: Vec<Result<UpstreamEvent, FakeError>>,
+    events: Events,
 ) -> Box<dyn AsyncResponsesEventStream<Error = FakeError>> {
-    Box::new(AsyncFakeStream {
-        inner: SyncFakeStream {
-            events: VecDeque::from(events),
-            pulls: Arc::new(AtomicUsize::new(0)),
-        },
-    })
+    Box::new(FakeStream::new(events, Arc::new(AtomicUsize::new(0))))
 }
 
-pub(super) fn sync_iterator(
-    fixture: &SetupFixture,
-    events: Vec<Result<UpstreamEvent, FakeError>>,
-) -> (InteractionsSyncIterator<FakeError>, Arc<AtomicUsize>) {
-    let pulls = Arc::new(AtomicUsize::new(0));
-    let setup = fixture.setup();
-    let stream = SyncFakeStream {
-        events: VecDeque::from(events),
-        pulls: Arc::clone(&pulls),
-    };
-    let iterator = InteractionsSyncIterator::new(Box::new(stream), &setup);
-    (iterator, pulls)
+trait FakeIterator: Sized {
+    fn from_fake(stream: FakeStream, setup: &IteratorSetup<'_>) -> Self;
 }
 
-pub(super) fn async_iterator(
-    fixture: &SetupFixture,
-    events: Vec<Result<UpstreamEvent, FakeError>>,
-) -> (InteractionsAsyncIterator<FakeError>, Arc<AtomicUsize>) {
+impl FakeIterator for SyncIterator {
+    fn from_fake(stream: FakeStream, setup: &IteratorSetup<'_>) -> Self {
+        InteractionsSyncIterator::new(Box::new(stream), setup)
+    }
+}
+
+impl FakeIterator for AsyncIterator {
+    fn from_fake(stream: FakeStream, setup: &IteratorSetup<'_>) -> Self {
+        InteractionsAsyncIterator::new(Box::new(stream), setup)
+    }
+}
+
+fn fake_iterator<I: FakeIterator>(fixture: &Fixture, events: Events) -> (I, Pulls) {
     let pulls = Arc::new(AtomicUsize::new(0));
-    let setup = fixture.setup();
-    let stream = AsyncFakeStream {
-        inner: SyncFakeStream {
-            events: VecDeque::from(events),
-            pulls: Arc::clone(&pulls),
-        },
-    };
-    let iterator = InteractionsAsyncIterator::new(Box::new(stream), &setup);
-    (iterator, pulls)
+    let stream = FakeStream::new(events, Arc::clone(&pulls));
+    (I::from_fake(stream, &fixture.setup()), pulls)
+}
+
+pub(super) fn sync_iterator(fixture: &Fixture, events: Events) -> (SyncIterator, Pulls) {
+    fake_iterator::<SyncIterator>(fixture, events)
+}
+
+pub(super) fn async_iterator(fixture: &Fixture, events: Events) -> (AsyncIterator, Pulls) {
+    fake_iterator::<AsyncIterator>(fixture, events)
 }
 
 #[derive(Clone)]
@@ -307,13 +272,21 @@ impl RequestRecorder {
     }
 }
 
+fn take_answer<T>(answer: &Mutex<Option<T>>) -> T {
+    answer
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .expect("the handler calls the operation exactly once")
+}
+
 pub(super) struct RecordingOperation {
-    answer: Mutex<Option<Result<SyncResponsesAnswer<FakeError>, FakeError>>>,
+    answer: Mutex<Option<SyncAnswer>>,
     pub(super) recorder: RequestRecorder,
 }
 
 impl RecordingOperation {
-    pub(super) fn new(answer: Result<SyncResponsesAnswer<FakeError>, FakeError>) -> Self {
+    pub(super) fn new(answer: SyncAnswer) -> Self {
         Self {
             answer: Mutex::new(Some(answer)),
             recorder: RequestRecorder::default(),
@@ -325,27 +298,19 @@ impl ResponsesOperation for RecordingOperation {
     type Context = ();
     type Error = FakeError;
 
-    fn responses(
-        &self,
-        request: &ResponsesRequest,
-        _context: (),
-    ) -> Result<SyncResponsesAnswer<FakeError>, FakeError> {
+    fn responses(&self, request: &ResponsesRequest, _context: ()) -> SyncAnswer {
         self.recorder.record(request);
-        self.answer
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .expect("the handler calls the operation exactly once")
+        take_answer(&self.answer)
     }
 }
 
 pub(super) struct AsyncRecordingOperation {
-    answer: Mutex<Option<Result<AsyncResponsesAnswer<FakeError>, FakeError>>>,
+    answer: Mutex<Option<AsyncAnswer>>,
     pub(super) recorder: RequestRecorder,
 }
 
 impl AsyncRecordingOperation {
-    pub(super) fn new(answer: Result<AsyncResponsesAnswer<FakeError>, FakeError>) -> Self {
+    pub(super) fn new(answer: AsyncAnswer) -> Self {
         Self {
             answer: Mutex::new(Some(answer)),
             recorder: RequestRecorder::default(),
@@ -358,17 +323,9 @@ impl AsyncResponsesOperation for AsyncRecordingOperation {
     type Context = ();
     type Error = FakeError;
 
-    async fn aresponses(
-        &self,
-        request: &ResponsesRequest,
-        _context: (),
-    ) -> Result<AsyncResponsesAnswer<FakeError>, FakeError> {
+    async fn aresponses(&self, request: &ResponsesRequest, _context: ()) -> AsyncAnswer {
         self.recorder.record(request);
-        self.answer
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .expect("the handler calls the operation exactly once")
+        take_answer(&self.answer)
     }
 }
 
@@ -389,7 +346,6 @@ pub(super) const MESSAGE_RESPONSE: &str = r#"{
 }"#;
 
 pub(super) fn interaction_state(model: &str) -> InteractionsStreamState {
-    let fixture = SetupFixture::new(model);
-    let setup = fixture.setup();
-    InteractionsStreamState::new(&setup)
+    let fixture = Fixture::new(model);
+    InteractionsStreamState::new(&fixture.setup())
 }

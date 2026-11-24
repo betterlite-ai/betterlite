@@ -20,19 +20,15 @@ pub trait AsyncResponsesEventStream: Send {
 }
 
 // LiteLLM's responses() returns a ResponsesAPIResponse or a BaseResponsesAPIStreamingIterator, split so the wrap is the type check.
-pub enum SyncResponsesAnswer<Error>
-where
-    Error: StdError + Send + Sync + 'static,
-{
+pub enum ResponsesAnswer<Stream> {
     Complete(Box<ResponsesApiResponse>),
-    Stream(Box<dyn SyncResponsesEventStream<Error = Error>>),
+    Stream(Stream),
 }
 
-// LiteLLM's awaited aresponses() answers the same two shapes over the async iterator.
-pub enum AsyncResponsesAnswer<Error>
-where
-    Error: StdError + Send + Sync + 'static,
-{
-    Complete(Box<ResponsesApiResponse>),
-    Stream(Box<dyn AsyncResponsesEventStream<Error = Error>>),
-}
+// The sync creation call's answer: the stream is the one its iterator hands over.
+pub type SyncResponsesAnswer<Error> =
+    ResponsesAnswer<Box<dyn SyncResponsesEventStream<Error = Error>>>;
+
+// The awaited creation call's answer: the same two shapes over the async stream.
+pub type AsyncResponsesAnswer<Error> =
+    ResponsesAnswer<Box<dyn AsyncResponsesEventStream<Error = Error>>>;

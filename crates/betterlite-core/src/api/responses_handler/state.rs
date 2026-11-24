@@ -25,6 +25,21 @@ pub struct IteratorSetup<'call> {
     pub ids: &'call dyn IdSource,
 }
 
+impl IteratorSetup<'_> {
+    // A copy with the provider the built request carries, which is where LiteLLM's async branch reads it.
+    #[must_use]
+    pub fn with_provider<'call>(&'call self, provider: Option<&'call str>) -> IteratorSetup<'call> {
+        IteratorSetup {
+            model: self.model,
+            request_input: self.request_input,
+            optional_params: self.optional_params,
+            custom_llm_provider: provider,
+            litellm_metadata: self.litellm_metadata,
+            ids: self.ids,
+        }
+    }
+}
+
 // LiteLLMResponsesInteractionsStreamingIterator's record: what __init__ stored, the collected text, the send flags and the queue iteration drains.
 pub struct InteractionsStreamState {
     pub model: String,

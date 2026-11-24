@@ -1,103 +1,119 @@
 use std::error::Error as StdError;
 
-use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_context::non_default_params::Params;
 use betterlite_interactions::types::response::InteractionsApiResponse;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use jiff::tz::TimeZone;
 
 use super::async_iterator::InteractionsAsyncIterator;
 use super::error::InteractionsHandlerError;
 use super::operation::{AsyncResponsesOperation, ResponsesOperation};
 use super::state::IteratorSetup;
-use super::streams::{AsyncResponsesAnswer, SyncResponsesAnswer};
+use super::streams::{AsyncResponsesEventStream, ResponsesAnswer, SyncResponsesEventStream};
 use super::sync_iterator::InteractionsSyncIterator;
 use crate::api::responses_transform::request::{ResponsesRequest, to_responses_request};
 use crate::api::responses_transform::response::to_interactions_response;
 
-// interactions_api_handler's arguments: the caller's request, its extra kwargs, the explicit stream flag and what the transform needs from our side.
+// interactions_api_handler's arguments: the iterator parts, the explicit stream flag, the extra kwargs and the zone.
 pub struct HandlerRequest<'call> {
-    pub model: &'call str,
-    pub input: Option<&'call JsonValue>,
-    pub optional_params: &'call Params,
-    pub custom_llm_provider: Option<&'call str>,
+    pub setup: IteratorSetup<'call>,
     pub stream: Option<bool>,
     pub extras: &'call Params,
-    pub litellm_metadata: &'call Params,
     pub zone: &'call TimeZone,
-    pub ids: &'call dyn IdSource,
 }
 
-// async_interactions_api_handler's arguments: the Responses request is the one the caller already built, so the transform never runs twice.
+impl<'call> HandlerRequest<'call> {
+    #[must_use]
+    pub fn new(
+        setup: IteratorSetup<'call>,
+        stream: Option<bool>,
+        extras: &'call Params,
+        zone: &'call TimeZone,
+    ) -> Self {
+        Self {
+            setup,
+            stream,
+            extras,
+            zone,
+        }
+    }
+}
+
+// async_interactions_api_handler's arguments: the request the caller already built, the iterator parts and the zone; the provider comes from the request, as in LiteLLM's async branch.
 pub struct AsyncHandlerRequest<'call> {
     pub responses_request: &'call ResponsesRequest,
-    pub model: &'call str,
-    pub input: Option<&'call JsonValue>,
-    pub optional_params: &'call Params,
-    pub litellm_metadata: &'call Params,
+    pub setup: IteratorSetup<'call>,
     pub zone: &'call TimeZone,
-    pub ids: &'call dyn IdSource,
 }
 
-// What the sync handler hands back: a complete Interactions response, or the iterator over the synthesized events.
-pub enum InteractionsAnswer<Error>
+impl<'call> AsyncHandlerRequest<'call> {
+    #[must_use]
+    pub fn new(
+        responses_request: &'call ResponsesRequest,
+        setup: IteratorSetup<'call>,
+        zone: &'call TimeZone,
+    ) -> Self {
+        Self {
+            responses_request,
+            setup,
+            zone,
+        }
+    }
+}
+
+// What a handler hands back: a complete Interactions response, or the iterator over the synthesized events.
+pub enum InteractionsAnswer<Iterator> {
+    Complete(Box<InteractionsApiResponse>),
+    Stream(Box<Iterator>),
+}
+
+// The iterator kind an entry point wraps a stream in, so the dispatch body is written once.
+trait StreamWrap<Error>
 where
     Error: StdError + Send + Sync + 'static,
 {
-    Complete(Box<InteractionsApiResponse>),
-    Stream(Box<InteractionsSyncIterator<Error>>),
+    type Stream;
+
+    fn wrap(stream: Self::Stream, setup: &IteratorSetup<'_>) -> Self;
 }
 
-// What the async handler hands back: the same two shapes over the awaited iterator.
-pub enum AsyncInteractionsAnswer<Error>
+impl<Error> StreamWrap<Error> for InteractionsSyncIterator<Error>
 where
     Error: StdError + Send + Sync + 'static,
 {
-    Complete(Box<InteractionsApiResponse>),
-    Stream(Box<InteractionsAsyncIterator<Error>>),
+    type Stream = Box<dyn SyncResponsesEventStream<Error = Error>>;
+
+    fn wrap(stream: Self::Stream, setup: &IteratorSetup<'_>) -> Self {
+        InteractionsSyncIterator::new(stream, setup)
+    }
 }
 
-// interactions_api_handler: transform the Interactions request, call responses(), then wrap a stream or transform the complete response.
-pub fn interactions_api_handler<Operation>(
-    operation: &Operation,
+impl<Error> StreamWrap<Error> for InteractionsAsyncIterator<Error>
+where
+    Error: StdError + Send + Sync + 'static,
+{
+    type Stream = Box<dyn AsyncResponsesEventStream<Error = Error>>;
+
+    fn wrap(stream: Self::Stream, setup: &IteratorSetup<'_>) -> Self {
+        InteractionsAsyncIterator::new(stream, setup)
+    }
+}
+
+// interactions_api_handler: transform the Interactions request, call responses(), then wrap a stream or transform the complete response; litellm.responses itself is a runtime lookup in vars(litellm), so the sync creation call arrives as a trait object.
+pub fn interactions_api_handler<Context, Error>(
+    operation: &dyn ResponsesOperation<Context = Context, Error = Error>,
     request: &HandlerRequest<'_>,
-    context: Operation::Context,
-) -> Result<InteractionsAnswer<Operation::Error>, InteractionsHandlerError<Operation::Error>>
+    context: Context,
+) -> Result<InteractionsAnswer<InteractionsSyncIterator<Error>>, InteractionsHandlerError<Error>>
 where
-    Operation: ResponsesOperation,
+    Error: StdError + Send + Sync + 'static,
 {
-    let extras = responses_extras(request);
-    let responses_request = to_responses_request(
-        request.model,
-        request.input,
-        request.optional_params,
-        &extras,
-    )
-    .map_err(InteractionsHandlerError::Transform)?;
+    let responses_request = build_responses_request(request)?;
     let answer = operation
         .responses(&responses_request, context)
         .map_err(InteractionsHandlerError::Call)?;
-    match answer {
-        SyncResponsesAnswer::Complete(response) => {
-            let interaction =
-                to_interactions_response(&response, Some(request.model), request.zone)
-                    .map_err(InteractionsHandlerError::Transform)?;
-            Ok(InteractionsAnswer::Complete(Box::new(interaction)))
-        }
-        SyncResponsesAnswer::Stream(stream) => {
-            let setup = IteratorSetup {
-                model: request.model,
-                request_input: request.input,
-                optional_params: request.optional_params,
-                custom_llm_provider: request.custom_llm_provider,
-                litellm_metadata: request.litellm_metadata,
-                ids: request.ids,
-            };
-            Ok(InteractionsAnswer::Stream(Box::new(
-                InteractionsSyncIterator::new(stream, &setup),
-            )))
-        }
-    }
+    dispatched(answer, &request.setup, request.setup.model, request.zone)
 }
 
 // async_interactions_api_handler: await aresponses() with the request already built, then wrap a stream or transform the complete response.
@@ -105,7 +121,10 @@ pub async fn async_interactions_api_handler<Operation>(
     operation: &Operation,
     request: &AsyncHandlerRequest<'_>,
     context: Operation::Context,
-) -> Result<AsyncInteractionsAnswer<Operation::Error>, InteractionsHandlerError<Operation::Error>>
+) -> Result<
+    InteractionsAnswer<InteractionsAsyncIterator<Operation::Error>>,
+    InteractionsHandlerError<Operation::Error>,
+>
 where
     Operation: AsyncResponsesOperation,
 {
@@ -113,34 +132,69 @@ where
         .aresponses(request.responses_request, context)
         .await
         .map_err(InteractionsHandlerError::Call)?;
+    let setup = request
+        .setup
+        .with_provider(request_provider(request.responses_request));
+    dispatched(answer, &setup, setup.model, request.zone)
+}
+
+// The dispatch both entry points share once the operation returns: a complete interaction, or the stream in its iterator.
+fn dispatched<Error, Stream, Iterator>(
+    answer: ResponsesAnswer<Stream>,
+    setup: &IteratorSetup<'_>,
+    model: &str,
+    zone: &TimeZone,
+) -> Result<InteractionsAnswer<Iterator>, InteractionsHandlerError<Error>>
+where
+    Error: StdError + Send + Sync + 'static,
+    Iterator: StreamWrap<Error, Stream = Stream>,
+{
     match answer {
-        AsyncResponsesAnswer::Complete(response) => {
-            let interaction =
-                to_interactions_response(&response, Some(request.model), request.zone)
-                    .map_err(InteractionsHandlerError::Transform)?;
-            Ok(AsyncInteractionsAnswer::Complete(Box::new(interaction)))
-        }
-        AsyncResponsesAnswer::Stream(stream) => {
-            let setup = IteratorSetup {
-                model: request.model,
-                request_input: request.input,
-                optional_params: request.optional_params,
-                custom_llm_provider: request_provider(request.responses_request),
-                litellm_metadata: request.litellm_metadata,
-                ids: request.ids,
-            };
-            Ok(AsyncInteractionsAnswer::Stream(Box::new(
-                InteractionsAsyncIterator::new(stream, &setup),
-            )))
-        }
+        ResponsesAnswer::Complete(response) => Ok(InteractionsAnswer::Complete(
+            complete_interaction(&response, model, zone)?,
+        )),
+        ResponsesAnswer::Stream(stream) => Ok(InteractionsAnswer::Stream(Box::new(
+            Iterator::wrap(stream, setup),
+        ))),
     }
+}
+
+// The request the sync path calls with: LiteLLM's kwargs update first, then B3497's Interactions-to-Responses transform.
+fn build_responses_request<CallError>(
+    request: &HandlerRequest<'_>,
+) -> Result<ResponsesRequest, InteractionsHandlerError<CallError>>
+where
+    CallError: StdError + Send + Sync + 'static,
+{
+    let extras = responses_extras(request);
+    to_responses_request(
+        request.setup.model,
+        request.setup.request_input,
+        request.setup.optional_params,
+        &extras,
+    )
+    .map_err(InteractionsHandlerError::Transform)
+}
+
+// The transform the complete path shares: B3497's response transform, named with the caller's model and read in the caller's zone.
+fn complete_interaction<CallError>(
+    response: &ResponsesApiResponse,
+    model: &str,
+    zone: &TimeZone,
+) -> Result<Box<InteractionsApiResponse>, InteractionsHandlerError<CallError>>
+where
+    CallError: StdError + Send + Sync + 'static,
+{
+    let interaction = to_interactions_response(response, Some(model), zone)
+        .map_err(InteractionsHandlerError::Transform)?;
+    Ok(Box::new(interaction))
 }
 
 // The transform's kwargs: stream is always present, so the explicit argument wins over optional_params, and custom_llm_provider rides along when set.
 fn responses_extras(request: &HandlerRequest<'_>) -> Params {
     let mut extras = request.extras.clone();
     extras.insert(String::from("stream"), stream_value(request.stream));
-    if let Some(provider) = request.custom_llm_provider {
+    if let Some(provider) = request.setup.custom_llm_provider {
         extras.insert(
             String::from("custom_llm_provider"),
             JsonValue::Text(provider.to_owned()),

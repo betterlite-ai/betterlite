@@ -1,8 +1,8 @@
 use std::sync::atomic::Ordering;
 
 use super::support::{
-    FakeError, SetupFixture, async_iterator, completed_chunk, created_chunk, delta_chunk,
-    done_chunk, object, sync_iterator,
+    FakeError, Fixture, async_iterator, completed_chunk, created_chunk, delta_chunk, done_chunk,
+    object, sync_iterator,
 };
 
 fn expected_kinds() -> Vec<String> {
@@ -19,7 +19,7 @@ fn expected_kinds() -> Vec<String> {
 
 #[test]
 fn sync_iterator_drains_the_queue_before_pulling_again() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, pulls) = sync_iterator(
         &fixture,
         vec![
@@ -48,7 +48,7 @@ fn sync_iterator_drains_the_queue_before_pulling_again() {
 
 #[test]
 fn sync_iterator_skips_chunks_that_produce_no_events() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, pulls) = sync_iterator(
         &fixture,
         vec![Ok(done_chunk()), Ok(delta_chunk("item_1", "hi"))],
@@ -63,7 +63,7 @@ fn sync_iterator_skips_chunks_that_produce_no_events() {
 
 #[test]
 fn sync_iterator_flushes_the_terminal_events_at_eof() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, _pulls) = sync_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
     let mut kinds = Vec::new();
     while let Some(step) = iterator.next_event() {
@@ -76,7 +76,7 @@ fn sync_iterator_flushes_the_terminal_events_at_eof() {
 
 #[test]
 fn sync_iterator_stops_after_the_terminal_flush() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, pulls) = sync_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
     while iterator.next_event().is_some() {}
     let drained = pulls.load(Ordering::SeqCst);
@@ -87,7 +87,7 @@ fn sync_iterator_stops_after_the_terminal_flush() {
 
 #[test]
 fn sync_iterator_returns_the_upstream_error() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, _pulls) = sync_iterator(&fixture, vec![Err(FakeError::Stream)]);
     assert!(matches!(
         iterator.next_event(),
@@ -97,7 +97,7 @@ fn sync_iterator_returns_the_upstream_error() {
 
 #[test]
 fn sync_iterator_stops_at_the_upstream_completion() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, pulls) = sync_iterator(
         &fixture,
         vec![
@@ -121,12 +121,12 @@ fn sync_iterator_stops_at_the_upstream_completion() {
 
 #[test]
 fn sync_iterator_completes_with_the_collected_text() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, _pulls) = sync_iterator(
         &fixture,
         vec![
-            Ok(delta_chunk("item_1", "hel")),
-            Ok(delta_chunk("item_1", "lo")),
+            Ok(delta_chunk("item_1", "hell")),
+            Ok(delta_chunk("item_1", "o")),
         ],
     );
     let mut last = None;
@@ -144,7 +144,7 @@ fn sync_iterator_completes_with_the_collected_text() {
 
 #[tokio::test]
 async fn async_iterator_drains_the_queue_before_pulling_again() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, pulls) = async_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
     let created = iterator
         .next_event()
@@ -163,7 +163,7 @@ async fn async_iterator_drains_the_queue_before_pulling_again() {
 
 #[tokio::test]
 async fn async_iterator_skips_chunks_that_produce_no_events() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, pulls) = async_iterator(
         &fixture,
         vec![Ok(done_chunk()), Ok(delta_chunk("item_1", "hi"))],
@@ -179,7 +179,7 @@ async fn async_iterator_skips_chunks_that_produce_no_events() {
 
 #[tokio::test]
 async fn async_iterator_flushes_the_terminal_events_at_eof() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, _pulls) = async_iterator(&fixture, vec![Ok(delta_chunk("item_1", "hello"))]);
     let mut kinds = Vec::new();
     while let Some(step) = iterator.next_event().await {
@@ -191,7 +191,7 @@ async fn async_iterator_flushes_the_terminal_events_at_eof() {
 
 #[tokio::test]
 async fn async_iterator_returns_the_upstream_error() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, _pulls) = async_iterator(&fixture, vec![Err(FakeError::Stream)]);
     assert!(matches!(
         iterator.next_event().await,
@@ -201,7 +201,7 @@ async fn async_iterator_returns_the_upstream_error() {
 
 #[tokio::test]
 async fn async_iterator_stops_at_the_upstream_completion() {
-    let fixture = SetupFixture::new("gpt-4o");
+    let fixture = Fixture::new("gpt-4o");
     let (mut iterator, pulls) = async_iterator(
         &fixture,
         vec![
