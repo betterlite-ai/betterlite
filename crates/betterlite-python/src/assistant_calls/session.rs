@@ -34,7 +34,6 @@ use betterlite_openai::assistants::records::AssistantObject;
 use betterlite_openai::threads::records::ThreadRecord;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use secrecy::SecretString;
 
 use super::convert::{self, ModuleSettings, ThreadRequest};
 use super::error::CallError;
@@ -241,12 +240,12 @@ impl Session {
 
 // litellm.api_key and the other module globals win over the environment, and an unset one leaves it in place.
 fn apply_module_settings(settings: &mut resource_sdk_settings::Settings, module: &ModuleSettings) {
-    settings.api_key = module.api_key.clone().map(SecretString::from);
+    settings.api_key.clone_from(&module.api_key);
     settings.api_base.clone_from(&module.api_base);
     settings.api_version.clone_from(&module.api_version);
     settings.organization.clone_from(&module.organization);
-    settings.openai_key = module.openai_key.clone().map(SecretString::from);
-    settings.azure_key = module.azure_key.clone().map(SecretString::from);
+    settings.openai_key.clone_from(&module.openai_key);
+    settings.azure_key.clone_from(&module.azure_key);
 }
 
 // the outbound client honours the proxy variables of the environment the session was built from

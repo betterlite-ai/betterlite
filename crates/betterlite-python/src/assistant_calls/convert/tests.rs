@@ -20,12 +20,24 @@ fn request_settings_keeps_every_module_global() {
     let text = r#"{"api_key":"sk-a","api_base":"http://base","api_version":"v1",
         "organization":"org","openai_key":"sk-b","azure_key":"az"}"#;
     let settings: ModuleSettings = read("assistant session settings", text).unwrap();
-    assert_eq!(settings.api_key.as_deref(), Some("sk-a"));
+    let api_key = settings
+        .api_key
+        .as_ref()
+        .map(secrecy::ExposeSecret::expose_secret);
+    let openai_key = settings
+        .openai_key
+        .as_ref()
+        .map(secrecy::ExposeSecret::expose_secret);
+    let azure_key = settings
+        .azure_key
+        .as_ref()
+        .map(secrecy::ExposeSecret::expose_secret);
+    assert_eq!(api_key, Some("sk-a"));
     assert_eq!(settings.api_base.as_deref(), Some("http://base"));
     assert_eq!(settings.api_version.as_deref(), Some("v1"));
     assert_eq!(settings.organization.as_deref(), Some("org"));
-    assert_eq!(settings.openai_key.as_deref(), Some("sk-b"));
-    assert_eq!(settings.azure_key.as_deref(), Some("az"));
+    assert_eq!(openai_key, Some("sk-b"));
+    assert_eq!(azure_key, Some("az"));
 }
 
 #[test]

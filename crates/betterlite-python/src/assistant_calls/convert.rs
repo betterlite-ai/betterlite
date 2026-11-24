@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::threads::records::ThreadMessageData;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -13,12 +14,12 @@ mod tests;
 #[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct ModuleSettings {
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) api_base: Option<String>,
     pub(crate) api_version: Option<String>,
     pub(crate) organization: Option<String>,
-    pub(crate) openai_key: Option<String>,
-    pub(crate) azure_key: Option<String>,
+    pub(crate) openai_key: Option<SecretString>,
+    pub(crate) azure_key: Option<SecretString>,
 }
 
 // One create_thread or get_thread call: the named arguments next to the caller's kwargs.
