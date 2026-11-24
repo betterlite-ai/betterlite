@@ -2,6 +2,7 @@ import datetime as dt
 from collections.abc import Mapping
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
+import litellm
 from litellm.files.streaming import FileContentStreamingResponse
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -11,6 +12,9 @@ from litellm.proxy.openai_files_endpoints.file_content_streaming_handler import 
 )
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
+
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 JSON: Final = TypeAdapter(JsonValue)
 SNAPSHOT: Final = TypeAdapter(Mapping[str, JsonValue])

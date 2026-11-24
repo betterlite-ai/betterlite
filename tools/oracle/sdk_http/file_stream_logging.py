@@ -1,10 +1,9 @@
 import asyncio
 import datetime as dt
 from collections.abc import AsyncIterator, Iterator
-from typing import Final, Literal, Protocol, TypedDict, Unpack
+from typing import Final, Literal
 
 from litellm.files.streaming import FileContentStreamingResponse
-from litellm.files.types import FileContentStreamingResult
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.files.transformation import BaseFilesConfig
@@ -41,22 +40,7 @@ class FileStreamLoggingEnvelope(BaseModel):
     file_stream_logging: dict[str, Outcome]
 
 
-class RetrieveKwargs(TypedDict):
-    file_content_request: FileContentRequest
-    provider_config: BaseFilesConfig
-    litellm_params: dict[str, JsonValue]
-    headers: dict[str, str]
-    logging_obj: Logging
-    chunk_size: int
-
-
-class FilesHandler(Protocol):
-    async def async_retrieve_file_content_streaming(  # ast-grep-ignore: no-long-names
-        self, **kwargs: Unpack[RetrieveKwargs]
-    ) -> FileContentStreamingResult: ...
-
-
-HANDLER: Final[FilesHandler] = BaseLLMHTTPHandler()
+HANDLER: Final = BaseLLMHTTPHandler()
 
 
 class Capture(CustomLogger):
@@ -127,7 +111,7 @@ def async_stream(stream: Iterator[bytes] | AsyncIterator[bytes]) -> AsyncIterato
 async def run_case(call: FileStreamLoggingCall, api_base: str) -> Outcome:
     capture = Capture()
     logging_obj = logging_fixture(capture)
-    request = RetrieveKwargs(
+    result = await HANDLER.async_retrieve_file_content_streaming(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5109-L5119
         file_content_request=FileContentRequest(file_id=call.file_id),
         provider_config=provider_config(),
         litellm_params={"api_base": api_base},
@@ -135,7 +119,6 @@ async def run_case(call: FileStreamLoggingCall, api_base: str) -> Outcome:
         logging_obj=logging_obj,
         chunk_size=call.chunk_size,
     )
-    result = await HANDLER.async_retrieve_file_content_streaming(**request)
     fail_after = FAIL_AFTER if call.scenario == "fail" else None
     response = FileContentStreamingResponse(
         FaultyStream(async_stream(result.stream_iterator), fail_after),
