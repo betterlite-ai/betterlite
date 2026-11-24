@@ -1,0 +1,8 @@
+kind: helper
+name: native-callback-list
+call:
+  b10062:
+    native_redirect_uris: ' ,  , '
+    uris: []
+env: {}
+compare: {ignore: []}
