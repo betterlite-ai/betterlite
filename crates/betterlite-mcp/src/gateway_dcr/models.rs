@@ -75,5 +75,8 @@ impl Sealable for GatewayAuthCode {
 
 #[must_use]
 pub fn is_gateway_dcr_client_id(client_id: Option<&str>) -> bool {
-    client_id.is_some_and(|id| id.starts_with(GATEWAY_DCR_CLIENT_ID_PREFIX))
+    let Some(id) = client_id else {
+        return false;
+    };
+    id.starts_with(GATEWAY_DCR_CLIENT_ID_PREFIX)
 }

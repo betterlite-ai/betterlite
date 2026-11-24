@@ -312,22 +312,19 @@ fn seal_reports_a_cipher_that_refuses() {
     assert!(matches!(refusal, Err(SealError::Encrypt(_))));
 }
 
+#[rstest]
+fn replays_the_gateway_dcr_open_sealed_corpus(
+    #[files("fuzz/corpus/gateway_dcr_open_sealed/*")] path: PathBuf,
+) {
+    let bytes = fs::read(path).unwrap();
+    let Ok(text) = str::from_utf8(&bytes) else {
+        return;
+    };
+    let _opened = open_gateway_dcr_client(text, &cipher());
+}
+
 #[test]
-fn replays_the_gateway_dcr_open_sealed_corpus() {
-    let mut paths: Vec<PathBuf> = fs::read_dir(CORPUS)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_file())
-        .collect();
-    paths.sort();
-    assert!(!paths.is_empty(), "the corpus holds no seeds");
-    for path in &paths {
-        let bytes = fs::read(path).unwrap();
-        let Ok(text) = str::from_utf8(&bytes) else {
-            continue;
-        };
-        let _opened = open_gateway_dcr_client(text, &cipher());
-    }
+fn opens_only_the_client_seed_and_refuses_the_hostile_ones() {
     let opened = open_gateway_dcr_client(&corpus_file("client"), &cipher()).unwrap();
     assert_eq!(
         opened.redirect_uris,
