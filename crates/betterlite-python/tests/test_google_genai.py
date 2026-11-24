@@ -189,11 +189,6 @@ async def async_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str
     return ours, reference
 
 
-async def reference_content_async(server_url: str, key: str) -> dict[str, JsonValue]:
-    answer = await LITELLM_ASYNC.agenerate_content(**reference_call(server_url, key))
-    return reference_dict(answer)
-
-
 async def flagged_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     ours = generate_content(**common_call(server_url), agenerate_content=True)
     reference = LITELLM_ASYNC.generate_content(
@@ -496,14 +491,16 @@ def test_error_class_and_cause() -> None:
     with GenaiServer() as server:
         with pytest.raises(BadRequestError) as caught:
             generate_content(**common_call(server.url, BAD_KEY))
-        with pytest.raises(AuthenticationError) as awaited:
-            asyncio.run(agenerate_content(**common_call(server.url, BAD_KEY)))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
             LITELLM.generate_content(**reference_call(server.url, BAD_KEY))
-        with pytest.raises(LITELLM_ERRORS.AuthenticationError):
-            asyncio.run(reference_content_async(server.url, BAD_KEY))
     payload = bad_request_payload(caught.value, "API key not valid")
     assert payload["type"] == "BadRequestError"
+
+
+def test_async_error_class() -> None:
+    with GenaiServer() as server:
+        with pytest.raises(AuthenticationError) as awaited:
+            asyncio.run(agenerate_content(**common_call(server.url, BAD_KEY)))
     assert authentication_payload(awaited.value)["type"] == "AuthenticationError"
 
 
