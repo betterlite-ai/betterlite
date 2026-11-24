@@ -1,0 +1,34 @@
+kind: helper
+name: missing-key-fails
+call:
+  b10074:
+    salt_key: null
+    master_key: null
+    general_settings: {}
+    calls:
+      - operation: encrypt_env
+        values:
+          api_key: sk-secret
+        new_key: null
+      - operation: encrypt_env
+        values:
+          port: 6379
+          ssl: true
+          tokens: []
+        new_key: null
+      - operation: encrypt_env_for_db
+        values:
+          api_key: sk-secret
+        new_key: null
+      - operation: encrypt_env
+        values:
+          api_key: sk-secret
+        new_key: override-key
+      - operation: decrypt_env
+        values:
+          api_key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXccVZjgu1TZy2W9RyeYfnLiSlXcAj
+          port: 6379
+        new_key: null
+env: {}
+compare:
+  ignore: []
