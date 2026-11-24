@@ -278,6 +278,14 @@ def test_reload_corrupt_body(
     assert our_reason is not None
     assert our_reason.startswith(f"Remote fetch failed: invalid JSON from {url}")
     assert their_reason.startswith(f"Remote fetch failed: invalid JSON from {url}")
+    their_reload = asyncio.run(REFETCH.refetch_model_cost_map(url))
+    our_reload = asyncio.run(refetch_model_cost_map(url))
+    match our_reload:
+        case ModelCostMapReloadUnavailable():
+            assert our_reload.reason.startswith(f"invalid JSON from {url}")
+            assert their_reload.reason.startswith(f"invalid JSON from {url}")
+        case ModelCostMapReloaded():
+            pytest.fail("our refetch reloaded a corrupt map")
 
 
 def test_reload_retry_then_good(
@@ -306,21 +314,6 @@ def test_reload_retry_then_good(
     assert our_info["source_revision"] == their_info["source_revision"]
     assert our_info["loaded_at"] is not None
     assert their_info["loaded_at"] is not None
-
-
-def test_reload_refetch_corrupt(
-    server: ModelMapServer, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv(LOCAL_MAP_ENV, raising=False)
-    url = server.url + CORRUPT_PATH
-    theirs = asyncio.run(REFETCH.refetch_model_cost_map(url))
-    ours = asyncio.run(refetch_model_cost_map(url))
-    match ours:
-        case ModelCostMapReloadUnavailable():
-            assert ours.reason.startswith(f"invalid JSON from {url}")
-            assert theirs.reason.startswith(f"invalid JSON from {url}")
-        case ModelCostMapReloaded():
-            pytest.fail("our refetch reloaded a corrupt map")
 
 
 def test_unsupported_options(server: ModelMapServer) -> None:
