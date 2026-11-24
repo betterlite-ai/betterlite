@@ -16,8 +16,14 @@ deviations:
     why: "The request runs on the session's own Rust client, and a Python httpx client cannot cross into it."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8826-L8830
   - what: "A caller that passes azure_ad_token_provider gets UnsupportedCallArgument, so an azure or azure_text container call cannot mint its token through a Python callable."
-    why: "A Python callable cannot cross into the Rust session. An api_key, or the credentials the environment gives the session, still authenticates an azure call."
+    why: "A Python callable cannot cross into the Rust session, and an azure container call is unsupported here, as this file records below."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L86
+  - what: "An azure or azure_text container call fails with a 400 bad-request answer, where LiteLLM serves both ids with its AzureContainerConfig."
+    why: "The Azure container config is not ported, so B3369 and B3370 answer only openai; the config belongs to the task that owns the azure provider."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9741-L9743
+  - what: "A call's ssl_verify is ignored: every container request verifies TLS with the session client's default policy, where LiteLLM builds the container client from litellm_params.ssl_verify."
+    why: "The session builds one client at startup and the container transport carries no per-call TLS policy yet, so a call against a self-signed endpoint or a CA bundle fails the handshake."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8828
   - what: "This task has no helper oracle cases; the tests run both packages against one local HTTP server and compare the recorded requests and the answers."
     why: "The oracle helper runs a LiteLLM function in process and caches its answer, while these eight functions answer through a native session, so the local server compares both packages on the same input instead."
     link: ""

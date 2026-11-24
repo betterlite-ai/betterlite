@@ -21,13 +21,11 @@ from betterlite.types.containers.main import (
 )
 
 DEFAULT_TIMEOUT: Final = 600
-# the module globals a container call falls back to, read at call time like LiteLLM's own
 SETTINGS: Final[tuple[str, ...]] = ("api_base", "api_key", "openai_key", "organization")
-# LiteLLM pops these two before it reads the call, so they never become arguments
-BOOKKEEPING: Final[tuple[str, ...]] = ("async_call", "litellm_logging_obj")
-# a token provider is a Python callable the payload cannot carry into Rust
+BOOKKEEPING: Final[tuple[str, ...]] = (
+    "async_call", "client", "litellm_logging_obj", "logger_fn", "shared_session",
+)
 REFUSED: Final = "azure_ad_token_provider"
-# the operation each request names for the one native session
 CREATE: Final = "create_container"
 LIST: Final = "list_containers"
 RETRIEVE: Final = "retrieve_container"
@@ -38,13 +36,16 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 Provider: TypeAlias = Literal["openai", "azure", "azure_text"]
 
 
-# the call as the session takes it: its operation, the arguments set and the module settings
 def call_payload(operation: str, values: Mapping[str, CallValue]) -> CallPayload:
     if values.get(REFUSED) is not None:
         raise UnsupportedCallArgument(REFUSED)
     arguments = {name: given for name, given in values.items() if given is not None}
     kept = {name: given for name, given in arguments.items() if name not in BOOKKEEPING}
-    payload = {"arguments": kept, "settings": read_settings(SETTINGS), "operation": operation}
+    payload: dict[str, CallValue] = {
+        "arguments": kept, "settings": read_settings(SETTINGS), "operation": operation,
+    }
+    for name in ("client", "logger_fn", "shared_session"):
+        payload[name] = values.get(name)
     return to_call_payload(payload)
 
 
@@ -56,7 +57,6 @@ def merged(
     return {name: value for name, value in together.items() if value is not None}
 
 
-# only the values the caller set, for the operations that name each one at the call
 def omit_none(**named: CallValue) -> dict[str, CallValue]:
     given = named.items()
     return {name: value for name, value in given if value is not None}
@@ -77,7 +77,6 @@ def operation_values(
     return merged(kwargs, named)
 
 
-# the created container as LiteLLM returns it: the record plus the hidden params its transform set
 def created(answer: JsonValue) -> ContainerObject:
     fields = OBJECT.validate_python(answer)
     hidden = OBJECT.validate_python(fields.pop("_hidden_params", {}))
@@ -176,15 +175,11 @@ async def alist_containers(
     extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None,
     **kwargs: CallValue,
 ) -> ContainerListResponse:
-    values = {
-        **kwargs,
-        **omit_none(
-            after=after, limit=limit, order=order, timeout=timeout,
-            custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
-            extra_query=extra_query, extra_body=extra_body,
-        ),
-    }
-    return await alist_from_values(values)
+    return await alist_from_values(merged(kwargs, omit_none(
+        after=after, limit=limit, order=order, timeout=timeout,
+        custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
+        extra_query=extra_query, extra_body=extra_body,
+    )))
 
 
 def retrieve_container(
@@ -241,14 +236,11 @@ async def adelete_container(
     extra_query: dict[str, JsonValue] | None = None,
     extra_body: dict[str, JsonValue] | None = None, **kwargs: CallValue,
 ) -> DeleteContainerResult:
-    values = {
-        **kwargs,
-        **omit_none(
-            container_id=container_id, timeout=timeout,
-            custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
-            extra_query=extra_query, extra_body=extra_body,
-        ),
-    }
+    values = merged(kwargs, omit_none(
+        container_id=container_id, timeout=timeout,
+        custom_llm_provider=custom_llm_provider, extra_headers=extra_headers,
+        extra_query=extra_query, extra_body=extra_body,
+    ))
     answer = await acall_native(
         NativeContainerSession("{}").acall, call_payload(DELETE, values), NativeContainerError
     )
