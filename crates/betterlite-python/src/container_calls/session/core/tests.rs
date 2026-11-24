@@ -21,6 +21,7 @@ use betterlite_sdk::call_wrapper::ports::WrapperClock as _;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
 use rust_decimal::Decimal;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 use super::super::NativeContainerSession;
@@ -232,7 +233,7 @@ fn init_carries_the_call_type_and_the_call_id() {
 #[test]
 fn session_clock_counts_the_time_since_it_was_built() {
     let clock = stack::SessionClock::new();
-    get_runtime().block_on(tokio::time::sleep(Duration::from_millis(2)));
+    get_runtime().block_on(sleep(Duration::from_millis(2)));
     assert!(clock.monotonic() > Duration::ZERO);
 }
 
