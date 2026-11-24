@@ -26,7 +26,11 @@ const PARAMETERS_KEY: &str = "parameters";
 // the ocr mode arguments as the request B6809's aocr takes: its keywords split out, the rest as optional params
 pub fn aocr_request(call: OcrCall) -> Result<LiteLLMOcrRequest, HealthProbeError> {
     let mut parameters = ocr_parameters(&call.parameters)?;
-    let model = take_required(&mut parameters, MODEL_KEY)?;
+    let model_value = parameters.shift_remove(MODEL_KEY).unwrap_or(OcrJson::Null);
+    let encoded = serde_json::to_string(&model_value)
+        .map_err(|source| parameter_failure(MODEL_KEY, source))?;
+    let model =
+        serde_json::from_str(&encoded).map_err(|source| parameter_failure(MODEL_KEY, source))?;
     let api_base = take_optional(&mut parameters, API_BASE_KEY)?;
     let custom_llm_provider = take_optional(&mut parameters, PROVIDER_KEY)?;
     let timeout_seconds = take_optional(&mut parameters, TIMEOUT_KEY)?;
@@ -70,14 +74,6 @@ fn ocr_parameters(parameters: &IndexMap<String, Json>) -> Result<OcrObject, Heal
     serde_json::from_str(&encoded).map_err(|source| parameter_failure(PARAMETERS_KEY, source))
 }
 
-fn take_required<T>(parameters: &mut OcrObject, key: &'static str) -> Result<T, HealthProbeError>
-where
-    T: DeserializeOwned,
-{
-    let value = parameters.shift_remove(key).unwrap_or(OcrJson::Null);
-    convert(key, &value)
-}
-
 fn take_optional<T>(
     parameters: &mut OcrObject,
     key: &'static str,
@@ -91,15 +87,10 @@ where
     if matches!(value, OcrJson::Null) {
         return Ok(None);
     }
-    convert(key, &value).map(Some)
-}
-
-fn convert<T>(key: &str, value: &OcrJson) -> Result<T, HealthProbeError>
-where
-    T: DeserializeOwned,
-{
-    let encoded = serde_json::to_string(value).map_err(|source| parameter_failure(key, source))?;
-    serde_json::from_str(&encoded).map_err(|source| parameter_failure(key, source))
+    let encoded = serde_json::to_string(&value).map_err(|source| parameter_failure(key, source))?;
+    serde_json::from_str(&encoded)
+        .map(Some)
+        .map_err(|source| parameter_failure(key, source))
 }
 
 fn parameter_failure(key: &str, source: serde_json::Error) -> HealthProbeError {

@@ -508,7 +508,12 @@ impl Harness {
         build_health_check_entry(HealthEntryDeps {
             backend: self.backend(),
             resolver: Arc::new(FakeResolver {
-                resolved: resolved(model, provider),
+                resolved: ResolvedModel {
+                    model: String::from(model),
+                    provider: ProviderIdentity::Custom(String::from(provider)),
+                    api_base: None,
+                    api_key: None,
+                },
             }),
             catalog: Arc::new(FakeCatalog),
             redactor: Arc::new(Redactor::new(16).expect("the test redactor builds")),
@@ -749,15 +754,6 @@ pub(super) fn document(source: &str) -> OcrDocument {
     OcrDocument::DocumentUrl {
         document_url: String::from(source),
         extra: BTreeMap::new(),
-    }
-}
-
-pub(super) fn resolved(model: &str, provider: &str) -> ResolvedModel {
-    ResolvedModel {
-        model: String::from(model),
-        provider: ProviderIdentity::Custom(String::from(provider)),
-        api_base: None,
-        api_key: None,
     }
 }
 
