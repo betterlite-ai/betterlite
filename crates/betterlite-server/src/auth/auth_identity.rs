@@ -9,6 +9,7 @@ use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
+use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
@@ -25,6 +26,7 @@ pub enum AuthBackend {
     AuthModelPatterns,
     AuthResourceGrants,
     AuthTagBudgets,
+    AuthOrgLookup,
     AuthEndUsers,
 }
 
@@ -37,6 +39,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthModelPatterns,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
+    AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
 
@@ -49,6 +52,7 @@ pub enum StageInput {
     AuthModelPatterns(Box<ModelPatternStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
+    AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
 
@@ -80,6 +84,7 @@ pub(crate) enum StageFailure {
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
+    OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
 
@@ -108,6 +113,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the batch reads ran while this stage's input was assembled, so only the identity is left
+            Ok(stage.context.clone())
+        }
+        AuthBackend::AuthOrgLookup => {
+            let StageInput::AuthOrgLookup(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the request-scoped lookup ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
         AuthBackend::AuthEndUsers => {

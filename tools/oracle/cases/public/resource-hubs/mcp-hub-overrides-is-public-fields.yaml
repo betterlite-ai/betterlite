@@ -1,0 +1,22 @@
+kind: helper
+name: resource-hubs-mcp-hub-overrides-is-public-fields
+call:
+  b3194:
+    function: mcp_hub
+    config_servers:
+      - server_id: stored-flags
+        name: Stored Flags
+        transport: http
+        mcp_info:
+          is_public: false
+          is_public_explicit: false
+          protocol_version: "2025-06-18"
+          vendor: acme
+      - server_id: no-info
+        name: No Info
+        transport: sse
+    db_servers: []
+    public_mcp_servers: [stored-flags, no-info]
+    public_hub_strict: true
+env: {}
+compare: {ignore: []}
