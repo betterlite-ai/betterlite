@@ -36,6 +36,9 @@ where
     Execution: ResponsesExecution<Client> + Sync,
     Client: ?Sized + Sync,
 {
+    if matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true))) {
+        return acompletion(execution, call).await;
+    }
     run(execution, call, Mode::Sync).await
 }
 

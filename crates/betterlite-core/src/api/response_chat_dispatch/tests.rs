@@ -285,6 +285,41 @@ async fn sync_passes_the_client_while_async_omits_it() {
 }
 
 #[tokio::test]
+async fn only_a_boolean_true_acompletion_takes_the_async_path() {
+    let fields = with(
+        kwargs("gpt-4o-mini", "openai"),
+        "acompletion",
+        Json::Bool(true),
+    );
+    let asynchronous = FakeExecution::new(Answer::Chat(chat_body()));
+    expect_ok(completion(&asynchronous, call(&fields)).await);
+    assert!(!asynchronous.observations()[0].client);
+    for value in [
+        Json::Bool(false),
+        Json::Text(String::from("true")),
+        Json::Number(serde_json::Number::from(1_i32)),
+        Json::Null,
+    ] {
+        let fields = with(kwargs("gpt-4o-mini", "openai"), "acompletion", value);
+        let synchronous = FakeExecution::new(Answer::Chat(chat_body()));
+        expect_ok(completion(&synchronous, call(&fields)).await);
+        assert!(synchronous.observations()[0].client);
+    }
+}
+
+#[tokio::test]
+async fn the_sdk_stream_key_is_read_through_the_litellm_params() {
+    let params: Json = serde_json::from_str(r#"{"stream":true}"#).unwrap();
+    let fields = with(kwargs("gpt-4o-mini", "openai"), "litellm_params", params);
+    let execution = FakeExecution::new(events(frames(), &[]));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&fields)).await,
+    )))
+    .await;
+    assert_eq!(joined(&chunks), "hello");
+}
+
+#[tokio::test]
 async fn the_outer_stream_flag_only_adds_a_missing_optional_key() {
     let injected = FakeExecution::new(events(frames(), &[]));
     let output = expect_ok(completion(&injected, call(&streaming())).await);
@@ -486,6 +521,10 @@ async fn a_direct_model_response_streams_through_the_mock_iterator() {
     assert_eq!(finishes(&chunks), vec![String::from("stop")]);
     assert!(ids(&chunks).iter().all(|id| id == "chatcmpl-x"));
     assert!(!ids(&chunks).is_empty());
+    assert_eq!(
+        created_of(&chunks[0]),
+        Some(Json::Number(serde_json::Number::from(1700000000_i64)))
+    );
 }
 
 #[tokio::test]
