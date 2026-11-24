@@ -17,9 +17,9 @@ from a2a.compat.v0_3.types import (
 )
 from a2a.types.a2a_pb2 import AgentCard
 from a2a_server import AGENT_NAME, AgentServer, Recorder
+from litellm.a2a_protocol import LiteLLMSendMessageResponse as LiteLLMResponse
 from litellm.a2a_protocol import card_resolver as litellm_cards
 from litellm.a2a_protocol import main as litellm_main
-from litellm.types.agents import LiteLLMSendMessageResponse as LiteLLMResponse
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -56,6 +56,7 @@ class LiteLLMSendCall(Protocol):
         a2a_client: Client | None = ...,
         request: SendMessageRequest | None = ...,
         api_base: str | None = ...,
+        *,
         agent_id: str | None = ...,
         agent_extra_headers: dict[str, str] | None = ...,
     ) -> Awaitable[LiteLLMResponse]: ...
@@ -160,11 +161,10 @@ def test_card_headers_reach_agent() -> None:
 
 
 def test_card_helpers_match() -> None:
-    assert card_resolver.AGENT_CARD_WELL_KNOWN_PATH == litellm_cards.AGENT_CARD_WELL_KNOWN_PATH
-    assert (
-        card_resolver.PREV_AGENT_CARD_WELL_KNOWN_PATH
-        == litellm_cards.PREV_AGENT_CARD_WELL_KNOWN_PATH
-    )
+    their_cards = litellm_cards
+    pair = (their_cards.AGENT_CARD_WELL_KNOWN_PATH, their_cards.PREV_AGENT_CARD_WELL_KNOWN_PATH)  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L20-L30
+    assert card_resolver.AGENT_CARD_WELL_KNOWN_PATH == pair[0]
+    assert card_resolver.PREV_AGENT_CARD_WELL_KNOWN_PATH == pair[1]
     assert card_resolver.FOUNDRY_AGENT_CARD_PATH == litellm_cards.FOUNDRY_AGENT_CARD_PATH
     for url in (None, "", "http://localhost:9/", "http://127.0.0.1:9/", "https://agent.example/"):
         assert card_resolver.is_localhost_or_internal_url(url) == (

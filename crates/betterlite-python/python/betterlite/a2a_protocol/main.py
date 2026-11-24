@@ -118,7 +118,7 @@ def call_values(
             case SendMessageRequest() | SendStreamingMessageRequest():
                 text = request.model_dump(mode="json", exclude_none=True)
             case dict():
-                text = request
+                text = JSON_OBJECT.validate_python(request)
             case object():
                 raise UnsupportedA2AArgument("request")
     if client is None:
