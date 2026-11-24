@@ -47,7 +47,6 @@ pub async fn skill_hub(
     Ok(Json(plugin_response(table.as_ref()).await?))
 }
 
-#[must_use]
 pub async fn plugin_response(
     table: &dyn PluginTable,
 ) -> Result<ListPluginsResponse, ResourceHubsError> {

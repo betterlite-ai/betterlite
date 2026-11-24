@@ -52,7 +52,6 @@ pub async fn agent_hub(
     Ok(Json(cards))
 }
 
-#[must_use]
 pub fn public_agent_cards<R: AgentRegistryApi>(
     registry: &R,
     groups: Option<&[String]>,

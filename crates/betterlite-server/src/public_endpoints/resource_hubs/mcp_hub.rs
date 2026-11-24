@@ -35,7 +35,6 @@ pub async fn mcp_hub(
     )?))
 }
 
-#[must_use]
 pub fn public_mcp_servers(
     registry: &ServerRegistry,
     explicit: Option<&[String]>,
