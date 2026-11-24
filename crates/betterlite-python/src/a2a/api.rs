@@ -48,7 +48,10 @@ pub(crate) fn send_message_streaming_direct<'py>(
 
 #[pyfunction]
 pub(crate) fn is_localhost_or_internal_url(url: Option<&str>) -> bool {
-    url.is_some_and(|candidate| localhost::is_localhost_or_internal_url(Some(candidate)))
+    if url.is_none() {
+        return false;
+    }
+    localhost::is_localhost_or_internal_url(url)
 }
 
 #[pyfunction(name = "normalize_agent_card_interfaces")]
