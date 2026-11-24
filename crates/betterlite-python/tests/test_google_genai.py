@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import json
 import logging
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Mapping, Sequence
 from typing import Final, Protocol, TypeAlias, TypedDict
 
 import litellm
@@ -40,6 +40,7 @@ from betterlite._completion import arguments
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints.payload import LOGGER_FN_DROPPED, CallValue
 from betterlite._endpoints.proxy import ProxyAuthProvider
+from betterlite._genai import arguments as genai_arguments
 from betterlite._genai.arguments import fill_settings, session_settings
 from betterlite._genai.stream import GenaiStream
 from betterlite.exceptions import BadRequestError
@@ -90,6 +91,17 @@ class FakeProxyAuth(ProxyAuthProvider):
     @override
     def get_auth_headers(self) -> Mapping[str, str]:
         return self.headers
+
+
+# stands in for the module-setting reader and keeps the names production asked it for
+class SettingsReader:
+    def __init__(self, values: dict[str, JsonValue]) -> None:
+        self.values = values
+        self.asked: list[tuple[str, ...]] = []
+
+    def __call__(self, names: Sequence[str]) -> dict[str, JsonValue]:
+        self.asked.append(tuple(names))
+        return {name: self.values[name] for name in names}
 
 
 def common_call(server_url: str, key: str = GOOD_KEY) -> CommonCall:
@@ -268,12 +280,18 @@ def test_optional_matches_litellm() -> None:
 def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    reader = SettingsReader(
+        {"api_key": GOOD_KEY, "vertex_project": None, "vertex_location": None}
+    )
     expected: dict[str, str] = {"api_key": GOOD_KEY}
-    assert session_settings() == "{}"
     our_key = betterlite.api_key
+    original = genai_arguments.read_settings
     their_key = litellm.api_key
     try:
-        betterlite.api_key = GOOD_KEY
+        del betterlite.api_key
+        with pytest.raises(AttributeError, match="api_key"):
+            session_settings()
+        genai_arguments.read_settings = reader
         litellm.api_key = GOOD_KEY
         assert session_settings() == json.dumps(expected)
         with GenaiServer() as server:
@@ -290,14 +308,17 @@ def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
             keys = [recorded_header(server, index, API_KEY_HEADER) for index in (FIRST, SECOND)]
     finally:
         betterlite.api_key = our_key
+        genai_arguments.read_settings = original
         litellm.api_key = their_key
     assert answers[FIRST] == answers[SECOND]
     assert keys == [GOOD_KEY, GOOD_KEY]
+    assert ("api_key",) in reader.asked
 
 
 def test_optional_vertex_settings() -> None:
-    our_project = betterlite.vertex_project
-    our_location = betterlite.vertex_location
+    reader = SettingsReader(
+        {"api_key": None, "vertex_project": VERTEX_PROJECT, "vertex_location": VERTEX_LOCATION}
+    )
     given: list[dict[str, CallValue]] = [
         {"api_base": None, "vertex_location": None},
         {"vertex_project": CALL_PROJECT, "vertex_location": None},
@@ -311,15 +332,20 @@ def test_optional_vertex_settings() -> None:
         {"vertex_project": CALL_PROJECT, "vertex_location": VERTEX_LOCATION},
         {"vertex_project": ""},
     ]
+    our_project = betterlite.vertex_project
+    original = genai_arguments.read_settings
     try:
-        betterlite.vertex_project = VERTEX_PROJECT
-        betterlite.vertex_location = VERTEX_LOCATION
+        del betterlite.vertex_project
+        with pytest.raises(AttributeError, match="vertex_project"):
+            fill_settings({"api_base": None})
+        genai_arguments.read_settings = reader
         for forwarded in given:
             fill_settings(forwarded)
     finally:
         betterlite.vertex_project = our_project
-        betterlite.vertex_location = our_location
+        genai_arguments.read_settings = original
     assert given == expected
+    assert reader.asked == [("vertex_project", "vertex_location")] * len(given)
 
 
 def test_optional_proxy_headers() -> None:
