@@ -5,7 +5,7 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 from betterlite import _native
-from betterlite._model_info.catalog import _CATALOG
+from betterlite._model_info.catalog import catalog_state
 from betterlite.exceptions import ModelNotMappedError
 
 CACHE_MAXSIZE: Final = 64
@@ -51,7 +51,7 @@ class _CachedModelInfo(_CacheAccess):
         api_base: str | None = None,
         api_key: str | None = None,
     ) -> ModelInfo:
-        _CATALOG.sync()
+        catalog_state.sync()
         self._lookups += 1
         request: _ModelInfoRequest = {
             "model": model,
@@ -60,7 +60,7 @@ class _CachedModelInfo(_CacheAccess):
             "api_key": api_key,
         }
         try:
-            text = _CATALOG.native.model_info(json.dumps(request))
+            text = catalog_state.native.model_info(json.dumps(request))
         except _native.ModelLookupError as error:
             raise ModelNotMappedError(str(error)) from error
         return _MODEL_INFO.validate_json(text)
@@ -83,9 +83,9 @@ get_model_info: Final = _CachedModelInfo()
 
 
 def get_max_tokens(model: str) -> int | None:
-    _CATALOG.sync()
+    catalog_state.sync()
     try:
-        found = _CATALOG.native.max_tokens(model)
+        found = catalog_state.native.max_tokens(model)
     except _native.ModelLookupError as error:
         raise ModelNotMappedError(str(error)) from error
     return found
@@ -94,12 +94,12 @@ def get_max_tokens(model: str) -> int | None:
 def get_provider_info(
     model: str, custom_llm_provider: str | None
 ) -> dict[str, JsonValue] | None:
-    _CATALOG.sync()
+    catalog_state.sync()
     request: _ProviderRequest = {
         "model": model,
         "custom_llm_provider": custom_llm_provider,
     }
-    text = _CATALOG.native.provider_info(json.dumps(request))
+    text = catalog_state.native.provider_info(json.dumps(request))
     if text is None:
         return None
     return _MODEL_INFO.validate_json(text)

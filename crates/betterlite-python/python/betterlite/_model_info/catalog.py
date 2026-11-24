@@ -48,16 +48,16 @@ class _CatalogState:
         self.generation += 1
 
 
-_CATALOG: Final = _CatalogState()
+catalog_state: Final = _CatalogState()
 
 
 # ast-grep-ignore: no-long-names, no-one-line-functions
 def get_model_cost_mutation_generation() -> int:
-    return _CATALOG.generation
+    return catalog_state.generation
 
 
 def adopt_model_cost_map(model_cost: dict[str, JsonValue]) -> int:
-    _CATALOG.adopt(model_cost)
+    catalog_state.adopt(model_cost)
     betterlite.model_cost = model_cost
     return len(model_cost)
 

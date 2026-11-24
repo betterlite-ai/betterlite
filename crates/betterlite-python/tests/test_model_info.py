@@ -1,28 +1,12 @@
 import asyncio
-import dataclasses
 import importlib
 import random
 import re
 from collections.abc import Iterator, Mapping
-from typing import Final, Protocol, TypedDict
+from typing import Final, Protocol
 
 import pytest
 from litellm.exceptions import ModelNotMappedError as LiteLLMModelNotMapped
-from litellm.litellm_core_utils.get_model_cost_map import (
-    adopt_model_cost_map as litellm_adopt_model_cost_map,
-)
-from litellm.litellm_core_utils.get_model_cost_map import (
-    get_model_cost_map_loaded_at as litellm_loaded_at,
-)
-from litellm.litellm_core_utils.get_model_cost_map import (
-    get_model_cost_map_provenance as litellm_provenance,
-)
-from litellm.litellm_core_utils.get_model_cost_map import (
-    get_model_cost_map_source_info as litellm_source_info,
-)
-from litellm.litellm_core_utils.get_model_cost_map import (
-    refetch_model_cost_map as litellm_refetch,
-)
 from litellm.utils import (
     get_max_tokens as litellm_get_max_tokens,
 )
@@ -71,16 +55,8 @@ PROBE_MAX_TOKENS: Final = 77
 REMOVAL_MAX_TOKENS: Final = 3
 ADOPT_MAX_TOKENS: Final = 5
 _MODEL_INFO: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
-
-
-class _LiteReloadView(TypedDict, total=False):
-    model_cost_map: dict[str, JsonValue]
-    revision: str | None
-    etag: str | None
-    reason: str
-
-
-_LITE_RELOAD: Final[TypeAdapter[_LiteReloadView]] = TypeAdapter(_LiteReloadView)
+_TEXT: Final[TypeAdapter[str]] = TypeAdapter(str)
+COST_MAP_MODULE: Final = "litellm.litellm_core_utils.get_model_cost_map"
 
 
 class ReferenceCall(Protocol):
@@ -91,7 +67,40 @@ class ReferenceModule(Protocol):
     def __getattr__(self, name: str) -> ReferenceCall: ...
 
 
+class InfoCall(Protocol):
+    def __call__(self) -> dict[str, JsonValue]: ...
+
+
+class InfoModule(Protocol):
+    def __getattr__(self, name: str) -> InfoCall: ...
+
+
+class LiteReloadView(Protocol):
+    @property
+    def model_cost_map(self) -> dict[str, JsonValue]: ...
+
+    @property
+    def revision(self) -> str | None: ...
+
+    @property
+    def etag(self) -> str | None: ...
+
+    @property
+    def reason(self) -> str: ...
+
+
+class RefetchCall(Protocol):
+    async def __call__(self, url: str) -> LiteReloadView: ...
+
+
+class RefetchModule(Protocol):
+    def __getattr__(self, name: str) -> RefetchCall: ...
+
+
 REFERENCE: ReferenceModule = importlib.import_module("litellm")
+COST_MAP: ReferenceModule = importlib.import_module(COST_MAP_MODULE)
+INFO: InfoModule = importlib.import_module(COST_MAP_MODULE)
+REFETCH: RefetchModule = importlib.import_module(COST_MAP_MODULE)
 
 
 def without_params(info: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
@@ -116,7 +125,7 @@ def server() -> Iterator[ModelMapServer]:
 
 def assert_source_info_matches() -> None:
     ours = get_model_cost_map_source_info()
-    theirs = litellm_source_info()
+    theirs = INFO.get_model_cost_map_source_info()
     assert set(ours) == set(theirs)
     assert ours["source"] == theirs["source"]
     assert ours["url"] == theirs["url"]
@@ -227,7 +236,7 @@ def test_reporter_local_shapes(
     _ = REFERENCE.get_model_cost_map(server.url + GOOD_PATH)
     get_model_cost_map(server.url + GOOD_PATH)
     assert_source_info_matches()
-    assert get_model_cost_map_provenance() == litellm_provenance()
+    assert get_model_cost_map_provenance() == INFO.get_model_cost_map_provenance()
     info = get_model_cost_map_source_info()
     assert info["source"] == "local"
     assert info["url"] is None
@@ -236,7 +245,7 @@ def test_reporter_local_shapes(
     assert info["etag"] is None
     assert info["source_revision"] == git_blob_id(bundled_body())
     assert get_model_cost_map_loaded_at() is not None
-    assert litellm_loaded_at() is not None
+    assert COST_MAP.get_model_cost_map_loaded_at() is not None
 
 
 def test_reload_good_body(
@@ -264,9 +273,9 @@ def test_reload_corrupt_body(
     ours = get_model_cost_map(url)
     assert ours == theirs
     our_reason = get_model_cost_map_source_info()["fallback_reason"]
-    their_reason = litellm_source_info()["fallback_reason"]
+    their_info = INFO.get_model_cost_map_source_info()
+    their_reason = _TEXT.validate_python(their_info["fallback_reason"])
     assert our_reason is not None
-    assert their_reason is not None
     assert our_reason.startswith(f"Remote fetch failed: invalid JSON from {url}")
     assert their_reason.startswith(f"Remote fetch failed: invalid JSON from {url}")
 
@@ -277,20 +286,18 @@ def test_reload_retry_then_good(
     monkeypatch.delenv(LOCAL_MAP_ENV, raising=False)
     their_url = server.url + RETRY_LITELLM_PATH
     our_url = server.url + RETRY_BETTERLITE_PATH
-    theirs = asyncio.run(litellm_refetch(their_url))
+    theirs = asyncio.run(REFETCH.refetch_model_cost_map(their_url))
     ours = asyncio.run(refetch_model_cost_map(our_url))
-    their_fields: JsonValue = dataclasses.asdict(theirs)
-    reloaded = _LITE_RELOAD.validate_python(their_fields)
     match ours:
         case ModelCostMapReloaded():
-            assert reloaded["model_cost_map"] == ours.model_cost_map
-            assert reloaded["revision"] == ours.revision
+            assert theirs.model_cost_map == ours.model_cost_map
+            assert theirs.revision == ours.revision
             assert ours.etag == f"etag{RETRY_BETTERLITE_PATH}"
-            assert reloaded["etag"] == f"etag{RETRY_LITELLM_PATH}"
+            assert theirs.etag == f"etag{RETRY_LITELLM_PATH}"
         case ModelCostMapReloadUnavailable():
             pytest.fail("our refetch answered unavailable")
     our_info = get_model_cost_map_source_info()
-    their_info = litellm_source_info()
+    their_info = INFO.get_model_cost_map_source_info()
     assert set(our_info) == set(their_info)
     assert our_info["source"] == their_info["source"] == "remote"
     assert our_info["is_env_forced"] is False
@@ -306,14 +313,12 @@ def test_reload_refetch_corrupt(
 ) -> None:
     monkeypatch.delenv(LOCAL_MAP_ENV, raising=False)
     url = server.url + CORRUPT_PATH
-    theirs = asyncio.run(litellm_refetch(url))
+    theirs = asyncio.run(REFETCH.refetch_model_cost_map(url))
     ours = asyncio.run(refetch_model_cost_map(url))
-    their_fields: JsonValue = dataclasses.asdict(theirs)
-    unavailable = _LITE_RELOAD.validate_python(their_fields)
     match ours:
         case ModelCostMapReloadUnavailable():
             assert ours.reason.startswith(f"invalid JSON from {url}")
-            assert unavailable["reason"].startswith(f"invalid JSON from {url}")
+            assert theirs.reason.startswith(f"invalid JSON from {url}")
         case ModelCostMapReloaded():
             pytest.fail("our refetch reloaded a corrupt map")
 
@@ -341,14 +346,14 @@ def test_reload_adopt_cost_map(
     try:
         generation = get_model_cost_mutation_generation()
         ours_count = adopt_model_cost_map(adopted)
-        theirs_count = litellm_adopt_model_cost_map(adopted)
+        theirs_count = COST_MAP.adopt_model_cost_map(adopted)
         assert ours_count == theirs_count == 1
         assert get_model_info("adopt-probe")["max_tokens"] == ADOPT_MAX_TOKENS
         assert get_model_cost_mutation_generation() > generation
         empty: dict[str, JsonValue] = {}
         assert adopt_model_cost_map(empty) == 0
-        assert litellm_adopt_model_cost_map(empty) == 0
+        assert COST_MAP.adopt_model_cost_map(empty) == 0
     finally:
         adopt_model_cost_map(our_backup)
-        litellm_adopt_model_cost_map(their_backup)
+        COST_MAP.adopt_model_cost_map(their_backup)
         get_model_info("gpt-4")

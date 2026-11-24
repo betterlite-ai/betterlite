@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
 use serde_json::value::RawValue;
@@ -85,23 +86,15 @@ fn model_info_request_rejects_a_negative_timeout() {
 
 #[test]
 fn model_info_result_serializes_the_fields_in_order() {
-    let raw: Box<RawValue> = RawValue::from_string(r#"{"max_tokens":4096}"#.to_owned()).unwrap();
-    let mut fields: IndexMap<String, betterlite_models::decisions::Json> = IndexMap::new();
-    fields.insert(
-        "key".to_owned(),
-        serde_json::from_str::<betterlite_models::decisions::Json>(r#""gpt-4""#).unwrap(),
-    );
-    fields.insert(
-        "max_tokens".to_owned(),
-        serde_json::from_str(raw.get()).unwrap(),
-    );
+    let fields: IndexMap<String, Json> =
+        serde_json::from_str(r#"{"key":"gpt-4","max_tokens":4096}"#).unwrap();
     let text = serde_json::to_string(&fields).unwrap();
     assert_eq!(text, r#"{"key":"gpt-4","max_tokens":4096}"#);
 }
 
 #[test]
 fn model_info_result_keeps_a_null_optional_field() {
-    let fields: IndexMap<String, betterlite_models::decisions::Json> =
+    let fields: IndexMap<String, Json> =
         serde_json::from_str(r#"{"key":"gpt-4","supported_openai_params":null}"#).unwrap();
     let text = serde_json::to_string(&fields).unwrap();
     assert_eq!(text, r#"{"key":"gpt-4","supported_openai_params":null}"#);

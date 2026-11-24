@@ -5,12 +5,12 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite._completion.errors import UnsupportedCallArgument
-from betterlite._model_info.catalog import _CATALOG
+from betterlite._model_info.catalog import catalog_state
 
 DEFAULT_MAX_ATTEMPTS: Final = 3
 DEFAULT_TIMEOUT_SECONDS: Final = 5
@@ -44,12 +44,19 @@ class CostMapSourceInfo(CostMapProvenance):
     loaded_at: str | None
 
 
-class _ReloadPayload(TypedDict, total=False):
-    status: str
+class _ReloadedPayload(TypedDict):
+    status: Literal["reloaded"]
     model_cost_map: dict[str, JsonValue]
     revision: str | None
     etag: str | None
+
+
+class _UnavailablePayload(TypedDict):
+    status: Literal["unavailable"]
     reason: str
+
+
+_ReloadPayload: TypeAlias = _ReloadedPayload | _UnavailablePayload
 
 
 class _ReloadRequest(TypedDict):
@@ -59,6 +66,7 @@ class _ReloadRequest(TypedDict):
 
 
 _RELOAD: Final[TypeAdapter[_ReloadPayload]] = TypeAdapter(_ReloadPayload)
+_RELOADED: Final[TypeAdapter[_ReloadedPayload]] = TypeAdapter(_ReloadedPayload)
 _SOURCE_INFO: Final[TypeAdapter[CostMapSourceInfo]] = TypeAdapter(CostMapSourceInfo)
 
 
@@ -91,27 +99,19 @@ def _reject_injected_options(
 
 
 def _reload_request(url: str, timeout: float, max_attempts: int) -> str:
-    request: _ReloadRequest = {
-        "url": url,
-        "timeout": timeout,
-        "max_attempts": max_attempts,
-    }
+    request: _ReloadRequest = {"url": url, "timeout": timeout, "max_attempts": max_attempts}
     return json.dumps(request)
 
 
 def _reload_result(text: str) -> ModelCostMapReloadResult:
     payload = _RELOAD.validate_json(text)
-    match payload["status"]:
-        case "reloaded":
-            return ModelCostMapReloaded(
-                model_cost_map=payload["model_cost_map"],
-                revision=payload["revision"],
-                etag=payload["etag"],
-            )
-        case "unavailable":
-            return ModelCostMapReloadUnavailable(reason=payload["reason"])
-        case _:
-            raise ValueError(f"the native reload returned an unknown status {payload['status']}")
+    if payload["status"] == "unavailable":
+        return ModelCostMapReloadUnavailable(reason=payload["reason"])
+    return ModelCostMapReloaded(
+        model_cost_map=payload["model_cost_map"],
+        revision=payload["revision"],
+        etag=payload["etag"],
+    )
 
 
 def get_model_cost_map(
@@ -121,8 +121,8 @@ def get_model_cost_map(
     **options: Unpack[CostMapOptions],
 ) -> dict[str, JsonValue]:
     _reject_injected_options(options, time.sleep)
-    text = _CATALOG.native.reload_blocking(_reload_request(url, float(timeout), max_attempts))
-    return _RELOAD.validate_json(text)["model_cost_map"]
+    text = catalog_state.native.reload_blocking(_reload_request(url, float(timeout), max_attempts))
+    return _RELOADED.validate_json(text)["model_cost_map"]
 
 
 async def refetch_model_cost_map(
@@ -134,22 +134,20 @@ async def refetch_model_cost_map(
     max_attempts = options.get("max_attempts")
     limit = DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout
     attempts = DEFAULT_MAX_ATTEMPTS if max_attempts is None else max_attempts
-    text = await _CATALOG.native.reload_async(_reload_request(url, float(limit), attempts))
+    text = await catalog_state.native.reload_async(_reload_request(url, float(limit), attempts))
     return _reload_result(text)
 
 
 def get_model_cost_map_provenance() -> CostMapProvenance:
-    info = _SOURCE_INFO.validate_json(_CATALOG.native.source_info())
+    info = _SOURCE_INFO.validate_json(catalog_state.native.source_info())
     return CostMapProvenance(source_revision=info["source_revision"], etag=info["etag"])
 
 
 # ast-grep-ignore: no-one-line-functions
 def get_model_cost_map_source_info() -> CostMapSourceInfo:
-    return _SOURCE_INFO.validate_json(_CATALOG.native.source_info())
+    return _SOURCE_INFO.validate_json(catalog_state.native.source_info())
 
 
 def get_model_cost_map_loaded_at() -> datetime | None:
-    loaded_at = _SOURCE_INFO.validate_json(_CATALOG.native.source_info())["loaded_at"]
-    if loaded_at is None:
-        return None
-    return datetime.fromisoformat(loaded_at)
+    loaded_at = _SOURCE_INFO.validate_json(catalog_state.native.source_info())["loaded_at"]
+    return None if loaded_at is None else datetime.fromisoformat(loaded_at)

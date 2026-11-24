@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::fetch_policy::client::{CatalogClient, CatalogRequest};
@@ -38,7 +38,10 @@ impl ScriptedClient {
 
     fn next(&self) -> Result<FetchResponse, FetchError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        let mut responses = self.responses.lock().unwrap();
+        let mut responses = self
+            .responses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         responses.pop_front().unwrap_or_else(|| {
             Err(FetchError::Transport(
                 "no scripted response is left".to_owned(),
@@ -304,7 +307,7 @@ fn model_info_reload_blocking_uses_the_local_env_flag() {
     assert_eq!(info.get("fallback_reason"), Some(&Json::Null));
     assert_eq!(
         info.get("source_revision"),
-        Some(&Json::Text(runtime.bundled.revision.clone().unwrap()))
+        Some(&Json::Text(runtime.bundled.revision.unwrap()))
     );
 }
 
@@ -439,6 +442,7 @@ fn model_info_reload_blocking_answers_through_the_process_environment() {
 #[test]
 fn model_info_reload_async_answers_through_the_process_environment() {
     let runtime = runtime();
+    let before = runtime.source_json().unwrap();
     let mut broken = query();
     broken.url = "not a url".to_owned();
     let answer = get_runtime()
@@ -447,10 +451,13 @@ fn model_info_reload_async_answers_through_the_process_environment() {
     let parsed = envelope(&answer);
     assert_eq!(
         parsed.get("status"),
-        Some(&Json::Text("reloaded".to_owned()))
+        Some(&Json::Text("unavailable".to_owned()))
     );
-    let info = source(&runtime);
-    assert_eq!(info.get("source"), Some(&Json::Text("local".to_owned())));
+    let Some(Json::Text(reason)) = parsed.get("reason") else {
+        panic!("reason is not text");
+    };
+    assert!(reason.contains("fetching not a url"));
+    assert_eq!(runtime.source_json().unwrap(), before);
 }
 
 #[test]

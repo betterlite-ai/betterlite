@@ -11,6 +11,7 @@ use serde_json::value::RawValue;
 
 use super::{Runtime, catalog_settings};
 use crate::model_info::convert::{self, RuntimeEntries};
+use crate::model_info::error::ModelInfoError;
 use crate::model_info::fetch::header_pairs;
 use crate::model_info::git_blob_id as native_git_blob_id;
 use crate::model_info::map::finalize;
@@ -139,7 +140,8 @@ fn model_info_state_adopt_moves_the_generation_every_time() {
 #[test]
 fn model_info_state_adopt_rejects_malformed_text() {
     let runtime = runtime();
-    assert!(runtime.adopt("{not json").is_err());
+    let error = runtime.adopt("{not json").unwrap_err();
+    assert!(matches!(error, ModelInfoError::Request(_)));
     assert_eq!(runtime.state().generation, 0);
 }
 
