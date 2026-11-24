@@ -1,6 +1,22 @@
 use pyo3::prelude::*;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The cache_backends family task adds its native functions here.
+use self::disk::NativeDisk;
+use self::dual::NativeDual;
+use self::memory::NativeMemory;
+use self::redis::NativeRedis;
+
+mod convert;
+mod disk;
+mod dual;
+mod error;
+mod memory;
+mod redis;
+mod settings;
+
+pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<NativeMemory>()?;
+    module.add_class::<NativeDisk>()?;
+    module.add_class::<NativeRedis>()?;
+    module.add_class::<NativeDual>()?;
     Ok(())
 }
