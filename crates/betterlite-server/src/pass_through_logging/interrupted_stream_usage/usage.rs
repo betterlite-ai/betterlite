@@ -44,40 +44,27 @@ fn logging_usage(usage: &Usage) -> LoggingUsage {
 }
 
 fn prompt_details(details: &PromptTokensDetails) -> IndexMap<String, Json> {
-    let mut fields = IndexMap::new();
-    insert_number(&mut fields, "cached_tokens", details.cached_tokens);
-    insert_number(
-        &mut fields,
-        "web_search_requests",
-        details.web_search_requests,
-    );
-    insert_number(
-        &mut fields,
-        "google_maps_grounding_requests",
-        details.google_maps_grounding_requests,
-    );
-    insert_number(
-        &mut fields,
-        "cache_write_tokens",
-        details.cache_write_tokens,
-    );
-    insert_number(
-        &mut fields,
-        "cache_creation_tokens",
-        details.cache_creation_tokens,
-    );
+    let mut fields = detail_map(&[
+        ("cached_tokens", details.cached_tokens),
+        ("web_search_requests", details.web_search_requests),
+        (
+            "google_maps_grounding_requests",
+            details.google_maps_grounding_requests,
+        ),
+        ("cache_write_tokens", details.cache_write_tokens),
+        ("cache_creation_tokens", details.cache_creation_tokens),
+    ]);
     if let Some(creation) = &details.cache_creation_token_details {
-        let mut nested = IndexMap::new();
-        insert_number(
-            &mut nested,
-            "ephemeral_5m_input_tokens",
-            creation.ephemeral_5m_input_tokens,
-        );
-        insert_number(
-            &mut nested,
-            "ephemeral_1h_input_tokens",
-            creation.ephemeral_1h_input_tokens,
-        );
+        let nested = detail_map(&[
+            (
+                "ephemeral_5m_input_tokens",
+                creation.ephemeral_5m_input_tokens,
+            ),
+            (
+                "ephemeral_1h_input_tokens",
+                creation.ephemeral_1h_input_tokens,
+            ),
+        ]);
         fields.insert(
             "cache_creation_token_details".to_owned(),
             Json::Object(nested),
@@ -88,32 +75,32 @@ fn prompt_details(details: &PromptTokensDetails) -> IndexMap<String, Json> {
 }
 
 fn completion_details(details: &CompletionTokensDetails) -> IndexMap<String, Json> {
-    let mut fields = IndexMap::new();
-    insert_number(&mut fields, "reasoning_tokens", details.reasoning_tokens);
-    insert_number(&mut fields, "text_tokens", details.text_tokens);
-    insert_number(&mut fields, "image_tokens", details.image_tokens);
-    insert_number(&mut fields, "audio_tokens", details.audio_tokens);
+    let mut fields = detail_map(&[
+        ("reasoning_tokens", details.reasoning_tokens),
+        ("text_tokens", details.text_tokens),
+        ("image_tokens", details.image_tokens),
+        ("audio_tokens", details.audio_tokens),
+    ]);
     copy_extra(&mut fields, &details.extra);
     fields
 }
 
 fn server_details(details: &ServerToolUse) -> IndexMap<String, Json> {
+    detail_map(&[
+        ("web_search_requests", details.web_search_requests),
+        ("tool_search_requests", details.tool_search_requests),
+        ("browser_open_requests", details.browser_open_requests),
+    ])
+}
+
+// The detail groups differ only in their count list, so one builder takes each list.
+fn detail_map(entries: &[(&str, Option<i64>)]) -> IndexMap<String, Json> {
     let mut fields = IndexMap::new();
-    insert_number(
-        &mut fields,
-        "web_search_requests",
-        details.web_search_requests,
-    );
-    insert_number(
-        &mut fields,
-        "tool_search_requests",
-        details.tool_search_requests,
-    );
-    insert_number(
-        &mut fields,
-        "browser_open_requests",
-        details.browser_open_requests,
-    );
+    for &(name, value) in entries {
+        if let Some(number) = value {
+            fields.insert(name.to_owned(), Json::Number(Number::from(number)));
+        }
+    }
     fields
 }
 
@@ -137,11 +124,5 @@ fn decisions_json(value: &ShapedValue) -> Json {
                 .map(|(name, value)| (name.to_owned(), decisions_json(value)))
                 .collect(),
         ),
-    }
-}
-
-fn insert_number(fields: &mut IndexMap<String, Json>, name: &str, value: Option<i64>) {
-    if let Some(number) = value {
-        fields.insert(name.to_owned(), Json::Number(Number::from(number)));
     }
 }

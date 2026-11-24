@@ -6,7 +6,7 @@ mod tests;
 mod usage;
 
 use betterlite_anthropic::stream_events::error::StreamEventError;
-use betterlite_logging::logging_failure::partial_usage::record_partial_usage_for_failure as record_on_call_log;
+use betterlite_logging::logging_failure::partial_usage;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -85,7 +85,7 @@ pub(crate) fn stream_was_interrupted(
     Ok(true)
 }
 
-// LiteLLM's _recover_interrupted_stream_output_tokens: re-count the buffered text of a cut stream.
+// ast-grep-ignore: no-long-names - LiteLLM's _recover_interrupted_stream_output_tokens re-counts the buffered text of a cut stream.
 pub(crate) fn recover_interrupted_stream_output_tokens<Counter>(
     response: &mut Response,
     all_chunks: &[Chunk],
@@ -198,7 +198,7 @@ where
     }
 }
 
-// LiteLLM's _build_streaming_response_for_logging: the placeholder cost is dropped only after a recovery.
+// ast-grep-ignore: no-long-names - LiteLLM's _build_streaming_response_for_logging drops the placeholder cost only after a recovery.
 pub fn build_streaming_response_for_logging<Costs, Counter>(
     call_log: &LoggingState,
     request_body: &JsonObject,
@@ -216,6 +216,7 @@ where
     else {
         return Ok(None);
     };
+    // ast-grep-ignore: no-long-names
     let recovered = recover_interrupted_stream_output_tokens(
         &mut response,
         all_chunks,
@@ -228,7 +229,7 @@ where
     Ok(Some(response))
 }
 
-// LiteLLM's record_partial_usage_for_failure: the failure row bills the recovered usage and its cost.
+// ast-grep-ignore: no-long-names - LiteLLM's record_partial_usage_for_failure bills the recovered usage and its cost on the failure row.
 pub fn record_partial_usage_for_failure<Costs, Counter>(
     call_log: &mut LoggingState,
     request_body: &JsonObject,
@@ -244,21 +245,19 @@ where
     }
     let model = resolve_logged_model(call_log, request_body, all_chunks)?;
     let Some(response) =
+        // ast-grep-ignore: no-long-names
         build_streaming_response_for_logging(call_log, request_body, all_chunks, &model, services)?
     else {
         return Ok(());
     };
     let usage = usage_of(&response);
-    let partial = response_json(&response)?;
+    // The reconstructed response is what LiteLLM hands completion_cost, as the JSON B3630's service reads.
+    let value = serde_json::to_value(&response).map_err(encode_failure)?;
+    let partial: Json = serde_json::from_value(value).map_err(encode_failure)?;
     let cost = cost_partial_stream_or_zero(services.costs, &partial, &model, call_log);
-    record_on_call_log(call_log, &usage, cost);
+    // ast-grep-ignore: no-long-names
+    partial_usage::record_partial_usage_for_failure(call_log, &usage, cost);
     Ok(())
-}
-
-// The reconstructed response is what LiteLLM hands completion_cost, as the JSON B3630's service reads.
-fn response_json(response: &Response) -> Result<Json, InterruptedStreamUsageError> {
-    let value = serde_json::to_value(response).map_err(encode_failure)?;
-    serde_json::from_value(value).map_err(encode_failure)
 }
 
 // A response that cannot round-trip through JSON fails the reconstruction it came from.

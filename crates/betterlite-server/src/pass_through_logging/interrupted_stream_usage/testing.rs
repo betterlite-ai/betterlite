@@ -1,6 +1,3 @@
-// The oracle helpers and the fuzz target live outside this crate, so the internal functions reach them
-// through these plain-value seams: none of them names a betterlite-streaming type.
-
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -43,8 +40,8 @@ pub struct UsageSummary {
     pub completion_tokens: i64,
     pub total_tokens: i64,
     pub text_tokens: Option<i64>,
-    pub cost: Option<f64>,
-    pub hidden_response_cost: Option<f64>,
+    pub cost: Option<Decimal>,
+    pub hidden_response_cost: Option<Decimal>,
 }
 
 #[derive(Debug)]
@@ -59,7 +56,7 @@ pub struct ClearOutcome {
     pub hidden_cost_cleared: bool,
 }
 
-// LiteLLM decodes every chunk as strict UTF-8, so a bad chunk fails the walk here as it fails there.
+// ast-grep-ignore: no-padded-one-line-functions - the oracle and fuzz target pass raw bytes, and LiteLLM decodes them as strict UTF-8.
 pub fn stream_was_interrupted(chunks: &[Vec<u8>]) -> Result<bool, InterruptedStreamUsageError> {
     let decoded = chunks_of(chunks);
     super::stream_was_interrupted(&decoded)
@@ -74,6 +71,7 @@ pub fn recover_with_fixed_count(
 ) -> Result<RecoveryOutcome, InterruptedStreamUsageError> {
     let mut response = chat_response(spec);
     let decoded = chunks_of(chunks);
+    // ast-grep-ignore: no-long-names
     let changed = super::recover_interrupted_stream_output_tokens(
         &mut response,
         &decoded,
@@ -99,17 +97,23 @@ pub fn clear_placeholder_cost(spec: &ChatSpec) -> ClearOutcome {
 pub fn chat_response(spec: &ChatSpec) -> Response {
     let details = if spec.has_details {
         Some(CompletionTokensDetails {
+            reasoning_tokens: None,
             text_tokens: spec.text_tokens,
-            ..CompletionTokensDetails::default()
+            image_tokens: None,
+            audio_tokens: None,
+            extra: ShapedObject::new(),
         })
     } else {
         None
     };
-    let cost = spec.cost.as_deref().and_then(price_of);
+    let cost = spec
+        .cost
+        .as_deref()
+        .and_then(|text| Decimal::from_str(text).ok());
     let mut hidden_params = ShapedObject::new();
     if let Some(text) = &spec.hidden_response_cost
-        && let Some(cost) = price_of(text)
-        && let Some(number) = cost.to_f64().and_then(Number::from_f64)
+        && let Some(hidden_amount) = Decimal::from_str(text).ok()
+        && let Some(number) = hidden_amount.to_f64().and_then(Number::from_f64)
     {
         hidden_params.insert("response_cost".to_owned(), ShapedValue::Number(number));
     }
@@ -165,7 +169,7 @@ pub fn usage_summary(response: &Response) -> UsageSummary {
                 .completion_tokens_details
                 .as_ref()
                 .and_then(|details| details.text_tokens),
-            cost: chat.usage.cost.and_then(|cost| cost.to_f64()),
+            cost: chat.usage.cost,
             hidden_response_cost: hidden_cost(&chat.hidden_params),
         },
         Response::Text(text) => UsageSummary {
@@ -186,13 +190,9 @@ fn chunks_of(chunks: &[Vec<u8>]) -> Vec<Chunk> {
         .collect()
 }
 
-fn price_of(text: &str) -> Option<Decimal> {
-    Decimal::from_str(text).ok()
-}
-
-fn hidden_cost(hidden: &ShapedObject) -> Option<f64> {
+fn hidden_cost(hidden: &ShapedObject) -> Option<Decimal> {
     match hidden.get("response_cost") {
-        Some(ShapedValue::Number(number)) => number.as_f64(),
+        Some(ShapedValue::Number(number)) => Decimal::from_str(&number.to_string()).ok(),
         None | Some(_) => None,
     }
 }

@@ -100,17 +100,17 @@ where
 fn cost_response(input: &CostInput<'_>) -> Result<Json, CostError> {
     let mut fields = IndexMap::new();
     fields.insert("model".to_owned(), Json::Text(input.model.to_owned()));
-    fields.insert("usage".to_owned(), json_of(input.usage)?);
-    fields.insert("_hidden_params".to_owned(), json_of(input.hidden_params)?);
+    let usage = serde_json::to_value(input.usage).map_err(cost_failure)?;
+    fields.insert(
+        "usage".to_owned(),
+        serde_json::from_value(usage).map_err(cost_failure)?,
+    );
+    let hidden = serde_json::to_value(input.hidden_params).map_err(cost_failure)?;
+    fields.insert(
+        "_hidden_params".to_owned(),
+        serde_json::from_value(hidden).map_err(cost_failure)?,
+    );
     Ok(Json::Object(fields))
-}
-
-fn json_of<T>(value: &T) -> Result<Json, CostError>
-where
-    T: serde::Serialize,
-{
-    let json = serde_json::to_value(value).map_err(cost_failure)?;
-    serde_json::from_value(json).map_err(cost_failure)
 }
 
 fn cost_failure(source: serde_json::Error) -> CostError {
@@ -216,8 +216,10 @@ fn event_converter(
 ) -> Result<StreamEventConverter<CollectedCounter>, AssemblyFailure> {
     let counter = CollectedCounter::bundled().ok_or(AssemblyFailure::Tokenizer)?;
     let options = EventOptions {
+        sync_stream: false,
+        json_mode: None,
         speed: speed.map(str::to_owned),
-        ..EventOptions::default()
+        tool_name_reverse_map: IndexMap::new(),
     };
     Ok(StreamEventConverter {
         state: StreamState::new(options, &UuidV4),

@@ -77,7 +77,7 @@ class FixedCounter:
 
 def tail_answer(call: TailCall) -> bool:
     chunks = [bytes.fromhex(chunk) for chunk in call["chunks"]]
-    return Handler._stream_was_interrupted(chunks)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L330-L361
+    return Handler._stream_was_interrupted(chunks)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L330-L361
 
 
 def recover_answer(call: RecoverCall) -> RecoverAnswer:
@@ -88,7 +88,7 @@ def recover_answer(call: RecoverCall) -> RecoverAnswer:
     )
     response = ModelResponse(
         id="chatcmpl-b3632",
-        choices=[
+        choices=[  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181-L2258
             Choices(
                 index=0,
                 message=Message(content=call["content"]),
@@ -106,8 +106,12 @@ def recover_answer(call: RecoverCall) -> RecoverAnswer:
     )
     chunks = [bytes.fromhex(chunk) for chunk in call["chunks"]]
     litellm.token_counter = FixedCounter(call["count"])
-    recovered = Handler._recover_interrupted_stream_output_tokens(response=response, all_chunks=chunks, model=call["model"])  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L363-L403
-    usage = cast(Usage, response.usage)  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181-L2258
+    recovered = Handler._recover_interrupted_stream_output_tokens(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L363-L403
+        response=response,
+        all_chunks=chunks,
+        model=call["model"],
+    )
+    usage = cast(Usage, response.usage)  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181-L2258
     details_after = usage.completion_tokens_details
     return {
         "changed": recovered is not None,
@@ -128,7 +132,9 @@ def clear_answer(call: ClearCall) -> ClearAnswer:
     hidden_cost = call["hidden_response_cost"]
     response = ModelResponse(
         id="chatcmpl-b3632",
-        choices=[Choices(index=0, message=Message(content=None), finish_reason="stop")],
+        choices=[  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181-L2258
+            Choices(index=0, message=Message(content=None), finish_reason="stop"),
+        ],
         created=1700000000,
         model="claude-test",
         usage=Usage(
@@ -138,11 +144,12 @@ def clear_answer(call: ClearCall) -> ClearAnswer:
             completion_tokens_details=details,
             cost=cost,
         ),
-        hidden_params=None if hidden_cost is None else {"response_cost": float(hidden_cost)},
     )
-    usage = cast(Usage, response.usage)  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181-L2258
-    Handler._clear_placeholder_cost(response, usage)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L406-L408
     hidden = cast(dict[str, JsonValue], response._hidden_params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088
+    if hidden_cost is not None:
+        hidden["response_cost"] = float(hidden_cost)
+    usage = cast(Usage, response.usage)  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181-L2258
+    Handler._clear_placeholder_cost(response, usage)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L406-L408
     return {
         "cost_cleared": usage.cost is None,
         "hidden_cost_cleared": "response_cost" not in hidden,

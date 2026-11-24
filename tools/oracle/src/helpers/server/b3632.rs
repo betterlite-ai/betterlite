@@ -46,6 +46,14 @@ struct ClearCall {
     hidden_response_cost: Option<String>,
 }
 
+struct Counts {
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    total_tokens: i64,
+    has_details: bool,
+    text_tokens: Option<i64>,
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -82,16 +90,18 @@ fn tail_answer(call: &TailCall) -> Result<Value, Box<HelperError>> {
 }
 
 fn recover_answer(call: &RecoverCall) -> Result<Value, Box<HelperError>> {
-    let spec = ChatSpec {
-        content: call.content.clone(),
-        prompt_tokens: call.prompt_tokens,
-        completion_tokens: call.completion_tokens,
-        total_tokens: call.total_tokens,
-        has_details: call.has_details,
-        text_tokens: call.text_tokens,
-        cost: None,
-        hidden_response_cost: None,
-    };
+    let spec = chat_spec(
+        Counts {
+            prompt_tokens: call.prompt_tokens,
+            completion_tokens: call.completion_tokens,
+            total_tokens: call.total_tokens,
+            has_details: call.has_details,
+            text_tokens: call.text_tokens,
+        },
+        call.content.clone(),
+        None,
+        None,
+    );
     let outcome =
         recover_with_fixed_count(&spec, &chunks_of(&call.chunks)?, &call.model, call.count)
             .or_value_error()?;
@@ -105,21 +115,41 @@ fn recover_answer(call: &RecoverCall) -> Result<Value, Box<HelperError>> {
 }
 
 fn clear_answer(call: &ClearCall) -> Result<Value, Box<HelperError>> {
-    let spec = ChatSpec {
-        content: None,
-        prompt_tokens: call.prompt_tokens,
-        completion_tokens: call.completion_tokens,
-        total_tokens: call.total_tokens,
-        has_details: call.has_details,
-        text_tokens: call.text_tokens,
-        cost: call.cost.clone(),
-        hidden_response_cost: call.hidden_response_cost.clone(),
-    };
+    let spec = chat_spec(
+        Counts {
+            prompt_tokens: call.prompt_tokens,
+            completion_tokens: call.completion_tokens,
+            total_tokens: call.total_tokens,
+            has_details: call.has_details,
+            text_tokens: call.text_tokens,
+        },
+        None,
+        call.cost.clone(),
+        call.hidden_response_cost.clone(),
+    );
     let outcome = clear_placeholder_cost(&spec);
     Ok(json!({
         "cost_cleared": outcome.cost_cleared,
         "hidden_cost_cleared": outcome.hidden_cost_cleared,
     }))
+}
+
+fn chat_spec(
+    counts: Counts,
+    content: Option<String>,
+    cost: Option<String>,
+    hidden_response_cost: Option<String>,
+) -> ChatSpec {
+    ChatSpec {
+        content,
+        prompt_tokens: counts.prompt_tokens,
+        completion_tokens: counts.completion_tokens,
+        total_tokens: counts.total_tokens,
+        has_details: counts.has_details,
+        text_tokens: counts.text_tokens,
+        cost,
+        hidden_response_cost,
+    }
 }
 
 fn chunks_of(encoded: &[String]) -> Result<Vec<Vec<u8>>, Box<HelperError>> {

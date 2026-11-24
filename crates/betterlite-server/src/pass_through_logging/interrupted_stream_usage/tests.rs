@@ -1,13 +1,13 @@
 #![cfg(test)]
 
+mod support;
+
 use std::fs::read;
 use std::io;
 use std::path::PathBuf;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use async_trait::async_trait;
-use betterlite_core::cost::recording::PortFailure;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -16,13 +16,11 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_redact::secret::Redactor;
 use betterlite_streaming::stream_chunk_shaping::records::{
     JsonObject as ShapedObject, JsonValue as ShapedValue,
 };
 use betterlite_streaming::stream_tool_assembly::records::{FunctionOutput, ToolOutput};
-use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
 use betterlite_streaming::stream_usage_assembly::wire::{
     CacheCreationTokenDetails, CompletionTokensDetails, PromptTokensDetails, ServerToolUse,
     Usage as WireUsage,
@@ -30,8 +28,6 @@ use betterlite_streaming::stream_usage_assembly::wire::{
 use betterlite_streaming::streamed_response_assembly::response::{
     ChatChoice, ChatMessage, ChatResponse, Response, TextResponse, TextUsage,
 };
-use betterlite_tokenizer::count::error::CountError;
-use betterlite_tokenizer::count::request::Message as CountMessage;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -40,6 +36,10 @@ use serde_json::Number;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
+use self::support::{
+    FailingCount, FakeCost, FixedCount, RecordingCount, completed_stream_bytes, cut_stream_bytes,
+    number, recorded_cost, recorded_usage, request_body,
+};
 use super::lines::split_lines;
 use super::testing::{
     ChatSpec, chat_response, clear_placeholder_cost as clear_cost_for_testing,
@@ -52,7 +52,6 @@ use super::{
     build_streaming_response_for_logging, clear_placeholder_cost, record_partial_usage_for_failure,
     recover_interrupted_stream_output_tokens, stream_was_interrupted, usage_only_response_or_none,
 };
-use crate::pass_through_logging::response_costing::{ResponseCostRequest, ResponseCostService};
 use crate::pass_through_logging::stream_fields::Chunk;
 
 const START: &str = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"role\":\"assistant\",\"model\":\"claude-test\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n";
@@ -433,8 +432,8 @@ fn interrupted_clear_removes_cost_and_hidden_response_cost() {
         ..interrupted_spec()
     };
     let before = usage_summary(&chat_response(&spec));
-    assert_eq!(before.cost, Some(0.00025));
-    assert_eq!(before.hidden_response_cost, Some(0.00025));
+    assert_eq!(before.cost, Some(Decimal::new(25, 5)));
+    assert_eq!(before.hidden_response_cost, Some(Decimal::new(25, 5)));
     let cleared = clear_cost_for_testing(&spec);
     assert!(cleared.cost_cleared);
     assert!(cleared.hidden_cost_cleared);
@@ -552,10 +551,10 @@ fn interrupted_build_keeps_the_cost_of_a_completed_stream() {
     );
     assert_eq!(
         summary.cost,
-        Some(0.25),
+        Some(Decimal::new(25, 2)),
         "a completed stream keeps its cost"
     );
-    assert_eq!(summary.hidden_response_cost, Some(0.25));
+    assert_eq!(summary.hidden_response_cost, Some(Decimal::new(25, 2)));
 }
 
 #[test]
@@ -601,7 +600,7 @@ fn interrupted_build_skips_the_hidden_cost_for_an_xai_provider() {
     let summary = usage_summary(&response);
     assert_eq!(
         summary.cost,
-        Some(0.25),
+        Some(Decimal::new(25, 2)),
         "the xai stream keeps its usage cost"
     );
     assert_eq!(
@@ -862,178 +861,6 @@ fn replays_the_stream_interrupted_corpus(
 ) {
     let bytes = read(path).expect("a corpus seed");
     let _decided = stream_was_interrupted_bytes(&[bytes]);
-}
-
-fn cut_stream_bytes() -> Vec<u8> {
-    cut_stream_text().into_bytes()
-}
-
-fn cut_stream_text() -> String {
-    [START, TEXT_START, TEXT_DELTA].concat()
-}
-
-fn completed_stream_bytes() -> Vec<u8> {
-    [
-        START,
-        TEXT_START,
-        TEXT_DELTA,
-        CONTENT_STOP,
-        DELTA,
-        MESSAGE_STOP,
-    ]
-    .concat()
-    .into_bytes()
-}
-
-fn recorded_usage(call_log: &LoggingState) -> &JsonObject {
-    match call_log.model_call_details.get("combined_usage_object") {
-        Some(Json::Object(fields)) => fields,
-        None | Some(_) => panic!("the failure recorded no usage"),
-    }
-}
-
-fn recorded_cost(call_log: &LoggingState) -> Option<f64> {
-    match call_log.model_call_details.get("response_cost") {
-        Some(Json::Number(number)) => number.as_f64(),
-        None | Some(_) => None,
-    }
-}
-
-fn number(value: Option<&Json>) -> Option<i64> {
-    match value {
-        Some(Json::Number(number)) => number.as_i64(),
-        None | Some(_) => None,
-    }
-}
-
-fn request_body(model: &str) -> JsonObject {
-    let mut fields = JsonObject::new();
-    fields.insert("model".to_owned(), Json::Text(model.to_owned()));
-    fields
-}
-
-struct FakeCost {
-    price: Option<Decimal>,
-}
-
-impl FakeCost {
-    fn priced(price: Decimal) -> Self {
-        Self { price: Some(price) }
-    }
-
-    fn unpriced() -> Self {
-        Self { price: None }
-    }
-}
-
-impl ResponseCostService for FakeCost {
-    fn completion_cost(&self, _request: &ResponseCostRequest<'_>) -> Result<Decimal, PortFailure> {
-        self.price
-            .ok_or_else(|| PortFailure::from("no price for this model"))
-    }
-}
-
-struct FixedCount(i64);
-
-#[async_trait]
-impl UsageTokenCounter for FixedCount {
-    async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
-        Ok(self.0)
-    }
-
-    async fn count_text(&self, _text: &str) -> Result<i64, CountError> {
-        Ok(self.0)
-    }
-
-    async fn count_messages(
-        &self,
-        _model: &str,
-        _messages: Option<&[CountMessage]>,
-    ) -> Result<i64, CountError> {
-        Ok(self.0)
-    }
-}
-
-struct FailingCount;
-
-#[async_trait]
-impl UsageTokenCounter for FailingCount {
-    async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
-        Err(CountError::MissingInput)
-    }
-
-    async fn count_text(&self, _text: &str) -> Result<i64, CountError> {
-        Err(CountError::MissingInput)
-    }
-
-    async fn count_messages(
-        &self,
-        _model: &str,
-        _messages: Option<&[CountMessage]>,
-    ) -> Result<i64, CountError> {
-        Err(CountError::MissingInput)
-    }
-}
-
-struct RecordingCount {
-    count: i64,
-    texts: Mutex<Vec<String>>,
-    models: Mutex<Vec<String>>,
-}
-
-impl RecordingCount {
-    fn new(count: i64) -> Self {
-        Self {
-            count,
-            texts: Mutex::new(Vec::new()),
-            models: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn texts(&self) -> Vec<String> {
-        self.texts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn models(&self) -> Vec<String> {
-        self.models
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl UsageTokenCounter for RecordingCount {
-    async fn count_response_text(&self, model: &str, text: &str) -> Result<i64, CountError> {
-        self.models
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(model.to_owned());
-        self.texts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(text.to_owned());
-        Ok(self.count)
-    }
-
-    async fn count_text(&self, text: &str) -> Result<i64, CountError> {
-        self.texts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(text.to_owned());
-        Ok(self.count)
-    }
-
-    async fn count_messages(
-        &self,
-        _model: &str,
-        _messages: Option<&[CountMessage]>,
-    ) -> Result<i64, CountError> {
-        Ok(self.count)
-    }
 }
 
 fn timestamp() -> DateTime<FixedOffset> {
