@@ -552,3 +552,10 @@ path = "fuzz_targets/health_connection_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "scoped_report_query"
+path = "fuzz_targets/scoped_report_query.rs"
+test = false
+doc = false
+bench = false
