@@ -164,7 +164,7 @@ CREATE TABLE "LiteLLM_ConfigOverrides" (
     config_type TEXT PRIMARY KEY,
     config_value JSONB NOT NULL,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP(3) NOT NULL
 );
 "#;
 

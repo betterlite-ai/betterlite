@@ -1,15 +1,10 @@
 use betterlite_config::config_override::CYBERARK_FIELDS;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use betterlite_secret_managers::secret_types::KeyManagementSystem;
 
 use super::environment::{EnvironmentSnapshot, RuntimeEnvironment, project_environment};
 use super::models::OverrideKind;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ManagerKind {
-    HashicorpVault,
-    CyberArk,
-}
 
 #[derive(Debug, thiserror::Error)]
 #[error("the secret manager failed to initialize: {message}")]
@@ -19,11 +14,11 @@ pub struct SecretManagerInitError {
 
 // The proxy's one active secret manager and the two change-detection markers the routes own.
 pub trait SecretManagerControl {
-    fn active_manager(&self) -> Option<ManagerKind>;
+    fn active_manager(&self) -> Option<KeyManagementSystem>;
 
     fn drop_active_manager(&mut self);
 
-    fn initialize(&mut self, kind: ManagerKind) -> Result<(), SecretManagerInitError>;
+    fn initialize(&mut self, kind: KeyManagementSystem) -> Result<(), SecretManagerInitError>;
 }
 
 #[derive(Debug, Default)]
@@ -42,7 +37,7 @@ pub fn clear_hashicorp_vault_state(
         OverrideKind::HashicorpVault,
         &JsonMap::new(),
     ));
-    if control.active_manager() == Some(ManagerKind::HashicorpVault) {
+    if control.active_manager() == Some(KeyManagementSystem::HashicorpVault) {
         control.drop_active_manager();
     }
     state.vault_last_config = None;
@@ -80,14 +75,14 @@ pub fn restore_cyberark_runtime(
         .is_some_and(Option::is_some);
     environment.apply(&batch);
     if has_api_base {
-        match control.initialize(ManagerKind::CyberArk) {
+        match control.initialize(KeyManagementSystem::Cyberark) {
             Ok(()) => return,
             Err(error) => {
                 tracing::error!("Failed to restore previous CyberArk configuration: {error}");
             }
         }
     }
-    if control.active_manager() != Some(ManagerKind::CyberArk) {
+    if control.active_manager() != Some(KeyManagementSystem::Cyberark) {
         return;
     }
     control.drop_active_manager();
@@ -101,7 +96,7 @@ pub fn restore_cyberark_runtime(
     if vault_addr.is_empty() {
         return;
     }
-    if let Err(error) = control.initialize(ManagerKind::HashicorpVault) {
+    if let Err(error) = control.initialize(KeyManagementSystem::HashicorpVault) {
         tracing::error!("Failed to reinitialize Hashicorp Vault after CyberArk rollback: {error}");
     }
 }

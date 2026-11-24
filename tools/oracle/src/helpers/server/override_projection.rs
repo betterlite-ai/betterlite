@@ -48,7 +48,7 @@ impl Helper for Op {
                 };
                 serde_json::to_value(redact_config(config.as_ref())).or_value_error()
             }
-            Function::Schema => Ok(field_schema(input.kind)),
+            Function::Schema => serde_json::to_value(field_schema(input.kind)).or_value_error(),
             Function::Project => {
                 let parsed = decode_stored_override(&input.raw, input.kind).or_value_error()?;
                 serde_json::to_value(project_environment(input.kind, &parsed).changes)

@@ -16,8 +16,8 @@ use betterlite_secrets::secret_codec::{NonceSource, StoredCipher};
 use super::models::OverrideKind;
 use crate::env_value_codec::{EnvValueCodecError, encrypt_env};
 
-const UPSERT_SQL: &str = "INSERT INTO \"LiteLLM_ConfigOverrides\" (config_type, config_value) \
-     VALUES ($1, $2::text::jsonb) ON CONFLICT (config_type) \
+const UPSERT_SQL: &str = "INSERT INTO \"LiteLLM_ConfigOverrides\" (config_type, config_value, updated_at) \
+     VALUES ($1, $2::text::jsonb, now()) ON CONFLICT (config_type) \
      DO UPDATE SET config_value = EXCLUDED.config_value, updated_at = now()";
 
 #[derive(Debug, thiserror::Error)]

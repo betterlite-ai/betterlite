@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::config_override::{
     CYBERARK_DESCRIPTION, CYBERARK_FIELDS, HASHICORP_VAULT_DESCRIPTION, HASHICORP_VAULT_FIELDS,
     OverrideField,
 };
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde::{Deserialize, Serialize};
 
@@ -74,40 +75,42 @@ pub struct CyberArkConfig {
     pub refresh_interval: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ConfigOverrideSettingsResponse {
     pub config_type: String,
     pub values: JsonMap,
-    pub field_schema: JsonValue,
+    pub field_schema: ConfigOverrideFieldSchema,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ConfigOverrideFieldSchema {
+    pub description: &'static str,
+    pub properties: BTreeMap<String, ConfigOverrideFieldProperty>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct ConfigOverrideFieldProperty {
+    pub description: &'static str,
+    #[serde(rename = "type")]
+    pub kind: &'static str,
 }
 
 // The UI schema LiteLLM derives from the pydantic model: its docstring and each field's description and non-null type.
 #[must_use]
-pub fn field_schema(kind: OverrideKind) -> JsonValue {
-    let properties = kind
+pub fn field_schema(kind: OverrideKind) -> ConfigOverrideFieldSchema {
+    let properties: BTreeMap<String, ConfigOverrideFieldProperty> = kind
         .fields()
         .iter()
         .map(|field| {
-            let entry = [
-                (
-                    "description".to_owned(),
-                    JsonValue::String(field.description.to_owned()),
-                ),
-                ("type".to_owned(), JsonValue::String("string".to_owned())),
-            ]
-            .into_iter()
-            .collect::<JsonMap>();
-            (field.name.to_owned(), JsonValue::Object(entry))
+            let property = ConfigOverrideFieldProperty {
+                description: field.description,
+                kind: "string",
+            };
+            (field.name.to_owned(), property)
         })
-        .collect::<JsonMap>();
-    let schema = [
-        (
-            "description".to_owned(),
-            JsonValue::String(kind.description().to_owned()),
-        ),
-        ("properties".to_owned(), JsonValue::Object(properties)),
-    ]
-    .into_iter()
-    .collect::<JsonMap>();
-    JsonValue::Object(schema)
+        .collect();
+    ConfigOverrideFieldSchema {
+        description: kind.description(),
+        properties,
+    }
 }
