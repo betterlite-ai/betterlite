@@ -218,30 +218,26 @@ async def _teams_answer(call: TeamsCall, effects: list[str]) -> JsonValue:
 def _projections_answer(call: ProjectionsCall) -> JsonValue:
     caller = _caller_record(call["caller"])
     teams = [TEAM.validate_python(row) for row in call["teams"]]
-    return _JSON.validate_python(
-        {
-            "admins": _get_admin_team_ids_from_objects(caller, teams),
-            "list_permission": _get_team_ids_with_key_list_permission_from_objects(caller, teams),
-            "members": _get_member_team_ids_from_objects(caller, teams),
-        }
-    )
+    admins = _get_admin_team_ids_from_objects(caller, teams)
+    permitted = _get_team_ids_with_key_list_permission_from_objects(caller, teams)
+    members = _get_member_team_ids_from_objects(caller, teams)
+    projection = {"admins": admins, "list_permission": permitted, "members": members}
+    return _JSON.validate_python(projection)
 
 
 async def _alias_scope_answer(call: AliasScopeCall, effects: list[str]) -> JsonValue:
-    caller = _caller_record(call["caller"])
-    user_row = None if call["user_row"] is None else USER.validate_python(call["user_row"])
-    client = CasePrisma(
-        CaseDb(
-            CaseUserTable(row=user_row, effects=effects),
-            CaseKeyTable(row=None, fails=False, effects=effects),
-            CaseTeamTable(rows=[], fails=False, effects=effects),
-        )
-    )
     params = list(call["query_params"])
     parts = list(call["where_parts"])
+    user_row = None if call["user_row"] is None else USER.validate_python(call["user_row"])
     await _apply_non_admin_alias_scope(
-        caller,
-        client,
+        _caller_record(call["caller"]),
+        CasePrisma(
+            CaseDb(
+                CaseUserTable(row=user_row, effects=effects),
+                CaseKeyTable(row=None, fails=False, effects=effects),
+                CaseTeamTable(rows=[], fails=False, effects=effects),
+            )
+        ),
         cast("list[object]", params),  # LiteLLM types query_params as list[object]: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6687-L6692
         parts,
     )
@@ -266,6 +262,12 @@ def _error_of(
     return _JSON.validate_python(error)
 
 
+def _envelope(value: JsonValue, error: JsonValue, effects: list[str]) -> JsonValue:
+    return _JSON.validate_python(
+        {"value": value, "error": error, "warnings": [], "effects": effects}
+    )
+
+
 async def _call_outcome(call: Call) -> JsonValue:
     effects: list[str] = []
     value: JsonValue = None
@@ -280,12 +282,8 @@ async def _call_outcome(call: Call) -> JsonValue:
             case "alias_scope":
                 value = await _alias_scope_answer(call, effects)
     except (HTTPException, ProxyException, RuntimeError, ValidationError) as error:
-        return _JSON.validate_python(
-            {"value": None, "error": _error_of(error), "warnings": [], "effects": effects}
-        )
-    return _JSON.validate_python(
-        {"value": value, "error": None, "warnings": [], "effects": effects}
-    )
+        return _envelope(None, _error_of(error), effects)
+    return _envelope(value, None, effects)
 
 
 def run(input_value: Input) -> JsonValue:
