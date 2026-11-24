@@ -37,7 +37,7 @@ pub enum OrganizationCreateError {
     },
     #[error("the caller may not hand every model to the organization")]
     AllModelsDenied,
-    #[error(transparent)]
+    #[error("the caller may not grant the requested model")]
     // ast-grep-ignore: no-long-names
     ModelDenied(Box<ModelAccessDeniedProxyException>),
     #[error("the model fallback depth was exceeded for {model}")]
