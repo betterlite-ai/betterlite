@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator, Awaitable, Coroutine, Mapping
-from typing import Final, Protocol, TypeAlias, TypedDict, TypeVar
+from typing import Final, Protocol, TypeAlias, TypedDict, TypeVar, Unpack
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -61,14 +61,15 @@ RequestValue: TypeAlias = (
 ClientValue: TypeAlias = A2AClientType | SDKClient | None
 
 
-# asend_message's own **kwargs cannot take this wrapper's dict of any call value
-class SendCall(Protocol):
-    def __call__(
-        self,
-        a2a_client: ClientValue = ...,
-        request: RequestValue = ...,
-        **kwargs: CallValue,
-    ) -> Coroutine[None, None, LiteLLMSendMessageResponse]: ...
+# send_message's **kwargs: asend_message's named arguments plus the JSON values it forwards
+class SendMessageKwargs(TypedDict, total=False):
+    api_base: str | None
+    litellm_params: dict[str, JsonValue] | None
+    agent_id: str | None
+    agent_extra_headers: dict[str, str] | None
+    litellm_call_id: JsonValue
+    litellm_trace_id: str | None
+    metadata: JsonValue
 
 
 async def guarded(call: Awaitable[_CallResult]) -> _CallResult:
@@ -266,10 +267,9 @@ async def aget_agent_card(
 def send_message(
     a2a_client: ClientValue,
     request: RequestValue,
-    **kwargs: CallValue,
+    **kwargs: Unpack[SendMessageKwargs],
 ) -> LiteLLMSendMessageResponse | Coroutine[None, None, LiteLLMSendMessageResponse]:
-    send: SendCall = asend_message
-    call = send(a2a_client=a2a_client, request=request, **kwargs)
+    call = asend_message(a2a_client=a2a_client, request=request, **kwargs)
     try:
         _ = asyncio.get_running_loop()
     except RuntimeError:
