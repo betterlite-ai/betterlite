@@ -25,8 +25,8 @@ calls:
       target: acme
       in_memory_ttl: 5.0
       alias_rows:
-        - {organization_id: o1, organization_alias: acme, budget_id: b1}
-        - {organization_id: o2, organization_alias: acme, budget_id: b2}
+        - {organization_id: o1, organization_alias: acme, budget_id: b1, created_by: ops, updated_by: ops}
+        - {organization_id: o2, organization_alias: acme, budget_id: b2, created_by: ops, updated_by: ops}
       steps:
         - {now: 100.0, fail: []}
   - auth_org_lookup:
