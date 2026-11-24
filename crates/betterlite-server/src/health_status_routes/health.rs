@@ -60,15 +60,6 @@ struct RouterCall<'call> {
     deployments: &'call [DeploymentSpec],
 }
 
-// The cached result and the scope it is narrowed by, with the caller's admin flag for _post_process
-struct BackgroundScope<'kept, 'call> {
-    restrict: bool,
-    deployments: &'kept [DeploymentSpec],
-    targeted_ids: Option<&'kept BTreeSet<String>>,
-    caller: &'call HealthCaller,
-    admin: bool,
-}
-
 pub(super) async fn health_endpoint(
     State(state): State<HealthStatusState>,
     identity: Option<Extension<AuthContext>>,
@@ -169,18 +160,7 @@ async fn router_health(
     let kept = scope.kept(deployments);
     let targeted_ids = resolve_targeting(&kept, &scope, query)?;
     if state.use_background_health_checks.0 {
-        return background_health(
-            state,
-            BackgroundScope {
-                restrict: scope.restrict,
-                deployments: &kept,
-                targeted_ids: targeted_ids.as_ref(),
-                caller,
-                admin: mode.admin,
-            },
-            mode.model_specific,
-        )
-        .await;
+        return background_health(state, &scope, &kept, targeted_ids.as_ref(), mode);
     }
     let probe = HealthProbeCall {
         model_list: &kept,
@@ -229,27 +209,24 @@ fn probe_scope<'state, 'call>(
 }
 
 // The background cache: narrowed to the targeted or allowed ids, with the missing-id warning on a scoped empty filter
-async fn background_health(
+fn background_health(
     state: &HealthStatusState,
-    scope: BackgroundScope<'_, '_>,
-    model_specific: bool,
+    scope: &ProbeScope<'_, '_>,
+    deployments: &[DeploymentSpec],
+    targeted_ids: Option<&BTreeSet<String>>,
+    mode: PostProcess,
 ) -> Result<Response, HealthRouteError> {
     let result = state.results.snapshot().to_json();
-    let mode = PostProcess {
-        model_specific,
-        admin: scope.admin,
-    };
     if !scope.restrict {
-        if let Some(ids) = scope.targeted_ids {
+        if let Some(ids) = targeted_ids {
             return post_process(filter_by_ids(&result, ids), mode);
         }
         return post_process(result, mode);
     }
-    let allowed_model_ids = deployment_ids(scope.deployments);
-    let filter_ids = scope.targeted_ids.unwrap_or(&allowed_model_ids);
+    let allowed_model_ids = deployment_ids(deployments);
+    let filter_ids = targeted_ids.unwrap_or(&allowed_model_ids);
     let mut filtered = filter_by_ids(&result, filter_ids);
-    if scope.targeted_ids.is_none() && !scope.deployments.is_empty() && allowed_model_ids.is_empty()
-    {
+    if targeted_ids.is_none() && !deployments.is_empty() && allowed_model_ids.is_empty() {
         warn_missing_ids(scope.caller);
         add_missing_id_warning(&mut filtered);
     }

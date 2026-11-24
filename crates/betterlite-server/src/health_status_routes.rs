@@ -16,7 +16,6 @@ use axum::routing::get;
 use crate::health_status_routes::state::HealthStatusState;
 
 // The three health routes B8540 mounts once; each sits behind the proxy's key auth middleware
-#[must_use]
 pub fn health_status_routes(state: HealthStatusState) -> Router {
     Router::new()
         .route("/health", get(health::health_endpoint))

@@ -27,7 +27,7 @@ pub enum HealthRouteError {
 impl HealthRouteError {
     // HTTPException(status_code=status, detail={"error": message}), rendered under {"detail": ...}
     #[must_use]
-    pub fn http(status: StatusCode, message: String) -> Self {
+    pub const fn http(status: StatusCode, message: String) -> Self {
         Self::Http(Rejection {
             status,
             detail: RejectionDetail::Error(message),

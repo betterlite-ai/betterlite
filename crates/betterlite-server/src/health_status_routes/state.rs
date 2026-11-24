@@ -75,13 +75,16 @@ pub trait HealthResultsSource: Send + Sync {
     fn snapshot(&self) -> HealthCheckResults;
 }
 
+// The router crate's provider hook, shared by the cycle catalog and the lookup it builds
+pub type InferredProvider = dyn Fn(&str) -> Option<String> + Send + Sync;
+
 // The router's catalog, owned so the state stays 'static: the handle is read into a snapshot for each cycle
 #[derive(Clone)]
 pub struct CycleCatalog {
     pub handle: Arc<CatalogHandle>,
     pub aliases: Arc<AliasMap>,
     pub routing_groups: Arc<RoutingGroupIndex>,
-    pub inferred_provider: Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
+    pub inferred_provider: Arc<InferredProvider>,
 }
 
 // B4443's cycle dependencies, injected as the server holds them

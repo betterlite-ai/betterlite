@@ -2,6 +2,7 @@
 
 mod support;
 
+use std::ptr::eq;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -156,7 +157,9 @@ async fn target_failing_lookup_logs_and_is_a_404() {
 
 #[tokio::test]
 async fn check_without_a_store_is_database_not_initialized() {
-    let error = check_prisma_client(None).expect_err("no store");
+    let Err(error) = check_prisma_client(None) else {
+        panic!("no store gives an error");
+    };
     let reply = render(error).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(reply.detail_error(), "Database not initialized");
@@ -166,7 +169,7 @@ async fn check_without_a_store_is_database_not_initialized() {
 fn check_with_a_store_returns_it() {
     let rows = unconnected();
     let found = check_prisma_client(Some(&rows)).expect("the store");
-    assert!(std::ptr::eq(found, &rows));
+    assert!(eq(found, &raw const rows));
 }
 
 #[rstest]
@@ -188,7 +191,7 @@ async fn save_returns_the_lists_and_their_counts() {
     ];
     let (mut state, _provider, _source) = fixture();
     let provider = Arc::new(FakeProvider::new().failing("openai/b"));
-    state.cycle.provider = Arc::clone(&provider);
+    state.cycle.provider = Arc::<FakeProvider>::clone(&provider);
     let outcome = perform_health_check_and_save(&state, probe(&models))
         .await
         .expect("the probe runs");
@@ -266,7 +269,7 @@ async fn save_falls_back_to_the_target_model() {
 #[tokio::test]
 async fn save_writes_nothing_without_a_store() {
     let models = vec![deployment("group-a", "id-a", "openai/a")];
-    let (mut state, _provider, _source) = fixture();
+    let (state, _provider, _source) = fixture();
     let mut call = probe(&models);
     call.target_model = Some("group-a");
     perform_health_check_and_save(&state, call)
@@ -502,7 +505,7 @@ async fn health_targeted_model_id_with_no_healthy_endpoint_is_503() {
     let models = vec![deployment("a", "id-a", "openai/a")];
     let (mut state, _provider, _source) = fixture();
     let provider = Arc::new(FakeProvider::new().failing("openai/a"));
-    state.cycle.provider = Arc::clone(&provider);
+    state.cycle.provider = Arc::<FakeProvider>::clone(&provider);
     serve(&mut state, models);
     let reply = get(state, Some(&admin()), "/health?model_id=id-a").await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
@@ -516,7 +519,7 @@ async fn health_targeted_model_name_with_no_healthy_endpoint_is_503() {
     let models = vec![deployment("a", "id-a", "openai/a")];
     let (mut state, _provider, _source) = fixture();
     let provider = Arc::new(FakeProvider::new().failing("openai/a"));
-    state.cycle.provider = Arc::clone(&provider);
+    state.cycle.provider = Arc::<FakeProvider>::clone(&provider);
     serve(&mut state, models);
     let reply = get(state, Some(&admin()), "/health?model=a").await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
@@ -670,6 +673,7 @@ async fn history_returns_the_page() {
         ],
     )
     .await;
+    database.release();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/history").await;
@@ -702,6 +706,7 @@ async fn history_honours_limit_and_offset() {
         ],
     )
     .await;
+    database.release();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/history?limit=1&offset=1").await;
@@ -730,6 +735,7 @@ async fn history_filters_by_model_and_status() {
         ],
     )
     .await;
+    database.release();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(database.rows()));
     let reply = get(
@@ -841,6 +847,7 @@ async fn latest_returns_the_latest_row_per_model() {
         ],
     )
     .await;
+    database.release();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;
@@ -879,6 +886,7 @@ async fn latest_prints_the_converted_row() {
         )],
     )
     .await;
+    database.release();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;
@@ -917,6 +925,7 @@ async fn latest_keys_by_model_id_else_model_name() {
         ],
     )
     .await;
+    database.release();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;
@@ -945,6 +954,7 @@ async fn latest_collapses_rows_that_share_a_key() {
         ],
     )
     .await;
+    database.release();
     let (mut state, _provider, _source) = fixture();
     state.rows = Some(Arc::new(database.rows()));
     let reply = get(state, Some(&admin()), "/health/latest").await;

@@ -39,12 +39,11 @@ use tracing_subscriber::fmt::{MakeWriter, fmt};
 use crate::auth::auth_identity::AuthContext;
 use crate::health_access_and_connections::visibility::{HealthRouter, LookupFailure};
 use crate::health_cycle::ports::{ProbeFailure, ProbeRequest, ProbeResponse, ProviderHealth};
-use crate::health_cycle::state::HealthCycleState;
 use crate::health_status_routes::error::HealthRouteError;
 use crate::health_status_routes::health_status_routes;
 use crate::health_status_routes::save::HealthProbeCall;
 use crate::health_status_routes::state::{
-    HealthCheckResults, HealthFlag, HealthResultsSource, HealthStatusState,
+    HealthCheckResults, HealthCycleState, HealthFlag, HealthResultsSource, HealthStatusState,
 };
 use crate::model_deprecation::clock::UtcClock;
 
@@ -182,14 +181,14 @@ pub(crate) struct FakeProvider {
 }
 
 impl FakeProvider {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             failing: Mutex::new(Vec::new()),
             calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub(crate) fn failing(mut self, model: &str) -> Self {
+    pub(crate) fn failing(self, model: &str) -> Self {
         self.failing
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -310,7 +309,10 @@ pub(crate) fn endpoint(model_name: &str, model_id: &str) -> JsonObject {
     ])
 }
 
-pub(crate) fn results(healthy: Vec<JsonObject>, unhealthy: Vec<JsonObject>) -> HealthCheckResults {
+pub(crate) const fn results(
+    healthy: Vec<JsonObject>,
+    unhealthy: Vec<JsonObject>,
+) -> HealthCheckResults {
     HealthCheckResults {
         healthy_count: healthy.len(),
         unhealthy_count: unhealthy.len(),
@@ -337,7 +339,7 @@ pub(crate) fn background(state: &mut HealthStatusState, healthy: Vec<JsonObject>
     let source = Arc::new(FakeResults {
         snapshot: results(healthy, Vec::new()),
     });
-    state.results = Arc::clone(&source);
+    state.results = Arc::<FakeResults>::clone(&source);
     state.use_background_health_checks = HealthFlag(true);
 }
 
@@ -400,12 +402,12 @@ pub(crate) fn fixture() -> (HealthStatusState, Arc<FakeProvider>, Arc<FakeResult
         health_check_concurrency: None,
         use_background_health_checks: HealthFlag(false),
         skip_disabled_models: HealthFlag(false),
-        results: Arc::clone(&source),
+        results: Arc::<FakeResults>::clone(&source),
         rows: None,
         clock: Arc::new(FixedClock(fixed_now())),
         tasks: TaskTracker::new(),
         cycle: HealthCycleState {
-            provider: Arc::clone(&provider),
+            provider: Arc::<FakeProvider>::clone(&provider),
             models,
             policy: ProbePolicy::default(),
             catalog: None,

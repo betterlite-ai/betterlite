@@ -9,18 +9,18 @@ pub fn resolve_target_model_name(
     model_id: Option<&str>,
     router: Option<&dyn HealthRouter>,
 ) -> Result<Option<String>, HealthRouteError> {
-    let Some(model_id) = model_id.filter(|id| !id.is_empty()) else {
+    let Some(id) = model_id.filter(|id| !id.is_empty()) else {
         return Ok(model.map(str::to_owned));
     };
-    let Some(router) = router else {
-        return Err(not_found(model_id));
+    let Some(lookup) = router else {
+        return Err(not_found(id));
     };
-    match router.get_deployment(model_id) {
+    match lookup.get_deployment(id) {
         Ok(Some(deployment)) => Ok(Some(deployment.model_name)),
-        Ok(None) => Err(not_found(model_id)),
+        Ok(None) => Err(not_found(id)),
         Err(error) => {
-            tracing::error!("Error getting deployment for model_id {model_id}: {error}");
-            Err(not_found(model_id))
+            tracing::error!("Error getting deployment for model_id {id}: {error}");
+            Err(not_found(id))
         }
     }
 }

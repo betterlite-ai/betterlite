@@ -129,7 +129,7 @@ fn schedule_save(
     let healthy = results.healthy_endpoints.clone();
     let unhealthy = results.unhealthy_endpoints.clone();
     let start_time = call.start_time;
-    let rows = Arc::clone(rows);
+    let store = Arc::clone(rows);
     let clock = Arc::clone(&state.clock);
     let _task = state.tasks.spawn(async move {
         let check = SingleHealthCheck {
@@ -140,6 +140,6 @@ fn schedule_save(
             start_time,
             user_id: user_id.as_deref(),
         };
-        save_single(rows.as_ref(), &check, clock.as_ref()).await;
+        save_single(store.as_ref(), &check, clock.as_ref()).await;
     });
 }
