@@ -18,9 +18,9 @@ deviations:
       array or object, and refusing the value keeps the request an ordinary 400.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1785
   - what: >-
-      A non-finite upperbound max_budget (.nan or .inf) fails the config load as an invalid scalar.
-      LiteLLM stores the float, the ceiling then never binds because value > NaN is false, and
-      fill_defaults copies the NaN into generated keys.
+      A non-finite upperbound max_budget (.nan or .inf) fails the config load, since the YAML layer
+      refuses a non-finite float before the section reads it. LiteLLM stores the float, the ceiling
+      then never binds because value > NaN is false, and fill_defaults copies the NaN into generated keys.
     why: >-
       betterlite keeps budgets in rust_decimal (docs/compatibility.md), which cannot hold NaN or
       infinity; failing at the config boundary beats generating keys whose budget check is disabled.

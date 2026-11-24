@@ -109,6 +109,20 @@ fn invalid_upperbound_type(#[case] entry: &str, #[case] field: &str) {
     );
 }
 
+// LiteLLM keeps the float and hands out keys whose ceiling never binds
+#[rstest]
+#[case::nan(".nan")]
+#[case::inf(".inf")]
+fn non_finite_budget_fails_the_load(#[case] value: &str) {
+    let source =
+        format!("litellm_settings:\n  upperbound_key_generate_params:\n    max_budget: {value}");
+    let error = settings(&source, &[]).expect_err("a non-finite budget fails the load");
+    assert!(
+        matches!(error.category(), "yaml" | "invalid_scalar"),
+        "{value}: {error}"
+    );
+}
+
 #[test]
 fn missing_env_reference() {
     let missing = settings(

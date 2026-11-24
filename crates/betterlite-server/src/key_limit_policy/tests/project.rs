@@ -107,6 +107,16 @@ async fn project_model_order() {
 }
 
 #[tokio::test]
+async fn project_model_non_string_entry() {
+    let mut reads = FakeReads::default();
+    reads.project = Some(stored(r#"["gpt-4"]"#, "null"));
+    let rejection = rejected(check(&reads, r#"{"models": [["gpt-4"]]}"#).await);
+    assert!(matches!(rejection, Rejection::ProjectModel { .. }));
+    let rejection = rejected(check(&reads, r#"{"models": [{"name": "gpt-4"}]}"#).await);
+    assert!(matches!(rejection, Rejection::ProjectModel { .. }));
+}
+
+#[tokio::test]
 async fn project_model_before_budget() {
     let mut reads = FakeReads::default();
     reads.project = Some(stored(
