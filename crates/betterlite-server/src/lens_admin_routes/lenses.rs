@@ -117,7 +117,8 @@ where
     };
     let queued = queue_job(&lens, now, state.ids.new_id(), &RunRequest::default())
         .map_err(LensMutationError::from)?;
-    Ok(Json(lens_repository(&state)?.create(queued).await?))
+    let repository = lens_repository(&state)?;
+    Ok(Json(repository.create(queued).await?))
 }
 
 pub(crate) async fn read_lens<Db, Store>(

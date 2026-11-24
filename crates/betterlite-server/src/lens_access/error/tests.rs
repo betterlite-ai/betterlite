@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use axum::http::StatusCode;
+use betterlite_auth::resolved_key::auth::AuthError;
 use betterlite_db::lens_repository::repository::LensRepositoryError;
 
 use crate::lens_access::error::LensAccessError;
@@ -112,6 +113,27 @@ fn a_repository_failure_is_a_500_that_keeps_its_text() {
     let error = LensAccessError::Repository(LensRepositoryError::Version);
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(error.detail(), "the lens version would overflow");
+}
+
+#[test]
+fn a_chained_repository_failure_names_its_cause() {
+    let source = serde_json::from_str::<u8>("not json").expect_err("the fixture is not json");
+    let error = LensAccessError::Repository(LensRepositoryError::Encode(source));
+    assert!(
+        error
+            .detail()
+            .starts_with("the record could not be encoded as JSON: ")
+    );
+}
+
+#[test]
+fn an_unbuilt_caller_names_its_cause() {
+    let error = LensAccessError::CallerKey(AuthError::NonStringApiKey);
+    assert!(
+        error
+            .detail()
+            .starts_with("the caller key could not be rebuilt: ")
+    );
 }
 
 #[test]

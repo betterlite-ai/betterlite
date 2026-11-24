@@ -124,11 +124,6 @@ impl IntoResponse for QueryFailure {
                 msg: "Input should be greater than or equal to 0".to_owned(),
             },
         };
-        let detail = vec![issue];
-        (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(ValidationBody { detail }),
-        )
-            .into_response()
+        BodyFailure::Fields(vec![issue]).into_response()
     }
 }
