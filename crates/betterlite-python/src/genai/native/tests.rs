@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 use super::super::register;
 use super::NativeGenaiSession;
+use crate::genai::convert::ConvertError;
 
 const SESSION: &str = r#"{"environment": {}}"#;
 
@@ -33,7 +34,11 @@ fn a_file_marker_is_refused_before_any_request() {
     Python::attach(|py| {
         let session = NativeGenaiSession::new(SESSION).unwrap();
         let payload = r#"{"model": "gemini/gemini-2.5-flash", "contents": [{"parts": [{"$file": {"blob": 0, "name": "a.txt"}}]}], "kwargs": {}}"#;
-        let refused = session.content(py, payload, vec![b"hi".to_vec()]);
-        refused.unwrap_err();
+        let message = session
+            .content(py, payload, vec![b"hi".to_vec()])
+            .err()
+            .map(|error| error.to_string());
+        let refusal = ConvertError::Files.to_string();
+        assert_eq!(message, Some(format!("ValueError: {refusal}")));
     });
 }

@@ -1,8 +1,11 @@
 import asyncio
 import inspect
+import json
+import logging
 from collections.abc import Awaitable, Mapping
 from typing import Final, Protocol, TypeAlias, TypedDict
 
+import litellm
 import pytest
 from genai_server import (
     API_KEY_HEADER,
@@ -34,7 +37,10 @@ from typing_extensions import override
 
 from betterlite._completion import arguments
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._endpoints.payload import CallValue, LOGGER_FN_DROPPED
 from betterlite._endpoints.proxy import ProxyAuthProvider
+from betterlite._genai import arguments as genai_arguments
+from betterlite._genai.arguments import fill_settings, session_settings
 from betterlite._genai.stream import GenaiStream
 from betterlite.exceptions import BadRequestError
 from betterlite.google_genai import (
@@ -47,6 +53,9 @@ from betterlite.google_genai import (
 PROXY_HEADER: Final = "x-proxy-auth"
 PROXY_VALUE: Final = "yes"
 CLIENT_VALUE: Final = "driver"
+VERTEX_PROJECT: Final = "genai-project"
+VERTEX_LOCATION: Final = "europe-west4"
+CALL_PROJECT: Final = "call-project"
 FIRST: Final = 0
 SECOND: Final = 1
 
@@ -129,16 +138,30 @@ async def awaited_stream(result: StreamAnswer) -> GenaiStream:
             return await awaitable
 
 
+def bad_request_payload(failure: BadRequestError) -> ErrorPayload:
+    cause = failure.__cause__
+    assert cause is not None
+    payload = ERROR_PAYLOAD.validate_json(str(cause))
+    assert failure.status_code == STATUS_BAD_REQUEST
+    assert "API key not valid" in payload["message"]
+    return payload
+
+
 async def async_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     ours = await agenerate_content(**common_call(server_url))
-    reference = reference_dict(await LITELLM_ASYNC.agenerate_content(**common_call(server_url)))
+    reference = reference_dict(
+        await LITELLM_ASYNC.agenerate_content(
+            model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY
+        )
+    )
     return ours, reference
 
 
 async def flagged_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     ours = generate_content(**common_call(server_url), agenerate_content=True)
     reference = LITELLM_ASYNC.generate_content(
-        **common_call(server_url), agenerate_content=True
+        model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY,
+        agenerate_content=True,
     )
     return await awaited_dict(ours), reference_dict(await reference)
 
@@ -148,7 +171,9 @@ async def async_streams(server_url: str) -> tuple[list[bytes], list[bytes]]:
     reference = [
         chunk
         async for chunk in await reference_stream_async(
-            LITELLM_ASYNC.agenerate_content_stream(**common_call(server_url))
+            LITELLM_ASYNC.agenerate_content_stream(
+                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY
+            )
         )
     ]
     return ours, reference
@@ -157,7 +182,8 @@ async def async_streams(server_url: str) -> tuple[list[bytes], list[bytes]]:
 async def flagged_stream(server_url: str) -> tuple[list[bytes], list[bytes]]:
     ours = generate_content_stream(**common_call(server_url), agenerate_content_stream=True)
     reference = LITELLM_ASYNC.generate_content_stream(
-        **common_call(server_url), agenerate_content_stream=True
+        model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=GOOD_KEY,
+        agenerate_content_stream=True,
     )
     return (
         [chunk async for chunk in await awaited_stream(ours)],
@@ -172,6 +198,12 @@ async def close_async_stream(server_url: str) -> None:
     await stream.aclose()
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
+
+
+async def reference_bad_stream(server_url: str) -> None:
+    await LITELLM_ASYNC.agenerate_content_stream(
+        model=PREFIXED_MODEL, contents=CONTENTS, api_base=server_url, api_key=BAD_KEY
+    )
 
 
 def test_signature_matches_litellm() -> None:
@@ -192,7 +224,11 @@ def test_signature_matches_litellm() -> None:
 def test_plain_matches_litellm() -> None:
     with GenaiServer() as server:
         ours = content_dict(generate_content(**common_call(server.url)))
-        reference = reference_dict(LITELLM.generate_content(**common_call(server.url)))
+        reference = reference_dict(
+            LITELLM.generate_content(
+                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=GOOD_KEY
+            )
+        )
         paths = [call["path"] for call in server.calls]
         bodies = [call["body"] for call in server.calls]
         key = recorded_header(server, FIRST, API_KEY_HEADER)
@@ -220,7 +256,7 @@ def test_optional_matches_litellm() -> None:
         )
         reference = reference_dict(
             LITELLM.generate_content(
-                **common_call(server.url),
+                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=GOOD_KEY,
                 config=CONFIG,
                 tools=TOOLS,
                 extra_body=EXTRA_BODY,
@@ -236,6 +272,55 @@ def test_optional_matches_litellm() -> None:
     assert bodies[FIRST]["safetySettings"] == SAFETY_SETTINGS
     assert bodies[FIRST]["labels"] == EXTRA_BODY["labels"]
     assert bodies[FIRST]["tools"] == TOOLS
+
+
+def test_optional_module_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert session_settings() == "{}"
+    their_key = litellm.api_key
+    try:
+        litellm.api_key = GOOD_KEY
+        genai_arguments.settings_seam["api_key"] = GOOD_KEY
+        assert session_settings() == json.dumps({"api_key": GOOD_KEY})
+        with GenaiServer() as server:
+            ours = content_dict(
+                generate_content(model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url)
+            )
+            reference = reference_dict(
+                LITELLM.generate_content(
+                    model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url
+                )
+            )
+            key = recorded_header(server, FIRST, API_KEY_HEADER)
+            reference_key = recorded_header(server, SECOND, API_KEY_HEADER)
+    finally:
+        litellm.api_key = their_key
+        genai_arguments.settings_seam.clear()
+    assert ours == reference
+    assert key == GOOD_KEY
+    assert reference_key == GOOD_KEY
+
+
+def test_optional_vertex_settings() -> None:
+    genai_arguments.settings_seam["vertex_project"] = VERTEX_PROJECT
+    genai_arguments.settings_seam["vertex_location"] = VERTEX_LOCATION
+    try:
+        forwarded: dict[str, CallValue] = {"api_base": None, "vertex_location": None}
+        fill_settings(forwarded)
+        explicit: dict[str, CallValue] = {"vertex_project": CALL_PROJECT, "vertex_location": None}
+        fill_settings(explicit)
+        empty: dict[str, CallValue] = {"vertex_project": ""}
+        fill_settings(empty)
+    finally:
+        genai_arguments.settings_seam.clear()
+    assert forwarded == {
+        "api_base": None,
+        "vertex_project": VERTEX_PROJECT,
+        "vertex_location": VERTEX_LOCATION,
+    }
+    assert explicit == {"vertex_project": CALL_PROJECT, "vertex_location": VERTEX_LOCATION}
+    assert empty == {"vertex_project": ""}
 
 
 def test_optional_proxy_headers() -> None:
@@ -272,7 +357,11 @@ def test_stream_matches_litellm() -> None:
     with GenaiServer() as server:
         ours = list(own_stream(generate_content_stream(**common_call(server.url))))
         reference = list(
-            reference_stream(LITELLM.generate_content_stream(**common_call(server.url)))
+            reference_stream(
+                LITELLM.generate_content_stream(
+                    model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=GOOD_KEY
+                )
+            )
         )
         paths = [call["path"] for call in server.calls]
     assert ours == reference
@@ -292,6 +381,24 @@ def test_stream_close_after_end() -> None:
         stream.close()
         with pytest.raises(StopIteration):
             next(stream)
+
+
+def test_stream_error_class() -> None:
+    with GenaiServer() as server:
+        with pytest.raises(BadRequestError) as caught:
+            generate_content_stream(**common_call(server.url, BAD_KEY))
+        with pytest.raises(BadRequestError) as awaited:
+            asyncio.run(agenerate_content_stream(**common_call(server.url, BAD_KEY)))
+        with pytest.raises(LITELLM_ERRORS.BadRequestError):
+            LITELLM.generate_content_stream(
+                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=BAD_KEY
+            )
+        with pytest.raises(LITELLM_ERRORS.BadRequestError):
+            asyncio.run(reference_bad_stream(server.url))
+        paths = [call["path"] for call in server.calls]
+    assert bad_request_payload(caught.value)["type"] == "BadRequestError"
+    assert bad_request_payload(awaited.value)["type"] == "BadRequestError"
+    assert paths == [STREAM_PATH, STREAM_PATH, STREAM_PATH, STREAM_PATH]
 
 
 def test_async_stream_matches() -> None:
@@ -321,20 +428,29 @@ def test_error_class_and_cause() -> None:
         with pytest.raises(BadRequestError) as caught:
             generate_content(**common_call(server.url, BAD_KEY))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
-            LITELLM.generate_content(**common_call(server.url, BAD_KEY))
-    cause = caught.value.__cause__
-    assert cause is not None
-    payload = ERROR_PAYLOAD.validate_json(str(cause))
-    assert caught.value.status_code == STATUS_BAD_REQUEST
+            LITELLM.generate_content(
+                model=PREFIXED_MODEL, contents=CONTENTS, api_base=server.url, api_key=BAD_KEY
+            )
+    payload = bad_request_payload(caught.value)
     assert payload["type"] == "BadRequestError"
-    assert "API key not valid" in payload["message"]
 
 
-def test_client_is_refused() -> None:
-    with GenaiServer() as server, pytest.raises(UnsupportedCallArgument) as caught:
-        generate_content(**common_call(server.url), client=CLIENT_VALUE)
+def test_client_is_refused(caplog: pytest.LogCaptureFixture) -> None:
+    with GenaiServer() as server:
+        with pytest.raises(UnsupportedCallArgument) as caught:
+            generate_content(**common_call(server.url), client=CLIENT_VALUE)
+        with pytest.raises(UnsupportedCallArgument) as session:
+            generate_content(**common_call(server.url), shared_session=CLIENT_VALUE)
+        with caplog.at_level(logging.WARNING, logger="LiteLLM"):
+            logged = content_dict(
+                generate_content(**common_call(server.url), logger_fn=CLIENT_VALUE)
+            )
+        paths = [call["path"] for call in server.calls]
     assert caught.value.argument == "client"
-    assert not server.calls
+    assert session.value.argument == "shared_session"
+    assert logged["modelVersion"] == MODEL
+    assert LOGGER_FN_DROPPED in caplog.messages
+    assert paths == [GENERATE_PATH]
 
 
 def test_adapter_model_error() -> None:

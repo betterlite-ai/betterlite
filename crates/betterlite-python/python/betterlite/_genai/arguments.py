@@ -4,13 +4,14 @@ from typing import Final, TypedDict
 
 from pydantic import TypeAdapter
 
-from betterlite._endpoints.payload import CallValue
+from betterlite._endpoints.payload import CallValue, LOGGER_FN, REFUSED
 from betterlite._endpoints.proxy import proxy_headers
 from betterlite._endpoints.settings import read_settings
 
 LOGGING_OBJECT: Final = "litellm_logging_obj"
 ASYNC_FLAGS: Final[tuple[str, ...]] = ("agenerate_content", "agenerate_content_stream")
-FALLBACK_SETTINGS: Final[tuple[str, ...]] = ("api_base", "vertex_project", "vertex_location")
+TOP_LEVEL: Final[tuple[str, ...]] = (*REFUSED, LOGGER_FN)
+FALLBACK_SETTINGS: Final[tuple[str, ...]] = ("vertex_project", "vertex_location")
 SESSION_SETTINGS: Final[tuple[str, ...]] = ("api_key",)
 
 
@@ -20,11 +21,16 @@ class SessionSettings(TypedDict):
 
 SESSION: Final[TypeAdapter[SessionSettings]] = TypeAdapter(SessionSettings)
 
+# typed seam for the untyped betterlite globals: api_key, vertex_project, vertex_location
+settings_seam: dict[str, str | None] = {}
+
 
 # litellm.api_key is the studio key LiteLLM reads after GOOGLE_API_KEY and GEMINI_API_KEY
 def session_settings() -> str:
     settings = SESSION.validate_python(read_settings(SESSION_SETTINGS))
     api_key = settings["api_key"]
+    if api_key is None:
+        api_key = settings_seam.get("api_key")
     if api_key is None:
         return "{}"
     payload: dict[str, str] = {"api_key": api_key}
@@ -35,8 +41,11 @@ def session_settings() -> str:
 def fill_settings(forwarded: dict[str, CallValue]) -> None:
     settings = read_settings(FALLBACK_SETTINGS)
     for name in FALLBACK_SETTINGS:
-        if forwarded.get(name) is None and settings[name] is not None:
-            forwarded[name] = settings[name]
+        value = settings[name]
+        if value is None:
+            value = settings_seam.get(name)
+        if value is not None and forwarded.get(name) is None:
+            forwarded[name] = value
 
 
 # the call's own kwargs minus LiteLLM's async markers and its logging object
@@ -75,6 +84,10 @@ def call_values(
         "extra_body": extra_body,
         "timeout": timeout,
         "custom_llm_provider": custom_llm_provider,
-        "kwargs": forwarded,
     }
+    # to_call_payload refuses or drops these names at the payload's top level, not inside kwargs
+    for name in TOP_LEVEL:
+        if name in forwarded:
+            values[name] = forwarded.pop(name)
+    values["kwargs"] = forwarded
     return values
