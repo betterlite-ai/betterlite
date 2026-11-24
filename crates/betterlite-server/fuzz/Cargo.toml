@@ -524,3 +524,17 @@ path = "fuzz_targets/legacy_spend_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "claude_plugin_read"
+path = "fuzz_targets/claude_plugin_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_inputs"
+path = "fuzz_targets/session_inputs.rs"
+test = false
+doc = false
+bench = false
