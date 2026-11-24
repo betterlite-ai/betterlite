@@ -66,11 +66,7 @@ impl Helper for Op {
             .iter()
             .map(recover_answer)
             .collect::<Result<_, _>>()?;
-        let clears: Vec<Value> = input
-            .clears
-            .iter()
-            .map(clear_answer)
-            .collect::<Result<_, _>>()?;
+        let clears: Vec<Value> = input.clears.iter().map(clear_answer).collect();
         Ok(json!({
             "tails": tails,
             "recovers": recovers,
@@ -86,7 +82,16 @@ fn tail_answer(call: &TailCall) -> Result<Value, Box<HelperError>> {
 }
 
 fn recover_answer(call: &RecoverCall) -> Result<Value, Box<HelperError>> {
-    let spec = chat_spec(&call.counts, call.content.clone(), None, None);
+    let spec = ChatSpec {
+        content: call.content.clone(),
+        prompt_tokens: call.counts.prompt_tokens,
+        completion_tokens: call.counts.completion_tokens,
+        total_tokens: call.counts.total_tokens,
+        has_details: call.counts.has_details,
+        text_tokens: call.counts.text_tokens,
+        cost: None,
+        hidden_response_cost: None,
+    };
     let outcome =
         recover_with_fixed_count(&spec, &chunks_of(&call.chunks)?, &call.model, call.count)
             .or_value_error()?;
@@ -100,30 +105,12 @@ fn recover_answer(call: &RecoverCall) -> Result<Value, Box<HelperError>> {
     serde_json::to_value(answer).or_value_error()
 }
 
-fn clear_answer(spec: &ChatSpec) -> Result<Value, Box<HelperError>> {
+fn clear_answer(spec: &ChatSpec) -> Value {
     let outcome = clear_placeholder_cost(spec);
-    Ok(json!({
+    json!({
         "cost_cleared": outcome.cost_cleared,
         "hidden_cost_cleared": outcome.hidden_cost_cleared,
-    }))
-}
-
-fn chat_spec(
-    counts: &Counts,
-    content: Option<String>,
-    cost: Option<String>,
-    hidden_response_cost: Option<String>,
-) -> ChatSpec {
-    ChatSpec {
-        content,
-        prompt_tokens: counts.prompt_tokens,
-        completion_tokens: counts.completion_tokens,
-        total_tokens: counts.total_tokens,
-        has_details: counts.has_details,
-        text_tokens: counts.text_tokens,
-        cost,
-        hidden_response_cost,
-    }
+    })
 }
 
 fn chunks_of(encoded: &[String]) -> Result<Vec<Vec<u8>>, Box<HelperError>> {
