@@ -143,7 +143,7 @@ where
             table: source.table,
             queue: source.queue,
         });
-        let disable_logs = self.settings.disable_spend_logs == Some(true);
+        let disable_logs = self.settings.disable_spend_logs != Some(false);
         if !record_spend_log(queued, &row, disable_logs).await {
             return Ok(false);
         }

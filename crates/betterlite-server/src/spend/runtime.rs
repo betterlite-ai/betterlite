@@ -224,10 +224,10 @@ impl SpendAccountingAdmission for SpendRuntime {
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
         Box::pin(async move {
-            let Some(sender) = sender else {
+            let Some(open_sender) = sender else {
                 return Err(SpendAccountingClosed);
             };
-            sender
+            open_sender
                 .send(work)
                 .await
                 .map_err(|_closed| SpendAccountingClosed)

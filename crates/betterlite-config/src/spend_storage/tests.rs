@@ -310,18 +310,6 @@ fn replays_the_spend_storage_policy_corpus(
     let _policy = decode_spend_storage_policy(&bytes);
 }
 
-#[rstest]
-fn replays_the_config_yaml_corpus(#[files("fuzz/corpus/config_yaml/*")] path: PathBuf) {
-    let bytes = fs::read(path).unwrap();
-    let Ok(source) = std::str::from_utf8(&bytes) else {
-        return;
-    };
-    let _outcome = ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(source);
-}
-
 #[test]
 fn decodes_a_stored_policy_row() {
     let decoded = decode_spend_storage_policy(

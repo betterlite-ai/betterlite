@@ -75,11 +75,11 @@ fn redis_lists(
     Option<Arc<dyn SpendBufferLists>>,
     Option<Arc<dyn SpendBufferPush>>,
 ) {
-    let Some(cache) = cache else {
+    let Some(connected) = cache else {
         return (None, None);
     };
     let lists = Arc::new(RedisSpendLists {
-        cache: Arc::clone(cache),
+        cache: Arc::clone(connected),
     });
     let buffer: Arc<dyn SpendBufferLists> = Arc::clone(&lists);
     let push: Arc<dyn SpendBufferPush> = lists;

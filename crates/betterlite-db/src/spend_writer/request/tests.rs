@@ -224,26 +224,59 @@ async fn writes_log_dependent_usage_only_when_logs_are_exactly_enabled() {
     assert_eq!(log_dependent_counts(None).await, (0, 1, 1));
 }
 
-#[tokio::test]
-async fn a_batch_claim_with_logs_disabled_writes_only_the_claim_fields() {
-    let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let settings = SpendWriterSettings {
+fn claim_settings(disable_spend_logs: Option<bool>) -> SpendWriterSettings {
+    SpendWriterSettings {
         disable_spend_updates: false,
-        disable_spend_logs: Some(true),
+        disable_spend_logs,
         max_budget: Decimal::ZERO,
         proxy_budget_name: "litellm-proxy-budget".to_owned(),
-    };
-    let writer = harness.writer(settings);
+    }
+}
+
+async fn log_rows_written(disable_spend_logs: Option<bool>) -> usize {
+    let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
+    let writer = harness.writer(claim_settings(disable_spend_logs));
+    assert!(
+        writer
+            .update_database(&log_row(PAYLOAD), &sample_request())
+            .await
+    );
+    harness.log_queue.dequeue(usize::MAX).len()
+}
+
+async fn batch_claim_fields(disable_spend_logs: Option<bool>) -> Vec<String> {
+    let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
+    let writer = harness.writer(claim_settings(disable_spend_logs));
     assert!(
         writer
             .update_database(&log_row(BATCH_PAYLOAD), &sample_request())
             .await
     );
-    let rows = harness.claim.rows();
-    assert_eq!(rows.len(), 1);
-    let fields: Vec<&str> = rows[0].keys().map(String::as_str).collect();
+    harness
+        .claim
+        .rows()
+        .first()
+        .expect("the batch claim wrote a row")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+#[tokio::test]
+async fn a_batch_claim_with_logs_disabled_writes_only_the_claim_fields() {
     assert_eq!(
-        fields,
+        batch_claim_fields(Some(true)).await,
+        vec!["call_type", "request_id", "spend", "startTime", "status"]
+    );
+}
+
+#[tokio::test]
+async fn a_null_disable_spend_logs_keeps_no_log_row_and_reduces_the_claim() {
+    assert_eq!(log_rows_written(Some(false)).await, 1);
+    assert_eq!(log_rows_written(Some(true)).await, 0);
+    assert_eq!(log_rows_written(None).await, 0);
+    assert_eq!(
+        batch_claim_fields(None).await,
         vec!["call_type", "request_id", "spend", "startTime", "status"]
     );
 }
