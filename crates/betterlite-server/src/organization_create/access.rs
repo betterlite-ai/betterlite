@@ -12,8 +12,8 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::rows::KeyColumn;
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::user_repository::UserRepository;
 use betterlite_db::user_repository::projection::{UserRecordError, user_record_to_model};
-use betterlite_db::user_repository::{RowDecodeError, UserRepository};
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use serde::Serialize;
 
@@ -30,8 +30,6 @@ pub enum OrgAccessError {
     DatabaseNotConnected,
     #[error("the caller user session failed: {0}")]
     Session(#[source] DbError),
-    #[error("the caller user row could not be read: {0}")]
-    UserRead(#[source] DbError<RowDecodeError>),
     #[error("the caller membership rows could not be read: {0}")]
     MembershipRead(#[source] AuthReadError<UserRowError>),
     #[error("the stored user record is not readable: {0}")]
@@ -103,35 +101,31 @@ pub async fn verify_org_access(
     Err(OrgAccessError::Denied)
 }
 
-// the caller's stored user row; creation swallows every lookup and validation failure, as the source does
+// _table(UserRepository(prisma_client)).find_unique(where={"user_id": ...}): B723's plain row, no include
 pub async fn read_user_object(
     store: &PostgresStore,
     caller: &OrgCaller,
 ) -> Option<LiteLLMUserTable> {
     let user_id = caller.user_id.as_deref()?;
-    match read_creation_user(store, user_id).await {
-        Ok(found) => found,
-        Err(error) => {
-            tracing::debug!(error = %error, "the caller user row could not be read");
-            None
-        }
-    }
-}
-
-// _table(UserRepository(prisma_client)).find_unique(where={"user_id": ...}): B723's row with no include
-async fn read_creation_user(
-    store: &PostgresStore,
-    user_id: &str,
-) -> Result<Option<LiteLLMUserTable>, OrgAccessError> {
-    let session = store.session().await.map_err(OrgAccessError::Session)?;
-    UserRepository {
+    let Ok(session) = store.session().await else {
+        tracing::debug!("the caller user session could not be opened");
+        return None;
+    };
+    let found = UserRepository {
         db: Some(&session),
         writer_db: None,
         use_writer: false,
     }
     .find_by_id(user_id)
-    .await
-    .map_err(OrgAccessError::UserRead)
+    .await;
+    // creation swallows the lookup failure, as the source does
+    match found {
+        Ok(user) => user,
+        Err(error) => {
+            tracing::debug!(error = %error, "the caller user row could not be read");
+            None
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -180,10 +174,7 @@ impl IntoResponse for OrgAccessError {
                 }),
             )
                 .into_response(),
-            error @ (Self::Session(_)
-            | Self::UserRead(_)
-            | Self::MembershipRead(_)
-            | Self::Record(_)) => {
+            error @ (Self::Session(_) | Self::MembershipRead(_) | Self::Record(_)) => {
                 tracing::error!(error = %error, "the organization member lookup failed");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,

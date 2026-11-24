@@ -44,7 +44,7 @@ struct FailingLookup;
 #[async_trait]
 impl OrgUserLookup for FailingLookup {
     async fn find_user(&self, _user_id: &str) -> Result<Option<LiteLLMUserTable>, OrgAccessError> {
-        Err(OrgAccessError::UserRead(DbError::NoDbConnected))
+        Err(OrgAccessError::Session(DbError::NoDbConnected))
     }
 }
 
@@ -119,11 +119,11 @@ async fn org_access_membership_matrix(
 #[tokio::test]
 async fn org_access_lookup_error() {
     let failed = verify_org_access("org-1", &caller(Some("u1"), false), &FailingLookup).await;
-    let Err(OrgAccessError::UserRead(_)) = failed else {
+    let Err(OrgAccessError::Session(_)) = failed else {
         panic!("a failed lookup is reported, not hidden");
     };
 
-    let (status, text) = rendered(OrgAccessError::UserRead(DbError::NoDbConnected)).await;
+    let (status, text) = rendered(OrgAccessError::Session(DbError::NoDbConnected)).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     let JsonData::Object(body) = serde_json::from_str(&text).unwrap() else {
         panic!("the internal error body is an object");
