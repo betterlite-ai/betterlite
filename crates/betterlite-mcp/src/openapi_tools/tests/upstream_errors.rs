@@ -217,6 +217,26 @@ async fn a_latin_1_challenge_is_decoded_byte_by_byte() {
 }
 
 #[tokio::test]
+async fn a_utf8_challenge_is_decoded_as_utf8() {
+    let mut config = config("get", "/pets", "{}");
+    config.relays_upstream_auth = true;
+    let tool = OpenApiTool::new(config);
+    let transport = FakeTransport::replying(401, b"")
+        .with_header_bytes("www-authenticate", b"Basic caf\xc3\xa9");
+    let error = tool
+        .call(&arguments("{}"), &context(), &transport)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        OpenApiToolError::UpstreamAuth {
+            www_authenticate: Some(ref challenge),
+            ..
+        } if challenge == "Basic café"
+    ));
+}
+
+#[tokio::test]
 async fn a_non_utf8_body_is_an_error() {
     let tool = tool("get", "/pets", "{}");
     let transport = FakeTransport::replying(200, &[0xFF, 0xFE]);
