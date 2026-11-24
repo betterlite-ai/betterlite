@@ -13,61 +13,44 @@ use axum::routing::{delete, get, patch, post, put};
 use betterlite_db::lens_repository::database::Database;
 use betterlite_lens::sources::storage::Storage;
 
-use crate::lens_access::state::LensRoutesState;
+use crate::lens_access::state::LensRoutesState as LensState;
 
 // LiteLLM's APIRouter(prefix="/lens") with the static routes declared before /{lens_id}
-pub fn router<Db, Store>(state: LensRoutesState<Db, Store>) -> Router
+pub fn router<Db, Store>(state: LensState<Db, Store>) -> Router
 where
     Db: Database + 'static,
     Store: Storage + Clone + Send + Sync + 'static,
 {
+    let lens_collection = get(LensState::<Db, Store>::list_lenses).post(lenses::create_lens);
+    let activity_available = get(LensState::<Db, Store>::activity_available);
+    let agent_list = get(LensState::<Db, Store>::list_agents);
+    let sample_preview = post(preview::preview_sample);
+    let worker_register = post(LensState::<Db, Store>::register_worker);
+    let worker_billing = put(workers::set_worker_billing);
+    let worker_revoke = delete(LensState::<Db, Store>::revoke_worker);
+    let lens_detail = put(LensState::<Db, Store>::update_lens).get(lenses::read_lens);
+    let run_collection =
+        get(LensState::<Db, Store>::list_runs).post(LensState::<Db, Store>::run_lens);
+    let run_detail = get(LensState::<Db, Store>::read_run);
+    let lens_cancel = post(runs::cancel_lens);
+    let finding_patch = patch(findings::update_finding);
+    let execution_content = get(evidence::evidence_content);
     Router::new()
-        .route(
-            "/lens",
-            get(LensRoutesState::<Db, Store>::list_lenses).post(lenses::create_lens),
-        )
-        .route(
-            "/lens/activity/available",
-            get(LensRoutesState::<Db, Store>::activity_available),
-        )
-        .route(
-            "/lens/agents",
-            get(LensRoutesState::<Db, Store>::list_agents),
-        )
-        .route("/lens/preview/sample", post(preview::preview_sample))
-        .route(
-            "/lens/workers/register",
-            post(LensRoutesState::<Db, Store>::register_worker),
-        )
-        .route(
-            "/lens/workers/{worker_id}/billing-key",
-            put(workers::set_worker_billing),
-        )
-        .route(
-            "/lens/workers/{worker_id}",
-            delete(LensRoutesState::<Db, Store>::revoke_worker),
-        )
-        .route(
-            "/lens/{lens_id}",
-            put(LensRoutesState::<Db, Store>::update_lens).get(lenses::read_lens),
-        )
-        .route(
-            "/lens/{lens_id}/runs",
-            get(LensRoutesState::<Db, Store>::list_runs)
-                .post(LensRoutesState::<Db, Store>::run_lens),
-        )
-        .route(
-            "/lens/{lens_id}/runs/{job_id}",
-            get(LensRoutesState::<Db, Store>::read_run),
-        )
-        .route("/lens/{lens_id}/cancel", post(runs::cancel_lens))
-        .route(
-            "/lens/{lens_id}/findings/{finding_id}",
-            patch(findings::update_finding),
-        )
+        .route("/lens", lens_collection)
+        .route("/lens/activity/available", activity_available)
+        .route("/lens/agents", agent_list)
+        .route("/lens/preview/sample", sample_preview)
+        .route("/lens/workers/register", worker_register)
+        .route("/lens/workers/{worker_id}/billing-key", worker_billing)
+        .route("/lens/workers/{worker_id}", worker_revoke)
+        .route("/lens/{lens_id}", lens_detail)
+        .route("/lens/{lens_id}/runs", run_collection)
+        .route("/lens/{lens_id}/runs/{job_id}", run_detail)
+        .route("/lens/{lens_id}/cancel", lens_cancel)
+        .route("/lens/{lens_id}/findings/{finding_id}", finding_patch)
         .route(
             "/lens/{lens_id}/executions/{execution_id}",
-            get(evidence::evidence_content),
+            execution_content,
         )
         .with_state(state)
 }
