@@ -9,4 +9,7 @@ deviations:
   - what: DOCS_TITLE from the environment (public_discovery.docs_title) sets the Swagger and ReDoc page titles and info.title in the document, with no license.
     why: LiteLLM reads DOCS_TITLE only when premium_user is true, which needs an enterprise license, and betterlite's public_discovery section reads it in the open-source build; this task passes that title to the pages and the document as its text requires, which supersedes B123's note that the override is not built.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1044
+  - what: An unauthenticated request to a path that no route serves, such as GET / when NO_DOCS is set, gets the authentication stage's missing-key reply (500 Internal Server Error) rather than LiteLLM's 404, and only a request carrying a key reaches the router's 404 fallback.
+    why: betterlite authenticates in a stage around the whole application, so every path outside the public route list passes through it before the router finds no match, while LiteLLM attaches user_api_key_auth per route and FastAPI answers an unmatched path 404 without running a dependency; this is the shared stage failure B348 records for its own routes, and the docs-no-docs-flag oracle case sends the master key so both sides compare the 404 the removed docs page leaves behind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1884
 kept_bugs: []
