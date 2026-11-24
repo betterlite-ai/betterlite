@@ -10,3 +10,5 @@ frequence = "frequence"
 # LiteLLM's UnparseableRecord keeps this spelling
 Unparseable = "Unparseable"
 unparseable = "unparseable"
+# prometheus_client 0.20 spells its mmap writer MmapedDict, and helpers import the class by that name
+Mmaped = "Mmaped"
