@@ -100,6 +100,29 @@ class RecordContext(TypedDict):
     log_target: LogTarget | None
 
 
+class AdminMetadata(TypedDict, total=False):
+    disable_global_guardrails: bool | None
+    opted_out_global_guardrails: list[JsonValue] | None
+
+
+class RequestMetadata(TypedDict, total=False):
+    guardrails: list[JsonValue] | None
+    session_id: JsonValue
+    user_api_key_metadata: AdminMetadata | None
+    user_api_key_team_metadata: AdminMetadata | None
+
+
+class RequestData(TypedDict, total=False):
+    guardrails: list[JsonValue] | None
+    input: JsonValue
+    instructions: JsonValue
+    litellm_metadata: RequestMetadata | None
+    litellm_session_id: JsonValue
+    messages: list[JsonValue] | None
+    metadata: RequestMetadata | None
+    model: str | None
+
+
 class GuardrailConfigModel(Protocol): ...
 
 
@@ -159,3 +182,7 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 SETTINGS: Final[TypeAdapter[SettingsJson]] = TypeAdapter(SettingsJson)
 LOG_TARGET: Final[TypeAdapter[LogTarget | None]] = TypeAdapter(LogTarget | None)
+REQUEST: Final[TypeAdapter[RequestData]] = TypeAdapter(RequestData)
+ADMIN: Final[TypeAdapter[AdminMetadata]] = TypeAdapter(AdminMetadata)
+BUCKET: Final[TypeAdapter[dict[str, JsonValue] | None]] = TypeAdapter(dict[str, JsonValue] | None)
+LISTS: Final[TypeAdapter[list[JsonValue] | None]] = TypeAdapter(list[JsonValue] | None)

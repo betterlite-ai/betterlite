@@ -8,20 +8,22 @@ from betterlite._integrations.custom_guardrail_constants import (
     PRE_CALL_EXECUTED_GUARDRAILS_KEY,
     PRE_CALL_EXECUTED_TOKEN,
 )
-from betterlite._integrations.custom_guardrail_request import (
-    admin_metadata,
-    requested_list,
-)
+from betterlite._integrations.custom_guardrail_request import admin_metadata
 from betterlite._integrations.custom_guardrail_state import GuardrailState
 from betterlite._integrations.custom_guardrail_support import (
-    as_list,
-    as_mapping,
     dynamic_params,
     event_hook_matches,
     native_handle,
+    request_json,
     selection_answer,
 )
 from betterlite._integrations.custom_logger import LOGGER
+from betterlite._integrations.guardrail_types import (
+    BUCKET,
+    LISTS,
+    REQUEST,
+    AdminMetadata,
+)
 from betterlite.types.guardrails.params import GuardrailEventHooks, Mode
 
 PRE_CALL_BUCKETS: Final = ("metadata", "litellm_metadata")
@@ -38,29 +40,21 @@ class GuardrailSelection(GuardrailState):
         _ = native_handle(self, strict=True)
 
     @staticmethod
-    def _get_admin_metadata(data: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    def _get_admin_metadata(data: dict[str, JsonValue]) -> AdminMetadata:
         return admin_metadata(data)
 
     def get_disable_global_guardrail(self, data: dict[str, JsonValue]) -> bool | None:
-        value = self._get_admin_metadata(data).get("disable_global_guardrails")
-        if value is None:
-            return False
-        match value:
-            case bool():
-                return value
-            case str() | int() | float() | list() | dict():
-                return False
+        return self._get_admin_metadata(data).get("disable_global_guardrails", False)
 
     # ast-grep-ignore: no-long-names
     def get_opted_out_global_guardrails_from_metadata(
         self, data: dict[str, JsonValue]
     ) -> list[str]:
         value = self._get_admin_metadata(data).get("opted_out_global_guardrails")
-        listed = as_list(value)
         names: list[str] = []
-        if listed is None:
+        if value is None:
             return names
-        for item in listed:
+        for item in value:
             match item:
                 case str():
                     names.append(item)
@@ -72,12 +66,14 @@ class GuardrailSelection(GuardrailState):
         return result is not None
 
     def get_guardrail_from_metadata(self, data: dict[str, JsonValue]) -> list[JsonValue]:
-        if "guardrails" in data:
-            return requested_list(data["guardrails"])
-        for meta_key in PRE_CALL_BUCKETS:
-            meta = as_mapping(data.get(meta_key))
-            if meta is not None and "guardrails" in meta:
-                return requested_list(meta["guardrails"])
+        view = REQUEST.validate_python(request_json(data))
+        top = view.get("guardrails")
+        if top is not None:
+            return top
+        for bucket in (view.get("metadata"), view.get("litellm_metadata")):
+            found = None if bucket is None else bucket.get("guardrails")
+            if found is not None:
+                return found
         return []
 
     # ast-grep-ignore: no-long-names
@@ -109,15 +105,14 @@ class GuardrailSelection(GuardrailState):
         # ast-grep-ignore: no-long-names
         bucket_key = PRE_CALL_EXECUTED_GUARDRAILS_KEY
         for bucket_name in PRE_CALL_BUCKETS:
-            bucket = as_mapping(data.get(bucket_name))
+            bucket = BUCKET.validate_python(data.get(bucket_name))
             if bucket is None:
                 continue
-            executed = as_list(bucket.get(bucket_key))
-            if executed is None:
-                fresh: list[JsonValue] = [marker]
-                bucket[bucket_key] = fresh
-            elif marker not in executed:
+            executed = LISTS.validate_python(bucket.get(bucket_key)) or []
+            if marker not in executed:
                 executed.append(marker)
+            bucket[bucket_key] = executed
+            data[bucket_name] = bucket
             return
         entries: list[JsonValue] = [marker]
         fresh_bucket: dict[str, JsonValue] = {bucket_key: entries}
@@ -130,10 +125,10 @@ class GuardrailSelection(GuardrailState):
         # ast-grep-ignore: no-long-names
         bucket_key = PRE_CALL_EXECUTED_GUARDRAILS_KEY
         for bucket_name in PRE_CALL_BUCKETS:
-            bucket = as_mapping(data.get(bucket_name))
+            bucket = BUCKET.validate_python(data.get(bucket_name))
             if bucket is None:
                 continue
-            executed = as_list(bucket.get(bucket_key))
+            executed = LISTS.validate_python(bucket.get(bucket_key))
             if executed is not None and marker in executed:
                 return True
         return False

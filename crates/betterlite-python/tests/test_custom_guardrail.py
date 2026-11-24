@@ -62,6 +62,33 @@ SIDES = {
 HOOKS = ("pre_call", "post_call", "during_call", "logging_only")
 
 
+class CacheFailure(Exception):
+    pass
+
+
+class ReadFailingCache:
+    def __init__(self):
+        self.set_calls = 0
+
+    async def async_get_cache(self, key):
+        raise CacheFailure("read down")
+
+    async def async_set_cache(self, key, value, ttl):
+        self.set_calls += 1
+
+
+class WriteFailingCache:
+    def __init__(self):
+        self.set_calls = 0
+
+    async def async_get_cache(self, key):
+        return ["stale-hash"]
+
+    async def async_set_cache(self, key, value, ttl):
+        self.set_calls += 1
+        raise CacheFailure("write down")
+
+
 def mismatch(label, left, right):
     print("MISMATCH " + label, file=sys.stderr)
     print("litellm: " + json.dumps(left, indent=2, default=str, sort_keys=True), file=sys.stderr)
@@ -493,21 +520,20 @@ def group_records():
         )
         written = normalize(updated_logging.litellm_params["metadata"]) or []
 
-        class BrokenCache:
-            async def async_get_cache(self, key):
-                raise RuntimeError("cache down")
-
-            async def async_set_cache(self, key, value, ttl):
-                raise RuntimeError("cache down")
-
         scanning = base(
             guardrail_name="probe", event_hook=hooks.pre_call, only_scan_new_messages=True
         )
         scanning_data = {"metadata": {"session_id": "s-1"}}
-        filtered = await scanning.filter_new_texts_for_session(
-            ["hello"], scanning_data, BrokenCache()
+        read_failing = ReadFailingCache()
+        read_filtered = await scanning.filter_new_texts_for_session(
+            ["hello"], scanning_data, read_failing
         )
-        await scanning.mark_texts_scanned(["hello"], scanning_data, BrokenCache())
+        await scanning.mark_texts_scanned(["hello"], scanning_data, read_failing)
+        write_failing = WriteFailingCache()
+        write_filtered = await scanning.filter_new_texts_for_session(
+            ["hello"], scanning_data, write_failing
+        )
+        await scanning.mark_texts_scanned(["hello"], scanning_data, write_failing)
         return {
             "direct": direct,
             "result": result,
@@ -516,12 +542,18 @@ def group_records():
             "failure": normalize(failure_logging.litellm_params["metadata"]),
             "deny": normalize(deny_logging.litellm_params["metadata"]),
             "updated": [entry["guardrail_status"] for entry in written],
-            "filtered": filtered,
+            "read_filtered": read_filtered,
+            "write_filtered": write_filtered,
+            "cache_sets": [read_failing.set_calls, write_failing.set_calls],
         }
 
     for side, types in SIDES.items():
         reports[side] = asyncio.run(run(side, types))
     equal("records", reports["litellm"], reports["betterlite"])
+    ours = reports["betterlite"]
+    equal("cache read fallback", None, ours["read_filtered"])
+    equal("cache write fallback", ["hello"], ours["write_filtered"])
+    equal("cache write reached", [0, 1], ours["cache_sets"])
     print("OK")
 
 

@@ -69,22 +69,6 @@ def strict_guardrail_modes() -> bool:
     return raw.strip().lower() != "false"
 
 
-def as_mapping(value: JsonValue) -> dict[str, JsonValue] | None:
-    match value:
-        case dict():
-            return value
-        case str() | bool() | int() | float() | list() | None:
-            return None
-
-
-def as_list(value: JsonValue) -> list[JsonValue] | None:
-    match value:
-        case list():
-            return value
-        case str() | bool() | int() | float() | dict() | None:
-            return None
-
-
 def text_value(value: JsonValue, fallback: str) -> str:
     match value:
         case str():
