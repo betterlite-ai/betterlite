@@ -1,0 +1,16 @@
+kind: helper
+name: mcp-tool-registry-unregister-prefix
+call:
+  b4680:
+    function: unregister_prefix
+    tool_names: [srv_a, other, srv_b, srv_a_extra]
+    prefix: srv_
+    mcp_tools: null
+calls:
+  - b4680:
+      function: unregister_prefix
+      tool_names: [srv_a, other]
+      prefix: zzz
+      mcp_tools: null
+env: {}
+compare: {ignore: []}

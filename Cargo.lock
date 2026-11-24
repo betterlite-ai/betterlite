@@ -2399,6 +2399,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
