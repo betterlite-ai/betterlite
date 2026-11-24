@@ -214,6 +214,15 @@ fn an_empty_upper_authorization_falls_through_to_the_lower_one() {
 }
 
 #[test]
+fn an_empty_lower_authorization_is_no_credential() {
+    let upstream = oauth(&[("authorization", "")]);
+    assert_eq!(
+        owner_fingerprint(None, Some(&upstream), Some("10.0.0.1")),
+        format!("ip:{IP_HASH}")
+    );
+}
+
+#[test]
 fn the_client_ip_is_the_last_credential() {
     assert_eq!(
         owner_fingerprint(None, None, Some("10.0.0.1")),
