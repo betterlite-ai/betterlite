@@ -9,6 +9,7 @@ use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_shapes::websocket::ResponsesWebSocketMessage;
+use rust_decimal::Decimal;
 use secrecy::SecretString;
 
 use crate::api::decisions_send::error::visible_message;
@@ -267,16 +268,20 @@ async fn assert_logged_credentials() {
     );
 }
 
-async fn guardrail_precedence() -> (Event, Event) {
+async fn assert_guardrail_precedence() {
     let mut entry = Entry::new();
     entry.kwargs = object(r#"{"metadata":{"guardrails":[]},"guardrails":["fallback"]}"#);
     let fallback = entry.request().await;
     entry.kwargs = object(r#"{"metadata":{},"guardrails":[]}"#);
     let neither = entry.request().await;
-    (fallback.litellm_metadata, neither.litellm_metadata)
+    assert_eq!(
+        fallback.litellm_metadata,
+        object(r#"{"guardrails":["fallback"]}"#)
+    );
+    assert!(neither.litellm_metadata.is_empty());
 }
 
-async fn credential_fallbacks() -> Vec<Option<String>> {
+async fn assert_credential_fallbacks() {
     let mut entry = Entry::new();
     entry.resolution.api_base = Some(String::new());
     entry.globals.api_base = Some(String::from("https://global.test"));
@@ -290,13 +295,22 @@ async fn credential_fallbacks() -> Vec<Option<String>> {
     let env = entry.request().await;
     entry.openai_api_key = None;
     let none = entry.request().await;
-    vec![
-        global.api_base,
-        global.api_key,
-        openai_key.api_key,
-        env.api_key,
-        none.api_key,
-    ]
+    assert_eq!(
+        vec![
+            global.api_base,
+            global.api_key,
+            openai_key.api_key,
+            env.api_key,
+            none.api_key,
+        ],
+        vec![
+            Some(String::from("https://global.test")),
+            Some(String::from("sk-global")),
+            Some(String::from("sk-openai")),
+            Some(String::from("sk-env")),
+            None,
+        ]
+    );
 }
 
 async fn recorded_user() -> Option<String> {
@@ -314,16 +328,18 @@ async fn routing_prefix_is_stripped() -> (String, String) {
     (request.model, logged)
 }
 
-async fn call_credentials_reach_resolution() -> (String, Option<String>, Option<String>) {
+async fn assert_call_credentials_reach_resolution() {
     let mut entry = Entry::new();
     entry.resolution.echo_request = true;
     entry.api_base = Some(String::from("wss://caller.test"));
     entry.api_key = Some(String::from("sk-call"));
     let request = entry.request().await;
-    (request.model, request.api_base, request.api_key)
+    assert_eq!(request.model, "gpt-4o");
+    assert_eq!(request.api_base.as_deref(), Some("wss://caller.test"));
+    assert_eq!(request.api_key.as_deref(), Some("sk-call"));
 }
 
-async fn api_base_precedence() -> Vec<Option<String>> {
+async fn assert_api_base_precedence() {
     let mut entry = Entry::new();
     entry.resolution.api_base = Some(String::from("wss://dynamic.test"));
     entry.kwargs = object(r#"{"api_base":"wss://kwarg.test"}"#);
@@ -335,15 +351,23 @@ async fn api_base_precedence() -> Vec<Option<String>> {
     let from_globals = entry.request().await;
     entry.globals.api_base = None;
     let absent = entry.request().await;
-    vec![
-        dynamic.api_base,
-        from_kwargs.api_base,
-        from_globals.api_base,
-        absent.api_base,
-    ]
+    assert_eq!(
+        vec![
+            dynamic.api_base,
+            from_kwargs.api_base,
+            from_globals.api_base,
+            absent.api_base,
+        ],
+        vec![
+            Some(String::from("wss://dynamic.test")),
+            Some(String::from("wss://kwarg.test")),
+            Some(String::from("https://global.test")),
+            None,
+        ]
+    );
 }
 
-async fn provider_configs() -> (Option<ResponsesApiConfig>, Option<ResponsesApiConfig>) {
+async fn assert_provider_config() {
     let mut entry = Entry::new();
     entry.configs.native = true;
     entry.resolution.api_base = Some(String::from("wss://dynamic.test"));
@@ -360,27 +384,13 @@ async fn provider_configs() -> (Option<ResponsesApiConfig>, Option<ResponsesApiC
     missing.resolution.provider = None;
     let absent = missing.request().await;
     assert!(lock(&missing.configs.seen).is_empty());
-    (native.provider_config, absent.provider_config)
-}
-
-async fn assert_call_credentials_and_precedence() {
-    let (model, base, key) = call_credentials_reach_resolution().await;
-    assert_eq!(model, "gpt-4o");
-    assert_eq!(base.as_deref(), Some("wss://caller.test"));
-    assert_eq!(key.as_deref(), Some("sk-call"));
-    let (forwarded_model, logged_model) = routing_prefix_is_stripped().await;
-    assert_eq!(forwarded_model, "gpt-4o");
-    assert_eq!(logged_model, "gpt-4o");
-    assert_eq!(recorded_user().await.as_deref(), Some("alice"));
     assert_eq!(
-        api_base_precedence().await,
-        vec![
-            Some(String::from("wss://dynamic.test")),
-            Some(String::from("wss://kwarg.test")),
-            Some(String::from("https://global.test")),
-            None,
-        ]
+        native.provider_config,
+        Some(ResponsesApiConfig::Native(NativeConfig {
+            encrypted_agent_messages: true,
+        }))
     );
+    assert_eq!(absent.provider_config, None);
 }
 
 #[tokio::test]
@@ -393,31 +403,24 @@ async fn metadata_and_credentials() {
     assert_eq!(merged.api_base.as_deref(), Some("wss://dynamic.test"));
     assert_eq!(merged.api_key.as_deref(), Some("sk-dynamic"));
     assert_eq!(merged.custom_llm_provider.as_deref(), Some("openai"));
-    assert_call_credentials_and_precedence().await;
-    let (fallback, neither) = guardrail_precedence().await;
-    assert_eq!(fallback, object(r#"{"guardrails":["fallback"]}"#));
-    assert!(neither.is_empty());
-    let credentials = credential_fallbacks().await;
-    assert_eq!(
-        credentials,
-        vec![
-            Some(String::from("https://global.test")),
-            Some(String::from("sk-global")),
-            Some(String::from("sk-openai")),
-            Some(String::from("sk-env")),
-            None,
-        ]
-    );
-    let (native, absent) = provider_configs().await;
-    assert_eq!(
-        native,
-        Some(ResponsesApiConfig::Native(NativeConfig {
-            encrypted_agent_messages: true,
-        }))
-    );
-    assert_eq!(absent, None);
+    assert_call_credentials_reach_resolution().await;
+    assert_guardrail_precedence().await;
+    assert_credential_fallbacks().await;
+    assert_provider_config().await;
     assert_logged_metadata().await;
     assert_logged_credentials().await;
+}
+
+#[tokio::test]
+async fn routing_prefix_is_stripped_before_resolution() {
+    let (forwarded_model, logged_model) = routing_prefix_is_stripped().await;
+    assert_eq!(forwarded_model, "gpt-4o");
+    assert_eq!(logged_model, "gpt-4o");
+}
+
+#[tokio::test]
+async fn caller_user_reaches_logging() {
+    assert_eq!(recorded_user().await.as_deref(), Some("alice"));
 }
 
 fn constructor_defaults(relay: &ResponsesWsRelay<'_, EchoGuard, TestClient, ScriptedBackend>) {
@@ -836,7 +839,7 @@ fn assert_failure_usage(logging: &RecordingLogging) {
     assert_eq!(partial[0].0.prompt_tokens, 3);
     assert_eq!(partial[0].0.completion_tokens, 4);
     assert_eq!(partial[0].0.total_tokens, 7);
-    assert_eq!(partial[0].1.to_bits(), 0.0_f64.to_bits());
+    assert_eq!(partial[0].1, Decimal::ZERO);
     assert_eq!(
         lock(&logging.charged).clone(),
         vec![(Some(String::from("flex")), None)]

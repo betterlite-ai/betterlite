@@ -20,6 +20,7 @@ use betterlite_openai::api::responses_shapes::websocket::{
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 use thiserror::Error;
@@ -318,12 +319,12 @@ pub(super) struct RecordingLogging {
     pub(super) inputs: Mutex<Vec<Vec<Event>>>,
     pub(super) success: Mutex<Vec<Vec<Event>>>,
     pub(super) success_prefers_async: Mutex<Vec<bool>>,
-    pub(super) partial: Mutex<Vec<(Usage, f64)>>,
-    pub(super) charged: Mutex<Vec<(Option<String>, Option<f64>)>>,
+    pub(super) partial: Mutex<Vec<(Usage, Decimal)>>,
+    pub(super) charged: Mutex<Vec<(Option<String>, Option<Decimal>)>>,
     pub(super) failures: Mutex<Vec<ErrorClass>>,
     pub(super) failure_prefers_async: Mutex<Vec<bool>>,
     pub(super) tracebacks: Mutex<Vec<String>>,
-    pub(super) reported: Option<f64>,
+    pub(super) reported: Option<Decimal>,
 }
 
 impl RecordingLogging {
@@ -361,13 +362,13 @@ impl WsNativeLogging for RecordingLogging {
         lock(&self.success_prefers_async).push(prefer_async);
     }
 
-    fn response_cost(&self, billing: &RealtimeBilling) -> Option<f64> {
+    fn response_cost(&self, billing: &RealtimeBilling) -> Option<Decimal> {
         lock(&self.effects).push(String::from("cost"));
         lock(&self.charged).push((billing.service_tier.clone(), self.reported));
         self.reported
     }
 
-    fn record_partial_usage(&self, usage: &Usage, response_cost: f64) {
+    fn record_partial_usage(&self, usage: &Usage, response_cost: Decimal) {
         lock(&self.effects).push(String::from("partial_usage"));
         lock(&self.partial).push((usage.clone(), response_cost));
     }

@@ -6,6 +6,7 @@ use betterlite_openai::api::responses_shapes::websocket::{
     PresidioGuardrailCallback, ResponsesClientWebSocket,
 };
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 
 use super::ResponsesWsRelay;
 use super::backend::NativeWsBackend;
@@ -158,7 +159,7 @@ fn record_usage_for_failure(
         usage: usage_sum(&usages)?,
         service_tier,
     };
-    let response_cost = logging.response_cost(&billing).unwrap_or(0.0_f64);
+    let response_cost = logging.response_cost(&billing).unwrap_or(Decimal::ZERO);
     logging.record_partial_usage(&billing.usage, response_cost);
     Ok(())
 }
