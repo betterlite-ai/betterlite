@@ -128,7 +128,7 @@ fn entries_of(spec: &FileSpec) -> Vec<DbEntry> {
     entries
 }
 
-// json.dumps([metric_name, name, labels, help_text], sort_keys=True), the key MmapedDict writes into the file
+// json.dumps([metric_name, name, labels, help_text], sort_keys=True), the key prometheus_client's mmap_dict writes into the file
 fn mmap_key(metric: &str, sample: &str, labels: &BTreeMap<String, String>, help: &str) -> String {
     let mut key = String::from("[");
     push_string(&mut key, metric);
@@ -151,7 +151,7 @@ fn mmap_key(metric: &str, sample: &str, labels: &BTreeMap<String, String>, help:
     key
 }
 
-// python's json.dumps writes its strings with ensure_ascii, so the key bytes match the ones MmapedDict writes there
+// python's json.dumps writes its strings with ensure_ascii, so the key bytes match the ones mmap_dict.py writes there
 fn push_string(key: &mut String, value: &str) {
     key.push('"');
     for character in value.chars() {
@@ -175,7 +175,7 @@ fn push_string(key: &mut String, value: &str) {
     key.push('"');
 }
 
-// the bytes up to the used length, which is what MmapedDict.read_all_values_from_file reads
+// the bytes up to the used length, which is what mmap_dict.py's read_all_values_from_file reads
 fn used_hex(bytes: &[u8]) -> String {
     let used = bytes
         .get(..4)

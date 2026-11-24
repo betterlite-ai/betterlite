@@ -11,7 +11,7 @@ const LENGTH_BYTES: usize = 4;
 const DOUBLE_BYTES: usize = 8;
 const TWO_DOUBLES_BYTES: usize = 16;
 const ALIGNMENT_BYTES: usize = 8;
-// MmapedDict._INITIAL_MMAP_SIZE: a fresh file is one 64 KiB page of zero bytes
+// prometheus_client's mmap_dict._INITIAL_MMAP_SIZE: a fresh file is one 64 KiB page of zero bytes
 const INITIAL_CAPACITY: usize = 65536;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -21,7 +21,7 @@ pub struct DbEntry {
     pub timestamp: f64,
 }
 
-// MmapedDict.read_all_values_from_file and _read_all_values: the entries between the header and the used length
+// prometheus_client's mmap_dict.read_all_values_from_file and _read_all_values: the entries between the header and the used length
 pub fn decode_db_file(bytes: &[u8]) -> Result<Vec<DbEntry>, MultiprocessError> {
     let Some(header) = bytes
         .get(USED_OFFSET..)
@@ -109,7 +109,7 @@ fn decode_doubles(bytes: &[u8], start: usize) -> Result<(f64, f64), Multiprocess
     ))
 }
 
-// MmapedDict._init_value pads the key with 8 - (len + 4) % 8 spaces, a full 8 when 4 + len is aligned
+// prometheus_client's mmap_dict writer pads the key with 8 - (len + 4) % 8 spaces, a full 8 when 4 + len is aligned
 const fn entry_padding(key_length: usize) -> usize {
     let head = key_length.saturating_add(LENGTH_BYTES);
     match head.checked_rem(ALIGNMENT_BYTES) {
@@ -118,7 +118,7 @@ const fn entry_padding(key_length: usize) -> usize {
     }
 }
 
-// the bytes MmapedDict._init_value and write_value leave for one key
+// the bytes the mmap_dict writer's _init_value and write_value leave for one key
 pub(crate) fn encode_entry(key: &str, value: f64, timestamp: f64) -> Vec<u8> {
     let key_length = key.len();
     let length = i32::try_from(key_length).unwrap_or(i32::MAX);
