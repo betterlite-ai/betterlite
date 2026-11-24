@@ -116,6 +116,7 @@ fn unsupported_failure(provider: &str, message: String) -> Failure {
 }
 
 pub(crate) fn wire_failure(source: WireError) -> Raised {
+    let text = source.to_string();
     match source {
         WireError::Provider {
             status,
@@ -125,29 +126,31 @@ pub(crate) fn wire_failure(source: WireError) -> Raised {
         WireError::MissingAzureBase => Raised::Python(Box::new(PyValueError::new_err(
             String::from(AZURE_BASE_MESSAGE),
         ))),
-        other => Raised::Failure(Box::new(plain_failure(&other))),
-    }
-}
-
-// Every wire failure without a provider response to keep; its own match names all the remaining variants.
-fn plain_failure(source: &WireError) -> Failure {
-    let (kind, text) = match source {
-        WireError::MissingOpenAiKey => ("Exception", String::from(OPENAI_KEY_MESSAGE)),
-        WireError::MissingAzureKey => ("Exception", String::from(AZURE_KEY_MESSAGE)),
-        WireError::Vertex => ("Exception", String::from(VERTEX_MESSAGE)),
-        WireError::Transport { .. } => ("APIConnectionError", source.to_string()),
-        WireError::Decode { .. } => ("APIResponseValidationError", source.to_string()),
+        WireError::MissingOpenAiKey => Raised::Failure(Box::new(failure(
+            "Exception",
+            String::from(OPENAI_KEY_MESSAGE),
+        ))),
+        WireError::MissingAzureKey => Raised::Failure(Box::new(failure(
+            "Exception",
+            String::from(AZURE_KEY_MESSAGE),
+        ))),
+        WireError::Vertex => {
+            Raised::Failure(Box::new(failure("Exception", String::from(VERTEX_MESSAGE))))
+        }
+        WireError::Transport { .. } => {
+            Raised::Failure(Box::new(failure("APIConnectionError", text)))
+        }
+        WireError::Decode { .. } => {
+            Raised::Failure(Box::new(failure("APIResponseValidationError", text)))
+        }
         WireError::Body { .. }
         | WireError::Encode { .. }
         | WireError::Url { .. }
         | WireError::Header { .. }
-        | WireError::Provider { .. }
         | WireError::Proxy { .. }
         | WireError::Config { .. }
-        | WireError::Client { .. }
-        | WireError::MissingAzureBase => ("Exception", source.to_string()),
-    };
-    failure(kind, text)
+        | WireError::Client { .. } => Raised::Failure(Box::new(failure("Exception", text))),
+    }
 }
 
 // The error a call's own steps raised, before it becomes the class LiteLLM shows the caller.
