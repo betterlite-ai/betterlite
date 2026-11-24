@@ -3,9 +3,14 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll};
 
 use axum::body::{Body, to_bytes};
 use bytes::Bytes;
+use futures_util::Stream;
 use futures_util::stream;
 use rstest::rstest;
 
@@ -105,6 +110,45 @@ async fn the_sniff_stops_at_the_peek_limit() {
     assert_eq!(whole, Bytes::from([first, second].concat()));
 }
 
+// counts its polls, so a peek that reads past the limit is visible before the replay is consumed
+struct CountingStream {
+    frames: Vec<Result<Bytes, io::Error>>,
+    polls: Arc<AtomicUsize>,
+}
+
+impl Stream for CountingStream {
+    type Item = Result<Bytes, io::Error>;
+
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        this.polls.fetch_add(1, Ordering::SeqCst);
+        if this.frames.is_empty() {
+            return Poll::Ready(None);
+        }
+        Poll::Ready(Some(this.frames.remove(0)))
+    }
+}
+
+#[tokio::test]
+async fn the_peek_reads_no_frame_past_the_limit() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let frames = vec![
+        Ok::<Bytes, io::Error>(Bytes::from(vec![b'a'; PEEK_LIMIT])),
+        Ok(Bytes::from_static(b"tail")),
+    ];
+    let source = CountingStream {
+        frames,
+        polls: Arc::clone(&polls),
+    };
+    let (replayed, sniffed) = peek_routing_body(Body::from_stream(source)).await;
+    assert_eq!(sniffed.len(), PEEK_LIMIT);
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
+    let whole = to_bytes(replayed, PEEK_LIMIT.saturating_add(4))
+        .await
+        .unwrap();
+    assert_eq!(whole.len(), PEEK_LIMIT.saturating_add(4));
+}
+
 #[tokio::test]
 async fn a_frame_past_the_limit_is_sniffed_in_part_and_replayed_whole() {
     let first = vec![b'a'; PEEK_LIMIT.saturating_sub(4)];
@@ -195,6 +239,7 @@ fn initialize_client_info_validates_the_sdk_request(
 #[case::method_in_an_array(r#"["method"]"#, false)]
 #[case::method_in_an_array_object(r#"{"a":[{"method":"x"}]}"#, false)]
 #[case::other_case(r#"{"Method":"x"}"#, false)]
+#[case::bare_key_before_a_value(r#"{a:"method"}"#, false)]
 #[case::truncated_after_the_key(r#"{"method":"initial"#, true)]
 #[case::truncated_inside_the_key(r#"{"meth"#, false)]
 #[case::escaped_quote_before(r#"{"x\"y":1,"method":2}"#, true)]

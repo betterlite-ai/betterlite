@@ -11,6 +11,7 @@ call:
       - '["method"]'
       - '{"a": [{"method": "x"}]}'
       - '{"Method": "x"}'
+      - '{a:"method"}'
       - '{"method": "initial'
       - '{"meth'
       - '{"method":'
