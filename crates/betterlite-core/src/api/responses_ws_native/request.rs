@@ -103,7 +103,7 @@ pub fn deployment_reasoning_default(
         return Ok(None);
     };
     let optional = IndexMap::from([(String::from("reasoning_effort"), effort.clone())]);
-    let mut params = serde_json::from_value(serde_json::json!({}))?;
+    let mut params = serde_json::from_str("{}")?;
     map_optional_params(&optional, &mut params, auto_summary)?;
     let Some(reasoning) = params.remove("reasoning") else {
         return Ok(None);
