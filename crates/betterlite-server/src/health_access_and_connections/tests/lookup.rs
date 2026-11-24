@@ -199,6 +199,7 @@ fn merging_keeps_the_config_order_and_lets_the_request_win() {
     assert_eq!(
         order,
         vec![
+            ("api_base", text("https://config")),
             ("api_key", text("sk-config")),
             ("model", text("request-model")),
             ("temperature", number(1)),

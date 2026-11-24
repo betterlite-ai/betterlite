@@ -103,8 +103,12 @@ fn stripping_leaves_the_input_rows_and_non_list_values_as_they_were() {
     ]);
     let stripped = strip_admin_only_fields(&result);
     assert_eq!(
-        stripped.get("healthy_endpoints"),
+        result.get("healthy_endpoints"),
         Some(&Json::List(healthy_rows))
+    );
+    assert_ne!(
+        stripped.get("healthy_endpoints"),
+        result.get("healthy_endpoints")
     );
     assert_eq!(stripped.get("unhealthy_endpoints"), Some(&Json::Null));
     assert_eq!(stripped.get("other"), result.get("other"));

@@ -84,9 +84,13 @@ pub(super) fn failing_router() -> FakeRouter {
     }
 }
 
+// Router.should_include_deployment's team arm: no team constraint includes every row, a team includes its own and the global ones
 fn team_allows(row: &DeploymentSpec, team_id: Option<&str>) -> bool {
+    let Some(team) = team_id else {
+        return true;
+    };
     match row.model_info.get("team_id") {
-        Some(Json::Text(owner)) => team_id == Some(owner.as_str()),
+        Some(Json::Text(owner)) => owner.as_str() == team,
         _ => true,
     }
 }
