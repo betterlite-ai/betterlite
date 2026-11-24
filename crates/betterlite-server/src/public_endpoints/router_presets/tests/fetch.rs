@@ -52,12 +52,14 @@ async fn serves_the_cached_catalog_without_a_second_fetch() {
 #[rstest]
 #[case::ok(200, true)]
 #[case::created(201, true)]
-#[case::last_success(299, true)]
-#[case::multiple_choices(300, false)]
-#[case::informational(199, false)]
+#[case::redirect_without_a_location(300, true)]
+#[case::not_modified(304, true)]
+#[case::last_non_error(399, true)]
+#[case::bad_request(400, false)]
+#[case::not_found(404, false)]
 #[case::unavailable(503, false)]
 #[tokio::test]
-async fn treats_only_2xx_answers_as_success(#[case] status: u16, #[case] remote: bool) {
+async fn treats_only_4xx_and_5xx_answers_as_failures(#[case] status: u16, #[case] remote: bool) {
     let script = Script::new(vec![reply(status, REMOTE_CATALOG)]);
     let router = app(&script, settings(PRESETS_URL, false));
     let (_, _, body) = get(router, AUTOROUTER_PRESETS_PATH).await;

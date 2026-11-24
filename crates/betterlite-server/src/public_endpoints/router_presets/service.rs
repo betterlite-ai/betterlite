@@ -87,7 +87,8 @@ where
             .send(request)
             .await
             .map_err(RouterPresetsError::Request)?;
-        if !(200_u16..300).contains(&response.status) {
+        // LiteLLM only raises for 4xx and 5xx, so an unfollowed 3xx still has its body decoded
+        if response.status >= 400 {
             return Err(RouterPresetsError::Status {
                 status: response.status,
             });
