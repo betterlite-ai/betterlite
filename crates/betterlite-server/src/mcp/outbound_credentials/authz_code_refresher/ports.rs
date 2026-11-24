@@ -67,7 +67,8 @@ impl EpochClock for SystemEpochClock {
     fn now(&self) -> f64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0.0_f64, std::time::Duration::as_secs_f64)
+            .unwrap_or_default()
+            .as_secs_f64()
     }
 }
 

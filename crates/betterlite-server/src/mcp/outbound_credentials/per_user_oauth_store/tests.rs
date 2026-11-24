@@ -198,6 +198,16 @@ async fn adapter_reader_reports_a_disconnected_database() {
     assert_eq!(error.detail, "Database not connected");
 }
 
+fn stored_payload(expires_at: CredentialValue) -> CredentialPayload {
+    CredentialPayload {
+        access_token: CredentialValue::Text("stored".to_owned()),
+        refresh_token: CredentialValue::Null,
+        expires_at,
+        scopes: CredentialValue::Array(vec![CredentialValue::Text("read".to_owned())]),
+        identity_binding_proof: CredentialValue::Text("proof".to_owned()),
+    }
+}
+
 #[tokio::test]
 async fn adapter_reader_maps_a_stored_row_into_the_chain_payload() {
     let cipher = test_cipher();
@@ -234,14 +244,7 @@ async fn adapter_reader_maps_a_stored_row_into_the_chain_payload() {
         iso_to_epoch(expires_at),
         base.checked_add_signed(TimeDelta::seconds(60))
     );
-    let expected = CredentialPayload {
-        access_token: CredentialValue::Text("stored".to_owned()),
-        refresh_token: CredentialValue::Null,
-        expires_at: credential.expires_at.clone(),
-        scopes: CredentialValue::Array(vec![CredentialValue::Text("read".to_owned())]),
-        identity_binding_proof: CredentialValue::Text("proof".to_owned()),
-    };
-    assert_eq!(credential, expected);
+    assert_eq!(credential, stored_payload(credential.expires_at.clone()));
 }
 
 #[tokio::test]

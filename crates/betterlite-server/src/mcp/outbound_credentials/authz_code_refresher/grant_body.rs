@@ -63,12 +63,10 @@ pub fn parse_expires_in(value: &JsonValue) -> Option<i64> {
 // Python's int() on a string: surrounding whitespace, one optional sign, ASCII digits with single underscores between them.
 fn parse_int_text(text: &str) -> Option<i64> {
     let trimmed = text.trim();
-    let (negative, digits) = if let Some(rest) = trimmed.strip_prefix('-') {
-        (true, rest)
-    } else if let Some(rest) = trimmed.strip_prefix('+') {
-        (false, rest)
-    } else {
-        (false, trimmed)
+    let (negative, digits) = match (trimmed.strip_prefix('-'), trimmed.strip_prefix('+')) {
+        (Some(rest), _) => (true, rest),
+        (None, Some(rest)) => (false, rest),
+        (None, None) => (false, trimmed),
     };
     if digits.is_empty() {
         return None;
@@ -90,7 +88,10 @@ fn parse_int_text(text: &str) -> Option<i64> {
     if after_underscore {
         return None;
     }
-    Some(if negative { -value } else { value })
+    if negative {
+        return value.checked_neg();
+    }
+    Some(value)
 }
 
 // LiteLLM's _parse_scopes: the words of a non-empty string, None for an empty string or any other type.

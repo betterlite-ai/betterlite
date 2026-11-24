@@ -25,37 +25,12 @@ struct LazyState {
 }
 
 pub struct LazyPerUserOAuthTokenStore<Lookup, Binding, Builder, Availability> {
-    pub server_lookup: Arc<Lookup>,
-    pub binding: Arc<Binding>,
-    pub store_builder: Builder,
-    pub redis_available: Arc<Availability>,
+    server_lookup: Arc<Lookup>,
+    binding: Arc<Binding>,
+    store_builder: Builder,
+    redis_available: Arc<Availability>,
     state: Mutex<LazyState>,
     notify: Notify,
-}
-
-impl<Lookup, Binding, Builder, Availability>
-    LazyPerUserOAuthTokenStore<Lookup, Binding, Builder, Availability>
-{
-    #[must_use]
-    pub fn new(
-        server_lookup: Arc<Lookup>,
-        binding: Arc<Binding>,
-        store_builder: Builder,
-        redis_available: Arc<Availability>,
-    ) -> Self {
-        Self {
-            server_lookup,
-            binding,
-            store_builder,
-            redis_available,
-            state: Mutex::new(LazyState {
-                store: None,
-                uses_redis: false,
-                local_fetches: 0,
-            }),
-            notify: Notify::new(),
-        }
-    }
 }
 
 #[async_trait]
@@ -129,6 +104,27 @@ where
     Builder: StoreBuilder,
     Availability: RedisAvailability,
 {
+    #[must_use]
+    pub fn new(
+        server_lookup: Arc<Lookup>,
+        binding: Arc<Binding>,
+        store_builder: Builder,
+        redis_available: Arc<Availability>,
+    ) -> Self {
+        Self {
+            server_lookup,
+            binding,
+            store_builder,
+            redis_available,
+            state: Mutex::new(LazyState {
+                store: None,
+                uses_redis: false,
+                local_fetches: 0,
+            }),
+            notify: Notify::new(),
+        }
+    }
+
     async fn fetch_token(
         &self,
         user_id: &str,

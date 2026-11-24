@@ -77,7 +77,7 @@ impl InvalidatableOAuthTokenStore for ChainStore {
 struct ScriptedBuilder {
     store: Arc<ChainStore>,
     answers: Mutex<VecDeque<bool>>,
-    builds: Mutex<Vec<bool>>,
+    builds: Arc<Mutex<Vec<bool>>>,
 }
 
 impl StoreBuilder for ScriptedBuilder {
@@ -105,7 +105,20 @@ impl RedisAvailability for ScriptedAvailability {
     }
 }
 
-pub(super) fn lazy_fetch(input: &LazyInput) -> HelperResult {
+struct LazyParts {
+    store: LazyPerUserOAuthTokenStore<
+        FixedLookup,
+        ScriptedBinding,
+        ScriptedBuilder,
+        ScriptedAvailability,
+    >,
+    chain: Arc<ChainStore>,
+    binding: Arc<ScriptedBinding>,
+    availability: Arc<ScriptedAvailability>,
+    builds: Arc<Mutex<Vec<bool>>>,
+}
+
+fn build_parts(input: &LazyInput) -> Result<LazyParts, Box<HelperError>> {
     let server = match &input.server {
         Some(value) => Some(Arc::new(server_record(value)?)),
         None => None,
@@ -120,56 +133,74 @@ pub(super) fn lazy_fetch(input: &LazyInput) -> HelperResult {
         invalidations: Mutex::new(Vec::new()),
     });
     let availability = Arc::new(ScriptedAvailability(AtomicBool::new(false)));
+    let builds = Arc::new(Mutex::new(Vec::new()));
     let store = LazyPerUserOAuthTokenStore::new(
         Arc::new(FixedLookup(server)),
         Arc::clone(&binding),
         ScriptedBuilder {
             store: Arc::clone(&chain),
             answers: Mutex::new(VecDeque::from(input.builds.clone())),
-            builds: Mutex::new(Vec::new()),
+            builds: Arc::clone(&builds),
         },
         Arc::clone(&availability),
     );
-    let steps = runtime()?.block_on(async {
-        let mut outputs = Vec::new();
-        for step in &input.steps {
-            let (op, token) = match step {
-                Step::Fetch { user_id, server_id } => (
-                    "fetch",
-                    store
-                        .fetch(user_id, server_id)
-                        .await
-                        .map_err(|error| helper_error("TokenStoreUnavailable", error.detail))?,
-                ),
-                Step::Invalidate { user_id, server_id } => {
-                    store.invalidate(user_id, server_id).await;
-                    ("invalidate", None)
-                }
-                Step::SetRedisAvailable { available } => {
-                    availability.0.store(*available, Ordering::Relaxed);
-                    ("set_redis_available", None)
-                }
-            };
-            outputs.push(StepOutput {
-                op: op.to_owned(),
-                token: token.map(TokenOutput::from),
-            });
-        }
-        Ok::<_, Box<HelperError>>(outputs)
-    })?;
+    Ok(LazyParts {
+        store,
+        chain,
+        binding,
+        availability,
+        builds,
+    })
+}
+
+async fn run_steps(parts: &LazyParts, steps: &[Step]) -> Result<Vec<StepOutput>, Box<HelperError>> {
+    let mut outputs = Vec::new();
+    for step in steps {
+        let (op, token) = match step {
+            Step::Fetch { user_id, server_id } => (
+                "fetch",
+                parts
+                    .store
+                    .fetch(user_id, server_id)
+                    .await
+                    .map_err(|error| helper_error("TokenStoreUnavailable", error.detail))?,
+            ),
+            Step::Invalidate { user_id, server_id } => {
+                parts.store.invalidate(user_id, server_id).await;
+                ("invalidate", None)
+            }
+            Step::SetRedisAvailable { available } => {
+                parts.availability.0.store(*available, Ordering::Relaxed);
+                ("set_redis_available", None)
+            }
+        };
+        outputs.push(StepOutput {
+            op: op.to_owned(),
+            token: token.map(TokenOutput::from),
+        });
+    }
+    Ok(outputs)
+}
+
+pub(super) fn lazy_fetch(input: &LazyInput) -> HelperResult {
+    let parts = build_parts(input)?;
+    let steps = runtime()?.block_on(run_steps(&parts, &input.steps))?;
     Ok(json!({
         "steps": steps,
-        "builds": store.store_builder.builds
+        "builds": parts
+            .builds
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone(),
-        "store_fetches": chain.fetches.load(Ordering::Relaxed),
-        "store_invalidations": chain
+        "store_fetches": parts.chain.fetches.load(Ordering::Relaxed),
+        "store_invalidations": parts
+            .chain
             .invalidations
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone(),
-        "binding_checks": binding
+        "binding_checks": parts
+            .binding
             .proof_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

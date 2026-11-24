@@ -8,7 +8,7 @@ use betterlite_mcp::server_record::MCPServer;
 
 use super::super::authz_code_refresher::AuthorizationCodeRefresher;
 use super::super::authz_code_refresher::ports::{
-    CredentialPersist, ServerLookup, TokenEndpointPost,
+    CredentialPersist, ServerLookup, SystemEpochClock, TokenEndpointPost,
 };
 use super::super::cache_codec::OAuthTokenCacheCodec;
 use super::super::cached_store::CachedOAuthTokenStore;
@@ -18,8 +18,8 @@ use super::super::v2_store::{CredentialReader, V2PerUserTokenStore};
 use super::super::{
     DEFAULT_EXPIRY_SKEW, DEFAULT_MAX_SIZE, InMemoryTokenCacheBackend, InvalidatableOAuthTokenStore,
     OAuthToken, OAuthTokenStore, PER_USER_TOKEN_KEY_PREFIX, RefreshCoordinator, RefreshStep,
-    SystemWallClock, TokenCacheBackend, TokenCacheEntries, TokenKey, TokenStoreUnavailable,
-    WallClock,
+    SystemWallClock, TokenCacheBackend, TokenCacheEntries, TokenKey, TokenRefresher,
+    TokenStoreUnavailable,
 };
 use super::adapters::BoundCredentialReader;
 
@@ -115,7 +115,7 @@ where
     Reader: CredentialReader + 'static,
     Persist: CredentialPersist + 'static,
     Post: TokenEndpointPost + 'static,
-    Redis: RedisChain + 'static,
+    Redis: RedisChain + Send + Sync + 'static,
     <Redis as RedisChain>::Cache: 'static,
 {
     fn build(&self) -> BuiltStore {
@@ -124,54 +124,70 @@ where
             binding: Arc::clone(&self.binding),
             reader: Arc::clone(&self.reader),
         };
-        let refresher = AuthorizationCodeRefresher::new(
-            Arc::clone(&self.server_lookup),
-            Arc::clone(&self.post),
-            Arc::clone(&self.persist),
-            SharedBinding(Arc::clone(&self.binding)),
-        );
+        let refresher = AuthorizationCodeRefresher {
+            server_lookup: Arc::clone(&self.server_lookup),
+            token_endpoint: Arc::clone(&self.post),
+            persist: Arc::clone(&self.persist),
+            binding: SharedBinding(Arc::clone(&self.binding)),
+            clock: SystemEpochClock,
+        };
         let inner = V2PerUserTokenStore { reader };
         match self.redis.parts() {
-            Some(parts) => {
-                let chain = RefreshingTokenStore {
-                    inner,
-                    refresher,
-                    expiry_skew: DEFAULT_EXPIRY_SKEW,
-                    clock: Arc::new(SystemWallClock),
-                    coordinator: SharedRefreshCoordinator(parts.coordinator),
-                };
-                let backend = DualCacheTokenCacheBackend {
-                    cache: parts.cache,
-                    codec: parts.codec,
-                    key_prefix: PER_USER_TOKEN_KEY_PREFIX,
-                };
-                BuiltStore {
-                    store: Arc::new(cached_store(chain, backend)),
-                    uses_redis: true,
-                }
-            }
-            None => {
-                let chain = RefreshingTokenStore {
-                    inner,
-                    refresher,
-                    expiry_skew: DEFAULT_EXPIRY_SKEW,
-                    clock: Arc::new(SystemWallClock),
-                    coordinator: InProcessRefreshCoordinator::<
-                        Option<OAuthToken>,
-                        TokenStoreUnavailable,
-                    >::default(),
-                };
-                let backend = InMemoryTokenCacheBackend {
-                    max_size: DEFAULT_MAX_SIZE,
-                    clock: Arc::new(SystemWallClock),
-                    entries: TokenCacheEntries::default(),
-                };
-                BuiltStore {
-                    store: Arc::new(cached_store(chain, backend)),
-                    uses_redis: false,
-                }
-            }
+            Some(parts) => built_with_redis(inner, refresher, parts),
+            None => built_locally(inner, refresher),
         }
+    }
+}
+
+fn built_with_redis<Inner, Refresher, Cache>(
+    inner: Inner,
+    refresher: Refresher,
+    parts: RedisParts<Cache>,
+) -> BuiltStore
+where
+    Inner: OAuthTokenStore + 'static,
+    Refresher: TokenRefresher + 'static,
+    Cache: AsyncCache + 'static,
+{
+    let chain = RefreshingTokenStore {
+        inner,
+        refresher,
+        expiry_skew: DEFAULT_EXPIRY_SKEW,
+        clock: Arc::new(SystemWallClock),
+        coordinator: SharedRefreshCoordinator(parts.coordinator),
+    };
+    let backend = DualCacheTokenCacheBackend {
+        cache: parts.cache,
+        codec: parts.codec,
+        key_prefix: PER_USER_TOKEN_KEY_PREFIX,
+    };
+    BuiltStore {
+        store: Arc::new(cached_store(chain, backend)),
+        uses_redis: true,
+    }
+}
+
+fn built_locally<Inner, Refresher>(inner: Inner, refresher: Refresher) -> BuiltStore
+where
+    Inner: OAuthTokenStore + 'static,
+    Refresher: TokenRefresher + 'static,
+{
+    let chain = RefreshingTokenStore {
+        inner,
+        refresher,
+        expiry_skew: DEFAULT_EXPIRY_SKEW,
+        clock: Arc::new(SystemWallClock),
+        coordinator:
+            InProcessRefreshCoordinator::<Option<OAuthToken>, TokenStoreUnavailable>::default(),
+    };
+    let backend = InMemoryTokenCacheBackend {
+        max_size: DEFAULT_MAX_SIZE,
+        clock: Arc::new(SystemWallClock),
+        entries: TokenCacheEntries::default(),
+    };
+    BuiltStore {
+        store: Arc::new(cached_store(chain, backend)),
+        uses_redis: false,
     }
 }
 

@@ -181,7 +181,6 @@ pub struct DbCredentialPersist<Table> {
     pub clock: Arc<dyn WallClock>,
 }
 
-#[async_trait]
 impl<Table: CredentialRows> CredentialPersist for DbCredentialPersist<Table> {
     async fn persist(&self, request: &PersistRequest<'_>) -> Result<(), TokenStoreUnavailable> {
         let Some(table) = &self.database else {
