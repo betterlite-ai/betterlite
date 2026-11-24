@@ -90,40 +90,37 @@ where
     Ok(UpperboundKeyGenerateParams {
         max_budget: resolve_number(
             raw.max_budget,
-            &field_path("max_budget"),
+            &format!("{KEY}.max_budget"),
             lookup,
             parse_money,
         )?,
         budget_duration: text(raw.budget_duration, "budget_duration", lookup)?,
         duration: text(raw.duration, "duration", lookup)?,
-        max_parallel_requests: resolve_number(
-            raw.max_parallel_requests,
-            &field_path("max_parallel_requests"),
-            lookup,
-            parse_limit,
-        )?,
-        tpm_limit: resolve_number(raw.tpm_limit, &field_path("tpm_limit"), lookup, parse_limit)?,
-        rpm_limit: resolve_number(raw.rpm_limit, &field_path("rpm_limit"), lookup, parse_limit)?,
+        max_parallel_requests: count(raw.max_parallel_requests, "max_parallel_requests", lookup)?,
+        tpm_limit: count(raw.tpm_limit, "tpm_limit", lookup)?,
+        rpm_limit: count(raw.rpm_limit, "rpm_limit", lookup)?,
     })
 }
 
-fn field_path(field: &str) -> String {
-    format!("{KEY}.{field}")
-}
-
-fn parse_limit(text: &str, path: &str) -> Result<i64, ConfigError> {
-    text.parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: path.to_owned(),
-            source,
-        })
+fn count<L>(value: Option<RawNumber>, field: &str, lookup: &L) -> Result<Option<i64>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    resolve_number(value, &format!("{KEY}.{field}"), lookup, |number, path| {
+        number
+            .parse::<i64>()
+            .map_err(|source| ConfigError::InvalidInteger {
+                path: path.to_owned(),
+                source,
+            })
+    })
 }
 
 fn text<L>(value: Option<RawText>, field: &str, lookup: &L) -> Result<Option<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let path = field_path(field);
+    let path = format!("{KEY}.{field}");
     match value {
         None => Ok(None),
         Some(RawText::Text(found)) => resolve_string(found, &path, lookup).map(Some),

@@ -1,4 +1,5 @@
 use jiff::tz::TimeZoneDatabase;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::key_fields::values::Amount as KeyAmount;
@@ -18,7 +19,7 @@ fn upperbound_key_param() {
     let request = generate(r#"{"max_budget": 3, "rpm_limit": 2, "duration": "12h"}"#);
     let database = TimeZoneDatabase::from_env();
     let values = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -40,7 +41,7 @@ fn upperbound_fill_generation() {
     let request = generate(r#"{"key_alias": "alias-1"}"#);
     let database = TimeZoneDatabase::from_env();
     let values = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -60,7 +61,7 @@ fn upperbound_update_omits() {
     let request = update(r#"{"key": "sk-abc", "max_budget": 2}"#);
     let database = TimeZoneDatabase::from_env();
     let values = enforce_upperbound(
-        &KeyLimitRequest::Update(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         false,
         &time(&database),
@@ -77,7 +78,7 @@ fn finite_without_config() {
     let request = generate(r#"{"max_budget": 5}"#);
     let database = TimeZoneDatabase::from_env();
     let values = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         None,
         true,
         &time(&database),
@@ -107,29 +108,21 @@ fn finite_without_config() {
     );
 }
 
-#[test]
-fn non_finite_each_direction() {
-    let cases = [
-        (GuardAmount::PositiveInfinity, "max_budget", "inf"),
-        (GuardAmount::NegativeInfinity, "tpd_limit", "-inf"),
-        (GuardAmount::Nan, "rpm_limit", "nan"),
-    ];
-    for (amount, field, text) in cases {
-        let values = [NumericValue {
-            field,
-            value: Some(amount),
-        }];
-        let rejection = check_finite(&values).unwrap_err();
-        assert_eq!(
-            rejection.to_string(),
-            format!("{field} must be a finite number. Received: {text}")
-        );
-    }
-    let missing = [NumericValue {
-        field: "max_budget",
-        value: None,
-    }];
-    check_finite(&missing).unwrap();
+#[rstest]
+#[case::positive_infinity(Some(GuardAmount::PositiveInfinity), "max_budget", Some("inf"))]
+#[case::negative_infinity(Some(GuardAmount::NegativeInfinity), "tpd_limit", Some("-inf"))]
+#[case::nan(Some(GuardAmount::Nan), "rpm_limit", Some("nan"))]
+#[case::missing(None, "max_budget", None)]
+fn non_finite_each_direction(
+    #[case] value: Option<GuardAmount>,
+    #[case] field: &'static str,
+    #[case] received: Option<&str>,
+) {
+    let outcome = check_finite(&[NumericValue { field, value }]);
+    let message = outcome.err().map(|rejection| rejection.to_string());
+    let expected =
+        received.map(|text| format!("{field} must be a finite number. Received: {text}"));
+    assert_eq!(message, expected);
 }
 
 #[test]
@@ -160,7 +153,7 @@ fn duration_limit() {
     let database = TimeZoneDatabase::from_env();
     let request = generate(r#"{"duration": "30d"}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -171,7 +164,7 @@ fn duration_limit() {
     );
     let infinite = generate(r#"{"duration": "-1"}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&infinite),
+        &KeyLimitRequest::from(&infinite),
         Some(&ceiling),
         true,
         &time(&database),
@@ -182,7 +175,7 @@ fn duration_limit() {
     );
     let within = generate(r#"{"duration": "12h"}"#);
     let values = enforce_upperbound(
-        &KeyLimitRequest::Generate(&within),
+        &KeyLimitRequest::from(&within),
         Some(&ceiling),
         true,
         &time(&database),
@@ -197,7 +190,7 @@ fn budget_duration_limit() {
     let database = TimeZoneDatabase::from_env();
     let request = generate(r#"{"budget_duration": "2d"}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -208,7 +201,7 @@ fn budget_duration_limit() {
     );
     let equal = generate(r#"{"budget_duration": "1d"}"#);
     let values = enforce_upperbound(
-        &KeyLimitRequest::Generate(&equal),
+        &KeyLimitRequest::from(&equal),
         Some(&ceiling),
         true,
         &time(&database),
@@ -223,7 +216,7 @@ fn invalid_duration() {
     let bad_ceiling = configured(r#"{"duration": "abc"}"#);
     let request = generate(r#"{"duration": "1d"}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&bad_ceiling),
         true,
         &time(&database),
@@ -235,7 +228,7 @@ fn invalid_duration() {
     let ceiling = configured(r#"{"duration": "1d"}"#);
     let bad_request = generate(r#"{"duration": "soon"}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&bad_request),
+        &KeyLimitRequest::from(&bad_request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -256,7 +249,7 @@ fn equal_ceiling() {
     );
     let database = TimeZoneDatabase::from_env();
     let values = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -272,7 +265,7 @@ fn unsupported_ceiling_field() {
     let request = generate(r#"{"soft_budget": 1000, "tpd_limit": 1000}"#);
     let database = TimeZoneDatabase::from_env();
     let values = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -288,7 +281,7 @@ fn negative_and_zero_ceiling() {
     let database = TimeZoneDatabase::from_env();
     let request = generate(r#"{"max_budget": 0, "rpm_limit": -1}"#);
     enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -296,7 +289,7 @@ fn negative_and_zero_ceiling() {
     .unwrap();
     let over_budget = generate(r#"{"max_budget": 1}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&over_budget),
+        &KeyLimitRequest::from(&over_budget),
         Some(&ceiling),
         true,
         &time(&database),
@@ -307,7 +300,7 @@ fn negative_and_zero_ceiling() {
     );
     let over_rpm = generate(r#"{"rpm_limit": 0}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&over_rpm),
+        &KeyLimitRequest::from(&over_rpm),
         Some(&ceiling),
         true,
         &time(&database),
@@ -328,7 +321,7 @@ fn failure_order_is_configuration_order() {
     );
     let database = TimeZoneDatabase::from_env();
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),
@@ -340,7 +333,7 @@ fn failure_order_is_configuration_order() {
     let ceiling = configured(r#"{"max_budget": 10, "max_parallel_requests": 4}"#);
     let request = generate(r#"{"max_parallel_requests": 8, "max_budget": 20}"#);
     let result = enforce_upperbound(
-        &KeyLimitRequest::Generate(&request),
+        &KeyLimitRequest::from(&request),
         Some(&ceiling),
         true,
         &time(&database),

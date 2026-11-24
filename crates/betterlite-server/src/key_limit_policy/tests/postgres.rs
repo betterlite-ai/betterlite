@@ -15,7 +15,7 @@ async fn team_query_excludes_current() {
     let team_table = team(r#"{"team_id": "team-1", "rpm_limit": 10}"#);
     let request =
         update(r#"{"key": "sk-abc", "rpm_limit_type": "guaranteed_throughput", "rpm_limit": 10}"#);
-    check_team_key_limits(&team_table, &KeyLimitRequest::Update(&request), &recorded)
+    check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &recorded)
         .await
         .unwrap();
     let client = store.session().await.unwrap();
@@ -26,7 +26,7 @@ async fn team_query_excludes_current() {
         .await
         .unwrap();
     let rejection = rejected(
-        check_team_key_limits(&team_table, &KeyLimitRequest::Update(&request), &recorded).await,
+        check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &recorded).await,
     );
     assert_eq!(
         text_detail(&rejection),

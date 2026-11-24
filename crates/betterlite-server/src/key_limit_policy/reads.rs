@@ -143,7 +143,7 @@ struct MembershipRow {
 }
 
 // membership.organization_id for each row in (memberships or []), skipping the rows without one
-fn member_ids(row: &JsonData) -> Result<BTreeSet<String>, KeyLimitReadError> {
+pub fn member_ids(row: &JsonData) -> Result<BTreeSet<String>, KeyLimitReadError> {
     let JsonData::Object(fields) = row else {
         return Ok(BTreeSet::new());
     };

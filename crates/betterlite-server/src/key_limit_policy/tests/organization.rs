@@ -26,7 +26,7 @@ async fn org_model_limits() {
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "metadata": {"model_rpm_limit": {"gpt-4": 6}}}]"#);
     let result =
-        check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads).await;
+        check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated RPM limit=6 + Key RPM limit=15 is greater than organization RPM limit=20"
@@ -42,7 +42,7 @@ async fn org_type_metadata() {
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 10}]"#);
     let result =
-        check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads).await;
+        check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated RPM limit=10 + Key RPM limit=10 is greater than organization RPM limit=10"
@@ -59,7 +59,7 @@ async fn org_table_metadata_type_ignored() {
     let request = generate(r#"{"rpm_limit": 100}"#);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
-    check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads)
+    check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
     assert!(reads.queries.lock().unwrap().is_empty());
@@ -74,7 +74,7 @@ async fn org_declared_type_wins() {
     let request = generate(r#"{"rpm_limit_type": "best_effort_throughput", "rpm_limit": 100}"#);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
-    check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads)
+    check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
     assert!(reads.queries.lock().unwrap().is_empty());
@@ -88,7 +88,7 @@ async fn org_missing_budget() {
     );
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
-    check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads)
+    check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
 }
@@ -101,7 +101,7 @@ async fn org_metadata_models() {
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "metadata": {"model_tpm_limit": {"gpt-4": 2}}}]"#);
     let result =
-        check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads).await;
+        check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated TPM limit=2 + Key TPM limit=4 is greater than organization TPM limit=5"
@@ -118,7 +118,7 @@ async fn org_update_excludes_self() {
     reads.keys = keys(&format!(
         r#"[{{"token": "{hashed}", "rpm_limit": 10}}, {{"token": "k2", "rpm_limit": 0}}]"#
     ));
-    check_org_key_limits(&organization, &KeyLimitRequest::Update(&request), &reads)
+    check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
 }
@@ -131,7 +131,7 @@ async fn org_missing_organization_id() {
     let request = generate(r#"{"rpm_limit_type": "guaranteed_throughput", "rpm_limit": 1}"#);
     let reads = FakeReads::default();
     let result =
-        check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads).await;
+        check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert!(matches!(result, Err(KeyLimitError::MissingOrganization)));
     assert!(reads.queries.lock().unwrap().is_empty());
 }
@@ -146,7 +146,7 @@ async fn org_model_before_scalar() {
     reads.keys =
         keys(r#"[{"token": "k1", "rpm_limit": 5, "metadata": {"model_rpm_limit": {"gpt-4": 5}}}]"#);
     let result =
-        check_org_key_limits(&organization, &KeyLimitRequest::Generate(&request), &reads).await;
+        check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated RPM limit=5 + Key RPM limit=6 is greater than organization RPM limit=10"

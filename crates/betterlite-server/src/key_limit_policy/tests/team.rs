@@ -18,8 +18,7 @@ async fn team_rpm_ceiling() {
     let request = generate(r#"{"rpm_limit_type": "guaranteed_throughput", "rpm_limit": 6}"#);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 5}]"#);
-    let result =
-        check_team_key_limits(&team_table, &KeyLimitRequest::Generate(&request), &reads).await;
+    let result = check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated RPM limit=5 + Key RPM limit=6 is greater than team RPM limit=10"
@@ -35,8 +34,7 @@ async fn team_model_tpm() {
         generate(r#"{"rpm_limit_type": "guaranteed_throughput", "model_tpm_limit": {"gpt-4": 8}}"#);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "metadata": {"model_tpm_limit": {"gpt-4": 5}}}]"#);
-    let result =
-        check_team_key_limits(&team_table, &KeyLimitRequest::Generate(&request), &reads).await;
+    let result = check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated TPM limit=5 + Key TPM limit=8 is greater than team TPM limit=10"
@@ -52,7 +50,7 @@ async fn team_non_guaranteed_skips(#[case] request: &str) {
     let request = generate(request);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
-    check_team_key_limits(&team_table, &KeyLimitRequest::Generate(&request), &reads)
+    check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
     assert!(reads.queries.lock().unwrap().is_empty());
@@ -64,8 +62,7 @@ async fn either_guaranteed_checks_both() {
     let request = generate(r#"{"rpm_limit_type": "guaranteed_throughput", "tpm_limit": 6}"#);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "tpm_limit": 5}]"#);
-    let result =
-        check_team_key_limits(&team_table, &KeyLimitRequest::Generate(&request), &reads).await;
+    let result = check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated TPM limit=5 + Key TPM limit=6 is greater than team TPM limit=10"
@@ -79,7 +76,7 @@ async fn team_metadata_type_ignored() {
         generate(r#"{"rpm_limit": 100, "metadata": {"rpm_limit_type": "guaranteed_throughput"}}"#);
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
-    check_team_key_limits(&team_table, &KeyLimitRequest::Generate(&request), &reads)
+    check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
     assert!(reads.queries.lock().unwrap().is_empty());
@@ -95,13 +92,13 @@ async fn team_update_excludes_self() {
     reads.keys = keys(&format!(
         r#"[{{"token": "{hashed}", "rpm_limit": 10}}, {{"token": "k2", "rpm_limit": 0}}]"#
     ));
-    check_team_key_limits(&team_table, &KeyLimitRequest::Update(&request), &reads)
+    check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
     let request = update(&format!(
         r#"{{"key": "{hashed}", "rpm_limit_type": "guaranteed_throughput", "rpm_limit": 10}}"#
     ));
-    check_team_key_limits(&team_table, &KeyLimitRequest::Update(&request), &reads)
+    check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
 }
@@ -114,8 +111,7 @@ async fn team_update_no_alias_exclusion() {
     );
     let mut reads = FakeReads::default();
     reads.keys = keys(r#"[{"token": "k1", "key_alias": "alias-1", "rpm_limit": 10}]"#);
-    let result =
-        check_team_key_limits(&team_table, &KeyLimitRequest::Update(&request), &reads).await;
+    let result = check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         text_detail(&rejected(result)),
         "Allocated RPM limit=10 + Key RPM limit=10 is greater than team RPM limit=10"
@@ -133,8 +129,7 @@ async fn team_model_before_scalar() {
     let mut reads = FakeReads::default();
     reads.keys =
         keys(r#"[{"token": "k1", "rpm_limit": 5, "metadata": {"model_rpm_limit": {"gpt-4": 5}}}]"#);
-    let result =
-        check_team_key_limits(&team_table, &KeyLimitRequest::Generate(&request), &reads).await;
+    let result = check_team_key_limits(&team_table, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
         rejected(result),
         Rejection::Allocation {

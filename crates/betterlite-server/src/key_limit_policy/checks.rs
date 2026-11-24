@@ -18,38 +18,41 @@ use crate::team_parent_limits::error::RateLimit;
 
 const GUARANTEED: &str = "guaranteed_throughput";
 
+// one entity's aggregate RPM/TPM ceilings and the metadata holding its per-model maps
+struct EntityLimits<'entity> {
+    entity: Entity,
+    metadata: Option<&'entity BTreeMap<String, JsonData>>,
+    rpm: Option<i64>,
+    tpm: Option<i64>,
+}
+
 pub async fn check_team_key_limits(
     team: &LiteLLMTeamTableCachedObj,
-    request: &KeyLimitRequest<'_>,
+    request: &KeyLimitRequest,
     reads: &dyn KeyLimitReads,
 ) -> Result<(), KeyLimitError> {
-    if request.rpm_limit_type() != Some(LimitType::GuaranteedThroughput)
-        && request.tpm_limit_type() != Some(LimitType::GuaranteedThroughput)
+    if request.rpm_limit_type != Some(LimitType::GuaranteedThroughput)
+        && request.tpm_limit_type != Some(LimitType::GuaranteedThroughput)
     {
         return Ok(());
     }
     let base = &team.team.fields.base;
-    let keys = reads.keys(KeyOwner::Team(&base.team_id)).await?;
-    let keys = exclude_current(keys, request);
-    let metadata = base.metadata.as_ref();
-    model_limits(
-        &keys,
-        request,
-        metadata,
-        Entity::Team,
-        base.rpm_limit,
-        base.tpm_limit,
-    )?;
-    check_rate_limits(&keys, request, base.rpm_limit, base.tpm_limit, Entity::Team)
+    let limits = EntityLimits {
+        entity: Entity::Team,
+        metadata: base.metadata.as_ref(),
+        rpm: base.rpm_limit,
+        tpm: base.tpm_limit,
+    };
+    check_entity(request, reads, KeyOwner::Team(&base.team_id), &limits).await
 }
 
 pub async fn check_org_key_limits(
     organization: &OrganizationTable,
-    request: &KeyLimitRequest<'_>,
+    request: &KeyLimitRequest,
     reads: &dyn KeyLimitReads,
 ) -> Result<(), KeyLimitError> {
-    if !guaranteed(request.rpm_limit_type(), request, "rpm_limit_type")
-        && !guaranteed(request.tpm_limit_type(), request, "tpm_limit_type")
+    if !guaranteed(request.rpm_limit_type, request, "rpm_limit_type")
+        && !guaranteed(request.tpm_limit_type, request, "tpm_limit_type")
     {
         return Ok(());
     }
@@ -57,41 +60,56 @@ pub async fn check_org_key_limits(
         .organization_id
         .as_deref()
         .ok_or(KeyLimitError::MissingOrganization)?;
-    let keys = reads.keys(KeyOwner::Organization(organization_id)).await?;
-    let keys = exclude_current(keys, request);
-    let metadata = organization.metadata.as_ref().map(|payload| &payload.0);
     let budget = organization.litellm_budget_table.as_ref();
-    let rpm_limit = budget.and_then(|table| table.rpm_limit);
-    let tpm_limit = budget.and_then(|table| table.tpm_limit);
-    model_limits(
-        &keys,
+    let limits = EntityLimits {
+        entity: Entity::Organization,
+        metadata: organization.metadata.as_ref().map(|payload| &payload.0),
+        rpm: budget.and_then(|table| table.rpm_limit),
+        tpm: budget.and_then(|table| table.tpm_limit),
+    };
+    check_entity(
         request,
-        metadata,
-        Entity::Organization,
-        rpm_limit,
-        tpm_limit,
-    )?;
-    check_rate_limits(&keys, request, rpm_limit, tpm_limit, Entity::Organization)?;
-    Ok(())
+        reads,
+        KeyOwner::Organization(organization_id),
+        &limits,
+    )
+    .await
 }
 
-// the two model-ceiling checks both entities share: aggregate ceiling and metadata per-model map
-fn model_limits(
-    keys: &[LiteLLMVerificationToken],
-    request: &KeyLimitRequest<'_>,
-    metadata: Option<&BTreeMap<String, JsonData>>,
-    entity: Entity,
-    rpm: Option<i64>,
-    tpm: Option<i64>,
+// data.key may be raw or hashed; either way that key's own limits are not counted, then model limits run first
+async fn check_entity(
+    request: &KeyLimitRequest,
+    reads: &dyn KeyLimitReads,
+    owner: KeyOwner<'_>,
+    limits: &EntityLimits<'_>,
 ) -> Result<(), KeyLimitError> {
-    let rpm = model_ceilings(metadata, MODEL_RPM_FIELD, RateLimit::Rpm, entity, rpm)?;
-    let tpm = model_ceilings(metadata, MODEL_TPM_FIELD, RateLimit::Tpm, entity, tpm)?;
-    check_model_limits(keys, request, &rpm, &tpm)
+    let mut keys = reads.keys(owner).await?;
+    if let Some(current) = request.update_key_hash.as_deref() {
+        keys.retain(|key| key.token.as_ref().map(|token| token.expose_secret()) != Some(current));
+    }
+    let (entity, metadata) = (limits.entity, limits.metadata);
+    let rpm = model_ceilings(
+        metadata,
+        MODEL_RPM_FIELD,
+        RateLimit::Rpm,
+        entity,
+        limits.rpm,
+    )?;
+    let tpm = model_ceilings(
+        metadata,
+        MODEL_TPM_FIELD,
+        RateLimit::Tpm,
+        entity,
+        limits.tpm,
+    )?;
+    check_model_limits(&keys, request, &rpm, &tpm)?;
+    check_rate_limits(&keys, request, limits.rpm, limits.tpm, entity)?;
+    Ok(())
 }
 
 pub async fn check_project_key_limits(
     project_id: &str,
-    request: &KeyLimitRequest<'_>,
+    request: &KeyLimitRequest,
     reads: &dyn KeyLimitReads,
 ) -> Result<(), KeyLimitError> {
     let project = reads.project(project_id).await?;
@@ -101,7 +119,7 @@ pub async fn check_project_key_limits(
         }));
     };
     let allowed = &project.project.models;
-    if let Some(models) = request.models().filter(|_| !allowed.is_empty()) {
+    if let Some(models) = request.models.as_deref().filter(|_| !allowed.is_empty()) {
         for model in models {
             if !permitted(model, allowed) {
                 return Err(KeyLimitError::from(Rejection::ProjectModel {
@@ -117,7 +135,7 @@ pub async fn check_project_key_limits(
         .litellm_budget_table
         .as_ref()
         .and_then(|table| table.max_budget);
-    let (Some(requested), Some(ceiling)) = (request.max_budget(), ceiling) else {
+    let (Some(requested), Some(ceiling)) = (request.max_budget, ceiling) else {
         return Ok(());
     };
     if requested > ceiling {
@@ -147,27 +165,12 @@ pub async fn validate_org_assignment(
     Ok(())
 }
 
-// data.key may be a raw sk-... key or an already hashed token; both exclude the key being updated
-fn exclude_current(
-    keys: Vec<LiteLLMVerificationToken>,
-    request: &KeyLimitRequest<'_>,
-) -> Vec<LiteLLMVerificationToken> {
-    let Some(current) = request.update_key_hash() else {
-        return keys;
-    };
-    keys.into_iter()
-        .filter(|key| {
-            key.token.as_ref().map(|token| token.expose_secret()) != Some(current.as_str())
-        })
-        .collect()
-}
-
 // an organization's type field falls back to its metadata key; a team's does not
-fn guaranteed(field: Option<LimitType>, request: &KeyLimitRequest<'_>, key: &str) -> bool {
+fn guaranteed(field: Option<LimitType>, request: &KeyLimitRequest, key: &str) -> bool {
     match field {
         Some(kind) => kind == LimitType::GuaranteedThroughput,
         None => matches!(
-            request.metadata().and_then(|metadata| metadata.get(key)),
+            request.metadata.as_ref().and_then(|metadata| metadata.get(key)),
             Some(JsonData::String(text)) if text == GUARANTEED
         ),
     }

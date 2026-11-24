@@ -38,12 +38,14 @@ pub fn model_ceilings(
 
 pub fn check_model_limits(
     keys: &[LiteLLMVerificationToken],
-    request: &KeyLimitRequest<'_>,
+    request: &KeyLimitRequest,
     rpm: &ModelCeilings,
     tpm: &ModelCeilings,
 ) -> Result<(), KeyLimitError> {
-    let rpm_requested = requested_limits(request.model_rpm_limit(), request, MODEL_RPM_FIELD)?;
-    let tpm_requested = requested_limits(request.model_tpm_limit(), request, MODEL_TPM_FIELD)?;
+    let rpm_requested =
+        requested_limits(request.model_rpm_limit.as_ref(), request, MODEL_RPM_FIELD)?;
+    let tpm_requested =
+        requested_limits(request.model_tpm_limit.as_ref(), request, MODEL_TPM_FIELD)?;
     if rpm_requested.is_none() && tpm_requested.is_none() {
         return Ok(());
     }
@@ -60,31 +62,27 @@ pub fn check_model_limits(
 
 pub fn check_rate_limits(
     keys: &[LiteLLMVerificationToken],
-    request: &KeyLimitRequest<'_>,
+    request: &KeyLimitRequest,
     rpm_ceiling: Option<i64>,
     tpm_ceiling: Option<i64>,
     entity: Entity,
 ) -> Result<(), Rejection> {
-    let allocated_tpm = sum_limit(keys, |key| key.tpm_limit);
-    let allocated_rpm = sum_limit(keys, |key| key.rpm_limit);
     let limits = [
-        (
-            RateLimit::Tpm,
-            request.tpm_limit(),
-            allocated_tpm,
-            tpm_ceiling,
-        ),
-        (
-            RateLimit::Rpm,
-            request.rpm_limit(),
-            allocated_rpm,
-            rpm_ceiling,
-        ),
+        (RateLimit::Tpm, request.tpm_limit, tpm_ceiling),
+        (RateLimit::Rpm, request.rpm_limit, rpm_ceiling),
     ];
-    for (limit, requested, allocated, ceiling) in limits {
+    for (limit, requested, ceiling) in limits {
         let (Some(asked), Some(cap)) = (requested, ceiling) else {
             continue;
         };
+        let allocated = keys
+            .iter()
+            .filter_map(|key| match limit {
+                RateLimit::Rpm => key.rpm_limit,
+                RateLimit::Tpm => key.tpm_limit,
+            })
+            .map(i128::from)
+            .fold(0_i128, i128::saturating_add);
         if i128::from(asked).saturating_add(allocated) > i128::from(cap) {
             return Err(Rejection::Allocation {
                 limit,
@@ -106,62 +104,43 @@ fn check_models(
 ) -> Result<(), Rejection> {
     for (model, asked) in requested {
         let already = allocated.get(model).copied().unwrap_or(0_i128);
-        if let Some(cap) = ceilings.aggregate
-            && i128::from(*asked).saturating_add(already) > i128::from(cap)
-        {
-            return Err(allocation(ceilings, already, *asked, cap));
-        }
         let per_model = ceilings
             .per_model
             .get(model)
             .copied()
             .flatten()
             .filter(|cap| *cap != 0);
-        if let Some(cap) = per_model
-            && i128::from(*asked).saturating_add(already) > i128::from(cap)
-        {
-            return Err(allocation(ceilings, already, *asked, cap));
+        let exceeded = [ceilings.aggregate, per_model]
+            .into_iter()
+            .flatten()
+            .find(|cap| i128::from(*asked).saturating_add(already) > i128::from(*cap));
+        if let Some(cap) = exceeded {
+            return Err(Rejection::Allocation {
+                limit: ceilings.limit,
+                entity: ceilings.entity,
+                allocated: already,
+                requested: *asked,
+                ceiling: cap,
+            });
         }
     }
     Ok(())
 }
 
-fn allocation(
-    ceilings: &ModelCeilings,
-    allocated: i128,
-    requested: i64,
-    ceiling: i64,
-) -> Rejection {
-    Rejection::Allocation {
-        limit: ceilings.limit,
-        entity: ceilings.entity,
-        allocated,
-        requested,
-        ceiling,
-    }
-}
-
-fn sum_limit(
-    keys: &[LiteLLMVerificationToken],
-    select: fn(&LiteLLMVerificationToken) -> Option<i64>,
-) -> i128 {
-    keys.iter()
-        .filter_map(select)
-        .map(i128::from)
-        .fold(0_i128, i128::saturating_add)
-}
-
 // a request map with entries wins; an absent or empty one falls back to the request metadata
 fn requested_limits(
     field_value: Option<&BTreeMap<String, JsonData>>,
-    request: &KeyLimitRequest<'_>,
+    request: &KeyLimitRequest,
     field: &'static str,
 ) -> Result<Option<BTreeMap<String, i64>>, KeyLimitError> {
     if let Some(limits) = field_value.filter(|limits| !limits.is_empty()) {
         let stored = JsonData::Object(limits.clone());
         return decode(Some(&stored), field);
     }
-    let stored = request.metadata().and_then(|metadata| metadata.get(field));
+    let stored = request
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get(field));
     decode(stored, field)
 }
 

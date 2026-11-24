@@ -15,7 +15,7 @@ fn stored(models: &str, budget: &str) -> CachedProject {
 
 async fn check(reads: &FakeReads, request: &str) -> Result<(), KeyLimitError> {
     let request = generate(request);
-    check_project_key_limits("proj-1", &KeyLimitRequest::Generate(&request), reads).await
+    check_project_key_limits("proj-1", &KeyLimitRequest::from(&request), reads).await
 }
 
 #[tokio::test]

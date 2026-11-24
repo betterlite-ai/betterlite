@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::loader::{ConfigError, ConfigLoader};
@@ -94,31 +95,22 @@ litellm_settings:
     );
 }
 
+#[rstest]
+#[case::boolean_budget("max_budget: true", "max_budget")]
+#[case::boolean_parallel("max_parallel_requests: true", "max_parallel_requests")]
+#[case::text_tpm("tpm_limit: fast", "tpm_limit")]
+#[case::number_duration("duration: 30", "duration")]
+fn invalid_upperbound_type(#[case] entry: &str, #[case] field: &str) {
+    let source = format!("litellm_settings:\n  upperbound_key_generate_params:\n    {entry}");
+    let error = settings(&source, &[]).expect_err("a wrong type fails the load");
+    assert!(
+        error.to_string().contains(&format!("{KEY}.{field}")),
+        "{entry}: {error}"
+    );
+}
+
 #[test]
-fn invalid_upperbound_type() {
-    let cases = [
-        (
-            "max_budget: true",
-            "litellm_settings.upperbound_key_generate_params.max_budget",
-        ),
-        (
-            "max_parallel_requests: true",
-            "litellm_settings.upperbound_key_generate_params.max_parallel_requests",
-        ),
-        (
-            "tpm_limit: fast",
-            "litellm_settings.upperbound_key_generate_params.tpm_limit",
-        ),
-        (
-            "duration: 30",
-            "litellm_settings.upperbound_key_generate_params.duration",
-        ),
-    ];
-    for (entry, path) in cases {
-        let source = format!("litellm_settings:\n  upperbound_key_generate_params:\n    {entry}");
-        let error = settings(&source, &[]).expect_err("a wrong type fails the load");
-        assert!(error.to_string().contains(path), "{entry}: {error}");
-    }
+fn missing_env_reference() {
     let missing = settings(
         "litellm_settings:\n  upperbound_key_generate_params:\n    rpm_limit: os.environ/MISSING",
         &[],

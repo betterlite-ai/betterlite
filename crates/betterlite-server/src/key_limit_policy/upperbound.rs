@@ -4,7 +4,6 @@ use betterlite_config::sections::key_limit_policy::UpperboundKeyGenerateParams;
 use betterlite_core::duration::seconds::duration_in_seconds;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
-use rust_decimal::Decimal;
 
 use crate::key_fields::values::Amount;
 use crate::key_limit_policy::error::{KeyLimitError, Rejection};
@@ -29,69 +28,50 @@ pub struct TimeContext<'time> {
     pub database: &'time TimeZoneDatabase,
 }
 
+// fields run in the request model's declaration order, the order LiteLLM iterates the request in
 pub fn enforce_upperbound(
-    request: &KeyLimitRequest<'_>,
+    request: &KeyLimitRequest,
     params: Option<&UpperboundKeyGenerateParams>,
-    fill_defaults: bool,
+    fill: bool,
     time: &TimeContext<'_>,
 ) -> Result<UpperboundValues, KeyLimitError> {
     check_finite(&request.numeric_values())?;
-    let mut values = UpperboundValues::of(request);
-    let Some(params) = params else {
-        return Ok(values);
+    let mut max_budget = request.max_budget;
+    let mut values = UpperboundValues {
+        max_budget: None,
+        max_parallel_requests: request.max_parallel_requests,
+        tpm_limit: request.tpm_limit,
+        rpm_limit: request.rpm_limit,
+        duration: request.duration.clone(),
+        budget_duration: request.budget_duration.clone(),
     };
-    apply_duration(
-        "duration",
-        &mut values.duration,
-        params.duration.as_deref(),
-        fill_defaults,
-        time,
-    )?;
-    apply_limits(&mut values, params, fill_defaults)?;
-    apply_duration(
-        "budget_duration",
-        &mut values.budget_duration,
-        params.budget_duration.as_deref(),
-        fill_defaults,
-        time,
-    )?;
+    if let Some(ceilings) = params {
+        let duration = ceilings.duration.as_deref();
+        apply_duration("duration", &mut values.duration, duration, fill, time)?;
+        apply_ceiling("max_budget", &mut max_budget, ceilings.max_budget, fill)?;
+        let parallel = ceilings.max_parallel_requests;
+        apply_ceiling(
+            "max_parallel_requests",
+            &mut values.max_parallel_requests,
+            parallel,
+            fill,
+        )?;
+        apply_ceiling("tpm_limit", &mut values.tpm_limit, ceilings.tpm_limit, fill)?;
+        apply_ceiling("rpm_limit", &mut values.rpm_limit, ceilings.rpm_limit, fill)?;
+        let budget_duration = ceilings.budget_duration.as_deref();
+        apply_duration(
+            "budget_duration",
+            &mut values.budget_duration,
+            budget_duration,
+            fill,
+            time,
+        )?;
+    }
+    values.max_budget = max_budget.map(Amount);
     Ok(values)
 }
 
-// the four numeric ceilings, in the request field declaration order LiteLLM iterates
-fn apply_limits(
-    values: &mut UpperboundValues,
-    params: &UpperboundKeyGenerateParams,
-    fill_defaults: bool,
-) -> Result<(), Rejection> {
-    apply_money(
-        "max_budget",
-        &mut values.max_budget,
-        params.max_budget,
-        fill_defaults,
-    )?;
-    apply_count(
-        "max_parallel_requests",
-        &mut values.max_parallel_requests,
-        params.max_parallel_requests,
-        fill_defaults,
-    )?;
-    apply_count(
-        "tpm_limit",
-        &mut values.tpm_limit,
-        params.tpm_limit,
-        fill_defaults,
-    )?;
-    apply_count(
-        "rpm_limit",
-        &mut values.rpm_limit,
-        params.rpm_limit,
-        fill_defaults,
-    )
-}
-
-// The GHSA-2rv4-xv66-fpjg guard: it runs before the missing-config return, and every model field it
-// names is declared float or int, so only the two money fields can actually carry a non-finite value.
+// the GHSA-2rv4-xv66-fpjg guard runs before the missing-config return, for the six budget numerics
 pub fn check_finite(values: &[NumericValue]) -> Result<(), Rejection> {
     for item in values {
         if let Some(amount) = item.value
@@ -106,52 +86,22 @@ pub fn check_finite(values: &[NumericValue]) -> Result<(), Rejection> {
     Ok(())
 }
 
-impl UpperboundValues {
-    fn of(request: &KeyLimitRequest<'_>) -> Self {
-        Self {
-            max_budget: request.max_budget().map(Amount),
-            max_parallel_requests: request.max_parallel_requests(),
-            tpm_limit: request.tpm_limit(),
-            rpm_limit: request.rpm_limit(),
-            duration: request.duration().map(str::to_owned),
-            budget_duration: request.budget_duration().map(str::to_owned),
-        }
-    }
-}
-
-fn apply_money(
+fn apply_ceiling<T>(
     field: &'static str,
-    value: &mut Option<Amount>,
-    ceiling: Option<Decimal>,
-    fill_defaults: bool,
-) -> Result<(), Rejection> {
-    let Some(cap) = ceiling else {
-        return Ok(());
-    };
-    match *value {
-        Some(asked) if asked.0 > cap => Err(over(field, asked.0, cap)),
-        Some(_) => Ok(()),
-        None if fill_defaults => {
-            *value = Some(Amount(cap));
-            Ok(())
-        }
-        None => Ok(()),
-    }
-}
-
-fn apply_count(
-    field: &'static str,
-    value: &mut Option<i64>,
-    ceiling: Option<i64>,
-    fill_defaults: bool,
-) -> Result<(), Rejection> {
+    value: &mut Option<T>,
+    ceiling: Option<T>,
+    fill: bool,
+) -> Result<(), Rejection>
+where
+    T: Copy + PartialOrd + Display,
+{
     let Some(cap) = ceiling else {
         return Ok(());
     };
     match *value {
         Some(asked) if asked > cap => Err(over(field, asked, cap)),
         Some(_) => Ok(()),
-        None if fill_defaults => {
+        None if fill => {
             *value = Some(cap);
             Ok(())
         }
@@ -164,41 +114,32 @@ fn apply_duration(
     field: &'static str,
     value: &mut Option<String>,
     ceiling: Option<&str>,
-    fill_defaults: bool,
+    fill: bool,
     time: &TimeContext<'_>,
 ) -> Result<(), KeyLimitError> {
     let Some(cap_text) = ceiling else {
         return Ok(());
     };
-    let Some(asked) = value.clone() else {
-        if fill_defaults {
+    let Some(asked) = value.as_deref() else {
+        if fill {
             *value = Some(cap_text.to_owned());
         }
         return Ok(());
     };
-    let cap = duration_in_seconds(cap_text, time.now, time.timezone, time.database)
-        .map(|budget| budget.seconds)
-        .map_err(|source| KeyLimitError::Duration { field, source })?;
-    let asked_seconds = if asked == "-1" {
-        None
-    } else {
-        Some(
-            duration_in_seconds(&asked, time.now, time.timezone, time.database)
-                .map(|budget| budget.seconds)
-                .map_err(|source| KeyLimitError::Duration { field, source })?,
-        )
+    let seconds = |text: &str| {
+        duration_in_seconds(text, time.now, time.timezone, time.database)
+            .map(|budget| budget.seconds)
+            .map_err(|source| KeyLimitError::Duration { field, source })
     };
-    if exceeds(asked_seconds, cap) {
-        return Err(KeyLimitError::from(over(field, asked.as_str(), cap_text)));
+    let cap = seconds(cap_text)?;
+    let exceeds = match asked {
+        "-1" => true,
+        finite => seconds(finite)? > cap,
+    };
+    if exceeds {
+        return Err(KeyLimitError::from(over(field, asked, cap_text)));
     }
     Ok(())
-}
-
-fn exceeds(asked: Option<i64>, cap: i64) -> bool {
-    match asked {
-        Some(seconds) => seconds > cap,
-        None => true,
-    }
 }
 
 fn over<T: Display>(field: &'static str, user_value: T, max_value: T) -> Rejection {

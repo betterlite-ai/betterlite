@@ -11,142 +11,97 @@ use crate::key_fields::update::UpdateKeyRequest;
 use crate::key_fields::values::{Amount, LimitType};
 use crate::management_guards::amounts::Amount as GuardAmount;
 
-// LiteLLM's Union[GenerateKeyRequest, UpdateKeyRequest], read through its getattr calls
-#[derive(Clone, Copy)]
-pub enum KeyLimitRequest<'request> {
-    Generate(&'request GenerateKeyRequest),
-    Update(&'request UpdateKeyRequest),
+// the GenerateKeyRequest or UpdateKeyRequest fields the checks read, with null and absent both None
+#[derive(Debug, Clone)]
+pub struct KeyLimitRequest {
+    pub max_budget: Option<Decimal>,
+    pub soft_budget: Option<Decimal>,
+    pub max_parallel_requests: Option<i64>,
+    pub tpm_limit: Option<i64>,
+    pub rpm_limit: Option<i64>,
+    pub tpd_limit: Option<i64>,
+    pub duration: Option<String>,
+    pub budget_duration: Option<String>,
+    pub models: Option<Vec<JsonData>>,
+    pub metadata: Option<BTreeMap<String, JsonData>>,
+    pub model_rpm_limit: Option<BTreeMap<String, JsonData>>,
+    pub model_tpm_limit: Option<BTreeMap<String, JsonData>>,
+    pub rpm_limit_type: Option<LimitType>,
+    pub tpm_limit_type: Option<LimitType>,
+    // _hash_token_if_needed(data.key), set only for an UpdateKeyRequest that carries a key
+    pub update_key_hash: Option<String>,
 }
 
-impl<'request> KeyLimitRequest<'request> {
-    const fn base(&self) -> &'request KeyRequestBase {
-        match *self {
-            Self::Generate(request) => &request.base,
-            Self::Update(request) => &request.base,
-        }
+impl From<&GenerateKeyRequest> for KeyLimitRequest {
+    fn from(request: &GenerateKeyRequest) -> Self {
+        Self::read(&request.base, request.generate.soft_budget.flatten(), None)
     }
+}
 
-    #[must_use]
-    pub fn max_budget(&self) -> Option<Decimal> {
-        inner(&self.base().base.max_budget).map(|amount| amount.0)
+impl From<&UpdateKeyRequest> for KeyLimitRequest {
+    fn from(request: &UpdateKeyRequest) -> Self {
+        let key = request
+            .base
+            .key_fields
+            .key
+            .as_ref()
+            .and_then(Option::as_ref);
+        let hash = key.map(|secret| hash_token_if_needed(secret.expose_secret()));
+        Self::read(&request.base, request.update.soft_budget.flatten(), hash)
     }
+}
 
-    #[must_use]
-    pub fn soft_budget(&self) -> Option<Amount> {
-        let field = match *self {
-            Self::Generate(request) => &request.generate.soft_budget,
-            Self::Update(request) => &request.update.soft_budget,
-        };
-        inner(field).copied()
-    }
-
-    #[must_use]
-    pub fn max_parallel_requests(&self) -> Option<i64> {
-        self.base().base.max_parallel_requests.flatten()
-    }
-
-    #[must_use]
-    pub fn tpm_limit(&self) -> Option<i64> {
-        self.base().base.tpm_limit.flatten()
-    }
-
-    #[must_use]
-    pub fn rpm_limit(&self) -> Option<i64> {
-        self.base().base.rpm_limit.flatten()
-    }
-
-    #[must_use]
-    pub fn tpd_limit(&self) -> Option<i64> {
-        self.base().key_fields.tpd_limit.flatten()
-    }
-
-    #[must_use]
-    pub fn duration(&self) -> Option<&str> {
-        inner(&self.base().base.duration).map(String::as_str)
-    }
-
-    #[must_use]
-    pub fn budget_duration(&self) -> Option<&str> {
-        inner(&self.base().base.budget_duration).map(String::as_str)
-    }
-
-    #[must_use]
-    pub fn models(&self) -> Option<&[JsonData]> {
-        inner(&self.base().base.models).map(Vec::as_slice)
-    }
-
-    #[must_use]
-    pub fn metadata(&self) -> Option<&BTreeMap<String, JsonData>> {
-        inner(&self.base().base.metadata).map(|payload| &payload.0)
-    }
-
-    #[must_use]
-    pub fn model_rpm_limit(&self) -> Option<&BTreeMap<String, JsonData>> {
-        inner(&self.base().base.model_rpm_limit).map(|payload| &payload.0)
-    }
-
-    #[must_use]
-    pub fn model_tpm_limit(&self) -> Option<&BTreeMap<String, JsonData>> {
-        inner(&self.base().base.model_tpm_limit).map(|payload| &payload.0)
-    }
-
-    #[must_use]
-    pub fn rpm_limit_type(&self) -> Option<LimitType> {
-        self.base().key_fields.rpm_limit_type.flatten()
-    }
-
-    #[must_use]
-    pub fn tpm_limit_type(&self) -> Option<LimitType> {
-        self.base().key_fields.tpm_limit_type.flatten()
-    }
-
-    // _hash_token_if_needed(data.key) only runs for an UpdateKeyRequest that carries a key
-    #[must_use]
-    pub fn update_key_hash(&self) -> Option<String> {
-        match self {
-            Self::Update(request) => {
-                let key = inner(&request.base.key_fields.key)?;
-                Some(hash_token_if_needed(key.expose_secret()))
-            }
-            Self::Generate(_) => None,
+impl KeyLimitRequest {
+    fn read(base: &KeyRequestBase, soft_budget: Option<Amount>, key_hash: Option<String>) -> Self {
+        let fields = &base.base;
+        Self {
+            max_budget: fields.max_budget.flatten().map(|amount| amount.0),
+            soft_budget: soft_budget.map(|amount| amount.0),
+            max_parallel_requests: fields.max_parallel_requests.flatten(),
+            tpm_limit: fields.tpm_limit.flatten(),
+            rpm_limit: fields.rpm_limit.flatten(),
+            tpd_limit: base.key_fields.tpd_limit.flatten(),
+            duration: fields.duration.clone().flatten(),
+            budget_duration: fields.budget_duration.clone().flatten(),
+            models: fields.models.clone().flatten(),
+            metadata: fields.metadata.clone().flatten().map(|payload| payload.0),
+            model_rpm_limit: fields
+                .model_rpm_limit
+                .clone()
+                .flatten()
+                .map(|payload| payload.0),
+            model_tpm_limit: fields
+                .model_tpm_limit
+                .clone()
+                .flatten()
+                .map(|payload| payload.0),
+            rpm_limit_type: base.key_fields.rpm_limit_type.flatten(),
+            tpm_limit_type: base.key_fields.tpm_limit_type.flatten(),
+            update_key_hash: key_hash,
         }
     }
 
     // the six _BUDGET_NUMERIC_KEYS in the request model's declaration order
     #[must_use]
     pub fn numeric_values(&self) -> [NumericValue; 6] {
+        let count = |number: Option<i64>| number.map(Decimal::from);
         [
-            money("max_budget", self.max_budget()),
-            count("max_parallel_requests", self.max_parallel_requests()),
-            count("tpm_limit", self.tpm_limit()),
-            count("rpm_limit", self.rpm_limit()),
-            count("tpd_limit", self.tpd_limit()),
-            money("soft_budget", self.soft_budget().map(|amount| amount.0)),
+            ("max_budget", self.max_budget),
+            ("max_parallel_requests", count(self.max_parallel_requests)),
+            ("tpm_limit", count(self.tpm_limit)),
+            ("rpm_limit", count(self.rpm_limit)),
+            ("tpd_limit", count(self.tpd_limit)),
+            ("soft_budget", self.soft_budget),
         ]
+        .map(|(field, value)| NumericValue {
+            field,
+            value: value.map(GuardAmount::Finite),
+        })
     }
-}
-
-// the request fields are Option<Option<T>> because null and absent mean different writes
-fn inner<T>(field: &Option<Option<T>>) -> Option<&T> {
-    field.as_ref().and_then(Option::as_ref)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NumericValue {
     pub field: &'static str,
     pub value: Option<GuardAmount>,
-}
-
-fn money(field: &'static str, value: Option<Decimal>) -> NumericValue {
-    NumericValue {
-        field,
-        value: value.map(GuardAmount::Finite),
-    }
-}
-
-fn count(field: &'static str, value: Option<i64>) -> NumericValue {
-    NumericValue {
-        field,
-        value: value.map(|number| GuardAmount::Finite(Decimal::from(number))),
-    }
 }

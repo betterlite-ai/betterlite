@@ -1,7 +1,3 @@
-# pyright: reportPrivateUsage=false
-# The oracle calls the owned key-management functions, which LiteLLM keeps private.
-# https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1110-L1937
-
 import asyncio
 from typing import Final, Literal, TypedDict
 
@@ -30,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 from typing_extensions import override
 
+# pyright: reportPrivateUsage=false
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 Row = dict[str, JsonValue]
 
@@ -106,14 +103,12 @@ class Table:
         self.rows = rows
         self.model = model
 
-    async def find_many(self, where: dict[str, str], **_: object) -> list[BaseModel]:
+    async def find_many(self, where: dict[str, str]) -> list[BaseModel]:
         field, value = next(iter(where.items()))
         return [self.model.model_validate(row) for row in self.rows if row.get(field) == value]
 
-    async def find_unique(
-        self, where: dict[str, str], include: dict[str, bool] | None = None
-    ) -> BaseModel | None:
-        found = await self.find_many(where, include=include)
+    async def find_unique(self, where: dict[str, str], **_: dict[str, bool]) -> BaseModel | None:
+        found = await self.find_many(where)
         return found[0] if found else None
 
 
@@ -200,16 +195,12 @@ async def perform(call: Call) -> JsonValue:
     return None
 
 
-async def answer(call: Call) -> JsonValue:
+def run(input_value: Call) -> JsonValue:
     try:
-        return await perform(call)
+        return asyncio.run(perform(input_value))
     except HTTPException as raised:
         rejection = TypeAdapter(Rejection).validate_python(raised, from_attributes=True)
         return {
             "status": rejection.status_code,
             "detail": JSON.validate_python(rejection.detail),
         }
-
-
-def run(input_value: Call) -> JsonValue:
-    return asyncio.run(answer(input_value))
