@@ -1,6 +1,6 @@
 import importlib
 import inspect
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from inspect import Signature
 from typing import Final, Protocol, TypeAlias
 
@@ -25,9 +25,11 @@ from betterlite._cost_extra import (
     transcription_cost,
     vector_store_search_cost,
 )
-from betterlite.cost_calculator import batch_cost_calculator as module_batch_cost_calculator
-from betterlite.cost_calculator import completion_cost as module_completion_cost
-from betterlite.cost_calculator import ocr_cost as module_ocr_cost
+from betterlite.cost_calculator import (
+    batch_cost_calculator as module_batch_cost_calculator,
+    completion_cost as module_completion_cost,
+    ocr_cost as module_ocr_cost,
+)
 from betterlite.ocr import OCRPage, OCRResponse, OCRUsageInfo
 from betterlite.types.rerank import RerankBilledUnits
 from betterlite.types.utils import Usage
@@ -108,7 +110,6 @@ DUMP: Final[TypeAdapter[DumpView]] = TypeAdapter(DumpView)
 
 # LiteLLM's namespace modules carry no stubs, so its calls come back as JSON and are validated here.
 ReferenceValue: TypeAlias = JsonValue | ReferenceUsage | list[dict[str, JsonValue]]
-SignatureTarget: TypeAlias = Callable[..., ReferenceValue | tuple[float, float]]
 
 
 class ReferenceCall(Protocol):
@@ -300,7 +301,7 @@ def reference_usage(prompt: int, completion: int, cached: int) -> ReferenceUsage
 
 
 def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
-    dump = DUMP.validate_python(usage.model_dump())
+    dump = DUMP.validate_json(usage.model_dump_json())
     prompt = dump["prompt_tokens_details"] if "prompt_tokens_details" in dump else None
     completion = (
         dump["completion_tokens_details"] if "completion_tokens_details" in dump else None
@@ -323,21 +324,33 @@ def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
 
 
 def test_cost_extra_signatures() -> None:
-    pairs: list[tuple[SignatureTarget, ReferenceCall]] = [
-        (ocr_cost, REFERENCE.ocr_cost),
-        (ocr_batch_cost, REFERENCE.ocr_batch_cost),
-        (vector_store_search_cost, REFERENCE.vector_store_search_cost),
-        (rerank_cost, REFERENCE.rerank_cost),
-        (transcription_cost, REFERENCE.transcription_cost),
-        (default_image_cost_calculator, REFERENCE.default_image_cost_calculator),
-        (default_video_cost_calculator, REFERENCE.default_video_cost_calculator),
-        (batch_cost_calculator, REFERENCE.batch_cost_calculator),
-        (realtime_stream_cost, REFERENCE.handle_realtime_stream_cost_calculation),
-    ]
-    for ours, reference in pairs:
-        assert signature_rows(inspect.signature(ours)) == signature_rows(
-            inspect.signature(reference)
-        )
+    assert signature_rows(inspect.signature(ocr_cost)) == signature_rows(
+        inspect.signature(REFERENCE.ocr_cost)
+    )
+    assert signature_rows(inspect.signature(ocr_batch_cost)) == signature_rows(
+        inspect.signature(REFERENCE.ocr_batch_cost)
+    )
+    assert signature_rows(inspect.signature(vector_store_search_cost)) == signature_rows(
+        inspect.signature(REFERENCE.vector_store_search_cost)
+    )
+    assert signature_rows(inspect.signature(rerank_cost)) == signature_rows(
+        inspect.signature(REFERENCE.rerank_cost)
+    )
+    assert signature_rows(inspect.signature(transcription_cost)) == signature_rows(
+        inspect.signature(REFERENCE.transcription_cost)
+    )
+    assert signature_rows(inspect.signature(default_image_cost_calculator)) == signature_rows(
+        inspect.signature(REFERENCE.default_image_cost_calculator)
+    )
+    assert signature_rows(inspect.signature(default_video_cost_calculator)) == signature_rows(
+        inspect.signature(REFERENCE.default_video_cost_calculator)
+    )
+    assert signature_rows(inspect.signature(batch_cost_calculator)) == signature_rows(
+        inspect.signature(REFERENCE.batch_cost_calculator)
+    )
+    assert signature_rows(inspect.signature(realtime_stream_cost)) == signature_rows(
+        inspect.signature(REFERENCE.handle_realtime_stream_cost_calculation)
+    )
 
 
 def test_ocr_cost_pages() -> None:
@@ -487,7 +500,7 @@ def test_batch_cost_eu_residency() -> None:
     )
     reference = PAIR.validate_python(
         REFERENCE.batch_cost_calculator(
-            usage=REFERENCE_TYPES.Usage(
+            usage=ReferenceUsage(
                 prompt_tokens=BATCH_PROMPT_TOKENS,
                 completion_tokens=BATCH_COMPLETION_TOKENS,
                 total_tokens=BATCH_PROMPT_TOKENS + BATCH_COMPLETION_TOKENS,

@@ -7,12 +7,15 @@ use betterlite_models::ocr_pricing::OcrUsage;
 use betterlite_models::usage_sum::{Usage, UsageNumber};
 use rust_decimal::Decimal;
 
+use super::usage::{UsageNumberView, UsageView, UsageWire};
+use betterlite_core::cost::realtime::Event;
+
 use super::{
-    Amount, CollectUsageRequest, CombineUsageRequest, ConvertError, CostAnswer, ImageRequest,
-    OcrBatchRequest, OcrCostRequest, OcrUsageWire, PartitionAnswer, RealtimeCostWire,
-    RealtimeTranscriptionWire, RerankRequest, ServiceTierGroup, TranscriptionRequest, UsageAnswer,
-    UsageNumberView, UsageView, UsageWire, VectorStoreRequest, VideoRequest, encode, parse,
+    CollectUsageRequest, CombineUsageRequest, ImageRequest, OcrBatchRequest, OcrCostRequest,
+    OcrUsageWire, RealtimeCostWire, RealtimeTranscriptionWire, RerankRequest, TranscriptionRequest,
+    VectorStoreRequest, VideoRequest,
 };
+use crate::cost::convert::{Amount, ConvertError, encode, parse};
 
 fn dec(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the expected decimal parses")
@@ -168,11 +171,8 @@ fn cost_extra_result_pair_keeps_both_slots_as_numbers() {
 
 #[test]
 fn cost_extra_result_cost_answer_holds_one_number() {
-    let encoded = encode(&CostAnswer {
-        cost: Amount(dec("1.5")),
-    })
-    .expect("the answer encodes");
-    assert_eq!(encoded, r#"{"cost":1.5}"#);
+    let encoded = encode(&Amount(dec("1.5"))).expect("the answer encodes");
+    assert_eq!(encoded, "1.5");
 }
 
 #[test]
@@ -188,13 +188,10 @@ fn cost_extra_result_usage_view_spells_the_extras_flat() {
         completion_tokens_details: None,
         numeric_extras: extras,
     };
-    let encoded = encode(&UsageAnswer {
-        usage: UsageView::from(&usage),
-    })
-    .expect("the usage answer encodes");
+    let encoded = encode(&UsageView::from(&usage)).expect("the usage answer encodes");
     assert_eq!(
         encoded,
-        r#"{"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4,"prompt_tokens_details":null,"completion_tokens_details":null,"byok":true,"requests":2}}"#
+        r#"{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4,"prompt_tokens_details":null,"completion_tokens_details":null,"byok":true,"requests":2}"#
     );
     let kind = UsageNumberView::from(&UsageNumber::Decimal(dec("2.5")));
     assert!(matches!(kind, UsageNumberView::Amount(amount) if amount.0 == dec("2.5")));
@@ -202,15 +199,10 @@ fn cost_extra_result_usage_view_spells_the_extras_flat() {
 
 #[test]
 fn cost_extra_result_partition_keeps_the_tier_and_its_events() {
-    let answer = PartitionAnswer {
-        tiers: vec![ServiceTierGroup {
-            service_tier: None,
-            events: vec![parse(r#"{"type": "response.completed"}"#).expect("the event parses")],
-        }],
-    };
-    let encoded = encode(&answer).expect("the partition answer encodes");
-    assert_eq!(
-        encoded,
-        r#"{"tiers":[{"service_tier":null,"events":[{"type":"response.completed"}]}]}"#
-    );
+    let tiers: Vec<(Option<String>, Vec<Event>)> = vec![(
+        None,
+        vec![parse(r#"{"type": "response.completed"}"#).expect("the event parses")],
+    )];
+    let encoded = encode(&tiers).expect("the partition answer encodes");
+    assert_eq!(encoded, r#"[[null,[{"type":"response.completed"}]]]"#);
 }

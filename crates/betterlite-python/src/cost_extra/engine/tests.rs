@@ -2,19 +2,22 @@
 
 use std::str::FromStr as _;
 
+use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_core::cost::realtime::Event;
 use betterlite_models::decisions::Json;
 use betterlite_models::ocr_pricing::OcrCostError;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
+use crate::cost::convert::parse;
+use crate::cost::settings::{Settings, SettingsError, SettingsWire};
 use crate::cost_extra::convert::{
     BatchRequest, CollectUsageRequest, CombineUsageRequest, ImageRequest, OcrBatchRequest,
     OcrCostRequest, PartitionUsageRequest, RealtimeCostWire, RealtimeTranscriptionWire,
-    RerankRequest, TranscriptionRequest, VectorStoreRequest, VideoRequest, parse,
+    RerankRequest, TranscriptionRequest, VectorStoreRequest, VideoRequest,
 };
-use crate::cost_extra::engine::{Engine, collect_usage, combine_usage, partition_usage};
-use crate::cost_extra::settings::{Settings, SettingsError, SettingsWire};
+use crate::cost_extra::engine::Engine;
+use crate::cost_extra::engine::support::{collect_usage, combine_usage, partition_usage};
 
 const CATALOG: &str = r#"{
     "ocr-test": {
@@ -112,8 +115,8 @@ fn engine() -> Engine {
     let model_cost: IndexMap<String, Json> = parse(CATALOG).expect("the fixture catalog parses");
     let settings = Settings::build(SettingsWire {
         model_cost,
-        cost_discount_config: None,
-        cost_margin_config: None,
+        cost_discount_config: CostAdjustmentMap::new(),
+        cost_margin_config: CostAdjustmentMap::new(),
     })
     .expect("the fixture settings build");
     Engine { settings }
@@ -534,8 +537,8 @@ fn cost_extra_engine_rejects_a_scalar_price_entry() {
     );
     let failure = Settings::build(SettingsWire {
         model_cost,
-        cost_discount_config: None,
-        cost_margin_config: None,
+        cost_discount_config: CostAdjustmentMap::new(),
+        cost_margin_config: CostAdjustmentMap::new(),
     });
     assert!(matches!(failure, Err(SettingsError::ModelEntry { .. })));
 }

@@ -5,14 +5,12 @@ from pydantic import JsonValue
 
 from betterlite._cost.cost_logging import CostLogging, store_breakdown
 from betterlite._cost.engine import native_call
-from betterlite._cost.wire import CostAnswerWire
+from betterlite._cost.wire import CostAnswerWire, JSON_OBJECT
 from betterlite._cost_extra.wire import (
-    COST,
     ENGINE,
     REALTIME_COST,
     JsonObject,
-    RealtimeRequestWire,
-    RealtimeTranscribeWire,
+    cost_value,
     usage_wire,
 )
 from betterlite.types.utils.usage import Usage
@@ -28,14 +26,16 @@ def handle_realtime_stream_cost_calculation(  # ast-grep-ignore: no-long-names  
     custom_pricing_model: str | None = None,
     base_pricing_model: str | None = None,
 ) -> float:
-    request = RealtimeRequestWire(
-        results=[JsonObject(result) for result in results],
-        combined_usage=usage_wire(combined_usage_object),
-        custom_llm_provider=custom_llm_provider,
-        litellm_model_name=litellm_model_name,
-        data_residency=data_residency,
-        custom_pricing_model=custom_pricing_model,
-        base_pricing_model=base_pricing_model,
+    request = JSON_OBJECT.validate_python(
+        {
+            "results": [JsonObject(result) for result in results],
+            "combined_usage": usage_wire(combined_usage_object),
+            "custom_llm_provider": custom_llm_provider,
+            "litellm_model_name": litellm_model_name,
+            "data_residency": data_residency,
+            "custom_pricing_model": custom_pricing_model,
+            "base_pricing_model": base_pricing_model,
+        }
     )
     answer = REALTIME_COST.validate_json(
         native_call(ENGINE.realtime_cost, json.dumps(request))
@@ -57,13 +57,12 @@ def handle_realtime_transcription_cost_calculation(  # ast-grep-ignore: no-long-
     litellm_model_name: str,
     custom_pricing_model: str | None = None,
 ) -> float:
-    request = RealtimeTranscribeWire(
-        results=[JsonObject(result) for result in results],
-        custom_llm_provider=custom_llm_provider,
-        litellm_model_name=litellm_model_name,
-        custom_pricing_model=custom_pricing_model,
+    request = JSON_OBJECT.validate_python(
+        {
+            "results": [JsonObject(result) for result in results],
+            "custom_llm_provider": custom_llm_provider,
+            "litellm_model_name": litellm_model_name,
+            "custom_pricing_model": custom_pricing_model,
+        }
     )
-    answer = COST.validate_json(
-        native_call(ENGINE.realtime_transcription_cost, json.dumps(request))
-    )
-    return answer["cost"]
+    return cost_value(ENGINE.realtime_transcription_cost, request)

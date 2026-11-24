@@ -6,16 +6,14 @@ from typing import Final
 from pydantic import JsonValue
 
 from betterlite._cost.engine import native_call
+from betterlite._cost.wire import JSON_OBJECT
 from betterlite._cost_extra.wire import (
     ENGINE,
     PARTITION,
-    CollectRequestWire,
-    CombineRequestWire,
     JsonObject,
-    PartitionRequestWire,
-    usage_answer,
+    usage_value,
     usage_wire,
-    usages_answer,
+    usages_value,
 )
 from betterlite.types.utils import LiteLLMRealtimeStreamLoggingObject
 from betterlite.types.utils.usage import Usage
@@ -24,13 +22,19 @@ REALTIME_SOURCE: Final = "realtime"
 RESPONSES_WS_SOURCE: Final = "responses_ws"
 
 
+def collect_request(source: str, results: Sequence[Mapping[str, JsonValue]]) -> JsonObject:
+    return JSON_OBJECT.validate_python(
+        {"source": source, "results": [JsonObject(result) for result in results]}
+    )
+
+
 class BaseTokenUsageProcessor:
     @staticmethod
     def combine_usage_objects(usage_objects: list[Usage]) -> Usage:
-        request = CombineRequestWire(
-            usages=[usage_wire(usage) for usage in usage_objects]
+        request = JSON_OBJECT.validate_python(
+            {"usages": [usage_wire(usage) for usage in usage_objects]}
         )
-        return usage_answer(ENGINE.combine_usage, json.dumps(request))
+        return usage_value(ENGINE.combine_usage, request)
 
 
 class RealtimeAPITokenUsageProcessor(BaseTokenUsageProcessor):
@@ -38,11 +42,8 @@ class RealtimeAPITokenUsageProcessor(BaseTokenUsageProcessor):
     def collect_usage_from_realtime_stream_results(  # ast-grep-ignore: no-long-names
         results: Sequence[Mapping[str, JsonValue]],
     ) -> list[Usage]:
-        request = CollectRequestWire(
-            source=REALTIME_SOURCE,
-            results=[JsonObject(result) for result in results],
-        )
-        return usages_answer(ENGINE.collect_usage, json.dumps(request))
+        request = collect_request(REALTIME_SOURCE, results)
+        return usages_value(ENGINE.collect_usage, request)
 
     @staticmethod
     def collect_and_combine_usage_from_realtime_stream_results(  # ast-grep-ignore: no-long-names
@@ -70,27 +71,21 @@ class ResponsesWebSocketTokenUsageProcessor(  # ast-grep-ignore: no-long-names
     def collect_usage_from_responses_ws_results(  # ast-grep-ignore: no-long-names
         results: Sequence[Mapping[str, JsonValue]],
     ) -> tuple[Usage, ...]:
-        request = CollectRequestWire(
-            source=RESPONSES_WS_SOURCE,
-            results=[JsonObject(result) for result in results],
-        )
-        return tuple(usages_answer(ENGINE.collect_usage, json.dumps(request)))
+        request = collect_request(RESPONSES_WS_SOURCE, results)
+        return tuple(usages_value(ENGINE.collect_usage, request))
 
     @staticmethod
     def partition_results_by_service_tier(  # ast-grep-ignore: no-long-names
         results: Sequence[Mapping[str, JsonValue]],
     ) -> Mapping[str | None, tuple[Mapping[str, JsonValue], ...]]:
-        request = PartitionRequestWire(
-            results=[JsonObject(result) for result in results]
+        request = JSON_OBJECT.validate_python(
+            {"results": [JsonObject(result) for result in results]}
         )
-        answer = PARTITION.validate_json(
+        tiers = PARTITION.validate_json(
             native_call(ENGINE.partition_usage, json.dumps(request))
         )
         return MappingProxyType(
-            {
-                group["service_tier"]: tuple(group["events"])
-                for group in answer["tiers"]
-            }
+            {service_tier: tuple(events) for service_tier, events in tiers}
         )
 
     @staticmethod

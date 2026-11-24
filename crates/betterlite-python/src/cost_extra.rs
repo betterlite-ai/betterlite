@@ -2,7 +2,6 @@ mod convert;
 mod engine;
 mod error;
 mod native;
-mod settings;
 
 use pyo3::prelude::*;
 
