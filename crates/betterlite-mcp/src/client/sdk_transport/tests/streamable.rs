@@ -239,6 +239,23 @@ fn a_transport_send_status_error_is_described_as_the_http_status_error() {
 }
 
 #[test]
+fn a_direct_status_error_is_described_as_the_http_status_error() {
+    let error: SessionError<SdkError> = SessionError::Runtime(Arc::new(SdkError::from(
+        McpHttpError::Status(Box::new(ResponseHead {
+            status: 401,
+            headers: HeaderMap::new(),
+            capture: None,
+        })),
+    )));
+    let failure = describe_failure(&error);
+    assert_eq!(failure.error_type, "HTTPStatusError");
+    assert_eq!(
+        failure.message,
+        "Client error '401 Unauthorized' for url ''\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
+    );
+}
+
+#[test]
 fn a_runtime_error_that_is_not_a_status_error_keeps_its_type_name() {
     let error: SessionError<SdkError> = SessionError::Runtime(Arc::new(SdkError::SessionClosed));
     let failure = describe_failure(&error);
