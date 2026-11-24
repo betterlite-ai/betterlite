@@ -6,6 +6,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use super::{Arguments, ConvertError, parse, query_values};
@@ -144,20 +145,17 @@ fn request_absent_or_null_call_id_answers_none() {
     assert_eq!(null.litellm_call_id, None);
 }
 
-#[test]
-fn request_zero_and_negative_timeouts_read_as_absent() {
-    for text in [
-        r#"{"timeout": 0}"#,
-        r#"{"timeout": 0.0}"#,
-        r#"{"timeout": -0.5}"#,
-        r#"{"timeout": -1}"#,
-    ] {
-        let converted = match arguments(text).endpoint_call(None) {
-            Ok(converted) => converted,
-            Err(error) => panic!("the call should convert: {error}"),
-        };
-        assert_eq!(converted.timeout, None);
-    }
+#[rstest]
+#[case::integer_zero(r#"{"timeout": 0}"#)]
+#[case::float_zero(r#"{"timeout": 0.0}"#)]
+#[case::negative_float(r#"{"timeout": -0.5}"#)]
+#[case::negative_integer(r#"{"timeout": -1}"#)]
+fn request_zero_and_negative_timeouts_read_as_absent(#[case] text: &str) {
+    let converted = match arguments(text).endpoint_call(None) {
+        Ok(converted) => converted,
+        Err(error) => panic!("the call should convert: {error}"),
+    };
+    assert_eq!(converted.timeout, None);
 }
 
 #[test]

@@ -114,14 +114,10 @@ impl SessionCore {
         })
     }
 
-    pub(crate) fn call(&self, wire: &CallWire, blobs: Vec<Vec<u8>>) -> Fallible<String> {
+    pub(crate) fn call(&self, wire: &CallWire, blobs: Vec<Vec<u8>>) -> Fallible<Answer> {
         let prepared = self.prepare(wire, blobs)?;
         let reply = prepared.advance(self, wire)?;
-        json_text(answer(reply)?, wire)
-    }
-
-    pub(crate) fn content(&self, wire: &CallWire) -> Fallible<Answer> {
-        answer(self.prepare(wire, Vec::new())?.advance(self, wire)?)
+        answer(reply)
     }
 
     // the awaited path: the same catalog call, with the handler's async transport under it
@@ -163,11 +159,10 @@ impl SessionCore {
         )
         .map_err(SessionFailure::from)?;
         // LiteLLM accepts a timeout and never sends it, so the client's own deadline applies
-        let deadline = Duration::from_secs(DEFAULT_TIMEOUT_SECONDS);
         let handler = GenericContainerHandler {
             clients: Source {
                 client: self.client.clone(),
-                deadline,
+                deadline: Duration::from_secs(DEFAULT_TIMEOUT_SECONDS),
             },
             logging: stack::NoPreCall,
         };

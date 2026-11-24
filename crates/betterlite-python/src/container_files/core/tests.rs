@@ -26,6 +26,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3_async_runtimes::tokio::get_runtime;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -84,7 +85,9 @@ fn call_list_answers_the_mocked_page() {
         r#""container_id":"cntr_1""#,
         LIST_JSON,
     );
-    let text = core().call(&wire(&request), Vec::new()).unwrap();
+    let Answer::Json(text) = core().call(&wire(&request), Vec::new()).unwrap() else {
+        panic!("a list answers JSON");
+    };
     let page: ContainerFileListResponse = serde_json::from_str(&text).unwrap();
     assert_eq!(page.data.len(), 1);
     assert_eq!(page.data[0].id, "cfile_1");
@@ -103,7 +106,9 @@ fn call_upload_answers_the_mocked_file() {
         FILE_JSON,
     );
     let blobs = vec![b"a,b\n1,2\n".to_vec()];
-    let text = core().call(&wire(&request), blobs).unwrap();
+    let Answer::Json(text) = core().call(&wire(&request), blobs).unwrap() else {
+        panic!("an upload answers JSON");
+    };
     let file: ContainerFileObject = serde_json::from_str(&text).unwrap();
     assert_eq!(file.id, "cfile_1");
     assert_eq!(file.path, "/mnt/data/a.txt");
@@ -116,7 +121,9 @@ fn call_retrieve_answers_the_mocked_file() {
         r#""container_id":"cntr_1","file_id":"cfile_1""#,
         FILE_JSON,
     );
-    let text = core().call(&wire(&request), Vec::new()).unwrap();
+    let Answer::Json(text) = core().call(&wire(&request), Vec::new()).unwrap() else {
+        panic!("a retrieve answers JSON");
+    };
     let file: ContainerFileObject = serde_json::from_str(&text).unwrap();
     assert_eq!(file.id, "cfile_1");
     assert_eq!(file.container_id, "cntr_1");
@@ -130,7 +137,9 @@ fn call_delete_answers_the_mocked_deletion() {
         r#""container_id":"cntr_1","file_id":"cfile_1""#,
         DELETED_JSON,
     );
-    let text = core().call(&wire(&request), Vec::new()).unwrap();
+    let Answer::Json(text) = core().call(&wire(&request), Vec::new()).unwrap() else {
+        panic!("a delete answers JSON");
+    };
     let deleted: DeleteContainerFileResponse = serde_json::from_str(&text).unwrap();
     assert_eq!(deleted.id, "cfile_1");
     assert!(deleted.deleted);
@@ -138,9 +147,10 @@ fn call_delete_answers_the_mocked_deletion() {
 
 #[test]
 fn call_refuses_an_operation_it_does_not_know() {
-    let failure = core()
-        .call(&wire(r#"{"operation":"close_container_file"}"#), Vec::new())
-        .unwrap_err();
+    let Err(failure) = core().call(&wire(r#"{"operation":"close_container_file"}"#), Vec::new())
+    else {
+        panic!("an unknown operation fails");
+    };
     assert!(matches!(
         failure,
         SessionFailure::Invalid(ConvertError::Operation { .. })
@@ -154,7 +164,7 @@ fn content_answers_the_mocked_json() {
         r#""container_id":"cntr_1","file_id":"cfile_1""#,
         CONTENT_JSON,
     );
-    let value = core().content(&wire(&request)).unwrap();
+    let value = core().call(&wire(&request), Vec::new()).unwrap();
     let Answer::Json(text) = value else {
         panic!("a mocked content answers its JSON");
     };
@@ -186,19 +196,16 @@ fn asynchronous_dispatch_answers_a_mocked_list() {
     assert_eq!(page.data[0].id, "cfile_1");
 }
 
-#[test]
-fn prepare_bounds_every_call_by_the_client_deadline() {
+#[rstest]
+#[case::absent("")]
+#[case::float_zero(r#","arguments":{"timeout":0.0}"#)]
+#[case::negative(r#","arguments":{"timeout":-1}"#)]
+#[case::positive(r#","arguments":{"timeout":4}"#)]
+fn prepare_bounds_every_call_by_the_client_deadline(#[case] arguments: &str) {
     let timed = SessionCore::build(r#"{"environment":{"REQUEST_TIMEOUT":"30"}}"#).unwrap();
-    for arguments in [
-        "",
-        r#","arguments":{"timeout":0.0}"#,
-        r#","arguments":{"timeout":-1}"#,
-        r#","arguments":{"timeout":4}"#,
-    ] {
-        let request = format!(r#"{{"operation":"list_container_files"{arguments}}}"#);
-        let prepared = timed.prepare(&wire(&request), Vec::new()).unwrap();
-        assert_eq!(prepared.handler.clients.deadline, Duration::from_secs(600));
-    }
+    let request = format!(r#"{{"operation":"list_container_files"{arguments}}}"#);
+    let prepared = timed.prepare(&wire(&request), Vec::new()).unwrap();
+    assert_eq!(prepared.handler.clients.deadline, Duration::from_secs(600));
 }
 
 #[test]
@@ -224,7 +231,9 @@ fn build_refuses_a_request_timeout_that_is_not_a_duration() {
 fn error_provider_without_a_config_keeps_the_bad_request_class() {
     let request =
         r#"{"operation":"list_container_files","arguments":{"custom_llm_provider":"azure"}}"#;
-    let failure = core().call(&wire(request), Vec::new()).unwrap_err();
+    let Err(failure) = core().call(&wire(request), Vec::new()) else {
+        panic!("a provider without a config fails");
+    };
     let SessionFailure::Raised(payload) = failure else {
         panic!("a provider without a config raises the mapped error");
     };
@@ -468,7 +477,9 @@ fn native_error_carries_the_payload_as_the_exception_text() {
 fn raised_failure_keeps_the_class_as_the_exception_text() {
     let request =
         r#"{"operation":"list_container_files","arguments":{"custom_llm_provider":"azure"}}"#;
-    let failure = core().call(&wire(request), Vec::new()).unwrap_err();
+    let Err(failure) = core().call(&wire(request), Vec::new()) else {
+        panic!("a provider without a config fails");
+    };
     Python::initialize();
     let text = Python::attach(|py| {
         let error_type =

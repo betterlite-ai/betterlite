@@ -53,10 +53,20 @@ where
 }
 
 // a content answer is the provider's bytes, or the catalog's parsed mock value
-fn answer_object(py: Python<'_>, answer: Answer) -> PyResult<Py<PyAny>> {
+fn answer_object<'py>(py: Python<'py>, answer: Answer) -> PyResult<Bound<'py, PyAny>> {
     match answer {
-        Answer::Bytes(bytes) => Ok(PyBytes::new(py, &bytes).into_any().unbind()),
-        Answer::Json(text) => Ok(py.import("json")?.call_method1("loads", (text,))?.unbind()),
+        Answer::Bytes(bytes) => Ok(PyBytes::new(py, &bytes).into_any()),
+        Answer::Json(text) => py.import("json")?.call_method1("loads", (text,)),
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Answer {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        answer_object(py, self)
     }
 }
 
@@ -79,17 +89,19 @@ impl NativeContainerFileSession {
     // list and upload answer JSON; the file bytes the caller sent sit beside the request text
     fn call(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
         let wire: CallWire = parse(request)?;
-        py.detach(|| self.core.call(&wire, blobs))
-            .map_err(|failure| failure.into_pyerr(py, &self.error_type))
+        let answer = py
+            .detach(|| self.core.call(&wire, blobs))
+            .map_err(|failure| failure.into_pyerr(py, &self.error_type))?;
+        json_text(answer, &wire).map_err(|failure| failure.into_pyerr(py, &self.error_type))
     }
 
     // retrieve_container_file_content answers the provider's bytes, or a mock as parsed JSON
     fn content(&self, py: Python<'_>, request: &str) -> PyResult<Py<PyAny>> {
         let wire: CallWire = parse(request)?;
         let answer = py
-            .detach(|| self.core.content(&wire))
+            .detach(|| self.core.call(&wire, Vec::new()))
             .map_err(|failure| failure.into_pyerr(py, &self.error_type))?;
-        answer_object(py, answer)
+        Ok(answer_object(py, answer)?.unbind())
     }
 
     fn acall<'py>(&self, py: Python<'py>, request: &str, blobs: Vec<Vec<u8>>) -> Awaitable<'py> {
@@ -105,13 +117,8 @@ impl NativeContainerFileSession {
     fn acontent<'py>(&self, py: Python<'py>, request: &str) -> Awaitable<'py> {
         let wire: CallWire = parse(request)?;
         let core = Arc::clone(&self.core);
-        let error_type = self.error_type.clone_ref(py);
-        future_into_py(py, async move {
-            let answer = core.dispatch(&wire, Vec::new()).await;
-            Python::attach(|attached| match answer {
-                Ok(answer) => answer_object(attached, answer),
-                Err(failure) => Err(failure.into_pyerr(attached, &error_type)),
-            })
+        await_answer(py, self.error_type.clone_ref(py), async move {
+            core.dispatch(&wire, Vec::new()).await
         })
     }
 }
