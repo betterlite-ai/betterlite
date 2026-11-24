@@ -49,6 +49,8 @@ from betterlite.types.mcp import (
 
 CLIENT_TIMEOUT_VARIABLE: Final = "LITELLM_MCP_CLIENT_TIMEOUT"
 CLIENT_TIMEOUT_SECONDS: Final = 60.0
+# Pattern the constant, not ssl.SSLContext: typeshed's class object carries Any through __new__
+SSL_CONTEXT_TYPE: Final[type[ssl.SSLContext]] = ssl.SSLContext
 OPENAI_TOOLS: Final[TypeAdapter[list[ChatCompletionToolParam]]] = TypeAdapter(
     list[ChatCompletionToolParam]
 )
@@ -156,7 +158,7 @@ class MCPClient:
         match ssl_verify:
             case bool() | str():
                 self.ssl_verify = ssl_verify
-            case ssl.SSLContext():
+            case SSL_CONTEXT_TYPE():
                 raise UnsupportedMcpArgument("ssl_verify")
             case object():
                 self.ssl_verify = None

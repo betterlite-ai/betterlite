@@ -62,18 +62,6 @@ EXPECTED_AUTH_HEADERS: Final[dict[str, JsonValue]] = {
     "map": HEADER_MAP["X-Api-Key"],
     "updated": f"Bearer {UPDATED_BEARER}",
 }
-OUR_AUTH_TYPES: Final[tuple[str, str, str, str]] = (
-    MCPAuth.bearer_token,
-    MCPAuth.basic,
-    MCPAuth.api_key,
-    MCPAuth.bearer_token,
-)
-THEIR_AUTH_TYPES: Final[tuple[str, str, str, str]] = (
-    TheirAuth.bearer_token,
-    TheirAuth.basic,
-    TheirAuth.api_key,
-    TheirAuth.bearer_token,
-)
 FAILURE_MODES: Final[tuple[tuple[str, str, str | None], ...]] = (
     (UNAUTHORIZED_MODE, "MCPError: ", None),
     (SLOW, "TimeoutError: ", "TimeoutError: "),
@@ -114,7 +102,13 @@ class ResourceClient(Protocol):
     def read_resource(self, url: AnyUrl) -> Awaitable[Dumpable]: ...
 
 
+class MemberMethod(Protocol):
+    def __call__(self, *args: JsonValue, **kwargs: JsonValue) -> Dumpable: ...
+
+
 class ClientClass(Protocol):
+    @staticmethod
+    def error_tool_result(exc: Exception) -> Dumpable: ...
     def __call__(
         self,
         *,
@@ -122,7 +116,7 @@ class ClientClass(Protocol):
         auth_type: str | None = None,
         auth_value: str | dict[str, str] | None = None,
     ) -> AuthClient: ...
-    def __getattr__(self, name: str) -> Callable[..., Dumpable]: ...
+    def __getattr__(self, name: str) -> MemberMethod: ...
 
 
 class ClientModule(Protocol):
@@ -279,16 +273,29 @@ async def observe_resources(client: ResourceClient) -> dict[str, JsonValue]:
     return {"resources": resources, "templates": templates, "read": read}
 
 
+def our_auth_clients(server: Server) -> tuple[AuthClient, AuthClient, AuthClient, AuthClient]:
+    return (
+        MCPClient(server_url=server.url, auth_type=MCPAuth.bearer_token, auth_value=BEARER),
+        MCPClient(server_url=server.url, auth_type=MCPAuth.basic, auth_value=BASIC_VALUE),
+        MCPClient(server_url=server.url, auth_type=MCPAuth.api_key, auth_value=HEADER_MAP),
+        MCPClient(server_url=server.url, auth_type=MCPAuth.bearer_token, auth_value=BEARER),
+    )
+
+
+def their_auth_clients(server: Server) -> tuple[AuthClient, AuthClient, AuthClient, AuthClient]:
+    return (
+        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.bearer_token, auth_value=BEARER),
+        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.basic, auth_value=BASIC_VALUE),
+        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.api_key, auth_value=HEADER_MAP),
+        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.bearer_token, auth_value=BEARER),
+    )
+
+
 async def observe_auth(
     server: Server,
-    build: Callable[..., AuthClient],
-    auth_types: tuple[str, str, str, str],
+    clients: tuple[AuthClient, AuthClient, AuthClient, AuthClient],
 ) -> dict[str, JsonValue]:
-    bearer_type, basic_type, key_type, renewed_type = auth_types
-    bearer = build(server_url=server.url, auth_type=bearer_type, auth_value=BEARER)
-    basic = build(server_url=server.url, auth_type=basic_type, auth_value=BASIC_VALUE)
-    keyed = build(server_url=server.url, auth_type=key_type, auth_value=HEADER_MAP)
-    renewed = build(server_url=server.url, auth_type=renewed_type, auth_value=BEARER)
+    bearer, basic, keyed, renewed = clients
     await bearer.list_tools()
     listed = server.record.headers.get("authorization")
     await basic.list_tools()
@@ -432,8 +439,8 @@ def test_methods_resources() -> None:
 
 def test_methods_auth_headers() -> None:
     with Server() as server:
-        ours = asyncio.run(observe_auth(server, MCPClient, OUR_AUTH_TYPES))
-        theirs = asyncio.run(observe_auth(server, LITELLM_CLIENT.MCPClient, THEIR_AUTH_TYPES))
+        ours = asyncio.run(observe_auth(server, our_auth_clients(server)))
+        theirs = asyncio.run(observe_auth(server, their_auth_clients(server)))
     assert ours == theirs == EXPECTED_AUTH_HEADERS
 
 
