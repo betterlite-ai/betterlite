@@ -149,11 +149,7 @@ pub fn encode_db_file(entries: &[DbEntry]) -> Vec<u8> {
     file
 }
 
-// _INITIAL_MMAP_SIZE doubles while the entries do not fit
-const fn file_capacity(used: usize) -> usize {
-    let mut capacity = INITIAL_CAPACITY;
-    while used > capacity {
-        capacity = capacity.saturating_mul(2);
-    }
-    capacity
+// _INITIAL_MMAP_SIZE doubles while the entries do not fit, so the page is the next power of two from the initial size up
+fn file_capacity(used: usize) -> usize {
+    used.max(INITIAL_CAPACITY).next_power_of_two()
 }
