@@ -216,6 +216,18 @@ impl Warnings {
     }
 }
 
+#[derive(Clone, Default)]
+pub(super) struct Debugs(Arc<Mutex<Vec<String>>>);
+
+impl Debugs {
+    pub(super) fn lines(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
 #[derive(Default)]
 struct Message(String);
 
@@ -230,6 +242,19 @@ impl Visit for Message {
 impl<Inner: Subscriber> Layer<Inner> for Warnings {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         if *event.metadata().level() == Level::WARN {
+            let mut message = Message::default();
+            event.record(&mut message);
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(message.0);
+        }
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for Debugs {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
+        if *event.metadata().level() == Level::DEBUG {
             let mut message = Message::default();
             event.record(&mut message);
             self.0

@@ -523,6 +523,33 @@ fn should_skip_does_not_resolve_without_skip_providers() {
 }
 
 #[test]
+fn skip_debug_messages_name_the_provider_and_the_missing_limits() {
+    let messages = support::Debugs::default();
+    let guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(messages.clone()));
+    let providers = skip_service("providers");
+    drop(run_calls(
+        &providers,
+        "{}",
+        r#"[{"function": "should_skip", "data": {"model": "top-model"}}]"#,
+    ));
+    let bare = service(settings(None, None, None), empty_limiter(), None);
+    drop(run_calls(
+        &bare,
+        "{}",
+        r#"[{"function": "should_skip", "data": {}}]"#,
+    ));
+    drop(guard);
+    let lines = messages.lines();
+    assert!(lines.contains(&"Skipping batch input file processing for provider=openai".to_owned()));
+    assert!(
+        lines.contains(
+            &"Skipping batch input file processing: no rate limits configured".to_owned()
+        )
+    );
+}
+
+#[test]
 fn should_skip_enqueued_scopes_need_inspection() {
     let service = service(settings(None, None, None), empty_limiter(), None);
     let answer = single(run_calls(
