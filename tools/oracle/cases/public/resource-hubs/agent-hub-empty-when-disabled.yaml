@@ -1,0 +1,23 @@
+kind: helper
+name: resource-hubs-agent-hub-empty-when-disabled
+call:
+  b3194:
+    function: agent_hub
+    agents:
+      - agent_id: alpha
+        agent_name: alpha
+        agent_card_params:
+          protocolVersion: "0.3.0"
+          name: alpha
+          description: a planning agent
+          version: "1.0.0"
+          capabilities: {}
+          defaultInputModes: [text]
+          defaultOutputModes: [text]
+          skills: []
+    public_agent_groups: null
+    request_base_url: "http://testserver/"
+    root_path: ""
+    proxy_base_url: null
+env: {}
+compare: {ignore: []}
