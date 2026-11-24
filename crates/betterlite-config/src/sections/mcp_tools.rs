@@ -22,6 +22,9 @@ pub struct McpToolsSection {
     pub entries: Vec<McpToolEntry>,
 }
 
+// the sections! macro names every section's settings type Settings
+pub type Settings = McpToolsSection;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum McpToolEntry {
     Tool(McpToolSettings),

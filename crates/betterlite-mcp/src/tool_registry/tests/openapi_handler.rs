@@ -18,8 +18,9 @@ async fn calls_the_tool_with_the_arguments_and_the_context() {
     };
     let arguments = object(r#"{"id": "7"}"#);
     let context = OpenApiCallContext {
+        auth_header: None,
         extra_headers: BTreeMap::from([("x-extra".to_owned(), "value".to_owned())]),
-        ..OpenApiCallContext::default()
+        resolved_auth_headers: BTreeMap::new(),
     };
     let output = handler.call(&arguments, &context).await.unwrap();
     assert!(matches!(output, OpenApiToolOutput::Json { .. }));
