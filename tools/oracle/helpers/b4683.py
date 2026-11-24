@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Awaitable, Iterator
+from collections.abc import Awaitable, Generator
 from contextlib import contextmanager
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
@@ -25,6 +25,8 @@ from pydantic import JsonValue, TypeAdapter
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 _AUTH_MODE: Final[TypeAdapter[MCPAuthType]] = TypeAdapter(MCPAuthType)
 _ARGUMENTS: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+_PARAMS: Final[TypeAdapter[list[dict[str, JsonValue]]]] = TypeAdapter(list[dict[str, JsonValue]])
+_SCHEMA: Final[TypeAdapter[dict[str, JsonValue] | None]] = TypeAdapter(dict[str, JsonValue] | None)
 _SKIPPED_HEADERS: Final[frozenset[str]] = frozenset(
     {"host", "accept", "accept-encoding", "connection",
      "user-agent", "content-length", "content-type"},
@@ -73,33 +75,20 @@ class Reply(TypedDict):
     body: str
 
 
-CallInput = TypedDict(
-    "CallInput",
-    {
-        "operation": Literal["call"], "path": str, "method": str, "base_url": str,
-        "spec_operation": JsonValue, "headers": dict[str, str],
-        "server_label": str | None, "relays_upstream_auth": bool,
-        "auth_type": str | None, "upstream_token_header": str | None,
-        "arguments": JsonValue, "auth_header": str | None,
-        "extra_headers": dict[str, str], "resolved_auth_headers": dict[str, str],
-        "reply": Reply,
-    },
-)
+class CallInput(RequestHeaders):
+    operation: Literal["call"]
+    path: str
+    method: str
+    base_url: str
+    spec_operation: JsonValue
+    headers: dict[str, str]
+    server_label: str | None
+    relays_upstream_auth: bool
+    auth_type: str | None
+    upstream_token_header: str | None
+    arguments: JsonValue
+    reply: Reply
 
-SchemaOut = TypedDict("SchemaOut", {"type": str, "properties": dict[str, JsonValue]}, total=False)
-ParameterOut = TypedDict(
-    "ParameterOut",
-    {"in": str, "name": str, "description": str, "required": bool, "schema": SchemaOut},
-    total=False,
-)
-ResultOut = TypedDict("ResultOut", {"kind": str, "text": str, "value": JsonValue}, total=False)
-ErrorOut = TypedDict(
-    "ErrorOut",
-    {"kind": str, "status": int, "www_authenticate": str | None, "server": str},
-    total=False,
-)
-
-_PARAMETERS: Final = TypeAdapter(list[ParameterOut])
 
 Input: TypeAlias = (
     ToolNameInput | BaseUrlInput | ResolveInput | OperationInput | MergeHeadersInput | CallInput
@@ -124,7 +113,7 @@ class Capture:
 
 
 @contextmanager
-def _request_headers(source: RequestHeaders) -> Iterator[None]:
+def _request_headers(source: RequestHeaders) -> Generator[None, None, None]:
     auth_token, extra_token, resolved_token = (
         openapi_to_mcp_generator._request_auth_header.set(source["auth_header"]),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109
         openapi_to_mcp_generator._request_extra_headers.set(source["extra_headers"]),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L112
@@ -138,13 +127,11 @@ def _request_headers(source: RequestHeaders) -> Iterator[None]:
         openapi_to_mcp_generator._request_resolved_auth_headers.reset(resolved_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L118
 
 
-def _parameter_json(parameter: ParameterOut) -> dict[str, JsonValue]:
-    schema = parameter.get("schema")
+def _parameter_json(parameter: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    schema = _SCHEMA.validate_python(parameter.get("schema"))
     return {
-        "name": parameter.get("name"),
-        "in": parameter.get("in"),
-        "description": parameter.get("description"),
-        "required": parameter.get("required"),
+        "name": parameter.get("name"), "in": parameter.get("in"),
+        "description": parameter.get("description"), "required": parameter.get("required"),
         "type": None if schema is None else schema.get("type"),
     }
 
@@ -172,27 +159,32 @@ def _answers(
     outcome: TextResult | JsonResult | None, failure: Failure | None
 ) -> tuple[JsonValue, JsonValue]:
     result: JsonValue = None
-    if isinstance(outcome, TextResult):
-        text: ResultOut = ResultOut(kind="text", text=outcome.text)
-        result = _JSON.validate_python(text)
-    elif isinstance(outcome, JsonResult):
-        value: ResultOut = ResultOut(kind="json", text=outcome.original_text, value=outcome.value)
-        result = _JSON.validate_python(value)
     error: JsonValue = None
-    if isinstance(failure, MCPUpstreamAuthError):
-        challenge: ErrorOut = {
-            "kind": "upstream_auth", "status": failure.status_code,
-            "www_authenticate": failure.www_authenticate, "server": failure.server_name,
-        }
-        error = _JSON.validate_python(challenge)
-    elif isinstance(failure, MCPOpenApiUpstreamError):
-        status: ErrorOut = {
-            "kind": "upstream_status", "status": failure.status_code, "server": failure.server_name,
-        }
-        error = _JSON.validate_python(status)
-    elif failure is not None:
-        credential: ErrorOut = {"kind": "credential", "status": failure.status_code}
-        error = _JSON.validate_python(credential)
+    if outcome is not None:
+        match outcome:
+            case TextResult(text=text):
+                text_answer: dict[str, JsonValue] = {"kind": "text", "text": text}
+                result = _JSON.validate_python(text_answer)
+            case JsonResult(value=value, original_text=text):
+                json_answer: dict[str, JsonValue] = {"kind": "json", "text": text, "value": value}
+                result = _JSON.validate_python(json_answer)
+    if failure is not None:
+        match failure:
+            case MCPUpstreamAuthError():
+                challenge: dict[str, JsonValue] = {
+                    "kind": "upstream_auth", "status": failure.status_code,
+                    "www_authenticate": failure.www_authenticate, "server": failure.server_name,
+                }
+                error = _JSON.validate_python(challenge)
+            case MCPOpenApiUpstreamError():
+                bad_status: dict[str, JsonValue] = {
+                    "kind": "upstream_status", "status": failure.status_code,
+                    "server": failure.server_name,
+                }
+                error = _JSON.validate_python(bad_status)
+            case HTTPException():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L442-L465
+                cred: dict[str, JsonValue] = {"kind": "credential", "status": failure.status_code}
+                error = _JSON.validate_python(cred)
     return result, error
 
 
@@ -230,7 +222,7 @@ def _resolve(input_value: ResolveInput) -> JsonValue:
         input_value["path_item"],  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L267
         input_value["components"],  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L268
     )
-    parameters = _PARAMETERS.validate_python(resolved.get("parameters"))
+    parameters = _PARAMS.validate_python(resolved.get("parameters"))
     views = [_parameter_json(parameter) for parameter in parameters]
     answer: dict[str, JsonValue] = {"parameters": _JSON.validate_python(views)}
     return _JSON.validate_python(answer)
@@ -239,9 +231,9 @@ def _resolve(input_value: ResolveInput) -> JsonValue:
 def _extract(input_value: OperationInput) -> JsonValue:
     path, query, body = extract_parameters(input_value["spec_operation"])  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L293
     answer: dict[str, JsonValue] = {
-        "path": _JSON.validate_python(list(path)),
-        "query": _JSON.validate_python(list(query)),
-        "body": _JSON.validate_python(list(body)),
+        "path": _JSON.validate_python(list[str](path)),
+        "query": _JSON.validate_python(list[str](query)),
+        "body": _JSON.validate_python(list[str](body)),
     }
     return _JSON.validate_python(answer)
 
@@ -252,8 +244,10 @@ def _schema(input_value: OperationInput) -> JsonValue:
 
 def _merge_headers(input_value: MergeHeadersInput) -> JsonValue:
     with _request_headers(input_value):
-        merged = openapi_to_mcp_generator._merge_openapi_tool_request_headers(input_value["static_headers"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L393
-    answer: dict[str, JsonValue] = {"headers": merged}
+        merged = openapi_to_mcp_generator._merge_openapi_tool_request_headers(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L393
+            input_value["static_headers"],
+        )
+    answer: dict[str, JsonValue] = {"headers": _JSON.validate_python(merged)}
     return _JSON.validate_python(answer)
 
 
@@ -275,9 +269,7 @@ def _call(input_value: CallInput) -> JsonValue:
     )
     result, error = _answers(outcome, failure)
     answer: dict[str, JsonValue] = {
-        "request": _request_answer(request),
-        "result": result,
-        "error": error,
+        "request": _request_answer(request), "result": result, "error": error,
     }
     return _JSON.validate_python(answer)
 
@@ -285,15 +277,17 @@ def _call(input_value: CallInput) -> JsonValue:
 def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "tool_name":
         answer: dict[str, JsonValue] = {"name": sanitize_openapi_tool_name(input_value["raw"])}
-        return _JSON.validate_python(answer)
-    if input_value["operation"] == "base_url":
-        return _base_url(input_value)
-    if input_value["operation"] == "resolve_params":
-        return _resolve(input_value)
-    if input_value["operation"] == "merge_headers":
-        return _merge_headers(input_value)
-    if input_value["operation"] == "call":
-        return _call(input_value)
-    if input_value["operation"] == "extract_params":
-        return _extract(input_value)
-    return _schema(input_value)
+        result: JsonValue = _JSON.validate_python(answer)
+    elif input_value["operation"] == "base_url":
+        result = _base_url(input_value)
+    elif input_value["operation"] == "resolve_params":
+        result = _resolve(input_value)
+    elif input_value["operation"] == "merge_headers":
+        result = _merge_headers(input_value)
+    elif input_value["operation"] == "call":
+        result = _call(input_value)
+    elif input_value["operation"] == "extract_params":
+        result = _extract(input_value)
+    else:
+        result = _schema(input_value)
+    return result
