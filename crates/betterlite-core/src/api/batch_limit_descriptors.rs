@@ -32,7 +32,7 @@ where
     CredentialError: Error + 'static,
 {
     #[error(transparent)]
-    Principal(#[from] AuthError),
+    Principal(AuthError),
     #[error("failed to read the batch principal fields")]
     Fields(#[source] serde_json::Error),
     #[error(transparent)]
@@ -48,7 +48,7 @@ pub struct BatchLimitDescriptors<Limiter, Credentials> {
     pub limiter: Limiter,
     pub credentials: Option<Credentials>,
     pub limits: ApiLimits,
-    warned_unsupported_model_skip: AtomicBool,
+    pub warned_unsupported_model_skip: AtomicBool,
 }
 
 impl<Limiter, Credentials> BatchLimitDescriptors<Limiter, Credentials> {
@@ -82,7 +82,8 @@ where
         self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
             known_count: input.calls.len(),
         }))?;
-        let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.principal.0.clone()))?;
+        let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.principal.0.clone()))
+            .map_err(BatchLimitError::Principal)?;
         let fields: BatchPrincipalFields = serde_json::to_value(&auth)
             .and_then(serde_json::from_value)
             .map_err(BatchLimitError::Fields)?;
