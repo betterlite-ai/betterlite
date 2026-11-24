@@ -1,0 +1,6 @@
+# the spend log queue monitor reads nothing from the document; its threshold and poll interval are environment only, so this file pins that an otherwise ordinary document still loads
+general_settings:
+  use_redis_transaction_buffer: false
+litellm_settings:
+  disable_end_user_cost_tracking: true
+model_list: []

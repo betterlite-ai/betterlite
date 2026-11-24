@@ -1,0 +1,27 @@
+kind: helper
+name: new-key-and-empty-override
+call:
+  b10074:
+    salt_key: null
+    master_key: override-key
+    general_settings: {}
+    calls:
+      - operation: encrypt_env
+        values:
+          api_key: sk-secret
+        new_key: write-key
+      - operation: encrypt_env
+        values:
+          api_key: sk-secret
+        new_key: ""
+      - operation: encrypt_env
+        values:
+          api_key: sk-secret
+        new_key: null
+      - operation: encrypt_env_for_db
+        values:
+          stored: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXfuRp9WUvbNm7fn_PA-d4hvaoT58a
+        new_key: write-key
+env: {}
+compare:
+  ignore: []

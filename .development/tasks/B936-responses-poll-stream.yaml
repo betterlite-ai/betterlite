@@ -37,6 +37,7 @@ description: >-
   70 fuzz/replay and 35 wiring lines, 765 total under 800.
 scope:
   paths:
+  - "tools/oracle/src/sdk_http/tests.rs"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_poll_stream.rs
   - crates/betterlite-core/src/api/responses_poll_stream/**
