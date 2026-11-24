@@ -1,6 +1,5 @@
 import json
-from collections.abc import Coroutine, Mapping
-from functools import partial
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Final, Literal, TypeAlias, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
@@ -9,7 +8,6 @@ from typing_extensions import TypeIs
 from betterlite._completion.arguments import timeout_value
 from betterlite._completion.errors import UnsupportedCallArgument, raise_native_error
 from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
-from betterlite._endpoints.runner import AsyncNativeCall, NativeCall
 from betterlite._endpoints.settings import read_settings
 from betterlite._native import NativeAssistantError, NativeAssistantSession, NativeError
 from betterlite.types.llms.openai.core.threads import Thread
@@ -52,6 +50,10 @@ class AssistantPage(ResponseObject):
 
 PageAnswer: TypeAlias = AssistantPage | Coroutine[None, None, AssistantPage]
 DeletedAnswer: TypeAlias = AssistantDeleted | Coroutine[None, None, AssistantDeleted]
+SessionMethod: TypeAlias = Callable[[NativeAssistantSession, str, list[bytes]], str]
+AsyncSessionMethod: TypeAlias = Callable[
+    [NativeAssistantSession, str, list[bytes]], Awaitable[str]
+]
 RecordT = TypeVar("RecordT", bound=ResponseObject)
 MessageInput: TypeAlias = InitValue | CallValue | tuple[CallValue, ...]
 MessageSequence: TypeAlias = list[CallValue] | tuple[CallValue, ...]
@@ -123,10 +125,8 @@ def read_delete_payload(
 
 def read_delete_answer(record: type[RecordT], operation: Literal["list", "delete"],
                        provider: str, arguments: Mapping[str, CallValue]) -> RecordT:
-    method = READ_METHODS[operation]
     payload = read_delete_payload(operation, provider, "sync", arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    return record.model_validate(assistant_answer(partial(method, session), payload))
+    return record.model_validate(assistant_answer(READ_METHODS[operation], payload))
 
 
 def create_payload(provider: str, arguments: Mapping[str, CallValue]) -> CallPayload:
@@ -155,17 +155,19 @@ def thread_payload(
     return to_call_payload(values)
 
 
-def assistant_answer(method: NativeCall, payload: CallPayload) -> JsonValue:
+def assistant_answer(method: SessionMethod, payload: CallPayload) -> JsonValue:
+    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
     try:
-        answer = method(payload.text, payload.blobs)
+        answer = method(session, payload.text, payload.blobs)
     except NativeAssistantError as failure:
         raise_native_error(NativeError(str(failure)))
     return JSON.validate_json(answer)
 
 
-async def assistant_aanswer(method: AsyncNativeCall, payload: CallPayload) -> JsonValue:
+async def assistant_aanswer(method: AsyncSessionMethod, payload: CallPayload) -> JsonValue:
+    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
     try:
-        answer = await method(payload.text, payload.blobs)
+        answer = await method(session, payload.text, payload.blobs)
     except NativeAssistantError as failure:
         raise_native_error(NativeError(str(failure)))
     return JSON.validate_json(answer)
@@ -196,8 +198,7 @@ async def aget_assistants(
 ) -> AssistantPage:
     arguments = named_arguments(kwargs, {"client": client, "aget_assistants": True})
     payload = read_delete_payload("list", custom_llm_provider, "async", arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    answer = await assistant_aanswer(session.aget_assistants, payload)
+    answer = await assistant_aanswer(NativeAssistantSession.aget_assistants, payload)
     return AssistantPage.model_validate(answer)
 
 
@@ -221,8 +222,8 @@ def create_assistants(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     if flag:
         return acreate_assistants(custom_llm_provider, **arguments)
     payload = create_payload(custom_llm_provider, arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    return Assistant.model_validate(assistant_answer(session.create_assistants, payload))
+    return Assistant.model_validate(
+        assistant_answer(NativeAssistantSession.create_assistants, payload))
 
 
 async def acreate_assistants(
@@ -230,8 +231,7 @@ async def acreate_assistants(
 ) -> Assistant:
     arguments = named_arguments(kwargs, {"client": client, "async_create_assistants": True})
     payload = create_payload(custom_llm_provider, arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    answer = await assistant_aanswer(session.acreate_assistants, payload)
+    answer = await assistant_aanswer(NativeAssistantSession.acreate_assistants, payload)
     return Assistant.model_validate(answer)
 
 
@@ -254,8 +254,7 @@ async def adelete_assistant(
 ) -> AssistantDeleted:
     arguments = named_arguments(kwargs, {"client": client, "async_delete_assistants": True})
     payload = read_delete_payload("delete", custom_llm_provider, "async", arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    answer = await assistant_aanswer(session.adelete_assistant, payload)
+    answer = await assistant_aanswer(NativeAssistantSession.adelete_assistant, payload)
     return AssistantDeleted.model_validate(answer)
 
 
@@ -273,14 +272,13 @@ def create_thread(
     if kwargs.get("acreate_thread") is True:
         return acreate_thread(custom_llm_provider, **arguments)
     payload = thread_payload(custom_llm_provider, None, arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    return thread_of(assistant_answer(session.create_thread, payload))
+    return thread_of(assistant_answer(NativeAssistantSession.create_thread, payload))
 
 
 async def acreate_thread(custom_llm_provider: str, **kwargs: CallValue) -> Thread | None:
     payload = thread_payload(custom_llm_provider, None, kwargs)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    return thread_of(await assistant_aanswer(session.acreate_thread, payload))
+    return thread_of(await assistant_aanswer(
+        NativeAssistantSession.acreate_thread, payload))
 
 
 def get_thread(
@@ -290,8 +288,7 @@ def get_thread(
     if kwargs.get("aget_thread") is True:
         return aget_thread(custom_llm_provider, thread_id, **arguments)
     payload = thread_payload(custom_llm_provider, thread_id, arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    return thread_of(assistant_answer(session.get_thread, payload))
+    return thread_of(assistant_answer(NativeAssistantSession.get_thread, payload))
 
 
 async def aget_thread(
@@ -299,5 +296,4 @@ async def aget_thread(
 ) -> Thread | None:
     arguments = named_arguments(kwargs, {"client": client})
     payload = thread_payload(custom_llm_provider, thread_id, arguments)
-    session = NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
-    return thread_of(await assistant_aanswer(session.aget_thread, payload))
+    return thread_of(await assistant_aanswer(NativeAssistantSession.aget_thread, payload))
