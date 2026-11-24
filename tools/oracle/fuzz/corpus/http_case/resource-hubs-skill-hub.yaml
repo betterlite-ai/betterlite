@@ -1,0 +1,7 @@
+name: resource-hubs-skill-hub
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: GET, path: /public/skill_hub, headers: {}, body: null}
+upstream: []
+plugins: [{id: plugin-alpha, name: alpha, manifest_json: null, enabled: true}]
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
