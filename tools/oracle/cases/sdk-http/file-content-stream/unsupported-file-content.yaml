@@ -1,0 +1,26 @@
+kind: sdk_http
+name: unsupported-file-content
+call:
+  file_content_stream:
+    steps:
+      - function: file_content
+        file_id: file-x
+        custom_llm_provider: cohere
+      - function: afile_content
+        file_id: file-x
+        custom_llm_provider: cohere
+      - function: file_content
+        file_id: file-x
+        custom_llm_provider: bogus
+      - function: file_content
+        file_id: file-x
+        custom_llm_provider: cohere
+        stream: true
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /file_content_stream/value/steps/2/failure/message
+      why: Python's enum lookup text and betterlite's provider-name text differ
