@@ -363,16 +363,7 @@ async fn provider_configs() -> (Option<ResponsesApiConfig>, Option<ResponsesApiC
     (native.provider_config, absent.provider_config)
 }
 
-#[tokio::test]
-async fn metadata_and_credentials() {
-    let merged = merged_metadata_request().await;
-    assert_eq!(
-        merged.litellm_metadata,
-        object(r#"{"trace":"t1","guardrails":["pii"]}"#)
-    );
-    assert_eq!(merged.api_base.as_deref(), Some("wss://dynamic.test"));
-    assert_eq!(merged.api_key.as_deref(), Some("sk-dynamic"));
-    assert_eq!(merged.custom_llm_provider.as_deref(), Some("openai"));
+async fn assert_call_credentials_and_precedence() {
     let (model, base, key) = call_credentials_reach_resolution().await;
     assert_eq!(model, "gpt-4o");
     assert_eq!(base.as_deref(), Some("wss://caller.test"));
@@ -390,6 +381,19 @@ async fn metadata_and_credentials() {
             None,
         ]
     );
+}
+
+#[tokio::test]
+async fn metadata_and_credentials() {
+    let merged = merged_metadata_request().await;
+    assert_eq!(
+        merged.litellm_metadata,
+        object(r#"{"trace":"t1","guardrails":["pii"]}"#)
+    );
+    assert_eq!(merged.api_base.as_deref(), Some("wss://dynamic.test"));
+    assert_eq!(merged.api_key.as_deref(), Some("sk-dynamic"));
+    assert_eq!(merged.custom_llm_provider.as_deref(), Some("openai"));
+    assert_call_credentials_and_precedence().await;
     let (fallback, neither) = guardrail_precedence().await;
     assert_eq!(fallback, object(r#"{"guardrails":["fallback"]}"#));
     assert!(neither.is_empty());
