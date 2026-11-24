@@ -32,13 +32,13 @@ where
     CredentialError: Error + 'static,
 {
     #[error(transparent)]
-    Principal(AuthError),
+    Principal(#[from] AuthError),
     #[error("failed to read the batch principal fields")]
     Fields(#[source] serde_json::Error),
     #[error(transparent)]
     Boundary(#[from] ApiLimitError),
     #[error(transparent)]
-    Limits(#[from] LimiterError),
+    Limits(LimiterError),
     #[error(transparent)]
     Credentials(#[from] BatchCredentialError<CredentialError>),
 }
@@ -82,8 +82,7 @@ where
         self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
             known_count: input.calls.len(),
         }))?;
-        let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.principal.0.clone()))
-            .map_err(BatchLimitError::Principal)?;
+        let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.principal.0.clone()))?;
         let fields: BatchPrincipalFields = serde_json::to_value(&auth)
             .and_then(serde_json::from_value)
             .map_err(BatchLimitError::Fields)?;
@@ -115,7 +114,8 @@ where
             }
             BatchLimitCall::CreateRateLimitDescriptors { data } => {
                 Ok(BatchLimitAnswer::CreateRateLimitDescriptors {
-                    descriptors: descriptors::create_batch_descriptors(self, fields, auth, data)?,
+                    descriptors: descriptors::create_batch_descriptors(self, fields, auth, data)
+                        .map_err(BatchLimitError::Limits)?,
                 })
             }
             BatchLimitCall::ProjectHasIoLimits => Ok(BatchLimitAnswer::ProjectHasIoLimits {

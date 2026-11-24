@@ -59,7 +59,8 @@ where
             });
         }
     }
-    let descriptors = create_batch_descriptors(service, fields, auth, data)?;
+    let descriptors =
+        create_batch_descriptors(service, fields, auth, data).map_err(BatchLimitError::Limits)?;
     if !has_enqueued_scopes && !has_applicable_limits(&descriptors) && !project_has_io_limits(auth)
     {
         tracing::debug!("Skipping batch input file processing: no rate limits configured");
