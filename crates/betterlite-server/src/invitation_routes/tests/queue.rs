@@ -6,6 +6,7 @@ use axum::body::Body;
 use axum::http::{HeaderValue, Request, StatusCode};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;
 use serde_json::json;
 use tower::ServiceExt as _;
@@ -16,10 +17,9 @@ use super::support::{
 };
 use crate::invitation_routes::state::{QueueFailureHook, QueueRouteState};
 use crate::pre_call::rewrites::CliOverrides;
-use crate::sse_data_generator::types::{
-    FailureKind, FailureParam, FailureType, StreamFailure, StreamItem,
-};
+use crate::sse_data_generator::types::{FailureKind, FailureParam, FailureType, StreamFailure};
 use crate::stream_chunks::DONE_FRAME;
+use crate::stream_chunks::StreamItem;
 
 const NO_PRIORITY: &str = "Authentication Error, the request carries no priority between 0 and 255";
 
@@ -151,6 +151,11 @@ async fn queue_builds_the_request_like_litellm() {
     assert_eq!(seen["model"], "query-model");
     assert_eq!(seen["user"], "given");
     assert!(seen.get("_litellm_strip_stream_usage").is_none());
+    assert_proxy_server_request(&seen);
+    assert_metadata(&seen);
+}
+
+fn assert_proxy_server_request(seen: &JsonMap) {
     assert_eq!(
         seen["proxy_server_request"]["url"],
         "http://proxy.test/queue/chat/completions?model=query-model"
@@ -166,6 +171,9 @@ async fn queue_builds_the_request_like_litellm() {
             .get("proxy_server_request")
             .is_none()
     );
+}
+
+fn assert_metadata(seen: &JsonMap) {
     assert_eq!(seen["metadata"]["team"], "x");
     assert_eq!(seen["metadata"]["user_api_key"], "plain-key");
     assert_eq!(seen["metadata"]["user_api_key_hash"], "plain-key");
@@ -340,9 +348,9 @@ async fn queue_applies_only_truthy_cli_overrides() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let seen = completion.seen();
-    assert_eq!(seen["temperature"], 0.5);
-    assert_eq!(seen["max_tokens"], 100);
-    assert_eq!(seen["request_timeout"], 30);
+    assert_eq!(seen["temperature"], 0.5_f64);
+    assert_eq!(seen["max_tokens"], 100_i64);
+    assert_eq!(seen["request_timeout"], 30_i64);
     assert!(seen.get("api_base").is_none());
 }
 
@@ -365,7 +373,10 @@ async fn queue_answers_a_non_streaming_completion() {
     let body = parse(&text);
     assert_eq!(body["id"], "resp-1");
     assert!(body.get("_hidden_params").is_none());
-    assert!(matches!(completion.calls().as_slice(), [(data, false)] if data["priority"] == 7));
+    assert!(matches!(
+        completion.calls().as_slice(),
+        [(data, false)] if data["priority"] == 7_i64
+    ));
 }
 
 #[tokio::test]
@@ -454,7 +465,10 @@ async fn queue_streams_the_completion() {
     assert!(headers.contains_key("x-accel-buffering"));
     assert!(text.contains(r#"data: {"id":"c1"}"#), "{text}");
     assert!(text.contains(DONE_FRAME), "{text}");
-    assert!(matches!(completion.calls().as_slice(), [(data, true)] if data["stream"] == true));
+    assert!(matches!(
+        completion.calls().as_slice(),
+        [(data, true)] if data["stream"] == json!(true)
+    ));
 }
 
 #[tokio::test]
@@ -515,7 +529,10 @@ async fn queue_reports_a_stream_failure_to_the_hook() {
         hook.seen(),
         vec![("upstream broke".to_owned(), "500".to_owned())]
     );
-    assert_eq!(hook.data.lock().expect("the hook lock")[0]["priority"], 1);
+    assert_eq!(
+        hook.data.lock().expect("the hook lock")[0]["priority"],
+        1_i64
+    );
 }
 
 #[tokio::test]

@@ -27,9 +27,9 @@ fn setup(
     scope: FakeScope,
 ) -> (Arc<FakeStore>, Arc<FakeScope>, Router) {
     let store = Arc::new(FakeStore::with_records(records));
-    let scope = Arc::new(scope);
-    let router = router_for(invitation_router(&store, &scope));
-    (store, scope, router)
+    let shared_scope = Arc::new(scope);
+    let router = router_for(invitation_router(&store, &shared_scope));
+    (store, shared_scope, router)
 }
 
 fn open_scope() -> FakeScope {

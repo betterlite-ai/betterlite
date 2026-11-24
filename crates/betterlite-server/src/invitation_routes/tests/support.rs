@@ -33,7 +33,8 @@ use crate::invitation_routes::state::{
 use crate::invitation_routes::store::{InvitationStore, InvitationStoreError};
 use crate::pre_call::rewrites::CliOverrides;
 use crate::routing::request_scheduler::build;
-use crate::sse_data_generator::types::{StreamFailure, StreamItem, StreamSource};
+use crate::sse_data_generator::types::{StreamFailure, StreamSource};
+use crate::stream_chunks::StreamItem;
 use crate::user_invitation::{InvitationError, InvitationRecord};
 
 pub(super) fn parse(text: &str) -> JsonValue {
@@ -143,12 +144,12 @@ pub(super) async fn send_with(
         .expect("a request");
     let response = router.clone().oneshot(request).await.expect("a response");
     let status = response.status();
-    let headers = response.headers().clone();
+    let response_headers = response.headers().clone();
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("a body");
     let text = String::from_utf8(bytes.to_vec()).expect("utf8");
-    (status, headers, text)
+    (status, response_headers, text)
 }
 
 #[derive(Default)]
@@ -277,9 +278,12 @@ pub(super) fn invitation_router(
     scope: &Arc<FakeScope>,
 ) -> InvitationRouteState {
     let invitations: Arc<dyn InvitationStore> = Arc::clone(store);
-    let scope: Arc<dyn InvitationScope> = Arc::clone(scope);
+    let invitation_scope: Arc<dyn InvitationScope> = Arc::clone(scope);
     InvitationRouteState {
-        invitations: Some(InvitationDatabase { invitations, scope }),
+        invitations: Some(InvitationDatabase {
+            invitations,
+            scope: invitation_scope,
+        }),
         queue: QueueRouteState::default(),
     }
 }
@@ -454,11 +458,11 @@ pub(super) fn queue_state(
     completion: &Arc<FakeCompletion>,
     failure: Option<Arc<dyn QueueFailureHook>>,
 ) -> QueueRouteState {
-    let completion: Arc<dyn QueueCompletion> = Arc::clone(completion);
+    let queued: Arc<dyn QueueCompletion> = Arc::clone(completion);
     QueueRouteState {
         router: Some(QueueRouter {
             scheduler: Arc::clone(scheduler),
-            completion,
+            completion: queued,
         }),
         keepalive: None,
         failure,
