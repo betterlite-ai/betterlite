@@ -214,3 +214,13 @@ steps:
       upstream_headers: []
       ignore:
         - {pointer: /detail, why: betterlite writes its own viewer rejection message}
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval/start
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []

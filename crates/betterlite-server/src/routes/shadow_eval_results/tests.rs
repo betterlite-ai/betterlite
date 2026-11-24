@@ -2,13 +2,17 @@
 
 use std::sync::Arc;
 
-use axum::body::to_bytes;
+use axum::body::{Body, to_bytes};
 use axum::extract::{Path, RawQuery, State};
-use axum::http::StatusCode;
+use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse as _;
+use betterlite_auth::auth_identity::records::Principal;
 use rstest::rstest;
+use tower::ServiceExt as _;
 
-use super::{ResultsState, answered, failure, shadow_eval_read};
+use super::{ResultsState, answered, failure, routes, shadow_eval_read, shadow_eval_start_read};
+use crate::auth::auth_identity::AuthContext;
+use crate::routes::tests::{empty_config, state_for};
 use crate::shadow_eval_results::error::ShadowResultsRouteError;
 use crate::shadow_eval_results::query::ShadowQueryError;
 use crate::shadow_eval_validation::error::AccessError;
@@ -37,6 +41,34 @@ async fn an_unauthenticated_detail_answers_401() {
     .await
     .unwrap_err();
     assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn an_unauthenticated_start_answers_401() {
+    let error = shadow_eval_start_read(State(state()), None)
+        .await
+        .unwrap_err();
+    assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
+}
+
+// LiteLLM's {job_id} route reads GET on the static start path as job "start": the merged router must reach the detail read, not the POST route's 405
+#[tokio::test]
+async fn get_on_the_start_path_reads_job_start() {
+    let state = state_for(&empty_config());
+    let router = routes(&state).merge(crate::routes::shadow_eval_lifecycle::routes(&state));
+    // the list read rejects this query with 422; the detail read ignores it and reaches the missing database
+    let mut request = Request::builder()
+        .uri("/auto_router/shadow_eval/start?limit=zero")
+        .body(Body::empty())
+        .unwrap();
+    // the master key's principal is the proxy admin the read's viewer check expects
+    let principal: Principal = serde_json::from_str(
+        r#"{"principal_type":"human","subject":"master_key","roles":[],"auth_method":"api_key"}"#,
+    )
+    .expect("the master key's principal");
+    request.extensions_mut().insert(AuthContext { principal });
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 // the read's success path reaches the caller as its JSON body, not as the empty 200 a default response carries

@@ -16,7 +16,7 @@ use crate::shadow_eval_results::error::ShadowResultsRouteError;
 use crate::shadow_eval_results::postgres::store_from_state;
 use crate::shadow_eval_results::query::{ShadowQueryError, decode_shadow_query};
 use crate::shadow_eval_results::service::{get_shadow_eval_job, list_shadow_eval_jobs};
-use crate::shadow_eval_results::{DETAIL_PATH, LIST_PATH};
+use crate::shadow_eval_results::{DETAIL_PATH, LIST_PATH, START_PATH};
 use crate::shadow_result_aggregation::postgres::PgShadowResults;
 use crate::state::ServerState;
 use crate::tracing_routes::router::{ValidationBody, ValidationIssue, unauthenticated};
@@ -41,6 +41,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
     Router::new()
         .route(LIST_PATH, get(shadow_eval_read))
         .route(DETAIL_PATH, get(shadow_eval_read))
+        .route(START_PATH, get(shadow_eval_start_read))
         .with_state(results)
 }
 
@@ -73,8 +74,25 @@ async fn shadow_eval_read(
         let store = viewer_store(&state, &identity)?;
         return answered(list_shadow_eval_jobs(store, &query, Utc::now()).await);
     };
-    let store = viewer_store(&state, &identity)?;
-    answered(get_shadow_eval_job(store, &job_id, Utc::now()).await)
+    detail_read(&state, &identity, &job_id).await
+}
+
+// LiteLLM's {job_id} route reads GET on the static start path as job "start", so this MethodRouter merges with the POST start route
+async fn shadow_eval_start_read(
+    State(state): State<Arc<ResultsState>>,
+    caller: Option<Extension<AuthContext>>,
+) -> Result<Response, RouteFailure> {
+    let identity = identity_of_caller(caller.as_ref())?;
+    detail_read(&state, &identity, "start").await
+}
+
+async fn detail_read(
+    state: &ResultsState,
+    identity: &Identity,
+    job_id: &str,
+) -> Result<Response, RouteFailure> {
+    let store = viewer_store(state, identity)?;
+    answered(get_shadow_eval_job(store, job_id, Utc::now()).await)
 }
 
 fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, RouteFailure> {

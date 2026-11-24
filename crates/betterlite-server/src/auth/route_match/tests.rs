@@ -86,6 +86,8 @@ async fn encoded_separator_is_decoded_before_template_admission(#[case] path: &s
 #[rstest]
 #[case::list("/auto_router/shadow_eval", "GET", true)]
 #[case::start("/auto_router/shadow_eval/start", "POST", true)]
+#[case::start_get("/auto_router/shadow_eval/start", "GET", true)]
+#[case::start_head("/auto_router/shadow_eval/start", "HEAD", true)]
 #[case::detail(
     "/auto_router/shadow_eval/8f0e1d2c-0000-4000-8000-000000000000",
     "GET",
