@@ -132,7 +132,7 @@ pub(crate) fn encode_entry(key: &str, value: f64, timestamp: f64) -> Vec<u8> {
     encoded
 }
 
-// the whole file those writes leave: the used length, then the entries, then zero bytes up to the page-sized capacity
+// the whole file those writes leave: the used length, the entries, then zeros up to the next power of two from _INITIAL_MMAP_SIZE up
 #[must_use]
 pub fn encode_db_file(entries: &[DbEntry]) -> Vec<u8> {
     let mut body = Vec::new();
@@ -145,11 +145,6 @@ pub fn encode_db_file(entries: &[DbEntry]) -> Vec<u8> {
     file.extend_from_slice(&length.to_le_bytes());
     file.extend_from_slice(&[0_u8; 4]);
     file.extend_from_slice(&body);
-    file.resize(file_capacity(used), 0);
+    file.resize(used.max(INITIAL_CAPACITY).next_power_of_two(), 0);
     file
-}
-
-// _INITIAL_MMAP_SIZE doubles while the entries do not fit, so the page is the next power of two from the initial size up
-fn file_capacity(used: usize) -> usize {
-    used.max(INITIAL_CAPACITY).next_power_of_two()
 }
