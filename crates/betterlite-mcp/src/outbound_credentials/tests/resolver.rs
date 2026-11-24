@@ -11,7 +11,7 @@ use crate::credential_contracts::header_carrier::HeaderCarrier;
 use crate::credential_contracts::server_spec::ServerSpec;
 
 use super::super::resolver::source::resolve_with_source;
-use super::super::resolver::{Collaborators, SystemWallClock, WallClock};
+use super::super::resolver::{Collaborators, SystemWallClock, WallClock as _};
 use super::support::{
     FakeAssertions, FakeCredentials, FakeEndpoint, FakeExchanger, FakeTokens, applied, bearer,
     failure, header, id_jag_spec, param, provider, request, shared_credentials, shared_endpoint,
