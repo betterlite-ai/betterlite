@@ -515,9 +515,8 @@ def test_error_create() -> None:
                 display_title=TITLE, api_base=server.url, api_key=GOOD_KEY
             )
     assert ours.value.status_code == theirs.value.status_code == BAD_REQUEST
-    assert "display_title is invalid" in str(ours.value)
     assert "display_title is invalid" in str(theirs.value)
-    assert "AnthropicException" in str(ours.value)
+    assert "anthropic: the provider rejected the request body" in str(ours.value)
     cause = ours.value.__cause__
     assert cause is not None
     assert '"BadRequestError"' in str(cause)
@@ -530,8 +529,8 @@ def test_error_delete() -> None:
         with pytest.raises(REFERENCE_ERRORS.NotFoundError) as theirs:
             REFERENCE.delete_skill(skill_id=SKILL_ID, api_base=server.url, api_key=GOOD_KEY)
     assert ours.value.status_code == theirs.value.status_code == NOT_FOUND
-    assert "skill not found" in str(ours.value)
     assert "skill not found" in str(theirs.value)
+    assert "anthropic: the provider could not find the requested resource" in str(ours.value)
 
 
 def test_error_get_and_list() -> None:
@@ -546,7 +545,9 @@ def test_error_get_and_list() -> None:
             REFERENCE.list_skills(api_base=server.url, api_key=GOOD_KEY)
     for error in (fetched, listed):
         assert error.value.status_code == NOT_FOUND
-        assert "skill not found" in str(error.value)
+        assert "anthropic: the provider could not find the requested resource" in str(
+            error.value
+        )
 
 
 def test_error_no_database() -> None:

@@ -6,9 +6,12 @@ deviations:
   - what: create_skill and list_skills name the first five of LiteLLM's parameters and take timeout and custom_llm_provider through **kwargs; aget_skill and adelete_skill take timeout and custom_llm_provider the same way.
     why: ruff's PLR0913 and PLR0917 cap a function at five named parameters and a noqa costs this task's zero expect budget; every keyword LiteLLM takes is still accepted, only a positional call past the named prefix differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L135-L145
-  - what: An error response to get_skill or list_skills is classified from its status, so a 404 raises NotFoundError carrying the body's message.
+  - what: An error response to get_skill or list_skills is classified from its status, so a 404 raises NotFoundError.
     why: LiteLLM validates the error body as Skill or ListSkillsResponse and raises APIConnectionError at status 500, a bug no working setup can rely on; delete already maps its status and create maps it through _handle_error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12349-L12361
+  - what: "A provider error to a skill call carries betterlite's own message for its status, 'anthropic: the provider rejected the request body' for a 400, where LiteLLM raises BaseLLMException with the response body text as its message."
+    why: The rule errors-match-litellm and docs/compatibility.md keep an error's message betterlite's own, and LiteLLM's text names its own AnthropicException class; the class and the status still match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6082-L6106
   - what: A hosted (litellm_proxy) skills call raises APIConnectionError with "Prisma client is not initialized..." without opening a database.
     why: The Python package never initializes Prisma, so LiteLLM's hosted handler cannot run; the message is LiteLLM's own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L62
