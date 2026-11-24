@@ -122,8 +122,14 @@ fn key_view(caller: &Principal) -> KeyView {
         // LiteLLM's master key authenticates as a key object with this alias and user id (user_api_key_auth L2090-L2098)
         return KeyView {
             api_key: Some(String::from(MASTER_KEY_ALIAS)),
+            token: None,
+            is_session_token: false,
+            key_alias: None,
             user_id: Some(String::from(MASTER_KEY_USER_ID)),
-            ..KeyView::default()
+            team_id: None,
+            object_permission_id: None,
+            team_object_permission_id: None,
+            metadata: JsonValue::Null,
         };
     }
     let Some(key) = caller.source_key.0.as_ref() else {
