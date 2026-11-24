@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use axum::body::{Body, to_bytes};
+use axum::extract::Request;
 use axum::http::HeaderMap;
 use betterlite_config::sections::public_router_presets::Settings;
 use betterlite_http::proxy::UpstreamResponse;
@@ -8,14 +10,18 @@ use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_router::fuse_presets::get_fuse_presets;
 use betterlite_server::public_endpoints::router_presets::catalog::PresetCatalog;
 use betterlite_server::public_endpoints::router_presets::scorer::ComplexityScorerDefaults;
 use betterlite_server::public_endpoints::router_presets::service::AutorouterPresetService;
+use betterlite_server::public_endpoints::router_presets::{
+    FUSE_PRESETS_PATH, router_presets_routes,
+};
 use betterlite_server::roi_github::transport::Transport;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::runtime::Builder;
 use tokio::task::yield_now;
+use tower::ServiceExt as _;
 
 pub(crate) struct Op;
 
@@ -64,12 +70,33 @@ impl Helper for Op {
                 let defaults = ComplexityScorerDefaults::shipped().or_config_error()?;
                 Ok(serde_json::to_value(defaults)?)
             }
-            Input::FusePresets => {
-                let catalog = get_fuse_presets().or_config_error()?;
-                Ok(serde_json::to_value(catalog.as_ref())?)
-            }
+            Input::FusePresets => fuse_answer(),
         }
     }
+}
+
+// the route the proxy mounts, so the answer is the endpoint's own serialization
+fn fuse_answer() -> HelperResult {
+    let service = AutorouterPresetService::new(
+        Script::new(&[]),
+        Settings {
+            local_only: true,
+            url: String::new(),
+        },
+    );
+    let router = router_presets_routes(Arc::new(service));
+    let runtime = Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(async {
+        let request = Request::builder()
+            .uri(FUSE_PRESETS_PATH)
+            .body(Body::empty())
+            .or_config_error()?;
+        let response = router.oneshot(request).await.or_config_error()?;
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .or_config_error()?;
+        Ok(serde_json::from_slice::<Value>(&body)?)
+    })
 }
 
 fn autorouter_answer(
