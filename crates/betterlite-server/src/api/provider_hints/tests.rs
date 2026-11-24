@@ -60,9 +60,12 @@ fn header_byte_above_ascii_decodes_as_latin1() {
     let mut map = HeaderMap::new();
     map.insert(
         "custom-llm-provider",
-        HeaderValue::from_bytes(b"caf\xE9").expect("a latin-1 header value"),
+        HeaderValue::from_bytes(b"bedrock\xFF").expect("a latin-1 header value"),
     );
-    assert_eq!(provider_from_headers(&map), Some(String::from("caf\u{e9}")));
+    assert_eq!(
+        provider_from_headers(&map),
+        Some(String::from("bedrock\u{ff}"))
+    );
 }
 
 #[test]
