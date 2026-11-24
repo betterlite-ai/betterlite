@@ -1,3 +1,9 @@
+#![expect(
+    clippy::disallowed_types,
+    reason = "A caller's timeout level arrives as untyped JSON, and only the winning level is read as seconds."
+)]
+
+use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 mod seconds_text;
@@ -9,6 +15,21 @@ use seconds_text::parse_seconds_text;
 pub enum TimeoutValue {
     Number(f64),
     Text(String),
+}
+
+// The wire value of one timeout level; a list or object stays text so only the winning level is validated.
+pub fn timeout_value(value: Option<&JsonValue>) -> Option<TimeoutValue> {
+    match value {
+        None | Some(JsonValue::Null) => None,
+        Some(JsonValue::Number(number)) => number.as_f64().map(TimeoutValue::Number),
+        Some(JsonValue::Bool(flag)) => {
+            Some(TimeoutValue::Number(if *flag { 1.0_f64 } else { 0.0_f64 }))
+        }
+        Some(JsonValue::String(text)) => Some(TimeoutValue::Text(text.clone())),
+        Some(other @ (JsonValue::Array(_) | JsonValue::Object(_))) => {
+            Some(TimeoutValue::Text(other.to_string()))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
