@@ -26,6 +26,7 @@ env: {}
 upstream: []
 database:
   seed:
+    dashboard: {logs: []}
     users:
       - {user_id: ui-user, user_email: ui-user@example.com}
       - {user_id: ui-viewer, user_email: ui-viewer@example.com}

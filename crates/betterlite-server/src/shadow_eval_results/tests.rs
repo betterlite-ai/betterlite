@@ -642,6 +642,11 @@ fn padded(bytes: usize) -> Vec<u8> {
     raw
 }
 
+// a limit spelled as a run of nines of a chosen length, with text on either side of the run
+fn digit_limit(prefix: &str, digits: usize, suffix: &str) -> Vec<u8> {
+    format!("limit={prefix}{}{suffix}", "9".repeat(digits)).into_bytes()
+}
+
 // the pydantic issue FastAPI's validation body carries for one rejected query parameter
 const fn invalid(
     parameter: &'static str,
@@ -695,6 +700,25 @@ const fn invalid(
 #[case::query_rejects_an_empty_target_type(Boundary::QueryError { raw: b"target_type=".to_vec(), error: invalid("target_type", "literal_error", "Input should be 'key', 'team' or 'user'") })]
 #[case::query_reports_target_type_before_an_invalid_limit(Boundary::QueryError { raw: b"target_type=org&limit=0".to_vec(), error: invalid("target_type", "literal_error", "Input should be 'key', 'team' or 'user'") })]
 #[case::query_rejects_one_byte_past_the_bound(Boundary::QueryError { raw: padded(MAX_SHADOW_QUERY_BYTES + 1), error: ShadowQueryError::TooLarge { bytes: MAX_SHADOW_QUERY_BYTES + 1, limit: MAX_SHADOW_QUERY_BYTES } })]
+#[case::query_bounds_a_4300_digit_limit(Boundary::QueryError { raw: digit_limit("", 4_300, ""), error: invalid("limit", "less_than_equal", "Input should be less than or equal to 200") })]
+#[case::query_rejects_a_4301_digit_limit(Boundary::QueryError { raw: digit_limit("", 4_301, ""), error: invalid("limit", "int_parsing_size", "Unable to parse input string as an integer, exceeded maximum size") })]
+#[case::query_bounds_a_4299_digit_negative_limit(Boundary::QueryError { raw: digit_limit("-", 4_299, ""), error: invalid("limit", "greater_than_equal", "Input should be greater than or equal to 1") })]
+#[case::query_rejects_a_4300_digit_negative_limit(Boundary::QueryError { raw: digit_limit("-", 4_300, ""), error: invalid("limit", "int_parsing_size", "Unable to parse input string as an integer, exceeded maximum size") })]
+#[case::query_rejects_a_padded_4301_digit_limit(Boundary::QueryError { raw: digit_limit("%20", 4_301, ""), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_a_signed_4301_digit_limit(Boundary::QueryError { raw: digit_limit("%2B", 4_301, ""), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_a_zero_padded_4301_digit_limit(Boundary::QueryError { raw: digit_limit("0", 4_301, ""), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_a_4301_digit_limit_with_trailing_text(Boundary::QueryError { raw: digit_limit("", 4_301, "x"), error: invalid("limit", "int_parsing_size", "Unable to parse input string as an integer, exceeded maximum size") })]
+#[case::query_accepts_an_underscored_limit(Boundary::Query { raw: b"limit=1_0".to_vec(), expected: Some(query(None, None, 10)) })]
+#[case::query_accepts_a_zero_fraction_limit(Boundary::Query { raw: b"limit=7.0".to_vec(), expected: Some(query(None, None, 7)) })]
+#[case::query_accepts_a_zero_padded_limit(Boundary::Query { raw: b"limit=00000200".to_vec(), expected: Some(query(None, None, 200)) })]
+#[case::query_accepts_a_zero_then_underscored_limit(Boundary::Query { raw: b"limit=0_5".to_vec(), expected: Some(query(None, None, 5)) })]
+#[case::query_rejects_a_zero_fraction_zero_limit(Boundary::QueryError { raw: b"limit=0.0".to_vec(), error: invalid("limit", "greater_than_equal", "Input should be greater than or equal to 1") })]
+#[case::query_rejects_an_underscored_zero_limit(Boundary::QueryError { raw: b"limit=0_0".to_vec(), error: invalid("limit", "greater_than_equal", "Input should be greater than or equal to 1") })]
+#[case::query_bounds_a_cleaned_negative_limit(Boundary::QueryError { raw: b"limit=-007".to_vec(), error: invalid("limit", "greater_than_equal", "Input should be greater than or equal to 1") })]
+#[case::query_rejects_a_plus_then_minus_limit(Boundary::QueryError { raw: b"limit=%2B-5".to_vec(), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_a_leading_underscore_limit(Boundary::QueryError { raw: b"limit=_10".to_vec(), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_a_trailing_underscore_limit(Boundary::QueryError { raw: b"limit=10_".to_vec(), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
+#[case::query_rejects_a_doubled_underscore_limit(Boundary::QueryError { raw: b"limit=1__0".to_vec(), error: invalid("limit", "int_parsing", "Input should be a valid integer, unable to parse string as an integer") })]
 #[case::list_rejects_a_type_without_an_id(Boundary::Pair { target_type: Some(Key), target_id: None })]
 #[case::list_rejects_an_id_without_a_type(Boundary::Pair { target_type: None, target_id: Some("k1") })]
 #[case::detail_answers_404_for_an_unknown_job(Boundary::MissingJob { store: Box::default(), job_id: "job-none" })]
