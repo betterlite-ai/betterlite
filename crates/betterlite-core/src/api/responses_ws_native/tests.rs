@@ -137,7 +137,7 @@ async fn native_ws_response_create() {
     assert_forwarded_call(&fixture);
 }
 
-fn assert_frame_routing() {
+fn assert_frame_rewrites() {
     let routed = Json::Text(String::from("routed"));
     assert_eq!(routed_first_frame("not-json", Some(&routed)), "not-json");
     assert_eq!(routed_first_frame("null", Some(&routed)), "null");
@@ -162,6 +162,10 @@ fn assert_frame_routing() {
         ),
         r#"{"type":"response.create","response":{"input":null},"input":"routed"}"#
     );
+}
+
+fn assert_frame_noops() {
+    let routed = Json::Text(String::from("routed"));
     let matching = r#"{"type":"response.create","input":"routed"}"#;
     assert_eq!(routed_first_frame(matching, Some(&routed)), matching);
     let no_routed_input = r#"{"type":"response.create","input":"old"}"#;
@@ -270,7 +274,8 @@ async fn null_routed_input_request() -> support::RecordedRequest {
 
 #[tokio::test]
 async fn request_defaults_and_routing() {
-    assert_frame_routing();
+    assert_frame_rewrites();
+    assert_frame_noops();
     assert_reasoning_defaults();
     assert_deployment_defaults();
     assert_malformed_inputs();
@@ -589,7 +594,7 @@ async fn recv_fallback_and_connection_closed() {
         )));
         script.push_back(Err(BackendError::Closed(TestError(String::from(
             "the backend connection closed",
-        )))))
+        )))));
     };
     let logging = RecordingLogging::default();
     let redactor = redactor();

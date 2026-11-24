@@ -11,7 +11,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::{NativeWsCall, NativeWsCallError, NativeWsDeps};
 use crate::api::responses_provider_selection::prefixes::strip_responses_routing_prefix;
 use crate::api::responses_provider_selection::provider_config::{
-    ResponsesApiConfig, resolve_provider_config,
+    ConfigLookup, ResponsesApiConfig, resolve_provider_config,
 };
 use crate::api::responses_stream_events::JsonShape;
 use crate::api::responses_ws_native::logging::WsCallUpdate;
@@ -25,10 +25,13 @@ pub(super) struct ResolvedCall {
     pub(super) provider_config: Option<ResponsesApiConfig>,
 }
 
-pub(super) fn resolve_call<Client, Handler, HandlerError: Error + 'static>(
+pub(super) fn resolve_call<Client, Handler, HandlerError>(
     deps: &NativeWsDeps<'_, Handler>,
     call: &NativeWsCall<'_, Client>,
-) -> Result<ResolvedCall, NativeWsCallError<HandlerError>> {
+) -> Result<ResolvedCall, NativeWsCallError<HandlerError>>
+where
+    HandlerError: Error + 'static,
+{
     let resolved = deps.resolution.resolve(&ResolutionRequest {
         model: call.model,
         custom_llm_provider: None,
@@ -55,16 +58,7 @@ pub(super) fn resolve_call<Client, Handler, HandlerError: Error + 'static>(
         deps.globals.openai_key.as_ref(),
         deps.openai_api_key,
     ]);
-    let provider_config = match provider {
-        Some(name) => resolve_provider_config(
-            deps.configs,
-            &model,
-            name,
-            &JsonValue::Null,
-            api_base.as_deref(),
-        ),
-        None => None,
-    };
+    let provider_config = provider_config_for(deps.configs, provider, &model, api_base.as_deref());
     Ok(ResolvedCall {
         model,
         provider: resolved.provider,
@@ -72,6 +66,16 @@ pub(super) fn resolve_call<Client, Handler, HandlerError: Error + 'static>(
         api_key,
         provider_config,
     })
+}
+
+fn provider_config_for(
+    configs: &(dyn ConfigLookup + Sync),
+    provider: Option<&str>,
+    model: &str,
+    api_base: Option<&str>,
+) -> Option<ResponsesApiConfig> {
+    provider
+        .and_then(|name| resolve_provider_config(configs, model, name, &JsonValue::Null, api_base))
 }
 
 fn first_text<const N: usize>(candidates: [Option<&str>; N]) -> Option<String> {

@@ -108,7 +108,10 @@ pub trait NativeWsProviderHandler<Client>: Send + Sync {
 }
 
 #[derive(Debug, Error)]
-pub enum NativeWsCallError<HandlerError: Error + 'static> {
+pub enum NativeWsCallError<HandlerError>
+where
+    HandlerError: Error + 'static,
+{
     #[error(transparent)]
     Resolution(#[from] ResolutionError),
     #[error(transparent)]
@@ -119,10 +122,14 @@ pub enum NativeWsCallError<HandlerError: Error + 'static> {
     Handler(HandlerError),
 }
 
-pub async fn responses_websocket<Client: Sync, Handler: NativeWsProviderHandler<Client>>(
+pub async fn responses_websocket<Client, Handler>(
     deps: &NativeWsDeps<'_, Handler>,
     call: NativeWsCall<'_, Client>,
-) -> Result<Option<ErrorClass>, NativeWsCallError<Handler::Error>> {
+) -> Result<Option<ErrorClass>, NativeWsCallError<Handler::Error>>
+where
+    Client: Sync,
+    Handler: NativeWsProviderHandler<Client>,
+{
     let resolved = resolve_call(deps, &call)?;
     let deployment_kwargs = without_keys(call.kwargs, &RESPONSES_WS_ROUTING_HINT_KEYS);
     let remaining_kwargs = without_keys(call.kwargs, &EXPLICIT_KEYS);
