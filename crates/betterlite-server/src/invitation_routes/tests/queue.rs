@@ -290,6 +290,28 @@ async fn queue_fills_the_master_keys_user_with_the_proxy_admin_name() {
     assert_eq!(completion.seen()["user"], "default_user_id");
 }
 
+#[tokio::test]
+async fn queue_carries_the_master_keys_alias_and_user_id_in_metadata() {
+    let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
+    let router = queue_router(queue_state(&scheduler(), &completion, None));
+    let (status, _, _) = send(
+        &router,
+        "POST",
+        "/queue/chat/completions",
+        &chat_body(1),
+        Some(master()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let seen = completion.seen();
+    assert_eq!(seen["metadata"]["user_api_key"], "litellm_proxy_master_key");
+    assert_eq!(
+        seen["metadata"]["user_api_key_hash"],
+        "litellm_proxy_master_key"
+    );
+    assert_eq!(seen["metadata"]["user_api_key_user_id"], "default_user_id");
+}
+
 #[rstest]
 #[case::completion_model(
     Some("completion-model"),

@@ -20,6 +20,8 @@ const AUTHORIZATION: &str = "authorization";
 const MASTER_KEY_SUBJECT: &str = "master_key";
 // LiteLLM's litellm_proxy_admin_name, the user id its master key authenticates with
 const MASTER_KEY_USER_ID: &str = "default_user_id";
+// LiteLLM's LITELLM_PROXY_MASTER_KEY_ALIAS, the api_key its master key authenticates with
+const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 
 #[derive(Clone, Copy)]
 pub(super) struct QueueRequest<'call> {
@@ -108,16 +110,22 @@ fn resolved_model(request: QueueRequest<'_>, data: &JsonMap) -> Option<String> {
         })
 }
 
-// tokenless keys have no identity of their own, so the key's user id stands in for them
+// LiteLLM fills user from user_api_key_dict.user_id, and a principal authenticated without a key keeps its own id
 fn queue_user_id<'call>(caller: &'call Principal, key: &'call KeyView) -> Option<&'call str> {
-    let master_user = (caller.subject == MASTER_KEY_SUBJECT).then_some(MASTER_KEY_USER_ID);
     key.user_id
         .as_deref()
         .or_else(|| caller.user.as_ref().map(|user| user.id.as_str()))
-        .or(master_user)
 }
 
 fn key_view(caller: &Principal) -> KeyView {
+    if caller.subject == MASTER_KEY_SUBJECT {
+        // LiteLLM's master key authenticates as a key object with this alias and user id (user_api_key_auth L2090-L2098)
+        return KeyView {
+            api_key: Some(String::from(MASTER_KEY_ALIAS)),
+            user_id: Some(String::from(MASTER_KEY_USER_ID)),
+            ..KeyView::default()
+        };
+    }
     let Some(key) = caller.source_key.0.as_ref() else {
         return KeyView::default();
     };
