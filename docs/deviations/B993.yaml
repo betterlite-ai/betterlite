@@ -1,0 +1,33 @@
+task: B993
+deviations:
+  - what: >-
+      A stored manifest that is not JSON, is not an object, or carries a field of the wrong type answers 500 {"detail": {"error": "the stored plugin manifest is not valid JSON"}}, "the stored plugin manifest is not an object", or "the stored plugin manifest field '<field>' has an unexpected value". LiteLLM answers 500 with the Python exception text instead: json.loads' message for a parse failure, str(e) from an AttributeError for a non-object, and pydantic's multi-line ValidationError text for a mistyped list field.
+    why: >-
+      Status 500 and the {"detail": {"error": "..."}} envelope match; betterlite names the failing column and field without leaking Python internals or a parser's character offset. plugin_not_found's broken_manifest_is_500 and invalid_manifest_fields_answer_500 prove each branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L456-L459
+  - what: >-
+      A stored manifest_json over ApiLimits.max_json_bytes (16 MiB by default) answers 500 {"detail": {"error": "the stored plugin manifest is <n> bytes; the maximum is <m>"}}, where LiteLLM parses whatever size the row holds.
+    why: >-
+      The decoder is also the fuzz boundary, so every input it reads is bounded; a manifest past 16 MiB is a corrupt row and nothing that size can be registered through the write endpoint, whose body has the same limit. Both peers answer 500. decoder_rejects_bytes_over_the_limit proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L423
+  - what: >-
+      An enabled_only value outside pydantic's boolean words answers 422 {"detail": [{"loc": ["query", "enabled_only"], "msg": "not a boolean", "type": "bool_parsing"}]}, where FastAPI's validation error also carries an "input" member and words msg as "Input should be a valid boolean, unable to interpret input".
+    why: >-
+      read_query is the shared boolean query parser every betterlite model route uses, and it renders its own detail; status, the detail array shape, loc and type match. invalid_enabled_only_is_rejected proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L398
+  - what: >-
+      A request with no credentials on these routes answers 401 {"error": {"message": "the API key is not valid", "type": "auth_error", "param": "None", "code": "401"}}, where LiteLLM answers the same envelope with the message "Authentication Error, No api key passed in.".
+    why: >-
+      Status 401, type auth_error, param "None" and code "401" match; the message comes from betterlite's shared unauth envelope (B003), which every dependency 401 uses, so this slice does not reword it for these routes. The claude-plugin-read-auth-missing case ignores /error/message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L75-L80
+  - what: >-
+      An invalid virtual key with no database answers 400 with betterlite's own message "the API key is not valid", where LiteLLM reports the ProxyException message "No connected db.".
+    why: >-
+      Status, type no_db_connection, null param and code "400" match LiteLLM; the authentication stage (B003) owns the wording, and the claude-plugin-read-auth-invalid case ignores /error/message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2125-L2133
+kept_bugs:
+  - what: >-
+      An absent database answers 500 rather than 503 and names DATABASE_URL in the detail; betterlite keeps the status and the detail text for both read endpoints.
+    why: >-
+      Both read handlers call _get_prisma_client, which raises HTTPException(500, detail=DB not connected...), and a setup that watches for that 500 relies on the classification. The claude-plugin-read-route-aliases case compares the exact body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L88-L97
