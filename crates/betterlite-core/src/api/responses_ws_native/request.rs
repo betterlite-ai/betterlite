@@ -6,6 +6,7 @@ use betterlite_openai::api::responses_shapes::websocket::WsRequestDefaults;
 use indexmap::IndexMap;
 
 use super::error::WsNativeError;
+use crate::api::response_chat_request::options::map_optional_params;
 use crate::api::responses_parameters::requested::requested_optional_params;
 
 #[must_use]
@@ -88,37 +89,26 @@ pub fn build_litellm_metadata_for_ws(
     Ok(metadata)
 }
 
-#[must_use]
 pub fn deployment_reasoning_default(
     kwargs: &IndexMap<String, Json>,
     auto_summary: bool,
-) -> Option<Json> {
+) -> Result<Option<Json>, WsNativeError> {
     if kwargs
         .get("reasoning")
         .is_some_and(|value| !matches!(value, Json::Null))
     {
-        return None;
+        return Ok(None);
     }
-    let effort = kwargs.get("reasoning_effort")?;
-    match effort {
-        Json::Null => None,
-        Json::Object(_) => Some(effort.clone()),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Some(reasoning_effort_object(effort, auto_summary))
-        }
-    }
-}
-
-fn reasoning_effort_object(effort: &Json, auto_summary: bool) -> Json {
-    let mut fields = IndexMap::new();
-    fields.insert(String::from("effort"), effort.clone());
-    if auto_summary {
-        fields.insert(
-            String::from("summary"),
-            Json::Text(String::from("detailed")),
-        );
-    }
-    Json::Object(fields)
+    let Some(effort) = kwargs.get("reasoning_effort") else {
+        return Ok(None);
+    };
+    let optional = IndexMap::from([(String::from("reasoning_effort"), effort.clone())]);
+    let mut params = serde_json::from_value(serde_json::json!({}))?;
+    map_optional_params(&optional, &mut params, auto_summary)?;
+    let Some(reasoning) = params.remove("reasoning") else {
+        return Ok(None);
+    };
+    Ok(Some(serde_json::from_value(reasoning)?))
 }
 
 #[must_use]
@@ -155,7 +145,7 @@ pub fn ws_request_defaults(
     auto_summary: bool,
 ) -> Result<WsRequestDefaults<Json>, WsNativeError> {
     let mut candidate = deployment_kwargs.clone();
-    if let Some(reasoning) = deployment_reasoning_default(deployment_kwargs, auto_summary) {
+    if let Some(reasoning) = deployment_reasoning_default(deployment_kwargs, auto_summary)? {
         candidate.insert(String::from("reasoning"), reasoning);
     }
     let mut params: Params =

@@ -94,21 +94,32 @@ fn assert_frame_noops() {
 fn assert_reasoning_defaults() {
     let scalar = object(r#"{"reasoning_effort":"high"}"#);
     assert_eq!(
-        deployment_reasoning_default(&scalar, false),
+        deployment_reasoning_default(&scalar, false).unwrap(),
         Some(json(r#"{"effort":"high"}"#))
     );
     assert_eq!(
-        deployment_reasoning_default(&scalar, true),
+        deployment_reasoning_default(&scalar, true).unwrap(),
         Some(json(r#"{"effort":"high","summary":"detailed"}"#))
     );
     let mapping = object(r#"{"reasoning_effort":{"effort":"high"}}"#);
     assert_eq!(
-        deployment_reasoning_default(&mapping, false),
+        deployment_reasoning_default(&mapping, false).unwrap(),
         Some(json(r#"{"effort":"high"}"#))
     );
     let suppressed = object(r#"{"reasoning":{"effort":"none"},"reasoning_effort":"high"}"#);
-    assert_eq!(deployment_reasoning_default(&suppressed, false), None);
-    assert_eq!(deployment_reasoning_default(&object("{}"), false), None);
+    assert_eq!(
+        deployment_reasoning_default(&suppressed, false).unwrap(),
+        None
+    );
+    let null_effort = object(r#"{"reasoning_effort":null}"#);
+    assert_eq!(
+        deployment_reasoning_default(&null_effort, false).unwrap(),
+        None
+    );
+    assert_eq!(
+        deployment_reasoning_default(&object("{}"), false).unwrap(),
+        None
+    );
 }
 
 fn assert_deployment_defaults() {
