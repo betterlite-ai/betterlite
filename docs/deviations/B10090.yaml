@@ -21,6 +21,17 @@ deviations:
       depends on the host. The task makes the failure a 500, and render_scrape itself cannot fail except when its
       task is aborted.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L92
+  - what: >-
+      PROMETHEUS_DISABLE_CREATED_SERIES has no effect: betterlite always writes each counter and histogram series'
+      _created sample, even when a deployment sets the variable that prometheus_client reads at import.
+    why: >-
+      prometheus_client reads the variable once into a module global when it is imported and gates
+      Counter._child_samples and Histogram._child_samples on it, so a LiteLLM process that sets it writes no
+      _created lines. Reading it needs an environment variable, and the workspace allows one only through the
+      config crate; this task requires betterlite-prometheus to depend on no betterlite crate, and its
+      make_metrics_app takes only the registry, so no flag reaches the encoders here. B3886 or B3887 can resolve it
+      through config where they nest the app and pass it into render_scrape.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L67-L68
 kept_bugs:
   - what: >-
       q-values are ignored: an Accept part of application/openmetrics-text;q=0 still picks OpenMetrics, and
