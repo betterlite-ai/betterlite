@@ -17,9 +17,11 @@ use betterlite_openai::api::container_contracts::records::{
 use betterlite_openai::containers::costs::ContainerCosts;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::Object;
+use betterlite_sdk::call_wrapper::ports::WrapperClock as _;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
 use rust_decimal::Decimal;
+use uuid::Uuid;
 
 use super::super::NativeContainerSession;
 use super::asynchronous;
@@ -211,6 +213,7 @@ fn init_carries_the_call_type_and_the_call_id() {
     );
     assert_eq!(given.call_type, "create_container");
     assert_eq!(given.litellm_call_id, "call_1");
+    assert!(given.start_time.timestamp() > 1_600_000_000);
     let generated = stack::init(
         "list_containers",
         None,
@@ -218,7 +221,19 @@ fn init_carries_the_call_type_and_the_call_id() {
         &stack::SessionClock::new(),
     );
     assert_eq!(generated.call_type, "list_containers");
-    assert!(!generated.litellm_call_id.is_empty());
+    assert_eq!(
+        Uuid::parse_str(&generated.litellm_call_id)
+            .unwrap()
+            .get_version_num(),
+        4
+    );
+}
+
+#[test]
+fn session_clock_counts_the_time_since_it_was_built() {
+    let clock = stack::SessionClock::new();
+    get_runtime().block_on(tokio::time::sleep(Duration::from_millis(2)));
+    assert!(clock.monotonic() > Duration::ZERO);
 }
 
 #[test]
