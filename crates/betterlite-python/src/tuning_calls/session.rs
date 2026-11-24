@@ -115,17 +115,10 @@ fn decode<T: DeserializeOwned>(text: &str) -> PyResult<T> {
     }
 }
 
-// The synchronous answer: one attempt on the runtime, this thread waiting with the GIL released.
-fn sync_answer(py: Python<'_>, core: &Arc<TuningCore>, call: NativeCall) -> PyResult<String> {
-    py.detach(|| get_runtime().block_on(core.execute(call)))
-        .map_err(Raised::to_pyerr)
-}
-
 // The awaitable answer: the same call on the asyncio loop's runtime, handed back as a coroutine.
-fn async_answer(py: Python<'_>, core: &Arc<TuningCore>, call: NativeCall) -> PyResult<Py<PyAny>> {
-    let owned = Arc::clone(core);
+fn async_answer(py: Python<'_>, core: Arc<TuningCore>, call: NativeCall) -> PyResult<Py<PyAny>> {
     let future = future_into_py(py, async move {
-        let text = owned.execute(call).await.map_err(Raised::to_pyerr)?;
+        let text = core.execute(call).await.map_err(Raised::to_pyerr)?;
         Ok::<String, PyErr>(text)
     })?;
     Ok(future.unbind())
@@ -149,42 +142,50 @@ impl NativeTuningSession {
 
     fn create(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: CreateCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Create(Box::new(call)))
+        py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Create(Box::new(call)))))
+            .map_err(Raised::to_pyerr)
     }
 
     fn acreate(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: CreateCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Create(Box::new(call)))
+        let core = Arc::clone(&self.core);
+        async_answer(py, core, NativeCall::Create(Box::new(call)))
     }
 
     fn retrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: ReadCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Read(Box::new(call)))
+        py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Read(Box::new(call)))))
+            .map_err(Raised::to_pyerr)
     }
 
     fn aretrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: ReadCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Read(Box::new(call)))
+        let core = Arc::clone(&self.core);
+        async_answer(py, core, NativeCall::Read(Box::new(call)))
     }
 
     fn list(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: ReadCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Read(Box::new(call)))
+        py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Read(Box::new(call)))))
+            .map_err(Raised::to_pyerr)
     }
 
     fn alist(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: ReadCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Read(Box::new(call)))
+        let core = Arc::clone(&self.core);
+        async_answer(py, core, NativeCall::Read(Box::new(call)))
     }
 
     fn cancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: CancelCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Cancel(Box::new(call)))
+        py.detach(|| get_runtime().block_on(self.core.execute(NativeCall::Cancel(Box::new(call)))))
+            .map_err(Raised::to_pyerr)
     }
 
     fn acancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: CancelCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Cancel(Box::new(call)))
+        let core = Arc::clone(&self.core);
+        async_answer(py, core, NativeCall::Cancel(Box::new(call)))
     }
 }
 
