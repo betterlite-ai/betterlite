@@ -13,8 +13,12 @@ HOST = "127.0.0.1"
 OK = 200
 UNAUTHORIZED = 401
 NOT_FOUND = 404
+RATE_LIMITED = 429
+SERVER_ERROR = 500
 GOOD_KEY = "sk-test"
 BAD_KEY = "sk-denied"
+RATE_LIMITED_KEY = "sk-rate-limited"
+FAILING_KEY = "sk-failing"
 ASSISTANT_ID = "asst_1"
 THREAD_ID = "thread_1"
 CREATED = 1700000000
@@ -58,6 +62,22 @@ THREAD: dict[str, JsonValue] = {
     "object": "thread",
     "created_at": CREATED,
     "metadata": {"team": "a"},
+}
+RATE_LIMITED_BODY: dict[str, JsonValue] = {
+    "error": {
+        "message": "Rate limit reached for requests",
+        "type": "requests",
+        "param": None,
+        "code": "rate_limit_exceeded",
+    },
+}
+SERVER_ERROR_BODY: dict[str, JsonValue] = {
+    "error": {
+        "message": "The server had an error while processing your request",
+        "type": "server_error",
+        "param": None,
+        "code": None,
+    },
 }
 
 
@@ -141,8 +161,15 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_error(NOT_FOUND)
 
     def authorized(self) -> bool:
-        if self.headers.get(AUTHORIZATION) == f"{BEARER}{GOOD_KEY}":
+        key = self.headers.get(AUTHORIZATION)
+        if key == f"{BEARER}{GOOD_KEY}":
             return True
+        if key == f"{BEARER}{RATE_LIMITED_KEY}":
+            self.reply(RATE_LIMITED, RATE_LIMITED_BODY)
+            return False
+        if key == f"{BEARER}{FAILING_KEY}":
+            self.reply(SERVER_ERROR, SERVER_ERROR_BODY)
+            return False
         payload: dict[str, JsonValue] = {
             "error": {
                 "message": f"Incorrect API key provided: {BAD_KEY}.",
