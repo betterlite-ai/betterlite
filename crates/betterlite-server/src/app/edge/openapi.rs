@@ -56,7 +56,6 @@ pub fn document_inputs(server_root_path: &str, version: &str) -> DocumentInputs 
     }
 }
 
-#[must_use]
 pub fn document_router(openapi_url: Option<&str>, server_root_path: &str, title: &str) -> Router {
     let Some(path) = openapi_url else {
         return Router::new();
@@ -86,7 +85,7 @@ pub fn document_router(openapi_url: Option<&str>, server_root_path: &str, title:
 
 fn document_bytes(server_root_path: &str, title: &str) -> Result<Bytes, DocumentError> {
     let mut inputs = document_inputs(server_root_path, env!("CARGO_PKG_VERSION"));
-    inputs.info.title = title.to_owned();
+    title.clone_into(&mut inputs.info.title);
     serde_json::to_vec(&build_document(&inputs))
         .map(Bytes::from)
         .map_err(|source| DocumentError::Encode { source })
