@@ -103,9 +103,6 @@ async fn org_access_membership_matrix(
         .seed_membership("u1", "org-1", Some("org_admin"))
         .await;
     database
-        .seed_membership("u1", "org-2", Some("org_admin"))
-        .await;
-    database
         .seed_membership("u1", "org-3", Some("internal_user"))
         .await;
     database.seed_membership("u1", "org-4", None).await;
