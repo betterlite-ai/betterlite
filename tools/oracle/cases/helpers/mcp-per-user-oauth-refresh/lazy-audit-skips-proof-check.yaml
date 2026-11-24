@@ -1,0 +1,26 @@
+kind: helper
+name: lazy-audit-skips-proof-check
+call:
+  b4660:
+    function: lazy_fetch
+    server:
+      server_id: srv
+      name: Server
+      transport: http
+      auth_type: oauth2
+      client_id: client
+      client_secret: secret
+      token_url: https://idp.test/token
+      oauth_identity_binding: {mode: audit, issuer: https://idp.test, audiences: [aud]}
+    token:
+      access_token: fresh
+      refresh_token: stored-refresh
+      scopes: [read]
+      identity_binding_proof: user-proof
+    builds: [false]
+    binding_matches: [false]
+    steps:
+      - {op: fetch, user_id: user, server_id: srv}
+env: {}
+compare:
+  ignore: []

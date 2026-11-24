@@ -1,0 +1,24 @@
+kind: helper
+name: lazy-enforce-mismatch-invalidates
+call:
+  b4660:
+    function: lazy_fetch
+    server:
+      server_id: srv
+      name: Server
+      transport: http
+      auth_type: oauth2
+      client_id: client
+      client_secret: secret
+      token_url: https://idp.test/token
+      oauth_identity_binding: {mode: enforce, issuer: https://idp.test, audiences: [aud]}
+    token:
+      access_token: fresh
+      identity_binding_proof: other-user
+    builds: [false]
+    binding_matches: [false]
+    steps:
+      - {op: fetch, user_id: user, server_id: srv}
+env: {}
+compare:
+  ignore: []

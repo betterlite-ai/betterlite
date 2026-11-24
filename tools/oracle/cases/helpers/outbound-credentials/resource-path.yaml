@@ -1,0 +1,68 @@
+kind: helper
+name: outbound-credentials-resource-path
+call:
+  b4667:
+    function: protected_resource_path
+    server:
+      server_id: srv-1
+      name: Server One
+      transport: http
+      url: https://mcp.example.com/mcp
+      alias: Alias
+    root_path: /litellm
+    scalar_root_path: /litellm
+calls:
+  - b4667:
+      function: protected_resource_path
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: /litellm
+      scalar_root_path: /litellm/
+  - b4667:
+      function: protected_resource_path
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: /team/a
+      scalar_root_path: /litellm
+  - b4667:
+      function: protected_resource_path
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: /
+      scalar_root_path: /litellm
+  - b4667:
+      function: protected_resource_path
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        server_name: named
+      root_path: /litellm
+      scalar_root_path: /litellm
+  - b4667:
+      function: protected_resource_path
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: ""
+        server_name: ""
+      root_path: /team/a
+      scalar_root_path: /litellm
+env:
+  SERVER_ROOT_PATH: /litellm
+compare: {ignore: []}
