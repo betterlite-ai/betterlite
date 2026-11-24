@@ -792,9 +792,24 @@ async fn explicit_prompt_cache_key_replaces_the_decoded_one() {
     );
 }
 
+#[tokio::test]
+async fn absent_forwarding_forwards_nothing() {
+    let input: MessagesResponseCallInput =
+        serde_json::from_str(r#"{"request":{"model":"gpt-4o","messages":[],"max_tokens":8}}"#)
+            .expect("an input without forwarding parses");
+    let fixture = fixture_with(true, Some("openai"), None, native());
+    let (result, _) = run(&fixture, &input).await;
+    let call = result.expect("the call succeeds").call;
+    assert!(
+        call.kwargs.is_empty(),
+        "an absent forwarding mapping forwards nothing"
+    );
+}
+
 #[rstest]
 #[case::provider(r#"{"custom_llm_provider":5}"#, "custom_llm_provider")]
 #[case::include(r#"{"include":"reasoning.encrypted_content"}"#, "include")]
+#[case::include_item(r#"{"include":["reasoning.encrypted_content",5]}"#, "include")]
 #[case::prompt_cache_key(r#"{"prompt_cache_key":5}"#, "prompt_cache_key")]
 #[tokio::test]
 async fn forwarded_values_must_match_their_declared_types(
