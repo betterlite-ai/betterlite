@@ -652,6 +652,21 @@ async fn native_responses_error_keeps_a_normalized_failure() {
     assert_eq!(normalized.code.as_deref(), Some("429"));
 }
 
+#[tokio::test]
+async fn native_responses_error_maps_a_translation_failure() {
+    let response: ResponsesApiResponse = serde_json::from_str(
+        r#"{"id":"resp_b985_translate","created_at":1,"model":"gpt-4o","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"c1","name":"f","arguments":"[1,2]","status":"completed"}]}"#,
+    )
+    .expect("the response parses");
+    let fixture = fixture_with(true, Some("openai"), None, AnswerPlan::Response(response));
+    let input = call_input(LISTED_REQUEST, r#"{"custom_llm_provider":"openai"}"#, false);
+    let (result, _) = run(&fixture, &input).await;
+    let error = result.err().expect("a translation failure fails the call");
+    let failure = error.normalize("openai/gpt-4o", "openai", &fixture.redactor);
+    assert_eq!(failure.status, 500);
+    assert_eq!(failure.class, "APIConnectionError");
+}
+
 async fn first_chunk<S>(stream: &mut MessagesResponseStream<S>) -> Json
 where
     S: ResponsesEventSource,
