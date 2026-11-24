@@ -4,19 +4,16 @@ from functools import partial
 from typing import Final, Literal, TypeAlias, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypeIs
 
 from betterlite._completion.arguments import timeout_value
 from betterlite._completion.errors import UnsupportedCallArgument, raise_native_error
 from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
 from betterlite._endpoints.runner import AsyncNativeCall, NativeCall
 from betterlite._endpoints.settings import read_settings
-from betterlite._native import NativeError
-from betterlite._native_assistant_calls import (
-    NativeAssistantError,
-    NativeAssistantSession,
-)
+from betterlite._native import NativeAssistantError, NativeAssistantSession, NativeError
 from betterlite.types.llms.openai.core.threads import Thread
-from betterlite.types.utils.base import Dumpable, ResponseObject
+from betterlite.types.utils.base import Dumpable, InitValue, ResponseObject
 
 SETTINGS: Final = ("api_key", "api_base", "api_version", "organization", "openai_key", "azure_key")
 PARAMS: Final = ("api_key", "api_base", "api_version", "organization", "max_retries", "timeout",
@@ -56,6 +53,8 @@ class AssistantPage(ResponseObject):
 PageAnswer: TypeAlias = AssistantPage | Coroutine[None, None, AssistantPage]
 DeletedAnswer: TypeAlias = AssistantDeleted | Coroutine[None, None, AssistantDeleted]
 RecordT = TypeVar("RecordT", bound=ResponseObject)
+MessageInput: TypeAlias = InitValue | CallValue | tuple[CallValue, ...]
+MessageSequence: TypeAlias = list[CallValue] | tuple[CallValue, ...]
 READ_METHODS: Final = {
     "list": NativeAssistantSession.get_assistants,
     "delete": NativeAssistantSession.delete_assistant,
@@ -63,8 +62,7 @@ READ_METHODS: Final = {
 
 
 def session() -> NativeAssistantSession:
-    settings = json.dumps(read_settings(SETTINGS))
-    return NativeAssistantSession(settings)
+    return NativeAssistantSession(json.dumps(read_settings(SETTINGS)))
 
 
 def flag_argument(name: str, arguments: Mapping[str, CallValue], error: type[Exception]) -> bool:
@@ -80,7 +78,7 @@ def flag_argument(name: str, arguments: Mapping[str, CallValue], error: type[Exc
 
 def param_value(name: str, value: CallValue) -> JsonValue:
     if name == "timeout":
-        return timeout_value(value)
+        return None if value is None else timeout_value(value)
     if name == "api_version":
         match value:
             case None | str():
@@ -91,17 +89,21 @@ def param_value(name: str, value: CallValue) -> JsonValue:
 
 
 def params_of(arguments: Mapping[str, CallValue]) -> dict[str, JsonValue]:
-    params: dict[str, JsonValue] = {}
-    for name in PARAMS:
-        if name in arguments:
-            params[name] = param_value(name, arguments[name])
-    return params
+    return {name: param_value(name, arguments[name]) for name in PARAMS if name in arguments}
 
 
 def named_arguments(
     arguments: Mapping[str, CallValue], named: Mapping[str, CallValue]) -> dict[str, CallValue]:
     given = {name: value for name, value in named.items() if value is not None}
     return {**arguments, **given}
+
+
+def is_message_sequence(value: MessageInput | None) -> TypeIs[MessageSequence]:
+    match value:
+        case list() | tuple():
+            return True
+        case object():
+            return False
 
 
 def thread_message(value: CallValue | Dumpable) -> JsonValue:
@@ -144,12 +146,10 @@ def thread_payload(
     provider: str, thread_id: str | None, arguments: Mapping[str, CallValue]) -> CallPayload:
     values: dict[str, CallValue] = {"custom_llm_provider": provider, "thread_id": thread_id}
     messages = arguments.get("messages")
-    if messages is not None:
-        match messages:
-            case list() as items:
-                values["messages"] = [thread_message(item) for item in items]
-            case object():
-                raise UnsupportedCallArgument("messages")
+    if is_message_sequence(messages):
+        values["messages"] = [thread_message(item) for item in messages]
+    elif messages is not None:
+        raise UnsupportedCallArgument("messages")
     fields = {name: arguments[name] for name in ("metadata", "tool_resources") if name in arguments}
     values.update(fields)
     values.update({name: arguments.get(name) for name in DROPPED})
@@ -261,13 +261,15 @@ async def adelete_assistant(
 
 
 def create_thread(
-    custom_llm_provider: str, messages: CallValue = None, metadata: CallValue = None,
+    custom_llm_provider: str, messages: MessageInput | None = None, metadata: CallValue = None,
     tool_resources: CallValue = None, client: CallValue = None, **kwargs: CallValue,
 ) -> Thread | Coroutine[None, None, Thread | None] | None:
-    named = {
-        "messages": messages, "metadata": metadata,
-        "tool_resources": tool_resources, "client": client,
-    }
+    named = {"metadata": metadata, "tool_resources": tool_resources, "client": client}
+    if is_message_sequence(messages):
+        listed: list[CallValue] = list(messages)
+        named["messages"] = listed
+    elif messages is not None:
+        raise UnsupportedCallArgument("messages")
     arguments = named_arguments(kwargs, named)
     if kwargs.get("acreate_thread") is True:
         return acreate_thread(custom_llm_provider, **arguments)
