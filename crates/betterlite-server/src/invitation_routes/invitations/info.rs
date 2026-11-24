@@ -39,6 +39,8 @@ async fn read_invitation(
     principal: &Principal,
     invitation_id: &str,
 ) -> Result<InvitationRecord, InvitationRouteError> {
+    // LiteLLM checks prisma_client (L17799) before the admin view (L17805)
+    let database = state.database()?;
     let admin_view = principal.subject == MASTER_KEY_SUBJECT
         || principal
             .source_key
@@ -52,8 +54,7 @@ async fn read_invitation(
             role: role_text(principal),
         });
     }
-    state
-        .database()?
+    database
         .invitations
         .info(invitation_id)
         .await

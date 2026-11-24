@@ -13,7 +13,7 @@ use tower::ServiceExt as _;
 
 use super::support::{
     FakeCompletion, FakeHook, Reply, key_caller, master, object, parse, queue_router, queue_state,
-    scheduler, send, send_with,
+    scheduler, send, send_with, userless_admin,
 };
 use crate::invitation_routes::state::{QueueFailureHook, QueueRouteState};
 use crate::pre_call::rewrites::CliOverrides;
@@ -267,11 +267,27 @@ async fn queue_leaves_the_user_unset_for_an_identityless_call() {
         "POST",
         "/queue/chat/completions",
         &chat_body(1),
-        Some(master()),
+        Some(userless_admin()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(completion.seen().get("user").is_none());
+}
+
+#[tokio::test]
+async fn queue_fills_the_master_keys_user_with_the_proxy_admin_name() {
+    let completion = Arc::new(FakeCompletion::new(Reply::Object(object("{}"))));
+    let router = queue_router(queue_state(&scheduler(), &completion, None));
+    let (status, _, _) = send(
+        &router,
+        "POST",
+        "/queue/chat/completions",
+        &chat_body(1),
+        Some(master()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(completion.seen()["user"], "default_user_id");
 }
 
 #[rstest]

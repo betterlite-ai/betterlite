@@ -17,6 +17,9 @@ use crate::pre_call::rewrites::apply_overrides;
 const STRIP_STREAM_USAGE: &str = "_litellm_strip_stream_usage";
 const HOST: &str = "host";
 const AUTHORIZATION: &str = "authorization";
+const MASTER_KEY_SUBJECT: &str = "master_key";
+// LiteLLM's litellm_proxy_admin_name, the user id its master key authenticates with
+const MASTER_KEY_USER_ID: &str = "default_user_id";
 
 #[derive(Clone, Copy)]
 pub(super) struct QueueRequest<'call> {
@@ -107,9 +110,11 @@ fn resolved_model(request: QueueRequest<'_>, data: &JsonMap) -> Option<String> {
 
 // tokenless keys have no identity of their own, so the key's user id stands in for them
 fn queue_user_id<'call>(caller: &'call Principal, key: &'call KeyView) -> Option<&'call str> {
+    let master_user = (caller.subject == MASTER_KEY_SUBJECT).then_some(MASTER_KEY_USER_ID);
     key.user_id
         .as_deref()
         .or_else(|| caller.user.as_ref().map(|user| user.id.as_str()))
+        .or(master_user)
 }
 
 fn key_view(caller: &Principal) -> KeyView {

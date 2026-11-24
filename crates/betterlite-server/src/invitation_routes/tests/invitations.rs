@@ -397,6 +397,21 @@ async fn info_requires_the_database() {
 }
 
 #[tokio::test]
+async fn info_checks_the_database_before_the_admin_view() {
+    let router = router_for(InvitationRouteState::default());
+    let (status, _, text) = send(
+        &router,
+        "GET",
+        "/invitation/info?invitation_id=inv-1",
+        "",
+        Some(internal_user()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(parse(&text)["detail"]["error"], DB_NOT_CONNECTED);
+}
+
+#[tokio::test]
 async fn info_reports_a_database_it_cannot_reach() {
     let scope: Arc<dyn InvitationScope> = Arc::new(open_scope());
     let store = PostgresInvitations {
@@ -447,6 +462,25 @@ async fn update_needs_a_user_id() {
             .expect("the store lock")
             .updated
             .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn update_accepts_the_invitation_from_the_master_key() {
+    let (store, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
+    let (status, _, text) = send(
+        &router,
+        "POST",
+        "/invitation/update",
+        r#"{"invitation_id":"inv-1","is_accepted":true}"#,
+        Some(master()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(parse(&text)["updated_by"], "default_user_id");
+    assert_eq!(
+        store.rows.lock().expect("the store lock").updated,
+        vec![("inv-1".to_owned(), true, "default_user_id".to_owned())]
     );
 }
 
