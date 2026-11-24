@@ -50,6 +50,7 @@ fn write_file(dir: &Path, name: &str, entries: &[DbEntry]) -> PathBuf {
 }
 
 fn write_histogram(dir: &Path, pid: u32, bound: &str, counts: [f64; 2], sum: f64) -> PathBuf {
+    let [one, infinite] = counts;
     write_file(
         dir,
         &format!("histogram_{pid}.db"),
@@ -58,13 +59,13 @@ fn write_histogram(dir: &Path, pid: u32, bound: &str, counts: [f64; 2], sum: f64
                 "request_latency",
                 "request_latency_bucket",
                 &[("le", bound)],
-                counts[0],
+                one,
             ),
             entry(
                 "request_latency",
                 "request_latency_bucket",
                 &[("le", "+Inf")],
-                counts[1],
+                infinite,
             ),
             entry("request_latency", "request_latency_sum", &[], sum),
         ],
