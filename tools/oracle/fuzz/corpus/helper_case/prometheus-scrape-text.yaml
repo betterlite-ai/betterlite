@@ -1,0 +1,13 @@
+kind: helper
+name: prometheus-scrape-corpus-text
+call:
+  b10090:
+    metrics:
+      - {kind: counter, name: corpus_requests_total, help: requests, labels: [model], buckets: []}
+    updates:
+      - {metric: 0, labels: [gpt-4o], action: inc, value: 1}
+    accept: ""
+    accept_encoding: ""
+    names: []
+env: {}
+compare: {ignore: []}
