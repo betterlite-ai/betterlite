@@ -63,8 +63,7 @@ where
         let Some(storage) = state.storage.as_ref() else {
             return Ok(Json(Vec::new()));
         };
-        let reader = source_reader(Some(storage))?;
-        Ok(Json(reader.agents(&scope).await?))
+        Ok(Json(source_reader(Some(storage))?.agents(&scope).await?))
     }
 
     pub(crate) async fn update_lens(
@@ -118,8 +117,7 @@ where
     };
     let queued = queue_job(&lens, now, state.ids.new_id(), &RunRequest::default())
         .map_err(LensMutationError::from)?;
-    let repository = lens_repository(&state)?;
-    Ok(Json(repository.create(queued).await?))
+    Ok(Json(lens_repository(&state)?.create(queued).await?))
 }
 
 pub(crate) async fn read_lens<Db, Store>(

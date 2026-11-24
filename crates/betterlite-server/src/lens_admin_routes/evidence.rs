@@ -30,15 +30,13 @@ where
     };
     let query = decode_content_query(raw.0.unwrap_or_default().as_bytes())?;
     let scope = user_scope(&caller_key(&context.principal)?, false)?;
-    let repository = lens_repository(&state)?;
-    let lens = get_lens(repository, &lens_id, &scope).await?;
+    let lens = get_lens(lens_repository(&state)?, &lens_id, &scope).await?;
     let Ok(parsed) = parse_execution(&execution_id) else {
         return Err(LensRouteError::Access(LensAccessError::ExecutionNotFound));
     };
     let execution = named_execution(execution_id, &lens, parsed)?;
-    let reader = source_reader(state.storage.as_ref())?;
     Ok(Json(
-        reader
+        source_reader(state.storage.as_ref())?
             .content(&lens.scope, &execution, &query.cursor, query.offset)
             .await?,
     ))

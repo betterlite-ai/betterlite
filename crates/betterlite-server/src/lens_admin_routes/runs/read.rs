@@ -20,8 +20,7 @@ where
     Store: LensStorage,
 {
     let repository = accessible_repository(&state, caller, &lens_id, false).await?;
-    let job = repository.job(&lens_id, &job_id).await?;
-    let Some(found) = job else {
+    let Some(found) = repository.job(&lens_id, &job_id).await? else {
         return Err(LensRouteError::Access(
             LensAccessError::InvestigationNotFound,
         ));

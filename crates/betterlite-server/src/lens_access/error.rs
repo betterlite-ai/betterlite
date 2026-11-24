@@ -81,43 +81,24 @@ pub(crate) enum LensAccessError {
 impl LensAccessError {
     #[must_use]
     pub(crate) const fn status(&self) -> StatusCode {
-        if matches!(
-            self,
-            Self::WriteDenied | Self::AccessDenied | Self::ModelDenied
-        ) {
-            return StatusCode::FORBIDDEN;
-        }
-        if matches!(self, Self::NoDatabase) {
-            return StatusCode::SERVICE_UNAVAILABLE;
-        }
-        if matches!(
-            self,
+        match self {
+            Self::WriteDenied | Self::AccessDenied | Self::ModelDenied => StatusCode::FORBIDDEN,
+            Self::NoDatabase => StatusCode::SERVICE_UNAVAILABLE,
             Self::LensNotFound
-                | Self::InvestigationNotFound
-                | Self::WorkerNotFound
-                | Self::ExecutionNotFound
-        ) {
-            return StatusCode::NOT_FOUND;
-        }
-        if matches!(
-            self,
+            | Self::InvestigationNotFound
+            | Self::WorkerNotFound
+            | Self::ExecutionNotFound => StatusCode::NOT_FOUND,
             Self::ConcurrentChange
-                | Self::WorkerRevoked
-                | Self::WorkerAccessRevoked
-                | Self::WorkerRunning
-        ) {
-            return StatusCode::CONFLICT;
+            | Self::WorkerRevoked
+            | Self::WorkerAccessRevoked
+            | Self::WorkerRunning => StatusCode::CONFLICT,
+            Self::TracingDisabled => StatusCode::NOT_IMPLEMENTED,
+            Self::InvalidSelection => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::UnknownModel => StatusCode::BAD_REQUEST,
+            Self::Caller(_) | Self::CallerKey(_) | Self::Repository(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         }
-        if matches!(self, Self::TracingDisabled) {
-            return StatusCode::NOT_IMPLEMENTED;
-        }
-        if matches!(self, Self::InvalidSelection) {
-            return StatusCode::UNPROCESSABLE_ENTITY;
-        }
-        if matches!(self, Self::UnknownModel) {
-            return StatusCode::BAD_REQUEST;
-        }
-        StatusCode::INTERNAL_SERVER_ERROR
     }
 
     #[must_use]
