@@ -271,8 +271,14 @@ async fn restore_tag_cohort(
     cohort: DailySpendUpdate,
 ) -> Result<(), RepublicationError> {
     let cohorts = UncommittedCohorts {
+        entity: None,
+        daily_user: None,
+        daily_team: None,
+        daily_org: None,
+        daily_end_user: None,
+        daily_agent: None,
         daily_tag: Some(cohort),
-        ..UncommittedCohorts::default()
+        window: None,
     };
     restore_transactions_to_redis(publisher, cohorts).await
 }
