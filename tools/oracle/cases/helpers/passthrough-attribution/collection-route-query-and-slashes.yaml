@@ -1,0 +1,39 @@
+kind: helper
+name: collection-route-query-and-slashes
+call:
+  b3630:
+    routes:
+      - url_route: "/v1/messages/batches?beta=true"
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batches///"
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batches"
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batches/abc"
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batches/abc?x=1"
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batches?next=/batches/abc"
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batche"
+        collection_suffix: "/batches"
+      - url_route: "?/batches"
+        collection_suffix: "/batches"
+      - url_route: "/batches"
+        collection_suffix: "/batches"
+      - url_route: "/v1/batches/"
+        collection_suffix: "/batches/"
+      - url_route: ""
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batches"
+        collection_suffix: ""
+      - url_route: "/v1/messages/batches/?beta=1"
+        collection_suffix: "/batches"
+    tags: []
+    models: []
+    ids: []
+    costing: []
+    speeds: []
+env: {}
+compare:
+  ignore: []

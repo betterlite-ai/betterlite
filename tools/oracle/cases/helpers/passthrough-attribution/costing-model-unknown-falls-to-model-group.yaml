@@ -1,0 +1,66 @@
+kind: helper
+name: costing-model-unknown-falls-to-model-group
+call:
+  b3630:
+    routes: []
+    tags: []
+    models: []
+    ids: []
+    costing:
+      - model: "unknown"
+        details:
+          litellm_params:
+            metadata:
+              model_group: "passthrough/group"
+      - model: ""
+        details:
+          litellm_params:
+            metadata:
+              model_group: "passthrough/passthrough/group"
+      - model: ""
+        details:
+          litellm_params:
+            metadata:
+              model_group: ""
+      - model: "unknown"
+        details: {}
+      - model: "unknown"
+        details:
+          litellm_params: null
+      - model: ""
+        details:
+          litellm_params:
+            metadata: null
+      - model: "unknown"
+        details:
+          litellm_params:
+            metadata: {}
+      - model: "given"
+        details:
+          litellm_params:
+            metadata:
+              model_group: "group"
+      - model: "unknown"
+        details:
+          litellm_params:
+            model: ""
+            metadata:
+              model_group: "group"
+      - model: "unknown"
+        details:
+          litellm_params:
+            model: "unknown"
+            metadata:
+              model_group: "group"
+      - model: "unknown"
+        details:
+          litellm_params:
+            metadata:
+              model_group: "Passthrough/group"
+      - model: "unknown"
+        details:
+          litellm_params: {}
+    speeds: []
+env: {}
+compare:
+  ignore: []

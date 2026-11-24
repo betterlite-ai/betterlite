@@ -1,0 +1,25 @@
+task: B8080
+deviations:
+  - what: >-
+      The sampling, elicitation and logging callbacks and the aws_auth and resolved_auth constructor objects are
+      refused by the native client; AWS signing is selected with auth_type "aws_sigv4" and keys in auth_value.
+    why: >-
+      Rust cannot call a Python function in the middle of a session, and an httpx2.Auth object cannot drive the
+      Rust transport.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L376-L430
+  - what: >-
+      The auth_type values "oauth2_id_jag", "true_passthrough" and "oauth_delegate" are refused with a ValueError.
+    why: >-
+      Those three run LiteLLM's Python OAuth flows, which need the Python MCPClient B8082 builds; the native client
+      only carries the header the resolved credential slot holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L66
+  - what: The session's load_tools takes its format argument as tool_format in the Python stub.
+    why: ruff's A002 refuses a parameter that shadows the format builtin, and the stub is linted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py
+kept_bugs:
+  - what: list_tools answers an empty list when the server fails and raise_on_error is false.
+    why: LiteLLM's MCPClient relies on that swallow to keep the proxy serving when one MCP server is down.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L1225
+  - what: call_tool answers an error tool result when the server fails and raise_on_error is false.
+    why: LiteLLM's tool loop hands that isError result back to the model instead of failing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L1225
