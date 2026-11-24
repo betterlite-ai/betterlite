@@ -21,108 +21,63 @@ use super::{ManagedOpenApiCall, ManagedOpenApiError, call};
 type HandlerResult = Result<OpenApiToolOutput, ToolHandlerError>;
 type HandlerFuture<'call> = Pin<Box<dyn Future<Output = HandlerResult> + Send + 'call>>;
 
-struct TextHandler(String);
-
-impl ToolHandler for TextHandler {
-    fn call<'call>(
-        &'call self,
-        _arguments: &'call Object,
-        _context: &'call OpenApiCallContext,
-    ) -> HandlerFuture<'call> {
-        let text = self.0.clone();
-        Box::pin(async move { Ok(OpenApiToolOutput::Text(text)) })
-    }
+enum Reply {
+    Text(String),
+    Json {
+        value: Json,
+        original_text: String,
+    },
+    Recording {
+        text: String,
+        seen: Arc<Mutex<Vec<(Object, OpenApiCallContext)>>>,
+    },
+    RegistryWrite {
+        registry: Arc<ToolRegistry>,
+    },
+    UpstreamAuth,
+    Failure(String),
 }
 
-struct JsonHandler {
-    value: Json,
-    original_text: String,
-}
+struct StubHandler(Reply);
 
-impl ToolHandler for JsonHandler {
-    fn call<'call>(
-        &'call self,
-        _arguments: &'call Object,
-        _context: &'call OpenApiCallContext,
-    ) -> HandlerFuture<'call> {
-        let value = self.value.clone();
-        let original_text = self.original_text.clone();
-        Box::pin(async move {
-            Ok(OpenApiToolOutput::Json {
-                value,
-                original_text,
-            })
-        })
-    }
-}
-
-struct RecordingHandler {
-    seen: Arc<Mutex<Vec<(Object, OpenApiCallContext)>>>,
-}
-
-impl ToolHandler for RecordingHandler {
+impl ToolHandler for StubHandler {
     fn call<'call>(
         &'call self,
         arguments: &'call Object,
         context: &'call OpenApiCallContext,
     ) -> HandlerFuture<'call> {
-        let seen = Arc::clone(&self.seen);
-        Box::pin(async move {
-            seen.lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((arguments.clone(), context.clone()));
-            Ok(OpenApiToolOutput::Text("recorded".to_owned()))
-        })
-    }
-}
-
-struct UpstreamAuthHandler;
-
-impl ToolHandler for UpstreamAuthHandler {
-    fn call<'call>(
-        &'call self,
-        _arguments: &'call Object,
-        _context: &'call OpenApiCallContext,
-    ) -> HandlerFuture<'call> {
-        Box::pin(async {
-            Err(ToolHandlerError::OpenApi(OpenApiToolError::UpstreamAuth {
+        let outcome = match &self.0 {
+            Reply::Text(text) => Ok(OpenApiToolOutput::Text(text.clone())),
+            Reply::Json {
+                value,
+                original_text,
+            } => Ok(OpenApiToolOutput::Json {
+                value: value.clone(),
+                original_text: original_text.clone(),
+            }),
+            Reply::Recording { text, seen } => {
+                seen.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push((arguments.clone(), context.clone()));
+                Ok(OpenApiToolOutput::Text(text.clone()))
+            }
+            Reply::RegistryWrite { registry } => {
+                registry.register_tool(
+                    "srv-get_pets",
+                    "replacement",
+                    Object::new(),
+                    Arc::new(StubHandler(Reply::Text("replaced".to_owned()))),
+                );
+                Ok(OpenApiToolOutput::Text("written".to_owned()))
+            }
+            Reply::UpstreamAuth => Err(ToolHandlerError::OpenApi(OpenApiToolError::UpstreamAuth {
                 status: 401,
                 www_authenticate: Some("Bearer realm=\"pets\"".to_owned()),
                 server: "pets".to_owned(),
-            }))
-        })
-    }
-}
-
-struct FailureHandler;
-
-impl ToolHandler for FailureHandler {
-    fn call<'call>(
-        &'call self,
-        _arguments: &'call Object,
-        _context: &'call OpenApiCallContext,
-    ) -> HandlerFuture<'call> {
-        Box::pin(async { Err(ToolHandlerError::Failed("upstream refused".to_owned())) })
-    }
-}
-
-struct LockProbeHandler {
-    registry: Arc<ToolRegistry>,
-}
-
-impl ToolHandler for LockProbeHandler {
-    fn call<'call>(
-        &'call self,
-        _arguments: &'call Object,
-        _context: &'call OpenApiCallContext,
-    ) -> HandlerFuture<'call> {
-        self.registry.register_tool(
-            "srv-get_pets",
-            "replacement",
-            Object::new(),
-            Arc::new(TextHandler("replaced".to_owned())),
-        );
-        Box::pin(async { Ok(OpenApiToolOutput::Text("written".to_owned())) })
+            })),
+            Reply::Failure(message) => Err(ToolHandlerError::Failed(message.clone())),
+        };
+        Box::pin(async move { outcome })
     }
 }
 
@@ -188,7 +143,7 @@ async fn alias_key() {
         "Pet_Alias-get_pets",
         "d",
         Object::new(),
-        Arc::new(TextHandler("alias tool".to_owned())),
+        Arc::new(StubHandler(Reply::Text("alias tool".to_owned()))),
     );
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -213,7 +168,7 @@ async fn short_prefix_key() {
         "abc.get_pets",
         "d",
         Object::new(),
-        Arc::new(TextHandler("short tool".to_owned())),
+        Arc::new(StubHandler(Reply::Text("short tool".to_owned()))),
     );
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -235,9 +190,10 @@ async fn short_prefix_key() {
 async fn arguments_and_context() {
     let server = plain_server();
     let seen = Arc::new(Mutex::new(Vec::new()));
-    let registry = registry_with(Arc::new(RecordingHandler {
+    let registry = registry_with(Arc::new(StubHandler(Reply::Recording {
+        text: "recorded".to_owned(),
         seen: Arc::clone(&seen),
-    }));
+    })));
     let arguments = object(r#"{"pet_id": 7}"#);
     let context = OpenApiCallContext {
         auth_header: Some("Bearer caller-token".to_owned()),
@@ -287,7 +243,9 @@ async fn missing_registration() {
 
 #[tokio::test]
 async fn text_result() {
-    let registry = registry_with(Arc::new(TextHandler("upstream text".to_owned())));
+    let registry = registry_with(Arc::new(StubHandler(Reply::Text(
+        "upstream text".to_owned(),
+    ))));
     let server = plain_server();
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -307,10 +265,10 @@ async fn text_result() {
 #[tokio::test]
 async fn object_result() {
     let value = parse_json(r#"{"ok": true}"#);
-    let registry = registry_with(Arc::new(JsonHandler {
+    let registry = registry_with(Arc::new(StubHandler(Reply::Json {
         value: value.clone(),
         original_text: r#"{"ok": true}"#.to_owned(),
-    }));
+    })));
     let server = plain_server();
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -329,10 +287,10 @@ async fn object_result() {
 
 #[tokio::test]
 async fn legacy_array() {
-    let registry = registry_with(Arc::new(JsonHandler {
+    let registry = registry_with(Arc::new(StubHandler(Reply::Json {
         value: parse_json("[1, 2]"),
         original_text: "[1, 2]".to_owned(),
-    }));
+    })));
     let server = plain_server();
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -352,10 +310,10 @@ async fn legacy_array() {
 #[tokio::test]
 async fn modern_array() {
     let value = parse_json("[1, 2]");
-    let registry = registry_with(Arc::new(JsonHandler {
+    let registry = registry_with(Arc::new(StubHandler(Reply::Json {
         value: value.clone(),
         original_text: "[1, 2]".to_owned(),
-    }));
+    })));
     let server = plain_server();
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -374,7 +332,7 @@ async fn modern_array() {
 
 #[tokio::test]
 async fn upstream_auth_preserved() {
-    let registry = registry_with(Arc::new(UpstreamAuthHandler));
+    let registry = registry_with(Arc::new(StubHandler(Reply::UpstreamAuth)));
     let server = plain_server();
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -400,7 +358,9 @@ async fn upstream_auth_preserved() {
 
 #[tokio::test]
 async fn ordinary_failure_result() {
-    let registry = registry_with(Arc::new(FailureHandler));
+    let registry = registry_with(Arc::new(StubHandler(Reply::Failure(
+        "upstream refused".to_owned(),
+    ))));
     let server = plain_server();
     let arguments = Object::new();
     let context = OpenApiCallContext::default();
@@ -426,9 +386,9 @@ async fn registry_lock_released() {
         "srv-get_pets",
         "d",
         Object::new(),
-        Arc::new(LockProbeHandler {
+        Arc::new(StubHandler(Reply::RegistryWrite {
             registry: Arc::clone(&registry),
-        }),
+        })),
     );
     let server = plain_server();
     let arguments = Object::new();
