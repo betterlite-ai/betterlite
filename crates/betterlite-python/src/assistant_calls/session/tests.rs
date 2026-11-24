@@ -1,18 +1,24 @@
 #![cfg(test)]
 
-use betterlite_config::sections::resource_sdk_settings::Settings;
+use std::collections::BTreeMap;
 
-use super::{ModuleSettings, apply_module_settings};
+use betterlite_config::sections::resource_sdk_settings::Settings;
+use betterlite_core::api::assistant_threads::error::ThreadError;
+use pyo3_async_runtimes::tokio::get_runtime;
+use secrecy::SecretString;
+
+use super::{ModuleSettings, Session, ThreadKind, ThreadRequest, apply_module_settings};
+use crate::assistant_calls::error::family::ThreadOutcome;
 
 #[test]
 fn module_settings_apply_every_global() {
     let module = ModuleSettings {
-        api_key: Some(String::from("sk-a")),
+        api_key: Some(SecretString::from("sk-a")),
         api_base: Some(String::from("http://base")),
         api_version: Some(String::from("v1")),
         organization: Some(String::from("org")),
-        openai_key: Some(String::from("sk-b")),
-        azure_key: Some(String::from("az")),
+        openai_key: Some(SecretString::from("sk-b")),
+        azure_key: Some(SecretString::from("az")),
     };
     let mut settings = Settings::default();
     apply_module_settings(&mut settings, &module);
@@ -34,4 +40,23 @@ fn module_settings_apply_every_global() {
     assert_eq!(settings.organization.as_deref(), Some("org"));
     assert_eq!(openai, Some("sk-b"));
     assert_eq!(azure, Some("az"));
+}
+
+// a provider no thread call supports answers the mapped error instead of a thread
+#[test]
+fn thread_for_an_unsupported_provider_answers_an_error() {
+    let session = Session::build("{}").unwrap();
+    let request = ThreadRequest {
+        custom_llm_provider: String::from("bedrock"),
+        thread_id: None,
+        messages: None,
+        metadata: None,
+        tool_resources: None,
+        kwargs: BTreeMap::new(),
+    };
+    let outcome = get_runtime().block_on(session.thread(ThreadKind::Create, &request, false));
+    assert!(matches!(
+        outcome,
+        Err(ThreadOutcome::Sync(ThreadError::Unsupported { .. }))
+    ));
 }
