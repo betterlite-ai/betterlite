@@ -1,0 +1,9 @@
+task: B8870
+deviations:
+  - what: With allow_dynamic_callback_disabling true, native tenant destinations honor x-litellm-disable-callbacks and the key's stored disable list without a license; MIT LiteLLM ignores them when premium_user is false.
+    why: The README removes paid-tier checks for code present in the open-source tree; the operator can still turn dynamic disabling off.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1047-L1072
+  - what: A stored key whose budget_reset_at is a naive timestamp fails the principal projection, so its tenant destinations are not seeded and the request keeps the operator's exporters; LiteLLM's pydantic datetime accepts the naive value and resolves the destinations.
+    why: betterlite's typed projection requires an offset on that field, and the seed is best-effort, so the failure stays inside the debug-and-continue boundary instead of reaching the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L37
+kept_bugs: []
