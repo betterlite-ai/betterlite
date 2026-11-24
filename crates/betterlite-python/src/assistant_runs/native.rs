@@ -40,12 +40,12 @@ impl NativeAssistantRunSession {
         let call: RunCall = convert::read("assistant run request", text)?;
         let provider = call.custom_llm_provider.clone();
         let sdk = self.session.run_sdk();
-        let source = if asynchronous {
+        let opened = if asynchronous {
             sdk.arun_thread_stream(call.into_call())
         } else {
             sdk.run_thread_stream(call.into_call())
-        }
-        .map_err(|error| {
+        };
+        let source = opened.map_err(|error| {
             run_error(error, &provider, self.session.redactor.as_ref()).into_exception()
         })?;
         Py::new(

@@ -12,6 +12,7 @@ use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use tokio::sync::Mutex;
 
 use super::convert::run_error;
+use super::error::CallError;
 use super::session::ProviderRunStream;
 
 // The lazy manager core built waits here until the first event read, which is when the provider is called.
@@ -148,6 +149,5 @@ fn stream_exception(error: ThreadRunsError, provider: &str, redactor: &Redactor)
 }
 
 fn encode_event(event: &RunEvent) -> PyResult<String> {
-    serde_json::to_string(event)
-        .map_err(|source| PyErr::from(super::error::CallError::Encode { source }))
+    serde_json::to_string(event).map_err(|source| PyErr::from(CallError::Encode { source }))
 }

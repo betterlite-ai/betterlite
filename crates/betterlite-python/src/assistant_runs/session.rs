@@ -19,6 +19,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use super::convert::{self, AppendCall, ListCall, ModuleSettings};
 use super::error::CallError;
+use crate::completion::setup::outbound_client;
 
 mod tests;
 
@@ -45,7 +46,7 @@ impl Session {
         let azure = azure_endpoints::Raw::default()
             .convert(&environment)
             .map_err(|source| CallError::Settings { source })?;
-        let client = crate::completion::setup::outbound_client(&environment)?;
+        let client = outbound_client(&environment)?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
             .map_err(|source| CallError::Redactor { source })?;
         Ok(Self {

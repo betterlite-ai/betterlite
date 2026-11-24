@@ -1,3 +1,4 @@
+use crate::completion::error::SessionError;
 use betterlite_config::loader::ConfigError;
 use betterlite_models::decisions::Json;
 use betterlite_redact::error::RedactionError;
@@ -22,7 +23,7 @@ pub(crate) enum CallError {
         source: serde_json::Error,
     },
     #[error(transparent)]
-    Transport(#[from] crate::completion::error::SessionError),
+    Transport(#[from] SessionError),
     #[error("the assistant settings could not be read: {source}")]
     Settings {
         #[source]

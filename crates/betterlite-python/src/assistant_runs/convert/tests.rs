@@ -5,10 +5,12 @@ use betterlite_core::api::assistant_messages::error::{
 };
 use betterlite_core::api::assistant_run_sdk::call::RunFlag;
 use betterlite_core::api::assistant_run_sdk::error::AssistantRunError;
+use betterlite_error::envelope::WireField;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use super::{
     AppendCall, ListCall, ModuleSettings, RunCall, inner_message, message_error, read, run_error,
+    wire_body,
 };
 
 const APPEND: &str = r#"{"custom_llm_provider":"openai","thread_id":"thread_1","role":"user",
@@ -75,7 +77,7 @@ fn request_append_call_defaults_the_optional_arguments() {
     assert_eq!(data.attachments, None);
     assert_eq!(data.metadata, None);
     assert!(!call.drop_params);
-    assert_eq!(call.params.api_key, None);
+    assert!(call.params.api_key.is_none());
 }
 
 #[test]
@@ -159,11 +161,15 @@ fn error_message_error_names_the_model_an_unsupported_provider_answers() {
     });
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let failure = message_failure(error, "bedrock", &redactor);
-    let text = serde_json::to_string(&message_error(failure, "bedrock")).unwrap();
+    let answer = message_error(failure, "bedrock");
+    assert_eq!(answer.class, "BadRequestError");
     assert_eq!(
-        text,
-        r#"{"type":"BadRequestError","message":"LiteLLM doesn't support bedrock for 'create_thread'. Only 'openai' is supported.","status_code":400,"llm_provider":"bedrock","model":"n/a","body":{"type":null,"param":null}}"#
+        answer.message,
+        "LiteLLM doesn't support bedrock for 'create_thread'. Only 'openai' is supported."
     );
+    assert_eq!(answer.status_code, Some(400));
+    assert_eq!(answer.llm_provider.as_deref(), Some("bedrock"));
+    assert_eq!(answer.model.as_deref(), Some("n/a"));
 }
 
 #[test]
@@ -173,11 +179,15 @@ fn error_message_error_answers_a_wrong_reply_as_a_plain_exception() {
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let failure = message_failure(error, "openai", &redactor);
-    let text = serde_json::to_string(&message_error(failure, "openai")).unwrap();
+    let answer = message_error(failure, "openai");
+    assert_eq!(answer.class, "Exception");
     assert_eq!(
-        text,
-        r#"{"type":"Exception","message":"the provider answered the get_messages call with the wrong SDK object","llm_provider":"openai"}"#
+        answer.message,
+        "the provider answered the get_messages call with the wrong SDK object"
     );
+    assert_eq!(answer.status_code, None);
+    assert_eq!(answer.llm_provider.as_deref(), Some("openai"));
+    assert_eq!(answer.model, None);
 }
 
 #[test]
@@ -186,26 +196,49 @@ fn error_run_error_reports_an_unsupported_provider_as_a_bad_request() {
         provider: String::from("bedrock"),
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let text = serde_json::to_string(&run_error(error, "bedrock", &redactor)).unwrap();
+    let answer = run_error(error, "openai", &redactor);
+    assert_eq!(answer.class, "BadRequestError");
     assert_eq!(
-        text,
-        r#"{"type":"BadRequestError","message":"LiteLLM doesn't support bedrock for 'run_thread'. Only 'openai' is supported.","status_code":400,"llm_provider":"bedrock","model":"n/a"}"#
+        answer.message,
+        "LiteLLM doesn't support bedrock for 'run_thread'. Only 'openai' is supported."
     );
+    assert_eq!(answer.status_code, Some(400));
+    assert_eq!(answer.llm_provider.as_deref(), Some("bedrock"));
+    assert_eq!(answer.model.as_deref(), Some("n/a"));
 }
 
 #[test]
 fn error_run_error_reports_a_duplicate_stream_as_a_plain_exception() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let text = serde_json::to_string(&run_error(
-        AssistantRunError::DuplicateStream,
-        "openai",
-        &redactor,
-    ))
-    .unwrap();
+    let answer = run_error(AssistantRunError::DuplicateStream, "openai", &redactor);
+    assert_eq!(answer.class, "Exception");
     assert_eq!(
-        text,
-        r#"{"type":"Exception","message":"litellm.assistants.main.run_thread() got multiple values for keyword argument 'stream'"}"#
+        answer.message,
+        "litellm.assistants.main.run_thread() got multiple values for keyword argument 'stream'"
     );
+    assert_eq!(answer.status_code, None);
+    assert_eq!(answer.llm_provider, None);
+}
+
+#[test]
+fn error_wire_body_keeps_a_null_field_and_drops_a_missing_one() {
+    let null = WireField::Null;
+    let text = WireField::Text(String::from("invalid_api_key"));
+    let body = wire_body([
+        ("type", &WireField::MISSING),
+        ("param", &null),
+        ("code", &text),
+    ]);
+    assert_eq!(
+        serde_json::to_string(&body).unwrap(),
+        r#"{"param":null,"code":"invalid_api_key"}"#
+    );
+    let empty = wire_body([
+        ("type", &WireField::MISSING),
+        ("param", &WireField::MISSING),
+        ("code", &WireField::MISSING),
+    ]);
+    assert!(empty.is_none());
 }
 
 #[test]
@@ -227,9 +260,13 @@ fn error_inner_message_strips_the_matching_prefix_once() {
 fn error_negative_timeout_becomes_the_timeout_message() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let error = AssistantRunError::InvalidTimeout { seconds: -1.0 };
-    let text = serde_json::to_string(&run_error(error, "openai", &redactor)).unwrap();
-    assert!(text.contains(r#""message":"Request timed out.""#));
-    assert!(text.contains(r#""status_code":408"#));
+    let answer = run_error(error, "openai", &redactor);
+    assert_eq!(answer.class, "Timeout");
+    assert_eq!(
+        answer.message,
+        "APITimeoutError - Request timed out. Error_str: Request timed out."
+    );
+    assert_eq!(answer.status_code, Some(408));
 }
 
 #[test]
@@ -238,7 +275,12 @@ fn error_timeout_text_keeps_its_text_and_no_status() {
     let error = AssistantRunError::InvalidTimeoutText {
         text: String::from("soon"),
     };
-    let text = serde_json::to_string(&run_error(error, "openai", &redactor)).unwrap();
-    assert!(text.contains(r#""message":"could not convert string to float: 'soon'""#));
-    assert!(!text.contains("status_code"));
+    let answer = run_error(error, "openai", &redactor);
+    assert_eq!(answer.class, "APIConnectionError");
+    assert!(
+        answer
+            .message
+            .contains("could not convert string to float: 'soon'")
+    );
+    assert_ne!(answer.status_code, Some(408));
 }
