@@ -525,6 +525,8 @@ fn assert_encrypted_wrapping() {
     };
     assert_ne!(content, "cipher");
     assert!(content.ends_with(";cipher"));
+    let empty_id = object(r#"{"encrypted_content_affinity_enabled":true,"model_info":{"id":""}}"#);
+    assert_ne!(wrapped_item(frame, empty_id), frame);
     let disabled = object(r#"{"encrypted_content_affinity_enabled":false}"#);
     assert_eq!(wrapped_item(frame, disabled), frame);
     let missing = object(r#"{"encrypted_content_affinity_enabled":true}"#);
