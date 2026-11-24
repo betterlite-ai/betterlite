@@ -1,8 +1,11 @@
 use crate::key_fields::shared::hash_token_if_needed;
-use crate::key_limit_policy::checks::{check_team_key_limits, validate_org_assignment};
+use crate::key_limit_policy::checks::{
+    check_project_key_limits, check_team_key_limits, validate_org_assignment,
+};
+use crate::key_limit_policy::error::Rejection;
 use crate::key_limit_policy::request::KeyLimitRequest;
 
-use super::support::{close, database, reads, rejected, team, text_detail, update};
+use super::support::{close, database, generate, reads, rejected, team, text_detail, update};
 
 #[tokio::test]
 async fn team_query_excludes_current() {
@@ -59,5 +62,38 @@ async fn org_membership_query() {
         text_detail(&rejection),
         "Caller is not a member of organization_id=org-1"
     );
+    close(fixture, store).await;
+}
+
+const PROJECT_SEED: &str = r#"
+INSERT INTO "LiteLLM_BudgetTable" ("budget_id", "max_budget", "created_by", "updated_by") VALUES ('budget-1', 10, 'admin', 'admin');
+INSERT INTO "LiteLLM_ProjectTable" ("project_id", "budget_id", "models", "created_by", "updated_by") VALUES ('proj-1', 'budget-1', '{gpt-4}', 'admin', 'admin');
+"#;
+
+#[tokio::test]
+async fn project_query_reads_the_row() {
+    let (fixture, store) = database(PROJECT_SEED).await;
+    let recorded = reads(&store);
+    let model = generate(r#"{"models": ["claude-4"]}"#);
+    let checked = check_project_key_limits("proj-1", &KeyLimitRequest::from(&model), &recorded);
+    match rejected(checked.await) {
+        Rejection::ProjectModel { allowed, .. } => assert_eq!(allowed, vec!["gpt-4".to_owned()]),
+        other => panic!("expected the stored model list to refuse claude-4, got {other:?}"),
+    }
+    let budget = generate(r#"{"models": ["gpt-4"], "max_budget": 11}"#);
+    let checked = check_project_key_limits("proj-1", &KeyLimitRequest::from(&budget), &recorded);
+    assert!(matches!(
+        rejected(checked.await),
+        Rejection::ProjectBudget { .. }
+    ));
+    let within = generate(r#"{"models": ["gpt-4"], "max_budget": 10}"#);
+    check_project_key_limits("proj-1", &KeyLimitRequest::from(&within), &recorded)
+        .await
+        .unwrap();
+    let missing = check_project_key_limits("proj-2", &KeyLimitRequest::from(&within), &recorded);
+    assert!(matches!(
+        rejected(missing.await),
+        Rejection::ProjectNotFound { .. }
+    ));
     close(fixture, store).await;
 }

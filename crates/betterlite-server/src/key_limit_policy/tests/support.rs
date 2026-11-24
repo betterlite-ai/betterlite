@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_org_lookup::organization::OrgLookup;
 use betterlite_auth::auth_org_lookup::ports::OrgCache;
+use betterlite_auth::auth_org_lookup::store::DatabaseOrgStore;
 use betterlite_auth::auth_prefetch::rows::CachedProject;
 use betterlite_auth::auth_user_lookup::store::{DatabaseUserStore, UserStore};
 use betterlite_config::sections::key_limit_policy::UpperboundKeyGenerateParams;
@@ -185,7 +186,17 @@ pub(super) fn reads(store: &PostgresStore) -> PostgresKeyLimitReads {
     PostgresKeyLimitReads {
         store: store.clone(),
         projects: OrgLookup {
-            store: None,
+            store: Some(Arc::new(DatabaseOrgStore {
+                reader: store.clone(),
+                writer: store.clone(),
+                availability: Arc::new(Availability::default()),
+                default_deadline_seconds: 5.0_f64,
+                tracker: Arc::new(DbLookupStallTracker {
+                    clock: SystemClock,
+                    last_hit: Mutex::new(None),
+                }),
+                tasks: TaskTracker::new(),
+            })),
             cache: Arc::new(NoProjects),
             in_memory_ttl: 60.0_f64,
         },
