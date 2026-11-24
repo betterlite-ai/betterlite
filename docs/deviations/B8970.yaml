@@ -18,4 +18,7 @@ deviations:
   - what: handler_outcome's fallback that wraps any other return value in TextResult(str(value)) is not built; the handler's OpenApiToolOutput is converted straight to TextResult or JsonResult.
     why: ToolHandler::call returns the typed OpenApiToolOutput, which is exactly LiteLLM's tagged TextResult or JsonResult that handler_outcome passes through, so the untagged-value branch and the CallToolResult, InputRequiredResult and Exception arms cannot occur on this path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_outcome.py#L52-L56
+  - what: 'The generic failure message keeps the LiteLLM prefix "Error calling OpenAPI tool <tool>" and then appends the Display text of the typed ToolHandlerError, where LiteLLM appends str(exception).'
+    why: 'The task sets the betterlite wording and forbids copying Python repr and exception class names; the prefix, the error log and the isError result match, and a betterlite failure still names the operation and the upstream status.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5785-L5791
 kept_bugs: []
