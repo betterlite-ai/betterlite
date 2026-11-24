@@ -47,6 +47,18 @@ fn text_field(value: Option<String>) -> WireField {
     WireField::Text(text)
 }
 
+// Python's raise_native_error builds only the names LiteLLM's exception_type raises, so the sync SDK's other
+// classes map the way exception_type maps them.
+fn buildable(class: &str) -> &str {
+    match class {
+        "APITimeoutError" => "Timeout",
+        "ConflictError" | "APIStatusError" => "APIError",
+        "OpenAIError" => "AuthenticationError",
+        "ValueError" => "APIConnectionError",
+        other => other,
+    }
+}
+
 // The create façades hand over the class and status, and their own failures name the model instead of n/a.
 pub(crate) fn create(
     failure: &AssistantCreateFailure,
@@ -69,7 +81,7 @@ pub(crate) fn create(
             ("param", &failure.param),
             ("code", &failure.code),
         ]),
-        ..payload(&failure.class, failure.message.clone())
+        ..payload(buildable(&failure.class), failure.message.clone())
     }
 }
 
@@ -137,7 +149,7 @@ fn thread_body(fields: &[WireField; 3]) -> Option<Json> {
 }
 
 fn thread_error(fields: ThreadFields<'_>, provider: &str) -> NativeErrorPayload {
-    let mut answer = payload(fields.class, fields.message);
+    let mut answer = payload(buildable(fields.class), fields.message);
     answer.status_code = fields.status;
     answer.llm_provider = Some(provider.to_owned());
     answer.model = fields
