@@ -37,11 +37,11 @@ async fn accept_invitation(
     principal: &Principal,
     request: &AcceptInvitation,
 ) -> Result<InvitationRecord, InvitationRouteError> {
+    let database = state.database()?;
     let Some(user_id) = principal.user.as_ref().map(|user| user.id.as_str()) else {
         return Err(InvitationRouteError::UserUnidentified);
     };
-    state
-        .database()?
+    database
         .invitations
         .update(&request.invitation_id, request.is_accepted, user_id)
         .await
