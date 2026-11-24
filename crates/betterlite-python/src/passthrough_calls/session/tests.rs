@@ -14,9 +14,11 @@ use crate::passthrough_calls::convert::{BAD_REQUEST, BAD_REQUEST_STATUS, ErrorPa
 
 const ENVIRONMENT: &str = r#"{"environment": {}}"#;
 
-fn vllm_request(address: &SocketAddr, stream: bool) -> String {
+fn vllm_request(address: &SocketAddr, streaming: bool) -> String {
+    // LiteLLM's vLLM passthrough reads any body with a stream key as a streaming call, even stream: false: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/passthrough/transformation.py#L12-L13
+    let stream_key = if streaming { r#", "stream": true"# } else { "" };
     format!(
-        r#"{{"method": "POST", "endpoint": "chat/completions", "model": "vllm/my-model", "custom_llm_provider": "vllm", "api_base": "http://{address}/v1", "json": {{"model": "original", "stream": {stream}}}}}"#
+        r#"{{"method": "POST", "endpoint": "chat/completions", "model": "vllm/my-model", "custom_llm_provider": "vllm", "api_base": "http://{address}/v1", "json": {{"model": "original"{stream_key}}}}}"#
     )
 }
 

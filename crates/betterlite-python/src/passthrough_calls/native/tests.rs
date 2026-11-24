@@ -14,9 +14,11 @@ use crate::passthrough_calls::stream::NativePassthroughStream;
 
 const ENVIRONMENT: &str = r#"{"environment": {}}"#;
 
-fn request(address: &SocketAddr, stream: bool) -> String {
+fn request(address: &SocketAddr, streaming: bool) -> String {
+    // LiteLLM's vLLM passthrough reads any body with a stream key as a streaming call, even stream: false: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/passthrough/transformation.py#L12-L13
+    let stream_key = if streaming { r#", "stream": true"# } else { "" };
     format!(
-        r#"{{"method": "POST", "endpoint": "chat/completions", "model": "vllm/my-model", "custom_llm_provider": "vllm", "api_base": "http://{address}/v1", "json": {{"model": "original", "stream": {stream}}}}}"#
+        r#"{{"method": "POST", "endpoint": "chat/completions", "model": "vllm/my-model", "custom_llm_provider": "vllm", "api_base": "http://{address}/v1", "json": {{"model": "original"{stream_key}}}}}"#
     )
 }
 
@@ -57,9 +59,15 @@ fn call_answers_the_status_headers_and_whole_body() {
         let tuple = answer.bind(py).cast::<PyTuple>().unwrap();
         assert_eq!(tuple.get_item(0).unwrap().extract::<u16>().unwrap(), 200);
         let headers = tuple.get_item(1).unwrap();
+        let mut pairs = headers.extract::<Vec<(String, String)>>().unwrap();
+        pairs.sort_unstable();
         assert_eq!(
-            headers.extract::<Vec<(String, String)>>().unwrap(),
-            vec![(String::from("x-upstream"), String::from("yes"))]
+            pairs,
+            vec![
+                (String::from("connection"), String::from("close")),
+                (String::from("content-length"), String::from("4")),
+                (String::from("x-upstream"), String::from("yes")),
+            ]
         );
         let body = tuple.get_item(2).unwrap();
         assert_eq!(body.cast::<PyBytes>().unwrap().as_bytes(), b"pong");
