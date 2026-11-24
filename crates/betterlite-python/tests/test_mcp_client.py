@@ -1,7 +1,8 @@
 import asyncio
+import importlib
 import json
 import ssl
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Iterable
 from functools import partial
 from inspect import Signature, signature
 from typing import Final, Protocol, TypedDict
@@ -12,7 +13,6 @@ from litellm.experimental_mcp_client.client import MCPClient as LiteLLMClient
 from litellm.types.mcp import MCPAuth as TheirAuth
 from mcp import MCPError as TheirProtocolError
 from mcp.types import CallToolRequestParams as TheirCallToolRequestParams
-from mcp.types import CallToolResult as TheirCallToolResult
 from mcp.types import GetPromptRequestParams as TheirGetPromptRequestParams
 from mcp_server import DENIED_CODE, REFUSE, SLOW, UNAUTHORIZED_MODE, Server
 from pydantic import AnyUrl, JsonValue, TypeAdapter
@@ -56,44 +56,27 @@ FINGERPRINT_LENGTH: Final = 64
 REFUSED: Final = "refused"
 MCP_LEGACY_VERSION: Final[MCPUpstreamProtocol] = "2025-06-18"
 TOOL_ARGUMENTS: Final[dict[str, JsonValue]] = {"q": "x"}
-
-MEMBERS: Final[tuple[tuple[str, Signature, Signature], ...]] = (
-    ("MCPClient", signature(MCPClient), signature(LiteLLMClient)),
-    ("list_tools", signature(MCPClient.list_tools), signature(LiteLLMClient.list_tools)),
-    ("call_tool", signature(MCPClient.call_tool), signature(LiteLLMClient.call_tool)),
-    ("list_prompts", signature(MCPClient.list_prompts), signature(LiteLLMClient.list_prompts)),
-    ("get_prompt", signature(MCPClient.get_prompt), signature(LiteLLMClient.get_prompt)),
-    (
-        "list_resources",
-        signature(MCPClient.list_resources),
-        signature(LiteLLMClient.list_resources),
-    ),
-    (
-        "list_resource_templates",
-        signature(MCPClient.list_resource_templates),
-        signature(LiteLLMClient.list_resource_templates),
-    ),
-    ("read_resource", signature(MCPClient.read_resource), signature(LiteLLMClient.read_resource)),
-    (
-        "discovery_auth_fingerprint",
-        signature(MCPClient.discovery_auth_fingerprint),
-        signature(LiteLLMClient.discovery_auth_fingerprint),
-    ),
-    (
-        "error_tool_result",
-        signature(MCPClient.error_tool_result),
-        signature(LiteLLMClient.error_tool_result),
-    ),
-    (
-        "update_auth_value",
-        signature(MCPClient.update_auth_value),
-        signature(LiteLLMClient.update_auth_value),
-    ),
-    (
-        "run_with_session",
-        signature(MCPClient.run_with_session),
-        signature(LiteLLMClient.run_with_session),
-    ),
+EXPECTED_AUTH_HEADERS: Final[dict[str, JsonValue]] = {
+    "bearer": f"Bearer {BEARER}",
+    "basic": BASIC_HEADER,
+    "map": HEADER_MAP["X-Api-Key"],
+    "updated": f"Bearer {UPDATED_BEARER}",
+}
+OUR_AUTH_TYPES: Final[tuple[str, str, str, str]] = (
+    MCPAuth.bearer_token,
+    MCPAuth.basic,
+    MCPAuth.api_key,
+    MCPAuth.bearer_token,
+)
+THEIR_AUTH_TYPES: Final[tuple[str, str, str, str]] = (
+    TheirAuth.bearer_token,
+    TheirAuth.basic,
+    TheirAuth.api_key,
+    TheirAuth.bearer_token,
+)
+FAILURE_MODES: Final[tuple[tuple[str, str, str | None], ...]] = (
+    (UNAUTHORIZED_MODE, "MCPError: ", None),
+    (SLOW, "TimeoutError: ", "TimeoutError: "),
 )
 
 class TextBlock(TypedDict):
@@ -115,6 +98,96 @@ class Dumpable(Protocol):
     ) -> dict[str, JsonValue]: ...
 
 
+class DefaultView(Protocol):
+    @property
+    def default(self) -> JsonValue: ...
+
+
+class AuthClient(Protocol):
+    def list_tools(self) -> Awaitable[Iterable[Dumpable]]: ...
+    def update_auth_value(self, mcp_auth_value: str | dict[str, str]) -> None: ...
+
+
+class ResourceClient(Protocol):
+    def list_resources(self) -> Awaitable[Iterable[Dumpable]]: ...
+    def list_resource_templates(self) -> Awaitable[Iterable[Dumpable]]: ...
+    def read_resource(self, url: AnyUrl) -> Awaitable[Dumpable]: ...
+
+
+class ClientClass(Protocol):
+    def __call__(
+        self,
+        *,
+        server_url: str = "",
+        auth_type: str | None = None,
+        auth_value: str | dict[str, str] | None = None,
+    ) -> AuthClient: ...
+    def __getattr__(self, name: str) -> Callable[..., Dumpable]: ...
+
+
+class ClientModule(Protocol):
+    def __getattr__(self, name: str) -> ClientClass: ...
+
+
+class McpErrorClasses(Protocol):
+    def __getattr__(self, name: str) -> type[TheirProtocolError]: ...
+
+
+LITELLM_CLIENT: ClientModule = importlib.import_module("litellm.experimental_mcp_client.client")
+MCP_ERRORS: McpErrorClasses = importlib.import_module("mcp")
+
+MEMBERS: Final[tuple[tuple[str, Signature, Signature], ...]] = (
+    ("MCPClient", signature(MCPClient), signature(LITELLM_CLIENT.MCPClient)),
+    ("list_tools", signature(MCPClient.list_tools), signature(LITELLM_CLIENT.MCPClient.list_tools)),
+    ("call_tool", signature(MCPClient.call_tool), signature(LITELLM_CLIENT.MCPClient.call_tool)),
+    (
+        "list_prompts",
+        signature(MCPClient.list_prompts),
+        signature(LITELLM_CLIENT.MCPClient.list_prompts),
+    ),
+    (
+        "get_prompt",
+        signature(MCPClient.get_prompt),
+        signature(LITELLM_CLIENT.MCPClient.get_prompt),
+    ),
+    (
+        "list_resources",
+        signature(MCPClient.list_resources),
+        signature(LITELLM_CLIENT.MCPClient.list_resources),
+    ),
+    (
+        "list_resource_templates",
+        signature(MCPClient.list_resource_templates),
+        signature(LITELLM_CLIENT.MCPClient.list_resource_templates),
+    ),
+    (
+        "read_resource",
+        signature(MCPClient.read_resource),
+        signature(LITELLM_CLIENT.MCPClient.read_resource),
+    ),
+    (
+        "discovery_auth_fingerprint",
+        signature(MCPClient.discovery_auth_fingerprint),
+        signature(LITELLM_CLIENT.MCPClient.discovery_auth_fingerprint),
+    ),
+    (
+        "error_tool_result",
+        signature(MCPClient.error_tool_result),
+        signature(LITELLM_CLIENT.MCPClient.error_tool_result),
+    ),
+    (
+        "update_auth_value",
+        signature(MCPClient.update_auth_value),
+        signature(LITELLM_CLIENT.MCPClient.update_auth_value),
+    ),
+    (
+        "run_with_session",
+        signature(MCPClient.run_with_session),
+        signature(LITELLM_CLIENT.MCPClient.run_with_session),
+    ),
+)
+
+
 # ast-grep-ignore: no-one-line-functions
 def dumped(value: Dumpable) -> dict[str, JsonValue]:
     return value.model_dump(by_alias=True, exclude_none=True)
@@ -126,11 +199,11 @@ def error_text(fields: dict[str, JsonValue]) -> str:
 
 
 def parameters_of(declaration: Signature) -> list[tuple[str, str, str]]:
-    parameters = declaration.parameters.values()
-    return [
-        (parameter.name, str(parameter.kind), repr(parameter.default))
-        for parameter in parameters
-    ]
+    rows: list[tuple[str, str, str]] = []
+    for parameter in declaration.parameters.values():
+        default: DefaultView = parameter
+        rows.append((parameter.name, str(parameter.kind), repr(default.default)))
+    return rows
 
 
 def refusal_of(build: Callable[[], MCPClient]) -> str:
@@ -161,28 +234,6 @@ async def progress_refused() -> str:
     raise AssertionError("the refused argument was accepted")
 
 
-async def our_tools(server: Server) -> list[dict[str, JsonValue]]:
-    client = MCPClient(server_url=server.url)
-    return [dumped(tool) for tool in await client.list_tools()]
-
-
-async def their_tools(server: Server) -> list[dict[str, JsonValue]]:
-    client = LiteLLMClient(server_url=server.url)
-    return [dumped(tool) for tool in await client.list_tools()]
-
-
-async def our_call(server: Server) -> dict[str, JsonValue]:
-    client = MCPClient(server_url=server.url)
-    params = CallToolRequestParams(name=TOOL_NAME, arguments=TOOL_ARGUMENTS)
-    return dumped(await client.call_tool(params))
-
-
-async def their_call(server: Server) -> dict[str, JsonValue]:
-    client = LiteLLMClient(server_url=server.url)
-    params = TheirCallToolRequestParams(name=TOOL_NAME, arguments=TOOL_ARGUMENTS)
-    return dumped(await client.call_tool(params))
-
-
 async def our_prompts(server: Server) -> dict[str, JsonValue]:
     client = MCPClient(server_url=server.url)
     params = GetPromptRequestParams(name=PROMPT_NAME)
@@ -199,8 +250,27 @@ async def their_prompts(server: Server) -> dict[str, JsonValue]:
     return {"prompts": prompts, "prompt": prompt}
 
 
-async def our_resources(server: Server) -> dict[str, JsonValue]:
-    client = MCPClient(server_url=server.url)
+async def both_tool_lists(
+    server: Server, client_timeout: float | None = None
+) -> tuple[list[dict[str, JsonValue]], list[dict[str, JsonValue]]]:
+    ours = await MCPClient(server_url=server.url, timeout=client_timeout).list_tools()
+    theirs = await LiteLLMClient(server_url=server.url, timeout=client_timeout).list_tools()
+    return [dumped(tool) for tool in ours], [dumped(tool) for tool in theirs]
+
+
+async def both_calls(
+    server: Server, client_timeout: float | None = None
+) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
+    ours = await MCPClient(server_url=server.url, timeout=client_timeout).call_tool(
+        CallToolRequestParams(name=TOOL_NAME, arguments=TOOL_ARGUMENTS)
+    )
+    theirs = await LiteLLMClient(server_url=server.url, timeout=client_timeout).call_tool(
+        TheirCallToolRequestParams(name=TOOL_NAME, arguments=TOOL_ARGUMENTS)
+    )
+    return dumped(ours), dumped(theirs)
+
+
+async def observe_resources(client: ResourceClient) -> dict[str, JsonValue]:
     resources: list[JsonValue] = [dumped(item) for item in await client.list_resources()]
     templates: list[JsonValue] = [
         dumped(template) for template in await client.list_resource_templates()
@@ -209,54 +279,26 @@ async def our_resources(server: Server) -> dict[str, JsonValue]:
     return {"resources": resources, "templates": templates, "read": read}
 
 
-async def their_resources(server: Server) -> dict[str, JsonValue]:
-    client = LiteLLMClient(server_url=server.url)
-    resources: list[JsonValue] = [dumped(item) for item in await client.list_resources()]
-    templates: list[JsonValue] = [
-        dumped(template) for template in await client.list_resource_templates()
-    ]
-    read = dumped(await client.read_resource(AnyUrl(RESOURCE_URL)))
-    return {"resources": resources, "templates": templates, "read": read}
-
-
-async def our_auth_headers(server: Server) -> dict[str, JsonValue]:
-    bearer = MCPClient(server_url=server.url, auth_type=MCPAuth.bearer_token, auth_value=BEARER)
+async def observe_auth(
+    server: Server,
+    build: Callable[..., AuthClient],
+    auth_types: tuple[str, str, str, str],
+) -> dict[str, JsonValue]:
+    bearer_type, basic_type, key_type, renewed_type = auth_types
+    bearer = build(server_url=server.url, auth_type=bearer_type, auth_value=BEARER)
+    basic = build(server_url=server.url, auth_type=basic_type, auth_value=BASIC_VALUE)
+    keyed = build(server_url=server.url, auth_type=key_type, auth_value=HEADER_MAP)
+    renewed = build(server_url=server.url, auth_type=renewed_type, auth_value=BEARER)
     await bearer.list_tools()
     listed = server.record.headers.get("authorization")
-    basic = MCPClient(server_url=server.url, auth_type=MCPAuth.basic, auth_value=BASIC_VALUE)
     await basic.list_tools()
     encoded = server.record.headers.get("authorization")
-    header_map = MCPClient(server_url=server.url, auth_type=MCPAuth.api_key, auth_value=HEADER_MAP)
-    await header_map.list_tools()
+    await keyed.list_tools()
     mapped = server.record.headers.get("x-api-key")
-    updated = MCPClient(server_url=server.url, auth_type=MCPAuth.bearer_token, auth_value=BEARER)
-    updated.update_auth_value(UPDATED_BEARER)
-    await updated.list_tools()
-    renewed = server.record.headers.get("authorization")
-    return {"bearer": listed, "basic": encoded, "map": mapped, "updated": renewed}
-
-
-async def their_auth_headers(server: Server) -> dict[str, JsonValue]:
-    bearer = LiteLLMClient(
-        server_url=server.url, auth_type=TheirAuth.bearer_token, auth_value=BEARER
-    )
-    await bearer.list_tools()
-    listed = server.record.headers.get("authorization")
-    basic = LiteLLMClient(server_url=server.url, auth_type=TheirAuth.basic, auth_value=BASIC_VALUE)
-    await basic.list_tools()
-    encoded = server.record.headers.get("authorization")
-    header_map = LiteLLMClient(
-        server_url=server.url, auth_type=TheirAuth.api_key, auth_value=HEADER_MAP
-    )
-    await header_map.list_tools()
-    mapped = server.record.headers.get("x-api-key")
-    updated = LiteLLMClient(
-        server_url=server.url, auth_type=TheirAuth.bearer_token, auth_value=BEARER
-    )
-    updated.update_auth_value(UPDATED_BEARER)
-    await updated.list_tools()
-    renewed = server.record.headers.get("authorization")
-    return {"bearer": listed, "basic": encoded, "map": mapped, "updated": renewed}
+    renewed.update_auth_value(UPDATED_BEARER)
+    await renewed.list_tools()
+    refreshed = server.record.headers.get("authorization")
+    return {"bearer": listed, "basic": encoded, "map": mapped, "updated": refreshed}
 
 
 async def our_fingerprints(server: Server) -> tuple[str, str]:
@@ -265,34 +307,6 @@ async def our_fingerprints(server: Server) -> tuple[str, str]:
     client.update_auth_value(UPDATED_BEARER)
     second = await client.discovery_auth_fingerprint()
     return first, second
-
-
-async def both_swallowed_calls(
-    server: Server,
-) -> tuple[dict[str, JsonValue], TheirCallToolResult]:
-    ours = await MCPClient(server_url=server.url).call_tool(CallToolRequestParams(name=TOOL_NAME))
-    theirs = await LiteLLMClient(server_url=server.url).call_tool(
-        TheirCallToolRequestParams(name=TOOL_NAME)
-    )
-    return dumped(ours), theirs
-
-
-async def both_swallowed_tools(
-    server: Server,
-) -> tuple[list[dict[str, JsonValue]], list[dict[str, JsonValue]]]:
-    ours = [dumped(tool) for tool in await MCPClient(server_url=server.url).list_tools()]
-    theirs = [dumped(tool) for tool in await LiteLLMClient(server_url=server.url).list_tools()]
-    return ours, theirs
-
-
-async def both_slow_tools(
-    server: Server,
-) -> tuple[list[dict[str, JsonValue]], list[dict[str, JsonValue]]]:
-    client = MCPClient(server_url=server.url, timeout=SHORT_TIMEOUT)
-    reference = LiteLLMClient(server_url=server.url, timeout=SHORT_TIMEOUT)
-    ours = [dumped(tool) for tool in await client.list_tools()]
-    theirs = [dumped(tool) for tool in await reference.list_tools()]
-    return ours, theirs
 
 
 async def our_raised_details(server: Server) -> str:
@@ -308,7 +322,7 @@ async def their_raised_details(server: Server) -> str:
     client = LiteLLMClient(server_url=server.url)
     try:
         await client.list_tools(raise_on_error=True)
-    except TheirProtocolError as failure:
+    except MCP_ERRORS.MCPError as failure:
         return f"{failure.error.code}: {failure.error.message}"
     raise AssertionError("the protocol error became a result")
 
@@ -331,18 +345,6 @@ async def our_timeout(server: Server) -> None:
 async def their_timeout(server: Server) -> None:
     client = LiteLLMClient(server_url=server.url, timeout=SHORT_TIMEOUT)
     await client.list_tools(raise_on_error=True)
-
-
-async def both_slow_calls(
-    server: Server,
-) -> tuple[dict[str, JsonValue], TheirCallToolResult]:
-    ours = await MCPClient(server_url=server.url, timeout=SHORT_TIMEOUT).call_tool(
-        CallToolRequestParams(name=TOOL_NAME)
-    )
-    theirs = await LiteLLMClient(server_url=server.url, timeout=SHORT_TIMEOUT).call_tool(
-        TheirCallToolRequestParams(name=TOOL_NAME)
-    )
-    return dumped(ours), theirs
 
 
 def test_signature_members() -> None:
@@ -404,15 +406,13 @@ def test_signature_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_methods_list_tools() -> None:
     with Server() as server:
-        ours = asyncio.run(our_tools(server))
-        theirs = asyncio.run(their_tools(server))
+        ours, theirs = asyncio.run(both_tool_lists(server))
     assert ours == theirs
 
 
 def test_methods_call_tool() -> None:
     with Server() as server:
-        ours = asyncio.run(our_call(server))
-        theirs = asyncio.run(their_call(server))
+        ours, theirs = asyncio.run(both_calls(server))
     assert ours == theirs
 
 
@@ -425,20 +425,16 @@ def test_methods_prompts() -> None:
 
 def test_methods_resources() -> None:
     with Server() as server:
-        ours = asyncio.run(our_resources(server))
-        theirs = asyncio.run(their_resources(server))
+        ours = asyncio.run(observe_resources(MCPClient(server_url=server.url)))
+        theirs = asyncio.run(observe_resources(LiteLLMClient(server_url=server.url)))
     assert ours == theirs
 
 
 def test_methods_auth_headers() -> None:
     with Server() as server:
-        ours = asyncio.run(our_auth_headers(server))
-        theirs = asyncio.run(their_auth_headers(server))
-    assert ours == theirs
-    assert ours["bearer"] == f"Bearer {BEARER}"
-    assert ours["basic"] == BASIC_HEADER
-    assert ours["map"] == HEADER_MAP["X-Api-Key"]
-    assert ours["updated"] == f"Bearer {UPDATED_BEARER}"
+        ours = asyncio.run(observe_auth(server, MCPClient, OUR_AUTH_TYPES))
+        theirs = asyncio.run(observe_auth(server, LITELLM_CLIENT.MCPClient, THEIR_AUTH_TYPES))
+    assert ours == theirs == EXPECTED_AUTH_HEADERS
 
 
 def test_methods_fingerprints() -> None:
@@ -469,7 +465,7 @@ def test_errors_unknown_type() -> None:
 def test_errors_tool_result() -> None:
     failure = ValueError("boom")
     ours = dumped(MCPClient.error_tool_result(failure))
-    theirs = dumped(LiteLLMClient.error_tool_result(failure))
+    theirs = dumped(LITELLM_CLIENT.MCPClient.error_tool_result(failure))
     assert ours["isError"] is True
     assert ours == theirs
     assert error_text(ours) == "ValueError: boom"
@@ -477,15 +473,15 @@ def test_errors_tool_result() -> None:
 
 def test_errors_swallowed_result() -> None:
     with Server(mode=REFUSE) as server:
-        ours, theirs = asyncio.run(both_swallowed_calls(server))
+        ours, theirs = asyncio.run(both_calls(server))
     assert ours["isError"] is True
-    assert ours == dumped(theirs)
+    assert ours == theirs
     assert error_text(ours) == f"MCPError: {DENIED_MESSAGE}"
 
 
 def test_errors_swallowed_tools() -> None:
     with Server(mode=REFUSE) as server:
-        ours, theirs = asyncio.run(both_swallowed_tools(server))
+        ours, theirs = asyncio.run(both_tool_lists(server))
     assert ours == theirs == []
 
 
@@ -497,14 +493,17 @@ def test_errors_raised_protocol() -> None:
     assert ours == f"{DENIED_CODE}: tools/list denied by policy"
 
 
-def test_errors_401_swallowed() -> None:
-    with Server(mode=UNAUTHORIZED_MODE) as server:
-        ours_tools, theirs_tools = asyncio.run(both_swallowed_tools(server))
-        ours_call, theirs_call = asyncio.run(both_swallowed_calls(server))
+@pytest.mark.parametrize(("mode", "ours_prefix", "theirs_prefix"), FAILURE_MODES)
+def test_errors_swallowed_failure(mode: str, ours_prefix: str, theirs_prefix: str | None) -> None:
+    with Server(mode=mode) as server:
+        ours_tools, theirs_tools = asyncio.run(both_tool_lists(server, SHORT_TIMEOUT))
+        ours_call, theirs_call = asyncio.run(both_calls(server, SHORT_TIMEOUT))
     assert ours_tools == theirs_tools == []
     assert ours_call["isError"] is True
-    assert error_text(ours_call).startswith("MCPError: ")
-    assert dumped(theirs_call)["isError"] is True
+    assert error_text(ours_call).startswith(ours_prefix)
+    assert theirs_call["isError"] is True
+    if theirs_prefix is not None:
+        assert error_text(theirs_call).startswith(theirs_prefix)
 
 
 def test_errors_401_raised() -> None:
@@ -514,16 +513,6 @@ def test_errors_401_raised() -> None:
         with pytest.raises(httpx2.HTTPStatusError):
             asyncio.run(their_unauthorized(server))
     assert ours.value.code == INTERNAL_ERROR
-
-
-def test_errors_timeout_swallowed() -> None:
-    with Server(mode=SLOW) as server:
-        ours_tools, theirs_tools = asyncio.run(both_slow_tools(server))
-        ours_call, theirs_call = asyncio.run(both_slow_calls(server))
-    assert ours_tools == theirs_tools == []
-    assert ours_call["isError"] is True
-    assert error_text(ours_call).startswith("TimeoutError: ")
-    assert error_text(dumped(theirs_call)).startswith("TimeoutError: ")
 
 
 def test_errors_timeout_raised() -> None:

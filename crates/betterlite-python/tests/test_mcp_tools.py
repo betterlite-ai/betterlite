@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import json
 from typing import Final, Protocol, cast
 
@@ -46,6 +47,8 @@ from betterlite.experimental_mcp_client.tools import (
     transform_openai_tool_call_request_to_mcp_tool_call_request,
 )
 from betterlite.experimental_mcp_client.types import CallToolResult, Tool
+from betterlite.types.llms.anthropic.tools import AnthropicMessagesTool
+from betterlite.types.llms.openai.chat.tool_params import ChatCompletionToolParam
 from betterlite.types.utils.tool_calls import ChatCompletionMessageToolCall, Function
 
 TOOL_NAME: Final = "search"
@@ -64,6 +67,13 @@ RICH_SCHEMA: Final[dict[str, JsonValue]] = {
     "title": "Search",
     "additionalProperties": True,
 }
+
+
+class McpTypes(Protocol):
+    def __getattr__(self, name: str) -> type[TheirTool]: ...
+
+
+MCP_TYPES: McpTypes = importlib.import_module("mcp.types")
 
 
 class Dumpable(Protocol):
@@ -93,18 +103,19 @@ def dumped(value: Dumpable) -> dict[str, JsonValue]:
     return value.model_dump(by_alias=True, exclude_none=True)
 
 
+def as_mcp_tool(tool: Tool | ChatCompletionToolParam) -> Tool:
+    match tool:
+        case Tool() as mcp_tool:
+            return mcp_tool
+        case object():
+            raise AssertionError("the mcp format listed an OpenAI tool")
+
+
 async def our_tool_flow(session: MCPSession) -> list[dict[str, JsonValue]]:
-    tools = await load_mcp_tools(session)
+    loaded = [as_mcp_tool(tool) for tool in await load_mcp_tools(session)]
     paged = await list_tools_with_pagination(session, LISTING_DEADLINE)
-    loaded: list[dict[str, JsonValue]] = []
-    for tool in tools:
-        match tool:
-            case Tool():
-                loaded.append(dumped(tool))
-            case object():
-                raise AssertionError("the mcp format listed an OpenAI tool")
-    assert loaded == [dumped(tool) for tool in paged]
-    return loaded
+    assert [dumped(tool) for tool in loaded] == [dumped(tool) for tool in paged]
+    return [dumped(tool) for tool in loaded]
 
 
 async def their_tool_flow(session: ClientSession) -> list[dict[str, JsonValue]]:
@@ -112,7 +123,7 @@ async def their_tool_flow(session: ClientSession) -> list[dict[str, JsonValue]]:
     loaded: list[dict[str, JsonValue]] = []
     for tool in tools:
         match tool:
-            case TheirTool():
+            case MCP_TYPES.Tool():
                 loaded.append(dumped(tool))
             case object():
                 raise AssertionError("the mcp format listed an OpenAI tool")
@@ -279,19 +290,19 @@ def test_session_refuses_foreign() -> None:
 
 def test_transform_openai_tool() -> None:
     ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
     assert transform_mcp_tool_to_openai_tool(ours) == their_openai_tool(theirs)
     bare = Tool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    their_bare = TheirTool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     assert transform_mcp_tool_to_openai_tool(bare) == their_openai_tool(their_bare)
 
 
 def test_transform_responses_tool() -> None:
     ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
     assert transform_mcp_tool_to_openai_responses_api_tool(ours) == their_responses_tool(theirs)
     bare = Tool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    their_bare = TheirTool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     assert transform_mcp_tool_to_openai_responses_api_tool(bare) == their_responses_tool(
         their_bare
     )
@@ -299,18 +310,26 @@ def test_transform_responses_tool() -> None:
 
 def test_transform_anthropic_tool() -> None:
     ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=RICH_SCHEMA)
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=RICH_SCHEMA)
-    assert transform_mcp_tool_to_anthropic_tool(ours) == their_anthropic_tool(theirs)
-    bare = Tool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    their_bare = TheirTool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
-    assert transform_mcp_tool_to_anthropic_tool(bare) == their_anthropic_tool(their_bare)
+    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=RICH_SCHEMA)
+    reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
+    assert transform_mcp_tool_to_anthropic_tool(ours) == reference
+
+
+def test_transform_bare_tool() -> None:
+    ours = Tool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
+    theirs = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
+    reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
+    assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 
 
 def test_transform_schema() -> None:
-    assert _normalize_mcp_input_schema(SCHEMA) == their_normalize_input_schema(SCHEMA)
-    assert _normalize_mcp_input_schema(BARE_SCHEMA) == their_normalize_input_schema(BARE_SCHEMA)
+    reference: dict[str, JsonValue] = their_normalize_input_schema(SCHEMA)
+    assert _normalize_mcp_input_schema(SCHEMA) == reference
+    bare_reference: dict[str, JsonValue] = their_normalize_input_schema(BARE_SCHEMA)
+    assert _normalize_mcp_input_schema(BARE_SCHEMA) == bare_reference
     empty: dict[str, JsonValue] = {}
-    assert _normalize_mcp_input_schema(empty) == their_normalize_input_schema(empty)
+    empty_reference: dict[str, JsonValue] = their_normalize_input_schema(empty)
+    assert _normalize_mcp_input_schema(empty) == empty_reference
 
 
 def test_transform_arguments() -> None:
@@ -331,8 +350,9 @@ def test_transform_call_request() -> None:
     theirs = their_tool_call_request(
         TheirToolCall(id="call-1", type="function", function=function)
     )
+    their_arguments: dict[str, JsonValue] | None = theirs.arguments
     assert ours.name == theirs.name
-    assert ours.arguments == theirs.arguments == ARGUMENTS
+    assert ours.arguments == their_arguments == ARGUMENTS
     bad = transform_openai_tool_call_request_to_mcp_tool_call_request(
         ChatCompletionMessageToolCall(function=Function(name=TOOL_NAME, arguments=BAD_ARGUMENTS))
     )
@@ -343,4 +363,5 @@ def test_transform_call_request() -> None:
             function=TheirFunction(name=TOOL_NAME, arguments=BAD_ARGUMENTS),
         )
     )
-    assert bad.arguments == bad_theirs.arguments == {}
+    bad_arguments: dict[str, JsonValue] | None = bad_theirs.arguments
+    assert bad.arguments == bad_arguments == {}

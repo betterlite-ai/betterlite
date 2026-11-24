@@ -1,5 +1,6 @@
 import json
 import os
+import ssl
 from collections.abc import Awaitable, Callable
 from typing import Final, Protocol, Required, TypedDict, TypeVar, runtime_checkable
 
@@ -94,7 +95,6 @@ SessionResult = TypeVar("SessionResult")
 
 
 class MCPSession:
-    # ast-grep-ignore: no-one-line-functions
     def __init__(self, session: NativeMcpSession) -> None:
         self._session = session
 
@@ -156,10 +156,10 @@ class MCPClient:
         match ssl_verify:
             case bool() | str():
                 self.ssl_verify = ssl_verify
-            case None:
-                self.ssl_verify = None
-            case object():
+            case ssl.SSLContext():
                 raise UnsupportedMcpArgument("ssl_verify")
+            case object():
+                self.ssl_verify = None
         configured = os.getenv(CLIENT_TIMEOUT_VARIABLE)
         default_timeout = CLIENT_TIMEOUT_SECONDS if not configured else float(configured)
         self.server_url: str = server_url
@@ -251,6 +251,8 @@ class MCPClient:
         match pending:
             case Pending():
                 pending.close()
+            case object():
+                pass
 
     async def run_with_session(
         self,

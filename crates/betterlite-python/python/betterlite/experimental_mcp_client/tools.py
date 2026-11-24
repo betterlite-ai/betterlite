@@ -107,8 +107,8 @@ def _tool_function(
         case ChatCompletionMessageToolCall():
             return openai_tool.function
         case dict() as fields:
-            inner = fields["function"]
-            match inner:
+            function: JsonValue = fields["function"]
+            match function:
                 case dict() as given:
                     return Function(**given)
                 case object():
