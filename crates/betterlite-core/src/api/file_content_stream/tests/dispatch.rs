@@ -12,12 +12,12 @@ async fn buffered_content_dispatch_compatible(#[case] provider: &str) {
     settings.openai_api_key = Some(SecretString::from("sk-settings"));
     settings.openai_organization = Some(String::from("org-settings"));
     let read = service(&resolution, settings, &[]);
-    let mut kwargs = ContentKwargs::default();
-    kwargs.max_retries = Some(4);
+    let kwargs = ContentKwargs {
+        max_retries: Some(4),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(provider.to_owned());
-    call.extra_headers = Some(text_map(&[("x-trace", "1")]));
-    call.extra_body = Some(text_map(&[("dropped", "1")]));
     let answer = run(&read, ContentEntry::Sync, &call, bare()).await.unwrap();
     assert_eq!(answered_buffered(answer).body, vec![0, 255]);
     let record = sent(&read).pop().unwrap();
@@ -35,15 +35,29 @@ async fn buffered_content_dispatch_compatible(#[case] provider: &str) {
             client: None,
         }
     );
+    assert_eq!(record.request.file_id, "file-1");
+}
+
+#[tokio::test]
+async fn buffered_content_dispatch_forwards_headers_and_body_without_a_timeout() {
+    let env = Env::default();
+    let resolution = env.resolution();
+    let read = reader(&resolution);
+    let kwargs = ContentKwargs::default();
+    let mut call = content_call(&kwargs);
+    call.custom_llm_provider = Some(String::from("openai"));
+    call.extra_headers = Some(text_map(&[("x-trace", "1")]));
+    call.extra_body = Some(text_map(&[("dropped", "1")]));
+    run(&read, ContentEntry::Sync, &call, bare()).await.unwrap();
     assert_eq!(
-        record.request.extra_headers,
-        IndexMap::from([(String::from("x-trace"), String::from("1"))])
+        sent(&read).pop().unwrap().request,
+        FileContentRequest {
+            file_id: String::from("file-1"),
+            extra_headers: IndexMap::from([(String::from("x-trace"), String::from("1"))]),
+            extra_body: IndexMap::from([(String::from("dropped"), String::from("1"))]),
+            timeout: None,
+        }
     );
-    assert_eq!(
-        record.request.extra_body,
-        IndexMap::from([(String::from("dropped"), String::from("1"))])
-    );
-    assert_eq!(record.request.timeout, None);
 }
 
 #[tokio::test]
@@ -54,8 +68,10 @@ async fn buffered_content_dispatch_azure() {
     settings.azure_api_key = Some(SecretString::from("sk-azure"));
     settings.azure_api_version = Some(String::from("2024-06-01"));
     let read = service(&resolution, settings, &[]);
-    let mut kwargs = ContentKwargs::default();
-    kwargs.api_base = Some(String::from("https://azure.example"));
+    let kwargs = ContentKwargs {
+        api_base: Some(String::from("https://azure.example")),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("azure"));
     let context = ContentContext {
@@ -95,10 +111,12 @@ async fn buffered_content_dispatch_generic_configs(#[case] provider: ProviderId)
     let trusted = TrustedCredentials {
         values: BTreeMap::from([(String::from("bucket"), SecretString::from("files"))]),
     };
-    let mut kwargs = ContentKwargs::default();
-    kwargs.api_key = Some(SecretString::from("sk-call"));
+    let kwargs = ContentKwargs {
+        api_key: Some(SecretString::from("sk-call")),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
-    call.custom_llm_provider = Some(provider.to_string());
+    call.custom_llm_provider = Some(provider.to_owned());
     let context = ContentContext {
         trusted: Some(&trusted),
         client: Some(CallerClient::Http(SuppliedClient {
@@ -189,9 +207,11 @@ async fn buffered_content_dispatch_xai_batch_precedes_config() {
         Settings::default(),
         &[ProviderId::Xai, ProviderId::Anthropic],
     );
-    let mut kwargs = ContentKwargs::default();
-    kwargs.api_key = Some(SecretString::from("sk-xai"));
-    kwargs.api_base = Some(String::from("https://xai.example"));
+    let kwargs = ContentKwargs {
+        api_key: Some(SecretString::from("sk-xai")),
+        api_base: Some(String::from("https://xai.example")),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.file_id = "batch_7";
     call.custom_llm_provider = Some(String::from("xai"));

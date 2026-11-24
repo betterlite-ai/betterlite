@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_openai::files::error::FilesError;
-use betterlite_openai::files::records::FileContentRequest;
 use betterlite_openai::files::stream::{
     FileContentStream as SdkFileStream, FileContentStreamingResult,
 };
@@ -20,9 +19,9 @@ use crate::api::vector_store_http_write::service::ClientKind;
 
 use super::error::FileContentError;
 use super::plan::known_provider;
-use super::service::{COMPATIBLE_PROVIDERS, Reply};
+use super::service::{COMPATIBLE_PROVIDERS, ContentCredentials, ContentInputs, Reply, Selection};
 use super::target::{
-    CallerClient, ContentMode, ContentOperation, ContentReply, ContentTarget, FileContentDispatch,
+    CallerClient, ContentOperation, ContentReply, ContentTarget, FileContentDispatch,
     StreamIdentity, SuppliedSdk,
 };
 use super::{ContentAnswer, ContentCall, ContentContext, FileContentStream, StreamedContent};
@@ -31,28 +30,27 @@ impl<Dispatch> FileContentStream<'_, Dispatch>
 where
     Dispatch: FileContentDispatch,
 {
-    // file_content_streaming: write the identity, then the provider branch; B1080 wraps the iterator
+    // file_content_streaming: write the identity, pick the provider branch, then let B1080 wrap the iterator
     pub(super) async fn streamed<'call>(
         &self,
         call: &ContentCall<'call>,
-        provider: Option<String>,
-        mode: ContentMode,
-        request: FileContentRequest,
+        selection: &Selection,
         context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
     ) -> Reply<ContentAnswer, Dispatch> {
         let ContentContext {
             trusted,
             client,
             logger,
-            logging,
+            logging: supplied_logging,
         } = context;
-        let logging = match logging {
-            Some(logging) => logging,
-            None => self
-                .dispatch
-                .create_logging(&self.new_logger(call.kwargs, mode)),
-        };
-        let provider_name = provider.clone().unwrap_or_else(|| String::from("None"));
+        let logging = supplied_logging.unwrap_or_else(|| {
+            self.dispatch
+                .create_logging(&self.new_logger(call.kwargs, selection.mode))
+        });
+        let provider_name = selection
+            .provider
+            .clone()
+            .unwrap_or_else(|| String::from("None"));
         logging.record_identity(&StreamIdentity {
             model: call
                 .model
@@ -61,49 +59,90 @@ where
             custom_llm_provider: &provider_name,
             api_base: call.kwargs.api_base.as_deref(),
         });
-        let name = provider.as_deref().unwrap_or_default();
-        let target = if COMPATIBLE_PROVIDERS.contains(&name) {
+        let target = self.target(
+            call,
+            selection,
+            client,
+            ContentCredentials { trusted, logger },
+        )?;
+        let result = self.dispatch_streamed(call, selection, target).await?;
+        Ok(self.wrap(call, selection, logging, result))
+    }
+
+    // the streamed provider branch: the OpenAI-compatible names, then vertex, then the 400 every other name raises
+    fn target<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
+        client: Option<CallerClient<'call, Dispatch::Client>>,
+        credentials: ContentCredentials<'call>,
+    ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
+        let name = selection.provider.as_deref().unwrap_or_default();
+        if COMPATIBLE_PROVIDERS.contains(&name) {
             let supplied = match client {
                 Some(CallerClient::Sdk(SuppliedSdk::OpenAi)) => Some(SuppliedSdk::OpenAi),
                 Some(CallerClient::Sdk(SuppliedSdk::Azure) | CallerClient::Http(_)) | None => None,
             };
-            ContentTarget::Compatible(self.plan(call.kwargs, mode).compatible(supplied))
-        } else if name == "vertex_ai" {
-            if !mode.is_async {
-                return Err(FileContentError::SyncVertexStreaming);
+            return Ok(ContentTarget::Compatible(
+                self.plan(call.kwargs, selection.mode).compatible(supplied),
+            ));
+        }
+        if name == "vertex_ai" {
+            return self.vertex_target(call, selection, client, credentials);
+        }
+        Err(FileContentError::UnsupportedStreaming {
+            provider: name.to_owned(),
+        })
+    }
+
+    // vertex raises on the sync entry first, then keeps the caller's client only when it is an AsyncHTTPHandler
+    fn vertex_target<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
+        client: Option<CallerClient<'call, Dispatch::Client>>,
+        credentials: ContentCredentials<'call>,
+    ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
+        if !selection.mode.is_async {
+            return Err(FileContentError::SyncVertexStreaming);
+        }
+        let supplied = match client {
+            Some(CallerClient::Http(handler)) if handler.kind == ClientKind::Asynchronous => {
+                Some(handler)
             }
-            let supplied = match client {
-                Some(CallerClient::Http(handler)) if handler.kind == ClientKind::Asynchronous => {
-                    Some(handler)
-                }
-                Some(CallerClient::Http(_) | CallerClient::Sdk(_)) | None => None,
-            };
-            let id = known_provider::<Dispatch::Error>(provider.as_deref())?;
-            let Some(config) = self.dispatch.files_config(id) else {
-                return Err(FileContentError::UnsupportedStreaming {
-                    provider: provider_name,
-                });
-            };
-            ContentTarget::Generic(Box::new(self.generic(
-                call,
-                call.extra_headers.clone().unwrap_or_default(),
-                config,
-                mode,
-                trusted,
-                supplied,
-                logger,
-            )))
-        } else {
+            Some(CallerClient::Http(_) | CallerClient::Sdk(_)) | None => None,
+        };
+        let id = known_provider::<Dispatch::Error>(selection.provider.as_deref())?;
+        let Some(config) = self.dispatch.files_config(id) else {
             return Err(FileContentError::UnsupportedStreaming {
-                provider: name.to_owned(),
+                provider: selection.provider.clone().unwrap_or_default(),
             });
         };
+        let ContentCredentials { trusted, logger } = credentials;
+        Ok(ContentTarget::Generic(Box::new(self.generic(
+            call,
+            selection,
+            config,
+            ContentInputs {
+                trusted,
+                client: supplied,
+                logger,
+            },
+        ))))
+    }
+
+    async fn dispatch_streamed<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
+        target: ContentTarget<'call, Dispatch::Config, Dispatch::Client>,
+    ) -> Reply<FileContentStreamingResult, Dispatch> {
         let reply = self
             .dispatch
             .content(
                 target,
                 ContentOperation::Streamed {
-                    request: &request,
+                    request: &selection.request,
                     // httpx iter_bytes(chunk_size=0) raises, so a zero or unrepresentable size takes the default
                     chunk_size: usize::try_from(call.chunk_size)
                         .ok()
@@ -112,29 +151,40 @@ where
             )
             .await
             .map_err(FileContentError::Dispatch)?;
-        let ContentReply::Streamed(result) = reply else {
-            return Err(FileContentError::Reply);
-        };
+        match reply {
+            ContentReply::Streamed(result) => Ok(*result),
+            ContentReply::Buffered(_content) => Err(FileContentError::Reply),
+        }
+    }
+
+    // B1080's wrapper: the provider's headers and exit ride beside the async SDK stream and its logger
+    fn wrap(
+        &self,
+        call: &ContentCall<'_>,
+        selection: &Selection,
+        logging: Arc<Dispatch::Logging>,
+        result: FileContentStreamingResult,
+    ) -> ContentAnswer {
         let FileContentStreamingResult {
             stream,
             headers,
             exit,
-        } = *result;
+        } = result;
         let response = FileContentStreamingResponse::new(
             FileStreamSetup {
                 source: StreamSource::Async(Box::new(SdkContentStream { stream })),
                 file_id: call.file_id.to_owned(),
                 model: call.model.map(str::to_owned),
-                custom_llm_provider: provider,
+                custom_llm_provider: selection.provider.clone(),
                 logger: Some(logging.stream_logger()),
             },
             Arc::new(ContentClock(self.clock)),
         );
-        Ok(ContentAnswer::Streamed(Box::new(StreamedContent {
+        ContentAnswer::Streamed(Box::new(StreamedContent {
             response,
             headers,
             exit,
-        })))
+        }))
     }
 }
 

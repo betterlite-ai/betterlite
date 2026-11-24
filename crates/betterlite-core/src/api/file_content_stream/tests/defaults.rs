@@ -112,18 +112,14 @@ async fn file_content_defaults_trusted_credentials_precede_key_and_base() {
     let trusted = TrustedCredentials {
         values: BTreeMap::from([(String::from("bucket"), SecretString::from("files"))]),
     };
-    let mut kwargs = ContentKwargs::default();
-    kwargs.api_key = Some(SecretString::from("sk-call"));
-    kwargs.api_base = Some(String::from("https://call.example"));
+    let kwargs = ContentKwargs {
+        api_key: Some(SecretString::from("sk-call")),
+        api_base: Some(String::from("https://call.example")),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("anthropic"));
-    let context = ContentContext {
-        trusted: Some(&trusted),
-        client: None,
-        logger: None,
-        logging: None,
-    };
-    run(&read, ContentEntry::Sync, &call, context)
+    run(&read, ContentEntry::Sync, &call, trusted_context(&trusted))
         .await
         .unwrap();
     let generic = sent(&read).pop().unwrap().target.generic();
@@ -134,15 +130,14 @@ async fn file_content_defaults_trusted_credentials_precede_key_and_base() {
     let null_kwargs = ContentKwargs::default();
     let mut null_call = content_call(&null_kwargs);
     null_call.custom_llm_provider = Some(String::from("anthropic"));
-    let null_context = ContentContext {
-        trusted: Some(&trusted),
-        client: None,
-        logger: None,
-        logging: None,
-    };
-    run(&read, ContentEntry::Sync, &null_call, null_context)
-        .await
-        .unwrap();
+    run(
+        &read,
+        ContentEntry::Sync,
+        &null_call,
+        trusted_context(&trusted),
+    )
+    .await
+    .unwrap();
     let overwritten = sent(&read).pop().unwrap().target.generic();
     assert_eq!(overwritten.api_key, None);
     assert_eq!(overwritten.api_base, None);
@@ -227,9 +222,11 @@ async fn file_content_defaults_timeout_selection(
     let env = Env::default();
     let resolution = env.resolution();
     let read = reader(&resolution);
-    let mut kwargs = ContentKwargs::default();
-    kwargs.timeout = timeout;
-    kwargs.request_timeout = request_timeout;
+    let kwargs = ContentKwargs {
+        timeout,
+        request_timeout,
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(provider.to_owned());
     run(&read, ContentEntry::Sync, &call, bare()).await.unwrap();
@@ -244,8 +241,10 @@ async fn file_content_defaults_bad_text_fails_before_the_provider(#[case] provid
     let env = Env::default();
     let resolution = env.resolution();
     let read = reader(&resolution);
-    let mut kwargs = ContentKwargs::default();
-    kwargs.timeout = Some(ReadTimeout::Plain(text("soon")));
+    let kwargs = ContentKwargs {
+        timeout: Some(ReadTimeout::Plain(text("soon"))),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(provider.to_owned());
     let failure = run(&read, ContentEntry::Sync, &call, bare())

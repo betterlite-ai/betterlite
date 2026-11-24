@@ -14,18 +14,15 @@ async fn streaming_logging_identity_keeps_a_supplied_object() {
     let resolution = env.resolution();
     let read = reader(&resolution);
     let logger = Arc::new(RecordingLogging::default());
-    let mut kwargs = ContentKwargs::default();
-    kwargs.api_base = Some(String::from("https://call.example"));
+    let kwargs = ContentKwargs {
+        api_base: Some(String::from("https://call.example")),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.model = Some("gpt-4o");
     call.custom_llm_provider = Some(String::from("openai"));
     call.stream = true;
-    let context = ContentContext {
-        trusted: None,
-        client: None,
-        logger: None,
-        logging: Some(Arc::clone(&logger)),
-    };
+    let context = logging_context(&logger);
     let mut content = answered_streamed(
         run(&read, ContentEntry::Async, &call, context)
             .await
@@ -68,12 +65,7 @@ async fn streaming_logging_identity_normalizes_the_model(
     call.model = model;
     call.custom_llm_provider = Some(String::from("openai"));
     call.stream = true;
-    let context = ContentContext {
-        trusted: None,
-        client: None,
-        logger: None,
-        logging: Some(Arc::clone(&logger)),
-    };
+    let context = logging_context(&logger);
     run(&read, ContentEntry::Sync, &call, context)
         .await
         .unwrap();
@@ -99,17 +91,14 @@ async fn streaming_logging_identity_writes_only_a_non_null_api_base(
     let resolution = env.resolution();
     let read = reader(&resolution);
     let logger = Arc::new(RecordingLogging::default());
-    let mut kwargs = ContentKwargs::default();
-    kwargs.api_base = api_base.map(str::to_owned);
+    let kwargs = ContentKwargs {
+        api_base: api_base.map(str::to_owned),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("hosted_vllm"));
     call.stream = true;
-    let context = ContentContext {
-        trusted: None,
-        client: None,
-        logger: None,
-        logging: Some(Arc::clone(&logger)),
-    };
+    let context = logging_context(&logger);
     run(&read, ContentEntry::Sync, &call, context)
         .await
         .unwrap();
@@ -136,9 +125,11 @@ async fn streaming_logging_identity_creates_the_missing_object(
     let env = Env::default();
     let resolution = env.resolution();
     let read = reader(&resolution);
-    let mut kwargs = ContentKwargs::default();
-    kwargs.litellm_call_id = litellm_call_id.map(str::to_owned);
-    kwargs.id = id.map(str::to_owned);
+    let kwargs = ContentKwargs {
+        litellm_call_id: litellm_call_id.map(str::to_owned),
+        id: id.map(str::to_owned),
+        ..ContentKwargs::default()
+    };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("openai"));
     call.stream = true;
@@ -175,12 +166,7 @@ async fn streaming_logging_identity_precedes_the_vertex_error() {
     call.model = Some("gemini-2.0-flash");
     call.custom_llm_provider = Some(String::from("vertex_ai"));
     call.stream = true;
-    let context = ContentContext {
-        trusted: None,
-        client: None,
-        logger: None,
-        logging: Some(Arc::clone(&logger)),
-    };
+    let context = logging_context(&logger);
     let failure = run(&read, ContentEntry::Sync, &call, context)
         .await
         .unwrap_err();
@@ -301,8 +287,18 @@ async fn sdk_stream_selection_vertex_needs_an_async_http_handler() {
         record.target.generic().config,
         FakeConfig(ProviderId::VertexAi)
     );
+}
 
-    let sync_client = ContentContext {
+#[tokio::test]
+async fn sdk_stream_selection_vertex_drops_a_sync_http_handler() {
+    let env = Env::default();
+    let resolution = env.resolution();
+    let read = reader(&resolution);
+    let kwargs = ContentKwargs::default();
+    let mut call = content_call(&kwargs);
+    call.custom_llm_provider = Some(String::from("vertex_ai"));
+    call.stream = true;
+    let context = ContentContext {
         trusted: None,
         client: Some(CallerClient::Http(SuppliedClient {
             kind: ClientKind::Sync,
@@ -312,7 +308,7 @@ async fn sdk_stream_selection_vertex_needs_an_async_http_handler() {
         logging: None,
     };
     answered_streamed(
-        run(&read, ContentEntry::Async, &call, sync_client)
+        run(&read, ContentEntry::Async, &call, context)
             .await
             .unwrap(),
     );
@@ -372,20 +368,20 @@ async fn sdk_stream_selection_unreachable_helper_branch_is_still_built() {
     let read = reader(&resolution);
     let kwargs = ContentKwargs::default();
     let call = content_call(&kwargs);
-    let request = FileContentRequest {
-        file_id: String::from("file-1"),
-        extra_headers: IndexMap::new(),
-        extra_body: IndexMap::new(),
-        timeout: None,
+    let selection = Selection {
+        provider: Some(String::from("cohere")),
+        mode: ContentMode {
+            is_async: true,
+            timeout: FineTuningTimeout::Seconds(600.0_f64),
+        },
+        request: FileContentRequest {
+            file_id: String::from("file-1"),
+            extra_headers: IndexMap::new(),
+            extra_body: IndexMap::new(),
+            timeout: None,
+        },
     };
-    let mode = ContentMode {
-        is_async: true,
-        timeout: FineTuningTimeout::Seconds(600.0_f64),
-    };
-    let failure = read
-        .streamed(&call, Some(String::from("cohere")), mode, request, bare())
-        .await
-        .unwrap_err();
+    let failure = read.streamed(&call, &selection, bare()).await.unwrap_err();
     assert!(matches!(
         &failure,
         FileContentError::UnsupportedStreaming { provider } if provider == "cohere"
@@ -396,26 +392,34 @@ async fn sdk_stream_selection_unreachable_helper_branch_is_still_built() {
     );
     assert_eq!(failure.bad_request().map(|_request| 400_u16), Some(400));
     assert_eq!(sent(&read), Vec::new());
+}
 
+#[tokio::test]
+async fn sdk_stream_selection_vertex_without_a_config_is_unsupported() {
+    let env = Env::default();
+    let resolution = env.resolution();
     let unconfigured = service(&resolution, Settings::default(), &[]);
-    let another = FileContentRequest {
-        file_id: String::from("file-1"),
-        extra_headers: IndexMap::new(),
-        extra_body: IndexMap::new(),
-        timeout: None,
+    let kwargs = ContentKwargs::default();
+    let call = content_call(&kwargs);
+    let selection = Selection {
+        provider: Some(String::from("vertex_ai")),
+        mode: ContentMode {
+            is_async: true,
+            timeout: FineTuningTimeout::Seconds(600.0_f64),
+        },
+        request: FileContentRequest {
+            file_id: String::from("file-1"),
+            extra_headers: IndexMap::new(),
+            extra_body: IndexMap::new(),
+            timeout: None,
+        },
     };
-    let vertex = unconfigured
-        .streamed(
-            &call,
-            Some(String::from("vertex_ai")),
-            mode,
-            another,
-            bare(),
-        )
+    let failure = unconfigured
+        .streamed(&call, &selection, bare())
         .await
         .unwrap_err();
     assert!(matches!(
-        &vertex,
+        &failure,
         FileContentError::UnsupportedStreaming { provider } if provider == "vertex_ai"
     ));
     assert_eq!(sent(&unconfigured), Vec::new());

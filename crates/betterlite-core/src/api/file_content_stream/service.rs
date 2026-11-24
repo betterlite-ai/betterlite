@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_openai::files::records::FileContentRequest;
@@ -23,6 +21,26 @@ use super::{
 // OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS: these names share the OpenAI files client
 pub(super) const COMPATIBLE_PROVIDERS: [&str; 3] = ["openai", "hosted_vllm", "litellm_proxy"];
 
+// The two entry points settle the same values before they split; selection carries them across
+pub(super) struct Selection {
+    pub provider: Option<String>,
+    pub mode: ContentMode,
+    pub request: FileContentRequest,
+}
+
+// What only the server hands a generic handler: the trusted snapshot, the caller's HTTP handler and its logger
+pub(super) struct ContentInputs<'call, Client> {
+    pub trusted: Option<&'call TrustedCredentials>,
+    pub client: Option<SuppliedClient<'call, Client>>,
+    pub logger: Option<&'call mut LoggingState>,
+}
+
+// The two inputs streaming still needs for a generic target after it filters the caller's client itself
+pub(super) struct ContentCredentials<'call> {
+    pub trusted: Option<&'call TrustedCredentials>,
+    pub logger: Option<&'call mut LoggingState>,
+}
+
 pub(super) type Reply<Value, Dispatch> =
     Result<Value, FileContentError<<Dispatch as FileContentDispatch>::Error>>;
 
@@ -42,75 +60,32 @@ where
             is_async: entry == ContentEntry::Async,
             timeout: content_timeout::<Dispatch::Error>(call.kwargs, provider.as_deref())?,
         };
-        let request = content_request(call);
-        if call.stream && should_stream_file_content(provider.as_deref()) {
-            return self.streamed(call, provider, mode, request, context).await;
+        let selection = Selection {
+            provider,
+            mode,
+            request: content_request(call),
+        };
+        if call.stream && should_stream_file_content(selection.provider.as_deref()) {
+            return self.streamed(call, &selection, context).await;
         }
-        self.buffered(call, provider, mode, request, context).await
+        self.buffered(call, &selection, context).await
     }
 
     async fn buffered<'call>(
         &self,
         call: &ContentCall<'call>,
-        provider: Option<String>,
-        mode: ContentMode,
-        request: FileContentRequest,
+        selection: &Selection,
         context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
     ) -> Reply<ContentAnswer, Dispatch> {
-        let target = if provider.as_deref() == Some("xai") && is_xai_batch_results_id(call.file_id)
-        {
-            ContentTarget::XaiBatch(XaiBatchContent {
-                batch_id: call.file_id,
-                api_base: call.kwargs.api_base.as_deref(),
-                api_key: call.kwargs.api_key.as_ref(),
-                timeout: mode.timeout,
-            })
-        } else {
-            let id = known_provider::<Dispatch::Error>(provider.as_deref())?;
-            match self.dispatch.files_config(id) {
-                Some(config) => {
-                    let ContentContext {
-                        trusted,
-                        client,
-                        logger,
-                        logging: _logging,
-                    } = context;
-                    let handler = match client {
-                        Some(CallerClient::Http(supplied)) => Some(supplied),
-                        Some(CallerClient::Sdk(SuppliedSdk::Azure | SuppliedSdk::OpenAi))
-                        | None => None,
-                    };
-                    ContentTarget::Generic(Box::new(self.generic(
-                        call,
-                        call.extra_headers.clone().unwrap_or_default(),
-                        config,
-                        mode,
-                        trusted,
-                        handler,
-                        logger,
-                    )))
-                }
-                None => {
-                    let name = provider.as_deref().unwrap_or_default();
-                    if COMPATIBLE_PROVIDERS.contains(&name) {
-                        ContentTarget::Compatible(self.plan(call.kwargs, mode).compatible(None))
-                    } else if name == "azure" {
-                        let supplied = match context.client {
-                            Some(CallerClient::Sdk(kind)) => Some(kind),
-                            Some(CallerClient::Http(_)) | None => None,
-                        };
-                        ContentTarget::Azure(self.plan(call.kwargs, mode).azure(supplied))
-                    } else {
-                        return Err(FileContentError::Unsupported {
-                            provider: name.to_owned(),
-                        });
-                    }
-                }
-            }
-        };
+        let target = self.target(call, selection, context)?;
         match self
             .dispatch
-            .content(target, ContentOperation::Buffered { request: &request })
+            .content(
+                target,
+                ContentOperation::Buffered {
+                    request: &selection.request,
+                },
+            )
             .await
             .map_err(FileContentError::Dispatch)?
         {
@@ -118,16 +93,98 @@ where
             ContentReply::Streamed(_stream) => Err(FileContentError::Reply),
         }
     }
-    pub(super) fn generic<'call>(
+
+    // file_content's provider branch: the xai batch shortcut, then the provider's config, then the named fallbacks
+    fn target<'call>(
         &self,
         call: &ContentCall<'call>,
-        headers: BTreeMap<String, String>,
+        selection: &Selection,
+        context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
+    ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
+        if selection.provider.as_deref() == Some("xai") && is_xai_batch_results_id(call.file_id) {
+            return Ok(ContentTarget::XaiBatch(XaiBatchContent {
+                batch_id: call.file_id,
+                api_base: call.kwargs.api_base.as_deref(),
+                api_key: call.kwargs.api_key.as_ref(),
+                timeout: selection.mode.timeout,
+            }));
+        }
+        let id = known_provider::<Dispatch::Error>(selection.provider.as_deref())?;
+        match self.dispatch.files_config(id) {
+            Some(config) => Ok(self.configured(call, selection, config, context)),
+            None => self.named(call, selection, context),
+        }
+    }
+
+    // a provider config keeps only an HTTPHandler: neither SDK client class reaches the generic handler
+    fn configured<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
         config: Dispatch::Config,
-        mode: ContentMode,
-        trusted: Option<&'call TrustedCredentials>,
-        client: Option<SuppliedClient<'call, Dispatch::Client>>,
-        logger: Option<&'call mut LoggingState>,
+        context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
+    ) -> ContentTarget<'call, Dispatch::Config, Dispatch::Client> {
+        let ContentContext {
+            trusted,
+            client: caller_client,
+            logger,
+            logging: _logging,
+        } = context;
+        let client = match caller_client {
+            Some(CallerClient::Http(supplied)) => Some(supplied),
+            Some(CallerClient::Sdk(SuppliedSdk::Azure | SuppliedSdk::OpenAi)) | None => None,
+        };
+        ContentTarget::Generic(Box::new(self.generic(
+            call,
+            selection,
+            config,
+            ContentInputs {
+                trusted,
+                client,
+                logger,
+            },
+        )))
+    }
+
+    // without a provider config: the OpenAI-compatible names, then azure, then the 400 LiteLLM raises
+    fn named<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
+        context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
+    ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
+        let name = selection.provider.as_deref().unwrap_or_default();
+        if COMPATIBLE_PROVIDERS.contains(&name) {
+            return Ok(ContentTarget::Compatible(
+                self.plan(call.kwargs, selection.mode).compatible(None),
+            ));
+        }
+        if name == "azure" {
+            let supplied = match context.client {
+                Some(CallerClient::Sdk(kind)) => Some(kind),
+                Some(CallerClient::Http(_)) | None => None,
+            };
+            return Ok(ContentTarget::Azure(
+                self.plan(call.kwargs, selection.mode).azure(supplied),
+            ));
+        }
+        Err(FileContentError::Unsupported {
+            provider: name.to_owned(),
+        })
+    }
+
+    pub(super) fn generic<'call>(
+        &self,
+        call: &ContentCall<'_>,
+        selection: &Selection,
+        config: Dispatch::Config,
+        inputs: ContentInputs<'call, Dispatch::Client>,
     ) -> GenericContent<'call, Dispatch::Config, Dispatch::Client> {
+        let ContentInputs {
+            trusted,
+            client,
+            logger,
+        } = inputs;
         GenericContent {
             config,
             params: ContentParams {
@@ -135,13 +192,13 @@ where
                 api_key: call.kwargs.api_key.clone(),
             },
             trusted,
-            headers,
-            logger: match logger {
-                Some(state) => ContentLogger::Supplied(state),
-                None => ContentLogger::Created(Box::new(self.new_logger(call.kwargs, mode))),
-            },
+            headers: call.extra_headers.clone().unwrap_or_default(),
+            logger: logger.map_or_else(
+                || ContentLogger::Created(Box::new(self.new_logger(call.kwargs, selection.mode))),
+                ContentLogger::Supplied,
+            ),
             client,
-            mode,
+            mode: selection.mode,
         }
     }
 
