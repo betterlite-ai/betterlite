@@ -93,15 +93,15 @@ impl ScopeCaller {
         })
     }
 
-    // _populate_team_access_on_models, then the filter get_all_team_and_direct_access_models applies: annotate from the caller's rows and keep what it can use when visible_only is set.
+    // _populate_team_access_on_models, then the filter get_all_team_and_direct_access_models applies: annotate from the caller's rows through the lookups tuple of the catalog and its access-group cache, and keep what it can use when visible_only is set.
     pub fn accessible_models(
         &self,
         annotated: Vec<DeploymentSpec>,
         visible_only: bool,
         rows: CallerRows,
-        lookup: &CatalogLookup<'_>,
-        access_groups: &AccessGroups,
+        lookups: (&CatalogLookup<'_>, &AccessGroups),
     ) -> Result<Vec<DeploymentSpec>, ScopeError> {
+        let (lookup, access_groups) = lookups;
         let mut models = annotated;
         match rows {
             CallerRows::Admin(teams) => {

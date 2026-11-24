@@ -239,8 +239,7 @@ async fn admin_annotations() {
             rows,
             true,
             reading,
-            &lookup.lookup(),
-            &AccessGroups::default(),
+            (&lookup.lookup(), &AccessGroups::default()),
         )
         .unwrap();
     assert_eq!(ids(&annotated), vec![Some("global-1"), Some("team-1")]);
@@ -270,8 +269,7 @@ async fn missing_user_annotations() {
             rows,
             false,
             reading,
-            &lookup.lookup(),
-            &AccessGroups::default(),
+            (&lookup.lookup(), &AccessGroups::default()),
         )
         .unwrap();
     assert_eq!(annotated.len(), 2);
@@ -294,8 +292,7 @@ async fn anonymous_annotations() {
             rows,
             false,
             reading,
-            &lookup.lookup(),
-            &AccessGroups::default(),
+            (&lookup.lookup(), &AccessGroups::default()),
         )
         .unwrap();
     assert_annotations(&populated[0], false, None);
@@ -514,8 +511,7 @@ async fn all_proxy_grant_marks_non_team_models() {
             rows,
             false,
             reading,
-            &lookup.lookup(),
-            &AccessGroups::default(),
+            (&lookup.lookup(), &AccessGroups::default()),
         )
         .unwrap();
     assert_annotations(&annotated[0], true, Some(&[]));
@@ -548,8 +544,7 @@ async fn wildcard_key_keeps_the_user_grant() {
             rows,
             false,
             reading,
-            &lookup.lookup(),
-            &AccessGroups::default(),
+            (&lookup.lookup(), &AccessGroups::default()),
         )
         .unwrap();
     assert_annotations(&annotated[0], false, Some(&[]));

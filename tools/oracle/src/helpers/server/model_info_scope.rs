@@ -107,8 +107,7 @@ fn populate(
         specs(&input.all_models),
         visible_only,
         read,
-        lookup,
-        &AccessGroups::default(),
+        (lookup, &AccessGroups::default()),
     )?;
     Ok(spec_ids(&models))
 }

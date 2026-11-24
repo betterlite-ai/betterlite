@@ -429,8 +429,7 @@ async fn stored_roster_annotates_models() {
                 rows,
                 false,
                 reading,
-                &lookup.lookup(),
-                &AccessGroups::default(),
+                (&lookup.lookup(), &AccessGroups::default()),
             )
             .unwrap()
     };
