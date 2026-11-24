@@ -1,16 +1,21 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::batch_provider_list;
 use betterlite_core::api::batch_provider_cancel::connection::CancelTimeout;
 use betterlite_core::api::batch_provider_cancel::{BatchProviderCancelError, CancelCall};
 use betterlite_core::api::batch_provider_list::BatchListTimeoutValue;
 use betterlite_core::api::batch_provider_list::error::BatchProviderListError;
 use betterlite_core::api::resource_sdk_settings::timeout::{TimeoutError, TimeoutValue};
+use rstest::rstest;
 
 use super::{
-    CallMode, ConvertError, HiddenParams, cancel_input, cancel_payload, list_input, list_payload,
+    CallMode, ConvertError, HiddenParams, ModuleSettings, cancel_input, cancel_payload, list_input,
+    list_payload, section_settings,
 };
 use crate::batch_listing::error::DispatchFailure;
-use crate::batch_listing::payload::{cancel_error_payload, list_error_payload};
+use crate::batch_listing::payload::{cancel_error_payload, class_for_status, list_error_payload};
 
 const CANCEL: &str = r#"{"cancel":{"batch_id":"batch-1","model":"gpt-4o","provider":"openai","extra_headers":{"x-test":"1"},"extra_body":{"note":"n"},"params":{"api_base":"http://127.0.0.1:1/v1","api_key":"sk-test","timeout":3}}}"#;
 
@@ -302,4 +307,30 @@ fn error_cancel_payload_names_the_unwired_branch() {
     assert_eq!(payload.status_code, Some(400));
     assert_eq!(payload.llm_provider, "azure");
     assert!(payload.message.contains("azure"));
+}
+
+// every status LiteLLM's exception table names keeps its class; anything else is the bare APIError
+#[rstest]
+#[case::bad_request(400, "BadRequestError")]
+#[case::authentication(401, "AuthenticationError")]
+#[case::permission(403, "PermissionDeniedError")]
+#[case::not_found(404, "NotFoundError")]
+#[case::unprocessable(422, "UnprocessableEntityError")]
+#[case::rate_limit(429, "RateLimitError")]
+#[case::internal_first(500, "InternalServerError")]
+#[case::internal_last(599, "InternalServerError")]
+#[case::other(418, "APIError")]
+fn error_classes_follow_the_status(#[case] status: u16, #[case] class: &str) {
+    assert_eq!(class_for_status(status), class);
+}
+
+// the module globals reach the section settings the session resolves once
+#[test]
+fn request_section_settings_resolve_the_module_values() {
+    let module: ModuleSettings =
+        serde_json::from_str(r#"{"organization":"org-1","api_base":"http://127.0.0.1:9/v1"}"#)
+            .unwrap();
+    let settings = section_settings::<batch_provider_list::Raw>(&module, &BTreeMap::new()).unwrap();
+    assert_eq!(settings.organization.as_deref(), Some("org-1"));
+    assert_eq!(settings.api_base.as_deref(), Some("http://127.0.0.1:9/v1"));
 }
