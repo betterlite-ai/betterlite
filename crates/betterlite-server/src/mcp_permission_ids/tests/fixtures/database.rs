@@ -28,7 +28,11 @@ const SEED_ID_ONLY_SQL: &str =
     r#"INSERT INTO "LiteLLM_ObjectPermissionTable" (object_permission_id) VALUES ($1)"#;
 const SEED_SERVER_SQL: &str =
     r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, server_name, alias) VALUES ($1, $2, $3)"#;
-const ALTER_SERVERS_JSONB_SQL: &str = r#"ALTER TABLE "LiteLLM_ObjectPermissionTable" ALTER COLUMN mcp_servers TYPE JSONB USING to_jsonb(mcp_servers)"#;
+// Postgres cannot cast the column's array default during the type change, so it goes first
+const ALTER_SERVERS_JSONB_SQL: &str = r#"
+ALTER TABLE "LiteLLM_ObjectPermissionTable" ALTER COLUMN mcp_servers DROP DEFAULT;
+ALTER TABLE "LiteLLM_ObjectPermissionTable" ALTER COLUMN mcp_servers TYPE JSONB USING to_jsonb(mcp_servers);
+"#;
 const DROP_SERVERS_COLUMN_SQL: &str =
     r#"ALTER TABLE "LiteLLM_ObjectPermissionTable" DROP COLUMN mcp_servers"#;
 const DROP_PERMISSION_TABLE_SQL: &str = r#"DROP TABLE "LiteLLM_ObjectPermissionTable""#;
