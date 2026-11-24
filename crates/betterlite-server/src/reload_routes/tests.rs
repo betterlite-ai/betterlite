@@ -91,6 +91,20 @@ async fn oneshot_rejects_a_caller_without_admin_view_on_every_read_route() {
     .await;
 }
 
+// a failing store would answer 500, so the 403 proves the role check ran before the read on every read route
+#[tokio::test]
+async fn oneshot_rejects_a_caller_without_admin_view_before_the_store_read() {
+    let mut harness = Harness::new();
+    harness.store = Some(FakeStore::failing());
+    every_route_answer(
+        &harness,
+        &key_with("internal_user"),
+        &READS,
+        Some("internal_user"),
+    )
+    .await;
+}
+
 #[rstest]
 #[case::master(master())]
 #[case::proxy_admin_key(key_with("proxy_admin"))]
@@ -501,6 +515,15 @@ async fn oneshot_answers_an_empty_local_cost_map_source() {
             r#"{"source": "local", "url": null, "is_env_forced": false, "fallback_reason": null, "loaded_at": null, "source_revision": null, "etag": null, "model_count": 0}"#
         )
     );
+}
+
+#[tokio::test]
+async fn oneshot_answers_the_cost_map_source_without_a_database() {
+    let mut harness = Harness::new();
+    harness.store = None;
+    let (status, text) = send(&harness, Some(master()), Method::GET, COST_MAP_SOURCE).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(parsed(&text)["model_count"], 3_i32);
 }
 
 #[tokio::test]
