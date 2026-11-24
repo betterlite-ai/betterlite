@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use super::error::MessagesResponseCallError;
 use super::records::{
-    CallSettings, MessagesResponseCallAnswer, MessagesResponseCallInput,
+    CallSettings, DEFAULT_MAX_TOKENS, MessagesResponseCallAnswer, MessagesResponseCallInput,
     MessagesResponseCallResult, ResponsesAnswer,
 };
 use super::seams::{MessagesResponseCallSeams, ResponsesCreatePort, ResponsesIncludeSupport};
@@ -357,7 +357,13 @@ fn native() -> AnswerPlan {
     "cache-key",
     "https://api.example.com"
 )]
-#[case::include_without_capability(r#"{"custom_llm_provider":"openai"}"#, false, "", "", "")]
+#[case::include_without_capability(
+    r#"{"custom_llm_provider":"openai","prompt_cache_key":null}"#,
+    false,
+    "",
+    "",
+    ""
+)]
 #[case::explicit_prompt_cache_key_wins(
     r#"{"custom_llm_provider":"openai","api_base":"https://api.example.com","prompt_cache_key":"explicit"}"#,
     true,
@@ -659,6 +665,9 @@ async fn loads_settings(#[case] environment: &[(&str, &str)], #[case] expected: 
     };
     let tokens_from_config = loaded.expect("the variable loads");
     assert_eq!(tokens_from_config, tokens);
+    let unset: CallSettings =
+        serde_json::from_str("{}").expect("an absent setting takes its declared default");
+    assert_eq!(unset.default_max_tokens, DEFAULT_MAX_TOKENS);
     let settings = CallSettings {
         default_max_tokens: tokens_from_config,
         ..CallSettings::default()
@@ -688,5 +697,60 @@ async fn loads_settings(#[case] environment: &[(&str, &str)], #[case] expected: 
             .max_output_tokens,
         Some(128),
         "a request max_tokens wins over the default"
+    );
+}
+
+#[tokio::test]
+async fn explicit_prompt_cache_key_replaces_the_decoded_one() {
+    let request = r#"{"model":"gpt-4o","messages":[],"max_tokens":64,"metadata":{"user_id":"{\"session_id\":\"sess-1\"}"}}"#;
+    let decoded_fixture = fixture_with(true, Some("openai"), None, native());
+    let decoded_input = call_input(request, r#"{"custom_llm_provider":"openai"}"#, false);
+    let (decoded_result, _) = run(&decoded_fixture, &decoded_input).await;
+    let decoded_call = decoded_result.expect("the call succeeds").call;
+    assert_eq!(
+        decoded_call.kwargs.get("prompt_cache_key"),
+        Some(&value(r#""sess-1""#)),
+        "a Claude Code session id becomes the prompt cache key"
+    );
+
+    let override_fixture = fixture_with(true, Some("openai"), None, native());
+    let override_input = call_input(
+        request,
+        r#"{"custom_llm_provider":"openai","prompt_cache_key":"explicit"}"#,
+        false,
+    );
+    let (override_result, _) = run(&override_fixture, &override_input).await;
+    let override_call = override_result.expect("the call succeeds").call;
+    assert_eq!(
+        override_call.kwargs.get("prompt_cache_key"),
+        Some(&value(r#""explicit""#)),
+        "the explicit key replaces the decoded one"
+    );
+    assert_eq!(
+        override_call.user.as_deref(),
+        Some(r#"{"session_id":"sess-1"}"#)
+    );
+}
+
+#[rstest]
+#[case::provider(r#"{"custom_llm_provider":5}"#, "custom_llm_provider")]
+#[case::include(r#"{"include":"reasoning.encrypted_content"}"#, "include")]
+#[case::prompt_cache_key(r#"{"prompt_cache_key":5}"#, "prompt_cache_key")]
+#[tokio::test]
+async fn forwarded_values_must_match_their_declared_types(
+    #[case] forwarded: &str,
+    #[case] field: &str,
+) {
+    let fixture = fixture_with(true, Some("openai"), None, native());
+    let input = call_input(LISTED_REQUEST, forwarded, false);
+    let (result, _) = run(&fixture, &input).await;
+    let error = result.expect_err("a forwarded value of the wrong type fails the build");
+    assert!(
+        error.to_string().contains(field),
+        "the error names the field"
+    );
+    assert!(
+        fixture.seen_calls().is_empty(),
+        "nothing reaches the upstream call"
     );
 }
