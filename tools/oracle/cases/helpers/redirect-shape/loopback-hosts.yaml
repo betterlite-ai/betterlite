@@ -1,0 +1,29 @@
+kind: helper
+name: loopback-hosts
+call:
+  b10062:
+    native_redirect_uris: null
+    uris:
+      - 'http://localhost/cb'
+      - 'http://LOCALHOST/cb'
+      - 'http://127.0.0.1/cb'
+      - 'http://127.255.255.254/cb'
+      - 'http://127.0.0.1:8080/cb'
+      # the port is not validated and the host is still 127.0.0.1
+      - 'http://127.0.0.1:port/cb'
+      - 'http://[::1]/cb'
+      - 'http://[0:0:0:0:0:0:0:1]/cb'
+      - 'http://[::1]:8080/cb'
+      - 'http://[::ffff:127.0.0.1]/cb'
+      - 'http://[::ffff:127.0.0.2]/cb'
+      # a zone id is not part of the address
+      - 'http://[::1%25eth0]/cb'
+      - 'http://0.0.0.0/cb'
+      - 'http://[::]/cb'
+      - 'http://[::ffff:8.8.8.8]/cb'
+      - 'http://localhost.evil.example/cb'
+      - 'http://127.000.000.001/cb'
+      - 'http://127.0.0.1./cb'
+      - 'http://127.1/cb'
+env: {}
+compare: {ignore: []}

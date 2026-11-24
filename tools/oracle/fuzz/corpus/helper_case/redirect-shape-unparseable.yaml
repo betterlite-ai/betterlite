@@ -1,0 +1,11 @@
+kind: helper
+name: redirect-shape-unparseable
+call:
+  b10062:
+    native_redirect_uris: null
+    uris:
+      - 'http://[::1/cb'
+      - 'http://[gg::1]/cb'
+      - 'http://[::1]x/cb'
+env: {}
+compare: {ignore: []}

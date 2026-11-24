@@ -1,0 +1,10 @@
+kind: helper
+name: no-preset-keeps-text
+call:
+  b10087:
+    function: resolve
+    text: A hand-written profile for this deployment.
+    preset_id: null
+    kind: model
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: web-uri-hygiene
+call:
+  b10062:
+    native_redirect_uris: null
+    uris:
+      - 'https://host/cb#frag'
+      # the fragment check runs before the backslash check
+      - 'https://host\evil/cb#frag'
+      - 'https:///cb'
+      - 'https://@host/cb'
+      - 'https://user:pass@host/cb'
+      - 'https://host\evil/cb'
+      - 'https://host/cb#'
+      - 'https://host/cb?x=1'
+      - 'HTTPS://HOST/CB'
+env: {}
+compare: {ignore: []}
