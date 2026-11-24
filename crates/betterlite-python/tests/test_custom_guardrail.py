@@ -11,6 +11,7 @@ import betterlite.exceptions
 import litellm.exceptions
 from betterlite.integrations.custom_guardrail import (
     DEFAULT_ADVISORY_MESSAGE as BETTER_ADVISORY,
+    PRE_CALL_EXECUTED_GUARDRAILS_KEY as BETTER_PRE_CALL,
     CustomGuardrail as BetterGuardrail,
     get_session_id_from_request_data as better_session_id,
     is_guardrail_intervention as better_intervention,
@@ -21,6 +22,7 @@ from betterlite.types.guardrails.params import (
     LitellmParams as BetterParams,
     Mode as BetterMode,
 )
+from litellm.constants import PRE_CALL_EXECUTED_GUARDRAILS_KEY as LITE_PRE_CALL
 from litellm.integrations.custom_guardrail import (
     DEFAULT_ADVISORY_MESSAGE as LITE_ADVISORY,
     CustomGuardrail as LiteGuardrail,
@@ -60,6 +62,33 @@ SIDES = {
 }
 
 HOOKS = ("pre_call", "post_call", "during_call", "logging_only")
+
+ADMIN_CASES = {
+    "admin_key": {"metadata": {"user_api_key_metadata": {"disable_global_guardrails": True}}},
+    "admin_team": {
+        "metadata": {
+            "user_api_key_team_metadata": {
+                "disable_global_guardrails": True,
+                "opted_out_global_guardrails": ["team-out"],
+            }
+        }
+    },
+    "admin_thread": {
+        "litellm_metadata": {
+            "user_api_key_metadata": {"opted_out_global_guardrails": ["thread-out"]}
+        }
+    },
+    "admin_null": {"metadata": {"user_api_key_metadata": {"disable_global_guardrails": None}}},
+    "admin_absent": {},
+    "requested_top": {"guardrails": ["probe"]},
+    "requested_metadata": {"metadata": {"guardrails": ["probe"]}},
+    "requested_thread": {"litellm_metadata": {"guardrails": ["thread"]}},
+    "requested_empty": {"metadata": {"guardrails": []}},
+    "requested_null": {"metadata": {"guardrails": None}},
+    "session_top": {"litellm_session_id": "top", "metadata": {"session_id": "meta"}},
+    "session_meta": {"metadata": {"session_id": "meta"}},
+    "session_thread": {"litellm_metadata": {"session_id": "thread"}},
+}
 
 
 class CacheFailure(Exception):
@@ -180,6 +209,7 @@ def group_surface():
                 sorted(class_attributes(LiteGuardrail)),
             )
     equal("advisory constant", LITE_ADVISORY, BETTER_ADVISORY)
+    equal("pre-call key", LITE_PRE_CALL, BETTER_PRE_CALL)
     for label in ("session", "intervention", "logguard"):
         equal(label + " async", False, inspect.iscoroutinefunction(SIDES["betterlite"][label]))
         equal(
@@ -267,6 +297,37 @@ def group_selection():
                 {"guardrails": ["probe"]}, hooks.pre_call, suppressed=frozenset({"probe"})
             )
             report["suppressed"] = suppressed
+        reader = instances["plain"]
+        admin_rows = {}
+        for name, data in ADMIN_CASES.items():
+            admin_rows[name] = [
+                reader.get_disable_global_guardrail(data),
+                reader.get_opted_out_global_guardrails_from_metadata(data),
+                reader.get_guardrail_from_metadata(data),
+                types["session"](data),
+            ]
+        report["admin"] = admin_rows
+        marked = base(guardrail_name="probe")
+        marked_data = {"metadata": {"user": "u"}}
+        marked.mark_pre_call_hook_ran(marked_data)
+        seen = {"metadata": {LITE_PRE_CALL: [marked._pre_call_marker()]}}
+        other = base(guardrail_name="other")
+        report["marker"] = [
+            sorted(marked_data["metadata"]),
+            len(marked_data["metadata"][LITE_PRE_CALL]),
+            marked._pre_call_hook_already_ran(marked_data),
+            marked._pre_call_hook_already_ran(seen),
+            other._pre_call_hook_already_ran(seen),
+            marked._pre_call_hook_already_ran({}),
+        ]
+        marked.mark_pre_call_hook_ran(marked_data)
+        report["marker_repeat"] = len(marked_data["metadata"][LITE_PRE_CALL])
+        thread_data = {"litellm_metadata": {"a": 1}}
+        marked.mark_pre_call_hook_ran(thread_data)
+        report["marker_thread"] = [
+            sorted(thread_data["litellm_metadata"]),
+            marked._pre_call_hook_already_ran(thread_data),
+        ]
         reports[side] = report
     ours = reports["betterlite"]
     if ours.pop("suppressed") is not False:
