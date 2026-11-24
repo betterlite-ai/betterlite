@@ -6,4 +6,7 @@ deviations:
   - what: A .db file whose type part is gaugehistogram, info, stateset or unknown fails the scrape with 500. prometheus_client's Metric accepts those types and LiteLLM renders them.
     why: prometheus_client's writers only create counter, gauge, histogram and summary files, so such a file comes from something else in the folder, and the four extra encodings would only serve that.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics_core.py#L6-L9
+  - what: A multiprocess folder that cannot be listed, because it was removed or is unreadable, fails the scrape with 500. prometheus_client's collect lists the folder with glob, which yields no files when the folder cannot be scanned, so LiteLLM renders an empty body.
+    why: The folder is checked when the app is built, so one that vanishes or loses its permissions later is a broken deployment; betterlite reports the read_dir error instead of hiding it as an empty scrape.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/multiprocess.py#L156-L158
 kept_bugs: []
