@@ -155,6 +155,10 @@ fn batch_success_model_falls_back_to_unknown() {
         .with_request_body(r#"{"requests":[{"params":{"model":5}}]}"#);
     let (fifth, _call_log) = run(&handler(None, None), &non_string_nested);
     assert_eq!(fifth.result.model, "unknown");
+    let non_object_params = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
+        .with_request_body(r#"{"requests":[{"params":5}]}"#);
+    let (sixth, _call_log) = run(&handler(None, None), &non_object_params);
+    assert_eq!(sixth.result.model, "unknown");
 }
 
 #[test]
