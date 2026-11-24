@@ -43,11 +43,6 @@ impl From<&CallerRecord> for ScopeCaller {
     }
 }
 
-fn caller(input: &Input) -> Result<ScopeCaller, Failure> {
-    let record = input.caller.as_ref().ok_or(Failure::MissingCaller)?;
-    Ok(ScopeCaller::from(record))
-}
-
 fn selection(input: &Input) -> Result<TeamSelection, Failure> {
     match &input.user_teams {
         Some(UserTeams::Ids(ids)) => Ok(TeamSelection::Ids(ids.clone())),
@@ -63,7 +58,10 @@ fn answer(input: &Input) -> Result<Value, Failure> {
     let snapshot = fixture(input)?;
     let lookup = snapshot.lookup();
     match input.function {
-        Predicate::GrantResolution => grant_ids(input, &lookup),
+        Predicate::GrantResolution => {
+            let ids = grant_deployment_ids(&input.grant, &lookup, &AccessGroups::default())?;
+            Ok(json!({"ids": ids}))
+        }
         Predicate::DirectAccess => direct_ids(input, &lookup),
         Predicate::TeamModels => {
             let read = runtime.block_on(read_team_models(&selection(input)?, &reads(input)))?;
@@ -74,7 +72,8 @@ fn answer(input: &Input) -> Result<Value, Failure> {
             )?))
         }
         Predicate::NonAdmin => {
-            let alice = caller(input)?;
+            let record = input.caller.as_ref().ok_or(Failure::MissingCaller)?;
+            let alice = ScopeCaller::from(record);
             let read = runtime.block_on(read_user_models(
                 specs(&input.all_models),
                 &alice,
@@ -86,11 +85,6 @@ fn answer(input: &Input) -> Result<Value, Failure> {
         Predicate::TeamAndDirect => populate(input, &lookup, &runtime, true),
         Predicate::Filter => Ok(spec_ids(&visible_models(specs(&input.all_models)))),
     }
-}
-
-fn grant_ids(input: &Input, lookup: &CatalogLookup<'_>) -> Result<Value, Failure> {
-    let ids = grant_deployment_ids(&input.grant, lookup, &AccessGroups::default())?;
-    Ok(json!({"ids": ids}))
 }
 
 fn direct_ids(input: &Input, lookup: &CatalogLookup<'_>) -> Result<Value, Failure> {
@@ -106,7 +100,8 @@ fn populate(
     runtime: &Runtime,
     visible_only: bool,
 ) -> Result<Value, Failure> {
-    let alice = caller(input)?;
+    let record = input.caller.as_ref().ok_or(Failure::MissingCaller)?;
+    let alice = ScopeCaller::from(record);
     let read = runtime.block_on(read_caller_rows(&alice, &reads(input)))?;
     let models = accessible_models(
         specs(&input.all_models),

@@ -18,9 +18,8 @@ use super::{
     assert_annotations, caller, identified, ids, snapshot, team_list, team_row, unnumbered,
 };
 use crate::model_info_scope::compose::{
-    ScopeReads, TeamSelection, accessible_models, check_if_model_is_user_added,
-    get_all_team_models, non_admin_all_models, read_caller_rows, read_team_models,
-    read_user_models,
+    ScopeReads, TeamSelection, accessible_models, get_all_team_models, non_admin_all_models,
+    read_caller_rows, read_team_models, read_user_models,
 };
 use crate::model_info_scope::error::{ScopeDetail, ScopeError, USER_NOT_FOUND};
 use crate::model_info_scope::postgres::PostgresScopeReads;
@@ -201,9 +200,8 @@ async fn creator_reads_by_id() {
 #[tokio::test]
 async fn no_database() {
     let empty: Vec<DeploymentSpec> = Vec::new();
-    let anonymous = caller(None, &[]);
     let absent: Option<&dyn ScopeReads> = None;
-    let error = check_if_model_is_user_added(empty.clone(), &anonymous, absent)
+    let error = read_user_models(empty.clone(), &caller(None, &[]), absent)
         .await
         .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -213,7 +211,7 @@ async fn no_database() {
             error: CommonProxyErrors::DbNotConnectedError.as_str(),
         }
     );
-    let second = read_user_models(empty, &anonymous, absent)
+    let second = read_user_models(empty, &caller(Some("alice"), &[]), absent)
         .await
         .unwrap_err();
     assert_eq!(second.status_code(), StatusCode::INTERNAL_SERVER_ERROR);

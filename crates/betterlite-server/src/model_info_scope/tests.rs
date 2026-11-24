@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::sync::Mutex;
 
+use async_trait::async_trait;
 use axum::http::StatusCode;
 use betterlite_auth::auth_model_patterns::ALL_PROXY_MODELS;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -15,8 +16,8 @@ use betterlite_router::model_group_lookups::access_groups::{AccessGroupMap, Acce
 
 use super::annotate::{populate_team_access, visible_models};
 use super::compose::{
-    ModelCreator, ScopeCaller, ScopeFuture, ScopeReads, TeamSelection, UserScope,
-    accessible_models, non_admin_all_models, read_caller_rows, read_user_models,
+    ModelCreator, ScopeCaller, ScopeReads, TeamSelection, UserScope, accessible_models,
+    non_admin_all_models, read_caller_rows, read_user_models,
 };
 use super::error::ScopeError;
 use super::grants::direct_access_models;
@@ -150,33 +151,25 @@ impl StubReads {
     }
 }
 
+#[async_trait]
 impl ScopeReads for StubReads {
-    fn model_creator<'scope>(
-        &'scope self,
-        model_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>> {
-        Box::pin(async move { Ok(self.creator(model_id)) })
+    async fn model_creator(&self, model_id: &str) -> Result<Option<ModelCreator>, ScopeError> {
+        Ok(self.creator(model_id))
     }
 
-    fn user_scope<'scope>(
-        &'scope self,
-        user_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>> {
-        Box::pin(async move { Ok(self.user_row(user_id)) })
+    async fn user_scope(&self, user_id: &str) -> Result<Option<UserScope>, ScopeError> {
+        Ok(self.user_row(user_id))
     }
 
-    fn team_scopes<'scope>(
-        &'scope self,
-        selection: &'scope TeamSelection,
-    ) -> ScopeFuture<'scope, Result<Vec<TeamScope>, ScopeError>> {
-        Box::pin(async move { self.team_rows(selection) })
+    async fn team_scopes(&self, selection: &TeamSelection) -> Result<Vec<TeamScope>, ScopeError> {
+        self.team_rows(selection)
     }
 
-    fn access_group_models<'scope>(
-        &'scope self,
-        access_group_ids: &'scope [String],
-    ) -> ScopeFuture<'scope, Result<AccessGroupMap, ScopeError>> {
-        Box::pin(async move { self.group_rows(access_group_ids) })
+    async fn access_group_models(
+        &self,
+        access_group_ids: &[String],
+    ) -> Result<AccessGroupMap, ScopeError> {
+        self.group_rows(access_group_ids)
     }
 }
 

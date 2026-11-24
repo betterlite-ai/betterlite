@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
+use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_router::model_group_lookups::access_groups::AccessGroupMap;
 use betterlite_server::model_info_scope::compose::{
-    ModelCreator, ScopeFuture, ScopeReads, TeamSelection, UserScope,
+    ModelCreator, ScopeReads, TeamSelection, UserScope,
 };
 use betterlite_server::model_info_scope::error::ScopeError;
 use betterlite_server::model_info_scope::teams::TeamScope;
@@ -28,37 +29,27 @@ impl CaseReads {
     }
 }
 
+#[async_trait]
 impl ScopeReads for CaseReads {
-    fn model_creator<'scope>(
-        &'scope self,
-        model_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>> {
-        Box::pin(async move {
-            Ok(self.creators.get(model_id).map(|created_by| ModelCreator {
-                created_by: created_by.clone(),
-            }))
-        })
+    async fn model_creator(&self, model_id: &str) -> Result<Option<ModelCreator>, ScopeError> {
+        Ok(self.creators.get(model_id).map(|created_by| ModelCreator {
+            created_by: created_by.clone(),
+        }))
     }
 
-    fn user_scope<'scope>(
-        &'scope self,
-        user_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>> {
-        Box::pin(async move { Ok(self.stored_user(user_id)) })
+    async fn user_scope(&self, user_id: &str) -> Result<Option<UserScope>, ScopeError> {
+        Ok(self.stored_user(user_id))
     }
 
-    fn team_scopes<'scope>(
-        &'scope self,
-        _selection: &'scope TeamSelection,
-    ) -> ScopeFuture<'scope, Result<Vec<TeamScope>, ScopeError>> {
-        Box::pin(async move { Ok(self.teams.clone()) })
+    async fn team_scopes(&self, _selection: &TeamSelection) -> Result<Vec<TeamScope>, ScopeError> {
+        Ok(self.teams.clone())
     }
 
-    fn access_group_models<'scope>(
-        &'scope self,
-        _access_group_ids: &'scope [String],
-    ) -> ScopeFuture<'scope, Result<AccessGroupMap, ScopeError>> {
-        Box::pin(async move { Ok(self.groups.clone()) })
+    async fn access_group_models(
+        &self,
+        _access_group_ids: &[String],
+    ) -> Result<AccessGroupMap, ScopeError> {
+        Ok(self.groups.clone())
     }
 }
 

@@ -1,6 +1,4 @@
-use std::future::Future;
-use std::pin::Pin;
-
+use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::{UserAPIKeyAuth, user_api_key_has_admin_view};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
@@ -16,8 +14,6 @@ use super::teams::{
     add_team_models_to_all_models, check_if_model_is_team_model,
 };
 use crate::model_reload::dedupe::deduplicate_router_models;
-
-pub type ScopeFuture<'scope, T> = Pin<Box<dyn Future<Output = T> + Send + 'scope>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelCreator {
@@ -56,30 +52,18 @@ pub enum CallerRows {
         models: Vec<JsonData>,
         teams: TeamReads,
     },
-    MissingUser,
-    Anonymous,
+    Unresolved,
 }
 
+#[async_trait]
 pub trait ScopeReads: Send + Sync {
-    fn model_creator<'scope>(
-        &'scope self,
-        model_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>>;
-
-    fn user_scope<'scope>(
-        &'scope self,
-        user_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>>;
-
-    fn team_scopes<'scope>(
-        &'scope self,
-        selection: &'scope TeamSelection,
-    ) -> ScopeFuture<'scope, Result<Vec<TeamScope>, ScopeError>>;
-
-    fn access_group_models<'scope>(
-        &'scope self,
-        access_group_ids: &'scope [String],
-    ) -> ScopeFuture<'scope, Result<AccessGroupMap, ScopeError>>;
+    async fn model_creator(&self, model_id: &str) -> Result<Option<ModelCreator>, ScopeError>;
+    async fn user_scope(&self, user_id: &str) -> Result<Option<UserScope>, ScopeError>;
+    async fn team_scopes(&self, selection: &TeamSelection) -> Result<Vec<TeamScope>, ScopeError>;
+    async fn access_group_models(
+        &self,
+        access_group_ids: &[String],
+    ) -> Result<AccessGroupMap, ScopeError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,20 +94,8 @@ impl ScopeCaller {
     }
 }
 
-pub async fn check_if_model_is_user_added<Store>(
-    all_models: Vec<DeploymentSpec>,
-    caller: &ScopeCaller,
-    reads: Option<&Store>,
-) -> Result<Vec<DeploymentSpec>, ScopeError>
-where
-    Store: ScopeReads + ?Sized,
-{
-    let store = reads.ok_or(ScopeError::DatabaseUnavailable)?;
-    created_by_caller(all_models, caller, store).await
-}
-
 // The rows whose stored created_by names the caller; a row without an id can never match.
-async fn created_by_caller<Store>(
+pub async fn check_if_model_is_user_added<Store>(
     all_models: Vec<DeploymentSpec>,
     caller: &ScopeCaller,
     store: &Store,
@@ -153,11 +125,11 @@ pub async fn read_user_models<Store>(
 where
     Store: ScopeReads + ?Sized,
 {
-    let models = check_if_model_is_user_added(all_models, caller, reads).await?;
+    let store = reads.ok_or(ScopeError::DatabaseUnavailable)?;
+    let models = check_if_model_is_user_added(all_models, caller, store).await?;
     let Some(user_id) = caller.user_id.as_deref().filter(|value| !value.is_empty()) else {
         return Ok(UserModels { models, user: None });
     };
-    let store = reads.ok_or(ScopeError::DatabaseUnavailable)?;
     let user = store
         .user_scope(user_id)
         .await
@@ -218,7 +190,7 @@ pub fn get_all_team_models(
     Ok(returned)
 }
 
-// The reads _populate_team_access_on_models makes: an admin view names every team, a caller reads its stored row and that row's teams, and an anonymous caller reads nothing.
+// The reads _populate_team_access_on_models makes: an admin view names every team, a caller reads its stored row and that row's teams, and a caller without a stored row reads nothing.
 pub async fn read_caller_rows<Store>(
     caller: &ScopeCaller,
     reads: &Store,
@@ -232,10 +204,10 @@ where
         ));
     }
     let Some(user_id) = caller.user_id.as_deref() else {
-        return Ok(CallerRows::Anonymous);
+        return Ok(CallerRows::Unresolved);
     };
     let Some(user) = reads.user_scope(user_id).await? else {
-        return Ok(CallerRows::MissingUser);
+        return Ok(CallerRows::Unresolved);
     };
     let teams = read_team_models(&TeamSelection::Ids(user.teams), reads).await?;
     Ok(CallerRows::User {
@@ -270,7 +242,7 @@ pub fn accessible_models(
             let team_models = get_all_team_models(teams, lookup, access_groups)?;
             populate_team_access(&mut models, Some(&team_models), &direct);
         }
-        CallerRows::MissingUser | CallerRows::Anonymous => {
+        CallerRows::Unresolved => {
             populate_team_access(&mut models, None, &[]);
         }
     }

@@ -2,6 +2,7 @@ use std::convert::Infallible;
 use std::error::Error as StdError;
 use std::sync::atomic::Ordering;
 
+use async_trait::async_trait;
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, PrismaTableRepository};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::postgres_store::errors::backend;
@@ -15,7 +16,7 @@ use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use betterlite_redis::config_sync::table_actions::ConfigSyncTableActions;
 use betterlite_router::model_group_lookups::access_groups::AccessGroupMap;
 
-use super::compose::{ModelCreator, ScopeFuture, ScopeReads, TeamSelection, UserScope};
+use super::compose::{ModelCreator, ScopeReads, TeamSelection, UserScope};
 use super::error::ScopeError;
 use super::teams::TeamScope;
 use crate::team_fields::tables::user_table;
@@ -51,20 +52,6 @@ where
     }
 }
 
-fn model_creator_row(
-    rows: Vec<JsonData>,
-    model_id: &str,
-) -> Result<Option<ModelCreator>, ScopeError> {
-    let Some(row) = rows.into_iter().next() else {
-        return Ok(None);
-    };
-    let model =
-        ProxyModelTable::try_from(row).map_err(|source| model_read_error(model_id, source))?;
-    Ok(Some(ModelCreator {
-        created_by: model.fields.created_by,
-    }))
-}
-
 async fn fetch_creator(
     client: PrismaClient<'_>,
     model_id: &str,
@@ -82,22 +69,13 @@ async fn fetch_creator(
         .find::<JsonData>(KeyFilter::Equal(model_id))
         .await
         .map_err(|source| model_read_error(model_id, source))?;
-    model_creator_row(rows, model_id)
-}
-
-async fn read_user(store: &PostgresStore, user_id: &str) -> Result<Option<UserScope>, ScopeError> {
-    let session = store
-        .session()
-        .await
-        .map_err(|source| ScopeError::UserRead(Box::new(source)))?;
-    let repository = user_table(Some(&session));
-    let user = repository
-        .find_by_id(user_id)
-        .await
-        .map_err(|source| ScopeError::UserRead(Box::new(source)))?;
-    Ok(user.map(|row| UserScope {
-        teams: row.teams,
-        models: row.models,
+    let Some(row) = rows.into_iter().next() else {
+        return Ok(None);
+    };
+    let model =
+        ProxyModelTable::try_from(row).map_err(|source| model_read_error(model_id, source))?;
+    Ok(Some(ModelCreator {
+        created_by: model.fields.created_by,
     }))
 }
 
@@ -165,40 +143,40 @@ async fn read_access_group_rows(
     Ok(groups)
 }
 
+#[async_trait]
 impl ScopeReads for PostgresScopeReads<'_> {
-    fn model_creator<'scope>(
-        &'scope self,
-        model_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<ModelCreator>, ScopeError>> {
-        Box::pin(fetch_creator(self.client, model_id))
+    async fn model_creator(&self, model_id: &str) -> Result<Option<ModelCreator>, ScopeError> {
+        fetch_creator(self.client, model_id).await
     }
 
-    fn user_scope<'scope>(
-        &'scope self,
-        user_id: &'scope str,
-    ) -> ScopeFuture<'scope, Result<Option<UserScope>, ScopeError>> {
-        Box::pin(async move { read_user(read_store(self.client), user_id).await })
+    async fn user_scope(&self, user_id: &str) -> Result<Option<UserScope>, ScopeError> {
+        let session = read_store(self.client)
+            .session()
+            .await
+            .map_err(|source| ScopeError::UserRead(Box::new(source)))?;
+        let repository = user_table(Some(&session));
+        let user = repository
+            .find_by_id(user_id)
+            .await
+            .map_err(|source| ScopeError::UserRead(Box::new(source)))?;
+        Ok(user.map(|row| UserScope {
+            teams: row.teams,
+            models: row.models,
+        }))
     }
 
-    fn team_scopes<'scope>(
-        &'scope self,
-        selection: &'scope TeamSelection,
-    ) -> ScopeFuture<'scope, Result<Vec<TeamScope>, ScopeError>> {
-        Box::pin(async move {
-            let store = read_store(self.client);
-            match selection {
-                TeamSelection::All => read_team_rows(store, None).await,
-                TeamSelection::Ids(ids) => read_team_rows(store, Some(ids.as_slice())).await,
-            }
-        })
+    async fn team_scopes(&self, selection: &TeamSelection) -> Result<Vec<TeamScope>, ScopeError> {
+        let store = read_store(self.client);
+        match selection {
+            TeamSelection::All => read_team_rows(store, None).await,
+            TeamSelection::Ids(ids) => read_team_rows(store, Some(ids.as_slice())).await,
+        }
     }
 
-    fn access_group_models<'scope>(
-        &'scope self,
-        access_group_ids: &'scope [String],
-    ) -> ScopeFuture<'scope, Result<AccessGroupMap, ScopeError>> {
-        Box::pin(
-            async move { read_access_group_rows(read_store(self.client), access_group_ids).await },
-        )
+    async fn access_group_models(
+        &self,
+        access_group_ids: &[String],
+    ) -> Result<AccessGroupMap, ScopeError> {
+        read_access_group_rows(read_store(self.client), access_group_ids).await
     }
 }
