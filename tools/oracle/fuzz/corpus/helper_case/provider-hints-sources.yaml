@@ -1,0 +1,12 @@
+kind: helper
+name: provider-hints-corpus-seed
+call:
+  b10059:
+    headers:
+      - [custom-llm-provider, bedrock]
+    query: custom_llm_provider=bedrock
+    body:
+      custom_llm_provider: bedrock
+env: {}
+compare:
+  ignore: []
