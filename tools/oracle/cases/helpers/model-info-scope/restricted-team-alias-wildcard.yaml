@@ -1,0 +1,26 @@
+kind: helper
+name: model-info-scope-restricted-team-alias-wildcard
+call:
+  model_info_scope:
+    function: team_models
+    model_list:
+      - model_name: team-gpt
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: tg1}
+      - model_name: gpt-4o
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: g1}
+    model_group_alias: {alias-gpt: team-gpt}
+    user: null
+    teams:
+      - team_id: team-alpha
+        models: [alias-gpt, all-team-models]
+    user_teams: [team-alpha]
+    access_groups: []
+    creators: {}
+    all_models: []
+    grant: []
+    key_models: []
+    caller: null
+env: {}
+compare: {ignore: []}
