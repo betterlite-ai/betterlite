@@ -46,50 +46,14 @@ class Input(TypedDict):
     calls: list[ProjectionCall | HiddenCall]
 
 
-class HiddenView(TypedDict):
-    api_base: str | None
-    litellm_model_name: str | None
-    response_cost: JsonValue
-
-
 class PayloadView(TypedDict):
     id: str
     model: str
     api_base: str
     custom_llm_provider: str | None
     status: str
-    hidden_params: HiddenView
+    hidden_params: dict[str, JsonValue]
     response: dict[str, JsonValue] | None
-
-
-class ProjectionAnswer(TypedDict):
-    function: Literal["streaming_projection"]
-    provider: JsonValue
-    file_id: JsonValue
-    data: dict[str, JsonValue]
-    trusted: dict[str, str] | None
-    predicates: list[bool]
-
-
-class HiddenAnswer(TypedDict):
-    api_base: str | None
-    litellm_model_name: str | None
-    response_cost: JsonValue
-
-
-class PayloadAnswer(TypedDict):
-    id: str
-    model: str
-    api_base: str
-    custom_llm_provider: str | None
-    status: str
-    hidden: HiddenAnswer
-    response: dict[str, JsonValue] | None
-
-
-class HiddenMetadataAnswer(TypedDict):
-    function: Literal["hidden_stream_metadata"]
-    payload: PayloadAnswer | None
 
 
 PAYLOAD: Final = TypeAdapter(PayloadView)
@@ -137,8 +101,14 @@ def predicate(provider: str | None) -> bool:
     return FileContentStreamingHandler.should_stream_file_content(custom_llm_provider=provider)
 
 
+def predicates(call: ProjectionCall) -> list[bool]:
+    inputs = call.get("predicates")
+    if inputs is None:
+        return []
+    return [predicate(provider) for provider in inputs]
+
+
 def projection_answer(call: ProjectionCall) -> JsonValue:
-    predicates = [predicate(provider) for provider in call.get("predicates", [])]
     credentials = call.get("credentials")
     if call["should_route"] and credentials is not None:
         data = dict(call["data"])
@@ -150,46 +120,47 @@ def projection_answer(call: ProjectionCall) -> JsonValue:
         )
         snapshot = text_fields(SNAPSHOT.validate_python(data.pop(SNAPSHOT_KEY)))
         data.pop("model", None)
-        answer = ProjectionAnswer(
-            function="streaming_projection",
-            provider=credentials["custom_llm_provider"],
-            file_id=data.get("file_id"),
-            data=data,
-            trusted=snapshot,
-            predicates=predicates,
+        return JSON.validate_python(
+            {
+                "function": "streaming_projection",
+                "provider": credentials["custom_llm_provider"],
+                "file_id": data.get("file_id"),
+                "data": data,
+                "trusted": snapshot,
+                "predicates": predicates(call),
+            }
         )
-        return JSON.validate_python(answer)
-    answer = ProjectionAnswer(
-        function="streaming_projection",
-        provider=call["custom_llm_provider"],
-        file_id=call["file_id"],
-        data=call["data"],
-        trusted=None,
-        predicates=predicates,
+    return JSON.validate_python(
+        {
+            "function": "streaming_projection",
+            "provider": call["custom_llm_provider"],
+            "file_id": call["file_id"],
+            "data": call["data"],
+            "trusted": None,
+            "predicates": predicates(call),
+        }
     )
-    return JSON.validate_python(answer)
 
 
-def payload_view(value: JsonValue) -> PayloadView | None:
+def payload_view(value: JsonValue) -> JsonValue:
     if value is None:
         return None
-    return PAYLOAD.validate_python(value)
-
-
-def payload_answer(payload: PayloadView) -> PayloadAnswer:
+    payload = PAYLOAD.validate_python(value)
     hidden = payload["hidden_params"]
-    return PayloadAnswer(
-        id=payload["id"],
-        model=payload["model"],
-        api_base=payload["api_base"],
-        custom_llm_provider=payload["custom_llm_provider"],
-        status=payload["status"],
-        hidden=HiddenAnswer(
-            api_base=hidden["api_base"],
-            litellm_model_name=hidden["litellm_model_name"],
-            response_cost=hidden["response_cost"],
-        ),
-        response=payload["response"],
+    return JSON.validate_python(
+        {
+            "id": payload["id"],
+            "model": payload["model"],
+            "api_base": payload["api_base"],
+            "custom_llm_provider": payload["custom_llm_provider"],
+            "status": payload["status"],
+            "hidden": {
+                "api_base": hidden["api_base"],
+                "litellm_model_name": hidden["litellm_model_name"],
+                "response_cost": hidden["response_cost"],
+            },
+            "response": payload["response"],
+        }
     )
 
 
@@ -212,16 +183,21 @@ def hidden_answer(call: HiddenCall) -> JsonValue:
         kwargs=kwargs,
     )
     response = FileContentStreamingResponse(
-        iter([b"ab"]), call["file_id"], call.get("model"), call.get("custom_llm_provider"), logging_obj
+        iter([b"ab"]),
+        call["file_id"],
+        call.get("model"),
+        call.get("custom_llm_provider"),
+        logging_obj,
     )
     _drained = list(response)
-    payload: PayloadAnswer | None = None
+    payload: JsonValue = None
     for recorded in capture.calls:
         view = payload_view(recorded.get("standard_logging_object"))
         if view is not None:
-            payload = payload_answer(view)
-    answer = HiddenMetadataAnswer(function="hidden_stream_metadata", payload=payload)
-    return JSON.validate_python(answer)
+            payload = view
+    return JSON.validate_python(
+        {"function": "hidden_stream_metadata", "payload": payload}
+    )
 
 
 def answer(call: ProjectionCall | HiddenCall) -> JsonValue:

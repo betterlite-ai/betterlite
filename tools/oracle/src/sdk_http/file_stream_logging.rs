@@ -22,12 +22,9 @@ use betterlite_http::proxy::pool::ClientPool;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_models::decisions::Json;
-use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::records::FileContentRequest;
-use betterlite_openai::files::stream::{FileContentStream, FileContentStreamingResult};
-use betterlite_openai::files::{
-    ClientArgs, FilesApi, FilesClient, get_openai_client, select_client,
-};
+use betterlite_openai::files::stream::FileContentStream;
+use betterlite_openai::files::{ClientArgs, FilesApi, get_openai_client, select_client};
 use chrono::{DateTime, FixedOffset, Utc};
 use futures_util::StreamExt as _;
 use indexmap::IndexMap;
@@ -59,7 +56,6 @@ pub struct Call {
 
 // The bytes the wrapper yielded, whether the fault surfaced, and what the logging callbacks saw
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub chunks: Vec<Vec<u8>>,
     pub raised: bool,
@@ -93,11 +89,50 @@ async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let opened = open_stream(call, api_base, env).await?;
-    let counts = Arc::new(Counts::default());
-    let logger: Arc<dyn FileStreamLogger> = Arc::new(FakeLogger {
-        calls: Arc::clone(&counts),
-    });
+    let config = ConfigLoader {
+        lookup: env.clone(),
+    }
+    .load("model_list: []")
+    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    let routing = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
+    );
+    let tls = TlsPolicy::resolve(&config, env, None)
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    let wire = ClientPool::new(1_usize, TransportLimits::DEFAULT)
+        .client(&tls, &routing)
+        .map_err(|error| SdkHttpError::Client(Box::new(error)))?;
+    let args = ClientArgs {
+        api_key: Some(SecretString::from("sk-oracle")),
+        api_base: Some(api_base.to_owned()),
+        timeout: None,
+        max_retries: None,
+        organization: None,
+    };
+    let kind = get_openai_client(args, None, true)
+        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    let client =
+        select_client(kind, true).map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    let request = FileContentRequest {
+        file_id: call.file_id.clone(),
+        extra_headers: IndexMap::new(),
+        extra_body: IndexMap::new(),
+        timeout: None,
+    };
+    let size = NonZeroUsize::new(call.chunk_size).ok_or_else(|| {
+        SdkHttpError::Invalid(String::from(
+            "the file stream needs a chunk_size of at least 1",
+        ))
+    })?;
+    let opened = FilesApi {
+        transport: wire,
+        boundaries: Uuid::new_v4,
+    }
+    .file_content_streaming(&client, &request, Some(size))
+    .await
+    .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+    let logger = Arc::new(FakeLogger::default());
+    let stream_logger: Arc<dyn FileStreamLogger> = Arc::clone(&logger);
     let fail_after = match call.scenario {
         Scenario::Fail => Some(1_usize),
         Scenario::Drain | Scenario::Close => None,
@@ -112,123 +147,54 @@ async fn execute(
             file_id: call.file_id.clone(),
             model: Some(call.model.clone()),
             custom_llm_provider: None,
-            logger: Some(logger),
+            logger: Some(stream_logger),
         },
         Arc::new(WallClock),
     );
     let mut outcome = Outcome::default();
     match call.scenario {
-        Scenario::Drain | Scenario::Fail => drain(&mut stream, &mut outcome).await?,
-        Scenario::Close => close(&mut stream, &mut outcome).await?,
+        Scenario::Drain | Scenario::Fail => {
+            let mut chunks = stream
+                .async_iter()
+                .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+            loop {
+                match chunks.next_chunk().await {
+                    Some(Ok(bytes)) => outcome.chunks.push(bytes),
+                    Some(Err(_failure)) => {
+                        outcome.raised = true;
+                        break;
+                    }
+                    None => break,
+                }
+            }
+        }
+        Scenario::Close => {
+            let first = {
+                let mut chunks = stream
+                    .async_iter()
+                    .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+                chunks.next_chunk().await
+            };
+            if let Some(Ok(bytes)) = first {
+                outcome.chunks.push(bytes);
+            }
+            stream
+                .close()
+                .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+            let mut empty = stream
+                .sync_iter()
+                .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+            while let Some(Ok(_bytes)) = empty.next_chunk() {
+                outcome.after_close_chunks = outcome.after_close_chunks.saturating_add(1);
+            }
+            outcome.capability = stream.async_iter().err().map(|error| error.to_string());
+        }
     }
-    outcome.success_calls = counts.success.load(Ordering::SeqCst);
-    outcome.failure_calls = counts.failure.load(Ordering::SeqCst);
+    outcome.success_calls = logger.success.load(Ordering::SeqCst);
+    outcome.failure_calls = logger.failure.load(Ordering::SeqCst);
     Ok(SdkResult::FileStreamLogging {
         value: Box::new(outcome),
     })
-}
-
-async fn open_stream(
-    call: &Call,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<FileContentStreamingResult, SdkHttpError> {
-    let config = ConfigLoader {
-        lookup: env.clone(),
-    }
-    .load("model_list: []")
-    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    let routing = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
-    );
-    let tls = TlsPolicy::resolve(&config, env, None)
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    let wire = ClientPool::new(1_usize, TransportLimits::DEFAULT)
-        .client(&tls, &routing)
-        .map_err(|error| SdkHttpError::Client(Box::new(error)))?;
-    let client = files_client(api_base)?;
-    let api = FilesApi {
-        transport: wire,
-        boundaries: Uuid::new_v4,
-    };
-    let request = FileContentRequest {
-        file_id: call.file_id.clone(),
-        extra_headers: IndexMap::new(),
-        extra_body: IndexMap::new(),
-        timeout: None,
-    };
-    let size = NonZeroUsize::new(call.chunk_size).ok_or_else(|| {
-        SdkHttpError::Invalid(String::from(
-            "the file stream needs a chunk_size of at least 1",
-        ))
-    })?;
-    api.file_content_streaming(&client, &request, Some(size))
-        .await
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))
-}
-
-fn files_client(api_base: &str) -> Result<FilesClient, SdkHttpError> {
-    let args = ClientArgs {
-        api_key: Some(SecretString::from("sk-oracle")),
-        api_base: Some(api_base.to_owned()),
-        timeout: None,
-        max_retries: None,
-        organization: None,
-    };
-    let kind = get_openai_client(args, None, true)
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    select_client(kind, true).map_err(|error| SdkHttpError::Invalid(error.to_string()))
-}
-
-async fn drain(
-    stream: &mut FileContentStreamingResponse,
-    outcome: &mut Outcome,
-) -> Result<(), SdkHttpError> {
-    let mut chunks = stream
-        .async_iter()
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    loop {
-        match chunks.next_chunk().await {
-            Some(Ok(bytes)) => outcome.chunks.push(bytes),
-            Some(Err(_failure)) => {
-                outcome.raised = true;
-                break;
-            }
-            None => break,
-        }
-    }
-    Ok(())
-}
-
-async fn close(
-    stream: &mut FileContentStreamingResponse,
-    outcome: &mut Outcome,
-) -> Result<(), SdkHttpError> {
-    {
-        let mut chunks = stream
-            .async_iter()
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-        let first = chunks.next_chunk().await;
-        if let Some(Ok(bytes)) = first {
-            outcome.chunks.push(bytes);
-        }
-    }
-    stream
-        .close()
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    let mut empty = stream
-        .sync_iter()
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    loop {
-        match empty.next_chunk() {
-            Some(Ok(_bytes)) => {
-                outcome.after_close_chunks = outcome.after_close_chunks.saturating_add(1)
-            }
-            Some(Err(_failure)) | None => break,
-        }
-    }
-    outcome.capability = stream.async_iter().err().map(|error| error.to_string());
-    Ok(())
 }
 
 struct FaultyStream {
@@ -278,13 +244,9 @@ fn context(message: String) -> ErrorClass {
 }
 
 #[derive(Default)]
-struct Counts {
+struct FakeLogger {
     success: AtomicUsize,
     failure: AtomicUsize,
-}
-
-struct FakeLogger {
-    calls: Arc<Counts>,
 }
 
 #[async_trait]
@@ -311,7 +273,7 @@ impl FileStreamLogger for FakeLogger {
     }
 
     async fn async_success_handler(&self, _call: SuccessCall) -> Result<(), CallbackFailure> {
-        self.calls.success.fetch_add(1_usize, Ordering::SeqCst);
+        self.success.fetch_add(1_usize, Ordering::SeqCst);
         Ok(())
     }
 
@@ -324,7 +286,7 @@ impl FileStreamLogger for FakeLogger {
     }
 
     async fn async_failure_handler(&self, _call: FailureCall) -> Result<(), CallbackFailure> {
-        self.calls.failure.fetch_add(1_usize, Ordering::SeqCst);
+        self.failure.fetch_add(1_usize, Ordering::SeqCst);
         Ok(())
     }
 }

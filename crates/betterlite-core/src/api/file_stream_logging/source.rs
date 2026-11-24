@@ -41,8 +41,7 @@ pub trait SyncByteSource: Send {
     fn close(&mut self) -> Option<CloseResult>;
 }
 
-// close() on an async source: None when it has none, Returned when it returned null,
-// Awaitable when the caller must await what it returned
+// close() on an async source: Absent without one, Returned for null, Awaitable for a result
 pub enum CloseCall<'source> {
     Absent,
     Returned,

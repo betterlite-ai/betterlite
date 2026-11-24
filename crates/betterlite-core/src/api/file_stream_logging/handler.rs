@@ -5,9 +5,8 @@ use thiserror::Error;
 
 use crate::api::model_credentials::prepare_data_with_credentials;
 
-// FILE_CONTENT_STREAMING_PROVIDERS: the OpenAI-compatible batch and files providers plus vertex_ai
-pub const FILE_CONTENT_STREAMING_PROVIDERS: [&str; 4] =
-    ["openai", "hosted_vllm", "litellm_proxy", "vertex_ai"];
+// LiteLLM's FILE_CONTENT_STREAMING_PROVIDERS: the OpenAI-compatible batch and files providers plus vertex_ai
+pub const STREAMING_PROVIDERS: [&str; 4] = ["openai", "hosted_vllm", "litellm_proxy", "vertex_ai"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum StreamingParamsError {
@@ -43,7 +42,7 @@ pub fn should_stream_file_content(custom_llm_provider: Option<&str>) -> bool {
     let Some(provider) = custom_llm_provider else {
         return false;
     };
-    FILE_CONTENT_STREAMING_PROVIDERS.contains(&provider)
+    STREAMING_PROVIDERS.contains(&provider)
 }
 
 // ast-grep-ignore: no-long-names
