@@ -2989,6 +2989,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-db",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-http-fixture",
