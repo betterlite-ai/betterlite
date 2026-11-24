@@ -29,7 +29,7 @@ const WORKER_NAME: &str = "Lens worker";
 #[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub(crate) struct WorkerBilling {
-    #[garde(pattern(r"^[a-f0-9]{64}$"))]
+    #[garde(pattern("^[a-f0-9]{64}$"))]
     pub(crate) analysis_key_id: String,
 }
 
@@ -37,7 +37,7 @@ pub(crate) struct WorkerBilling {
 #[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub(crate) struct WorkerName {
-    #[garde(pattern(r"^[a-f0-9]{64}$"))]
+    #[garde(pattern("^[a-f0-9]{64}$"))]
     pub(crate) analysis_key_id: String,
     #[serde(default = "default_name")]
     #[garde(length(chars, min = 1, max = 100))]

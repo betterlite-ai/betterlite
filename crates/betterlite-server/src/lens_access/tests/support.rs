@@ -807,8 +807,8 @@ pub(crate) struct TestIssue {
 
 pub(crate) fn execution_id(parts: &[&str]) -> String {
     use base64::Engine as _;
-    base64::engine::general_purpose::URL_SAFE
-        .encode(serde_json::to_vec(parts).expect("the execution parts encode"))
+    use base64::engine::general_purpose::URL_SAFE;
+    URL_SAFE.encode(serde_json::to_vec(parts).expect("the execution parts encode"))
 }
 
 pub(crate) fn body_json<T: Serialize>(value: &T) -> String {
