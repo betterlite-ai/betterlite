@@ -118,13 +118,11 @@ impl FakeProvider {
         }
     }
 
+    // The streaming shape with the failure flag set: the transform and the stream build both fail.
     pub(crate) fn failing() -> Self {
-        Self {
-            models: Mutex::new(Vec::new()),
-            chat: Mutex::new(None),
-            streamed: Mutex::new(None),
-            stream_fails: true,
-        }
+        let mut provider = Self::streaming(None);
+        provider.stream_fails = true;
+        provider
     }
 
     pub(crate) fn streaming(streamed: Option<StreamedResponse>) -> Self {
