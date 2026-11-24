@@ -15,6 +15,7 @@ use betterlite_server::public_endpoints::router_presets::service::AutorouterPres
 use betterlite_server::roi_github::transport::Transport;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Builder;
+use tokio::task::yield_now;
 
 pub(crate) struct Op;
 
@@ -125,6 +126,7 @@ impl Script {
 
 impl Transport for Script {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+        yield_now().await;
         self.urls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
