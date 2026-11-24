@@ -680,31 +680,54 @@ pub(super) fn expected_operations(increment_value: i64) -> Vec<BatchTpdRefundOpe
     .collect()
 }
 
+// one row of the partial-failure answer: the counter, its descriptor and the limits the limiter reports
+#[derive(Clone, Copy)]
+struct PartialFailureRow {
+    code: BatchCounterCode,
+    key: &'static str,
+    value: &'static str,
+    limit_type: BatchCounterLimitType,
+    limits: (i64, i64),
+}
+
 // the statuses a partial failure reports: an Ok row, then the daily and team counters over their limits
+const PARTIAL_FAILURE_ROWS: [PartialFailureRow; 3] = [
+    PartialFailureRow {
+        code: BatchCounterCode::Ok,
+        key: "api_key",
+        value: "sk-1",
+        limit_type: BatchCounterLimitType::Requests,
+        limits: (5, 1),
+    },
+    PartialFailureRow {
+        code: BatchCounterCode::OverLimit,
+        key: "api_key_tpd",
+        value: "sk-1",
+        limit_type: BatchCounterLimitType::Tokens,
+        limits: (100, 0),
+    },
+    PartialFailureRow {
+        code: BatchCounterCode::OverLimit,
+        key: "team_tpd",
+        value: "team-1",
+        limit_type: BatchCounterLimitType::Tokens,
+        limits: (100, 0),
+    },
+];
+
+fn row_status(row: PartialFailureRow) -> BatchCounterStatus {
+    let PartialFailureRow {
+        code,
+        key,
+        value,
+        limit_type,
+        limits,
+    } = row;
+    status(code, key, Some(value), limit_type, limits)
+}
+
 pub(super) fn partial_failure_statuses() -> Vec<BatchCounterStatus> {
-    vec![
-        status(
-            BatchCounterCode::Ok,
-            "api_key",
-            Some("sk-1"),
-            BatchCounterLimitType::Requests,
-            (5, 1),
-        ),
-        status(
-            BatchCounterCode::OverLimit,
-            "api_key_tpd",
-            Some("sk-1"),
-            BatchCounterLimitType::Tokens,
-            (100, 0),
-        ),
-        status(
-            BatchCounterCode::OverLimit,
-            "team_tpd",
-            Some("team-1"),
-            BatchCounterLimitType::Tokens,
-            (100, 0),
-        ),
-    ]
+    PARTIAL_FAILURE_ROWS.into_iter().map(row_status).collect()
 }
 
 // base and project counters that charge in one call, answered by partial_failure_statuses
@@ -733,19 +756,10 @@ pub(super) fn partial_failure_limiter() -> ScriptedLimiter {
 }
 
 pub(super) fn partial_failure_cache() -> ScriptedCache {
-    ScriptedCache {
-        values: BTreeMap::from([
-            (
-                String::from("{api_key_tpd:sk-1}:window"),
-                WindowStartValue::Integer(1_699_990_000),
-            ),
-            (
-                String::from("{team_tpd:team-1}:window"),
-                WindowStartValue::Integer(1_699_980_000),
-            ),
-        ]),
-        reads: Arc::default(),
-    }
+    ScriptedCache::with_value(
+        "{api_key_tpd:sk-1}:window",
+        WindowStartValue::Integer(1_699_990_000),
+    )
 }
 
 pub(super) fn window_status(
@@ -846,16 +860,6 @@ pub(super) async fn run_refund(
         .await
         .unwrap();
     (harness, result)
-}
-
-pub(super) fn assert_accepted(answer: &BatchLimitCounterAnswer) {
-    match answer {
-        BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection }
-        | BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection } => {
-            assert!(rejection.is_none());
-        }
-        other => panic!("not an accepted answer: {other:?}"),
-    }
 }
 
 pub(super) fn assert_requests_rejection(

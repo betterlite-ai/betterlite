@@ -7,20 +7,21 @@ use crate::api::batch_enqueued_reserve::ReservationBackend;
 use crate::api::batch_limit_counters::BatchLimitCountersError;
 use crate::api::batch_limit_counters::input::BatchLimitCounterCall;
 use crate::api::batch_limit_counters::records::{
-    BatchCounterCode, BatchCounterLimitType, BatchReservationBackend, WindowStartValue,
+    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, BatchReservationBackend,
+    WindowStartValue,
 };
 use crate::api::batch_limit_counters::rejections::request_model;
 use crate::api::batch_limit_descriptors::descriptors::TPD_WINDOW_SECONDS;
 
 use self::support::{
     LimiterFailure, RESET_AT, ScriptedCache, ScriptedLimiter, ScriptedStore, Stored, WINDOW,
-    assert_accepted, assert_direct_enqueued_model, assert_enqueued_rejection,
-    assert_requests_rejection, daily_descriptor, data, descriptor, detail_text, empty_model_data,
-    expected_operations, harness, header, increments, input, non_text_model_data, null_model_data,
-    ok_response, operations_of, over_limit, partial_failure_cache, partial_failure_limiter,
-    project_usage_row, refund_call, refund_windows, rejection, requests_limiter, reserved,
-    run_check, run_raise, run_refund, run_window, scope, status, stored_value, usage,
-    usage_for_row, usage_with_rows, window_start_of, window_status,
+    assert_direct_enqueued_model, assert_enqueued_rejection, assert_requests_rejection,
+    daily_descriptor, data, descriptor, detail_text, empty_model_data, expected_operations,
+    harness, header, increments, input, non_text_model_data, null_model_data, ok_response,
+    operations_of, over_limit, partial_failure_cache, partial_failure_limiter, project_usage_row,
+    refund_call, refund_windows, rejection, requests_limiter, reserved, run_check, run_raise,
+    run_refund, run_window, scope, status, stored_value, usage, usage_for_row, usage_with_rows,
+    window_start_of, window_status,
 };
 
 mod support;
@@ -69,7 +70,10 @@ async fn batch_rpm_limit(
             "60",
         );
     } else {
-        assert_accepted(&result.answers[0]);
+        assert!(matches!(
+            result.answers[0],
+            BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection: None }
+        ));
     }
     assert!(rig.stash.operations().is_empty());
 }
@@ -255,7 +259,10 @@ async fn enqueued_reservation_is_stashed() {
     assert_eq!(reservation.tokens, 30);
     assert_eq!(reservation.scopes, scopes);
     assert_eq!(reservation.backend, ReservationBackend::Memory);
-    assert_accepted(&result.answers[0]);
+    assert!(matches!(
+        result.answers[0],
+        BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection: None }
+    ));
 }
 
 // more enqueued tokens than the allowance still displays zero remaining
@@ -393,7 +400,10 @@ async fn refunds_stash_and_aware_rejection() {
         Some(vec![daily.clone()]),
     )
     .await;
-    assert_accepted(&result.answers[0]);
+    assert!(matches!(
+        result.answers[0],
+        BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection: None }
+    ));
     let stashed = rig.stash.operations();
     assert_eq!(stashed.len(), 1);
     assert_eq!(stashed[0].key, "{api_key_tpd:sk-1}:tokens");
@@ -486,7 +496,10 @@ async fn limiter_failure_keeps_stash() {
         Some(vec![daily_descriptor()]),
     )
     .await;
-    assert_accepted(&first.answers[0]);
+    assert!(matches!(
+        first.answers[0],
+        BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection: None }
+    ));
     assert_eq!(rig.stash.operations().len(), 1);
     let failure = rig
         .service
