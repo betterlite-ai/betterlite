@@ -66,45 +66,28 @@ impl Helper for Op {
             Input::ToSubject {
                 principal,
                 subject_token,
-            } => Ok(to_subject_answer(
-                principal.as_ref(),
-                subject_token.as_deref(),
-            )),
+            } => Ok(subject_answer(principal.as_ref(), subject_token.as_deref())),
             Input::ToServerSpec { server } => inspect::spec_answer(server),
             Input::ProtectedResourcePath {
                 server,
                 root_path,
                 scalar_root_path,
-            } => Ok(Value::String(
-                adapter::challenge::oauth_protected_resource_path(
-                    root_path,
-                    scalar_root_path,
-                    server,
-                ),
-            )),
+            } => Ok(inspect::resource_path(server, root_path, scalar_root_path)),
             Input::UserOauthChallenge {
                 server,
                 root_path,
                 scalar_root_path,
-            } => Ok(inspect::challenge_answer(
-                &adapter::challenge::raise_user_oauth_challenge(
-                    server,
-                    root_path,
-                    scalar_root_path,
-                ),
-            )),
+            } => Ok(inspect::user_challenge(server, root_path, scalar_root_path)),
             Input::TokenExchangeChallenge {
                 server,
                 root_path,
                 scalar_root_path,
                 claims,
-            } => Ok(inspect::challenge_answer(
-                &adapter::challenge::raise_token_exchange_challenge(
-                    server,
-                    root_path,
-                    scalar_root_path,
-                    claims.as_deref(),
-                ),
+            } => Ok(inspect::exchange_challenge(
+                server,
+                root_path,
+                scalar_root_path,
+                claims.as_deref(),
             )),
             Input::CredentialResolver {
                 server,
@@ -116,7 +99,7 @@ impl Helper for Op {
     }
 }
 
-fn to_subject_answer(principal: Option<&Principal>, subject_token: Option<&str>) -> Value {
+fn subject_answer(principal: Option<&Principal>, subject_token: Option<&str>) -> Value {
     let user = principal.map(|fields| UserPrincipal {
         org_id: fields.org_id.clone(),
         team_id: fields.team_id.clone(),

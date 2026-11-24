@@ -25,7 +25,6 @@ def user_challenge_answer(server: MCPServer, root_path: str) -> dict[str, JsonVa
         raise_user_oauth_challenge(server, root_path=root_path)
     except RaisedError as exception:
         return exception_answer(exception)
-    raise AssertionError("the user OAuth challenge did not raise")
 
 
 def exchange_challenge_answer(
@@ -35,4 +34,3 @@ def exchange_challenge_answer(
         raise_token_exchange_challenge(server, root_path=root_path, claims=claims)
     except RaisedError as exception:
         return exception_answer(exception)
-    raise AssertionError("the token exchange challenge did not raise")

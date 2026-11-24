@@ -4,10 +4,12 @@ use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
 use betterlite_mcp::credential_contracts::auth_config::AuthConfig;
-use betterlite_mcp::credential_contracts::auth_config::aws::AwsCredentialSource;
-use betterlite_mcp::credential_contracts::auth_config::id_jag::ClientAuth;
-use betterlite_mcp::credential_contracts::auth_config::key_source::ApiKeySource;
-use betterlite_mcp::credential_contracts::auth_config::oauth::TokenExchangeProfile;
+use betterlite_mcp::credential_contracts::auth_config::aws::{AwsCredentialSource, AwsSigV4Config};
+use betterlite_mcp::credential_contracts::auth_config::id_jag::{ClientAuth, IdJagConfig};
+use betterlite_mcp::credential_contracts::auth_config::key_source::{ApiKeyConfig, ApiKeySource};
+use betterlite_mcp::credential_contracts::auth_config::oauth::{
+    AuthorizationCodeConfig, ClientCredentialsConfig, TokenExchangeConfig, TokenExchangeProfile,
+};
 use betterlite_mcp::credential_contracts::header_carrier::HeaderCarrier;
 use betterlite_mcp::credential_contracts::token_endpoint_auth::TokenEndpointAuthMethod;
 use betterlite_mcp::outbound_credentials::adapter;
@@ -27,6 +29,33 @@ pub(super) fn spec_answer(server: &MCPServer) -> HelperResult {
     }))
 }
 
+pub(super) fn resource_path(server: &MCPServer, root_path: &str, scalar_root_path: &str) -> Value {
+    let path =
+        adapter::challenge::oauth_protected_resource_path(root_path, scalar_root_path, server);
+    Value::String(path)
+}
+
+pub(super) fn user_challenge(server: &MCPServer, root_path: &str, scalar_root_path: &str) -> Value {
+    let exception =
+        adapter::challenge::raise_user_oauth_challenge(server, root_path, scalar_root_path);
+    challenge_answer(&exception)
+}
+
+pub(super) fn exchange_challenge(
+    server: &MCPServer,
+    root_path: &str,
+    scalar_root_path: &str,
+    claims: Option<&str>,
+) -> Value {
+    let exception = adapter::challenge::raise_token_exchange_challenge(
+        server,
+        root_path,
+        scalar_root_path,
+        claims,
+    );
+    challenge_answer(&exception)
+}
+
 pub(super) fn challenge_answer(exception: &HttpException) -> Value {
     let headers: BTreeMap<String, String> = exception
         .headers
@@ -38,112 +67,136 @@ pub(super) fn challenge_answer(exception: &HttpException) -> Value {
 
 fn config_answer(config: &AuthConfig) -> Value {
     match config {
-        AuthConfig::AuthorizationCode(fields) => with_header(
-            "authorization_code",
-            &fields.header,
-            json!({
-                "scopes": fields.scopes,
-                "client_id": fields.client_id,
-                "client_secret": fields
-                    .client_secret
-                    .as_ref()
-                    .map(|secret| secret.expose_secret().to_owned()),
-                "authorization_url": fields.authorization_url,
-                "token_url": fields.token_url,
-            }),
-        ),
-        AuthConfig::ClientCredentials(fields) => with_header(
-            "client_credentials",
-            &fields.header,
-            json!({
-                "client_id": fields.client_id,
-                "client_secret": fields
-                    .client_secret
-                    .as_ref()
-                    .map(|secret| secret.expose_secret().to_owned()),
-                "token_url": fields.token_url,
-                "scopes": fields.scopes,
-                "audience": fields.audience,
-                "upstream_resource": fields.upstream_resource,
-                "token_endpoint_auth_method": fields
-                    .token_endpoint_auth_method
-                    .map(TokenEndpointAuthMethod::as_str),
-            }),
-        ),
-        AuthConfig::TokenExchange(fields) => with_header(
-            "token_exchange",
-            &fields.header,
-            json!({
-                "profile": profile(fields.profile),
-                "subject_token_type": fields.subject_token_type,
-                "token_exchange_endpoint": fields.token_exchange_endpoint,
-                "audience": fields.audience,
-                "client_id": fields.client_id,
-                "client_secret": fields
-                    .client_secret
-                    .as_ref()
-                    .map(|secret| secret.expose_secret().to_owned()),
-                "token_endpoint_auth_method": fields
-                    .token_endpoint_auth_method
-                    .map(TokenEndpointAuthMethod::as_str),
-                "scopes": fields.scopes,
-            }),
-        ),
-        AuthConfig::IdJag(fields) => with_header(
-            "id_jag",
-            &fields.header,
-            json!({
-                "org_token_endpoint": fields.org_token_endpoint,
-                "resource_token_endpoint": fields.resource_token_endpoint,
-                "client_id": fields.client_id,
-                "client_auth": client_auth_answer(&fields.client_auth),
-                "subject_token_type": fields.subject_token_type,
-                "audience": fields.audience,
-                "resource": fields.resource,
-                "scopes": fields.scopes,
-            }),
-        ),
-        AuthConfig::ApiKey(fields) => with_header(
-            "api_key",
-            &fields.header,
-            json!({
-                "key_source": match &fields.key_source {
-                    ApiKeySource::Shared(shared) => json!({
-                        "kind": "shared",
-                        "value": shared.value.expose_secret(),
-                    }),
-                    ApiKeySource::Byok => json!({"kind": "byok"}),
-                },
-            }),
-        ),
+        AuthConfig::AuthorizationCode(fields) => authorization_code_answer(fields),
+        AuthConfig::ClientCredentials(fields) => client_credentials_answer(fields),
+        AuthConfig::TokenExchange(fields) => token_exchange_answer(fields),
+        AuthConfig::IdJag(fields) => id_jag_answer(fields),
+        AuthConfig::ApiKey(fields) => api_key_answer(fields),
         AuthConfig::Passthrough(_fields) => json!({"kind": "passthrough", "fields": {}}),
         AuthConfig::None(_fields) => json!({"kind": "none", "fields": {}}),
-        AuthConfig::AwsSigv4(fields) => json!({
-            "kind": "aws_sigv4",
-            "fields": {
-                "region": fields.region,
-                "service": fields.service,
-                "credentials": match &fields.credentials {
-                    AwsCredentialSource::StaticKeys(keys) => json!({
-                        "kind": "static_keys",
-                        "access_key_id": keys.access_key_id,
-                        "secret_access_key": keys.secret_access_key.expose_secret(),
-                        "session_token": keys
-                            .session_token
-                            .as_ref()
-                            .map(|secret| secret.expose_secret().to_owned()),
-                    }),
-                    AwsCredentialSource::AssumeRole(role) => json!({
-                        "kind": "assume_role",
-                        "role_arn": role.role_arn,
-                        "session_name": role.session_name,
-                        "external_id": role.external_id,
-                    }),
-                    AwsCredentialSource::Ambient => json!({"kind": "ambient"}),
-                },
+        AuthConfig::AwsSigv4(fields) => aws_sigv4_answer(fields),
+    }
+}
+
+fn authorization_code_answer(fields: &AuthorizationCodeConfig) -> Value {
+    with_header(
+        "authorization_code",
+        &fields.header,
+        json!({
+            "scopes": fields.scopes,
+            "client_id": fields.client_id,
+            "client_secret": fields
+                .client_secret
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
+            "authorization_url": fields.authorization_url,
+            "token_url": fields.token_url,
+        }),
+    )
+}
+
+fn client_credentials_answer(fields: &ClientCredentialsConfig) -> Value {
+    with_header(
+        "client_credentials",
+        &fields.header,
+        json!({
+            "client_id": fields.client_id,
+            "client_secret": fields
+                .client_secret
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
+            "token_url": fields.token_url,
+            "scopes": fields.scopes,
+            "audience": fields.audience,
+            "upstream_resource": fields.upstream_resource,
+            "token_endpoint_auth_method": fields
+                .token_endpoint_auth_method
+                .map(TokenEndpointAuthMethod::as_str),
+        }),
+    )
+}
+
+fn token_exchange_answer(fields: &TokenExchangeConfig) -> Value {
+    with_header(
+        "token_exchange",
+        &fields.header,
+        json!({
+            "profile": profile(fields.profile),
+            "subject_token_type": fields.subject_token_type,
+            "token_exchange_endpoint": fields.token_exchange_endpoint,
+            "audience": fields.audience,
+            "client_id": fields.client_id,
+            "client_secret": fields
+                .client_secret
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
+            "token_endpoint_auth_method": fields
+                .token_endpoint_auth_method
+                .map(TokenEndpointAuthMethod::as_str),
+            "scopes": fields.scopes,
+        }),
+    )
+}
+
+fn id_jag_answer(fields: &IdJagConfig) -> Value {
+    with_header(
+        "id_jag",
+        &fields.header,
+        json!({
+            "org_token_endpoint": fields.org_token_endpoint,
+            "resource_token_endpoint": fields.resource_token_endpoint,
+            "client_id": fields.client_id,
+            "client_auth": client_auth_answer(&fields.client_auth),
+            "subject_token_type": fields.subject_token_type,
+            "audience": fields.audience,
+            "resource": fields.resource,
+            "scopes": fields.scopes,
+        }),
+    )
+}
+
+fn api_key_answer(fields: &ApiKeyConfig) -> Value {
+    with_header(
+        "api_key",
+        &fields.header,
+        json!({
+            "key_source": match &fields.key_source {
+                ApiKeySource::Shared(shared) => json!({
+                    "kind": "shared",
+                    "value": shared.value.expose_secret(),
+                }),
+                ApiKeySource::Byok => json!({"kind": "byok"}),
             },
         }),
-    }
+    )
+}
+
+fn aws_sigv4_answer(fields: &AwsSigV4Config) -> Value {
+    json!({
+        "kind": "aws_sigv4",
+        "fields": {
+            "region": fields.region,
+            "service": fields.service,
+            "credentials": match &fields.credentials {
+                AwsCredentialSource::StaticKeys(keys) => json!({
+                    "kind": "static_keys",
+                    "access_key_id": keys.access_key_id,
+                    "secret_access_key": keys.secret_access_key.expose_secret(),
+                    "session_token": keys
+                        .session_token
+                        .as_ref()
+                        .map(|secret| secret.expose_secret().to_owned()),
+                }),
+                AwsCredentialSource::AssumeRole(role) => json!({
+                    "kind": "assume_role",
+                    "role_arn": role.role_arn,
+                    "session_name": role.session_name,
+                    "external_id": role.external_id,
+                }),
+                AwsCredentialSource::Ambient => json!({"kind": "ambient"}),
+            },
+        },
+    })
 }
 
 fn with_header(kind: &str, header: &HeaderCarrier, fields: Value) -> Value {
