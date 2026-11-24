@@ -74,10 +74,9 @@ fn provider_config_for(
     model: &str,
     api_base: Option<&str>,
 ) -> Option<ResponsesApiConfig> {
-    match provider {
-        Some(name) => resolve_provider_config(configs, model, name, &JsonValue::Null, api_base),
-        None => None,
-    }
+    provider.map_or(None, |name| {
+        resolve_provider_config(configs, model, name, &JsonValue::Null, api_base)
+    })
 }
 
 fn first_text<const N: usize>(candidates: [Option<&str>; N]) -> Option<String> {
