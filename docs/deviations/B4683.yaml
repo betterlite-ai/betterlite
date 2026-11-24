@@ -29,11 +29,18 @@ deviations:
       it. Null and absent schemes take the same https default, as the compatibility rules say.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L213
   - what: >-
-      A path or query argument that is a list or an object is sent as compact JSON.
+      A path argument that is a list or an object is sent as compact JSON.
     why: >-
       LiteLLM renders it with Python str(), whose spacing and quoting are runtime text the
       compatibility rules do not copy. A scalar renders the same on both sides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L136
+  - what: >-
+      A query argument that is an object is sent as compact JSON.
+    why: >-
+      LiteLLM hands the value to httpx, which renders it with Python str(), spacing and single
+      quotes included, and the compatibility rules do not copy that text. A list is still
+      repeated once per item, as httpx does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L540-L546
   - what: >-
       A servers entry without a url contributes an empty base URL.
     why: >-
