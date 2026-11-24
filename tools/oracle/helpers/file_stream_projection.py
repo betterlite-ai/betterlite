@@ -88,9 +88,6 @@ class CommonUtils(Protocol):
     ) -> None: ...
 
 
-UTILS: Final[CommonUtils] = common_utils
-
-
 def text_fields(snapshot: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     texts: dict[str, JsonValue] = {}
     for name, value in snapshot.items():
@@ -102,20 +99,23 @@ def text_fields(snapshot: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     return texts
 
 
-def predicates(call: ProjectionCall) -> JsonValue:
-    inputs = call.get("predicates")
-    if inputs is None:
-        return []
-    return JSON.validate_python(
-        [
-            name is not None
-            and FileContentStreamingHandler.should_stream_file_content(custom_llm_provider=name)
-            for name in inputs
-        ]
-    )
+def predicates(call: ProjectionCall) -> list[JsonValue]:
+    providers = call.get("predicates")
+    checks: list[JsonValue] = []
+    if providers is None:
+        return checks
+    for name in providers:
+        enabled = name is not None and FileContentStreamingHandler.should_stream_file_content(
+            custom_llm_provider=name
+        )
+        checks.append(enabled)
+    return checks
 
 
-def projection_answer(call: ProjectionCall) -> JsonValue:
+def projection_answer(
+    call: ProjectionCall,
+    utils: CommonUtils = common_utils,
+) -> JsonValue:
     credentials = call.get("credentials")
     data = call["data"]
     file_id: JsonValue = call["file_id"]
@@ -123,7 +123,7 @@ def projection_answer(call: ProjectionCall) -> JsonValue:
     trusted: dict[str, JsonValue] | None = None
     if call["should_route"] and credentials is not None:
         data = dict(data)
-        UTILS.prepare_data_with_credentials(
+        utils.prepare_data_with_credentials(
             data,
             credentials,
             file_id=call.get("original_file_id"),
