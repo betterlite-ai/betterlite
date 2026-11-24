@@ -131,6 +131,12 @@ async fn inherited_budget_fields_preserved() {
         table.get("budget_duration"),
         Some(&JsonData::String(String::from("1d")))
     );
+    // the nested table echoes the request's money and limit columns, not only the stored row
+    assert_eq!(number(table.get("max_budget").unwrap()), 12.5);
+    assert_eq!(number(table.get("soft_budget").unwrap()), 3.0);
+    assert_eq!(number(table.get("temp_budget_increase").unwrap()), 2.0);
+    assert_eq!(table.get("max_parallel_requests"), Some(&parsed("4")));
+    assert_eq!(table.get("tpm_limit"), Some(&parsed("5")));
     app.close().await;
 }
 

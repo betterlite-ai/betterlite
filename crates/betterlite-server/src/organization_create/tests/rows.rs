@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use betterlite_db::budget_permission_rows::JsonData;
 
 use super::support::{TestApp, admin_caller, capture_logs, number, parsed};
+use crate::organization_create::records::NewOrganizationRequest;
 
 const DEFAULT_BODY: &str = r#"{"organization_alias":"acme"}"#;
 
@@ -12,6 +13,31 @@ fn text_value(value: Option<&JsonData>) -> &str {
         panic!("the value is not a JSON string");
     };
     text
+}
+
+#[test]
+fn request_fields_projection() {
+    let request: NewOrganizationRequest = serde_json::from_str(
+        r#"{"organization_alias":"acme","models":["gpt-4"],"max_budget":12.5}"#,
+    )
+    .unwrap();
+    let fields = request.fields().unwrap();
+    // data.json(exclude_none=True): the required columns and every sent value enter the projection
+    assert_eq!(
+        fields.get("organization_alias"),
+        Some(&JsonData::String(String::from("acme")))
+    );
+    assert_eq!(
+        fields.get("models"),
+        Some(&JsonData::Array(vec![JsonData::String(String::from(
+            "gpt-4"
+        ))]))
+    );
+    assert_eq!(number(fields.get("max_budget").unwrap()), 12.5);
+    // absent option fields are left out instead of written as null
+    assert!(!fields.contains_key("metadata"));
+    assert!(!fields.contains_key("object_permission"));
+    assert!(!fields.contains_key("budget_id"));
 }
 
 #[tokio::test]
