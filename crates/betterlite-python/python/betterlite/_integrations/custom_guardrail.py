@@ -16,7 +16,7 @@ APPLY_GUARDRAIL_HOOK: Final = "apply_guardrail"
 class CustomGuardrail(GuardrailParams):
     @override
     def __init_subclass__(cls, **kwargs: JsonValue) -> None:
-        _ = kwargs
+        super().__init_subclass__(**kwargs)
         own = cls.apply_guardrail
         # ast-grep-ignore: no-reflection
         marked: JsonValue = getattr(own, MARKER, False)

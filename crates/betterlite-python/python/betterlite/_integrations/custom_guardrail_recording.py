@@ -40,17 +40,11 @@ class GuardrailRecording(GuardrailSelection, GuardrailRecorder):
     @override
     # ast-grep-ignore: no-long-names
     def add_standard_logging_guardrail_information_to_request_data(
-        self,
-        guardrail_json_response: GuardrailValue,
-        request_data: dict[str, JsonValue],
-        guardrail_status: GuardrailStatus,
-        start_time: float | None = None,
-        end_time: float | None = None,
-        *,
-        duration: float | None = None,
+        self, guardrail_json_response: GuardrailValue, request_data: dict[str, JsonValue],
+        guardrail_status: GuardrailStatus, start_time: float | None = None,
+        end_time: float | None = None, *, duration: float | None = None,
         masked_entity_count: dict[str, int] | None = None,
-        guardrail_provider: str | None = None,
-        event_type: GuardrailEventHooks | None = None,
+        guardrail_provider: str | None = None, event_type: GuardrailEventHooks | None = None,
         tracing_detail: GuardrailTracingDetail | None = None,
     ) -> None:
         detail = None if tracing_detail is None else JSON.validate_json(json.dumps(tracing_detail))

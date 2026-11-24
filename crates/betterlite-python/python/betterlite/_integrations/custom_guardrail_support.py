@@ -157,7 +157,8 @@ def selection_answer(
     handle: NativeGuardrail, data: Mapping[str, JsonValue],
     event_type: GuardrailEventHooks, suppressed: frozenset[str],
 ) -> bool:
-    names = json.dumps(sorted(suppressed))
+    ordered: list[str] = sorted(suppressed)
+    names = json.dumps(ordered)
     return guarded(
         partial(handle.should_run_guardrail, json.dumps(request_json(data)), str(event_type), names)
     )

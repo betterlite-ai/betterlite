@@ -30,6 +30,12 @@ deviations:
   - what: _suppressed_by_auto_router_compression always returns False.
     why: The request-scoped suppression set it reads belongs to the auto-router compression feature, which betterlite has not ported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1041-L1056
+  - what: A subclass is wrapped when its resolved apply_guardrail is neither the base method nor already marked, where LiteLLM wraps only when the class's own namespace defines apply_guardrail.
+    why: The no-reflection rule and strict typing leave no typed way to read a class's own namespace, so a method inherited from a plain mixin is wrapped and auto-recorded too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L183-L188
+  - what: _deployment_hook_target raises ImportError for a guardrail that implements apply_guardrail instead of returning litellm.proxy.utils.unified_guardrail.
+    why: betterlite has no Python proxy module; its native proxy picks the unified target in Rust, and the Python method keeps LiteLLM's message for direct callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L815-L826
 kept_bugs:
   - what: A guardrail whose class name contains CustomCodeGuardrail records the literal string "deny" in place of the exception it raised.
     why: Copying the name-substring check keeps those guardrails' spend logs and pass-through responses as LiteLLM's are.

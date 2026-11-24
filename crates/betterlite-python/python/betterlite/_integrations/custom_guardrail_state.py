@@ -193,8 +193,8 @@ class GuardrailState(CustomLogger):
         key = self._scanned_texts_cache_key(session_id)
         try:
             cached = await cache.async_get_cache(key=key)
-        except Exception as error:
-            LOGGER.warning("Guardrail %s: read cache failed: %s", self.guardrail_name, error)
+        except Exception:
+            LOGGER.warning("Guardrail %s: read cache failed", self.guardrail_name, exc_info=True)
             return None
         return self._hash_set(cached)
 
@@ -242,8 +242,8 @@ class GuardrailState(CustomLogger):
                 # ast-grep-ignore: no-long-names
                 key=key, value=merged, ttl=GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS
             )
-        except Exception as error:
-            LOGGER.warning("Guardrail %s: write cache failed: %s", self.guardrail_name, error)
+        except Exception:
+            LOGGER.warning("Guardrail %s: write cache failed", self.guardrail_name, exc_info=True)
 
     def should_route_on_sensitive_data(self) -> bool:
         return self.on_sensitive_data == "route" and self.sensitive_data_route_to_model is not None
