@@ -73,14 +73,16 @@ pub(crate) fn listed(values: &[&str]) -> Json {
     Json::List(values.iter().map(|value| text(value)).collect())
 }
 
+// The fixture deployments' litellm_params, shared by the dumped row and the built spec.
+fn default_params() -> JsonObject {
+    object(&[("model", text("openai/gpt-4o"))])
+}
+
 // One router-shaped row: what get_model_list and the model info responses dump.
 pub(crate) fn deployment_json(name: &str, info: &[(&str, Json)]) -> JsonObject {
     object(&[
         ("model_name", text(name)),
-        (
-            "litellm_params",
-            Json::Object(object(&[("model", text("openai/gpt-4o"))])),
-        ),
+        ("litellm_params", Json::Object(default_params())),
         ("model_info", Json::Object(object(info))),
     ])
 }
@@ -113,7 +115,7 @@ pub(crate) fn name_of(row: &JsonObject) -> &str {
 pub(crate) fn spec(name: &str, info: &[(&str, Json)]) -> DeploymentSpec {
     DeploymentSpec::new(
         String::from(name),
-        object(&[("model", text("openai/gpt-4o"))]),
+        default_params(),
         object(info),
         JsonObject::new(),
         String::new,
@@ -183,17 +185,6 @@ pub(crate) fn read_failure() -> TeamScopeReadError {
 }
 
 impl StubReads {
-    pub(crate) const fn new() -> Self {
-        Self {
-            users: BTreeMap::new(),
-            teams: BTreeMap::new(),
-            rows: Vec::new(),
-            failing: Vec::new(),
-            calls: Mutex::new(Vec::new()),
-            names_seen: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(crate) fn with_users(mut self, users: BTreeMap<String, Vec<String>>) -> Self {
         self.users = users;
         self
@@ -396,24 +387,34 @@ pub(crate) struct DecryptFixture {
     pub(crate) warnings: Warnings,
 }
 
+// The fixture cipher: a plaintext signing key, so stored params decrypt without a secret manager.
+fn fixture_cipher() -> DbCipher {
+    DbCipher {
+        settings: CipherSettings {
+            signing_key: Some(SecretString::from("b1216-test-key".to_owned())),
+            algorithm: Algorithm::XSalsa20Poly1305,
+        },
+        nonces: OsNonces,
+        diagnostics: TracingDiagnostics,
+    }
+}
+
+// The fixture secret lookup: no manager and fixed inputs, so decryption never reaches the network.
+fn fixture_secrets() -> SecretLookup {
+    SecretLookup {
+        manager: None,
+        oidc_http: Arc::new(NoOidcHttp),
+        azure_tokens: Arc::new(NoAzureTokens),
+        clock: Arc::new(FixedClock),
+        oidc_cache: OidcTokenCache::default(),
+    }
+}
+
 impl DecryptFixture {
     pub(crate) fn new() -> Self {
         Self {
-            cipher: DbCipher {
-                settings: CipherSettings {
-                    signing_key: Some(SecretString::from("b1216-test-key".to_owned())),
-                    algorithm: Algorithm::XSalsa20Poly1305,
-                },
-                nonces: OsNonces,
-                diagnostics: TracingDiagnostics,
-            },
-            secrets: SecretLookup {
-                manager: None,
-                oidc_http: Arc::new(NoOidcHttp),
-                azure_tokens: Arc::new(NoAzureTokens),
-                clock: Arc::new(FixedClock),
-                oidc_cache: OidcTokenCache::default(),
-            },
+            cipher: fixture_cipher(),
+            secrets: fixture_secrets(),
             environment: BTreeMap::new(),
             warnings: Warnings::default(),
         }

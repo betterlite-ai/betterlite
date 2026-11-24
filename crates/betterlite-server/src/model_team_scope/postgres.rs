@@ -49,10 +49,13 @@ async fn fetch_team_models(
     client: Option<PrismaClient<'_>>,
     team_id: &str,
 ) -> Result<Option<Vec<String>>, TeamQueryError> {
-    let connected = client.ok_or(DbError::NoDbConnected)?;
-    let repository = team_table(Some(connected))?;
-    let team = repository.find_by_id(team_id).await?;
-    Ok(team.map(|row| row.fields.base.models))
+    let Some(connected) = client else {
+        return Err(TeamQueryError::from(DbError::NoDbConnected));
+    };
+    Ok(team_table(Some(connected))?
+        .find_by_id(team_id)
+        .await?
+        .map(|row| row.fields.base.models))
 }
 
 // ModelRepository.table.find_many(where={"model_name": {"in": names}}): B725's rows by name, no team predicate.
