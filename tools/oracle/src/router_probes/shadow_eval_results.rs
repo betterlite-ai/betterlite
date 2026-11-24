@@ -129,11 +129,11 @@ async fn list_outcome(
         }
         Err(ShadowQueryError::Invalid { .. }) => return Ok(StepOutcome::Failed { status: 422 }),
     };
-    let store = match viewer(store, step.role, step.store) {
-        Ok(store) => store,
+    let visible = match viewer(store, step.role, step.store) {
+        Ok(visible) => visible,
         Err(outcome) => return Ok(outcome),
     };
-    match list_shadow_eval_jobs(store, &query, now).await {
+    match list_shadow_eval_jobs(visible, &query, now).await {
         Ok(jobs) => Ok(StepOutcome::Listed {
             jobs: jobs
                 .iter()
@@ -156,7 +156,7 @@ async fn detail_outcome(
         Err(error) => Ok(StepOutcome::Failed {
             status: error.status_code(),
         }),
-        Ok(store) => job_outcome(get_shadow_eval_job(store, &step.job_id, now).await),
+        Ok(visible) => job_outcome(get_shadow_eval_job(visible, &step.job_id, now).await),
     }
 }
 
@@ -173,11 +173,7 @@ fn job_outcome(
     }
 }
 
-fn viewer<'store>(
-    store: &'store ProbeStore,
-    role: Role,
-    connected: bool,
-) -> Result<&'store ProbeStore, StepOutcome> {
+fn viewer(store: &ProbeStore, role: Role, connected: bool) -> Result<&ProbeStore, StepOutcome> {
     let identity = identity_of(role);
     require_viewer(&identity, VIEW_ACTION, connected.then_some(store)).map_err(|error| {
         StepOutcome::Failed {
