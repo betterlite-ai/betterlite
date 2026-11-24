@@ -1,7 +1,7 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
-from typing import Final, Protocol, TypeAlias, TypeVar, TypedDict
+from collections.abc import AsyncIterator, Awaitable, Coroutine, Mapping
+from typing import Final, Protocol, TypeAlias, TypedDict, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -59,6 +59,16 @@ RequestValue: TypeAlias = (
     SendMessageRequest | SendStreamingMessageRequest | Mapping[str, JsonValue] | SDKRequest | None
 )
 ClientValue: TypeAlias = A2AClientType | SDKClient | None
+
+
+# asend_message's own **kwargs cannot take this wrapper's dict of any call value
+class SendCall(Protocol):
+    def __call__(
+        self,
+        a2a_client: ClientValue = ...,
+        request: RequestValue = ...,
+        **kwargs: CallValue,
+    ) -> Coroutine[None, None, LiteLLMSendMessageResponse]: ...
 
 
 async def guarded(call: Awaitable[_CallResult]) -> _CallResult:
@@ -258,7 +268,7 @@ def send_message(
     request: RequestValue,
     **kwargs: CallValue,
 ) -> LiteLLMSendMessageResponse | Coroutine[None, None, LiteLLMSendMessageResponse]:
-    send: Callable[..., Coroutine[None, None, LiteLLMSendMessageResponse]] = asend_message
+    send: SendCall = asend_message
     call = send(a2a_client=a2a_client, request=request, **kwargs)
     try:
         _ = asyncio.get_running_loop()

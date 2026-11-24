@@ -1,7 +1,7 @@
 import asyncio
 import copy
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
-from typing import Final, TypedDict
+from collections.abc import AsyncIterator, Awaitable, Coroutine
+from typing import Final, Protocol, TypedDict
 
 import pytest
 from a2a.client import Client
@@ -49,11 +49,28 @@ STATUS_EVENT: Final = (
 
 CARD: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
-# LiteLLM's asend_message is wrapped by its untyped @client decorator, so the call itself is Any
-LITELLM_SEND: Final[Callable[..., Awaitable[LiteLLMResponse]]] = litellm_main.asend_message
-LITELLM_STREAM: Final[Callable[..., AsyncIterator[BaseModel]]] = (
-    litellm_main.asend_message_streaming
-)
+# LiteLLM's @client decorator hides asend_message's signature, so the calls go through a protocol
+class LiteLLMSendCall(Protocol):
+    def __call__(
+        self,
+        a2a_client: Client | None = ...,
+        request: SendMessageRequest | None = ...,
+        api_base: str | None = ...,
+        agent_id: str | None = ...,
+        agent_extra_headers: dict[str, str] | None = ...,
+    ) -> Awaitable[LiteLLMResponse]: ...
+
+
+class LiteLLMStreamCall(Protocol):
+    def __call__(
+        self,
+        a2a_client: Client | None = ...,
+        request: SendStreamingMessageRequest | None = ...,
+    ) -> AsyncIterator[BaseModel]: ...
+
+
+LITELLM_SEND: Final[LiteLLMSendCall] = litellm_main.asend_message
+LITELLM_STREAM: Final[LiteLLMStreamCall] = litellm_main.asend_message_streaming
 
 
 class InterfaceView(TypedDict):
