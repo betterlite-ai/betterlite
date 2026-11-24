@@ -178,7 +178,7 @@ impl ReasoningTokenCounter for ZeroReasoningCounter {
 }
 
 #[derive(Debug, Error)]
-enum UsageBridgeError {
+pub(super) enum UsageBridgeError {
     #[error(transparent)]
     Usage(#[from] UsageError<Infallible>),
     #[error(transparent)]

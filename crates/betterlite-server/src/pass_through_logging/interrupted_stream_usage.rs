@@ -127,14 +127,13 @@ fn re_tokenized<Counter>(counter: &Counter, model: &str, output: &str) -> Option
 where
     Counter: UsageTokenCounter,
 {
-    match block_on(counter.count_response_text(model, output)) {
-        Ok(Ok(count)) => Some(count),
-        Ok(Err(_)) | Err(_) => {
-            tracing::warn!(
-                "Could not re-tokenize interrupted stream output; keeping placeholder completion token count."
-            );
-            None
-        }
+    if let Ok(Ok(count)) = block_on(counter.count_response_text(model, output)) {
+        Some(count)
+    } else {
+        tracing::warn!(
+            "Could not re-tokenize interrupted stream output; keeping placeholder completion token count."
+        );
+        None
     }
 }
 

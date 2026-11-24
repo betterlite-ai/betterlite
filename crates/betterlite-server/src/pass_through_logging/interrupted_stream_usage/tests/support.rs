@@ -5,10 +5,21 @@ use betterlite_core::cost::recording::PortFailure;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_streaming::stream_chunk_shaping::records::{
+    JsonObject as ShapedObject, JsonValue as ShapedValue,
+};
 use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
+use betterlite_streaming::stream_usage_assembly::wire::{
+    CacheCreationTokenDetails, CompletionTokensDetails, PromptTokensDetails, ServerToolUse,
+    Usage as WireUsage,
+};
+use betterlite_streaming::streamed_response_assembly::response::{
+    ChatChoice, ChatMessage, ChatResponse, Response,
+};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message as CountMessage;
 use rust_decimal::Decimal;
+use serde_json::Number;
 
 use super::{CONTENT_STOP, DELTA, MESSAGE_STOP, START, TEXT_DELTA, TEXT_START};
 use crate::pass_through_logging::response_costing::{ResponseCostRequest, ResponseCostService};
@@ -183,4 +194,87 @@ impl UsageTokenCounter for RecordingCount {
     ) -> Result<i64, CountError> {
         Ok(self.count)
     }
+}
+
+pub(super) fn detail_counts_response() -> Response {
+    Response::Chat(Box::new(ChatResponse {
+        id: "chatcmpl-b3632".to_owned(),
+        object: "chat.completion".to_owned(),
+        created: 1_700_000_000,
+        model: "claude-test".to_owned(),
+        system_fingerprint: None,
+        service_tier: None,
+        choices: vec![detail_counts_choice()],
+        usage: detail_counts_usage(),
+        hidden_params: ShapedObject::new(),
+    }))
+}
+
+fn detail_counts_choice() -> ChatChoice {
+    ChatChoice {
+        index: 0,
+        message: ChatMessage {
+            content: Some("hello".to_owned()),
+            role: "assistant".to_owned(),
+            tool_calls: None,
+            function_call: None,
+            provider_specific_fields: None,
+            reasoning_content: None,
+            thinking_blocks: None,
+            annotations: None,
+            audio: None,
+            images: None,
+        },
+        finish_reason: "stop".to_owned(),
+        provider_specific_fields: None,
+    }
+}
+
+fn detail_counts_usage() -> WireUsage {
+    let (prompt_extra, completion_extra) = detail_extras();
+    WireUsage {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        cache_creation_input_tokens: Some(2),
+        cache_read_input_tokens: Some(3),
+        completion_tokens_details: Some(CompletionTokensDetails {
+            reasoning_tokens: Some(1),
+            text_tokens: Some(4),
+            image_tokens: Some(0),
+            audio_tokens: None,
+            extra: completion_extra,
+        }),
+        prompt_tokens_details: Some(PromptTokensDetails {
+            cached_tokens: Some(7),
+            web_search_requests: Some(1),
+            google_maps_grounding_requests: Some(2),
+            cache_write_tokens: Some(3),
+            cache_creation_tokens: Some(4),
+            cache_creation_token_details: Some(CacheCreationTokenDetails {
+                ephemeral_5m_input_tokens: Some(5),
+                ephemeral_1h_input_tokens: Some(6),
+            }),
+            extra: prompt_extra,
+        }),
+        server_tool_use: Some(ServerToolUse {
+            web_search_requests: Some(1),
+            tool_search_requests: Some(2),
+            browser_open_requests: Some(3),
+        }),
+        cost: Some(Decimal::new(25, 2)),
+        inference_geo: Some("us".to_owned()),
+        speed: Some("fast".to_owned()),
+    }
+}
+
+fn detail_extras() -> (ShapedObject, ShapedObject) {
+    let mut prompt_extra = ShapedObject::new();
+    prompt_extra.insert(
+        "custom_prompt".to_owned(),
+        ShapedValue::Number(Number::from(9_i64)),
+    );
+    let mut completion_extra = ShapedObject::new();
+    completion_extra.insert("custom_completion".to_owned(), ShapedValue::Bool(true));
+    (prompt_extra, completion_extra)
 }

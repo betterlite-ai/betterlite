@@ -7,6 +7,7 @@ use std::io;
 use std::path::PathBuf;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -17,16 +18,9 @@ use betterlite_logging::logging_state::types::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonObject as ShapedObject, JsonValue as ShapedValue,
-};
 use betterlite_streaming::stream_tool_assembly::records::{FunctionOutput, ToolOutput};
-use betterlite_streaming::stream_usage_assembly::wire::{
-    CacheCreationTokenDetails, CompletionTokensDetails, PromptTokensDetails, ServerToolUse,
-    Usage as WireUsage,
-};
 use betterlite_streaming::streamed_response_assembly::response::{
-    ChatChoice, ChatMessage, ChatResponse, Response, TextResponse, TextUsage,
+    Response, TextResponse, TextUsage,
 };
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -38,7 +32,7 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use self::support::{
     FailingCount, FakeCost, FixedCount, RecordingCount, completed_stream_bytes, cut_stream_bytes,
-    number, recorded_cost, recorded_usage, request_body,
+    detail_counts_response, number, recorded_cost, recorded_usage, request_body,
 };
 use super::lines::split_lines;
 use super::testing::{
@@ -668,7 +662,7 @@ fn interrupted_record_bills_zero_cost_when_costing_fails() {
     let recorded = recorded_usage(&call_log);
     assert_eq!(number(recorded.get("completion_tokens")), Some(5));
     assert_eq!(number(recorded.get("total_tokens")), Some(15));
-    assert_eq!(recorded_cost(&call_log), Some(0.0));
+    assert_eq!(recorded_cost(&call_log), Some(0.0_f64));
     assert!(log.contents().contains(
         "Anthropic passthrough: could not cost the partial usage of an interrupted stream (model=claude-test): "
     ));
@@ -690,86 +684,34 @@ fn interrupted_record_bills_the_partial_stream_cost() {
     let recorded = recorded_usage(&call_log);
     assert_eq!(number(recorded.get("prompt_tokens")), Some(10));
     assert_eq!(number(recorded.get("completion_tokens")), Some(5));
-    assert_eq!(recorded_cost(&call_log), Some(0.25));
+    assert_eq!(recorded_cost(&call_log), Some(0.25_f64));
 }
 
 #[test]
 fn interrupted_usage_copies_every_detail_count_into_the_recorded_usage() {
-    let mut prompt_extra = ShapedObject::new();
-    prompt_extra.insert(
-        "custom_prompt".to_owned(),
-        ShapedValue::Number(Number::from(9_i64)),
-    );
-    let mut completion_extra = ShapedObject::new();
-    completion_extra.insert("custom_completion".to_owned(), ShapedValue::Bool(true));
-    let response = Response::Chat(Box::new(ChatResponse {
-        id: "chatcmpl-b3632".to_owned(),
-        object: "chat.completion".to_owned(),
-        created: 1_700_000_000,
-        model: "claude-test".to_owned(),
-        system_fingerprint: None,
-        service_tier: None,
-        choices: vec![ChatChoice {
-            index: 0,
-            message: ChatMessage {
-                content: Some("hello".to_owned()),
-                role: "assistant".to_owned(),
-                tool_calls: None,
-                function_call: None,
-                provider_specific_fields: None,
-                reasoning_content: None,
-                thinking_blocks: None,
-                annotations: None,
-                audio: None,
-                images: None,
-            },
-            finish_reason: "stop".to_owned(),
-            provider_specific_fields: None,
-        }],
-        usage: WireUsage {
-            prompt_tokens: 10,
-            completion_tokens: 5,
-            total_tokens: 15,
-            cache_creation_input_tokens: Some(2),
-            cache_read_input_tokens: Some(3),
-            completion_tokens_details: Some(CompletionTokensDetails {
-                reasoning_tokens: Some(1),
-                text_tokens: Some(4),
-                image_tokens: Some(0),
-                audio_tokens: None,
-                extra: completion_extra,
-            }),
-            prompt_tokens_details: Some(PromptTokensDetails {
-                cached_tokens: Some(7),
-                web_search_requests: Some(1),
-                google_maps_grounding_requests: Some(2),
-                cache_write_tokens: Some(3),
-                cache_creation_tokens: Some(4),
-                cache_creation_token_details: Some(CacheCreationTokenDetails {
-                    ephemeral_5m_input_tokens: Some(5),
-                    ephemeral_1h_input_tokens: Some(6),
-                }),
-                extra: prompt_extra,
-            }),
-            server_tool_use: Some(ServerToolUse {
-                web_search_requests: Some(1),
-                tool_search_requests: Some(2),
-                browser_open_requests: Some(3),
-            }),
-            cost: Some(Decimal::new(25, 2)),
-            inference_geo: Some("us".to_owned()),
-            speed: Some("fast".to_owned()),
-        },
-        hidden_params: ShapedObject::new(),
-    }));
-    let recorded = usage_of(&response);
+    let recorded = usage_of(&detail_counts_response());
     assert_eq!(recorded.prompt_tokens, 10);
     assert_eq!(recorded.completion_tokens, 5);
     assert_eq!(recorded.total_tokens, 15);
     assert_eq!(recorded.cost, Some(Decimal::new(25, 2)));
-    let prompt = recorded
-        .prompt_tokens_details
-        .expect("the prompt details are recorded");
+    assert_prompt_details(
+        &recorded
+            .prompt_tokens_details
+            .expect("the prompt details are recorded"),
+    );
+    assert_completion_details(
+        &recorded
+            .completion_tokens_details
+            .expect("the completion details are recorded"),
+    );
+    assert_server_tool_use(
+        &recorded
+            .server_tool_use
+            .expect("the server tool use is recorded"),
+    );
+}
+
+fn assert_prompt_details(prompt: &IndexMap<String, Json>) {
     assert_eq!(
         prompt.get("cached_tokens"),
         Some(&Json::Number(Number::from(7_i64)))
@@ -790,6 +732,14 @@ fn interrupted_usage_copies_every_detail_count_into_the_recorded_usage() {
         prompt.get("cache_creation_tokens"),
         Some(&Json::Number(Number::from(4_i64)))
     );
+    assert_cache_creation_details(prompt);
+    assert_eq!(
+        prompt.get("custom_prompt"),
+        Some(&Json::Number(Number::from(9_i64)))
+    );
+}
+
+fn assert_cache_creation_details(prompt: &IndexMap<String, Json>) {
     let mut nested = IndexMap::new();
     nested.insert(
         "ephemeral_5m_input_tokens".to_owned(),
@@ -803,13 +753,9 @@ fn interrupted_usage_copies_every_detail_count_into_the_recorded_usage() {
         prompt.get("cache_creation_token_details"),
         Some(&Json::Object(nested))
     );
-    assert_eq!(
-        prompt.get("custom_prompt"),
-        Some(&Json::Number(Number::from(9_i64)))
-    );
-    let completion = recorded
-        .completion_tokens_details
-        .expect("the completion details are recorded");
+}
+
+fn assert_completion_details(completion: &IndexMap<String, Json>) {
     assert_eq!(
         completion.get("reasoning_tokens"),
         Some(&Json::Number(Number::from(1_i64)))
@@ -824,9 +770,9 @@ fn interrupted_usage_copies_every_detail_count_into_the_recorded_usage() {
     );
     assert!(completion.get("audio_tokens").is_none());
     assert_eq!(completion.get("custom_completion"), Some(&Json::Bool(true)));
-    let server = recorded
-        .server_tool_use
-        .expect("the server tool use is recorded");
+}
+
+fn assert_server_tool_use(server: &IndexMap<String, Json>) {
     assert_eq!(
         server.get("web_search_requests"),
         Some(&Json::Number(Number::from(1_i64)))
@@ -901,7 +847,7 @@ fn logging_state(litellm_params: &[(&str, Json)], details: &[(&str, Json)]) -> L
         },
         &redactor,
         || "generated-trace".to_owned(),
-        || std::time::Duration::ZERO,
+        || Duration::ZERO,
     )
     .expect("a valid logging state");
     for (name, value) in details {

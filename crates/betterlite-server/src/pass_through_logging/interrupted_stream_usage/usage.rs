@@ -110,8 +110,8 @@ fn detail_map(
             fields.insert(name.to_owned(), Json::Number(Number::from(number)));
         }
     }
-    if let Some(extra) = extra {
-        copy_extra(&mut fields, extra);
+    if let Some(extras) = extra {
+        copy_extra(&mut fields, extras);
     }
     fields
 }
@@ -133,7 +133,7 @@ fn decisions_json(value: &ShapedValue) -> Json {
         ShapedValue::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.to_owned(), decisions_json(value)))
+                .map(|(name, item)| (name.to_owned(), decisions_json(item)))
                 .collect(),
         ),
     }

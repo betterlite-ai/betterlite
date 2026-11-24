@@ -34,7 +34,7 @@ pub struct ChatSpec {
     pub hidden_response_cost: Option<String>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct UsageSummary {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
