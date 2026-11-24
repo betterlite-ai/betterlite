@@ -10,7 +10,9 @@ use betterlite_auth::auth_identity::records::Principal;
 use rstest::rstest;
 use tower::ServiceExt as _;
 
-use super::{ResultsState, answered, failure, routes, shadow_eval_read, shadow_eval_start_read};
+use super::{
+    ResultsState, answered, failure, routes, shadow_eval_detail_read, shadow_eval_list_read,
+};
 use crate::auth::auth_identity::AuthContext;
 use crate::routes::tests::{empty_config, state_for};
 use crate::shadow_eval_results::error::ShadowResultsRouteError;
@@ -24,7 +26,7 @@ fn state() -> Arc<ResultsState> {
 // the middleware answers an absent caller, so neither handler may run its own read first
 #[tokio::test]
 async fn an_unauthenticated_list_answers_401() {
-    let error = shadow_eval_read(State(state()), None, None, RawQuery(None))
+    let error = shadow_eval_list_read(State(state()), None, RawQuery(None))
         .await
         .unwrap_err();
     assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
@@ -32,20 +34,15 @@ async fn an_unauthenticated_list_answers_401() {
 
 #[tokio::test]
 async fn an_unauthenticated_detail_answers_401() {
-    let error = shadow_eval_read(
-        State(state()),
-        Some(Path("job-1".to_owned())),
-        None,
-        RawQuery(None),
-    )
-    .await
-    .unwrap_err();
+    let error = shadow_eval_detail_read(State(state()), Some(Path("job-1".to_owned())), None)
+        .await
+        .unwrap_err();
     assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
 async fn an_unauthenticated_start_answers_401() {
-    let error = shadow_eval_start_read(State(state()), None)
+    let error = shadow_eval_detail_read(State(state()), None, None)
         .await
         .unwrap_err();
     assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);

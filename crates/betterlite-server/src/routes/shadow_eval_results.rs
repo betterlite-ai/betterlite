@@ -39,9 +39,9 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         store: store_from_state(state).map(Arc::new),
     });
     Router::new()
-        .route(LIST_PATH, get(shadow_eval_read))
-        .route(DETAIL_PATH, get(shadow_eval_read))
-        .route(START_PATH, get(shadow_eval_start_read))
+        .route(LIST_PATH, get(shadow_eval_list_read))
+        .route(DETAIL_PATH, get(shadow_eval_detail_read))
+        .route(START_PATH, get(shadow_eval_detail_read))
         .with_state(results)
 }
 
@@ -61,38 +61,28 @@ impl IntoResponse for RouteFailure {
 }
 
 // FastAPI checks the auth (401) before it validates the query (422), then the endpoint checks the role (403)
-async fn shadow_eval_read(
+async fn shadow_eval_list_read(
     State(state): State<Arc<ResultsState>>,
-    job: Option<Path<String>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
 ) -> Result<Response, RouteFailure> {
     let identity = identity_of_caller(caller.as_ref())?;
-    let Some(Path(job_id)) = job else {
-        let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
-            .map_err(|error| RouteFailure::from(failure(&ShadowResultsRouteError::from(error))))?;
-        let store = viewer_store(&state, &identity)?;
-        return answered(list_shadow_eval_jobs(store, &query, Utc::now()).await);
-    };
-    detail_read(&state, &identity, &job_id).await
+    let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
+        .map_err(|error| RouteFailure::from(failure(&ShadowResultsRouteError::from(error))))?;
+    let store = viewer_store(&state, &identity)?;
+    answered(list_shadow_eval_jobs(store, &query, Utc::now()).await)
 }
 
-// LiteLLM's {job_id} route reads GET on the static start path as job "start", so this MethodRouter merges with the POST start route
-async fn shadow_eval_start_read(
+// LiteLLM's {job_id} route reads GET on the static start path as job "start", so this handler serves both reads
+async fn shadow_eval_detail_read(
     State(state): State<Arc<ResultsState>>,
+    job: Option<Path<String>>,
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Response, RouteFailure> {
     let identity = identity_of_caller(caller.as_ref())?;
-    detail_read(&state, &identity, "start").await
-}
-
-async fn detail_read(
-    state: &ResultsState,
-    identity: &Identity,
-    job_id: &str,
-) -> Result<Response, RouteFailure> {
-    let store = viewer_store(state, identity)?;
-    answered(get_shadow_eval_job(store, job_id, Utc::now()).await)
+    let job_id = job.map_or_else(|| "start".to_owned(), |Path(job_id)| job_id);
+    let store = viewer_store(&state, &identity)?;
+    answered(get_shadow_eval_job(store, &job_id, Utc::now()).await)
 }
 
 fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, RouteFailure> {
