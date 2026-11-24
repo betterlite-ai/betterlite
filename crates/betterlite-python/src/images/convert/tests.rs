@@ -432,6 +432,22 @@ fn request_first_image_needs_an_image_and_keeps_its_name() {
     assert_eq!(found.content, vec![4_u8]);
 }
 
+#[tokio::test]
+async fn error_variation_requires_an_api_key() {
+    let text = r#"{"arguments":{"image":{"$file":{"name":"a.png","blob":0}}}}"#;
+    let mut blobs = vec![vec![1_u8]];
+    let (wire, files) = parse(text, &mut blobs).unwrap();
+    let image_session = session();
+    let failure = variation(&image_session, wire, files, false)
+        .await
+        .unwrap_err();
+    assert!(
+        failure
+            .message
+            .contains("API key is required for OpenAI image variations")
+    );
+}
+
 #[test]
 fn request_session_present_drops_an_empty_secret() {
     assert!(present(None).is_none());

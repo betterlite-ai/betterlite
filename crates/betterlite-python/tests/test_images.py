@@ -230,7 +230,7 @@ def test_edit_sends_files_in_order_with_their_types() -> None:
         call = server.calls[-1]
     body = call["body"]
     assert call["path"] == EDITS_PATH
-    assert offset(body, b'name="prompt"') < offset(body, b'name="image"')
+    assert offset(body, b'name="prompt"') < offset(body, b'name="image[]"')
     first = offset(body, b'filename="first.png"')
     second = offset(body, b'filename="second.jpg"')
     mask = offset(body, b'filename="mask.png"')
