@@ -108,14 +108,14 @@ pub(super) fn build(
 ) -> CredResult<Option<ServerSpec>> {
     match mode {
         SpecMode::Oauth2 => oauth2(server, resource),
-        SpecMode::TokenExchange => token_exchange(server, resource),
+        SpecMode::TokenExchange => oauth_spec(server, resource, Grant::TokenExchange),
         SpecMode::IdJag => id_jag(server, resource),
     }
 }
 
 fn oauth2(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
     if server.has_client_credentials() {
-        return client_credentials(server, resource);
+        return oauth_spec(server, resource, Grant::ClientCredentials);
     }
     if server.needs_user_oauth_token() && !server.fields.delegate_auth_to_upstream {
         return authorization_code(server, resource);
@@ -123,61 +123,67 @@ fn oauth2(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> 
     Ok(None)
 }
 
-fn client_credentials(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
-    let upstream = UpstreamServer {
-        upstream_resource: server.fields.upstream_resource.as_deref(),
-        url: server.fields.url.as_deref(),
-        server_id: &server.fields.server_id,
+#[derive(Clone, Copy)]
+enum Grant {
+    ClientCredentials,
+    TokenExchange,
+}
+
+fn oauth_spec(server: &MCPServer, resource: &str, grant: Grant) -> CredResult<Option<ServerSpec>> {
+    let config = oauth_config(server, grant)?;
+    Ok(Some(spec(server, resource, config)))
+}
+
+// Both OAuth grants carry the same client registration, so one match builds either; only the resource and the exchange endpoint differ.
+fn oauth_config(server: &MCPServer, grant: Grant) -> CredResult<AuthConfig> {
+    let config = match grant {
+        Grant::ClientCredentials => {
+            let upstream = UpstreamServer {
+                upstream_resource: server.fields.upstream_resource.as_deref(),
+                url: server.fields.url.as_deref(),
+                server_id: &server.fields.server_id,
+            };
+            AuthConfig::ClientCredentials(ClientCredentialsConfig {
+                header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
+                client_id: server.fields.client_id.clone(),
+                client_secret: secret_text(server.fields.client_secret.as_ref())
+                    .map(SecretString::from),
+                token_url: server.effective_token_url().map(str::to_owned),
+                scopes: server.fields.scopes.clone().unwrap_or_default(),
+                audience: server.fields.audience.clone(),
+                upstream_resource: resolve_upstream_resource(&upstream),
+                token_endpoint_auth_method: token_endpoint_method(
+                    server.fields.token_endpoint_auth_method,
+                ),
+            })
+        }
+        Grant::TokenExchange => AuthConfig::TokenExchange(TokenExchangeConfig {
+            header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
+            profile: token_exchange_profile(server),
+            subject_token_type: exchange_subject_token_type(server),
+            token_exchange_endpoint: exchange_endpoint(server),
+            audience: server.fields.audience.clone(),
+            client_id: server.fields.client_id.clone(),
+            client_secret: secret_text(server.fields.client_secret.as_ref())
+                .map(SecretString::from),
+            token_endpoint_auth_method: token_endpoint_method(
+                server.fields.token_endpoint_auth_method,
+            ),
+            scopes: server.fields.scopes.clone().unwrap_or_default(),
+        }),
     };
-    let config = ClientCredentialsConfig {
-        header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
-        client_id: server.fields.client_id.clone(),
-        client_secret: secret_text(server.fields.client_secret.as_ref()).map(SecretString::from),
-        token_url: server.effective_token_url().map(str::to_owned),
-        scopes: server.fields.scopes.clone().unwrap_or_default(),
-        audience: server.fields.audience.clone(),
-        upstream_resource: resolve_upstream_resource(&upstream),
-        token_endpoint_auth_method: token_endpoint_method(server.fields.token_endpoint_auth_method),
-    };
-    Ok(Some(spec(
-        server,
-        resource,
-        AuthConfig::ClientCredentials(config),
-    )))
+    Ok(config)
 }
 
 fn authorization_code(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
     let config = AuthorizationCodeConfig {
         header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
-        scopes: Vec::new(),
-        client_id: None,
-        client_secret: None,
-        authorization_url: None,
-        token_url: None,
+        ..AuthorizationCodeConfig::default()
     };
     Ok(Some(spec(
         server,
         resource,
         AuthConfig::AuthorizationCode(config),
-    )))
-}
-
-fn token_exchange(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
-    let config = TokenExchangeConfig {
-        header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
-        profile: token_exchange_profile(server),
-        subject_token_type: exchange_subject_token_type(server),
-        token_exchange_endpoint: exchange_endpoint(server),
-        audience: server.fields.audience.clone(),
-        client_id: server.fields.client_id.clone(),
-        client_secret: secret_text(server.fields.client_secret.as_ref()).map(SecretString::from),
-        token_endpoint_auth_method: token_endpoint_method(server.fields.token_endpoint_auth_method),
-        scopes: server.fields.scopes.clone().unwrap_or_default(),
-    };
-    Ok(Some(spec(
-        server,
-        resource,
-        AuthConfig::TokenExchange(config),
     )))
 }
 
