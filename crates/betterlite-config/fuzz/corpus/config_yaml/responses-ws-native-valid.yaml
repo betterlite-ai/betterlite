@@ -1,0 +1,4 @@
+litellm_settings:
+  api_base: https://global.test
+  api_key: sk-global
+  openai_key: sk-openai
