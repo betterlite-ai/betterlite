@@ -1,0 +1,1 @@
+{"vault_addr": "https://vault.example.com:8200", "vault_token": "hunter2-token", "unknown_field": "ignored"}
