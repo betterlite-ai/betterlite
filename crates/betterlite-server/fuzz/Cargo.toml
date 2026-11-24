@@ -559,3 +559,10 @@ path = "fuzz_targets/stream_interrupted.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "refresh_grant_body"
+path = "fuzz_targets/refresh_grant_body.rs"
+test = false
+doc = false
+bench = false

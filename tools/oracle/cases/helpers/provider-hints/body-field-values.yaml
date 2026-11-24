@@ -1,0 +1,32 @@
+kind: helper
+name: body-field-values
+call:
+  b10059:
+    headers: []
+    query: null
+    body:
+      custom_llm_provider: ""
+calls:
+  - b10059:
+      headers: []
+      query: null
+      body:
+        custom_llm_provider: null
+  - b10059:
+      headers: []
+      query: null
+      body:
+        custom_llm_provider: 123
+  - b10059:
+      headers: []
+      query: null
+      body:
+        custom_llm_provider: bedrock
+  - b10059:
+      headers: []
+      query: null
+      body:
+        model: gpt-4
+env: {}
+compare:
+  ignore: []
