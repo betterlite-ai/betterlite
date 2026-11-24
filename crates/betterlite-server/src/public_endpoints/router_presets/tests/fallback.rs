@@ -3,8 +3,8 @@ use rstest::rstest;
 use serde::Deserialize;
 
 use super::support::{
-    PRESETS_URL, REMOTE_CATALOG, Script, app, app_with_bundled, bundled_catalog, get, parsed,
-    reply, settings,
+    Answer, PRESETS_URL, REMOTE_CATALOG, Script, app, app_with_bundled, bundled_catalog, get,
+    parsed, reply, settings,
 };
 use crate::public_endpoints::router_presets::AUTOROUTER_PRESETS_PATH;
 
@@ -49,7 +49,7 @@ async fn falls_back_to_the_bundled_catalog_when_the_remote_answers_with_an_error
 
 #[tokio::test]
 async fn falls_back_when_the_connection_fails() {
-    let script = Script::default();
+    let script = Script::new(vec![Answer::Closed]);
     let router = app(&script, settings(PRESETS_URL, false));
     let (_, _, body) = get(router, AUTOROUTER_PRESETS_PATH).await;
     assert_eq!(parsed(&body), bundled_catalog());
