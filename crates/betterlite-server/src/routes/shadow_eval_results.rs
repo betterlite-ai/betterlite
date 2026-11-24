@@ -121,9 +121,9 @@ fn failure(error: &ShadowResultsRouteError) -> Response {
     {
         let body = ValidationBody {
             detail: vec![ValidationIssue {
-                kind: *kind,
+                kind,
                 loc: vec!["query".to_owned(), (*parameter).to_owned()],
-                msg: *msg,
+                msg,
             }],
         };
         return (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response();
