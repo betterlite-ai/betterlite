@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -18,6 +19,16 @@ async fn minted(
         expires_in,
     };
     Ok(token)
+}
+
+async fn fill_range(cache: &ExchangedTokenCache, calls: &AtomicUsize, range: Range<u32>) {
+    for index in range {
+        let key = format!("key-{index:04}");
+        let _stored = cache
+            .get_or_compute(key.as_str(), "fp", minted("token", None, calls))
+            .await
+            .unwrap();
+    }
 }
 
 async fn yielding_mint(
@@ -208,13 +219,7 @@ async fn a_second_key_keeps_the_inflight_guard_alive() {
 async fn the_cache_evicts_the_earliest_expiry_at_capacity() {
     let cache = ExchangedTokenCache::default();
     let calls = AtomicUsize::new(0);
-    for index in 0..500_u32 {
-        let key = format!("key-{index:04}");
-        let _stored = cache
-            .get_or_compute(key.as_str(), "fp", minted("token", None, &calls))
-            .await
-            .unwrap();
-    }
+    fill_range(&cache, &calls, 0..500_u32).await;
     let _overflow = cache
         .get_or_compute("key-extra", "fp", minted("token", None, &calls))
         .await
@@ -239,13 +244,7 @@ async fn the_cache_does_not_evict_another_entry_for_a_replacement() {
         .get_or_compute("key-0000", "fp", minted("token", Some(100_000), &calls))
         .await
         .unwrap();
-    for index in 1..500_u32 {
-        let key = format!("key-{index:04}");
-        let _stored = cache
-            .get_or_compute(key.as_str(), "fp", minted("token", None, &calls))
-            .await
-            .unwrap();
-    }
+    fill_range(&cache, &calls, 1..500_u32).await;
     let replaced = cache
         .get_or_compute("key-0000", "fp-2", minted("replacement", None, &calls))
         .await

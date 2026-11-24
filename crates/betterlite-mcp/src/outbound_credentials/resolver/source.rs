@@ -14,7 +14,7 @@ pub struct ResolvedCredential {
     pub source: AuthResolution,
 }
 
-pub async fn resolve_credentials_with_source(
+pub async fn resolve_with_source(
     provider: &UpstreamCredentialProvider,
     subject: &Subject,
     server: &ServerSpec,

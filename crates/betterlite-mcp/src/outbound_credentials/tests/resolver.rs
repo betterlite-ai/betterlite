@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rstest::rstest;
 use serde_json::json;
 
 use crate::credential_contracts::auth_config::AuthConfig;
@@ -11,77 +12,102 @@ use crate::credential_contracts::header_carrier::HeaderCarrier;
 use crate::credential_contracts::server_spec::ServerSpec;
 
 use super::super::resolver::Collaborators;
-use super::super::resolver::source::resolve_credentials_with_source;
+use super::super::resolver::source::resolve_with_source;
 use super::support::{
     FakeAssertions, FakeCredentials, FakeEndpoint, FakeExchanger, FakeTokens, applied, bearer,
     failure, header, id_jag_spec, param, provider, spec, subject,
 };
 
-fn none_spec(url: &str) -> ServerSpec {
-    spec(json!({
-        "server_id": "srv-1",
-        "name": "Server One",
-        "transport": "http",
-        "url": url
-    }))
+#[derive(serde::Serialize)]
+struct ServerFixture {
+    server_id: &'static str,
+    name: &'static str,
+    transport: &'static str,
+    url: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auth_type: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    authentication_token: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    oauth2_flow: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_secret: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token_url: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token_exchange_endpoint: Option<&'static str>,
+}
+
+const BASE_FIXTURE: ServerFixture = ServerFixture {
+    server_id: "srv-1",
+    name: "Server One",
+    transport: "http",
+    url: "https://mcp.example.com/mcp",
+    auth_type: None,
+    authentication_token: None,
+    oauth2_flow: None,
+    client_id: None,
+    client_secret: None,
+    token_url: None,
+    token_exchange_endpoint: None,
+};
+
+#[derive(Clone, Copy)]
+enum Oauth2Profile {
+    ClientCredentials,
+    TokenExchange,
+}
+
+fn oauth2_profile_spec(profile: Oauth2Profile) -> ServerSpec {
+    let fixture = match profile {
+        Oauth2Profile::ClientCredentials => ServerFixture {
+            auth_type: Some("oauth2"),
+            oauth2_flow: Some("client_credentials"),
+            client_id: Some("client-1"),
+            client_secret: Some("secret-1"),
+            token_url: Some("https://idp.example.com/token"),
+            ..BASE_FIXTURE
+        },
+        Oauth2Profile::TokenExchange => ServerFixture {
+            auth_type: Some("oauth2_token_exchange"),
+            token_exchange_endpoint: Some("https://idp.example.com/token"),
+            client_id: Some("client-1"),
+            client_secret: Some("secret-1"),
+            ..BASE_FIXTURE
+        },
+    };
+    spec(fixture)
+}
+
+fn none_spec(url: &'static str) -> ServerSpec {
+    spec(ServerFixture {
+        url,
+        ..BASE_FIXTURE
+    })
 }
 
 fn api_key_spec() -> ServerSpec {
-    spec(json!({
-        "server_id": "srv-1",
-        "name": "Server One",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "api_key",
-        "authentication_token": "shared-token"
-    }))
+    spec(ServerFixture {
+        auth_type: Some("api_key"),
+        authentication_token: Some("shared-token"),
+        ..BASE_FIXTURE
+    })
 }
 
 fn passthrough_spec() -> ServerSpec {
-    spec(json!({
-        "server_id": "srv-1",
-        "name": "Server One",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "true_passthrough"
-    }))
+    spec(ServerFixture {
+        auth_type: Some("true_passthrough"),
+        ..BASE_FIXTURE
+    })
 }
 
 fn authorization_code_spec() -> ServerSpec {
-    spec(json!({
-        "server_id": "srv-1",
-        "name": "Server One",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "oauth2"
-    }))
-}
-
-fn client_credentials_spec() -> ServerSpec {
-    spec(json!({
-        "server_id": "srv-1",
-        "name": "Server One",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "oauth2",
-        "oauth2_flow": "client_credentials",
-        "client_id": "client-1",
-        "client_secret": "secret-1",
-        "token_url": "https://idp.example.com/token"
-    }))
-}
-
-fn token_exchange_spec() -> ServerSpec {
-    spec(json!({
-        "server_id": "srv-1",
-        "name": "Server One",
-        "transport": "http",
-        "url": "https://mcp.example.com/mcp",
-        "auth_type": "oauth2_token_exchange",
-        "token_exchange_endpoint": "https://idp.example.com/token",
-        "client_id": "client-1",
-        "client_secret": "secret-1"
-    }))
+    spec(ServerFixture {
+        auth_type: Some("oauth2"),
+        ..BASE_FIXTURE
+    })
 }
 
 #[tokio::test]
@@ -101,20 +127,18 @@ async fn none_config_no_userinfo() {
     assert!(applied(anonymous.as_ref()).is_empty());
 }
 
+#[rstest]
+#[case::user_and_password("https://user:pass@mcp.example.com/mcp")]
+#[case::user_only("https://user@mcp.example.com/mcp")]
 #[tokio::test]
-async fn none_config_rejects_userinfo() {
+async fn none_config_rejects_userinfo(#[case] url: &'static str) {
     let resolver = provider(Collaborators::default());
-    for url in [
-        "https://user:pass@mcp.example.com/mcp",
-        "https://user@mcp.example.com/mcp",
-    ] {
-        let error = failure(
-            resolver
-                .resolve_credentials(&subject("org-1", "user-1", None), &none_spec(url))
-                .await,
-        );
-        assert_eq!(error, CredError::UrlCredentialsNotAllowed);
-    }
+    let error = failure(
+        resolver
+            .resolve_credentials(&subject("org-1", "user-1", None), &none_spec(url))
+            .await,
+    );
+    assert_eq!(error, CredError::UrlCredentialsNotAllowed);
     let relative = none_spec("mcp.example.com/mcp");
     let auth = resolver
         .resolve_credentials(&subject("org-1", "user-1", None), &relative)
@@ -187,7 +211,10 @@ async fn client_credentials_success() {
     let source = Arc::new(FakeCredentials::new("minted", Some("fresh")));
     let collaborators = Collaborators::default().with_client_credentials_source(source.clone());
     let auth = provider(collaborators)
-        .resolve_credentials(&subject("", "", None), &client_credentials_spec())
+        .resolve_credentials(
+            &subject("", "", None),
+            &oauth2_profile_spec(Oauth2Profile::ClientCredentials),
+        )
         .await
         .unwrap();
     assert_eq!(auth.header_name(), Some("Authorization"));
@@ -202,7 +229,10 @@ async fn client_credentials_keeps_the_rejected_token_without_a_refetch() {
     let source = Arc::new(FakeCredentials::new("minted", None));
     let collaborators = Collaborators::default().with_client_credentials_source(source.clone());
     let auth = provider(collaborators)
-        .resolve_credentials(&subject("", "", None), &client_credentials_spec())
+        .resolve_credentials(
+            &subject("", "", None),
+            &oauth2_profile_spec(Oauth2Profile::ClientCredentials),
+        )
         .await
         .unwrap();
     assert!(!auth.after_unauthorized().await);
@@ -214,7 +244,10 @@ async fn client_credentials_keeps_the_rejected_token_without_a_refetch() {
 async fn client_credentials_without_a_source_fails_closed() {
     let error = failure(
         provider(Collaborators::default())
-            .resolve_credentials(&subject("", "", None), &client_credentials_spec())
+            .resolve_credentials(
+                &subject("", "", None),
+                &oauth2_profile_spec(Oauth2Profile::ClientCredentials),
+            )
             .await,
     );
     let expected = CredError::Misconfigured("client_credentials collaborator not wired".to_owned());
@@ -225,7 +258,10 @@ async fn client_credentials_without_a_source_fails_closed() {
 async fn token_exchange_no_inbound_fails_closed() {
     let error = failure(
         provider(Collaborators::default())
-            .resolve_credentials(&subject("org-1", "user-1", None), &token_exchange_spec())
+            .resolve_credentials(
+                &subject("org-1", "user-1", None),
+                &oauth2_profile_spec(Oauth2Profile::TokenExchange),
+            )
             .await,
     );
     let expected = CredError::Unauthorized(Unauthorized {
@@ -243,7 +279,7 @@ async fn token_exchange_reaches_the_exchanger() {
     let collaborators = Collaborators::default().with_token_exchanger(exchanger.clone());
     let caller = subject("org-1", "user-1", Some("caller-token"));
     let auth = provider(collaborators)
-        .resolve_credentials(&caller, &token_exchange_spec())
+        .resolve_credentials(&caller, &oauth2_profile_spec(Oauth2Profile::TokenExchange))
         .await
         .unwrap();
     assert_eq!(bearer(&auth), "exchanged-token");
@@ -263,7 +299,7 @@ async fn token_exchange_propagates_the_exchanger_error() {
         provider(collaborators)
             .resolve_credentials(
                 &subject("org-1", "user-1", Some("caller-token")),
-                &token_exchange_spec(),
+                &oauth2_profile_spec(Oauth2Profile::TokenExchange),
             )
             .await,
     );
@@ -293,29 +329,30 @@ async fn authorization_code_success() {
     );
 }
 
+#[rstest]
+#[case::empty(FakeTokens::empty())]
+#[case::unavailable(FakeTokens::unavailable())]
 #[tokio::test]
-async fn authorization_code_missing_token_fails_closed() {
+async fn authorization_code_missing_token_fails_closed(#[case] store: FakeTokens) {
     let expected = CredError::Unauthorized(Unauthorized {
         detail: "Authorization required: complete the OAuth flow for this server.".to_owned(),
         www_authenticate: None,
         body: None,
         claims: None,
     });
-    for store in [FakeTokens::empty(), FakeTokens::unavailable()] {
-        let resolver = provider(Collaborators::default().with_oauth_token_store(Arc::new(store)));
-        let caller = subject("org-1", "user-1", None);
-        let error = failure(
-            resolver
-                .resolve_credentials(&caller, &authorization_code_spec())
-                .await,
-        );
-        assert_eq!(error, expected);
-        assert!(
-            !resolver
-                .has_user_token(&caller, &authorization_code_spec())
-                .await
-        );
-    }
+    let resolver = provider(Collaborators::default().with_oauth_token_store(Arc::new(store)));
+    let caller = subject("org-1", "user-1", None);
+    let error = failure(
+        resolver
+            .resolve_credentials(&caller, &authorization_code_spec())
+            .await,
+    );
+    assert_eq!(error, expected);
+    assert!(
+        !resolver
+            .has_user_token(&caller, &authorization_code_spec())
+            .await
+    );
 }
 
 const TOKEN_EXCHANGE_GRANT: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
@@ -381,8 +418,41 @@ async fn aws_sigv4_arm_is_not_implemented() {
     assert_eq!(error, expected);
 }
 
+#[rstest]
+#[case::none(
+    none_spec("https://mcp.example.com/mcp"),
+    AuthResolution::NoAuth,
+    Some("caller-token")
+)]
+#[case::api_key(api_key_spec(), AuthResolution::StaticToken, Some("caller-token"))]
+#[case::passthrough(
+    passthrough_spec(),
+    AuthResolution::Oauth2Passthrough,
+    Some("caller-token")
+)]
+#[case::authorization_code(
+    authorization_code_spec(),
+    AuthResolution::StoredUserToken,
+    Some("caller-token")
+)]
+#[case::client_credentials(
+    oauth2_profile_spec(Oauth2Profile::ClientCredentials),
+    AuthResolution::ClientCredentials,
+    Some("caller-token")
+)]
+#[case::token_exchange(
+    oauth2_profile_spec(Oauth2Profile::TokenExchange),
+    AuthResolution::TokenExchange,
+    Some("caller-token")
+)]
+#[case::id_jag(id_jag_spec("secret-1"), AuthResolution::IdJag, Some("caller-token"))]
+#[case::anonymous_passthrough(passthrough_spec(), AuthResolution::NoAuth, None)]
 #[tokio::test]
-async fn resolve_credentials_with_source_names_each_mode() {
+async fn resolve_credentials_with_source_names_each_mode(
+    #[case] server: ServerSpec,
+    #[case] expected: AuthResolution,
+    #[case] inbound_token: Option<&str>,
+) {
     let collaborators = Collaborators::default()
         .with_oauth_token_store(Arc::new(FakeTokens::with_token("user-1", "user-token")))
         .with_token_exchanger(Arc::new(FakeExchanger::returning("exchanged-token")))
@@ -390,30 +460,11 @@ async fn resolve_credentials_with_source_names_each_mode() {
         .with_sso_assertion_store(Arc::new(FakeAssertions::storing("id-token", None)))
         .with_token_endpoint(Arc::new(FakeEndpoint::tokens(&["leg1-jag", "leg2-bearer"])));
     let resolver = provider(collaborators);
-    let caller = subject("org-1", "user-1", Some("caller-token"));
-    let cases = [
-        (
-            none_spec("https://mcp.example.com/mcp"),
-            AuthResolution::NoAuth,
-        ),
-        (api_key_spec(), AuthResolution::StaticToken),
-        (passthrough_spec(), AuthResolution::Oauth2Passthrough),
-        (authorization_code_spec(), AuthResolution::StoredUserToken),
-        (client_credentials_spec(), AuthResolution::ClientCredentials),
-        (token_exchange_spec(), AuthResolution::TokenExchange),
-        (id_jag_spec("secret-1"), AuthResolution::IdJag),
-    ];
-    for (server, expected) in cases {
-        let resolved = resolve_credentials_with_source(&resolver, &caller, &server)
-            .await
-            .unwrap();
-        assert_eq!(resolved.source, expected);
-    }
-    let anonymous = subject("org-1", "user-1", None);
-    let resolved = resolve_credentials_with_source(&resolver, &anonymous, &passthrough_spec())
+    let caller = subject("org-1", "user-1", inbound_token);
+    let resolved = resolve_with_source(&resolver, &caller, &server)
         .await
         .unwrap();
-    assert_eq!(resolved.source, AuthResolution::NoAuth);
+    assert_eq!(resolved.source, expected);
 }
 
 #[tokio::test]
@@ -443,7 +494,7 @@ async fn invalidate_token_exchange_drops_bearer() {
     let exchanger = Arc::new(FakeExchanger::returning("exchanged-token"));
     let collaborators = Collaborators::default().with_token_exchanger(exchanger.clone());
     let resolver = provider(collaborators);
-    let server = token_exchange_spec();
+    let server = oauth2_profile_spec(Oauth2Profile::TokenExchange);
     let caller = subject("org-1", "user-1", Some("caller-token"));
     let _before = resolver
         .resolve_credentials(&caller, &server)
@@ -461,8 +512,14 @@ async fn invalidate_token_exchange_drops_bearer() {
     assert_eq!(exchanger.exchanges().len(), 2);
 }
 
+#[rstest]
+#[case::none(none_spec("https://mcp.example.com/mcp"))]
+#[case::api_key(api_key_spec())]
+#[case::passthrough(passthrough_spec())]
+#[case::authorization_code(authorization_code_spec())]
+#[case::client_credentials(oauth2_profile_spec(Oauth2Profile::ClientCredentials))]
 #[tokio::test]
-async fn invalidate_nonexchanged_noop() {
+async fn invalidate_nonexchanged_noop(#[case] server: ServerSpec) {
     let exchanger = Arc::new(FakeExchanger::returning("exchanged-token"));
     let source = Arc::new(FakeCredentials::new("minted", Some("fresh")));
     let collaborators = Collaborators::default()
@@ -471,16 +528,7 @@ async fn invalidate_nonexchanged_noop() {
         .with_oauth_token_store(Arc::new(FakeTokens::with_token("user-1", "user-token")));
     let resolver = provider(collaborators);
     let caller = subject("org-1", "user-1", Some("caller-token"));
-    let servers = [
-        none_spec("https://mcp.example.com/mcp"),
-        api_key_spec(),
-        passthrough_spec(),
-        authorization_code_spec(),
-        client_credentials_spec(),
-    ];
-    for server in servers {
-        resolver.invalidate_credentials(&caller, &server).await;
-    }
+    resolver.invalidate_credentials(&caller, &server).await;
     assert!(exchanger.invalidations().is_empty());
     assert!(source.refetched_tokens().is_empty());
     assert!(exchanger.exchanges().is_empty());
@@ -493,7 +541,10 @@ async fn invalidate_with_no_inbound_noop() {
     let resolver = provider(collaborators);
     let anonymous = subject("org-1", "user-1", None);
     resolver
-        .invalidate_credentials(&anonymous, &token_exchange_spec())
+        .invalidate_credentials(
+            &anonymous,
+            &oauth2_profile_spec(Oauth2Profile::TokenExchange),
+        )
         .await;
     assert!(exchanger.invalidations().is_empty());
     assert!(exchanger.exchanges().is_empty());

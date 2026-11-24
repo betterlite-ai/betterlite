@@ -5,16 +5,16 @@ use chrono::{DateTime, Utc};
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use betterlite_mcp::credential_contracts::auth_config::oauth::ClientCredentialsConfig;
 use betterlite_mcp::credential_contracts::errors::{CredError, CredResult};
 use betterlite_mcp::outbound_credentials::collaborators::{
-    BoxFuture, ClientCredentialsSource, OAuthToken, OAuthTokenStore, TokenStoreUnavailable,
+    BoxFuture, ClientCredentialsSource, CredentialRequest, OAuthToken, OAuthTokenStore,
+    TokenStoreUnavailable,
 };
 use betterlite_mcp::outbound_credentials::resolver::Collaborators;
 use betterlite_mcp::sso_assertions::assertion::SsoIdentityAssertion;
 use betterlite_mcp::sso_assertions::read::{AssertionStoreUnavailable, SsoAssertionStore};
 
-use super::recorders::{RecordingEndpoint, RecordingExchanger, oauth_token};
+use super::recorders::{NOT_WIRED, RecordingEndpoint, RecordingExchanger, oauth_token};
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -68,13 +68,10 @@ pub(super) fn build(input: &CollaboratorsInput) -> Fakes {
     let access_tokens = input.token_endpoint.clone().unwrap_or_default();
     let endpoint = Arc::new(RecordingEndpoint::new(&access_tokens));
     let exchanger = Arc::new(build_exchanger(input.exchanger.as_ref()));
+    let (token_store, assertion_store) = build_stores(input);
     let collaborators = Collaborators::default()
-        .with_oauth_token_store(Arc::new(build_token_store(
-            input.oauth_token_store.as_ref(),
-        )))
-        .with_sso_assertion_store(Arc::new(build_assertion_store(
-            input.assertion_store.as_ref(),
-        )))
+        .with_oauth_token_store(Arc::new(token_store))
+        .with_sso_assertion_store(Arc::new(assertion_store))
         .with_token_endpoint(Arc::clone(&endpoint))
         .with_token_exchanger(Arc::clone(&exchanger))
         .with_client_credentials_source(Arc::new(build_credentials(
@@ -87,8 +84,8 @@ pub(super) fn build(input: &CollaboratorsInput) -> Fakes {
     }
 }
 
-fn build_token_store(input: Option<&TokenStoreInput>) -> StoredTokens {
-    match input {
+fn build_stores(input: &CollaboratorsInput) -> (StoredTokens, StoredAssertions) {
+    let token_store = match input.oauth_token_store.as_ref() {
         Some(TokenStoreInput::Token { access_token }) => StoredTokens {
             token: Some(oauth_token(access_token)),
             unavailable: false,
@@ -101,11 +98,8 @@ fn build_token_store(input: Option<&TokenStoreInput>) -> StoredTokens {
             token: None,
             unavailable: false,
         },
-    }
-}
-
-fn build_assertion_store(input: Option<&AssertionStoreInput>) -> StoredAssertions {
-    match input {
+    };
+    let assertion_store = match input.assertion_store.as_ref() {
         Some(AssertionStoreInput::Stored {
             id_token,
             expires_at_unix,
@@ -127,7 +121,8 @@ fn build_assertion_store(input: Option<&AssertionStoreInput>) -> StoredAssertion
             assertion: None,
             unavailable: false,
         },
-    }
+    };
+    (token_store, assertion_store)
 }
 
 fn build_exchanger(input: Option<&ExchangerInput>) -> RecordingExchanger {
@@ -136,7 +131,7 @@ fn build_exchanger(input: Option<&ExchangerInput>) -> RecordingExchanger {
         Some(ExchangerInput::Failure { tag, detail }) => {
             RecordingExchanger::failing(error_from_tag(tag, detail))
         }
-        None => RecordingExchanger::not_wired(),
+        None => RecordingExchanger::failing(CredError::Misconfigured(NOT_WIRED.to_owned())),
     }
 }
 
@@ -144,7 +139,7 @@ fn build_credentials(input: Option<&ClientCredentialsInput>) -> MintedCredential
     match input {
         Some(fields) => MintedCredentials {
             access_token: Some(fields.access_token.clone()),
-            refetched: fields.refetch.clone(),
+            refetched: fields.refetch.clone().map(SecretString::from),
         },
         None => MintedCredentials {
             access_token: None,
@@ -215,14 +210,13 @@ fn store_unavailable() -> AssertionStoreUnavailable {
 
 struct MintedCredentials {
     access_token: Option<String>,
-    refetched: Option<String>,
+    refetched: Option<SecretString>,
 }
 
 impl ClientCredentialsSource for MintedCredentials {
     fn get<'call>(
         &'call self,
-        _server_id: &'call str,
-        _config: &'call ClientCredentialsConfig,
+        _request: CredentialRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>> {
         let token = self.access_token.as_deref().map(oauth_token);
         Box::pin(async move {
@@ -234,14 +228,9 @@ impl ClientCredentialsSource for MintedCredentials {
 
     fn refetch<'call>(
         &'call self,
-        _server_id: &'call str,
-        _config: &'call ClientCredentialsConfig,
+        _request: CredentialRequest<'call>,
         _failed_access_token: &'call SecretString,
     ) -> BoxFuture<'call, Option<SecretString>> {
-        let fresh = self
-            .refetched
-            .as_ref()
-            .map(|value| SecretString::from(value.clone()));
-        Box::pin(async move { fresh })
+        Box::pin(async move { self.refetched.clone() })
     }
 }

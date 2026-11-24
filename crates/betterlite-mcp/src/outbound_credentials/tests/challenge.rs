@@ -220,21 +220,17 @@ fn raise_public_keeps_the_unauthorized_body_out_of_the_detail() {
     assert!(exception.headers.is_empty());
 }
 
-#[test]
-fn raise_public_maps_each_terminal_error() {
-    let cases = [
-        (CredError::Misconfigured("bad".to_owned()), 500_u16),
-        (CredError::UpstreamUnavailable("down".to_owned()), 503_u16),
-        (CredError::UnsupportedMode("mode".to_owned()), 500_u16),
-        (CredError::PreconditionRequired("need".to_owned()), 412_u16),
-        (CredError::NotImplemented("todo".to_owned()), 501_u16),
-    ];
-    for (error, expected_status) in cases {
-        let exception = raise_public(&error);
-        assert_eq!(exception.status_code, expected_status);
-        assert_eq!(exception.detail, error.to_string());
-        assert!(exception.headers.is_empty());
-    }
+#[rstest]
+#[case::misconfigured(CredError::Misconfigured("bad".to_owned()), 500_u16)]
+#[case::upstream_unavailable(CredError::UpstreamUnavailable("down".to_owned()), 503_u16)]
+#[case::unsupported_mode(CredError::UnsupportedMode("mode".to_owned()), 500_u16)]
+#[case::precondition_required(CredError::PreconditionRequired("need".to_owned()), 412_u16)]
+#[case::not_implemented(CredError::NotImplemented("todo".to_owned()), 501_u16)]
+fn raise_public_maps_each_terminal_error(#[case] error: CredError, #[case] expected_status: u16) {
+    let exception = raise_public(&error);
+    assert_eq!(exception.status_code, expected_status);
+    assert_eq!(exception.detail, error.to_string());
+    assert!(exception.headers.is_empty());
 }
 
 #[test]

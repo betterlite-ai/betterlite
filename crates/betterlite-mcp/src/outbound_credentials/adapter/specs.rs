@@ -16,7 +16,14 @@ use crate::credentials::{strip_auth_scheme, to_basic_credentials};
 use crate::oauth_resource::resource_identity::{UpstreamServer, resolve_upstream_resource};
 use crate::server_record::{MCPServer, SecretCredential};
 
-use super::{credential_header, present, token_endpoint_method};
+use super::{VALUE_PREFIX_BEARER, token_endpoint_method, token_header};
+
+#[derive(Clone, Copy)]
+pub(super) enum SpecMode {
+    Oauth2,
+    TokenExchange,
+    IdJag,
+}
 
 pub(super) fn shared_key(
     server: &MCPServer,
@@ -35,8 +42,13 @@ pub(super) fn shared_key(
     } else {
         strip_auth_scheme(&token, value_prefix)
     };
-    let configured = present(server.fields.upstream_token_header.as_deref());
-    let header = configured.unwrap_or_else(|| default_header.to_owned());
+    let header = server
+        .fields
+        .upstream_token_header
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| default_header.to_owned());
     let config = ApiKeyConfig {
         header: HeaderCarrier::new(&header, value_prefix)?,
         key_source: ApiKeySource::Shared(SharedKey {
@@ -46,104 +58,135 @@ pub(super) fn shared_key(
     Ok(Some(spec(server, resource, AuthConfig::ApiKey(config))))
 }
 
-pub(super) fn oauth2(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
-    if server.has_client_credentials() {
-        return client_credentials(server, resource);
-    }
-    if server.needs_user_oauth_token() && !server.fields.delegate_auth_to_upstream {
-        let config = AuthorizationCodeConfig {
-            header: credential_header(server)?,
-            scopes: Vec::new(),
-            client_id: None,
-            client_secret: None,
-            authorization_url: None,
-            token_url: None,
-        };
-        return Ok(Some(spec(
-            server,
-            resource,
-            AuthConfig::AuthorizationCode(config),
-        )));
-    }
-    Ok(None)
-}
-
-pub(super) fn client_credentials(
+pub(super) fn build(
     server: &MCPServer,
     resource: &str,
+    mode: SpecMode,
 ) -> CredResult<Option<ServerSpec>> {
-    let upstream = UpstreamServer {
-        upstream_resource: server.fields.upstream_resource.as_deref(),
-        url: server.fields.url.as_deref(),
-        server_id: &server.fields.server_id,
-    };
-    let config = ClientCredentialsConfig {
-        header: credential_header(server)?,
-        client_id: server.fields.client_id.clone(),
-        client_secret: client_secret(server),
-        token_url: server.effective_token_url().map(str::to_owned),
-        scopes: server.fields.scopes.clone().unwrap_or_default(),
-        audience: server.fields.audience.clone(),
-        upstream_resource: resolve_upstream_resource(&upstream),
-        token_endpoint_auth_method: token_endpoint_method(server.fields.token_endpoint_auth_method),
-    };
-    Ok(Some(spec(
-        server,
-        resource,
-        AuthConfig::ClientCredentials(config),
-    )))
-}
-
-pub(super) fn token_exchange(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
-    let configured_endpoint = present(server.fields.token_exchange_endpoint.as_deref());
-    let endpoint = configured_endpoint.or_else(|| server.effective_token_url().map(str::to_owned));
-    let profile = if server.fields.token_exchange_profile == "entra_obo" {
-        TokenExchangeProfile::EntraObo
-    } else {
-        TokenExchangeProfile::Rfc8693
-    };
-    let subject_token_type = present(Some(server.fields.subject_token_type.as_str()))
-        .unwrap_or_else(|| DEFAULT_SUBJECT_TOKEN_TYPE.to_owned());
-    let config = TokenExchangeConfig {
-        header: credential_header(server)?,
-        profile,
-        subject_token_type,
-        token_exchange_endpoint: endpoint,
-        audience: server.fields.audience.clone(),
-        client_id: server.fields.client_id.clone(),
-        client_secret: client_secret(server),
-        token_endpoint_auth_method: token_endpoint_method(server.fields.token_endpoint_auth_method),
-        scopes: server.fields.scopes.clone().unwrap_or_default(),
-    };
-    Ok(Some(spec(
-        server,
-        resource,
-        AuthConfig::TokenExchange(config),
-    )))
-}
-
-pub(super) fn id_jag(server: &MCPServer, resource: &str) -> CredResult<Option<ServerSpec>> {
-    let org_endpoint = present(server.fields.token_exchange_endpoint.as_deref());
-    let resource_endpoint = present(server.fields.id_jag_resource_token_endpoint.as_deref());
-    let client_id = present(server.fields.client_id.as_deref());
-    let client_auth = id_jag_client_auth(server);
-    let (Some(org_endpoint), Some(resource_endpoint), Some(client_id), Some(client_auth)) =
-        (org_endpoint, resource_endpoint, client_id, client_auth)
-    else {
-        return Ok(None);
-    };
-    let config = IdJagConfig {
-        header: credential_header(server)?,
-        org_token_endpoint: org_endpoint,
-        resource_token_endpoint: resource_endpoint,
-        client_id,
-        client_auth,
-        subject_token_type: id_jag_subject_token_type(server),
-        audience: server.fields.audience.clone(),
-        resource: server.fields.id_jag_resource.clone(),
-        scopes: server.fields.scopes.clone().unwrap_or_default(),
-    };
-    Ok(Some(spec(server, resource, AuthConfig::IdJag(config))))
+    match mode {
+        SpecMode::Oauth2 => {
+            if server.has_client_credentials() {
+                let upstream = UpstreamServer {
+                    upstream_resource: server.fields.upstream_resource.as_deref(),
+                    url: server.fields.url.as_deref(),
+                    server_id: &server.fields.server_id,
+                };
+                let config = ClientCredentialsConfig {
+                    header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
+                    client_id: server.fields.client_id.clone(),
+                    client_secret: secret_text(server.fields.client_secret.as_ref())
+                        .map(SecretString::from),
+                    token_url: server.effective_token_url().map(str::to_owned),
+                    scopes: server.fields.scopes.clone().unwrap_or_default(),
+                    audience: server.fields.audience.clone(),
+                    upstream_resource: resolve_upstream_resource(&upstream),
+                    token_endpoint_auth_method: token_endpoint_method(
+                        server.fields.token_endpoint_auth_method,
+                    ),
+                };
+                Ok(Some(spec(
+                    server,
+                    resource,
+                    AuthConfig::ClientCredentials(config),
+                )))
+            } else if server.needs_user_oauth_token() && !server.fields.delegate_auth_to_upstream {
+                let config = AuthorizationCodeConfig {
+                    header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
+                    scopes: Vec::new(),
+                    client_id: None,
+                    client_secret: None,
+                    authorization_url: None,
+                    token_url: None,
+                };
+                Ok(Some(spec(
+                    server,
+                    resource,
+                    AuthConfig::AuthorizationCode(config),
+                )))
+            } else {
+                Ok(None)
+            }
+        }
+        SpecMode::TokenExchange => {
+            let endpoint = server
+                .fields
+                .token_exchange_endpoint
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned)
+                .or_else(|| server.effective_token_url().map(str::to_owned));
+            let profile = if server.fields.token_exchange_profile == "entra_obo" {
+                TokenExchangeProfile::EntraObo
+            } else {
+                TokenExchangeProfile::Rfc8693
+            };
+            let subject_token_type = Some(server.fields.subject_token_type.as_str())
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned)
+                .unwrap_or_else(|| DEFAULT_SUBJECT_TOKEN_TYPE.to_owned());
+            let config = TokenExchangeConfig {
+                header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
+                profile,
+                subject_token_type,
+                token_exchange_endpoint: endpoint,
+                audience: server.fields.audience.clone(),
+                client_id: server.fields.client_id.clone(),
+                client_secret: secret_text(server.fields.client_secret.as_ref())
+                    .map(SecretString::from),
+                token_endpoint_auth_method: token_endpoint_method(
+                    server.fields.token_endpoint_auth_method,
+                ),
+                scopes: server.fields.scopes.clone().unwrap_or_default(),
+            };
+            Ok(Some(spec(
+                server,
+                resource,
+                AuthConfig::TokenExchange(config),
+            )))
+        }
+        SpecMode::IdJag => {
+            let org_endpoint = server
+                .fields
+                .token_exchange_endpoint
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned);
+            let resource_endpoint = server
+                .fields
+                .id_jag_resource_token_endpoint
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned);
+            let client_id = server
+                .fields
+                .client_id
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned);
+            let client_auth = id_jag_client_auth(server);
+            let (
+                Some(org_token_endpoint),
+                Some(resource_token_endpoint),
+                Some(client_id),
+                Some(client_auth),
+            ) = (org_endpoint, resource_endpoint, client_id, client_auth)
+            else {
+                return Ok(None);
+            };
+            let config = IdJagConfig {
+                header: HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)?,
+                org_token_endpoint,
+                resource_token_endpoint,
+                client_id,
+                client_auth,
+                subject_token_type: id_jag_subject_token_type(server),
+                audience: server.fields.audience.clone(),
+                resource: server.fields.id_jag_resource.clone(),
+                scopes: server.fields.scopes.clone().unwrap_or_default(),
+            };
+            Ok(Some(spec(server, resource, AuthConfig::IdJag(config))))
+        }
+    }
 }
 
 fn id_jag_client_auth(server: &MCPServer) -> Option<ClientAuth> {
@@ -155,7 +198,7 @@ fn id_jag_client_auth(server: &MCPServer) -> Option<ClientAuth> {
             signing_alg: server.fields.client_assertion_signing_alg.clone(),
         }));
     }
-    let secret = client_secret(server)?;
+    let secret = SecretString::from(secret_text(server.fields.client_secret.as_ref())?);
     Some(ClientAuth::ClientSecret(ClientSecretAuth {
         client_secret: secret,
     }))
@@ -168,11 +211,6 @@ fn id_jag_subject_token_type(server: &MCPServer) -> String {
         return configured.to_owned();
     }
     ID_JAG_SUBJECT_TOKEN_TYPE.to_owned()
-}
-
-fn client_secret(server: &MCPServer) -> Option<SecretString> {
-    let text = secret_text(server.fields.client_secret.as_ref())?;
-    Some(SecretString::from(text))
 }
 
 fn secret_text(secret: Option<&SecretCredential>) -> Option<String> {

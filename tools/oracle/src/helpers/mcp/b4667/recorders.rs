@@ -5,17 +5,16 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use betterlite_mcp::credential_contracts::auth_config::id_jag::ClientAuth;
-use betterlite_mcp::credential_contracts::auth_config::oauth::TokenExchangeConfig;
 use betterlite_mcp::credential_contracts::errors::{CredError, CredResult};
-use betterlite_mcp::credential_contracts::server_spec::ServerSpec;
 use betterlite_mcp::outbound_credentials::collaborators::{
-    BoxFuture, ExchangedToken, OAuthToken, TokenEndpointClient, TokenExchanger,
+    BoxFuture, ExchangeRequest, ExchangedToken, OAuthToken, TokenEndpointClient, TokenExchanger,
 };
 
 use super::inspect::client_auth_answer;
 
 const NO_REPLY: &str = "no canned token endpoint reply";
-const NOT_WIRED: &str = "token exchange collaborator not wired";
+pub(super) const NOT_WIRED: &str = "token exchange collaborator not wired";
+const NO_TOKEN: &str = "the recording exchanger has no token";
 
 pub(super) struct RecordingEndpoint {
     replies: Mutex<VecDeque<ExchangedToken>>,
@@ -38,8 +37,10 @@ impl RecordingEndpoint {
     }
 
     pub(super) fn calls(&self) -> Vec<Value> {
-        let guard = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        guard.clone()
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -98,10 +99,6 @@ impl RecordingExchanger {
         }
     }
 
-    pub(super) fn not_wired() -> Self {
-        Self::failing(CredError::Misconfigured(NOT_WIRED.to_owned()))
-    }
-
     pub(super) fn exchanges(&self) -> Vec<Value> {
         let guard = self
             .exchanges
@@ -122,25 +119,23 @@ impl RecordingExchanger {
 impl TokenExchanger for RecordingExchanger {
     fn exchange<'call>(
         &'call self,
-        subject_token: &'call SecretString,
-        _server: &'call ServerSpec,
-        _config: &'call TokenExchangeConfig,
-        tenant_id: &'call str,
+        request: ExchangeRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>> {
-        record_exchange(&self.exchanges, subject_token, tenant_id);
-        let token = self.token.clone();
-        let error = self.error.clone();
-        Box::pin(async move { error.map_or_else(|| token.ok_or_else(missing_token), Ok) })
+        record_exchange(&self.exchanges, request.subject_token, request.tenant_id);
+        let reply = match (&self.error, &self.token) {
+            (Some(error), _token) => Err(error.clone()),
+            (None, Some(token)) => Ok(token.clone()),
+            (None, None) => Err(CredError::Misconfigured(NO_TOKEN.to_owned())),
+        };
+        Box::pin(async move { reply })
     }
 
-    fn invalidate<'call>(
-        &'call self,
-        subject_token: &'call SecretString,
-        _server: &'call ServerSpec,
-        _config: &'call TokenExchangeConfig,
-        tenant_id: &'call str,
-    ) -> BoxFuture<'call, ()> {
-        record_exchange(&self.invalidations, subject_token, tenant_id);
+    fn invalidate<'call>(&'call self, request: ExchangeRequest<'call>) -> BoxFuture<'call, ()> {
+        record_exchange(
+            &self.invalidations,
+            request.subject_token,
+            request.tenant_id,
+        );
         Box::pin(async {})
     }
 }
@@ -151,10 +146,6 @@ fn record_exchange(records: &Mutex<Vec<Value>>, subject_token: &SecretString, te
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(record);
-}
-
-fn missing_token() -> CredError {
-    CredError::Misconfigured("the recording exchanger has no token".to_owned())
 }
 
 pub(super) fn oauth_token(access_token: &str) -> OAuthToken {

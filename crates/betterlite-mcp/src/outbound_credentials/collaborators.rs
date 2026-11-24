@@ -43,35 +43,37 @@ pub trait OAuthTokenStore: Send + Sync {
     ) -> BoxFuture<'store, Result<Option<OAuthToken>, TokenStoreUnavailable>>;
 }
 
+// One OBO exchange: the caller's token, the server it is minted for and the tenant the caller belongs to.
+pub struct ExchangeRequest<'a> {
+    pub subject_token: &'a SecretString,
+    pub server: &'a ServerSpec,
+    pub config: &'a TokenExchangeConfig,
+    pub tenant_id: &'a str,
+}
+
 pub trait TokenExchanger: Send + Sync {
     fn exchange<'call>(
         &'call self,
-        subject_token: &'call SecretString,
-        server: &'call ServerSpec,
-        config: &'call TokenExchangeConfig,
-        tenant_id: &'call str,
+        request: ExchangeRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>>;
 
-    fn invalidate<'call>(
-        &'call self,
-        subject_token: &'call SecretString,
-        server: &'call ServerSpec,
-        config: &'call TokenExchangeConfig,
-        tenant_id: &'call str,
-    ) -> BoxFuture<'call, ()>;
+    fn invalidate<'call>(&'call self, request: ExchangeRequest<'call>) -> BoxFuture<'call, ()>;
+}
+
+pub struct CredentialRequest<'a> {
+    pub server_id: &'a str,
+    pub config: &'a ClientCredentialsConfig,
 }
 
 pub trait ClientCredentialsSource: Send + Sync {
     fn get<'call>(
         &'call self,
-        server_id: &'call str,
-        config: &'call ClientCredentialsConfig,
+        request: CredentialRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>>;
 
     fn refetch<'call>(
         &'call self,
-        server_id: &'call str,
-        config: &'call ClientCredentialsConfig,
+        request: CredentialRequest<'call>,
         failed_access_token: &'call SecretString,
     ) -> BoxFuture<'call, Option<SecretString>>;
 }
@@ -119,30 +121,23 @@ impl OAuthTokenStore for NullTokenStore {
     }
 }
 
+pub const TOKEN_EXCHANGE_NOT_WIRED: &str = "token exchange collaborator not wired";
+
 pub struct NullTokenExchanger;
 
 impl TokenExchanger for NullTokenExchanger {
     fn exchange<'call>(
         &'call self,
-        _subject_token: &'call SecretString,
-        _server: &'call ServerSpec,
-        _config: &'call TokenExchangeConfig,
-        _tenant_id: &'call str,
+        _request: ExchangeRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>> {
         Box::pin(async {
             Err(CredError::Misconfigured(
-                "token exchange collaborator not wired".to_owned(),
+                TOKEN_EXCHANGE_NOT_WIRED.to_owned(),
             ))
         })
     }
 
-    fn invalidate<'call>(
-        &'call self,
-        _subject_token: &'call SecretString,
-        _server: &'call ServerSpec,
-        _config: &'call TokenExchangeConfig,
-        _tenant_id: &'call str,
-    ) -> BoxFuture<'call, ()> {
+    fn invalidate<'call>(&'call self, _request: ExchangeRequest<'call>) -> BoxFuture<'call, ()> {
         Box::pin(async {})
     }
 }
@@ -165,25 +160,21 @@ impl TokenEndpointClient for NullTokenEndpoint {
     }
 }
 
+const CLIENT_CREDS_NOT_WIRED: &str = "client_credentials collaborator not wired";
+
 pub struct NullClientCredentialsSource;
 
 impl ClientCredentialsSource for NullClientCredentialsSource {
     fn get<'call>(
         &'call self,
-        _server_id: &'call str,
-        _config: &'call ClientCredentialsConfig,
+        _request: CredentialRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>> {
-        Box::pin(async {
-            Err(CredError::Misconfigured(
-                "client_credentials collaborator not wired".to_owned(),
-            ))
-        })
+        Box::pin(async { Err(CredError::Misconfigured(CLIENT_CREDS_NOT_WIRED.to_owned())) })
     }
 
     fn refetch<'call>(
         &'call self,
-        _server_id: &'call str,
-        _config: &'call ClientCredentialsConfig,
+        _request: CredentialRequest<'call>,
         _failed_access_token: &'call SecretString,
     ) -> BoxFuture<'call, Option<SecretString>> {
         Box::pin(async { None })

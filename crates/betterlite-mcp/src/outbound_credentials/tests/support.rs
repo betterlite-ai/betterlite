@@ -6,9 +6,6 @@ use std::time::Duration;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credential_contracts::auth_config::id_jag::ClientAuth;
-use crate::credential_contracts::auth_config::oauth::{
-    ClientCredentialsConfig, TokenExchangeConfig,
-};
 use crate::credential_contracts::errors::{CredError, CredResult};
 use crate::credential_contracts::server_spec::{ServerSpec, Subject};
 use crate::credentials::{CredentialError, McpAuthType, McpClient, Request, ResolvedAuth};
@@ -16,8 +13,8 @@ use crate::sso_assertions::assertion::SsoIdentityAssertion;
 use crate::sso_assertions::read::{AssertionStoreUnavailable, SsoAssertionStore};
 
 use super::super::collaborators::{
-    BoxFuture, ExchangedToken, OAuthToken, OAuthTokenStore, TokenEndpointClient, TokenExchanger,
-    TokenStoreUnavailable,
+    BoxFuture, CredentialRequest, ExchangeRequest, ExchangedToken, OAuthToken, OAuthTokenStore,
+    TokenEndpointClient, TokenExchanger, TokenStoreUnavailable,
 };
 use super::super::resolver::{Collaborators, UpstreamCredentialProvider};
 
@@ -45,6 +42,14 @@ pub(super) fn subject(tenant_id: &str, subject_id: &str, inbound: Option<&str>) 
 
 pub(super) fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
+}
+
+fn oauth_token(access_token: &str) -> OAuthToken {
+    OAuthToken {
+        access_token: secret(access_token),
+        expires_at: None,
+        scopes: Vec::new(),
+    }
 }
 
 pub(super) fn exposed(value: &SecretString) -> String {
@@ -128,7 +133,7 @@ pub(super) fn client(
 }
 
 pub(super) fn provider(collaborators: Collaborators) -> UpstreamCredentialProvider {
-    UpstreamCredentialProvider::new(collaborators)
+    UpstreamCredentialProvider { collaborators }
 }
 
 pub(super) struct FailingAuth;
@@ -304,11 +309,7 @@ pub(super) struct FakeExchanger {
 impl FakeExchanger {
     pub(super) fn returning(access_token: &str) -> Self {
         Self {
-            token: Some(OAuthToken {
-                access_token: secret(access_token),
-                expires_at: None,
-                scopes: Vec::new(),
-            }),
+            token: Some(oauth_token(access_token)),
             error: None,
             exchanged: Mutex::new(Vec::new()),
             invalidated: Mutex::new(Vec::new()),
@@ -341,40 +342,34 @@ impl FakeExchanger {
     }
 }
 
+const NO_EXCHANGED_TOKEN: &str = "the fake exchanger has no token";
+
 impl TokenExchanger for FakeExchanger {
     fn exchange<'call>(
         &'call self,
-        subject_token: &'call SecretString,
-        _server: &'call ServerSpec,
-        _config: &'call TokenExchangeConfig,
-        tenant_id: &'call str,
+        request: ExchangeRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>> {
-        self.exchanged
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((exposed(subject_token), tenant_id.to_owned()));
-        let token = self.token.clone();
-        let error = self.error.clone();
-        Box::pin(async move { error.map_or_else(|| token.ok_or_else(missing_exchange), Ok) })
+        record(&self.exchanged, request.subject_token, request.tenant_id);
+        let reply = match (&self.error, &self.token) {
+            (Some(error), _token) => Err(error.clone()),
+            (None, Some(token)) => Ok(token.clone()),
+            (None, None) => Err(CredError::Misconfigured(NO_EXCHANGED_TOKEN.to_owned())),
+        };
+        Box::pin(async move { reply })
     }
 
-    fn invalidate<'call>(
-        &'call self,
-        subject_token: &'call SecretString,
-        _server: &'call ServerSpec,
-        _config: &'call TokenExchangeConfig,
-        tenant_id: &'call str,
-    ) -> BoxFuture<'call, ()> {
-        self.invalidated
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((exposed(subject_token), tenant_id.to_owned()));
+    fn invalidate<'call>(&'call self, request: ExchangeRequest<'call>) -> BoxFuture<'call, ()> {
+        record(&self.invalidated, request.subject_token, request.tenant_id);
         Box::pin(async {})
     }
 }
 
-fn missing_exchange() -> CredError {
-    CredError::Misconfigured("the fake exchanger has no token".to_owned())
+fn record(records: &Mutex<Vec<(String, String)>>, subject_token: &SecretString, tenant_id: &str) {
+    let entry = (exposed(subject_token), tenant_id.to_owned());
+    records
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(entry);
 }
 
 pub(super) struct FakeCredentials {
@@ -404,21 +399,15 @@ impl FakeCredentials {
 impl super::super::collaborators::ClientCredentialsSource for FakeCredentials {
     fn get<'call>(
         &'call self,
-        _server_id: &'call str,
-        _config: &'call ClientCredentialsConfig,
+        _request: CredentialRequest<'call>,
     ) -> BoxFuture<'call, CredResult<OAuthToken>> {
-        let token = OAuthToken {
-            access_token: secret(&self.access_token),
-            expires_at: None,
-            scopes: Vec::new(),
-        };
+        let token = oauth_token(&self.access_token);
         Box::pin(async move { Ok(token) })
     }
 
     fn refetch<'call>(
         &'call self,
-        _server_id: &'call str,
-        _config: &'call ClientCredentialsConfig,
+        _request: CredentialRequest<'call>,
         failed_access_token: &'call SecretString,
     ) -> BoxFuture<'call, Option<SecretString>> {
         self.refetches

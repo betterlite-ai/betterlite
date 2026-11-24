@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use crate::credential_contracts::auth_config::AuthConfig;
 use crate::credential_contracts::auth_spec::AuthSpecKind;
-use crate::credential_contracts::errors::CredResult;
+use crate::credential_contracts::errors::{CredError, CredResult};
 use crate::credential_contracts::server_spec::{ServerSpec, Subject};
 use crate::credentials::ResolvedAuth;
 
 use super::collaborators::{
-    AssertionStore, ClientCredentialsSource, NullAssertionStore, NullClientCredentialsSource,
-    NullTokenEndpoint, NullTokenExchanger, NullTokenStore, OAuthTokenStore, TokenEndpointClient,
-    TokenExchanger,
+    AssertionStore, ClientCredentialsSource, ExchangeRequest, NullAssertionStore,
+    NullClientCredentialsSource, NullTokenEndpoint, NullTokenExchanger, NullTokenStore,
+    OAuthTokenStore, TokenEndpointClient, TokenExchanger,
 };
 use super::token_cache::ExchangedTokenCache;
 
@@ -75,14 +75,10 @@ impl Collaborators {
 }
 
 pub struct UpstreamCredentialProvider {
-    collaborators: Collaborators,
+    pub collaborators: Collaborators,
 }
 
 impl UpstreamCredentialProvider {
-    pub fn new(collaborators: Collaborators) -> Self {
-        Self { collaborators }
-    }
-
     pub async fn resolve_credentials(
         &self,
         subject: &Subject,
@@ -101,13 +97,9 @@ impl UpstreamCredentialProvider {
                 .await
             }
             AuthConfig::TokenExchange(config) => {
-                arms::token_exchange(
-                    subject,
-                    server,
-                    config,
-                    &*self.collaborators.token_exchanger,
-                )
-                .await
+                let caller =
+                    arms::CallerToken::Exchanged(&*self.collaborators.token_exchanger, config);
+                arms::user_token(subject, server, &config.header, caller).await
             }
             AuthConfig::IdJag(config) => {
                 arms::id_jag(
@@ -120,43 +112,38 @@ impl UpstreamCredentialProvider {
                 .await
             }
             AuthConfig::AuthorizationCode(config) => {
-                arms::authorization_code(
-                    subject,
-                    server,
-                    config,
-                    &*self.collaborators.oauth_token_store,
-                )
-                .await
+                let caller = arms::CallerToken::Stored(&*self.collaborators.oauth_token_store);
+                arms::user_token(subject, server, &config.header, caller).await
             }
-            AuthConfig::AwsSigv4(_config) => Err(arms::not_implemented(AuthSpecKind::AwsSigv4)),
+            AuthConfig::AwsSigv4(_config) => Err(CredError::NotImplemented(format!(
+                "{}: resolver arm not implemented yet",
+                AuthSpecKind::AwsSigv4
+            ))),
         }
     }
 
     pub async fn has_user_token(&self, subject: &Subject, server: &ServerSpec) -> bool {
-        arms::has_user_token(subject, server, &*self.collaborators.oauth_token_store).await
+        let store: &dyn OAuthTokenStore = &*self.collaborators.oauth_token_store;
+        let fetched = arms::authz_token(subject, server, store).await;
+        fetched.is_some()
     }
 
     // Only id_jag and token_exchange hold a re-mintable credential here; client_credentials recovers inside its own auth flow and the rest mint nothing.
     pub async fn invalidate_credentials(&self, subject: &Subject, server: &ServerSpec) {
-        match &server.config {
-            AuthConfig::IdJag(_config) => {
-                id_jag::invalidate(subject, server, &self.collaborators.exchanged_tokens)
-            }
-            AuthConfig::TokenExchange(config) => {
-                let inbound = subject.inbound_token.as_ref();
-                if let Some(token) = inbound {
-                    self.collaborators
-                        .token_exchanger
-                        .invalidate(token, server, config, &subject.tenant_id)
-                        .await;
-                }
-            }
-            AuthConfig::AuthorizationCode(_config)
-            | AuthConfig::ClientCredentials(_config)
-            | AuthConfig::ApiKey(_config)
-            | AuthConfig::Passthrough(_config)
-            | AuthConfig::None(_config)
-            | AuthConfig::AwsSigv4(_config) => {}
+        if let AuthConfig::IdJag(_config) = &server.config {
+            let slot = id_jag::slot_key(subject, server);
+            self.collaborators.exchanged_tokens.invalidate(&slot);
+        }
+        if let AuthConfig::TokenExchange(config) = &server.config
+            && let Some(token) = &subject.inbound_token
+        {
+            let request = ExchangeRequest {
+                subject_token: token,
+                server,
+                config,
+                tenant_id: &subject.tenant_id,
+            };
+            self.collaborators.token_exchanger.invalidate(request).await;
         }
     }
 }

@@ -9,7 +9,7 @@ use betterlite_mcp::credential_contracts::server_spec::{ServerSpec, Subject};
 use betterlite_mcp::credentials::{Request, ResolvedAuth};
 use betterlite_mcp::outbound_credentials::adapter;
 use betterlite_mcp::outbound_credentials::resolver::UpstreamCredentialProvider;
-use betterlite_mcp::outbound_credentials::resolver::source::resolve_credentials_with_source;
+use betterlite_mcp::outbound_credentials::resolver::source::resolve_with_source;
 use betterlite_mcp::server_record::MCPServer;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -45,7 +45,9 @@ pub(super) fn answer(
         return Ok(Value::Null);
     };
     let fixtures = fakes::build(collaborators);
-    let provider = UpstreamCredentialProvider::new(fixtures.collaborators);
+    let provider = UpstreamCredentialProvider {
+        collaborators: fixtures.collaborators,
+    };
     let subject = subject.to_subject();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_time()
@@ -82,8 +84,10 @@ async fn run_actions(
     let mut records = Vec::with_capacity(actions.len());
     for action in actions {
         let record = match action {
-            Action::Resolve => resolve_answer(provider, subject, server, "resolve").await,
-            Action::ResolveWithSource => source_answer(provider, subject, server).await,
+            Action::Resolve => resolve_answer(provider, subject, server, AnswerMode::Plain).await,
+            Action::ResolveWithSource => {
+                resolve_answer(provider, subject, server, AnswerMode::WithSource).await
+            }
             Action::HasUserToken => json!({
                 "action": "has_user_token",
                 "ok": true,
@@ -99,31 +103,43 @@ async fn run_actions(
     records
 }
 
+#[derive(Clone, Copy)]
+enum AnswerMode {
+    Plain,
+    WithSource,
+}
+
+impl AnswerMode {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Plain => "resolve",
+            Self::WithSource => "resolve_with_source",
+        }
+    }
+}
+
 async fn resolve_answer(
     provider: &UpstreamCredentialProvider,
     subject: &Subject,
     server: &ServerSpec,
-    action: &str,
+    mode: AnswerMode,
 ) -> Value {
-    match provider.resolve_credentials(subject, server).await {
-        Ok(auth) => json!({"action": action, "ok": true, "headers": applied(auth.as_ref())}),
+    let action = mode.label();
+    match resolve_with_source(provider, subject, server).await {
+        Ok(resolved) => {
+            let headers = applied(resolved.auth.as_ref());
+            let source = resolved.source.to_string();
+            match mode {
+                AnswerMode::Plain => json!({"action": action, "ok": true, "headers": headers}),
+                AnswerMode::WithSource => json!({
+                    "action": action,
+                    "ok": true,
+                    "headers": headers,
+                    "source": source,
+                }),
+            }
+        }
         Err(error) => error_answer(action, &error),
-    }
-}
-
-async fn source_answer(
-    provider: &UpstreamCredentialProvider,
-    subject: &Subject,
-    server: &ServerSpec,
-) -> Value {
-    match resolve_credentials_with_source(provider, subject, server).await {
-        Ok(resolved) => json!({
-            "action": "resolve_with_source",
-            "ok": true,
-            "headers": applied(resolved.auth.as_ref()),
-            "source": resolved.source.to_string(),
-        }),
-        Err(error) => error_answer("resolve_with_source", &error),
     }
 }
 
@@ -134,7 +150,11 @@ fn applied(auth: &dyn ResolvedAuth) -> BTreeMap<String, String> {
         headers: BTreeMap::new(),
     };
     match auth.authenticate(request) {
-        Ok(authenticated) => authenticated.headers,
+        Ok(authenticated) => authenticated
+            .headers
+            .into_iter()
+            .map(|(name, value)| (name.to_lowercase(), value))
+            .collect(),
         Err(_error) => BTreeMap::from([("authorization".to_owned(), "apply failed".to_owned())]),
     }
 }

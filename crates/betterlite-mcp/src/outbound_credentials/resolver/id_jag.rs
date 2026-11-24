@@ -12,11 +12,10 @@ use crate::credential_contracts::server_spec::{ServerSpec, Subject};
 use crate::credentials::ResolvedAuth;
 use crate::sso_assertions::assertion::assertion_expired;
 
-use crate::outbound_credentials::auth::StaticAuth;
+use crate::outbound_credentials::auth::static_auth;
 use crate::outbound_credentials::collaborators::{
     AssertionStore, ExchangedToken, TokenEndpointClient,
 };
-use crate::outbound_credentials::token_cache::ExchangedTokenCache;
 
 use super::Collaborators;
 
@@ -78,15 +77,7 @@ pub(super) async fn exchange(
         .exchanged_tokens
         .get_or_compute(&slot, &fingerprint, compute)
         .await?;
-    let (header_name, header_value) = config.header.header(access_token.expose_secret());
-    let auth = StaticAuth::new(&header_name, &header_value)?;
-    Ok(Arc::new(auth))
-}
-
-// The slot is addressed by the principal, never by the credential material, so invalidate stays computable while the assertion store is down.
-pub(super) fn invalidate(subject: &Subject, server: &ServerSpec, cache: &ExchangedTokenCache) {
-    let slot = slot_key(subject, server);
-    cache.invalidate(&slot);
+    static_auth(&config.header, access_token.expose_secret())
 }
 
 async fn exchange_legs(
@@ -156,7 +147,8 @@ fn second_leg_params(assertion: &SecretString) -> BTreeMap<String, String> {
     ])
 }
 
-fn slot_key(subject: &Subject, server: &ServerSpec) -> String {
+// The slot is addressed by the principal, never by the credential material, so invalidate stays computable while the assertion store is down.
+pub(super) fn slot_key(subject: &Subject, server: &ServerSpec) -> String {
     let inbound = subject
         .inbound_token
         .as_ref()
@@ -166,7 +158,7 @@ fn slot_key(subject: &Subject, server: &ServerSpec) -> String {
         "{}\u{0}{}\u{0}{}\u{0}{}",
         subject.tenant_id, subject.subject_id, server.server_id, inbound
     );
-    sha256_hex(&material)
+    hex::encode(Sha256::digest(material.as_bytes()))
 }
 
 // Everything an exchange depends on goes into the fingerprint, so a rotated assertion or an edited server re-mints instead of serving a bearer authorized under the old policy.
@@ -185,7 +177,7 @@ fn fingerprint(subject_token: &SecretString, server_id: &str, config: &IdJagConf
         config.resource.as_deref().unwrap_or_default(),
         config.scopes.join(" "),
     );
-    sha256_hex(&material)
+    hex::encode(Sha256::digest(material.as_bytes()))
 }
 
 fn client_auth_fingerprint(client_auth: &ClientAuth) -> String {
@@ -200,9 +192,4 @@ fn client_auth_fingerprint(client_auth: &ClientAuth) -> String {
             format!("client_secret\u{0}{}", secret.client_secret.expose_secret())
         }
     }
-}
-
-fn sha256_hex(material: &str) -> String {
-    let digest = Sha256::digest(material.as_bytes());
-    hex::encode(digest)
 }

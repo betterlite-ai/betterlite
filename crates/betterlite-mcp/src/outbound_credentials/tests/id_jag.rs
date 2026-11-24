@@ -199,15 +199,24 @@ async fn id_jag_fingerprint_includes_client_auth() {
         .unwrap();
     let calls = endpoint.calls();
     assert_eq!(calls.len(), 6);
-    let expected = ["secret-1", "secret-2", "secret-1"];
-    for (call, expected_secret) in calls.iter().step_by(2).zip(expected) {
-        assert_eq!(
-            call.client_auth,
-            RecordedAuth::ClientSecret {
-                client_secret: expected_secret.to_owned()
-            }
-        );
-    }
+    assert_eq!(
+        calls[0].client_auth,
+        RecordedAuth::ClientSecret {
+            client_secret: "secret-1".to_owned()
+        }
+    );
+    assert_eq!(
+        calls[2].client_auth,
+        RecordedAuth::ClientSecret {
+            client_secret: "secret-2".to_owned()
+        }
+    );
+    assert_eq!(
+        calls[4].client_auth,
+        RecordedAuth::ClientSecret {
+            client_secret: "secret-1".to_owned()
+        }
+    );
 }
 
 #[tokio::test]

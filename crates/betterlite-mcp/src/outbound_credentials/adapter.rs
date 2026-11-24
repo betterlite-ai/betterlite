@@ -3,13 +3,13 @@ pub mod errors;
 pub mod prepare;
 mod specs;
 
-use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTokenEndpointAuthMethod, MCPTransport};
+use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTokenEndpointAuthMethod};
 use secrecy::SecretString;
 
 use crate::credential_contracts::auth_config::AuthConfig;
 use crate::credential_contracts::auth_config::simple::{NoneConfig, PassthroughConfig};
 use crate::credential_contracts::errors::CredResult;
-use crate::credential_contracts::header_carrier::{DEFAULT_CREDENTIAL_HEADER, HeaderCarrier};
+use crate::credential_contracts::header_carrier::DEFAULT_CREDENTIAL_HEADER;
 use crate::credential_contracts::server_spec::{ServerSpec, Subject};
 use crate::credential_contracts::token_endpoint_auth::TokenEndpointAuthMethod;
 use crate::credentials::McpAuthType;
@@ -25,7 +25,10 @@ pub struct UserPrincipal {
 }
 
 pub fn to_subject(principal: Option<&UserPrincipal>, subject_token: Option<&str>) -> Subject {
-    let inbound_token = present(subject_token).map(SecretString::from);
+    let inbound_token = subject_token
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .map(SecretString::from);
     let Some(principal) = principal else {
         return Subject {
             tenant_id: String::new(),
@@ -33,10 +36,19 @@ pub fn to_subject(principal: Option<&UserPrincipal>, subject_token: Option<&str>
             inbound_token,
         };
     };
-    let tenant_id = present(principal.org_id.as_deref())
-        .or_else(|| present(principal.team_id.as_deref()))
-        .unwrap_or_default();
-    let subject_id = present(principal.user_id.as_deref()).unwrap_or_default();
+    let tenant_id = principal
+        .org_id
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .or_else(|| principal.team_id.as_deref().filter(|text| !text.is_empty()))
+        .unwrap_or_default()
+        .to_owned();
+    let subject_id = principal
+        .user_id
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .unwrap_or_default()
+        .to_owned();
     Subject {
         tenant_id,
         subject_id,
@@ -68,18 +80,26 @@ pub fn to_server_spec(server: &MCPServer) -> CredResult<Option<ServerSpec>> {
         Some(MCPAuth::Basic) => {
             specs::shared_key(server, &resource, "Authorization", "Basic", true)
         }
-        Some(MCPAuth::Oauth2) => specs::oauth2(server, &resource),
-        Some(MCPAuth::Oauth2IdJag) => specs::id_jag(server, &resource),
-        Some(MCPAuth::TruePassthrough | MCPAuth::OauthDelegate) => {
-            Ok(Some(passthrough_spec(server, &resource)))
+        Some(MCPAuth::Oauth2) => specs::build(server, &resource, specs::SpecMode::Oauth2),
+        Some(MCPAuth::Oauth2IdJag) => specs::build(server, &resource, specs::SpecMode::IdJag),
+        Some(MCPAuth::TruePassthrough | MCPAuth::OauthDelegate) => Ok(Some(ServerSpec {
+            server_id: server.fields.server_id.clone(),
+            resource,
+            config: AuthConfig::Passthrough(PassthroughConfig),
+        })),
+        Some(MCPAuth::Oauth2TokenExchange) => {
+            specs::build(server, &resource, specs::SpecMode::TokenExchange)
         }
-        Some(MCPAuth::Oauth2TokenExchange) => specs::token_exchange(server, &resource),
         Some(MCPAuth::AwsSigv4) => Ok(None),
         None | Some(MCPAuth::None) => {
             if server.is_oauth_passthrough() {
                 return Ok(None);
             }
-            Ok(Some(none_spec(server, &resource)))
+            Ok(Some(ServerSpec {
+                server_id: server.fields.server_id.clone(),
+                resource,
+                config: AuthConfig::None(NoneConfig),
+            }))
         }
     }
 }
@@ -113,13 +133,13 @@ pub(super) fn static_header_slots(server: &MCPServer) -> Vec<String> {
 }
 
 pub(super) fn token_header(server: &MCPServer) -> String {
-    let configured = present(server.fields.upstream_token_header.as_deref());
-    configured.unwrap_or_else(|| DEFAULT_CREDENTIAL_HEADER.to_owned())
-}
-
-pub(super) fn present(value: Option<&str>) -> Option<String> {
-    let filled = value.filter(|text| !text.is_empty());
-    filled.map(str::to_owned)
+    server
+        .fields
+        .upstream_token_header
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| DEFAULT_CREDENTIAL_HEADER.to_owned())
 }
 
 pub(super) fn token_endpoint_method(
@@ -136,35 +156,12 @@ pub(super) fn token_endpoint_method(
     }
 }
 
-pub(super) fn credential_header(server: &MCPServer) -> CredResult<HeaderCarrier> {
-    HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)
-}
-
-pub(super) const fn stdio_transport(server: &MCPServer) -> bool {
-    matches!(server.fields.transport, MCPTransport::Stdio)
-}
-
 fn resource_of(server: &MCPServer) -> String {
-    let url = present(server.fields.url.as_deref());
-    url.unwrap_or_else(|| server.fields.server_id.clone())
-}
-
-fn none_spec(server: &MCPServer, resource: &str) -> ServerSpec {
-    let config = AuthConfig::None(NoneConfig);
-    let server_id = server.fields.server_id.clone();
-    ServerSpec {
-        server_id,
-        resource: resource.to_owned(),
-        config,
-    }
-}
-
-fn passthrough_spec(server: &MCPServer, resource: &str) -> ServerSpec {
-    let config = AuthConfig::Passthrough(PassthroughConfig);
-    let server_id = server.fields.server_id.clone();
-    ServerSpec {
-        server_id,
-        resource: resource.to_owned(),
-        config,
-    }
+    server
+        .fields
+        .url
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| server.fields.server_id.clone())
 }
