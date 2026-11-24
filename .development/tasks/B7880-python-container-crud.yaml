@@ -10,6 +10,7 @@ description: >-
   Python side, `python/betterlite/containers/_crud.py`. Each sync function keeps the signature of its `@overload` set: `create_container(name, expires_after, file_ids, timeout, custom_llm_provider, extra_headers, extra_query, extra_body, **kwargs)`, `list_containers(after, limit, order, ...)`, `retrieve_container(container_id, ...)` and `delete_container(container_id, ...)`. The `a`-twin has the same parameters and is a coroutine function. `create_container` returns `ContainerObject`, `list_containers` returns `ContainerListResponse`, and `delete_container` returns `DeleteContainerResult`. The created container id is encoded with the model-style id wrapper of `_encode_created_container_id` (L50-L57) when a managed-id context is in kwargs. Build shared argument handling with the B6040 helpers `to_call_payload`, `call_native`, `acall_native` and `read_settings`. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
 scope:
   paths:
+  - "crates/betterlite-python/ruff.toml"
   - crates/betterlite-python/src/container_calls.rs
   - crates/betterlite-python/src/container_calls/**
   - crates/betterlite-python/python/betterlite/_native_container_calls.pyi

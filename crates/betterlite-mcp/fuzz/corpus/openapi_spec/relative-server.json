@@ -1,0 +1,23 @@
+{
+  "openapi": "3.1.0",
+  "servers": [{"url": "/api/v3"}, {"url": "https://backup.test"}],
+  "paths": {
+    "/things/{thingId}": {
+      "parameters": [
+        {"$ref": "#/components/parameters/Missing"},
+        {"$ref": "#/definitions/Elsewhere", "name": "elsewhere"},
+        {"name": "thingId", "in": "path", "required": true, "schema": {"type": "string"}}
+      ],
+      "patch": {
+        "operationId": "patch-thing",
+        "parameters": [{"name": "thingId", "in": "path", "required": true}],
+        "requestBody": {
+          "content": {
+            "application/json; charset=utf-8": {"schema": {"type": "object"}},
+            "application/json": {"schema": null}
+          }
+        }
+      }
+    }
+  }
+}

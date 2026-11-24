@@ -1,0 +1,27 @@
+kind: helper
+name: resource-hubs-agent-hub-includes-public-url
+call:
+  b3194:
+    function: agent_hub
+    agents:
+      - agent_id: alpha
+        agent_name: alpha
+        agent_card_params:
+          protocolVersion: "0.3.0"
+          name: alpha
+          description: the alpha agent
+          url: "http://wrong.example/a2a/alpha"
+          version: "1.0.0"
+          capabilities: {streaming: true}
+          defaultInputModes: [text]
+          defaultOutputModes: [text]
+          skills: []
+          preferredTransport: JSONRPC
+          iconUrl: null
+          x-extra: dropped
+    public_agent_groups: [alpha]
+    request_base_url: "http://testserver/proxy/"
+    root_path: "/proxy"
+    proxy_base_url: null
+env: {}
+compare: {ignore: []}

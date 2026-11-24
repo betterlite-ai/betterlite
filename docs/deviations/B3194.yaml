@@ -1,0 +1,29 @@
+task: B3194
+deviations:
+  - what: >-
+      The three public hubs read their inputs from ResourceHubsState, injected when the app builds the routes, instead of
+      from LiteLLM's module globals: global_agent_registry, litellm.public_agent_groups, global_mcp_server_manager,
+      litellm.public_mcp_servers, litellm.public_mcp_hub_strict_whitelist, the per-request prisma client and its plugin
+      table.
+    why: >-
+      betterlite keeps no module-level state; the group store and the MCP registry with its public list come from the
+      composition of B002's litellm_settings keys with B4776's registry and B10079's public_servers, and the plugin table
+      is a port over the same LiteLLM_ClaudeCodePluginTable rows, so the request answers the same JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L273-L295
+  - what: >-
+      The plugin table is read through a typed port with the same WHERE clause (enabled = TRUE) and row decode, not
+      through ClaudeCodePluginRepository(prisma_client).table built per request.
+    why: >-
+      The port is what the write routes of B1140 already use for this table, and it keeps the hub's database access one
+      seam the tests can replace; the SQL and the selected columns are copied from LiteLLM's list of enabled plugins.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L322-L361
+  - what: >-
+      A failing skill hub answers 500 with {"detail": "<text>"} carrying betterlite's typed error message, where
+      LiteLLM's body carries str(e) of the caught exception: str(JSONDecodeError) or the prisma error text, and
+      "500: {'error': '...'}" when the missing database's HTTPException is wrapped by the route's except clause.
+    why: >-
+      The status, the shape (detail is a string) and the null type/param/code fields match; docs/compatibility.md keeps
+      Python's str() and repr() text out of betterlite, so the message wording differs while nothing a caller can branch
+      on does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L359-L361
+kept_bugs: []

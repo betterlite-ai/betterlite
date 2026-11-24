@@ -1,0 +1,34 @@
+kind: helper
+name: mcp-openapi-input-schema
+call:
+  b4683:
+    operation: input_schema
+    spec_operation:
+      parameters:
+        - {name: id, in: path, required: true, description: Pet id, schema: {type: integer}}
+        - {name: x-token, in: header}
+        - {in: query}
+      requestBody:
+        required: true
+        description: The pet
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+calls:
+  - b4683:
+      operation: input_schema
+      spec_operation:
+        requestBody:
+          content:
+            application/json; charset=utf-8:
+              schema: {type: object, properties: {a: {type: string}}}
+  - b4683:
+      operation: input_schema
+      spec_operation:
+        parameters:
+          - {name: id, in: path, schema: {}}
+env: {}
+compare: {ignore: []}

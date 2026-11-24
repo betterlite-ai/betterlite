@@ -1,0 +1,38 @@
+kind: helper
+name: mcp-openapi-base-url-spec-path
+call:
+  b4683:
+    operation: base_url
+    spec: {}
+    spec_path: https://example.com/v3/openapi.json
+calls:
+  - b4683:
+      operation: base_url
+      spec: {}
+      spec_path: https://example.com/v3/openapi.yaml
+  - b4683:
+      operation: base_url
+      spec: {}
+      spec_path: https://example.com/v3/swagger.yaml
+  - b4683:
+      operation: base_url
+      spec: {}
+      spec_path: https://example.com/v3/spec.yml
+  - b4683:
+      operation: base_url
+      spec: {}
+      spec_path: https://example.com/v3/spec.txt
+  - b4683:
+      operation: base_url
+      spec: {}
+      spec_path: specs/spec.json
+  - b4683:
+      operation: base_url
+      spec: {}
+      spec_path: null
+  - b4683:
+      operation: base_url
+      spec: {}
+      spec_path: https://example.com/openapi.json
+env: {}
+compare: {ignore: []}
