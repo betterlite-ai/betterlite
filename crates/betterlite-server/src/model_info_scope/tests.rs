@@ -18,6 +18,7 @@ use super::compose::{
     accessible_models, non_admin_all_models,
 };
 use super::error::ScopeError;
+use super::grants::direct_access_models;
 use super::teams::{TeamModelLists, TeamModelMap, TeamScope, add_access_group_models};
 use crate::model_visibility::testing::{Row, Snapshot};
 
@@ -513,6 +514,23 @@ async fn wildcard_key_keeps_the_user_grant() {
     .unwrap();
     assert_annotations(&annotated[0], false, Some(&[]));
     assert_annotations(&annotated[1], true, None);
+}
+
+// A key whitelisted to the sentinel alone has no narrowing grant, so the user's team grant stays direct.
+#[test]
+fn all_proxy_only_key_keeps_the_user_grant() {
+    let rows = vec![team_row("team-gpt", "k1", "team-alpha")];
+    let snapshot = snapshot(&rows);
+    let user_models = vec![String::from("team-gpt")];
+    let keys = vec![String::from(ALL_PROXY_MODELS)];
+    let direct = direct_access_models(
+        &user_models,
+        &keys,
+        &snapshot.lookup(),
+        &AccessGroups::default(),
+    )
+    .unwrap();
+    assert_eq!(direct, vec![String::from("k1")]);
 }
 
 #[test]
