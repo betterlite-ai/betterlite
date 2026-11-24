@@ -1,0 +1,14 @@
+kind: helper
+name: read-optional-fields
+call:
+  b10064:
+    database: true
+    rows:
+      - {user_id: alice, assertion_b64: 'gFpvf0yaSltJ0GgTqHIAmaRUWkJbVUJQYKyppoPbHF0wVPp3NnTLzZiE8Ot-65X3R_du8fFB-qapCwxC4xywXjM='}
+      - {user_id: bravo, assertion_b64: 'I4eIB1LPPdwoaHijm2wjp_uKDhInzOwOq36ujTTPN0RT1WnoqaNVriGvIzXirDQv-6bbpN2ZFC4az_lijEVtllhQzFkowjPSXELkjaIIUdmNwqOccelcDDKy5RQ_fdcrAIydpmAG3jg='}
+    failure: null
+    steps:
+      - {step: fetch, user_id: alice}
+      - {step: fetch_uncached, user_id: bravo}
+env: {}
+compare: {ignore: []}
