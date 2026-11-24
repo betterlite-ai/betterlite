@@ -21,6 +21,9 @@ deviations:
   - what: The complete Responses response is transformed with a TimeZone the caller passes in; LiteLLM's datetime.fromtimestamp uses the process's local zone.
     why: Rule inject-dependencies keeps the clock out of the handler, and B3497's to_interactions_response already takes the zone for the created and updated fields.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/handler.py#L103-L106
+  - what: The handlers return Result<InteractionsAnswer, InteractionsHandlerError<Operation::Error>>, with Transform for a request or response that cannot be transformed and Call for a failed Responses call; LiteLLM lets the transform's exceptions and the responses call's exception propagate unchanged.
+    why: Rust reports failure through a typed error, so the route reading the handler can tell a bad request or response shape from an upstream failure, and the operation's own error type stays intact in the Call variant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/handler.py#L57-L106
 kept_bugs:
   - what: A response.failed or response.incomplete chunk produces no event, and the end of the stream then reports interaction.completed with whatever text arrived, so a failed Responses stream reaches the Interactions caller as a successful interaction.
     why: The new Interactions schema has no error event, and the handler's only terminal event is interaction.completed, so a client that waits for that event would hang if betterlite suppressed it; copying LiteLLM keeps a working setup's event sequence unchanged.
