@@ -22,26 +22,49 @@ where
     Store: Storage + Clone + Send + Sync + 'static,
 {
     Router::new()
-        .route("/lens", get(lenses::list_lenses).post(lenses::create_lens))
-        .route("/lens/activity/available", get(lenses::activity_available))
-        .route("/lens/agents", get(lenses::list_agents))
+        .route(
+            "/lens",
+            get(LensRoutesState::<Db, Store>::list_lenses)
+                .post(LensRoutesState::<Db, Store>::create_lens),
+        )
+        .route(
+            "/lens/activity/available",
+            get(LensRoutesState::<Db, Store>::activity_available),
+        )
+        .route(
+            "/lens/agents",
+            get(LensRoutesState::<Db, Store>::list_agents),
+        )
         .route("/lens/preview/sample", post(preview::preview_sample))
-        .route("/lens/workers/register", post(workers::register_worker))
+        .route(
+            "/lens/workers/register",
+            post(LensRoutesState::<Db, Store>::register_worker),
+        )
         .route(
             "/lens/workers/{worker_id}/billing-key",
-            put(workers::set_worker_billing),
+            put(LensRoutesState::<Db, Store>::set_worker_billing),
         )
-        .route("/lens/workers/{worker_id}", delete(workers::revoke_worker))
+        .route(
+            "/lens/workers/{worker_id}",
+            delete(LensRoutesState::<Db, Store>::revoke_worker),
+        )
         .route(
             "/lens/{lens_id}",
-            put(lenses::update_lens).get(lenses::read_lens),
+            put(LensRoutesState::<Db, Store>::update_lens)
+                .get(LensRoutesState::<Db, Store>::read_lens),
         )
         .route(
             "/lens/{lens_id}/runs",
-            get(runs::list_runs).post(runs::run_lens),
+            get(runs::list_runs).post(LensRoutesState::<Db, Store>::run_lens),
         )
-        .route("/lens/{lens_id}/runs/{job_id}", get(runs::read_run))
-        .route("/lens/{lens_id}/cancel", post(runs::cancel_lens))
+        .route(
+            "/lens/{lens_id}/runs/{job_id}",
+            get(LensRoutesState::<Db, Store>::read_run),
+        )
+        .route(
+            "/lens/{lens_id}/cancel",
+            post(LensRoutesState::<Db, Store>::cancel_lens),
+        )
         .route(
             "/lens/{lens_id}/findings/{finding_id}",
             patch(findings::update_finding),

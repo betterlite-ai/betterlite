@@ -1,15 +1,21 @@
 use std::error::Error as StdError;
 
 use axum::Json;
+use axum::extract::Extension;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::lens_repository::repository::LensRepositoryError;
 use betterlite_db::lens_repository::update::LensUpdateError;
+use betterlite_lens::models::settings::Scope;
 use betterlite_lens::sources::source_reader::SourceError;
+use betterlite_lens::sources::storage::Storage;
 use betterlite_lens::state::transitions::TransitionError;
 use thiserror::Error;
 
+use crate::auth::auth_identity::AuthContext;
 use crate::lens_access::error::{LensAccessError, failure_text};
+use crate::lens_access::scope::{caller_key, user_scope};
 use crate::lens_billing::key_validation::KeyValidationError;
 use crate::tracing_routes::router::{DetailBody, unauthenticated};
 
@@ -57,6 +63,22 @@ where
         LensUpdateError::Repository(source) => LensRouteError::Repository(source),
         LensUpdateError::Transform(source) => LensRouteError::Mutation(source),
     }
+}
+
+// the resolved key and its scope: the write flag refuses a non-admin before the handler does anything else
+pub(crate) fn route_key_scope<Store>(
+    caller: Option<Extension<AuthContext>>,
+    write: bool,
+) -> Result<(UserAPIKeyAuth, Scope), LensRouteError<<Store as Storage>::Error>>
+where
+    Store: Storage,
+{
+    let Some(Extension(context)) = caller else {
+        return Err(LensRouteError::Unauthenticated);
+    };
+    let key = caller_key(&context.principal)?;
+    let scope = user_scope(&key, write)?;
+    Ok((key, scope))
 }
 
 impl<E> IntoResponse for LensRouteError<E>

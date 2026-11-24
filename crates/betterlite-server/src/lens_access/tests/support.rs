@@ -261,6 +261,15 @@ fn stored(cell: &Mutex<String>) -> Vec<u8> {
     }
 }
 
+fn record<T>(cell: &Mutex<Vec<T>>, lock: &str, value: T) {
+    cell.lock().expect(lock).push(value);
+}
+
+fn rows<T: Serialize>(items: &Mutex<Vec<T>>, lock: &str) -> Vec<Row> {
+    let guard = items.lock().expect(lock);
+    guard.iter().map(encoded).collect()
+}
+
 impl FakeStorage {
     pub(crate) fn samples(&self) -> Vec<SampleParameters> {
         self.samples.lock().expect("the sample lock").clone()
@@ -305,10 +314,7 @@ impl Storage for FakeStorage {
         &self,
         parameters: SampleParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        self.samples
-            .lock()
-            .expect("the sample lock")
-            .push(parameters);
+        record(&self.samples, "the sample lock", parameters);
         ready(Ok(stored(&self.sample_json)))
     }
 
@@ -316,10 +322,7 @@ impl Storage for FakeStorage {
         &self,
         parameters: ContentParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        self.contents
-            .lock()
-            .expect("the content lock")
-            .push(parameters);
+        record(&self.contents, "the content lock", parameters);
         ready(Ok(stored(&self.content_json)))
     }
 
@@ -331,7 +334,7 @@ impl Storage for FakeStorage {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct FakeDatabase {
     pub(crate) lenses: Arc<Mutex<Vec<Lens>>>,
     pub(crate) workers: Arc<Mutex<Vec<Worker>>>,
@@ -343,18 +346,6 @@ pub(crate) struct FakeDatabase {
 }
 
 impl FakeDatabase {
-    pub(crate) fn new() -> Self {
-        Self {
-            lenses: Arc::new(Mutex::new(Vec::new())),
-            workers: Arc::new(Mutex::new(Vec::new())),
-            tokens: Arc::new(Mutex::new(Vec::new())),
-            archived: Arc::new(Mutex::new(Vec::new())),
-            queries: Arc::new(Mutex::new(Vec::new())),
-            job_offsets: Arc::new(Mutex::new(Vec::new())),
-            corrupt: Arc::new(Mutex::new(false)),
-        }
-    }
-
     pub(crate) fn job_offsets(&self) -> Vec<i64> {
         self.job_offsets.lock().expect("the offset lock").clone()
     }
@@ -376,9 +367,8 @@ impl FakeDatabase {
     }
 
     pub(crate) fn lens(&self, id: &str) -> Lens {
-        self.lenses
-            .lock()
-            .expect("the lens lock")
+        let lenses = self.lenses.lock().expect("the lens lock");
+        lenses
             .iter()
             .find(|lens| lens.id == id)
             .expect("the stored lens")
@@ -386,9 +376,8 @@ impl FakeDatabase {
     }
 
     pub(crate) fn worker(&self, id: &str) -> Worker {
-        self.workers
-            .lock()
-            .expect("the worker lock")
+        let workers = self.workers.lock().expect("the worker lock");
+        workers
             .iter()
             .find(|worker| worker.id == id)
             .expect("the stored worker")
@@ -454,25 +443,14 @@ impl FakeDatabase {
     }
 
     fn all_lenses(&self) -> Vec<Row> {
-        self.lenses
-            .lock()
-            .expect("the lens lock")
-            .iter()
-            .map(encoded)
-            .collect()
+        rows(&self.lenses, "the lens lock")
     }
 
     fn one_lens(&self, args: &[SqlBind]) -> Vec<Row> {
         let Some(id) = text_arg(args, 0) else {
             return Vec::new();
         };
-        self.lenses
-            .lock()
-            .expect("the lens lock")
-            .iter()
-            .filter(|lens| lens.id == id)
-            .map(encoded)
-            .collect()
+        lens_rows(&self.lenses, id)
     }
 
     fn created(&self, args: &[SqlBind]) -> Vec<Row> {
@@ -480,7 +458,7 @@ impl FakeDatabase {
             return Vec::new();
         };
         let created: Lens = serde_json::from_str(data).expect("the created lens decodes");
-        self.lenses.lock().expect("the lens lock").push(created);
+        record(&self.lenses, "the lens lock", created);
         Vec::new()
     }
 
@@ -557,12 +535,7 @@ impl FakeDatabase {
     }
 
     fn all_workers(&self) -> Vec<Row> {
-        self.workers
-            .lock()
-            .expect("the worker lock")
-            .iter()
-            .map(encoded)
-            .collect()
+        rows(&self.workers, "the worker lock")
     }
 
     fn by_token(&self, args: &[SqlBind]) -> Vec<Row> {
@@ -579,68 +552,78 @@ impl FakeDatabase {
     }
 
     fn inserted_worker(&self, args: &[SqlBind]) -> Vec<Row> {
-        let Some(hash) = text_arg(args, 1) else {
+        let (Some(hash), Some(data)) = (text_arg(args, 1), text_arg(args, 2)) else {
             return Vec::new();
         };
-        let Some(data) = text_arg(args, 2) else {
-            return Vec::new();
-        };
-        let worker: Worker = serde_json::from_str(data).expect("the worker decodes");
-        self.workers
-            .lock()
-            .expect("the worker lock")
-            .push(worker.clone());
-        self.tokens
-            .lock()
-            .expect("the token lock")
-            .push((hash.to_owned(), worker));
+        self.save_worker(hash, data);
         Vec::new()
     }
 
+    fn save_worker(&self, hash: &str, data: &str) {
+        let worker: Worker = serde_json::from_str(data).expect("the worker decodes");
+        record(&self.workers, "the worker lock", worker.clone());
+        record(&self.tokens, "the token lock", (hash.to_owned(), worker));
+    }
+
     fn replaced_worker(&self, args: &[SqlBind]) -> Vec<Row> {
-        let Some(data) = text_arg(args, 0) else {
+        let (Some(data), Some(id)) = (text_arg(args, 0), text_arg(args, 1)) else {
             return Vec::new();
         };
-        let Some(id) = text_arg(args, 1) else {
-            return Vec::new();
-        };
-        let mut workers = self.workers.lock().expect("the worker lock");
-        let Some(stored) = workers.iter_mut().find(|worker| worker.id == id) else {
-            return Vec::new();
-        };
-        *stored = serde_json::from_str(data).expect("the worker decodes");
+        replace_worker(&self.workers, id, data);
         Vec::new()
     }
 
     fn billing(&self, args: &[SqlBind]) -> Vec<Row> {
-        let Some(key_id) = text_arg(args, 0) else {
+        let (Some(key_id), Some(id)) = (text_arg(args, 0), text_arg(args, 1)) else {
             return Vec::new();
         };
-        let Some(id) = text_arg(args, 1) else {
-            return Vec::new();
-        };
-        let mut workers = self.workers.lock().expect("the worker lock");
-        let Some(stored) = workers.iter_mut().find(|worker| worker.id == id) else {
-            return Vec::new();
-        };
-        if stored.revoked {
-            return Vec::new();
-        }
-        stored.analysis_key_id = Some(key_id.to_owned());
-        vec![encoded(stored)]
+        apply_billing(&self.workers, id, key_id)
     }
 
     fn revoked(&self, args: &[SqlBind]) -> Vec<Row> {
         let Some(id) = text_arg(args, 0) else {
             return Vec::new();
         };
-        let mut workers = self.workers.lock().expect("the worker lock");
-        let Some(stored) = workers.iter_mut().find(|worker| worker.id == id) else {
-            return Vec::new();
-        };
-        stored.revoked = true;
+        retire_worker(&self.workers, id);
         Vec::new()
     }
+}
+
+fn lens_rows(lenses: &Mutex<Vec<Lens>>, id: &str) -> Vec<Row> {
+    let guard = lenses.lock().expect("the lens lock");
+    let mut matched = Vec::new();
+    for lens in guard.iter().filter(|lens| lens.id == id) {
+        matched.push(encoded(lens));
+    }
+    matched
+}
+
+fn replace_worker(workers: &Mutex<Vec<Worker>>, id: &str, data: &str) {
+    let mut guard = workers.lock().expect("the worker lock");
+    let Some(worker) = guard.iter_mut().find(|worker| worker.id == id) else {
+        return;
+    };
+    *worker = serde_json::from_str(data).expect("the worker decodes");
+}
+
+fn apply_billing(workers: &Mutex<Vec<Worker>>, id: &str, key_id: &str) -> Vec<Row> {
+    let mut guard = workers.lock().expect("the worker lock");
+    let Some(worker) = guard.iter_mut().find(|worker| worker.id == id) else {
+        return Vec::new();
+    };
+    if worker.revoked {
+        return Vec::new();
+    }
+    worker.analysis_key_id = Some(key_id.to_owned());
+    vec![encoded(worker)]
+}
+
+fn retire_worker(workers: &Mutex<Vec<Worker>>, id: &str) {
+    let mut guard = workers.lock().expect("the worker lock");
+    let Some(worker) = guard.iter_mut().find(|worker| worker.id == id) else {
+        return;
+    };
+    worker.revoked = true;
 }
 
 fn text_arg(args: &[SqlBind], index: usize) -> Option<&str> {
@@ -693,7 +676,7 @@ pub(crate) struct Harness {
 impl Harness {
     pub(crate) fn new() -> Self {
         Self {
-            database: FakeDatabase::new(),
+            database: FakeDatabase::default(),
             storage: Some(FakeStorage::default()),
             catalog: Some(Arc::new(Catalog {
                 names: vec!["gpt-4o".to_owned()],

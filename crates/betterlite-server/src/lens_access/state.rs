@@ -2,6 +2,7 @@ use std::convert::Infallible;
 use std::future::{Future, ready};
 use std::sync::Arc;
 
+use betterlite_db::lens_repository::database::Database;
 use betterlite_db::lens_repository::repository::LensRepository;
 use betterlite_lens::sources::storage::{
     ContentParameters, EvidenceParameters, Parameters, SampleParameters, Storage,
@@ -25,6 +26,13 @@ pub(crate) trait IdSource: Send + Sync {
 pub(crate) trait ModelNames: Send + Sync {
     fn get_model_names(&self, team_id: Option<&str>) -> Vec<String>;
 }
+
+// the database and storage bounds every administration handler repeats, named once per trait
+pub(crate) trait LensDatabase: Database + 'static {}
+impl<T: Database + 'static> LensDatabase for T {}
+
+pub(crate) trait LensStorage: Storage + Clone + Send + Sync + 'static {}
+impl<T: Storage + Clone + Send + Sync + 'static> LensStorage for T {}
 
 // the ports the administration routes and the worker routes read, built once by the mount
 pub struct LensRoutesState<Db, Store = NoStorage> {
