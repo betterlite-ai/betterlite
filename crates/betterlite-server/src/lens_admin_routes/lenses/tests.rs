@@ -36,6 +36,15 @@ async fn without_storage_the_list_reports_tracing_disabled() {
 }
 
 #[tokio::test]
+async fn a_repository_failure_is_a_500_that_keeps_its_text() {
+    let harness = Harness::new();
+    harness.database.corrupted();
+    let reply = call(harness.app(), request("GET", "/lens", Some(&admin()), None)).await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(!reply.detail().is_empty());
+}
+
+#[tokio::test]
 async fn the_lens_list_is_read_before_the_worker_list() {
     let harness = Harness::new();
     harness.database.seed_worker(worker("w1"));
