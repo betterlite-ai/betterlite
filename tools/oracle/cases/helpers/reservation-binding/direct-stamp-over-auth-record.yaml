@@ -1,0 +1,21 @@
+kind: helper
+name: reservation-binding-direct-stamp-over-auth-record
+call:
+  b10088:
+    function: lookup
+    metadata:
+      user_api_key_budget_reservation: {id: direct, callback_bound: true}
+      user_api_key_auth: {budget_reservation: {id: from-auth}}
+      team: t1
+calls:
+  - b10088:
+      function: lookup
+      metadata:
+        user_api_key_auth: {budget_reservation: {id: from-auth, cost: 1}}
+  - b10088:
+      function: lookup
+      metadata:
+        user_api_key_budget_reservation: {}
+        user_api_key_auth: {budget_reservation: {id: from-auth}}
+env: {}
+compare: {ignore: []}

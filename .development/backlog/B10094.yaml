@@ -1,13 +1,13 @@
 id: B10094
 milestone: M9 agents and mcp
 title: MCP trusted redirect settings
-status: todo
+status: done
 depends_on: [B002]
 file: tasks/B10094-mcp-redirect-settings.yaml
 covers: []
 parent: B137
 split_from: B8702
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3068

@@ -1,0 +1,18 @@
+kind: helper
+name: native-refusals
+call:
+  b10062:
+    native_redirect_uris: 'myapp://host/cb*, myapp://host/oauth/*'
+    uris:
+      - 'cursor://anysphere.cursor-mcp/oauth/callback?x=1'
+      - 'cursor://anysphere.cursor-mcp/oauth/callback#frag'
+      - 'cursor://user:pass@anysphere.cursor-mcp/oauth/callback'
+      - 'cursor://@anysphere.cursor-mcp/oauth/callback'
+      - 'cursor://anysphere.cursor-mcp\/oauth/callback'
+      - 'cursor://anysphere.cursor-mcp/oauth/callback/extra'
+      - 'myapp://host/cb-2'
+      - 'myapp://host/cb-2/x'
+      - 'myapp://host/oauth'
+      - 'myapp://host/oauthx'
+env: {}
+compare: {ignore: []}

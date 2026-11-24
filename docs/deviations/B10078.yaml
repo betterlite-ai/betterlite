@@ -1,0 +1,9 @@
+task: B10078
+deviations:
+  - what: The config ids and the database ids come from the SharedRegistry and the AccessGroupServerRows port the caller passes, not from proxy_server's global_mcp_server_manager and prisma_client.
+    why: betterlite has no module-level state, and a caller that wires its own registry and store gets the same ids LiteLLM would.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3640-L3655
+  - what: The lists LiteLLM builds from a Python set come back de-duplicated in first-seen order, the config ids first and then the database ids not already listed.
+    why: Python's set order is not stable, so no client can rely on it; tests and cases compare as sets and the helper answers sorted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3657-L3659
+kept_bugs: []
