@@ -14,14 +14,14 @@ pub async fn fetch_user_team_objects(
     user: Option<&LiteLLMUserTable>,
     teams: &dyn TeamReads,
 ) -> Result<Vec<LiteLLMTeamTable>, KeyListFiltersError> {
-    let Some(user) = user else {
+    let Some(user_row) = user else {
         return Ok(Vec::new());
     };
-    if user.teams.is_empty() {
+    if user_row.teams.is_empty() {
         return Ok(Vec::new());
     }
     let records = teams
-        .teams_by_ids(&user.teams)
+        .teams_by_ids(&user_row.teams)
         .await
         .map_err(KeyListReadError::Teams)?;
     let decoded: Result<Vec<Option<LiteLLMTeamTable>>, TeamRecordError> = records

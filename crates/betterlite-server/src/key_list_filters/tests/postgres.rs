@@ -163,8 +163,13 @@ async fn postgres_token_client_serves_only_its_table() {
     ));
     assert!(client.attribute("litellm_usertable").unwrap().is_none());
     let disconnected = PostgresStore { pool: None };
-    let client = PostgresTokenClient {
+    let disconnected_client = PostgresTokenClient {
         store: &disconnected,
     };
-    assert!(client.attribute(TOKEN_TABLE_ATTRIBUTE).unwrap().is_none());
+    assert!(
+        disconnected_client
+            .attribute(TOKEN_TABLE_ATTRIBUTE)
+            .unwrap()
+            .is_none()
+    );
 }

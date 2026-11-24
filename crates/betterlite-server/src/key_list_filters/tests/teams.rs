@@ -62,9 +62,9 @@ async fn teams_invalid_row_propagates() {
         Err(KeyListFiltersError::Read(KeyListReadError::Team(_)))
     ));
     let missing_id = FakeTeams::with_records(&[r#"{"members_with_roles":[]}"#]);
-    let outcome = fetch_user_team_objects(Some(&user), &missing_id).await;
+    let missing_outcome = fetch_user_team_objects(Some(&user), &missing_id).await;
     assert!(matches!(
-        outcome,
+        missing_outcome,
         Err(KeyListFiltersError::Read(KeyListReadError::Team(_)))
     ));
 }

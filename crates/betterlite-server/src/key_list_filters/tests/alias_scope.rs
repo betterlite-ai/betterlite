@@ -50,9 +50,9 @@ async fn aliases_missing_row_owner_only() {
     assert_eq!(filters, strings(&["(user_id = $1)"]));
     assert_eq!(store.reads(), strings(&["user u1"]));
     let empty_teams = FakeStore::with_user(user_row(r#"{"user_id":"u1","teams":[]}"#));
-    let (query, filters) = bind(&owner, &empty_teams, Vec::new(), Vec::new()).await;
-    assert_eq!(query, params(&["u1"]));
-    assert_eq!(filters, strings(&["(user_id = $1)"]));
+    let (empty_query, empty_filters) = bind(&owner, &empty_teams, Vec::new(), Vec::new()).await;
+    assert_eq!(empty_query, params(&["u1"]));
+    assert_eq!(empty_filters, strings(&["(user_id = $1)"]));
 }
 
 #[tokio::test]
@@ -64,9 +64,9 @@ async fn aliases_missing_identity_false() {
     assert_eq!(filters, strings(&["FALSE"]));
     assert!(store.reads().is_empty());
     let empty_identity = team_caller(Some(""));
-    let (query, filters) = bind(&empty_identity, &store, Vec::new(), Vec::new()).await;
-    assert!(query.is_empty());
-    assert_eq!(filters, strings(&["FALSE"]));
+    let (blank_query, blank_filters) = bind(&empty_identity, &store, Vec::new(), Vec::new()).await;
+    assert!(blank_query.is_empty());
+    assert_eq!(blank_filters, strings(&["FALSE"]));
     assert!(store.reads().is_empty());
 }
 

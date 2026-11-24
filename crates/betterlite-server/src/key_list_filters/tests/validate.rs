@@ -117,8 +117,11 @@ async fn scope_organization_membership() {
     assert!(matches!(error, KeyListFiltersError::ForeignOrganization));
     // a row whose membership list is absent reaches no organization
     let bare = FakeStore::with_user(user_row(r#"{"user_id":"u1","teams":[]}"#));
-    let error = denied(check(&auth, &member, &bare).await, "organization_id");
-    assert!(matches!(error, KeyListFiltersError::ForeignOrganization));
+    let bare_error = denied(check(&auth, &member, &bare).await, "organization_id");
+    assert!(matches!(
+        bare_error,
+        KeyListFiltersError::ForeignOrganization
+    ));
 }
 
 #[tokio::test]
