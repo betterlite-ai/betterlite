@@ -5,8 +5,7 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use super::descriptors::BatchLimitDescriptor;
 use crate::api::request_destination::RequestData;
 
-// B1087's descriptor builders and B013's token facts behind one port: betterlite-rate-limit depends on
-// this crate, so the dependency points back through the constructor instead of the manifest
+// betterlite-rate-limit depends on this crate, so its builders arrive through the constructor port
 pub trait BatchLimiterSource {
     type Error: Error + Send + Sync + 'static;
 

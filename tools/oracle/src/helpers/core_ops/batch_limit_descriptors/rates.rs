@@ -25,8 +25,7 @@ use betterlite_rate_limit::token_estimation::output_cap::{
     no_max_tokens_output_floor, output_candidate_count,
 };
 
-// The batch slice resolves no model groups, agents, tags or deployment health: its state is the key,
-// team, user and project limits only, so empty resolvers are what an unconfigured proxy answers
+// Its state is the key, team, user and project limits, so the resolvers for the rest stay empty
 static NO_DEPS: NoDeps = NoDeps;
 
 pub(super) struct RateLimitSource {

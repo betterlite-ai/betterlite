@@ -13,13 +13,13 @@ mod tests;
 use std::error::Error;
 use std::sync::atomic::AtomicBool;
 
-use betterlite_auth::resolved_key::auth::{AuthError, UserAPIKeyAuth};
+use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::batch_limit_descriptors::Settings;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, ItemsBoundary};
 use crate::api::model_credentials::CredentialSource;
 use answer::{BatchLimitAnswer, BatchLimitDescriptorsResult};
-use fields::{BatchPrincipalFields, principal_fields};
+use fields::BatchPrincipalFields;
 use input::{BatchLimitCall, BatchLimitDescriptorsInput};
 use limiter::BatchLimiterSource;
 use routing::BatchCredentialError;
@@ -82,8 +82,10 @@ where
         self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
             known_count: input.calls.len(),
         }))?;
-        let auth = input.principal.auth()?;
-        let fields = principal_fields(&auth).map_err(BatchLimitError::Fields)?;
+        let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.principal.0.clone()))?;
+        let fields: BatchPrincipalFields = serde_json::to_value(&auth)
+            .and_then(serde_json::from_value)
+            .map_err(BatchLimitError::Fields)?;
         let mut answers = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
             answers.push(self.answer(&auth, &fields, call)?);

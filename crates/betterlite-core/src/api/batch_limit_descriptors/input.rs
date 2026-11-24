@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -12,12 +11,6 @@ use crate::api::request_destination::RequestData;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(transparent)]
 pub struct BatchLimitPrincipal(pub BTreeMap<String, JsonData>);
-
-impl BatchLimitPrincipal {
-    pub fn auth(&self) -> Result<UserAPIKeyAuth, AuthError> {
-        UserAPIKeyAuth::construct(AuthInput::Dict(self.0.clone()))
-    }
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -45,7 +45,7 @@ where
     }
 }
 
-fn text_member<'value>(data: &'value RequestData, name: &str) -> Option<&'value str> {
+pub(super) fn text_member<'value>(data: &'value RequestData, name: &str) -> Option<&'value str> {
     match data.get(name) {
         Some(Json::Text(text)) if !text.is_empty() => Some(text.as_str()),
         Some(
@@ -71,15 +71,13 @@ pub fn file_bound_model(data: &RequestData) -> Option<String> {
     target_model_names(&unified).into_iter().next()
 }
 
-#[must_use]
-pub fn request_model(data: &RequestData) -> Option<&str> {
-    text_member(data, "model")
-}
-
 // A file-bound model wins over the top-level one, as create_batch routes the batch
 #[must_use]
 pub fn batch_routing_model(data: &RequestData) -> Option<String> {
-    file_bound_model(data).or_else(|| request_model(data).map(str::to_owned))
+    if let Some(model) = file_bound_model(data) {
+        return Some(model);
+    }
+    text_member(data, "model").map(str::to_owned)
 }
 
 // The provider comes from the deployment's trusted credentials, never from the request body

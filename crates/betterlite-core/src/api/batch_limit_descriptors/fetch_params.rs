@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::BatchLimitDescriptors;
-use super::routing::{BatchCredentialError, credentials_for, provider_from, request_model};
+use super::routing::{BatchCredentialError, credentials_for, provider_from, text_member};
 use crate::api::file_routing_ids::routing::{decode_model_from_file_id, get_original_file_id};
 use crate::api::model_credentials::CredentialSource;
 use crate::api::request_destination::RequestData;
@@ -50,7 +50,7 @@ where
         }
         return Ok((get_original_file_id(file_id), params));
     }
-    if let Some(model) = request_model(data)
+    if let Some(model) = text_member(data, "model")
         && let Some(credentials) = credentials_for(service.credentials.as_ref(), model)?
     {
         apply_credentials(&mut params, &credentials, model);

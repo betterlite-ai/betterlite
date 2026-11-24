@@ -1,4 +1,3 @@
-use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use serde::Deserialize;
 
 // The principal wire fields this slice reads; the auth type keeps its one serializer, so they are read back
@@ -10,8 +9,4 @@ pub struct BatchPrincipalFields {
     pub tpd_limit: Option<i64>,
     pub team_tpd_limit: Option<i64>,
     pub end_user_tpd_limit: Option<i64>,
-}
-
-pub fn principal_fields(auth: &UserAPIKeyAuth) -> Result<BatchPrincipalFields, serde_json::Error> {
-    serde_json::to_value(auth).and_then(serde_json::from_value)
 }
