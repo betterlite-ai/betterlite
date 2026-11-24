@@ -100,7 +100,11 @@ def common_call(server_url: str, key: str = GOOD_KEY) -> CommonCall:
 
 # a plain dict, because the reference protocols take **kwargs and reject a TypedDict unpack
 def reference_call(server_url: str, key: str = GOOD_KEY) -> dict[str, JsonValue]:
-    return {"model": PREFIXED_MODEL, "contents": CONTENTS, "api_base": server_url, "api_key": key}
+    call = common_call(server_url, key)
+    return {
+        "model": call["model"], "contents": call["contents"],
+        "api_base": call["api_base"], "api_key": call["api_key"],
+    }
 
 
 def signature_rows(signature: inspect.Signature) -> list[str]:
@@ -195,10 +199,6 @@ async def close_async_stream(server_url: str) -> None:
     await stream.aclose()
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
-
-
-async def reference_bad_stream(server_url: str) -> None:
-    await LITELLM_ASYNC.agenerate_content_stream(**reference_call(server_url, BAD_KEY))
 
 
 def test_signature_matches_litellm() -> None:
@@ -380,7 +380,11 @@ def test_stream_error_class() -> None:
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
             LITELLM.generate_content_stream(**reference_call(server.url, BAD_KEY))
         with pytest.raises(LITELLM_ERRORS.BadRequestError):
-            asyncio.run(reference_bad_stream(server.url))
+            asyncio.run(
+                reference_stream_async(
+                    LITELLM_ASYNC.agenerate_content_stream(**reference_call(server.url, BAD_KEY))
+                )
+            )
         paths = [call["path"] for call in server.calls]
     assert bad_request_payload(caught.value)["type"] == "BadRequestError"
     assert bad_request_payload(awaited.value)["type"] == "BadRequestError"
