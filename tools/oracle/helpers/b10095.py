@@ -68,25 +68,13 @@ class MmapModule(ModuleType):
     MmapedDict: Callable[[str], Mmap]
 
 
-class MergeMetrics(Protocol):
-    def __call__(self, files: Sequence[str], *, accumulate: bool) -> Iterable[Metric]: ...
-
-
-class CollectorModule(ModuleType):
-    MultiProcessCollector: Callable[[CollectorRegistry, str], object]
-    merge: MergeMetrics
+class Collector(Protocol):
+    def merge(self, files: Sequence[str], *, accumulate: bool) -> Iterable[Metric]: ...
 
 
 def mmap_module() -> MmapModule:
     module = MmapModule("prometheus_client.mmap_dict")
     module.MmapedDict = MmapedDict
-    return module
-
-
-def collector_module() -> CollectorModule:
-    module = CollectorModule("prometheus_client.multiprocess")
-    module.MultiProcessCollector = MultiProcessCollector
-    module.merge = MultiProcessCollector.merge
     return module
 
 
@@ -145,8 +133,11 @@ def family_out(metric: Metric) -> FamilyOut:
 
 def families_out(metrics: Iterable[Metric]) -> list[FamilyOut]:
     families: list[FamilyOut] = [family_out(metric) for metric in metrics]
-    families.sort(key=lambda family: family["name"])
-    return families
+    indexed: list[tuple[str, int]] = [
+        (family["name"], index) for index, family in enumerate(families)
+    ]
+    indexed.sort()
+    return [families[index] for _, index in indexed]
 
 
 def blocks(text: str) -> list[str]:
@@ -161,12 +152,13 @@ def blocks(text: str) -> list[str]:
             sections.append((marker, []))
         if sections:
             sections[-1][1].append(line)
-    rendered: list[tuple[str, str]] = []
-    for marker, lines in sections:
+    for _, lines in sections:
         lines.sort()
-        rendered.append((marker, "\n".join(lines)))
-    rendered.sort(key=lambda section: section[0])
-    return [block for _, block in rendered]
+    indexed: list[tuple[str, int]] = [
+        (marker, index) for index, (marker, _lines) in enumerate(sections)
+    ]
+    indexed.sort()
+    return ["\n".join(sections[index][1]) for _, index in indexed]
 
 
 def run(input_value: Input) -> MergeAnswer | ScrapeAnswer:
@@ -174,13 +166,11 @@ def run(input_value: Input) -> MergeAnswer | ScrapeAnswer:
         directory = Path(folder)
         paths = write_files(directory, input_value)
         files = [used_hex(path) for path in paths]
-        if input_value["call"] == "merge":
-            merged = list(
-                collector_module().merge([str(path) for path in paths], accumulate=True)
-            )
-            return {"files": files, "families": families_out(merged)}
         registry = CollectorRegistry()
-        collector_module().MultiProcessCollector(registry, str(directory))
+        collector: Collector = MultiProcessCollector(registry, str(directory))
+        if input_value["call"] == "merge":
+            merged = list(collector.merge([str(path) for path in paths], accumulate=True))
+            return {"files": files, "families": families_out(merged)}
         scrape = parse_scrape_request(input_value["accept"], "", ())
         body = render_scrape(registry, scrape)
         return {"files": files, "blocks": blocks(body.decode("utf-8"))}
