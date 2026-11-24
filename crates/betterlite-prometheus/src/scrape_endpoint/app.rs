@@ -8,14 +8,12 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
 use futures_util::stream;
 
-use crate::collector_registry::CollectorRegistry;
-
 use super::renderer::CoalescedScrapeRenderer;
-use super::{RESPONSE_CHUNK_SIZE_BYTES, parse_scrape_request};
+use super::{RESPONSE_CHUNK_SIZE_BYTES, ScrapeSource, parse_scrape_request};
 
-// LiteLLM's make_metrics_asgi_app: every method and path answers a scrape, at whatever prefix the caller mounts it
-pub fn make_metrics_app(registry: Arc<CollectorRegistry>) -> Router {
-    let renderer = Arc::new(CoalescedScrapeRenderer::new(registry));
+// LiteLLM's make_metrics_asgi_app: every method and path answers a scrape, over the registry or the multiprocess folder the caller names
+pub fn make_metrics_app(source: ScrapeSource) -> Router {
+    let renderer = Arc::new(CoalescedScrapeRenderer::new(source));
     let router = Router::new().fallback(scrape);
     router.with_state(renderer)
 }
