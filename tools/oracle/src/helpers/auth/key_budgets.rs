@@ -1,3 +1,4 @@
+#[path = "key_budgets/fixtures/players.rs"]
 mod fixtures;
 
 use std::collections::BTreeMap;
