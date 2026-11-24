@@ -29,10 +29,10 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-// one production entry point with the rows and request the case supplies
+// the team and org rows outweigh every other variant, so the input boxes them as the row enums do
 #[derive(Deserialize)]
 #[serde(tag = "check", rename_all = "snake_case")]
-enum Call {
+pub(crate) enum Call {
     Upperbound {
         request: RequestInput,
         params: Option<UpperboundKeyGenerateParams>,
@@ -40,7 +40,7 @@ enum Call {
     },
     Team {
         request: RequestInput,
-        team: LiteLLMTeamTableCachedObj,
+        team: Box<LiteLLMTeamTableCachedObj>,
         keys: Vec<JsonData>,
     },
     Project {
@@ -50,7 +50,7 @@ enum Call {
     },
     Organization {
         request: RequestInput,
-        organization: OrganizationTable,
+        organization: Box<OrganizationTable>,
         keys: Vec<JsonData>,
     },
     Assignment {
@@ -62,7 +62,7 @@ enum Call {
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", content = "body", rename_all = "snake_case")]
-enum RequestInput {
+pub(crate) enum RequestInput {
     Generate(JsonData),
     Update(JsonData),
 }
