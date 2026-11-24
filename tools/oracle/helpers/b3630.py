@@ -2,14 +2,16 @@ from datetime import UTC, datetime
 from typing import Literal, TypedDict
 
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.proxy.pass_through_endpoints.llm_provider_handlers.anthropic_passthrough_logging_handler import (
-    AnthropicPassthroughLoggingHandler as Handler,
+from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
+    anthropic_passthrough_logging_handler as handler_module,
 )
 from litellm.proxy.pass_through_endpoints.llm_provider_handlers.batch_attribution import (
     is_collection_route,
     request_tags_from_metadata,
 )
 from pydantic import JsonValue
+
+Handler = handler_module.AnthropicPassthroughLoggingHandler
 
 
 class RouteCall(TypedDict):
