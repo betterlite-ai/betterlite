@@ -13,8 +13,8 @@ use super::timestamps::utc_timestamp_text;
 
 #[derive(Debug, Default, Deserialize)]
 struct Manifest {
-    #[serde(default, with = "serde_with::rust::double_option")]
-    source: Option<Option<BTreeMap<String, String>>>,
+    #[serde(default)]
+    source: SourceField,
     #[serde(default)]
     version: Option<String>,
     #[serde(default)]
@@ -31,6 +31,16 @@ struct Manifest {
     domain: Option<String>,
     #[serde(default)]
     namespace: Option<String>,
+}
+
+// the manifest's source key: an absent key means {}, an explicit null is refused, and an object is the map
+#[derive(Debug, Default, Deserialize)]
+#[serde(untagged)]
+enum SourceField {
+    Null(()),
+    Map(BTreeMap<String, String>),
+    #[default]
+    Absent,
 }
 
 pub async fn skill_hub(
@@ -75,9 +85,9 @@ fn plugin_item(row: &PluginRow) -> Result<PluginListItem, ResourceHubsError> {
         namespace,
     } = manifest_of(row.manifest_json.as_deref())?;
     let resolved_source = match source {
-        None => BTreeMap::new(),
-        Some(None) => return Err(ResourceHubsError::ManifestSource),
-        Some(Some(entries)) => entries,
+        SourceField::Absent => BTreeMap::new(),
+        SourceField::Null(()) => return Err(ResourceHubsError::ManifestSource),
+        SourceField::Map(entries) => entries,
     };
     Ok(PluginListItem {
         id: row.id.clone(),
