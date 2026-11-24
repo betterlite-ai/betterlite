@@ -16,6 +16,7 @@ use betterlite_db::mcp_user_credentials::types::StoreOAuthCredential;
 use betterlite_db::oauth_token_resolution::ports::TokenResponse;
 use betterlite_db::oauth_token_resolution::{EnforceRequest, OauthBindingPort};
 use betterlite_http::proxy::outbound::RequestBody;
+use betterlite_mcp::server_record::MCPServer;
 use chrono::TimeDelta;
 use http::Method;
 use http::header::ACCEPT;
@@ -24,9 +25,16 @@ use secrecy::SecretString;
 use tokio::task::JoinSet;
 
 use super::adapters::{DbCredentialPersist, DbCredentialReader, PooledTokenPost, refresh_request};
-use super::chain::SharedBinding;
-use crate::mcp::outbound_credentials::v2_store::{CredentialPayload, CredentialValue};
-use crate::mcp::outbound_credentials::{PER_USER_TOKEN_KEY_PREFIX, iso_to_epoch};
+use super::chain::{SharedBinding, StoreBuilder};
+use crate::mcp::outbound_credentials::authz_code_refresher::ports::{
+    CredentialPersist, PersistRequest, TokenEndpointPost,
+};
+use crate::mcp::outbound_credentials::v2_store::{
+    CredentialPayload, CredentialReader, CredentialValue,
+};
+use crate::mcp::outbound_credentials::{
+    InvalidatableOAuthTokenStore, OAuthTokenStore, PER_USER_TOKEN_KEY_PREFIX, iso_to_epoch,
+};
 use support::{
     DEADLINE, FailingRows, FakeRows, FixedWallClock, RecordingBinding, answer_with_array,
     answer_with_object, answer_with_server_error, base_time, chain_fixture, expired_credential,
