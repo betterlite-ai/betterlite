@@ -283,23 +283,20 @@ impl MemoryCase {
         }
     }
 
-    fn policy(&self) -> SpendRetryPolicy<'_> {
-        SpendRetryPolicy {
+    // The memory branch's one tick through the source's selector at the job adapter's retry count; true when its failure surfaces as the memory variant.
+    async fn commit(&self) -> bool {
+        let policy = SpendRetryPolicy {
             retries: 0,
             clock: &self.clock,
             jitter: &self.jitter,
             pause: &*self.pause,
             failures: &self.failures,
-        }
-    }
-
-    // The memory branch's one tick through the source's selector at the job adapter's retry count; true when its failure surfaces as the memory variant.
-    async fn commit(&self) -> bool {
+        };
         let flush = MemorySpendFlush {
             entity_queue: &self.queues.entity,
             entity_writer: &self.entity_writer,
             entity_cache: &self.cache,
-            policy: self.policy(),
+            policy,
             daily: DailySpendQueues {
                 user: &self.queues.daily_user,
                 team: &self.queues.daily_team,
