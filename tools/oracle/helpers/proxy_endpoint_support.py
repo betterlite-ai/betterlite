@@ -78,7 +78,7 @@ class NoticeMismatch(RuntimeError):
     pass
 
 
-# getattr(e, "status_code", None) must answer None for a scripted failure without one, so the attribute is only set when the case supplies it
+# getattr(e, "status_code", None) must answer None for a failure without one, so it is set only when supplied
 class Failure(Exception):
     def __init__(self, message: str, status_code: int | None, param: str | None) -> None:
         super().__init__(message)
