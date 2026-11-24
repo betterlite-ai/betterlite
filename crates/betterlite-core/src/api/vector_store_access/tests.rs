@@ -148,17 +148,20 @@ async fn granted(
 }
 
 async fn listable(
-    access: &VectorStoreAccess<'_, World, World, World>,
+    world: &World,
     vector_stores: &[LiteLlmManagedVectorStore],
     caller: &UserAPIKeyAuth,
 ) -> Vec<String> {
-    let list = access
+    let access = policy(world);
+    let allowed = access
         .filter_listable_vector_stores(vector_stores, caller)
         .await
         .unwrap();
-    list.iter()
-        .map(|vector_store| vector_store.vector_store_id.clone().unwrap_or_default())
-        .collect()
+    let mut ids = Vec::with_capacity(allowed.len());
+    for vector_store in allowed {
+        ids.push(vector_store.vector_store_id.clone().unwrap_or_default());
+    }
+    ids
 }
 
 fn permission_object(object_permission_id: &str, stores: &[&str]) -> Json {
@@ -561,11 +564,11 @@ async fn teamless_access_is_not_listing() {
     let numeric_caller = auth(&[("team_id", data_text("5"))]);
     assert!(!granted(&access, &numeric_team, &numeric_caller).await);
     let stores = [teamless, null_team, empty_team, owned];
-    assert!(listable(&access, &stores, &caller).await.is_empty());
+    assert!(listable(&world, &stores, &caller).await.is_empty());
     let empty_team_caller = auth(&[("team_id", data_text(""))]);
     assert!(granted(&access, &stores[2], &empty_team_caller).await);
     assert_eq!(
-        listable(&access, &stores, &empty_team_caller).await,
+        listable(&world, &stores, &empty_team_caller).await,
         vec!["vs_c".to_owned()]
     );
 }
@@ -586,7 +589,7 @@ async fn admin_access_and_listing_skip_every_lookup() {
     ]);
     assert!(granted(&access, &stores[0], &admin).await);
     assert_eq!(
-        listable(&access, &stores, &admin).await,
+        listable(&world, &stores, &admin).await,
         vec!["vs_a".to_owned(), "vs_b".to_owned()]
     );
     let session_admin = auth(&[
@@ -594,7 +597,7 @@ async fn admin_access_and_listing_skip_every_lookup() {
         ("user_id", data_text("u1")),
         ("user_role", data_text("proxy_admin")),
     ]);
-    assert_eq!(listable(&access, &stores, &session_admin).await.len(), 2);
+    assert_eq!(listable(&world, &stores, &session_admin).await.len(), 2);
     assert!(world.permission_reads().is_empty());
     assert!(world.team_reads().is_empty());
 }
@@ -612,7 +615,7 @@ async fn proxy_admin_viewer_is_not_an_admin() {
         ("user_role", data_text("proxy_admin_viewer")),
     ]);
     assert!(!granted(&access, &stores[0], &viewer).await);
-    assert!(listable(&access, &stores, &viewer).await.is_empty());
+    assert!(listable(&world, &stores, &viewer).await.is_empty());
 }
 
 #[tokio::test]
@@ -632,7 +635,7 @@ async fn dashboard_effective_teams() {
         store(&[("vector_store_id", text("vs_x")), ("team_id", text("z"))]),
     ];
     assert_eq!(
-        listable(&access, &stores, &caller).await,
+        listable(&world, &stores, &caller).await,
         vec!["vs_key".to_owned(), "vs_a".to_owned(), "vs_b".to_owned()]
     );
     assert!(!granted(&access, &stores[3], &caller).await);
