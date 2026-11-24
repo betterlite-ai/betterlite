@@ -75,22 +75,25 @@ async fn project_query_reads_the_row() {
     let (fixture, store) = database(PROJECT_SEED).await;
     let recorded = reads(&store);
     let model = generate(r#"{"models": ["claude-4"]}"#);
-    let checked = check_project_key_limits("proj-1", &KeyLimitRequest::from(&model), &recorded);
+    let model_request = KeyLimitRequest::from(&model);
+    let checked = check_project_key_limits("proj-1", &model_request, &recorded);
     match rejected(checked.await) {
         Rejection::ProjectModel { allowed, .. } => assert_eq!(allowed, vec!["gpt-4".to_owned()]),
         other => panic!("expected the stored model list to refuse claude-4, got {other:?}"),
     }
     let budget = generate(r#"{"models": ["gpt-4"], "max_budget": 11}"#);
-    let checked = check_project_key_limits("proj-1", &KeyLimitRequest::from(&budget), &recorded);
+    let budget_request = KeyLimitRequest::from(&budget);
+    let checked = check_project_key_limits("proj-1", &budget_request, &recorded);
     assert!(matches!(
         rejected(checked.await),
         Rejection::ProjectBudget { .. }
     ));
     let within = generate(r#"{"models": ["gpt-4"], "max_budget": 10}"#);
-    check_project_key_limits("proj-1", &KeyLimitRequest::from(&within), &recorded)
+    let within_request = KeyLimitRequest::from(&within);
+    check_project_key_limits("proj-1", &within_request, &recorded)
         .await
         .unwrap();
-    let missing = check_project_key_limits("proj-2", &KeyLimitRequest::from(&within), &recorded);
+    let missing = check_project_key_limits("proj-2", &within_request, &recorded);
     assert!(matches!(
         rejected(missing.await),
         Rejection::ProjectNotFound { .. }

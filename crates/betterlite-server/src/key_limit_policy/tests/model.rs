@@ -175,13 +175,14 @@ fn scalar_totals() {
     )
     .unwrap();
     let request = generate(r#"{"tpm_limit": 10}"#);
-    let rejection = rejected(check_rate_limits(
+    let rejection = check_rate_limits(
         &stored,
         &KeyLimitRequest::from(&request),
         None,
         Some(10),
         Entity::Team,
-    ));
+    )
+    .unwrap_err();
     assert_eq!(rejection, allocation(RateLimit::Tpm, 1, 10, 10));
     assert_eq!(
         text_detail(&rejection),
@@ -193,22 +194,24 @@ fn scalar_totals() {
 fn scalar_tpm_before_rpm() {
     let stored = keys(r#"[{"token": "k1", "tpm_limit": 1, "rpm_limit": 1}]"#);
     let request = generate(r#"{"tpm_limit": 10, "rpm_limit": 10}"#);
-    let rejection = rejected(check_rate_limits(
+    let rejection = check_rate_limits(
         &stored,
         &KeyLimitRequest::from(&request),
         Some(10),
         Some(10),
         Entity::Team,
-    ));
+    )
+    .unwrap_err();
     assert_eq!(rejection, allocation(RateLimit::Tpm, 1, 10, 10));
     let request = generate(r#"{"rpm_limit": 10}"#);
-    let rejection = rejected(check_rate_limits(
+    let rejection = check_rate_limits(
         &stored,
         &KeyLimitRequest::from(&request),
         Some(10),
         Some(10),
         Entity::Team,
-    ));
+    )
+    .unwrap_err();
     assert_eq!(rejection, allocation(RateLimit::Rpm, 1, 10, 10));
 }
 
@@ -225,13 +228,14 @@ fn scalar_zero_ceiling_enforced() {
     )
     .unwrap();
     let stored = keys(r#"[{"token": "k1", "tpm_limit": 1}]"#);
-    let rejection = rejected(check_rate_limits(
+    let rejection = check_rate_limits(
         &stored,
         &KeyLimitRequest::from(&request),
         None,
         Some(0),
         Entity::Team,
-    ));
+    )
+    .unwrap_err();
     assert_eq!(rejection, allocation(RateLimit::Tpm, 1, 0, 0));
 }
 

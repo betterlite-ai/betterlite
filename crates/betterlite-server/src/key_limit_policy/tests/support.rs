@@ -76,7 +76,10 @@ pub(super) fn params(text: &str) -> UpperboundKeyGenerateParams {
     serde_json::from_str(text).unwrap()
 }
 
-pub(super) fn rejected<Ok: Debug>(result: Result<Ok, KeyLimitError>) -> Rejection {
+pub(super) fn rejected<Ok>(result: Result<Ok, KeyLimitError>) -> Rejection
+where
+    Ok: Debug,
+{
     match result {
         Err(KeyLimitError::Rejected(rejection)) => rejection,
         other => panic!("expected a ceiling rejection, got {other:?}"),

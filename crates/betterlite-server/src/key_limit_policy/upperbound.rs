@@ -142,7 +142,10 @@ fn apply_duration(
     Ok(())
 }
 
-fn over<T: Display>(field: &'static str, user_value: T, max_value: T) -> Rejection {
+fn over<T>(field: &'static str, user_value: T, max_value: T) -> Rejection
+where
+    T: Display,
+{
     Rejection::Upperbound {
         field,
         user_value: user_value.to_string(),

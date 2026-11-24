@@ -42,7 +42,7 @@ async fn team_model_tpm() {
 }
 
 #[rstest]
-#[case::absent(r#"{}"#)]
+#[case::absent("{}")]
 #[case::best_effort(r#"{"rpm_limit_type": "best_effort_throughput"}"#)]
 #[tokio::test]
 async fn team_non_guaranteed_skips(#[case] request: &str) {

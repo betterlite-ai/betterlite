@@ -9,6 +9,22 @@ deviations:
   - what: An organization row without an organization_id is refused; LiteLLM queries its keys with organization_id equal to NULL and counts any key whose organization_id is NULL.
     why: A NULL organization_id is not an organization-scoped key selector betterlite models, and refusing beats counting unowned keys against an unnamed organization.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1920-L1922
+  - what: >-
+      A project key request whose models list holds an array or object is refused with 400 ProjectModel.
+      LiteLLM tests the entry with `m not in _INHERITED_MODEL_SENTINELS`, a frozenset lookup that raises
+      TypeError for the unhashable list or dict and answers 500.
+    why: >-
+      The lookup crashed on a value of the declared list type; no working setup names a model as an
+      array or object, and refusing the value keeps the request an ordinary 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1785
+  - what: >-
+      A non-finite upperbound max_budget (.nan or .inf) fails the config load as an invalid scalar.
+      LiteLLM stores the float, the ceiling then never binds because value > NaN is false, and
+      fill_defaults copies the NaN into generated keys.
+    why: >-
+      betterlite keeps budgets in rust_decimal (docs/compatibility.md), which cannot hold NaN or
+      infinity; failing at the config boundary beats generating keys whose budget check is disabled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6595-L6602
 kept_bugs:
   - what: A per-model ceiling of 0 is skipped as if it were unset, while a scalar ceiling of 0 is enforced.
     why: LiteLLM's truthiness test reads a stored 0 as no per-model ceiling, and a setup that stores 0 for that reason must keep working.
