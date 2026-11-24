@@ -187,12 +187,19 @@ pub(super) fn response_cost(logging_obj: &StreamLoggingObject) -> Option<Json> {
     model_details(logging_obj).get("response_cost").cloned()
 }
 
-pub(super) fn usage_outcome(prompt: i64, completion: i64, total: i64, cost: f64) -> HandlerOutcome {
+fn usage_handler_outcome(
+    prompt: i64,
+    completion: i64,
+    total: i64,
+    cost: Option<f64>,
+) -> HandlerOutcome {
     let mut kwargs = PassThroughLoggingKwargs::default();
-    let number = serde_json::Number::from_f64(cost).expect("a finite response cost");
-    kwargs
-        .entries
-        .insert("response_cost".to_owned(), Json::Number(number));
+    if let Some(amount) = cost {
+        let number = serde_json::Number::from_f64(amount).expect("a finite response cost");
+        kwargs
+            .entries
+            .insert("response_cost".to_owned(), Json::Number(number));
+    }
     HandlerOutcome {
         result: Some(PassThroughResponse::ModelResponse(model_response_body(
             prompt, completion, total,
@@ -201,17 +208,16 @@ pub(super) fn usage_outcome(prompt: i64, completion: i64, total: i64, cost: f64)
     }
 }
 
+pub(super) fn usage_outcome(prompt: i64, completion: i64, total: i64, cost: f64) -> HandlerOutcome {
+    usage_handler_outcome(prompt, completion, total, Some(cost))
+}
+
 pub(super) fn usage_without_cost_outcome(
     prompt: i64,
     completion: i64,
     total: i64,
 ) -> HandlerOutcome {
-    HandlerOutcome {
-        result: Some(PassThroughResponse::ModelResponse(model_response_body(
-            prompt, completion, total,
-        ))),
-        kwargs: PassThroughLoggingKwargs::default(),
-    }
+    usage_handler_outcome(prompt, completion, total, None)
 }
 
 fn model_response_body(prompt: i64, completion: i64, total: i64) -> Json {

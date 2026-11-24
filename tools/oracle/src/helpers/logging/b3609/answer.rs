@@ -98,13 +98,15 @@ fn failures(recorder: &Recorder) -> Vec<Value> {
 }
 
 fn tinyfish_started(recorder: &Recorder) -> Vec<Value> {
-    recorder
+    let started = recorder
         .started
         .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .map(|(run_id, at)| json!([run_id, at.to_rfc3339()]))
-        .collect()
+        .unwrap_or_else(PoisonError::into_inner);
+    let mut values = Vec::with_capacity(started.len());
+    for (run_id, at) in started.iter() {
+        values.push(json!([run_id, at.to_rfc3339()]));
+    }
+    values
 }
 
 fn partial_usage(details: &IndexMap<String, Json>) -> Option<Value> {

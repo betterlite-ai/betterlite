@@ -2,9 +2,9 @@ use std::mem::take;
 
 use betterlite_models::decisions::Json;
 
-// ast-grep-ignore: no-long-names
 use crate::passthrough_stream_lifecycle::cost_injection::cost_injection_active;
 use crate::passthrough_stream_lifecycle::lifecycle::StreamLifecycle;
+// ast-grep-ignore: no-long-names
 use crate::passthrough_stream_logging::model::extract_model_for_cost_injection;
 use crate::passthrough_stream_logging::object::StreamLoggingObject;
 use crate::passthrough_stream_logging::sse_frames::split_complete_sse_frames;
