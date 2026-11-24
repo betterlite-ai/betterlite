@@ -1,0 +1,28 @@
+kind: helper
+name: team-list-query-deleted-and-live-row-projection
+call:
+  team_list_query:
+    teams:
+      - team_id: live-1
+        team_alias: Live
+        members_with_roles:
+          - {user_id: u1, role: user}
+      - team_id: live-2
+        members_with_roles: []
+    use_deleted_table: false
+    keys_count_by_team:
+      live-1: 4
+calls:
+  - team_list_query:
+      teams:
+        - team_id: gone-1
+          team_alias: Gone
+          id: del-1
+          deleted_by: admin
+          deleted_by_api_key: hash-1
+          litellm_changed_by: ops
+          members_with_roles:
+            - {user_id: u1, role: user}
+      use_deleted_table: true
+env: {}
+compare: {ignore: []}

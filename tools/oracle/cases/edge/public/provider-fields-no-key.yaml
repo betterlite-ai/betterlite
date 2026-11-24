@@ -1,0 +1,15 @@
+name: public-provider-fields-no-key
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /public/providers/fields
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
