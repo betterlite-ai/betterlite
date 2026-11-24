@@ -49,10 +49,10 @@ fn insert_audit_fields(info: &mut JsonObject, row: &ProxyModelTable) {
     let fields = &row.fields;
     let created_at = fields
         .created_at
-        .map_or(Json::Null, |time| Json::Text(python_datetime(time)));
+        .map_or(Json::Null, |time| Json::Text(json_timestamp(time)));
     let updated_at = fields
         .updated_at
-        .map_or(Json::Null, |time| Json::Text(python_datetime(time)));
+        .map_or(Json::Null, |time| Json::Text(json_timestamp(time)));
     let created_by = fields
         .created_by
         .as_ref()
@@ -95,7 +95,7 @@ fn finish_router_info(mut info: JsonObject) -> JsonObject {
 }
 
 // pydantic's mode="json" datetime: Z for UTC, the numeric offset otherwise, micros only when present.
-fn python_datetime(value: Timestamp) -> String {
+fn json_timestamp(value: Timestamp) -> String {
     match value {
         Timestamp::Aware(time) => timestamp_text(time, "Z"),
         Timestamp::Naive(time) => naive_text(time),
