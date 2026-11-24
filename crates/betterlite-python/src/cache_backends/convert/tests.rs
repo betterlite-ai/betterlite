@@ -182,3 +182,29 @@ fn backends_request_object_number_key_is_left_alone() {
         Some(&CacheValue::Text("1.5".to_owned()))
     );
 }
+
+#[test]
+fn backends_request_wall_clock() {
+    assert!(wall_clock() > 1_700_000_000.0_f64);
+}
+
+#[test]
+fn backends_result_cached_number_key_needs_one_field() {
+    let mut fields = BTreeMap::new();
+    fields.insert(NUMBER_KEY.to_owned(), CachedValue::Text("1.5".to_owned()));
+    fields.insert("other".to_owned(), CachedValue::Boolean(true));
+    assert_eq!(
+        text_of_cached(CachedValue::Object(fields)).unwrap(),
+        r#"{"$serde_json::private::Number":"1.5","other":true}"#
+    );
+}
+
+#[test]
+fn backends_result_cached_number_key_needs_digits() {
+    let mut fields = BTreeMap::new();
+    fields.insert(NUMBER_KEY.to_owned(), CachedValue::Text("xyz".to_owned()));
+    assert_eq!(
+        text_of_cached(CachedValue::Object(fields)).unwrap(),
+        r#"{"$serde_json::private::Number":"xyz"}"#
+    );
+}

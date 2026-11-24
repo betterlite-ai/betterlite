@@ -158,3 +158,5 @@ async fn count(cache: Arc<DiskCache>, key: String, by: f64, ttl: Option<f64>) ->
     let counted = error::backend_err(cache.async_increment(&key, whole, ttl).await)?;
     convert::whole_text(counted).map_err(PyErr::from)
 }
+
+mod tests;

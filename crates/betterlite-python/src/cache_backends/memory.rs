@@ -177,3 +177,5 @@ fn remaining_ttl(entries: Vec<(String, f64)>, key: &str) -> PyResult<Option<Stri
         None => Ok(None),
     }
 }
+
+mod tests;

@@ -1,0 +1,111 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use betterlite_cache::configuration::settings::{
+    DEFAULT_REDIS_MAJOR_VERSION, DEFAULT_REDIS_TTL_SECONDS,
+};
+use betterlite_redis::cache_primitives::decode::CachedValue;
+use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::connect::RedisCacheOptions;
+use betterlite_redis::redis_client_reuse::store::RedisClientStore;
+use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_live_client::LiveClientFactory;
+use pyo3::prelude::*;
+use pyo3_async_runtimes::tokio::get_runtime;
+
+use super::*;
+
+// Nothing listens on port 1, so a call reaches the client and every command fails on the way out.
+const DEAD_REDIS: &str =
+    r#"{"host": "127.0.0.1", "port": 1, "socket_timeout": 0.1, "socket_connect_timeout": 0.1}"#;
+
+fn dead_redis() -> NativeRedis {
+    Python::initialize();
+    let overrides: RedisOverrides = serde_json::from_str(DEAD_REDIS).unwrap();
+    let options = RedisCacheOptions {
+        overrides,
+        family: RedisCacheFamily::Standalone,
+        namespace: None,
+        default_ttl: DEFAULT_REDIS_TTL_SECONDS,
+        redis_flush_size: None,
+        default_major_version: DEFAULT_REDIS_MAJOR_VERSION,
+        factory: Arc::new(LiveClientFactory::new(None)),
+        store: Arc::new(RedisClientStore::new()),
+        hooks: Arc::new(QuietHooks),
+        gate: Arc::new(QuietGate),
+    };
+    let environment = BTreeMap::<String, String>::new();
+    let cache: RedisCache = get_runtime()
+        .block_on(connect(options, &environment))
+        .unwrap();
+    NativeRedis {
+        cache: Arc::new(cache),
+    }
+}
+
+#[test]
+fn backends_redis_errors_surface() {
+    let native = dead_redis();
+    native.set("key", "1", None).unwrap();
+    assert_eq!(native.get("key").unwrap(), None);
+    native.increment("key", 1.0_f64, None).unwrap_err();
+    native.delete(vec!["key".to_owned()]).unwrap_err();
+    native.flush().unwrap_err();
+    native.ping().unwrap_err();
+    Python::attach(|py| assert_eq!(native.ttl(py, "key").unwrap(), None));
+}
+
+#[test]
+fn backends_redis_close_is_ok() {
+    let native = dead_redis();
+    Python::attach(|py| native.close(py).unwrap());
+}
+
+#[test]
+fn backends_redis_answers_the_value_text() {
+    assert_eq!(
+        answer_text(Some(CachedValue::Null)).unwrap(),
+        Some("null".to_owned())
+    );
+    assert_eq!(answer_text(None).unwrap(), None);
+}
+
+#[test]
+fn backends_redis_answers_whole_seconds() {
+    assert_eq!(whole_answer(Some(5_i64)).unwrap(), Some("5".to_owned()));
+    assert_eq!(whole_answer(None).unwrap(), None);
+}
+
+#[test]
+fn backends_redis_gate_admits() {
+    let gate = QuietGate;
+    gate.enter("probe").unwrap();
+}
+
+#[test]
+fn backends_redis_store_swallows_a_failure() {
+    let native = dead_redis();
+    get_runtime()
+        .block_on(store(
+            Arc::clone(&native.cache),
+            "key".to_owned(),
+            Json::Bool(true),
+            None,
+        ))
+        .unwrap();
+}
+
+#[test]
+fn backends_redis_count_reports_failure() {
+    let native = dead_redis();
+    get_runtime()
+        .block_on(count(
+            Arc::clone(&native.cache),
+            "count".to_owned(),
+            2.0_f64,
+            None,
+        ))
+        .unwrap_err();
+}

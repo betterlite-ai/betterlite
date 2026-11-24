@@ -225,3 +225,5 @@ impl BreakerGate for QuietGate {
 
     fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
 }
+
+mod tests;

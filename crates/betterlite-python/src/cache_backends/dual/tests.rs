@@ -1,0 +1,121 @@
+#![cfg(test)]
+
+use std::sync::Arc;
+
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, Ttl};
+use betterlite_models::decisions::Json;
+use pyo3::prelude::*;
+use pyo3_async_runtimes::tokio::get_runtime;
+use serde_json::Number;
+
+use super::*;
+
+const ITEM_KIB: i64 = 1024;
+
+fn native_dual() -> NativeDual {
+    Python::initialize();
+    let clock = Arc::new(convert::wall_clock);
+    let ops = Arc::new(LocalMemoryOps::new(ITEM_KIB, clock).unwrap());
+    let settings = DualCacheSettings {
+        default_in_memory_ttl: None,
+        default_redis_ttl: None,
+        batch_cache_expiry: None,
+        max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
+    };
+    let cache = DualCache::new(ops, None, settings);
+    NativeDual {
+        cache: Arc::new(cache),
+        redis: None,
+    }
+}
+
+#[test]
+fn backends_dual_round_trip() {
+    let native = native_dual();
+    native.set("key", r#"{"a":1}"#, None).unwrap();
+    assert_eq!(native.get("key").unwrap(), Some(r#"{"a":1}"#.to_owned()));
+    assert_eq!(native.get("missing").unwrap(), None);
+    native.delete(vec!["key".to_owned()]).unwrap();
+    assert_eq!(native.get("key").unwrap(), None);
+    native.set("text", "\"x\"", None).unwrap();
+    native.flush().unwrap();
+    assert_eq!(native.get("text").unwrap(), None);
+}
+
+#[test]
+fn backends_dual_counts_increments() {
+    let native = native_dual();
+    assert_eq!(native.increment("count", 2.0_f64, None).unwrap(), "2.0");
+    assert_eq!(native.increment("count", 2.0_f64, None).unwrap(), "4.0");
+}
+
+#[test]
+fn backends_dual_ttl_reads_the_remaining() {
+    let native = native_dual();
+    Python::attach(|py| {
+        native.set("key", "1", Some(60.0_f64)).unwrap();
+        let remaining = native
+            .ttl(py, "key")
+            .unwrap()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap();
+        assert!(remaining > 0.0_f64);
+        assert_eq!(native.ttl(py, "missing").unwrap(), None);
+    });
+}
+
+#[test]
+fn backends_dual_ping_without_redis() {
+    let native = native_dual();
+    Python::attach(|py| {
+        assert!(native.ping(py).unwrap());
+        native.close(py).unwrap();
+    });
+}
+
+#[test]
+fn backends_dual_options_and_text_of_ttl() {
+    let cache_options = options(Some(5.0_f64));
+    assert_eq!(cache_options.ttl, Some(5.0_f64));
+    assert!(!cache_options.local_only);
+    assert!(!cache_options.refresh_ttl);
+    assert_eq!(
+        text_of_ttl(Some(Ttl::Seconds(7))).unwrap(),
+        Some("7".to_owned())
+    );
+    assert_eq!(text_of_ttl(None).unwrap(), None);
+}
+
+#[test]
+fn backends_dual_store_and_answer_json() {
+    let native = native_dual();
+    get_runtime()
+        .block_on(store(
+            Arc::clone(&native.cache),
+            "key".to_owned(),
+            Json::Bool(true),
+            None,
+        ))
+        .unwrap();
+    assert_eq!(native.get("key").unwrap(), Some("true".to_owned()));
+    let number = Json::Number(Number::from(3_i64));
+    assert_eq!(answer_json(Some(number)).unwrap(), Some("3".to_owned()));
+    assert_eq!(answer_json(None).unwrap(), None);
+}
+
+#[test]
+fn backends_dual_count_adds() {
+    let native = native_dual();
+    let counted = get_runtime()
+        .block_on(count(
+            Arc::clone(&native.cache),
+            "count".to_owned(),
+            2.0_f64,
+            None,
+        ))
+        .unwrap();
+    assert_eq!(counted, "2.0");
+}

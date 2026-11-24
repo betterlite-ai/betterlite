@@ -208,3 +208,5 @@ async fn close_tier(tier: Arc<RedisCache>) -> PyResult<()> {
     tier.admin.disconnect().await;
     Ok(())
 }
+
+mod tests;

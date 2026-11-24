@@ -95,3 +95,5 @@ where
         .map_err(BackendHandleError::from)
         .map_err(PyErr::from)
 }
+
+mod tests;

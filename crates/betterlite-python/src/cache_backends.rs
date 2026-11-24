@@ -20,3 +20,5 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeDual>()?;
     Ok(())
 }
+
+mod tests;
