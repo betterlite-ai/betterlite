@@ -168,36 +168,47 @@ impl SessionCore {
             self.clock.as_ref(),
         )
         .map_err(SessionFailure::from)?;
-        // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured one
-        let deadline = match call.timeout {
-            Some(timeout) if !timeout.is_zero() => timeout,
-            Some(_) | None => self.request_timeout,
-        };
-        let handler = GenericContainerHandler {
-            clients: Source {
-                client: self.client.clone(),
-                deadline,
-            },
-            logging: stack::NoPreCall,
-        };
-        let globals = LiteLlmGlobals {
-            api_base: wire.settings.api_base.clone(),
-            api_key: wire.settings.api_key.clone(),
-            openai_key: wire.settings.openai_key.clone(),
-            organization: wire.settings.organization.clone(),
-        };
-        let configs = stack::Configs::new(
-            self.settings.clone(),
-            globals,
-            self.env_api_key.clone(),
-            Arc::new(stack::NoCosts),
-        );
+        let handler = self.handler(call.timeout);
+        let configs = self.configs(wire);
         Ok(Prepared {
             call,
             configs,
             logging,
             handler,
         })
+    }
+
+    // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured one
+    fn handler(
+        &self,
+        requested: Option<Duration>,
+    ) -> GenericContainerHandler<Source, stack::NoPreCall> {
+        let deadline = match requested {
+            Some(timeout) if !timeout.is_zero() => timeout,
+            Some(_) | None => self.request_timeout,
+        };
+        GenericContainerHandler {
+            clients: Source {
+                client: self.client.clone(),
+                deadline,
+            },
+            logging: stack::NoPreCall,
+        }
+    }
+
+    fn configs(&self, wire: &CallWire) -> stack::Configs {
+        let globals = LiteLlmGlobals {
+            api_base: wire.settings.api_base.clone(),
+            api_key: wire.settings.api_key.clone(),
+            openai_key: wire.settings.openai_key.clone(),
+            organization: wire.settings.organization.clone(),
+        };
+        stack::Configs::new(
+            self.settings.clone(),
+            globals,
+            self.env_api_key.clone(),
+            Arc::new(stack::NoCosts),
+        )
     }
 }
 

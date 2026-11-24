@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_config::env_integer::timeout::TimeoutError;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::Raw;
 use betterlite_core::api::container_file_endpoints::handler::{
@@ -287,11 +288,12 @@ fn error_session_error_keeps_the_python_class() {
             operation: String::from("close_container_file"),
         }));
         assert!(json.is_instance_of::<PyValueError>(py));
-        let seconds = -5.0_f64;
-        let Err(source) = Duration::try_from_secs_f64(seconds) else {
-            panic!("a negative timeout is not a duration");
+        let Err(source) = "not-a-number".parse::<f64>() else {
+            panic!("the text is not a number");
         };
-        let timeout = PyErr::from(SessionError::Timeout { seconds, source });
+        let timeout = PyErr::from(SessionError::Timeout {
+            source: TimeoutError::Invalid { source },
+        });
         assert!(timeout.is_instance_of::<PyRuntimeError>(py));
     });
 }

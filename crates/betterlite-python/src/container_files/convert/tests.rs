@@ -79,7 +79,7 @@ fn request_query_values_carry_text_and_integers() {
 
 #[test]
 fn request_upload_moves_the_blob_into_a_tuple_file() {
-    let mut call = arguments(UPLOAD);
+    let call = arguments(UPLOAD);
     let mut blobs = vec![b"a,b\n1,2\n".to_vec()];
     let file = match call.upload(&mut blobs) {
         Ok(file) => file,
@@ -164,7 +164,7 @@ fn error_query_value_refuses_a_boolean() {
 
 #[test]
 fn error_missing_file() {
-    let mut call = arguments(r#"{"container_id": "cntr_1"}"#);
+    let call = arguments(r#"{"container_id": "cntr_1"}"#);
     let Err(error) = call.upload(&mut Vec::new()) else {
         panic!("a request without a file cannot upload");
     };
@@ -173,8 +173,7 @@ fn error_missing_file() {
 
 #[test]
 fn error_unknown_blob() {
-    let mut call =
-        arguments(r#"{"file": {"$file": {"name": "f", "blob": 2, "content_type": null}}}"#);
+    let call = arguments(r#"{"file": {"$file": {"name": "f", "blob": 2, "content_type": null}}}"#);
     let Err(error) = call.upload(&mut vec![Vec::new()]) else {
         panic!("a marker cannot name a blob the call did not send");
     };
