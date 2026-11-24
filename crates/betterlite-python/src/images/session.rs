@@ -1,6 +1,6 @@
 use super::convert::fields::{headers, text, timeout};
 use super::convert::{ConvertError, DEFAULT_TIMEOUT, SettingsWire};
-use super::error::{CallFailure, SessionError, convert_failure_at};
+use super::error::{CallFailure, SessionError, convert_failure};
 use crate::completion::setup::outbound_client;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::sections::openai_credentials::{
@@ -20,7 +20,7 @@ use betterlite_openai::image_variations::logging::{
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_setup::RequestMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -56,8 +56,8 @@ impl ImageSession {
         };
         let globals = LiteLlmGlobals {
             api_base: settings.api_base.clone(),
-            api_key: present(settings.api_key.clone()),
-            openai_key: present(settings.openai_key.clone()),
+            api_key: settings.api_key.clone(),
+            openai_key: settings.openai_key.clone(),
             organization: None,
         };
         let env_api_key =
@@ -80,12 +80,15 @@ pub(crate) fn call_setup(
     model: &str,
     provider: &str,
 ) -> Result<CallSetup, CallFailure> {
-    let headers =
-        headers(arguments).map_err(|error| convert_failure_at(&error, model, provider))?;
-    let timeout =
-        timeout(arguments).map_err(|error| convert_failure_at(&error, model, provider))?;
-    let explicit = explicit_credentials(arguments)
-        .map_err(|error| convert_failure_at(&error, model, provider))?;
+    let headers = headers(arguments).map_err(|error| {
+        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
+    })?;
+    let timeout = timeout(arguments).map_err(|error| {
+        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
+    })?;
+    let explicit = explicit_credentials(arguments).map_err(|error| {
+        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
+    })?;
     Ok(CallSetup {
         headers,
         timeout: timeout.unwrap_or(DEFAULT_TIMEOUT),
@@ -111,10 +114,6 @@ pub(crate) fn now_seconds() -> i64 {
         Ok(duration) => i64::try_from(duration.as_secs()).unwrap_or(i64::MAX),
         Err(_before_epoch) => 0,
     }
-}
-
-pub(crate) fn present(value: Option<SecretString>) -> Option<SecretString> {
-    value.filter(|secret| !secret.expose_secret().is_empty())
 }
 
 pub(crate) fn first_text(environment: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {

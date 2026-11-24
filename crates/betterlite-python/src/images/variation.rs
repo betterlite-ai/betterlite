@@ -24,11 +24,12 @@ pub(crate) async fn variation(
     let (model, provider) =
         target(&call.arguments).map_err(|error| convert_failure(&error, None, None))?;
     if provider != OPENAI_PROVIDER {
-        return Err(rejected(
+        return Err(CallFailure::plain(
+            "ValueError",
             format!(
                 "Invalid image variation provider: {provider}. Supported providers are: LITELLM_IMAGE_VARIATION_PROVIDERS"
             ),
-            &model,
+            Some(model.to_owned()),
         ));
     }
     let request = request(session, &call, &files, async_call, &model)?;
@@ -51,9 +52,10 @@ fn request(
         OPENAI_PROVIDER,
     )?;
     let Some(api_key) = setup.credentials.api_key else {
-        return Err(rejected(
+        return Err(CallFailure::plain(
+            "ValueError",
             String::from("API key is required for OpenAI image variations"),
-            model,
+            Some(model.to_owned()),
         ));
     };
     Ok(ImageVariationRequest {
@@ -91,19 +93,16 @@ async fn round(
     Ok(ImageAnswer::new(outcome.reply, None))
 }
 
-fn rejected(message: String, model: &str) -> CallFailure {
-    CallFailure::plain("ValueError", message, Some(model.to_owned()))
-}
-
 pub(crate) fn first_image(
     files: &[(String, CallFile)],
     model: &str,
 ) -> Result<ImageFile, CallFailure> {
     let mut found = images(files, "image", DEFAULT_IMAGE_NAME);
     if found.is_empty() {
-        return Err(rejected(
+        return Err(CallFailure::plain(
+            "ValueError",
             String::from("image is required for image variations"),
-            model,
+            Some(model.to_owned()),
         ));
     }
     Ok(found.remove(0))

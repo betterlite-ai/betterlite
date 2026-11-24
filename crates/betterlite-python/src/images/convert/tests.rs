@@ -2,11 +2,15 @@
 
 use super::super::edit::{edit, edit_file, form, parts, reply, status_message};
 use super::super::generate::generate;
-use super::super::session::{ImageSession, explicit_credentials, first_text, now_seconds, present};
+use super::super::session::{
+    ImageSession, call_setup, explicit_credentials, first_text, now_seconds,
+};
 use super::super::variation::{first_image, variation};
 use super::fields::{headers, resolve_target, target, timeout};
 use super::options::{edit_options, generation_options};
-use super::{ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, image_file, images, parse};
+use super::{
+    ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, SettingsWire, image_file, images, parse,
+};
 use crate::completion::setup::outbound_client;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -463,10 +467,30 @@ async fn error_variation_requires_an_api_key() {
 
 #[test]
 fn request_session_present_drops_an_empty_secret() {
-    assert!(present(None).is_none());
-    assert!(present(Some(SecretString::from(""))).is_none());
-    let kept = present(Some(SecretString::from("sk-x"))).unwrap();
-    assert_eq!(kept.expose_secret(), "sk-x");
+    let (wire, _files) = call(r#"{"prompt":"a cat"}"#);
+    let empty_api_key = SettingsWire {
+        api_base: None,
+        api_key: Some(SecretString::from("")),
+        openai_key: None,
+        drop_params: None,
+    };
+    let setup = call_setup(
+        &session(),
+        &wire.arguments,
+        &empty_api_key,
+        "dall-e-2",
+        "openai",
+    )
+    .unwrap();
+    assert!(setup.credentials.api_key.is_none());
+    let fallback = SettingsWire {
+        api_base: None,
+        api_key: Some(SecretString::from("")),
+        openai_key: Some(SecretString::from("sk-x")),
+        drop_params: None,
+    };
+    let kept = call_setup(&session(), &wire.arguments, &fallback, "dall-e-2", "openai").unwrap();
+    assert_eq!(kept.credentials.api_key.unwrap().expose_secret(), "sk-x");
 }
 
 #[test]

@@ -6,21 +6,17 @@ use std::time::{Duration, TryFromFloatSecsError};
 
 pub(crate) fn text(arguments: &RequestMap, name: &str) -> Result<Option<String>, ConvertError> {
     match arguments.get(name) {
-        None | Some(Json::Null) => Ok(None),
         Some(Json::Text(value)) => Ok(Some(value.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(field(name, "text"))
-        }
+        Some(Json::Null) | None => Ok(None),
+        Some(_other) => Err(field(name, "text")),
     }
 }
 
 pub(crate) fn boolean(arguments: &RequestMap, name: &str) -> Result<Option<bool>, ConvertError> {
     match arguments.get(name) {
-        None | Some(Json::Null) => Ok(None),
         Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(field(name, "a boolean"))
-        }
+        Some(Json::Null) | None => Ok(None),
+        Some(_other) => Err(field(name, "a boolean")),
     }
 }
 
@@ -77,13 +73,13 @@ fn merge_headers(
 
 pub(crate) fn timeout(arguments: &RequestMap) -> Result<Option<Duration>, ConvertError> {
     match arguments.get("timeout") {
-        None | Some(Json::Null) => Ok(None),
         Some(Json::Number(value)) => {
             let seconds = value.as_f64().ok_or_else(|| field("timeout", "a number"))?;
             Duration::try_from_secs_f64(seconds)
                 .map(Some)
                 .map_err(|source| ConvertError::Timeout { source })
         }
+        None | Some(Json::Null) => Ok(None),
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(field("timeout", "a number"))
         }

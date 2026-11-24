@@ -4,9 +4,7 @@ use super::convert::{
     DEFAULT_IMAGE_NAME, DEFAULT_MASK_NAME, ImageAnswer, ImageCallWire, OPENAI_PROVIDER,
     content_type_for, images,
 };
-use super::error::{
-    CallFailure, connection_failure, convert_failure, convert_failure_at, provider_failure,
-};
+use super::error::{CallFailure, connection_failure, convert_failure, provider_failure};
 use super::session::{CallSetup, ImageSession, call_setup, now_seconds};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
@@ -14,7 +12,6 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageFiles};
 use betterlite_openai::image_edits::environment::{complete_url, validate_environment};
-use betterlite_openai::image_edits::error::ImageEditError;
 use betterlite_openai::image_edits::family::select_image_edit_family;
 use betterlite_openai::image_edits::file::{ImageEditFile, multipart_parts};
 use betterlite_openai::image_edits::request::{
@@ -77,10 +74,24 @@ fn outbound(
             .unwrap_or_else(|| DEFAULT_IMAGE_NAME.to_owned());
         file.content_type = Some(content_type_for(&name));
     }
-    let url = complete_url(&setup.credentials.api_base)
-        .map_err(|error| edit_failure(&error, model, provider, &session.redactor))?;
-    let headers = validate_environment(&setup.headers, &setup.credentials)
-        .map_err(|error| edit_failure(&error, model, provider, &session.redactor))?;
+    let url = complete_url(&setup.credentials.api_base).map_err(|error| {
+        provider_failure(
+            error.to_string(),
+            error.status(),
+            model,
+            provider,
+            &session.redactor,
+        )
+    })?;
+    let headers = validate_environment(&setup.headers, &setup.credentials).map_err(|error| {
+        provider_failure(
+            error.to_string(),
+            error.status(),
+            model,
+            provider,
+            &session.redactor,
+        )
+    })?;
     Ok(OutboundRequest {
         method: Method::POST,
         url,
@@ -106,9 +117,10 @@ pub(crate) fn form(
         model,
         call.settings.drop_params.unwrap_or(false),
     )
-    .map_err(|error| convert_failure_at(&error, model, provider))?;
-    let prompt = text(&call.arguments, "prompt")
-        .map_err(|error| convert_failure_at(&error, model, provider))?;
+    .map_err(|error| convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned())))?;
+    let prompt = text(&call.arguments, "prompt").map_err(|error| {
+        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
+    })?;
     let mask = images(files, "mask", DEFAULT_MASK_NAME)
         .pop()
         .map(|file| vec![Some(edit_file(&file))]);
@@ -124,8 +136,9 @@ pub(crate) fn form(
         mask,
         options,
     };
-    transform_image_edit_request(select_image_edit_family(model), &request)
-        .map_err(|error| edit_failure(&error, model, provider, redactor))
+    transform_image_edit_request(select_image_edit_family(model), &request).map_err(|error| {
+        provider_failure(error.to_string(), error.status(), model, provider, redactor)
+    })
 }
 
 async fn round(
@@ -183,17 +196,9 @@ pub(crate) fn reply(
             redactor,
         ));
     }
-    transform_image_edit_response(response.status, &response.body, now_seconds())
-        .map_err(|error| edit_failure(&error, model, provider, redactor))
-}
-
-fn edit_failure(
-    error: &ImageEditError,
-    model: &str,
-    provider: &str,
-    redactor: &Redactor,
-) -> CallFailure {
-    provider_failure(error.to_string(), error.status(), model, provider, redactor)
+    transform_image_edit_response(response.status, &response.body, now_seconds()).map_err(|error| {
+        provider_failure(error.to_string(), error.status(), model, provider, redactor)
+    })
 }
 
 #[derive(Deserialize)]

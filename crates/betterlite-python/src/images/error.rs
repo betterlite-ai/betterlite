@@ -135,8 +135,7 @@ fn context(message: String, model: Option<String>, provider: Option<String>) -> 
     }
 }
 
-// a local refusal LiteLLM reaches through ValueError, which its exception mapping turns into a
-// connection error when the call is inside a try block
+// a local refusal LiteLLM reaches through ValueError, which its exception mapping turns into a connection error
 pub(crate) fn connection_failure(
     message: String,
     model: Option<String>,
@@ -196,8 +195,4 @@ pub(crate) fn convert_failure(
         return CallFailure::from_class(class, message, model, provider);
     }
     connection_failure(message, model, provider)
-}
-
-pub(crate) fn convert_failure_at(error: &ConvertError, model: &str, provider: &str) -> CallFailure {
-    convert_failure(error, Some(model.to_owned()), Some(provider.to_owned()))
 }
