@@ -15,6 +15,9 @@ deviations:
   - what: decode_section_values refuses a stored section row that holds JSON that is not an object with ConfigStateError::InvalidStoredSection.
     why: LiteLLM reads any stored value that is not a mapping as an empty mapping, so a corrupt row silently reads as a section with no keys and the next merge writes it away; a typed error names the row instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5687-L5694
+  - what: save_environment_variables decodes a stored environment_variables row that holds the JSON text save_config wrote before it merges the named keys.
+    why: LiteLLM reads the row with dict(row.param_value), so the json.dumps text that save_config itself stores for that row raises ValueError there and the update fails; decoding the text first makes the merge work on every row LiteLLM can write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5728-L5736
   - what: Without a database, save_config writes the config file with serde_saphyr (block style, sorted keys) instead of PyYAML's yaml.dump.
     why: The written document parses to the same mapping, but PyYAML's quoting and indentation of some scalars differ from the serializer, so the file text is not byte-identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5586-L5588
