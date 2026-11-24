@@ -11,6 +11,8 @@ use pyo3::{PyErr, exceptions::PyValueError, prelude::*};
 use crate::cost::error::{native_error, payload};
 use crate::cost_extra::convert::TranscriptionRequest;
 
+mod tests;
+
 const BAD_REQUEST: &str = "BadRequestError";
 const MODEL_NOT_MAPPED: &str = "ModelNotMappedError";
 
