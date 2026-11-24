@@ -503,6 +503,7 @@ def test_errors_401_swallowed() -> None:
         ours_call, theirs_call = asyncio.run(both_swallowed_calls(server))
     assert ours_tools == theirs_tools == []
     assert ours_call["isError"] is True
+    assert error_text(ours_call).startswith("MCPError: ")
     assert dumped(theirs_call)["isError"] is True
 
 
