@@ -102,7 +102,7 @@ impl Fake {
     {
         record(
             &self.events,
-            format!("{kind} {:?} {}", query.params, query.sql),
+            format!("{kind} params={:?} {}", query.params, query.sql),
         );
         outcome(self.failure, values)
     }
@@ -113,7 +113,7 @@ impl Fake {
         query: &SessionQuery,
         count: i64,
     ) -> Result<i64, SessionsStoreError> {
-        let event = format!("{kind} {:?} {}", query.params, query.sql);
+        let event = format!("{kind} params={:?} {}", query.params, query.sql);
         record(&self.events, event);
         self.failure.map_or(Ok(count), |error| Err(error.error()))
     }
