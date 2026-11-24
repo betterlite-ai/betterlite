@@ -14,7 +14,7 @@ use super::{MASTER_KEY_SUBJECT, RouteResult, role_text};
 use crate::user_invitation::InvitationRecord;
 
 #[derive(Deserialize)]
-struct InfoQuery {
+pub(crate) struct InfoQuery {
     invitation_id: Option<String>,
 }
 

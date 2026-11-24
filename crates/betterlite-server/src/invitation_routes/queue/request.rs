@@ -1,5 +1,6 @@
 use axum::http::HeaderMap;
 use axum::http::request::Parts;
+use axum::http::uri::Authority;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::api::request_principal_metadata::Metadata;
@@ -123,7 +124,7 @@ fn key_view(caller: &Principal) -> KeyView {
 
 // Router.schedule_acompletion receives all of this as keyword arguments, so every slot is written in LiteLLM's order
 #[derive(Serialize)]
-struct KeyMetadata<'key> {
+struct KeyArgs<'key> {
     user_api_key: Option<&'key str>,
     user_api_key_hash: Option<&'key str>,
     user_api_key_metadata: JsonValue,
@@ -153,7 +154,7 @@ fn write_metadata(data: &mut JsonMap, key: &KeyView, parts: &Parts, endpoint: &s
     let mut headers = headers_object(&parts.headers);
     headers.remove(AUTHORIZATION);
     let logged = logged_api_key(key);
-    let entry = KeyMetadata {
+    let entry = KeyArgs {
         user_api_key: logged,
         user_api_key_hash: logged,
         user_api_key_metadata: stripped_key_metadata(&key.metadata),
@@ -212,10 +213,10 @@ fn headers_object(headers: &HeaderMap) -> JsonMap {
         let Ok(text) = value.to_str() else {
             continue;
         };
-        let merged = match object.get(name.as_str()).and_then(JsonValue::as_str) {
-            Some(existing) => format!("{existing}, {text}"),
-            None => text.to_owned(),
-        };
+        let merged = object
+            .get(name.as_str())
+            .and_then(JsonValue::as_str)
+            .map_or_else(|| text.to_owned(), |existing| format!("{existing}, {text}"));
         object.insert(name.as_str().to_owned(), JsonValue::String(merged));
     }
     object
@@ -226,12 +227,10 @@ fn request_url(parts: &Parts) -> String {
     let authority = parts
         .uri
         .authority()
-        .map(|authority| authority.as_str())
+        .map(Authority::as_str)
         .or_else(|| {
-            parts
-                .headers
-                .get(HOST)
-                .and_then(|value| value.to_str().ok())
+            let host = parts.headers.get(HOST)?;
+            host.to_str().ok()
         })
         .unwrap_or_default();
     let path = parts

@@ -277,8 +277,10 @@ pub(super) fn invitation_router(
     store: &Arc<FakeStore>,
     scope: &Arc<FakeScope>,
 ) -> InvitationRouteState {
-    let invitations: Arc<dyn InvitationStore> = Arc::clone(store);
-    let invitation_scope: Arc<dyn InvitationScope> = Arc::clone(scope);
+    let store_handle: Arc<FakeStore> = Arc::clone(store);
+    let invitations: Arc<dyn InvitationStore> = store_handle;
+    let scope_handle: Arc<FakeScope> = Arc::clone(scope);
+    let invitation_scope: Arc<dyn InvitationScope> = scope_handle;
     InvitationRouteState {
         invitations: Some(InvitationDatabase {
             invitations,
@@ -458,7 +460,8 @@ pub(super) fn queue_state(
     completion: &Arc<FakeCompletion>,
     failure: Option<Arc<dyn QueueFailureHook>>,
 ) -> QueueRouteState {
-    let queued: Arc<dyn QueueCompletion> = Arc::clone(completion);
+    let completion_handle: Arc<FakeCompletion> = Arc::clone(completion);
+    let queued: Arc<dyn QueueCompletion> = completion_handle;
     QueueRouteState {
         router: Some(QueueRouter {
             scheduler: Arc::clone(scheduler),

@@ -138,7 +138,6 @@ pub struct InvitationRouteState {
     pub queue: QueueRouteState,
 }
 
-#[must_use]
 pub fn timeout_plan(timeouts: &RouterTimeouts, stream: bool) -> Result<TimeoutPlan, TimeoutError> {
     let request = RequestTimeouts {
         stream,

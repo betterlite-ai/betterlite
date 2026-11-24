@@ -48,7 +48,6 @@ impl LoginPageState {
 }
 
 // The invitation routes and the queued chat route, mounted inside the auth layers
-#[must_use]
 pub fn routes(state: InvitationRouteState) -> Router {
     Router::new()
         .route("/invitation/new", post(invitations::new_invitation))
@@ -63,7 +62,6 @@ pub fn routes(state: InvitationRouteState) -> Router {
 }
 
 // The routes the proxy answers without a key, mounted outside the auth layers
-#[must_use]
 pub fn public_routes(login: LoginPageState) -> Router {
     Router::new()
         .route("/fallback/login", get(fallback_login::fallback_login))
@@ -115,7 +113,12 @@ impl InvitationRouteError {
                 CommonProxyErrors::NotAllowedAccess.as_str()
             ),
             Self::Store(error) => error.message(),
-            other => other.to_string(),
+            other @ (Self::Body(_)
+            | Self::InviteNotAllowed
+            | Self::InvitationMissing
+            | Self::UserUnidentified
+            | Self::OrgAdminDelete
+            | Self::Unauthenticated) => other.to_string(),
         }
     }
 
@@ -141,7 +144,13 @@ impl IntoResponse for InvitationRouteError {
             Self::Body(error) => error.into_response(),
             Self::MissingInvitationId => missing_query_parameter(),
             Self::Unauthenticated => unauthenticated(),
-            other => detail_response(other.status(), other.message()),
+            other @ (Self::Database
+            | Self::NotAllowed { .. }
+            | Self::InviteNotAllowed
+            | Self::InvitationMissing
+            | Self::UserUnidentified
+            | Self::OrgAdminDelete
+            | Self::Store(_)) => detail_response(other.status(), other.message()),
         }
     }
 }

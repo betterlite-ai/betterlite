@@ -59,8 +59,10 @@ async fn a_late_failure_runs_the_hook_and_keeps_its_none() {
     let hook = Arc::new(RecordingHook {
         calls: Mutex::new(0),
     });
+    let recording: Arc<RecordingHook> = Arc::clone(&hook);
+    let failure_hook: Arc<dyn QueueFailureHook> = recording;
     let late = QueueLateFailure {
-        hook: Arc::clone(&hook),
+        hook: failure_hook,
         caller: principal(),
         data: JsonMap::new(),
     };

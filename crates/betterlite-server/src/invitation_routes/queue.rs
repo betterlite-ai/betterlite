@@ -22,7 +22,7 @@ use crate::tracing_routes::router::unauthenticated;
 const BODY_LIMIT: usize = TransportLimits::DEFAULT.body_bytes;
 
 #[derive(Deserialize)]
-struct QueueQuery {
+pub(super) struct QueueQuery {
     model: Option<String>,
 }
 
@@ -52,7 +52,7 @@ pub(super) async fn queue_chat_completions(
         parts: &parts,
         model: query.model.as_deref(),
     };
-    match process(input, &bytes, &mut data).await {
+    match Box::pin(process(input, &bytes, &mut data)).await {
         Ok(response) => response,
         Err(error) => {
             let hook = state.queue.failure.as_deref();
@@ -71,7 +71,7 @@ async fn process(
         return Err(QueueError::NoRouter);
     };
     if matches!(data.get("stream"), Some(JsonValue::Bool(true))) {
-        return streamed(input, router, data).await;
+        return Box::pin(streamed(input, router, data)).await;
     }
     non_streaming(input, router, data).await
 }

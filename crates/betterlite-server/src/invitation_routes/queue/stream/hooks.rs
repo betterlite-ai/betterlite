@@ -66,10 +66,10 @@ impl StreamHooks<Principal> for QueueHooks {
             Some(replacement) => Err(StreamFailure {
                 message: replacement.message.clone(),
                 error_type: FailureType::Text(replacement.error_type.clone()),
-                param: match &replacement.param {
-                    Some(text) => FailureParam::Text(text.clone()),
-                    None => FailureParam::Null,
-                },
+                param: replacement
+                    .param
+                    .as_ref()
+                    .map_or(FailureParam::Null, |text| FailureParam::Text(text.clone())),
                 status_code: replacement.code.parse::<u16>().ok(),
                 code: None,
                 body: None,
