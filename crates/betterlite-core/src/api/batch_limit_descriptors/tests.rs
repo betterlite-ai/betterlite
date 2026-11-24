@@ -109,6 +109,17 @@ fn file_bound_model_without_input_file_id_or_model() {
 }
 
 #[test]
+fn blank_strings_are_absent() {
+    let service = service(settings(None, None, None), empty_limiter(), None);
+    let answer = single(run_calls(
+        &service,
+        "{}",
+        r#"[{"function": "batch_routing_model", "data": {"input_file_id": "", "model": ""}}]"#,
+    ));
+    assert_eq!(routing_answer(answer), None);
+}
+
+#[test]
 fn project_io_descriptors() {
     let principal = r#"{"project_id": "proj-1", "project_metadata": {"model_itpm_limit": {"gpt": 100}, "model_otpm_limit": {"gpt": 50}}}"#;
     let project = vec![
@@ -451,6 +462,67 @@ fn should_skip_keeps_descriptors_when_limits_apply() {
 }
 
 #[test]
+fn should_skip_keeps_descriptors_when_project_limits_apply() {
+    let service = service(settings(None, None, None), empty_limiter(), None);
+    let answer = single(run_calls(
+        &service,
+        r#"{"project_id": "proj-1", "project_metadata": {"model_otpm_limit": {"gpt": 5}}}"#,
+        r#"[{"function": "should_skip", "data": {}}]"#,
+    ));
+    let (skip, descriptors) = skip_answer(answer);
+    assert!(!skip);
+    assert_eq!(descriptors.map(|found| found.len()), Some(0));
+}
+
+#[test]
+fn should_skip_runs_when_disabling_is_off() {
+    let service = service(
+        settings(Some(false), None, None),
+        limiter(
+            vec![descriptor("api_key", "key-batch", Some(10), None)],
+            Vec::new(),
+            1,
+            1024,
+            false,
+        ),
+        None,
+    );
+    let answer = single(run_calls(
+        &service,
+        r#"{"api_key": "key-batch"}"#,
+        r#"[{"function": "should_skip", "data": {}}]"#,
+    ));
+    let (skip, descriptors) = skip_answer(answer);
+    assert!(!skip);
+    assert_eq!(descriptors.map(|found| found.len()), Some(1));
+}
+
+#[test]
+fn should_skip_does_not_resolve_without_skip_providers() {
+    let mut models = BTreeMap::new();
+    models.insert("top-model".to_owned(), Some(support::credentials("openai")));
+    let service = service(
+        settings(None, None, None),
+        empty_limiter(),
+        Some(router(models, None, false)),
+    );
+    let answer = single(run_calls(
+        &service,
+        "{}",
+        r#"[{"function": "should_skip", "data": {"model": "top-model"}}]"#,
+    ));
+    assert!(skip_answer(answer).0);
+    assert!(
+        service
+            .credentials
+            .as_ref()
+            .expect("a router")
+            .asked()
+            .is_empty()
+    );
+}
+
+#[test]
 fn should_skip_enqueued_scopes_need_inspection() {
     let service = service(settings(None, None, None), empty_limiter(), None);
     let answer = single(run_calls(
@@ -619,5 +691,25 @@ fn resolve_batch_provider_answers_none_without_a_router_or_model() {
             BatchLimitAnswer::ResolveBatchProvider { provider } => assert_eq!(provider, None),
             other => panic!("unexpected answer {other:?}"),
         }
+    }
+}
+
+#[test]
+fn empty_provider_credential_is_absent() {
+    let mut models = BTreeMap::new();
+    models.insert("top-model".to_owned(), Some(support::credentials("")));
+    let service = service(
+        settings(None, None, None),
+        empty_limiter(),
+        Some(router(models, None, false)),
+    );
+    let answer = single(run_calls(
+        &service,
+        "{}",
+        r#"[{"function": "resolve_batch_provider", "model": "top-model"}]"#,
+    ));
+    match answer {
+        BatchLimitAnswer::ResolveBatchProvider { provider } => assert_eq!(provider, None),
+        other => panic!("unexpected answer {other:?}"),
     }
 }
