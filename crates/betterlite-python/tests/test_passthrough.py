@@ -508,13 +508,11 @@ async def async_answer(answer: AsyncStreamReply | AnswerView) -> Answer:
             raise AssertionError("the async call answered with a stream")
 
 
-async def async_stream(answer: AsyncStreamReply | AsyncStreamView) -> Answer:
-    match answer:
-        case AsyncStreamView():
-            chunks = [chunk async for chunk in answer]
-            return answer.status_code, compared_headers(answer.headers), b"".join(chunks)
-        case object():
-            raise AssertionError("the async call answered with a full response")
+async def async_stream(stream: AsyncPassthroughStreamingResponse) -> Answer:
+    returned = stream.aiter_bytes()
+    assert returned is stream
+    chunks = [chunk async for chunk in returned]
+    return stream.status_code, compared_headers(stream.headers), b"".join(chunks)
 
 
 async def reference_async_stream(answer: CallResult) -> Answer:
@@ -529,7 +527,7 @@ async def reference_async_stream(answer: CallResult) -> Answer:
 async def ours_async(base: str) -> tuple[Answer, Answer]:
     full = await allm_passthrough_route(**call_for(INPUT_BODY, base))
     streamed = await allm_passthrough_route(**call_for(STREAM_BODY, base))
-    return await async_answer(full), await async_stream(streamed)
+    return await async_answer(full), await async_stream(astream_of(streamed))
 
 
 async def reference_async(base: str) -> tuple[Answer, Answer]:
@@ -578,6 +576,13 @@ async def afirst_then_failure(stream: AsyncPassthroughStreamingResponse) -> tupl
     with pytest.raises(StopAsyncIteration):
         await anext(stream)
     return first, failure.value
+
+
+async def atruncated_stream(server: PassthroughServer) -> tuple[bytes, int]:
+    arguments = call_for(STREAM_BODY, server.base, endpoint=TRUNCATED_ENDPOINT)
+    asked = await allm_passthrough_route(**arguments)
+    first, failure = await afirst_then_failure(astream_of(asked))
+    return first, failure.status_code
 
 
 def passthrough_response(answer: StreamReply) -> PassthroughResponse:
@@ -900,12 +905,10 @@ def test_error_stream_truncated(server: PassthroughServer) -> None:
     assert failure.status_code == SERVER_ERROR
 
 
-async def test_error_truncated_async(server: PassthroughServer) -> None:
-    arguments = call_for(STREAM_BODY, server.base, endpoint=TRUNCATED_ENDPOINT)
-    asked = await allm_passthrough_route(**arguments)
-    first, failure = await afirst_then_failure(astream_of(asked))
+def test_error_truncated_async(server: PassthroughServer) -> None:
+    first, status = asyncio.run(atruncated_stream(server))
     assert TRUNCATED_FRAME.startswith(first)
-    assert failure.status_code == SERVER_ERROR
+    assert status == SERVER_ERROR
 
 
 def test_error_provider_missing() -> None:
