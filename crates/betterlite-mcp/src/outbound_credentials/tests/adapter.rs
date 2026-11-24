@@ -268,6 +268,19 @@ fn client_credentials_carries_the_grant_fields() {
 }
 
 #[test]
+fn authorization_code_carries_the_upstream_token_header() {
+    let spec = owned(r#","auth_type":"oauth2","upstream_token_header":"X-Custom""#);
+    let config = match &spec.config {
+        AuthConfig::AuthorizationCode(config) => config,
+        other => panic!("expected authorization_code, got {}", other.kind()),
+    };
+    assert_eq!(config.header.header("token").0, "X-Custom");
+    assert_eq!(config.header.header("token").1, "Bearer token");
+    assert!(config.scopes.is_empty());
+    assert!(config.client_id.is_none());
+}
+
+#[test]
 fn token_exchange_deferred() {
     // Pinned LiteLLM keeps a declared oauth2_token_exchange owned even when its client configuration is incomplete; the DoD name predates that rule.
     let spec = owned(r#","auth_type":"oauth2_token_exchange""#);
