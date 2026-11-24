@@ -18,7 +18,7 @@ use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
 
 use super::error::PostStreamError;
-use super::port::{PostStreamDeps, PostStreamProcessing as _, ResponsesEventStream};
+use super::port::{PostStreamDeps, ResponsesEventStream};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream::chunk::wrapper_view;
 use crate::api::chat_response_stream::source::AsyncChunkStream;

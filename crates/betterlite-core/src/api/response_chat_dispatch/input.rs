@@ -94,22 +94,25 @@ fn messages(kwargs: &IndexMap<String, Json>) -> Result<Vec<HistoryMessage>, Inpu
             return Err(InputError::Required { field: "messages" });
         }
     };
-    let value = serde_json::to_value(Json::List(items.clone())).map_err(RequestError::Json)?;
+    let value = serde_json::to_value(Json::List(items.clone()))
+        .map_err(|source| RequestError::Json { source })?;
     serde_json::from_value(value)
-        .map_err(RequestError::Json)
+        .map_err(|source| RequestError::Json { source })
         .map_err(InputError::Request)
 }
 
 fn value_map(fields: &IndexMap<String, Json>) -> Result<IndexMap<String, Value>, InputError> {
-    let value = serde_json::to_value(Json::Object(fields.clone())).map_err(RequestError::Json)?;
+    let value = serde_json::to_value(Json::Object(fields.clone()))
+        .map_err(|source| RequestError::Json { source })?;
     serde_json::from_value(value)
-        .map_err(RequestError::Json)
+        .map_err(|source| RequestError::Json { source })
         .map_err(InputError::Request)
 }
 
 fn header_map(kwargs: &IndexMap<String, Json>) -> Result<IndexMap<String, String>, InputError> {
     let fields = object(kwargs, "headers")?;
-    let value = serde_json::to_value(Json::Object(fields.clone())).map_err(RequestError::Json)?;
+    let value = serde_json::to_value(Json::Object(fields.clone()))
+        .map_err(|source| RequestError::Json { source })?;
     serde_json::from_value(value).map_err(|_source| InputError::Field {
         field: "headers",
         expected: "a map of strings",
@@ -134,12 +137,12 @@ pub fn resolve_stream_flag(
     litellm_params: &IndexMap<String, Value>,
 ) -> bool {
     match optional_params.get("stream") {
-        Some(value) if !matches!(value, Json::Null) => {
-            serde_json::to_value(value).is_ok_and(|converted| is_truthy(Some(&converted)))
-        }
         Some(Json::Null) | None => litellm_params
             .get("stream")
             .is_some_and(|value| is_truthy(Some(value))),
+        Some(value) => {
+            serde_json::to_value(value).is_ok_and(|converted| is_truthy(Some(&converted)))
+        }
     }
 }
 

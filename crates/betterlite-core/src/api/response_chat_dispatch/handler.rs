@@ -116,7 +116,10 @@ where
 }
 
 // The bridge sets both on request_data rather than as arguments, so the spread never repeats a keyword
-fn route<Client: ?Sized>(request: &mut ResponsesChatRequest<'_, Client>, input: &Input) {
+fn route<Client>(request: &mut ResponsesChatRequest<'_, Client>, input: &Input)
+where
+    Client: ?Sized,
+{
     request.litellm_params.insert(
         String::from("custom_llm_provider"),
         Value::String(input.custom_llm_provider.clone()),
@@ -207,12 +210,15 @@ where
 }
 
 // _apply_post_stream_processing runs on whatever stream the bridge produced
-fn stream_output<Source: Error + 'static>(
+fn stream_output<Source>(
     model: &str,
     provider: &str,
     delivery: &Delivery<'_>,
     source: StreamSource,
-) -> Result<BridgeOutput, DispatchError<Source>> {
+) -> Result<BridgeOutput, DispatchError<Source>>
+where
+    Source: Error + 'static,
+{
     let stream: Box<dyn AsyncChunkStream + Send> = match source {
         StreamSource::Events(events) => Box::new(TranslatedStream::new(
             events,

@@ -343,6 +343,7 @@ async fn the_outer_stream_flag_only_adds_a_missing_optional_key() {
 
 #[test]
 fn the_stream_flag_follows_the_optional_value_then_the_sdk() {
+    let no_optional_params = IndexMap::new();
     let absent = IndexMap::new();
     assert!(resolve_stream_flag(
         &optional_stream(Some(Json::Bool(true))),
@@ -356,9 +357,12 @@ fn the_stream_flag_follows_the_optional_value_then_the_sdk() {
         &optional_stream(Some(Json::Null)),
         &sdk_stream(Value::Bool(true))
     ));
-    assert!(resolve_stream_flag(&absent, &sdk_stream(Value::Bool(true))));
+    assert!(resolve_stream_flag(
+        &no_optional_params,
+        &sdk_stream(Value::Bool(true))
+    ));
     assert!(!resolve_stream_flag(
-        &absent,
+        &no_optional_params,
         &sdk_stream(Value::Bool(false))
     ));
     assert!(resolve_stream_flag(
@@ -528,7 +532,7 @@ async fn a_direct_model_response_streams_through_the_mock_iterator() {
     assert!(!ids(&chunks).is_empty());
     assert_eq!(
         created_of(&chunks[0]),
-        Some(Json::Number(serde_json::Number::from(1700000000_i64)))
+        Some(Json::Number(serde_json::Number::from(1_700_000_000_i64)))
     );
 }
 
