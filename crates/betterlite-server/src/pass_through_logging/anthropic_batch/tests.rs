@@ -186,6 +186,22 @@ fn batch_success_non_string_top_level_model_uses_nested() {
 }
 
 #[test]
+fn batch_success_unknown_model_string_uses_nested() {
+    let creation = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
+        .with_request_body(r#"{"model":"unknown","requests":[{"params":{"model":"nested"}}]}"#);
+    let (logged, _call_log) = run(&handler(None, None), &creation);
+    assert_eq!(logged.result.model, "nested");
+    assert_eq!(
+        text(provider_fields(&logged), "unified_object_id"),
+        unified_object_id("anthropic/nested", BATCH_ID)
+    );
+    let alone = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
+        .with_request_body(r#"{"model":"unknown"}"#);
+    let (second, _call_log) = run(&handler(None, None), &alone);
+    assert_eq!(second.result.model, "unknown");
+}
+
+#[test]
 fn batch_success_router_id_replaces_model_in_unified_id() {
     let recording = router(&["litellm-deployment"]);
     let logging = handler(

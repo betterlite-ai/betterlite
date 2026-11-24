@@ -97,6 +97,7 @@ fn request_model(request_body: Option<&Json>) -> String {
     };
     if let Some(model) = body.get("model").and_then(optional_str)
         && !model.is_empty()
+        && model != UNKNOWN_MODEL
     {
         return model.to_owned();
     }
