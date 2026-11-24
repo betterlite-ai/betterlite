@@ -35,21 +35,10 @@ use super::{
     handle_exception_on_proxy, is_known_model, redact_deployment, release_parallel_slot,
 };
 
-fn read_only_error() -> DbError {
+fn prisma_failure(message: &str) -> DbError {
     DbError {
         error_type: ErrorType::Prisma,
-        message: "read-only transaction".to_owned(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: None,
-    }
-}
-
-fn other_error() -> DbError {
-    DbError {
-        error_type: ErrorType::Prisma,
-        message: "permission denied for the write".to_owned(),
+        message: message.to_owned(),
         code: None,
         meta_code: None,
         traceback_modules: Vec::new(),
@@ -508,8 +497,8 @@ fn assert_recovery_reasons(writer: &PendingWriter, expected: bool) {
 }
 
 #[rstest]
-#[case::read_only(Some(read_only_error()), true)]
-#[case::other_failure(Some(other_error()), false)]
+#[case::read_only(Some(prisma_failure("read-only transaction")), true)]
+#[case::other_failure(Some(prisma_failure("permission denied for the write")), false)]
 #[case::no_database(None, false)]
 #[tokio::test]
 async fn recovery_submission(#[case] database: Option<DbError>, #[case] expected: bool) {
@@ -604,7 +593,7 @@ fn recovery_precedes_the_diagnostics() {
         audit: Arc::clone(&audit),
         submitted: Mutex::new(Vec::new()),
     };
-    let database = read_only_error();
+    let database = prisma_failure("read-only transaction");
 
     let record = handle_exception_on_proxy(
         CaughtException::Failure(failure_facts(
@@ -843,14 +832,14 @@ async fn failing_release_propagates() {
     r#"{"model_name": "dep", "model_info": {"id": "dep-1", "api_key": "sk-outside"}, "litellm_params": {"model": "openai/gpt-4o", "temperature": 0.2}}"#
 )]
 #[case::masker_applied(
-    r#"{"litellm_params": {"model": "openai/gpt-4o", "api_secret": "sk-secret-value", "nested": {"db_password": "hunter2"}}}"#,
+    r#"{"litellm_params": {"model": "openai/gpt-4o", "api_secret": "sk-secret-7890", "nested": {"db_password": "hunter2"}}}"#,
     &[],
-    r#"{"litellm_params": {"model": "openai/gpt-4o", "api_secret": "sk-s*******alue", "nested": {"db_password": "*******"}}}"#
+    r#"{"litellm_params": {"model": "openai/gpt-4o", "api_secret": "sk-s******7890", "nested": {"db_password": "*******"}}}"#
 )]
 #[case::caller_exclusion(
-    r#"{"litellm_params": {"litellm_credential_name": "my-cred", "other_secret": "hidden-value"}}"#,
+    r#"{"litellm_params": {"litellm_credential_name": "my-cred", "other_secret": "hidden-4321"}}"#,
     &["litellm_credential_name"],
-    r#"{"litellm_params": {"litellm_credential_name": "my-cred", "other_secret": "hidd****alue"}}"#
+    r#"{"litellm_params": {"litellm_credential_name": "my-cred", "other_secret": "hidd***4321"}}"#
 )]
 #[case::rate_limit_fields(
     r#"{"litellm_params": {"default_api_key_tpm_limit": "100", "default_api_key_rpm_limit": "50"}}"#,

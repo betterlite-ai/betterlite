@@ -156,22 +156,18 @@ pub fn handle_exception_on_proxy(
     }
     let headers = litellm_call_id_headers(litellm_call_id);
     match exception {
-        CaughtException::Http(http) => http_record(http, headers),
+        CaughtException::Http(http) => ProxyException::new(ProxyExceptionInit {
+            message: http.detail,
+            error_type: INTERNAL_SERVER_ERROR.to_owned(),
+            param: None,
+            code: ExceptionCode::Status(i64::from(http.status_code)),
+            headers,
+            openai_code: None,
+            provider_specific_fields: BTreeMap::new(),
+        }),
         CaughtException::Proxy(proxy) => with_litellm_call_id(proxy, litellm_call_id),
         CaughtException::Failure(facts) => failure_record(&facts, headers, diagnostics),
     }
-}
-
-fn http_record(http: HttpFailure, headers: BTreeMap<String, String>) -> ProxyException {
-    ProxyException::new(ProxyExceptionInit {
-        message: http.detail,
-        error_type: INTERNAL_SERVER_ERROR.to_owned(),
-        param: None,
-        code: ExceptionCode::Status(i64::from(http.status_code)),
-        headers,
-        openai_code: None,
-        provider_specific_fields: BTreeMap::new(),
-    })
 }
 
 fn failure_record(
