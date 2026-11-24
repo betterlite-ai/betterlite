@@ -168,7 +168,10 @@ fn permission_object(object_permission_id: &str, stores: &[&str]) -> Json {
     ])
 }
 
-fn wire<T: DeserializeOwned>(value: &Json) -> T {
+fn wire<T>(value: &Json) -> T
+where
+    T: DeserializeOwned,
+{
     let encoded = serde_json::to_string(value).unwrap();
     serde_json::from_str(&encoded).unwrap()
 }
