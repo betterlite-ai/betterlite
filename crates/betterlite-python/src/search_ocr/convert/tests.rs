@@ -108,7 +108,7 @@ fn request_search_call_rejects_an_unknown_keyword() {
     let error = serde_json::from_str::<SearchCall>(&text)
         .err()
         .expect("the field is refused");
-    assert!(matches!(error, ConvertError::Json { .. }));
+    assert!(error.to_string().contains("unknown field `unknown`"));
 }
 
 #[test]
