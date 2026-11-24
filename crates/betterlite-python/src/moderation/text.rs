@@ -48,10 +48,8 @@ pub(crate) async fn call(
     let requested = arguments.model.clone().unwrap_or_default();
     let resolved = session.resolve(&requested, &arguments, api_key.as_ref(), &globals)?;
     let provider = resolved.provider.slug().to_owned();
-    let model = resolved
-        .model
-        .strip_prefix(&format!("{provider}/"))
-        .map_or_else(|| resolved.model.clone(), str::to_owned);
+    let stripped = resolved.model.strip_prefix(&format!("{provider}/"));
+    let model = stripped.map_or_else(|| resolved.model.clone(), str::to_owned);
     let facts = CallFacts {
         model: &model,
         provider: &provider,
