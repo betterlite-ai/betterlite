@@ -3,7 +3,7 @@ name: anthropic-batch-create-scalar-body-error
 call:
   b3633:
     status_code: 200
-    body: 5
+    body: '5'
     url_route: /v1/messages/batches/msgbatch_1
     start_time: "2026-01-01T00:00:00+00:00"
     request_body:

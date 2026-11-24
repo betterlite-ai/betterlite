@@ -22,4 +22,11 @@ deviations:
     why: >-
       Rust has no asyncio task, and the join result carries the same facts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1119-L1121
+  - what: >-
+      BatchRegistration carries create_if_missing true for the create, a field the pinned
+      Anthropic handler's store call does not send (the Vertex create does).
+    why: >-
+      B3633 owns the registration struct and B3641 needs the field to tell a create from a poll;
+      the registry is None in every deployment today, so nothing observes the difference yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1149-L1158
 kept_bugs: []
