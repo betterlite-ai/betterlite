@@ -168,11 +168,13 @@ async fn prefix_wildcards_are_patterns() {
         matched_ids(&fixture, &percent).await,
         vec!["t-pct".to_owned(), "t-plain".to_owned()]
     );
+    // the underscore matches one character and the trailing percent matches nothing, so "ab" matches
     let alias = searching("a_", true);
     assert_eq!(
         matched_ids(&fixture, &alias).await,
         vec![
             "t-pct".to_owned(),
+            "t-plain".to_owned(),
             "t-slash".to_owned(),
             "t-underscore".to_owned(),
             "t-x".to_owned(),
