@@ -7,6 +7,7 @@ use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::{Raw, Settings};
 use betterlite_core::api::container_file_endpoints::ContainerFileEndpoints;
 use betterlite_core::api::container_file_endpoints::call::ContainerFileCall;
+use betterlite_core::api::container_file_endpoints::call::DEFAULT_TIMEOUT_SECONDS;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::containers::container_file_http::{
@@ -19,7 +20,7 @@ use secrecy::SecretString;
 use serde::Serialize;
 
 use super::convert::{CallWire, ConvertError, SessionWire, parse};
-use super::error::{SessionError, SessionFailure, binary, json_answer};
+use super::error::{SessionError, SessionFailure, binary};
 use super::stack;
 use super::transport::Source;
 use crate::completion::setup::outbound_client;
@@ -36,7 +37,7 @@ type FileHandler = GenericContainerHandler<Source, stack::NoPreCall>;
 type EndpointCatalog<'deps> =
     ContainerFileEndpoints<'deps, FileHandler, stack::Decoder, stack::Configs>;
 
-// list, upload, retrieve and delete answer JSON; the content endpoint answers the provider's bytes
+// list, upload, retrieve and delete answer JSON; content answers bytes, or its mock's parsed JSON
 pub(crate) enum Answer {
     Json(String),
     Bytes(Vec<u8>),
@@ -48,7 +49,6 @@ pub(crate) struct SessionCore {
     settings: Settings,
     env_api_key: Option<SecretString>,
     client: ProxiedClient,
-    request_timeout_seconds: f64,
     request_timeout: Duration,
     redactor: Redactor,
     decoder: stack::Decoder,
@@ -70,7 +70,7 @@ impl Prepared {
             &wire.operation,
             &self.call,
             &self.logging,
-            core.request_timeout_seconds,
+            core.request_timeout.as_secs_f64(),
         )?)
     }
 
@@ -106,7 +106,6 @@ impl SessionCore {
             settings,
             env_api_key,
             client,
-            request_timeout_seconds: seconds,
             request_timeout,
             redactor,
             decoder: stack::Decoder,
@@ -121,10 +120,8 @@ impl SessionCore {
         json_text(answer(reply)?, wire)
     }
 
-    pub(crate) fn content(&self, wire: &CallWire) -> Fallible<Vec<u8>> {
-        let prepared = self.prepare(wire, Vec::new())?;
-        let reply = prepared.advance(self, wire)?;
-        raw_bytes(answer(reply)?, wire)
+    pub(crate) fn content(&self, wire: &CallWire) -> Fallible<Answer> {
+        answer(self.prepare(wire, Vec::new())?.advance(self, wire)?)
     }
 
     // the awaited path: the same catalog call, with the handler's async transport under it
@@ -136,7 +133,7 @@ impl SessionCore {
                 &wire.operation,
                 &prepared.call,
                 &prepared.logging,
-                self.request_timeout_seconds,
+                self.request_timeout.as_secs_f64(),
             )
             .await?;
         answer(reply)
@@ -165,11 +162,8 @@ impl SessionCore {
             self.clock.as_ref(),
         )
         .map_err(SessionFailure::from)?;
-        // `timeout or DEFAULT_REQUEST_TIMEOUT`: an absent or zero timeout takes the configured one
-        let deadline = match call.timeout {
-            Some(timeout) if !timeout.is_zero() => timeout,
-            Some(_) | None => self.request_timeout,
-        };
+        // LiteLLM accepts a timeout and never sends it, so the client's own deadline applies
+        let deadline = Duration::from_secs(DEFAULT_TIMEOUT_SECONDS);
         let handler = GenericContainerHandler {
             clients: Source {
                 client: self.client.clone(),
@@ -206,13 +200,6 @@ pub(crate) fn json_text(answer: Answer, wire: &CallWire) -> Fallible<String> {
     match answer {
         Answer::Json(text) => Ok(text),
         Answer::Bytes(_bytes) => Err(binary(wire)),
-    }
-}
-
-pub(crate) fn raw_bytes(answer: Answer, wire: &CallWire) -> Fallible<Vec<u8>> {
-    match answer {
-        Answer::Bytes(bytes) => Ok(bytes),
-        Answer::Json(_text) => Err(json_answer(wire)),
     }
 }
 

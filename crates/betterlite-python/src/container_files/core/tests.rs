@@ -10,6 +10,8 @@ use betterlite_config::sections::openai_credentials::Raw;
 use betterlite_core::api::container_file_endpoints::handler::{
     ContainerConfigLookup as _, ContainerIdDecoder as _,
 };
+use betterlite_core::api::response_id_codecs::container::build_container_id;
+use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::api::container_contracts::records::{
     ContainerFileListResponse, ContainerFileObject, DeleteContainerFileResponse,
@@ -22,17 +24,16 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_wrapper::ports::WrapperClock as _;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3_async_runtimes::tokio::get_runtime;
 use rust_decimal::Decimal;
 use tokio::time::sleep;
 use uuid::Uuid;
 
-use super::{Answer, SessionCore, answer, json_text, raw_bytes};
+use super::{Answer, SessionCore, answer, json_text};
 use crate::completion;
 use crate::container_files::convert::{CallWire, ConvertError, NativeFilePayload, parse};
-use crate::container_files::error::{
-    SessionError, SessionFailure, binary, json_answer, native_error,
-};
+use crate::container_files::error::{SessionError, SessionFailure, binary, native_error};
 use crate::container_files::stack;
 use crate::container_files::{NativeContainerFileSession, register};
 
@@ -49,6 +50,8 @@ const LIST_JSON: &str = concat!(
 );
 
 const DELETED_JSON: &str = r#"{"id":"cfile_1","object":"container.file.deleted","deleted":true}"#;
+
+const CONTENT_JSON: &str = r#"{"object":"file_content","text":"hello"}"#;
 
 fn core() -> SessionCore {
     // an explicit empty environment keeps the test off the process's proxy and credential variables
@@ -145,17 +148,25 @@ fn call_refuses_an_operation_it_does_not_know() {
 }
 
 #[test]
-fn content_answers_json_as_an_error() {
+fn content_answers_the_mocked_json() {
     let request = mocked(
         "retrieve_container_file_content",
         r#""container_id":"cntr_1","file_id":"cfile_1""#,
-        FILE_JSON,
+        CONTENT_JSON,
     );
-    let failure = core().content(&wire(&request)).unwrap_err();
-    assert!(matches!(
-        failure,
-        SessionFailure::Invalid(ConvertError::JsonAnswer { .. })
-    ));
+    let value = core().content(&wire(&request)).unwrap();
+    let Answer::Json(text) = value else {
+        panic!("a mocked content answers its JSON");
+    };
+    let parsed: Json = serde_json::from_str(&text).unwrap();
+    let Json::Object(fields) = parsed else {
+        panic!("the mock answers an object");
+    };
+    assert_eq!(
+        fields.get("object"),
+        Some(&Json::Text(String::from("file_content")))
+    );
+    assert_eq!(fields.get("text"), Some(&Json::Text(String::from("hello"))));
 }
 
 #[test]
@@ -176,26 +187,18 @@ fn asynchronous_dispatch_answers_a_mocked_list() {
 }
 
 #[test]
-fn prepare_takes_the_request_timeout_for_zero_and_none() {
+fn prepare_bounds_every_call_by_the_client_deadline() {
     let timed = SessionCore::build(r#"{"environment":{"REQUEST_TIMEOUT":"30"}}"#).unwrap();
-    let absent = timed
-        .prepare(&wire(r#"{"operation":"list_container_files"}"#), Vec::new())
-        .unwrap();
-    assert_eq!(absent.handler.clients.deadline, Duration::from_secs(30));
-    let zero = timed
-        .prepare(
-            &wire(r#"{"operation":"list_container_files","arguments":{"timeout":0.0}}"#),
-            Vec::new(),
-        )
-        .unwrap();
-    assert_eq!(zero.handler.clients.deadline, Duration::from_secs(30));
-    let given = timed
-        .prepare(
-            &wire(r#"{"operation":"list_container_files","arguments":{"timeout":4}}"#),
-            Vec::new(),
-        )
-        .unwrap();
-    assert_eq!(given.handler.clients.deadline, Duration::from_secs(4));
+    for arguments in [
+        "",
+        r#","arguments":{"timeout":0.0}"#,
+        r#","arguments":{"timeout":-1}"#,
+        r#","arguments":{"timeout":4}"#,
+    ] {
+        let request = format!(r#"{{"operation":"list_container_files"{arguments}}}"#);
+        let prepared = timed.prepare(&wire(&request), Vec::new()).unwrap();
+        assert_eq!(prepared.handler.clients.deadline, Duration::from_secs(600));
+    }
 }
 
 #[test]
@@ -238,12 +241,6 @@ fn error_text_answers_name_the_operation() {
     assert!(matches!(
         as_bytes,
         SessionFailure::Invalid(ConvertError::Binary { operation })
-            if operation == "retrieve_container_file_content"
-    ));
-    let as_json = json_answer(&empty);
-    assert!(matches!(
-        as_json,
-        SessionFailure::Invalid(ConvertError::JsonAnswer { operation })
             if operation == "retrieve_container_file_content"
     ));
 }
@@ -313,20 +310,6 @@ fn json_text_answers_the_text_or_the_binary_error() {
 }
 
 #[test]
-fn raw_bytes_answers_the_bytes_or_the_json_error() {
-    let empty = wire("{}");
-    assert_eq!(
-        raw_bytes(Answer::Bytes(vec![1, 2]), &empty).unwrap(),
-        vec![1, 2]
-    );
-    let json_answer_value = raw_bytes(Answer::Json(String::from("{}")), &empty);
-    assert!(matches!(
-        json_answer_value,
-        Err(SessionFailure::Invalid(ConvertError::JsonAnswer { .. }))
-    ));
-}
-
-#[test]
 fn answer_keeps_the_reply_variant() {
     let bytes = answer(ContainerFileReply::Bytes(vec![7, 8])).unwrap();
     assert!(matches!(bytes, Answer::Bytes(values) if values == vec![7, 8]));
@@ -375,6 +358,20 @@ fn decoder_reads_a_plain_container_id() {
         .unwrap();
     assert_eq!(decoded.container_id, "cntr_1");
     assert_eq!(decoded.custom_llm_provider, "openai");
+}
+
+#[test]
+fn decoder_reads_a_managed_container_id() {
+    let encoded = build_container_id(Some("azure"), Some("gpt-4o-mini"), "cntr_origin");
+    let decoded = stack::Decoder
+        .decode(&encoded, "openai", &Object::new())
+        .unwrap();
+    assert_eq!(decoded.container_id, "cntr_origin");
+    assert_eq!(decoded.custom_llm_provider, "azure");
+    assert_eq!(
+        decoded.litellm_params.get("model_id"),
+        Some(&serde_json::json!("gpt-4o-mini"))
+    );
 }
 
 #[test]
@@ -504,15 +501,24 @@ fn session_call_raises_a_value_error_for_a_request_that_is_not_json() {
 }
 
 #[test]
-fn session_content_answers_json_as_an_error() {
+fn session_content_answers_the_mocked_json() {
     Python::initialize();
     let request = mocked(
         "retrieve_container_file_content",
         r#""container_id":"cntr_1","file_id":"cfile_1""#,
-        FILE_JSON,
+        CONTENT_JSON,
     );
     Python::attach(|py| {
-        let error = session(py).content(py, &request).unwrap_err();
-        assert!(error.to_string().contains("answers JSON, not raw bytes"));
+        let answer = session(py).content(py, &request).unwrap();
+        let object = answer.bind(py).cast::<PyDict>().unwrap();
+        let kind: String = object
+            .get_item("object")
+            .unwrap()
+            .unwrap()
+            .extract()
+            .unwrap();
+        let text: String = object.get_item("text").unwrap().unwrap().extract().unwrap();
+        assert_eq!(kind, "file_content");
+        assert_eq!(text, "hello");
     });
 }

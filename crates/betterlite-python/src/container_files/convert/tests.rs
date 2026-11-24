@@ -145,14 +145,19 @@ fn request_absent_or_null_call_id_answers_none() {
 }
 
 #[test]
-fn error_negative_timeout_names_the_seconds() {
-    let call = arguments(r#"{"timeout": -1}"#);
-    let Err(error) = call.endpoint_call(None) else {
-        panic!("a negative timeout is not a duration");
-    };
-    assert!(
-        matches!(error, ConvertError::Timeout { seconds, .. } if seconds.total_cmp(&-1.0_f64).is_eq())
-    );
+fn request_zero_and_negative_timeouts_read_as_absent() {
+    for text in [
+        r#"{"timeout": 0}"#,
+        r#"{"timeout": 0.0}"#,
+        r#"{"timeout": -0.5}"#,
+        r#"{"timeout": -1}"#,
+    ] {
+        let converted = match arguments(text).endpoint_call(None) {
+            Ok(converted) => converted,
+            Err(error) => panic!("the call should convert: {error}"),
+        };
+        assert_eq!(converted.timeout, None);
+    }
 }
 
 #[test]

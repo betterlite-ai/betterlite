@@ -109,7 +109,7 @@ impl Arguments {
             limit: self.limit,
             order: self.order.clone(),
             file,
-            timeout: requested_timeout(self.timeout)?,
+            timeout: requested_timeout(self.timeout),
             api_key: self.api_key.clone(),
             api_base: self.api_base.clone(),
             api_version: self.api_version.clone(),
@@ -127,13 +127,13 @@ impl Arguments {
     }
 }
 
-pub(crate) fn requested_timeout(given: Option<f64>) -> Result<Option<Duration>, ConvertError> {
-    let Some(seconds) = given else {
-        return Ok(None);
-    };
-    Duration::try_from_secs_f64(seconds)
-        .map(Some)
-        .map_err(|source| ConvertError::Timeout { seconds, source })
+// LiteLLM accepts a timeout and never sends it: zero, negative and unrepresentable values read as absent
+pub(crate) fn requested_timeout(given: Option<f64>) -> Option<Duration> {
+    given.and_then(|seconds| {
+        Duration::try_from_secs_f64(seconds)
+            .ok()
+            .filter(|duration| !duration.is_zero())
+    })
 }
 
 // extra_query crosses as a JSON map; LiteLLM sends a string or a number, and a name says which value failed
@@ -222,8 +222,6 @@ pub(crate) enum ConvertError {
     Operation { operation: String },
     #[error("the {operation} operation answers raw bytes, not JSON")]
     Binary { operation: String },
-    #[error("the {operation} operation answers JSON, not raw bytes")]
-    JsonAnswer { operation: String },
 }
 
 pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>

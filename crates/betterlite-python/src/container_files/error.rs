@@ -102,20 +102,13 @@ impl From<ConvertError> for PyErr {
             | ConvertError::File
             | ConvertError::MissingFile
             | ConvertError::Operation { .. }
-            | ConvertError::Binary { .. }
-            | ConvertError::JsonAnswer { .. } => PyRuntimeError::new_err(error.to_string()),
+            | ConvertError::Binary { .. } => PyRuntimeError::new_err(error.to_string()),
         }
     }
 }
 
 pub(crate) fn binary(wire: &CallWire) -> SessionFailure {
     SessionFailure::from(ConvertError::Binary {
-        operation: wire.operation.clone(),
-    })
-}
-
-pub(crate) fn json_answer(wire: &CallWire) -> SessionFailure {
-    SessionFailure::from(ConvertError::JsonAnswer {
         operation: wire.operation.clone(),
     })
 }

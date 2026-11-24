@@ -8,11 +8,11 @@ use std::future::Future;
 use std::sync::Arc;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyType};
+use pyo3::types::{PyAny, PyBytes, PyType};
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use self::convert::{CallWire, parse};
-use self::core::{Fallible, SessionCore, json_text, raw_bytes};
+use self::core::{Answer, Fallible, SessionCore, json_text};
 
 type Awaitable<'py> = PyResult<Bound<'py, PyAny>>;
 
@@ -52,6 +52,14 @@ where
     })
 }
 
+// a content answer is the provider's bytes, or the catalog's parsed mock value
+fn answer_object(py: Python<'_>, answer: Answer) -> PyResult<Py<PyAny>> {
+    match answer {
+        Answer::Bytes(bytes) => Ok(PyBytes::new(py, &bytes).into_any().unbind()),
+        Answer::Json(text) => Ok(py.import("json")?.call_method1("loads", (text,))?.unbind()),
+    }
+}
+
 #[pymethods]
 impl NativeContainerFileSession {
     #[new]
@@ -75,11 +83,13 @@ impl NativeContainerFileSession {
             .map_err(|failure| failure.into_pyerr(py, &self.error_type))
     }
 
-    // retrieve_container_file_content answers the provider's bytes as they came
-    fn content(&self, py: Python<'_>, request: &str) -> PyResult<Vec<u8>> {
+    // retrieve_container_file_content answers the provider's bytes, or a mock as parsed JSON
+    fn content(&self, py: Python<'_>, request: &str) -> PyResult<Py<PyAny>> {
         let wire: CallWire = parse(request)?;
-        py.detach(|| self.core.content(&wire))
-            .map_err(|failure| failure.into_pyerr(py, &self.error_type))
+        let answer = py
+            .detach(|| self.core.content(&wire))
+            .map_err(|failure| failure.into_pyerr(py, &self.error_type))?;
+        answer_object(py, answer)
     }
 
     fn acall<'py>(&self, py: Python<'py>, request: &str, blobs: Vec<Vec<u8>>) -> Awaitable<'py> {
@@ -95,8 +105,13 @@ impl NativeContainerFileSession {
     fn acontent<'py>(&self, py: Python<'py>, request: &str) -> Awaitable<'py> {
         let wire: CallWire = parse(request)?;
         let core = Arc::clone(&self.core);
-        await_answer(py, self.error_type.clone_ref(py), async move {
-            raw_bytes(core.dispatch(&wire, Vec::new()).await?, &wire)
+        let error_type = self.error_type.clone_ref(py);
+        future_into_py(py, async move {
+            let answer = core.dispatch(&wire, Vec::new()).await;
+            Python::attach(|attached| match answer {
+                Ok(answer) => answer_object(attached, answer),
+                Err(failure) => Err(failure.into_pyerr(attached, &error_type)),
+            })
         })
     }
 }

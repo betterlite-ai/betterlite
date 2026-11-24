@@ -37,7 +37,7 @@ async def ajson_call(operation: str, values: Mapping[str, CallValue]) -> JsonVal
                               NativeContainerFileError)
 
 
-def bytes_call(operation: str, values: Mapping[str, CallValue]) -> bytes:
+def bytes_call(operation: str, values: Mapping[str, CallValue]) -> bytes | JsonValue:
     session = NativeContainerFileSession("{}")
     payload = call_payload(operation, values)
     try:
@@ -46,7 +46,7 @@ def bytes_call(operation: str, values: Mapping[str, CallValue]) -> bytes:
         raise_native_error(failure)
 
 
-async def abytes_call(operation: str, values: Mapping[str, CallValue]) -> bytes:
+async def abytes_call(operation: str, values: Mapping[str, CallValue]) -> bytes | JsonValue:
     session = NativeContainerFileSession("{}")
     payload = call_payload(operation, values)
     try:
@@ -96,7 +96,7 @@ async def adelete_container_file(
 def retrieve_container_file_content(  # ast-grep-ignore: no-long-names
     timeout: float | TimeoutValues = DEFAULT_TIMEOUT, custom_llm_provider: Provider = "openai",
     extra_headers: Extra | None = None, extra_query: Extra | None = None,
-    extra_body: Extra | None = None, **kwargs: CallValue) -> bytes:
+    extra_body: Extra | None = None, **kwargs: CallValue) -> bytes | JsonValue:
     values = file_values(kwargs, timeout, custom_llm_provider, extra_headers, extra_query,
                          extra_body)
     return bytes_call(CONTENT, values)
@@ -105,6 +105,6 @@ def retrieve_container_file_content(  # ast-grep-ignore: no-long-names
 async def aretrieve_container_file_content(  # ast-grep-ignore: no-long-names
     timeout: float | TimeoutValues = DEFAULT_TIMEOUT, custom_llm_provider: Provider = "openai",
     extra_headers: Extra | None = None, extra_query: Extra | None = None,
-    extra_body: Extra | None = None, **kwargs: CallValue) -> bytes:
+    extra_body: Extra | None = None, **kwargs: CallValue) -> bytes | JsonValue:
     return await abytes_call(CONTENT, file_values(
         kwargs, timeout, custom_llm_provider, extra_headers, extra_query, extra_body))

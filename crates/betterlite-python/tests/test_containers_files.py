@@ -120,13 +120,13 @@ class AsyncAnswerCall(Protocol):
 
 
 class ContentCall(Protocol):
-    def __call__(self, **kwargs: CallValue) -> bytes: ...
+    def __call__(self, **kwargs: CallValue) -> bytes | JsonValue: ...
 
 
 class AsyncContentCall(Protocol):
     def __call__(
         self, **kwargs: CallValue
-    ) -> Coroutine[JsonValue, JsonValue, bytes]: ...
+    ) -> Coroutine[JsonValue, JsonValue, bytes | JsonValue]: ...
 
 
 # LiteLLM's modules carry no stubs, so a reference answers any name as its module's call
@@ -502,6 +502,26 @@ def test_calls_content_bytes() -> None:
     assert paths_of(calls) == [CONTENT_PATH] * 3
 
 
+def test_calls_mock_content() -> None:
+    mock: dict[str, JsonValue] = {"object": "file_content", "text": "hello"}
+    ours = retrieve_container_file_content(
+        container_id=CONTAINER_ID, file_id=FILE_ID, mock_response=mock,
+    )
+    reference = FACTORY_CONTENT_REF.retrieve_container_file_content(
+        container_id=CONTAINER_ID, file_id=FILE_ID, mock_response=mock,
+    )
+    async_ours = asyncio.run(aretrieve_container_file_content(
+        container_id=CONTAINER_ID, file_id=FILE_ID, mock_response=mock,
+    ))
+    async_reference = asyncio.run(FACTORY_ASYNC_CONTENT_REF.aretrieve_container_file_content(
+        container_id=CONTAINER_ID, file_id=FILE_ID, mock_response=mock,
+    ))
+    assert ours == mock
+    assert async_ours == mock
+    assert ours == reference
+    assert async_ours == async_reference
+
+
 def test_calls_extra_params() -> None:
     with closing(FileServer()) as server:
         base = f"{server.url}{API_BASE_PATH}"
@@ -527,10 +547,14 @@ def test_calls_utils_params() -> None:
     given: dict[str, JsonValue] = {
         "expires_after": {"anchor": "last_active_at", "minutes": 30},
         "file_ids": ["file_1"],
+        "extra_headers": {"X-Probe": PROBE_VALUE},
+        "extra_body": {"X-Body": PROBE_VALUE},
         "name": "probe",
     }
     listed: dict[str, JsonValue] = {
         "after": AFTER, "limit": LIMIT, "order": ORDER, "timeout": 4,
+        "extra_headers": {"X-Probe": PROBE_VALUE},
+        "extra_query": {PAGE_PARAM: PAGE_VALUE},
     }
     ours = _utils.get_requested_container_create_optional_param(given)
     reference = UTILS_REF.ContainerRequestUtils.get_requested_container_create_optional_param(given)
@@ -600,6 +624,21 @@ def test_error_retrieve_missing() -> None:
     error = caught.value
     assert error.status_code == NOT_FOUND
     assert error.__class__.__name__ == reference_caught.value.__class__.__name__
+    assert NOT_FOUND_TEXT in error.message
+    cause = error.__cause__
+    assert cause is not None
+    assert cause.__class__.__name__ == "NativeContainerFileError"
+
+
+def test_error_content_missing() -> None:
+    with closing(FileServer()) as server:
+        base = f"{server.url}{API_BASE_PATH}"
+        with pytest.raises(NotFoundError) as caught:
+            retrieve_container_file_content(
+                container_id=MISSING_ID, file_id=FILE_ID, api_base=base, api_key=GOOD_KEY,
+            )
+    error = caught.value
+    assert error.status_code == NOT_FOUND
     assert NOT_FOUND_TEXT in error.message
     cause = error.__cause__
     assert cause is not None
