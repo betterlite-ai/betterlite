@@ -14,12 +14,9 @@ from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.disk_cache import DiskCache
 from betterlite.caching.in_memory_cache import InMemoryCache
 from betterlite.caching.redis_cache import RedisCache
-from betterlite.types.caching import (
-    DEFAULT_CACHING_SUPPORTED_CALL_TYPES as SUPPORTED_CALLS,
-    CachingSupportedCallTypes as CallType,
-    LiteLLMCacheType,
-    SemanticCacheScope,
-)
+from betterlite.types.caching import DEFAULT_CACHING_SUPPORTED_CALL_TYPES as SUPPORTED_CALLS
+from betterlite.types.caching import CachingSupportedCallTypes as CallType
+from betterlite.types.caching import LiteLLMCacheType, SemanticCacheScope
 
 _LOGGER: Final = logging.getLogger("LiteLLM")
 _CACHE_CALLBACK: Final = "cache"
@@ -54,7 +51,7 @@ def _add_cache_callbacks() -> None:
 
 
 class Cache(CacheOperations):
-    def __init__(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L132
+    def __init__(  # noqa: PLR0913, PLR0917, C901  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L132
         self,
         type: LiteLLMCacheType | str | None = LiteLLMCacheType.LOCAL,  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L82
         mode: CacheMode | str | None = CacheMode.default_on,

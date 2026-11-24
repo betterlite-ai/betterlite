@@ -95,7 +95,7 @@ def _isolated_cache_state() -> Iterator[None]:
     LITELLM_SWITCHES.disable_cache()
 
 
-@pytest.fixture()
+@pytest.fixture
 def redis_server() -> Iterator[FakeRedisServer]:
     server = FakeRedisServer()
     server.start()
@@ -220,9 +220,7 @@ def test_cache_init_disk_directory(tmp_path: Path) -> None:
     assert backend.get_cache("missing") is None
 
 
-def test_cache_init_disk_default_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_init_disk_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     backend = _require_disk(Cache(type="disk").cache)
     backend.set_cache("key", CACHED)
