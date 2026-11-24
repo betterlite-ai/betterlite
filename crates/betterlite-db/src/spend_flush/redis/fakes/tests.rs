@@ -42,7 +42,6 @@ use crate::spend_commit::policy::SpendFailure;
 use crate::spend_commit::tables::SpendTable;
 use crate::spend_flush::daily::DailyCommitParts;
 use crate::spend_flush::fakes::tests::{Events, FakeEntityError, FixedClock, FixedJitter};
-use crate::spend_flush::memory::DailySpendQueues;
 use crate::spend_flush::redis::leader::dispatch::SpendFlushPass;
 use crate::spend_flush::service::ServiceFuture;
 use crate::spend_log_storage::rows::writer::NoSpendLogFailureSink;
@@ -93,17 +92,6 @@ impl Queues {
             daily_end_user: &self.daily_end_user,
             daily_agent: &self.daily_agent,
             window: Some(&self.window),
-        }
-    }
-
-    // The five daily queues the memory pass commits; the tag queue has its own flusher.
-    pub(crate) fn daily(&self) -> DailySpendQueues<'_> {
-        DailySpendQueues {
-            user: &self.daily_user,
-            team: &self.daily_team,
-            org: &self.daily_org,
-            end_user: &self.daily_end_user,
-            agent: &self.daily_agent,
         }
     }
 
@@ -168,16 +156,19 @@ pub(crate) fn parts_with_pause<Writer>(
     })
 }
 
-// The append port over a live Redis: the publisher pushes into the same buffer the drain pops from.
-pub(crate) fn redis_publisher(cache: &Arc<RedisCache>) -> RedisSpendPublisher {
-    let port: Arc<dyn SpendBufferPush> = Arc::new(RedisSpendLists {
-        cache: Arc::clone(cache),
-    });
+fn publisher(lists: Option<Arc<dyn SpendBufferPush>>) -> RedisSpendPublisher {
     RedisSpendPublisher {
-        lists: Some(port),
+        lists,
         events: Arc::new(NoRedisBufferEventSink),
         staging: SpendStaging::default(),
     }
+}
+
+// The append port over a live Redis: the publisher pushes into the same buffer the drain pops from.
+pub(crate) fn redis_publisher(cache: &Arc<RedisCache>) -> RedisSpendPublisher {
+    publisher(Some(Arc::new(RedisSpendLists {
+        cache: Arc::clone(cache),
+    })))
 }
 
 // One pod's lease manager over a live Redis; two calls mint two owners that contend on the same lock keys.
@@ -236,17 +227,20 @@ pub(crate) async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
     Arc::new(connect(options, &env).await.unwrap())
 }
 
-// The buffer over the same live Redis the publisher appends to.
-pub(crate) fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
-    let port: Arc<dyn SpendBufferLists> = Arc::new(RedisSpendLists {
-        cache: Arc::clone(cache),
-    });
+fn buffer_lists(lists: Option<Arc<dyn SpendBufferLists>>) -> RedisUpdateBuffer {
     RedisUpdateBuffer {
-        lists: Some(port),
+        lists,
         enabled: true,
         dequeue_count: 5,
         events: Arc::new(NoRedisBufferEventSink),
     }
+}
+
+// The buffer over the same live Redis the publisher appends to.
+pub(crate) fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
+    buffer_lists(Some(Arc::new(RedisSpendLists {
+        cache: Arc::clone(cache),
+    })))
 }
 
 pub(crate) async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
@@ -307,6 +301,11 @@ impl UnreachableLists {
     fn count_push(&self) {
         *self.pushes.lock().unwrap_or_else(PoisonError::into_inner) += 1;
     }
+
+    fn failed_push(&self, operation: &'static str) -> SpendListFuture<'_, i64> {
+        self.count_push();
+        Box::pin(ready(Err(list_failure(operation))))
+    }
 }
 
 fn list_failure(operation: &'static str) -> SpendBufferListError {
@@ -344,8 +343,7 @@ impl SpendBufferLists for UnreachableLists {
         _values: &'call [String],
         _max_len: i64,
     ) -> SpendListFuture<'call, i64> {
-        self.count_push();
-        Box::pin(ready(Err(list_failure("async_rpush_trim"))))
+        self.failed_push("async_rpush_trim")
     }
 }
 
@@ -355,8 +353,7 @@ impl SpendBufferPush for UnreachableLists {
         _key: &'call str,
         _values: &'call [String],
     ) -> SpendListFuture<'call, i64> {
-        self.count_push();
-        Box::pin(ready(Err(list_failure("async_rpush"))))
+        self.failed_push("async_rpush")
     }
 
     fn rpush_pipeline<'call>(
@@ -369,22 +366,11 @@ impl SpendBufferPush for UnreachableLists {
 }
 
 pub(crate) fn publisher_over(lists: &Arc<UnreachableLists>) -> RedisSpendPublisher {
-    let port: Arc<dyn SpendBufferPush> = Arc::clone(lists);
-    RedisSpendPublisher {
-        lists: Some(port),
-        events: Arc::new(NoRedisBufferEventSink),
-        staging: SpendStaging::default(),
-    }
+    publisher(Some(Arc::clone(lists)))
 }
 
 pub(crate) fn buffer_over(lists: &Arc<UnreachableLists>) -> RedisUpdateBuffer {
-    let port: Arc<dyn SpendBufferLists> = Arc::clone(lists);
-    RedisUpdateBuffer {
-        lists: Some(port),
-        enabled: true,
-        dequeue_count: 5,
-        events: Arc::new(NoRedisBufferEventSink),
-    }
+    buffer_lists(Some(Arc::clone(lists)))
 }
 
 // An entity writer that commits the source's table order up to one chosen table and then fails it, so a case can see exactly which tables the restore keeps.
@@ -532,29 +518,18 @@ pub(crate) fn daily_user_rows(count: usize) -> DailySpendUpdate {
 }
 
 pub(crate) fn user_spend_row(user: &str) -> SpendRow {
-    SpendRow::from([
-        (
-            "date".to_owned(),
-            SpendColumnValue::Text("2026-01-02".to_owned()),
-        ),
-        (
-            "user_id".to_owned(),
-            SpendColumnValue::Text(user.to_owned()),
-        ),
-        (
-            "api_key".to_owned(),
-            SpendColumnValue::Text("key-1".to_owned()),
-        ),
-        (
-            "model".to_owned(),
-            SpendColumnValue::Text("model-1".to_owned()),
-        ),
-        (
-            "custom_llm_provider".to_owned(),
-            SpendColumnValue::Text("openai".to_owned()),
-        ),
-        ("spend".to_owned(), SpendColumnValue::Decimal(Decimal::ONE)),
-    ])
+    let mut row = SpendRow::new();
+    for (column, value) in [
+        ("date", "2026-01-02"),
+        ("user_id", user),
+        ("api_key", "key-1"),
+        ("model", "model-1"),
+        ("custom_llm_provider", "openai"),
+    ] {
+        row.insert(column.to_owned(), SpendColumnValue::Text(value.to_owned()));
+    }
+    row.insert("spend".to_owned(), SpendColumnValue::Decimal(Decimal::ONE));
+    row
 }
 
 // One window buffer record: the wire payload B1734 writes, with the spend the fake window commit reads.

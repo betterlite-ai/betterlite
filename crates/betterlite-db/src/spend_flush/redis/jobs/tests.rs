@@ -13,7 +13,7 @@ use crate::spend_flush::fakes::tests::{
     ChunkStep, Events, FakeCache, FakeDailyWriter, FakeDiscovery, FakeEntityWriter, FakeService,
     FakeWindow, FixedClock, FixedJitter,
 };
-use crate::spend_flush::memory::MemorySpendFlush;
+use crate::spend_flush::memory::{DailySpendQueues, MemorySpendFlush};
 use crate::spend_flush::redis::fakes::tests::{
     CountingPause, parts_with_pause, recording_pass, spend_queues,
 };
@@ -270,7 +270,13 @@ async fn the_memory_branch_commits_with_the_adapters_retry_count() {
         entity_writer: &entity_writer,
         entity_cache: &cache,
         policy,
-        daily: queues.daily(),
+        daily: DailySpendQueues {
+            user: &queues.daily_user,
+            team: &queues.daily_team,
+            org: &queues.daily_org,
+            end_user: &queues.daily_end_user,
+            agent: &queues.daily_agent,
+        },
         daily_commits: &commits,
         daily_parts: &parts,
         window_queue: &queues.window,
