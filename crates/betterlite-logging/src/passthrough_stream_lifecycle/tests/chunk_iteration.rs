@@ -53,7 +53,11 @@ async fn the_first_chunk_anchors_the_completion_start_time() {
         EndpointType::OpenAi,
     );
     let chunks = vec![b"alpha".to_vec(), b"beta".to_vec()];
-    let _: Vec<_> = chunk_processor(call, ok_chunks(chunks)).collect().await;
+    drop(
+        chunk_processor(call, ok_chunks(chunks))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(
         completion_start_time(logging_obj.as_ref()).as_deref(),
         Some("2024-01-01T00:00:01+00:00")
@@ -90,9 +94,11 @@ async fn a_status_below_400_is_logged() {
         EndpointType::OpenAi,
     );
     call.status_code = 399;
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Success]);
     assert_eq!(harness.binder.calls(), 1);
 }
@@ -108,9 +114,11 @@ async fn a_status_of_400_is_not_logged() {
         EndpointType::OpenAi,
     );
     call.status_code = 400;
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert!(harness.queue.kinds().is_empty());
     assert_eq!(harness.binder.calls(), 0);
     assert!(harness.route.calls().is_empty());
@@ -128,9 +136,11 @@ async fn the_end_time_is_read_when_the_job_is_built() {
         EndpointType::OpenAi,
     );
     call.url_route = "/v1/chat/completions".to_owned();
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     let job = harness.queue.take_all().into_iter().next().unwrap();
     job.work.await;
     let routes = harness.route.calls();

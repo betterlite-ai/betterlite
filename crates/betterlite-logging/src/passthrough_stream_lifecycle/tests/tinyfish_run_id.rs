@@ -16,7 +16,11 @@ async fn run(harness: &Harness, endpoint_type: EndpointType, chunks: Vec<Vec<u8>
         object(&[], IndexMap::new()),
         endpoint_type,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(chunks)).collect().await;
+    drop(
+        chunk_processor(call, ok_chunks(chunks))
+            .collect::<Vec<_>>()
+            .await,
+    );
 }
 
 #[tokio::test]

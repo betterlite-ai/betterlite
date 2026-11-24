@@ -89,12 +89,14 @@ async fn the_partial_bytes_reach_the_anthropic_usage_recovery() {
         object(&[], IndexMap::new()),
         EndpointType::Anthropic,
     );
-    let _: Vec<_> = chunk_processor(
-        call,
-        failing_chunks(vec![b"event: message_start\n\n".to_vec()], failure()),
-    )
-    .collect()
-    .await;
+    drop(
+        chunk_processor(
+            call,
+            failing_chunks(vec![b"event: message_start\n\n".to_vec()], failure()),
+        )
+        .collect::<Vec<_>>()
+        .await,
+    );
     assert_eq!(
         *harness.anthropic.calls.lock().unwrap(),
         vec![(json("{}"), vec![b"event: message_start\n\n".to_vec()])]

@@ -23,9 +23,11 @@ async fn an_armed_deferred_stream_parks_its_logging() {
         Arc::clone(&logging_obj),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert!(harness.queue.kinds().is_empty());
     assert_eq!(
         harness.deferred_handle().kinds(),
@@ -52,9 +54,11 @@ async fn the_parked_job_carries_the_stream_bytes() {
         object(&[], reservation_params()),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(chunks.clone()))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(chunks.clone()))
+            .collect::<Vec<_>>()
+            .await,
+    );
     let job = harness
         .deferred_handle()
         .take_all()
@@ -76,9 +80,11 @@ async fn without_deferred_logging_the_job_is_enqueued() {
         Arc::clone(&logging_obj),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Success]);
     assert_eq!(harness.binder.calls(), 1);
     assert!(
@@ -115,9 +121,11 @@ async fn an_armed_deferred_stream_with_status_400_logs_nothing() {
         EndpointType::OpenAi,
     );
     call.status_code = 400;
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert!(harness.deferred_handle().kinds().is_empty());
     assert!(harness.queue.kinds().is_empty());
     assert_eq!(harness.binder.calls(), 0);
@@ -132,9 +140,11 @@ async fn a_clean_completion_creates_exactly_one_job() {
         object(&[], reservation_params()),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(harness.queue.kinds().len(), 1);
     assert_eq!(harness.binder.calls(), 1);
     assert!(harness.failure_dispatch.failures().is_empty());
@@ -150,9 +160,11 @@ async fn the_logged_request_body_is_never_null() {
         object(&[], IndexMap::new()),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     let job = harness.queue.take_all().into_iter().next().unwrap();
     job.work.await;
     assert_eq!(harness.route.calls()[0].request_body, Some(json("{}")));

@@ -21,9 +21,11 @@ async fn a_successful_enqueue_binds_the_reservation() {
         Arc::clone(&logging_obj),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(harness.binder.calls(), 1);
     assert_eq!(callback_bound(logging_obj.as_ref()), Some(json("true")));
 }
@@ -38,9 +40,11 @@ async fn a_rejected_enqueue_never_binds_the_reservation() {
         Arc::clone(&logging_obj),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"alpha".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(harness.binder.calls(), 0);
     assert!(callback_bound(logging_obj.as_ref()).is_none());
 }
@@ -55,9 +59,11 @@ async fn a_failure_never_binds_the_reservation() {
         Arc::clone(&logging_obj),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure()))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure()))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(harness.binder.calls(), 0);
     assert!(callback_bound(logging_obj.as_ref()).is_none());
 }

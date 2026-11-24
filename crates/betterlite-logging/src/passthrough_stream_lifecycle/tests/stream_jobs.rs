@@ -8,7 +8,9 @@ use indexmap::IndexMap;
 use crate::passthrough_stream_lifecycle::ports::{
     StreamJobKind, StreamLoggingJob, StreamLoggingQueue, StreamRoute, StreamWork,
 };
-use crate::passthrough_stream_lifecycle::support::{Harness, json, object, passthrough, time};
+use crate::passthrough_stream_lifecycle::support::{
+    FakeProbe, Harness, RecordingTinyfish, json, object, passthrough, time,
+};
 use crate::passthrough_stream_logging::build::StreamLoggingInput;
 use crate::passthrough_stream_logging::router::StreamLoggingRouter;
 use crate::passthrough_stream_logging::types::EndpointType;
@@ -75,8 +77,8 @@ async fn the_router_route_reaches_the_handler() {
     let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]);
     let router = Arc::new(StreamLoggingRouter {
         providers: Arc::clone(&harness.providers),
-        frames: Arc::clone(&harness.probe),
-        tinyfish: Arc::clone(&harness.tinyfish),
+        frames: Arc::<FakeProbe>::clone(&harness.probe),
+        tinyfish: Arc::<RecordingTinyfish>::clone(&harness.tinyfish),
     });
     let input = StreamLoggingInput {
         logging_obj: object(&[], IndexMap::new()),

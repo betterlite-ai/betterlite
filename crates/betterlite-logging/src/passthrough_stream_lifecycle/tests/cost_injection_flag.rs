@@ -138,9 +138,11 @@ async fn the_switch_turns_injection_on_for_a_known_model() {
         EndpointType::OpenAi,
     );
     call.request_body = Some(json("{\"model\":\"gpt-4o\"}"));
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"data: {}\n\n".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"data: {}\n\n".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert_eq!(
         harness.cost_injection.calls(),
         vec![(b"data: {}\n\n".to_vec(), "gpt-4o".to_owned())]
@@ -156,9 +158,11 @@ async fn a_missing_model_keeps_the_hot_path() {
         object(&[], IndexMap::new()),
         EndpointType::OpenAi,
     );
-    let _: Vec<_> = chunk_processor(call, ok_chunks(vec![b"data: {}\n\n".to_vec()]))
-        .collect()
-        .await;
+    drop(
+        chunk_processor(call, ok_chunks(vec![b"data: {}\n\n".to_vec()]))
+            .collect::<Vec<_>>()
+            .await,
+    );
     assert!(harness.cost_injection.calls().is_empty());
 }
 
@@ -187,7 +191,8 @@ async fn the_flag_is_resolved_once_per_stream() {
         calls: Mutex::new(0),
     });
     let harness =
-        Harness::new(&["2024-01-01T00:00:01+00:00"]).with_injection(Arc::clone(&injection));
+        Harness::new(&["2024-01-01T00:00:01+00:00"])
+            .with_injection(Arc::<ClearingInjection>::clone(&injection));
     let lifecycle = harness.lifecycle(true);
     let logging_obj = object(
         &[("model", Json::Text("gpt-4o".to_owned()))],

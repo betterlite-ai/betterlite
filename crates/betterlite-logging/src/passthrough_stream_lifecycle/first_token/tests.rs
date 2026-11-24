@@ -55,7 +55,7 @@ fn a_stamped_stream_never_reads_the_clock() {
 #[test]
 fn an_empty_logging_slot_does_not_panic() {
     let logging_obj = object(&[], IndexMap::new());
-    logging_obj.slot.lock().unwrap().take();
+    drop(logging_obj.slot.lock().unwrap().take());
     let clock = StepClock::new(&["2024-01-01T00:00:01+00:00"]);
     stamp_first_chunk_if_needed(logging_obj.as_ref(), clock.as_ref());
     assert_eq!(clock.calls(), 0);

@@ -640,7 +640,7 @@ pub(super) struct Harness {
 impl Harness {
     pub(super) fn new(values: &[&str]) -> Self {
         let handler = RecordingHandler::returning(Ok(HandlerOutcome::default()));
-        let collected: Arc<dyn CollectedChunksHandler> = Arc::clone(&handler);
+        let collected: Arc<dyn CollectedChunksHandler> = Arc::<RecordingHandler>::clone(&handler);
         Self {
             clock: StepClock::new(values),
             queue: Arc::new(RecordingQueue::default()),
@@ -663,7 +663,8 @@ impl Harness {
         reply: Result<HandlerOutcome, HandlerError>,
     ) -> Self {
         self.handler = RecordingHandler::returning(reply);
-        let collected: Arc<dyn CollectedChunksHandler> = Arc::clone(&self.handler);
+        let collected: Arc<dyn CollectedChunksHandler> =
+            Arc::<RecordingHandler>::clone(&self.handler);
         self.providers = providers(&collected);
         self
     }
@@ -703,29 +704,30 @@ impl Harness {
     }
 
     pub(super) fn lifecycle(&self, cost_injection_enabled: bool) -> Arc<StreamLifecycle> {
-        let mut cost_injection: Arc<dyn StreamCostInjection> = Arc::clone(&self.cost_injection);
+        let mut cost_injection: Arc<dyn StreamCostInjection> =
+            Arc::<RecordingCostInjection>::clone(&self.cost_injection);
         if let Some(injection) = &self.injection_override {
             cost_injection = Arc::clone(injection);
         }
         let mut lifecycle = StreamLifecycle {
             router: Arc::new(StreamLoggingRouter {
                 providers: Arc::clone(&self.providers),
-                frames: Arc::clone(&self.probe),
-                tinyfish: Arc::clone(&self.tinyfish),
+                frames: Arc::<FakeProbe>::clone(&self.probe),
+                tinyfish: Arc::<RecordingTinyfish>::clone(&self.tinyfish),
             }),
             passthrough: passthrough(),
-            route: Arc::clone(&self.route),
+            route: Arc::<RecordingRoute>::clone(&self.route),
             cost_injection,
-            anthropic_partial_usage: Arc::clone(&self.anthropic),
-            failure_dispatch: Arc::clone(&self.failure_dispatch),
-            queue: Arc::clone(&self.queue),
-            binder: Arc::clone(&self.binder),
+            anthropic_partial_usage: Arc::<RecordingAnthropic>::clone(&self.anthropic),
+            failure_dispatch: Arc::<RecordingFailureDispatch>::clone(&self.failure_dispatch),
+            queue: Arc::<RecordingQueue>::clone(&self.queue),
+            binder: Arc::<RecordingBinder>::clone(&self.binder),
             deferred: None,
-            clock: Arc::clone(&self.clock),
+            clock: Arc::<StepClock>::clone(&self.clock),
             cost_injection_enabled,
         };
         if let Some(parked) = &self.deferred {
-            let job: Arc<dyn DeferredStreamLogging> = Arc::clone(parked);
+            let job: Arc<dyn DeferredStreamLogging> = Arc::<RecordingDeferred>::clone(parked);
             lifecycle.deferred = Some(job);
         }
         Arc::new(lifecycle)

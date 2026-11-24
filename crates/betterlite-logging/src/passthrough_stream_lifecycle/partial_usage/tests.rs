@@ -10,8 +10,9 @@ use crate::logging_success::ports::SuccessClock;
 use crate::passthrough_stream_lifecycle::context::PassThroughStreamContext;
 use crate::passthrough_stream_lifecycle::partial_usage::AnthropicPartialUsage;
 use crate::passthrough_stream_lifecycle::support::{
-    Harness, capture_logs, json, object, passthrough, recorded_usage, response_cost,
-    standard_outcome, time, usage_outcome, usage_without_cost_outcome,
+    Harness, RecordingAnthropic, StepClock, capture_logs, json, object, passthrough,
+    recorded_usage, response_cost, standard_outcome, time, usage_outcome,
+    usage_without_cost_outcome,
 };
 use crate::passthrough_stream_logging::object::StreamLoggingObject;
 use crate::passthrough_stream_logging::types::{EndpointType, HandlerError};
@@ -36,8 +37,9 @@ struct Case {
 }
 
 fn call(harness: &Harness, logging_obj: Arc<StreamLoggingObject>, case: Case) -> PartialUsageCall {
-    let anthropic: Arc<dyn AnthropicPartialUsage> = Arc::clone(&harness.anthropic);
-    let clock: Arc<dyn SuccessClock> = Arc::clone(&harness.clock);
+    let anthropic: Arc<dyn AnthropicPartialUsage> =
+        Arc::<RecordingAnthropic>::clone(&harness.anthropic);
+    let clock: Arc<dyn SuccessClock> = Arc::<StepClock>::clone(&harness.clock);
     PartialUsageCall {
         logging_obj,
         passthrough: passthrough(),

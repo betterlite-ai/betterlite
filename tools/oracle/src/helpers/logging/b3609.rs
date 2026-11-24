@@ -81,19 +81,19 @@ fn build_wiring(input: &input::Input) -> Result<Wiring, Box<HelperError>> {
         input.run_id.clone(),
     ));
     let shared = Arc::new(fakes::PassThrough);
-    let deferred_job: Arc<dyn DeferredStreamLogging> = Arc::clone(&recorder);
+    let deferred_job: Arc<dyn DeferredStreamLogging> = Arc::<fakes::Recorder>::clone(&recorder);
     let deferred = input.deferred.then_some(deferred_job);
     let lifecycle = Arc::new(StreamLifecycle {
         router: router(&recorder, &shared),
         passthrough: Arc::new(PassThroughEndpointLogging {
             injected_log_dispatch: None,
         }),
-        route: Arc::clone(&recorder),
-        cost_injection: Arc::clone(&recorder),
-        anthropic_partial_usage: Arc::clone(&shared),
-        failure_dispatch: Arc::clone(&recorder),
-        queue: Arc::clone(&recorder),
-        binder: Arc::clone(&recorder),
+        route: Arc::<fakes::Recorder>::clone(&recorder),
+        cost_injection: Arc::<fakes::Recorder>::clone(&recorder),
+        anthropic_partial_usage: Arc::<fakes::PassThrough>::clone(&shared),
+        failure_dispatch: Arc::<fakes::Recorder>::clone(&recorder),
+        queue: Arc::<fakes::Recorder>::clone(&recorder),
+        binder: Arc::<fakes::Recorder>::clone(&recorder),
         deferred,
         clock: clock()?,
         cost_injection_enabled: input.cost_injection.0,
@@ -117,8 +117,8 @@ fn router(
             gemini: Arc::clone(&handler),
             openai: handler,
         }),
-        frames: Arc::clone(shared),
-        tinyfish: Arc::clone(recorder),
+        frames: Arc::<fakes::PassThrough>::clone(shared),
+        tinyfish: Arc::<fakes::Recorder>::clone(recorder),
     })
 }
 
