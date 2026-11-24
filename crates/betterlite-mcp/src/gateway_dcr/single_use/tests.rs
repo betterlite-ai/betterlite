@@ -187,7 +187,8 @@ async fn local_store_keeps_live_claims_and_sweeps_expired_ones_at_capacity() {
     assert_eq!(entry_count(&store), MAX_MEMORY_CLAIMS.saturating_add(1));
     assert_eq!(store.read("key-0"), Some(1));
 
-    ticker.store(1_011, Ordering::SeqCst);
+    // the deadline itself is already expired, so the sweep drops every key at exactly 1_010
+    ticker.store(1_010, Ordering::SeqCst);
     assert_eq!(store.increment("fresh", 10), 1);
     assert_eq!(entry_count(&store), 1);
     assert_eq!(store.read("key-0"), None);
