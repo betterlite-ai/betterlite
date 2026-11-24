@@ -1,0 +1,13 @@
+kind: helper
+name: resource-hubs-mcp-hub-empty-when-disabled
+call:
+  b3194:
+    function: mcp_hub
+    config_servers:
+      - {server_id: cfg-open, name: Open Config, transport: http, available_on_public_internet: true}
+    db_servers:
+      - {server_id: db-open, name: Open Database, transport: sse}
+    public_mcp_servers: null
+    public_hub_strict: true
+env: {}
+compare: {ignore: []}
