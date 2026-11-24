@@ -14,7 +14,8 @@ use crate::queues::pod_lock::owner::lease_key;
 use crate::redis_spend::buffer::RedisUpdateBuffer;
 use crate::redis_spend::codec::{decode_daily_batch, decode_entity_batch};
 use crate::redis_spend::keys::{
-    REDIS_DAILY_USER_BUFFER_KEY, REDIS_UPDATE_BUFFER_KEY, REDIS_WINDOW_BUFFER_KEY,
+    REDIS_DAILY_TAG_BUFFER_KEY, REDIS_DAILY_USER_BUFFER_KEY, REDIS_UPDATE_BUFFER_KEY,
+    REDIS_WINDOW_BUFFER_KEY,
 };
 use crate::redis_spend::lists::BufferReply;
 use crate::redis_spend::publication::RedisSpendPublisher;
@@ -29,8 +30,8 @@ use crate::spend_flush::fakes::tests::{
 use crate::spend_flush::redis::DB_SPEND_UPDATE_JOB_NAME;
 use crate::spend_flush::redis::fakes::tests::{
     CountingPause, Queues, TableFailWriter, UnreachableLists, buffer as redis_buffer, buffer_over,
-    cache_for, daily_user_rows, entity_batch, length, parts, parts_with_pause, pod, publisher_over,
-    push, range, raw, redis_publisher, spend_queues, window_payload,
+    cache_for, daily_row, daily_user_rows, entity_batch, length, parts, parts_with_pause, pod,
+    publisher_over, push, range, raw, redis_publisher, spend_queues, window_payload,
 };
 use crate::spend_flush::redis::jobs::SPEND_JOB_RETRIES;
 use crate::spend_flush::redis::leader::{RedisFlushError, RedisSpendFlush};
@@ -532,6 +533,27 @@ async fn the_handlers_retry_count_reaches_the_redis_daily_commit() {
         length(&mut connection, REDIS_DAILY_USER_BUFFER_KEY).await,
         1,
         "the whole map goes back after an exhausted retryable failure"
+    );
+}
+
+#[tokio::test]
+async fn the_main_flusher_leaves_the_daily_tag_cohort_in_redis() {
+    let fixture = RedisFixture::start().await.unwrap();
+    let case = LeaderCase::new(&fixture, Vec::new()).await;
+    let mut connection = raw(&fixture).await;
+    push(
+        &mut connection,
+        REDIS_DAILY_TAG_BUFFER_KEY,
+        &[safe_dumps(&daily_row("day-1", "1.5", 1)).unwrap()],
+    )
+    .await;
+
+    case.flush().await.unwrap();
+
+    assert_eq!(
+        length(&mut connection, REDIS_DAILY_TAG_BUFFER_KEY).await,
+        1,
+        "the tag cohort belongs to its own scheduler job"
     );
 }
 
