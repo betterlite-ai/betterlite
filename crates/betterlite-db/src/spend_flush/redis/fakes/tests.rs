@@ -38,11 +38,16 @@ use crate::redis_spend::lists::{
     SpendBufferPush, SpendListFuture,
 };
 use crate::redis_spend::publication::{RedisSpendPublisher, SpendStaging, SpendUpdateQueues};
-use crate::spend_commit::policy::SpendFailure;
+use crate::spend_commit::policy::{SpendFailure, SpendRetryPolicy};
 use crate::spend_commit::tables::SpendTable;
 use crate::spend_flush::daily::DailyCommitParts;
-use crate::spend_flush::fakes::tests::{Events, FakeEntityError, FixedClock, FixedJitter};
+use crate::spend_flush::fakes::tests::{
+    ChunkStep, Events, FakeCache, FakeDailyWriter, FakeEntityError, FakeEntityWriter, FakeWindow,
+    FixedClock, FixedJitter,
+};
+use crate::spend_flush::redis::jobs::SPEND_JOB_RETRIES;
 use crate::spend_flush::redis::leader::dispatch::SpendFlushPass;
+use crate::spend_flush::redis::leader::{RedisFlushError, RedisSpendFlush};
 use crate::spend_flush::service::ServiceFuture;
 use crate::spend_log_storage::rows::writer::NoSpendLogFailureSink;
 use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue};
@@ -279,6 +284,103 @@ pub(crate) async fn range(
         .unwrap()
 }
 
+// One buffer's length on the case's own Redis, read over a fresh connection.
+pub(crate) async fn buffer_length(fixture: &RedisFixture, key: &str) -> i64 {
+    let mut connection = raw(fixture).await;
+    length(&mut connection, key).await
+}
+
+// The ports one leader flush drives: the queues it publishes from, the live-Redis publisher, buffer and lease, and the fake writers its commit reads.
+pub(crate) struct FlushCase<Writer> {
+    pub(crate) queues: Queues,
+    pub(crate) events: Arc<Events>,
+    pub(crate) entity_writer: Arc<Writer>,
+    pub(crate) daily: Arc<FakeDailyWriter>,
+    pub(crate) window: Arc<FakeWindow>,
+    pub(crate) cache_reset: FakeCache,
+    pub(crate) publisher: RedisSpendPublisher,
+    pub(crate) buffer: RedisUpdateBuffer,
+    pub(crate) lease: PodLockManager<RedisLockCache>,
+    pub(crate) clock: FixedClock,
+    pub(crate) jitter: FixedJitter,
+    pub(crate) pause: Arc<CountingPause>,
+    pub(crate) failures: NoSpendLogFailureSink,
+    pub(crate) parts: Arc<DailyCommitParts<FakeDailyWriter>>,
+}
+
+impl<Writer> FlushCase<Writer>
+where
+    Writer: EntityTableWriter,
+{
+    pub(crate) async fn new(
+        fixture: &RedisFixture,
+        events: Arc<Events>,
+        entity_writer: Arc<Writer>,
+        steps: Vec<ChunkStep>,
+    ) -> Self {
+        let cache = cache_for(fixture).await;
+        let daily = Arc::new(FakeDailyWriter::new(Arc::clone(&events), steps));
+        let pause = Arc::new(CountingPause::default());
+        let parts = parts_with_pause(Arc::clone(&daily), Arc::clone(&pause));
+        Self {
+            queues: spend_queues(),
+            window: Arc::new(FakeWindow::new(Arc::clone(&events))),
+            cache_reset: FakeCache::new(Arc::clone(&events)),
+            publisher: redis_publisher(&cache),
+            buffer: buffer(&cache),
+            lease: pod(&cache),
+            clock: FixedClock {
+                instant: Instant::now(),
+            },
+            jitter: FixedJitter,
+            failures: NoSpendLogFailureSink,
+            entity_writer,
+            daily,
+            parts,
+            pause,
+            events,
+        }
+    }
+
+    // A publisher and buffer no tick can reach, while the lease stays on the case's real Redis so a case can read the key it releases.
+    pub(crate) fn use_lists(&mut self, lists: &Arc<UnreachableLists>) {
+        self.publisher = publisher_over(lists);
+        self.buffer = buffer_over(lists);
+    }
+
+    // One tick of the source's Redis branch, with the retry count the job adapter pins.
+    pub(crate) async fn flush(&self) -> Result<(), RedisFlushError> {
+        let flusher = RedisSpendFlush {
+            queues: self.queues.view(),
+            publisher: &self.publisher,
+            buffer: &self.buffer,
+            lease: &self.lease,
+            entity_writer: &*self.entity_writer,
+            entity_cache: &self.cache_reset,
+            policy: SpendRetryPolicy {
+                retries: 0,
+                clock: &self.clock,
+                jitter: &self.jitter,
+                pause: &*self.pause,
+                failures: &self.failures,
+            },
+            daily_parts: &self.parts,
+            window: &*self.window,
+        };
+        flusher.commit_from_redis(SPEND_JOB_RETRIES).await
+    }
+}
+
+// One pod over the live Redis a case started, with the fake entity writer every ordinary leader case drives.
+pub(crate) async fn leader_case(
+    fixture: &RedisFixture,
+    steps: Vec<ChunkStep>,
+) -> FlushCase<FakeEntityWriter> {
+    let events = Arc::new(Events::default());
+    let writer = Arc::new(FakeEntityWriter::new(Arc::clone(&events)));
+    FlushCase::new(fixture, events, writer, steps).await
+}
+
 // A buffer port no append can reach: the scripted pops hand back what the holder drained, and every push fails the way an unreachable Redis does.
 #[derive(Default)]
 pub(crate) struct UnreachableLists {
@@ -366,11 +468,15 @@ impl SpendBufferPush for UnreachableLists {
 }
 
 pub(crate) fn publisher_over(lists: &Arc<UnreachableLists>) -> RedisSpendPublisher {
-    publisher(Some(Arc::clone(lists)))
+    let concrete: Arc<UnreachableLists> = Arc::clone(lists);
+    let push_port: Arc<dyn SpendBufferPush> = concrete;
+    publisher(Some(push_port))
 }
 
 pub(crate) fn buffer_over(lists: &Arc<UnreachableLists>) -> RedisUpdateBuffer {
-    buffer_lists(Some(Arc::clone(lists)))
+    let concrete: Arc<UnreachableLists> = Arc::clone(lists);
+    let pop_port: Arc<dyn SpendBufferLists> = concrete;
+    buffer_lists(Some(pop_port))
 }
 
 // An entity writer that commits the source's table order up to one chosen table and then fails it, so a case can see exactly which tables the restore keeps.
