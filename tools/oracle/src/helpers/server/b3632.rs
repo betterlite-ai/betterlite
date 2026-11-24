@@ -3,7 +3,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::pass_through_logging::interrupted_stream_usage::testing::{
     ChatSpec, clear_placeholder_cost, recover_with_fixed_count, stream_was_interrupted,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 #[derive(Default, Deserialize)]
@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 pub(crate) struct Input {
     tails: Vec<TailCall>,
     recovers: Vec<RecoverCall>,
-    clears: Vec<ClearCall>,
+    clears: Vec<ChatSpec>,
 }
 
 #[derive(Default, Deserialize)]
@@ -21,36 +21,32 @@ struct TailCall {
 }
 
 #[derive(Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 struct RecoverCall {
     model: String,
     count: i64,
     content: Option<String>,
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
-    has_details: bool,
-    text_tokens: Option<i64>,
     chunks: Vec<String>,
+    #[serde(flatten)]
+    counts: Counts,
 }
 
 #[derive(Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct ClearCall {
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
-    has_details: bool,
-    text_tokens: Option<i64>,
-    cost: Option<String>,
-    hidden_response_cost: Option<String>,
-}
-
+#[serde(default)]
 struct Counts {
     prompt_tokens: i64,
     completion_tokens: i64,
     total_tokens: i64,
     has_details: bool,
+    text_tokens: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct RecoveredAnswer {
+    changed: bool,
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    total_tokens: i64,
     text_tokens: Option<i64>,
 }
 
@@ -90,44 +86,22 @@ fn tail_answer(call: &TailCall) -> Result<Value, Box<HelperError>> {
 }
 
 fn recover_answer(call: &RecoverCall) -> Result<Value, Box<HelperError>> {
-    let spec = chat_spec(
-        Counts {
-            prompt_tokens: call.prompt_tokens,
-            completion_tokens: call.completion_tokens,
-            total_tokens: call.total_tokens,
-            has_details: call.has_details,
-            text_tokens: call.text_tokens,
-        },
-        call.content.clone(),
-        None,
-        None,
-    );
+    let spec = chat_spec(&call.counts, call.content.clone(), None, None);
     let outcome =
         recover_with_fixed_count(&spec, &chunks_of(&call.chunks)?, &call.model, call.count)
             .or_value_error()?;
-    Ok(json!({
-        "changed": outcome.changed,
-        "prompt_tokens": outcome.usage.prompt_tokens,
-        "completion_tokens": outcome.usage.completion_tokens,
-        "total_tokens": outcome.usage.total_tokens,
-        "text_tokens": outcome.usage.text_tokens,
-    }))
+    let answer = RecoveredAnswer {
+        changed: outcome.changed,
+        prompt_tokens: outcome.usage.prompt_tokens,
+        completion_tokens: outcome.usage.completion_tokens,
+        total_tokens: outcome.usage.total_tokens,
+        text_tokens: outcome.usage.text_tokens,
+    };
+    serde_json::to_value(answer).or_value_error()
 }
 
-fn clear_answer(call: &ClearCall) -> Result<Value, Box<HelperError>> {
-    let spec = chat_spec(
-        Counts {
-            prompt_tokens: call.prompt_tokens,
-            completion_tokens: call.completion_tokens,
-            total_tokens: call.total_tokens,
-            has_details: call.has_details,
-            text_tokens: call.text_tokens,
-        },
-        None,
-        call.cost.clone(),
-        call.hidden_response_cost.clone(),
-    );
-    let outcome = clear_placeholder_cost(&spec);
+fn clear_answer(spec: &ChatSpec) -> Result<Value, Box<HelperError>> {
+    let outcome = clear_placeholder_cost(spec);
     Ok(json!({
         "cost_cleared": outcome.cost_cleared,
         "hidden_cost_cleared": outcome.hidden_cost_cleared,
@@ -135,7 +109,7 @@ fn clear_answer(call: &ClearCall) -> Result<Value, Box<HelperError>> {
 }
 
 fn chat_spec(
-    counts: Counts,
+    counts: &Counts,
     content: Option<String>,
     cost: Option<String>,
     hidden_response_cost: Option<String>,
