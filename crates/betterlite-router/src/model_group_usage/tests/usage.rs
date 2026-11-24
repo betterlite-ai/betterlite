@@ -17,8 +17,8 @@ use crate::model_group_usage::counters::BatchCounters;
 use crate::model_group_usage::usage::{UsageSeries, group_counter_totals};
 
 use super::support::{
-    CacheFailure, FakeCache, answered, deployment, float, itpm_key, now, number, otpm_key, rpm_key,
-    runtime, text, tpm_key,
+    CacheFailure, FakeCache, deployment, float, itpm_key, now, number, otpm_key, rpm_key, runtime,
+    text, tpm_key,
 };
 
 // a cache whose batch read does not depend on any tier, so the options it receives are the only thing to observe
@@ -116,8 +116,13 @@ fn batch_read_options_match_the_router_defaults() {
         ))
         .expect("the usage read");
     assert_eq!(usage, (None, None));
-    let recorded = cache.options.lock().unwrap_or_else(PoisonError::into_inner);
-    let options = recorded.first().expect("the batch read");
+    let options = cache
+        .options
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .first()
+        .copied()
+        .expect("the batch read");
     assert!(!options.local_only);
     assert!(options.throttle_redis);
 }
@@ -128,12 +133,7 @@ fn batch_key_order() {
         deployment("group", "a", "openai/gpt-4o"),
         deployment("group", "b", "openai/gpt-4o"),
     ];
-    let cache = FakeCache::answering(answered(vec![
-        Json::Null,
-        Json::Null,
-        Json::Null,
-        Json::Null,
-    ]));
+    let cache = FakeCache::answered(vec![Json::Null, Json::Null, Json::Null, Json::Null]);
     let usage = runtime()
         .block_on(group_counter_totals(
             UsageSeries::Standard,
@@ -160,12 +160,7 @@ fn io_batch_key_order_sends_every_itpm_key_before_every_otpm_key() {
         deployment("group", "a", "openai/gpt-4o"),
         deployment("group", "b", "openai/gpt-4o"),
     ];
-    let cache = FakeCache::answering(answered(vec![
-        Json::Null,
-        Json::Null,
-        Json::Null,
-        Json::Null,
-    ]));
+    let cache = FakeCache::answered(vec![Json::Null, Json::Null, Json::Null, Json::Null]);
     let usage = runtime()
         .block_on(group_counter_totals(
             UsageSeries::IoToken,
@@ -198,12 +193,7 @@ fn skip_missing_identity() {
         deployment("group", "", "openai/gpt-4o"),
         missing_model,
     ];
-    let cache = FakeCache::answering(answered(vec![
-        Json::Null,
-        Json::Null,
-        Json::Null,
-        Json::Null,
-    ]));
+    let cache = FakeCache::answered(vec![Json::Null, Json::Null, Json::Null, Json::Null]);
     let usage = runtime()
         .block_on(group_counter_totals(
             UsageSeries::Standard,
@@ -312,7 +302,7 @@ fn boolean_and_invalid_counters_sum_only_python_ints() {
         deployment("group", "c", "openai/gpt-4o"),
         deployment("group", "d", "openai/gpt-4o"),
     ];
-    let cache = FakeCache::answering(answered(vec![
+    let cache = FakeCache::answered(vec![
         Json::Bool(true),
         float(1.5),
         number(2),
@@ -321,7 +311,7 @@ fn boolean_and_invalid_counters_sum_only_python_ints() {
         Json::List(Vec::new()),
         Json::Null,
         Json::Object(JsonObject::new()),
-    ]));
+    ]);
     let usage = runtime()
         .block_on(group_counter_totals(
             UsageSeries::Standard,
@@ -374,7 +364,7 @@ fn duplicate_deployment_sum_counts_every_key_in_the_batch() {
         deployment("group", "a", "openai/gpt-4o"),
         deployment("group", "a", "openai/gpt-4o"),
     ];
-    let cache = FakeCache::answering(answered(vec![number(1), number(2), number(3), number(4)]));
+    let cache = FakeCache::answered(vec![number(1), number(2), number(3), number(4)]);
     let usage = runtime()
         .block_on(group_counter_totals(
             UsageSeries::Standard,

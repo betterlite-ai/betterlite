@@ -30,13 +30,12 @@ where
         .await
         .map_err(GroupUsageError::Metadata)?;
     let mut headers = RemainingUsage::new();
-    let io_limits = match info.as_ref() {
-        Some(group) => IoLimits {
+    let io_limits = info
+        .as_ref()
+        .map_or_else(IoLimits::default, |group| IoLimits {
             itpm: group.itpm,
             otpm: group.otpm,
-        },
-        None => IoLimits::default(),
-    };
+        });
     if io_limits.itpm.is_some() || io_limits.otpm.is_some() {
         let (itpm, otpm) = group_counter_totals(UsageSeries::IoToken, model_list, cache, now)
             .await

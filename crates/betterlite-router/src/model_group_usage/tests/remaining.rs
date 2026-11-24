@@ -8,8 +8,8 @@ use crate::model_group_usage::error::GroupUsageError;
 use crate::model_group_usage::remaining::group_remaining_usage;
 
 use super::support::{
-    FailingMetadata, FakeCache, FakeMetadata, MetadataFailure, answered, deployment, group_info,
-    itpm_key, now, number, ordered, otpm_key, rpm_key, runtime, tpm_key,
+    FailingMetadata, FakeCache, FakeMetadata, MetadataFailure, deployment, group_info, itpm_key,
+    now, number, ordered, otpm_key, rpm_key, runtime, tpm_key,
 };
 
 #[test]
@@ -18,12 +18,7 @@ fn remaining_rpm() {
         deployment("group", "a", "openai/gpt-4o"),
         deployment("group", "b", "openai/gpt-4o-mini"),
     ];
-    let cache = FakeCache::answering(answered(vec![
-        Json::Null,
-        Json::Null,
-        number(10),
-        number(30),
-    ]));
+    let cache = FakeCache::answered(vec![Json::Null, Json::Null, number(10), number(30)]);
     let metadata = FakeMetadata {
         answer: Some(group_info(None, Some(100), None, None)),
     };
@@ -57,7 +52,7 @@ fn remaining_rpm() {
 #[test]
 fn remaining_tpm() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(20), number(3)]));
+    let cache = FakeCache::answered(vec![number(20), number(3)]);
     let metadata = FakeMetadata {
         answer: Some(group_info(Some(50), None, None, None)),
     };
@@ -82,7 +77,7 @@ fn remaining_tpm() {
 #[test]
 fn input_output_usage() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(5), number(7)]));
+    let cache = FakeCache::answered(vec![number(5), number(7)]);
     let metadata = FakeMetadata {
         answer: Some(group_info(None, None, Some(40), Some(30))),
     };
@@ -118,7 +113,7 @@ fn input_output_usage() {
 #[test]
 fn missing_counter() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![Json::Null, Json::Null]));
+    let cache = FakeCache::answered(vec![Json::Null, Json::Null]);
     let metadata = FakeMetadata {
         answer: Some(group_info(Some(100), Some(10), None, None)),
     };
@@ -138,7 +133,7 @@ fn missing_counter() {
 #[test]
 fn io_and_standard_usage_are_read_separately_and_merged() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(5), number(7)]));
+    let cache = FakeCache::answered(vec![number(5), number(7)]);
     let metadata = FakeMetadata {
         answer: Some(group_info(Some(100), Some(50), Some(40), Some(30))),
     };
@@ -181,7 +176,7 @@ fn io_and_standard_usage_are_read_separately_and_merged() {
 #[test]
 fn ordinary_remaining_may_go_negative() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(25), Json::Null]));
+    let cache = FakeCache::answered(vec![number(25), Json::Null]);
     let metadata = FakeMetadata {
         answer: Some(group_info(Some(10), None, None, None)),
     };
@@ -200,7 +195,7 @@ fn ordinary_remaining_may_go_negative() {
 #[test]
 fn io_remaining_clamps_at_zero_and_the_reset_is_whole() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(25), Json::Null]));
+    let cache = FakeCache::answered(vec![number(25), Json::Null]);
     let metadata = FakeMetadata {
         answer: Some(group_info(None, None, Some(10), None)),
     };
@@ -249,7 +244,7 @@ fn no_group_or_limits_reads_no_counters(#[case] answer: Option<ModelGroupInfo>) 
 #[test]
 fn metadata_failure_precedes_the_counter_read() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(3), Json::Null]));
+    let cache = FakeCache::answered(vec![number(3), Json::Null]);
     let outcome = runtime().block_on(group_remaining_usage(
         "group",
         Some(&rows),

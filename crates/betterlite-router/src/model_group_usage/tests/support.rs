@@ -42,6 +42,10 @@ impl FakeCache {
         }
     }
 
+    pub(crate) fn answered(values: Vec<Json>) -> Self {
+        Self::answering(Some(values.into_iter().map(Some).collect()))
+    }
+
     pub(crate) fn failing() -> Self {
         Self {
             answer: Err(CacheFailure),
@@ -119,10 +123,6 @@ pub(crate) fn text(value: &str) -> Json {
 
 pub(crate) fn number(value: i64) -> Json {
     Json::Number(Number::from(value))
-}
-
-pub(crate) fn answered(values: Vec<Json>) -> Option<Vec<Option<Json>>> {
-    Some(values.into_iter().map(Some).collect())
 }
 
 pub(crate) fn float(value: f64) -> Json {

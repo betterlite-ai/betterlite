@@ -5,14 +5,14 @@ use crate::model_group_usage::response_headers::{ResponseHeadersRequest, set_res
 use crate::router_core::headers::Response;
 
 use super::support::{
-    FailingMetadata, FakeCache, FakeMetadata, answered, deployment, group_info, now, number,
-    object, runtime, text,
+    FailingMetadata, FakeCache, FakeMetadata, deployment, group_info, now, number, object, runtime,
+    text,
 };
 
 #[test]
 fn response_headers() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(3), Json::Null]));
+    let cache = FakeCache::answered(vec![number(3), Json::Null]);
     let metadata = FakeMetadata {
         answer: Some(group_info(Some(10), None, None, None)),
     };
@@ -120,7 +120,7 @@ fn model_id_skips_a_bucket_without_model_info() {
 #[test]
 fn existing_rate_limit_headers_win_over_the_remaining_usage() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(4), Json::Null]));
+    let cache = FakeCache::answered(vec![number(4), Json::Null]);
     let metadata = FakeMetadata {
         answer: Some(group_info(Some(100), None, None, None)),
     };
@@ -154,7 +154,7 @@ fn existing_rate_limit_headers_win_over_the_remaining_usage() {
 #[test]
 fn a_parsed_response_gets_the_headers_on_its_hidden_params() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(3), Json::Null]));
+    let cache = FakeCache::answered(vec![number(3), Json::Null]);
     let metadata = FakeMetadata {
         answer: Some(group_info(None, Some(10), None, None)),
     };
@@ -187,7 +187,7 @@ fn a_parsed_response_gets_the_headers_on_its_hidden_params() {
 #[test]
 fn the_stream_wrapper_comes_back_without_consuming_events() {
     let rows = [deployment("group", "a", "openai/gpt-4o")];
-    let cache = FakeCache::answering(answered(vec![number(3), Json::Null]));
+    let cache = FakeCache::answered(vec![number(3), Json::Null]);
     let metadata = FakeMetadata {
         answer: Some(group_info(None, Some(10), None, None)),
     };
