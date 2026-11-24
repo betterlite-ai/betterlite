@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_prefetch::permission::lookup::PermissionError;
@@ -17,8 +17,9 @@ use betterlite_auth::ui_session_identity::{UI_SESSION_TOKEN_TEAM_ID, UiSessionTe
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
-use serde_json::json;
-use tracing::subscriber::set_default;
+use serde::de::DeserializeOwned;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use super::VectorStoreAccess;
 use super::auth::{AuthContext, ObjectPermissionLookup};
@@ -159,12 +160,21 @@ async fn listable(
         .collect()
 }
 
+fn permission_object(object_permission_id: &str, stores: &[&str]) -> Json {
+    let allowed = stores.iter().copied().map(text).collect();
+    object(&[
+        ("object_permission_id", text(object_permission_id)),
+        ("vector_stores", Json::List(allowed)),
+    ])
+}
+
+fn wire<T: DeserializeOwned>(value: &Json) -> T {
+    let encoded = serde_json::to_string(value).unwrap();
+    serde_json::from_str(&encoded).unwrap()
+}
+
 fn permission_row(object_permission_id: &str, stores: &[&str]) -> LiteLLMObjectPermissionTable {
-    serde_json::from_value(json!({
-        "object_permission_id": object_permission_id,
-        "vector_stores": stores,
-    }))
-    .unwrap()
+    wire(&permission_object(object_permission_id, stores))
 }
 
 fn team_row(
@@ -172,14 +182,16 @@ fn team_row(
     permission_id: Option<&str>,
     inline: Option<(&str, &[&str])>,
 ) -> LiteLLMTeamTableCachedObj {
-    let permission =
-        inline.map(|(id, stores)| json!({"object_permission_id": id, "vector_stores": stores}));
-    serde_json::from_value(json!({
-        "team_id": team_id,
-        "object_permission_id": permission_id,
-        "object_permission": permission,
-    }))
-    .unwrap()
+    let permission = inline.map_or(Json::Null, |(id, stores)| permission_object(id, stores));
+    let fields = [
+        ("team_id", text(team_id)),
+        (
+            "object_permission_id",
+            permission_id.map_or(Json::Null, text),
+        ),
+        ("object_permission", permission),
+    ];
+    wire(&object(&fields))
 }
 
 fn text(value: &str) -> Json {
@@ -209,11 +221,13 @@ fn data_text(value: &str) -> JsonData {
 }
 
 fn data_permission(object_permission_id: &str, stores: &[&str]) -> JsonData {
-    serde_json::from_value(json!({
-        "object_permission_id": object_permission_id,
-        "vector_stores": stores,
-    }))
-    .unwrap()
+    data_object(&[
+        ("object_permission_id", data_text(object_permission_id)),
+        (
+            "vector_stores",
+            JsonData::Array(stores.iter().copied().map(data_text).collect()),
+        ),
+    ])
 }
 
 fn data_object(fields: &[(&str, JsonData)]) -> JsonData {
@@ -231,6 +245,31 @@ fn auth(fields: &[(&str, JsonData)]) -> UserAPIKeyAuth {
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect();
     UserAPIKeyAuth::construct(AuthInput::Dict(map)).unwrap()
+}
+
+fn dashboard_world() -> World {
+    let mut world = World::with_database();
+    world.user_teams = vec!["a".to_owned(), "b".to_owned()];
+    world.teams.insert(
+        "a".to_owned(),
+        team_row("a", None, Some(("a_perm", &["vs_a"]))),
+    );
+    world
+        .teams
+        .insert("b".to_owned(), team_row("b", Some("p_b"), None));
+    world
+}
+
+fn session_caller() -> UserAPIKeyAuth {
+    auth(&[
+        ("team_id", data_text(UI_SESSION_TOKEN_TEAM_ID)),
+        ("user_id", data_text("u1")),
+        ("object_permission", data_permission("p_key", &["vs_key"])),
+        (
+            "parent_otel_span",
+            data_object(&[("span_id", data_text("s1"))]),
+        ),
+    ])
 }
 
 fn assert_params_read_as_empty(raw: &str) {
@@ -255,9 +294,12 @@ impl Output {
 }
 
 impl Write for Output {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -265,12 +307,12 @@ impl Write for Output {
     }
 }
 
-fn capture_debug_logs() -> (Output, tracing::subscriber::DefaultGuard) {
+fn capture_debug_logs() -> (Output, DefaultGuard) {
     let output = Output(Arc::new(Mutex::new(Vec::new())));
     let writer = output.clone();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(move || writer.clone())
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(Level::DEBUG)
         .with_ansi(false)
         .finish();
     (output, set_default(subscriber))
@@ -305,11 +347,8 @@ fn parameter_string_normalization() {
     let absent = store(&[("vector_store_id", text("vs_a"))]);
     assert_eq!(normalize_litellm_params(&absent), absent);
     assert!(format!("{absent:?}").contains("litellm_params: \"absent\""));
-    let numeric = store(&[(
-        "litellm_params",
-        Json::Number(serde_json::Number::from(5_u64)),
-    )]);
-    assert_eq!(normalize_litellm_params(&numeric), numeric);
+    let flagged = store(&[("litellm_params", Json::Bool(true))]);
+    assert_eq!(normalize_litellm_params(&flagged), flagged);
 }
 
 #[test]
@@ -564,26 +603,10 @@ async fn proxy_admin_viewer_is_not_an_admin() {
 
 #[tokio::test]
 async fn dashboard_effective_teams() {
-    let mut world = World::with_database();
-    world.user_teams = vec!["a".to_owned(), "b".to_owned()];
-    world.teams.insert(
-        "a".to_owned(),
-        team_row("a", None, Some(("a_perm", &["vs_a"]))),
-    );
+    let mut world = dashboard_world();
     world.allow("p_b", &["vs_b"]);
-    world
-        .teams
-        .insert("b".to_owned(), team_row("b", Some("p_b"), None));
     let access = policy(&world);
-    let caller = auth(&[
-        ("team_id", data_text(UI_SESSION_TOKEN_TEAM_ID)),
-        ("user_id", data_text("u1")),
-        ("object_permission", data_permission("p_key", &["vs_key"])),
-        (
-            "parent_otel_span",
-            data_object(&[("span_id", data_text("s1"))]),
-        ),
-    ]);
+    let caller = session_caller();
     let stores = [
         store(&[("vector_store_id", text("vs_key")), ("team_id", text("t"))]),
         store(&[("vector_store_id", text("vs_a")), ("team_id", text("a"))]),
@@ -604,25 +627,9 @@ async fn dashboard_effective_teams() {
 
 #[tokio::test]
 async fn dashboard_contexts_clear_and_replace_team_fields() {
-    let mut world = World::with_database();
-    world.user_teams = vec!["a".to_owned(), "b".to_owned()];
-    world.teams.insert(
-        "a".to_owned(),
-        team_row("a", None, Some(("a_perm", &["vs_a"]))),
-    );
-    world
-        .teams
-        .insert("b".to_owned(), team_row("b", Some("p_b"), None));
+    let world = dashboard_world();
     let access = policy(&world);
-    let caller = auth(&[
-        ("team_id", data_text(UI_SESSION_TOKEN_TEAM_ID)),
-        ("user_id", data_text("u1")),
-        ("object_permission", data_permission("p_key", &["vs_key"])),
-        (
-            "parent_otel_span",
-            data_object(&[("span_id", data_text("s1"))]),
-        ),
-    ]);
+    let caller = session_caller();
     let contexts = access.vector_store_auth_contexts(&caller).await.unwrap();
     assert_eq!(contexts.len(), 3);
     assert_eq!(contexts[0].team_id, None);

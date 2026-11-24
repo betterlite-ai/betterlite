@@ -12,11 +12,10 @@ use super::decode::parse_params;
 pub struct ManagedVectorStore(pub BTreeMap<String, Json>);
 
 impl Debug for ManagedVectorStore {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // litellm_params carries a provider credential, so Debug names the fields and prints no value
         let names: Vec<&str> = self.0.keys().map(String::as_str).collect();
-        formatter
-            .debug_struct("ManagedVectorStore")
+        f.debug_struct("ManagedVectorStore")
             .field("fields", &names)
             .field("litellm_params", &self.params_kind())
             .finish()
@@ -45,6 +44,7 @@ impl ManagedVectorStore {
     }
 
     // the store's team id when stored as text, the only value a text auth team id can equal
+    #[must_use]
     pub fn team_id_text(&self) -> Option<&str> {
         match self.0.get("team_id") {
             Some(Json::Text(text)) => Some(text.as_str()),

@@ -16,6 +16,7 @@ pub enum VectorStoreAccessError {
 
 impl VectorStoreAccessError {
     // the HTTP status a route answers with, or None where the policy call raises no HTTPException
+    #[must_use]
     pub fn http(&self) -> Option<u16> {
         match self {
             Self::Team(error) => error.http().map(|(status, _detail)| status),

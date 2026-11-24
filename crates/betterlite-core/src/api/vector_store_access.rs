@@ -2,7 +2,6 @@ pub mod auth;
 pub mod decode;
 pub mod error;
 pub mod grants;
-pub mod listing;
 pub mod store;
 
 mod tests;

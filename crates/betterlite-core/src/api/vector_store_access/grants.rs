@@ -4,6 +4,7 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_auth::ui_session_identity::{
     UiSessionTeams, is_ui_session_credential, resolve_ui_session_team_ids,
 };
+use betterlite_auth::vector_index_admin::auth_is_proxy_admin;
 use betterlite_db::budget_permission_rows::LiteLLMObjectPermissionTable;
 
 use super::VectorStoreAccess;
@@ -17,15 +18,15 @@ pub(super) fn permission_lists_vector_store(
     object_permission: Option<&LiteLLMObjectPermissionTable>,
     vector_store_id: &str,
 ) -> bool {
-    let Some(object_permission) = object_permission else {
+    let Some(permission) = object_permission else {
         return false;
     };
-    match object_permission.vector_stores.0.as_deref() {
-        Some(allowed) => allowed
-            .iter()
-            .any(|entry| entry.as_str() == vector_store_id),
-        None => false,
-    }
+    let Some(allowed) = permission.vector_stores.0.as_deref() else {
+        return false;
+    };
+    allowed
+        .iter()
+        .any(|entry| entry.as_str() == vector_store_id)
 }
 
 impl<Permissions, Teams, SessionTeams> VectorStoreAccess<'_, Permissions, Teams, SessionTeams>
@@ -142,14 +143,52 @@ where
         object_permission_id: Option<&str>,
         vector_store_id: &str,
     ) -> bool {
-        match inline {
-            Some(permission) => permission_lists_vector_store(Some(permission), vector_store_id),
-            None => {
-                let loaded = self
-                    .get_object_permission_for_id(object_permission_id)
-                    .await;
-                permission_lists_vector_store(loaded.as_ref(), vector_store_id)
+        if let Some(permission) = inline {
+            return permission_lists_vector_store(Some(permission), vector_store_id);
+        }
+        let loaded = self
+            .get_object_permission_for_id(object_permission_id)
+            .await;
+        permission_lists_vector_store(loaded.as_ref(), vector_store_id)
+    }
+
+    // can_user_access_vector_store: admin, then a teamless store, then any effective context's grant
+    pub async fn can_user_access_vector_store(
+        &self,
+        vector_store: &ManagedVectorStore,
+        auth: &UserAPIKeyAuth,
+    ) -> Result<bool, VectorStoreAccessError> {
+        if auth_is_proxy_admin(auth) {
+            return Ok(true);
+        }
+        if vector_store.team_id_is_null_or_absent() {
+            return Ok(true);
+        }
+        let auth_contexts = self.vector_store_auth_contexts(auth).await?;
+        Ok(self
+            .is_vector_store_granted_to_any(vector_store, &auth_contexts)
+            .await)
+    }
+
+    // filter_listable_vector_stores: admins keep every store; anyone else keeps the granted ones in order
+    pub async fn filter_listable_vector_stores<'store>(
+        &self,
+        vector_stores: &'store [ManagedVectorStore],
+        auth: &UserAPIKeyAuth,
+    ) -> Result<Vec<&'store ManagedVectorStore>, VectorStoreAccessError> {
+        if auth_is_proxy_admin(auth) {
+            return Ok(vector_stores.iter().collect());
+        }
+        let auth_contexts = self.vector_store_auth_contexts(auth).await?;
+        let mut listable = Vec::new();
+        for vector_store in vector_stores {
+            if self
+                .is_vector_store_granted_to_any(vector_store, &auth_contexts)
+                .await
+            {
+                listable.push(vector_store);
             }
         }
+        Ok(listable)
     }
 }

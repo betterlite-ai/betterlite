@@ -34,10 +34,9 @@ pub struct AuthContext {
 }
 
 impl Debug for AuthContext {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // fields carries the credential's api key, so Debug prints ids and a count, never a field value
-        formatter
-            .debug_struct("AuthContext")
+        f.debug_struct("AuthContext")
             .field("team_id", &self.team_id)
             .field("object_permission", &self.object_permission)
             .field("object_permission_id", &self.object_permission_id)
@@ -90,19 +89,19 @@ impl AuthContext {
         let permission = team.team.fields.object_permission.clone();
         let permission_id = team.team.fields.object_permission_id.clone();
         self.team_id = Some(team_id.to_owned());
-        self.team_object_permission = permission.clone();
-        self.team_object_permission_id = permission_id.clone();
+        self.team_object_permission.clone_from(&permission);
+        self.team_object_permission_id.clone_from(&permission_id);
         self.fields
             .insert("team_id".to_owned(), JsonData::String(team_id.to_owned()));
         self.fields.insert(
             "team_object_permission_id".to_owned(),
-            optional_text(permission_id),
+            permission_id.map_or(JsonData::Null, JsonData::String),
         );
-        let permission = serde_json::to_value(permission)
+        let serialized = serde_json::to_value(permission)
             .and_then(serde_json::from_value)
             .map_err(VectorStoreAccessError::Fields)?;
         self.fields
-            .insert("team_object_permission".to_owned(), permission);
+            .insert("team_object_permission".to_owned(), serialized);
         Ok(self)
     }
 
@@ -116,12 +115,5 @@ impl AuthContext {
             .insert("team_object_permission".to_owned(), JsonData::Null);
         self.fields
             .insert("team_object_permission_id".to_owned(), JsonData::Null);
-    }
-}
-
-fn optional_text(value: Option<String>) -> JsonData {
-    match value {
-        Some(text) => JsonData::String(text),
-        None => JsonData::Null,
     }
 }
