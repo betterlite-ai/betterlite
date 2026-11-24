@@ -5,6 +5,7 @@ use rstest::rstest;
 use crate::gateway_dcr::models::{
     ConnectFlow, GatewayAuthCode, GatewayDcrClient, is_gateway_dcr_client_id,
 };
+use crate::gateway_dcr::sealed::Sealable;
 use crate::types::SessionAudience;
 
 const CLIENT_ONE_URI: &str =
@@ -24,24 +25,24 @@ fn flow(text: &str) -> ConnectFlow {
 
 #[test]
 fn gateway_dcr_client_accepts_one_and_four_redirect_uris() {
+    let one = client(CLIENT_ONE_URI);
     assert_eq!(
-        client(CLIENT_ONE_URI).redirect_uris,
+        one.redirect_uris,
         vec!["https://client.example/callback".to_owned()]
     );
+    assert!(one.acceptable());
     let four = r#"{"redirect_uris":["https://a.example/1","https://a.example/2","https://a.example/3","https://a.example/4"],"iat":7}"#;
     assert_eq!(client(four).redirect_uris.len(), 4);
     assert_eq!(client(four).iat, 7);
+    assert!(client(four).acceptable());
 }
 
 #[test]
-fn gateway_dcr_client_rejects_zero_and_five_redirect_uris() {
-    assert!(serde_json::from_str::<GatewayDcrClient>(r#"{"redirect_uris":[],"iat":1}"#).is_err());
-    assert!(
-        serde_json::from_str::<GatewayDcrClient>(
-            r#"{"redirect_uris":["https://a.example/1","https://a.example/2","https://a.example/3","https://a.example/4","https://a.example/5"],"iat":1}"#
-        )
-        .is_err()
-    );
+fn gateway_dcr_client_refuses_zero_and_five_redirect_uris_on_open() {
+    let none = client(r#"{"redirect_uris":[],"iat":1}"#);
+    assert!(!none.acceptable());
+    let five = r#"{"redirect_uris":["https://a.example/1","https://a.example/2","https://a.example/3","https://a.example/4","https://a.example/5"],"iat":1}"#;
+    assert!(!client(five).acceptable());
 }
 
 #[test]
@@ -73,6 +74,7 @@ fn gateway_auth_code_rejects_a_sealed_client_record() {
 fn connect_flow_keeps_an_empty_state() {
     let text = r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","state":"","code_challenge":"challenge-1","jti":"jti-1","exp":1700000600}"#;
     assert_eq!(flow(text).state, "");
+    assert!(flow(text).acceptable());
 }
 
 #[rstest]
@@ -92,7 +94,7 @@ fn connect_flow_keeps_an_empty_state() {
     r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","state":"s","code_challenge":"c","jti":"","exp":1}"#
 )]
 fn connect_flow_rejects_empty_required_fields(#[case] text: &str) {
-    assert!(serde_json::from_str::<ConnectFlow>(text).is_err());
+    assert!(!flow(text).acceptable());
 }
 
 #[test]
@@ -131,8 +133,17 @@ fn gateway_auth_code_reads_and_writes_the_optional_fields() {
 }
 
 #[test]
-fn gateway_auth_code_rejects_empty_required_fields_and_unknown_keys() {
-    assert!(serde_json::from_str::<GatewayAuthCode>(r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"","jti":"jti-1","iat":1,"exp":2}"#).is_err());
+fn gateway_auth_code_refuses_empty_required_fields_on_open() {
+    let empty_challenge = r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"","jti":"jti-1","iat":1,"exp":2}"#;
+    let opened: GatewayAuthCode = serde_json::from_str(empty_challenge).unwrap();
+    assert!(!opened.acceptable());
+    let complete = r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"c","jti":"jti-1","iat":1,"exp":2}"#;
+    let opened: GatewayAuthCode = serde_json::from_str(complete).unwrap();
+    assert!(opened.acceptable());
+}
+
+#[test]
+fn gateway_auth_code_rejects_unknown_keys() {
     assert!(serde_json::from_str::<GatewayAuthCode>(r#"{"user_id":"user-1","client_id":"llm_dcrc_client","redirect_uri":"https://client.example/callback","code_challenge":"c","jti":"jti-1","iat":1,"exp":2,"redirect_uris":[]}"#).is_err());
 }
 

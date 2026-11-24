@@ -61,11 +61,7 @@ impl ClaimBackend for CountingBackend {
         &self,
         key: &str,
     ) -> impl Future<Output = Result<Option<u64>, ClaimBackendError>> + Send {
-        let count = {
-            let counts = self.counts.lock().unwrap();
-            counts.get(key).copied()
-        };
-        ready(Ok(count))
+        ready(Ok(self.counts.lock().unwrap().get(key).copied()))
     }
 }
 

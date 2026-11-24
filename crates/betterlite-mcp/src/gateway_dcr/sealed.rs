@@ -37,10 +37,15 @@ where
     Ok(format!("{prefix}{}", text.expose_secret()))
 }
 
+pub trait Sealable: DeserializeOwned {
+    #[must_use]
+    fn acceptable(&self) -> bool;
+}
+
 #[must_use]
 pub fn open_sealed<T>(value: &str, prefix: &str, cipher: &DbCipher, debug_key: &str) -> Option<T>
 where
-    T: DeserializeOwned,
+    T: Sealable,
 {
     let ciphertext = value.strip_prefix(prefix)?;
     let stored = StoredValue::<Infallible>::Text(SecretString::from(ciphertext.to_owned()));
@@ -56,7 +61,8 @@ where
         StoredValue::Text(text) => text,
         StoredValue::Other(never) => match never {},
     };
-    serde_json::from_str(text.expose_secret()).ok()
+    let opened: T = serde_json::from_str(text.expose_secret()).ok()?;
+    opened.acceptable().then_some(opened)
 }
 
 #[must_use]

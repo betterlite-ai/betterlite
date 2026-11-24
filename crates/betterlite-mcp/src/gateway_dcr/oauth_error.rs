@@ -1,11 +1,11 @@
 mod tests;
 
 use serde::Serialize;
-use strum::Display;
+use strum::{Display, IntoStaticStr};
 
 use crate::oauth_resource::challenge::TOKEN_NO_CACHE_HEADERS;
 
-#[derive(Clone, Copy, Debug, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Display, Eq, IntoStaticStr, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum OauthErrorCode {
@@ -25,24 +25,10 @@ pub enum OauthErrorCode {
 
 impl OauthErrorCode {
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::InvalidRequest => "invalid_request",
-            Self::InvalidClient => "invalid_client",
-            Self::InvalidGrant => "invalid_grant",
-            Self::InvalidTarget => "invalid_target",
-            Self::InvalidRedirectUri => "invalid_redirect_uri",
-            Self::InvalidClientMetadata => "invalid_client_metadata",
-            Self::UnsupportedResponseType => "unsupported_response_type",
-            Self::UnsupportedGrantType => "unsupported_grant_type",
-            Self::AccessDenied => "access_denied",
-            Self::LoginRequired => "login_required",
-            Self::TemporarilyUnavailable => "temporarily_unavailable",
-            Self::ServerError => "server_error",
-        }
+    pub fn as_str(self) -> &'static str {
+        <&'static str>::from(self)
     }
 }
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OauthError {
     pub status: u16,

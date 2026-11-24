@@ -59,14 +59,9 @@ fn cipher() -> DbCipher {
 }
 
 fn cipher_without_a_key() -> DbCipher {
-    StoredCipher {
-        settings: CipherSettings {
-            signing_key: None,
-            algorithm: Algorithm::XSalsa20Poly1305,
-        },
-        nonces: OsNonces,
-        diagnostics: TracingDiagnostics,
-    }
+    let mut cipher = cipher();
+    cipher.settings.signing_key = None;
+    cipher
 }
 
 fn client() -> GatewayDcrClient {

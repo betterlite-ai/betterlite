@@ -1,49 +1,26 @@
 mod tests;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::gateway_dcr::contracts::{GATEWAY_DCR_CLIENT_ID_PREFIX, MAX_REDIRECT_URIS};
+use crate::gateway_dcr::sealed::Sealable;
 use crate::types::SessionAudience;
 
-#[derive(Debug, Error, Eq, PartialEq)]
-pub enum ModelError {
-    #[error("the sealed DCR client must carry 1 to 4 redirect URIs")]
-    RedirectUriCount,
-    #[error("a required field of the sealed value is empty")]
-    EmptyField,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, try_from = "GatewayDcrClientPayload")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GatewayDcrClient {
     pub redirect_uris: Vec<String>,
     pub iat: i64,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GatewayDcrClientPayload {
-    redirect_uris: Vec<String>,
-    iat: i64,
-}
-
-impl TryFrom<GatewayDcrClientPayload> for GatewayDcrClient {
-    type Error = ModelError;
-
-    fn try_from(payload: GatewayDcrClientPayload) -> Result<Self, Self::Error> {
-        if payload.redirect_uris.is_empty() || payload.redirect_uris.len() > MAX_REDIRECT_URIS {
-            return Err(ModelError::RedirectUriCount);
-        }
-        Ok(Self {
-            redirect_uris: payload.redirect_uris,
-            iat: payload.iat,
-        })
+impl Sealable for GatewayDcrClient {
+    fn acceptable(&self) -> bool {
+        !self.redirect_uris.is_empty() && self.redirect_uris.len() <= MAX_REDIRECT_URIS
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, try_from = "ConnectFlowPayload")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConnectFlow {
     pub user_id: String,
     pub client_id: String,
@@ -58,48 +35,18 @@ pub struct ConnectFlow {
     pub audience: Option<SessionAudience>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ConnectFlowPayload {
-    user_id: String,
-    client_id: String,
-    redirect_uri: String,
-    state: String,
-    code_challenge: String,
-    jti: String,
-    exp: i64,
-    resource_server_id: Option<String>,
-    audience: Option<SessionAudience>,
-}
-
-impl TryFrom<ConnectFlowPayload> for ConnectFlow {
-    type Error = ModelError;
-
-    fn try_from(payload: ConnectFlowPayload) -> Result<Self, Self::Error> {
-        if payload.user_id.is_empty()
-            || payload.client_id.is_empty()
-            || payload.redirect_uri.is_empty()
-            || payload.code_challenge.is_empty()
-            || payload.jti.is_empty()
-        {
-            return Err(ModelError::EmptyField);
-        }
-        Ok(Self {
-            user_id: payload.user_id,
-            client_id: payload.client_id,
-            redirect_uri: payload.redirect_uri,
-            state: payload.state,
-            code_challenge: payload.code_challenge,
-            jti: payload.jti,
-            exp: payload.exp,
-            resource_server_id: payload.resource_server_id,
-            audience: payload.audience,
-        })
+impl Sealable for ConnectFlow {
+    fn acceptable(&self) -> bool {
+        !self.user_id.is_empty()
+            && !self.client_id.is_empty()
+            && !self.redirect_uri.is_empty()
+            && !self.code_challenge.is_empty()
+            && !self.jti.is_empty()
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, try_from = "GatewayAuthCodePayload")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GatewayAuthCode {
     pub user_id: String,
     pub client_id: String,
@@ -116,45 +63,13 @@ pub struct GatewayAuthCode {
     pub team_id: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GatewayAuthCodePayload {
-    user_id: String,
-    client_id: String,
-    redirect_uri: String,
-    code_challenge: String,
-    jti: String,
-    iat: i64,
-    exp: i64,
-    resource_server_id: Option<String>,
-    audience: Option<SessionAudience>,
-    team_id: Option<String>,
-}
-
-impl TryFrom<GatewayAuthCodePayload> for GatewayAuthCode {
-    type Error = ModelError;
-
-    fn try_from(payload: GatewayAuthCodePayload) -> Result<Self, Self::Error> {
-        if payload.user_id.is_empty()
-            || payload.client_id.is_empty()
-            || payload.redirect_uri.is_empty()
-            || payload.code_challenge.is_empty()
-            || payload.jti.is_empty()
-        {
-            return Err(ModelError::EmptyField);
-        }
-        Ok(Self {
-            user_id: payload.user_id,
-            client_id: payload.client_id,
-            redirect_uri: payload.redirect_uri,
-            code_challenge: payload.code_challenge,
-            jti: payload.jti,
-            iat: payload.iat,
-            exp: payload.exp,
-            resource_server_id: payload.resource_server_id,
-            audience: payload.audience,
-            team_id: payload.team_id,
-        })
+impl Sealable for GatewayAuthCode {
+    fn acceptable(&self) -> bool {
+        !self.user_id.is_empty()
+            && !self.client_id.is_empty()
+            && !self.redirect_uri.is_empty()
+            && !self.code_challenge.is_empty()
+            && !self.jti.is_empty()
     }
 }
 

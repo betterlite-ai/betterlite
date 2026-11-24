@@ -77,11 +77,11 @@ pub fn register_aggregate_client(
 ) -> Registration {
     let redirect_uris = match redirect_uris_from(body) {
         Ok(redirect_uris) => redirect_uris,
-        Err(refusal) => return refused(refusal),
+        Err(refusal) => return refused(&refusal),
     };
     for uri in &redirect_uris {
         if let Err(refusal) = check_redirect_uri(uri, native_callbacks) {
-            return refused(refusal);
+            return refused(&refusal);
         }
     }
     let issued_at = now.timestamp();
@@ -89,15 +89,21 @@ pub fn register_aggregate_client(
         redirect_uris: redirect_uris.clone(),
         iat: issued_at,
     };
-    match seal(GATEWAY_DCR_CLIENT_ID_PREFIX, &client, cipher) {
-        Ok(client_id) => registered(
-            client_id,
-            issued_at,
-            redirect_uris,
-            token_exchange_available,
-        ),
-        Err(error) => refused(RegistrationRefusal::SealFailed(error)),
+    let client_id = match seal(GATEWAY_DCR_CLIENT_ID_PREFIX, &client, cipher) {
+        Ok(client_id) => client_id,
+        Err(error) => return refused(&RegistrationRefusal::SealFailed(error)),
+    };
+    if client_id.chars().count() > MAX_CLIENT_ID_LENGTH {
+        return refused(&RegistrationRefusal::MetadataTooLarge);
     }
+    Registration::Registered(RegisteredClient {
+        client_id,
+        client_id_issued_at: issued_at,
+        redirect_uris,
+        token_endpoint_auth_method: "none",
+        grant_types: supported_grant_types(token_exchange_available),
+        response_types: ["code"],
+    })
 }
 
 fn redirect_uris_from(
@@ -137,27 +143,8 @@ fn check_redirect_uri(uri: &str, native_callbacks: &[String]) -> Result<(), Regi
     Err(RegistrationRefusal::RedirectUriScheme)
 }
 
-fn registered(
-    client_id: String,
-    issued_at: i64,
-    redirect_uris: Vec<String>,
-    token_exchange_available: bool,
-) -> Registration {
-    if client_id.chars().count() > MAX_CLIENT_ID_LENGTH {
-        return refused(RegistrationRefusal::MetadataTooLarge);
-    }
-    Registration::Registered(RegisteredClient {
-        client_id,
-        client_id_issued_at: issued_at,
-        redirect_uris,
-        token_endpoint_auth_method: "none",
-        grant_types: supported_grant_types(token_exchange_available),
-        response_types: ["code"],
-    })
-}
-
-fn refused(refusal: RegistrationRefusal) -> Registration {
-    let (status, error) = match &refusal {
+fn refused(refusal: &RegistrationRefusal) -> Registration {
+    let (status, error) = match refusal {
         RegistrationRefusal::MetadataTooLarge => (400, OauthErrorCode::InvalidClientMetadata),
         RegistrationRefusal::SealFailed(_) => (500, OauthErrorCode::ServerError),
         RegistrationRefusal::RedirectUrisList

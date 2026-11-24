@@ -22,14 +22,12 @@ pub enum ClaimOutcome {
     Replayed,
     Unavailable,
 }
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PeekOutcome {
     Unclaimed,
     Claimed,
     Unavailable,
 }
-
 #[derive(Debug, Error)]
 #[error("the single-use claim backend is unavailable")]
 pub struct ClaimBackendError;
@@ -129,43 +127,43 @@ impl<S: ClaimBackend> From<ClaimAuthority<S>> for SingleUseGuard<S> {
 impl<S: ClaimBackend> SingleUseGuard<S> {
     #[must_use]
     pub async fn claim(&self, key: &str, ttl_seconds: i64) -> ClaimOutcome {
-        match &self.authority {
-            ClaimAuthority::Shared(backend) => match backend.increment(key, ttl_seconds).await {
-                Ok(1) => ClaimOutcome::First,
-                Ok(_count) => ClaimOutcome::Replayed,
-                Err(error) => {
-                    warn!(
-                        error = %error,
-                        "mcp gateway single-use claim: shared cache backend unavailable, failing closed"
-                    );
-                    ClaimOutcome::Unavailable
-                }
-            },
-            ClaimAuthority::Local(store) => match store.increment(key, ttl_seconds) {
-                1 => ClaimOutcome::First,
-                _count => ClaimOutcome::Replayed,
-            },
-        }
+        let counted = match &self.authority {
+            ClaimAuthority::Shared(backend) => backend.increment(key, ttl_seconds).await,
+            ClaimAuthority::Local(store) => Ok(store.increment(key, ttl_seconds)),
+        };
+        claimed(counted)
     }
 
     #[must_use]
     pub async fn peek(&self, key: &str) -> PeekOutcome {
-        match &self.authority {
-            ClaimAuthority::Shared(backend) => match backend.read(key).await {
-                Ok(None) => PeekOutcome::Unclaimed,
-                Ok(Some(_count)) => PeekOutcome::Claimed,
-                Err(error) => {
-                    warn!(
-                        error = %error,
-                        "mcp gateway single-use peek: shared cache backend unavailable"
-                    );
-                    PeekOutcome::Unavailable
-                }
-            },
-            ClaimAuthority::Local(store) => match store.read(key) {
-                Some(_count) => PeekOutcome::Claimed,
-                None => PeekOutcome::Unclaimed,
-            },
+        let count = match &self.authority {
+            ClaimAuthority::Shared(backend) => backend.read(key).await,
+            ClaimAuthority::Local(store) => Ok(store.read(key)),
+        };
+        match count {
+            Ok(Some(_count)) => PeekOutcome::Claimed,
+            Ok(None) => PeekOutcome::Unclaimed,
+            Err(error) => {
+                warn!(
+                    error = %error,
+                    "mcp gateway single-use peek: shared cache backend unavailable"
+                );
+                PeekOutcome::Unavailable
+            }
+        }
+    }
+}
+
+fn claimed(counted: Result<u64, ClaimBackendError>) -> ClaimOutcome {
+    match counted {
+        Ok(1) => ClaimOutcome::First,
+        Ok(_count) => ClaimOutcome::Replayed,
+        Err(error) => {
+            warn!(
+                error = %error,
+                "mcp gateway single-use claim: shared cache backend unavailable, failing closed"
+            );
+            ClaimOutcome::Unavailable
         }
     }
 }

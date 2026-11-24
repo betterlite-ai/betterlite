@@ -80,7 +80,6 @@ pub trait LookupConsentTeams: Send + Sync {
 }
 
 pub struct RefuseProxyCredential;
-
 impl MintProxyCredential for RefuseProxyCredential {
     fn mint(
         &self,
@@ -93,7 +92,6 @@ impl MintProxyCredential for RefuseProxyCredential {
 }
 
 pub struct RefuseSubjectToken;
-
 impl<Context> ExchangeSubjectToken<Context> for RefuseSubjectToken {
     fn exchange(
         &self,
@@ -108,7 +106,6 @@ impl<Context> ExchangeSubjectToken<Context> for RefuseSubjectToken {
 }
 
 pub struct UnavailableVendorCredential;
-
 impl LookupVendorCredential for UnavailableVendorCredential {
     fn lookup(
         &self,
