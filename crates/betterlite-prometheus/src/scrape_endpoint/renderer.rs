@@ -44,11 +44,14 @@ impl CoalescedScrapeRenderer {
     }
 
     pub async fn render(&self, request: ScrapeRequest) -> Result<Bytes, ScrapeRenderError> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        poll_finished(&mut state.tasks);
-        let pending = running_render(&mut state, &self.registry, &self.state, &request);
-        drop(state);
-        pending.await
+        let running = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            poll_finished(&mut state.tasks);
+            let pending = running_render(&mut state, &self.registry, &self.state, &request);
+            drop(state);
+            pending
+        };
+        running.await
     }
 }
 
