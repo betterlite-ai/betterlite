@@ -42,6 +42,14 @@ deviations:
       repeated once per item, as httpx does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L540-L546
   - what: >-
+      A 2xx upstream body that is not valid UTF-8 fails with OpenApiToolError::BodyText instead of
+      becoming tool text.
+    why: >-
+      LiteLLM reads response.text, which decodes through the Content-Type charset and replaces
+      undecodable bytes with U+FFFD. This module does not implement other charsets, and a tool
+      result must not silently carry substituted characters, so it reports the failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L592
+  - what: >-
       A servers entry without a url contributes an empty base URL.
     why: >-
       LiteLLM raises KeyError on servers[0]["url"], so a document it cannot load has no behavior to
