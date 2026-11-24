@@ -110,30 +110,29 @@ async fn team_customer_rows_need_both_filters_and_keep_the_window() {
     let GlobalReport::TeamsCustomers(days) = report(&store, branch, 2).await else {
         panic!("the team and customer branch answers teams_customers rows");
     };
-    let shape: Vec<(&str, Vec<(&str, &str, String)>)> = days
+    let shape: Vec<(&str, &str, &str, String)> = days
         .iter()
-        .map(|day| {
-            let groups = day
-                .teams_customers
-                .iter()
-                .map(|group| {
-                    let spend = group.total_spend.to_string();
-                    (group.team_name.as_str(), group.customer.as_str(), spend)
-                })
-                .collect();
-            (day.group_by_day.as_str(), groups)
+        .flat_map(|day| {
+            day.teams_customers.iter().map(move |group| {
+                let spend = group.total_spend.to_string();
+                (
+                    day.group_by_day.as_str(),
+                    group.team_name.as_str(),
+                    group.customer.as_str(),
+                    spend,
+                )
+            })
         })
         .collect();
     assert_eq!(
         shape,
         vec![
-            (
-                "2024-01-01T00:00:00.000Z",
-                vec![("Alpha", "c1", String::from("3"))]
-            ),
+            ("2024-01-01T00:00:00.000Z", "Alpha", "c1", String::from("3")),
             (
                 "2024-01-02T00:00:00.000Z",
-                vec![("Alpha", "c1", String::from("16"))]
+                "Alpha",
+                "c1",
+                String::from("16")
             ),
         ]
     );
