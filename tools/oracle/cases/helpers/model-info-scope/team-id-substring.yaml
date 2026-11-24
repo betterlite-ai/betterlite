@@ -1,0 +1,28 @@
+kind: helper
+name: model-info-scope-team-id-substring
+call:
+  model_info_scope:
+    function: team_models
+    model_list:
+      - model_name: gpt-4o
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: g1}
+      - model_name: beta-gpt
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: t2, team_id: team-beta}
+      - model_name: alpha-gpt
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: t3, team_id: alpha}
+    model_group_alias: {}
+    user: null
+    teams:
+      - {team_id: team-alpha, models: []}
+    user_teams: "*"
+    access_groups: []
+    creators: {}
+    all_models: []
+    grant: []
+    key_models: []
+    caller: null
+env: {}
+compare: {ignore: []}
