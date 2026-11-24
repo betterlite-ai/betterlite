@@ -15,6 +15,19 @@ fn kinds_name_themselves_as_litellm_config_types() {
 }
 
 #[test]
+fn kinds_deserialize_from_litellm_config_type_names() {
+    let vault: OverrideKind = serde_json::from_value(json!("hashicorp_vault")).unwrap();
+    let cyberark: OverrideKind = serde_json::from_value(json!("cyberark")).unwrap();
+    assert_eq!(vault, OverrideKind::HashicorpVault);
+    assert_eq!(cyberark, OverrideKind::CyberArk);
+    assert_eq!(
+        serde_json::to_value(OverrideKind::CyberArk).unwrap(),
+        json!("cyberark")
+    );
+    serde_json::from_value::<OverrideKind>(json!("cyber_ark")).unwrap_err();
+}
+
+#[test]
 fn schema_reports_the_model_description_and_first_non_null_type() {
     let schema = field_schema(OverrideKind::CyberArk);
     assert_eq!(

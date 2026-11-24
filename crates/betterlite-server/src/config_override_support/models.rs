@@ -7,10 +7,11 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
 pub enum OverrideKind {
+    #[serde(rename = "hashicorp_vault")]
     #[strum(serialize = "hashicorp_vault")]
     HashicorpVault,
+    #[serde(rename = "cyberark")]
     #[strum(serialize = "cyberark")]
     CyberArk,
 }

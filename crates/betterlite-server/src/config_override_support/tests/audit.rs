@@ -65,7 +65,7 @@ fn entry() -> OverrideAuditEntry<'static> {
     }
 }
 
-fn snapshot(value: &Option<JsonValue>) -> JsonValue {
+fn snapshot(value: Option<&JsonValue>) -> JsonValue {
     match value {
         Some(JsonValue::String(text)) => serde_json::from_str(text).unwrap(),
         other => panic!("the audit snapshot is not JSON text: {other:?}"),
@@ -108,14 +108,14 @@ fn redacts_every_value_and_keeps_the_keys() {
         DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").unwrap()
     );
     assert_eq!(
-        snapshot(&record.before_value),
+        snapshot(record.before_value.as_ref()),
         json!({"config": {
             "vault_addr": AUDIT_REDACTED,
             "vault_token": AUDIT_REDACTED
         }})
     );
     assert_eq!(
-        snapshot(&record.updated_values),
+        snapshot(record.updated_values.as_ref()),
         json!({"config": {"vault_token": AUDIT_REDACTED}})
     );
 }
@@ -139,8 +139,14 @@ fn an_empty_or_missing_snapshot_is_an_empty_config() {
         },
     );
     let records = audit.records.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(snapshot(&records[0].before_value), json!({"config": {}}));
-    assert_eq!(snapshot(&records[0].updated_values), json!({"config": {}}));
+    assert_eq!(
+        snapshot(records[0].before_value.as_ref()),
+        json!({"config": {}})
+    );
+    assert_eq!(
+        snapshot(records[0].updated_values.as_ref()),
+        json!({"config": {}})
+    );
     assert_eq!(records[0].changed_by, None);
 }
 
