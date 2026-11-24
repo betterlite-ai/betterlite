@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::helper::Helper as _;
