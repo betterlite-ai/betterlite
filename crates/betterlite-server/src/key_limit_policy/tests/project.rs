@@ -14,14 +14,13 @@ fn stored(models: &str, budget: &str) -> CachedProject {
 }
 
 async fn check(reads: &FakeReads, request: &str) -> Result<(), KeyLimitError> {
-    let request = generate(request);
-    check_project_key_limits("proj-1", &KeyLimitRequest::from(&request), reads).await
+    let parsed = generate(request);
+    check_project_key_limits("proj-1", &KeyLimitRequest::from(&parsed), reads).await
 }
 
 #[tokio::test]
 async fn project_budget_ceiling() {
-    let mut reads = FakeReads::default();
-    reads.project = Some(stored(
+    let reads = FakeReads::default().with_project(stored(
         "[]",
         r#"{"budget_id": "budget-1", "max_budget": 10}"#,
     ));
@@ -31,17 +30,16 @@ async fn project_budget_ceiling() {
         "Key max_budget (11) exceeds project's max_budget (10). Project: proj-1"
     );
     check(&reads, r#"{"max_budget": 10}"#).await.unwrap();
-    let rejection = rejected(check(&reads, r#"{"max_budget": 10.5}"#).await);
+    let fractional_rejection = rejected(check(&reads, r#"{"max_budget": 10.5}"#).await);
     assert_eq!(
-        error_text(&rejection),
+        error_text(&fractional_rejection),
         "Key max_budget (10.5) exceeds project's max_budget (10). Project: proj-1"
     );
 }
 
 #[tokio::test]
 async fn project_budget_absent() {
-    let mut reads = FakeReads::default();
-    reads.project = Some(stored(
+    let mut reads = FakeReads::default().with_project(stored(
         "[]",
         r#"{"budget_id": "budget-1", "max_budget": null}"#,
     ));
@@ -68,16 +66,14 @@ async fn project_missing() {
 
 #[tokio::test]
 async fn project_empty_models() {
-    let mut reads = FakeReads::default();
-    reads.project = Some(stored("[]", "null"));
+    let reads = FakeReads::default().with_project(stored("[]", "null"));
     check(&reads, r#"{"models": ["anything"]}"#).await.unwrap();
     check(&reads, r#"{"models": [42]}"#).await.unwrap();
 }
 
 #[tokio::test]
 async fn project_model_subset() {
-    let mut reads = FakeReads::default();
-    reads.project = Some(stored(r#"["gpt-4"]"#, "null"));
+    let reads = FakeReads::default().with_project(stored(r#"["gpt-4"]"#, "null"));
     check(
         &reads,
         r#"{"models": ["gpt-4", "all-team-models", "all-proxy-models"]}"#,
@@ -93,33 +89,38 @@ async fn project_model_subset() {
 
 #[tokio::test]
 async fn project_model_order() {
-    let mut reads = FakeReads::default();
-    reads.project = Some(stored(r#"["gpt-4"]"#, "null"));
+    let reads = FakeReads::default().with_project(stored(r#"["gpt-4"]"#, "null"));
     let rejection = rejected(check(&reads, r#"{"models": ["z-model", "a-model"]}"#).await);
     match rejection {
         Rejection::ProjectModel { model, .. } => {
             assert_eq!(model, JsonData::String("z-model".to_owned()));
         }
-        other => panic!("expected a project model rejection, got {other:?}"),
+        other @ Rejection::NonFinite { .. }
+        | other @ Rejection::Upperbound { .. }
+        | other @ Rejection::Allocation { .. }
+        | other @ Rejection::ProjectNotFound { .. }
+        | other @ Rejection::ProjectBudget { .. }
+        | other @ Rejection::AssignWithoutUser
+        | other @ Rejection::NotMember { .. } => {
+            panic!("expected a project model rejection, got {other:?}")
+        }
     }
-    let rejection = rejected(check(&reads, r#"{"models": [42]}"#).await);
-    assert!(matches!(rejection, Rejection::ProjectModel { .. }));
+    let non_string = rejected(check(&reads, r#"{"models": [42]}"#).await);
+    assert!(matches!(non_string, Rejection::ProjectModel { .. }));
 }
 
 #[tokio::test]
 async fn project_model_non_string_entry() {
-    let mut reads = FakeReads::default();
-    reads.project = Some(stored(r#"["gpt-4"]"#, "null"));
+    let reads = FakeReads::default().with_project(stored(r#"["gpt-4"]"#, "null"));
     let rejection = rejected(check(&reads, r#"{"models": [["gpt-4"]]}"#).await);
     assert!(matches!(rejection, Rejection::ProjectModel { .. }));
-    let rejection = rejected(check(&reads, r#"{"models": [{"name": "gpt-4"}]}"#).await);
-    assert!(matches!(rejection, Rejection::ProjectModel { .. }));
+    let object_entry = rejected(check(&reads, r#"{"models": [{"name": "gpt-4"}]}"#).await);
+    assert!(matches!(object_entry, Rejection::ProjectModel { .. }));
 }
 
 #[tokio::test]
 async fn project_model_before_budget() {
-    let mut reads = FakeReads::default();
-    reads.project = Some(stored(
+    let reads = FakeReads::default().with_project(stored(
         r#"["gpt-4"]"#,
         r#"{"budget_id": "budget-1", "max_budget": 10}"#,
     ));

@@ -23,8 +23,9 @@ async fn org_model_limits() {
     let request = generate(
         r#"{"tpm_limit_type": "guaranteed_throughput", "model_rpm_limit": {"gpt-4": 15}}"#,
     );
-    let mut reads = FakeReads::default();
-    reads.keys = keys(r#"[{"token": "k1", "metadata": {"model_rpm_limit": {"gpt-4": 6}}}]"#);
+    let reads = FakeReads::default().with_keys(keys(
+        r#"[{"token": "k1", "metadata": {"model_rpm_limit": {"gpt-4": 6}}}]"#,
+    ));
     let result =
         check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
@@ -39,8 +40,7 @@ async fn org_type_metadata() {
     let organization = org("{}", r#"{"budget_id": "budget-1", "rpm_limit": 10}"#);
     let request =
         generate(r#"{"rpm_limit": 10, "metadata": {"rpm_limit_type": "guaranteed_throughput"}}"#);
-    let mut reads = FakeReads::default();
-    reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 10}]"#);
+    let reads = FakeReads::default().with_keys(keys(r#"[{"token": "k1", "rpm_limit": 10}]"#));
     let result =
         check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
@@ -57,8 +57,7 @@ async fn org_table_metadata_type_ignored() {
         r#"{"budget_id": "budget-1", "rpm_limit": 1}"#,
     );
     let request = generate(r#"{"rpm_limit": 100}"#);
-    let mut reads = FakeReads::default();
-    reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
+    let reads = FakeReads::default().with_keys(keys(r#"[{"token": "k1", "rpm_limit": 100}]"#));
     check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
@@ -72,8 +71,7 @@ async fn org_declared_type_wins() {
         r#"{"budget_id": "budget-1", "rpm_limit": 1}"#,
     );
     let request = generate(r#"{"rpm_limit_type": "best_effort_throughput", "rpm_limit": 100}"#);
-    let mut reads = FakeReads::default();
-    reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
+    let reads = FakeReads::default().with_keys(keys(r#"[{"token": "k1", "rpm_limit": 100}]"#));
     check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
@@ -86,8 +84,7 @@ async fn org_missing_budget() {
     let request = generate(
         r#"{"tpm_limit_type": "guaranteed_throughput", "tpm_limit": 1000, "rpm_limit": 1000}"#,
     );
-    let mut reads = FakeReads::default();
-    reads.keys = keys(r#"[{"token": "k1", "rpm_limit": 100}]"#);
+    let reads = FakeReads::default().with_keys(keys(r#"[{"token": "k1", "rpm_limit": 100}]"#));
     check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
@@ -98,8 +95,9 @@ async fn org_metadata_models() {
     let organization = org(r#"{"model_tpm_limit": {"gpt-4": 5}}"#, "null");
     let request =
         generate(r#"{"rpm_limit_type": "guaranteed_throughput", "model_tpm_limit": {"gpt-4": 4}}"#);
-    let mut reads = FakeReads::default();
-    reads.keys = keys(r#"[{"token": "k1", "metadata": {"model_tpm_limit": {"gpt-4": 2}}}]"#);
+    let reads = FakeReads::default().with_keys(keys(
+        r#"[{"token": "k1", "metadata": {"model_tpm_limit": {"gpt-4": 2}}}]"#,
+    ));
     let result =
         check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(
@@ -114,10 +112,9 @@ async fn org_update_excludes_self() {
     let organization = org("{}", r#"{"budget_id": "budget-1", "rpm_limit": 10}"#);
     let request =
         update(r#"{"key": "sk-abc", "rpm_limit_type": "guaranteed_throughput", "rpm_limit": 10}"#);
-    let mut reads = FakeReads::default();
-    reads.keys = keys(&format!(
+    let reads = FakeReads::default().with_keys(keys(&format!(
         r#"[{{"token": "{hashed}", "rpm_limit": 10}}, {{"token": "k2", "rpm_limit": 0}}]"#
-    ));
+    )));
     check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads)
         .await
         .unwrap();
@@ -142,9 +139,9 @@ async fn org_model_before_scalar() {
     let request = generate(
         r#"{"rpm_limit_type": "guaranteed_throughput", "rpm_limit": 10, "model_rpm_limit": {"gpt-4": 6}}"#,
     );
-    let mut reads = FakeReads::default();
-    reads.keys =
-        keys(r#"[{"token": "k1", "rpm_limit": 5, "metadata": {"model_rpm_limit": {"gpt-4": 5}}}]"#);
+    let reads = FakeReads::default().with_keys(keys(
+        r#"[{"token": "k1", "rpm_limit": 5, "metadata": {"model_rpm_limit": {"gpt-4": 5}}}]"#,
+    ));
     let result =
         check_org_key_limits(&organization, &KeyLimitRequest::from(&request), &reads).await;
     assert_eq!(

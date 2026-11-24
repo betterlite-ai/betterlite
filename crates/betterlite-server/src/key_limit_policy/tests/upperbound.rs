@@ -25,7 +25,7 @@ fn upperbound_key_param() {
         &time(&database),
     )
     .unwrap();
-    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(3))));
+    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(3_i32))));
     assert_eq!(values.max_parallel_requests, Some(4));
     assert_eq!(values.tpm_limit, Some(100));
     assert_eq!(values.rpm_limit, Some(2));
@@ -47,7 +47,7 @@ fn upperbound_fill_generation() {
         &time(&database),
     )
     .unwrap();
-    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(10))));
+    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(10_i32))));
     assert_eq!(values.max_parallel_requests, Some(4));
     assert_eq!(values.tpm_limit, Some(100));
     assert_eq!(values.rpm_limit, Some(5));
@@ -67,7 +67,7 @@ fn upperbound_update_omits() {
         &time(&database),
     )
     .unwrap();
-    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(2))));
+    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(2_i32))));
     assert_eq!(values.tpm_limit, None);
     assert_eq!(values.duration, None);
     assert_eq!(values.budget_duration, None);
@@ -84,18 +84,18 @@ fn finite_without_config() {
         &time(&database),
     )
     .unwrap();
-    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(5))));
-    let values = [
+    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(5_i32))));
+    let numerics = [
         NumericValue {
             field: "max_budget",
-            value: Some(GuardAmount::Finite(Decimal::from(5))),
+            value: Some(GuardAmount::Finite(Decimal::from(5_i32))),
         },
         NumericValue {
             field: "soft_budget",
             value: Some(GuardAmount::Nan),
         },
     ];
-    let rejection = check_finite(&values).unwrap_err();
+    let rejection = check_finite(&numerics).unwrap_err();
     assert_eq!(
         rejection.to_string(),
         "soft_budget must be a finite number. Received: nan"
@@ -163,14 +163,14 @@ fn duration_limit() {
         "duration is over max limit set in config - user_value=30d; max_value=1d"
     );
     let infinite = generate(r#"{"duration": "-1"}"#);
-    let result = enforce_upperbound(
+    let infinite_result = enforce_upperbound(
         &KeyLimitRequest::from(&infinite),
         Some(&ceiling),
         true,
         &time(&database),
     );
     assert_eq!(
-        rejected(result).to_string(),
+        rejected(infinite_result).to_string(),
         "duration is over max limit set in config - user_value=-1; max_value=1d"
     );
     let within = generate(r#"{"duration": "12h"}"#);
@@ -227,13 +227,13 @@ fn invalid_duration() {
     }
     let ceiling = configured(r#"{"duration": "1d"}"#);
     let bad_request = generate(r#"{"duration": "soon"}"#);
-    let result = enforce_upperbound(
+    let bad_request_result = enforce_upperbound(
         &KeyLimitRequest::from(&bad_request),
         Some(&ceiling),
         true,
         &time(&database),
     );
-    match result {
+    match bad_request_result {
         Err(KeyLimitError::Duration { field, .. }) => assert_eq!(field, "duration"),
         other => panic!("expected the caller duration to fail, got {other:?}"),
     }
@@ -255,7 +255,7 @@ fn equal_ceiling() {
         &time(&database),
     )
     .unwrap();
-    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(10))));
+    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(10_i32))));
     assert_eq!(values.rpm_limit, Some(5));
 }
 
@@ -271,7 +271,7 @@ fn unsupported_ceiling_field() {
         &time(&database),
     )
     .unwrap();
-    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(10))));
+    assert_eq!(values.max_budget, Some(KeyAmount(Decimal::from(10_i32))));
     assert_eq!(values.tpm_limit, None);
 }
 
@@ -299,14 +299,14 @@ fn negative_and_zero_ceiling() {
         "max_budget is over max limit set in config - user_value=1; max_value=0"
     );
     let over_rpm = generate(r#"{"rpm_limit": 0}"#);
-    let result = enforce_upperbound(
+    let rpm_result = enforce_upperbound(
         &KeyLimitRequest::from(&over_rpm),
         Some(&ceiling),
         true,
         &time(&database),
     );
     assert_eq!(
-        rejected(result).to_string(),
+        rejected(rpm_result).to_string(),
         "rpm_limit is over max limit set in config - user_value=0; max_value=-1"
     );
 }
@@ -330,16 +330,16 @@ fn failure_order_is_configuration_order() {
         rejected(result).to_string(),
         "duration is over max limit set in config - user_value=2d; max_value=1d"
     );
-    let ceiling = configured(r#"{"max_budget": 10, "max_parallel_requests": 4}"#);
-    let request = generate(r#"{"max_parallel_requests": 8, "max_budget": 20}"#);
-    let result = enforce_upperbound(
-        &KeyLimitRequest::from(&request),
-        Some(&ceiling),
+    let later_ceiling = configured(r#"{"max_budget": 10, "max_parallel_requests": 4}"#);
+    let later_request = generate(r#"{"max_parallel_requests": 8, "max_budget": 20}"#);
+    let later_result = enforce_upperbound(
+        &KeyLimitRequest::from(&later_request),
+        Some(&later_ceiling),
         true,
         &time(&database),
     );
     assert_eq!(
-        rejected(result).to_string(),
+        rejected(later_result).to_string(),
         "max_budget is over max limit set in config - user_value=20; max_value=10"
     );
 }

@@ -57,9 +57,9 @@ async fn org_membership_query() {
         text_detail(&rejection),
         "Caller is not a member of organization_id=org-2"
     );
-    let rejection = rejected(validate_org_assignment(Some("u2"), "org-1", &recorded).await);
+    let not_member = rejected(validate_org_assignment(Some("u2"), "org-1", &recorded).await);
     assert_eq!(
-        text_detail(&rejection),
+        text_detail(&not_member),
         "Caller is not a member of organization_id=org-1"
     );
     close(fixture, store).await;
@@ -79,13 +79,21 @@ async fn project_query_reads_the_row() {
     let checked = check_project_key_limits("proj-1", &model_request, &recorded);
     match rejected(checked.await) {
         Rejection::ProjectModel { allowed, .. } => assert_eq!(allowed, vec!["gpt-4".to_owned()]),
-        other => panic!("expected the stored model list to refuse claude-4, got {other:?}"),
+        other @ Rejection::NonFinite { .. }
+        | other @ Rejection::Upperbound { .. }
+        | other @ Rejection::Allocation { .. }
+        | other @ Rejection::ProjectNotFound { .. }
+        | other @ Rejection::ProjectBudget { .. }
+        | other @ Rejection::AssignWithoutUser
+        | other @ Rejection::NotMember { .. } => {
+            panic!("expected the stored model list to refuse claude-4, got {other:?}")
+        }
     }
     let budget = generate(r#"{"models": ["gpt-4"], "max_budget": 11}"#);
     let budget_request = KeyLimitRequest::from(&budget);
-    let checked = check_project_key_limits("proj-1", &budget_request, &recorded);
+    let budget_checked = check_project_key_limits("proj-1", &budget_request, &recorded);
     assert!(matches!(
-        rejected(checked.await),
+        rejected(budget_checked.await),
         Rejection::ProjectBudget { .. }
     ));
     let within = generate(r#"{"models": ["gpt-4"], "max_budget": 10}"#);

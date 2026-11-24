@@ -4,7 +4,6 @@ use betterlite_auth::auth_model_patterns::{ALL_PROXY_MODELS, ALL_TEAM_MODELS};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
-use secrecy::ExposeSecret as _;
 
 use crate::key_fields::values::LimitType;
 use crate::key_limit_policy::error::{Entity, KeyLimitError, Rejection};
@@ -84,7 +83,9 @@ async fn check_entity(
 ) -> Result<(), KeyLimitError> {
     let mut keys = reads.keys(owner).await?;
     if let Some(current) = request.update_key_hash.as_deref() {
-        keys.retain(|key| key.token.as_ref().map(|token| token.expose_secret()) != Some(current));
+        keys.retain(|key| {
+            key.token.as_ref().map(secrecy::ExposeSecret::expose_secret) != Some(current)
+        });
     }
     let (entity, metadata) = (limits.entity, limits.metadata);
     let rpm = model_ceilings(
@@ -111,8 +112,8 @@ pub async fn check_project_key_limits(
     request: &KeyLimitRequest,
     reads: &dyn KeyLimitReads,
 ) -> Result<(), KeyLimitError> {
-    let project = reads.project(project_id).await?;
-    let Some(project) = project else {
+    let stored = reads.project(project_id).await?;
+    let Some(project) = stored else {
         return Err(KeyLimitError::from(Rejection::ProjectNotFound {
             project_id: project_id.to_owned(),
         }));
@@ -129,12 +130,12 @@ pub async fn check_project_key_limits(
             }
         }
     }
-    let ceiling = project
+    let cap = project
         .project
         .litellm_budget_table
         .as_ref()
         .and_then(|table| table.max_budget);
-    let (Some(requested), Some(ceiling)) = (request.max_budget, ceiling) else {
+    let (Some(requested), Some(ceiling)) = (request.max_budget, cap) else {
         return Ok(());
     };
     if requested > ceiling {
@@ -166,13 +167,15 @@ pub async fn validate_org_assignment(
 
 // an organization's type field falls back to its metadata key; a team's does not
 fn guaranteed(field: Option<LimitType>, request: &KeyLimitRequest, key: &str) -> bool {
-    match field {
-        Some(kind) => kind == LimitType::GuaranteedThroughput,
-        None => matches!(
-            request.metadata.as_ref().and_then(|metadata| metadata.get(key)),
-            Some(JsonData::String(text)) if text == GUARANTEED
-        ),
-    }
+    field.map_or_else(
+        || {
+            matches!(
+                request.metadata.as_ref().and_then(|metadata| metadata.get(key)),
+                Some(JsonData::String(text)) if text == GUARANTEED
+            )
+        },
+        |kind| kind == LimitType::GuaranteedThroughput,
+    )
 }
 
 fn permitted(model: &JsonData, allowed: &[String]) -> bool {

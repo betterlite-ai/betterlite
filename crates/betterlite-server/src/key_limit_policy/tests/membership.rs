@@ -13,8 +13,7 @@ fn rejection_statuses() {
         project_id: "proj-1".to_owned(),
     };
     assert_eq!(not_found.status(), 404);
-    let no_user = Rejection::AssignWithoutUser;
-    assert_eq!(no_user.status(), 403);
+    assert_eq!(Rejection::AssignWithoutUser.status(), 403);
     let not_member = Rejection::NotMember {
         organization_id: "org-1".to_owned(),
     };
@@ -40,8 +39,8 @@ fn rejection_statuses() {
     };
     assert_eq!(model.status(), 400);
     let budget = Rejection::ProjectBudget {
-        requested: Decimal::from(2),
-        ceiling: Decimal::from(1),
+        requested: Decimal::from(2_i32),
+        ceiling: Decimal::from(1_i32),
         project_id: "proj-1".to_owned(),
     };
     assert_eq!(budget.status(), 400);

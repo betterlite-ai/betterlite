@@ -121,10 +121,7 @@ impl KeyLimitReads for PostgresKeyLimitReads {
             .find_by_id(user_id, false)
             .await
             .map_err(KeyLimitReadError::User)?;
-        match row {
-            Some(found) => member_ids(&found),
-            None => Ok(BTreeSet::new()),
-        }
+        row.map_or_else(|| Ok(BTreeSet::new()), |found| member_ids(&found))
     }
 }
 

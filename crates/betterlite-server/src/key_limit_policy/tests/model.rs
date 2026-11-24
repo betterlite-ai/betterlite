@@ -85,10 +85,18 @@ fn global_model_ceiling() {
     let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 8, 4, 10));
-    let stored = keys(r#"[{"token": "k1"}]"#);
-    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
-    let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
-    assert_eq!(rejected(result), allocation(RateLimit::Rpm, 0, 4, 3));
+    let bare_keys = keys(r#"[{"token": "k1"}]"#);
+    let per_model_rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
+    let per_model_result = check_model_limits(
+        &bare_keys,
+        &KeyLimitRequest::from(&request),
+        &per_model_rpm,
+        &tpm,
+    );
+    assert_eq!(
+        rejected(per_model_result),
+        allocation(RateLimit::Rpm, 0, 4, 3)
+    );
 }
 
 #[test]
@@ -99,8 +107,14 @@ fn model_ceiling_zero_ignored() {
     let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, Some(10));
     let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, None);
     check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm).unwrap();
-    let rpm = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
-    check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm).unwrap();
+    let rpm_without_aggregate = ceilings(Some(&metadata), MODEL_RPM_FIELD, RateLimit::Rpm, None);
+    check_model_limits(
+        &stored,
+        &KeyLimitRequest::from(&request),
+        &rpm_without_aggregate,
+        &tpm,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -133,9 +147,9 @@ fn model_rpm_before_tpm() {
     let tpm = ceilings(None, MODEL_TPM_FIELD, RateLimit::Tpm, Some(10));
     let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
     assert_eq!(rejected(result), allocation(RateLimit::Rpm, 0, 11, 10));
-    let request = generate(r#"{"model_tpm_limit": {"gpt-4": 11}}"#);
-    let result = check_model_limits(&stored, &KeyLimitRequest::from(&request), &rpm, &tpm);
-    assert_eq!(rejected(result), allocation(RateLimit::Tpm, 0, 11, 10));
+    let tpm_request = generate(r#"{"model_tpm_limit": {"gpt-4": 11}}"#);
+    let tpm_result = check_model_limits(&stored, &KeyLimitRequest::from(&tpm_request), &rpm, &tpm);
+    assert_eq!(rejected(tpm_result), allocation(RateLimit::Tpm, 0, 11, 10));
 }
 
 #[test]
@@ -174,10 +188,10 @@ fn scalar_totals() {
         Entity::Team,
     )
     .unwrap();
-    let request = generate(r#"{"tpm_limit": 10}"#);
+    let over_request = generate(r#"{"tpm_limit": 10}"#);
     let rejection = check_rate_limits(
         &stored,
-        &KeyLimitRequest::from(&request),
+        &KeyLimitRequest::from(&over_request),
         None,
         Some(10),
         Entity::Team,
@@ -203,16 +217,16 @@ fn scalar_tpm_before_rpm() {
     )
     .unwrap_err();
     assert_eq!(rejection, allocation(RateLimit::Tpm, 1, 10, 10));
-    let request = generate(r#"{"rpm_limit": 10}"#);
-    let rejection = check_rate_limits(
+    let rpm_request = generate(r#"{"rpm_limit": 10}"#);
+    let rpm_rejection = check_rate_limits(
         &stored,
-        &KeyLimitRequest::from(&request),
+        &KeyLimitRequest::from(&rpm_request),
         Some(10),
         Some(10),
         Entity::Team,
     )
     .unwrap_err();
-    assert_eq!(rejection, allocation(RateLimit::Rpm, 1, 10, 10));
+    assert_eq!(rpm_rejection, allocation(RateLimit::Rpm, 1, 10, 10));
 }
 
 #[test]
@@ -227,9 +241,9 @@ fn scalar_zero_ceiling_enforced() {
         Entity::Team,
     )
     .unwrap();
-    let stored = keys(r#"[{"token": "k1", "tpm_limit": 1}]"#);
+    let over_stored = keys(r#"[{"token": "k1", "tpm_limit": 1}]"#);
     let rejection = check_rate_limits(
-        &stored,
+        &over_stored,
         &KeyLimitRequest::from(&request),
         None,
         Some(0),
@@ -251,10 +265,10 @@ fn scalar_missing_ceiling_or_value() {
         Entity::Team,
     )
     .unwrap();
-    let request = generate(r#"{"key_alias": "alias-2"}"#);
+    let alias_request = generate(r#"{"key_alias": "alias-2"}"#);
     check_rate_limits(
         &stored,
-        &KeyLimitRequest::from(&request),
+        &KeyLimitRequest::from(&alias_request),
         Some(10),
         Some(10),
         Entity::Team,

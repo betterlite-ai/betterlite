@@ -44,7 +44,11 @@ pub(super) fn data(text: &str) -> JsonData {
 pub(super) fn object(text: &str) -> BTreeMap<String, JsonData> {
     match data(text) {
         JsonData::Object(fields) => fields,
-        other => panic!("expected an object, got {other:?}"),
+        other @ JsonData::Null
+        | other @ JsonData::Bool(_)
+        | other @ JsonData::Number(_)
+        | other @ JsonData::String(_)
+        | other @ JsonData::Array(_) => panic!("expected an object, got {other:?}"),
     }
 }
 
@@ -118,6 +122,18 @@ pub(super) struct FakeReads {
     pub(super) memberships: BTreeSet<String>,
     pub(super) queries: Mutex<Vec<(&'static str, String)>>,
     pub(super) user_lookups: Mutex<Vec<String>>,
+}
+
+impl FakeReads {
+    pub(super) fn with_keys(mut self, keys: Vec<LiteLLMVerificationToken>) -> Self {
+        self.keys = keys;
+        self
+    }
+
+    pub(super) fn with_project(mut self, project: CachedProject) -> Self {
+        self.project = Some(project);
+        self
+    }
 }
 
 #[async_trait]

@@ -100,12 +100,11 @@ where
     };
     match *value {
         Some(asked) if asked > cap => Err(over(field, asked, cap)),
-        Some(_) => Ok(()),
         None if fill => {
             *value = Some(cap);
             Ok(())
         }
-        None => Ok(()),
+        Some(_) | None => Ok(()),
     }
 }
 
