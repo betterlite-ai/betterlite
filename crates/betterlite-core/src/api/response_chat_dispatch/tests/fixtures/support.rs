@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,6 +14,9 @@ use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_context::chat_config_selection::vertex::VertexModelLists;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::types::{
+    CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
@@ -36,37 +39,44 @@ use crate::api::response_chat_dispatch::port::{
 
 #[derive(Debug, Error)]
 #[error("the fake execution failed")]
-pub struct FakeError;
+pub(crate) struct FakeError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StreamParam {
+    Absent,
+    Null,
+    Bool(bool),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Observation {
+pub(crate) struct Observation {
     pub model: String,
     pub provider: Option<String>,
     pub client: bool,
-    pub params_stream: Option<Option<bool>>,
+    pub params_stream: StreamParam,
 }
 
-pub struct FakeExecution {
+pub(crate) struct FakeExecution {
     answers: Mutex<VecDeque<Result<Answer, FakeError>>>,
     observations: Mutex<Vec<Observation>>,
 }
 
 impl FakeExecution {
-    pub fn new(answer: Answer) -> Self {
+    pub(crate) fn new(answer: Answer) -> Self {
         Self {
             answers: Mutex::new(VecDeque::from([Ok(answer)])),
             observations: Mutex::new(Vec::new()),
         }
     }
 
-    pub fn failing() -> Self {
+    pub(crate) fn failing() -> Self {
         Self {
             answers: Mutex::new(VecDeque::from([Err(FakeError)])),
             observations: Mutex::new(Vec::new()),
         }
     }
 
-    pub fn observations(&self) -> Vec<Observation> {
+    pub(crate) fn observations(&self) -> Vec<Observation> {
         self.observations.lock().unwrap().clone()
     }
 
@@ -82,15 +92,23 @@ impl FakeExecution {
             )
             | None => None,
         };
-        self.observations.lock().unwrap().push(Observation {
-            model: call.params.model.clone(),
-            provider,
-            client: call.client.is_some(),
-            params_stream: call.params.stream,
-        });
+        let params_stream = match call.params.stream {
+            None => StreamParam::Absent,
+            Some(None) => StreamParam::Null,
+            Some(Some(stream)) => StreamParam::Bool(stream),
+        };
+        self.observations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Observation {
+                model: call.params.model.clone(),
+                provider,
+                client: call.client.is_some(),
+                params_stream,
+            });
         self.answers
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(Err(FakeError))
     }
@@ -109,14 +127,14 @@ impl ResponsesExecution<u8> for FakeExecution {
     }
 }
 
-pub struct FakeEvents {
+pub(crate) struct FakeEvents {
     lines: VecDeque<Result<Vec<u8>, StreamFailure>>,
     hidden: Map<String, Value>,
     dropped: Option<Arc<Mutex<bool>>>,
 }
 
 impl FakeEvents {
-    pub fn new(lines: Vec<Vec<u8>>, hidden: Map<String, Value>) -> Self {
+    pub(crate) fn new(lines: Vec<Vec<u8>>, hidden: Map<String, Value>) -> Self {
         Self {
             lines: lines.into_iter().map(Ok).collect(),
             hidden,
@@ -124,7 +142,7 @@ impl FakeEvents {
         }
     }
 
-    pub fn failing(failure: StreamFailure) -> Self {
+    pub(crate) fn failing(failure: StreamFailure) -> Self {
         Self {
             lines: VecDeque::from([Err(failure)]),
             hidden: Map::new(),
@@ -132,7 +150,7 @@ impl FakeEvents {
         }
     }
 
-    pub fn with_drop_flag(mut self, flag: Arc<Mutex<bool>>) -> Self {
+    pub(crate) fn with_drop_flag(mut self, flag: Arc<Mutex<bool>>) -> Self {
         self.dropped = Some(flag);
         self
     }
@@ -157,12 +175,12 @@ impl ResponsesEventStream for FakeEvents {
     }
 }
 
-pub struct FakeChunks {
+pub(crate) struct FakeChunks {
     chunks: VecDeque<Json>,
 }
 
 impl FakeChunks {
-    pub fn new(chunks: &[&str]) -> Self {
+    pub(crate) fn new(chunks: &[&str]) -> Self {
         Self {
             chunks: chunks
                 .iter()
@@ -179,7 +197,7 @@ impl AsyncChunkStream for FakeChunks {
     }
 }
 
-pub struct Probe;
+pub(crate) struct Probe;
 
 impl ModelFamilyProbe for Probe {
     fn openai_o_series(&self, _model: &str) -> bool {
@@ -200,7 +218,7 @@ impl ModelFamilyProbe for Probe {
 }
 
 // a probe whose answers depend on the exact model text, so a routing prefix would change the selection
-pub struct FamilyByName;
+pub(crate) struct FamilyByName;
 
 impl ModelFamilyProbe for FamilyByName {
     fn openai_o_series(&self, model: &str) -> bool {
@@ -220,7 +238,7 @@ impl ModelFamilyProbe for FamilyByName {
     }
 }
 
-pub struct NoJsonProviders;
+pub(crate) struct NoJsonProviders;
 
 impl JsonProviderProjection for NoJsonProviders {
     fn lookup(&self, _provider: ProviderId) -> JsonProviderLookup {
@@ -228,7 +246,7 @@ impl JsonProviderProjection for NoJsonProviders {
     }
 }
 
-pub struct MissingJsonProviders;
+pub(crate) struct MissingJsonProviders;
 
 impl JsonProviderProjection for MissingJsonProviders {
     fn lookup(&self, _provider: ProviderId) -> JsonProviderLookup {
@@ -242,7 +260,7 @@ static NO_JSON_PROVIDERS: NoJsonProviders = NoJsonProviders;
 static MISSING_JSON_PROVIDERS: MissingJsonProviders = MissingJsonProviders;
 
 #[derive(Default)]
-pub struct RecordingProcessing {
+pub(crate) struct RecordingProcessing {
     pub calls: Mutex<Vec<ChatConfigTag>>,
 }
 
@@ -252,23 +270,24 @@ impl PostStreamProcessing for RecordingProcessing {
         tag: ChatConfigTag,
         stream: Box<dyn AsyncChunkStream + Send>,
     ) -> Result<Box<dyn AsyncChunkStream + Send>, PostStreamError> {
-        self.calls.lock().unwrap().push(tag);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(tag);
         drop(stream);
         Ok(Box::new(FakeChunks::new(&["{\"replaced\":true}"])))
     }
 }
 
-pub fn post_stream<'deps>(processing: &'deps RecordingProcessing) -> PostStreamDeps<'deps> {
+pub(crate) fn post_stream(processing: &RecordingProcessing) -> PostStreamDeps<'_> {
     deps(processing, &NO_JSON_PROVIDERS, &PROBE)
 }
 
-pub fn post_stream_missing_record<'deps>(
-    processing: &'deps RecordingProcessing,
-) -> PostStreamDeps<'deps> {
+pub(crate) fn post_stream_missing_record(processing: &RecordingProcessing) -> PostStreamDeps<'_> {
     deps(processing, &MISSING_JSON_PROVIDERS, &PROBE)
 }
 
-pub fn post_stream_named<'deps>(processing: &'deps RecordingProcessing) -> PostStreamDeps<'deps> {
+pub(crate) fn post_stream_named(processing: &RecordingProcessing) -> PostStreamDeps<'_> {
     deps(processing, &NO_JSON_PROVIDERS, &FAMILY_BY_NAME)
 }
 
@@ -291,7 +310,7 @@ fn deps<'deps>(
     }
 }
 
-pub fn logging() -> LoggingState {
+pub(crate) fn logging() -> LoggingState {
     let mut context = CorrelationContext::default();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let init = LoggingInit {
@@ -308,10 +327,10 @@ pub fn logging() -> LoggingState {
         callback_dynamic_params: IndexMap::new(),
         trusted_callback_vars: Vec::new(),
         standard_built_in_tools_params: IndexMap::new(),
-        dynamic_callbacks: Default::default(),
+        dynamic_callbacks: DynamicCallbacks::default(),
         applied_guardrails: None,
-        request_logging: Default::default(),
-        callback_policy: Default::default(),
+        request_logging: RequestLoggingFlags::default(),
+        callback_policy: CallbackPolicy::default(),
     };
     LoggingState::new(
         init,
@@ -326,7 +345,7 @@ pub fn logging() -> LoggingState {
     .unwrap()
 }
 
-pub fn kwargs(model: &str, provider: &str) -> IndexMap<String, Json> {
+pub(crate) fn kwargs(model: &str, provider: &str) -> IndexMap<String, Json> {
     let text = format!(
         r#"{{"model":"{model}","custom_llm_provider":"{provider}","messages":[{{"role":"user","content":"hi"}}],"optional_params":{{}},"litellm_params":{{}},"headers":{{}},"model_response":{{}},"logging_obj":{{}}}}"#
     );
@@ -336,7 +355,7 @@ pub fn kwargs(model: &str, provider: &str) -> IndexMap<String, Json> {
     fields
 }
 
-pub fn call<'call>(kwargs: &'call IndexMap<String, Json>) -> BridgeCall<'call, u8> {
+pub(crate) fn call(kwargs: &IndexMap<String, Json>) -> BridgeCall<'_, u8> {
     BridgeCall {
         kwargs,
         model_response: ModelResponseSeed {
@@ -352,18 +371,18 @@ pub fn call<'call>(kwargs: &'call IndexMap<String, Json>) -> BridgeCall<'call, u
     }
 }
 
-pub fn sse(event: &str) -> Vec<u8> {
+pub(crate) fn sse(event: &str) -> Vec<u8> {
     format!("data: {event}").into_bytes()
 }
 
-pub fn hidden(pairs: &[(&str, &str)]) -> Map<String, Value> {
+pub(crate) fn hidden(pairs: &[(&str, &str)]) -> Map<String, Value> {
     pairs
         .iter()
         .map(|(key, value)| (String::from(*key), Value::from(*value)))
         .collect()
 }
 
-fn choice<'json>(chunk: &'json Json) -> Option<&'json IndexMap<String, Json>> {
+fn choice(chunk: &Json) -> Option<&IndexMap<String, Json>> {
     let Json::Object(fields) = chunk else {
         return None;
     };
@@ -384,7 +403,7 @@ fn text_member(fields: &IndexMap<String, Json>, name: &str) -> Option<String> {
     }
 }
 
-pub fn text_of(chunk: &Json) -> Option<String> {
+pub(crate) fn text_of(chunk: &Json) -> Option<String> {
     let first = choice(chunk)?;
     let Json::Object(delta) = first.get("delta")? else {
         return None;
@@ -392,24 +411,24 @@ pub fn text_of(chunk: &Json) -> Option<String> {
     text_member(delta, "content")
 }
 
-pub fn finish_of(chunk: &Json) -> Option<String> {
+pub(crate) fn finish_of(chunk: &Json) -> Option<String> {
     text_member(choice(chunk)?, "finish_reason")
 }
 
-pub fn id_of(chunk: &Json) -> Option<String> {
+pub(crate) fn id_of(chunk: &Json) -> Option<String> {
     let Json::Object(fields) = chunk else {
         return None;
     };
     text_member(fields, "id")
 }
 
-pub fn responses_body(text: &str) -> String {
+pub(crate) fn responses_body(text: &str) -> String {
     format!(
         r#"{{"id":"resp_a","created_at":1700000000,"status":"completed","output":[{{"type":"message","role":"assistant","content":[{{"type":"output_text","text":"{text}","annotations":[]}}]}}]}}"#
     )
 }
 
-pub fn terminal_event(text: &str) -> String {
+pub(crate) fn terminal_event(text: &str) -> String {
     format!(
         r#"{{"type":"response.completed","response":{}}}"#,
         responses_body(text)

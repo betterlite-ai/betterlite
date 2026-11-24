@@ -125,7 +125,7 @@ impl MockStream {
         if self.filled {
             return Ok(());
         }
-        while let Some(chunk) = self.inner.next() {
+        for chunk in self.inner.by_ref() {
             push_json(&mut self.wrapper, &mut self.pending, chunk)?;
         }
         close(&mut self.wrapper, &mut self.pending)?;

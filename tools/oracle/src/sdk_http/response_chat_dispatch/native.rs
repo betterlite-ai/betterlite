@@ -75,7 +75,7 @@ async fn run_once(
 ) -> Result<RunOutcome, SdkHttpError> {
     let spec = RunSpec::parse(run, api_base)?;
     let fixture = Fixture::new("completion")?;
-    let execution = RealExecution { api_base, env };
+    let execution = RealExecution::new(api_base, env)?;
     let call = BridgeCall {
         kwargs: &spec.kwargs,
         model_response: ModelResponseSeed::default(),

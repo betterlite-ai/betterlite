@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use indexmap::IndexMap;
@@ -14,7 +16,7 @@ pub async fn collect<Source>(
     limits: &ApiLimits,
 ) -> Result<BridgeResponse, DispatchError<Source>>
 where
-    Source: std::error::Error + 'static,
+    Source: Error + 'static,
 {
     let mut completed = Terminal::Pending;
     while let Some(event_line) = events.next_event().await {
@@ -43,7 +45,7 @@ pub fn coerce<Source>(
     payload: ResponsePayload,
 ) -> Result<ResponsesApiResponse, DispatchError<Source>>
 where
-    Source: std::error::Error + 'static,
+    Source: Error + 'static,
 {
     match payload {
         ResponsePayload::Typed(response) => Ok(*response),
@@ -59,7 +61,7 @@ fn construct<Source>(
     fields: IndexMap<String, Json>,
 ) -> Result<ResponsesApiResponse, DispatchError<Source>>
 where
-    Source: std::error::Error + 'static,
+    Source: Error + 'static,
 {
     let value = serde_json::to_value(Json::Object(fields))?;
     let Value::Object(mut object) = value else {
@@ -146,7 +148,7 @@ fn existing_hidden(payload: &Json) -> Map<String, Value> {
         .filter_map(|(key, value)| {
             serde_json::to_value(value)
                 .ok()
-                .map(|value| (key.clone(), value))
+                .map(|converted| (key.clone(), converted))
         })
         .collect()
 }

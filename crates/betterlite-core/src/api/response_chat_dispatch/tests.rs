@@ -2,6 +2,7 @@
 
 mod fixtures;
 
+use std::iter;
 use std::sync::{Arc, Mutex};
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
@@ -12,9 +13,9 @@ use rstest::rstest;
 use serde_json::{Map, Value};
 
 use self::fixtures::support::{
-    FakeChunks, FakeError, FakeEvents, FakeExecution, RecordingProcessing, call, finish_of, hidden,
-    id_of, kwargs, post_stream, post_stream_missing_record, post_stream_named, responses_body, sse,
-    terminal_event, text_of,
+    FakeChunks, FakeError, FakeEvents, FakeExecution, RecordingProcessing, StreamParam, call,
+    finish_of, hidden, id_of, kwargs, post_stream, post_stream_missing_record, post_stream_named,
+    responses_body, sse, terminal_event, text_of,
 };
 use super::error::DispatchError;
 use super::handler::completion;
@@ -64,7 +65,7 @@ fn delta_event(text: &str) -> Vec<u8> {
 }
 
 fn padding_line() -> Vec<u8> {
-    "event: response.created".as_bytes().to_vec()
+    b"event: response.created".to_vec()
 }
 
 fn frames() -> Vec<Vec<u8>> {
@@ -321,14 +322,20 @@ async fn the_sdk_stream_key_is_read_through_the_litellm_params() {
 async fn the_outer_stream_flag_only_adds_a_missing_optional_key() {
     let injected = FakeExecution::new(events(frames(), &[]));
     let output = expect_ok(completion(&injected, call(&streaming())).await);
-    assert_eq!(injected.observations()[0].params_stream, Some(Some(true)));
+    assert_eq!(
+        injected.observations()[0].params_stream,
+        StreamParam::Bool(true)
+    );
     let chunks = drain(expect_stream(output)).await;
     assert_eq!(joined(&chunks), "hello");
 
     let fields = optional_params(streaming(), r#"{"stream":false}"#);
     let retained = FakeExecution::new(events(frames(), &[]));
     let retained_output = expect_ok(completion(&retained, call(&fields)).await);
-    assert_eq!(retained.observations()[0].params_stream, None);
+    assert_eq!(
+        retained.observations()[0].params_stream,
+        StreamParam::Absent
+    );
     assert!(matches!(retained_output, BridgeOutput::Response(_)));
 
     let text_stream = with(
@@ -338,13 +345,15 @@ async fn the_outer_stream_flag_only_adds_a_missing_optional_key() {
     );
     let not_injected = FakeExecution::new(Answer::Chat(chat_body()));
     expect_ok(completion(&not_injected, call(&text_stream)).await);
-    assert_eq!(not_injected.observations()[0].params_stream, None);
+    assert_eq!(
+        not_injected.observations()[0].params_stream,
+        StreamParam::Absent
+    );
 }
 
 #[test]
 fn the_stream_flag_follows_the_optional_value_then_the_sdk() {
     let no_optional_params = IndexMap::new();
-    let absent = IndexMap::new();
     assert!(resolve_stream_flag(
         &optional_stream(Some(Json::Bool(true))),
         &sdk_stream(Value::Bool(false))
@@ -369,40 +378,23 @@ fn the_stream_flag_follows_the_optional_value_then_the_sdk() {
         &no_optional_params,
         &sdk_stream(Value::from("yes"))
     ));
-    assert!(!resolve_stream_flag(
-        &optional_stream(Some(Json::Text(String::new()))),
-        &sdk_stream(Value::Bool(true))
-    ));
-    assert!(resolve_stream_flag(
-        &optional_stream(Some(Json::Text(String::from("x")))),
-        &absent
-    ));
-    assert!(resolve_stream_flag(
-        &optional_stream(Some(Json::Number(serde_json::Number::from(1_i32)))),
-        &absent
-    ));
-    assert!(!resolve_stream_flag(
-        &optional_stream(Some(Json::Number(serde_json::Number::from(0_i32)))),
-        &absent
-    ));
-    assert!(resolve_stream_flag(
-        &optional_stream(Some(Json::List(vec![Json::Bool(false)]))),
-        &absent
-    ));
-    assert!(!resolve_stream_flag(
-        &optional_stream(Some(Json::List(Vec::new()))),
-        &absent
-    ));
-    let mut object = IndexMap::new();
-    object.insert(String::from("a"), Json::Bool(true));
-    assert!(resolve_stream_flag(
-        &optional_stream(Some(Json::Object(object))),
-        &absent
-    ));
-    assert!(!resolve_stream_flag(
-        &optional_stream(Some(Json::Object(IndexMap::new()))),
-        &absent
-    ));
+}
+
+#[rstest]
+#[case::empty_text(Json::Text(String::new()), false)]
+#[case::text(Json::Text(String::from("x")), true)]
+#[case::one(Json::Number(serde_json::Number::from(1_i32)), true)]
+#[case::zero(Json::Number(serde_json::Number::from(0_i32)), false)]
+#[case::list_with_false(Json::List(vec![Json::Bool(false)]), true)]
+#[case::empty_list(Json::List(Vec::new()), false)]
+#[case::object(Json::Object(IndexMap::from([(String::from("a"), Json::Bool(true))])), true)]
+#[case::empty_object(Json::Object(IndexMap::new()), false)]
+fn python_truthiness_decides_the_stream_flag(#[case] value: Json, #[case] expected: bool) {
+    let sdk = sdk_stream(Value::Bool(true));
+    assert_eq!(
+        resolve_stream_flag(&optional_stream(Some(value)), &sdk),
+        expected
+    );
 }
 
 #[test]
@@ -548,7 +540,7 @@ async fn a_model_response_without_identity_invents_the_empty_one() {
     )))
     .await;
     assert_eq!(joined(&chunks), "hey");
-    assert!(ids(&chunks).iter().all(|id| id.is_empty()));
+    assert!(ids(&chunks).iter().all(String::is_empty));
     assert_eq!(
         created_of(&chunks[0]),
         Some(Json::Number(serde_json::Number::from(0_i32)))
@@ -758,7 +750,8 @@ async fn a_missing_json_record_leaves_the_stream_unchanged() {
 #[tokio::test]
 async fn dropping_the_translated_stream_drops_the_event_stream() {
     let flag = Arc::new(Mutex::new(false));
-    let events = FakeEvents::new(vec![created_event()], Map::new()).with_drop_flag(flag.clone());
+    let events =
+        FakeEvents::new(vec![created_event()], Map::new()).with_drop_flag(Arc::clone(&flag));
     let stream = TranslatedStream::new(
         Box::new(events),
         &StreamConfig {
@@ -775,9 +768,9 @@ async fn dropping_the_translated_stream_drops_the_event_stream() {
 #[tokio::test]
 async fn identical_chunks_stop_at_the_repeated_chunk_limit() {
     let fields = streaming();
-    let at_limit: Vec<Vec<u8>> = std::iter::once(created_event())
-        .chain(std::iter::repeat_with(|| delta_event("hello")).take(100))
-        .chain(std::iter::once(sse(&terminal_event("hello"))))
+    let at_limit: Vec<Vec<u8>> = iter::once(created_event())
+        .chain(iter::repeat_with(|| delta_event("hello")).take(100))
+        .chain(iter::once(sse(&terminal_event("hello"))))
         .collect();
     let execution = FakeExecution::new(events(at_limit, &[]));
     let chunks = drain(expect_stream(expect_ok(
@@ -786,9 +779,9 @@ async fn identical_chunks_stop_at_the_repeated_chunk_limit() {
     .await;
     assert_eq!(joined(&chunks), "hello".repeat(100));
 
-    let past_limit: Vec<Vec<u8>> = std::iter::once(created_event())
-        .chain(std::iter::repeat_with(|| delta_event("hello")).take(101))
-        .chain(std::iter::once(sse(&terminal_event("hello"))))
+    let past_limit: Vec<Vec<u8>> = iter::once(created_event())
+        .chain(iter::repeat_with(|| delta_event("hello")).take(101))
+        .chain(iter::once(sse(&terminal_event("hello"))))
         .collect();
     let over_limit = FakeExecution::new(events(past_limit, &[]));
     let mut stream = expect_stream(expect_ok(completion(&over_limit, call(&fields)).await));

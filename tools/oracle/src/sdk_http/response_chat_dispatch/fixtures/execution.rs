@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fmt;
 
 use async_trait::async_trait;
@@ -94,7 +95,7 @@ impl fmt::Display for ExecutionFailure {
     }
 }
 
-impl std::error::Error for ExecutionFailure {}
+impl Error for ExecutionFailure {}
 
 impl From<SdkHttpError> for ExecutionFailure {
     fn from(error: SdkHttpError) -> Self {
@@ -103,8 +104,14 @@ impl From<SdkHttpError> for ExecutionFailure {
 }
 
 pub(crate) struct RealExecution<'run> {
-    pub(crate) api_base: &'run str,
-    pub(crate) env: &'run BTreeMap<String, String>,
+    api_base: &'run str,
+    env: &'run BTreeMap<String, String>,
+    origin: Outbound,
+    resolver: ScriptedResolver,
+    configs: Configs,
+    interception: NoInterception,
+    bridge: NoBridge,
+    nothing: Nothing,
 }
 
 type CreateDeps<'deps> = ResponsesCreateDeps<'deps, Outbound, Configs, Nothing, Nothing, ()>;
@@ -122,7 +129,25 @@ impl ResponsesExecution<()> for RealExecution<'_> {
     }
 }
 
-impl RealExecution<'_> {
+impl<'run> RealExecution<'run> {
+    pub(crate) fn new(
+        api_base: &'run str,
+        env: &'run BTreeMap<String, String>,
+    ) -> Result<Self, SdkHttpError> {
+        Ok(Self {
+            api_base,
+            env,
+            origin: Outbound::new(env)?,
+            resolver: ScriptedResolver,
+            configs: Configs {
+                api_key: env.get("OPENAI_API_KEY").cloned().map(SecretString::from),
+            },
+            interception: NoInterception,
+            bridge: NoBridge,
+            nothing: Nothing,
+        })
+    }
+
     async fn run(
         &self,
         call: ResponsesCall<'_, ()>,
@@ -136,24 +161,24 @@ impl RealExecution<'_> {
             ..
         } = call;
         let request = create_call(params, litellm_params, extra_headers, self.api_base)?;
-        let origin = Outbound::new(self.env)?;
-        let resolver = ScriptedResolver;
-        let configs = Configs {
-            api_key: self
-                .env
-                .get("OPENAI_API_KEY")
-                .cloned()
-                .map(SecretString::from),
+        let deps = self.deps();
+        let fixture = Fixture::new("responses")?;
+        let environment = request_environment(&fixture);
+        let mut log = LogContext {
+            state: logging,
+            env: &environment,
         };
-        let interception = NoInterception;
-        let bridge = NoBridge;
-        let nothing = Nothing;
+        let created = dispatch_create(&deps, &request, &mut log, asynchronous).await?;
+        answer(created)
+    }
+
+    fn deps(&self) -> CreateDeps<'_> {
         let (drop_params, auto_summary) = env_flags(self.env);
-        let deps = ResponsesCreateDeps {
-            resolver: &resolver,
-            lookup: &configs,
-            configs: &configs,
-            source: &origin,
+        ResponsesCreateDeps {
+            resolver: &self.resolver,
+            lookup: &self.configs,
+            configs: &self.configs,
+            source: &self.origin,
             supplied: None,
             environment: self.env,
             prompts: None,
@@ -163,37 +188,33 @@ impl RealExecution<'_> {
                     global: &[],
                     dynamic: &[],
                 },
-                resolver: &nothing,
-                dispatcher: &nothing,
-                executor: &nothing,
+                resolver: &self.nothing,
+                dispatcher: &self.nothing,
+                executor: &self.nothing,
                 logging: None,
             },
-            interception: &interception,
-            bridge: &bridge,
+            interception: &self.interception,
+            bridge: &self.bridge,
             drop_params,
             reasoning_auto_summary: auto_summary,
-        };
-        let fixture = Fixture::new("responses")?;
-        let environment = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &fixture.redactor,
-            log: &fixture.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: fixture.now,
-        };
-        let mut log = LogContext {
-            state: logging,
-            env: &environment,
-        };
-        let created = dispatch_create(&deps, &request, &mut log, asynchronous).await?;
-        answer(created)
+        }
+    }
+}
+
+fn request_environment(fixture: &Fixture) -> PrePostEnv<'_> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &fixture.redactor,
+        log: &fixture.sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: fixture.now,
     }
 }
 
@@ -237,15 +258,12 @@ fn create_call(
     call.api_key = text(litellm_params.get("api_key")).map(SecretString::from);
     call.custom_llm_provider = text(litellm_params.get("custom_llm_provider"));
     call.timeout = number(litellm_params.get("timeout"));
-    call.extra_headers = match extra_headers {
-        Some(headers) => Some(
-            headers
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone()))
-                .collect(),
-        ),
-        None => None,
-    };
+    call.extra_headers = extra_headers.map(|headers| {
+        headers
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect()
+    });
     Ok(call)
 }
 
