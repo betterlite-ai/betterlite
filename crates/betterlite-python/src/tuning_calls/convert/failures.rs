@@ -125,22 +125,11 @@ pub(crate) fn wire_failure(source: WireError) -> Raised {
         WireError::MissingAzureBase => Raised::Python(Box::new(PyValueError::new_err(
             String::from(AZURE_BASE_MESSAGE),
         ))),
-        rest @ WireError::Body { .. }
-        | rest @ WireError::Encode { .. }
-        | rest @ WireError::Decode { .. }
-        | rest @ WireError::Url { .. }
-        | rest @ WireError::Header { .. }
-        | rest @ WireError::Transport { .. }
-        | rest @ WireError::Proxy { .. }
-        | rest @ WireError::Config { .. }
-        | rest @ WireError::Client { .. }
-        | rest @ WireError::MissingOpenAiKey
-        | rest @ WireError::MissingAzureKey
-        | rest @ WireError::Vertex => Raised::Failure(Box::new(plain_failure(&rest))),
+        other => Raised::Failure(Box::new(plain_failure(&other))),
     }
 }
 
-// The exception class and text of a failure that has no provider response to keep.
+// Every wire failure without a provider response to keep; its own match names all the remaining variants.
 fn plain_failure(source: &WireError) -> Failure {
     let (kind, text) = match source {
         WireError::MissingOpenAiKey => ("Exception", String::from(OPENAI_KEY_MESSAGE)),

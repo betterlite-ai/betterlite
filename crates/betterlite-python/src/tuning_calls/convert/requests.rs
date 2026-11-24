@@ -109,11 +109,15 @@ fn azure_create(call: &AzureCreateCall, integrations: Option<&[Json]>) -> Outbou
 }
 
 fn openai_read(call: &OpenAiReadCall<'_>) -> OutboundResult {
+    let operation = call.values.operation;
+    let url = openai_jobs_url(&call.api_base, &read_suffix(operation))?;
+    let query = paging(operation);
+    let headers = openai_headers(call.api_key, call.organization, false)?;
     Ok(OutboundRequest {
         method: Method::GET,
-        url: openai_jobs_url(&call.api_base, &read_suffix(call.values.operation))?,
-        query: paging(call.values.operation),
-        headers: openai_headers(call.api_key, call.organization, false)?,
+        url,
+        query,
+        headers,
         body: RequestBody::Empty,
         deadline: deadline(call.values.timeout),
     })
@@ -123,22 +127,27 @@ fn azure_read(call: &AzureReadCall<'_>) -> OutboundResult {
     let (key, api_base, version) = azure_api(call.api_key, call.api_base, call.api_version)?;
     let mut query = azure_query(version);
     query.extend(paging(call.values.operation));
+    let url = azure_jobs_url(api_base, version, &read_suffix(call.values.operation))?;
+    let headers = azure_headers(key, version)?;
     Ok(OutboundRequest {
         method: Method::GET,
-        url: azure_jobs_url(api_base, version, &read_suffix(call.values.operation))?,
+        url,
         query,
-        headers: azure_headers(key, version)?,
+        headers,
         body: RequestBody::Empty,
         deadline: deadline(call.values.timeout),
     })
 }
 
 fn openai_cancel(call: &OpenAiFineTuningCancel<'_>) -> OutboundResult {
+    let suffix = format!("/{}/cancel", call.values.job_id);
+    let url = openai_jobs_url(&call.api_base, &suffix)?;
+    let headers = openai_headers(call.api_key, call.organization, false)?;
     Ok(OutboundRequest {
         method: Method::POST,
-        url: openai_jobs_url(&call.api_base, &format!("/{}/cancel", call.values.job_id))?,
+        url,
         query: Vec::new(),
-        headers: openai_headers(call.api_key, call.organization, false)?,
+        headers,
         body: RequestBody::Empty,
         deadline: deadline(call.values.timeout),
     })
@@ -147,11 +156,13 @@ fn openai_cancel(call: &OpenAiFineTuningCancel<'_>) -> OutboundResult {
 fn azure_cancel(call: &AzureFineTuningCancel<'_>) -> OutboundResult {
     let (key, api_base, version) = azure_api(call.api_key, call.api_base, call.api_version)?;
     let suffix = format!("/{}/cancel", call.values.job_id);
+    let url = azure_jobs_url(api_base, version, &suffix)?;
+    let headers = azure_headers(key, version)?;
     Ok(OutboundRequest {
         method: Method::POST,
-        url: azure_jobs_url(api_base, version, &suffix)?,
+        url,
         query: azure_query(version),
-        headers: azure_headers(key, version)?,
+        headers,
         body: RequestBody::Empty,
         deadline: deadline(call.values.timeout),
     })
