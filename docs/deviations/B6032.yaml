@@ -1,0 +1,45 @@
+task: B6032
+deviations:
+  - what: Guardrail types come from betterlite.types.guardrails.params instead of litellm.types.guardrails.
+    why: B167 owns the public guardrail types; until it lands these local classes stand in for LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L22-L27
+  - what: Selection, violation-message rendering, advisory injection, response summarising and record building run in betterlite's Rust guardrail modules; the Python class only delegates.
+    why: Rule port-the-behavior-not-the-shape puts the guardrail logic in Rust where the rest of betterlite reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1058-L1127
+  - what: A subclass's apply_guardrail is wrapped by a descriptor that writes the logs-guardrail-information marker on the descriptor and on the wrapped function, where LiteLLM writes it on its wrapper function. The decorator dispatches only apply_guardrail's argument names and only an async hook, so it cannot wrap LiteLLM's other hook methods; the hook call always returns an awaitable.
+    why: The repo bans nested functions, so the decorator's nested async and sync wrappers and its per-name event-type inference cannot be ported; class access still returns a plain callable, as LiteLLM's wrapped attribute does, and LiteLLM's proxy awaits apply_guardrail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580-L1710
+  - what: is_guardrail_intervention does not treat fastapi's HTTPException with status 400, 403 or 422 as an intervention, so a guardrail that raises one records guardrail_failed_to_respond instead of guardrail_intervened.
+    why: fastapi is not a dependency of the betterlite wheel, so the module cannot import HTTPException to match it, and the lint lane refuses an import inside the function.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/exception_utils.py#L7-L12
+  - what: apply_guardrail inputs are baselined as original_inputs on every call.
+    why: LiteLLM only captures a keyword inputs argument; betterlite records the baseline for positional calls too, which never changes what LiteLLM records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1560-L1578
+  - what: The self-recorded flag is an instance attribute instead of a ContextVar.
+    why: Rule no-contextvars bans per-run ContextVars; two hooks of one guardrail running at once can share the flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L72-L73
+  - what: The scanned-text cache is the GuardrailCache object the caller passes, not litellm.cache.
+    why: betterlite has no module-level cache singleton; the async cache methods in betterlite.caching take the same get/set shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L477-L556
+  - what: _validate_event_hook validates the event hook by building the native guardrail in strict mode.
+    why: The supported and actual event hooks are checked in Rust, so the Python method delegates instead of repeating the checks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L632-L672
+  - what: Record entries are plain JSON objects inside standard_logging_guardrail_information, not StandardLoggingGuardrailInformation models.
+    why: The Rust record builder serialises the entry, and betterlite types its JSON as JsonValue rather than pydantic models.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1209-L1310
+  - what: _suppressed_by_auto_router_compression always returns False.
+    why: The request-scoped suppression set it reads belongs to the auto-router compression feature, which betterlite has not ported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1041-L1056
+  - what: A subclass is wrapped when its resolved apply_guardrail is neither the base method nor already marked, where LiteLLM wraps only when the class's own namespace defines apply_guardrail.
+    why: The no-reflection rule and strict typing leave no typed way to read a class's own namespace, so a method inherited from a plain mixin is wrapped and auto-recorded too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L183-L188
+  - what: _deployment_hook_target raises ImportError for a guardrail that implements apply_guardrail instead of returning litellm.proxy.utils.unified_guardrail.
+    why: betterlite has no Python proxy module; its native proxy picks the unified target in Rust, and the Python method keeps LiteLLM's message for direct callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L815-L826
+kept_bugs:
+  - what: A guardrail whose class name contains CustomCodeGuardrail records the literal string "deny" in place of the exception it raised.
+    why: Copying the name-substring check keeps those guardrails' spend logs and pass-through responses as LiteLLM's are.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1425-L1437
+  - what: get_guardrail_dynamic_request_body_params parses the requested extra_body and then returns {} unless premium_user is True, which is false in every non-enterprise install.
+    why: A working LiteLLM setup without an enterprise license sees the warning and the empty body, so betterlite keeps both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1180-L1207
