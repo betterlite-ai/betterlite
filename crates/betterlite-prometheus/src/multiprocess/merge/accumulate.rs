@@ -7,7 +7,7 @@ use crate::multiprocess::MultiprocessError;
 use crate::scrape_endpoint::float::float_to_go_string;
 use crate::scrape_endpoint::{MetricKind, MetricSample};
 
-use super::{FamilyBuilder, RawSample, SampleKey};
+use super::{FamilyBuilder, GaugeMode, RawSample, SampleKey};
 
 type Samples = IndexMap<SampleKey, f64>;
 type Buckets = IndexMap<Vec<(String, String)>, Vec<(f64, f64)>>;
@@ -24,7 +24,6 @@ pub(super) fn samples(
     }
 }
 
-// Counter and Summary: the same name and labels from every pid add up
 fn sum(raw: &[RawSample]) -> Vec<MetricSample> {
     let mut summed = Samples::new();
     for sample in raw {
@@ -56,7 +55,7 @@ fn collected(samples: Samples) -> Vec<MetricSample> {
 }
 
 fn gauge(family: &FamilyBuilder) -> Vec<MetricSample> {
-    let mode = family.mode.as_deref().unwrap_or_default();
+    let mode = family.mode.unwrap_or(GaugeMode::All);
     let mut samples = Samples::new();
     let mut timestamps = Samples::new();
     for sample in &family.samples {
@@ -65,28 +64,23 @@ fn gauge(family: &FamilyBuilder) -> Vec<MetricSample> {
     collected(samples)
 }
 
-// min, max, sum and mostrecent combine a series without its pid label; every other mode keeps each pid
-fn gauge_sample(sample: &RawSample, mode: &str, samples: &mut Samples, timestamps: &mut Samples) {
-    let combining = matches!(
-        mode,
-        "min" | "livemin" | "max" | "livemax" | "sum" | "livesum" | "mostrecent" | "livemostrecent"
-    );
-    let labels = if combining {
-        without_label(&sample.labels, "pid")
+fn gauge_sample(raw: &RawSample, mode: GaugeMode, samples: &mut Samples, timestamps: &mut Samples) {
+    let labels = if mode.combines_without_pid() {
+        without_label(&raw.labels, "pid")
     } else {
-        sample.labels.clone()
+        raw.labels.clone()
     };
     let key = SampleKey {
-        name: sample.name.clone(),
+        name: raw.name.clone(),
         labels,
     };
     match mode {
-        "min" | "livemin" => keep_smallest(samples, key, sample.value),
-        "max" | "livemax" => keep_largest(samples, key, sample.value),
-        "sum" | "livesum" => accumulate_into(samples, key, sample.value),
-        "mostrecent" | "livemostrecent" => keep_most_recent(samples, timestamps, key, sample),
-        _other => {
-            let _previous = samples.insert(key, sample.value);
+        GaugeMode::Min => keep_smallest(samples, key, raw.value),
+        GaugeMode::Max => keep_largest(samples, key, raw.value),
+        GaugeMode::Sum => accumulate_into(samples, key, raw.value),
+        GaugeMode::MostRecent => keep_most_recent(samples, timestamps, key, raw),
+        GaugeMode::All => {
+            let _previous = samples.insert(key, raw.value);
         }
     }
 }

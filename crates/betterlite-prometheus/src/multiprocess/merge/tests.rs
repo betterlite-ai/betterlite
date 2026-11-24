@@ -163,6 +163,29 @@ fn keeps_each_pid_for_the_all_modes(#[case] mode: &str) {
     );
 }
 
+#[test]
+fn keeps_each_pid_for_an_unknown_mode() {
+    let dir = TempDir::new().unwrap();
+    let first = write_file(
+        dir.path(),
+        "gauge_sideways_1001.db",
+        &[entry("queue_length", "queue_length", &[], 3.0)],
+    );
+    let second = write_file(
+        dir.path(),
+        "gauge_sideways_1002.db",
+        &[entry("queue_length", "queue_length", &[], 5.0)],
+    );
+    let families = merge(&[first, second]).unwrap();
+    assert_eq!(
+        families.first().unwrap().samples,
+        vec![
+            sample("queue_length", &[("pid", "1001")], 3.0),
+            sample("queue_length", &[("pid", "1002")], 5.0),
+        ]
+    );
+}
+
 #[rstest]
 #[case("min", 3.0_f64)]
 #[case("livemin", 3.0_f64)]
@@ -441,12 +464,10 @@ fn fails_on_a_bucket_bound_that_is_not_a_float() {
         )],
     );
     let error = merge(&[path]).unwrap_err();
-    assert_eq!(
+    assert!(matches!(
         error,
-        MultiprocessError::InvalidBucketBound {
-            bound: "abc".to_owned(),
-        }
-    );
+        MultiprocessError::InvalidBucketBound { ref bound } if bound == "abc"
+    ));
     assert_eq!(error.to_string(), "the bucket bound abc is not a float");
 }
 
@@ -467,12 +488,10 @@ fn fails_on_an_unknown_metric_type() {
         &[entry("target_info", "target_info", &[], 1.0)],
     );
     let error = merge(&[path]).unwrap_err();
-    assert_eq!(
+    assert!(matches!(
         error,
-        MultiprocessError::InvalidType {
-            kind: "info".to_owned(),
-        }
-    );
+        MultiprocessError::InvalidType { ref kind } if kind == "info"
+    ));
     assert_eq!(error.to_string(), "Invalid metric type: info");
 }
 
@@ -485,12 +504,10 @@ fn fails_on_a_metric_name_that_is_not_an_identifier() {
         &[entry("1bad", "1bad_total", &[], 1.0)],
     );
     let error = merge(&[path]).unwrap_err();
-    assert_eq!(
+    assert!(matches!(
         error,
-        MultiprocessError::InvalidName {
-            name: "1bad".to_owned(),
-        }
-    );
+        MultiprocessError::InvalidName { ref name } if name == "1bad"
+    ));
     assert_eq!(error.to_string(), "Invalid metric name: 1bad");
 }
 

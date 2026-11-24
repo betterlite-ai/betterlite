@@ -21,8 +21,38 @@ type Families = IndexMap<String, FamilyBuilder>;
 struct FamilyBuilder {
     help: String,
     kind: MetricKind,
-    mode: Option<String>,
+    mode: Option<GaugeMode>,
     samples: Vec<RawSample>,
+}
+
+// prometheus_client's gauge branches on the file name's mode; any other name takes the all branch
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GaugeMode {
+    All,
+    Min,
+    Max,
+    Sum,
+    MostRecent,
+}
+
+impl GaugeMode {
+    fn from_file_mode(mode: &str) -> Self {
+        match mode {
+            "min" | "livemin" => Self::Min,
+            "max" | "livemax" => Self::Max,
+            "sum" | "livesum" => Self::Sum,
+            "mostrecent" | "livemostrecent" => Self::MostRecent,
+            _other => Self::All,
+        }
+    }
+
+    // min, max, sum and mostrecent combine a series without its pid label; all keeps each pid
+    const fn combines_without_pid(self) -> bool {
+        match self {
+            Self::All => false,
+            Self::Min | Self::Max | Self::Sum | Self::MostRecent => true,
+        }
+    }
 }
 
 struct RawSample {
@@ -109,7 +139,7 @@ fn add_entry(
             .unwrap_or_default();
         label_pairs.retain(|(label, _value)| label != "pid");
         label_pairs.push(("pid".to_owned(), pid.to_owned()));
-        family.mode = Some(mode.to_owned());
+        family.mode = Some(GaugeMode::from_file_mode(mode));
         Some(entry.timestamp)
     } else {
         None
