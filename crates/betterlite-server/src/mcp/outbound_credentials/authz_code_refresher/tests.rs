@@ -21,13 +21,14 @@ use super::ports::{
     CredentialPersist, EpochClock, PersistRequest, ServerLookup, TokenEndpointPost,
 };
 use super::{AuthorizationCodeRefresher, refresh_form};
+use crate::mcp::outbound_credentials::per_user_oauth_store::chain::SharedBinding;
 use crate::mcp::outbound_credentials::{OAuthToken, TokenRefresher, TokenStoreUnavailable};
 
 type FakeRefresher = AuthorizationCodeRefresher<
     Arc<FakeLookup>,
     Arc<FakePost>,
     Arc<FakePersist>,
-    Arc<FakeBinding>,
+    SharedBinding<FakeBinding>,
     FixedClock,
 >;
 
@@ -243,7 +244,7 @@ fn fixture(
         server_lookup: Arc::new(FakeLookup { server }),
         token_endpoint: Arc::clone(&post),
         persist: Arc::clone(&persist),
-        binding: Arc::clone(&binding),
+        binding: SharedBinding(Arc::clone(&binding)),
         clock: FixedClock(1_000.0),
     };
     Harness {
@@ -660,7 +661,7 @@ async fn a_persist_failure_is_returned_to_the_caller() {
         }),
         token_endpoint: Arc::clone(&post),
         persist: Arc::clone(&persist),
-        binding: Arc::clone(&binding),
+        binding: SharedBinding(Arc::clone(&binding)),
         clock: FixedClock(1_000.0),
     };
     let outcome = refresher

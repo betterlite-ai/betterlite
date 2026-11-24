@@ -427,13 +427,12 @@ async fn store_shared_binding_delegates_enforce_and_the_proof_check() {
         grant_type: "refresh_token",
         ownership: None,
     };
-    let accepting = Arc::new(RecordingBinding {
+    let shared = SharedBinding(Arc::new(RecordingBinding {
         matches: true,
         checks: AtomicUsize::new(0),
         proof: Some("bound".to_owned()),
         proofs: Mutex::new(Vec::new()),
-    });
-    let shared = SharedBinding(Arc::clone(&accepting));
+    }));
     assert_eq!(
         shared.enforce(&request).await.unwrap(),
         Some("bound".to_owned())
@@ -443,13 +442,12 @@ async fn store_shared_binding_delegates_enforce_and_the_proof_check() {
             .proof_matches(server.as_ref(), "user", Some("stored"))
             .await
     );
-    let rejecting = Arc::new(RecordingBinding {
+    let refusing = SharedBinding(Arc::new(RecordingBinding {
         matches: false,
         checks: AtomicUsize::new(0),
         proof: None,
         proofs: Mutex::new(Vec::new()),
-    });
-    let refusing = SharedBinding(rejecting);
+    }));
     assert!(!refusing.proof_matches(server.as_ref(), "user", None).await);
 }
 

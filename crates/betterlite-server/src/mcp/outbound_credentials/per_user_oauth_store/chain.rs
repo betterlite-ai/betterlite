@@ -109,13 +109,14 @@ pub struct PerUserStoreBuilder<Lookup, Binding, Reader, Persist, Post, Redis> {
 impl<Lookup, Binding, Reader, Persist, Post, Redis> StoreBuilder
     for PerUserStoreBuilder<Lookup, Binding, Reader, Persist, Post, Redis>
 where
-    Lookup: ServerLookup,
-    Binding:
-        OauthBindingPort<Server = MCPServer, Ownership = RefreshOwnership, Denied = BindingDenied>,
-    Reader: CredentialReader,
-    Persist: CredentialPersist,
-    Post: TokenEndpointPost,
-    Redis: RedisChain,
+    Lookup: ServerLookup + 'static,
+    Binding: OauthBindingPort<Server = MCPServer, Ownership = RefreshOwnership, Denied = BindingDenied>
+        + 'static,
+    Reader: CredentialReader + 'static,
+    Persist: CredentialPersist + 'static,
+    Post: TokenEndpointPost + 'static,
+    Redis: RedisChain + 'static,
+    <Redis as RedisChain>::Cache: 'static,
 {
     fn build(&self) -> BuiltStore {
         let reader = BoundCredentialReader {

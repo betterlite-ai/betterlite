@@ -76,7 +76,7 @@ impl TokenEndpointPost for PooledTokenPost {
 }
 
 #[derive(Debug, Error)]
-enum RefreshRequestError {
+pub(super) enum RefreshRequestError {
     #[error("the token URL is not a URL")]
     Url,
     #[error(transparent)]
