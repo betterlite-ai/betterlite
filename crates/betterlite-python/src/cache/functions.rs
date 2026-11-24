@@ -82,7 +82,7 @@ pub(crate) fn cache_embedding(settings: &str, request: &str) -> PyResult<String>
         &mut envelope,
         &result,
         call.input_value()?,
-        call.result_index(),
+        call.index,
     )
     .map_err(CacheError::from)?;
     Ok(convert::embedding_text(&entry)?)

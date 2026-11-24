@@ -28,7 +28,19 @@ struct PreparedAnswer {
 
 #[derive(Debug, Deserialize)]
 struct PreparedData {
-    timestamp: CacheValue,
+    timestamp: f64,
+    response: CacheValue,
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddingAnswer {
+    cache_key: String,
+    cached_data: PreparedResponse,
+    ttl: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PreparedResponse {
     response: CacheValue,
 }
 
@@ -81,8 +93,8 @@ fn cache_request_rejects_an_unknown_key_or_a_malformed_text() {
 
 #[test]
 fn cache_request_index_defaults_to_zero() {
-    assert_eq!(call(r#"{"kwargs": {}}"#).result_index(), 0);
-    assert_eq!(call(r#"{"kwargs": {}, "index": 3}"#).result_index(), 3);
+    assert_eq!(call(r#"{"kwargs": {}}"#).index, 0);
+    assert_eq!(call(r#"{"kwargs": {}, "index": 3}"#).index, 3);
 }
 
 #[test]
@@ -146,7 +158,7 @@ fn cache_result_envelope_holds_the_timestamp_and_the_response() {
     .unwrap();
     let answer: PreparedAnswer = serde_json::from_str(&text).unwrap();
     assert_eq!(answer.cache_key, "key");
-    assert_eq!(answer.cached_data.timestamp, CacheValue::Float(12.5_f64));
+    assert_eq!(answer.cached_data.timestamp, 12.5_f64);
     assert_eq!(
         answer.cached_data.response,
         CacheValue::Text("hi".to_owned())
@@ -216,7 +228,7 @@ fn cache_result_the_embedding_envelope_keeps_the_cached_data() {
         ttl: Some(45.0_f64),
     };
     let text = embedding_text(&entry).unwrap();
-    let answer: PreparedAnswer = serde_json::from_str(&text).unwrap();
+    let answer: EmbeddingAnswer = serde_json::from_str(&text).unwrap();
     assert_eq!(answer.cache_key, "embedding-key");
     assert_eq!(
         answer.cached_data.response,

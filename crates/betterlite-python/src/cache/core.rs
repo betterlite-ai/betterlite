@@ -100,7 +100,7 @@ impl CacheCore {
             &mut request,
             &result,
             call.input_value()?,
-            call.result_index(),
+            call.index,
         )?;
         convert::embedding_text(&entry)
     }

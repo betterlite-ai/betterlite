@@ -24,7 +24,7 @@ class CacheStore(Protocol):
 
 # LiteLLM reaches ping and delete_cache_keys only on a backend that declares them, like RedisCache.
 @runtime_checkable
-class CacheLifecycle(Protocol):
+class CacheLifecycle(CacheStore, Protocol):
     async def ping(self) -> bool: ...
 
     async def delete_cache_keys(self, keys: list[str]) -> None: ...

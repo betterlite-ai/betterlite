@@ -55,11 +55,6 @@ struct EntryEnvelope {
     response: CachedEmbedding,
 }
 
-#[derive(Debug, Deserialize)]
-struct HitEnvelope {
-    response: CachedEmbedding,
-}
-
 fn open(settings: &str) -> CacheCore {
     Python::initialize();
     let wire = convert::parse_settings(settings).unwrap();
@@ -95,7 +90,7 @@ fn cache_core_rejects_a_type_it_cannot_build() {
     let Err(refused) = get_runtime().block_on(CacheCore::open(&wire)) else {
         panic!("a redis cache has no native store");
     };
-    assert!(refused.to_string().contains("redis"));
+    assert!(refused.to_string().contains("Redis"));
 }
 
 #[test]
@@ -192,14 +187,14 @@ fn cache_core_pipeline_writes_every_input_and_skips_a_count_mismatch() {
     get_runtime()
         .block_on(core.async_write_pipeline(&call(EMBEDDING_WRITE)))
         .unwrap();
-    let first: HitEnvelope =
+    let first: CachedEmbedding =
         serde_json::from_str(&core.lookup(&call(EMBEDDING_LOOKUP_A)).unwrap()).unwrap();
-    let second: HitEnvelope =
+    let second: CachedEmbedding =
         serde_json::from_str(&core.lookup(&call(EMBEDDING_LOOKUP_B)).unwrap()).unwrap();
-    assert_eq!(first.response.index, Some(0));
-    assert_eq!(second.response.index, Some(1));
-    assert_eq!(first.response.prompt_tokens, Some(4));
-    assert_eq!(second.response.prompt_tokens, Some(3));
+    assert_eq!(first.index, Some(0));
+    assert_eq!(second.index, Some(1));
+    assert_eq!(first.prompt_tokens, Some(4));
+    assert_eq!(second.prompt_tokens, Some(3));
 }
 
 #[test]

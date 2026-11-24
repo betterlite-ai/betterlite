@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import time
 from collections.abc import Iterator
 from typing import Final
@@ -11,6 +10,7 @@ import betterlite
 from betterlite._cache_ops import wire
 from betterlite._cache_ops.types import CacheLifecycle, CacheSettings, CacheStore, StoredAnswer
 from betterlite._native import NativeCache, cache_decode, cache_embedding, cache_envelope, cache_key
+from betterlite._settings.env import env_number
 from betterlite.types.caching import CachingSupportedCallTypes, LiteLLMCacheType
 from betterlite.types.utils.base import InitValue
 
@@ -19,15 +19,12 @@ _CHUNK_SIZE: Final = 5
 _SEMANTIC_TYPES: Final[frozenset[str]] = frozenset(
     {"redis-semantic", "valkey-semantic", "qdrant-semantic"}
 )
-_DELAY_TEXT: Final = os.environ.get("CACHED_STREAMING_CHUNK_DELAY")
 # LiteLLM's CACHED_STREAMING_CHUNK_DELAY, which an empty value leaves at the default
-CACHED_STREAMING_CHUNK_DELAY: Final[float] = (
-    0.02 if _DELAY_TEXT is None or _DELAY_TEXT == "" else float(_DELAY_TEXT)
-)
+CACHED_STREAMING_CHUNK_DELAY: Final[float] = env_number("CACHED_STREAMING_CHUNK_DELAY", 0.02, float)
 
 
 class CacheOperations:
-    cache: CacheStore
+    cache: CacheStore | CacheLifecycle
     _native_cache: NativeCache | None = None
     type: LiteLLMCacheType
     namespace: str | None

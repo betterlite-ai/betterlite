@@ -35,7 +35,7 @@ pub(crate) struct CacheCall {
     pub(crate) result: Option<Json>,
     pub(crate) value: Option<Json>,
     pub(crate) input: Option<KeyValue>,
-    pub(crate) index: Option<usize>,
+    pub(crate) index: usize,
 }
 
 impl CacheCall {
@@ -72,11 +72,6 @@ impl CacheCall {
     // ast-grep-ignore: no-one-line-functions
     pub(crate) fn input_value(&self) -> Result<&KeyValue, CacheError> {
         self.input.as_ref().ok_or(CacheError::MissingInput)
-    }
-
-    // ast-grep-ignore: no-one-line-functions - idx_in_result_data takes 0, as in LiteLLM's add_embedding_response_to_cache
-    pub(crate) fn result_index(&self) -> usize {
-        self.index.unwrap_or_default()
     }
 
     // ast-grep-ignore: no-padded-one-line-functions - s-maxage wins over s-max-age and neither bounds the age
