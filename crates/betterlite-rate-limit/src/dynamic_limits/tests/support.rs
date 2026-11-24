@@ -86,24 +86,36 @@ impl RecordingCache {
 
     pub(crate) fn failing_reads() -> Self {
         Self {
+            sets: Arc::default(),
+            reads: Arc::default(),
+            writes: Arc::default(),
+            gate: None,
             read_fails: true,
-            ..Self::default()
+            write_fails: false,
         }
     }
 
     // a cache whose set add waits for release, so a hook that awaited the write could never return
     pub(crate) fn gated() -> Self {
         Self {
+            sets: Arc::default(),
+            reads: Arc::default(),
+            writes: Arc::default(),
             gate: Some(Arc::default()),
-            ..Self::default()
+            read_fails: false,
+            write_fails: false,
         }
     }
 
     // a cache whose set add always fails, still recording the attempt so the test can see the task ran
     pub(crate) fn failing_writes() -> Self {
         Self {
+            sets: Arc::default(),
+            reads: Arc::default(),
+            writes: Arc::default(),
+            gate: None,
+            read_fails: false,
             write_fails: true,
-            ..Self::default()
         }
     }
 
