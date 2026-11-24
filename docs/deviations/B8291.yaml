@@ -1,0 +1,27 @@
+task: B8291
+deviations:
+  - what: logging_disabled is the fourth argument of execute, passed by B336's summary call. LiteLLM's execute reads turn_off_message_logging from the inherited privacy context variable that B336 sets just before that call.
+    why: Rust has no context variables, so B336 passes the value it would have set. The value depends on the payload being compacted, so it cannot be fixed when the executor is built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L42
+  - what: A missing or non-string model is MissingModel (HTTP 400). LiteLLM calls str(payload["model"]), which raises KeyError for a missing model and turns a number into text.
+    why: B336 always sets a string model, so only a bug reaches this, and a typed error is clearer than stringifying a value that is not a model name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L56
+  - what: The child request goes through the tower service in memory. LiteLLM uses its own ASGI client.
+    why: Same effect, no socket, and axum already serves a tower service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/asgi_handler.py#L16-L46
+  - what: A child response body larger than 4 MiB is an error instead of being read in full.
+    why: Every input has a bound, and a compaction summary is far smaller than 4 MiB, while LiteLLM's aread has no limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L73
+  - what: A root path or parent URL that does not form a valid URI is an error naming the URI. LiteLLM builds the URL string and fails when httpx parses it.
+    why: A root path that does not start with a slash cannot be a mount prefix, and a typed error at the point that refuses it is clearer than a later URL parse failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L48
+  - what: The child's privacy flag is B188's PrivacyContext placed in the child request's extensions inside the spawned task. LiteLLM sets the inherited_message_logging_disabled context variable around the child call.
+    why: Rust has no inherited context variables, and the workspace keeps per-run data out of task locals, so the flag travels on the request whose call it describes, set where LiteLLM sets its variable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L16-L20
+  - what: The BadRequestError metadata is not carried. LiteLLM sets model="context_compaction" and llm_provider="" on the error object.
+    why: The HTTP body carries message, type, param and code, which match; the model and provider are read only by LiteLLM's logging, and B336 owns how a failed summary is attributed and logged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L68-L72
+  - what: The child keeps the parent HeaderMap order, where repeated headers group after their first value. LiteLLM copies the raw ASGI header list, which can interleave repeats of different names.
+    why: B100 hands the executor the parent HeaderMap, and http::HeaderMap stores repeats grouped with their first occurrence; every value and each name's relative order is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L49-L54
+kept_bugs: []
