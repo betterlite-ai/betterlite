@@ -1,0 +1,86 @@
+kind: helper
+name: mcp-openapi-call-result-parse
+call:
+  b4683:
+    operation: call
+    path: /pets
+    method: get
+    spec_operation: {}
+    base_url: https://api.example.com
+    headers: {}
+    server_label: null
+    relays_upstream_auth: false
+    auth_type: null
+    upstream_token_header: null
+    arguments: {}
+    auth_header: null
+    extra_headers: {}
+    resolved_auth_headers: {}
+    reply: {status: 200, headers: {}, body: '  '}
+calls:
+  - b4683:
+      operation: call
+      path: /pets
+      method: get
+      spec_operation: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: not json}
+  - b4683:
+      operation: call
+      path: /pets
+      method: get
+      spec_operation: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: 'null'}
+  - b4683:
+      operation: call
+      path: /pets
+      method: get
+      spec_operation: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: '{"a": 1}'}
+  - b4683:
+      operation: call
+      path: /pets
+      method: get
+      spec_operation: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 204, headers: {}, body: ''}
+env: {}
+compare: {ignore: []}

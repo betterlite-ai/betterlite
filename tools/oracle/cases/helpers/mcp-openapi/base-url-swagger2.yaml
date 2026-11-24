@@ -1,0 +1,30 @@
+kind: helper
+name: mcp-openapi-base-url-swagger2
+call:
+  b4683:
+    operation: base_url
+    spec:
+      host: petstore.example.com
+      schemes: [http]
+      basePath: /api/v2
+    spec_path: https://example.com/swagger.json
+calls:
+  - b4683:
+      operation: base_url
+      spec:
+        host: petstore.example.com
+        schemes: [https]
+      spec_path: null
+  - b4683:
+      operation: base_url
+      spec:
+        host: petstore.example.com
+      spec_path: null
+  - b4683:
+      operation: base_url
+      spec:
+        host: petstore.example.com
+        basePath: ''
+      spec_path: https://example.com/swagger.json
+env: {}
+compare: {ignore: []}
