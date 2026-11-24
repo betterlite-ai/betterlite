@@ -136,23 +136,25 @@ def settings_dict(settings: SettingsView) -> dict[str, JsonValue]:
 
 
 def answer(call: Call, hook: BatchRateLimiter, auth: UserAPIKeyAuth) -> JsonValue:
-    if call["function"] == "file_bound_model":
-        return {"function": "file_bound_model", "model": hook._get_file_bound_batch_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L151
-    if call["function"] == "batch_routing_model":
-        return {"function": "batch_routing_model", "model": hook._get_batch_routing_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L182
-    if call["function"] == "resolve_batch_provider":
-        return {"function": "resolve_batch_provider", "provider": hook._resolve_batch_provider(call["model"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L201
-    if call["function"] == "create_batch_rate_limit_descriptors":
-        descriptors = hook._create_batch_rate_limit_descriptors(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L231
-            user_api_key_dict=auth, data=call["data"]
-        )
-        return {
-            "function": "create_batch_rate_limit_descriptors",
-            "descriptors": [descriptor_view(descriptor) for descriptor in descriptors],
-        }
-    if call["function"] == "project_has_io_limits":
-        return {"function": "project_has_io_limits", "has_limits": BatchRateLimiter._project_has_any_io_token_limits(auth)}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L288
-    return answer_usage(call, hook, auth)
+    match call["function"]:
+        case "file_bound_model":
+            return {"function": "file_bound_model", "model": hook._get_file_bound_batch_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L151
+        case "batch_routing_model":
+            return {"function": "batch_routing_model", "model": hook._get_batch_routing_model(call["data"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L182
+        case "resolve_batch_provider":
+            return {"function": "resolve_batch_provider", "provider": hook._resolve_batch_provider(call["model"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L201
+        case "create_batch_rate_limit_descriptors":
+            descriptors = hook._create_batch_rate_limit_descriptors(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L231
+                user_api_key_dict=auth, data=call["data"]
+            )
+            return {
+                "function": "create_batch_rate_limit_descriptors",
+                "descriptors": [descriptor_view(descriptor) for descriptor in descriptors],
+            }
+        case "project_has_io_limits":
+            return {"function": "project_has_io_limits", "has_limits": BatchRateLimiter._project_has_any_io_token_limits(auth)}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L288
+        case _:
+            return answer_usage(call, hook, auth)
 
 
 def answer_usage(call: Call, hook: BatchRateLimiter, auth: UserAPIKeyAuth) -> JsonValue:
