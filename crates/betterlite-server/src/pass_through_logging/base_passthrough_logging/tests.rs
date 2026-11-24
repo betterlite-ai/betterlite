@@ -1,4 +1,5 @@
 #![cfg(test)]
+
 use std::sync::Arc;
 
 use betterlite_config::sections::request_headers::Settings;
