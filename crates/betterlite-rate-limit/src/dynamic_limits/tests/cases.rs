@@ -166,6 +166,23 @@ async fn overflow_saturates() {
     assert_eq!(usage.available_rpm, Some(i64::MAX));
 }
 
+// a share far below the bound is negative, so the clamp zeroes it and the model total keeps its value
+#[tokio::test]
+async fn negative_overflow_clamps_to_zero() {
+    let harness = harness_with(
+        FakeRouter::answering((Some(i64::MIN), Some(i64::MIN)), (Some(0), Some(0))),
+        Arc::default(),
+        prod_reservation(PriorityValue::Percent(2.0)),
+    );
+    let usage = harness
+        .handler()
+        .check_available_usage(MODEL, Some("prod"))
+        .await;
+    assert_eq!(usage.available_tpm, Some(0));
+    assert_eq!(usage.available_rpm, Some(0));
+    assert_eq!(usage.model_tpm, Some(i64::MIN));
+}
+
 // every read failure, a missing router, a zero count and a non-finite share fail open to five Nones
 #[tokio::test]
 async fn exception_returns_nones() {
