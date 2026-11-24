@@ -18,9 +18,9 @@ use tokio::time::timeout;
 
 use self::support::{
     BATCH_ID, COLLECTION_ROUTE, CountingIds, Creation, ID_SCOPED_ROUTE, MODEL, RESPONSE_ID,
-    assert_registrant_defaults, assert_registrant_identity, batch_body, batch_object, capture_logs,
-    field, handler, handler_with_ids, message, metadata, provider_fields, registry_port, router,
-    router_port, router_port_of, run, start_time, text,
+    assert_registrant_defaults, assert_registrant_empty_defaults, assert_registrant_identity,
+    batch_body, batch_object, capture_logs, field, handler, handler_with_ids, message, metadata,
+    provider_fields, registry_port, router, router_port, router_port_of, run, start_time, text,
 };
 use super::{BatchJobState, RegistryError, unified_object_id};
 
@@ -28,7 +28,7 @@ const SONNET_UNIFIED: &str = "bGl0ZWxsbV9wcm94eTttb2RlbF9pZDphbnRocm9waWMvY2xhdW
 
 #[test]
 fn batch_success_record_matches_litellm_shape() {
-    let (logged, _call_log) = run(&handler(None, None), &Creation::success(MODEL));
+    let (logged, _) = run(&handler(None, None), &Creation::success(MODEL));
     assert_eq!(logged.result.id, RESPONSE_ID);
     assert_eq!(logged.result.model, MODEL);
     assert_eq!(logged.result.object, "batch");
@@ -44,8 +44,6 @@ fn batch_success_record_matches_litellm_shape() {
             "Batch job {BATCH_ID} created and is pending. Status will be updated when the batch completes."
         )
     );
-    assert_eq!(choice.message.tool_calls, None);
-    assert_eq!(choice.message.function_call, None);
     let fields = provider_fields(&logged);
     let names: Vec<&str> = fields.keys().map(String::as_str).collect();
     assert_eq!(
@@ -61,10 +59,18 @@ fn batch_success_record_matches_litellm_shape() {
 }
 
 #[test]
+fn batch_success_message_has_no_tool_calls() {
+    let (logged, _) = run(&handler(None, None), &Creation::success(MODEL));
+    let logged_message = message(&logged);
+    assert_eq!(logged_message.tool_calls, None);
+    assert_eq!(logged_message.function_call, None);
+}
+
+#[test]
 fn batch_success_kwargs_match_litellm() {
     const META: &str = r#"{"user_api_key_user_id":"user-1"}"#;
     let creation = Creation::success(MODEL).with_metadata(META);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.kwargs.response_cost, Decimal::ZERO);
     assert_eq!(logged.kwargs.model, MODEL);
     assert_eq!(logged.kwargs.batch_id, Some(BATCH_ID.to_owned()));
@@ -102,7 +108,7 @@ fn batch_success_created_from_start_time() {
         .expect("a valid timestamp")
         .with_timezone(&Utc);
     let creation = Creation::success(MODEL).with_start_time(start);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.result.created, 1_717_243_200_i64);
     assert_ne!(logged.result.created, start_time().timestamp());
 }
@@ -122,7 +128,7 @@ fn batch_success_model_from_top_level_request_body() {
 fn batch_success_model_from_nested_params() {
     let creation = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"requests":[{"params":{"model":"claude-nested"}}]}"#);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.result.model, "claude-nested");
     assert_eq!(
         text(provider_fields(&logged), "unified_object_id"),
@@ -133,7 +139,7 @@ fn batch_success_model_from_nested_params() {
 #[test]
 fn batch_success_model_falls_back_to_unknown() {
     let no_body = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE);
-    let (first, _call_log) = run(&handler(None, None), &no_body);
+    let (first, _) = run(&handler(None, None), &no_body);
     assert_eq!(first.result.model, "unknown");
     assert_eq!(
         text(provider_fields(&first), "unified_object_id"),
@@ -141,23 +147,23 @@ fn batch_success_model_falls_back_to_unknown() {
     );
     let empty_requests = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"requests":[]}"#);
-    let (second, _call_log) = run(&handler(None, None), &empty_requests);
+    let (second, _) = run(&handler(None, None), &empty_requests);
     assert_eq!(second.result.model, "unknown");
     let scalar_request = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"requests":[5]}"#);
-    let (third, _call_log) = run(&handler(None, None), &scalar_request);
+    let (third, _) = run(&handler(None, None), &scalar_request);
     assert_eq!(third.result.model, "unknown");
     let empty_nested = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"requests":[{"params":{"model":""}}]}"#);
-    let (fourth, _call_log) = run(&handler(None, None), &empty_nested);
+    let (fourth, _) = run(&handler(None, None), &empty_nested);
     assert_eq!(fourth.result.model, "unknown");
     let non_string_nested = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"requests":[{"params":{"model":5}}]}"#);
-    let (fifth, _call_log) = run(&handler(None, None), &non_string_nested);
+    let (fifth, _) = run(&handler(None, None), &non_string_nested);
     assert_eq!(fifth.result.model, "unknown");
     let non_object_params = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"requests":[{"params":5}]}"#);
-    let (sixth, _call_log) = run(&handler(None, None), &non_object_params);
+    let (sixth, _) = run(&handler(None, None), &non_object_params);
     assert_eq!(sixth.result.model, "unknown");
 }
 
@@ -165,11 +171,11 @@ fn batch_success_model_falls_back_to_unknown() {
 fn batch_success_empty_top_level_model_falls_back_to_nested() {
     let creation = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"model":"","requests":[{"params":{"model":"nested"}}]}"#);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.result.model, "nested");
     let alone = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"model":""}"#);
-    let (second, _call_log) = run(&handler(None, None), &alone);
+    let (second, _) = run(&handler(None, None), &alone);
     assert_eq!(second.result.model, "unknown");
 }
 
@@ -177,7 +183,7 @@ fn batch_success_empty_top_level_model_falls_back_to_nested() {
 fn batch_success_top_level_model_wins_over_nested() {
     let creation = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"model":"top","requests":[{"params":{"model":"nested"}}]}"#);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.result.model, "top");
 }
 
@@ -185,7 +191,7 @@ fn batch_success_top_level_model_wins_over_nested() {
 fn batch_success_non_string_top_level_model_uses_nested() {
     let creation = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"model":5,"requests":[{"params":{"model":"nested"}}]}"#);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.result.model, "nested");
 }
 
@@ -193,7 +199,7 @@ fn batch_success_non_string_top_level_model_uses_nested() {
 fn batch_success_unknown_model_string_uses_nested() {
     let creation = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"model":"unknown","requests":[{"params":{"model":"nested"}}]}"#);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.result.model, "nested");
     assert_eq!(
         text(provider_fields(&logged), "unified_object_id"),
@@ -201,15 +207,15 @@ fn batch_success_unknown_model_string_uses_nested() {
     );
     let alone = Creation::new(200, batch_body(BATCH_ID), ID_SCOPED_ROUTE)
         .with_request_body(r#"{"model":"unknown"}"#);
-    let (second, _call_log) = run(&handler(None, None), &alone);
+    let (second, _) = run(&handler(None, None), &alone);
     assert_eq!(second.result.model, "unknown");
 }
 
 #[test]
 fn batch_success_router_id_replaces_model_in_unified_id() {
     let recording = router(&["litellm-deployment"]);
-    let logging = handler(router_port_of(&recording), None);
-    let (logged, _call_log) = run(&logging, &Creation::success(MODEL));
+    let logging = handler(Some(router_port_of(&recording)), None);
+    let (logged, _) = run(&logging, &Creation::success(MODEL));
     assert_eq!(logged.result.model, MODEL);
     assert_eq!(
         text(provider_fields(&logged), "unified_object_id"),
@@ -221,7 +227,7 @@ fn batch_success_router_id_replaces_model_in_unified_id() {
 #[test]
 fn batch_success_router_absent_warns_and_prefixes() {
     let (capture, _lines, _guard) = capture_logs("");
-    let (logged, _call_log) = run(&handler(None, None), &Creation::success(MODEL));
+    let (logged, _) = run(&handler(None, None), &Creation::success(MODEL));
     assert_eq!(
         text(provider_fields(&logged), "unified_object_id"),
         unified_object_id("anthropic/claude-x", BATCH_ID)
@@ -236,7 +242,10 @@ fn batch_success_router_absent_warns_and_prefixes() {
 #[test]
 fn batch_success_router_empty_warns_and_prefixes() {
     let (capture, _lines, _guard) = capture_logs("");
-    let (logged, _call_log) = run(&handler(router_port(&[]), None), &Creation::success(MODEL));
+    let (logged, _) = run(
+        &handler(Some(router_port(&[])), None),
+        &Creation::success(MODEL),
+    );
     assert_eq!(
         text(provider_fields(&logged), "unified_object_id"),
         unified_object_id("anthropic/claude-x", BATCH_ID)
@@ -252,8 +261,8 @@ fn batch_success_router_empty_warns_and_prefixes() {
 fn batch_success_router_found_logs_info_and_uses_first_id() {
     let recording = router(&["deployment-1", "deployment-2"]);
     let (capture, _lines, _guard) = capture_logs("");
-    let logging = handler(router_port_of(&recording), None);
-    let (logged, _call_log) = run(&logging, &Creation::success(MODEL));
+    let logging = handler(Some(router_port_of(&recording)), None);
+    let (logged, _) = run(&logging, &Creation::success(MODEL));
     assert_eq!(
         text(provider_fields(&logged), "unified_object_id"),
         unified_object_id("deployment-1", BATCH_ID)
@@ -268,7 +277,7 @@ fn batch_success_router_found_logs_info_and_uses_first_id() {
 
 #[test]
 fn batch_success_already_prefixed_model_keeps_one_prefix() {
-    let (logged, _call_log) = run(
+    let (logged, _) = run(
         &handler(None, None),
         &Creation::success("anthropic/claude-opus-4"),
     );
@@ -277,8 +286,8 @@ fn batch_success_already_prefixed_model_keeps_one_prefix() {
         unified_object_id("anthropic/claude-opus-4", BATCH_ID)
     );
     let recording = router(&["anthropic/claude-opus-4"]);
-    let logging = handler(router_port_of(&recording), None);
-    let (routed, _call_log) = run(&logging, &Creation::success("anthropic/claude-opus-4"));
+    let logging = handler(Some(router_port_of(&recording)), None);
+    let (routed, _) = run(&logging, &Creation::success("anthropic/claude-opus-4"));
     assert_eq!(
         text(provider_fields(&routed), "unified_object_id"),
         unified_object_id("anthropic/claude-opus-4", BATCH_ID)
@@ -288,18 +297,17 @@ fn batch_success_already_prefixed_model_keeps_one_prefix() {
 #[test]
 fn batch_success_uses_a_fresh_response_id_per_record() {
     let logging = handler_with_ids(None, None, Arc::new(CountingIds::new()));
-    let (first, _call_log) = run(&logging, &Creation::success(MODEL));
-    let (second, _call_log) = run(&logging, &Creation::success(MODEL));
+    let (first, _) = run(&logging, &Creation::success(MODEL));
+    let (second, _) = run(&logging, &Creation::success(MODEL));
     assert_eq!(first.result.id, "id-1");
     assert_eq!(second.result.id, "id-2");
 }
 
 #[test]
 fn batch_non_200_gives_failed_record() {
-    let (port, mut received) = registry_port(Ok(()));
     let creation = Creation::new(500, batch_body(BATCH_ID), COLLECTION_ROUTE)
         .with_request_body(r#"{"model":"claude-x"}"#);
-    let (logged, call_log) = run(&handler(None, port), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(logged.result.id, RESPONSE_ID);
     assert_eq!(logged.result.model, "anthropic_batch");
     assert_eq!(logged.result.object, "batch");
@@ -319,6 +327,15 @@ fn batch_non_200_gives_failed_record() {
     assert_eq!(logged.kwargs.model, "anthropic_batch");
     assert_eq!(logged.kwargs.batch_id, None);
     assert_eq!(logged.kwargs.unified_object_id, None);
+    assert_eq!(logged.kwargs.batch_job_state, BatchJobState::Failed);
+}
+
+#[test]
+fn batch_non_200_leaves_call_log_alone() {
+    let (port, mut received) = registry_port(Ok(()));
+    let creation = Creation::new(500, batch_body(BATCH_ID), COLLECTION_ROUTE)
+        .with_request_body(r#"{"model":"claude-x"}"#);
+    let (logged, call_log) = run(&handler(None, port), &creation);
     assert_eq!(logged.kwargs.batch_job_state, BatchJobState::Failed);
     assert_eq!(call_log.model, "");
     assert_eq!(
@@ -377,7 +394,7 @@ fn batch_200_without_id_gives_failed_record() {
 #[test]
 fn batch_200_unsearchable_scalar_bodies_give_error_records() {
     let number = Creation::new(200, b"5".to_vec(), ID_SCOPED_ROUTE);
-    let (first, _call_log) = run(&handler(None, None), &number);
+    let (first, _) = run(&handler(None, None), &number);
     assert!(
         text(provider_fields(&first), "error")
             .contains("is a number, which cannot be searched for an id")
@@ -388,13 +405,13 @@ fn batch_200_unsearchable_scalar_bodies_give_error_records() {
             .contains("is a number, which cannot be searched for an id")
     );
     let null = Creation::new(200, b"null".to_vec(), ID_SCOPED_ROUTE);
-    let (second, _call_log) = run(&handler(None, None), &null);
+    let (second, _) = run(&handler(None, None), &null);
     assert!(
         text(provider_fields(&second), "error")
             .contains("is null, which cannot be searched for an id")
     );
     let boolean = Creation::new(200, b"true".to_vec(), ID_SCOPED_ROUTE);
-    let (third, _call_log) = run(&handler(None, None), &boolean);
+    let (third, _) = run(&handler(None, None), &boolean);
     assert!(
         text(provider_fields(&third), "error")
             .contains("is a boolean, which cannot be searched for an id")
@@ -405,10 +422,10 @@ fn batch_200_unsearchable_scalar_bodies_give_error_records() {
 #[test]
 fn batch_200_array_body_uses_membership() {
     let with_id = Creation::new(200, br#"["id"]"#.to_vec(), ID_SCOPED_ROUTE);
-    let (logged, _call_log) = run(&handler(None, None), &with_id);
+    let (logged, _) = run(&handler(None, None), &with_id);
     assert!(text(provider_fields(&logged), "error").contains("the body must be a JSON object"));
     let without_id = Creation::new(200, b"[1,2]".to_vec(), ID_SCOPED_ROUTE);
-    let (failed, _call_log) = run(&handler(None, None), &without_id);
+    let (failed, _) = run(&handler(None, None), &without_id);
     assert_eq!(
         message(&failed).content,
         "Batch job creation failed. Status: 200"
@@ -418,10 +435,10 @@ fn batch_200_array_body_uses_membership() {
 #[test]
 fn batch_200_string_body_uses_substring() {
     let with_id = Creation::new(200, br#""a batch id""#.to_vec(), ID_SCOPED_ROUTE);
-    let (logged, _call_log) = run(&handler(None, None), &with_id);
+    let (logged, _) = run(&handler(None, None), &with_id);
     assert!(text(provider_fields(&logged), "error").contains("the body must be a JSON object"));
     let without_id = Creation::new(200, br#""nothing""#.to_vec(), ID_SCOPED_ROUTE);
-    let (failed, _call_log) = run(&handler(None, None), &without_id);
+    let (failed, _) = run(&handler(None, None), &without_id);
     assert_eq!(
         message(&failed).content,
         "Batch job creation failed. Status: 200"
@@ -431,7 +448,7 @@ fn batch_200_string_body_uses_substring() {
 #[test]
 fn batch_transform_error_gives_error_record() {
     let creation = Creation::new(200, br#"{"id":true}"#.to_vec(), ID_SCOPED_ROUTE);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert!(text(provider_fields(&logged), "error").contains("id must be a string"));
     assert!(
         message(&logged)
@@ -446,7 +463,7 @@ async fn batch_collection_route_registers_managed_object() {
     let (port, mut received) = registry_port(Ok(()));
     let (capture, mut lines, _guard) = capture_logs("Stored Anthropic batch managed object");
     let creation = Creation::success(MODEL).with_metadata(META);
-    let (logged, _call_log) = run(&handler(None, port), &creation);
+    let (logged, _) = run(&handler(None, port), &creation);
     let registration = timeout(Duration::from_secs(5), received.recv())
         .await
         .expect("a registration arrives")
@@ -469,6 +486,7 @@ async fn batch_collection_route_registers_managed_object() {
     let registrant = &registration.registrant;
     assert_registrant_identity(registrant);
     assert_registrant_defaults(registrant);
+    assert_registrant_empty_defaults(registrant);
     timeout(Duration::from_secs(5), lines.recv())
         .await
         .expect("the done callback logs")
@@ -482,7 +500,7 @@ async fn batch_collection_route_registers_managed_object() {
 #[tokio::test]
 async fn batch_registration_defaults_user_id_and_reads_null() {
     let (port, mut received) = registry_port(Ok(()));
-    let _ = run(&handler(None, port), &Creation::success(MODEL));
+    drop(run(&handler(None, port), &Creation::success(MODEL)));
     let defaulted = timeout(Duration::from_secs(5), received.recv())
         .await
         .expect("a registration arrives")
@@ -496,7 +514,7 @@ async fn batch_registration_defaults_user_id_and_reads_null() {
     assert_eq!(defaulted.request_tags, None);
     let (second_port, mut second_received) = registry_port(Ok(()));
     let creation = Creation::success(MODEL).with_metadata(r#"{"user_api_key_user_id":null}"#);
-    let _ = run(&handler(None, second_port), &creation);
+    drop(run(&handler(None, second_port), &creation));
     let nulled = timeout(Duration::from_secs(5), second_received.recv())
         .await
         .expect("a registration arrives")
@@ -508,9 +526,9 @@ async fn batch_registration_defaults_user_id_and_reads_null() {
 async fn batch_id_scoped_route_skips_registration() {
     let (port, mut received) = registry_port(Ok(()));
     let logging = handler(None, port);
-    let _ = run(&logging, &Creation::success(MODEL));
+    drop(run(&logging, &Creation::success(MODEL)));
     let other_route = Creation::new(200, batch_body(BATCH_ID), "/v1/messages");
-    let _ = run(&logging, &other_route);
+    drop(run(&logging, &other_route));
     yield_now().await;
     assert!(matches!(received.try_recv(), Err(TryRecvError::Empty)));
 }
@@ -524,9 +542,9 @@ async fn batch_collection_route_variants_register() {
         batch_body(BATCH_ID),
         "/anthropic/v1/messages/batches?beta=true",
     );
-    let _ = run(&logging, &query_route);
+    drop(run(&logging, &query_route));
     let trailing = Creation::new(200, batch_body(BATCH_ID), "/v1/messages/batches/");
-    let _ = run(&logging, &trailing);
+    drop(run(&logging, &trailing));
     let first = timeout(Duration::from_secs(5), received.recv())
         .await
         .expect("a registration arrives")
@@ -544,7 +562,7 @@ fn batch_missing_registry_warns() {
     let (capture, _lines, _guard) = capture_logs("");
     let creation = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE)
         .with_request_body(r#"{"model":"claude-x"}"#);
-    let (logged, _call_log) = run(&handler(None, None), &creation);
+    let (logged, _) = run(&handler(None, None), &creation);
     assert_eq!(
         text(provider_fields(&logged), "batch_job_state"),
         "in_progress"
@@ -564,7 +582,7 @@ async fn batch_registry_failure_logs_done_callback() {
     let (capture, mut lines, _guard) = capture_logs("boom");
     let creation = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE)
         .with_request_body(r#"{"model":"claude-x"}"#);
-    let (logged, _call_log) = run(&handler(None, port), &creation);
+    let (logged, _) = run(&handler(None, port), &creation);
     assert_eq!(logged.kwargs.batch_job_state, BatchJobState::InProgress);
     let _registration = timeout(Duration::from_secs(5), received.recv())
         .await
@@ -588,7 +606,7 @@ async fn batch_registry_success_logs_done_callback() {
     let (capture, mut lines, _guard) = capture_logs("Stored Anthropic batch managed object");
     let creation = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE)
         .with_request_body(r#"{"model":"claude-x"}"#);
-    let _ = run(&handler(None, port), &creation);
+    drop(run(&handler(None, port), &creation));
     let _registration = timeout(Duration::from_secs(5), received.recv())
         .await
         .expect("a registration arrives")

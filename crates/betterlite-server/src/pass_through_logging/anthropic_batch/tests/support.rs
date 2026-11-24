@@ -70,7 +70,9 @@ impl io::Write for LogCapture {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut bytes = self.bytes.lock().unwrap_or_else(PoisonError::into_inner);
         bytes.extend_from_slice(buf);
-        if self.saw_needle(&bytes) {
+        let found = self.saw_needle(&bytes);
+        drop(bytes);
+        if found {
             let _sent = self.line.try_send(());
         }
         Ok(buf.len())
@@ -223,13 +225,12 @@ pub(crate) fn router(ids: &[&str]) -> Arc<RecordingRouter> {
     Arc::new(RecordingRouter::new(ids))
 }
 
-pub(crate) fn router_port(ids: &[&str]) -> Option<Arc<dyn RouterModelIds>> {
-    Some(Arc::new(RecordingRouter::new(ids)))
+pub(crate) fn router_port(ids: &[&str]) -> Arc<dyn RouterModelIds> {
+    Arc::new(RecordingRouter::new(ids))
 }
 
-pub(crate) fn router_port_of(recording: &Arc<RecordingRouter>) -> Option<Arc<dyn RouterModelIds>> {
-    let port: Arc<dyn RouterModelIds> = Arc::<RecordingRouter>::clone(recording);
-    Some(port)
+pub(crate) fn router_port_of(recording: &Arc<RecordingRouter>) -> Arc<dyn RouterModelIds> {
+    Arc::<RecordingRouter>::clone(recording)
 }
 
 pub(crate) struct RecordingRegistry {
@@ -296,6 +297,9 @@ pub(crate) fn assert_registrant_defaults(registrant: &BatchRegistrant) {
     assert_eq!(registrant.tpm_limit, None);
     assert_eq!(registrant.rpm_limit, None);
     assert_eq!(registrant.budget_duration, None);
+}
+
+pub(crate) fn assert_registrant_empty_defaults(registrant: &BatchRegistrant) {
     assert_eq!(registrant.budget_reset_at, None);
     assert_eq!(registrant.max_parallel_requests, None);
     assert_eq!(registrant.allowed_model_region, None);
