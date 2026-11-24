@@ -33,14 +33,13 @@ pub enum UsageError {
 // remaining_model_tpm: the model's total minus what it used this minute, or the total alone when its usage is unknown
 #[must_use]
 pub const fn remaining_limit(total: Option<i64>, current: Option<i64>) -> Option<i64> {
-    if let Some(total) = total {
-        let mut remaining = total;
-        if let Some(used) = current {
-            remaining = total.saturating_sub(used);
-        }
-        return Some(remaining);
-    }
-    None
+    let Some(limit) = total else {
+        return None;
+    };
+    Some(match current {
+        Some(used) => limit.saturating_sub(used),
+        None => limit,
+    })
 }
 
 // available quota: total * weight / active_projects, truncated toward zero like int() and then clamped to zero or positive
@@ -49,10 +48,10 @@ pub fn available_quota(
     weight: f64,
     active_projects: Option<i64>,
 ) -> Result<Option<i64>, UsageError> {
-    let Some(remaining) = remaining else {
+    let Some(limit) = remaining else {
         return Ok(None);
     };
-    let remaining_float = cast::<i64, f64>(remaining).unwrap_or(f64::INFINITY);
+    let remaining_float = cast::<i64, f64>(limit).unwrap_or(f64::INFINITY);
     let scaled = remaining_float.mul(weight);
     let share = match active_projects {
         None => scaled,

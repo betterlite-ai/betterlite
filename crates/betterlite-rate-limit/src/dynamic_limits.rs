@@ -50,10 +50,10 @@ impl DynamicRateLimiterCache {
     pub async fn async_get_cache(&self, model: &str) -> Result<Option<i64>, CacheReadError> {
         let key = self.minute_key(model);
         let stored = self.cache.async_get_cache(&key).await?;
-        let Some(stored) = stored else {
+        let Some(members) = stored else {
             return Ok(None);
         };
-        Ok(i64::try_from(stored.len()).ok())
+        Ok(i64::try_from(members.len()).ok())
     }
 
     // async_set_cache_sadd: the key joins this minute's model set and the cache expires it after CACHE_TTL_SECONDS
@@ -202,11 +202,11 @@ impl DynamicRateLimitHandler {
     // asyncio.create_task(...async_set_cache_sadd(...)): the write runs on the tracker and only its failure is logged
     fn spawn_registration(&self, model: &str, principal: &PrincipalFacts) {
         let cache = Arc::clone(&self.internal_usage_cache);
-        let model = model.to_owned();
+        let model_name = model.to_owned();
         let member = logged_api_key(principal).map(str::to_owned);
         let values = vec![member.unwrap_or_else(|| String::from(DEFAULT_KEY))];
         self.tasks.spawn(async move {
-            let write = cache.async_set_cache_sadd(&model, &values);
+            let write = cache.async_set_cache_sadd(&model_name, &values);
             if let Err(error) = write.await {
                 tracing::error!(
                     "dynamic_rate_limiter async_set_cache_sadd: Exception occurred - {error}"
