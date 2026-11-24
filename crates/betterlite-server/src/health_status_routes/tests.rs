@@ -132,7 +132,7 @@ async fn save_falls_back_to_the_target_model() {
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].model_name, "group-a");
     assert_eq!(stored[0].model_id.as_deref(), Some("id-a"));
-    assert_eq!(stored[0].healthy_count, 1);
+    assert_eq!(stored[0].healthy_count, 1_i32);
     assert_eq!(stored[0].status, "healthy");
     database.finish().await;
 }

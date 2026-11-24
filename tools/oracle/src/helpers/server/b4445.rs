@@ -179,10 +179,10 @@ fn resolve_targets(cases: &[CaseInput]) -> HelperResult {
 }
 
 fn target_answer(case: &CaseInput) -> HelperResult {
-    let router: Option<Box<dyn HealthRouter>> = case
+    let router = case
         .router
         .as_ref()
-        .map(|input| Box::new(FakeRouter::from(input)));
+        .map(|input| -> Box<dyn HealthRouter> { Box::new(FakeRouter::from(input)) });
     match resolve_target_model_name(
         case.model.as_deref(),
         case.model_id.as_deref(),
