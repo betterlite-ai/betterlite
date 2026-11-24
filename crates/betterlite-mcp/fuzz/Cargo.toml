@@ -14,7 +14,9 @@ cargo-fuzz = true
 [dependencies]
 betterlite-auth = { path = "../../betterlite-auth" }
 betterlite-config = { path = "../../betterlite-config" }
+betterlite-db = { path = "../../betterlite-db" }
 betterlite-mcp = { path = ".." }
+betterlite-secrets = { path = "../../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false }
 libfuzzer-sys = "0.4.9"
 secrecy = "0.10.3"
@@ -79,6 +81,14 @@ bench = false
 [[bin]]
 name = "openapi_spec"
 path = "fuzz_targets/openapi_spec.rs"
+test = false
+doc = false
+bench = false
+
+
+[[bin]]
+name = "gateway_dcr_open_sealed"
+path = "fuzz_targets/gateway_dcr_open_sealed.rs"
 test = false
 doc = false
 bench = false
