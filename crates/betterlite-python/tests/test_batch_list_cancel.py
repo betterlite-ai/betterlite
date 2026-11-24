@@ -313,6 +313,45 @@ def test_page_ignores_the_metadata_kwarg() -> None:
     assert "metadata" not in dict(ours_call["query"])
 
 
+def test_page_ignores_the_extra_headers_and_body() -> None:
+    with ListServer() as server:
+        reference = LITELLM.list_batches(
+            extra_headers=dict(EXTRA_HEADERS),
+            extra_body=dict(EXTRA_BODY),
+            api_base=server.url,
+            api_key=GOOD_KEY,
+        )
+        made = made_page(
+            list_batches(
+                extra_headers=EXTRA_HEADERS,
+                extra_body=EXTRA_BODY,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
+        assert len(server.calls) == CALLS_PER_COMPARISON
+        reference_call, ours_call = server.calls
+    assert made.model_dump() == reference.model_dump()
+    assert dict(ours_call["query"]) == dict(reference_call["query"])
+    assert "x-test" not in {name.lower() for name in ours_call["headers"]}
+    assert "x-test" not in {name.lower() for name in reference_call["headers"]}
+
+
+def test_async_page_ignores_the_metadata_kwarg() -> None:
+    with ListServer() as server:
+        reference = LITELLM.list_batches(api_base=server.url, api_key=GOOD_KEY)
+        made = asyncio.run(
+            awaited_page(
+                alist_batches(metadata=dict(METADATA), api_base=server.url, api_key=GOOD_KEY)
+            )
+        )
+        assert len(server.calls) == CALLS_PER_COMPARISON
+        reference_call, ours_call = server.calls
+    assert made.model_dump() == reference.model_dump()
+    assert dict(ours_call["query"]) == dict(reference_call["query"])
+    assert "metadata" not in dict(ours_call["query"])
+
+
 def test_page_coroutines() -> None:
     with ListServer() as server:
         reference = LITELLM.list_batches(api_base=server.url, api_key=GOOD_KEY)
