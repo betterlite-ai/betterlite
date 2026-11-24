@@ -128,38 +128,12 @@ impl StepOutcome {
             FileContentError::Unsupported { .. }
             | FileContentError::UnsupportedStreaming { .. }
             | FileContentError::SyncVertexStreaming => {
-                let request = error
-                    .bad_request()
-                    .ok_or_else(|| SdkHttpError::Invalid(error.to_string()))?;
-                (
-                    Failure {
-                        class: String::from("BadRequestError"),
-                        status: 400,
-                        kind: Some(None),
-                        param: Some(None),
-                        code: Some(None),
-                        message: format!("litellm.BadRequestError: {error}"),
-                    },
-                    Some(Placeholder {
-                        body: request.body.to_owned(),
-                        method: request.method.to_owned(),
-                        url: request.url.to_owned(),
-                        model: request.model.to_owned(),
-                        provider: request.llm_provider.to_owned(),
-                    }),
-                )
+                let (failure, placeholder) = rejected(error)?;
+                (failure, Some(placeholder))
             }
-            FileContentError::Timeout(_) | FileContentError::UnknownProvider { .. } => (
-                Failure {
-                    class: String::from("ValueError"),
-                    status: 0,
-                    kind: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                },
-                None,
-            ),
+            FileContentError::Timeout(_) | FileContentError::UnknownProvider { .. } => {
+                (value_failure(error), None)
+            }
             FileContentError::Dispatch(wire) => (dispatch_failure(wire)?, None),
             FileContentError::Reply => {
                 return Err(SdkHttpError::Invalid(error.to_string()));
@@ -172,6 +146,44 @@ impl StepOutcome {
             failure: Some(failure),
             placeholder,
         })
+    }
+}
+
+// the rejected-provider 400: BadRequestError, the message prefix and the placeholder response
+fn rejected(
+    error: &FileContentError<ContentWireError>,
+) -> Result<(Failure, Placeholder), SdkHttpError> {
+    let request = error
+        .bad_request()
+        .ok_or_else(|| SdkHttpError::Invalid(error.to_string()))?;
+    Ok((
+        Failure {
+            class: String::from("BadRequestError"),
+            status: 400,
+            kind: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: format!("litellm.BadRequestError: {error}"),
+        },
+        Placeholder {
+            body: request.body.to_owned(),
+            method: request.method.to_owned(),
+            url: request.url.to_owned(),
+            model: request.model.to_owned(),
+            provider: request.llm_provider.to_owned(),
+        },
+    ))
+}
+
+// LiteLLM's ValueError: no SDK class, a zero status and no type, param or code
+fn value_failure(error: &FileContentError<ContentWireError>) -> Failure {
+    Failure {
+        class: String::from("ValueError"),
+        status: 0,
+        kind: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
     }
 }
 

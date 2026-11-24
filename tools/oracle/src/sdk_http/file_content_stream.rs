@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
@@ -9,7 +8,6 @@ use betterlite_core::api::file_content_stream::target::{CallerClient, SuppliedSd
 use betterlite_core::api::file_content_stream::{
     ContentAnswer, ContentCall, ContentContext, ContentEntry, ContentKwargs, FileContentStream,
 };
-use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::ModelCatalog;
@@ -27,11 +25,11 @@ use self::fixtures::anthropic_settings;
 use self::fixtures::logging::RecordingLogging;
 use self::outcome::{StepOutcome, identity};
 use self::wire::{ContentDispatch, Handler};
-use super::OracleLimits;
-use super::call_kind::CallKind;
 use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
+#[path = "file_content_stream/fixtures/cases.rs"]
+mod cases;
 #[path = "file_content_stream/fixtures/clients.rs"]
 mod clients;
 mod fixtures;
@@ -40,98 +38,17 @@ pub mod outcome;
 #[path = "file_content_stream/fixtures/wire.rs"]
 mod wire;
 
+// SdkHttpCall holds a Call, so the case schema keeps the public path calls.rs names
+pub use self::cases::{Call, Function, Step, SuppliedKind};
+
 // the header a supplied HTTPHandler's own client adds, so the wire shows whether the handler was used
 const HANDLER_HEADER: (&str, &str) = ("x-supplied-client", "http-handler");
 const DEFAULT_CHUNK_SIZE: u64 = 1024 * 1024;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Function {
-    FileContent,
-    AfileContent,
-}
-
-// the client kwarg: none, an OpenAI or Azure SDK client, or a LiteLLM HTTPHandler
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SuppliedKind {
-    #[default]
-    None,
-    OpenaiSdk,
-    AzureSdk,
-    HttpHandler,
-}
-
-// one SDK call; api_base is always the mock's, and every other kwarg is passed only when the step names it
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Step {
-    pub function: Function,
-    pub file_id: String,
-    #[serde(default)]
-    pub model: Option<String>,
-    // the Python step declares the provider as text, so an unnamed one is omitted rather than sent as null
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_llm_provider: Option<String>,
-    #[serde(default)]
-    pub extra_headers: Option<BTreeMap<String, String>>,
-    #[serde(default)]
-    pub extra_body: Option<BTreeMap<String, String>>,
-    #[serde(default)]
-    pub api_key: Option<String>,
-    #[serde(default)]
-    pub api_version: Option<String>,
-    #[serde(default)]
-    pub organization: Option<String>,
-    #[serde(default)]
-    pub timeout: Option<ReadTimeout>,
-    #[serde(default)]
-    pub request_timeout: Option<ReadTimeoutValue>,
-    #[serde(default)]
-    pub max_retries: Option<i64>,
-    // an absent size is LiteLLM's 1048576 default
-    #[serde(default)]
-    pub chunk_size: Option<u64>,
-    #[serde(default)]
-    pub stream: bool,
-    #[serde(default)]
-    pub client: SuppliedKind,
-    // the case hands over a real logging object, so the identity file_content_streaming writes is observable
-    #[serde(default)]
-    pub supplied_logging: bool,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Call {
-    pub steps: Vec<Step>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Outcome {
     pub steps: Vec<StepOutcome>,
-}
-
-impl CallKind for Call {
-    fn validate(&self, limits: &OracleLimits) -> Result<(), SdkHttpError> {
-        if self.steps.is_empty() || self.steps.len() > limits.max_requests {
-            return Err(SdkHttpError::Invalid(format!(
-                "a file content call needs 1 to {} steps and has {}",
-                limits.max_requests,
-                self.steps.len()
-            )));
-        }
-        Ok(())
-    }
-
-    fn send(
-        &self,
-        api_base: &str,
-        env: &BTreeMap<String, String>,
-    ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
-        send_steps(self, api_base, env)
-    }
 }
 
 async fn send_steps(
@@ -151,15 +68,7 @@ async fn send_steps(
         ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
     let catalog = ModelCatalog::default();
     let names = BTreeSet::new();
-    let resolution = ResolutionContext {
-        catalog: &catalog,
-        known_model_names: &names,
-        custom_providers: &names,
-        environment: env,
-        registry: JSONProviderRegistry::default(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
+    let resolution = model_resolution(&catalog, &names, env);
     let content = FileContentStream {
         dispatch: ContentDispatch {
             openai: FilesApi {
@@ -178,9 +87,35 @@ async fn send_steps(
     let handler = Handler {
         headers: BTreeMap::from([(HANDLER_HEADER.0.to_owned(), HANDLER_HEADER.1.to_owned())]),
     };
+    run_steps(&content, call, api_base, &handler).await
+}
+
+// the catalog and environment the resolver reads, held by send_steps for the call's lifetime
+fn model_resolution<'deps>(
+    catalog: &'deps ModelCatalog,
+    names: &'deps BTreeSet<String>,
+    env: &'deps BTreeMap<String, String>,
+) -> ResolutionContext<'deps> {
+    ResolutionContext {
+        catalog,
+        known_model_names: names,
+        custom_providers: names,
+        environment: env,
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    }
+}
+
+async fn run_steps(
+    content: &FileContentStream<'_, ContentDispatch>,
+    call: &Call,
+    api_base: &str,
+    handler: &Handler,
+) -> Result<SdkResult, SdkHttpError> {
     let mut steps = Vec::with_capacity(call.steps.len());
     for step in &call.steps {
-        steps.push(run_step(&content, step, api_base, &handler).await?);
+        steps.push(run_step(content, step, api_base, handler).await?);
     }
     Ok(SdkResult::FileContentStream {
         value: Box::new(Outcome { steps }),

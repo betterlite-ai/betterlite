@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -18,6 +18,7 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset, Utc};
 
@@ -49,11 +50,8 @@ impl Fixture {
     // the object LiteLLM's logging class gets for a call that passed none
     pub(crate) fn state(&self, new: &NewLogger) -> Result<LoggingState, SdkHttpError> {
         let text = format!(
-            r#"{{"model":"","call_type":"{}","start_time":"{}","litellm_call_id":"{}","function_id":"{}","litellm_trace_id":"trace-1"}}"#,
-            new.call_type,
+            r#"{{"model":"","call_type":"{new.call_type}","start_time":"{}","litellm_call_id":"{new.litellm_call_id}","function_id":"{new.function_id}","litellm_trace_id":"trace-1"}}"#,
             new.start_time.to_rfc3339(),
-            new.litellm_call_id,
-            new.function_id
         );
         let init: LoggingInit = serde_json::from_str(&text)
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
@@ -106,17 +104,23 @@ pub(crate) struct RecordedIdentity {
 
 impl RecordingLogging {
     pub(crate) fn identities(&self) -> Vec<RecordedIdentity> {
-        self.identities.lock().unwrap().clone()
+        self.identities
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
 impl ContentLogging for RecordingLogging {
     fn record_identity(&self, identity: &StreamIdentity<'_>) {
-        self.identities.lock().unwrap().push(RecordedIdentity {
-            model: identity.model.to_owned(),
-            custom_llm_provider: identity.custom_llm_provider.to_owned(),
-            api_base: identity.api_base.map(str::to_owned),
-        });
+        self.identities
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(RecordedIdentity {
+                model: identity.model.to_owned(),
+                custom_llm_provider: identity.custom_llm_provider.to_owned(),
+                api_base: identity.api_base.map(str::to_owned),
+            });
     }
 
     fn stream_logger(self: Arc<Self>) -> Arc<dyn FileStreamLogger> {
@@ -136,7 +140,7 @@ impl FileStreamLogger for RecordingLogging {
 
     fn build_payload(
         &self,
-        _response: &betterlite_models::decisions::Json,
+        _response: &Json,
         _start_time: DateTime<FixedOffset>,
         _end_time: DateTime<FixedOffset>,
     ) -> Option<StandardLoggingPayload> {

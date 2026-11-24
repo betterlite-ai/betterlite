@@ -10,11 +10,12 @@ use betterlite_core::api::file_content_stream::target::{
     ContentLogger, ContentMode, ContentOperation, ContentReply, ContentTarget, FileContentDispatch,
     GenericContent, NewLogger,
 };
+use betterlite_core::api::file_http_content::config::{ContentParams, FileContentConfig};
 use betterlite_core::api::file_http_content::error::ContentError;
 use betterlite_core::api::file_http_content::service::buffered::retrieve_file_content;
 use betterlite_core::api::file_http_content::service::streaming::retrieve_content_streaming;
 use betterlite_core::api::file_http_content::service::{
-    ContentDeps, LogContext, RetrieveCall, prepare,
+    ClientSource, ContentDeps, LogContext, PreparedContent, RetrieveCall, prepare,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
@@ -117,45 +118,25 @@ async fn generic_answer(
     client: &ProxiedClient,
 ) -> Result<ContentReply, ContentWireError> {
     let GenericContent {
-        config,
+        config: provider_config,
         params,
         trusted: _trusted,
         headers,
-        mut logger,
+        logger,
         client: supplied,
         mode,
     } = generic;
-    let config = content_config(config, settings)?;
-    let kind = client_kind(mode);
-    let lent = supplied
-        .filter(|supplied| supplied.kind == kind)
-        .map(|SuppliedClient { transport, .. }| transport.headers.clone());
-    let source = ContentSource {
-        client: client.clone(),
-        headers: lent.unwrap_or_default(),
-    };
-    let chunk_size = match &operation {
-        ContentOperation::Buffered { .. } => None,
-        ContentOperation::Streamed { chunk_size, .. } => *chunk_size,
-    };
-    let request = match &operation {
-        ContentOperation::Buffered { request } | ContentOperation::Streamed { request, .. } => {
-            *request
-        }
-    };
-    let retrieve = RetrieveCall {
-        request,
-        params: &params,
-        headers: &headers,
-        timeout: deadline(mode),
-    };
+    let config = content_config(provider_config, settings)?;
+    let source = content_source(mode, supplied, client);
+    let chunk_size = operation_chunk_size(&operation);
+    let retrieve = retrieve_call(&params, &headers, &operation, mode);
     let fixture = Fixture::new()?;
-    let mut built;
-    let state: &mut LoggingState = match &mut logger {
-        ContentLogger::Supplied(state) => state,
+    let mut created;
+    let state = match logger {
+        ContentLogger::Supplied(supplied) => supplied,
         ContentLogger::Created(new) => {
-            built = fixture.state(new)?;
-            &mut built
+            created = fixture.state(new)?;
+            &mut created
         }
     };
     let env = fixture.environment();
@@ -170,13 +151,68 @@ async fn generic_answer(
         };
         prepare(&deps, &retrieve, &mut log)?
     };
+    answer_operation(prepared, operation, chunk_size, state).await
+}
+
+// the caller's HTTPHandler lends its headers only when its class matches the entry's mode
+fn content_source(
+    mode: ContentMode,
+    supplied: Option<SuppliedClient<'_, Handler>>,
+    client: &ProxiedClient,
+) -> ContentSource {
+    let lent = supplied
+        .filter(|candidate| candidate.kind == client_kind(mode))
+        .map(|SuppliedClient { transport, .. }| transport.headers.clone());
+    ContentSource {
+        client: client.clone(),
+        headers: lent.unwrap_or_default(),
+    }
+}
+
+fn operation_chunk_size(operation: &ContentOperation<'_>) -> Option<NonZeroUsize> {
+    match operation {
+        ContentOperation::Buffered { .. } => None,
+        ContentOperation::Streamed { chunk_size, .. } => *chunk_size,
+    }
+}
+
+fn retrieve_call<'call>(
+    params: &'call ContentParams,
+    headers: &'call BTreeMap<String, String>,
+    operation: &'call ContentOperation<'_>,
+    mode: ContentMode,
+) -> RetrieveCall<'call> {
+    let request = match operation {
+        ContentOperation::Buffered { request } | ContentOperation::Streamed { request, .. } => {
+            *request
+        }
+    };
+    RetrieveCall {
+        request,
+        params,
+        headers,
+        timeout: deadline(mode),
+    }
+}
+
+async fn answer_operation<C, S>(
+    prepared: PreparedContent<'_, C, S>,
+    operation: ContentOperation<'_>,
+    chunk_size: Option<NonZeroUsize>,
+    state: &mut LoggingState,
+) -> Result<ContentReply, ContentWireError>
+where
+    C: FileContentConfig,
+    S: ClientSource,
+{
     match operation {
         ContentOperation::Buffered { .. } => Ok(ContentReply::Buffered(Box::new(
             retrieve_file_content(prepared, state).await?,
         ))),
         ContentOperation::Streamed { .. } => {
-            let size = chunk_size
-                .unwrap_or(NonZeroUsize::new(DEFAULT_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN));
+            let size = chunk_size.unwrap_or_else(|| {
+                NonZeroUsize::new(DEFAULT_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN)
+            });
             Ok(ContentReply::Streamed(Box::new(
                 retrieve_content_streaming(prepared, size, state).await?,
             )))

@@ -64,7 +64,7 @@ fn compatible_credentials(
     match content.client {
         Some(SuppliedSdk::OpenAi) => (
             Some(SecretString::from(SUPPLIED_KEY)),
-            format!("{}/{SUPPLIED_SUFFIX}", content.api_base),
+            format!("{content.api_base}/{SUPPLIED_SUFFIX}"),
             None,
         ),
         Some(SuppliedSdk::Azure) | None => (
