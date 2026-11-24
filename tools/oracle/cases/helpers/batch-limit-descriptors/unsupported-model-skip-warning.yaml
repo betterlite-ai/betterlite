@@ -1,0 +1,28 @@
+kind: helper
+name: batch-limit-descriptors-unsupported-model-skip-warning
+call:
+  batch_limit_descriptors:
+    settings:
+      skip_batch_input_file_rate_limiting_for_models:
+        - gpt-4o
+    principal:
+      api_key: key-batch
+      user_id: user-1
+      team_id: team-1
+      rpm_limit: 10
+      tpm_limit: 100
+      user_rpm_limit: 5
+      user_tpm_limit: 50
+      end_user_id: end-user-1
+      end_user_rpm_limit: 2
+      end_user_tpm_limit: 20
+      tpd_limit: 1000
+      team_tpd_limit: 0
+      end_user_tpd_limit: 3000
+    calls:
+      - function: should_skip
+        data: {}
+      - function: should_skip
+        data: {}
+env: {}
+compare: {ignore: []}

@@ -34,6 +34,7 @@ betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-policy = { path = "../../../../../crates/betterlite-policy" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
+betterlite-rate-limit = { path = "../../../../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
