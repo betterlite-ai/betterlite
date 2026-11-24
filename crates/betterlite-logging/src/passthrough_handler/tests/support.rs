@@ -567,9 +567,12 @@ fn build(name: ProviderId, payload_builder: RecordingBuilder) -> Harness {
     let provider = Arc::new(FakeProvider::new(name));
     let cost = Arc::new(FakeCost::default());
     let builder = Arc::new(payload_builder);
-    let provider_port: Arc<dyn PassthroughLoggingProvider> = Arc::clone(&provider);
-    let cost_port: Arc<dyn ResponseCost> = Arc::clone(&cost);
-    let builder_port: Arc<dyn StandardPayloadBuilder> = Arc::clone(&builder);
+    let provider_copy: Arc<FakeProvider> = Arc::clone(&provider);
+    let cost_copy: Arc<FakeCost> = Arc::clone(&cost);
+    let builder_copy: Arc<RecordingBuilder> = Arc::clone(&builder);
+    let provider_port: Arc<dyn PassthroughLoggingProvider> = provider_copy;
+    let cost_port: Arc<dyn ResponseCost> = cost_copy;
+    let builder_port: Arc<dyn StandardPayloadBuilder> = builder_copy;
     let handler = BasePassthroughLoggingHandler {
         provider: provider_port,
         cost: cost_port,
