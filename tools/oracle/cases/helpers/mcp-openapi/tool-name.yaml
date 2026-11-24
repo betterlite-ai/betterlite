@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-openapi-tool-name
+call:
+  b4683:
+    operation: tool_name
+    raw: GitHub.Actions/Download Job-Logs
+calls:
+  - b4683: {operation: tool_name, raw: ''}
+  - b4683:
+      operation: tool_name
+      raw: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+env: {}
+compare: {ignore: []}

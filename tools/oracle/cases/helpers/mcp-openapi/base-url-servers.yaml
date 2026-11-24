@@ -1,0 +1,32 @@
+kind: helper
+name: mcp-openapi-base-url-servers
+call:
+  b4683:
+    operation: base_url
+    spec:
+      servers:
+        - url: https://api.example.com/v1
+    spec_path: https://example.com/specs/openapi.json
+calls:
+  - b4683:
+      operation: base_url
+      spec:
+        servers:
+          - url: /v1
+      spec_path: https://example.com/specs/openapi.json
+  - b4683:
+      operation: base_url
+      spec:
+        servers:
+          - url: /v1
+      spec_path: specs/openapi.json
+  - b4683:
+      operation: base_url
+      spec:
+        servers: []
+        host: swagger.example.com
+        schemes: [http]
+        basePath: /api
+      spec_path: null
+env: {}
+compare: {ignore: []}

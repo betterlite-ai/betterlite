@@ -1,0 +1,101 @@
+kind: helper
+name: mcp-openapi-call-query-body
+call:
+  b4683:
+    operation: call
+    path: /pets
+    method: get
+    spec_operation:
+      parameters:
+        - {name: limit, in: query}
+        - {name: tag, in: query}
+        - {name: flag, in: query}
+    base_url: https://api.example.com
+    headers: {}
+    server_label: null
+    relays_upstream_auth: false
+    auth_type: null
+    upstream_token_header: null
+    arguments: {limit: 5, tag: [a, b], flag: 0}
+    auth_header: null
+    extra_headers: {}
+    resolved_auth_headers: {}
+    reply: {status: 200, headers: {}, body: '{}'}
+calls:
+  - b4683:
+      operation: call
+      path: /pets
+      method: post
+      spec_operation:
+        requestBody:
+          content:
+            application/json: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {body: '[1,2]'}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 201, headers: {}, body: ''}
+  - b4683:
+      operation: call
+      path: /pets
+      method: post
+      spec_operation:
+        parameters:
+          - {name: payload, in: body}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {payload: {name: rex}}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: '{"id":1}'}
+  - b4683:
+      operation: call
+      path: /pets
+      method: post
+      spec_operation:
+        requestBody:
+          content:
+            application/json: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {body: hello}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: ''}
+  - b4683:
+      operation: call
+      path: /pets
+      method: put
+      spec_operation:
+        requestBody:
+          content:
+            application/json: {}
+      base_url: https://api.example.com
+      headers: {}
+      server_label: null
+      relays_upstream_auth: false
+      auth_type: null
+      upstream_token_header: null
+      arguments: {body: {a: 1}}
+      auth_header: null
+      extra_headers: {}
+      resolved_auth_headers: {}
+      reply: {status: 200, headers: {}, body: ''}
+env: {}
+compare: {ignore: []}

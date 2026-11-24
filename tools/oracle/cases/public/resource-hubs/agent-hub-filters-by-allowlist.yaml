@@ -1,0 +1,34 @@
+kind: helper
+name: resource-hubs-agent-hub-filters-by-allowlist
+call:
+  b3194:
+    function: agent_hub
+    agents:
+      - agent_id: alpha
+        agent_name: alpha
+        agent_card_params:
+          protocolVersion: "0.3.0"
+          name: alpha
+          description: the alpha agent
+          version: "1.0.0"
+          capabilities: {}
+          defaultInputModes: [text]
+          defaultOutputModes: [text]
+          skills: []
+      - agent_id: beta
+        agent_name: beta
+        agent_card_params:
+          protocolVersion: "0.3.0"
+          name: beta
+          description: the beta agent
+          version: "2.0.0"
+          capabilities: {streaming: true}
+          defaultInputModes: [text]
+          defaultOutputModes: [text, audio]
+          skills: []
+    public_agent_groups: [beta]
+    request_base_url: "http://testserver/"
+    root_path: ""
+    proxy_base_url: null
+env: {}
+compare: {ignore: []}
