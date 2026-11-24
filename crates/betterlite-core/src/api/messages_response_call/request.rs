@@ -157,7 +157,10 @@ fn request_object(record: &ResponsesRequestRecord) -> Result<Object, MessagesRes
     match value {
         Json::Object(fields) => Ok(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(field_error(REQUEST, "an object"))
+            Err(MessagesResponseCallError::Build(CreateError::Field {
+                field: REQUEST,
+                expected: "an object",
+            }))
         }
     }
 }
@@ -178,11 +181,4 @@ fn bind(object: Object) -> Result<ResponsesCreateCall, MessagesResponseCallError
         transcode::<Json, ResponsesCreateCall>(&Json::Object(named)).map_err(CreateError::from)?;
     call.kwargs = extras;
     Ok(call)
-}
-
-pub(super) fn field_error(
-    field: &'static str,
-    expected: &'static str,
-) -> MessagesResponseCallError {
-    MessagesResponseCallError::Build(CreateError::Field { field, expected })
 }

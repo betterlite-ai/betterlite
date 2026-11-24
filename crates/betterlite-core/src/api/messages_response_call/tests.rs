@@ -39,6 +39,7 @@ use crate::api::messages_reasoning_route::seams::{
 };
 use crate::api::messages_response_stream::source::{ResponsesEvent, ResponsesEventSource};
 use crate::api::messages_response_stream::{MessagesResponseStream, MessagesResponseStreamResult};
+use crate::api::messages_responses_output::records::SettingsRecord;
 use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_create::error::CreateFailure;
 use crate::api::responses_create::execute::mock_responses_api_response;
@@ -676,7 +677,7 @@ async fn loads_settings(#[case] environment: &[(&str, &str)], #[case] expected: 
     assert_eq!(unset.default_max_tokens, DEFAULT_MAX_TOKENS);
     let settings = CallSettings {
         default_max_tokens: tokens_from_config,
-        ..CallSettings::default()
+        bridge: SettingsRecord::default(),
     };
 
     let absent_fixture = fixture_with(true, Some("openai"), None, native());

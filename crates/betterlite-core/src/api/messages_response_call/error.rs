@@ -29,10 +29,12 @@ impl MessagesResponseCallError {
         match self {
             Self::Build(error) => error.sdk_failure(provider, model, redactor),
             Self::Translate(error) => value_failure(&error.to_string(), model, provider, redactor),
-            Self::Unexpected { kind } => {
-                let message = format!("Expected ResponsesAPIResponse, got {kind}");
-                value_failure(&message, model, provider, redactor)
-            }
+            Self::Unexpected { kind } => value_failure(
+                &format!("Expected ResponsesAPIResponse, got {kind}"),
+                model,
+                provider,
+                redactor,
+            ),
             Self::Resolution(error) => resolution_failure(error, model, redactor),
             Self::Create(failure) => failure.clone(),
         }

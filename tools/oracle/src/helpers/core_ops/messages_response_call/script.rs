@@ -217,12 +217,34 @@ async fn finish(
     outcome: Result<MessagesResponseCallResult<ScriptedEvents>, MessagesResponseCallError>,
     redactor: &Redactor,
 ) -> Result<Output, Box<HelperError>> {
-    let error = match outcome {
-        Ok(result) => return answer(result).await,
-        Err(error) => error,
+    let result = match outcome {
+        Ok(result) => result,
+        Err(error) => {
+            let failure =
+                error.normalize(&input.call.request.model, &provider_label(input), redactor);
+            return Err(helper_error(&failure));
+        }
     };
-    let failure = error.normalize(&input.call.request.model, &provider_label(input), redactor);
-    Err(helper_error(&failure))
+    let view = CallView::new(&result.call);
+    let request = transcode::<CallView<'_>, Json>(&view).or_value_error()?;
+    match result.answer {
+        MessagesResponseCallAnswer::Native(message) => Ok(Output {
+            request,
+            native: Some(*message),
+            frames: None,
+        }),
+        MessagesResponseCallAnswer::Stream(mut stream) => {
+            let mut frames = Vec::new();
+            while let Some(frame) = stream.next_frame().await.or_value_error()? {
+                frames.push(frame_value(&frame)?);
+            }
+            Ok(Output {
+                request,
+                native: None,
+                frames: Some(frames),
+            })
+        }
+    }
 }
 
 // The provider exception_type would name: the forwarded hint, else the provider the seam resolved.
@@ -249,29 +271,4 @@ fn helper_error(failure: &CreateFailure) -> Box<HelperError> {
         code: failure.code.clone().map(ErrorCode::Text).map(Some),
         message: failure.message.clone(),
     })
-}
-
-async fn answer(
-    result: MessagesResponseCallResult<ScriptedEvents>,
-) -> Result<Output, Box<HelperError>> {
-    let view = CallView::new(&result.call);
-    let request = transcode::<CallView<'_>, Json>(&view).or_value_error()?;
-    match result.answer {
-        MessagesResponseCallAnswer::Native(message) => Ok(Output {
-            request,
-            native: Some(*message),
-            frames: None,
-        }),
-        MessagesResponseCallAnswer::Stream(mut stream) => {
-            let mut frames = Vec::new();
-            while let Some(frame) = stream.next_frame().await.or_value_error()? {
-                frames.push(frame_value(&frame)?);
-            }
-            Ok(Output {
-                request,
-                native: None,
-                frames: Some(frames),
-            })
-        }
-    }
 }

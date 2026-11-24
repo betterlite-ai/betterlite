@@ -12,10 +12,9 @@ from typing import (
 )
 
 import litellm
-from litellm.exceptions import APIError
 from litellm.litellm_core_utils import exception_mapping_utils
 from litellm.llms.anthropic.pass_through.responses_adapters.handler import (
-    LiteLLMMessagesToResponsesAPIHandler,
+    LiteLLMMessagesToResponsesAPIHandler as MessagesHandler,
 )
 from litellm.types.llms.openai import ResponsesAPIResponse
 from pydantic import JsonValue, TypeAdapter
@@ -135,9 +134,8 @@ class ExceptionTypeFn(Protocol):
 
 
 # the handler's async entry, whose staticmethod type no public stub spells out
-HANDLER: Final[HandlerFn] = cast(HandlerFn, LiteLLMMessagesToResponsesAPIHandler.async_anthropic_messages_handler)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/handler.py#L169
-# exception_type raises the mapped exception, which for a bare ValueError is APIConnectionError 500.
-EXCEPTION_TYPE: Final[ExceptionTypeFn] = cast(ExceptionTypeFn, exception_mapping_utils.exception_type)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358
+HANDLER: Final[HandlerFn] = cast(HandlerFn, MessagesHandler.async_anthropic_messages_handler)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/handler.py#L169
+EXCEPTION_TYPE: Final[ExceptionTypeFn] = cast(ExceptionTypeFn, exception_mapping_utils.exception_type)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358
 
 
 def mapped_error(error: Exception, model: str, provider: str) -> BaseException:
@@ -145,7 +143,7 @@ def mapped_error(error: Exception, model: str, provider: str) -> BaseException:
         return EXCEPTION_TYPE(
             model=model, original_exception=error, custom_llm_provider=provider
         )
-    except APIError as mapped:
+    except Exception as mapped:  # noqa: BLE001, E501 - exception_type raises the mapped error  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358
         return mapped
 
 
@@ -205,13 +203,6 @@ def frame_value(raw: bytes) -> Frame:
     return {"event": event, "data": ANSWER.validate_json(data)}
 
 
-async def read_frames(frames: AsyncIterator[bytes]) -> list[Frame]:
-    collected: list[Frame] = []
-    async for raw in frames:
-        collected.append(frame_value(raw))
-    return collected
-
-
 async def drive(input_value: Input) -> Output:
     call = input_value["call"]
     scripted = Scripted(input_value["answer"])
@@ -228,7 +219,10 @@ async def drive(input_value: Input) -> Output:
     if stream is None or not stream:
         answer["native"] = ANSWER.validate_python(raw)
         return answer
-    answer["frames"] = await read_frames(cast(AsyncIterator[bytes], raw))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L486
+    answer["frames"] = [
+        frame_value(chunk)
+        async for chunk in cast(AsyncIterator[bytes], raw)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py#L486
+    ]
     return answer
 
 

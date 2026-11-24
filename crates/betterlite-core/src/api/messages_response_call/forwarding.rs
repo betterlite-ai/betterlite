@@ -6,7 +6,6 @@ use crate::api::responses_create::error::CreateError;
 use crate::api::responses_provider_selection::ParameterMap;
 
 use super::error::MessagesResponseCallError;
-use super::request::field_error;
 
 pub(super) const ANTHROPIC_MESSAGES: &str = "anthropic_messages";
 pub(super) const CUSTOM_LLM_PROVIDER: &str = "custom_llm_provider";
@@ -22,7 +21,10 @@ pub(super) fn forwarded_provider(
         Some(JsonValue::Text(provider)) => Ok(Some(provider)),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(field_error(CUSTOM_LLM_PROVIDER, "a string")),
+        ) => Err(MessagesResponseCallError::Build(CreateError::Field {
+            field: CUSTOM_LLM_PROVIDER,
+            expected: "a string",
+        })),
     }
 }
 
@@ -52,12 +54,18 @@ pub(super) fn forwarded_include(
         return Ok(None);
     }
     let JsonValue::Array(items) = value else {
-        return Err(field_error(INCLUDE, "a list of strings"));
+        return Err(MessagesResponseCallError::Build(CreateError::Field {
+            field: INCLUDE,
+            expected: "a list of strings",
+        }));
     };
     let mut names = Vec::with_capacity(items.len());
     for item in items {
         let JsonValue::Text(name) = item else {
-            return Err(field_error(INCLUDE, "a list of strings"));
+            return Err(MessagesResponseCallError::Build(CreateError::Field {
+                field: INCLUDE,
+                expected: "a list of strings",
+            }));
         };
         names.push(name.clone());
     }
@@ -96,7 +104,10 @@ pub(super) fn override_prompt_cache_key(
         if matches!(value, JsonValue::Null) {
             return Ok(());
         }
-        return Err(field_error(PROMPT_CACHE_KEY, "a string"));
+        return Err(MessagesResponseCallError::Build(CreateError::Field {
+            field: PROMPT_CACHE_KEY,
+            expected: "a string",
+        }));
     };
     object.insert(String::from(PROMPT_CACHE_KEY), Json::Text(key.clone()));
     Ok(())
