@@ -25,7 +25,6 @@ use crate::organization_create::access::OrgAccessError;
 use crate::spend::reports::rows::{
     DailyTeamSpend, ModelSpend, OrganizationKeySpend, OrganizationModelSpend, ScopedKeySpend,
 };
-use crate::spend::reports::scope::ScopeColumn;
 use crate::spend::reports::store::{
     OrganizationReportRequest, ScopedReportError, ScopedReportHandle, ScopedReportRequest,
     ScopedReportStore, TeamSpendRequest,
