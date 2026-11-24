@@ -1,0 +1,28 @@
+task: B6043
+deviations:
+- what: Image bytes cross the native boundary as blobs and are not base64 inside the JSON text.
+  why: Large files would be copied twice, once to encode and once to decode.
+  link: ""
+- what: A file's content type comes from its name's extension, with application/octet-stream as the default.
+  why: The task fixes the rule; LiteLLM sniffs the first 100 bytes and defaults to image/png.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/utils.py#L84-L147
+- what: Only the openai provider is served for image_generation, image_variation and image_edit; any other
+    provider prefix, custom provider or Topaz route fails with a local error.
+  why: The per-provider image request code belongs to the provider tasks and the SDK image entries.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L374-L422
+- what: image_variation sends n, response_format, size and user; LiteLLM passes optional_params={} to its
+    variation handler, so those declared arguments never reach the wire.
+  why: The task says image_variation takes them, and a caller that passes them expects them to apply.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L671-L681
+- what: The image edit response does not carry the provider's response headers in _hidden_params.
+  why: The native call has no Python Logging object to record them on.
+  link: ""
+- what: A mask given as text is read from that path and uploaded as a multipart file.
+  why: LiteLLM declares mask as a path string but its openai edit transform never opens it, so the mask is
+    silently absent; a working setup expects the mask to reach the provider.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L711-L731
+- what: betterlite._images.main.__getattr__ raises AttributeError for ImageEditRequestUtils instead of
+    returning the lazily imported class, because the edit parameter rules run in Rust.
+  why: Keeping the declared names resolvable in Python without duplicating the rules.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L1046-L1056
+kept_bugs: []
