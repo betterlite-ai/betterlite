@@ -166,6 +166,7 @@ async fn batch_rpm_limit_negative_remaining() {
 #[case::project_itpm_row(TpmCase { key: "model_per_project_itpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "TPM", tokens: 40 })]
 #[case::project_itpm_absent_falls_back(TpmCase { key: "model_per_project_itpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: None, row_output: Some(30), label: "TPM", tokens: 120 })]
 #[case::project_value_without_colon(TpmCase { key: "model_per_project_itpm", value: "gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "TPM", tokens: 40 })]
+#[case::project_empty_model_falls_back(TpmCase { key: "model_per_project_itpm", value: "proj:", model: Some(""), row_total: Some(5), row_output: None, label: "TPM", tokens: 120 })]
 #[tokio::test]
 async fn batch_tpm_limit(#[case] case: TpmCase) {
     let limits = descriptor(case.key, case.value, Some(WINDOW), None, Some(100));
