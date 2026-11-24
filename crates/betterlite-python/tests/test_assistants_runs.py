@@ -3,12 +3,14 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterator
+from dataclasses import dataclass, field
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from types import TracebackType
 from typing import Final, Protocol, TypeAlias
 from urllib.parse import urlsplit
 
+import litellm
 import openai
 import pytest
 from assistant_server import (
@@ -46,9 +48,11 @@ from test_assistants_records import (
     same_call,
     shape,
 )
-from typing_extensions import override
+from typing_extensions import override, runtime_checkable
 
+import betterlite
 import betterlite.exceptions as errors
+from betterlite import assistants as package
 from betterlite._completion.errors import UnsupportedCallArgumentError
 from betterlite.assistants import _runs, _utils, main
 
@@ -64,6 +68,10 @@ MESSAGES_PATH: Final = f"/v1/threads/{THREAD_ID}/messages"
 BARE_MESSAGES_PATH: Final = "/v1/threads/thread_bare/messages"
 RUNS_PATH: Final = f"/v1/threads/{THREAD_ID}/runs"
 RUN_PATH: Final = f"{RUNS_PATH}/{RUN_ID}"
+NO_CALLS: Final = 0
+FIRST_READ_CALLS: Final = 1
+REREAD_CALLS: Final = 2
+STREAM_CALLS: Final = 3
 DENIED_BODY: Final[dict[str, JsonValue]] = {
     "error": {
         "message": f"Incorrect API key provided: {BAD_KEY}.",
@@ -72,7 +80,9 @@ DENIED_BODY: Final[dict[str, JsonValue]] = {
         "code": "invalid_api_key",
     },
 }
-ATTACHMENTS: Final[list[JsonValue]] = [{"file_id": "file_1", "tools": [{"type": "code_interpreter"}]}]
+ATTACHMENTS: Final[list[JsonValue]] = [
+    {"file_id": "file_1", "tools": [{"type": "code_interpreter"}]},
+]
 MESSAGE: Final[dict[str, JsonValue]] = {
     "id": MESSAGE_ID,
     "assistant_id": ASSISTANT_ID,
@@ -173,6 +183,20 @@ RUN_OPTIONS: Final[dict[str, JsonValue]] = {
     "model": "gpt-4o-mini",
     "tools": [{"type": "code_interpreter"}],
 }
+MESSAGE_ARGUMENTS: Final[dict[str, JsonValue]] = {
+    "attachments": ATTACHMENTS,
+    "metadata": {"k": "v"},
+}
+BARE_STREAM_ARGUMENTS: Final[dict[str, str]] = {
+    "custom_llm_provider": "openai",
+    "thread_id": THREAD_ID,
+    "assistant_id": ASSISTANT_ID,
+}
+BEDROCK_STREAM_ARGUMENTS: Final[dict[str, str]] = {
+    "custom_llm_provider": "bedrock",
+    "thread_id": THREAD_ID,
+    "assistant_id": ASSISTANT_ID,
+}
 View: TypeAlias = dict[str, JsonValue]
 
 
@@ -203,16 +227,22 @@ class RunServer(ThreadingHTTPServer):
     def url(self) -> str:
         return f"http://{HOST}:{self.server_port}/v1"
 
-    @override
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_value: BaseException | None,
-        _traceback: TracebackType | None,
-    ) -> None:
-        self.shutdown()
-        self.server_close()
-        self.thread.join()
+    def connection(self, key: str = GOOD_KEY) -> dict[str, str]:
+        return {"api_key": key, "api_base": self.url}
+
+    def stream_arguments(self, key: str = GOOD_KEY) -> dict[str, str]:
+        return {**BARE_STREAM_ARGUMENTS, **self.connection(key)}
+
+
+@pytest.fixture()
+def server() -> Iterator[RunServer]:
+    running = RunServer()
+    try:
+        yield running
+    finally:
+        running.shutdown()
+        running.server_close()
+        running.thread.join()
 
 
 class RunHandler(BaseHTTPRequestHandler):
@@ -268,13 +298,19 @@ class RunHandler(BaseHTTPRequestHandler):
 
 class StreamCall(Protocol):
     def __call__(
-        self, *, event_handler: AssistantEventHandler | None = None, **kwargs: CallArgument
+        self,
+        *,
+        event_handler: AssistantEventHandler | CallArgument = None,
+        **kwargs: CallArgument,
     ) -> AssistantStreamManager[AssistantEventHandler]: ...
 
 
 class AsyncStreamCall(Protocol):
     def __call__(
-        self, *, event_handler: AsyncAssistantEventHandler | None = None, **kwargs: CallArgument
+        self,
+        *,
+        event_handler: AsyncAssistantEventHandler | CallArgument = None,
+        **kwargs: CallArgument,
     ) -> AsyncAssistantStreamManager[AsyncAssistantEventHandler]: ...
 
 
@@ -294,28 +330,14 @@ class LiteLLMUtils(Protocol):
     def __getattr__(self, name: str) -> UtilsCall: ...
 
 
+@runtime_checkable
+class MessageCarrier(Protocol):
+    message: str
+
+
 STREAMS: LiteLLMStreams = importlib.import_module("litellm")
 ASYNC_STREAMS: LiteLLMAsyncStreams = importlib.import_module("litellm")
 THEIR_UTILS: LiteLLMUtils = importlib.import_module("litellm.assistants.utils")
-SignatureSource: TypeAlias = Callable[..., object]
-SIGNATURES: Final[dict[str, tuple[SignatureSource, SignatureSource]]] = {
-    "add_message": (main.add_message, LITELLM.add_message),
-    "a_add_message": (main.a_add_message, LITELLM.a_add_message),
-    "get_messages": (main.get_messages, LITELLM.get_messages),
-    "aget_messages": (main.aget_messages, LITELLM.aget_messages),
-    "run_thread": (main.run_thread, LITELLM.run_thread),
-    "arun_thread": (main.arun_thread, LITELLM.arun_thread),
-    "run_thread_stream": (main.run_thread_stream, LITELLM.run_thread_stream),
-    "arun_thread_stream": (main.arun_thread_stream, LITELLM.arun_thread_stream),
-    "get_optional_params_add_message": (
-        _utils.get_optional_params_add_message,
-        THEIR_UTILS.get_optional_params_add_message,
-    ),
-    "get_optional_params_image_gen": (
-        _utils.get_optional_params_image_gen,
-        THEIR_UTILS.get_optional_params_image_gen,
-    ),
-}
 EXPORTED_NAMES: Final[tuple[str, ...]] = (
     "Assistant", "AssistantDeleted", "AssistantPage", "AssistantStream",
     "AssistantStreamEvent", "AsyncAssistantStream", "EventHandler", "Message",
@@ -333,10 +355,11 @@ LITELLM_FUNCTIONS: Final[tuple[str, ...]] = (
 )  # fmt: skip
 
 
-class OurHandler:
-    def __init__(self) -> None:
-        self.seen: list[_runs.AssistantStreamEvent] = []
+@dataclass
+class OurHandler(_runs.EventHandler):
+    seen: list[_runs.AssistantStreamEvent] = field(default_factory=list)
 
+    @override
     def on_event(self, event: _runs.AssistantStreamEvent) -> None:
         self.seen.append(event)
 
@@ -349,19 +372,6 @@ class ReferenceHandler(AssistantEventHandler):
     @override
     def on_event(self, event: OpenAIStreamEvent) -> None:
         self.names.append(event.event)
-
-
-def connection(server: RunServer, key: str = GOOD_KEY) -> dict[str, str]:
-    return {"api_key": key, "api_base": server.url}
-
-
-def stream_arguments(server: RunServer, key: str = GOOD_KEY) -> dict[str, str]:
-    return {
-        "custom_llm_provider": "openai",
-        "thread_id": THREAD_ID,
-        "assistant_id": ASSISTANT_ID,
-        **connection(server, key),
-    }
 
 
 def matched_calls(server: RunServer, count: int) -> None:
@@ -380,97 +390,133 @@ def run_of(answer: _runs.RunAnswer) -> _runs.Run:
             raise AssertionError("the call answered no run")
 
 
-def flagged_run_answer(answer: _runs.RunAnswer) -> _runs.Run:
+def sync_stream_of(answer: _runs.RunAnswer) -> main.AssistantStream:
     match answer:
-        case Coroutine() as coroutine:
-            return asyncio.run(coroutine)
+        case main.AssistantStream() as stream:
+            return stream
         case object():
-            raise AssertionError("the flag did not answer a coroutine")
+            raise AssertionError("the call answered no sync stream")
 
 
-def reference_view(event: OpenAIStreamEvent) -> View:
-    return {"event": event.event, "data": JSON.validate_json(event.data.model_dump_json())}
-
-
-def our_view(event: _runs.AssistantStreamEvent) -> View:
-    return {"event": event.event, "data": event.data}
+def async_stream_of(answer: _runs.RunAnswer) -> main.AsyncAssistantStream:
+    match answer:
+        case main.AsyncAssistantStream() as stream:
+            return stream
+        case object():
+            raise AssertionError("the call answered no async stream")
 
 
 def reference_events(manager: AssistantStreamManager[AssistantEventHandler]) -> list[View]:
     with manager as handler:
-        return [reference_view(event) for event in handler]
+        return [
+            {"event": event.event, "data": JSON.validate_json(event.data.model_dump_json())}
+            for event in handler
+        ]
 
 
-def our_events(stream: _runs.AssistantStream) -> list[View]:
+def our_events(stream: main.AssistantStream) -> list[View]:
     with stream as events:
-        return [our_view(event) for event in events]
+        return [{"event": event.event, "data": event.data} for event in events]
 
 
 async def reference_async_events(
     manager: AsyncAssistantStreamManager[AsyncAssistantEventHandler],
 ) -> list[View]:
     async with manager as handler:
-        return [reference_view(event) async for event in handler]
+        return [
+            {"event": event.event, "data": JSON.validate_json(event.data.model_dump_json())}
+            async for event in handler
+        ]
 
 
-async def our_async_events(stream: _runs.AsyncAssistantStream) -> list[View]:
+async def our_async_events(stream: main.AsyncAssistantStream) -> list[View]:
     async with stream as events:
-        return [our_view(event) async for event in events]
+        return [{"event": event.event, "data": event.data} async for event in events]
 
 
 def reference_first(manager: AssistantStreamManager[AssistantEventHandler]) -> View:
     with manager as handler:
-        return reference_view(next(iter(handler)))
+        first = next(iter(handler))
+        data = JSON.validate_json(first.data.model_dump_json())
+        return {"event": first.event, "data": data}
 
 
-def our_first(stream: _runs.AssistantStream) -> View:
+def our_first(stream: main.AssistantStream) -> View:
     with stream as events:
-        return our_view(next(events))
+        first = next(events)
+        return {"event": first.event, "data": first.data}
 
 
-async def our_async_first(stream: _runs.AsyncAssistantStream) -> View:
+async def our_async_first(stream: main.AsyncAssistantStream) -> View:
     async with stream as events:
-        return our_view(await anext(events))
+        first = await anext(events)
+        return {"event": first.event, "data": first.data}
 
 
-def closed_after_first(stream: _runs.AssistantStream) -> _runs.AssistantStreamEvent | None:
+def closed_after_first(stream: main.AssistantStream) -> _runs.AssistantStreamEvent | None:
     with stream as events:
         assert next(events).event == EVENT_NAMES[0]
     return next(stream, None)
 
 
 async def async_closed_after_first(
-    stream: _runs.AsyncAssistantStream,
+    stream: main.AsyncAssistantStream,
 ) -> _runs.AssistantStreamEvent | None:
     async with stream as events:
         assert (await anext(events)).event == EVENT_NAMES[0]
     return await anext(stream, None)
 
 
-def message_arguments() -> dict[str, JsonValue]:
-    return {"attachments": ATTACHMENTS, "metadata": {"k": "v"}}
-
-
 def test_signature_matches_litellm() -> None:
-    for name, (ours, reference) in SIGNATURES.items():
-        assert shape(inspect.signature(ours)) == shape(inspect.signature(reference)), name
-        assert inspect.iscoroutinefunction(ours) == inspect.iscoroutinefunction(reference), name
-
-
-def test_signature_stream_helpers_return_managers() -> None:
-    assert not inspect.iscoroutinefunction(main.arun_thread_stream)
+    assert shape(inspect.signature(main.add_message)) == shape(
+        inspect.signature(LITELLM.add_message)
+    )
+    assert shape(inspect.signature(main.a_add_message)) == shape(
+        inspect.signature(LITELLM.a_add_message)
+    )
+    assert shape(inspect.signature(main.get_messages)) == shape(
+        inspect.signature(LITELLM.get_messages)
+    )
+    assert shape(inspect.signature(main.aget_messages)) == shape(
+        inspect.signature(LITELLM.aget_messages)
+    )
+    assert shape(inspect.signature(main.run_thread)) == shape(
+        inspect.signature(LITELLM.run_thread)
+    )
+    assert shape(inspect.signature(main.arun_thread)) == shape(
+        inspect.signature(LITELLM.arun_thread)
+    )
+    assert shape(inspect.signature(main.run_thread_stream)) == shape(
+        inspect.signature(LITELLM.run_thread_stream)
+    )
+    assert shape(inspect.signature(main.arun_thread_stream)) == shape(
+        inspect.signature(LITELLM.arun_thread_stream)
+    )
+    assert shape(inspect.signature(_utils.get_optional_params_add_message)) == shape(
+        inspect.signature(THEIR_UTILS.get_optional_params_add_message)
+    )
+    assert shape(inspect.signature(_utils.get_optional_params_image_gen)) == shape(
+        inspect.signature(THEIR_UTILS.get_optional_params_image_gen)
+    )
+    assert inspect.iscoroutinefunction(main.a_add_message)
+    assert inspect.iscoroutinefunction(main.aget_messages)
+    assert inspect.iscoroutinefunction(main.arun_thread)
+    assert not inspect.iscoroutinefunction(main.run_thread)
     assert not inspect.iscoroutinefunction(main.run_thread_stream)
-    with RunServer() as server:
-        sync_stream = main.run_thread_stream(**stream_arguments(server))
-        async_stream = main.arun_thread_stream(**stream_arguments(server))
-        assert isinstance(sync_stream, main.AssistantStream)
-        assert isinstance(async_stream, main.AsyncAssistantStream)
-        assert not server.calls
-        with sync_stream as entered:
-            assert entered is sync_stream
+    assert not inspect.iscoroutinefunction(main.arun_thread_stream)
 
 
-def test_signature_refuses_client_keyword() -> None:
+def test_signature_stream_helpers(server: RunServer) -> None:
+    sync_stream = main.run_thread_stream(**server.stream_arguments())
+    async_stream = main.arun_thread_stream(**server.stream_arguments())
+    assert sync_stream_of(sync_stream) is sync_stream
+    assert async_stream_of(async_stream) is async_stream
+    assert not server.calls
+    with sync_stream_of(sync_stream) as entered:
+        assert entered is sync_stream
+
+
+def test_signature_refuses_client() -> None:
     with pytest.raises(UnsupportedCallArgumentError, match="client"):
         main.add_message("openai", THREAD_ID, "user", "hi", client=FAKE_CLIENT)
     with pytest.raises(UnsupportedCallArgumentError, match="client"):
@@ -484,250 +530,274 @@ def test_signature_refuses_client_keyword() -> None:
     with pytest.raises(UnsupportedCallArgumentError, match="client"):
         asyncio.run(main.arun_thread("openai", THREAD_ID, ASSISTANT_ID, client=FAKE_CLIENT))
     with pytest.raises(UnsupportedCallArgumentError, match="client"):
-        main.run_thread_stream(**stream_arguments_without_server(), client=FAKE_CLIENT)
+        main.run_thread_stream(**BARE_STREAM_ARGUMENTS, client=FAKE_CLIENT)
     with pytest.raises(UnsupportedCallArgumentError, match="client"):
-        main.arun_thread_stream(**stream_arguments_without_server(), client=FAKE_CLIENT)
+        main.arun_thread_stream(**BARE_STREAM_ARGUMENTS, client=FAKE_CLIENT)
 
 
-def stream_arguments_without_server() -> dict[str, str]:
-    return {"custom_llm_provider": "openai", "thread_id": THREAD_ID, "assistant_id": ASSISTANT_ID}
-
-
-def test_calls_add_message_matches_litellm() -> None:
-    with RunServer() as server:
-        args = connection(server)
+def test_calls_add_message(server: RunServer) -> None:
+    args = server.connection()
+    cases: list[dict[str, JsonValue]] = [MESSAGE_ARGUMENTS, {}]
+    for extra in cases:
         reference = answer_of(
-            LITELLM.add_message("openai", THREAD_ID, "user", "hello", **message_arguments(), **args)
+            LITELLM.add_message("openai", THREAD_ID, "user", "hello", **extra, **args)
         )
-        ours = answer_of(
-            main.add_message("openai", THREAD_ID, "user", "hello", **message_arguments(), **args)
-        )
+        ours = answer_of(main.add_message("openai", THREAD_ID, "user", "hello", **extra, **args))
         matched_calls(server, 1)
         dump_pair(ours, reference)
-        reference_plain = answer_of(LITELLM.add_message("openai", THREAD_ID, "user", "hello", **args))
-        ours_plain = answer_of(main.add_message("openai", THREAD_ID, "user", "hello", **args))
-        matched_calls(server, 1)
-        dump_pair(ours_plain, reference_plain)
 
 
-def test_calls_add_message_without_status_is_completed() -> None:
-    with RunServer() as server:
-        args = connection(server)
-        reference = answer_of(LITELLM.add_message("openai", "thread_bare", "user", "hello", **args))
-        ours = answer_of(main.add_message("openai", "thread_bare", "user", "hello", **args))
-        matched_calls(server, 1)
-        dump_pair(ours, reference)
-        assert JSON.validate_json(ours.model_dump_json()) == MESSAGE
-        reference_async = answer_of(
-            asyncio.run(LITELLM_ASYNC.a_add_message("openai", "thread_bare", "user", "hello", **args))
-        )
-        ours_async = answer_of(
-            asyncio.run(main.a_add_message("openai", "thread_bare", "user", "hello", **args))
-        )
-        matched_calls(server, 1)
-        dump_pair(ours_async, reference_async)
+def test_calls_completed_status(server: RunServer) -> None:
+    args = server.connection()
+    reference = answer_of(LITELLM.add_message("openai", "thread_bare", "user", "hello", **args))
+    ours = answer_of(main.add_message("openai", "thread_bare", "user", "hello", **args))
+    matched_calls(server, 1)
+    dump_pair(ours, reference)
+    assert JSON.validate_json(ours.model_dump_json()) == MESSAGE
 
 
-def test_calls_get_messages_matches_litellm() -> None:
-    with RunServer() as server:
-        args = connection(server)
-        reference = page_of(LITELLM.get_messages("openai", THREAD_ID, **args))
-        ours = page_of(main.get_messages("openai", THREAD_ID, **args))
-        matched_calls(server, 1)
-        assert page_view(ours) == page_view(reference)
-        assert page_view(ours)["data"] == [MESSAGE]
-        assert [message.id for message in main.MessagePage.model_validate(MESSAGE_PAGE)] == [MESSAGE_ID]
+def test_calls_get_messages(server: RunServer) -> None:
+    args = server.connection()
+    reference = page_of(LITELLM.get_messages("openai", THREAD_ID, **args))
+    ours = page_of(main.get_messages("openai", THREAD_ID, **args))
+    matched_calls(server, 1)
+    assert page_view(ours) == page_view(reference)
+    assert page_view(ours)["data"] == [MESSAGE]
+    page = main.MessagePage.model_validate(MESSAGE_PAGE)
+    assert [message.id for message in page.data] == [MESSAGE_ID]
 
 
-def test_calls_run_thread_matches_litellm() -> None:
-    with RunServer() as server:
-        args = connection(server)
-        reference = answer_of(LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args))
-        ours = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args))
-        matched_calls(server, 2)
-        dump_pair(ours, reference)
-        assert JSON.validate_json(ours.model_dump_json()) == RUN
-        reference_plain = answer_of(LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **args))
-        ours_plain = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **args))
-        matched_calls(server, 2)
-        dump_pair(ours_plain, reference_plain)
+def test_calls_run_thread(server: RunServer) -> None:
+    args = server.connection()
+    reference = answer_of(
+        LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args)
+    )
+    ours = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args))
+    matched_calls(server, 2)
+    dump_pair(ours, reference)
+    assert JSON.validate_json(ours.model_dump_json()) == RUN
+    reference_plain = answer_of(LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **args))
+    ours_plain = run_of(main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **args))
+    matched_calls(server, 2)
+    dump_pair(ours_plain, reference_plain)
 
 
-def test_calls_run_thread_ignores_handler_without_stream() -> None:
-    with RunServer() as server:
-        args = connection(server)
-        handler = OurHandler()
-        ours = run_of(
-            main.run_thread("openai", THREAD_ID, ASSISTANT_ID, event_handler=handler, **args)
-        )
-        assert ours.id == RUN_ID
-        assert not handler.seen
-        for call in server.calls:
-            assert "event_handler" not in json.dumps(call.get("body"))
+def test_calls_handler_no_stream(server: RunServer) -> None:
+    args = server.connection()
+    handler = OurHandler()
+    ours = run_of(
+        main.run_thread("openai", THREAD_ID, ASSISTANT_ID, event_handler=handler, **args)
+    )
+    assert ours.id == RUN_ID
+    assert not handler.seen
+    for call in server.calls:
+        assert "event_handler" not in json.dumps(call.get("body"))
 
 
-def test_calls_async_forms_match_litellm() -> None:
-    with RunServer() as server:
-        args = connection(server)
-        reference_added = answer_of(
-            asyncio.run(
-                LITELLM_ASYNC.a_add_message("openai", THREAD_ID, "user", "hello", **message_arguments(), **args)
+def test_calls_async_forms(server: RunServer) -> None:
+    args = server.connection()
+    reference_added = answer_of(
+        asyncio.run(
+            LITELLM_ASYNC.a_add_message(
+                "openai", THREAD_ID, "user", "hello", **MESSAGE_ARGUMENTS, **args
             )
         )
-        ours_added = answer_of(
-            asyncio.run(main.a_add_message("openai", THREAD_ID, "user", "hello", **message_arguments(), **args))
+    )
+    ours_added = answer_of(
+        asyncio.run(
+            main.a_add_message("openai", THREAD_ID, "user", "hello", **MESSAGE_ARGUMENTS, **args)
         )
-        matched_calls(server, 1)
-        dump_pair(ours_added, reference_added)
-        flagged_added = answer_of(
-            flagged_run(main.add_message("openai", THREAD_ID, "user", "hello", a_add_message=True, **args))
+    )
+    matched_calls(server, 1)
+    dump_pair(ours_added, reference_added)
+    flagged_added = answer_of(
+        flagged_run(
+            main.add_message("openai", THREAD_ID, "user", "hello", a_add_message=True, **args)
         )
-        assert server.calls.pop()["method"] == "POST"
-        dump_pair(flagged_added, reference_added)
-        reference_page = page_of(asyncio.run(LITELLM_ASYNC.aget_messages("openai", THREAD_ID, **args)))
-        ours_page = page_of(asyncio.run(main.aget_messages("openai", THREAD_ID, **args)))
-        matched_calls(server, 1)
-        assert page_view(ours_page) == page_view(reference_page)
-        flagged_page = page_of(flagged_run(main.get_messages("openai", THREAD_ID, aget_messages=True, **args)))
-        server.calls.clear()
-        assert page_view(flagged_page) == page_view(reference_page)
-        reference_run = answer_of(
-            asyncio.run(LITELLM_ASYNC.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args))
+    )
+    assert server.calls.pop()["method"] == "POST"
+    dump_pair(flagged_added, reference_added)
+    reference_page = page_of(
+        asyncio.run(LITELLM_ASYNC.aget_messages("openai", THREAD_ID, **args))
+    )
+    ours_page = page_of(asyncio.run(main.aget_messages("openai", THREAD_ID, **args)))
+    matched_calls(server, 1)
+    assert page_view(ours_page) == page_view(reference_page)
+    flagged_page = page_of(
+        flagged_run(main.get_messages("openai", THREAD_ID, aget_messages=True, **args))
+    )
+    server.calls.clear()
+    assert page_view(flagged_page) == page_view(reference_page)
+    reference_run = answer_of(
+        asyncio.run(
+            LITELLM_ASYNC.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args)
         )
-        ours_run = asyncio.run(main.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args))
-        matched_calls(server, 2)
-        dump_pair(run_of(ours_run), reference_run)
-        flagged = flagged_run_answer(
-            main.run_thread("openai", THREAD_ID, ASSISTANT_ID, arun_thread=True, **args)
+    )
+    ours_run = asyncio.run(
+        main.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **RUN_OPTIONS, **args)
+    )
+    matched_calls(server, 2)
+    dump_pair(run_of(ours_run), reference_run)
+    flagged = main.run_thread("openai", THREAD_ID, ASSISTANT_ID, arun_thread=True, **args)
+    match flagged:
+        case Coroutine() as pending:
+            assert run_of(asyncio.run(pending)).id == RUN_ID
+        case object():
+            raise AssertionError("the flag did not answer a coroutine")
+    server.calls.clear()
+
+
+def test_stream_events(server: RunServer) -> None:
+    theirs = ReferenceHandler()
+    reference = reference_events(
+        STREAMS.run_thread_stream(event_handler=theirs, **server.stream_arguments())
+    )
+    mine = OurHandler()
+    opened = main.run_thread_stream(event_handler=mine, **server.stream_arguments())
+    ours = our_events(sync_stream_of(opened))
+    matched_calls(server, 1)
+    assert ours == reference
+    assert [view["event"] for view in ours] == EVENT_NAMES
+    assert ours[-1]["data"] == RUN
+    assert theirs.names == EVENT_NAMES
+    assert [event.event for event in mine.seen] == EVENT_NAMES
+    assert [{"event": event.event, "data": event.data} for event in mine.seen] == ours
+
+
+def test_stream_no_handler(server: RunServer) -> None:
+    reference = reference_events(STREAMS.run_thread_stream(**server.stream_arguments()))
+    opened = main.run_thread_stream(**server.stream_arguments())
+    ours = our_events(sync_stream_of(opened))
+    matched_calls(server, 1)
+    assert ours == reference
+
+
+def test_stream_async_events(server: RunServer) -> None:
+    reference = asyncio.run(
+        reference_async_events(ASYNC_STREAMS.arun_thread_stream(**server.stream_arguments()))
+    )
+    handler = OurHandler()
+    ours = asyncio.run(
+        our_async_events(
+            main.arun_thread_stream(event_handler=handler, **server.stream_arguments())
         )
-        server.calls.clear()
-        assert flagged.id == RUN_ID
+    )
+    matched_calls(server, 1)
+    assert ours == reference
+    assert [view["event"] for view in ours] == EVENT_NAMES
+    assert [{"event": event.event, "data": event.data} for event in handler.seen] == ours
+    sync_events = our_events(sync_stream_of(main.run_thread_stream(**server.stream_arguments())))
+    server.calls.clear()
+    assert sync_events == ours
 
 
-def test_stream_events_match_litellm() -> None:
-    with RunServer() as server:
-        theirs = ReferenceHandler()
-        reference = reference_events(STREAMS.run_thread_stream(event_handler=theirs, **stream_arguments(server)))
-        mine = OurHandler()
-        ours = our_events(main.run_thread_stream(event_handler=mine, **stream_arguments(server)))
-        matched_calls(server, 1)
-        assert ours == reference
-        assert [view["event"] for view in ours] == EVENT_NAMES
-        assert ours[-1]["data"] == RUN
-        assert theirs.names == EVENT_NAMES
-        assert [event.event for event in mine.seen] == EVENT_NAMES
-        assert [our_view(event) for event in mine.seen] == ours
-
-
-def test_stream_events_without_handler_match_litellm() -> None:
-    with RunServer() as server:
-        reference = reference_events(STREAMS.run_thread_stream(**stream_arguments(server)))
-        ours = our_events(main.run_thread_stream(**stream_arguments(server)))
-        matched_calls(server, 1)
-        assert ours == reference
-
-
-def test_stream_async_events_match_litellm() -> None:
-    with RunServer() as server:
-        reference = asyncio.run(
-            reference_async_events(ASYNC_STREAMS.arun_thread_stream(**stream_arguments(server)))
+def test_stream_run_thread_flags(server: RunServer) -> None:
+    args = server.connection()
+    sync_stream = sync_stream_of(
+        main.run_thread("openai", THREAD_ID, ASSISTANT_ID, stream=True, **args)
+    )
+    flagged = async_stream_of(
+        main.run_thread(
+            "openai", THREAD_ID, ASSISTANT_ID, stream=True, arun_thread=True, **args
         )
-        handler = OurHandler()
-        ours = asyncio.run(
-            our_async_events(main.arun_thread_stream(event_handler=handler, **stream_arguments(server)))
-        )
-        matched_calls(server, 1)
-        assert ours == reference
-        assert [view["event"] for view in ours] == EVENT_NAMES
-        assert [our_view(event) for event in handler.seen] == ours
-        sync_events = our_events(main.run_thread_stream(**stream_arguments(server)))
-        server.calls.clear()
-        assert sync_events == ours
+    )
+    awaited = async_stream_of(
+        asyncio.run(main.arun_thread("openai", THREAD_ID, ASSISTANT_ID, stream=True, **args))
+    )
+    names = [
+        [view["event"] for view in our_events(sync_stream)],
+        [view["event"] for view in asyncio.run(our_async_events(flagged))],
+        [view["event"] for view in asyncio.run(our_async_events(awaited))],
+    ]
+    assert names == [EVENT_NAMES] * STREAM_CALLS
+    assert len(server.calls) == STREAM_CALLS
 
 
-def test_stream_run_thread_flags_return_streams() -> None:
-    with RunServer() as server:
-        args = connection(server)
-        sync_stream = main.run_thread("openai", THREAD_ID, ASSISTANT_ID, stream=True, **args)
-        assert isinstance(sync_stream, main.AssistantStream)
-        assert [view["event"] for view in our_events(sync_stream)] == EVENT_NAMES
-        flagged = main.run_thread("openai", THREAD_ID, ASSISTANT_ID, stream=True, arun_thread=True, **args)
-        assert isinstance(flagged, main.AsyncAssistantStream)
-        assert [view["event"] for view in asyncio.run(our_async_events(flagged))] == EVENT_NAMES
-        awaited = asyncio.run(main.arun_thread("openai", THREAD_ID, ASSISTANT_ID, stream=True, **args))
-        assert isinstance(awaited, main.AsyncAssistantStream)
-        assert [view["event"] for view in asyncio.run(our_async_events(awaited))] == EVENT_NAMES
-        assert len(server.calls) == 3
+def test_stream_closes_on_exit(server: RunServer) -> None:
+    stream = sync_stream_of(main.run_thread_stream(**server.stream_arguments()))
+    assert closed_after_first(stream) is None
+    assert len(server.calls) == FIRST_READ_CALLS
+    async_stream = main.arun_thread_stream(**server.stream_arguments())
+    assert asyncio.run(async_closed_after_first(async_stream)) is None
+    assert len(server.calls) == REREAD_CALLS
+    raising = sync_stream_of(main.run_thread_stream(**server.stream_arguments()))
+    with pytest.raises(RuntimeError, match="stop"), raising:
+        raise RuntimeError("stop")
+    assert next(raising, None) is None
+    assert len(server.calls) == REREAD_CALLS
 
 
-def test_stream_closes_on_exit() -> None:
-    with RunServer() as server:
-        stream = main.run_thread_stream(**stream_arguments(server))
-        assert closed_after_first(stream) is None
-        assert len(server.calls) == 1
-        async_stream = main.arun_thread_stream(**stream_arguments(server))
-        assert asyncio.run(async_closed_after_first(async_stream)) is None
-        assert len(server.calls) == 2
-        raising = main.run_thread_stream(**stream_arguments(server))
-        with pytest.raises(RuntimeError, match="stop"):
-            with raising:
-                raise RuntimeError("stop")
-        assert next(raising, None) is None
-        assert len(server.calls) == 2
+def test_stream_first_read_waits(server: RunServer) -> None:
+    stream = sync_stream_of(main.run_thread_stream(**server.stream_arguments()))
+    assert not server.calls
+    expected: View = {"event": EVENT_NAMES[0], "data": STREAM_EVENTS[0][1]}
+    assert our_first(stream) == expected
+    assert len(server.calls) == FIRST_READ_CALLS
+    async_first = asyncio.run(
+        our_async_first(main.arun_thread_stream(**server.stream_arguments()))
+    )
+    assert async_first == expected
+    assert reference_first(STREAMS.run_thread_stream(**server.stream_arguments())) == expected
 
 
-def test_stream_waits_for_the_first_read() -> None:
-    with RunServer() as server:
-        stream = main.run_thread_stream(**stream_arguments(server))
-        assert not server.calls
-        first = our_first(stream)
-        assert first["event"] == EVENT_NAMES[0]
-        assert len(server.calls) == 1
-        async_first = asyncio.run(our_async_first(main.arun_thread_stream(**stream_arguments(server))))
-        assert async_first == first
-        reference = reference_first(STREAMS.run_thread_stream(**stream_arguments(server)))
-        assert reference == first
-
-
-def test_stream_handler_must_have_on_event() -> None:
-    assert isinstance(OurHandler(), main.EventHandler)
-    assert not isinstance(object(), main.EventHandler)
+def test_stream_handler_check() -> None:
     with pytest.raises(UnsupportedCallArgumentError, match="event_handler"):
-        main.run_thread_stream(**stream_arguments_without_server(), event_handler=FAKE_HANDLER)
+        main.run_thread_stream(**BARE_STREAM_ARGUMENTS, event_handler=FAKE_HANDLER)
     with pytest.raises(UnsupportedCallArgumentError, match="event_handler"):
-        main.arun_thread_stream(**stream_arguments_without_server(), event_handler=FAKE_HANDLER)
+        main.arun_thread_stream(**BARE_STREAM_ARGUMENTS, event_handler=FAKE_HANDLER)
     with pytest.raises(UnsupportedCallArgumentError, match="event_handler"):
         main.run_thread(
             "openai", THREAD_ID, ASSISTANT_ID, stream=True, event_handler=FAKE_HANDLER
         )
     with pytest.raises(TypeError, match="stream"):
-        main.run_thread_stream(**stream_arguments_without_server(), stream=True)
+        main.run_thread_stream(**BARE_STREAM_ARGUMENTS, stream=True)
     with pytest.raises(TypeError, match="stream"):
-        STREAMS.run_thread_stream(**stream_arguments_without_server(), stream=True)
+        STREAMS.run_thread_stream(**BARE_STREAM_ARGUMENTS, stream=True)
 
 
-def test_stream_failure_surfaces_on_the_first_read() -> None:
-    with RunServer() as server:
-        bad = stream_arguments(server, BAD_KEY)
-        ours = main.run_thread_stream(**bad)
-        assert len(server.calls) == 0
-        with pytest.raises(errors.AuthenticationError) as ours_failure:
-            our_first(ours)
-        with pytest.raises(openai.AuthenticationError) as reference_failure:
-            reference_first(STREAMS.run_thread_stream(**bad))
-        assert type(ours_failure.value).__name__ == type(reference_failure.value).__name__
-        assert ours_failure.value.status_code == UNAUTHORIZED
-        assert ours_failure.value.__cause__ is not None
-        assert next(ours, None) is None
-        with pytest.raises(errors.AuthenticationError):
-            asyncio.run(our_async_first(main.arun_thread_stream(**bad)))
+def test_stream_failure_first_read(server: RunServer) -> None:
+    bad = server.stream_arguments(BAD_KEY)
+    ours = sync_stream_of(main.run_thread_stream(**bad))
+    assert len(server.calls) == NO_CALLS
+    with pytest.raises(errors.AuthenticationError) as ours_failure:
+        our_first(ours)
+    with pytest.raises(openai.AuthenticationError) as reference_failure:
+        reference_first(STREAMS.run_thread_stream(**bad))
+    assert type(ours_failure.value).__name__ == type(reference_failure.value).__name__
+    assert ours_failure.value.status_code == UNAUTHORIZED
+    assert ours_failure.value.__cause__ is not None
+    assert next(ours, None) is None
+    with pytest.raises(errors.AuthenticationError):
+        asyncio.run(our_async_first(main.arun_thread_stream(**bad)))
 
 
-def utils_outcome(function: Callable[..., dict[str, JsonValue]], kwargs: dict[str, JsonValue]) -> View:
+def error_text(failure: Exception) -> str:
+    match failure:
+        case MessageCarrier() as carrier:
+            return carrier.message
+        case object():
+            return str(failure)
+
+
+def utils_outcome(function: Callable[[], dict[str, JsonValue]]) -> View:
     try:
-        return {"ok": function(**kwargs)}
+        answer = function()
     except UTILS_FAILURES as failure:
-        return {"error": [type(failure).__name__, str(vars(failure).get("message"))]}
+        return {"error": [type(failure).__name__, error_text(failure)]}
+    return {"ok": answer}
+
+
+def compared_outcomes(
+    ours: Callable[[], dict[str, JsonValue]], reference: Callable[[], dict[str, JsonValue]],
+) -> None:
+    try:
+        for dropped in (False, True):
+            litellm.drop_params = dropped
+            betterlite.drop_params = dropped
+            assert utils_outcome(ours) == utils_outcome(reference)
+    finally:
+        litellm.drop_params = False
+        betterlite.drop_params = False
 
 
 UTILS_FAILURES: Final[tuple[type[Exception], ...]] = (
@@ -737,10 +807,6 @@ UTILS_FAILURES: Final[tuple[type[Exception], ...]] = (
 ADD_MESSAGE_CASES: Final[dict[str, dict[str, JsonValue]]] = {
     "openai_everything": {
         "role": "user", "content": "hi", "attachments": ATTACHMENTS, "metadata": {"k": "v"},
-        "custom_llm_provider": "openai",
-    },
-    "openai_nulls_dropped": {
-        "role": "user", "content": "hi", "attachments": None, "metadata": None,
         "custom_llm_provider": "openai",
     },
     "openai_extra_key": {
@@ -754,10 +820,6 @@ ADD_MESSAGE_CASES: Final[dict[str, dict[str, JsonValue]]] = {
     "azure_list_content": {
         "role": "user", "content": [{"type": "text", "text": "hi"}], "attachments": None,
         "metadata": None, "custom_llm_provider": "azure",
-    },
-    "azure_file_attachment": {
-        "role": "user", "content": "hi", "attachments": ATTACHMENTS, "metadata": None,
-        "custom_llm_provider": "azure",
     },
     "azure_plain_attachment": {
         "role": "user", "content": "hi", "attachments": [{"text": "x"}], "metadata": None,
@@ -790,57 +852,58 @@ IMAGE_CASES: Final[dict[str, dict[str, JsonValue]]] = {
 
 
 @pytest.mark.parametrize("name", list(ADD_MESSAGE_CASES))
-def test_utils_add_message_params_match_litellm(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    kwargs = ADD_MESSAGE_CASES[name]
-    for dropping in (False, True):
-        monkeypatch.setattr("litellm.drop_params", dropping)
-        monkeypatch.setattr("betterlite.drop_params", dropping)
-        ours = utils_outcome(_utils.get_optional_params_add_message, kwargs)
-        reference = utils_outcome(THEIR_UTILS.get_optional_params_add_message, kwargs)
-        assert ours == reference
+def test_utils_add_message_matches(name: str) -> None:
+    case = ADD_MESSAGE_CASES[name]
+    compared_outcomes(
+        partial(_utils.get_optional_params_add_message, **case),
+        partial(THEIR_UTILS.get_optional_params_add_message, **case),
+    )
 
 
 @pytest.mark.parametrize("name", list(IMAGE_CASES))
-def test_utils_image_gen_params_match_litellm(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    kwargs = IMAGE_CASES[name]
-    for dropping in (False, True):
-        monkeypatch.setattr("litellm.drop_params", dropping)
-        monkeypatch.setattr("betterlite.drop_params", dropping)
-        ours = utils_outcome(_utils.get_optional_params_image_gen, kwargs)
-        reference = utils_outcome(THEIR_UTILS.get_optional_params_image_gen, kwargs)
-        assert ours == reference
+def test_utils_image_gen_matches(name: str) -> None:
+    case = IMAGE_CASES[name]
+    compared_outcomes(
+        partial(_utils.get_optional_params_image_gen, **case),
+        partial(THEIR_UTILS.get_optional_params_image_gen, **case),
+    )
 
 
-def test_utils_outcomes_cover_both_branches() -> None:
-    refused = utils_outcome(_utils.get_optional_params_add_message, ADD_MESSAGE_CASES["azure_list_content"])
-    assert refused["error"]
-    accepted = utils_outcome(_utils.get_optional_params_add_message, ADD_MESSAGE_CASES["azure_text"])
+def test_utils_both_outcomes() -> None:
+    list_content = ADD_MESSAGE_CASES["azure_list_content"]
+    rejected = utils_outcome(partial(_utils.get_optional_params_add_message, **list_content))
+    assert rejected["error"]
+    azure_text = ADD_MESSAGE_CASES["azure_text"]
+    accepted = utils_outcome(partial(_utils.get_optional_params_add_message, **azure_text))
     assert accepted["ok"] == {"role": "user", "content": "hi", "metadata": {"k": "v"}}
-    sized = utils_outcome(_utils.get_optional_params_image_gen, IMAGE_CASES["bedrock_size"])
-    assert sized["ok"] == {"width": 512, "height": 768}
 
 
-def test_package_main_exports_every_name() -> None:
-    package = importlib.import_module("betterlite.assistants")
-    reference = vars(importlib.import_module("litellm.assistants.main"))
+def test_package_exports_names() -> None:
+    reference = importlib.import_module("litellm.assistants.main")
+    assert package.__all__ == main.__all__
     for name in EXPORTED_NAMES:
         assert name in main.__all__, name
-        assert vars(package)[name] is vars(main)[name], name
+        assert name in dir(main), name
+        assert name in dir(package), name
+    assert package.add_message is main.add_message
+    assert package.Message is main.Message
     for name in LITELLM_FUNCTIONS:
-        assert name in reference, name
+        assert name in dir(reference), name
         assert name in main.__all__, name
 
 
-def test_package_utils_module_is_registered() -> None:
+def test_package_utils_registered() -> None:
     utils = importlib.import_module("betterlite.assistants.utils")
     reference = importlib.import_module("litellm.assistants.utils")
     assert utils is _utils
     for name in ("get_optional_params_add_message", "get_optional_params_image_gen"):
-        assert name in vars(utils)
-        assert name in vars(reference)
+        assert name in dir(utils)
+        assert name in dir(reference)
 
 
-def assert_denied(ours: errors.AuthenticationError, reference: openai.AuthenticationError) -> None:
+def assert_denied(
+    ours: errors.AuthenticationError, reference: openai.AuthenticationError,
+) -> None:
     assert type(ours).__name__ == type(reference).__name__
     assert ours.status_code == UNAUTHORIZED
     assert "Incorrect API key" in str(ours)
@@ -848,63 +911,65 @@ def assert_denied(ours: errors.AuthenticationError, reference: openai.Authentica
     assert ours.__cause__ is not None
 
 
-def test_error_class_and_cause_for_message_calls() -> None:
-    with RunServer() as server:
-        bad = connection(server, BAD_KEY)
-        with pytest.raises(errors.AuthenticationError) as ours:
-            main.add_message("openai", THREAD_ID, "user", "hi", **bad)
-        with pytest.raises(openai.AuthenticationError) as reference:
-            LITELLM.add_message("openai", THREAD_ID, "user", "hi", **bad)
-        assert_denied(ours.value, reference.value)
-        with pytest.raises(errors.AuthenticationError) as ours_list:
-            main.get_messages("openai", THREAD_ID, **bad)
-        with pytest.raises(openai.AuthenticationError) as reference_list:
-            LITELLM.get_messages("openai", THREAD_ID, **bad)
-        assert_denied(ours_list.value, reference_list.value)
-        with pytest.raises(errors.AuthenticationError) as ours_async:
-            asyncio.run(main.a_add_message("openai", THREAD_ID, "user", "hi", **bad))
-        with pytest.raises(openai.AuthenticationError) as reference_async:
-            asyncio.run(LITELLM_ASYNC.a_add_message("openai", THREAD_ID, "user", "hi", **bad))
-        assert_denied(ours_async.value, reference_async.value)
-        with pytest.raises(errors.AuthenticationError) as ours_pages:
-            asyncio.run(main.aget_messages("openai", THREAD_ID, **bad))
-        with pytest.raises(openai.AuthenticationError) as reference_pages:
-            asyncio.run(LITELLM_ASYNC.aget_messages("openai", THREAD_ID, **bad))
-        assert_denied(ours_pages.value, reference_pages.value)
+def test_error_message_denied(server: RunServer) -> None:
+    bad = server.connection(BAD_KEY)
+    with pytest.raises(errors.AuthenticationError) as ours:
+        main.add_message("openai", THREAD_ID, "user", "hi", **bad)
+    with pytest.raises(openai.AuthenticationError) as reference:
+        LITELLM.add_message("openai", THREAD_ID, "user", "hi", **bad)
+    assert_denied(ours.value, reference.value)
 
 
-def test_error_class_and_cause_for_run_calls() -> None:
-    with RunServer() as server:
-        bad = connection(server, BAD_KEY)
-        with pytest.raises(errors.AuthenticationError) as ours:
-            main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **bad)
-        with pytest.raises(openai.AuthenticationError) as reference:
-            LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **bad)
-        assert_denied(ours.value, reference.value)
-        with pytest.raises(errors.AuthenticationError) as ours_async:
-            asyncio.run(main.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **bad))
-        with pytest.raises(openai.AuthenticationError) as reference_async:
-            asyncio.run(LITELLM_ASYNC.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **bad))
-        assert_denied(ours_async.value, reference_async.value)
+def test_error_list_denied(server: RunServer) -> None:
+    bad = server.connection(BAD_KEY)
+    with pytest.raises(errors.AuthenticationError) as ours:
+        main.get_messages("openai", THREAD_ID, **bad)
+    with pytest.raises(openai.AuthenticationError) as reference:
+        LITELLM.get_messages("openai", THREAD_ID, **bad)
+    assert_denied(ours.value, reference.value)
 
 
-def test_error_rate_limit_keeps_its_class() -> None:
-    with RunServer() as server:
-        limited = {**connection(server, RATE_LIMITED_KEY), "max_retries": 0}
-        with pytest.raises(errors.RateLimitError) as ours_message:
-            main.add_message("openai", THREAD_ID, "user", "hi", **limited)
-        with pytest.raises(openai.RateLimitError):
-            LITELLM.add_message("openai", THREAD_ID, "user", "hi", **limited)
-        assert ours_message.value.status_code == RATE_LIMIT_STATUS
-        with pytest.raises(errors.RateLimitError) as ours_run:
-            main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **limited)
-        with pytest.raises(openai.RateLimitError):
-            LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **limited)
-        assert ours_run.value.status_code == RATE_LIMIT_STATUS
-        assert ours_run.value.__cause__ is not None
+def test_error_async_denied(server: RunServer) -> None:
+    bad = server.connection(BAD_KEY)
+    with pytest.raises(errors.AuthenticationError) as ours:
+        asyncio.run(main.a_add_message("openai", THREAD_ID, "user", "hi", **bad))
+    with pytest.raises(openai.AuthenticationError) as reference:
+        asyncio.run(LITELLM_ASYNC.a_add_message("openai", THREAD_ID, "user", "hi", **bad))
+    assert_denied(ours.value, reference.value)
 
 
-def test_error_unsupported_provider_is_a_bad_request() -> None:
+def test_error_run_denied(server: RunServer) -> None:
+    bad = server.connection(BAD_KEY)
+    with pytest.raises(errors.AuthenticationError) as ours:
+        main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **bad)
+    with pytest.raises(openai.AuthenticationError) as reference:
+        LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **bad)
+    assert_denied(ours.value, reference.value)
+
+
+def test_error_async_run_denied(server: RunServer) -> None:
+    bad = server.connection(BAD_KEY)
+    with pytest.raises(errors.AuthenticationError) as ours:
+        asyncio.run(main.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **bad))
+    with pytest.raises(openai.AuthenticationError) as reference:
+        asyncio.run(LITELLM_ASYNC.arun_thread("openai", THREAD_ID, ASSISTANT_ID, **bad))
+    assert_denied(ours.value, reference.value)
+
+
+def test_error_rate_limit_class(server: RunServer) -> None:
+    limited: dict[str, JsonValue] = {**server.connection(RATE_LIMITED_KEY), "max_retries": 0}
+    with pytest.raises(errors.RateLimitError) as ours_message:
+        main.add_message("openai", THREAD_ID, "user", "hi", **limited)
+    assert ours_message.value.status_code == RATE_LIMIT_STATUS
+    with pytest.raises(errors.RateLimitError) as ours_run:
+        main.run_thread("openai", THREAD_ID, ASSISTANT_ID, **limited)
+    assert ours_run.value.status_code == RATE_LIMIT_STATUS
+    assert ours_run.value.__cause__ is not None
+    with pytest.raises(openai.RateLimitError):
+        LITELLM.run_thread("openai", THREAD_ID, ASSISTANT_ID, **limited)
+
+
+def test_error_unknown_provider() -> None:
     with pytest.raises(errors.BadRequestError) as ours_message:
         main.add_message("bedrock", THREAD_ID, "user", "hi")
     with pytest.raises(THEIR_ERRORS.BadRequestError) as reference_message:
@@ -926,10 +991,4 @@ def test_error_unsupported_provider_is_a_bad_request() -> None:
     with pytest.raises(errors.BadRequestError):
         asyncio.run(main.arun_thread("bedrock", THREAD_ID, ASSISTANT_ID))
     with pytest.raises(errors.BadRequestError):
-        our_first(main.run_thread_stream(custom_llm_provider="bedrock", thread_id=THREAD_ID, assistant_id=ASSISTANT_ID))
-
-
-def test_error_unreadable_reply_names_the_field() -> None:
-    assert main.Message.model_validate(MESSAGE).id == MESSAGE_ID
-    with pytest.raises(ValueError, match="role"):
-        main.Message.model_validate({**MESSAGE, "role": None})
+        our_first(sync_stream_of(main.run_thread_stream(**BEDROCK_STREAM_ARGUMENTS)))

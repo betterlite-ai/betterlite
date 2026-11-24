@@ -6,6 +6,12 @@ deviations:
 - what: "A provider failure from the sync `add_message`, `get_messages` or `run_thread` raises the betterlite exception named by LiteLLM's `exception_type`, where LiteLLM's sync path lets the raw OpenAI SDK exception through; the async calls map the same way in both."
   why: Every request runs in Rust and comes back as an error envelope that `raise_native_error` turns into the mapped class; B7878 records the same deviation for the assistant and thread calls.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L955-L965
+- what: "`client`, an OpenAI or Azure SDK client object, raises `UnsupportedCallArgumentError` instead of driving the call, in all eight functions."
+  why: The OpenAI SDK is no dependency of the wheel and every request runs in Rust; B7878 records the same deviation for the assistant and thread calls.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L892-L900
+- what: "A streamed run calls `on_event` for every event on azure too, where LiteLLM's azure branch never passes `event_handler` to the Azure OpenAI wrapper, so a handler given to an azure stream run stays silent."
+  why: The task says the handler is called for every event, and betterlite dispatches events in Python after Rust reads them, so no provider can drop the handler a caller passed.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1335-L1353
 - what: "`betterlite.assistants.utils` is the `_utils` module registered under that name in `sys.modules`, not a separate file."
   why: The task scopes the helpers to `_utils.py` and keeps `get_optional_params_image_gen` importable from `betterlite.assistants.utils`; one module object means both names see the same functions.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/utils.py#L1
