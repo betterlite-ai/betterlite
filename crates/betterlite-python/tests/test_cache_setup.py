@@ -307,6 +307,17 @@ def test_enable_adds_cache() -> None:
     assert ours_counts == theirs_counts == CACHE_CALLBACK_COUNTS
 
 
+def test_verbose_prints_on_enable(capsys: pytest.CaptureFixture[str]) -> None:
+    enable_cache()
+    assert not capsys.readouterr().out
+    betterlite.set_verbose = True
+    try:
+        enable_cache()
+    finally:
+        betterlite.set_verbose = False
+    assert "LiteLLM: Enabling Cache" in capsys.readouterr().out
+
+
 def test_enable_keeps_cache() -> None:
     ours = Cache()
     betterlite.cache = ours  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L402-L405
