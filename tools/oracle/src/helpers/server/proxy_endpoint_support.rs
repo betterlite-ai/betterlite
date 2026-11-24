@@ -95,7 +95,7 @@ impl Visit for Message {
 
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
-            self.0 = value.to_owned();
+            value.clone_into(&mut self.0);
         }
     }
 }
@@ -189,7 +189,7 @@ fn record_answer(spec: &ExceptionSpec, litellm_call_id: Option<&str>, notice: bo
     let exception_line = format!("Exception: {}", rendered_exception(spec));
     json!({
         "record": record_view(&record),
-        "exception_logged": captured.iter().any(|line| *line == exception_line),
+        "exception_logged": captured.contains(&exception_line),
         "notice_logged": captured
             .iter()
             .any(|line| line.starts_with(NOTICE_PREFIX)),
