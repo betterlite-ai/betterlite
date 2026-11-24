@@ -4,6 +4,7 @@ config: |-
     - model_name: ui-router
       litellm_params:
         model: auto_router/complexity_router
+        complexity_router_default_model: ui-model
         complexity_router_config:
           tiers:
             SIMPLE: ui-model
