@@ -53,7 +53,7 @@ impl EnvironmentLookup for RuntimeEnvironment {
     fn lookup(&self, name: &str) -> Option<String> {
         self.overlay
             .get(name)
-            .map_or_else(|| self.boot.get(name).cloned(), |value| value.clone())
+            .map_or_else(|| self.boot.get(name).cloned(), Clone::clone)
     }
 }
 

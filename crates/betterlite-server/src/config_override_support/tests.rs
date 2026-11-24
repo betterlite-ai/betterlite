@@ -23,10 +23,10 @@ pub(crate) fn text(text: &str) -> JsonValue {
 pub(crate) fn object(text: &str) -> JsonMap {
     match value(text) {
         JsonValue::Object(map) => map,
-        other @ JsonValue::Null
-        | other @ JsonValue::Bool(_)
-        | other @ JsonValue::Number(_)
-        | other @ JsonValue::String(_)
-        | other @ JsonValue::Array(_) => panic!("the test fixture is not a JSON object: {other}"),
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)) => panic!("the test fixture is not a JSON object: {other}"),
     }
 }
