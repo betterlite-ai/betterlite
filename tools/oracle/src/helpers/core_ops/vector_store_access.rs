@@ -50,7 +50,7 @@ pub(crate) struct ListInput {
     world: WorldInput,
 }
 
-// the proxy globals a grant reads: the credential, whether a database exists, and the rows it loads
+// the proxy globals a grant reads, answering its three lookups: the credential, a database flag and the rows
 #[derive(Debug, Deserialize)]
 struct WorldInput {
     auth: BTreeMap<String, JsonData>,
@@ -81,16 +81,13 @@ impl Helper for Op {
                 Ok(serde_json::to_value(normalized).or_value_error()?)
             }
             Input::CanUserAccessVectorStore(fields) => {
-                let scripted = Scripted {
-                    world: &fields.world,
-                };
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
                     .or_value_error()?;
                 let runtime = Builder::new_current_thread().build()?;
                 let access = VectorStoreAccess {
-                    permissions: &scripted,
-                    teams: &scripted,
-                    session_teams: &scripted,
+                    permissions: &fields.world,
+                    teams: &fields.world,
+                    session_teams: &fields.world,
                 };
                 let allowed = runtime
                     .block_on(access.can_user_access_vector_store(&fields.vector_store, &auth))
@@ -98,16 +95,13 @@ impl Helper for Op {
                 Ok(json!(allowed))
             }
             Input::FilterListableVectorStores(fields) => {
-                let scripted = Scripted {
-                    world: &fields.world,
-                };
                 let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.world.auth.clone()))
                     .or_value_error()?;
                 let runtime = Builder::new_current_thread().build()?;
                 let access = VectorStoreAccess {
-                    permissions: &scripted,
-                    teams: &scripted,
-                    session_teams: &scripted,
+                    permissions: &fields.world,
+                    teams: &fields.world,
+                    session_teams: &fields.world,
                 };
                 let listable = runtime
                     .block_on(access.filter_listable_vector_stores(&fields.vector_stores, &auth))
@@ -129,36 +123,27 @@ fn denied(error: &VectorStoreAccessError) -> Box<HelperError> {
     })
 }
 
-struct Scripted<'world> {
-    world: &'world WorldInput,
-}
-
 #[async_trait]
-impl ObjectPermissionLookup for Scripted<'_> {
+impl ObjectPermissionLookup for WorldInput {
     fn has_database(&self) -> bool {
-        self.world.database
+        self.database
     }
 
     async fn load_permission(
         &self,
         object_permission_id: &str,
     ) -> Result<Option<LiteLLMObjectPermissionTable>, PermissionError> {
-        Ok(self
-            .world
-            .object_permissions
-            .get(object_permission_id)
-            .cloned())
+        Ok(self.object_permissions.get(object_permission_id).cloned())
     }
 }
 
 #[async_trait]
-impl TeamLoader for Scripted<'_> {
+impl TeamLoader for WorldInput {
     async fn load_team(
         &self,
         request: TeamRequest<'_>,
     ) -> Result<LiteLLMTeamTableCachedObj, TeamLookupError> {
-        self.world
-            .teams
+        self.teams
             .get(request.team_id)
             .cloned()
             .ok_or_else(|| TeamLookupError::TeamNotFound {
@@ -168,9 +153,9 @@ impl TeamLoader for Scripted<'_> {
 }
 
 #[async_trait]
-impl UiSessionTeams for Scripted<'_> {
+impl UiSessionTeams for WorldInput {
     fn has_database(&self) -> bool {
-        self.world.database
+        self.database
     }
 
     async fn user_teams(
@@ -178,6 +163,6 @@ impl UiSessionTeams for Scripted<'_> {
         _user_id: &str,
         _fresh: bool,
     ) -> Result<Option<Vec<String>>, UserLookupError> {
-        Ok(Some(self.world.user_teams.clone()))
+        Ok(Some(self.user_teams.clone()))
     }
 }
