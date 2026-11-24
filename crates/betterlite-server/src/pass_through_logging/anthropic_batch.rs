@@ -186,7 +186,11 @@ impl AnthropicBatchLogging {
             Err(error) => {
                 tracing::error!("Error in batch_creation_handler: {error}");
                 let response_id = self.ids.new_response_id();
-                records::creation_errored(&input, response_id, error.to_string())
+                records::creation_failed(
+                    &input,
+                    response_id,
+                    records::CreationFailure::Error(error.to_string()),
+                )
             }
         }
     }

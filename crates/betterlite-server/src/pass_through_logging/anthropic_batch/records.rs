@@ -100,52 +100,36 @@ fn success_kwargs(
     }
 }
 
+pub(super) enum CreationFailure {
+    Status(u16),
+    Error(String),
+}
+
 pub(super) fn creation_failed(
     input: &BatchCreationInput<'_>,
     response_id: String,
+    failure: CreationFailure,
 ) -> BatchCreationLogged {
-    let content = format!("Batch job creation failed. Status: {}", input.status_code);
-    failed_logged(
-        input,
-        response_id,
-        content,
-        failed_fields(input.status_code),
-    )
+    let (content, provider_fields) = match failure {
+        CreationFailure::Status(status_code) => (
+            format!("Batch job creation failed. Status: {status_code}"),
+            failed_fields("status_code", Json::Number(Number::from(status_code))),
+        ),
+        CreationFailure::Error(error) => {
+            let content = format!("Error creating batch job: {error}");
+            (content, failed_fields("error", Json::Text(error)))
+        }
+    };
+    failed_logged(input, response_id, content, provider_fields)
 }
 
-pub(super) fn creation_errored(
-    input: &BatchCreationInput<'_>,
-    response_id: String,
-    error: String,
-) -> BatchCreationLogged {
-    failed_logged(
-        input,
-        response_id,
-        format!("Error creating batch job: {error}"),
-        error_fields(&error),
-    )
-}
-
-fn failed_fields(status_code: u16) -> IndexMap<String, Json> {
+fn failed_fields(name: &str, value: Json) -> IndexMap<String, Json> {
     let mut provider_fields = IndexMap::new();
     provider_fields.insert(
         "batch_job_state".to_owned(),
         Json::Text(BatchJobState::Failed.word().to_owned()),
     );
-    provider_fields.insert(
-        "status_code".to_owned(),
-        Json::Number(Number::from(status_code)),
-    );
-    provider_fields
-}
-
-fn error_fields(error: &str) -> IndexMap<String, Json> {
-    let mut provider_fields = IndexMap::new();
-    provider_fields.insert(
-        "batch_job_state".to_owned(),
-        Json::Text(BatchJobState::Failed.word().to_owned()),
-    );
-    provider_fields.insert("error".to_owned(), Json::Text(error.to_owned()));
+    provider_fields.insert(name.to_owned(), value);
     provider_fields
 }
 

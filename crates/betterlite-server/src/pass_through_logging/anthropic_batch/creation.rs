@@ -9,7 +9,7 @@ use chrono::{DateTime, Offset as _, Utc};
 use indexmap::IndexMap;
 
 use super::error::AnthropicBatchError;
-use super::records::{SuccessFields, creation_failed, success_logged};
+use super::records::{CreationFailure, SuccessFields, creation_failed, success_logged};
 use super::{
     ANTHROPIC_PREFIX, AnthropicBatchLogging, BatchCreationInput, BatchCreationLogged,
     SUCCESS_STATUS, UNKNOWN_MODEL, unified_object_id,
@@ -24,7 +24,11 @@ pub(super) fn handle(
     let body = parse_body(input.body)?;
     if !success_status(input.status_code, &body)? {
         let response_id = logging.ids.new_response_id();
-        return Ok(creation_failed(input, response_id));
+        return Ok(creation_failed(
+            input,
+            response_id,
+            CreationFailure::Status(input.status_code),
+        ));
     }
     let batch_object = transform_batch(input.body, input.start_time)?;
     let batch_id = batch_object.id.clone();
