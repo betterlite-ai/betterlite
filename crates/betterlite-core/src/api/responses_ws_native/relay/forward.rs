@@ -87,7 +87,7 @@ where
         &self,
     ) -> Result<(), ClientRelayError<ClientError, BackendSource, GuardError>>;
 
-    async fn relay_client_frame(
+    async fn accept_client_frame(
         &self,
         message: &str,
     ) -> Result<(), ClientRelayError<ClientError, BackendSource, GuardError>>;
@@ -208,31 +208,30 @@ where
     async fn forward_client_frames(
         &self,
     ) -> Result<(), ClientRelayError<Client::Error, Backend::Error, Guard::Error>> {
-        let mut first = self.setup.first_message.clone();
+        if let Some(first) = self.setup.first_message.clone() {
+            self.accept_client_frame(&first).await?;
+        }
         loop {
-            let message = if let Some(queued) = first.take() {
-                queued
-            } else {
-                self.setup
-                    .websocket
-                    .receive_text()
-                    .await
-                    .map_err(ClientRelayError::Receive)?
-            };
-            let policy = self.policy();
-            let accepted = enforce_or_reject_frame(&policy, self.setup.websocket, &message)
+            let message = self
+                .setup
+                .websocket
+                .receive_text()
                 .await
-                .map_err(ClientRelayError::Rejected)?;
-            if accepted {
-                self.relay_client_frame(&message).await?;
-            }
+                .map_err(ClientRelayError::Receive)?;
+            self.accept_client_frame(&message).await?;
         }
     }
 
-    async fn relay_client_frame(
+    async fn accept_client_frame(
         &self,
         message: &str,
     ) -> Result<(), ClientRelayError<Client::Error, Backend::Error, Guard::Error>> {
+        let accepted = enforce_or_reject_frame(&self.policy(), self.setup.websocket, message)
+            .await
+            .map_err(ClientRelayError::Rejected)?;
+        if !accepted {
+            return Ok(());
+        }
         let mut request_data = self.request_data.lock().await;
         let masked = mask_response_create(&self.policy(), &mut request_data, message).await?;
         drop(request_data);
