@@ -1,0 +1,596 @@
+#![cfg(test)]
+
+// The fixtures the three Redis flusher test modules share: the queues a tick publishes from, the real-Redis handles, the pod leases two pods contend on, and the wire records a case seeds.
+use std::collections::{BTreeMap, VecDeque};
+use std::error::Error;
+use std::future::{Future, ready};
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
+
+use betterlite_redis::list_operations::error::RedisListOperationsError;
+use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
+use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
+use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
+use betterlite_redis::redis_client_reuse::store::RedisClientStore;
+use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
+use betterlite_redis::redis_live_client::LiveClientFactory;
+use betterlite_redis_fixture::server::RedisFixture;
+use redis::aio::MultiplexedConnection;
+use redis::{Client, cmd};
+use rust_decimal::Decimal;
+use uuid::Uuid;
+
+use crate::daily_spend_sql::entities::SpendRow;
+use crate::daily_spend_sql::values::SpendColumnValue;
+use crate::entity_spend_commit::{EntityTableWriter, TableFuture};
+use crate::queues::pod_lock::cache::RedisLockCache;
+use crate::queues::pod_lock::owner::PodId;
+use crate::queues::pod_lock::{NoPodLockEventSink, PodLockManager};
+use crate::redis_spend::buffer::RedisUpdateBuffer;
+use crate::redis_spend::events::NoRedisBufferEventSink;
+use crate::redis_spend::lists::{
+    BufferPop, BufferPush, BufferReply, RedisSpendLists, SpendBufferListError, SpendBufferLists,
+    SpendBufferPush, SpendListFuture,
+};
+use crate::redis_spend::publication::{RedisSpendPublisher, SpendStaging, SpendUpdateQueues};
+use crate::spend_commit::policy::SpendFailure;
+use crate::spend_commit::tables::SpendTable;
+use crate::spend_flush::daily::DailyCommitParts;
+use crate::spend_flush::fakes::tests::{Events, FakeEntityError, FixedClock, FixedJitter};
+use crate::spend_flush::memory::DailySpendQueues;
+use crate::spend_flush::redis::leader::dispatch::SpendFlushPass;
+use crate::spend_flush::service::ServiceFuture;
+use crate::spend_log_storage::rows::writer::NoSpendLogFailureSink;
+use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue};
+use crate::spend_queues::entity::{
+    EntityType, SpendAmount, SpendUpdateQueue, SpendUpdateQueueItem, SpendUpdateTransactions,
+};
+use crate::spend_queues::events::NoSpendQueueEventSink;
+use crate::tool_discovery::ToolDiscoveryQueue;
+use crate::tool_spend::RetryPause;
+use crate::window_queue::queue::WindowSpendUpdateQueue;
+
+// The spend queues one pod publishes from, each unbounded enough that only a test asking for a full one meets a closed queue.
+pub(crate) struct Queues {
+    pub(crate) entity: Arc<SpendUpdateQueue>,
+    pub(crate) daily_user: Arc<DailySpendUpdateQueue>,
+    pub(crate) daily_team: Arc<DailySpendUpdateQueue>,
+    pub(crate) daily_org: Arc<DailySpendUpdateQueue>,
+    pub(crate) daily_end_user: Arc<DailySpendUpdateQueue>,
+    pub(crate) daily_agent: Arc<DailySpendUpdateQueue>,
+    pub(crate) window: Arc<WindowSpendUpdateQueue>,
+    pub(crate) discovery: Arc<ToolDiscoveryQueue>,
+}
+
+pub(crate) fn spend_queues() -> Queues {
+    Queues {
+        entity: Arc::new(
+            SpendUpdateQueue::new(100, 1000, 100, Arc::new(NoSpendQueueEventSink)).unwrap(),
+        ),
+        daily_user: Arc::new(daily_queue(100, 1000, 100)),
+        daily_team: Arc::new(daily_queue(100, 1000, 100)),
+        daily_org: Arc::new(daily_queue(100, 1000, 100)),
+        daily_end_user: Arc::new(daily_queue(100, 1000, 100)),
+        daily_agent: Arc::new(daily_queue(100, 1000, 100)),
+        window: Arc::new(window_queue(100, 1000, 100)),
+        discovery: Arc::new(ToolDiscoveryQueue::new(100).unwrap()),
+    }
+}
+
+impl Queues {
+    // The six memory queues B1738 publishes, in the source's order, with a window queue because the test deployment runs one.
+    pub(crate) fn view(&self) -> SpendUpdateQueues<'_> {
+        SpendUpdateQueues {
+            entity: &self.entity,
+            daily_user: &self.daily_user,
+            daily_team: &self.daily_team,
+            daily_org: &self.daily_org,
+            daily_end_user: &self.daily_end_user,
+            daily_agent: &self.daily_agent,
+            window: Some(&self.window),
+        }
+    }
+
+    // The five daily queues the memory pass commits; the tag queue has its own flusher.
+    pub(crate) fn daily(&self) -> DailySpendQueues<'_> {
+        DailySpendQueues {
+            user: &self.daily_user,
+            team: &self.daily_team,
+            org: &self.daily_org,
+            end_user: &self.daily_end_user,
+            agent: &self.daily_agent,
+        }
+    }
+
+    pub(crate) async fn add_entity(&self, kind: EntityType, id: &str, cost: &str) {
+        self.entity
+            .add_update(queue_item(kind, id, cost))
+            .await
+            .unwrap();
+    }
+
+    pub(crate) async fn add_daily_user(&self, day: &str, spend: &str) {
+        self.daily_user
+            .add_update(daily_row(day, spend, 1))
+            .await
+            .unwrap();
+    }
+}
+
+// A retry pause that records every wait and returns at once, so a case can count the retries a commit policy actually spent.
+#[derive(Default)]
+pub(crate) struct CountingPause {
+    delays: Mutex<Vec<Duration>>,
+}
+
+impl CountingPause {
+    pub(crate) fn delays(&self) -> Vec<Duration> {
+        self.delays
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl RetryPause for CountingPause {
+    fn pause(&self, delay: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        self.delays
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(delay);
+        Box::pin(ready(()))
+    }
+}
+
+// The daily commit parts one case reads: the writer under test, a fixed clock and jitter, and the retry pause the test inspects.
+pub(crate) fn parts<Writer>(writer: Arc<Writer>) -> Arc<DailyCommitParts<Writer>> {
+    parts_with_pause(writer, Arc::new(CountingPause::default()))
+}
+
+pub(crate) fn parts_with_pause<Writer>(
+    writer: Arc<Writer>,
+    pause: Arc<CountingPause>,
+) -> Arc<DailyCommitParts<Writer>> {
+    Arc::new(DailyCommitParts {
+        writer,
+        retries: 0,
+        clock: Arc::new(FixedClock {
+            instant: Instant::now(),
+        }),
+        jitter: Arc::new(FixedJitter),
+        pause,
+        failures: Arc::new(NoSpendLogFailureSink),
+    })
+}
+
+// The append port over a live Redis: the publisher pushes into the same buffer the drain pops from.
+pub(crate) fn redis_publisher(cache: &Arc<RedisCache>) -> RedisSpendPublisher {
+    let port: Arc<dyn SpendBufferPush> = Arc::new(RedisSpendLists {
+        cache: Arc::clone(cache),
+    });
+    RedisSpendPublisher {
+        lists: Some(port),
+        events: Arc::new(NoRedisBufferEventSink),
+        staging: SpendStaging::default(),
+    }
+}
+
+// One pod's lease manager over a live Redis; two calls mint two owners that contend on the same lock keys.
+pub(crate) fn pod(cache: &Arc<RedisCache>) -> PodLockManager<RedisLockCache> {
+    PodLockManager::new(
+        Some(Arc::new(RedisLockCache {
+            cache: Arc::clone(cache),
+        })),
+        60,
+        Arc::new(NoPodLockEventSink),
+        PodId::try_from(Uuid::new_v4()).unwrap(),
+    )
+}
+
+// A cache connected to the case's own Redis: the production settings path, with hooks and a breaker that stay out of the way.
+struct NoHooks;
+
+impl ServiceHooks for NoHooks {
+    fn success(&self, _event: &ServiceEvent) {}
+
+    fn failure(&self, _event: &ServiceEvent, _error: &(dyn Error + Send + Sync)) {}
+}
+
+struct OpenGate;
+
+impl BreakerGate for OpenGate {
+    fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        Ok(BreakerAdmission::from(0))
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
+}
+
+const CACHE_TTL_SECONDS: i64 = 60;
+
+pub(crate) async fn cache_for(fixture: &RedisFixture) -> Arc<RedisCache> {
+    let url = serde_json::to_string(fixture.as_ref()).unwrap();
+    let overrides: RedisOverrides = serde_json::from_str(&format!(r#"{{"url":{url}}}"#)).unwrap();
+    let options = RedisCacheOptions {
+        family: RedisCacheFamily::Standalone,
+        overrides,
+        namespace: None,
+        redis_flush_size: None,
+        default_ttl: CACHE_TTL_SECONDS,
+        default_major_version: 7,
+        store: Arc::new(RedisClientStore::new()),
+        factory: Arc::new(LiveClientFactory::new(None)),
+        gate: Arc::new(OpenGate),
+        hooks: Arc::new(NoHooks),
+    };
+    let env: BTreeMap<String, String> = BTreeMap::new();
+    Arc::new(connect(options, &env).await.unwrap())
+}
+
+// The buffer over the same live Redis the publisher appends to.
+pub(crate) fn buffer(cache: &Arc<RedisCache>) -> RedisUpdateBuffer {
+    let port: Arc<dyn SpendBufferLists> = Arc::new(RedisSpendLists {
+        cache: Arc::clone(cache),
+    });
+    RedisUpdateBuffer {
+        lists: Some(port),
+        enabled: true,
+        dequeue_count: 5,
+        events: Arc::new(NoRedisBufferEventSink),
+    }
+}
+
+pub(crate) async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
+    Client::open(fixture.as_ref())
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap()
+}
+
+pub(crate) async fn push(connection: &mut MultiplexedConnection, key: &str, values: &[String]) {
+    let mut command = cmd("RPUSH");
+    command.arg(key);
+    for value in values {
+        command.arg(value.as_str());
+    }
+    let _length: i64 = command.query_async(connection).await.unwrap();
+}
+
+pub(crate) async fn length(connection: &mut MultiplexedConnection, key: &str) -> i64 {
+    cmd("LLEN").arg(key).query_async(connection).await.unwrap()
+}
+
+pub(crate) async fn range(
+    connection: &mut MultiplexedConnection,
+    key: &str,
+    start: i64,
+    stop: i64,
+) -> Vec<String> {
+    cmd("LRANGE")
+        .arg(key)
+        .arg(start)
+        .arg(stop)
+        .query_async(connection)
+        .await
+        .unwrap()
+}
+
+// A buffer port no append can reach: the scripted pops hand back what the holder drained, and every push fails the way an unreachable Redis does.
+#[derive(Default)]
+pub(crate) struct UnreachableLists {
+    pipelines: Mutex<VecDeque<Vec<BufferReply>>>,
+    pushes: Mutex<usize>,
+}
+
+impl UnreachableLists {
+    pub(crate) fn script_pipeline(&self, replies: Vec<BufferReply>) {
+        self.pipelines
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push_back(replies);
+    }
+
+    pub(crate) fn push_attempts(&self) -> usize {
+        *self.pushes.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn count_push(&self) {
+        *self.pushes.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+    }
+}
+
+fn list_failure(operation: &'static str) -> SpendBufferListError {
+    SpendBufferListError::Redis {
+        operation,
+        source: RedisListOperationsError::UnexpectedReply { operation },
+    }
+}
+
+impl SpendBufferLists for UnreachableLists {
+    fn pop<'call>(
+        &'call self,
+        _key: &'call str,
+        _count: Option<i64>,
+    ) -> SpendListFuture<'call, BufferReply> {
+        Box::pin(ready(Ok(BufferReply::Missing)))
+    }
+
+    fn pop_pipeline<'call>(
+        &'call self,
+        _operations: &'call [BufferPop],
+    ) -> SpendListFuture<'call, Vec<BufferReply>> {
+        let replies = self
+            .pipelines
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_default();
+        Box::pin(ready(Ok(replies)))
+    }
+
+    fn push_and_trim<'call>(
+        &'call self,
+        _key: &'call str,
+        _values: &'call [String],
+        _max_len: i64,
+    ) -> SpendListFuture<'call, i64> {
+        self.count_push();
+        Box::pin(ready(Err(list_failure("async_rpush_trim"))))
+    }
+}
+
+impl SpendBufferPush for UnreachableLists {
+    fn rpush<'call>(
+        &'call self,
+        _key: &'call str,
+        _values: &'call [String],
+    ) -> SpendListFuture<'call, i64> {
+        self.count_push();
+        Box::pin(ready(Err(list_failure("async_rpush"))))
+    }
+
+    fn rpush_pipeline<'call>(
+        &'call self,
+        _operations: &'call [BufferPush],
+    ) -> SpendListFuture<'call, Vec<i64>> {
+        self.count_push();
+        Box::pin(ready(Err(list_failure("async_rpush_pipeline"))))
+    }
+}
+
+pub(crate) fn publisher_over(lists: &Arc<UnreachableLists>) -> RedisSpendPublisher {
+    let port: Arc<dyn SpendBufferPush> = Arc::clone(lists);
+    RedisSpendPublisher {
+        lists: Some(port),
+        events: Arc::new(NoRedisBufferEventSink),
+        staging: SpendStaging::default(),
+    }
+}
+
+pub(crate) fn buffer_over(lists: &Arc<UnreachableLists>) -> RedisUpdateBuffer {
+    let port: Arc<dyn SpendBufferLists> = Arc::clone(lists);
+    RedisUpdateBuffer {
+        lists: Some(port),
+        enabled: true,
+        dequeue_count: 5,
+        events: Arc::new(NoRedisBufferEventSink),
+    }
+}
+
+// An entity writer that commits the source's table order up to one chosen table and then fails it, so a case can see exactly which tables the restore keeps.
+pub(crate) struct TableFailWriter {
+    failing: SpendTable,
+    failure: SpendFailure,
+    written: Mutex<Vec<SpendTable>>,
+}
+
+impl TableFailWriter {
+    pub(crate) fn new(failing: SpendTable, failure: SpendFailure) -> Self {
+        Self {
+            failing,
+            failure,
+            written: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn written(&self) -> Vec<SpendTable> {
+        self.written
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl EntityTableWriter for TableFailWriter {
+    type Error = FakeEntityError;
+
+    fn write_table<'writer>(
+        &'writer self,
+        table: SpendTable,
+        _increments: &'writer BTreeMap<String, Decimal>,
+    ) -> TableFuture<'writer, FakeEntityError> {
+        if table == self.failing {
+            return Box::pin(ready(Err(FakeEntityError {
+                failure: self.failure,
+            })));
+        }
+        self.written
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(table);
+        Box::pin(ready(Ok(())))
+    }
+}
+
+// The queues a tick publishes from and the wire rows a case seeds, built here because the redis_spend test fixtures are private to that module.
+pub(crate) fn daily_queue(
+    capacity: i64,
+    threshold: i64,
+    flush_count: i64,
+) -> DailySpendUpdateQueue {
+    DailySpendUpdateQueue::new(
+        capacity,
+        threshold,
+        flush_count,
+        Arc::new(NoSpendQueueEventSink),
+    )
+    .unwrap()
+}
+
+pub(crate) fn window_queue(
+    capacity: i64,
+    threshold: i64,
+    flush_count: i64,
+) -> WindowSpendUpdateQueue {
+    WindowSpendUpdateQueue::new(capacity, threshold, flush_count).unwrap()
+}
+
+pub(crate) fn amount(value: &str) -> SpendAmount {
+    SpendAmount(value.parse::<Decimal>().unwrap())
+}
+
+pub(crate) fn queue_item(kind: EntityType, id: &str, value: &str) -> SpendUpdateQueueItem {
+    SpendUpdateQueueItem {
+        entity_type: Some(kind),
+        entity_id: Some(id.to_owned()),
+        response_cost: Some(amount(value)),
+    }
+}
+
+pub(crate) fn transactions(user: &[(&str, &str)]) -> SpendUpdateTransactions {
+    let mut transactions = SpendUpdateTransactions::default();
+    for (id, value) in user {
+        transactions
+            .user_list_transactions
+            .insert((*id).to_owned(), amount(value));
+    }
+    transactions
+}
+
+pub(crate) fn daily_row(day: &str, spend: &str, prompt_tokens: i64) -> DailySpendUpdate {
+    DailySpendUpdate::from([(
+        day.to_owned(),
+        SpendRow::from([
+            (
+                "spend".to_owned(),
+                SpendColumnValue::Decimal(spend.parse::<Decimal>().unwrap()),
+            ),
+            (
+                "prompt_tokens".to_owned(),
+                SpendColumnValue::Int(prompt_tokens),
+            ),
+            ("completion_tokens".to_owned(), SpendColumnValue::Int(0)),
+            ("api_requests".to_owned(), SpendColumnValue::Int(0)),
+            ("successful_requests".to_owned(), SpendColumnValue::Int(0)),
+            ("failed_requests".to_owned(), SpendColumnValue::Int(0)),
+        ]),
+    )])
+}
+
+// The one entity record the partial-commit cases seed: a row in each of the four committed tables, the table that fails, and the two after it.
+pub(crate) fn entity_batch() -> SpendUpdateTransactions {
+    let mut batch = transactions(&[("u1", "1.5")]);
+    batch
+        .end_user_list_transactions
+        .insert("e1".to_owned(), amount("1.5"));
+    batch
+        .key_list_transactions
+        .insert("k1".to_owned(), amount("1.5"));
+    batch
+        .team_list_transactions
+        .insert("t1".to_owned(), amount("1.5"));
+    batch
+        .team_member_list_transactions
+        .insert("t1::u1".to_owned(), amount("1.5"));
+    batch
+        .org_list_transactions
+        .insert("o 1".to_owned(), amount("1.5"));
+    batch
+        .project_list_transactions
+        .insert("p1".to_owned(), amount("1.5"));
+    batch
+}
+
+// One daily user row per id, every column the real upsert requires, distinguishable in the table by its user_id.
+pub(crate) fn daily_user_rows(count: usize) -> DailySpendUpdate {
+    (0..count)
+        .map(|index| {
+            let user = format!("user-{index:03}");
+            (user.clone(), user_spend_row(&user))
+        })
+        .collect()
+}
+
+pub(crate) fn user_spend_row(user: &str) -> SpendRow {
+    SpendRow::from([
+        (
+            "date".to_owned(),
+            SpendColumnValue::Text("2026-01-02".to_owned()),
+        ),
+        (
+            "user_id".to_owned(),
+            SpendColumnValue::Text(user.to_owned()),
+        ),
+        (
+            "api_key".to_owned(),
+            SpendColumnValue::Text("key-1".to_owned()),
+        ),
+        (
+            "model".to_owned(),
+            SpendColumnValue::Text("model-1".to_owned()),
+        ),
+        (
+            "custom_llm_provider".to_owned(),
+            SpendColumnValue::Text("openai".to_owned()),
+        ),
+        ("spend".to_owned(), SpendColumnValue::Decimal(Decimal::ONE)),
+    ])
+}
+
+// One window buffer record: the wire payload B1734 writes, with the spend the fake window commit reads.
+pub(crate) fn window_payload() -> String {
+    r#"[{"entity_type":"user","entity_id":"user-1","window_duration":"1h","window_start":"2024-01-01T00:00:00+00:00","spend":2.5}]"#.to_owned()
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the scripted spend pass failed")]
+pub(crate) struct PassError;
+
+// A buffer-mode branch that records the retry count it was handed and succeeds or fails on script.
+pub(crate) struct RecordingPass {
+    name: &'static str,
+    events: Arc<Events>,
+    failing: bool,
+}
+
+pub(crate) fn recording_pass(
+    name: &'static str,
+    events: Arc<Events>,
+    failing: bool,
+) -> RecordingPass {
+    RecordingPass {
+        name,
+        events,
+        failing,
+    }
+}
+
+impl SpendFlushPass for RecordingPass {
+    type Error = PassError;
+
+    fn commit_spend_updates(&self, retries: u32) -> ServiceFuture<'_, Result<(), PassError>> {
+        self.events.push(format!("balance {} {retries}", self.name));
+        let outcome: Result<(), PassError> = if self.failing { Err(PassError) } else { Ok(()) };
+        Box::pin(ready(outcome))
+    }
+}
