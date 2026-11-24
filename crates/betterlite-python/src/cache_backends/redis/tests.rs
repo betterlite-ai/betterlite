@@ -11,7 +11,6 @@ use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::RedisCacheOptions;
 use betterlite_redis::redis_cache::connect::connect;
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate as _;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;

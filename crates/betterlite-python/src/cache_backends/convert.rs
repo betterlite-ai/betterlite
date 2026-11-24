@@ -104,7 +104,7 @@ pub(crate) fn whole_seconds(value: f64) -> Result<i64, BackendHandleError> {
 
 // DiskCache.increment_cache takes an int, so a fractional increment is the caller's error.
 pub(crate) fn whole_increment(value: f64) -> Result<i64, BackendHandleError> {
-    if (value.trunc() - value).abs() > 0.0_f64 {
+    if value.fract().abs() > 0.0_f64 {
         return Err(BackendHandleError::NotWhole { value });
     }
     whole_seconds(value)
