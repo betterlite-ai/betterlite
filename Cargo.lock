@@ -4226,6 +4226,9 @@ name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-types",
  "betterlite-a2a",
  "betterlite-cache",
  "betterlite-config",
@@ -4237,6 +4240,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-http-fixture",
  "betterlite-logging",
+ "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
@@ -4254,6 +4258,7 @@ dependencies = [
  "mutants",
  "pyo3",
  "pyo3-async-runtimes",
+ "rmcp",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -4263,6 +4268,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "url",
  "uuid",
 ]
@@ -4474,6 +4480,7 @@ dependencies = [
  "async-trait",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
