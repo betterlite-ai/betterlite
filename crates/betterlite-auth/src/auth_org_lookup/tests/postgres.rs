@@ -18,7 +18,7 @@ use crate::auth_org_lookup::ports::OrgStore as _;
 use crate::auth_org_lookup::store::DatabaseOrgStore;
 use crate::auth_prefetch::rows::CachedProject;
 
-const SEED: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, allowed_models, created_by, updated_by) VALUES ('b1', 10.5, ARRAY['gpt-4o']::TEXT[], 'a', 'a'); INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, organization_alias, budget_id, created_by, updated_by) VALUES ('o1', 'acme', 'b1', 'a', 'a'), ('o2', 'shared', 'b1', 'a', 'a'), ('o3', 'shared', 'b1', 'a', 'a'); INSERT INTO \"LiteLLM_ProjectTable\" (project_id, project_alias, budget_id, created_by, updated_by) VALUES ('p1', 'proj', 'b1', 'a', 'a')";
+const SEED: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, allowed_models, created_by, updated_by) VALUES ('b1', 10.5, ARRAY['gpt-4o']::TEXT[], 'a', 'a'); INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, organization_alias, budget_id, created_by, updated_by) VALUES ('o1', 'acme', 'b1', 'a', 'a'), ('o2', 'shared', 'b1', 'a', 'a'), ('o3', 'shared', 'b1', 'a', 'a'); INSERT INTO \"LiteLLM_ProjectTable\" (project_id, project_alias, budget_id, created_by, updated_by) VALUES ('p1', 'proj', 'b1', 'a', 'a'); INSERT INTO \"LiteLLM_ProjectTable\" (project_id, project_alias, models, budget_id, created_by, updated_by) VALUES ('p2', 'funded', ARRAY['gpt-4o']::TEXT[], 'b1', 'a', 'a')";
 
 // Postgres has no SELECT trigger, so the org table becomes a view whose predicate raises the stale-plan message
 const STALE_PLAN_SETUP: &str = "
@@ -106,6 +106,9 @@ async fn assert_projects(database: &DatabaseOrgStore) {
         project.project.models.is_empty(),
         "a null text[] reads as []"
     );
+    let funded_text = database.find_project("p2").await.unwrap().unwrap();
+    let funded: CachedProject = serde_json::from_str(&funded_text).unwrap();
+    assert_eq!(funded.project.models, vec!["gpt-4o".to_owned()]);
     assert!(project.project.litellm_budget_table.is_some());
     assert_eq!(project.last_refreshed_at, None);
     assert_eq!(database.find_project("absent").await.unwrap(), None);
