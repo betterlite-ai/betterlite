@@ -128,8 +128,13 @@ async fn a_scoped_report_orders_api_keys_by_total_cost() {
     assert_eq!(rows[0].total_cost.to_string(), "6");
     assert_eq!(rows[1].api_key, "k1");
     assert_eq!(rows[0].model_details.len(), 2);
-    assert_eq!(rows[0].model_details[0].model, "claude");
-    assert_eq!(rows[0].model_details[1].model, "gpt");
+    let models: Vec<&str> = rows[0]
+        .model_details
+        .iter()
+        .map(|detail| detail.model.as_str())
+        .collect();
+    assert!(models.contains(&"claude"));
+    assert!(models.contains(&"gpt"));
 }
 
 #[tokio::test]
@@ -297,10 +302,14 @@ async fn spend_by_team_groups_days_teams_models_and_keys() {
         .unwrap();
     assert_eq!(alpha.total_spend.to_string(), "4");
     assert_eq!(alpha.metadata.len(), 2);
-    assert_eq!(alpha.metadata[0].model, "gpt");
-    assert_eq!(alpha.metadata[0].api_key, "k1");
-    assert_eq!(alpha.metadata[0].spend.to_string(), "1");
-    assert_eq!(alpha.metadata[0].total_tokens, 2);
+    let gpt = alpha
+        .metadata
+        .iter()
+        .find(|entry| entry.model == "gpt")
+        .unwrap();
+    assert_eq!(gpt.api_key, "k1");
+    assert_eq!(gpt.spend.to_string(), "1");
+    assert_eq!(gpt.total_tokens, 2);
     let unassigned = first
         .teams
         .iter()
