@@ -46,7 +46,7 @@ deviations:
     why: >-
       docs/compatibility.md makes an absent or null config value take the default, and betterlite's other public URL
       sections read a null key the same way. Only a config that spells the key with no value sees the difference.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6303
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6620-L6628
   - what: >-
       When a bundled catalog cannot be decoded (the auto-router presets or the fuse presets), the endpoint answers 500
       with betterlite's JSON error envelope where LiteLLM's unhandled exception leaves Starlette's plain-text
