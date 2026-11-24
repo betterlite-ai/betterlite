@@ -28,7 +28,6 @@ use crate::health_probe_modes::calls::{
     RealtimeCall,
 };
 use crate::health_probe_modes::error::HealthProbeError;
-use crate::health_probe_modes::logging::HealthProbeLogging as _;
 
 const HIDDEN_PARAMS_KEY: &str = "_hidden_params";
 const API_KEY_KEY: &str = "api_key";

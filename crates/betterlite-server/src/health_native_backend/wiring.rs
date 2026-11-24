@@ -7,6 +7,7 @@ use super::backend::NativeHealthBackend;
 use super::documents::OcrDocuments;
 use crate::health_check_entry::HealthCheckEntry;
 use crate::health_check_entry::ports::{CatalogModes, ProviderResolver};
+use crate::health_probe_modes::backend::{CheapestChatModels, HealthProbeBackend};
 
 // the values the server already holds, handed in so the entry builds no global and reads no environment
 pub struct HealthEntryDeps {
@@ -22,9 +23,11 @@ pub struct HealthEntryDeps {
 #[must_use]
 pub fn build_health_check_entry(deps: HealthEntryDeps) -> HealthCheckEntry {
     let backend = Arc::new(deps.backend);
+    let health: Arc<dyn HealthProbeBackend> = Arc::clone(&backend);
+    let cheapest: Arc<dyn CheapestChatModels> = backend;
     HealthCheckEntry {
-        backend: Arc::clone(&backend),
-        cheapest: Arc::clone(&backend),
+        backend: health,
+        cheapest,
         documents: Arc::new(OcrDocuments),
         resolver: deps.resolver,
         catalog: deps.catalog,
