@@ -163,13 +163,13 @@ fn push_string(key: &mut String, value: &str) {
             '\t' => key.push_str("\\t"),
             '\u{8}' => key.push_str("\\b"),
             '\u{c}' => key.push_str("\\f"),
-            character if character < ' ' => {
-                let _written = write!(key, "\\u{:04x}", u32::from(character));
+            control if control < ' ' => {
+                let _written = write!(key, "\\u{:04x}", u32::from(control));
             }
-            character if !character.is_ascii() => {
-                let _written = write!(key, "\\u{:04x}", u32::from(character));
+            non_ascii if !non_ascii.is_ascii() => {
+                let _written = write!(key, "\\u{:04x}", u32::from(non_ascii));
             }
-            character => key.push(character),
+            plain => key.push(plain),
         }
     }
     key.push('"');
@@ -225,11 +225,16 @@ fn samples_out(samples: &[MetricSample]) -> Vec<SampleOut> {
 fn blocks(text: &str) -> Vec<String> {
     let mut sections: Vec<(String, Vec<String>)> = Vec::new();
     for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("# HELP ") {
-            let name = rest.split(' ').next().unwrap_or_default().to_owned();
-            sections.push((name, Vec::new()));
-        } else if line == "# EOF" {
-            sections.push(("# EOF".to_owned(), Vec::new()));
+        match line.strip_prefix("# HELP ") {
+            Some(rest) => {
+                let name = rest.split(' ').next().unwrap_or_default().to_owned();
+                sections.push((name, Vec::new()));
+            }
+            None => {
+                if line == "# EOF" {
+                    sections.push(("# EOF".to_owned(), Vec::new()));
+                }
+            }
         }
         if let Some(current) = sections.last_mut() {
             current.1.push(line.to_owned());
