@@ -24,6 +24,7 @@ betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-sdk = { path = "../betterlite-sdk" }
 betterlite-secrets = { path = "../betterlite-secrets" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false }

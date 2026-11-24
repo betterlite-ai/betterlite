@@ -156,25 +156,25 @@ pub(crate) fn body(arguments: &TextArguments) -> Result<IndexMap<String, Json>, 
         body.insert(String::from("stream"), Json::Bool(stream));
     }
     for (name, value) in &arguments.extra {
-        let name = name.as_str();
-        if CONTROL_PARAMETERS.contains(&name) {
+        let field = name.as_str();
+        if CONTROL_PARAMETERS.contains(&field) {
             continue;
         }
         // completion lets num_retries stand in for max_retries, and it wins when both are given
-        if name == "num_retries" {
+        if field == "num_retries" {
             body.insert(String::from("max_retries"), value.clone());
             continue;
         }
-        if name == "max_retries" && arguments.extra.contains_key("num_retries") {
+        if field == "max_retries" && arguments.extra.contains_key("num_retries") {
             continue;
         }
         // the policy's provider parameters, then the three settings fields the transport takes itself
-        if SUPPORTED_PARAMS.contains(&name) || ["best_of", "echo", "suffix"].contains(&name) {
-            body.insert(name.to_owned(), value.clone());
+        if SUPPORTED_PARAMS.contains(&field) || ["best_of", "echo", "suffix"].contains(&field) {
+            body.insert(field.to_owned(), value.clone());
             continue;
         }
         return Err(ConvertError::Unsupported {
-            name: name.to_owned(),
+            name: field.to_owned(),
         });
     }
     Ok(body)

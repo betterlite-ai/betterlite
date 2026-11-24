@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    CompletionPrompt, ModerationArguments, TextArguments, TextCallWire, body, chat_messages,
-    completion_request, moderation_model, prompt,
+    CompletionPrompt, ConvertError, ModerationArguments, TextArguments, TextCallWire, body,
+    chat_messages, completion_request, moderation_model, prompt,
 };
 use crate::moderation::error::{CallFacts, CallFailure, convert_failure};
 use crate::moderation::session::Entry;
@@ -16,7 +16,10 @@ fn arguments(text: &str) -> TextArguments {
     wire.arguments
 }
 
-fn encoded<T: serde::Serialize>(value: &T) -> String {
+fn encoded<T>(value: &T) -> String
+where
+    T: serde::Serialize,
+{
     serde_json::to_string(value).unwrap()
 }
 
@@ -40,7 +43,7 @@ fn request_string_list_prompt_is_one_message_per_string() {
 #[test]
 fn request_token_prompt_is_refused_for_a_chat_provider() {
     let call = arguments(r#"{"prompt": [1, 2]}"#);
-    assert!(chat_messages(&call).is_err());
+    assert!(matches!(chat_messages(&call), Err(ConvertError::Prompt)));
     assert!(matches!(prompt(&call), CompletionPrompt::Tokens(_)));
 }
 
@@ -155,7 +158,7 @@ fn request_moderation_input_reads_text_and_texts() {
 fn error_unsupported_parameter_names_the_class() {
     let call = arguments(r#"{"prompt": "hello", "api_type": "openai"}"#);
     let failure = convert_failure(
-        body(&call).unwrap_err(),
+        &body(&call).unwrap_err(),
         &CallFacts {
             model: "gpt-3.5-turbo-instruct",
             provider: "text-completion-openai",
@@ -213,9 +216,8 @@ fn error_payload_carries_no_status_for_a_plain_exception() {
 
 #[test]
 fn error_redaction_failure_is_an_internal_server() {
-    let redaction = match Redactor::new(usize::MAX) {
-        Ok(_) => panic!("an impossible repetition count must not compile"),
-        Err(error) => error,
+    let Err(redaction) = Redactor::new(usize::MAX) else {
+        panic!("an impossible repetition count must not compile");
     };
     let payload = super::NativeTextErrorPayload::from_class(&CallFailure::from(redaction).0);
     assert_eq!(payload.kind, "InternalServerError");

@@ -19,6 +19,7 @@ use betterlite_openai::text_completion_stream::shaped_chunk;
 use betterlite_openai::text_completion_transport::call::TextCompletionRequest as TransportRequest;
 use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use betterlite_redact::secret::Redactor;
+use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use futures_util::StreamExt as _;
 use serde::Serialize;
 
@@ -55,7 +56,7 @@ pub(crate) async fn call(
     };
     // main.py's prompt dispatch refuses a value it cannot read as one user message before any provider runs
     if matches!(prompt(&arguments).refusal(), Some(PromptRefusal::Unmapped)) {
-        return Err(convert_failure(ConvertError::Prompt, &facts));
+        return Err(convert_failure(&ConvertError::Prompt, &facts));
     }
     let declared_facts = DeploymentFacts {
         resolved: &resolved,
@@ -89,7 +90,7 @@ async fn answer_for(
     if answered || session.executor.endpoint(deployment).await == CompletionEndpoint::Chat {
         return chat_messages(arguments)
             .map(|messages| TextAnswer::Chat { messages })
-            .map_err(|error| convert_failure(error, facts));
+            .map_err(|error| convert_failure(&error, facts));
     }
     sent_text(
         &session.executor,
@@ -108,7 +109,7 @@ async fn sent_text(
     facts: &CallFacts<'_>,
     redactor: &Redactor,
 ) -> Result<TextAnswer, CallFailure> {
-    let request = completion_request(arguments).map_err(|error| convert_failure(error, facts))?;
+    let request = completion_request(arguments).map_err(|error| convert_failure(&error, facts))?;
     let streamed = arguments.stream == Some(true);
     let mut transport = executor
         .text_transport(deployment, &request, streamed)
@@ -153,31 +154,32 @@ async fn collect_stream(
     redactor: &Redactor,
 ) -> Result<Vec<String>, CallFailure> {
     let mut remaining = stream;
-    let mut kept = Vec::new();
+    let mut kept: Vec<StreamChunk> = Vec::new();
     while let Some(item) = remaining.next().await {
         let chunk =
             item.map_err(|error| provider_failure(RawSource::Stream(&error), facts, redactor))?;
-        if chunk.choices.is_empty() {
-            if let Some(usage) = chunk.usage {
-                if let Some(last) = kept.last_mut() {
-                    last.usage = Some(usage);
-                }
-            }
+        if !chunk.choices.is_empty() {
+            kept.push(chunk);
             continue;
         }
-        kept.push(chunk);
+        let Some(usage) = chunk.usage else {
+            continue;
+        };
+        if let Some(last) = kept.last_mut() {
+            last.usage = Some(usage);
+        }
     }
     let mut chunks = Vec::with_capacity(kept.len());
     for chunk in kept {
-        let shaped = shaped_chunk(chunk, "").map_err(|source| encode_failure(source, facts))?;
+        let shaped = shaped_chunk(chunk, "").map_err(|source| encode_failure(&source, facts))?;
         let text =
-            serde_json::to_string(&shaped).map_err(|source| encode_failure(source, facts))?;
+            serde_json::to_string(&shaped).map_err(|source| encode_failure(&source, facts))?;
         chunks.push(text);
     }
     Ok(chunks)
 }
 
-fn encode_failure(source: serde_json::Error, facts: &CallFacts<'_>) -> CallFailure {
+fn encode_failure(source: &serde_json::Error, facts: &CallFacts<'_>) -> CallFailure {
     raised(
         Raised::InternalServer,
         source.to_string(),

@@ -119,8 +119,8 @@ fn refused(kind: Raised, message: String, facts: &CallFacts<'_>) -> CallFailure 
     )
 }
 
-pub(crate) fn convert_failure(error: ConvertError, facts: &CallFacts<'_>) -> CallFailure {
-    let kind = match &error {
+pub(crate) fn convert_failure(error: &ConvertError, facts: &CallFacts<'_>) -> CallFailure {
+    let kind = match error {
         ConvertError::Prompt => Raised::Plain,
         ConvertError::Unsupported { .. } => Raised::UnsupportedParams,
         ConvertError::Json { .. } | ConvertError::Encode { .. } | ConvertError::Body { .. } => {

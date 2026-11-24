@@ -58,12 +58,18 @@ impl NativeTextSession {
     }
 }
 
-fn wire<T: DeserializeOwned>(text: &str) -> PyResult<T> {
+fn wire<T>(text: &str) -> PyResult<T>
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text)
         .map_err(|source| PyErr::from(SessionError::from(ConvertError::Json { source })))
 }
 
-fn encoded<T: Serialize>(outcome: Result<T, CallFailure>) -> PyResult<String> {
+fn encoded<T>(outcome: Result<T, CallFailure>) -> PyResult<String>
+where
+    T: Serialize,
+{
     match outcome {
         Ok(answer) => serde_json::to_string(&answer)
             .map_err(|source| PyErr::from(SessionError::from(ConvertError::Encode { source }))),

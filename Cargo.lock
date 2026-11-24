@@ -4228,6 +4228,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-sdk",
  "betterlite-secrets",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "futures-util",
