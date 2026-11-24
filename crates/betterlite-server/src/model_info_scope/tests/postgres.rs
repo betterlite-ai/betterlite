@@ -65,6 +65,7 @@ const INSERT_GROUP_SQL: &str = r#"INSERT INTO "LiteLLM_AccessGroupTable" (access
 const INSERT_NULL_GROUP_SQL: &str = r#"INSERT INTO "LiteLLM_AccessGroupTable" (access_group_id, access_group_name, access_model_names) VALUES ($1, $1, NULL)"#;
 const SET_TEAM_MODELS_SQL: &str =
     r#"UPDATE "LiteLLM_TeamTable" SET models = ($1::text)::jsonb WHERE team_id = $2"#;
+const DROP_MODEL_SQL: &str = r#"DROP TABLE "LiteLLM_ProxyModelTable""#;
 const DROP_USER_SQL: &str = r#"DROP TABLE "LiteLLM_UserTable""#;
 const DROP_GROUPS_SQL: &str = r#"DROP TABLE "LiteLLM_AccessGroupTable""#;
 
@@ -197,6 +198,20 @@ async fn creator_reads_by_id() {
         non_admin_all_models(stored, &lookup.lookup()).unwrap()
     };
     assert_eq!(ids(&kept), vec![Some("d1")]);
+    db.close().await;
+}
+
+#[tokio::test]
+async fn creator_read_failure() {
+    let db = Database::start().await;
+    seed_creator(&db, "d1", Some("alice")).await;
+    db.batch(DROP_MODEL_SQL).await;
+    let rows = vec![identified("gpt-4o", "d1")];
+    let error = read_user_models(rows, &caller(Some("alice"), &[]), Some(&db.reads()))
+        .await
+        .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(matches!(error, ScopeError::ModelRead { .. }));
     db.close().await;
 }
 
