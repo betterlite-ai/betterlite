@@ -18,7 +18,7 @@ const FALSE_DEFAULTS: [&str; 5] = [
 ];
 
 // LiteLLM_Params(**raw) as its dump reads: reserved keys gone, max_retries and drop_params normalised, affinity header checked, nulls left out.
-pub(super) fn litellm_params(raw: &JsonObject) -> Result<JsonObject, InvalidDeployment> {
+pub fn litellm_params(raw: &JsonObject) -> Result<JsonObject, InvalidDeployment> {
     let mut params: JsonObject = raw
         .iter()
         .filter(|(key, _)| !RESERVED_KEYS.contains(&key.as_str()))

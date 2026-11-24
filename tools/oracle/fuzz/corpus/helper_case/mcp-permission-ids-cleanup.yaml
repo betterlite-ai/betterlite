@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-permission-ids-cleanup-corpus-seed
+call:
+  mcp_permission_ids:
+    function: cleanup
+    object_permission:
+      mcp_servers: ["alias-a", "stale", "no-mcp-servers"]
+      mcp_tool_permissions:
+        alias-a: ["t1", "t1"]
+        stale: ["x"]
+    identifiers:
+      alias-a: ["srv-1"]
+      stale: []
+env: {}
+compare: {ignore: []}

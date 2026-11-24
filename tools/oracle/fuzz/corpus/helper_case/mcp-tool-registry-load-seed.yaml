@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-tool-registry-load-seed
+call:
+  b4680:
+    function: load_from_config
+    tool_names: [seeded.read]
+    prefix: null
+    mcp_tools:
+      - {name: seeded, description: seeded tool, handler: builtins.len}
+env: {}
+compare: {ignore: []}
