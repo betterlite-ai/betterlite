@@ -19,14 +19,14 @@ use super::store::{ShadowLegReads, ShadowTargetFilter};
 pub const LIST_LEGS_SQL: &str = r#"SELECT * FROM "LiteLLM_ShadowEvalJob"
 WHERE "group_id" IN (
     SELECT "group_id" FROM "LiteLLM_ShadowEvalJob"
-    GROUP BY "group_id" ORDER BY MAX("created_at") DESC LIMIT $1::int
+    GROUP BY "group_id" ORDER BY MAX("created_at") DESC LIMIT $1
 )"#;
 
 // _LIST_LEGS_BY_TARGET_SQL: the filter picks the jobs, never their legs
 pub const LIST_LEGS_BY_TARGET_SQL: &str = r#"SELECT * FROM "LiteLLM_ShadowEvalJob"
 WHERE "group_id" IN (
     SELECT "group_id" FROM "LiteLLM_ShadowEvalJob" WHERE "target_type" = $2 AND "target_id" = $3
-    GROUP BY "group_id" ORDER BY MAX("created_at") DESC LIMIT $1::int
+    GROUP BY "group_id" ORDER BY MAX("created_at") DESC LIMIT $1
 )"#;
 
 pub const LEGS_OF_GROUP_SQL: &str =
