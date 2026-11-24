@@ -12,21 +12,20 @@ from litellm.proxy._types import (
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.management_endpoints.key_management_endpoints import (
-    _check_org_key_limits,
-    _check_project_key_limits,
-    _check_team_key_limits,
-    _enforce_upperbound_key_params,
-    _validate_caller_can_assign_key_org,
+    _check_org_key_limits,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1897-L1937
+    _check_project_key_limits,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1757-L1804
+    _check_team_key_limits,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1716-L1749
+    _enforce_upperbound_key_params,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1110-L1169
+    _validate_caller_can_assign_key_org,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1865-L1894
 )
 from litellm.proxy.utils import PrismaClient
 from litellm.types.proxy.management_endpoints.ui_sso import (
-    LiteLLM_UpperboundKeyGenerateParams,
+    LiteLLM_UpperboundKeyGenerateParams as UpperboundParams,
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 from typing_extensions import override
 
-# pyright: reportPrivateUsage=false
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 Row = dict[str, JsonValue]
 
@@ -143,8 +142,8 @@ def client(
 
 def data(request: Request) -> GenerateKeyRequest | UpdateKeyRequest:
     if request["kind"] == "generate":
-        return GenerateKeyRequest.model_validate(request["body"])
-    return UpdateKeyRequest.model_validate(request["body"])
+        return GenerateKeyRequest.model_validate(request["body"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1289-L1332
+    return UpdateKeyRequest.model_validate(request["body"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441-L1484
 
 
 def values(request: GenerateKeyRequest | UpdateKeyRequest) -> dict[str, JsonValue]:
@@ -162,7 +161,7 @@ def upperbound(call: UpperboundCall) -> JsonValue:
     request = data(call["request"])
     params = call["params"]
     litellm.upperbound_key_generate_params = (
-        None if params is None else LiteLLM_UpperboundKeyGenerateParams.model_validate(params)
+        None if params is None else UpperboundParams.model_validate(params)
     )
     _enforce_upperbound_key_params(request, fill_defaults=call["fill_defaults"])
     return {"values": values(request)}
@@ -173,7 +172,7 @@ async def perform(call: Call) -> JsonValue:
         case "upperbound":
             return upperbound(call)
         case "team":
-            team = LiteLLM_TeamTableCachedObj.model_validate(call["team"])
+            team = LiteLLM_TeamTableCachedObj.model_validate(call["team"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L63-L83
             await _check_team_key_limits(team, data(call["request"]), client(keys=call["keys"]))
         case "project":
             await _check_project_key_limits(
@@ -183,7 +182,7 @@ async def perform(call: Call) -> JsonValue:
                 UserApiKeyCache(),
             )
         case "organization":
-            organization = LiteLLM_OrganizationTable.model_validate(call["organization"])
+            organization = LiteLLM_OrganizationTable.model_validate(call["organization"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization.py#L14-L29
             await _check_org_key_limits(
                 organization, data(call["request"]), client(keys=call["keys"])
             )
