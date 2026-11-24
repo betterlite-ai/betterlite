@@ -17,7 +17,6 @@ use super::client_config::SsoClientSource;
 use super::failure::RefreshFailureKind;
 use super::refresher::{AssertionAccess, AssertionRefresher};
 use super::transport::RefreshTransport;
-use crate::mcp::outbound_credentials::refresh_store::InProcessRefreshCoordinator;
 use crate::mcp::outbound_credentials::{RefreshCoordinator, RefreshStep, TokenKey, WallClock};
 
 pub const SINGLE_FLIGHT_KEY: &str = "sso_identity_assertion";
@@ -49,7 +48,7 @@ pub struct RefreshingAssertionStore<I, T, C, A, F> {
     pub refresher: AssertionRefresher<T, C, A>,
     pub access: Arc<A>,
     pub factory: F,
-    pub in_process: Arc<InProcessRefreshCoordinator<(), RenewalUnavailable>>,
+    pub in_process: RenewalCoordinator,
     pub distributed: Mutex<Option<RenewalCoordinator>>,
     pub skew: Duration,
     pub clock: Arc<dyn WallClock>,

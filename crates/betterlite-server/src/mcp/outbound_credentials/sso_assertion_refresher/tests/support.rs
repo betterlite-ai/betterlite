@@ -63,7 +63,7 @@ pub(crate) fn renewed_body(exp: i64, refresh_token: Option<&str>) -> RefreshResp
     if let Some(text) = refresh_token {
         pairs.push(("refresh_token", JsonValue::String(text.to_owned())));
     }
-    pairs.into_iter().collect()
+    body(pairs)
 }
 
 pub(crate) fn body(pairs: Vec<(&str, JsonValue)>) -> RefreshResponseBody {
