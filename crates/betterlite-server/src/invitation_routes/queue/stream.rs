@@ -45,15 +45,7 @@ pub(super) async fn streamed(
     router: &QueueRouter,
     data: &JsonMap,
 ) -> Result<Response, QueueError> {
-    let input = StreamedQueue {
-        scheduler: Arc::clone(&router.scheduler),
-        completion: Arc::clone(&router.completion),
-        failure: request.queue.failure.as_ref().map(Arc::clone),
-        timeouts: request.queue.timeouts,
-        keepalive: request.queue.keepalive.clone(),
-        caller: request.caller.clone(),
-        data: data.clone(),
-    };
+    let input = streamed_queue(request, router, data);
     let keepalive_request = JsonValue::Object(input.data.clone());
     let interval = ttft_keepalive_interval(&keepalive_request, &[], input.keepalive.as_ref())
         .map(|duration| PingSetting::Seconds(duration.as_secs_f64()));
@@ -94,6 +86,22 @@ struct StreamedQueue {
     keepalive: Option<PingSetting>,
     caller: Principal,
     data: JsonMap,
+}
+
+fn streamed_queue(
+    request: QueueRequest<'_>,
+    router: &QueueRouter,
+    data: &JsonMap,
+) -> StreamedQueue {
+    StreamedQueue {
+        scheduler: Arc::clone(&router.scheduler),
+        completion: Arc::clone(&router.completion),
+        failure: request.queue.failure.as_ref().map(Arc::clone),
+        timeouts: request.queue.timeouts,
+        keepalive: request.queue.keepalive.clone(),
+        caller: request.caller.clone(),
+        data: data.clone(),
+    }
 }
 
 // Router.schedule_acompletion for a streaming call: the call's own answer is the iterator the generator drives
