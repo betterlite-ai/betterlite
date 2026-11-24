@@ -358,7 +358,8 @@ async def gather_offloaded(offloaded: Callable[[str], Awaitable[int]], calls: in
 
 def test_counter_offload() -> None:
     probe = OffloadProbe()
-    offloaded = betterlite.offload_token_count(probe)
+    counted_function: Callable[[str], int] = probe
+    offloaded = betterlite.offload_token_count(counted_function)
     counted = asyncio.run(
         asyncio.wait_for(gather_offloaded(offloaded, OFFLOAD_CALLS), timeout=OFFLOAD_TIMEOUT)
     )
