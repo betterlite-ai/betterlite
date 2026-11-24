@@ -1,0 +1,17 @@
+kind: helper
+name: mcp-gateway-dcr-register-valid
+call:
+  b4674:
+    register:
+      - now: 1700000000
+        body: {redirect_uris: ['https://client.example/callback', 'http://localhost:8080/callback']}
+        token_exchange_available: false
+        native_redirect_uris: null
+      - now: 1700000001
+        body: {redirect_uris: ['https://any-host.example/callback?client=1']}
+        token_exchange_available: false
+        native_redirect_uris: ''
+    open: null
+    claims: null
+env: {}
+compare: {ignore: []}

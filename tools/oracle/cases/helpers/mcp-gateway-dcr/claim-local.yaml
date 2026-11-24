@@ -1,0 +1,36 @@
+kind: helper
+name: mcp-gateway-dcr-claim-local
+call:
+  b4674:
+    register: null
+    open: null
+    claims:
+      - name: local-first-then-replayed
+        authority: local
+        backend: counting
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-2'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+      - name: local-seeded-key
+        authority: local
+        backend: counting
+        ttl: 600
+        seed_keys: ['mcp_gateway_dcr_flow_used:flow-1']
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_flow_used:flow-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_flow_used:flow-2'}
+      - name: local-zero-ttl
+        authority: local
+        backend: counting
+        ttl: 0
+        seed_keys: []
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-3'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-3'}
+env: {}
+compare: {ignore: []}

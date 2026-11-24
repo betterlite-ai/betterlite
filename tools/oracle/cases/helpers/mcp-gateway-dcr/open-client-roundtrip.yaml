@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-gateway-dcr-open-client-roundtrip
+call:
+  b4674:
+    register: null
+    open:
+      - name: one-uri
+        payload: {redirect_uris: ['https://client.example/callback'], iat: 1700000000}
+        prefix: client
+        wrap: none
+        raw: null
+      - name: two-uris
+        payload:
+          redirect_uris: ['https://client.example/callback', 'http://localhost:8080/callback']
+          iat: 1700000001
+        prefix: client
+        wrap: none
+        raw: null
+      - name: bare-prefix
+        payload: {redirect_uris: ['https://bare.example/callback'], iat: 1700000002}
+        prefix: 'none'
+        wrap: none
+        raw: null
+    claims: null
+env: {}
+compare: {ignore: []}

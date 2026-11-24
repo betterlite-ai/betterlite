@@ -1,0 +1,49 @@
+kind: helper
+name: mcp-gateway-dcr-claim-shared
+call:
+  b4674:
+    register: null
+    open: null
+    claims:
+      - name: shared-counting
+        authority: shared
+        backend: counting
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-2'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+      - name: shared-fixed-one
+        authority: shared
+        backend: fixed_one
+        ttl: 600
+        seed_keys: []
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_flow_used:flow-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_flow_used:flow-1'}
+      - name: shared-fixed-two
+        authority: shared
+        backend: fixed_two
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_refresh_used:refresh-1'}
+      - name: shared-fixed-zero
+        authority: shared
+        backend: fixed_zero
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_refresh_used:refresh-1'}
+      - name: shared-ignores-local-seed
+        authority: shared
+        backend: counting
+        ttl: 120
+        seed_keys: ['mcp_gateway_dcr_code_used:code-9']
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-9'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-9'}
+env: {}
+compare: {ignore: []}

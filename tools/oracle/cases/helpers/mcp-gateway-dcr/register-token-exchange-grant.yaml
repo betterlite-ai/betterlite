@@ -1,0 +1,30 @@
+kind: helper
+name: mcp-gateway-dcr-register-token-exchange-grant
+call:
+  b4674:
+    register:
+      - now: 1700000000
+        body: {redirect_uris: ['https://client.example/callback']}
+        token_exchange_available: true
+        native_redirect_uris: null
+    open: null
+    claims: null
+calls:
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback']}
+          token_exchange_available: true
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['https://client.example/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,25 @@
+kind: helper
+name: mcp-gateway-dcr-claim-shared-fault
+call:
+  b4674:
+    register: null
+    open: null
+    claims:
+      - name: shared-fault-fails-closed
+        authority: shared
+        backend: faulty
+        ttl: 120
+        seed_keys: ['mcp_gateway_dcr_code_used:code-1']
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-2'}
+      - name: shared-fault-never-local
+        authority: shared
+        backend: faulty
+        ttl: 600
+        seed_keys: ['mcp_gateway_dcr_flow_used:flow-1']
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_flow_used:flow-1'}
+          - {action: peek, key: 'mcp_gateway_dcr_flow_used:flow-1'}
+env: {}
+compare: {ignore: []}

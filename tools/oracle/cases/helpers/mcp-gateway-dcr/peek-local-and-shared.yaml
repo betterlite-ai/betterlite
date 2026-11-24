@@ -1,0 +1,62 @@
+kind: helper
+name: mcp-gateway-dcr-peek-local-and-shared
+call:
+  b4674:
+    register: null
+    open: null
+    claims:
+      - name: local-peek
+        authority: local
+        backend: counting
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-2'}
+      - name: local-peek-seeded
+        authority: local
+        backend: counting
+        ttl: 600
+        seed_keys: ['mcp_gateway_dcr_flow_used:flow-1']
+        steps:
+          - {action: peek, key: 'mcp_gateway_dcr_flow_used:flow-1'}
+          - {action: peek, key: 'mcp_gateway_dcr_flow_used:flow-2'}
+          - {action: claim, key: 'mcp_gateway_dcr_flow_used:flow-1'}
+      - name: shared-counting-peek
+        authority: shared
+        backend: counting
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-2'}
+      - name: shared-fixed-zero-peek
+        authority: shared
+        backend: fixed_zero
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: peek, key: 'mcp_gateway_dcr_refresh_used:refresh-1'}
+          - {action: claim, key: 'mcp_gateway_dcr_refresh_used:refresh-1'}
+      - name: shared-fault-peek
+        authority: shared
+        backend: faulty
+        ttl: 120
+        seed_keys: ['mcp_gateway_dcr_code_used:code-1']
+        steps:
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-1'}
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-2'}
+      - name: shared-ignores-local-peek
+        authority: shared
+        backend: counting
+        ttl: 120
+        seed_keys: ['mcp_gateway_dcr_code_used:code-9']
+        steps:
+          - {action: peek, key: 'mcp_gateway_dcr_code_used:code-9'}
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:code-9'}
+env: {}
+compare: {ignore: []}

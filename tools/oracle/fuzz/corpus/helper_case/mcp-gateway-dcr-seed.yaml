@@ -1,0 +1,38 @@
+kind: helper
+name: mcp-gateway-dcr-seed
+call:
+  b4674:
+    register:
+      - now: 1700000000
+        body: {redirect_uris: ['https://client.example/callback']}
+        token_exchange_available: false
+        native_redirect_uris: null
+    open:
+      - name: seed
+        payload: {redirect_uris: ['https://client.example/callback'], iat: 1700000000}
+        prefix: client
+        wrap: none
+        raw: null
+    claims:
+      - name: seed
+        authority: local
+        backend: counting
+        ttl: 120
+        seed_keys: []
+        steps:
+          - {action: claim, key: 'mcp_gateway_dcr_code_used:seed'}
+calls:
+  - b4674:
+      register: null
+      open: null
+      claims:
+        - name: seed-shared
+          authority: shared
+          backend: counting
+          ttl: 600
+          seed_keys: ['mcp_gateway_dcr_flow_used:seed']
+          steps:
+            - {action: peek, key: 'mcp_gateway_dcr_flow_used:seed'}
+            - {action: claim, key: 'mcp_gateway_dcr_flow_used:seed'}
+env: {}
+compare: {ignore: []}

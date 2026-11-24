@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-gateway-dcr-register-ignores-client-metadata
+call:
+  b4674:
+    register:
+      - now: 1700000000
+        body:
+          redirect_uris: ['https://client.example/callback']
+          client_name: Claude Desktop
+          token_endpoint_auth_method: client_secret_basic
+          grant_types: ['implicit']
+          response_types: ['token']
+          client_uri: 'https://client.example'
+        token_exchange_available: false
+        native_redirect_uris: null
+    open: null
+    claims: null
+env: {}
+compare: {ignore: []}
