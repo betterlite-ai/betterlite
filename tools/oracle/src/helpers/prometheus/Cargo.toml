@@ -10,6 +10,10 @@ path = "lib.rs"
 
 [dependencies]
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-prometheus = { path = "../../../../../crates/betterlite-prometheus" }
+flate2 = "1.1.5"
+rust_decimal.workspace = true
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
 
 [lints]
