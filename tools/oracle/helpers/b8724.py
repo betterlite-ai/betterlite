@@ -1,4 +1,4 @@
-from typing import Final, Literal, NotRequired, TypedDict
+from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
 from litellm.proxy._experimental.mcp_server import server
@@ -46,7 +46,7 @@ class ForwardedAuthorizationQuery(TypedDict):
     headers: list[tuple[str, str]]
 
 
-Input = (
+Input: TypeAlias = (
     PathQuery
     | FingerprintQuery
     | InitializeDetectionQuery
