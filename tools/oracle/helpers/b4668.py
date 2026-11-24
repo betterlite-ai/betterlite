@@ -106,7 +106,9 @@ def dispatch(input_value: Input) -> AnswerValue:
 
 
 def load_named(call: LoadNamedCall) -> RowView:
-    token = UserAPIKeyAuth(requires_fresh_policy=call["requires_fresh_policy"])
+    # the before-validator drops requires_fresh_policy from constructor input, so a real caller sets the marker after
+    token = UserAPIKeyAuth()
+    token.requires_fresh_policy = call["requires_fresh_policy"]
     # the loader imports get_object_permission when it runs, so the stub is in place before the call
     auth_checks.get_object_permission = ScriptedRead(call["read"], call["row"])  # pyright: ignore[reportAttributeAccessIssue, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3982
     loaded = asyncio.run(
