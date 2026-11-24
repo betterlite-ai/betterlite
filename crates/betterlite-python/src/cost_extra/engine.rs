@@ -13,6 +13,7 @@ use betterlite_models::duration_cost::video::default_video_cost_calculator;
 use betterlite_models::image_cost::default_calculator::default_image_cost_calculator;
 use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::ocr_pricing::{OcrCostError, ocr_batch_cost, ocr_cost};
+use betterlite_models::price_lookup::PriceLookup as _;
 use betterlite_models::resolution::{ResolutionRequest, resolve};
 use betterlite_models::usage_sum::Usage;
 use rust_decimal::Decimal;
@@ -131,7 +132,7 @@ impl Engine {
         let duration = request.duration.0;
         let lookup = &self.settings.lookup;
         cost_per_second(&request.model, provider, duration, lookup)
-            .map(|cost| (Amount(cost), Amount(Decimal::ZERO)))
+            .map(|(prompt, completion)| (Amount(prompt), Amount(completion)))
     }
 
     pub(crate) fn image_cost(&self, request: &ImageRequest) -> Result<Amount, ImageCostError> {
