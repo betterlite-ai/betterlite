@@ -12,7 +12,7 @@ import pytest
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
-from betterlite.exceptions import AuthenticationError, UnsupportedParamsError
+from betterlite.exceptions import AuthenticationError, BadRequestError, UnsupportedParamsError
 from betterlite.main import (
     aimage_edit,
     aimage_generation,
@@ -222,7 +222,7 @@ def test_edit_sends_files_in_order_with_their_types() -> None:
         response = image_edit(
             image=[NamedFile(PNG_BYTES, "first.png"), NamedFile(JPEG_BYTES, "second.jpg")],
             prompt=PROMPT,
-            model=DEFAULT_MODEL,
+            model="gpt-image-1",
             mask=NamedFile(MASK_BYTES, "mask.png"),
             api_base=server.url,
             api_key=GOOD_KEY,
@@ -240,6 +240,19 @@ def test_edit_sends_files_in_order_with_their_types() -> None:
     assert offset(body, b'name="mask"') < mask
     assert response.data[0].b64_json == B64
     assert response._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L792
+
+
+def test_edit_dall_e_2_rejects_two_images() -> None:
+    with closing(ImageServer()) as server, pytest.raises(BadRequestError) as caught:
+        image_edit(
+            image=[NamedFile(PNG_BYTES, "first.png"), NamedFile(JPEG_BYTES, "second.jpg")],
+            prompt=PROMPT,
+            model=DEFAULT_MODEL,
+            api_base=server.url,
+            api_key=GOOD_KEY,
+        )
+    assert "DALL-E-2 only supports editing a single image" in caught.value.message
+    assert server.calls == []
 
 
 def test_variation_sends_the_named_image() -> None:

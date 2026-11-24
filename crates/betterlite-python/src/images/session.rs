@@ -55,7 +55,7 @@ impl ImageSession {
             organization: first_text(&self.environment, &["OPENAI_ORGANIZATION"]),
         };
         let globals = LiteLlmGlobals {
-            api_base: settings.api_base.clone().filter(|value| !value.is_empty()),
+            api_base: settings.api_base.clone(),
             api_key: present(settings.api_key.clone()),
             openai_key: present(settings.openai_key.clone()),
             organization: None,
@@ -93,13 +93,6 @@ pub(crate) fn call_setup(
     })
 }
 
-// Which entry point asked, because LiteLLM's sync and async clients differ in how they wrap an error.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Entry {
-    Sync,
-    Async,
-}
-
 pub(crate) fn explicit_credentials(
     arguments: &RequestMap,
 ) -> Result<ExplicitCredentials, ConvertError> {
@@ -120,11 +113,11 @@ pub(crate) fn now_seconds() -> i64 {
     }
 }
 
-fn present(value: Option<SecretString>) -> Option<SecretString> {
+pub(crate) fn present(value: Option<SecretString>) -> Option<SecretString> {
     value.filter(|secret| !secret.expose_secret().is_empty())
 }
 
-fn first_text(environment: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
+pub(crate) fn first_text(environment: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| {
         environment
             .get(*name)

@@ -1,15 +1,58 @@
 #![cfg(test)]
 
+use super::super::edit::{edit, edit_file, form, parts, reply, status_message};
+use super::super::generate::generate;
+use super::super::session::{ImageSession, explicit_credentials, first_text, now_seconds, present};
+use super::super::variation::{first_image, variation};
 use super::fields::{headers, resolve_target, target, timeout};
 use super::options::{edit_options, generation_options};
 use super::{ConvertError, DEFAULT_CONTENT_TYPE, image_file, mask_file, parse};
+use crate::completion::setup::outbound_client;
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::image_contracts::records::ImageFile;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_files::CallFile;
+use betterlite_sdk::call_setup::RequestMap;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
+use std::collections::BTreeMap;
+use std::time::Duration;
 
 fn call(text: &str) -> (super::ImageCallWire, Vec<(String, CallFile)>) {
     let mut blobs = Vec::new();
     parse(&format!(r#"{{"arguments":{text}}}"#), &mut blobs).unwrap()
+}
+
+fn file(name: &str, bytes: u8) -> CallFile {
+    CallFile {
+        name: name.to_owned(),
+        content_type: None,
+        bytes: vec![bytes],
+    }
+}
+
+fn redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
+}
+
+fn session() -> ImageSession {
+    let environment = BTreeMap::new();
+    let client = outbound_client(&environment).unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    ImageSession {
+        environment,
+        client,
+        redactor,
+    }
+}
+
+fn recorded_image(name: Option<&str>, bytes: u8) -> ImageFile {
+    ImageFile {
+        filename: name.map(str::to_owned),
+        content: vec![bytes],
+        content_type: None,
+    }
 }
 
 fn edited(text: &str, drop: bool) -> Result<super::RequestMap, ConvertError> {
@@ -62,7 +105,7 @@ fn error_generation_unsupported_param_fails_without_drop() {
 #[test]
 fn request_edit_options_keep_the_declared_fields() {
     let options = edited(
-        r#"{"background":"transparent","n":2,"size":"1024x1024","user":"me"}"#,
+        r#"{"background":"transparent","n":2,"size":"1024x1024","user":"me","mask":"m.png"}"#,
         false,
     )
     .unwrap();
@@ -76,6 +119,7 @@ fn request_edit_options_keep_the_declared_fields() {
         Some(&Json::Text(String::from("1024x1024")))
     );
     assert_eq!(options.get("user"), Some(&Json::Text(String::from("me"))));
+    assert!(!options.contains_key("mask"));
 }
 
 #[test]
@@ -201,4 +245,229 @@ fn error_missing_blob_index_is_reported() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("no blob index"));
+}
+
+#[test]
+fn request_target_reads_the_model_and_custom_provider() {
+    let (wire, _files) = call(r#"{"model":"gpt-image-1"}"#);
+    let (model, provider) = target(&wire.arguments).unwrap();
+    assert_eq!(model, "gpt-image-1");
+    assert_eq!(provider, "openai");
+    let (prefixed, _) = call(r#"{"model":"azure/gpt-image-1"}"#);
+    let (stripped, found) = target(&prefixed.arguments).unwrap();
+    assert_eq!(stripped, "gpt-image-1");
+    assert_eq!(found, "azure");
+}
+
+#[test]
+fn request_provider_matching_the_prefix_strips_only_its_own() {
+    let (model, provider) = resolve_target("openai/gpt-image-1", Some("openai"));
+    assert_eq!(model, "gpt-image-1");
+    assert_eq!(provider, "openai");
+    let (unprefixed, kept) = resolve_target("openai/gpt-image-1", Some("azure"));
+    assert_eq!(unprefixed, "openai/gpt-image-1");
+    assert_eq!(kept, "azure");
+}
+
+#[test]
+fn request_timeout_reads_seconds_and_defaults_to_none() {
+    let (wire, _files) = call(r#"{"timeout":30}"#);
+    assert_eq!(
+        timeout(&wire.arguments).unwrap(),
+        Some(Duration::from_secs(30))
+    );
+    let (untimed, _) = call(r#"{"prompt":"a cat"}"#);
+    assert_eq!(timeout(&untimed.arguments).unwrap(), None);
+}
+
+#[test]
+fn request_generation_options_drop_the_additional_names() {
+    let (wire, _files) =
+        call(r#"{"style":"vivid","quality":"hd","additional_drop_params":["style"]}"#);
+    let options = generation_options(&wire.arguments, "dall-e-3", false).unwrap();
+    assert!(!options.contains_key("style"));
+    assert_eq!(
+        options.get("quality"),
+        Some(&Json::Text(String::from("hd")))
+    );
+}
+
+#[test]
+fn request_edit_options_call_drop_params_removes_image_config() {
+    let options = edited(
+        r#"{"imageConfig":{"quality":"hd"},"drop_params":true}"#,
+        false,
+    )
+    .unwrap();
+    assert!(options.is_empty());
+}
+
+#[test]
+fn request_edit_file_carries_the_content_and_name() {
+    let image = recorded_image(Some("a.png"), 9);
+    let converted = edit_file(&image);
+    assert_eq!(converted.name.as_deref(), Some("a.png"));
+    assert_eq!(converted.content, vec![9_u8]);
+}
+
+#[test]
+fn request_edit_form_keeps_the_model_prompt_and_files() {
+    let (wire, _files) = call(r#"{"prompt":"a cat","size":"1024x1024"}"#);
+    let files = [
+        (String::from("image"), file("first.png", 1)),
+        (String::from("mask"), file("mask.png", 2)),
+    ];
+    let built = form(&wire, &files, "dall-e-2", "openai", &redactor()).unwrap();
+    assert_eq!(
+        built.data.get("model"),
+        Some(&Json::Text(String::from("dall-e-2")))
+    );
+    assert_eq!(
+        built.data.get("prompt"),
+        Some(&Json::Text(String::from("a cat")))
+    );
+    assert_eq!(
+        built.data.get("size"),
+        Some(&Json::Text(String::from("1024x1024")))
+    );
+    assert_eq!(built.files.len(), 2);
+    assert_eq!(built.files[0].0, "image");
+    assert_eq!(built.files[0].1.filename.as_deref(), Some("first.png"));
+    assert_eq!(built.files[0].1.content, vec![1_u8]);
+    assert_eq!(built.files[1].0, "mask");
+}
+
+#[test]
+fn request_edit_parts_carry_text_numbers_and_files() {
+    let mut data = RequestMap::new();
+    data.insert(String::from("model"), Json::Text(String::from("dall-e-2")));
+    data.insert(String::from("n"), Json::Number(Number::from(2_u32)));
+    data.insert(String::from("blank"), Json::Null);
+    let images = vec![(String::from("image"), recorded_image(Some("a.png"), 3))];
+    let found = parts(&data, &images);
+    assert_eq!(found.len(), 4);
+    assert_eq!(found[0].name, "model");
+    assert_eq!(found[0].data, b"dall-e-2".to_vec());
+    assert_eq!(found[1].name, "n");
+    assert_eq!(found[1].data, b"2".to_vec());
+    assert!(found[2].data.is_empty());
+    assert_eq!(found[3].name, "image");
+    assert_eq!(found[3].file_name.as_deref(), Some("a.png"));
+    assert_eq!(found[3].data, vec![3_u8]);
+}
+
+#[test]
+fn request_edit_reply_decodes_a_success_and_names_a_failure() {
+    let ok = UpstreamResponse {
+        status: 200,
+        headers: http::HeaderMap::new(),
+        body: br#"{"created":7,"data":[]}"#.to_vec(),
+    };
+    let decoded = reply(&ok, "dall-e-2", "openai", &redactor()).unwrap();
+    assert_eq!(decoded.created, 7);
+    let denied = UpstreamResponse {
+        status: 400,
+        headers: http::HeaderMap::new(),
+        body: br#"{"error":{"message":"boom"}}"#.to_vec(),
+    };
+    let refusal = reply(&denied, "dall-e-2", "openai", &redactor()).unwrap_err();
+    assert_eq!(refusal.message, "boom");
+}
+
+#[test]
+fn request_status_message_reads_the_nested_error_or_the_body() {
+    assert_eq!(status_message(br#"{"error":{"message":"boom"}}"#), "boom");
+    assert_eq!(status_message(b"plain failure"), "plain failure");
+}
+
+#[tokio::test]
+async fn error_generate_rejects_a_non_openai_provider() {
+    let (wire, _files) = call(r#"{"model":"vertex_ai/foo"}"#);
+    let image_session = session();
+    let failure = generate(&image_session, wire).await.unwrap_err();
+    assert!(
+        failure
+            .message
+            .contains("image generation is not supported for vertex_ai")
+    );
+}
+
+#[tokio::test]
+async fn error_edit_rejects_a_non_openai_provider() {
+    let (wire, files) = call(r#"{"model":"vertex_ai/foo"}"#);
+    let image_session = session();
+    let failure = edit(&image_session, wire, files).await.unwrap_err();
+    assert!(
+        failure
+            .message
+            .contains("image edit is not supported for vertex_ai")
+    );
+}
+
+#[tokio::test]
+async fn error_variation_rejects_a_non_openai_provider() {
+    let (wire, files) = call(r#"{"model":"vertex_ai/foo"}"#);
+    let image_session = session();
+    let failure = variation(&image_session, wire, files, false)
+        .await
+        .unwrap_err();
+    assert!(
+        failure
+            .message
+            .contains("Invalid image variation provider: vertex_ai")
+    );
+}
+
+#[test]
+fn request_first_image_needs_an_image_and_keeps_its_name() {
+    let missing = first_image(&[], "dall-e-2").unwrap_err();
+    assert!(
+        missing
+            .message
+            .contains("image is required for image variations")
+    );
+    let files = [(String::from("image"), file("a.jpg", 4))];
+    let found = first_image(&files, "dall-e-2").unwrap();
+    assert_eq!(found.filename.as_deref(), Some("a.jpg"));
+    assert_eq!(found.content, vec![4_u8]);
+}
+
+#[test]
+fn request_session_present_drops_an_empty_secret() {
+    assert!(present(None).is_none());
+    assert!(present(Some(SecretString::from(""))).is_none());
+    let kept = present(Some(SecretString::from("sk-x"))).unwrap();
+    assert_eq!(kept.expose_secret(), "sk-x");
+}
+
+#[test]
+fn request_first_text_skips_an_empty_value() {
+    let mut environment = BTreeMap::new();
+    environment.insert(String::from("OPENAI_API_KEY"), String::new());
+    environment.insert(
+        String::from("OPENAI_API_BASE"),
+        String::from("https://example.test"),
+    );
+    let found = first_text(&environment, &["OPENAI_API_KEY", "OPENAI_API_BASE"]);
+    assert_eq!(found.as_deref(), Some("https://example.test"));
+    assert_eq!(first_text(&BTreeMap::new(), &["OPENAI_API_KEY"]), None);
+}
+
+#[test]
+fn request_now_seconds_is_the_current_epoch() {
+    assert!(now_seconds() > 1_600_000_000);
+}
+
+#[test]
+fn request_explicit_credentials_drop_empty_text() {
+    let (wire, _files) = call(r#"{"api_base":"","api_key":"sk-x","organization":""}"#);
+    let explicit = explicit_credentials(&wire.arguments).unwrap();
+    assert_eq!(explicit.api_base, None);
+    assert_eq!(explicit.organization, None);
+    assert_eq!(explicit.api_key.unwrap().expose_secret(), "sk-x");
+    let (given, _) = call(r#"{"api_base":"https://example.test","organization":"team"}"#);
+    let resolved = explicit_credentials(&given.arguments).unwrap();
+    assert_eq!(resolved.api_base.as_deref(), Some("https://example.test"));
+    assert_eq!(resolved.organization.as_deref(), Some("team"));
+    assert!(resolved.api_key.is_none());
 }

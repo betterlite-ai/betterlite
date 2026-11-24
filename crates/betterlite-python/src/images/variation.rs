@@ -1,7 +1,7 @@
 use super::convert::fields::target;
 use super::convert::{DEFAULT_IMAGE_NAME, ImageAnswer, ImageCallWire, OPENAI_PROVIDER, images};
 use super::error::{CallFailure, convert_failure, provider_failure};
-use super::session::{Entry, ImageSession, SilentImageLogger, call_setup, now_seconds};
+use super::session::{ImageSession, SilentImageLogger, call_setup, now_seconds};
 use betterlite_openai::api::image_contracts::records::ImageFile;
 use betterlite_openai::image_variations::error::{ImageVariationSource, OpenAiImageVariationError};
 use betterlite_openai::image_variations::request::{
@@ -19,7 +19,7 @@ pub(crate) async fn variation(
     session: &ImageSession,
     call: ImageCallWire,
     files: Vec<(String, CallFile)>,
-    entry: Entry,
+    async_call: bool,
 ) -> Result<ImageAnswer, CallFailure> {
     let (model, provider) =
         target(&call.arguments).map_err(|error| convert_failure(&error, None, None))?;
@@ -31,7 +31,7 @@ pub(crate) async fn variation(
             &model,
         ));
     }
-    let request = request(session, &call, &files, entry, &model)?;
+    let request = request(session, &call, &files, async_call, &model)?;
     let reply = round(session, request, &model, &provider).await?;
     Ok(ImageAnswer::new(reply, None))
 }
@@ -40,7 +40,7 @@ fn request(
     session: &ImageSession,
     call: &ImageCallWire,
     files: &[(String, CallFile)],
-    entry: Entry,
+    async_call: bool,
     model: &str,
 ) -> Result<ImageVariationRequest, CallFailure> {
     let setup = call_setup(
@@ -65,9 +65,7 @@ fn request(
         api_base: Some(setup.credentials.api_base),
         organization: setup.credentials.organization,
         timeout: Some(setup.timeout),
-        params: ImageVariationParams {
-            async_call: entry == Entry::Async,
-        },
+        params: ImageVariationParams { async_call },
         client: None,
         shared_session: None,
         config: Some(OpenAiImageVariationConfig),
@@ -97,7 +95,10 @@ fn rejected(message: String, model: &str) -> CallFailure {
     CallFailure::plain("ValueError", message, Some(model.to_owned()))
 }
 
-fn first_image(files: &[(String, CallFile)], model: &str) -> Result<ImageFile, CallFailure> {
+pub(crate) fn first_image(
+    files: &[(String, CallFile)],
+    model: &str,
+) -> Result<ImageFile, CallFailure> {
     let mut found = images(files, "image", DEFAULT_IMAGE_NAME);
     if found.is_empty() {
         return Err(rejected(

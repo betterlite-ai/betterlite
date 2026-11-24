@@ -94,7 +94,7 @@ fn outbound(
     })
 }
 
-fn form(
+pub(crate) fn form(
     call: &ImageCallWire,
     files: &[(String, CallFile)],
     model: &str,
@@ -138,14 +138,14 @@ async fn round(
     reply(&response, model, provider, &session.redactor)
 }
 
-fn edit_file(file: &ImageFile) -> ImageEditFile {
+pub(crate) fn edit_file(file: &ImageFile) -> ImageEditFile {
     ImageEditFile {
         content: file.content.clone(),
         name: file.filename.clone(),
     }
 }
 
-fn parts(data: &RequestMap, files: &ImageFiles) -> Vec<MultipartPart> {
+pub(crate) fn parts(data: &RequestMap, files: &ImageFiles) -> Vec<MultipartPart> {
     let mut parts = Vec::new();
     for (name, value) in data {
         let text = match value {
@@ -166,7 +166,7 @@ fn parts(data: &RequestMap, files: &ImageFiles) -> Vec<MultipartPart> {
     parts
 }
 
-fn reply(
+pub(crate) fn reply(
     response: &UpstreamResponse,
     model: &str,
     provider: &str,
@@ -204,7 +204,7 @@ struct StatusError {
     message: Option<String>,
 }
 
-fn status_message(body: &[u8]) -> String {
+pub(crate) fn status_message(body: &[u8]) -> String {
     let parsed = serde_json::from_slice::<StatusBody>(body);
     match parsed
         .ok()

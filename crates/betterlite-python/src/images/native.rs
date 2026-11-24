@@ -2,7 +2,7 @@ use super::convert::{ConvertError, ImageAnswer, ImageCallWire, parse};
 use super::edit::edit;
 use super::error::{CallFailure, NativeImageError, SessionError, class_error};
 use super::generate::generate;
-use super::session::{Entry, ImageSession};
+use super::session::ImageSession;
 use super::variation::variation;
 use betterlite_sdk::call_files::CallFile;
 use pyo3::prelude::*;
@@ -41,8 +41,8 @@ impl NativeImageSession {
 
     fn variation(&self, py: Python<'_>, payload: &str, mut blobs: Blobs) -> PyResult<String> {
         let (call, files) = wire(payload, &mut blobs)?;
-        let outcome = py
-            .detach(|| get_runtime().block_on(variation(&self.session, call, files, Entry::Sync)));
+        let outcome =
+            py.detach(|| get_runtime().block_on(variation(&self.session, call, files, false)));
         encoded(outcome)
     }
 
@@ -50,7 +50,7 @@ impl NativeImageSession {
         let (call, files) = wire(payload, &mut blobs)?;
         let session = Arc::clone(&self.session);
         future_into_py(py, async move {
-            encoded(variation(&session, call, files, Entry::Async).await)
+            encoded(variation(&session, call, files, true).await)
         })
         .map(Bound::unbind)
     }
