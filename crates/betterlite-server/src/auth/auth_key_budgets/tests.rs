@@ -365,6 +365,29 @@ async fn soft_alert_passes_without_denial() {
 }
 
 #[tokio::test]
+async fn configured_alert_fraction_reaches_the_stage() {
+    let configured = config(
+        &[(ALERT_FRACTION_VARIABLE, "0.5")],
+        "general_settings:\n  master_key: secret-master-key\n",
+    );
+    let recorder = Arc::new(RecordingSink::default());
+    let shared = Arc::clone(&recorder);
+    let dispatched: Arc<dyn BudgetAlertSink> = shared;
+    let alerting = Arc::new(KeyBudgetRule {
+        alerts: Some(dispatched),
+        reader: Some(ScriptedReader::new(vec![Decimal::from(6_i64)])),
+        ..rule(r#"{"token":"sk-fraction","spend":6,"max_budget":10}"#)
+    });
+    let (status, _body, reached) = run_request(&configured, alerting).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(reached);
+    let alerts = recorder.take();
+    assert_eq!(alerts.len(), 2);
+    assert_eq!(alerts[0].kind, BudgetAlertKind::MaxBudgetAlert);
+    assert_eq!(alerts[1].kind, BudgetAlertKind::TokenBudget);
+}
+
+#[tokio::test]
 async fn prefetch_records_the_checked_key() {
     let master_key = SecretString::from(MASTER_KEY.to_owned());
     let budget_rule = Arc::new(KeyBudgetRule {
