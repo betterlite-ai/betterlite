@@ -306,12 +306,13 @@ pub(super) fn harness(
     cache: ScriptedCache,
 ) -> Harness {
     let stash = Arc::new(RecordingStash::default());
+    let stash_handle: Arc<dyn BatchCounterStash> = Arc::<RecordingStash>::clone(&stash);
     let service = BatchLimitCounters {
         clock: Arc::new(|| NOW),
         limiter: limiter.clone(),
         store: store.clone(),
         cache: cache.clone(),
-        stash: Arc::clone(&stash),
+        stash: stash_handle,
         resolver: Arc::new(ScriptedResolver {
             models: BTreeMap::from([(String::from("gpt-4o-mini"), String::from("openai"))]),
         }),

@@ -63,13 +63,30 @@ pub(super) struct StoreScript {
     pub(super) replies: Vec<StoreReply>,
 }
 
+// one project counter's charge as a case scripts it, mapped to the core increment type on the way in
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct IncrementScript {
+    pub(super) requests: i64,
+    pub(super) tokens: i64,
+}
+
+impl From<IncrementScript> for BatchDescriptorIncrements {
+    fn from(increment: IncrementScript) -> Self {
+        Self {
+            requests: increment.requests,
+            tokens: increment.tokens,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ProjectScript {
     #[serde(default)]
     pub(super) descriptors: Vec<BatchLimitDescriptor>,
     #[serde(default)]
-    pub(super) increments: Vec<BatchDescriptorIncrements>,
+    pub(super) increments: Vec<IncrementScript>,
 }
 
 #[derive(Debug, Deserialize)]

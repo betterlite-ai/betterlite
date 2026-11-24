@@ -101,13 +101,14 @@ impl Helper for Op {
         let limiter = ScriptedLimiter::new(&input.limiter);
         let cache = ScriptedCache::new(&input.cache);
         let stash = Arc::new(RecordingStash::default());
+        let stash_handle: Arc<dyn BatchCounterStash> = Arc::<RecordingStash>::clone(&stash);
         let clock = input.clock;
         let service = BatchLimitCounters {
             clock: Arc::new(move || clock),
             limiter: limiter.clone(),
             store: store.clone(),
             cache: cache.clone(),
-            stash: Arc::clone(&stash),
+            stash: stash_handle,
             resolver: Arc::new(FixedProviders),
             router: None,
             window_size: input.window_size,

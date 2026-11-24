@@ -164,7 +164,13 @@ impl ScriptedLimiter {
             base: script.base.clone(),
             project: (
                 script.project.descriptors.clone(),
-                script.project.increments.clone(),
+                script
+                    .project
+                    .increments
+                    .iter()
+                    .copied()
+                    .map(BatchDescriptorIncrements::from)
+                    .collect(),
             ),
             responses: Arc::new(Mutex::new(script.responses.iter().cloned().collect())),
             base_calls: Arc::default(),
