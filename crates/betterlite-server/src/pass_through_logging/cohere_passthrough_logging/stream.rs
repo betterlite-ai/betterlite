@@ -58,21 +58,21 @@ pub(crate) fn complete_streaming_response(
     };
     let hooks = silent_hooks()?;
     let built = block_on(stream_chunk_builder(&request, &hooks))?
-        .map_err(PassthroughStage::StreamBuild.failed)?;
+        .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
     match built {
         None => Ok(None),
         Some(Response::Chat(chat)) => {
             let chat_json = serde_json::to_string(chat.as_ref())
-                .map_err(PassthroughStage::StreamBuild.failed)?;
-            let logged: Json =
-                serde_json::from_str(&chat_json).map_err(PassthroughStage::StreamBuild.failed)?;
+                .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
+            let logged: Json = serde_json::from_str(&chat_json)
+                .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
             Ok(Some(StreamedResponse::Model(logged)))
         }
         Some(Response::Text(text)) => {
-            let text_json =
-                serde_json::to_string(&text).map_err(PassthroughStage::StreamBuild.failed)?;
-            let logged: Json =
-                serde_json::from_str(&text_json).map_err(PassthroughStage::StreamBuild.failed)?;
+            let text_json = serde_json::to_string(&text)
+                .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
+            let logged: Json = serde_json::from_str(&text_json)
+                .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
             Ok(Some(StreamedResponse::TextCompletion(logged)))
         }
     }
@@ -93,11 +93,11 @@ fn collected_chunks(
     let mut chunks = Vec::with_capacity(all_chunks.len());
     for line in all_chunks {
         let decoded = decode_cohere_line(CohereStreamVersion::V1, line.as_bytes(), false)
-            .map_err(PassthroughStage::StreamBuild.failed)?;
-        let decoded_json =
-            serde_json::to_string(&decoded).map_err(PassthroughStage::StreamBuild.failed)?;
-        let generic: GenericChunk =
-            serde_json::from_str(&decoded_json).map_err(PassthroughStage::StreamBuild.failed)?;
+            .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
+        let decoded_json = serde_json::to_string(&decoded)
+            .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
+        let generic: GenericChunk = serde_json::from_str(&decoded_json)
+            .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
         let chunk = ProviderChunk::Generic(Box::new(generic));
         let emitted = match chunk_creator(&mut shaper, &mut state, &chunk) {
             Ok(Some(kept)) => kept,
@@ -105,10 +105,10 @@ fn collected_chunks(
             Err(ProviderChunkError::StopIteration) => break,
             Err(error) => return Err(PassthroughStage::StreamBuild.failed(error)),
         };
-        let emitted_json =
-            serde_json::to_string(&emitted).map_err(PassthroughStage::StreamBuild.failed)?;
-        let collected: CollectedChunk =
-            serde_json::from_str(&emitted_json).map_err(PassthroughStage::StreamBuild.failed)?;
+        let emitted_json = serde_json::to_string(&emitted)
+            .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
+        let collected: CollectedChunk = serde_json::from_str(&emitted_json)
+            .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
         chunks.push(collected);
     }
     Ok(chunks)
@@ -135,8 +135,8 @@ fn decode_state(model: &str) -> DecodeState {
 
 // The stream builder has no logging object in this path, so its verbose output goes nowhere.
 fn silent_hooks() -> Result<VerboseHooks<SilentLogger, SilentConsole>, PassthroughLoggingError> {
-    let redactor =
-        Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(PassthroughStage::StreamBuild.failed)?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+        .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
     Ok(VerboseHooks {
         logger: SilentLogger,
         console: SilentConsole,
@@ -155,7 +155,7 @@ where
         Err(_outside) => {
             let runtime = Builder::new_current_thread()
                 .build()
-                .map_err(PassthroughStage::StreamBuild.failed)?;
+                .map_err(|source| PassthroughStage::StreamBuild.failed(source))?;
             Ok(runtime.block_on(future))
         }
     }

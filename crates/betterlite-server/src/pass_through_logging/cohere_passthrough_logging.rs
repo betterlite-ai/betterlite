@@ -141,10 +141,10 @@ impl CoherePassthroughLogger {
             &mut *input.call_log,
         )?;
         write_call_log(&mut *input.call_log, &model, cost);
-        let response_json =
-            serde_json::to_string(&response).map_err(PassthroughStage::Payload.failed)?;
-        let result: Json =
-            serde_json::from_str(&response_json).map_err(PassthroughStage::Payload.failed)?;
+        let response_json = serde_json::to_string(&response)
+            .map_err(|source| PassthroughStage::Payload.failed(source))?;
+        let result: Json = serde_json::from_str(&response_json)
+            .map_err(|source| PassthroughStage::Payload.failed(source))?;
         Ok(PassthroughOutcome {
             result: Some(PassThroughResponse::Embedding(result)),
             kwargs: take(&mut input.kwargs),

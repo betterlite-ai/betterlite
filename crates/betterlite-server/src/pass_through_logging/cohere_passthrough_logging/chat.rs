@@ -40,7 +40,7 @@ impl PassthroughProvider for CohereProvider {
             message: AssistantReply::default(),
             next_id: || Uuid::new_v4().to_string(),
         })
-        .map_err(PassthroughStage::Transform.failed)?;
+        .map_err(|source| PassthroughStage::Transform.failed(source))?;
         logged_model_response(&reply)
     }
 
@@ -106,6 +106,7 @@ fn logged_model_response(reply: &CohereV2Reply) -> Result<Json, PassthroughLoggi
         }],
         usage: &reply.usage,
     };
-    let encoded = serde_json::to_string(&logged).map_err(PassthroughStage::Transform.failed)?;
-    serde_json::from_str(&encoded).map_err(PassthroughStage::Transform.failed)
+    let encoded = serde_json::to_string(&logged)
+        .map_err(|source| PassthroughStage::Transform.failed(source))?;
+    serde_json::from_str(&encoded).map_err(|source| PassthroughStage::Transform.failed(source))
 }

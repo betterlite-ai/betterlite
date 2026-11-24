@@ -105,6 +105,7 @@ fn chat_takes_a_null_request_model_as_absent() {
         })
         .expect("the chat handler succeeds");
     assert_eq!(provider.seen(), ["served-model"]);
+    assert_eq!(outcome.kwargs.model, Some("served-model".to_owned()));
 }
 
 #[test]
