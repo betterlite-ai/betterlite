@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 
 // proxy_server's disable_spend_logs starts False, general_settings replaces it only when the key is there, and an explicit null is neither False nor True.
 pub(super) fn disable_spend_logs(
-    configured: &Option<Option<JsonValue>>,
+    configured: Option<&Option<JsonValue>>,
 ) -> Result<Option<bool>, ConfigError> {
     let Some(present) = configured else {
         return Ok(Some(false));

@@ -122,7 +122,7 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
-            disable_spend_logs: disable_spend_logs(&general.disable_spend_logs)?,
+            disable_spend_logs: disable_spend_logs(general.disable_spend_logs.as_ref())?,
             max_budget: max_budget(litellm.max_budget, lookup)?,
             disable_end_user_cost_tracking: optional_flag(
                 &litellm.disable_end_user_cost_tracking,
