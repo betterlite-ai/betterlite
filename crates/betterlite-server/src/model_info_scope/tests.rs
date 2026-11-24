@@ -1,14 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use betterlite_auth::auth_model_patterns::ALL_PROXY_MODELS;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::team_repository::repository::TeamQueryError;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
@@ -137,7 +139,7 @@ impl StubReads {
         if !self.teams_fail {
             return Ok(self.teams.clone());
         }
-        let failure = io::Error::other("team read failed");
+        let failure = TeamQueryError::from(DbError::NoDbConnected);
         Err(ScopeError::TeamRead(Box::new(failure)))
     }
 
@@ -146,7 +148,7 @@ impl StubReads {
         if !self.groups_fail {
             return Ok(self.groups.clone());
         }
-        let failure = io::Error::other("access group read failed");
+        let failure = TableError::from(DbError::NoDbConnected);
         Err(ScopeError::AccessGroupRead(Box::new(failure)))
     }
 }

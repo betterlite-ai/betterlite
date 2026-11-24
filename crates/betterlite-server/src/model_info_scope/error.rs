@@ -1,6 +1,9 @@
-use std::error::Error as StdError;
-
 use axum::http::StatusCode;
+use betterlite_db::auxiliary_repository::repository::TableError;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::resource_repository::model::ModelError;
+use betterlite_db::team_repository::repository::TeamQueryError;
+use betterlite_db::user_repository::RowDecodeError;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use betterlite_router::model_catalog_lookup::error::LookupError;
 use betterlite_router::model_group_lookups::error::AccessGroupError;
@@ -14,7 +17,7 @@ pub enum ScopeError {
     #[error("{}", CommonProxyErrors::DbNotConnectedError.as_str())]
     DatabaseUnavailable,
     #[error("{USER_NOT_FOUND}")]
-    UserNotFound,
+    UserNotFound(#[source] Box<ScopeError>),
     #[error(transparent)]
     Lookup(#[from] LookupError),
     #[error(transparent)]
@@ -25,16 +28,24 @@ pub enum ScopeError {
     ModelRead {
         model_id: String,
         #[source]
-        source: Box<dyn StdError + Send + Sync>,
+        source: Box<ModelError>,
     },
     #[error("the stored user row could not be read")]
-    UserRead(#[source] Box<dyn StdError + Send + Sync>),
+    UserRead(#[source] Box<UserRowReadError>),
     #[error("a stored team row could not be read")]
-    TeamRead(#[source] Box<dyn StdError + Send + Sync>),
+    TeamRead(#[source] Box<TeamQueryError>),
     #[error("the stored access group rows could not be read")]
-    AccessGroupRead(#[source] Box<dyn StdError + Send + Sync>),
+    AccessGroupRead(#[source] Box<TableError>),
     #[error("the stored {field} grant holds a model name that is not text")]
     InvalidGrant { field: &'static str },
+}
+
+#[derive(Debug, Error)]
+pub enum UserRowReadError {
+    #[error(transparent)]
+    Database(#[from] DbError),
+    #[error(transparent)]
+    Row(#[from] DbError<RowDecodeError>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -48,7 +59,7 @@ impl ScopeError {
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {
         match self {
-            Self::UserNotFound => StatusCode::BAD_REQUEST,
+            Self::UserNotFound(_) => StatusCode::BAD_REQUEST,
             Self::DatabaseUnavailable
             | Self::Lookup(_)
             | Self::AccessGroups(_)
@@ -68,7 +79,7 @@ impl ScopeError {
                 error: CommonProxyErrors::DbNotConnectedError.as_str(),
             };
         }
-        if matches!(self, Self::UserNotFound) {
+        if matches!(self, Self::UserNotFound(_)) {
             return ScopeDetail::Error {
                 error: USER_NOT_FOUND,
             };

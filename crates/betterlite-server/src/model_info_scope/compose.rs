@@ -167,7 +167,7 @@ where
     let user = store
         .user_scope(user_id)
         .await
-        .map_err(|_read_error| ScopeError::UserNotFound)?;
+        .map_err(|read_error| ScopeError::UserNotFound(Box::new(read_error)))?;
     Ok(UserModels { models, user })
 }
 

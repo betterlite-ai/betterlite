@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::error::Error as _;
+
 use axum::http::StatusCode;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
@@ -234,6 +236,7 @@ async fn user_read_error_400() {
             error: USER_NOT_FOUND,
         }
     );
+    assert!(error.source().is_some());
     db.close().await;
 }
 
