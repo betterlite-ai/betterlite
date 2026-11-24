@@ -39,7 +39,7 @@ where
     ) -> Result<(), UpdateSpendJobError<SpendUpdateError<Redis::Error, Memory::Error>, Logs::Error>>
     {
         self.balance
-            .db_update_spend_transaction_handler(SPEND_JOB_RETRIES)
+            .commit_spend_updates(SPEND_JOB_RETRIES)
             .await
             .map_err(UpdateSpendJobError::Balance)?;
         self.logs.recover_parked_logs().await;

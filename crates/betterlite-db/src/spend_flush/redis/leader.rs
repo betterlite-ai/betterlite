@@ -65,10 +65,7 @@ where
     DailyWriter: DailyChunkWriter,
     Window: WindowSpendCommit,
 {
-    pub async fn commit_spend_updates_to_db_with_redis(
-        &self,
-        retries: u32,
-    ) -> Result<(), RedisFlushError> {
+    pub async fn commit_from_redis(&self, retries: u32) -> Result<(), RedisFlushError> {
         store_spend_updates_in_redis(self.publisher, self.queues).await?;
         let Some(acquired) = self.lease.acquire(DB_SPEND_UPDATE_JOB_NAME).await else {
             return Ok(());
@@ -164,6 +161,6 @@ where
     type Error = RedisFlushError;
 
     fn commit_spend_updates(&self, retries: u32) -> ServiceFuture<'_, Result<(), RedisFlushError>> {
-        Box::pin(self.commit_spend_updates_to_db_with_redis(retries))
+        Box::pin(self.commit_from_redis(retries))
     }
 }

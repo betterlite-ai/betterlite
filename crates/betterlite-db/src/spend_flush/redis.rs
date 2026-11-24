@@ -16,7 +16,7 @@ use crate::spend_queues::daily::DailySpendUpdate;
 
 // DB_SPEND_UPDATE_JOB_NAME and DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME of litellm/constants.py: the cron job ids the two Redis flushers elect on.
 pub const DB_SPEND_UPDATE_JOB_NAME: &str = "db_spend_update_job";
-pub const DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME: &str = "db_daily_tag_spend_update_job";
+pub const DAILY_TAG_SPEND_JOB_NAME: &str = "db_daily_tag_spend_update_job";
 
 // The daily commit parts a job adapter's pinned retry count rebuilds, so a Redis flusher commits with the count it was handed.
 pub(crate) fn parts_with_retries<Writer>(

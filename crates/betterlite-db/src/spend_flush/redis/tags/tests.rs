@@ -26,7 +26,7 @@ use crate::spend_flush::redis::fakes::tests::{
 };
 use crate::spend_flush::redis::jobs::SPEND_JOB_RETRIES;
 use crate::spend_flush::redis::tags::{RedisTagFlush, TagFlushError};
-use crate::spend_flush::redis::{DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME, DB_SPEND_UPDATE_JOB_NAME};
+use crate::spend_flush::redis::{DAILY_TAG_SPEND_JOB_NAME, DB_SPEND_UPDATE_JOB_NAME};
 use crate::spend_queues::daily::DailySpendUpdateQueue;
 
 // One pod's tag flusher over a live Redis: its own tag queue, publisher, buffer and lease, and the fake writer its commit drives.
@@ -80,9 +80,7 @@ impl TagCase {
             commits: &self.commits,
             shutdown: &self.shutdown,
         };
-        flusher
-            .commit_daily_tag_spend_to_db_with_redis(SPEND_JOB_RETRIES)
-            .await
+        flusher.commit_tag_from_redis(SPEND_JOB_RETRIES).await
     }
 }
 
@@ -110,11 +108,7 @@ async fn the_tag_flusher_commits_under_its_own_lock_while_the_main_spend_lock_is
         "a committed tag cohort is popped for good"
     );
     assert_eq!(
-        length(
-            &mut connection,
-            &lease_key(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME)
-        )
-        .await,
+        length(&mut connection, &lease_key(DAILY_TAG_SPEND_JOB_NAME)).await,
         0
     );
     assert_eq!(
@@ -152,11 +146,7 @@ async fn an_ordinary_tag_commit_failure_restores_the_remaining_rows_and_releases
             .contains_key("day-1")
     );
     assert_eq!(
-        length(
-            &mut connection,
-            &lease_key(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME)
-        )
-        .await,
+        length(&mut connection, &lease_key(DAILY_TAG_SPEND_JOB_NAME)).await,
         0
     );
 }
@@ -192,11 +182,7 @@ async fn a_cancel_before_the_commit_restores_the_whole_cohort_and_propagates() {
             .contains_key("day-1")
     );
     assert_eq!(
-        length(
-            &mut connection,
-            &lease_key(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME)
-        )
-        .await,
+        length(&mut connection, &lease_key(DAILY_TAG_SPEND_JOB_NAME)).await,
         0
     );
 }
@@ -239,11 +225,7 @@ async fn a_commit_already_running_when_the_shutdown_arrives_restores_its_failed_
             .contains_key("day-1")
     );
     assert_eq!(
-        length(
-            &mut connection,
-            &lease_key(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME)
-        )
-        .await,
+        length(&mut connection, &lease_key(DAILY_TAG_SPEND_JOB_NAME)).await,
         0
     );
 }
@@ -274,11 +256,7 @@ async fn a_commit_that_finishes_while_the_shutdown_arrives_restores_nothing() {
         "a committed cohort is never sent again"
     );
     assert_eq!(
-        length(
-            &mut connection,
-            &lease_key(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME)
-        )
-        .await,
+        length(&mut connection, &lease_key(DAILY_TAG_SPEND_JOB_NAME)).await,
         0
     );
 }
@@ -300,11 +278,7 @@ async fn an_empty_tag_aggregate_commits_nothing_and_pops_the_record() {
     assert!(case.events.entries().is_empty());
     assert_eq!(length(&mut connection, REDIS_DAILY_TAG_BUFFER_KEY).await, 0);
     assert_eq!(
-        length(
-            &mut connection,
-            &lease_key(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME)
-        )
-        .await,
+        length(&mut connection, &lease_key(DAILY_TAG_SPEND_JOB_NAME)).await,
         0
     );
 }

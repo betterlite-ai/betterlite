@@ -55,7 +55,7 @@ where
         }
     }
 
-    pub async fn db_update_spend_transaction_handler(
+    pub async fn commit_spend_updates(
         &self,
         retries: u32,
     ) -> Result<(), SpendUpdateError<Redis::Error, Memory::Error>> {

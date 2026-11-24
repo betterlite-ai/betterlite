@@ -18,7 +18,7 @@ use crate::spend_flush::daily::{DailyCommitParts, DailyFlushError, flush_daily_s
 use crate::spend_flush::service::ServiceFuture;
 use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue};
 
-use super::DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME;
+use super::DAILY_TAG_SPEND_JOB_NAME;
 use super::commit_daily;
 use super::lease::SpendPodLease;
 use super::parts_with_retries;
@@ -121,12 +121,12 @@ impl<Writer> RedisTagFlush<'_, Writer>
 where
     Writer: DailyChunkWriter + 'static,
 {
-    pub async fn commit_daily_tag_spend_to_db_with_redis(
+    pub async fn commit_tag_from_redis(
         &self,
         retries: u32,
     ) -> Result<(), TagFlushError<Writer::Error>> {
         store_daily_tag_spend_updates(&self.publisher, self.queue).await?;
-        let Some(acquired) = self.lease.acquire(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME).await else {
+        let Some(acquired) = self.lease.acquire(DAILY_TAG_SPEND_JOB_NAME).await else {
             return Ok(());
         };
         if !acquired {
@@ -135,14 +135,14 @@ where
         match self.drain_and_commit(retries).await {
             Ok(()) => {}
             Err(error) if error.is_cancelled() => {
-                self.lease.release(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME).await;
+                self.lease.release(DAILY_TAG_SPEND_JOB_NAME).await;
                 return Err(error);
             }
             Err(error) => tracing::error!(
                 "Spend tracking - failed to commit daily tag spend updates from Redis to DB. Re-Queuing to Redis for retry on next tick. Error: {error}"
             ),
         }
-        self.lease.release(DB_DAILY_TAG_SPEND_UPDATE_JOB_NAME).await;
+        self.lease.release(DAILY_TAG_SPEND_JOB_NAME).await;
         Ok(())
     }
 
@@ -206,7 +206,7 @@ where
             let publisher = Arc::clone(&self.publisher);
             self.queue.track_interrupted_commit(async move {
                 let settled = task.await;
-                restore_tag_spend_the_commit_left_behind(&publisher, settled).await;
+                restore_interrupted_tag(&publisher, settled).await;
             });
             return Err(TagFlushError::Cancelled);
         }
@@ -229,12 +229,12 @@ where
     type Error = TagFlushError<Writer::Error>;
 
     fn commit_daily_tag_spend(&self, retries: u32) -> ServiceFuture<'_, Result<(), Self::Error>> {
-        Box::pin(self.commit_daily_tag_spend_to_db_with_redis(retries))
+        Box::pin(self.commit_tag_from_redis(retries))
     }
 }
 
 // _restore_tag_spend_the_commit_left_behind: the tracked commit is awaited first, and only its noncancelled failure restores its remaining rows.
-async fn restore_tag_spend_the_commit_left_behind<Writer>(
+async fn restore_interrupted_tag<Writer>(
     publisher: &RedisSpendPublisher,
     settled: Result<CommitResult<Writer>, JoinError>,
 ) where

@@ -106,9 +106,7 @@ impl LeaderCase {
             daily_parts: &self.parts,
             window: &*self.window,
         };
-        flusher
-            .commit_spend_updates_to_db_with_redis(SPEND_JOB_RETRIES)
-            .await
+        flusher.commit_from_redis(SPEND_JOB_RETRIES).await
     }
 }
 
@@ -212,10 +210,7 @@ async fn a_partial_entity_commit_restores_only_the_uncommitted_tables() {
         daily_parts: &parts,
         window: &window,
     };
-    flusher
-        .commit_spend_updates_to_db_with_redis(SPEND_JOB_RETRIES)
-        .await
-        .unwrap();
+    flusher.commit_from_redis(SPEND_JOB_RETRIES).await.unwrap();
 
     assert_eq!(
         writer.written(),
@@ -294,10 +289,7 @@ async fn an_unsafe_entity_failure_drops_the_table_in_flight_from_the_restore() {
         daily_parts: &parts,
         window: &window,
     };
-    flusher
-        .commit_spend_updates_to_db_with_redis(SPEND_JOB_RETRIES)
-        .await
-        .unwrap();
+    flusher.commit_from_redis(SPEND_JOB_RETRIES).await.unwrap();
 
     let restored = range(&mut connection, REDIS_UPDATE_BUFFER_KEY, 0, -1).await;
     assert_eq!(restored.len(), 1);
@@ -369,10 +361,7 @@ async fn a_partial_daily_commit_restores_the_remaining_rows() {
         daily_parts: &parts,
         window: &window,
     };
-    flusher
-        .commit_spend_updates_to_db_with_redis(SPEND_JOB_RETRIES)
-        .await
-        .unwrap();
+    flusher.commit_from_redis(SPEND_JOB_RETRIES).await.unwrap();
 
     let entries = events.entries();
     assert_eq!(
@@ -475,10 +464,7 @@ async fn a_restore_that_cannot_reach_redis_logs_the_loss_and_releases_the_lease(
         daily_parts: &parts,
         window: &window,
     };
-    flusher
-        .commit_spend_updates_to_db_with_redis(SPEND_JOB_RETRIES)
-        .await
-        .unwrap();
+    flusher.commit_from_redis(SPEND_JOB_RETRIES).await.unwrap();
 
     assert!(logs.text().contains("These spend updates are lost"));
     assert_eq!(

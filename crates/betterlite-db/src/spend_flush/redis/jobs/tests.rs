@@ -288,7 +288,7 @@ async fn the_memory_branch_commits_with_the_adapters_retry_count() {
     let redis = recording_pass("redis", Arc::clone(&events), false);
 
     SpendUpdateTransactionHandler::select(false, &redis, &flush)
-        .db_update_spend_transaction_handler(SPEND_JOB_RETRIES)
+        .commit_spend_updates(SPEND_JOB_RETRIES)
         .await
         .unwrap();
 
