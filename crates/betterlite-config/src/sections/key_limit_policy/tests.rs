@@ -1,0 +1,129 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+
+use rust_decimal::Decimal;
+
+use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::key_limit_policy::{Settings, UpperboundKeyGenerateParams};
+
+const KEY: &str = "litellm_settings.upperbound_key_generate_params";
+
+fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    let lookup: BTreeMap<String, String> = variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    Ok(ConfigLoader { lookup }
+        .load(source)?
+        .sections
+        .key_limit_policy)
+}
+
+fn amount(text: &str) -> Decimal {
+    text.parse().unwrap()
+}
+
+#[test]
+fn loads_settings() {
+    let source = "\
+litellm_settings:
+  upperbound_key_generate_params:
+    max_budget: os.environ/KEY_BUDGET
+    budget_duration: os.environ/KEY_BUDGET_DURATION
+    duration: 30d
+    max_parallel_requests: 8
+    tpm_limit: os.environ/KEY_TPM
+    rpm_limit: 60";
+    let loaded = settings(
+        source,
+        &[
+            ("KEY_BUDGET", "250.50"),
+            ("KEY_BUDGET_DURATION", "1mo"),
+            ("KEY_TPM", "100000"),
+        ],
+    )
+    .expect("every upperbound key loads");
+    assert_eq!(
+        loaded.upperbound_key_generate_params,
+        Some(UpperboundKeyGenerateParams {
+            max_budget: Some(amount("250.50")),
+            budget_duration: Some("1mo".to_owned()),
+            duration: Some("30d".to_owned()),
+            max_parallel_requests: Some(8),
+            tpm_limit: Some(100_000),
+            rpm_limit: Some(60),
+        })
+    );
+}
+
+#[test]
+fn upperbound_absent() {
+    let absent = settings("litellm_settings: {}", &[]).expect("an empty section loads");
+    assert_eq!(absent.upperbound_key_generate_params, None);
+    let null = settings(
+        "litellm_settings:\n  upperbound_key_generate_params: null",
+        &[],
+    )
+    .expect("an explicit null loads");
+    assert_eq!(null.upperbound_key_generate_params, None);
+}
+
+#[test]
+fn upperbound_numeric_and_duration() {
+    let source = "\
+litellm_settings:
+  upperbound_key_generate_params:
+    max_budget: 0
+    budget_duration: \"-1\"
+    duration: daily
+    max_parallel_requests: -2
+    tpm_limit: 0
+    rpm_limit: 0.0";
+    let loaded = settings(source, &[]).expect("zero and negative ceilings load");
+    assert_eq!(
+        loaded.upperbound_key_generate_params,
+        Some(UpperboundKeyGenerateParams {
+            max_budget: Some(Decimal::ZERO),
+            budget_duration: Some("-1".to_owned()),
+            duration: Some("daily".to_owned()),
+            max_parallel_requests: Some(-2),
+            tpm_limit: Some(0),
+            rpm_limit: Some(0),
+        })
+    );
+}
+
+#[test]
+fn invalid_upperbound_type() {
+    let cases = [
+        (
+            "max_budget: true",
+            "litellm_settings.upperbound_key_generate_params.max_budget",
+        ),
+        (
+            "max_parallel_requests: true",
+            "litellm_settings.upperbound_key_generate_params.max_parallel_requests",
+        ),
+        (
+            "tpm_limit: fast",
+            "litellm_settings.upperbound_key_generate_params.tpm_limit",
+        ),
+        (
+            "duration: 30",
+            "litellm_settings.upperbound_key_generate_params.duration",
+        ),
+    ];
+    for (entry, path) in cases {
+        let source = format!("litellm_settings:\n  upperbound_key_generate_params:\n    {entry}");
+        let error = settings(&source, &[]).expect_err("a wrong type fails the load");
+        assert!(error.to_string().contains(path), "{entry}: {error}");
+    }
+    let missing = settings(
+        "litellm_settings:\n  upperbound_key_generate_params:\n    rpm_limit: os.environ/MISSING",
+        &[],
+    )
+    .expect_err("a missing environment reference fails the load");
+    assert!(missing.to_string().contains("MISSING"), "{missing}");
+    assert!(missing.to_string().contains(KEY), "{missing}");
+}

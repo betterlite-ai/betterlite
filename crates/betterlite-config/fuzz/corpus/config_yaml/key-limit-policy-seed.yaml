@@ -1,0 +1,8 @@
+litellm_settings:
+  upperbound_key_generate_params:
+    max_budget: os.environ/UPPERBOUND_MAX_BUDGET
+    budget_duration: 30d
+    duration: 1d
+    max_parallel_requests: 4
+    tpm_limit: 1000
+    rpm_limit: 100
