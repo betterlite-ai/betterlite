@@ -68,10 +68,7 @@ pub fn decode_shadow_query(raw: &[u8]) -> Result<ShadowQuery, ShadowQueryError> 
 
 fn parse_limit(raw: &str) -> Result<i64, ShadowQueryError> {
     let Ok(parsed) = raw.trim().parse::<i64>() else {
-        return Err(limit_error(
-            "int_parsing",
-            "Input should be a valid integer, unable to parse string as an integer",
-        ));
+        return Err(unparsed_limit(raw.trim()));
     };
     if parsed < MIN_SHADOW_LIMIT {
         return Err(limit_error(
@@ -94,4 +91,25 @@ const fn limit_error(kind: &'static str, msg: &'static str) -> ShadowQueryError 
         kind,
         msg,
     }
+}
+
+// pydantic's int has no width, so a plain integer past i64 still faces the 1..200 bounds
+fn unparsed_limit(text: &str) -> ShadowQueryError {
+    let unsigned = text.strip_prefix(['-', '+']).unwrap_or(text);
+    if unsigned.is_empty() || !unsigned.bytes().all(|byte| byte.is_ascii_digit()) {
+        return limit_error(
+            "int_parsing",
+            "Input should be a valid integer, unable to parse string as an integer",
+        );
+    }
+    if text.starts_with('-') {
+        return limit_error(
+            "greater_than_equal",
+            "Input should be greater than or equal to 1",
+        );
+    }
+    limit_error(
+        "less_than_equal",
+        "Input should be less than or equal to 200",
+    )
 }
