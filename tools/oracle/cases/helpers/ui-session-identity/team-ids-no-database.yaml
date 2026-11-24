@@ -1,0 +1,16 @@
+kind: helper
+name: team-ids-no-database
+call:
+  b10070:
+    operation: team_ids
+    auth: {team_id: litellm-dashboard, user_id: user-1, requires_fresh_policy: false}
+    database: false
+    lookup: {kind: teams, teams: [team-1]}
+calls:
+  - b10070:
+      operation: team_ids
+      auth: {team_id: litellm-dashboard, user_id: user-1, requires_fresh_policy: true}
+      database: false
+      lookup: {kind: failure}
+env: {}
+compare: {ignore: []}

@@ -526,6 +526,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "claude_plugin_read"
+path = "fuzz_targets/claude_plugin_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "shadow_q"
 path = "fuzz_targets/shadow_q.rs"
 test = false
