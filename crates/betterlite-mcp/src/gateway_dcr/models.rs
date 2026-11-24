@@ -72,7 +72,6 @@ impl Sealable for GatewayAuthCode {
             && !self.jti.is_empty()
     }
 }
-
 #[must_use]
 pub fn is_gateway_dcr_client_id(client_id: Option<&str>) -> bool {
     let Some(id) = client_id else {
