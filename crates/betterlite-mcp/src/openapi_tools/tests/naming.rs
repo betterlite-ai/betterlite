@@ -8,7 +8,7 @@ use crate::openapi_tools::naming::{TOOL_NAME_MAX_LEN, sanitize_openapi_tool_name
 #[case::slash_becomes_underscore("actions/download-job-logs", "actions_download-job-logs")]
 #[case::dash_and_underscore_kept("list_pets-2", "list_pets-2")]
 #[case::dots_and_spaces("get.pet name", "get_pet_name")]
-#[case::unicode_becomes_one_underscore_each("caf\u{e9}s", "caf_s")]
+#[case::unicode_becomes_one_underscore_each("x\u{e9}\u{e8}y", "x__y")]
 #[case::already_lower("getpets", "getpets")]
 fn maps_names_to_the_provider_character_class(#[case] raw: &str, #[case] expected: &str) {
     assert_eq!(sanitize_openapi_tool_name(raw), expected);

@@ -10,5 +10,6 @@ pub mod request_headers;
 pub mod spec_loading;
 pub mod tool;
 pub mod transport;
+pub mod upstream;
 
 mod tests;

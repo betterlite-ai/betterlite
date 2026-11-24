@@ -18,42 +18,52 @@ pub async fn load_openapi_spec_async<R: Resolve>(
     max_bytes: Option<usize>,
 ) -> Result<OpenApiDocument, OpenApiError> {
     if location.starts_with("http://") || location.starts_with("https://") {
-        let response = fetcher
-            .fetch(client, location, &HeaderMap::new())
-            .await
-            .map_err(|source| OpenApiError::SpecFetch {
-                location: location.to_owned(),
-                source,
-            })?;
-        let limit = max_bytes.unwrap_or(client.limits.body_bytes);
-        let response = response
-            .buffered(limit)
-            .await
-            .map_err(|source| OpenApiError::SpecBody {
-                location: location.to_owned(),
-                source,
-            })?;
-        if response.status >= 400 {
-            return Err(OpenApiError::SpecStatus {
-                location: location.to_owned(),
-                status: response.status,
-            });
-        }
-        return parse_openapi_document(&response.body);
+        let body = fetch_spec(fetcher, client, location, max_bytes).await?;
+        return parse_openapi_document(&body);
     }
-    let contents = match tokio::fs::read_to_string(location).await {
-        Ok(contents) => contents,
-        Err(source) if source.kind() == NOT_FOUND => {
-            return Err(OpenApiError::SpecNotFound {
-                location: location.to_owned(),
-            });
-        }
-        Err(source) => {
-            return Err(OpenApiError::SpecRead {
-                location: location.to_owned(),
-                source,
-            });
-        }
-    };
+    let contents = read_local_spec(location).await?;
     parse_openapi_document(contents.as_bytes())
+}
+
+async fn fetch_spec<R: Resolve>(
+    fetcher: &UserUrlFetcher<R>,
+    client: &ProxiedClient,
+    location: &str,
+    max_bytes: Option<usize>,
+) -> Result<Vec<u8>, OpenApiError> {
+    let response = fetcher
+        .fetch(client, location, &HeaderMap::new())
+        .await
+        .map_err(|source| OpenApiError::SpecFetch {
+            location: location.to_owned(),
+            source,
+        })?;
+    let limit = max_bytes.unwrap_or(client.limits.body_bytes);
+    let response = response
+        .buffered(limit)
+        .await
+        .map_err(|source| OpenApiError::SpecBody {
+            location: location.to_owned(),
+            source,
+        })?;
+    if response.status >= 400 {
+        return Err(OpenApiError::SpecStatus {
+            location: location.to_owned(),
+            status: response.status,
+        });
+    }
+    Ok(response.body)
+}
+
+async fn read_local_spec(location: &str) -> Result<String, OpenApiError> {
+    match tokio::fs::read_to_string(location).await {
+        Ok(contents) => Ok(contents),
+        Err(source) if source.kind() == NOT_FOUND => Err(OpenApiError::SpecNotFound {
+            location: location.to_owned(),
+        }),
+        Err(source) => Err(OpenApiError::SpecRead {
+            location: location.to_owned(),
+            source,
+        }),
+    }
 }

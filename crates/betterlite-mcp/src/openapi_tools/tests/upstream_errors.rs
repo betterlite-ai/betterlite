@@ -202,7 +202,7 @@ async fn a_latin_1_challenge_is_decoded_byte_by_byte() {
     config.relays_upstream_auth = true;
     let tool = OpenApiTool::new(config);
     let transport =
-        FakeTransport::replying(401, b"").with_header_bytes("www-authenticate", b"Basic caf\xe9");
+        FakeTransport::replying(401, b"").with_header_bytes("www-authenticate", b"Basic a\xe9b");
     let error = tool
         .call(&arguments("{}"), &context(), &transport)
         .await
@@ -212,7 +212,7 @@ async fn a_latin_1_challenge_is_decoded_byte_by_byte() {
         OpenApiToolError::UpstreamAuth {
             www_authenticate: Some(ref challenge),
             ..
-        } if challenge == "Basic caf\u{e9}"
+        } if challenge == "Basic a\u{e9}b"
     ));
 }
 

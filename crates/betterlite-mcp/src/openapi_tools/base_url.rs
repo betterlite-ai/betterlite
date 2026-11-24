@@ -11,6 +11,7 @@ const SPEC_SUFFIXES: [&str; 4] = [
 const FILE_SUFFIXES: [&str; 3] = [".json", ".yaml", ".yml"];
 
 // LiteLLM's get_base_url: servers[0].url, then the Swagger 2 host form, then the spec location itself
+#[must_use]
 pub fn get_base_url(spec: &OpenApiDocument, spec_path: Option<&str>) -> String {
     if let Some(server) = spec.servers.first() {
         let server_url = server.url.as_deref().unwrap_or_default();
@@ -20,20 +21,20 @@ pub fn get_base_url(spec: &OpenApiDocument, spec_path: Option<&str>) -> String {
         return swagger_base(host, &spec.schemes, spec.base_path.as_deref());
     }
     match spec_path {
-        Some(path) if is_http_url(path) => derived_base(path),
+        Some(path) if path.starts_with("http://") || path.starts_with("https://") => {
+            derived_base(path)
+        }
         Some(_) | None => String::new(),
     }
-}
-
-fn is_http_url(text: &str) -> bool {
-    text.starts_with("http://") || text.starts_with("https://")
 }
 
 fn relative_server_url(server_url: &str, spec_path: Option<&str>) -> String {
     let Some(path) = spec_path else {
         return server_url.to_owned();
     };
-    if !server_url.starts_with('/') || !is_http_url(path) {
+    let relative = server_url.starts_with('/');
+    let http = path.starts_with("http://") || path.starts_with("https://");
+    if !relative || !http {
         return server_url.to_owned();
     }
     let Some((scheme, rest)) = path.split_once("://") else {

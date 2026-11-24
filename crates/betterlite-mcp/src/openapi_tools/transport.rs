@@ -69,18 +69,8 @@ pub trait OpenApiTransport {
     ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'a>>;
 }
 
-pub struct ProxiedTransport {
-    client: Arc<ProxiedClient>,
-    timeout: Duration,
-}
-
-impl ProxiedTransport {
-    #[must_use]
-    pub fn new(client: Arc<ProxiedClient>) -> Self {
-        let timeout = client.limits.read_timeout;
-        Self { client, timeout }
-    }
-}
+// the pooled client never follows redirects itself, so a tool call hands it this transport instead
+pub struct ProxiedTransport(pub Arc<ProxiedClient>);
 
 impl OpenApiTransport for ProxiedTransport {
     fn send<'a>(
@@ -88,64 +78,93 @@ impl OpenApiTransport for ProxiedTransport {
         request: OpenApiRequest,
     ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'a>>
     {
-        Box::pin(self.follow(request))
+        Box::pin(follow(&self.0, request))
     }
 }
 
-impl ProxiedTransport {
-    // httpx follows redirects on its shared clients; the pooled client here never does, so each hop is built
-    async fn follow(
-        &self,
-        request: OpenApiRequest,
-    ) -> Result<UpstreamResponse, OpenApiTransportError> {
-        let mut method = request.method;
-        let mut current = HttpxUrl::parse(&request.url)
-            .map_err(|source| failed_url(&request.url, UserUrlError::from(source)))?;
-        let mut headers = request.headers;
-        let mut body = request.body;
-        let mut query = request.query;
-        for _ in 0..=MAX_REDIRECTS {
-            if let Some(guard) = &request.redirect_guard {
-                guard.apply(&current.href(), &mut headers);
-            }
-            let sent = header_map(&headers)?;
-            let outbound = OutboundRequest {
-                method: method.clone(),
-                url: hop_url(&current)?,
-                query: std::mem::take(&mut query),
-                headers: sent.clone(),
-                body: match &body {
-                    Some(bytes) => RequestBody::Json(bytes.clone()),
-                    None => RequestBody::Empty,
-                },
-                deadline: self.timeout,
-            };
-            let response = self.client.send_buffered(outbound).await?;
-            if !is_redirect(response.status) {
-                return Ok(response);
-            }
-            let Some(target) = location(&response.headers) else {
-                return Ok(response);
-            };
-            let next = redirect_url(&current, &target)
-                .map_err(|source| failed_url(&current.href(), source))?;
-            let next_method = redirect_method(response.status, &method);
-            let mut next_headers = redirect_headers(&sent, &current, &next);
-            if next_method != method {
-                next_headers.remove(CONTENT_LENGTH);
-                next_headers.remove(TRANSFER_ENCODING);
-                body = None;
-            }
-            headers = from_header_map(&next_headers)?;
-            method = next_method;
-            current = next;
-        }
-        Err(OpenApiTransportError::Send(
-            TransportError::TooManyRedirects {
-                limit: MAX_REDIRECTS,
+// the method, url, headers, body and query a redirect chain carries from one hop to the next
+struct Hop {
+    method: Method,
+    current: HttpxUrl,
+    headers: BTreeMap<String, String>,
+    body: Option<Vec<u8>>,
+    query: Vec<(String, String)>,
+}
+
+impl Hop {
+    fn outbound(
+        &mut self,
+        sent: &HeaderMap,
+        deadline: Duration,
+    ) -> Result<OutboundRequest, OpenApiTransportError> {
+        Ok(OutboundRequest {
+            method: self.method.clone(),
+            url: hop_url(&self.current)?,
+            query: std::mem::take(&mut self.query),
+            headers: sent.clone(),
+            body: match &self.body {
+                Some(bytes) => RequestBody::Json(bytes.clone()),
+                None => RequestBody::Empty,
             },
-        ))
+            deadline,
+        })
     }
+
+    fn advance(
+        &mut self,
+        status: u16,
+        sent: &HeaderMap,
+        target: &str,
+    ) -> Result<(), OpenApiTransportError> {
+        let next = redirect_url(&self.current, target)
+            .map_err(|source| failed_url(&self.current.href(), source))?;
+        let next_method = redirect_method(status, &self.method);
+        let mut next_headers = redirect_headers(sent, &self.current, &next);
+        if next_method != self.method {
+            next_headers.remove(CONTENT_LENGTH);
+            next_headers.remove(TRANSFER_ENCODING);
+            self.body = None;
+        }
+        self.headers = from_header_map(&next_headers)?;
+        self.method = next_method;
+        self.current = next;
+        Ok(())
+    }
+}
+
+// httpx follows redirects on its shared clients; the pooled client here never does, so each hop is built
+async fn follow(
+    client: &ProxiedClient,
+    request: OpenApiRequest,
+) -> Result<UpstreamResponse, OpenApiTransportError> {
+    let mut hop = Hop {
+        method: request.method,
+        current: HttpxUrl::parse(&request.url)
+            .map_err(|source| failed_url(&request.url, UserUrlError::from(source)))?,
+        headers: request.headers,
+        body: request.body,
+        query: request.query,
+    };
+    for _ in 0..=MAX_REDIRECTS {
+        if let Some(guard) = &request.redirect_guard {
+            guard.apply(&hop.current.href(), &mut hop.headers);
+        }
+        let sent = header_map(&hop.headers)?;
+        let outbound = hop.outbound(&sent, client.limits.read_timeout)?;
+        let response = client.send_buffered(outbound).await?;
+        if !matches!(response.status, 301 | 302 | 303 | 307 | 308) {
+            return Ok(response);
+        }
+        let Some(target) = location(&response.headers) else {
+            return Ok(response);
+        };
+        hop.advance(response.status, &sent, &target)?;
+    }
+    Err(OpenApiTransportError::Send(
+        TransportError::TooManyRedirects {
+            limit: MAX_REDIRECTS,
+        },
+    ))
 }
 
 fn failed_url(url: &str, source: UserUrlError) -> OpenApiTransportError {
@@ -153,10 +172,6 @@ fn failed_url(url: &str, source: UserUrlError) -> OpenApiTransportError {
         url: url.to_owned(),
         source,
     }
-}
-
-fn is_redirect(status: u16) -> bool {
-    matches!(status, 301 | 302 | 303 | 307 | 308)
 }
 
 fn hop_url(current: &HttpxUrl) -> Result<Url, OpenApiTransportError> {
@@ -192,17 +207,17 @@ fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, OpenApiTr
 }
 
 fn from_header_map(map: &HeaderMap) -> Result<BTreeMap<String, String>, OpenApiTransportError> {
-    let mut headers = BTreeMap::new();
-    for (name, value) in map {
-        let text = value
-            .to_str()
-            .map_err(|source| OpenApiTransportError::HeaderText {
-                name: name.as_str().to_owned(),
-                source,
-            })?;
-        headers.insert(name.as_str().to_owned(), text.to_owned());
-    }
-    Ok(headers)
+    map.iter()
+        .map(|(name, value)| {
+            value
+                .to_str()
+                .map(|text| (name.as_str().to_owned(), text.to_owned()))
+                .map_err(|source| OpenApiTransportError::HeaderText {
+                    name: name.as_str().to_owned(),
+                    source,
+                })
+        })
+        .collect()
 }
 
 // httpx Client._redirect_method

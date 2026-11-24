@@ -6,6 +6,7 @@ const BODY_DESCRIPTION: &str = "Request body";
 const JSON_CONTENT: &str = "application/json";
 
 // LiteLLM's build_input_schema: every named parameter, plus the JSON request body as "body"
+#[must_use]
 pub fn build_input_schema(operation: &Operation) -> Object {
     let mut properties = Object::new();
     let mut required: Vec<Json> = Vec::new();

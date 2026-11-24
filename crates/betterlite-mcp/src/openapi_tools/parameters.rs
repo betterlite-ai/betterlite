@@ -14,6 +14,7 @@ pub struct ExtractedParameters {
 }
 
 // LiteLLM's resolve_operation_params: component refs resolved, nameless entries dropped, operation level winning
+#[must_use]
 pub fn resolve_operation_params(
     operation: &Operation,
     path_item: &PathItem,
@@ -77,6 +78,7 @@ fn resolve_ref(
 }
 
 // LiteLLM's extract_parameters: only path, query and body parameters, plus "body" for any requestBody
+#[must_use]
 pub fn extract_parameters(operation: &Operation) -> ExtractedParameters {
     let mut extracted = ExtractedParameters::default();
     for param in &operation.parameters {

@@ -23,7 +23,7 @@ fn client() -> Arc<ProxiedClient> {
 }
 
 fn transport() -> ProxiedTransport {
-    ProxiedTransport::new(client())
+    ProxiedTransport(client())
 }
 
 fn get(url: &str) -> OpenApiRequest {

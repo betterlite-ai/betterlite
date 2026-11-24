@@ -13,8 +13,9 @@ fn headers(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 fn context(pairs: &[(&str, &str)]) -> OpenApiCallContext {
     OpenApiCallContext {
+        auth_header: None,
         extra_headers: headers(pairs),
-        ..OpenApiCallContext::default()
+        resolved_auth_headers: BTreeMap::new(),
     }
 }
 
@@ -64,7 +65,8 @@ fn a_byok_header_replaces_every_authorization_casing() {
     let static_headers = headers(&[("authorization", "Bearer static"), ("X-Tenant", "acme")]);
     let byok = OpenApiCallContext {
         auth_header: Some("Bearer byok".to_owned()),
-        ..OpenApiCallContext::default()
+        extra_headers: BTreeMap::new(),
+        resolved_auth_headers: BTreeMap::new(),
     };
     let merged = merge_request_headers(&static_headers, &byok);
     assert_eq!(
@@ -78,7 +80,8 @@ fn an_empty_byok_header_changes_nothing() {
     let static_headers = headers(&[("Authorization", "Bearer static")]);
     let byok = OpenApiCallContext {
         auth_header: Some(String::new()),
-        ..OpenApiCallContext::default()
+        extra_headers: BTreeMap::new(),
+        resolved_auth_headers: BTreeMap::new(),
     };
     assert_eq!(
         merge_request_headers(&static_headers, &byok),
@@ -91,8 +94,8 @@ fn a_resolved_authorization_beats_byok_and_static() {
     let static_headers = headers(&[("Authorization", "Bearer static")]);
     let resolved = OpenApiCallContext {
         auth_header: Some("Bearer byok".to_owned()),
+        extra_headers: BTreeMap::new(),
         resolved_auth_headers: headers(&[("authorization", "Bearer resolved")]),
-        ..OpenApiCallContext::default()
     };
     assert_eq!(
         merge_request_headers(&static_headers, &resolved),
@@ -104,8 +107,9 @@ fn a_resolved_authorization_beats_byok_and_static() {
 fn resolved_custom_headers_replace_the_same_name_in_any_casing() {
     let static_headers = headers(&[("X-Cred", "static"), ("X-Tenant", "acme")]);
     let resolved = OpenApiCallContext {
+        auth_header: None,
+        extra_headers: BTreeMap::new(),
         resolved_auth_headers: headers(&[("x-cred", "resolved")]),
-        ..OpenApiCallContext::default()
     };
     assert_eq!(
         merge_request_headers(&static_headers, &resolved),
@@ -142,7 +146,8 @@ fn the_static_headers_are_not_changed() {
     let before = static_headers.clone();
     let context = OpenApiCallContext {
         auth_header: Some("Bearer byok".to_owned()),
-        ..OpenApiCallContext::default()
+        extra_headers: BTreeMap::new(),
+        resolved_auth_headers: BTreeMap::new(),
     };
     drop(merge_request_headers(&static_headers, &context));
     assert_eq!(static_headers, before);

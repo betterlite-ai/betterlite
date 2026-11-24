@@ -7,6 +7,7 @@ pub enum OpenApiToolOutput {
 }
 
 // LiteLLM's parse_http_body: blank, invalid JSON or JSON null stay text; anything else is JSON plus its text
+#[must_use]
 pub fn parse_http_body(body: &str) -> OpenApiToolOutput {
     if body.trim().is_empty() {
         return OpenApiToolOutput::Text(body.to_owned());

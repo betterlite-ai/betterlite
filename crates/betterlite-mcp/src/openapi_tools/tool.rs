@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_prompts::arguments::json::{Json, Object};
 use http::Method;
-use http::header::{HeaderMap, HeaderName};
 use thiserror::Error;
 
 use crate::client::sessions::factory::RedirectGuard;
@@ -15,10 +13,10 @@ use crate::openapi_tools::parameters::{ExtractedParameters, extract_parameters};
 use crate::openapi_tools::path_values::sanitize_path_value;
 use crate::openapi_tools::request_headers::{OpenApiCallContext, merge_request_headers};
 use crate::openapi_tools::transport::{OpenApiRequest, OpenApiTransport, OpenApiTransportError};
+use crate::openapi_tools::upstream;
 use crate::static_credential::validate_static_credential;
 
 pub const DEFAULT_AUTH_HEADER: &str = "Authorization";
-const WWW_AUTHENTICATE: HeaderName = HeaderName::from_static("www-authenticate");
 
 #[derive(Debug, Clone)]
 pub struct OpenApiToolConfig {
@@ -96,31 +94,12 @@ impl OpenApiTool {
         context: &OpenApiCallContext,
         transport: &dyn OpenApiTransport,
     ) -> Result<OpenApiToolOutput, OpenApiToolError> {
-        let headers = merge_request_headers(&self.headers, context);
-        if let Some(auth_type) = self.auth_type {
-            let static_names: Vec<String> = self.headers.keys().cloned().collect();
-            validate_static_credential(
-                auth_type,
-                &headers,
-                self.upstream_token_header.as_deref(),
-                &static_names,
-            )
-            .map_err(OpenApiToolError::Credential)?;
-        }
+        let headers = self.effective_headers(context)?;
         let url = match self.url(arguments) {
             Ok(url) => url,
             Err(rejection) => return Ok(rejection),
         };
-        let mut query: Vec<(String, String)> = Vec::new();
-        for name in &self.params.query {
-            let Some(value) = arguments.get(name) else {
-                continue;
-            };
-            if !value.is_truthy() {
-                continue;
-            }
-            push_query(&mut query, name, value);
-        }
+        let query = self.query(arguments);
         let body = self.json_body(arguments)?;
         let Some(method) = request_method(&self.method) else {
             return Ok(OpenApiToolOutput::Text(format!(
@@ -137,15 +116,26 @@ impl OpenApiTool {
             headers,
             body: if sends_body { body } else { None },
         };
-        let server = self.server();
-        let response = transport
-            .send(request)
-            .await
-            .map_err(OpenApiToolError::Transport)?;
-        classify(&response, self.relays_upstream_auth, server)?;
-        let text = String::from_utf8(response.body)
-            .map_err(|source| OpenApiToolError::BodyText { source })?;
-        Ok(parse_http_body(&text))
+        self.execute(request, transport).await
+    }
+
+    // LiteLLM checks the static credential before it builds the url or reads the arguments
+    fn effective_headers(
+        &self,
+        context: &OpenApiCallContext,
+    ) -> Result<BTreeMap<String, String>, OpenApiToolError> {
+        let headers = merge_request_headers(&self.headers, context);
+        if let Some(auth_type) = self.auth_type {
+            let static_names: Vec<String> = self.headers.keys().cloned().collect();
+            validate_static_credential(
+                auth_type,
+                &headers,
+                self.upstream_token_header.as_deref(),
+                &static_names,
+            )
+            .map_err(OpenApiToolError::Credential)?;
+        }
+        Ok(headers)
     }
 
     fn url(&self, arguments: &Object) -> Result<String, OpenApiToolOutput> {
@@ -171,14 +161,34 @@ impl OpenApiTool {
         Ok(url)
     }
 
+    fn query(&self, arguments: &Object) -> Vec<(String, String)> {
+        let mut query: Vec<(String, String)> = Vec::new();
+        for name in &self.params.query {
+            let Some(value) = arguments.get(name) else {
+                continue;
+            };
+            if !value.is_truthy() {
+                continue;
+            }
+            push_query(&mut query, name, value);
+        }
+        query
+    }
+
     fn json_body(&self, arguments: &Object) -> Result<Option<Vec<u8>>, OpenApiToolError> {
         if self.params.body.is_empty() {
             return Ok(None);
         }
-        let mut value = arguments.get("body").cloned().unwrap_or_else(empty_body);
+        let mut value = match arguments.get("body") {
+            Some(argument) => argument.clone(),
+            None => Json::Object(Object::new()),
+        };
         if !value.is_truthy() {
             for name in &self.params.body {
-                value = arguments.get(name).cloned().unwrap_or_else(empty_body);
+                value = match arguments.get(name) {
+                    Some(argument) => argument.clone(),
+                    None => Json::Object(Object::new()),
+                };
                 if value.is_truthy() {
                     break;
                 }
@@ -192,15 +202,27 @@ impl OpenApiTool {
         Ok(Some(bytes))
     }
 
+    async fn execute(
+        &self,
+        request: OpenApiRequest,
+        transport: &dyn OpenApiTransport,
+    ) -> Result<OpenApiToolOutput, OpenApiToolError> {
+        let server = self.server();
+        let response = transport
+            .send(request)
+            .await
+            .map_err(OpenApiToolError::Transport)?;
+        upstream::classify(&response, self.relays_upstream_auth, server)?;
+        let text = String::from_utf8(response.body)
+            .map_err(|source| OpenApiToolError::BodyText { source })?;
+        Ok(parse_http_body(&text))
+    }
+
     fn server(&self) -> String {
         self.server_label
             .clone()
             .unwrap_or_else(|| format!("{} {}", self.method.to_uppercase(), self.path))
     }
-}
-
-fn empty_body() -> Json {
-    Json::Object(Object::new())
 }
 
 fn body_payload(value: Json) -> Option<Json> {
@@ -267,41 +289,4 @@ fn credential_guard(url: &str, resolved: &BTreeMap<String, String>) -> Option<Re
         .keys()
         .find(|name| !name.eq_ignore_ascii_case(DEFAULT_AUTH_HEADER));
     RedirectGuard::new(url, slot.map(String::as_str))
-}
-
-fn classify(
-    response: &UpstreamResponse,
-    relays_upstream_auth: bool,
-    server: String,
-) -> Result<(), OpenApiToolError> {
-    if response.status < 400 {
-        return Ok(());
-    }
-    if response.status == 401 && relays_upstream_auth {
-        return Err(OpenApiToolError::UpstreamAuth {
-            status: response.status,
-            www_authenticate: header_text(&response.headers, &WWW_AUTHENTICATE),
-            server,
-        });
-    }
-    Err(OpenApiToolError::UpstreamStatus {
-        status: response.status,
-        server,
-    })
-}
-
-// httpx Headers.get: every value of the header joined with ", ", decoded as UTF-8 or else Latin-1
-fn header_text(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
-    let mut parts: Vec<String> = Vec::new();
-    for value in headers.get_all(name) {
-        let text = match value.to_str() {
-            Ok(text) => text.to_owned(),
-            Err(_) => value.as_bytes().iter().copied().map(char::from).collect(),
-        };
-        parts.push(text);
-    }
-    if parts.is_empty() {
-        return None;
-    }
-    Some(parts.join(", "))
 }

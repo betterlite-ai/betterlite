@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod base_url;
+mod document;
 mod http_server;
 mod input_schema;
 mod naming;

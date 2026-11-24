@@ -10,6 +10,7 @@ pub struct OpenApiCallContext {
 }
 
 // LiteLLM's _merge_openapi_tool_request_headers: extra, static, BYOK Authorization, resolved credential
+#[must_use]
 pub fn merge_request_headers(
     static_headers: &BTreeMap<String, String>,
     context: &OpenApiCallContext,
