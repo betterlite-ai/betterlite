@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::mem::take;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -136,7 +137,7 @@ struct RecordingSink {
 
 impl RecordingSink {
     fn take(&self) -> Vec<BudgetAlert> {
-        std::mem::take(&mut *self.alerts.lock().unwrap())
+        take(&mut *self.alerts.lock().unwrap())
     }
 }
 
@@ -265,40 +266,39 @@ async fn failure_stops_downstream() {
     assert!(body.contains("\"param\":null"), "{body}");
     assert!(body.contains("\"code\":\"422\""), "{body}");
     assert!(!reached);
+}
 
-    let (expiry_status, expiry_body, expiry_reached) = run_request(
+#[tokio::test]
+async fn invalid_expiry_is_unauthorized() {
+    let (status, body, reached) = run_request(
         &config_with_master_key(),
         Arc::new(rule(
             r#"{"token":"sk-bad-expiry","max_budget":100,"metadata":{"temp_budget_increase":10,"temp_budget_expiry":"garbage"}}"#,
         )),
     )
     .await;
-    assert_eq!(expiry_status, StatusCode::UNAUTHORIZED);
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(body.contains("\"type\":\"auth_error\""), "{body}");
     assert!(
-        expiry_body.contains("\"type\":\"auth_error\""),
-        "{expiry_body}"
-    );
-    assert!(
-        expiry_body.contains(
+        body.contains(
             "Authentication Error, the temporary budget expiry is not an ISO 8601 timestamp"
         ),
-        "{expiry_body}"
+        "{body}"
     );
-    assert!(expiry_body.contains("\"code\":\"401\""), "{expiry_body}");
-    assert!(!expiry_reached);
+    assert!(body.contains("\"code\":\"401\""), "{body}");
+    assert!(!reached);
+}
 
+#[tokio::test]
+async fn unverifiable_spend_is_unavailable() {
     let unverifiable = Arc::new(KeyBudgetRule {
         reader: Some(Arc::new(UnverifiableReader)),
         ..rule(r#"{"token":"sk-unverifiable","spend":0,"max_budget":5}"#)
     });
-    let (spend_status, spend_body, spend_reached) =
-        run_request(&config_with_master_key(), unverifiable).await;
-    assert_eq!(spend_status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(
-        spend_body.contains(BUDGET_UNVERIFIABLE_DETAIL),
-        "{spend_body}"
-    );
-    assert!(!spend_reached);
+    let (status, body, reached) = run_request(&config_with_master_key(), unverifiable).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains(BUDGET_UNVERIFIABLE_DETAIL), "{body}");
+    assert!(!reached);
 }
 
 #[tokio::test]
@@ -340,7 +340,7 @@ async fn temporary_increase_applies() {
 async fn soft_alert_passes_without_denial() {
     let sink = Arc::new(RecordingSink::default());
     let soft = Arc::new(KeyBudgetRule {
-        alerts: Some(sink.clone()),
+        alerts: Some(Arc::clone(&sink)),
         ..rule(r#"{"token":"sk-soft","spend":5,"soft_budget":5}"#)
     });
     let (status, _body, reached) = run_request(&config_with_master_key(), soft).await;

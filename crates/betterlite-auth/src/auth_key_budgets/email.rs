@@ -33,9 +33,9 @@ fn string_entry(value: &JsonData) -> Option<String> {
 // _normalize_alert_emails: a falsy mapping normalizes to an empty one
 #[must_use]
 pub fn normalize_alert_emails(
-    config: Option<&BTreeMap<String, JsonData>>,
+    raw: Option<&BTreeMap<String, JsonData>>,
 ) -> BTreeMap<String, Vec<String>> {
-    let Some(config) = config.filter(|config| !config.is_empty()) else {
+    let Some(config) = raw.filter(|config| !config.is_empty()) else {
         return BTreeMap::new();
     };
     config

@@ -92,7 +92,7 @@ fn alert_fraction_env_override(#[case] text: &str, #[case] expected: f64) {
 fn invalid_alert_fraction_stops_startup(#[case] text: &str) {
     let error = load("", &[(ALERT_FRACTION_VARIABLE, text)]).unwrap_err();
     assert!(
-        matches!(error, ConfigError::InvalidFloat { ref path, .. } if path == ALERT_FRACTION_VARIABLE),
+        matches!(&error, ConfigError::InvalidFloat { path, .. } if path == ALERT_FRACTION_VARIABLE),
         "{text}: {error}"
     );
 }

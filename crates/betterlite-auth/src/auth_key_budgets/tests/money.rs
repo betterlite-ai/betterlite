@@ -13,6 +13,10 @@ fn money_follows_float_semantics() {
     assert_eq!(Money::from_f64(0.5_f64), Money::Finite(dec_text("0.5")));
     assert_eq!(Money::from_f64(1e300_f64), Money::PositiveInfinity);
     assert_eq!(Money::from_f64(-1e300_f64), Money::NegativeInfinity);
+}
+
+#[test]
+fn money_text_and_json_semantics() {
     assert_eq!(Money::from_text("NaN"), Some(Money::Nan));
     assert_eq!(Money::from_text("Infinity"), Some(Money::PositiveInfinity));
     assert_eq!(Money::from_text("-Infinity"), Some(Money::NegativeInfinity));
@@ -27,6 +31,10 @@ fn money_follows_float_semantics() {
         Money::from_json(&json("\"Infinity\"")),
         Some(Money::PositiveInfinity)
     );
+}
+
+#[test]
+fn money_percent_and_finite_semantics() {
     assert_eq!(money(100).mul_percent(50), money(50));
     assert_eq!(money(100).mul_decimal_percent(50.0_f64), money(50));
     assert_eq!(
@@ -36,6 +44,10 @@ fn money_follows_float_semantics() {
     assert_eq!(money(100).mul_decimal_percent(f64::NAN), Money::Nan);
     assert_eq!(money(5).finite_value(), Some(dec(5)));
     assert_eq!(Money::Nan.finite_value(), None);
+}
+
+#[test]
+fn money_comparison_semantics() {
     assert!(Money::spend_at_least(dec(5), money(5)));
     assert!(!Money::spend_at_least(dec(5), money(6)));
     assert!(!Money::spend_at_least(dec(5), Money::Nan));

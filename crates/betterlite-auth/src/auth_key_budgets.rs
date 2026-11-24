@@ -42,7 +42,7 @@ pub enum KeyBudgetError {
 pub struct Admission<'request> {
     pub reader: &'request dyn SpendReader,
     pub alerts: Option<&'request dyn BudgetAlertSink>,
-    pub durations: &'request dyn DurationParser,
+    pub durations: &'request (dyn DurationParser + Sync),
     pub global_alert_emails: Option<&'request BTreeMap<String, JsonData>>,
     pub alert_fraction: Money,
     pub throttle_pct: Option<f64>,

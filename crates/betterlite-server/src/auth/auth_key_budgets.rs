@@ -33,7 +33,7 @@ pub struct KeyBudgetRule {
     pub user_email: Option<String>,
     pub reader: Option<Arc<dyn SpendReader>>,
     pub alerts: Option<Arc<dyn BudgetAlertSink>>,
-    pub durations: Option<Arc<dyn DurationParser>>,
+    pub durations: Option<Arc<dyn DurationParser + Send + Sync>>,
     pub throttle_pct: Option<f64>,
     pub now: Option<DateTime<Utc>>,
     pub applied: Mutex<Option<UserAPIKeyAuth>>,
@@ -48,6 +48,10 @@ impl fmt::Debug for KeyBudgetRule {
             .field("has_reader", &self.reader.is_some())
             .field("has_alerts", &self.alerts.is_some())
             .field("has_durations", &self.durations.is_some())
+            .field(
+                "has_applied",
+                &self.applied.try_lock().is_ok_and(|key| key.is_some()),
+            )
             .field("throttle_pct", &self.throttle_pct)
             .field("now", &self.now)
             .finish()
@@ -113,7 +117,7 @@ pub(crate) async fn prefetch(stage: &KeyBudgetStageInput) -> Result<(), Box<Prox
     let unconfigured = UnconfiguredReader;
     let no_durations = NoDurations;
     let reader: &dyn SpendReader = stage.rule.reader.as_deref().unwrap_or(&unconfigured);
-    let durations: &dyn DurationParser = stage.rule.durations.as_deref().unwrap_or(&no_durations);
+    let durations = stage.rule.durations.as_deref().unwrap_or(&no_durations);
     let admission = Admission {
         reader,
         alerts: stage.rule.alerts.as_deref(),

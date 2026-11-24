@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use rstest::rstest;
 
@@ -198,7 +199,7 @@ fn negative_increase_applies() {
         apply_temp_budget_increase(&below, now())
             .unwrap()
             .max_budget,
-        Some(Money::Finite(super::dec_text("-20.5")))
+        Some(Money::Finite(dec_text("-20.5")))
     );
 }
 
@@ -301,7 +302,7 @@ fn expiry_timestamp_forms() {
 #[rstest]
 fn replays_the_auth_key_budgets_corpus(#[files("fuzz/corpus/auth_key_budgets/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let Ok(text) = std::str::from_utf8(&bytes) else {
+    let Ok(text) = from_utf8(&bytes) else {
         return;
     };
     drop(parse_temp_budget_expiry(text));

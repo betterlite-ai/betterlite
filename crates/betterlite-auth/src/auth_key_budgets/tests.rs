@@ -5,6 +5,7 @@ mod money;
 mod temporary;
 
 use std::collections::BTreeMap;
+use std::mem::take;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -185,7 +186,7 @@ impl RecordingSink {
     }
 
     fn take(&self) -> Vec<BudgetAlert> {
-        std::mem::take(&mut *self.alerts.lock().unwrap())
+        take(&mut *self.alerts.lock().unwrap())
     }
 }
 
@@ -218,7 +219,7 @@ impl BudgetAlertSink for DeferredSink {
         self.senders.lock().unwrap().push(sender);
         let ran = Arc::clone(&self.ran);
         self.tasks.spawn(async move {
-            let _ = receiver.await;
+            receiver.await.unwrap();
             ran.store(true, Ordering::SeqCst);
         });
     }

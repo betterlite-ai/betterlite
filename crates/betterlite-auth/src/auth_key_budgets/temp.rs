@@ -33,10 +33,9 @@ pub fn get_temp_budget_increase(
     }
     // the metadata value is not a declared field: only a JSON number is the increase LiteLLM's addition accepts
     match increase {
-        JsonData::Number(number) => match Money::from_text(&number.to_string()) {
-            Some(money) => Ok(Some(money)),
-            None => Err(TempBudgetError::IncreaseInvalid),
-        },
+        JsonData::Number(number) => Money::from_text(&number.to_string())
+            .ok_or(TempBudgetError::IncreaseInvalid)
+            .map(Some),
         JsonData::Null => Ok(None),
         JsonData::Bool(_) | JsonData::String(_) | JsonData::Array(_) | JsonData::Object(_) => {
             Err(TempBudgetError::IncreaseInvalid)

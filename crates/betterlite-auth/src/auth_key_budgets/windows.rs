@@ -26,7 +26,7 @@ pub enum WindowError {
 pub async fn virtual_key_multi_budget_check(
     auth: &UserAPIKeyAuth,
     reader: &dyn SpendReader,
-    durations: &dyn DurationParser,
+    durations: &(dyn DurationParser + Sync),
     now: DateTime<Utc>,
 ) -> Result<(), KeyBudgetError> {
     let Some(limits) = auth.view.token.budget_limits.as_deref() else {

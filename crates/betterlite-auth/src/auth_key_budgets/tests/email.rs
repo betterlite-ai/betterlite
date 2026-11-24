@@ -433,11 +433,10 @@ fn member_unsupported_recipients_keep_threshold() {
 }
 
 #[test]
-fn member_no_global_merge() {
+fn key_alert_uses_global_emails() {
     let reader = ScriptedReader::new(Vec::new());
     let sink = RecordingSink::default();
     let global = emails(r#"{"50":["global@x"]}"#);
-    let team_config = emails(r#"{"50":["team@x"]}"#);
     let key_auth = key(r#"{"token":"sk-team","spend":60,"max_budget":100}"#);
     let budgets = effective_budgets(&key_auth, now()).unwrap();
     let mut inputs = admission(&reader, Some(&sink));
@@ -449,7 +448,13 @@ fn member_no_global_merge() {
         key_alerts[0].max_budget_alert_emails.as_ref().unwrap()["50"],
         vec!["global@x"]
     );
+}
 
+#[test]
+fn member_no_global_merge() {
+    let sink = RecordingSink::default();
+    let global = emails(r#"{"50":["global@x"]}"#);
+    let team_config = emails(r#"{"50":["team@x"]}"#);
     let merged = merge_alert_email_configs(Some(&global), Some(&team_config)).unwrap();
     assert_eq!(merged["50"], vec!["global@x", "team@x"]);
     let metadata = emails(&format!(

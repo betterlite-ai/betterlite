@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::budget_primitives::window_start::coerce_datetime;
 
-pub const MAX_TEMP_BUDGET_EXPIRY_BYTES: usize = 1_048_576;
+pub const MAX_TEMP_BUDGET_EXPIRY_BYTES: usize = 0x0010_0000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TempBudgetError {
@@ -27,10 +27,10 @@ pub fn parse_temp_budget_expiry(text: &str) -> Result<DateTime<FixedOffset>, Tem
 
 // fromisoformat also reads the ISO 8601 basic forms, which the shared parser does not
 fn normalize_basic_iso8601(text: &str) -> String {
-    let Some(separator) = text.find(|character| matches!(character, 'T' | 't' | ' ' | '_')) else {
+    let Some(position) = text.find(['T', 't', ' ', '_']) else {
         return normalize_basic_date(text);
     };
-    let (date, rest) = text.split_at(separator);
+    let (date, rest) = text.split_at(position);
     let (separator, time) = rest.split_at(1);
     format!(
         "{}{separator}{}",
@@ -49,9 +49,7 @@ fn normalize_basic_date(date: &str) -> String {
 }
 
 fn normalize_basic_time(time: &str) -> String {
-    let end = time
-        .find(|character| matches!(character, '.' | 'Z' | 'z' | '+' | '-'))
-        .unwrap_or(time.len());
+    let end = time.find(['.', 'Z', 'z', '+', '-']).unwrap_or(time.len());
     let (digits, tail) = time.split_at(end);
     if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return time.to_owned();

@@ -1,3 +1,4 @@
+use std::mem::take;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -36,7 +37,7 @@ impl<'script> ScriptedSpend<'script> {
 
     pub(crate) fn take(&self) -> Vec<Value> {
         let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *reads)
+        take(&mut *reads)
     }
 }
 
@@ -70,7 +71,7 @@ pub(crate) struct Recorder(Mutex<Vec<BudgetAlert>>);
 impl Recorder {
     pub(crate) fn take(&self) -> Vec<Value> {
         let mut queued = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let alerts = std::mem::take(&mut *queued);
+        let alerts = take(&mut *queued);
         alerts.iter().map(alert_json).collect()
     }
 }

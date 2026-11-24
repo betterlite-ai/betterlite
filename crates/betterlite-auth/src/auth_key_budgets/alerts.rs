@@ -45,8 +45,8 @@ pub trait BudgetAlertSink: Send + Sync {
 }
 
 pub(crate) fn schedule(sink: Option<&dyn BudgetAlertSink>, alert: BudgetAlert) {
-    if let Some(sink) = sink {
-        sink.schedule(alert);
+    if let Some(alert_sink) = sink {
+        alert_sink.schedule(alert);
     }
 }
 
