@@ -246,6 +246,38 @@ fn model_info_lookup_falls_back_to_the_bare_entry_for_none_reasoning_effort() {
 }
 
 #[test]
+fn model_info_lookup_reads_parallel_tool_calls_from_a_synced_flag() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/o1-2024-12-17":{"litellm_provider":"openai","mode":"chat","max_tokens":100000,"supports_parallel_function_calling":true},"o1-2024-12-17":{"litellm_provider":"openai","mode":"chat","max_tokens":100000,"supports_parallel_function_calling":false}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/o1-2024-12-17")))
+            .unwrap(),
+    ));
+    assert!(parameters.iter().any(|name| name == "parallel_tool_calls"));
+}
+
+#[test]
+fn model_info_lookup_keeps_an_explicit_parallel_flag_over_the_bare_entry() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/o1-2024-12-17":{"litellm_provider":"openai","mode":"chat","max_tokens":100000,"supports_parallel_function_calling":false},"o1-2024-12-17":{"litellm_provider":"openai","mode":"chat","max_tokens":100000,"supports_parallel_function_calling":true}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/o1-2024-12-17")))
+            .unwrap(),
+    ));
+    assert!(!parameters.iter().any(|name| name == "parallel_tool_calls"));
+}
+
+#[test]
 fn model_info_lookup_skips_a_prefixed_entry_for_another_provider() {
     let runtime = runtime();
     let entries: RuntimeEntries = convert::parse(
