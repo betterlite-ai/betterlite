@@ -49,12 +49,12 @@ pub(super) fn answer(
     let provider = UpstreamCredentialProvider {
         collaborators: fixtures.collaborators,
     };
-    let subject = subject.to_subject();
+    let caller = subject.to_subject();
     let runtime = Builder::new_current_thread()
         .enable_time()
         .build()
         .or_value_error()?;
-    let records = runtime.block_on(run_actions(&provider, &subject, &spec, actions));
+    let records = runtime.block_on(run_actions(&provider, &caller, &spec, actions));
     Ok(json!({
         "actions": records,
         "token_endpoint_calls": fixtures.endpoint.calls(),
@@ -183,13 +183,8 @@ const fn error_tag(error: &CredError) -> &'static str {
 }
 
 fn www_authenticate(error: &CredError) -> Option<&str> {
-    match error {
-        CredError::Unauthorized(unauthorized) => unauthorized.www_authenticate.as_deref(),
-        CredError::Misconfigured(_detail) => None,
-        CredError::UrlCredentialsNotAllowed => None,
-        CredError::UpstreamUnavailable(_detail) => None,
-        CredError::UnsupportedMode(_detail) => None,
-        CredError::PreconditionRequired(_detail) => None,
-        CredError::NotImplemented(_detail) => None,
-    }
+    let CredError::Unauthorized(unauthorized) = error else {
+        return None;
+    };
+    unauthorized.www_authenticate.as_deref()
 }

@@ -69,12 +69,14 @@ pub(super) fn build(input: &CollaboratorsInput) -> Fakes {
     let access_tokens = input.token_endpoint.clone().unwrap_or_default();
     let endpoint = Arc::new(RecordingEndpoint::new(&access_tokens));
     let exchanger = Arc::new(build_exchanger(input.exchanger.as_ref()));
+    let endpoint_slot = Arc::clone(&endpoint);
+    let exchanger_slot = Arc::clone(&exchanger);
     let (token_store, assertion_store) = build_stores(input);
     let collaborators = Collaborators::default()
         .with_oauth_token_store(Arc::new(token_store))
         .with_sso_assertion_store(Arc::new(assertion_store))
-        .with_token_endpoint(Arc::clone(&endpoint))
-        .with_token_exchanger(Arc::clone(&exchanger))
+        .with_token_endpoint(endpoint_slot)
+        .with_token_exchanger(exchanger_slot)
         .with_client_credentials_source(Arc::new(build_credentials(
             input.client_credentials.as_ref(),
         )));
@@ -151,7 +153,6 @@ fn build_credentials(input: Option<&ClientCredentialsInput>) -> MintedCredential
 
 pub(super) fn error_from_tag(tag: &str, detail: &str) -> CredError {
     match tag {
-        "misconfigured" => CredError::Misconfigured(detail.to_owned()),
         "upstream_unavailable" => CredError::UpstreamUnavailable(detail.to_owned()),
         "precondition_required" => CredError::PreconditionRequired(detail.to_owned()),
         "not_implemented" => CredError::NotImplemented(detail.to_owned()),
