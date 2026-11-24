@@ -90,29 +90,19 @@ fn master_context(master_key: &SecretString) -> AuthContext {
 
 struct ScriptedReader {
     spends: Mutex<Vec<Decimal>>,
-    counter_keys: Mutex<Vec<String>>,
 }
 
 impl ScriptedReader {
     fn new(spends: Vec<Decimal>) -> Arc<Self> {
         Arc::new(Self {
             spends: Mutex::new(spends),
-            counter_keys: Mutex::new(Vec::new()),
         })
-    }
-
-    fn counter_keys(&self) -> Vec<String> {
-        self.counter_keys.lock().unwrap().clone()
     }
 }
 
 #[async_trait]
 impl SpendReader for ScriptedReader {
-    async fn read_spend(&self, query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
-        self.counter_keys
-            .lock()
-            .unwrap()
-            .push(query.counter_key.to_owned());
+    async fn read_spend(&self, _query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
         let mut spends = self.spends.lock().unwrap();
         assert!(!spends.is_empty(), "the reader ran out of scripted spends");
         Ok(spends.remove(0))
@@ -339,7 +329,8 @@ async fn temporary_increase_applies() {
 #[tokio::test]
 async fn soft_alert_passes_without_denial() {
     let recorder = Arc::new(RecordingSink::default());
-    let dispatched: Arc<dyn BudgetAlertSink> = Arc::clone(&recorder);
+    let shared = Arc::clone(&recorder);
+    let dispatched: Arc<dyn BudgetAlertSink> = shared;
     let soft = Arc::new(KeyBudgetRule {
         alerts: Some(dispatched),
         ..rule(r#"{"token":"sk-soft","spend":5,"soft_budget":5}"#)
