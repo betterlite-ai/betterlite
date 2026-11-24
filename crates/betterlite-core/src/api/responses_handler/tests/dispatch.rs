@@ -208,6 +208,24 @@ async fn async_handler_takes_the_provider_from_the_request() {
 }
 
 #[tokio::test]
+async fn async_handler_ignores_a_provider_that_is_not_text() {
+    let fixture = HandlerFixture::new("gpt-4o");
+    let extras = params(r#"{"custom_llm_provider": 5}"#);
+    let responses_request = to_responses_request("gpt-4o", None, &Params::new(), &extras)
+        .expect("the request should build");
+    let stream = async_stream(vec![Ok(delta_chunk("item_1", "hello"))]);
+    let operation = AsyncRecordingOperation::new(Ok(AsyncResponsesAnswer::Stream(stream)));
+    let request = fixture.async_request(&responses_request);
+    let answer = async_interactions_api_handler(&operation, &request, ())
+        .await
+        .expect("the handler succeeds");
+    let AsyncInteractionsAnswer::Stream(iterator) = answer else {
+        panic!("a streaming answer must become an iterator");
+    };
+    assert_eq!(iterator.state.custom_llm_provider, None);
+}
+
+#[tokio::test]
 async fn async_handler_uses_the_prebuilt_request() {
     let fixture = HandlerFixture::new("gpt-4o");
     let optional_params = params(r#"{"system_instruction": "be nice"}"#);
