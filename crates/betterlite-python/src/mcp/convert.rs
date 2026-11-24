@@ -53,11 +53,12 @@ pub(crate) enum AuthTypeWire {
     TruePassthrough,
     OauthDelegate,
 }
+// serde reads both shapes into SecretString, so a token stays redacted from the first read
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum AuthValueWire {
-    Text(String),
-    Headers(BTreeMap<String, String>),
+    Text(SecretString),
+    Headers(BTreeMap<String, SecretString>),
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -182,13 +183,8 @@ fn npm_cache_dir(environment: &BTreeMap<String, String>) -> String {
 }
 pub(crate) fn auth_value(wire: AuthValueWire) -> AuthValue {
     match wire {
-        AuthValueWire::Text(text) => AuthValue::Text(SecretString::from(text)),
-        AuthValueWire::Headers(headers) => {
-            let secrets = headers
-                .into_iter()
-                .map(|(name, value)| (name, SecretString::from(value)));
-            AuthValue::Headers(secrets.collect())
-        }
+        AuthValueWire::Text(text) => AuthValue::Text(text),
+        AuthValueWire::Headers(headers) => AuthValue::Headers(headers),
     }
 }
 // LiteLLM picks aws_sigv4 signing by auth_type and reads its keys from the auth_value map (B4742)

@@ -22,7 +22,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rmcp::service::ServiceError;
 use rmcp::transport::DynamicTransportError;
 use rstest::rstest;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret as _;
 use tokio::time::timeout;
 
 use super::payload::{McpErrorKind, NativeMcpErrorPayload, status_payload};
@@ -521,8 +521,23 @@ fn error_payload_shape_names_every_field() {
 }
 
 #[test]
-fn result_secret_text_is_not_mistaken_for_an_error() {
-    let value = SecretString::from("kept");
-    assert_eq!(value.expose_secret(), "kept");
-    assert_eq!(encode(&Json::Null).unwrap(), "null");
+fn request_auth_value_text_is_read_into_a_secret() {
+    let settings = wire(r#"{"auth_value":"tok-1"}"#);
+    let debug = format!("{settings:?}");
+    let Some(AuthValueWire::Text(secret)) = settings.auth_value else {
+        panic!("a text auth value stays text");
+    };
+    assert_eq!(secret.expose_secret(), "tok-1");
+    assert!(!debug.contains("tok-1"));
+}
+
+#[test]
+fn request_auth_value_headers_are_read_into_secrets() {
+    let settings = wire(r#"{"auth_value":{"X-Api-Key":"sk-live"}}"#);
+    let debug = format!("{settings:?}");
+    let Some(AuthValueWire::Headers(headers)) = settings.auth_value else {
+        panic!("a map auth value stays a map");
+    };
+    assert_eq!(headers["X-Api-Key"].expose_secret(), "sk-live");
+    assert!(!debug.contains("sk-live"));
 }
