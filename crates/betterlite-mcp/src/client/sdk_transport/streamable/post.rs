@@ -7,8 +7,10 @@ use rmcp::model::{ClientNotification, ErrorCode, ErrorData, JsonRpcMessage, Requ
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use tracing::warn;
 
-use crate::client::cleanup::http_client::HttpResponse;
+use crate::client::cleanup::http_client::{HttpResponse, ResponseHead};
 use crate::client::cleanup::recording::ResponseBody as _;
+use crate::client::http_transport::capture::CaptureRecord;
+use crate::client::http_transport::error::McpHttpError;
 use crate::client::http_transport::request::McpHttpRequest;
 use crate::client::http_transport::send::HttpBody;
 use crate::client::sdk_transport::error::SdkError;
@@ -70,8 +72,8 @@ async fn answer(
     let HttpResponse {
         status,
         headers,
+        capture,
         mut body,
-        ..
     } = response;
     if status == 202 {
         let message = "server answered a request with 202 Accepted".to_owned();
@@ -92,7 +94,7 @@ async fn answer(
         return Ok(());
     }
     if status >= 400 {
-        return answer_error(core, status, &headers, body, id).await;
+        return answer_error(core, status, &headers, capture, body, id).await;
     }
     if initialize {
         note_session(core, &headers);
@@ -142,6 +144,7 @@ async fn answer_error(
     core: &StreamableCore,
     status: u16,
     headers: &HeaderMap,
+    capture: Option<CaptureRecord>,
     mut body: HttpBody,
     id: RequestId,
 ) -> Result<(), SdkError> {
@@ -153,12 +156,19 @@ async fn answer_error(
         let reply: RxJsonRpcMessage<RoleClient> = JsonRpcMessage::error(error.error, Some(id));
         return push(core, reply).await;
     }
-    let (error_code, text) = if status != 404 {
-        (
-            ErrorCode::INTERNAL_ERROR,
-            "Server returned an error response",
-        )
-    } else if session_id(core).is_some() {
+    // LiteLLM's HTTP client raises HTTPStatusError for every POST error status but 404 (client.py L249-L251)
+    if status != 404 {
+        drop(body.close().await);
+        let head = ResponseHead {
+            status,
+            headers: headers.clone(),
+            capture,
+        };
+        return Err(SdkError::Http(Arc::new(McpHttpError::Status(Box::new(
+            head,
+        )))));
+    }
+    let (error_code, text) = if session_id(core).is_some() {
         (ErrorCode::INVALID_REQUEST, "Session terminated")
     } else {
         (ErrorCode::METHOD_NOT_FOUND, "Not Found")
