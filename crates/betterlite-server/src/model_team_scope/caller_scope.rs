@@ -1,0 +1,63 @@
+use std::collections::BTreeSet;
+
+use betterlite_models::model_registration::JsonObject;
+
+use crate::model_info_scope::text_field;
+use crate::spend::visibility::roles::is_admin_view_safe;
+use crate::team_access::caller::TeamCaller;
+
+use super::reads::TeamScopeReads;
+
+// _get_caller_byok_team_scope: the teams whose BYOK rows the caller may see, or None for an admin or a path with no caller or database.
+pub async fn get_caller_byok_team_scope<Reads>(
+    caller: Option<&TeamCaller>,
+    reads: Option<&Reads>,
+) -> Option<BTreeSet<String>>
+where
+    Reads: TeamScopeReads + ?Sized,
+{
+    let (Some(caller), Some(reads)) = (caller, reads) else {
+        return None;
+    };
+    if is_admin_view_safe(caller) {
+        return None;
+    }
+    let key_team_scope: BTreeSet<String> = caller
+        .team_id
+        .iter()
+        .filter(|team| !team.is_empty())
+        .cloned()
+        .collect();
+    let Some(user_id) = caller.user_id.as_deref() else {
+        return Some(key_team_scope);
+    };
+    let stored = match reads.user_teams(user_id).await {
+        Ok(stored) => stored,
+        Err(error) => {
+            tracing::error!(
+                "Failed to look up caller teams while scoping BYOK search; defaulting to key team scope only. {error}"
+            );
+            return Some(key_team_scope);
+        }
+    };
+    let mut scope = key_team_scope;
+    if let Some(teams) = stored {
+        scope.extend(teams);
+    }
+    Some(scope)
+}
+
+// _byok_row_outside_caller_teams: a team BYOK row the caller's scope leaves out; non-team rows and an unscoped caller never fall outside.
+#[must_use]
+pub fn byok_row_outside_caller_teams(
+    model_info: &JsonObject,
+    allowed_team_ids: Option<&BTreeSet<String>>,
+) -> bool {
+    let Some(allowed) = allowed_team_ids else {
+        return false;
+    };
+    let Some(team_id) = text_field(model_info, "team_id") else {
+        return false;
+    };
+    !allowed.contains(team_id)
+}
