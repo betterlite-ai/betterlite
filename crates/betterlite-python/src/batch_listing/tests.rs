@@ -1,0 +1,377 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::{batch_provider_list, xai_identity};
+use betterlite_config::types::ProxyTrust;
+use betterlite_core::api::batch_provider_list::{BatchProviderList, BatchProviderListInput};
+use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
+use betterlite_core::api::resource_sdk_settings::timeout::{FineTuningTimeout, StructuredTimeout};
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_openai::api::batch_records::WireDecodeLimits;
+use betterlite_openai::batches::error::{BatchesError, SdkError};
+use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
+use betterlite_openai::xai_batches::error::XaiBatchesError;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3_async_runtimes::tokio::get_runtime;
+use rstest::rstest;
+
+use super::convert::{CallMode, ModuleSettings, cancel_payload, parse, section_settings};
+use super::error::{DispatchFailure, payload_for};
+use super::register;
+use super::session::ListingCore;
+use super::transport::{ListTransport, duration_of, openai_failure, sdk_timeout, xai_failure};
+
+const EMPTY_ENVIRONMENT: &str = r#"{"environment":{}}"#;
+const SECRET_ENVIRONMENT: &str = r#"{"environment":{},"settings":{"api_key":"sk-module","openai_key":"sk-openai","azure_key":"sk-azure"}}"#;
+// no listener answers port 1, so a session's provider call fails without any network behind it
+const LIST_OPENAI_REFUSED: &str =
+    r#"{"provider":"openai","api_base":"http://127.0.0.1:1/v1","api_key":"sk-test"}"#;
+const LIST_XAI_REFUSED: &str =
+    r#"{"provider":"xai","api_base":"http://127.0.0.1:1","api_key":"sk-test"}"#;
+const CANCEL_OPENAI_REFUSED: &str = r#"{"cancel":{"batch_id":"batch-1","provider":"openai","params":{"api_base":"http://127.0.0.1:1/v1","api_key":"sk-test"}}}"#;
+const CANCEL_XAI_REFUSED: &str = r#"{"cancel":{"batch_id":"batch-1","provider":"xai","params":{"api_base":"http://127.0.0.1:1","api_key":"sk-test"}}}"#;
+
+fn core() -> ListingCore {
+    ListingCore::build(EMPTY_ENVIRONMENT).unwrap()
+}
+
+fn proxied() -> ProxiedClient {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    ProxiedClient::outbound(&Arc::new(policy)).unwrap()
+}
+
+const fn decode_limits() -> WireDecodeLimits {
+    WireDecodeLimits {
+        max_json_bytes: 1024,
+        max_event_bytes: 1024,
+        max_items: 16,
+    }
+}
+
+fn transport() -> ListTransport {
+    ListTransport {
+        client: proxied(),
+        xai: xai_identity::Settings::default(),
+        limits: decode_limits(),
+    }
+}
+
+fn default_settings() -> batch_provider_list::Settings {
+    section_settings::<batch_provider_list::Raw>(&ModuleSettings::default(), &BTreeMap::new())
+        .unwrap()
+}
+
+#[test]
+fn register_adds_the_batch_listing_classes() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        assert!(module.hasattr("NativeBatchListSession").unwrap());
+        assert!(module.hasattr("NativeBatchListError").unwrap());
+    });
+}
+
+// every sync session method runs its call and hands back the provider the payload asked for
+#[rstest]
+#[case::list_openai("list", LIST_OPENAI_REFUSED, "openai")]
+#[case::list_xai("list", LIST_XAI_REFUSED, "xai")]
+#[case::cancel_openai("cancel", CANCEL_OPENAI_REFUSED, "openai")]
+#[case::cancel_xai("cancel", CANCEL_XAI_REFUSED, "xai")]
+fn session_errors_name_the_provider_the_payload_asked_for(
+    #[case] method: &str,
+    #[case] payload: &str,
+    #[case] provider: &str,
+) {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchListSession").unwrap();
+        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
+        let error = session
+            .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
+            .unwrap_err();
+        let message = error.value(py).to_string();
+        assert!(
+            message.contains(r#""type":"APIConnectionError""#),
+            "{method}: {message}"
+        );
+        assert!(
+            message.contains(&format!(r#""llm_provider":"{provider}""#)),
+            "{method}: {message}"
+        );
+        assert!(message.contains(r#""model":null"#), "{method}: {message}");
+    });
+}
+
+// a provider LiteLLM branches on but this build has no executor for answers 400 with its name
+#[rstest]
+#[case::list_azure("list", r#"{"provider":"azure"}"#, "azure", None)]
+#[case::list_vertex("list", r#"{"provider":"vertex_ai"}"#, "vertex_ai", None)]
+#[case::cancel_azure(
+    "cancel",
+    r#"{"cancel":{"batch_id":"batch-1","provider":"azure"}}"#,
+    "azure",
+    None
+)]
+#[case::cancel_vertex(
+    "cancel",
+    r#"{"cancel":{"batch_id":"batch-1","provider":"vertex_ai"}}"#,
+    "vertex_ai",
+    None
+)]
+#[case::cancel_bedrock(
+    "cancel",
+    r#"{"cancel":{"batch_id":"batch-1","provider":"bedrock"}}"#,
+    "bedrock",
+    None
+)]
+#[case::list_unknown("list", r#"{"provider":"cohere"}"#, "cohere", Some("n/a"))]
+#[case::cancel_unknown(
+    "cancel",
+    r#"{"cancel":{"batch_id":"batch-1","provider":"cohere"}}"#,
+    "cohere",
+    Some("n/a")
+)]
+fn session_unwired_providers_answer_bad_requests(
+    #[case] method: &str,
+    #[case] payload: &str,
+    #[case] provider: &str,
+    #[case] model: Option<&str>,
+) {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchListSession").unwrap();
+        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
+        let error = session
+            .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
+            .unwrap_err();
+        let message = error.value(py).to_string();
+        assert!(
+            message.contains(r#""type":"BadRequestError""#),
+            "{method}: {message}"
+        );
+        assert!(
+            message.contains(&format!(r#""llm_provider":"{provider}""#)),
+            "{method}: {message}"
+        );
+        let expected = match model {
+            Some(name) => format!(r#""model":"{name}""#),
+            None => String::from(r#""model":null"#),
+        };
+        assert!(message.contains(&expected), "{method}: {message}");
+    });
+}
+
+#[rstest]
+#[case::list("list")]
+#[case::cancel("cancel")]
+fn session_bad_json_is_a_value_error(#[case] method: &str) {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchListSession").unwrap();
+        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
+        let error = session
+            .call_method1(method, ("not json", Vec::<Vec<u8>>::new()))
+            .unwrap_err();
+        assert!(error.is_instance_of::<PyValueError>(py));
+    });
+}
+
+#[test]
+fn session_bad_settings_text_is_a_value_error() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchListSession").unwrap();
+        let error = class.call1(("not json",)).unwrap_err();
+        assert!(error.is_instance_of::<PyValueError>(py));
+    });
+}
+
+#[test]
+fn session_accepts_the_module_secrets() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchListSession").unwrap();
+        class.call1((SECRET_ENVIRONMENT,)).unwrap();
+    });
+}
+
+#[test]
+fn session_rejects_an_async_invoke_status() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchListSession").unwrap();
+        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
+        let payload =
+            r#"{"async_invoke":{"invocationArn":"arn:aws:batch:1","modelArn":"arn:aws:model:1"}}"#;
+        let error = session
+            .call_method1("cancel", (payload, Vec::<Vec<u8>>::new()))
+            .unwrap_err();
+        assert!(error.is_instance_of::<PyValueError>(py));
+    });
+}
+
+// list_batches with alist_batches and acancel_batch both answer an awaitable, not the answer
+#[rstest]
+#[case::alist("alist", LIST_OPENAI_REFUSED)]
+#[case::acancel("acancel", CANCEL_OPENAI_REFUSED)]
+fn session_async_methods_answer_with_a_coroutine(#[case] method: &str, #[case] payload: &str) {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeBatchListSession").unwrap();
+        let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
+        let answer = session
+            .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
+            .unwrap();
+        let inspect = py.import("inspect").unwrap();
+        let awaited = inspect.call_method1("iscoroutine", (answer,)).unwrap();
+        assert!(
+            awaited.extract::<bool>().unwrap(),
+            "{method} must answer a coroutine"
+        );
+    });
+}
+
+#[rstest]
+#[case::azure("azure")]
+#[case::vertex("vertex_ai")]
+fn transport_refuses_an_unwired_list_provider(#[case] provider: &str) {
+    let service = BatchProviderList {
+        settings: ResourceSdkSettings::from(default_settings()),
+    };
+    let text = format!(r#"{{"provider":"{provider}"}}"#);
+    let input: BatchProviderListInput = parse(&text).unwrap();
+    let result = service.run(&input).unwrap();
+    let outcome = get_runtime().block_on(transport().list(&result.call, result.is_async));
+    match outcome {
+        Err(DispatchFailure::Unsupported { provider: name }) => {
+            assert_eq!(name, provider);
+        }
+        Ok(_) | Err(_) => panic!("the {provider} branch is not wired in this build"),
+    }
+}
+
+#[test]
+fn transport_timeouts_follow_the_read_phase() {
+    let phases = TimeoutPhases {
+        connect: Some(1.0_f64),
+        read: Some(2.5_f64),
+        write: None,
+        pool: None,
+    };
+    assert_eq!(
+        duration_of(&Timeout::Phases(phases)).unwrap(),
+        Duration::from_secs_f64(2.5_f64)
+    );
+    let bare = TimeoutPhases {
+        connect: None,
+        read: None,
+        write: None,
+        pool: None,
+    };
+    assert_eq!(
+        duration_of(&Timeout::Phases(bare)).unwrap(),
+        Duration::from_secs(600)
+    );
+    assert_eq!(
+        duration_of(&Timeout::Seconds(3.0_f64)).unwrap(),
+        Duration::from_secs(3)
+    );
+    assert!(duration_of(&Timeout::Seconds(-1.0_f64)).is_err());
+}
+
+#[test]
+fn transport_sdk_timeout_keeps_the_seconds() {
+    assert_eq!(
+        sdk_timeout(&FineTuningTimeout::Seconds(3.0_f64)),
+        Timeout::Seconds(3.0_f64)
+    );
+    let structured = StructuredTimeout {
+        connect: Some(1.0_f64),
+        read: Some(2.0_f64),
+        write: None,
+        pool: None,
+    };
+    assert_eq!(
+        sdk_timeout(&FineTuningTimeout::Structured(structured)),
+        Timeout::Phases(TimeoutPhases {
+            connect: Some(1.0_f64),
+            read: Some(2.0_f64),
+            write: None,
+            pool: None,
+        })
+    );
+}
+
+#[test]
+fn transport_failures_follow_the_status() {
+    let status = SdkError::Status {
+        status: 429,
+        error_type: None,
+        param: None,
+        code: None,
+        message: "slow down".to_owned(),
+    };
+    match openai_failure(BatchesError::Sdk { source: status }) {
+        DispatchFailure::Status { status, message } => {
+            assert_eq!(status, 429);
+            assert_eq!(message, "slow down");
+        }
+        other => panic!("expected a status, got {other}"),
+    }
+    match openai_failure(BatchesError::NotInitialized) {
+        DispatchFailure::Connection(_) => {}
+        other => panic!("expected a connection failure, got {other}"),
+    }
+    match xai_failure(XaiBatchesError::MissingApiKey) {
+        DispatchFailure::Status { status, .. } => assert_eq!(status, 401),
+        other => panic!("expected a status, got {other}"),
+    }
+    match xai_failure(XaiBatchesError::InputFileRequired) {
+        DispatchFailure::Status { status, .. } => assert_eq!(status, 400),
+        other => panic!("expected a status, got {other}"),
+    }
+}
+
+#[test]
+fn list_with_reports_a_core_timeout() {
+    let input: BatchProviderListInput = parse(r#"{"provider":"openai","timeout":"abc"}"#).unwrap();
+    let error = get_runtime()
+        .block_on(core().list_with(input, CallMode::Sync))
+        .unwrap_err();
+    let payload = payload_for(&error, "openai", None).unwrap();
+    assert_eq!(payload.error_type, "BadRequestError");
+    assert_eq!(payload.status_code, Some(400));
+}
+
+#[test]
+fn cancel_with_reports_a_core_timeout() {
+    let text =
+        r#"{"cancel":{"batch_id":"batch-1","provider":"openai","params":{"timeout":"abc"}}}"#;
+    let call = cancel_payload(text).unwrap();
+    let error = get_runtime()
+        .block_on(core().cancel_with(call, CallMode::Sync))
+        .unwrap_err();
+    let payload = payload_for(&error, "openai", None).unwrap();
+    assert_eq!(payload.error_type, "BadRequestError");
+    assert_eq!(payload.status_code, Some(400));
+}
