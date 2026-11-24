@@ -1,0 +1,199 @@
+kind: helper
+name: vector-store-access-store-grant-precedence
+call:
+  vector_store_access:
+    function: can_user_access_vector_store
+    vector_store: {vector_store_id: vs_a, team_id: team_a}
+    auth:
+      team_id: team_b
+      object_permission: {object_permission_id: p_key, vector_stores: [vs_a]}
+    database: true
+    object_permissions:
+      p_key: {object_permission_id: p_key, vector_stores: [vs_a]}
+      p_key_other: {object_permission_id: p_key_other, vector_stores: [vs_b]}
+      p_team: {object_permission_id: p_team, vector_stores: [vs_a]}
+      p_empty: {object_permission_id: p_empty, vector_stores: [""]}
+    teams: {}
+    user_teams: []
+calls:
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth:
+        team_id: team_b
+        object_permission: {object_permission_id: p_key, vector_stores: []}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b, object_permission: null, object_permission_id: p_key}
+      database: true
+      object_permissions:
+        p_key: {object_permission_id: p_key, vector_stores: [vs_a]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b, object_permission_id: p_key}
+      database: true
+      object_permissions:
+        p_key: {object_permission_id: p_key, vector_stores: [vs_a]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_b, team_id: team_b}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth:
+        team_id: team_a
+        object_permission: {object_permission_id: p_key, vector_stores: []}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth:
+        team_id: team_b
+        team_object_permission: {object_permission_id: p_team, vector_stores: [vs_a]}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth:
+        team_id: team_b
+        team_object_permission: {object_permission_id: p_team, vector_stores: []}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b, team_object_permission: null, team_object_permission_id: p_team}
+      database: true
+      object_permissions:
+        p_team: {object_permission_id: p_team, vector_stores: [vs_a]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_owned, team_id: team_c, user_id: u_owner}
+      auth: {team_id: team_b, user_id: u_owner}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_teamless}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_null_team, team_id: null}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_empty_team, team_id: ""}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_empty_team, team_id: ""}
+      auth: {team_id: ""}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {team_id: team_a}
+      auth:
+        team_id: team_b
+        object_permission: {object_permission_id: p_empty, vector_stores: [""]}
+      database: true
+      object_permissions:
+        p_empty: {object_permission_id: p_empty, vector_stores: [""]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: null, team_id: team_a}
+      auth:
+        team_id: team_b
+        object_permission: {object_permission_id: p_empty, vector_stores: [""]}
+      database: true
+      object_permissions:
+        p_empty: {object_permission_id: p_empty, vector_stores: [""]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b, object_permission_id: ""}
+      database: true
+      object_permissions:
+        p_key: {object_permission_id: p_key, vector_stores: [vs_a]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b, object_permission_id: p_key}
+      database: false
+      object_permissions:
+        p_key: {object_permission_id: p_key, vector_stores: [vs_a]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b, object_permission_id: p_missing}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_num_team, team_id: 5}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+env: {}
+compare: {ignore: []}

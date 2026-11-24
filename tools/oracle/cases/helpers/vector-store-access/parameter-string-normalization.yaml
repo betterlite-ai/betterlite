@@ -1,0 +1,88 @@
+kind: helper
+name: vector-store-access-parameter-string-normalization
+call:
+  vector_store_access:
+    function: parameter_string_normalization
+    vector_store:
+      vector_store_id: vs_absent
+      team_id: team_a
+calls:
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_null
+        litellm_params: null
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_object
+        litellm_params:
+          api_key: sk-test
+          api_base: https://example.test
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_object
+        litellm_params: '{"api_base": "https://example.test/v1", "flags": [true, null, 3]}'
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_list
+        litellm_params: "[]"
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_null
+        litellm_params: "null"
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_number
+        litellm_params: "1"
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_broken
+        litellm_params: "broken"
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_empty
+        litellm_params: ""
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_braces
+        litellm_params: "{}"
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_nested
+        litellm_params: '{"nested": {"a": 1, "b": [false]}}'
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_bool
+        litellm_params: true
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_single_quotes
+        litellm_params: "{'a': 1}"
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_spaces
+        litellm_params: "   "
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_quoted
+        litellm_params: '"text"'
+  - vector_store_access:
+      function: parameter_string_normalization
+      vector_store:
+        vector_store_id: vs_text_true
+        litellm_params: "true"
+env: {}
+compare: {ignore: []}

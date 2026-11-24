@@ -1,0 +1,115 @@
+kind: helper
+name: vector-store-access-teamless-access-is-not-listing
+call:
+  vector_store_access:
+    function: filter_listable_vector_stores
+    vector_stores:
+      - {vector_store_id: vs_c, team_id: team_c}
+      - {vector_store_id: vs_teamless}
+      - {vector_store_id: vs_a, team_id: team_a}
+    auth:
+      team_id: team_a
+      object_permission: {object_permission_id: p_key, vector_stores: [vs_c, vs_teamless]}
+    database: true
+    object_permissions:
+      p_key: {object_permission_id: p_key, vector_stores: [vs_c, vs_teamless]}
+    teams: {}
+    user_teams: []
+calls:
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_teamless}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_null_team, team_id: null}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_a}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_c, team_id: team_c}
+      auth: {team_id: team_a}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_empty_team, team_id: ""}
+      auth: {team_id: team_a}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_c, team_id: team_c}
+      auth:
+        team_id: team_a
+        object_permission: {object_permission_id: p_key, vector_stores: [vs_c]}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: filter_listable_vector_stores
+      vector_stores:
+        - {vector_store_id: vs_a, team_id: team_a}
+        - {vector_store_id: vs_empty_team, team_id: ""}
+      auth: {team_id: ""}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: filter_listable_vector_stores
+      vector_stores:
+        - {vector_store_id: vs_teamless}
+        - {vector_store_id: vs_null_team, team_id: null}
+        - {vector_store_id: vs_a, team_id: team_a}
+        - {vector_store_id: vs_c, team_id: team_c}
+        - {vector_store_id: vs_empty_team, team_id: ""}
+      auth: {user_role: proxy_admin}
+      database: false
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: filter_listable_vector_stores
+      vector_stores:
+        - {vector_store_id: vs_c, team_id: team_c}
+        - {vector_store_id: vs_teamless}
+        - {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_b}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: filter_listable_vector_stores
+      vector_stores:
+        - {vector_store_id: vs_c, team_id: team_c}
+        - {vector_store_id: vs_teamless}
+        - {vector_store_id: vs_a, team_id: team_a}
+      auth: {team_id: team_c, user_role: proxy_admin_viewer}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+env: {}
+compare: {ignore: []}
