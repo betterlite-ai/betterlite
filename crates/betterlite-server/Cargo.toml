@@ -38,6 +38,7 @@ betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-guardrails = { path = "../betterlite-guardrails" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-lens = { path = "../betterlite-lens" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-mcp = { path = "../betterlite-mcp" }
 betterlite-models = { path = "../betterlite-models" }
@@ -74,6 +75,7 @@ flate2 = "1.1.5"
 form_urlencoded = "1.2.2"
 futures-channel = { version = "0.3.34", features = ["sink"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await", "sink"] }
+garde = { version = "0.23.0", default-features = false, features = ["derive", "regex", "rust_decimal"] }
 getrandom = "0.4.3"
 hex.workspace = true
 hmac = "0.13.0"

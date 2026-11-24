@@ -41,5 +41,10 @@ rstest = "=0.27.0"
 tokio = { workspace = true, features = ["time"] }
 tracing-subscriber.workspace = true
 
+# the dynamic limiter's tests name their module after the hook, so nextest sees dynamic_limits::<test>
+[[test]]
+name = "dynamic_limits"
+path = "src/dynamic_limits/tests.rs"
+
 [lints]
 workspace = true
