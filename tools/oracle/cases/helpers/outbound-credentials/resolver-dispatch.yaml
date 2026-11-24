@@ -1,0 +1,236 @@
+kind: helper
+name: outbound-credentials-resolver-dispatch
+call:
+  b4667:
+    function: credential_resolver
+    server:
+      server_id: srv-1
+      name: Server One
+      transport: http
+      url: https://mcp.example.com/mcp
+    subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+    actions: [resolve, has_user_token]
+calls:
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://user:pass@mcp.example.com/mcp
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: api_key
+        authentication_token: shared-token
+      subject: {tenant_id: "", subject_id: "", inbound_token: null}
+      actions: [resolve, resolve_with_source]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: true_passthrough
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: "Bearer caller-token"}
+      actions: [resolve, resolve_with_source]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: true_passthrough
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      actions: [resolve, resolve_with_source]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      collaborators:
+        oauth_token_store: {kind: token, access_token: user-token}
+      actions: [resolve, resolve_with_source, has_user_token]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      collaborators:
+        oauth_token_store: {kind: unavailable}
+      actions: [resolve, has_user_token]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: client-1
+        client_secret: secret-1
+        token_url: https://idp.example.com/token
+      subject: {tenant_id: "", subject_id: "", inbound_token: null}
+      collaborators:
+        client_credentials: {access_token: minted, refetch: null}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_token_exchange
+        token_exchange_endpoint: https://idp.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_token_exchange
+        token_exchange_endpoint: https://idp.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: caller-token}
+      collaborators:
+        exchanger: {kind: token, access_token: exchanged-token}
+      actions: [resolve, resolve_with_source]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_token_exchange
+        token_exchange_endpoint: https://idp.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: caller-token}
+      collaborators:
+        exchanger: {kind: failure, tag: upstream_unavailable, detail: idp down}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      collaborators:
+        assertion_store: {kind: missing}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      collaborators:
+        assertion_store: {kind: unavailable}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: "", inbound_token: null}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+        audience: api://upstream
+        id_jag_resource: https://resource.example.com
+        scopes: [read, write]
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      collaborators:
+        assertion_store: {kind: stored, id_token: stored-id-token, expires_at_unix: 4102444800}
+        token_endpoint: [leg1-jag, leg2-bearer]
+      actions: [resolve, resolve_with_source]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: null}
+      collaborators:
+        assertion_store: {kind: stored, id_token: stale-id-token, expires_at_unix: 1}
+      actions: [resolve]
+  - b4667:
+      function: credential_resolver
+      server:
+        server_id: srv-1
+        name: ID JAG
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2_id_jag
+        token_exchange_endpoint: https://idp.example.com/org/token
+        id_jag_resource_token_endpoint: https://upstream.example.com/token
+        client_id: client-1
+        client_secret: secret-1
+      subject: {tenant_id: org-1, subject_id: user-1, inbound_token: inbound-id-token}
+      collaborators:
+        token_endpoint: [inbound-leg1, inbound-leg2]
+      actions: [resolve, resolve]
+env: {}
+compare: {ignore: []}
