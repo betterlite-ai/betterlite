@@ -213,6 +213,39 @@ fn model_info_lookup_falls_back_to_the_bare_entry_for_a_missing_flag() {
 }
 
 #[test]
+fn model_info_lookup_falls_back_to_the_bare_entry_for_parallel_tool_calls() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/o1-2024-12-17":{"litellm_provider":"openai","mode":"chat","max_tokens":100000},"o1-2024-12-17":{"litellm_provider":"openai","mode":"chat","max_tokens":100000,"supports_parallel_function_calling":true}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/o1-2024-12-17")))
+            .unwrap(),
+    ));
+    assert!(parameters.iter().any(|name| name == "parallel_tool_calls"));
+}
+
+#[test]
+fn model_info_lookup_falls_back_to_the_bare_entry_for_none_reasoning_effort() {
+    let runtime = runtime();
+    let entries: RuntimeEntries = convert::parse(
+        r#"{"entries":{"openai/gpt-5.1":{"litellm_provider":"openai","mode":"chat","max_tokens":4096},"gpt-5.1":{"litellm_provider":"openai","mode":"chat","max_tokens":4096,"supports_none_reasoning_effort":true}},"removed":[]}"#,
+    )
+    .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let parameters = parameter_names(&fields(
+        &get_runtime()
+            .block_on(model_info(&runtime, &query("openai/gpt-5.1")))
+            .unwrap(),
+    ));
+    assert!(parameters.iter().any(|name| name == "logprobs"));
+    assert!(parameters.iter().any(|name| name == "top_p"));
+}
+
+#[test]
 fn model_info_lookup_skips_a_prefixed_entry_for_another_provider() {
     let runtime = runtime();
     let entries: RuntimeEntries = convert::parse(
