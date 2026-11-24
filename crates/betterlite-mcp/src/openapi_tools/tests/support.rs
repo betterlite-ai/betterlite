@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::openapi_tools::document::{OpenApiDocument, Operation};
@@ -26,7 +26,7 @@ pub fn arguments(json: &str) -> Object {
     serde_json::from_str(json).unwrap()
 }
 
-pub fn json(text: &str) -> betterlite_prompts::arguments::json::Json {
+pub fn json(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
@@ -100,10 +100,10 @@ impl FakeTransport {
 }
 
 impl OpenApiTransport for FakeTransport {
-    fn send<'a>(
-        &'a self,
+    fn send<'call>(
+        &'call self,
         request: OpenApiRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'a>>
+    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'call>>
     {
         self.requests
             .lock()

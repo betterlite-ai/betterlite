@@ -4,11 +4,13 @@ use std::future::Future;
 use betterlite_prompts::arguments::json::Json;
 use http::Method;
 use rstest::rstest;
+use tokio::runtime::Builder;
 
 use crate::credential_contracts::errors::CredError;
 use crate::credentials::McpAuthType;
+use crate::openapi_tools::output::OpenApiToolOutput;
 use crate::openapi_tools::request_headers::OpenApiCallContext;
-use crate::openapi_tools::tool::{OpenApiTool, OpenApiToolError, OpenApiToolOutput};
+use crate::openapi_tools::tool::{OpenApiTool, OpenApiToolError};
 use crate::openapi_tools::transport::OpenApiRequest;
 
 use super::support::{BASE, FakeTransport, arguments, config, context, json, tool};
@@ -30,8 +32,11 @@ fn body_json(request: &OpenApiRequest) -> Json {
     serde_json::from_slice(request.body.as_deref().unwrap()).unwrap()
 }
 
-fn block_on<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()

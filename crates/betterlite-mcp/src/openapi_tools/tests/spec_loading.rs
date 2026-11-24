@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::sync::Arc;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -89,7 +90,7 @@ async fn invalid_local_json_is_a_json_error() {
 
 #[tokio::test]
 async fn fetches_an_http_spec() {
-    let body = std::fs::read_to_string(corpus("petstore.json")).unwrap();
+    let body = fs::read_to_string(corpus("petstore.json")).unwrap();
     let server = TestServer::start(move |_| ok_json(&body)).await;
     let client = client(TransportLimits::DEFAULT);
     let document = load_openapi_spec_async(&fetcher(), &client, &server.url("/spec"), None)

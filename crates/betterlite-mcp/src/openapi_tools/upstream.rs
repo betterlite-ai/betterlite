@@ -33,10 +33,10 @@ pub fn classify(
 pub fn header_text(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     for value in headers.get_all(name) {
-        let text = match str::from_utf8(value.as_bytes()) {
-            Ok(text) => text.to_owned(),
-            Err(_) => value.as_bytes().iter().copied().map(char::from).collect(),
-        };
+        let text = str::from_utf8(value.as_bytes()).map_or_else(
+            |_| value.as_bytes().iter().copied().map(char::from).collect(),
+            str::to_owned,
+        );
         parts.push(text);
     }
     if parts.is_empty() {

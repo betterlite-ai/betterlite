@@ -208,10 +208,10 @@ impl PlannedTransport {
 }
 
 impl OpenApiTransport for PlannedTransport {
-    fn send<'a>(
-        &'a self,
+    fn send<'call>(
+        &'call self,
         request: OpenApiRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'a>>
+    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'call>>
     {
         Box::pin(async move {
             if let Ok(mut requests) = self.requests.lock() {

@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Router;
@@ -27,7 +28,7 @@ struct ServerState {
 }
 
 pub struct TestServer {
-    address: std::net::SocketAddr,
+    address: SocketAddr,
     requests: Arc<Mutex<Vec<Recorded>>>,
     _tasks: JoinSet<()>,
 }

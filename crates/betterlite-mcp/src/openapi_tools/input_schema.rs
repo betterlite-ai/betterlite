@@ -27,15 +27,15 @@ pub fn build_input_schema(operation: &Operation) -> Object {
             required.push(Json::Text(name.to_owned()));
         }
     }
-    if let Some(request_body) = &operation.request_body {
-        if let Some(media) = request_body.content.get(JSON_CONTENT) {
-            properties.insert(
-                "body".to_owned(),
-                body_property(request_body, media.schema.as_ref()),
-            );
-            if request_body.required == Some(true) {
-                required.push(Json::Text("body".to_owned()));
-            }
+    if let Some(request_body) = &operation.request_body
+        && let Some(media) = request_body.content.get(JSON_CONTENT)
+    {
+        properties.insert(
+            "body".to_owned(),
+            body_property(request_body, media.schema.as_ref()),
+        );
+        if request_body.required == Some(true) {
+            required.push(Json::Text("body".to_owned()));
         }
     }
     let mut schema = Object::new();

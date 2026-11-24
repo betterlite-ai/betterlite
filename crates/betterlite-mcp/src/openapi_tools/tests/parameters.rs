@@ -1,6 +1,6 @@
 use rstest::rstest;
 
-use crate::openapi_tools::document::{Components, PathItem};
+use crate::openapi_tools::document::{Components, Parameter, PathItem};
 use crate::openapi_tools::parameters::{
     ExtractedParameters, extract_parameters, resolve_operation_params,
 };
@@ -15,9 +15,7 @@ fn path_item(json: &str) -> PathItem {
     serde_json::from_str(json).unwrap()
 }
 
-fn names(
-    parameters: &[crate::openapi_tools::document::Parameter],
-) -> Vec<(String, Option<String>)> {
+fn names(parameters: &[Parameter]) -> Vec<(String, Option<String>)> {
     parameters
         .iter()
         .map(|param| {
@@ -159,7 +157,7 @@ fn an_operation_without_parameters_gets_an_empty_list() {
 }
 
 #[rstest]
-#[case::empty(r#"{}"#, ExtractedParameters::default())]
+#[case::empty("{}", ExtractedParameters::default())]
 #[case::all_three(
     r#"{"parameters":[{"name":"id","in":"path"},{"name":"q","in":"query"},{"name":"payload","in":"body"}]}"#,
     ExtractedParameters {

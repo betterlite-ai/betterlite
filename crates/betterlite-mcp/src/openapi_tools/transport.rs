@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,7 +13,8 @@ use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_http::user_url::redirect::{location, redirect_headers, redirect_url};
 use http::Method;
 use http::header::{
-    CONTENT_LENGTH, HeaderMap, HeaderName, HeaderValue, TRANSFER_ENCODING, ToStrError,
+    CONTENT_LENGTH, HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue,
+    TRANSFER_ENCODING, ToStrError,
 };
 use thiserror::Error;
 use url::Url;
@@ -44,13 +46,13 @@ pub enum OpenApiTransportError {
     HeaderName {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderName,
+        source: InvalidHeaderName,
     },
     #[error("the {name} header holds a character a header cannot carry")]
     HeaderValue {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the {name} header cannot be read as text")]
     HeaderText {
@@ -62,21 +64,21 @@ pub enum OpenApiTransportError {
     Send(#[from] TransportError),
 }
 
-pub trait OpenApiTransport {
-    fn send<'a>(
-        &'a self,
+pub trait OpenApiTransport: Send + Sync {
+    fn send<'call>(
+        &'call self,
         request: OpenApiRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'call>>;
 }
 
 // the pooled client never follows redirects itself, so a tool call hands it this transport instead
 pub struct ProxiedTransport(pub Arc<ProxiedClient>);
 
 impl OpenApiTransport for ProxiedTransport {
-    fn send<'a>(
-        &'a self,
+    fn send<'call>(
+        &'call self,
         request: OpenApiRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'a>>
+    ) -> Pin<Box<dyn Future<Output = Result<UpstreamResponse, OpenApiTransportError>> + Send + 'call>>
     {
         Box::pin(follow(&self.0, request))
     }
@@ -100,12 +102,12 @@ impl Hop {
         Ok(OutboundRequest {
             method: self.method.clone(),
             url: hop_url(&self.current)?,
-            query: std::mem::take(&mut self.query),
+            query: mem::take(&mut self.query),
             headers: sent.clone(),
-            body: match &self.body {
-                Some(bytes) => RequestBody::Json(bytes.clone()),
-                None => RequestBody::Empty,
-            },
+            body: self.body.as_ref().map_or_else(
+                || RequestBody::Empty,
+                |bytes| RequestBody::Json(bytes.clone()),
+            ),
             deadline,
         })
     }

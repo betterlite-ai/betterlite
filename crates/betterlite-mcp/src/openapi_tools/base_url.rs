@@ -50,8 +50,8 @@ fn relative_server_url(server_url: &str, spec_path: Option<&str>) -> String {
 
 fn swagger_base(host: &str, schemes: &[String], base_path: Option<&str>) -> String {
     let scheme = schemes.first().map_or("https", String::as_str);
-    let base_path = base_path.unwrap_or_default();
-    format!("{scheme}://{host}{base_path}")
+    let path = base_path.unwrap_or_default();
+    format!("{scheme}://{host}{path}")
 }
 
 fn derived_base(spec_path: &str) -> String {

@@ -1,6 +1,7 @@
 use betterlite_prompts::arguments::json::Json;
 
-use crate::openapi_tools::tool::{OpenApiTool, OpenApiToolError, OpenApiToolOutput};
+use crate::openapi_tools::output::OpenApiToolOutput;
+use crate::openapi_tools::tool::{OpenApiTool, OpenApiToolError};
 
 use super::support::{FakeTransport, arguments, config, context, json, tool};
 

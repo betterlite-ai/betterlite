@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::string::FromUtf8Error;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use http::Method;
@@ -66,7 +67,7 @@ pub enum OpenApiToolError {
     #[error("the upstream response body is not UTF-8")]
     BodyText {
         #[source]
-        source: std::string::FromUtf8Error,
+        source: FromUtf8Error,
     },
 }
 
@@ -179,20 +180,16 @@ impl OpenApiTool {
         if self.params.body.is_empty() {
             return Ok(None);
         }
-        let mut value = match arguments.get("body") {
-            Some(argument) => argument.clone(),
-            None => Json::Object(Object::new()),
-        };
-        if !value.is_truthy() {
-            for name in &self.params.body {
-                value = match arguments.get(name) {
-                    Some(argument) => argument.clone(),
-                    None => Json::Object(Object::new()),
-                };
-                if value.is_truthy() {
-                    break;
-                }
+        let mut value = arguments
+            .get("body")
+            .map_or_else(|| Json::Object(Object::new()), Clone::clone);
+        for name in &self.params.body {
+            if value.is_truthy() {
+                break;
             }
+            value = arguments
+                .get(name)
+                .map_or_else(|| Json::Object(Object::new()), Clone::clone);
         }
         let Some(payload) = body_payload(value) else {
             return Ok(None);
@@ -234,7 +231,10 @@ fn body_payload(value: Json) -> Option<Json> {
     }
     match value {
         Json::Text(text) => parsed_body(&text),
-        other => Some(data_wrapped(other)),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Some(data_wrapped(other))
+        }
     }
 }
 
