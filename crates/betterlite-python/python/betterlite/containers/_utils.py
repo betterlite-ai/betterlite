@@ -37,7 +37,10 @@ class ContainerConfig(Protocol):
     def get_supported_openai_params(self) -> list[str]: ...
 
     def map_openai_params(
-        self, params: Mapping[str, JsonValue], *, drop_params: bool,
+        self,
+        container_create_optional_params: dict[str, JsonValue],  # ast-grep-ignore: no-long-names
+        *,
+        drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
 

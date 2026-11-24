@@ -6,7 +6,7 @@ import threading
 from collections.abc import Coroutine, Mapping
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, Protocol
+from typing import ClassVar, Final, Protocol, TypeAlias
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -15,6 +15,7 @@ from typing_extensions import TypedDict
 
 from betterlite import containers as container_package
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._endpoints import CallValue
 from betterlite._router_types_params import GenericLiteLLMParams
 from betterlite.containers import _utils
 from betterlite.containers._factory import (
@@ -100,6 +101,7 @@ NOT_FOUND_BODY: Final[dict[str, JsonValue]] = {
 }
 
 DUMP: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+Answer: TypeAlias = ContainerFileObject | ContainerFileListResponse | DeleteContainerFileResponse
 
 
 class DefaultView(Protocol):
@@ -107,71 +109,55 @@ class DefaultView(Protocol):
     def default(self) -> JsonValue: ...
 
 
-class FileListCall(Protocol):
-    def __call__(self, **kwargs: object) -> ContainerFileListResponse: ...
+class AnswerCall(Protocol):
+    def __call__(self, **kwargs: CallValue) -> Answer: ...
 
 
-class AsyncFileListCall(Protocol):
+class AsyncAnswerCall(Protocol):
     def __call__(
-        self, **kwargs: object
-    ) -> Coroutine[JsonValue, JsonValue, ContainerFileListResponse]: ...
-
-
-class FileCall(Protocol):
-    def __call__(self, **kwargs: object) -> ContainerFileObject: ...
-
-
-class AsyncFileCall(Protocol):
-    def __call__(
-        self, **kwargs: object
-    ) -> Coroutine[JsonValue, JsonValue, ContainerFileObject]: ...
-
-
-class DeleteFileCall(Protocol):
-    def __call__(self, **kwargs: object) -> DeleteContainerFileResponse: ...
-
-
-class AsyncDeleteFileCall(Protocol):
-    def __call__(
-        self, **kwargs: object
-    ) -> Coroutine[JsonValue, JsonValue, DeleteContainerFileResponse]: ...
+        self, **kwargs: CallValue
+    ) -> Coroutine[JsonValue, JsonValue, Answer]: ...
 
 
 class ContentCall(Protocol):
-    def __call__(self, **kwargs: object) -> bytes: ...
+    def __call__(self, **kwargs: CallValue) -> bytes: ...
 
 
 class AsyncContentCall(Protocol):
     def __call__(
-        self, **kwargs: object
+        self, **kwargs: CallValue
     ) -> Coroutine[JsonValue, JsonValue, bytes]: ...
 
 
-class FilesReference(Protocol):
-    list_container_files: FileListCall
-    alist_container_files: AsyncFileListCall
-    upload_container_file: FileCall
-    aupload_container_file: AsyncFileCall
+# LiteLLM's modules carry no stubs, so a reference answers any name as its module's call
+class AnswerCallers(Protocol):
+    def __getattr__(self, name: str) -> AnswerCall: ...
 
 
-class FactoryReference(Protocol):
-    retrieve_container_file: FileCall
-    aretrieve_container_file: AsyncFileCall
-    delete_container_file: DeleteFileCall
-    adelete_container_file: AsyncDeleteFileCall
-    retrieve_container_file_content: ContentCall  # ast-grep-ignore: no-long-names
-    aretrieve_container_file_content: AsyncContentCall  # ast-grep-ignore: no-long-names
+class AsyncAnswerCallers(Protocol):
+    def __getattr__(self, name: str) -> AsyncAnswerCall: ...
 
 
-class PackageReference(Protocol):
-    __all__: list[str]
+class ContentCallers(Protocol):
+    def __getattr__(self, name: str) -> ContentCall: ...
+
+
+class AsyncContentCallers(Protocol):
+    def __getattr__(self, name: str) -> AsyncContentCall: ...
+
+
+class NameListCallers(Protocol):
+    def __getattr__(self, name: str) -> list[str]: ...
 
 
 class ContainerConfig(Protocol):
     def get_supported_openai_params(self) -> list[str]: ...
 
     def map_openai_params(
-        self, params: dict[str, JsonValue], *, drop_params: bool,
+        self,
+        container_create_optional_params: dict[str, JsonValue],  # ast-grep-ignore: no-long-names
+        *,
+        drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
 
@@ -200,19 +186,36 @@ class RequestUtilsReference(Protocol):
     ) -> ContainerFileObject: ...
 
 
-class UtilsReference(Protocol):
-    ContainerRequestUtils: type[RequestUtilsReference]
+class UtilsCallers(Protocol):
+    def __getattr__(self, name: str) -> type[RequestUtilsReference]: ...
 
-    def decode_managed_container_id_for_request(  # ast-grep-ignore: no-long-names
+
+class DecodeCall(Protocol):
+    def __call__(
         self, container_id: str, custom_llm_provider: str,
         litellm_params: GenericLiteLLMParams,
     ) -> tuple[str, str, GenericLiteLLMParams]: ...
 
 
-FILES_REF: FilesReference = importlib.import_module("litellm.containers.main")
-FACTORY_REF: FactoryReference = importlib.import_module("litellm.containers.endpoint_factory")
-PACKAGE_REF: PackageReference = importlib.import_module("litellm.containers")
-UTILS_REF: UtilsReference = importlib.import_module("litellm.containers.utils")
+class DecodeCallers(Protocol):
+    def __getattr__(self, name: str) -> DecodeCall: ...
+
+
+FILES_REF: AnswerCallers = importlib.import_module("litellm.containers.main")
+FILES_ASYNC_REF: AsyncAnswerCallers = importlib.import_module("litellm.containers.main")
+FACTORY_REF: AnswerCallers = importlib.import_module("litellm.containers.endpoint_factory")
+FACTORY_ASYNC_REF: AsyncAnswerCallers = importlib.import_module(
+    "litellm.containers.endpoint_factory"
+)
+FACTORY_CONTENT_REF: ContentCallers = importlib.import_module(
+    "litellm.containers.endpoint_factory"
+)
+FACTORY_ASYNC_CONTENT_REF: AsyncContentCallers = importlib.import_module(
+    "litellm.containers.endpoint_factory"
+)
+PACKAGE_REF: NameListCallers = importlib.import_module("litellm.containers")
+UTILS_REF: UtilsCallers = importlib.import_module("litellm.containers.utils")
+DECODE_REF: DecodeCallers = importlib.import_module("litellm.containers.utils")
 
 
 class FakeContainerConfig:
@@ -320,9 +323,7 @@ def rows_of(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     return rows
 
 
-def dumped_of(
-    answer: ContainerFileObject | ContainerFileListResponse | DeleteContainerFileResponse,
-) -> dict[str, JsonValue]:
+def dumped_of(answer: Answer) -> dict[str, JsonValue]:
     encoded = answer.model_dump_json()
     return DUMP.validate_json(encoded)
 
@@ -352,7 +353,7 @@ def test_signature_matches_litellm() -> None:
     )
     assert not inspect.iscoroutinefunction(container_package.list_container_files)
     assert rows_of(inspect.signature(container_package.alist_container_files)) == rows_of(
-        inspect.signature(FILES_REF.alist_container_files)
+        inspect.signature(FILES_ASYNC_REF.alist_container_files)
     )
     assert inspect.iscoroutinefunction(container_package.alist_container_files)
     assert rows_of(inspect.signature(container_package.upload_container_file)) == rows_of(
@@ -360,7 +361,7 @@ def test_signature_matches_litellm() -> None:
     )
     assert not inspect.iscoroutinefunction(container_package.upload_container_file)
     assert rows_of(inspect.signature(container_package.aupload_container_file)) == rows_of(
-        inspect.signature(FILES_REF.aupload_container_file)
+        inspect.signature(FILES_ASYNC_REF.aupload_container_file)
     )
     assert inspect.iscoroutinefunction(container_package.aupload_container_file)
     assert rows_of(inspect.signature(container_package.retrieve_container_file)) == rows_of(
@@ -368,7 +369,7 @@ def test_signature_matches_litellm() -> None:
     )
     assert not inspect.iscoroutinefunction(container_package.retrieve_container_file)
     assert rows_of(inspect.signature(container_package.aretrieve_container_file)) == rows_of(
-        inspect.signature(FACTORY_REF.aretrieve_container_file)
+        inspect.signature(FACTORY_ASYNC_REF.aretrieve_container_file)
     )
     assert inspect.iscoroutinefunction(container_package.aretrieve_container_file)
     assert rows_of(inspect.signature(container_package.delete_container_file)) == rows_of(
@@ -376,16 +377,16 @@ def test_signature_matches_litellm() -> None:
     )
     assert not inspect.iscoroutinefunction(container_package.delete_container_file)
     assert rows_of(inspect.signature(container_package.adelete_container_file)) == rows_of(
-        inspect.signature(FACTORY_REF.adelete_container_file)
+        inspect.signature(FACTORY_ASYNC_REF.adelete_container_file)
     )
     assert inspect.iscoroutinefunction(container_package.adelete_container_file)
     assert rows_of(inspect.signature(container_package.retrieve_container_file_content)) == rows_of(
-        inspect.signature(FACTORY_REF.retrieve_container_file_content)
+        inspect.signature(FACTORY_CONTENT_REF.retrieve_container_file_content)
     )
     assert not inspect.iscoroutinefunction(container_package.retrieve_container_file_content)
     assert rows_of(
         inspect.signature(container_package.aretrieve_container_file_content)
-    ) == rows_of(inspect.signature(FACTORY_REF.aretrieve_container_file_content))
+    ) == rows_of(inspect.signature(FACTORY_ASYNC_CONTENT_REF.aretrieve_container_file_content))
     assert inspect.iscoroutinefunction(container_package.aretrieve_container_file_content)
 
 
@@ -405,7 +406,7 @@ def test_calls_list_files() -> None:
             container_id=CONTAINER_ID, after=AFTER, limit=LIMIT, order=ORDER,
             api_base=base, api_key=GOOD_KEY,
         )
-        async_reference = asyncio.run(FILES_REF.alist_container_files(
+        async_reference = asyncio.run(FILES_ASYNC_REF.alist_container_files(
             container_id=CONTAINER_ID, after=AFTER, limit=LIMIT, order=ORDER,
             api_base=base, api_key=GOOD_KEY,
         ))
@@ -485,7 +486,7 @@ def test_calls_retrieve_and_delete() -> None:
 def test_calls_content_bytes() -> None:
     with closing(FileServer()) as server:
         base = f"{server.url}{API_BASE_PATH}"
-        reference = FACTORY_REF.retrieve_container_file_content(
+        reference = FACTORY_CONTENT_REF.retrieve_container_file_content(
             container_id=CONTAINER_ID, file_id=FILE_ID, api_base=base, api_key=GOOD_KEY,
         )
         ours = retrieve_container_file_content(
@@ -576,7 +577,7 @@ def test_calls_utils_codec() -> None:
         ours_decoded = _utils.decode_managed_container_id_for_request(
             container_id, "openai", ours_params
         )
-        reference_decoded = UTILS_REF.decode_managed_container_id_for_request(
+        reference_decoded = DECODE_REF.decode_managed_container_id_for_request(
             container_id=container_id, custom_llm_provider="openai",
             litellm_params=reference_params,
         )
