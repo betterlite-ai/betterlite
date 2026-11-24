@@ -575,6 +575,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "scoped_report_query"
+path = "fuzz_targets/scoped_report_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "shadow_q"
 path = "fuzz_targets/shadow_q.rs"
 test = false
