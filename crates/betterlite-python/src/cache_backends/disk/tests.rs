@@ -9,6 +9,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use tempfile::TempDir;
 
 use super::*;
+use crate::cache_backends::convert;
 
 fn native_disk(directory: &TempDir) -> NativeDisk {
     Python::initialize();
