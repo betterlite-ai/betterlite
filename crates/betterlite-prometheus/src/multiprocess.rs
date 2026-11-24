@@ -49,12 +49,3 @@ pub enum MultiprocessError {
     #[error("the bucket bound {bound} is not a float")]
     InvalidBucketBound { bound: String },
 }
-
-// two failures are the same when they read the same; the scrape seam only shows their text
-impl PartialEq for MultiprocessError {
-    fn eq(&self, other: &Self) -> bool {
-        let left = self.to_string();
-        let right = other.to_string();
-        left == right
-    }
-}

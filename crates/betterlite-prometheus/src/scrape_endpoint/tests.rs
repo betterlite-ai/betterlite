@@ -666,14 +666,14 @@ async fn coalesced_stopped_render_fails_every_waiter() {
     )));
     let scrape = request("", "", &[]);
     install_stopped(&renderer, scrape.clone());
-    assert_eq!(
+    assert!(matches!(
         renderer.render(scrape.clone()).await,
         Err(ScrapeRenderError::RenderTaskStopped)
-    );
-    assert_eq!(
+    ));
+    assert!(matches!(
         renderer.render(scrape).await,
         Err(ScrapeRenderError::RenderTaskStopped)
-    );
+    ));
 }
 
 // app

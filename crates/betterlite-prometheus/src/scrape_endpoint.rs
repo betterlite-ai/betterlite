@@ -118,12 +118,12 @@ impl ScrapeSource {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum ScrapeRenderError {
     #[error("the scrape render task stopped before it sent a body")]
     RenderTaskStopped,
-    #[error("the multiprocess collector failed: {0}")]
-    Multiprocess(Arc<MultiprocessError>),
+    #[error("the multiprocess collector failed")]
+    Multiprocess(#[source] Arc<MultiprocessError>),
 }
 
 // choose_encoder and gzip_accepted: the media type is compared before its parameters and case-sensitively, the encoding lowercased

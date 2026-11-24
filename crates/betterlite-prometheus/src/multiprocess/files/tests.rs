@@ -93,7 +93,7 @@ fn reads_a_key_that_ends_at_the_used_length() {
 #[test]
 fn fails_on_a_file_shorter_than_the_header() {
     let error = decode_db_file(&[0_u8, 0, 0]).unwrap_err();
-    assert_eq!(error, MultiprocessError::Truncated { offset: 0 });
+    assert!(matches!(error, MultiprocessError::Truncated { offset: 0 }));
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn fails_on_a_length_field_that_is_cut() {
     let mut bytes = vec![12_u8, 0, 0, 0, 0, 0, 0, 0];
     bytes.extend_from_slice(&[0_u8, 0]);
     let error = decode_db_file(&bytes).unwrap_err();
-    assert_eq!(error, MultiprocessError::Truncated { offset: 8 });
+    assert!(matches!(error, MultiprocessError::Truncated { offset: 8 }));
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn fails_on_a_negative_key_length() {
     let mut bytes = vec![12_u8, 0, 0, 0, 0, 0, 0, 0];
     bytes.extend_from_slice(&(-1_i32).to_le_bytes());
     let error = decode_db_file(&bytes).unwrap_err();
-    assert_eq!(error, MultiprocessError::Corrupted);
+    assert!(matches!(error, MultiprocessError::Corrupted));
     assert_eq!(
         error.to_string(),
         "Read beyond file size detected, file is corrupted."
@@ -122,7 +122,7 @@ fn fails_on_a_key_that_ends_past_used() {
     bytes.extend_from_slice(&10_i32.to_le_bytes());
     bytes.extend_from_slice(b"short");
     let error = decode_db_file(&bytes).unwrap_err();
-    assert_eq!(error, MultiprocessError::Corrupted);
+    assert!(matches!(error, MultiprocessError::Corrupted));
     assert_eq!(
         error.to_string(),
         "Read beyond file size detected, file is corrupted."
@@ -138,7 +138,10 @@ fn fails_on_a_key_that_is_not_utf8() {
     bytes.extend_from_slice(&1.0_f64.to_le_bytes());
     bytes.extend_from_slice(&0.0_f64.to_le_bytes());
     let error = decode_db_file(&bytes).unwrap_err();
-    assert_eq!(error, MultiprocessError::NonUtf8Key { offset: 12 });
+    assert!(matches!(
+        error,
+        MultiprocessError::NonUtf8Key { offset: 12 }
+    ));
     assert_eq!(error.to_string(), "the key at offset 12 is not UTF-8");
 }
 
@@ -151,7 +154,7 @@ fn fails_when_the_used_length_runs_past_the_bytes() {
     bytes.extend_from_slice(&1.0_f64.to_le_bytes());
     bytes.extend_from_slice(&0.0_f64.to_le_bytes());
     let error = decode_db_file(&bytes).unwrap_err();
-    assert_eq!(error, MultiprocessError::Truncated { offset: 32 });
+    assert!(matches!(error, MultiprocessError::Truncated { offset: 32 }));
 }
 
 #[rstest]
@@ -170,16 +173,19 @@ fn replays_the_db_file_decode_corpus(#[files("fuzz/corpus/db_file_decode/*")] pa
     }
     let error = decode_db_file(&bytes).unwrap_err();
     if name == "empty" {
-        assert_eq!(error, MultiprocessError::Truncated { offset: 0 });
+        assert!(matches!(error, MultiprocessError::Truncated { offset: 0 }));
         return;
     }
     if name == "key-past-used" {
-        assert_eq!(error, MultiprocessError::Corrupted);
+        assert!(matches!(error, MultiprocessError::Corrupted));
         return;
     }
     if name == "non-utf8-key" {
-        assert_eq!(error, MultiprocessError::NonUtf8Key { offset: 12 });
+        assert!(matches!(
+            error,
+            MultiprocessError::NonUtf8Key { offset: 12 }
+        ));
         return;
     }
-    assert_eq!(error, MultiprocessError::Truncated { offset: 32 });
+    assert!(matches!(error, MultiprocessError::Truncated { offset: 32 }));
 }

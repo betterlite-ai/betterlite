@@ -9,6 +9,7 @@ use tempfile::TempDir;
 use crate::multiprocess::MultiprocessError;
 use crate::multiprocess::collector::{MultiProcessCollector, mark_process_dead};
 use crate::multiprocess::files::{DbEntry, encode_db_file};
+use crate::scrape_endpoint::MetricSample;
 
 fn key(metric: &str, sample: &str) -> String {
     let labels: BTreeMap<&str, &str> = BTreeMap::new();
@@ -40,7 +41,7 @@ fn write_live_files(dir: &Path, pid: u32) {
 #[test]
 fn refuses_an_empty_path() {
     let error = MultiProcessCollector::new(Path::new("")).unwrap_err();
-    assert_eq!(error, MultiprocessError::MissingDirectory);
+    assert!(matches!(error, MultiprocessError::MissingDirectory));
     assert_eq!(
         error.to_string(),
         "env PROMETHEUS_MULTIPROC_DIR is not set or not a directory"
@@ -52,19 +53,7 @@ fn refuses_a_file() {
     let dir = TempDir::new().unwrap();
     let path = write_file(dir.path(), "not_a_folder", &[]);
     let error = MultiProcessCollector::new(&path).unwrap_err();
-    assert_eq!(error, MultiprocessError::MissingDirectory);
-}
-
-#[test]
-fn compares_errors_by_their_message() {
-    let first = MultiprocessError::InvalidType {
-        kind: "info".to_owned(),
-    };
-    let second = MultiprocessError::InvalidType {
-        kind: "info".to_owned(),
-    };
-    assert_eq!(first, second);
-    assert_ne!(first, MultiprocessError::Corrupted);
+    assert!(matches!(error, MultiprocessError::MissingDirectory));
 }
 
 #[test]
@@ -84,8 +73,14 @@ fn reads_every_db_file() {
     let families = collector.collect().unwrap();
     assert_eq!(families.len(), 1);
     let family = families.first().unwrap();
-    assert_eq!(family.samples.len(), 1);
-    assert_eq!(family.samples.first().unwrap().name, "requests_total");
+    assert_eq!(
+        family.samples,
+        vec![MetricSample {
+            name: "requests_total".to_owned(),
+            labels: Vec::new(),
+            value: 7.0,
+        }]
+    );
 }
 
 #[test]
