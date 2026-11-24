@@ -1,0 +1,54 @@
+kind: helper
+name: prometheus-scrape-accept-negotiation
+call:
+  b10090:
+    metrics:
+      - {kind: gauge, name: workers, help: workers, labels: [], buckets: []}
+    updates:
+      - {metric: 0, labels: [], action: set, value: 4}
+    accept: Application/OpenMetrics-Text
+    accept_encoding: ""
+    names: []
+calls:
+  - b10090:
+      metrics:
+        - {kind: gauge, name: workers, help: workers, labels: [], buckets: []}
+      updates:
+        - {metric: 0, labels: [], action: set, value: 4}
+      accept: application/openmetrics-text;q=0
+      accept_encoding: ""
+      names: []
+  - b10090:
+      metrics:
+        - {kind: gauge, name: workers, help: workers, labels: [], buckets: []}
+      updates:
+        - {metric: 0, labels: [], action: set, value: 4}
+      accept: text/plain;q=1, application/openmetrics-text;q=0.1
+      accept_encoding: ""
+      names: []
+  - b10090:
+      metrics:
+        - {kind: gauge, name: workers, help: workers, labels: [], buckets: []}
+      updates:
+        - {metric: 0, labels: [], action: set, value: 4}
+      accept: ""
+      accept_encoding: GZip
+      names: []
+  - b10090:
+      metrics:
+        - {kind: gauge, name: workers, help: workers, labels: [], buckets: []}
+      updates:
+        - {metric: 0, labels: [], action: set, value: 4}
+      accept: ""
+      accept_encoding: gzip;q=0
+      names: []
+  - b10090:
+      metrics:
+        - {kind: gauge, name: workers, help: workers, labels: [], buckets: []}
+      updates:
+        - {metric: 0, labels: [], action: set, value: 4}
+      accept: ""
+      accept_encoding: br
+      names: []
+env: {}
+compare: {ignore: []}

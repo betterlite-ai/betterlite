@@ -1,0 +1,24 @@
+task: B8062
+deviations:
+  - what: get_llm_provider for github_copilot and chatgpt does not start LiteLLM's OAuth device flow.
+    why: The device flows belong to the github_copilot and chatgpt provider tasks; until one registers a hook, the call returns the declared provider and the resolver's key with no prompt.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L802-L808
+  - what: litellm_params reaches _get_openai_compatible_provider_info only as a debug log line; the bedrock_mantle endpoint comes from the Rust tables.
+    why: B2207 and B174 own the Mantle endpoint policy, and LiteLLM reads litellm_params there only to build that endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L636-L645
+  - what: A model without a "/" passed to _get_openai_compatible_provider_info raises BadRequestError instead of LiteLLM's IndexError.
+    why: An IndexError is a 500-shaped bug no working setup can rely on; the call is a bad request and the message names the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L593-L594
+  - what: The litellm_proxy branch of get_llm_provider (should_use_litellm_proxy_by_default) is not taken.
+    why: That branch belongs to the litellm_proxy provider task, as the task's out_of_scope says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L179-L184
+  - what: provider_list, openai_compatible_providers and openai_compatible_endpoints are Rust tables, so a later reassignment of one of those module lists does not reach a lookup.
+    why: B174, B210 and B211 own those tables; only custom_provider_map and model_list_set are read from Python at call time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L231-L235
+  - what: This task has no oracle helper cases.
+    why: The pytest file compares both packages in one process, and B174, B209, B210 and B211 own the oracle cases for the resolver.
+    link: ""
+kept_bugs:
+  - what: azure/command-r-plus returns ("command-r-plus", "azure", None, None); the azure branch comment says such a model should go to cohere_chat, but command-r-plus is not in LiteLLM's cohere_chat_models so the branch never fires.
+    why: A working setup reads the tuple LiteLLM returns, so the pytest compares this case against LiteLLM instead of correcting it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L194-L200
