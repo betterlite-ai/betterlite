@@ -88,7 +88,7 @@ fn teams_answer(
 ) -> Result<Value, CallFailed> {
     let found = user_of(user)?;
     let fake = ScriptTeams {
-        rows: rows.map(|scripted| scripted.to_vec()).unwrap_or_default(),
+        rows: rows.unwrap_or_default().to_vec(),
         fails,
         trace: Mutex::new(Vec::new()),
     };
