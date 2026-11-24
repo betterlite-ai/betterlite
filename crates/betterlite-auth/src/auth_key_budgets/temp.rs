@@ -28,11 +28,20 @@ pub fn get_temp_budget_increase(
     let JsonData::String(expiry_text) = expiry else {
         return Err(TempBudgetError::ExpiryInvalid);
     };
-    if parse_temp_budget_expiry(expiry_text)? > now {
-        let increase = Money::from_json(increase).ok_or(TempBudgetError::IncreaseInvalid)?;
-        return Ok(Some(increase));
+    if parse_temp_budget_expiry(expiry_text)? <= now {
+        return Ok(None);
     }
-    Ok(None)
+    // the metadata value is not a declared field: only a JSON number is the increase LiteLLM's addition accepts
+    match increase {
+        JsonData::Number(number) => match Money::from_text(&number.to_string()) {
+            Some(money) => Ok(Some(money)),
+            None => Err(TempBudgetError::IncreaseInvalid),
+        },
+        JsonData::Null => Ok(None),
+        JsonData::Bool(_) | JsonData::String(_) | JsonData::Array(_) | JsonData::Object(_) => {
+            Err(TempBudgetError::IncreaseInvalid)
+        }
+    }
 }
 
 // _update_key_budget_with_temp_budget_increase: no maximum skips the parse, and a zero increase leaves the original maximum

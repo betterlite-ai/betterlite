@@ -7,7 +7,12 @@ use betterlite_db::budget_permission_rows::JsonData;
 pub fn parse_email_list(raw: &JsonData) -> Vec<String> {
     match raw {
         JsonData::Array(items) => items.iter().filter_map(string_entry).collect(),
-        JsonData::String(text) => text.split(',').filter_map(string_entry).collect(),
+        JsonData::String(text) => text
+            .split(',')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(str::to_owned)
+            .collect(),
         JsonData::Null | JsonData::Bool(_) | JsonData::Number(_) | JsonData::Object(_) => {
             Vec::new()
         }

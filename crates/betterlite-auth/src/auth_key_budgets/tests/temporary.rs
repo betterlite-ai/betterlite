@@ -87,6 +87,11 @@ fn expiry_equal_inactive() {
     TempBudgetError::IncreaseInvalid
 )]
 #[case::bool_increase("\"2027-01-01T00:00:00Z\"", "true", TempBudgetError::IncreaseInvalid)]
+#[case::numeric_string_increase(
+    "\"2027-01-01T00:00:00Z\"",
+    "\"30\"",
+    TempBudgetError::IncreaseInvalid
+)]
 fn invalid_expiry_propagates(
     #[case] expiry: &str,
     #[case] increase: &str,
@@ -111,6 +116,21 @@ fn invalid_expiry_propagates(
         get_temp_budget_increase(&expired, now()).unwrap(),
         None,
         "an expired date is read before the increase"
+    );
+}
+
+#[test]
+fn null_increase_keeps_original() {
+    let auth = key(
+        r#"{"token":"sk-null-increase","max_budget":100,"metadata":{"temp_budget_increase":null,"temp_budget_expiry":"2027-01-01T00:00:00Z"}}"#,
+    );
+    assert_eq!(get_temp_budget_increase(&auth, now()).unwrap(), None);
+    assert_eq!(
+        apply_temp_budget_increase(&auth, now()).unwrap(),
+        TempBudgetUpdate {
+            max_budget: Some(money(100)),
+            applied: false,
+        }
     );
 }
 
