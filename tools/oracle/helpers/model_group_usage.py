@@ -111,14 +111,14 @@ class ScriptedCache(DualCache):
         local_only: bool = False,
         throttle_redis: bool = True,
         **_kwargs: JsonValue,
-    ) -> list[JsonValue] | None:
+    ) -> list[object | None] | None:  # ast-grep-ignore: no-loose-types  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L401-L436
         _ = parent_otel_span, local_only, throttle_redis
         self.reads.append(keys)
         if self.mode == "error":
             raise RuntimeError("the scripted counter read failed")
         if self.mode == "missing":
             return None
-        return self.values
+        return list[object | None](self.values)
 
 
 class CaseRouter(Router):
