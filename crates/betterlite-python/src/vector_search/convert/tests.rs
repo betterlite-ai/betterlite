@@ -112,6 +112,17 @@ fn request_search_call_keeps_every_field() {
     );
     assert_eq!(call.optional.get("rewrite_query"), Some(&json("false")));
     assert_eq!(call.kwargs.get("api_key"), Some(&json(r#""sk-test""#)));
+    assert_eq!(
+        call.extra_headers,
+        Some(&BTreeMap::from([(
+            String::from("x-test"),
+            String::from("1")
+        )]))
+    );
+    assert_eq!(
+        call.extra_body,
+        Some(&BTreeMap::from([(String::from("custom"), json("true"))]))
+    );
     assert_eq!(call.timeout, Some(12.0_f64));
     assert_eq!(call.custom_llm_provider, Some("openai"));
     assert_eq!(call.entry, Entry::Sync);

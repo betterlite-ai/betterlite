@@ -2,7 +2,9 @@
 
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_context::resource_config_selection::vector_stores::VectorStoresConfigTag;
-use betterlite_core::api::vector_search_execution::config::Params;
+use betterlite_core::api::vector_search_execution::config::{Params, SearchConfig as _};
+use betterlite_core::api::vector_store_http_create_read::config::CreateReadConfig as _;
+use betterlite_core::api::vector_store_http_write::config::{WriteConfig as _, WriteParams};
 use betterlite_core::api::vector_store_search::service::{
     OptionalParamFilters as _, VectorStoreConfigs as _,
 };
@@ -66,6 +68,30 @@ fn configs_serve_openai_and_refuse_the_other_tags() {
             .search_config(VectorStoresConfigTag::AzureOpenAI)
             .is_none()
     );
+}
+
+#[test]
+fn configs_resolve_the_module_api_base_globally() {
+    let globals = LiteLlmGlobals {
+        api_base: Some(String::from("http://127.0.0.1:9/v1")),
+        ..LiteLlmGlobals::default()
+    };
+    let configs = Configs::new(OpenAiCredentialsSettings::default(), globals, None);
+    let create = configs
+        .create_config(VectorStoresConfigTag::OpenAI)
+        .expect("openai has a create config");
+    let create_url = create
+        .provider()
+        .complete_url(&WriteParams::default())
+        .expect("the module api base resolves");
+    assert_eq!(create_url, "http://127.0.0.1:9/v1/vector_stores");
+    let search = configs
+        .search_config(VectorStoresConfigTag::OpenAI)
+        .expect("openai has a search config");
+    let search_url = search
+        .complete_url(&Params::new())
+        .expect("the module api base resolves");
+    assert_eq!(search_url, "http://127.0.0.1:9/v1/vector_stores");
 }
 
 #[test]

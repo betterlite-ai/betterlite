@@ -14,7 +14,8 @@ use pyo3::types::PyType;
 use super::convert::{ConvertError, NativeRaise, raise_payload};
 
 const CLASS_NAME: &str = "NativeVectorSearchError";
-const CLASS_NAME_C: &CStr = c"NativeVectorSearchError";
+// CPython's PyErr_NewException takes a <module>.<ExceptionName> name; a bare one aborts _native's init
+const CLASS_NAME_C: &CStr = c"betterlite._native.NativeVectorSearchError";
 
 // The Python exception a vector store failure is raised as, created once as a subclass of the family base.
 static CLASS: PyOnceLock<Py<PyType>> = PyOnceLock::new();

@@ -95,7 +95,7 @@ impl VectorStoreConfigs for Configs {
             &self.credentials,
             globals(&self.globals),
             self.env_api_key.clone(),
-            None,
+            self.globals.api_base.clone(),
         )))
     }
 
@@ -109,7 +109,7 @@ impl VectorStoreConfigs for Configs {
             credentials,
             settings,
             self.env_api_key.clone(),
-            None,
+            self.globals.api_base.clone(),
         )))
     }
 }

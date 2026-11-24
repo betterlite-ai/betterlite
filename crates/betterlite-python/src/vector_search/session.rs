@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_config::api::vector_store_search::Settings;
 use betterlite_config::loader::ConfigLoader;
@@ -25,7 +25,8 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateE
 use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::Utc;
+use betterlite_sdk::call_wrapper::ports::{IdSource, WrapperClock};
+use chrono::{DateTime, FixedOffset, Utc};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -37,6 +38,8 @@ use super::convert::{CreateWire, SearchWire, create_call, parse, search_call};
 use super::error::SessionError;
 use super::seams::{Configs, Executors, Filters, Inline};
 use super::source::{ProxiedSource, SilentSink};
+
+mod tests;
 
 const CREATE_CALL_TYPE: &str = "vector_store_create";
 const SEARCH_CALL_TYPE: &str = "vector_store_search";
@@ -67,10 +70,21 @@ pub(crate) struct SessionCore {
     source: ProxiedSource,
     settings: Settings,
     pub(crate) redactor: Redactor,
+    clock: Arc<dyn WrapperClock>,
+    ids: Arc<dyn IdSource>,
 }
 
 impl SessionCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
+        Self::build_with(text, Arc::new(SystemClock::new()), Arc::new(SystemIds))
+    }
+
+    // The clock and the id source are fields so a test pins every time and id the session writes
+    fn build_with(
+        text: &str,
+        clock: Arc<dyn WrapperClock>,
+        ids: Arc<dyn IdSource>,
+    ) -> Result<Self, SessionError> {
         let wire: SessionWire = parse(text, 0)?;
         let environment = wire.environment.unwrap_or_else(process_environment);
         let config = ConfigLoader {
@@ -103,6 +117,8 @@ impl SessionCore {
             settings,
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
                 .map_err(|source| SessionError::Redactor { source })?,
+            clock,
+            ids,
         })
     }
 
@@ -114,8 +130,9 @@ impl SessionCore {
             Pending::Create(_) => CREATE_CALL_TYPE,
             Pending::Search(_) => SEARCH_CALL_TYPE,
         };
-        let mut state =
-            logging_state(call_type, &self.redactor).map_err(VectorStoreSearchError::from)?;
+        let mut state = self
+            .logging_state(call_type)
+            .map_err(VectorStoreSearchError::from)?;
         let mut log = LogContext {
             state: &mut state,
             env: &env,
@@ -159,40 +176,72 @@ impl SessionCore {
             input_callbacks: &[],
             sentry: None,
             logger_fn: None,
-            now: Utc::now().fixed_offset(),
+            now: self.clock.now(),
+        }
+    }
+
+    // The Pre Call logging a Python session starts from where the SDK's decorator would have built it
+    fn logging_state(&self, call_type: &str) -> Result<LoggingState, LoggingStateError> {
+        let init = LoggingInit {
+            model: String::new(),
+            call_type: call_type.to_owned(),
+            start_time: self.clock.now(),
+            litellm_call_id: self.ids.next_call_id(),
+            function_id: String::new(),
+            messages: None,
+            stream: None,
+            litellm_trace_id: None,
+            kwargs: IndexMap::new(),
+            litellm_params: IndexMap::new(),
+            callback_dynamic_params: IndexMap::new(),
+            trusted_callback_vars: Vec::new(),
+            standard_built_in_tools_params: IndexMap::new(),
+            dynamic_callbacks: DynamicCallbacks::default(),
+            applied_guardrails: None,
+            request_logging: RequestLoggingFlags::default(),
+            callback_policy: CallbackPolicy::default(),
+        };
+        LoggingState::new(
+            init,
+            CorrelationSetup {
+                context: &mut CorrelationContext::default(),
+                settings: CorrelationSettings::default(),
+            },
+            &self.redactor,
+            || self.ids.next_call_id(),
+            || self.clock.monotonic(),
+        )
+    }
+}
+
+// LiteLLM reads the clock and uuid4 from its call wrapper; completion::ports holds the same pair for
+// the completion family, but that module is private to completion and this task cannot widen it.
+pub(crate) struct SystemClock {
+    started: Instant,
+}
+
+impl SystemClock {
+    pub(crate) fn new() -> Self {
+        Self {
+            started: Instant::now(),
         }
     }
 }
 
-// The Pre Call logging a Python session starts from where the SDK's decorator would have built it
-fn logging_state(call_type: &str, redactor: &Redactor) -> Result<LoggingState, LoggingStateError> {
-    let init = LoggingInit {
-        model: String::new(),
-        call_type: call_type.to_owned(),
-        start_time: Utc::now().fixed_offset(),
-        litellm_call_id: Uuid::new_v4().to_string(),
-        function_id: String::new(),
-        messages: None,
-        stream: None,
-        litellm_trace_id: None,
-        kwargs: IndexMap::new(),
-        litellm_params: IndexMap::new(),
-        callback_dynamic_params: IndexMap::new(),
-        trusted_callback_vars: Vec::new(),
-        standard_built_in_tools_params: IndexMap::new(),
-        dynamic_callbacks: DynamicCallbacks::default(),
-        applied_guardrails: None,
-        request_logging: RequestLoggingFlags::default(),
-        callback_policy: CallbackPolicy::default(),
-    };
-    LoggingState::new(
-        init,
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || Uuid::new_v4().to_string(),
-        Duration::default,
-    )
+impl WrapperClock for SystemClock {
+    fn now(&self) -> DateTime<FixedOffset> {
+        Utc::now().fixed_offset()
+    }
+
+    fn monotonic(&self) -> Duration {
+        self.started.elapsed()
+    }
+}
+
+pub(crate) struct SystemIds;
+
+impl IdSource for SystemIds {
+    fn next_call_id(&self) -> String {
+        Uuid::new_v4().to_string()
+    }
 }

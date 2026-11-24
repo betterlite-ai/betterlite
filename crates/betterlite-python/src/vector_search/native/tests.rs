@@ -32,19 +32,6 @@ fn a_malformed_session_text_is_an_error_not_a_panic() {
 }
 
 #[test]
-fn a_session_takes_its_globals_and_an_environment() {
-    Python::initialize();
-    Python::attach(|_py| {
-        let settings =
-            r#"{"environment": {}, "api_key": "sk-test", "api_base": "http://127.0.0.1:9/v1"}"#;
-        assert!(matches!(
-            NativeVectorSearchSession::new(settings),
-            Ok(_session)
-        ));
-    });
-}
-
-#[test]
 fn a_raised_failure_is_the_registered_error_class() {
     Python::initialize();
     Python::attach(|py| {
