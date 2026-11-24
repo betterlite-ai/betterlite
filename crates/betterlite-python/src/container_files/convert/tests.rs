@@ -52,7 +52,7 @@ fn request_list_keeps_the_named_arguments_out_of_kwargs() {
     assert_eq!(call.extra.len(), 2);
     assert_eq!(
         call.extra.get("batch_size"),
-        Some(&Json::Number(Number::from(7)))
+        Some(&Json::Number(Number::from(7_i32)))
     );
     assert!(call.extra.contains_key("litellm_call_id"));
     assert!(!call.extra.contains_key("extra_body"));
@@ -150,7 +150,9 @@ fn error_negative_timeout_names_the_seconds() {
     let Err(error) = call.endpoint_call(None) else {
         panic!("a negative timeout is not a duration");
     };
-    assert!(matches!(error, ConvertError::Timeout { seconds, .. } if seconds == -1.0_f64));
+    assert!(
+        matches!(error, ConvertError::Timeout { seconds, .. } if seconds.total_cmp(&-1.0_f64).is_eq())
+    );
 }
 
 #[test]
@@ -174,7 +176,7 @@ fn error_missing_file() {
 #[test]
 fn error_unknown_blob() {
     let call = arguments(r#"{"file": {"$file": {"name": "f", "blob": 2, "content_type": null}}}"#);
-    let Err(error) = call.upload(&mut vec![Vec::new()]) else {
+    let Err(error) = call.upload(&mut [Vec::new()]) else {
         panic!("a marker cannot name a blob the call did not send");
     };
     assert!(matches!(error, ConvertError::File));
