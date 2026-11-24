@@ -3,8 +3,7 @@
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_context::resource_config_selection::vector_stores::VectorStoresConfigTag;
 use betterlite_core::api::vector_search_execution::config::{Params, SearchConfig as _};
-use betterlite_core::api::vector_store_http_create_read::config::CreateReadConfig as _;
-use betterlite_core::api::vector_store_http_write::config::{WriteConfig as _, WriteParams};
+use betterlite_core::api::vector_store_http_write::config::WriteParams;
 use betterlite_core::api::vector_store_search::service::{
     OptionalParamFilters as _, VectorStoreConfigs as _,
 };
