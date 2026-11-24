@@ -488,8 +488,8 @@ async fn backend_ocr_probe_passes_the_arguments_through_aocr() {
     };
     let reply = probe.ocr(call).await.expect("the probe answers");
     assert!(reply.hidden_headers.is_empty());
-    let requests = server.requests().await;
-    let request = requests.first().expect("one provider call was sent");
+    let sent = server.requests().await;
+    let request = sent.first().expect("one provider call was sent");
     let lowered = request.to_lowercase();
     assert!(lowered.starts_with("post /v1/ocr"), "{lowered}");
     assert!(
