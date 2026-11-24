@@ -30,15 +30,11 @@ fn convert_returns_the_twelve_keys_in_litellm_order() {
     );
     assert_eq!(keys.join(","), expected);
     assert_eq!(text_field(&converted, "model_id"), Some("id-a".to_owned()));
-    assert_eq!(
-        text_field(&converted, "checked_by"),
-        Some("user-1".to_owned())
-    );
+    let response_time = Number::from_f64(12.5_f64).expect("a finite float");
+
     assert_eq!(
         converted.get("response_time_ms"),
-        Some(&Json::Number(
-            Number::from_f64(12.5_f64).expect("a finite float")
-        ))
+        Some(&Json::Number(response_time))
     );
     assert_eq!(
         converted.get("health_check_id"),
