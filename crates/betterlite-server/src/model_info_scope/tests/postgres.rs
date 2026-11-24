@@ -182,7 +182,7 @@ async fn creator_reads_by_id() {
         identified("gpt-4o", "d1"),
         identified("gpt-4o-mini", "d2"),
         identified("gpt-4o-small", "d3"),
-        super::unnumbered("no-id-gpt", Vec::new()),
+        super::unnumbered("no-id-gpt"),
     ];
     let lookup = snapshot(&rows[..3]);
     let kept = non_admin_all_models(

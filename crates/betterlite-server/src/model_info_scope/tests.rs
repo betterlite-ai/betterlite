@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use axum::http::StatusCode;
+use betterlite_auth::auth_model_patterns::ALL_PROXY_MODELS;
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
@@ -15,7 +17,7 @@ use super::compose::{
     accessible_models, non_admin_all_models,
 };
 use super::error::ScopeError;
-use super::teams::{TeamModelLists, TeamScope};
+use super::teams::{TeamModelLists, TeamModelMap, TeamScope, add_access_group_models};
 use crate::model_visibility::testing::{Row, Snapshot};
 
 mod postgres;
@@ -61,13 +63,11 @@ fn team_row(name: &str, id: &str, team: &str) -> DeploymentSpec {
     )
 }
 
-fn unnumbered(name: &str, info: Vec<(&str, Json)>) -> DeploymentSpec {
-    DeploymentSpec {
-        model_name: name.to_owned(),
-        litellm_params: object(vec![("model", Json::Text("openai/gpt-4o".to_owned()))]),
-        model_info: object(info),
-        extra: JsonObject::new(),
-    }
+// A stored row without an id: DeploymentSpec::new always assigns one, so the fixture strips it again.
+fn unnumbered(name: &str) -> DeploymentSpec {
+    let mut spec = deployment(name, Vec::new());
+    spec.model_info.retain(|field, _| field.as_str() != "id");
+    spec
 }
 
 fn snapshot(rows: &[DeploymentSpec]) -> Snapshot {
@@ -403,4 +403,106 @@ async fn annotation_group_read_failure() {
     .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(matches!(error, ScopeError::AccessGroupRead(_)));
+}
+
+#[tokio::test]
+async fn team_models_join_user_deployments() {
+    let rows = vec![
+        identified("global-gpt", "g1"),
+        team_row("team-gpt", "t1", "team-alpha"),
+        team_row("other-gpt", "t2", "team-beta"),
+    ];
+    let snapshot = snapshot(&rows);
+    let mut store = StubReads::default();
+    store.user = Some(UserScope {
+        teams: team_list(&["team-alpha"]),
+        models: Vec::new(),
+    });
+    let kept = non_admin_all_models(
+        rows,
+        &caller(Some("alice"), &[]),
+        Some(&store),
+        &snapshot.lookup(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids(&kept), vec![Some("t1")]);
+}
+
+#[tokio::test]
+async fn all_proxy_grant_marks_non_team_models() {
+    let rows = vec![
+        identified("global-gpt", "g1"),
+        team_row("team-gpt", "t1", "team-alpha"),
+    ];
+    let snapshot = snapshot(&rows);
+    let mut store = StubReads::default();
+    store.user = Some(UserScope {
+        teams: Vec::new(),
+        models: vec![JsonData::String(String::from(ALL_PROXY_MODELS))],
+    });
+    let groups = AccessGroups::default();
+    let annotated = accessible_models(
+        rows,
+        false,
+        &caller(Some("alice"), &[]),
+        &store,
+        &snapshot.lookup(),
+        &groups,
+    )
+    .await
+    .unwrap();
+    assert_annotations(&annotated[0], true, Some(&[]));
+    assert_annotations(&annotated[1], false, None);
+}
+
+#[tokio::test]
+async fn wildcard_key_keeps_the_user_grant() {
+    let rows = vec![
+        identified("global-gpt", "g1"),
+        team_row("team-gpt", "t1", "team-alpha"),
+    ];
+    let snapshot = snapshot(&rows);
+    let mut store = StubReads::default();
+    store.user = Some(UserScope {
+        teams: Vec::new(),
+        models: vec![JsonData::String(String::from("team-gpt"))],
+    });
+    let groups = AccessGroups::default();
+    let annotated = accessible_models(
+        rows,
+        false,
+        &caller(Some("alice"), &[ALL_PROXY_MODELS, "extra"]),
+        &store,
+        &snapshot.lookup(),
+        &groups,
+    )
+    .await
+    .unwrap();
+    assert_annotations(&annotated[0], false, Some(&[]));
+    assert_annotations(&annotated[1], true, None);
+}
+
+#[test]
+fn open_team_skips_group_models() {
+    let rows = vec![identified("group-model", "m1")];
+    let snapshot = snapshot(&rows);
+    let mut groups = AccessGroupMap::new();
+    groups.insert(String::from("ag-1"), vec![String::from("group-model")]);
+    let teams = vec![
+        restricted("team-open", &[], &["ag-1"]),
+        restricted("team-beta", &["group-model"], &["ag-1"]),
+    ];
+    let mut team_models = TeamModelMap::new();
+    add_access_group_models(&snapshot.lookup(), &teams, &groups, &mut team_models).unwrap();
+    let marked: Vec<(&str, Vec<&str>)> = team_models
+        .iter()
+        .map(|(model_id, team_ids)| {
+            (
+                model_id.as_str(),
+                team_ids.iter().map(String::as_str).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(marked, vec![("m1", vec!["team-beta"])]);
 }
