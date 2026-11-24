@@ -1,13 +1,21 @@
 #![cfg(test)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
+use betterlite_db::sso_assertion_rows::MemoryAssertionRows;
+use betterlite_mcp::credential_contracts::byok_cache::SystemClock;
+use betterlite_mcp::sso_assertions::cache::{CacheState, SsoAssertionCache};
 use betterlite_mcp::sso_assertions::read::SsoAssertionStore;
+use betterlite_mcp::sso_assertions::store::DbSsoAssertionStore;
+use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
+use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use rstest::rstest;
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 use tokio::task::JoinSet;
 
+use super::super::refresher::AssertionAccess as _;
 use super::super::store::{RenewalCoordinator, SINGLE_FLIGHT_KEY};
 use super::super::tests::support::{
     AccessFailure, LoserCoordinator, NOW_MS, NOW_SECONDS, RecordingCoordinator, StoreFixture,
@@ -397,4 +405,53 @@ async fn keeps_the_distributed_coordinator_once_the_factory_yields_one() {
 #[test]
 fn the_single_flight_key_is_the_sso_assertion_namespace() {
     assert_eq!(SINGLE_FLIGHT_KEY, "sso_identity_assertion");
+}
+
+#[tokio::test]
+async fn the_db_access_reads_back_what_it_writes() {
+    let store = DbSsoAssertionStore {
+        rows: Some(MemoryAssertionRows::default()),
+        cipher: StoredCipher {
+            settings: CipherSettings {
+                signing_key: Some(SecretString::from("b4664-assertion-key".to_owned())),
+                algorithm: Algorithm::XSalsa20Poly1305,
+            },
+            nonces: OsNonces,
+            diagnostics: TracingDiagnostics,
+        },
+        cache: Arc::new(SsoAssertionCache {
+            ttl: Duration::from_secs(60),
+            max_size: 8,
+            clock: Box::new(SystemClock),
+            state: Mutex::new(CacheState::default()),
+        }),
+        config_declares_id_jag: false,
+    };
+    assert!(
+        store
+            .read("user-1")
+            .await
+            .expect("the empty read succeeds")
+            .is_none()
+    );
+    let stored = assertion(NOW_SECONDS, Some("carried-token"));
+    store
+        .write("user-1", &stored)
+        .await
+        .expect("the write succeeds");
+    let found = store
+        .read("user-1")
+        .await
+        .expect("the read-back succeeds")
+        .expect("the written assertion reads back");
+    assert_eq!(
+        found.id_token.expose_secret(),
+        stored.id_token.expose_secret()
+    );
+    assert_eq!(
+        found
+            .refresh_token
+            .map(|token| token.expose_secret().to_owned()),
+        Some("carried-token".to_owned())
+    );
 }

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod http;
+
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Mutex, PoisonError};
 
