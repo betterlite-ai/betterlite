@@ -4239,6 +4239,7 @@ dependencies = [
  "indexmap 2.14.2",
  "pyo3",
  "pyo3-async-runtimes",
+ "rmcp",
  "rstest",
  "rust_decimal",
  "secrecy",

@@ -1,10 +1,15 @@
 #![cfg(test)]
 
+use std::any::TypeId;
 use std::collections::BTreeMap;
 use std::future::pending;
+use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_http::error::HttpError;
 use betterlite_mcp::client::cleanup::failure::ReadTimeout;
+use betterlite_mcp::client::http_transport::error::McpHttpError;
 use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionConfigError, SessionError};
 use betterlite_mcp::client::sessions::negotiate::ProtocolVersion;
@@ -14,6 +19,8 @@ use betterlite_mcp::credentials::{AuthValue, McpAuthType};
 use betterlite_mcp::tools::pagination::{LoadedTool, Page, ToolError, ToolFormat};
 use betterlite_mcp::tools::schemas::{McpTool, mcp_tool_to_openai};
 use betterlite_prompts::arguments::json::{Json, Object};
+use rmcp::service::ServiceError;
+use rmcp::transport::DynamicTransportError;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 use tokio::time::timeout;
@@ -404,6 +411,53 @@ fn error_read_timeout_becomes_a_timeout() {
     }));
     assert_eq!(failure.kind, McpErrorKind::Timeout);
     assert!(failure.message.contains("read timed out"));
+}
+
+#[test]
+fn error_service_timeout_becomes_a_timeout() {
+    let failure = session_payload(&SessionError::Runtime(Arc::new(SdkError::Service(
+        ServiceError::Timeout {
+            timeout: Duration::from_millis(250),
+        },
+    ))));
+    assert_eq!(failure.kind, McpErrorKind::Timeout);
+    assert!(failure.message.contains("timeout"));
+}
+
+#[test]
+fn error_transport_send_timeout_becomes_a_timeout() {
+    let dynamic = DynamicTransportError::from_parts(
+        "streamable-http",
+        TypeId::of::<()>(),
+        Box::new(SdkError::from(McpHttpError::Timeout(HttpError::Timeout))),
+    );
+    let failure = session_payload(&SessionError::Runtime(Arc::new(SdkError::Service(
+        ServiceError::TransportSend(dynamic),
+    ))));
+    assert_eq!(failure.kind, McpErrorKind::Timeout);
+    assert!(failure.message.contains("timed out"));
+}
+
+#[test]
+fn error_transport_send_without_a_transport_error_stays_runtime() {
+    let dynamic = DynamicTransportError::from_parts(
+        "streamable-http",
+        TypeId::of::<()>(),
+        Box::new(io::Error::other("the socket closed")),
+    );
+    let failure = session_payload(&SessionError::Runtime(Arc::new(SdkError::Service(
+        ServiceError::TransportSend(dynamic),
+    ))));
+    assert_eq!(failure.kind, McpErrorKind::Runtime);
+    assert!(failure.message.contains("the socket closed"));
+}
+
+#[test]
+fn error_transport_closed_stays_runtime() {
+    let failure = session_payload(&SessionError::Runtime(Arc::new(SdkError::Service(
+        ServiceError::TransportClosed,
+    ))));
+    assert_eq!(failure.kind, McpErrorKind::Runtime);
 }
 
 #[test]

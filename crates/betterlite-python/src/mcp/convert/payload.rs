@@ -3,6 +3,7 @@ use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::SessionError;
 use betterlite_mcp::tools::pagination::ToolError;
 use betterlite_prompts::arguments::json::{Json, Object};
+use rmcp::service::ServiceError;
 use serde::Serialize;
 // The Python class names LiteLLM's MCP failures carry; B8082 maps them back to its exception classes
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -89,6 +90,21 @@ fn sdk_payload(error: &SdkError) -> NativeMcpErrorPayload {
     }
     if let SdkError::JsonRpc(data) = error {
         return NativeMcpErrorPayload::mcp(data.code.0, data.message.as_ref());
+    }
+    if let SdkError::Service(service) = error {
+        return service_payload(service);
+    }
+    NativeMcpErrorPayload::plain(McpErrorKind::Runtime, error.to_string())
+}
+// rmcp wraps a failed transport send in its ServiceError, so the timeout under it stays a TimeoutError
+fn service_payload(error: &ServiceError) -> NativeMcpErrorPayload {
+    if let ServiceError::Timeout { .. } = error {
+        return NativeMcpErrorPayload::plain(McpErrorKind::Timeout, error.to_string());
+    }
+    if let ServiceError::TransportSend(dynamic) = error
+        && let Some(source) = dynamic.error.downcast_ref::<SdkError>()
+    {
+        return sdk_payload(source);
     }
     NativeMcpErrorPayload::plain(McpErrorKind::Runtime, error.to_string())
 }
