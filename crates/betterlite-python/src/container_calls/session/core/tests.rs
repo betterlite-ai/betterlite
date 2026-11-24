@@ -44,7 +44,7 @@ fn wire(text: &str) -> CallWire {
 
 fn mocked(operation: &str, arguments: &str, answer: &str) -> String {
     format!(
-        r#"{{"operation":"{operation}","{arguments}","mock_response":{}}}"#,
+        r#"{{"operation":"{operation}","arguments":{{{arguments},"mock_response":{}}}}}"#,
         serde_json::to_string(answer).unwrap()
     )
 }
@@ -148,11 +148,14 @@ fn operation_deadline_takes_the_request_timeout_for_zero_and_none() {
 
 #[test]
 fn collection_call_names_the_logging_type_the_call_id_and_the_timeout() {
-    let create = wire(r#"{"timeout":2.0,"litellm_call_id":"call_1"}"#)
+    let create = wire(r#"{"arguments":{"timeout":2.0,"litellm_call_id":"call_1"}}"#)
         .arguments
         .create()
         .unwrap();
-    let list = wire(r#"{"timeout":null}"#).arguments.list().unwrap();
+    let list = wire(r#"{"arguments":{"timeout":null}}"#)
+        .arguments
+        .list()
+        .unwrap();
     assert_eq!(
         CollectionCall::Create(&create).call_type(),
         "create_container"

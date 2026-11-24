@@ -44,7 +44,8 @@ def call_payload(operation: str, values: Mapping[str, CallValue]) -> CallPayload
         raise UnsupportedCallArgument(REFUSED)
     arguments = {name: given for name, given in values.items() if given is not None}
     kept = {name: given for name, given in arguments.items() if name not in BOOKKEEPING}
-    return to_call_payload({**kept, "settings": read_settings(SETTINGS), "operation": operation})
+    payload = {"arguments": kept, "settings": read_settings(SETTINGS), "operation": operation}
+    return to_call_payload(payload)
 
 
 # a keyword the caller left unset stays out, so the fallback it would hide applies instead

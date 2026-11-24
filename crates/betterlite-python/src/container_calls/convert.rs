@@ -31,7 +31,7 @@ pub(crate) struct SessionWire {
 pub(crate) struct CallWire {
     pub(crate) operation: String,
     pub(crate) settings: SettingsWire,
-    #[serde(flatten)]
+    // nested, not flattened: arbitrary_precision turns a flattened float into a map
     pub(crate) arguments: Arguments,
 }
 

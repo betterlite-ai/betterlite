@@ -30,7 +30,7 @@ fn context() -> ErrorContext {
 }
 
 fn wire(text: &str) -> CallWire {
-    parse(text).unwrap()
+    parse(&format!(r#"{{"arguments":{{{text}}}}}"#)).unwrap()
 }
 
 fn container() -> ContainerObject {
@@ -308,12 +308,13 @@ fn error_parse_refuses_a_text_that_is_not_json() {
 
 #[test]
 fn error_parse_refuses_a_declared_keyword_of_the_wrong_type() {
-    let error = parse::<CallWire>(r#"{"container_id":5}"#).unwrap_err();
+    let error = parse::<CallWire>(r#"{"arguments":{"container_id":5}}"#).unwrap_err();
     assert!(matches!(error, ConvertError::Json { .. }));
 }
 
 #[test]
 fn error_parse_refuses_a_nested_extra_body_value() {
-    let error = parse::<CallWire>(r#"{"extra_body":{"target_model_names":["a"]}}"#).unwrap_err();
+    let error = parse::<CallWire>(r#"{"arguments":{"extra_body":{"target_model_names":["a"]}}}"#)
+        .unwrap_err();
     assert!(matches!(error, ConvertError::Json { .. }));
 }
