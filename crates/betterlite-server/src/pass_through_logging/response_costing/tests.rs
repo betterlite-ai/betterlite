@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -14,6 +15,7 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
@@ -30,20 +32,17 @@ use super::{
 #[test]
 fn costing_speed_reads_only_a_string_speed() {
     assert_eq!(cost_relevant_speed(None), None);
-    assert_eq!(cost_relevant_speed(Some(&object("{}"))), None);
+    assert_eq!(cost_relevant_speed(Some(&body("{}"))), None);
     assert_eq!(
-        cost_relevant_speed(Some(&object(r#"{"speed": "fast"}"#))),
+        cost_relevant_speed(Some(&body(r#"{"speed": "fast"}"#))),
         Some("fast".to_owned())
     );
     assert_eq!(
-        cost_relevant_speed(Some(&object(r#"{"speed": ""}"#))),
+        cost_relevant_speed(Some(&body(r#"{"speed": ""}"#))),
         Some(String::new())
     );
-    assert_eq!(cost_relevant_speed(Some(&object(r#"{"speed": 1}"#))), None);
-    assert_eq!(
-        cost_relevant_speed(Some(&object(r#"{"speed": null}"#))),
-        None
-    );
+    assert_eq!(cost_relevant_speed(Some(&body(r#"{"speed": 1}"#))), None);
+    assert_eq!(cost_relevant_speed(Some(&body(r#"{"speed": null}"#))), None);
 }
 
 #[test]
@@ -189,8 +188,8 @@ fn costing_compute_prefixes_the_provider_once(
     #[case] recorded_model: &str,
 ) {
     let mut details = Vec::new();
-    if let Some(provider) = provider {
-        details.push(("custom_llm_provider", Json::Text(provider.to_owned())));
+    if let Some(configured) = provider {
+        details.push(("custom_llm_provider", Json::Text(configured.to_owned())));
     }
     let call_log = logging_state(&[], &details);
     let cost = FakeCost::priced(Decimal::new(25, 2));
@@ -285,7 +284,8 @@ fn costing_partial_stream_returns_the_cost() {
 fn costing_partial_stream_costs_the_resolved_model() {
     let call_log = logging_state(&[("model", Json::Text("deployment".to_owned()))], &[]);
     let cost = FakeCost::priced(Decimal::new(25, 2));
-    cost_partial_stream_or_zero(&cost, &object("{}"), "unknown", &call_log);
+    let amount = cost_partial_stream_or_zero(&cost, &object("{}"), "unknown", &call_log);
+    assert_eq!(amount, Decimal::new(25, 2));
     assert_eq!(cost.calls()[0].model, "deployment");
 }
 
@@ -360,39 +360,40 @@ fn object(text: &str) -> Json {
     serde_json::from_str(text).expect("a JSON object")
 }
 
+fn body(text: &str) -> JsonObject {
+    serde_json::from_str(text).expect("a JSON object")
+}
+
 fn timestamp() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").expect("a valid timestamp")
 }
 
 fn logging_state(litellm_params: &[(&str, Json)], details: &[(&str, Json)]) -> LoggingState {
     let redactor = Redactor::new(16).expect("a valid redactor");
-    let mut context = CorrelationContext::default();
-    let setup = CorrelationSetup {
-        context: &mut context,
-        settings: CorrelationSettings::default(),
-    };
-    let init = LoggingInit {
-        model: String::new(),
-        call_type: "pass_through_endpoint".to_owned(),
-        start_time: timestamp(),
-        litellm_call_id: "call-1".to_owned(),
-        function_id: "function-1".to_owned(),
-        messages: None,
-        stream: Some(false),
-        litellm_trace_id: Some("trace-1".to_owned()),
-        kwargs: IndexMap::new(),
-        litellm_params: params(litellm_params),
-        callback_dynamic_params: IndexMap::new(),
-        trusted_callback_vars: Vec::new(),
-        standard_built_in_tools_params: IndexMap::new(),
-        dynamic_callbacks: DynamicCallbacks::default(),
-        applied_guardrails: None,
-        request_logging: RequestLoggingFlags::default(),
-        callback_policy: CallbackPolicy::default(),
-    };
     let mut state = LoggingState::new(
-        init,
-        setup,
+        LoggingInit {
+            model: String::new(),
+            call_type: "pass_through_endpoint".to_owned(),
+            start_time: timestamp(),
+            litellm_call_id: "call-1".to_owned(),
+            function_id: "function-1".to_owned(),
+            messages: None,
+            stream: Some(false),
+            litellm_trace_id: Some("trace-1".to_owned()),
+            kwargs: IndexMap::new(),
+            litellm_params: params(litellm_params),
+            callback_dynamic_params: IndexMap::new(),
+            trusted_callback_vars: Vec::new(),
+            standard_built_in_tools_params: IndexMap::new(),
+            dynamic_callbacks: DynamicCallbacks::default(),
+            applied_guardrails: None,
+            request_logging: RequestLoggingFlags::default(),
+            callback_policy: CallbackPolicy::default(),
+        },
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
         &redactor,
         || "generated-trace".to_owned(),
         || Duration::ZERO,
@@ -420,7 +421,9 @@ struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 impl LogBuffer {
     fn contents(&self) -> String {
         let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        String::from_utf8(bytes.clone()).expect("the captured log lines are UTF-8")
+        from_utf8(&bytes)
+            .expect("the captured log lines are UTF-8")
+            .to_owned()
     }
 }
 

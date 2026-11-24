@@ -196,7 +196,7 @@ fn fields_resolve_logged_model_prefers_the_request_body() {
 }
 
 #[rstest]
-#[case(r#"{}"#)]
+#[case("{}")]
 #[case(r#"{"model": ""}"#)]
 #[case(r#"{"model": 7}"#)]
 #[case(r#"{"model": null}"#)]
@@ -225,7 +225,7 @@ fn fields_resolve_logged_model_falls_to_the_chunk_model_without_a_logged_model()
     let call_log = logging_state(&[], &[]);
     let chunks = [Chunk::Text(format!("{MODEL_EVENT}\n"))];
     assert_eq!(
-        resolve_logged_model(&call_log, &body(r#"{}"#), &chunks).expect("valid text"),
+        resolve_logged_model(&call_log, &body("{}"), &chunks).expect("valid text"),
         "chunk-model"
     );
 }
@@ -235,12 +235,12 @@ fn fields_resolve_logged_model_returns_the_first_value_without_a_chunk_model() {
     let call_log = logging_state(&[("model", Json::Text("unknown".to_owned()))], &[]);
     let chunks = [Chunk::Text("event: ping\n".to_owned())];
     assert_eq!(
-        resolve_logged_model(&call_log, &body(r#"{}"#), &chunks).expect("valid text"),
+        resolve_logged_model(&call_log, &body("{}"), &chunks).expect("valid text"),
         "unknown"
     );
     let empty = logging_state(&[], &[]);
     assert_eq!(
-        resolve_logged_model(&empty, &body(r#"{}"#), &chunks).expect("valid text"),
+        resolve_logged_model(&empty, &body("{}"), &chunks).expect("valid text"),
         ""
     );
 }
@@ -278,33 +278,30 @@ fn timestamp() -> DateTime<FixedOffset> {
 
 fn logging_state(details: &[(&str, Json)], litellm_params: &[(&str, Json)]) -> LoggingState {
     let redactor = Redactor::new(16).expect("a valid redactor");
-    let mut context = CorrelationContext::default();
-    let setup = CorrelationSetup {
-        context: &mut context,
-        settings: CorrelationSettings::default(),
-    };
-    let init = LoggingInit {
-        model: String::new(),
-        call_type: "pass_through_endpoint".to_owned(),
-        start_time: timestamp(),
-        litellm_call_id: "call-1".to_owned(),
-        function_id: "function-1".to_owned(),
-        messages: None,
-        stream: Some(false),
-        litellm_trace_id: Some("trace-1".to_owned()),
-        kwargs: IndexMap::new(),
-        litellm_params: params(litellm_params),
-        callback_dynamic_params: IndexMap::new(),
-        trusted_callback_vars: Vec::new(),
-        standard_built_in_tools_params: IndexMap::new(),
-        dynamic_callbacks: DynamicCallbacks::default(),
-        applied_guardrails: None,
-        request_logging: RequestLoggingFlags::default(),
-        callback_policy: CallbackPolicy::default(),
-    };
     let mut state = LoggingState::new(
-        init,
-        setup,
+        LoggingInit {
+            model: String::new(),
+            call_type: "pass_through_endpoint".to_owned(),
+            start_time: timestamp(),
+            litellm_call_id: "call-1".to_owned(),
+            function_id: "function-1".to_owned(),
+            messages: None,
+            stream: Some(false),
+            litellm_trace_id: Some("trace-1".to_owned()),
+            kwargs: IndexMap::new(),
+            litellm_params: params(litellm_params),
+            callback_dynamic_params: IndexMap::new(),
+            trusted_callback_vars: Vec::new(),
+            standard_built_in_tools_params: IndexMap::new(),
+            dynamic_callbacks: DynamicCallbacks::default(),
+            applied_guardrails: None,
+            request_logging: RequestLoggingFlags::default(),
+            callback_policy: CallbackPolicy::default(),
+        },
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
         &redactor,
         || "generated-trace".to_owned(),
         || Duration::ZERO,

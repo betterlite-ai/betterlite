@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -185,7 +186,7 @@ fn payload_uses_end_user_argument() {
             r#"{"url": "https://upstream", "method": "POST", "body": {"user": "body-user"}}"#,
         ),
     );
-    let kwargs = logging_kwargs(
+    let seeded = logging_kwargs(
         params,
         Some(object(r#"{"user": "body-user", "model": "m"}"#)),
     );
@@ -194,7 +195,7 @@ fn payload_uses_end_user_argument() {
     let kwargs = create_response_logging_payload(
         &cost,
         &builder,
-        input(&mut response, &mut call_log, kwargs, Some("argument-user")),
+        input(&mut response, &mut call_log, seeded, Some("argument-user")),
     );
     let expected = Json::Object(object(r#"{"body": {"user": "argument-user"}}"#));
     assert_eq!(
@@ -213,13 +214,13 @@ fn payload_uses_end_user_argument() {
 fn payload_skips_the_user_without_a_usable_end_user(#[case] end_user: Option<&str>) {
     let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
-    let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
+    let seeded = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::returning();
     let kwargs = create_response_logging_payload(
         &cost,
         &builder,
-        input(&mut response, &mut call_log, kwargs, end_user),
+        input(&mut response, &mut call_log, seeded, end_user),
     );
     assert!(kwargs.litellm_params.get("proxy_server_request").is_none());
     assert!(
@@ -259,13 +260,13 @@ fn payload_skips_the_user_without_a_request_body() {
 fn payload_skips_the_user_for_an_empty_request_body() {
     let mut response = json_object(r#"{"id": "upstream-id"}"#);
     let mut call_log = logging_state();
-    let kwargs = logging_kwargs(JsonObject::new(), Some(JsonObject::new()));
+    let seeded = logging_kwargs(JsonObject::new(), Some(JsonObject::new()));
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::returning();
     let kwargs = create_response_logging_payload(
         &cost,
         &builder,
-        input(&mut response, &mut call_log, kwargs, Some("argument-user")),
+        input(&mut response, &mut call_log, seeded, Some("argument-user")),
     );
     assert!(kwargs.litellm_params.get("proxy_server_request").is_none());
     assert!(
@@ -281,13 +282,13 @@ fn payload_stops_after_a_cost_failure() {
     let (log, _guard) = capture_logs(tracing::Level::ERROR);
     let mut response = json_object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
     let mut call_log = logging_state();
-    let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
+    let seeded = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::unpriced();
     let builder = FakeBuilder::returning();
     let kwargs = create_response_logging_payload(
         &cost,
         &builder,
-        input(&mut response, &mut call_log, kwargs, Some("argument-user")),
+        input(&mut response, &mut call_log, seeded, Some("argument-user")),
     );
     assert_eq!(kwargs.response_cost, None);
     assert_eq!(kwargs.model, None);
@@ -315,23 +316,20 @@ fn payload_keeps_finished_steps_when_the_standard_object_fails() {
     let (log, _guard) = capture_logs(tracing::Level::ERROR);
     let mut response = json_object(r#"{"id": "upstream-id", "model": "upstream-model"}"#);
     let mut call_log = logging_state();
-    let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
+    let seeded = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::blank();
     let kwargs = create_response_logging_payload(
         &cost,
         &builder,
-        input(&mut response, &mut call_log, kwargs, Some("argument-user")),
+        input(&mut response, &mut call_log, seeded, Some("argument-user")),
     );
     assert_eq!(kwargs.response_cost, Some(Decimal::new(25, 2)));
     assert_eq!(kwargs.model.as_deref(), Some("requested-model"));
     assert!(kwargs.standard_logging_object.is_none());
-    assert_eq!(
-        kwargs.litellm_params.get("proxy_server_request"),
-        Some(&Json::Object(object(
-            r#"{"body": {"user": "argument-user"}}"#
-        )))
-    );
+    let stored = kwargs.litellm_params.get("proxy_server_request");
+    let expected = Json::Object(object(r#"{"body": {"user": "argument-user"}}"#));
+    assert_eq!(stored, Some(&expected));
     assert_eq!(field(&response, "id").clone(), json_text("upstream-id"));
     assert_eq!(
         field(&response, "model").clone(),
@@ -390,7 +388,7 @@ fn payload_logs_the_standard_object_at_debug() {
     let mut call_log = logging_state();
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::returning();
-    create_response_logging_payload(
+    let kwargs = create_response_logging_payload(
         &cost,
         &builder,
         input(
@@ -400,6 +398,7 @@ fn payload_logs_the_standard_object_at_debug() {
             None,
         ),
     );
+    assert!(kwargs.standard_logging_object.is_some());
     let output = log.contents();
     assert!(output.contains("standard_logging_object= {"));
     assert!(output.contains("\n  \"id\": \"chatcmpl-1\""));
@@ -412,11 +411,12 @@ fn payload_builds_the_standard_object_from_the_updated_state() {
     let kwargs = logging_kwargs(JsonObject::new(), Some(object(r#"{"user": "body-user"}"#)));
     let cost = FakeCost::priced(Decimal::new(25, 2));
     let builder = FakeBuilder::returning();
-    create_response_logging_payload(
+    let logged = create_response_logging_payload(
         &cost,
         &builder,
         input(&mut response, &mut call_log, kwargs, Some("argument-user")),
     );
+    assert!(logged.standard_logging_object.is_some());
     let calls = builder.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "requested-model");
@@ -668,7 +668,9 @@ struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 impl LogBuffer {
     fn contents(&self) -> String {
         let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        String::from_utf8(bytes.clone()).expect("the captured log lines are UTF-8")
+        from_utf8(&bytes)
+            .expect("the captured log lines are UTF-8")
+            .to_owned()
     }
 }
 

@@ -3,6 +3,7 @@
 use std::convert::Infallible;
 use std::future::pending;
 use std::io;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
@@ -21,7 +22,9 @@ struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 impl LogBuffer {
     fn contents(&self) -> String {
         let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        String::from_utf8(bytes.clone()).expect("the captured log lines are UTF-8")
+        from_utf8(&bytes)
+            .expect("the captured log lines are UTF-8")
+            .to_owned()
     }
 }
 
@@ -63,8 +66,8 @@ fn metadata(text: &str) -> IndexMap<String, Json> {
     serde_json::from_str(text).expect("a JSON object")
 }
 
-fn tags(items: &[&str]) -> Option<Vec<String>> {
-    Some(items.iter().map(|item| (*item).to_owned()).collect())
+fn tags(items: &[&str]) -> Vec<String> {
+    items.iter().map(|item| (*item).to_owned()).collect()
 }
 
 #[test]
@@ -103,15 +106,18 @@ fn batch_is_collection_route_cuts_the_query_and_trailing_slashes() {
 fn batch_request_tags_prefer_the_request_tags() {
     let request =
         metadata(r#"{"tags": ["a", "b"], "user_api_key_auth_metadata": {"tags": ["key"]}}"#);
-    assert_eq!(request_tags_from_metadata(&request), tags(&["a", "b"]));
+    assert_eq!(
+        request_tags_from_metadata(&request),
+        Some(tags(&["a", "b"]))
+    );
 }
 
 #[test]
 fn batch_request_tags_fall_back_to_the_key_tags() {
     let request = metadata(r#"{"tags": [1, 2], "user_api_key_auth_metadata": {"tags": ["key"]}}"#);
-    assert_eq!(request_tags_from_metadata(&request), tags(&["key"]));
+    assert_eq!(request_tags_from_metadata(&request), Some(tags(&["key"])));
     let absent = metadata(r#"{"user_api_key_auth_metadata": {"tags": ["key"]}}"#);
-    assert_eq!(request_tags_from_metadata(&absent), tags(&["key"]));
+    assert_eq!(request_tags_from_metadata(&absent), Some(tags(&["key"])));
 }
 
 #[test]
@@ -127,7 +133,10 @@ fn batch_request_tags_keep_an_empty_key_list() {
 #[test]
 fn batch_request_tags_strip_nul_and_drop_non_strings() {
     let request = metadata(r#"{"tags": ["a\u0000b", 7, "c\u0000"]}"#);
-    assert_eq!(request_tags_from_metadata(&request), tags(&["ab", "c"]));
+    assert_eq!(
+        request_tags_from_metadata(&request),
+        Some(tags(&["ab", "c"]))
+    );
 }
 
 #[test]
@@ -167,7 +176,7 @@ fn batch_log_registration_reports_a_stored_object() {
 fn batch_log_registration_reports_a_failed_create() {
     let (log, _guard) = capture_logs(tracing::Level::INFO);
     log_batch_registration_result(
-        Ok::<(), &str>(Err("store failed")),
+        Ok(Err("store failed")),
         "Anthropic",
         "unified-1",
         "batch-1",
@@ -183,7 +192,7 @@ fn batch_log_registration_reports_a_failed_create() {
 fn batch_log_registration_reports_a_stale_object() {
     let (log, _guard) = capture_logs(tracing::Level::INFO);
     log_batch_registration_result(
-        Ok::<(), &str>(Err("store failed")),
+        Ok(Err("store failed")),
         "Anthropic",
         "unified-1",
         "batch-1",
