@@ -48,24 +48,23 @@ async fn an_unauthenticated_start_answers_401() {
     assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
 }
 
-// LiteLLM's {job_id} route reads GET on the static start path as job "start": the merged router must reach the detail read, not the POST route's 405
+// LiteLLM's {job_id} route reads GET on the static start path as job "start": the merged router must reach the detail read, not the POST route's 405 or the list read's 422
 #[tokio::test]
-async fn get_on_the_start_path_reads_job_start() {
+async fn get_on_the_start_path_reaches_the_detail_read() {
     let state = state_for(&empty_config());
     let router = routes(&state).merge(crate::routes::shadow_eval_lifecycle::routes(&state));
-    // the list read rejects this query with 422; the detail read ignores it and reaches the missing database
     let mut request = Request::builder()
         .uri("/auto_router/shadow_eval/start?limit=zero")
         .body(Body::empty())
         .unwrap();
-    // the master key's principal is the proxy admin the read's viewer check expects
+    // an internal user passes the identity check and the detail read refuses the role before its database check, while the list read would reject the query with 422 first
     let principal: Principal = serde_json::from_str(
-        r#"{"principal_type":"human","subject":"master_key","roles":[],"auth_method":"api_key"}"#,
+        r#"{"principal_type":"human","subject":"user-1","auth_method":"api_key"}"#,
     )
-    .expect("the master key's principal");
+    .expect("the internal user's principal");
     request.extensions_mut().insert(AuthContext { principal });
     let response = router.oneshot(request).await.unwrap();
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 // the read's success path reaches the caller as its JSON body, not as the empty 200 a default response carries
