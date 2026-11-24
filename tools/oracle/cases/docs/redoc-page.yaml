@@ -1,0 +1,15 @@
+name: docs-redoc-page
+config: |
+  model_list: []
+env: {}
+request:
+  method: GET
+  path: /redoc
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

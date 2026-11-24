@@ -1,0 +1,30 @@
+kind: helper
+name: auth-org-lookup-project-not-found
+call:
+  auth_org_lookup:
+    function: project_object
+    database: true
+    target: p1
+    in_memory_ttl: 5.0
+    steps:
+      - {now: 100.0, fail: []}
+calls:
+  - auth_org_lookup:
+      function: project_object
+      database: false
+      target: p1
+      in_memory_ttl: 5.0
+      steps:
+        - {now: 100.0, fail: []}
+  # the table holds another project, so absence is a filtered read rather than an empty table
+  - auth_org_lookup:
+      function: project_object
+      database: true
+      target: p2
+      in_memory_ttl: 5.0
+      project_row: {project_id: p1, project_alias: research, budget_id: b2}
+      steps:
+        - {now: 100.0, fail: []}
+env:
+  DEFAULT_IN_MEMORY_TTL: "5"
+compare: {ignore: []}

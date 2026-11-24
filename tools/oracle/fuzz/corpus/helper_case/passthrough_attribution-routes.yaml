@@ -1,0 +1,37 @@
+kind: helper
+name: passthrough-attribution-routes-seed
+call:
+  b3630:
+    routes:
+      - url_route: "/v1/messages/batches?beta=1"
+        collection_suffix: "/batches"
+      - url_route: "/v1/messages/batches/msg_1"
+        collection_suffix: "/batches"
+    tags: []
+    models: []
+    ids: []
+    costing: []
+    speeds: []
+calls:
+  - b3630:
+      routes: []
+      tags:
+        - metadata:
+            tags:
+              - "a\u0000b"
+              - 1
+            user_api_key_auth_metadata:
+              tags:
+                - "key"
+        - metadata:
+            tags:
+              - 1
+            user_api_key_auth_metadata:
+              tags: []
+      models: []
+      ids: []
+      costing: []
+      speeds: []
+env: {}
+compare:
+  ignore: []
