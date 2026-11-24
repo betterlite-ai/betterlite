@@ -445,7 +445,7 @@ impl Harness {
         let config: Option<Arc<dyn ReloadConfigStore>> = self
             .store
             .as_ref()
-            .map_or_else(|| None, |fake| Some(Arc::new(fake.clone())));
+            .map(|fake| -> Arc<dyn ReloadConfigStore> { Arc::new(fake.clone()) });
         let now = self.now;
         ReloadRoutesState {
             config,
