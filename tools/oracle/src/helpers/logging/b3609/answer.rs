@@ -1,4 +1,4 @@
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_logging::passthrough_stream_lifecycle::failure::StreamFailure;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
@@ -28,33 +28,21 @@ pub(super) fn answer(
         .read(&mut |state| state.litellm_params.clone())
         .unwrap_or_default();
     let (route_calls, route_bytes) = route_summary(recorder);
-    let result = outcome(driven);
-    let completion = completion_start(logging_obj);
-    let failures: Vec<Value> = recorder
-        .failures
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .map(|failure| {
-            json!({
-                "class": failure.class,
-                "message": failure.message,
-                "traceback_tail": failure.traceback.lines().last().unwrap_or_default(),
-            })
+    let failures = locked_rows(&recorder.failures, |failure| {
+        json!({
+            "class": failure.class,
+            "message": failure.message,
+            "traceback_tail": failure.traceback.lines().last().unwrap_or_default(),
         })
-        .collect();
-    let started: Vec<Value> = recorder
-        .started
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .map(|(run_id, at)| json!([run_id, at.to_rfc3339()]))
-        .collect();
+    });
+    let started = locked_rows(&recorder.started, |(run_id, at)| {
+        json!([run_id, at.to_rfc3339()])
+    });
     json!({
         "yielded": driven.yielded,
-        "outcome": result,
+        "outcome": outcome(driven),
         "error": driven.failure.as_ref().map(error_text),
-        "completion_start_time": completion,
+        "completion_start_time": completion_start(logging_obj),
         "route_calls": route_calls,
         "route_raw_bytes": route_bytes,
         "queued_jobs": driven.queued_jobs,
@@ -68,6 +56,17 @@ pub(super) fn answer(
             .unwrap_or_else(PoisonError::into_inner),
         "callback_bound": callback_bound(&params),
     })
+}
+
+fn locked_rows<T, F>(list: &Mutex<Vec<T>>, row: F) -> Vec<Value>
+where
+    F: Fn(&T) -> Value,
+{
+    list.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .map(row)
+        .collect()
 }
 
 fn completion_start(logging_obj: &StreamLoggingObject) -> Option<String> {
