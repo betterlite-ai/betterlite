@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_cache::dual_cache::{CacheOptions, Ttl};
+use betterlite_cache::types::pipeline::RedisPipelineIncrement;
 use betterlite_models::decisions::Json;
 use betterlite_redis::redis_cache::RedisCache;
 use pyo3::prelude::*;
@@ -60,5 +61,22 @@ pub(super) async fn count(
 
 pub(super) async fn close_tier(tier: Arc<RedisCache>) -> PyResult<()> {
     tier.admin.disconnect().await;
+    Ok(())
+}
+
+// LiteLLM's RedisPipelineIncrementOperation reaches Rust as (key, increment_value, ttl)
+pub(super) async fn pipeline_post_call(
+    cache: Arc<MemoryDual>,
+    operations: Vec<(String, f64, Option<i64>)>,
+) -> PyResult<()> {
+    let queued: Vec<RedisPipelineIncrement> = operations
+        .into_iter()
+        .map(|(key, increment_value, ttl)| RedisPipelineIncrement {
+            key,
+            increment_value,
+            ttl,
+        })
+        .collect();
+    cache.pipeline_increment_post_call(&queued).await;
     Ok(())
 }

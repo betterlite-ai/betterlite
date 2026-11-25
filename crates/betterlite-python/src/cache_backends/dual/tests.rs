@@ -120,12 +120,6 @@ fn backends_dual_pre_call_without_redis_is_not_deferred() {
                 .is_none()
         );
         assert!(native.delete_cache_pre_call(py, "key").unwrap().is_none());
-        assert!(
-            native
-                .declare_batch_get(py, vec!["key".to_owned()])
-                .unwrap()
-                .is_none()
-        );
     });
 }
 
@@ -186,5 +180,25 @@ fn backends_dual_cancel_drops_the_deferred_write() {
         assert!(pending.borrow(py).result.lock().unwrap().is_some());
         pending.borrow(py).cancel();
         assert!(pending.borrow(py).result.lock().unwrap().is_none());
+    });
+}
+
+#[test]
+fn backends_dual_pipeline_post_call_counts_in_memory() {
+    let native = native_dual(None);
+    let operations = vec![
+        ("first".to_owned(), 2.0_f64, None),
+        ("second".to_owned(), 3.0_f64, Some(60)),
+        ("first".to_owned(), 1.0_f64, None),
+    ];
+    get_runtime()
+        .block_on(pipeline_post_call(Arc::clone(&native.cache), operations))
+        .unwrap();
+    Python::attach(|py| {
+        assert_eq!(native.increment(py, "first", 0.0_f64, None).unwrap(), "3.0");
+        assert_eq!(
+            native.increment(py, "second", 0.0_f64, None).unwrap(),
+            "3.0"
+        );
     });
 }

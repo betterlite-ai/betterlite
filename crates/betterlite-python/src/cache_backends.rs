@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 
 use self::disk::NativeDisk;
 use self::dual::NativeDual;
-use self::dual::batch::{NativeDeclaredBatchRead, NativeDeferred};
+use self::dual::batch::{NativeDeclaredBatchRead, NativeDeferred, NativeRedisBatch};
 use self::memory::NativeMemory;
 use self::redis::NativeRedis;
 
@@ -22,6 +22,7 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeDual>()?;
     module.add_class::<NativeDeferred>()?;
     module.add_class::<NativeDeclaredBatchRead>()?;
+    module.add_class::<NativeRedisBatch>()?;
     Ok(())
 }
 

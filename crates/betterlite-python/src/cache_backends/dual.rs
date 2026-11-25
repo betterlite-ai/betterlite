@@ -5,13 +5,14 @@ use betterlite_cache::batch_reads::BatchReadOptions;
 use betterlite_cache::batch_reads::BatchReads;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_redis::redis_cache::RedisCache;
-use betterlite_redis::request_batch::scope::active_request_redis_batch;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
-use self::batch::{NativeDeclaredBatchRead, NativeDeferred};
-use self::values::{answer_json, close_tier, count, options, store, text_of_ttl};
+use self::batch::{NativeDeclaredBatchRead, NativeDeferred, NativeRedisBatch};
+use self::values::{
+    answer_json, close_tier, count, options, pipeline_post_call, store, text_of_ttl,
+};
 use super::error::{self, BackendHandleError};
 use super::memory::NativeMemory;
 use super::redis::NativeRedis;
@@ -138,24 +139,23 @@ impl NativeDual {
         &self,
         py: Python<'_>,
         keys: Vec<String>,
-    ) -> PyResult<Option<Py<NativeDeclaredBatchRead>>> {
-        let Some(redis) = &self.redis else {
-            return Ok(None);
-        };
-        let Some(batch) = active_request_redis_batch(redis) else {
-            return Ok(None);
-        };
-        let declared = BatchReads::declare_batch_get(&*self.cache, &keys, &batch)
+        batch: PyRef<'_, NativeRedisBatch>,
+    ) -> PyResult<Py<NativeDeclaredBatchRead>> {
+        let read = BatchReads::declare_batch_get(&*self.cache, &keys, &batch.batch)
             .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-        drop(keys);
-        Py::new(
-            py,
-            NativeDeclaredBatchRead {
-                cache: Arc::clone(&self.cache),
-                declared: Mutex::new(Some(declared)),
-            },
-        )
-        .map(Some)
+        drop((keys, batch));
+        let cache = Arc::clone(&self.cache);
+        let declared = Mutex::new(Some(read));
+        Py::new(py, NativeDeclaredBatchRead { cache, declared })
+    }
+
+    fn async_increment_cache_pipeline_post_call<'py>(
+        &self,
+        py: Python<'py>,
+        operations: Vec<(String, f64, Option<i64>)>,
+    ) -> AsyncAnswer<'py> {
+        let cache = Arc::clone(&self.cache);
+        future_into_py(py, pipeline_post_call(cache, operations))
     }
 
     fn set_cache_pre_call(

@@ -42,6 +42,12 @@ deviations:
   - what: A DualCache async write ignores nx, so it replaces an existing Redis key where LiteLLM's async_set_cache hands nx to the Redis tier; the memory tier takes the new value in both.
     why: The native dual cache's async_set has no nx argument, and routing a dual write around the native handle would drop the crate's tier and batch rules (B4293 to B4295); the stand-alone RedisCache does forward and validate nx.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L519
+  - what: DualCache.get_cache, async_get_cache, batch_get_cache and async_batch_get_cache raise UnsupportedCallArgument("ttl") when the caller passes a ttl and the cache has a Redis tier (the check is skipped for local_only reads in the batch methods and for a cache with no Redis tier); LiteLLM accepts the ttl and stamps it on the memory backfill of a Redis hit.
+    why: The backfill is written by the Rust dual cache with the tier's own ttl and takes no per-call value, so honoring the argument is not possible here, and dropping it silently would give a Redis-only entry read with ttl=1 the default expiry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L436
+  - what: DualCache.declare_batch_get is async and takes the request batch as a NativeRedisBatch built from the Redis tier's native handle, and it returns the declared read to resolve; LiteLLM's takes a Python RedisBatch.
+    why: The request batch lives in the Rust redis crate, so a Python caller has to hold a native handle to it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L385-L399
   - what: This task has no helper oracle cases.
     why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
     link: ""

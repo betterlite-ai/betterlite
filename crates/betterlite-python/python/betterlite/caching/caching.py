@@ -1,7 +1,7 @@
 import logging
 from contextlib import suppress
 from enum import StrEnum
-from typing import Final
+from typing import Final, Unpack
 
 from pydantic import JsonValue
 
@@ -9,6 +9,7 @@ import betterlite
 from betterlite._cache_ops import CacheOperations
 from betterlite._settings.callbacks import Callback
 from betterlite.caching._backend import cluster_nodes_are_set
+from betterlite.caching._cache_arguments import REDIS_OVERRIDES, CacheArguments
 from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.disk_cache import DiskCache
 from betterlite.caching.in_memory_cache import InMemoryCache
@@ -156,7 +157,7 @@ class Cache(CacheOperations):
                 password=password,
                 redis_flush_size=redis_flush_size,
                 namespace=namespace,
-                **kwargs,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L213-L219
+                **REDIS_OVERRIDES.validate_python(kwargs),
             )
         elif selected == LiteLLMCacheType.LOCAL:
             backend = InMemoryCache()
@@ -204,7 +205,7 @@ def enable_cache(
     port: str | None = None,
     password: str | None = None,
     supported_call_types: list[CallType] | None = list(SUPPORTED_CALLS),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1020
-    **kwargs: JsonValue,
+    **kwargs: Unpack[CacheArguments],
 ) -> None:
     print_verbose("LiteLLM: Enabling Cache")
     _add_cache_callbacks()
@@ -215,7 +216,7 @@ def enable_cache(
             port=port,
             password=password,
             supported_call_types=supported_call_types,
-            **kwargs,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1050-L1056
+            **kwargs,
         )
     print_verbose(f"LiteLLM: Cache enabled, litellm.cache={betterlite.cache}")
     print_verbose(f"LiteLLM Cache: {betterlite.cache}")
@@ -227,7 +228,7 @@ def update_cache(
     port: str | None = None,
     password: str | None = None,
     supported_call_types: list[CallType] | None = list(SUPPORTED_CALLS),  # noqa: B006  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1067
-    **kwargs: JsonValue,
+    **kwargs: Unpack[CacheArguments],
 ) -> None:
     print_verbose("LiteLLM: Updating Cache")
     betterlite.cache = Cache(
@@ -236,7 +237,7 @@ def update_cache(
         port=port,
         password=password,
         supported_call_types=supported_call_types,
-        **kwargs,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1086-L1093
+        **kwargs,
     )
     print_verbose(f"LiteLLM: Cache Updated, litellm.cache={betterlite.cache}")
     print_verbose(f"LiteLLM Cache: {betterlite.cache}")

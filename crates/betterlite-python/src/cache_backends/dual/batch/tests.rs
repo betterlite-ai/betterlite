@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_cache::batch_reads::PendingBatchRead;
+use tokio_util::task::TaskTracker;
 
 use super::*;
 use crate::cache_backends::dual::tests::{dead_tier, native_dual};
@@ -39,16 +40,45 @@ fn batch_reads_shared() {
     );
 }
 
+fn supplied_batch(py: Python<'_>) -> Py<NativeRedisBatch> {
+    let batch = RedisBatch::new(dead_tier(), "request_redis_batch", TaskTracker::new());
+    let supplied = NativeRedisBatch {
+        batch: Arc::new(batch),
+    };
+    Py::new(py, supplied).unwrap()
+}
+
 #[test]
-fn batch_declaration_needs_a_request() {
+fn batch_declares_the_read_on_the_supplied_batch() {
     let native = native_dual(Some(dead_tier()));
     Python::attach(|py| {
-        assert!(
-            native
-                .declare_batch_get(py, vec!["key".to_owned()])
-                .unwrap()
-                .is_none()
-        );
+        let batch = supplied_batch(py);
+        let keys = vec!["key".to_owned()];
+        let declared = native
+            .declare_batch_get(py, keys, batch.borrow(py))
+            .unwrap();
+        assert_eq!(batch.borrow(py).batch.pending(), 1);
+        let held = declared.borrow(py);
+        let slot = held.declared.lock().unwrap();
+        let read = slot.as_ref().unwrap();
+        assert_eq!(read.pending.redis_keys, vec!["key".to_owned()]);
+        assert!(read.result.is_some());
+    });
+}
+
+#[test]
+fn batch_declaration_without_redis_declares_nothing() {
+    let native = native_dual(None);
+    Python::attach(|py| {
+        let batch = supplied_batch(py);
+        let keys = vec!["key".to_owned()];
+        let declared = native
+            .declare_batch_get(py, keys, batch.borrow(py))
+            .unwrap();
+        assert_eq!(batch.borrow(py).batch.pending(), 0);
+        let held = declared.borrow(py);
+        let slot = held.declared.lock().unwrap();
+        assert!(slot.as_ref().unwrap().result.is_none());
         assert!(deferred(py, None).unwrap().is_none());
     });
 }

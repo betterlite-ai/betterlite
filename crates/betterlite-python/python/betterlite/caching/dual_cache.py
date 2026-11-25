@@ -7,11 +7,18 @@ from pydantic import JsonValue
 from typing_extensions import override
 
 import betterlite
-from betterlite._native import NativeDeclaredBatchRead, NativeDeferred, NativeDual
+from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._native import (
+    NativeDeclaredBatchRead,
+    NativeDeferred,
+    NativeDual,
+    NativeRedisBatch,
+)
 from betterlite.caching._backend import _number, _ttl_of, _value_or_none
 from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.in_memory_cache import InMemoryCache
 from betterlite.caching.redis_cache import RedisCache
+from betterlite.types.caching import RedisPipelineIncrementOperation
 
 DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE: Final = 1000  # ast-grep-ignore: no-long-names
 _DEFAULT_BATCH_CACHE_EXPIRY: Final = 10.0
@@ -88,6 +95,12 @@ class DualCache(BaseCache):
             json.dumps(settings),
         )
 
+    # A read that finds a value only in Redis backfills memory with the tier's own ttl; a caller's ttl
+    # for that backfill is not carried over yet, so it fails instead of being dropped.
+    def _reject_backfill_ttl(self, kwargs: dict[str, JsonValue]) -> None:
+        if kwargs.get("ttl") is not None and self.redis_cache is not None:
+            raise UnsupportedCallArgument("ttl")
+
     # LiteLLM stamps default_in_memory_ttl on a memory write that carries no ttl of its own.
     def _memory_kwargs(self, kwargs: dict[str, JsonValue]) -> dict[str, JsonValue]:
         if "ttl" in kwargs or self.default_in_memory_ttl is None:
@@ -130,9 +143,10 @@ class DualCache(BaseCache):
         local_only: JsonValue = False,
         **kwargs: JsonValue,
     ) -> JsonValue:
-        _unread = (parent_otel_span, kwargs)
+        _unread = parent_otel_span
         if _local_only(local_only):
             return self.in_memory_cache.get_cache(key)
+        self._reject_backfill_ttl(kwargs)
         return _value_or_none(self.native.get(key))
 
     @override
@@ -143,8 +157,9 @@ class DualCache(BaseCache):
         local_only: JsonValue = False,
         **kwargs: JsonValue,
     ) -> JsonValue:
-        _unread = (parent_otel_span, kwargs)
+        _unread = parent_otel_span
         if not _local_only(local_only):
+            self._reject_backfill_ttl(kwargs)
             return _value_or_none(await self.native.async_get(key))
         return await self.in_memory_cache.async_get_cache(key)
 
@@ -155,7 +170,9 @@ class DualCache(BaseCache):
         local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L218-L223
         **kwargs: JsonValue,
     ) -> list[JsonValue] | None:
-        _unread = (parent_otel_span, kwargs)
+        _unread = parent_otel_span
+        if not local_only:
+            self._reject_backfill_ttl(kwargs)
         return _batch_values(self.native.batch_get(keys, local_only))
 
     async def async_batch_get_cache(
@@ -165,7 +182,9 @@ class DualCache(BaseCache):
         local_only: bool = False, throttle_redis: bool = True,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L401-L407
         **kwargs: JsonValue,
     ) -> list[JsonValue] | None:
-        _unread = (parent_otel_span, kwargs)
+        _unread = parent_otel_span
+        if not local_only:
+            self._reject_backfill_ttl(kwargs)
         result = await self.native.async_batch_get(
             keys, (local_only, throttle_redis)
         )
@@ -179,8 +198,10 @@ class DualCache(BaseCache):
         answers = await NativeDual.async_batch_get_shared(native_reads)
         return [_batch_values(answer) for answer in answers]
 
-    def declare_batch_get(self, keys: Sequence[str]) -> NativeDeclaredBatchRead | None:
-        return self.native.declare_batch_get(list(keys))
+    async def declare_batch_get(
+        self, keys: Sequence[str], batch: NativeRedisBatch
+    ) -> NativeDeclaredBatchRead:
+        return self.native.declare_batch_get(list(keys), batch)
 
     async def async_resolve_batch_get(
         self, declared: NativeDeclaredBatchRead
@@ -197,6 +218,28 @@ class DualCache(BaseCache):
     async def async_delete_cache_pre_call(self, key: str) -> _DeferredResult | None:
         result = self.native.delete_cache_pre_call(key)
         return None if result is None else _DeferredResult(result)
+
+    async def async_increment_cache_post_call(
+        self, key: str, value: float, ttl: int | None, parent_otel_span: JsonValue = None
+    ) -> None:
+        operation: RedisPipelineIncrementOperation = {
+            "key": key,
+            "increment_value": value,
+            "ttl": ttl,
+        }
+        await self.async_increment_cache_pipeline_post_call((operation,), parent_otel_span)
+
+    async def async_increment_cache_pipeline_post_call(
+        self,
+        increment_list: Sequence[RedisPipelineIncrementOperation],
+        parent_otel_span: JsonValue = None,
+    ) -> None:
+        _unread = parent_otel_span
+        operations = [
+            (entry["key"], entry["increment_value"], entry["ttl"])
+            for entry in increment_list
+        ]
+        await self.native.async_increment_cache_pipeline_post_call(operations)
 
     def increment_cache(
         self,

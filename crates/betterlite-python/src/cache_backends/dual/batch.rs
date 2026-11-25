@@ -2,12 +2,21 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_cache::batch_reads::{BatchReads, DeclaredBatchRead};
 use betterlite_models::decisions::Json;
+use betterlite_redis::batch::RedisBatch;
 use betterlite_redis::batch::result::BatchResult;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
+use tokio_util::task::TaskTracker;
 
 use super::{AsyncAnswer, MemoryDual, answer_json};
+use crate::cache_backends::redis::NativeRedis;
+
+// The batch a caller hands to declare_batch_get: its reads ride one pipeline round trip on that Redis tier.
+#[pyclass(module = "betterlite._native")]
+pub(crate) struct NativeRedisBatch {
+    pub(super) batch: Arc<RedisBatch>,
+}
 
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeDeferred {
@@ -18,6 +27,20 @@ pub(crate) struct NativeDeferred {
 pub(crate) struct NativeDeclaredBatchRead {
     pub(super) cache: Arc<MemoryDual>,
     pub(super) declared: Mutex<Option<DeclaredBatchRead>>,
+}
+
+#[pymethods]
+impl NativeRedisBatch {
+    #[new]
+    // ast-grep-ignore: no-one-line-functions - Python calls this constructor, so there is no Rust caller to inline into
+    fn new(redis: PyRef<'_, NativeRedis>) -> Self {
+        let tracker = TaskTracker::new();
+        let batch = RedisBatch::new(Arc::clone(&redis.cache), "request_redis_batch", tracker);
+        drop(redis);
+        Self {
+            batch: Arc::new(batch),
+        }
+    }
 }
 
 #[pymethods]
