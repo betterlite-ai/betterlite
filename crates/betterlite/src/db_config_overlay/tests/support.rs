@@ -1,7 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{Read as _, Write as _};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::sections::scheduled_job_stagger::Settings as StaggerSettings;
@@ -14,6 +19,7 @@ use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, Stor
 use betterlite_server::bucket_config::object::BucketObjectReader;
 use betterlite_server::db_row_decrypt::warnings::Warnings;
 use betterlite_server::plugin_routes::config::PluginRegistry;
+use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
 use betterlite_server::proxy_config_state::state::ProxyConfigState;
 use chrono::DateTime;
 use jiff::tz::TimeZoneDatabase;
@@ -27,7 +33,11 @@ use crate::config_boot::test_support::secret_lookup;
 use crate::db_config_overlay::error::{EndpointInstallError, OverlayError};
 use crate::db_config_overlay::general::{CleanupInputs, EffectPorts, apply_general_settings_row};
 use crate::db_config_overlay::pass_through::PassThroughInstaller;
-use crate::db_config_overlay::source::ConfigSource;
+use crate::db_config_overlay::reload::{
+    begin_reload, finish_reload, reload_stores, resolve_reload,
+};
+use crate::db_config_overlay::rows::fetch_db_rows;
+use crate::db_config_overlay::source::{ConfigSource, read_config};
 use crate::db_config_overlay::state::{
     ConfigRowReader, OverlayDatabase, OverlayState, RuntimeEffect, RuntimeSink,
 };
@@ -286,6 +296,24 @@ pub(super) fn file_source(path: &Path) -> ConfigSource {
     }
 }
 
+// get_config's phases against a state the test owns; the port drives the same steps around its own locks
+pub(super) async fn reload_config(
+    overlay: &mut OverlayState,
+    source: &ConfigSource,
+    db: Option<&OverlayDatabase>,
+    env: &mut BTreeMap<String, String>,
+) -> Result<ConfigWithBaseline, OverlayError> {
+    let file_config = read_config(source, env).await?;
+    reload_stores(overlay, &file_config)?;
+    let stored = match db.filter(|_| overlay.config.store_model_in_db) {
+        Some(backed) => Some((backed, fetch_db_rows(backed).await?)),
+        None => None,
+    };
+    let pending = begin_reload(overlay, &file_config, stored, source, env)?;
+    let resolved = resolve_reload(pending).await?;
+    Ok(finish_reload(overlay, resolved))
+}
+
 // a bucket holding one config object under the key the test names
 pub(super) struct MemoryBucket {
     pub(super) objects: BTreeMap<String, String>,
@@ -316,6 +344,83 @@ pub(super) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+const VAULT_BODY: &str = "{\"data\":{\"data\":{\"key\":\"sk-vault-secret\"}}}";
+
+// A Vault on loopback answering the one read a reload makes, so the manager transport runs its real HTTP path
+pub(super) struct MockVault {
+    pub(super) address: SocketAddr,
+    requests: Arc<Mutex<Vec<String>>>,
+    stopping: Arc<AtomicBool>,
+    server: Option<JoinHandle<()>>,
+}
+
+impl MockVault {
+    pub(super) fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let requests: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let stopping = Arc::new(AtomicBool::new(false));
+        let server = {
+            let request_log = Arc::clone(&requests);
+            let stop_signal = Arc::clone(&stopping);
+            thread::Builder::new()
+                .name("b8379-mock-vault".to_owned())
+                .spawn(move || {
+                    while !stop_signal.load(Ordering::Relaxed) {
+                        let Ok((mut stream, _peer)) = listener.accept() else {
+                            break;
+                        };
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(5)))
+                            .unwrap();
+                        let mut head = Vec::new();
+                        let mut chunk = [0_u8; 512];
+                        while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+                            let read = stream.read(&mut chunk).unwrap_or_default();
+                            if read == 0 {
+                                break;
+                            }
+                            head.extend_from_slice(&chunk[..read]);
+                        }
+                        request_log
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .push(String::from_utf8(head).unwrap());
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{VAULT_BODY}",
+                            VAULT_BODY.len()
+                        );
+                        drop(stream.write_all(response.as_bytes()));
+                    }
+                })
+                .unwrap()
+        };
+        Self {
+            address,
+            requests,
+            stopping,
+            server: Some(server),
+        }
+    }
+
+    pub(super) fn requests(&self) -> Vec<String> {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl Drop for MockVault {
+    fn drop(&mut self) {
+        self.stopping.store(true, Ordering::Relaxed);
+        drop(TcpStream::connect(self.address));
+        if let Some(server) = self.server.take() {
+            let _joined = server.join();
+        }
+    }
 }
 
 pub(super) fn write_config(directory: &Path, yaml: &str) -> PathBuf {

@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use betterlite_config::sections::settings::JsonValue;
@@ -7,13 +9,13 @@ use rstest::rstest;
 use tempfile::TempDir;
 
 use super::support::{
-    RecordingRuntime, bucket_source, database, environment, file_source, json, state, write_config,
+    MockVault, RecordingRuntime, bucket_source, database, environment, file_source, json,
+    reload_config, state, write_config,
 };
 use crate::config_boot::test_support::{capture_logs, secret_lookup};
 use crate::db_config_overlay::environ::Resolver;
 use crate::db_config_overlay::error::OverlayError;
-use crate::db_config_overlay::reload::reload_config;
-use crate::db_config_overlay::source::ConfigSource;
+use crate::db_config_overlay::source::{ConfigSource, parse_config_file};
 
 const BUCKET_ENV: [(&str, &str); 2] = [
     ("LITELLM_CONFIG_BUCKET_NAME", "configs"),
@@ -488,6 +490,45 @@ async fn reload_exports_database_environment_values_before_resolving() {
         json!({"master_key": "sk-db"})
     );
     assert_eq!(env.get("DB_MASTER").map(String::as_str), Some("sk-db"));
+}
+
+// The manager read blocks, so it must run where no Tokio runtime is entered; Vault answers only over HTTP
+#[tokio::test]
+async fn reload_reads_an_uncached_vault_secret_off_the_runtime() {
+    let vault = MockVault::start();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(
+        directory.path(),
+        "general_settings:\n  key_management_system: hashicorp_vault\n  master_key: os.environ/OPENAI_API_KEY\n",
+    );
+    let address = format!("http://{}", vault.address);
+    let mut env = environment(&[
+        ("HCP_VAULT_ADDR", address.as_str()),
+        ("HCP_VAULT_TOKEN", "vault-token"),
+    ]);
+    let mut overlay = state(false, &Arc::new(RecordingRuntime::default()));
+    let reloaded = reload_config(&mut overlay, &file_source(&path), None, &mut env)
+        .await
+        .unwrap();
+    let expected = json!({
+        "key_management_system": "hashicorp_vault",
+        "master_key": "sk-vault-secret"
+    });
+    assert_eq!(reloaded.values["general_settings"], expected);
+    assert_eq!(overlay.config.snapshot()["general_settings"], expected);
+    assert!(
+        vault
+            .requests()
+            .iter()
+            .any(|request| request.starts_with("GET /v1/secret/data/OPENAI_API_KEY "))
+    );
+    assert!(!env.contains_key("OPENAI_API_KEY"));
+}
+
+#[rstest]
+fn replays_the_config_overlay_corpus(#[files("fuzz/corpus/config_overlay/*")] path: PathBuf) {
+    let text = fs::read_to_string(&path).unwrap();
+    drop(parse_config_file(&path, &text));
 }
 
 // a leaf behind the given number of single-key mappings

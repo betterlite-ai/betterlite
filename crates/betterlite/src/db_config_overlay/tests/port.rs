@@ -10,10 +10,10 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::support::{
     Journal, RecordingInstaller, RecordingRuntime, database, failing_database, file_source, json,
-    state, write_config,
+    reload_config, state, write_config,
 };
+use crate::config_boot::test_support::capture_logs;
 use crate::db_config_overlay::port::OverlayPortAdapter;
-use crate::db_config_overlay::reload::reload_config;
 use crate::db_config_overlay::state::OverlayDatabase;
 
 const CONFIG: &str =
@@ -85,6 +85,27 @@ async fn port_missing_config_file_gives_reload() {
         .await
         .unwrap_err();
     assert_eq!(error, ConfigOverlayPortError::Reload);
+}
+
+// A parser diagnostic renders the surrounding config lines, so the logged error must not carry the file text
+#[tokio::test]
+async fn port_reload_logs_the_yaml_error_without_the_config_text() {
+    let (logs, _guard) = capture_logs();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(
+        directory.path(),
+        "general_settings: {master_key: sk-live-secret, ]}\n",
+    );
+    let error = port(&path, None, RecordingInstaller::default())
+        .port
+        .reload_config()
+        .await
+        .unwrap_err();
+    assert_eq!(error, ConfigOverlayPortError::Reload);
+    let logged = logs.contents();
+    assert!(logged.contains("is not valid YAML"), "{logged}");
+    assert!(!logged.contains("sk-live-secret"), "{logged}");
+    assert!(!logged.contains("general_settings"), "{logged}");
 }
 
 #[tokio::test]
