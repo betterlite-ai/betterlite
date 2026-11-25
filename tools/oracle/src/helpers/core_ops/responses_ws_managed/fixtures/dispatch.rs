@@ -17,6 +17,15 @@ use super::{
     NoInterception, Nothing, Outbound,
 };
 
+struct DispatchPorts {
+    resolver: DispatchResolver,
+    configs: Configs,
+    nothing: Nothing,
+    interception: NoInterception,
+    bridge: NoBridge,
+    variables: BTreeMap<String, String>,
+}
+
 // The HTTP call LiteLLM makes for the turn, through the production aresponses path, with the answer discarded
 pub(crate) async fn dispatch(
     outbound: &Outbound,
@@ -24,9 +33,7 @@ pub(crate) async fn dispatch(
     model: &str,
     call_kwargs: &IndexMap<String, Json>,
 ) -> Result<(), DispatchFailure> {
-    let call: ResponsesCreateCall =
-        transcode(&Json::Object(dispatched(base_url, model, call_kwargs)))
-            .map_err(FixtureError::Call)?;
+    let call = call_for_dispatch(base_url, model, call_kwargs)?;
     let mut probe = LoggingProbe::new()?;
     let environment = PrePostEnv {
         debug: DebugSettings::default(),
@@ -46,19 +53,44 @@ pub(crate) async fn dispatch(
         state: &mut probe.state,
         env: &environment,
     };
-    let variables: BTreeMap<String, String> = BTreeMap::new();
-    let resolver = DispatchResolver;
-    let configs = Configs;
-    let nothing = Nothing;
-    let interception = NoInterception;
-    let bridge = NoBridge;
-    let deps = ResponsesCreateDeps {
-        resolver: &resolver,
-        lookup: &configs,
-        configs: &configs,
+    let ports = DispatchPorts {
+        resolver: DispatchResolver,
+        configs: Configs,
+        nothing: Nothing,
+        interception: NoInterception,
+        bridge: NoBridge,
+        variables: BTreeMap::new(),
+    };
+    let deps = dependencies(outbound, &ports);
+    let execution = CreateExecution { deps: &deps };
+    let create = AsyncCreateDeps {
+        resolver: &ports.resolver,
+        lookup: &ports.configs,
+        prompts: None,
+    };
+    let _created = aresponses(&create, &execution, &call, (), &mut log).await?;
+    Ok(())
+}
+
+fn call_for_dispatch(
+    base_url: &str,
+    model: &str,
+    call_kwargs: &IndexMap<String, Json>,
+) -> Result<ResponsesCreateCall, FixtureError> {
+    transcode(&Json::Object(dispatched(base_url, model, call_kwargs))).map_err(FixtureError::Call)
+}
+
+fn dependencies<'deps>(
+    outbound: &'deps Outbound,
+    ports: &'deps DispatchPorts,
+) -> ResponsesCreateDeps<'deps, Outbound, Configs, Nothing, NoInterception, ()> {
+    ResponsesCreateDeps {
+        resolver: &ports.resolver,
+        lookup: &ports.configs,
+        configs: &ports.configs,
         source: outbound,
         supplied: None,
-        environment: &variables,
+        environment: &ports.variables,
         prompts: None,
         file_mapping: None,
         hooks: CreateHooks {
@@ -66,24 +98,16 @@ pub(crate) async fn dispatch(
                 global: &[],
                 dynamic: &[],
             },
-            resolver: &nothing,
-            dispatcher: &nothing,
-            executor: &nothing,
+            resolver: &ports.nothing,
+            dispatcher: &ports.nothing,
+            executor: &ports.nothing,
             logging: None,
         },
-        interception: &interception,
-        bridge: &bridge,
+        interception: &ports.interception,
+        bridge: &ports.bridge,
         drop_params: false,
         reasoning_auto_summary: false,
-    };
-    let execution = CreateExecution { deps: &deps };
-    let create = AsyncCreateDeps {
-        resolver: &resolver,
-        lookup: &configs,
-        prompts: None,
-    };
-    let _created = aresponses(&create, &execution, &call, (), &mut log).await?;
-    Ok(())
+    }
 }
 
 fn dispatched(

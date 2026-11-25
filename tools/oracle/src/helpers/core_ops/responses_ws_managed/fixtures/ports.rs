@@ -65,10 +65,10 @@ impl ModelResolver for DispatchResolver {
         &self,
         request: &ResolutionRequest<'_>,
     ) -> Result<ResolvedModel, ResolutionError> {
-        let (prefix, rest) = match request.model.split_once('/') {
-            Some(pair) => pair,
-            None => (request.model, request.model),
-        };
+        let (prefix, rest) = request
+            .model
+            .split_once('/')
+            .map_or((request.model, request.model), |pair| pair);
         let provider = request.custom_llm_provider.unwrap_or(prefix);
         if provider != "openai" {
             return Err(ResolutionError::MissingProvider {
@@ -86,7 +86,7 @@ impl ModelResolver for DispatchResolver {
 
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
-pub(super) struct HookFailure {
+pub(crate) struct HookFailure {
     pub(super) message: String,
 }
 

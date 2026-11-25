@@ -11,6 +11,7 @@ use betterlite_core::api::responses_ws_managed::provider::ResponsesStreaming;
 use betterlite_core::api::responses_ws_managed::run::{FrameSource, run};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::routing_mock_scripts::ProviderCall;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -65,50 +66,58 @@ impl Helper for Op {
                 .map_err(|error| support::helper_error("FixtureError", error.to_string()))?,
             base_url: mock.base_url.clone(),
         };
-        let socket = Socket {
-            shared: Arc::clone(&shared),
-            fails_at: input.sink.fails_at,
-            message: input.sink.message.clone(),
-        };
-        let source = ScriptedSource {
-            shared: Arc::clone(&shared),
-            frames: input.frames.clone(),
-            disconnect: input.disconnect.clone(),
-            next: 0,
-        };
-        let mut handler = build_handler(&input.setup, socket, &shared, input.quota.as_ref());
-        let captured = Captured::default();
-        let subscriber = registry().with(captured.clone());
-        let answer = runtime.block_on(
-            transcript(&shared, &captured, &mut handler, &provider, source)
-                .with_subscriber(subscriber),
-        )?;
+        let answer = runtime.block_on(run_transcript(input, &shared, &provider))?;
         let (calls, failure) = mock
             .finish_recording()
             .map_err(|error| support::helper_error("MockError", error.to_string()))?;
         if let Some(error) = failure {
             return Err(support::helper_error("MockError", error.to_string()));
         }
-        let Value::Object(mut fields) = answer else {
-            return Err(support::helper_error(
-                "AnswerShape",
-                String::from("the transcript answer is not an object"),
-            ));
-        };
-        fields.insert(
-            String::from("provider_requests"),
-            fixtures::requests(&calls),
-        );
-        Ok(Value::Object(fields))
+        answer_with_requests(answer, &calls)
     }
 }
 
-async fn transcript<Sink, Provider, Source>(
+async fn run_transcript(
+    input: &Input,
     shared: &Shared,
-    captured: &Captured,
+    provider: &ScriptedProvider,
+) -> HelperResult {
+    let socket = Socket {
+        shared: Arc::clone(shared),
+        fails_at: input.sink.fails_at,
+        message: input.sink.message.clone(),
+    };
+    let source = ScriptedSource {
+        shared: Arc::clone(shared),
+        frames: input.frames.clone(),
+        disconnect: input.disconnect.clone(),
+        next: 0,
+    };
+    let mut handler = build_handler(&input.setup, socket, shared, input.quota.as_ref());
+    let captured = Captured::default();
+    let subscriber = registry().with(captured.clone());
+    transcript(&mut handler, provider, source, shared, &captured)
+        .with_subscriber(subscriber)
+        .await
+}
+
+fn answer_with_requests(answer: Value, calls: &[ProviderCall]) -> HelperResult {
+    let Value::Object(mut fields) = answer else {
+        return Err(support::helper_error(
+            "AnswerShape",
+            String::from("the transcript answer is not an object"),
+        ));
+    };
+    fields.insert(String::from("provider_requests"), fixtures::requests(calls));
+    Ok(Value::Object(fields))
+}
+
+async fn transcript<Sink, Provider, Source>(
     handler: &mut ManagedResponsesWebSocket<Sink>,
     provider: &Provider,
     source: Source,
+    shared: &Shared,
+    captured: &Captured,
 ) -> HelperResult
 where
     Sink: FrameSink,
