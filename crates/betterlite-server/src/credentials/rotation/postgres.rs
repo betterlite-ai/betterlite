@@ -20,6 +20,7 @@ use deadpool_postgres::Client as PooledClient;
 use thiserror::Error;
 use tokio::time::timeout;
 use tokio_postgres::Error as PgError;
+use tokio_postgres::Transaction;
 use tokio_postgres::error::SqlState;
 
 use super::ENVIRONMENT_VARIABLES;
@@ -185,32 +186,11 @@ async fn model_transaction(
     deadline: Duration,
 ) -> Result<(), StoreError> {
     let started = Instant::now();
-    let opening = timeout(deadline, client.transaction())
+    let transaction = timeout(deadline, client.transaction())
         .await
-        .map_err(|_elapsed| StoreError::Timeout("transaction start", deadline))?;
-    let transaction = opening.map_err(|source| StoreError::Database(backend(source)))?;
-    let write = async {
-        for model in models {
-            let setting = statement_setting(deadline, started).ok_or(StoreError::ModelTimeout)?;
-            transaction
-                .execute(STATEMENT_TIMEOUT_SQL, &[&setting])
-                .await
-                .map_err(model_statement_error)?;
-            transaction
-                .execute(
-                    UPDATE_MODEL_PARAMS_SQL,
-                    &[&model.model_id, &model.litellm_params],
-                )
-                .await
-                .map_err(model_statement_error)?;
-        }
-        let setting = statement_setting(deadline, started).ok_or(StoreError::ModelTimeout)?;
-        transaction
-            .execute(STATEMENT_TIMEOUT_SQL, &[&setting])
-            .await
-            .map_err(model_statement_error)?;
-        transaction.commit().await.map_err(model_statement_error)
-    };
+        .map_err(|_elapsed| StoreError::Timeout("transaction start", deadline))?
+        .map_err(|source| StoreError::Database(backend(source)))?;
+    let write = write_model_rows(transaction, models, deadline, started);
     // the client stops waiting at the same absolute deadline the server is cancelling statements against
     match timeout(deadline.saturating_sub(started.elapsed()), write).await {
         Ok(result) => result,
@@ -219,9 +199,39 @@ async fn model_transaction(
 }
 
 // PostgreSQL applies statement_timeout to each statement, so each statement gets only the time the transaction has left, and none is sent once that is gone.
-fn statement_setting(deadline: Duration, started: Instant) -> Option<String> {
-    let left = deadline.checked_sub(started.elapsed())?;
-    Some(format!("{}ms", statement_millis(left)))
+async fn write_model_rows(
+    transaction: Transaction<'_>,
+    models: &[PreparedModel],
+    deadline: Duration,
+    started: Instant,
+) -> Result<(), StoreError> {
+    for model in models {
+        let left = deadline
+            .checked_sub(started.elapsed())
+            .ok_or(StoreError::ModelTimeout)?;
+        let setting = format!("{}ms", statement_millis(left));
+        transaction
+            .execute(STATEMENT_TIMEOUT_SQL, &[&setting])
+            .await
+            .map_err(model_statement_error)?;
+        transaction
+            .execute(
+                UPDATE_MODEL_PARAMS_SQL,
+                &[&model.model_id, &model.litellm_params],
+            )
+            .await
+            .map_err(model_statement_error)?;
+    }
+    // the commit gets the same remaining time: once the transaction's deadline is gone, nothing more is sent
+    let left = deadline
+        .checked_sub(started.elapsed())
+        .ok_or(StoreError::ModelTimeout)?;
+    let setting = format!("{}ms", statement_millis(left));
+    transaction
+        .execute(STATEMENT_TIMEOUT_SQL, &[&setting])
+        .await
+        .map_err(model_statement_error)?;
+    transaction.commit().await.map_err(model_statement_error)
 }
 
 // PostgreSQL treats zero as unlimited and refuses a statement_timeout above INT_MAX milliseconds.
