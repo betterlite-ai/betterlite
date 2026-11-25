@@ -313,7 +313,7 @@ async fn the_stored_model_and_ranking_settings_reach_the_rebuild() {
                 enabled: true,
                 embedding_model: Some("custom-embedding".to_owned()),
                 top_k: Some(3),
-                similarity_threshold: Some(0.75),
+                similarity_threshold: Some(0.75_f64),
             },
             has_router: false,
         }]

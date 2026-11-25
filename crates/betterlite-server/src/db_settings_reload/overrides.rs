@@ -113,7 +113,7 @@ where
             &mut control,
         ),
         OverrideKind::CyberArk => {
-            clear_cyberark_state(&mut reloader.environment, &mut reloader.state, &mut control)
+            clear_cyberark_state(&mut reloader.environment, &mut reloader.state, &mut control);
         }
     }
 }
