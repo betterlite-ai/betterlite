@@ -69,16 +69,10 @@ fn name_value(filter: &ModelFilter) -> String {
     }
 }
 
-fn excluded_ids(filter: &ModelFilter) -> Vec<String> {
-    filter.excluded_ids.iter().cloned().collect()
-}
-
-fn database_error(error: DbError) -> SearchDatabaseError {
-    SearchDatabaseError::Database(TableError::from(error))
-}
-
-fn query_error(error: tokio_postgres::Error) -> SearchDatabaseError {
-    database_error(backend::<Infallible>(error))
+impl From<tokio_postgres::Error> for SearchDatabaseError {
+    fn from(error: tokio_postgres::Error) -> Self {
+        Self::Database(TableError::from(backend::<Infallible>(error)))
+    }
 }
 
 async fn search_rows(
@@ -88,15 +82,21 @@ async fn search_rows(
     take: Option<i64>,
 ) -> Result<Vec<Row>, SearchDatabaseError> {
     let value = name_value(filter);
-    let excluded = excluded_ids(filter);
+    let excluded: Vec<String> = filter.excluded_ids.iter().cloned().collect();
     let sql = if filter.exact_name.is_some() {
         sqls.0
     } else {
         sqls.1
     };
     let parameters: [&(dyn ToSql + Sync); 3] = [&value, &excluded, &take];
-    let client = store.session().await.map_err(database_error)?;
-    client.query(sql, &parameters).await.map_err(query_error)
+    let client = store
+        .session()
+        .await
+        .map_err(|error| SearchDatabaseError::Database(TableError::from(error)))?;
+    client
+        .query(sql, &parameters)
+        .await
+        .map_err(SearchDatabaseError::from)
 }
 
 async fn count_rows(
@@ -107,7 +107,7 @@ async fn count_rows(
     let Some(row) = rows.first() else {
         return Err(SearchDatabaseError::MissingRow);
     };
-    row.try_get(0).map_err(query_error)
+    row.try_get(0)?
 }
 
 async fn find_rows(
@@ -118,7 +118,7 @@ async fn find_rows(
     let rows = search_rows(store, filter, FIND_SQLS, Some(take)).await?;
     let mut found = Vec::with_capacity(rows.len());
     for row in &rows {
-        let text: String = row.try_get(0).map_err(query_error)?;
+        let text: String = row.try_get(0)?;
         let stored: JsonData = serde_json::from_str(&text).map_err(SearchDatabaseError::Row)?;
         found.push(ProxyModelTable::try_from(stored).map_err(SearchDatabaseError::Decode)?);
     }

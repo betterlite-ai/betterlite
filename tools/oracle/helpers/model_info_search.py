@@ -112,7 +112,8 @@ def enrich_answer(input_value: Input) -> JsonValue:
     litellm.model_cost = cost_map
     litellm.get_model_info = CaseCatalog(entries)
     debug = input_value.get("debug")
-    enriched = cast(dict[str, JsonValue], proxy_server._enrich_model_info_with_litellm_data(model, debug is True, llm_router(input_value.get("router"))))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14540-L14610
+    enriched = cast(dict[str, JsonValue], proxy_server._enrich_model_info_with_litellm_data(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14540-L14610
+        model, debug is True, llm_router(input_value.get("router"))))
     return ANSWER.validate_python(enriched)
 
 
@@ -120,7 +121,8 @@ def sort_answer(input_value: Input) -> JsonValue:
     order = input_value.get("sort_order")
     if order is None:
         order = "asc"
-    sorted_models = cast(list[dict[str, JsonValue]], proxy_server._sort_models(model_list(input_value), input_value.get("sort_by"), order))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14897-L14983
+    sorted_models = cast(list[dict[str, JsonValue]], proxy_server._sort_models(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14897-L14983
+        model_list(input_value), input_value.get("sort_by"), order))
     found: list[JsonValue] = []
     found.extend(MODELS.validate_python(sorted_models))
     return found
