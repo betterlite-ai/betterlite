@@ -300,6 +300,47 @@ fn a_file_an_earlier_writer_left_is_continued_not_rewritten() {
     assert_eq!(entries[0].value.to_bits(), 5.0_f64.to_bits());
 }
 
+#[test]
+fn a_writer_continues_a_file_that_already_grew() {
+    let directory = TempDir::new().unwrap();
+    let metric = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "litellm_fanout",
+        "Fanout",
+        &["worker"],
+        Vec::new(),
+    );
+    let first = writer(&directory, 43);
+    for index in 0..800_u32 {
+        first.update(
+            &metric.description,
+            &[format!("worker-{index}")],
+            MetricUpdate::Inc(finite(1)),
+        );
+    }
+    drop(first);
+    let second = writer(&directory, 43);
+    second.update(
+        &metric.description,
+        &["worker-0".to_owned()],
+        MetricUpdate::Inc(finite(1)),
+    );
+    let bytes = fs::read(directory.path().join("counter_43.db")).unwrap();
+    assert_eq!(bytes.len(), 131_072);
+    let entries = decode_db_file(&bytes).unwrap();
+    assert_eq!(entries.len(), 800);
+    let worker = entries
+        .iter()
+        .find(|entry| {
+            sample_of(entry)
+                .1
+                .get("worker")
+                .is_some_and(|value| value == "worker-0")
+        })
+        .unwrap();
+    assert_eq!(worker.value.to_bits(), 2.0_f64.to_bits());
+}
+
 #[derive(Clone, Default)]
 struct LogCapture(Arc<Mutex<Vec<u8>>>);
 

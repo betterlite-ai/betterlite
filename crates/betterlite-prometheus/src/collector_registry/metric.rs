@@ -147,7 +147,21 @@ impl PrometheusMetric {
         buckets: Vec<Bucket>,
     ) -> Self {
         let created = SystemTime::now();
-        let description = Arc::new(description_of(kind, name, help, label_names, buckets));
+        let registered_name = match kind {
+            CollectorKind::Counter => name.strip_suffix("_total").unwrap_or(name),
+            CollectorKind::Gauge | CollectorKind::Histogram => name,
+        };
+        let description = Arc::new(CollectorDescription {
+            name: registered_name.to_owned(),
+            kind,
+            help: help.to_owned(),
+            label_names: label_names
+                .iter()
+                .map(|label| (*label).to_owned())
+                .collect(),
+            buckets,
+            multiprocess_mode: GaugeMode::All,
+        });
         let samples = initial_samples(&description, created);
         Self {
             description,
@@ -217,31 +231,6 @@ impl PrometheusMetric {
         }
         drop(samples);
         series
-    }
-}
-
-// prometheus_client strips _total from a counter name; a histogram takes what prepare_buckets validated
-fn description_of(
-    kind: CollectorKind,
-    name: &str,
-    help: &str,
-    label_names: &[&str],
-    buckets: Vec<Bucket>,
-) -> CollectorDescription {
-    let registered_name = match kind {
-        CollectorKind::Counter => name.strip_suffix("_total").unwrap_or(name),
-        CollectorKind::Gauge | CollectorKind::Histogram => name,
-    };
-    CollectorDescription {
-        name: registered_name.to_owned(),
-        kind,
-        help: help.to_owned(),
-        label_names: label_names
-            .iter()
-            .map(|label| (*label).to_owned())
-            .collect(),
-        buckets,
-        multiprocess_mode: GaugeMode::All,
     }
 }
 

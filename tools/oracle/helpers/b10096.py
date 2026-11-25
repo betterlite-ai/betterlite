@@ -121,39 +121,39 @@ def build_metric(spec: MetricSpec) -> Metric:
     raise ValueError(f"unknown metric kind {spec['kind']}")
 
 
+def require_action(action: str, allowed: tuple[str, ...]) -> None:
+    if action not in allowed:
+        raise ValueError(f"a metric of this kind takes {', '.join(allowed)}")
+
+
 def apply_counter(metric: Counter, update: UpdateSpec) -> None:
+    if update["action"] == "remove":
+        metric.remove(*update["labels"])
+        return
+    require_action(update["action"], ("inc",))
     target = metric if not update["labels"] else metric.labels(*update["labels"])
-    match update["action"]:
-        case "inc":
-            target.inc(update["value"])
-        case "remove":
-            metric.remove(*update["labels"])
-        case "set" | "observe":
-            raise ValueError("a counter takes inc or remove")
+    target.inc(update["value"])
 
 
 def apply_gauge(metric: Gauge, update: UpdateSpec) -> None:
+    if update["action"] == "remove":
+        metric.remove(*update["labels"])
+        return
+    require_action(update["action"], ("inc", "set"))
     target = metric if not update["labels"] else metric.labels(*update["labels"])
-    match update["action"]:
-        case "inc":
-            target.inc(update["value"])
-        case "set":
-            target.set(update["value"])
-        case "remove":
-            metric.remove(*update["labels"])
-        case "observe":
-            raise ValueError("a gauge takes inc, set or remove")
+    if update["action"] == "inc":
+        target.inc(update["value"])
+    else:
+        target.set(update["value"])
 
 
 def apply_histogram(metric: Histogram, update: UpdateSpec) -> None:
+    if update["action"] == "remove":
+        metric.remove(*update["labels"])
+        return
+    require_action(update["action"], ("observe",))
     target = metric if not update["labels"] else metric.labels(*update["labels"])
-    match update["action"]:
-        case "observe":
-            target.observe(update["value"])
-        case "remove":
-            metric.remove(*update["labels"])
-        case "inc" | "set":
-            raise ValueError("a histogram takes observe or remove")
+    target.observe(update["value"])
 
 
 def apply_update(metric: Metric, update: UpdateSpec) -> None:
@@ -183,31 +183,31 @@ def read_entries(path: Path) -> list[tuple[str, float, float]]:
     return entries
 
 
+def used_length(data: bytes) -> int:
+    used = int.from_bytes(data[:4], "little", signed=True)
+    return max(used, 0)
+
+
+def file_out(path: Path) -> FileOut:
+    data = path.read_bytes()
+    entries: list[EntryOut] = []
+    for key, value, timestamp in read_entries(path):
+        entries.append({"key": KEY.validate_json(key), "value": value, "timestamp": timestamp})
+    return {
+        "name": path.name,
+        "length": len(data),
+        "used": used_length(data),
+        "entries": entries,
+    }
+
+
 def files_answer(directory: Path) -> FilesAnswer:
-    files: list[FileOut] = []
-    for path in sorted(directory.glob("*.db")):
-        data = path.read_bytes()
-        used = int.from_bytes(data[:4], "little", signed=True)
-        entries: list[EntryOut] = []
-        for key, value, timestamp in read_entries(path):
-            entries.append(
-                {"key": KEY.validate_json(key), "value": value, "timestamp": timestamp}
-            )
-        files.append(
-            {
-                "name": path.name,
-                "length": path.stat().st_size,
-                "used": max(used, 0),
-                "entries": entries,
-            }
-        )
-    return {"files": files}
+    return {"files": [file_out(path) for path in sorted(directory.glob("*.db"))]}
 
 
 def used_hex(path: Path) -> str:
     data = path.read_bytes()
-    used = int.from_bytes(data[:4], "little", signed=True)
-    return data[: max(used, 0)].hex()
+    return data[: used_length(data)].hex()
 
 
 def scrape_answer(directory: Path, accept: str) -> ScrapeAnswer:
@@ -221,24 +221,17 @@ def scrape_answer(directory: Path, accept: str) -> ScrapeAnswer:
 
 
 def blocks(text: str) -> list[str]:
-    sections: list[tuple[str, list[str]]] = []
+    grouped: dict[str, list[str]] = {}
+    marker = ""
     for line in text.splitlines():
-        marker = ""
         if line.startswith("# HELP "):
             marker = line.split(" ")[2]
-        if line == "# EOF":
+        elif line == "# EOF":
             marker = "# EOF"
-        if marker:
-            sections.append((marker, []))
-        if sections:
-            sections[-1][1].append(line)
-    for _, lines in sections:
-        lines.sort()
-    indexed: list[tuple[str, int]] = [
-        (marker, index) for index, (marker, _lines) in enumerate(sections)
-    ]
-    indexed.sort()
-    return ["\n".join(sections[index][1]) for _, index in indexed]
+        if not marker:
+            continue
+        grouped.setdefault(marker, []).append(line)
+    return ["\n".join(sorted(grouped[name])) for name in sorted(grouped)]
 
 
 def run(input_value: Input) -> FilesAnswer | ScrapeAnswer:

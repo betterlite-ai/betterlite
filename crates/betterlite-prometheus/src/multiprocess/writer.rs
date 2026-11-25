@@ -14,6 +14,7 @@ mod series;
 mod tests;
 
 use file::FileState;
+use series::SeriesKeys;
 
 // values.py names a gauge's file after its multiprocess mode and every other metric after its type
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -54,6 +55,12 @@ struct WriterState {
     files: BTreeMap<FileKind, FileState>,
 }
 
+// what one locked write does: an update, or the zero entries a new label-less series creates
+enum SeriesWrite {
+    Update(MetricUpdate),
+    Create,
+}
+
 impl MultiProcessWriter {
     // the folder is checked when the writer is built, as the collector checks its own; a file opens on its first write
     pub fn new(directory: PathBuf, pid: u32) -> Result<Self, MultiprocessError> {
@@ -80,19 +87,7 @@ impl MultiProcessWriter {
         if update == MetricUpdate::Remove {
             return;
         }
-        let kind = FileKind::of(description);
-        let keys = match series::keys(description, label_values) {
-            Ok(keys) => keys,
-            Err(error) => return log_failure(&error),
-        };
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let file = match open_file(&mut state, &self.directory, kind, self.pid) {
-            Ok(file) => file,
-            Err(error) => return log_failure(&error),
-        };
-        if let Err(error) = series::apply(file, &keys, update) {
-            log_failure(&error);
-        }
+        self.write_series(description, label_values, SeriesWrite::Update(update));
     }
 
     // prometheus_client builds the one series of a label-less metric together with the metric, so it exists before any update
@@ -101,23 +96,58 @@ impl MultiProcessWriter {
         description: &CollectorDescription,
         label_values: &[String],
     ) {
-        let kind = FileKind::of(description);
-        let keys = match series::keys(description, label_values) {
-            Ok(keys) => keys,
-            Err(error) => return log_failure(&error),
-        };
+        self.write_series(description, label_values, SeriesWrite::Create);
+    }
+
+    // both writes take the one lock and open the kind's file the same way; a failure goes to the log, never to the caller
+    fn write_series(
+        &self,
+        description: &CollectorDescription,
+        label_values: &[String],
+        write: SeriesWrite,
+    ) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let file = match open_file(&mut state, &self.directory, kind, self.pid) {
-            Ok(file) => file,
+        let opened = open_series(
+            &mut state,
+            &self.directory,
+            self.pid,
+            description,
+            label_values,
+        );
+        let (file, keys) = match opened {
+            Ok(open) => open,
             Err(error) => return log_failure(&error),
         };
-        for key in keys.created() {
-            if let Err(error) = file.ensure(key) {
-                log_failure(&error);
-                return;
+        match write {
+            SeriesWrite::Update(update) => {
+                if let Err(error) = series::apply(file, &keys, update) {
+                    log_failure(&error);
+                }
+            }
+            SeriesWrite::Create => {
+                for key in keys.created() {
+                    if let Err(error) = file.ensure(key) {
+                        log_failure(&error);
+                        return;
+                    }
+                }
             }
         }
     }
+}
+
+// the kind's file, open or opened now, together with the keys this series owns in it
+fn open_series<'state>(
+    state: &'state mut WriterState,
+    directory: &Path,
+    pid: u32,
+    description: &CollectorDescription,
+    label_values: &[String],
+) -> Result<(&'state mut FileState, SeriesKeys), MultiprocessError> {
+    let kind = FileKind::of(description);
+    let keys = series::keys(description, label_values)?;
+    let file = open_file(state, directory, kind, pid)?;
+    Ok((file, keys))
 }
 
 // the writer's one lock over the open files: a kind's file opens on its first write and stays open

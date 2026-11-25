@@ -55,10 +55,17 @@ impl FileState {
         let Ok(capacity) = usize::try_from(length) else {
             return Err(MultiprocessError::Corrupted);
         };
-        if capacity == 0 {
-            return empty_file(path, file);
+        if capacity > 0 {
+            return rebuilt(path, file, capacity);
         }
-        resume(path, file, capacity)
+        // a file that did not exist yet starts as one page whose zeroed header reads as no entries
+        let page = offset(INITIAL_CAPACITY)?;
+        file.set_len(page)
+            .map_err(|source| MultiprocessError::Write {
+                path: path.clone(),
+                source,
+            })?;
+        rebuilt(path, file, INITIAL_CAPACITY)
     }
 
     // a key the file does not hold yet becomes one zero entry at the used length, in prometheus_client's creation order
@@ -121,33 +128,15 @@ impl FileState {
     }
 }
 
-// a file that did not exist yet: one 64 KiB page of zero bytes with the used length the header starts at
-fn empty_file(path: PathBuf, file: fs::File) -> Result<FileState, MultiprocessError> {
-    let size = offset(INITIAL_CAPACITY)?;
-    file.set_len(size)
-        .map_err(|source| MultiprocessError::Write {
-            path: path.clone(),
-            source,
-        })?;
-    let used_field = encode_used(HEADER_BYTES)?;
-    write_at(&file, offset(USED_OFFSET)?, &used_field, &path)?;
-    Ok(FileState {
-        path,
-        file,
-        used: HEADER_BYTES,
-        capacity: INITIAL_CAPACITY,
-        values: BTreeMap::new(),
-    })
-}
-
 // a file that holds bytes: continue from the used length it left, or start it at the header when that length is zero
-fn resume(path: PathBuf, file: fs::File, capacity: usize) -> Result<FileState, MultiprocessError> {
+fn rebuilt(path: PathBuf, file: fs::File, capacity: usize) -> Result<FileState, MultiprocessError> {
     let bytes = fs::read(&path).map_err(|source| MultiprocessError::Read {
         path: path.clone(),
         source,
     })?;
-    let header_used = decode_used(&bytes)?;
-    if header_used == 0 {
+    let header = decode_used(&bytes)?;
+    if header == 0 {
+        // used goes in before any entry, so a file that never grew reads as holding none
         let used_field = encode_used(HEADER_BYTES)?;
         write_at(&file, offset(USED_OFFSET)?, &used_field, &path)?;
         return Ok(FileState {
@@ -158,13 +147,12 @@ fn resume(path: PathBuf, file: fs::File, capacity: usize) -> Result<FileState, M
             values: BTreeMap::new(),
         });
     }
-    let values = stored_values(&bytes)?;
     Ok(FileState {
         path,
         file,
-        used: header_used,
+        used: header,
         capacity,
-        values,
+        values: stored_values(&bytes)?,
     })
 }
 

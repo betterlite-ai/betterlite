@@ -111,11 +111,10 @@ fn metric_file_names(directory: &Path) -> Result<Vec<String>, Box<HelperError>> 
 
 // the used length in the file's first four bytes, which every reader trusts over the file size
 fn used_length(bytes: &[u8]) -> usize {
-    bytes
-        .get(..4)
-        .and_then(<[u8]>::first_chunk::<4>)
-        .and_then(|length| usize::try_from(i32::from_le_bytes(*length)).ok())
-        .unwrap_or_default()
+    match bytes.first_chunk::<4>() {
+        Some(field) => usize::try_from(i32::from_le_bytes(*field)).unwrap_or_default(),
+        None => 0,
+    }
 }
 
 // the bytes up to the used length, which is what mmap_dict.py's read_all_values_from_file reads
@@ -128,26 +127,25 @@ fn used_hex(bytes: &[u8]) -> String {
     hex
 }
 
-// the render split at each HELP line, the families sorted by name and the lines of each block sorted
+// the render split at each HELP line, grouped by family name and with the lines of every family sorted
 fn blocks(text: &str) -> Vec<String> {
-    let mut sections: Vec<(String, Vec<String>)> = Vec::new();
+    let mut grouped: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+    let mut marker: Option<String> = None;
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("# HELP ") {
-            let name = rest.split(' ').next().unwrap_or_default().to_owned();
-            sections.push((name, Vec::new()));
+            marker = Some(rest.split(' ').next().unwrap_or_default().to_owned());
+        } else if line == "# EOF" {
+            marker = Some("# EOF".to_owned());
         }
-        if line == "# EOF" {
-            sections.push(("# EOF".to_owned(), Vec::new()));
-        }
-        if let Some(current) = sections.last_mut() {
-            current.1.push(line.to_owned());
+        if let Some(current) = &marker {
+            grouped.entry(current.clone()).or_default().push(line);
         }
     }
-    let mut rendered: Vec<(String, String)> = Vec::new();
-    for (name, mut lines) in sections {
-        lines.sort();
-        rendered.push((name, lines.join("\n")));
-    }
-    rendered.sort_by(|left, right| left.0.cmp(&right.0));
-    rendered.into_iter().map(|(_name, block)| block).collect()
+    grouped
+        .into_iter()
+        .map(|(_marker, mut lines)| {
+            lines.sort_unstable();
+            lines.join("\n")
+        })
+        .collect()
 }
