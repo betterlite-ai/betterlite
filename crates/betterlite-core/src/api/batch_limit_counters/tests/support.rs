@@ -34,7 +34,8 @@ use crate::api::request_destination::RequestData;
 const NOW: f64 = 1_700_000_000.0;
 pub(super) const WINDOW: i64 = 60;
 pub(super) const RESET_AT: &str = "2023-11-14 22:14:20 UTC";
-const ENQUEUED_DETAIL: &str = "Batch enqueued token limit exceeded for api_key: sk-1. Batch requires 30 tokens but only 5 enqueued tokens remaining out of 15 enqueued token limit. Tokens free up as running batches complete or are cancelled.";
+const ENQUEUED_DETAIL: &str =
+    "batch enqueued token limit reached for api_key: sk-1: 30 tokens requested, 5 of 15 remaining";
 
 // one atomic limiter call: the descriptors charged and the increments each one gets
 pub(super) type LimiterCall = (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>);
@@ -727,8 +728,8 @@ const PARTIAL_FAILURE_ROWS: [PartialFailureRow; 3] = [
     },
 ];
 
-// the 429 detail the first over-limit counter of a partial failure reports
-pub(super) const PARTIAL_FAILURE_DETAIL: &str = "Batch rate limit exceeded for api_key_tpd: sk-1. Batch contains 120 tokens but only 0 tokens remaining out of 100 TPD limit. Limit resets at: 2023-11-15 19:26:40 UTC";
+pub(super) const PARTIAL_FAILURE_DETAIL: &str =
+    "batch tokens rate limit reached for api_key_tpd: sk-1: 120 tokens, 0 of 100 per day remaining";
 
 fn row_status(row: PartialFailureRow) -> BatchCounterStatus {
     let PartialFailureRow {

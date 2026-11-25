@@ -24,14 +24,6 @@ where
     Store: BatchEnqueuedSource,
     Cache: BatchWindowCache,
 {
-    pub(super) fn attribution(&self) -> Attribution<'_> {
-        Attribution {
-            resolver: self.resolver.as_ref(),
-            router: self.router.as_deref(),
-        }
-    }
-
-    // _reserve_batch_enqueued_tokens: reserve the batch's tokens, or raise once a scope is over its allowance
     pub(super) async fn reserve_enqueued_tokens(
         &self,
         data: &RequestData,
@@ -53,27 +45,38 @@ where
                     scope: over_limit.scope,
                     enqueued: over_limit.enqueued,
                 };
-                let error =
-                    rejections::enqueued_error(&reached, data, batch_usage, &self.attribution())?;
-                Ok(BatchLimitCounterAnswer::RaiseEnqueuedLimitError {
-                    error: Box::new(error),
+                let error = rejections::enqueued_error(
+                    &reached,
+                    data,
+                    batch_usage,
+                    &Attribution {
+                        resolver: self.resolver.as_ref(),
+                        router: self.router.as_deref(),
+                    },
+                )?;
+                Ok(BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens {
+                    rejection: Some(Box::new(error)),
                 })
             }
         }
     }
 
-    // _raise_rate_limit_error itself: the callable as a direct case
     pub(super) fn rate_rejection(
         &self,
         facts: &RateLimitRejection<'_>,
     ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
-        let error = rejections::rate_limit_error(facts, &self.attribution())?;
+        let error = rejections::rate_limit_error(
+            facts,
+            &Attribution {
+                resolver: self.resolver.as_ref(),
+                router: self.router.as_deref(),
+            },
+        )?;
         Ok(BatchLimitCounterAnswer::RaiseRateLimitError {
             error: Box::new(error),
         })
     }
 
-    // _check_and_increment_batch_counters: charge every counter, then reject or stash the day's refunds
     pub(super) async fn check_and_increment(
         &self,
         auth: &UserAPIKeyAuth,
@@ -84,6 +87,9 @@ where
         let (charged, increments) = self
             .charged_counters(auth, data, batch_usage, descriptors)
             .map_err(BatchLimitCountersError::Limits)?;
+        self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
+            known_count: charged.len(),
+        }))?;
         let response = self
             .limiter
             .atomic_check_and_increment_by_n(&charged, &increments)
@@ -98,6 +104,9 @@ where
                 rejection: Some(Box::new(error)),
             });
         }
+        self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
+            known_count: response.reservation_windows.len(),
+        }))?;
         let operations = refund_ops(
             &charged,
             batch_usage.total_tokens,
@@ -108,7 +117,6 @@ where
         Ok(BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection: None })
     }
 
-    // the descriptors this batch charges: the caller's list, or the counters the limiter derives
     fn charged_counters(
         &self,
         auth: &UserAPIKeyAuth,
@@ -135,7 +143,6 @@ where
         Ok((charged, increments))
     }
 
-    // the first OVER_LIMIT status's 429, or none when the charge passed
     async fn first_rejection(
         &self,
         charged: &[BatchLimitDescriptor],
@@ -166,11 +173,13 @@ where
         };
         Ok(Some(rejections::rate_limit_error(
             &facts,
-            &self.attribution(),
+            &Attribution {
+                resolver: self.resolver.as_ref(),
+                router: self.router.as_deref(),
+            },
         )?))
     }
 
-    // _read_tpd_window_start: only a daily counter has a window key, and a value float cannot hold is absent
     pub(super) async fn tpd_window_start(
         &self,
         status: &BatchCounterStatus,
@@ -201,6 +210,9 @@ where
         let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.principal.0.clone()))?;
         let mut answers = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
+            self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
+                known_count: nested_items(call),
+            }))?;
             let answer = self.answer(&auth, call).await?;
             let ends_run = answer.is_rejection();
             answers.push(answer);
@@ -211,7 +223,6 @@ where
         Ok(BatchLimitCountersResult { answers })
     }
 
-    // one arm per owned batch callable; a rejection ends the request where it happens
     #[expect(clippy::too_many_lines, reason = "one arm per owned batch callable")]
     async fn answer(
         &self,
@@ -232,8 +243,15 @@ where
                 data,
                 batch_usage,
             } => {
-                let error =
-                    rejections::enqueued_error(over_limit, data, batch_usage, &self.attribution())?;
+                let error = rejections::enqueued_error(
+                    over_limit,
+                    data,
+                    batch_usage,
+                    &Attribution {
+                        resolver: self.resolver.as_ref(),
+                        router: self.router.as_deref(),
+                    },
+                )?;
                 Ok(BatchLimitCounterAnswer::RaiseEnqueuedLimitError {
                     error: Box::new(error),
                 })
@@ -280,5 +298,27 @@ where
                 Ok(BatchLimitCounterAnswer::BuildTpdRefundOps { operations })
             }
         }
+    }
+}
+
+fn nested_items(call: &BatchLimitCounterCall) -> usize {
+    match call {
+        BatchLimitCounterCall::ReserveBatchEnqueuedTokens { scopes, .. } => scopes.len(),
+        BatchLimitCounterCall::RaiseEnqueuedLimitError { .. }
+        | BatchLimitCounterCall::ReadTpdWindowStart { .. } => 0,
+        BatchLimitCounterCall::RaiseRateLimitError { descriptors, .. } => descriptors.len(),
+        BatchLimitCounterCall::CheckAndIncrementBatchCounters {
+            descriptors,
+            batch_usage,
+            ..
+        } => descriptors
+            .as_ref()
+            .map_or(0, Vec::len)
+            .max(batch_usage.per_model_usage.len()),
+        BatchLimitCounterCall::BuildTpdRefundOps {
+            descriptors,
+            reservation_windows,
+            ..
+        } => descriptors.len().max(reservation_windows.len()),
     }
 }

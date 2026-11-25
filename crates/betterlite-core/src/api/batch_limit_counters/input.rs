@@ -18,7 +18,6 @@ pub struct BatchLimitCountersInput {
     pub calls: Vec<BatchLimitCounterCall>,
 }
 
-// One owned callable of the slice with the typed facts it reads
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BatchLimitCounterCall {

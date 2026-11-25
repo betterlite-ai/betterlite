@@ -9,10 +9,9 @@ use serde::{Deserialize, Serialize};
 use crate::api::batch_enqueued_reserve::BatchEnqueuedTokenScope;
 use crate::api::batch_limit_descriptors::input::BatchModelUsage;
 
-// litellm's time_provider: the batch hook's clock reads unix seconds, fractions included
+// the batch hook's clock is unix seconds, fractions included, as litellm's time_provider returns
 pub type EpochClock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
-// RateLimitStatus.rate_limit_type: the v3 limiter's closed set of counter dimensions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BatchCounterLimitType {
@@ -32,7 +31,6 @@ impl BatchCounterLimitType {
     }
 }
 
-// The code on a RateLimitStatus and on the response overall
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BatchCounterCode {
@@ -40,7 +38,6 @@ pub enum BatchCounterCode {
     OverLimit,
 }
 
-// One counter's verdict inside atomic_check_and_increment_by_n's response
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchCounterStatus {
@@ -61,7 +58,7 @@ pub enum BatchReservationBackend {
     Redis,
 }
 
-// One (counter key, window start, backend) the charge landed in; ordered as the source sorts the tuples
+// derived Ord is the source's sort order, so this field order is load-bearing
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchReservationWindow {
@@ -70,7 +67,6 @@ pub struct BatchReservationWindow {
     pub backend: BatchReservationBackend,
 }
 
-// RateLimitResponse: the atomic limiter's answer, with the windows it charged
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchCounterResponse {
@@ -80,7 +76,7 @@ pub struct BatchCounterResponse {
     pub reservation_windows: BTreeSet<BatchReservationWindow>,
 }
 
-// BatchEnqueuedTokenOverLimit as a typed case record; B1042's runtime type carries no serde derives
+// B1042's runtime type carries no serde derives, so a case needs this record
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchEnqueuedLimitExceeded {
@@ -88,7 +84,7 @@ pub struct BatchEnqueuedLimitExceeded {
     pub enqueued: i64,
 }
 
-// BatchFileUsage: the batch's counted tokens; a per-model row keeps absent keys distinct from zero
+// a per-model row keeps absent keys distinct from zero, which the counter charge depends on
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchFileUsage {
@@ -137,7 +133,6 @@ impl WindowStartValue {
     }
 }
 
-// ReservationAwareIncrementOperation: the refund the failure hook applies to a daily token counter
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchTpdRefundOperation {
@@ -149,7 +144,6 @@ pub struct BatchTpdRefundOperation {
     pub reservation_backend: BatchReservationBackend,
 }
 
-// One answer per owned callable, tagged with the callable's name so a case reads both sides the same way
 #[derive(Debug)]
 pub struct BatchLimitCountersResult {
     pub answers: Vec<BatchLimitCounterAnswer>,
@@ -178,7 +172,6 @@ pub enum BatchLimitCounterAnswer {
 }
 
 impl BatchLimitCounterAnswer {
-    // a rejection raises where it happens, so no later call runs
     #[must_use]
     pub const fn is_rejection(&self) -> bool {
         match self {

@@ -21,7 +21,6 @@ use super::records::{
     BatchCounterLimitType, BatchCounterResponse, BatchTpdRefundOperation, WindowStartValue,
 };
 
-// The limiter's enqueued-token store; B1042's store is the production implementation
 pub trait BatchEnqueuedSource: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 
@@ -48,7 +47,6 @@ where
     }
 }
 
-// The v3 limiter surface these callables use: B1044's descriptor builders, the atomic counter and its key format
 pub trait BatchCounterLimiter: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 
@@ -80,7 +78,6 @@ pub trait BatchCounterLimiter: Send + Sync {
     ) -> String;
 }
 
-// InternalUsageCache.async_get_cache for a "{key:value}:window" key; a validated int, float or str comes back
 pub trait BatchWindowCache: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 
@@ -90,7 +87,6 @@ pub trait BatchWindowCache: Send + Sync {
     ) -> impl Future<Output = Result<Option<WindowStartValue>, Self::Error>> + Send;
 }
 
-// RequestRateLimiterStash's two batch fields
 pub trait BatchCounterStash: Send + Sync {
     fn set_batch_enqueued_reservation(&self, reservation: BatchEnqueuedTokenReservation);
 

@@ -1,9 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_error::rate_limit::RateLimitDimension;
 use rstest::rstest;
 
-use crate::api::batch_enqueued_reserve::ReservationBackend;
+use crate::api::api_boundaries::ApiLimitError;
+use crate::api::batch_enqueued_reserve::{BatchReservationBackend, ReservationBackend};
 use crate::api::batch_limit_counters::BatchLimitCountersError;
 use crate::api::batch_limit_counters::input::BatchLimitCounterCall;
 use crate::api::batch_limit_counters::records::{
@@ -19,8 +22,8 @@ use self::support::{
     detail_text, empty_model_data, expected_operations, harness, header, increments, input,
     non_text_model_data, null_model_data, operations_of, over_limit, partial_failure_cache,
     partial_failure_limiter, project_usage_row, refund_call, refund_windows, rejection,
-    requests_limiter, reserved, run_check, run_raise, run_refund, run_window, scope, status,
-    stored_value, usage, usage_for_row, usage_with_rows, window_start_of, window_status,
+    requests_limiter, reserved, response, run_check, run_raise, run_refund, run_window, scope,
+    status, stored_value, usage, usage_for_row, usage_with_rows, window_start_of, window_status,
 };
 
 mod support;
@@ -65,7 +68,7 @@ async fn batch_rpm_limit(
             &result.answers[0],
             "gpt-4o-mini",
             "openai",
-            "Batch rate limit exceeded for api_key: sk-1. Batch contains 6 requests but only 2 requests remaining out of 5 RPM limit. Limit resets at: 2023-11-14 22:14:20 UTC",
+            "batch requests rate limit reached for api_key: sk-1: 6 requests, 2 of 5 remaining",
             "60",
         );
     } else {
@@ -98,7 +101,7 @@ async fn batch_rpm_limit_without_descriptors() {
         &result.answers[0],
         "",
         "litellm_proxy",
-        "Batch rate limit exceeded for : . Batch contains 1 requests but only 0 requests remaining out of 5 RPM limit. Limit resets at: 2023-11-14 22:14:20 UTC",
+        "batch requests rate limit reached for : : 1 requests, 0 of 5 remaining",
         "60",
     );
 }
@@ -129,7 +132,7 @@ async fn batch_rpm_limit_unmatched_descriptor() {
     let error = rejection(&result.answers[0]);
     assert_eq!(
         detail_text(&error.detail),
-        "Batch rate limit exceeded for team: team-1. Batch contains 120 tokens but only 0 tokens remaining out of 100 TPM limit. Limit resets at: 2023-11-15 19:26:40 UTC"
+        "batch tokens rate limit reached for team: team-1: 120 tokens, 0 of 100 per minute remaining"
     );
     assert_eq!(header(error, "retry-after"), "76400");
 }
@@ -155,21 +158,21 @@ async fn batch_rpm_limit_negative_remaining() {
         &result.answers[0],
         "",
         "litellm_proxy",
-        "Batch rate limit exceeded for : . Batch contains 6 requests but only 0 requests remaining out of 5 RPM limit. Limit resets at: 2023-11-14 22:14:20 UTC",
+        "batch requests rate limit reached for : : 6 requests, 0 of 5 remaining",
         "60",
     );
 }
 
 // batch_tpm_limit: the token figure is the charged model's row for project quotas, the batch total otherwise
 #[rstest]
-#[case::batch_total(TpmCase { key: "api_key", value: "sk-1", model: None, row_total: None, row_output: None, label: "TPM", tokens: 120 })]
-#[case::tpd_label(TpmCase { key: "api_key_tpd", value: "sk-1", model: None, row_total: None, row_output: None, label: "TPD", tokens: 120 })]
-#[case::project_otpm_row(TpmCase { key: "model_per_project_otpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: None, row_output: Some(30), label: "TPM", tokens: 30 })]
-#[case::project_otpm_absent_falls_back(TpmCase { key: "model_per_project_otpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "TPM", tokens: 7 })]
-#[case::project_itpm_row(TpmCase { key: "model_per_project_itpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "TPM", tokens: 40 })]
-#[case::project_itpm_absent_falls_back(TpmCase { key: "model_per_project_itpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: None, row_output: Some(30), label: "TPM", tokens: 120 })]
-#[case::project_value_without_colon(TpmCase { key: "model_per_project_itpm", value: "gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "TPM", tokens: 40 })]
-#[case::project_empty_model_falls_back(TpmCase { key: "model_per_project_itpm", value: "proj:", model: Some(""), row_total: Some(5), row_output: None, label: "TPM", tokens: 120 })]
+#[case::batch_total(TpmCase { key: "api_key", value: "sk-1", model: None, row_total: None, row_output: None, label: "minute", tokens: 120 })]
+#[case::tpd_label(TpmCase { key: "api_key_tpd", value: "sk-1", model: None, row_total: None, row_output: None, label: "day", tokens: 120 })]
+#[case::project_otpm_row(TpmCase { key: "model_per_project_otpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: None, row_output: Some(30), label: "minute", tokens: 30 })]
+#[case::project_otpm_absent_falls_back(TpmCase { key: "model_per_project_otpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "minute", tokens: 7 })]
+#[case::project_itpm_row(TpmCase { key: "model_per_project_itpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "minute", tokens: 40 })]
+#[case::project_itpm_absent_falls_back(TpmCase { key: "model_per_project_itpm", value: "proj:gpt-4o", model: Some("gpt-4o"), row_total: None, row_output: Some(30), label: "minute", tokens: 120 })]
+#[case::project_value_without_colon(TpmCase { key: "model_per_project_itpm", value: "gpt-4o", model: Some("gpt-4o"), row_total: Some(40), row_output: None, label: "minute", tokens: 40 })]
+#[case::project_empty_model_falls_back(TpmCase { key: "model_per_project_itpm", value: "proj:", model: Some(""), row_total: Some(5), row_output: None, label: "minute", tokens: 120 })]
 #[tokio::test]
 async fn batch_tpm_limit(#[case] case: TpmCase) {
     let limits = descriptor(case.key, case.value, Some(WINDOW), None, Some(100));
@@ -192,7 +195,7 @@ async fn batch_tpm_limit(#[case] case: TpmCase) {
     assert_eq!(error.model, "gpt-4o-mini");
     assert_eq!(error.llm_provider, "openai");
     let expected = format!(
-        "Batch rate limit exceeded for {}: {}. Batch contains {} tokens but only 5 tokens remaining out of 100 {} limit. Limit resets at: {RESET_AT}",
+        "batch tokens rate limit reached for {}: {}: {} tokens, 5 of 100 per {} remaining",
         case.key, case.value, case.tokens, case.label
     );
     assert_eq!(detail_text(&error.detail), expected);
@@ -229,6 +232,10 @@ async fn batch_enqueued_limit(
         .await
         .unwrap();
     assert_eq!(rig.store.calls(), vec![(30, scopes)]);
+    assert!(matches!(
+        result.answers[0],
+        BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection: Some(_) }
+    ));
     assert_enqueued_rejection(&result.answers[0], expected_model, expected_provider);
     assert!(rig.stash.reservation().is_none());
 }
@@ -286,7 +293,7 @@ async fn enqueued_over_allowance_shows_zero_remaining() {
     let error = rejection(&result.answers[0]);
     assert_eq!(
         detail_text(&error.detail),
-        "Batch enqueued token limit exceeded for api_key: sk-1. Batch requires 30 tokens but only 0 enqueued tokens remaining out of 15 enqueued token limit. Tokens free up as running batches complete or are cancelled."
+        "batch enqueued token limit reached for api_key: sk-1: 30 tokens requested, 0 of 15 remaining"
     );
 }
 
@@ -572,4 +579,216 @@ fn request_model_requires_non_empty_text() {
         request_model(&data(Some("gpt-4o-mini"))),
         Some("gpt-4o-mini")
     );
+}
+
+// bounded-inputs: the call list and each call's own collections stay inside ApiLimits
+#[tokio::test]
+async fn oversized_call_list_is_rejected() {
+    let mut rig = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    rig.service.limits.max_items = 1;
+    let result = rig
+        .service
+        .run(&input(vec![refund_call(), refund_call()]))
+        .await;
+    assert!(matches!(
+        result,
+        Err(BatchLimitCountersError::Boundary(
+            ApiLimitError::TooManyItems { .. }
+        ))
+    ));
+}
+
+// bounded-inputs: the caller's scopes are counted before the store or the stash sees them
+#[tokio::test]
+async fn oversized_scope_list_is_rejected() {
+    let mut rig = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    rig.service.limits.max_items = 1;
+    let result = rig
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::ReserveBatchEnqueuedTokens {
+                data: data(None),
+                batch_usage: usage(30, 2, 0),
+                scopes: vec![scope("sk-1", 15), scope("sk-2", 15)],
+            },
+        ]))
+        .await;
+    assert!(matches!(
+        result,
+        Err(BatchLimitCountersError::Boundary(
+            ApiLimitError::TooManyItems { .. }
+        ))
+    ));
+    assert!(rig.store.calls().is_empty());
+}
+
+// bounded-inputs: the caller's descriptors are counted before the charge clones them
+#[tokio::test]
+async fn oversized_descriptor_list_is_rejected() {
+    let mut rig = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    rig.service.limits.max_items = 1;
+    let result = rig
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::CheckAndIncrementBatchCounters {
+                data: data(None),
+                batch_usage: usage(10, 1, 0),
+                descriptors: Some(vec![
+                    descriptor("api_key", "sk-1", Some(WINDOW), Some(5), None),
+                    descriptor("team", "team-1", Some(WINDOW), Some(5), None),
+                ]),
+            },
+        ]))
+        .await;
+    assert!(matches!(
+        result,
+        Err(BatchLimitCountersError::Boundary(
+            ApiLimitError::TooManyItems { .. }
+        ))
+    ));
+    assert!(rig.limiter.calls().is_empty());
+}
+
+// bounded-inputs: the usage rows are counted before they expand into project descriptors
+#[tokio::test]
+async fn oversized_usage_rows_are_rejected() {
+    let mut batch_usage = usage(10, 1, 0);
+    batch_usage
+        .per_model_usage
+        .insert(String::from("gpt-4o"), BTreeMap::new());
+    batch_usage
+        .per_model_usage
+        .insert(String::from("gpt-4o-mini"), BTreeMap::new());
+    let mut rig = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    rig.service.limits.max_items = 1;
+    let result = rig
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::CheckAndIncrementBatchCounters {
+                data: data(None),
+                batch_usage,
+                descriptors: None,
+            },
+        ]))
+        .await;
+    assert!(matches!(
+        result,
+        Err(BatchLimitCountersError::Boundary(
+            ApiLimitError::TooManyItems { .. }
+        ))
+    ));
+    assert!(rig.limiter.project_usages().is_empty());
+}
+
+// bounded-inputs: the refund windows are counted before a refund operation is built
+#[tokio::test]
+async fn oversized_refund_windows_are_rejected() {
+    let mut rig = harness(
+        ScriptedLimiter::default(),
+        ScriptedStore::default(),
+        ScriptedCache::default(),
+    );
+    rig.service.limits.max_items = 1;
+    let result = rig
+        .service
+        .run(&input(vec![BatchLimitCounterCall::BuildTpdRefundOps {
+            descriptors: vec![daily_descriptor()],
+            tokens: 10,
+            reservation_windows: refund_windows(),
+        }]))
+        .await;
+    assert!(matches!(
+        result,
+        Err(BatchLimitCountersError::Boundary(
+            ApiLimitError::TooManyItems { .. }
+        ))
+    ));
+    assert!(rig.stash.operations().is_empty());
+}
+
+// bounded-inputs: a charge the limiter derives is counted before the atomic call
+#[tokio::test]
+async fn oversized_limiter_charge_is_rejected() {
+    let limiter = ScriptedLimiter {
+        base: vec![
+            descriptor("api_key", "sk-1", Some(WINDOW), Some(5), None),
+            descriptor("team", "team-1", Some(WINDOW), Some(5), None),
+        ],
+        ..ScriptedLimiter::default()
+    };
+    let mut rig = harness(limiter, ScriptedStore::default(), ScriptedCache::default());
+    rig.service.limits.max_items = 1;
+    let result = rig
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::CheckAndIncrementBatchCounters {
+                data: data(None),
+                batch_usage: usage(10, 1, 0),
+                descriptors: None,
+            },
+        ]))
+        .await;
+    assert!(matches!(
+        result,
+        Err(BatchLimitCountersError::Boundary(
+            ApiLimitError::TooManyItems { .. }
+        ))
+    ));
+    assert!(rig.limiter.calls().is_empty());
+}
+
+// bounded-inputs: the windows the counter charge returns are counted before refunds expand them
+#[tokio::test]
+async fn oversized_response_windows_are_rejected() {
+    let limiter = ScriptedLimiter::with_responses(vec![Ok(response(
+        BatchCounterCode::Ok,
+        Vec::new(),
+        vec![
+            (
+                "{api_key_tpd:sk-1}:tokens",
+                "1699990000",
+                BatchReservationBackend::Redis,
+            ),
+            (
+                "{api_key_tpd:sk-2}:tokens",
+                "1699990000",
+                BatchReservationBackend::Redis,
+            ),
+        ],
+    ))]);
+    let mut rig = harness(limiter, ScriptedStore::default(), ScriptedCache::default());
+    rig.service.limits.max_items = 1;
+    let result = rig
+        .service
+        .run(&input(vec![
+            BatchLimitCounterCall::CheckAndIncrementBatchCounters {
+                data: data(None),
+                batch_usage: usage(10, 1, 0),
+                descriptors: Some(vec![daily_descriptor()]),
+            },
+        ]))
+        .await;
+    assert!(matches!(
+        result,
+        Err(BatchLimitCountersError::Boundary(
+            ApiLimitError::TooManyItems { .. }
+        ))
+    ));
+    assert!(rig.stash.operations().is_empty());
 }

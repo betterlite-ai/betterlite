@@ -17,7 +17,6 @@ use super::records::{BatchCounterStatus, BatchEnqueuedLimitExceeded, BatchFileUs
 use crate::api::batch_limit_descriptors::descriptors::{BatchLimitDescriptor, TPD_SUFFIX};
 use crate::api::request_destination::RequestData;
 
-// parallel_request_limiter_v3's PROJECT_ITPM_DESCRIPTOR_KEY and PROJECT_OTPM_DESCRIPTOR_KEY
 pub const PROJECT_ITPM_DESCRIPTOR_KEY: &str = "model_per_project_itpm";
 pub const PROJECT_OTPM_DESCRIPTOR_KEY: &str = "model_per_project_otpm";
 
@@ -36,13 +35,11 @@ pub enum BatchCounterValueError {
     Header(#[from] InvalidRateLimitHeader),
 }
 
-// The provider attribution the two rejection builders share
 pub struct Attribution<'call> {
     pub resolver: &'call dyn ProviderResolution,
     pub router: Option<&'call dyn DeploymentSnapshot>,
 }
 
-// The facts _raise_rate_limit_error reads from the OVER_LIMIT status and its descriptor list
 pub struct RateLimitRejection<'call> {
     pub status: &'call BatchCounterStatus,
     pub descriptors: &'call [BatchLimitDescriptor],
@@ -59,7 +56,7 @@ struct ResetTimes {
     reset_at: String,
 }
 
-// data's model, read only when it is a non-empty string: both call sites resolve nothing for anything else
+// both call sites resolve no provider for a model that is not non-empty text
 pub(super) fn request_model(data: &RequestData) -> Option<&str> {
     match data.get("model") {
         Some(Json::Text(text)) if !text.is_empty() => Some(text.as_str()),
@@ -97,7 +94,6 @@ fn proxy_rate_limit_error(
     ProxyRateLimitError::new(init).map_err(BatchCounterValueError::Header)
 }
 
-// _raise_enqueued_limit_error: the 429 a batch past its enqueued-token allowance raises
 pub(super) fn enqueued_error(
     over_limit: &BatchEnqueuedLimitExceeded,
     data: &RequestData,
@@ -107,7 +103,7 @@ pub(super) fn enqueued_error(
     let scope = &over_limit.scope;
     let remaining = scope.limit.saturating_sub(over_limit.enqueued).max(0);
     let detail = format!(
-        "Batch enqueued token limit exceeded for {}: {}. Batch requires {} tokens but only {remaining} enqueued tokens remaining out of {} enqueued token limit. Tokens free up as running batches complete or are cancelled.",
+        "batch enqueued token limit reached for {}: {}: {} tokens requested, {remaining} of {} remaining",
         scope.key.as_str(),
         scope.value,
         batch_usage.total_tokens,
@@ -127,7 +123,7 @@ pub(super) fn enqueued_error(
     )
 }
 
-// The figure the error reports: the charged model's own row for project ITPM/OTPM, the whole batch otherwise
+// project ITPM/OTPM counters were charged one model's row, so the error reports that row and not the batch
 fn token_count(descriptor_key: &str, descriptor_value: &str, batch_usage: &BatchFileUsage) -> i64 {
     let model = match descriptor_key {
         PROJECT_ITPM_DESCRIPTOR_KEY | PROJECT_OTPM_DESCRIPTOR_KEY => Some(
@@ -155,7 +151,6 @@ fn token_count(descriptor_key: &str, descriptor_value: &str, batch_usage: &Batch
     batch_usage.total_tokens
 }
 
-// now + window_size, or the active window's start plus its size; both headers read it
 fn reset_times(
     window_start: Option<i64>,
     now: f64,
@@ -204,7 +199,6 @@ fn format_reset(seconds: i64) -> Result<String, BatchCounterValueError> {
         .ok_or(BatchCounterValueError::ResetOutOfRange)
 }
 
-// _raise_rate_limit_error: the 429 the first OVER_LIMIT counter of a batch raises
 pub(super) fn rate_limit_error(
     facts: &RateLimitRejection<'_>,
     attribution: &Attribution<'_>,
@@ -229,7 +223,7 @@ pub(super) fn rate_limit_error(
         .filter(|size| *size != 0)
         .unwrap_or(facts.window_size);
     let reset = reset_times(facts.window_start, facts.now, window_size)?;
-    let detail = rejection_detail(facts, descriptor_key, descriptor_value, &reset);
+    let detail = rejection_detail(facts, descriptor_key, descriptor_value);
     let (model, llm_provider) = resolve_rate_limit_provider(
         facts.requested_model,
         attribution.resolver,
@@ -244,30 +238,27 @@ pub(super) fn rate_limit_error(
     )
 }
 
-// the detail text: requests report their count, tokens the charged model's figure and its TPM/TPD label
 fn rejection_detail(
     facts: &RateLimitRejection<'_>,
     descriptor_key: &str,
     descriptor_value: &str,
-    reset: &ResetTimes,
 ) -> String {
     let remaining = facts.status.limit_remaining.max(0);
     let current_limit = facts.status.current_limit;
     if facts.limit_type == "requests" {
         return format!(
-            "Batch rate limit exceeded for {descriptor_key}: {descriptor_value}. Batch contains {} requests but only {remaining} requests remaining out of {current_limit} RPM limit. Limit resets at: {}",
-            facts.batch_usage.request_count, reset.reset_at
+            "batch requests rate limit reached for {descriptor_key}: {descriptor_value}: {} requests, {remaining} of {current_limit} remaining",
+            facts.batch_usage.request_count
         );
     }
     let tokens = token_count(descriptor_key, descriptor_value, facts.batch_usage);
-    let label = if descriptor_key.ends_with(TPD_SUFFIX) {
-        "TPD"
+    let window = if descriptor_key.ends_with(TPD_SUFFIX) {
+        "day"
     } else {
-        "TPM"
+        "minute"
     };
     format!(
-        "Batch rate limit exceeded for {descriptor_key}: {descriptor_value}. Batch contains {tokens} tokens but only {remaining} tokens remaining out of {current_limit} {label} limit. Limit resets at: {}",
-        reset.reset_at
+        "batch tokens rate limit reached for {descriptor_key}: {descriptor_value}: {tokens} tokens, {remaining} of {current_limit} per {window} remaining"
     )
 }
 

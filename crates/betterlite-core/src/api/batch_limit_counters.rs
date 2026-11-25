@@ -45,7 +45,6 @@ pub(crate) type CountingFailure<Limiter, Store, Cache> = BatchLimitCountersError
     <Cache as BatchWindowCache>::Error,
 >;
 
-// The batch rate limiter's counter half: the clock, the three repositories, the request stash and the provider resolver
 pub struct BatchLimitCounters<Limiter, Store, Cache> {
     pub clock: EpochClock,
     pub limiter: Limiter,
