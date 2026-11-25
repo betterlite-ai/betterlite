@@ -29,6 +29,19 @@ deviations:
       validation; that projection is the shape the router reads, so writing it back keeps the stored
       row usable without the colliding keys.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7415-L7441
+  - what: >-
+      Every store operation of the rotation has a deadline: a connection is acquired within ten
+      seconds, each config and credential scan or write within thirty seconds, and the model
+      transaction within two minutes with a transaction-local statement_timeout so PostgreSQL
+      itself cancels a blocked statement. A connection whose operation timed out is dropped rather
+      than returned to the pool, and a timed-out scan skips only its own stage.
+    why: >-
+      LiteLLM bounds only the model transaction, with prisma's two-minute tx timeout; its scans,
+      environment update and per-credential updates wait as long as the server makes them wait, so a
+      drained pool or a locked row suspends the rotation and every later stage with it. Abandoning a
+      client-side wait does not cancel the server's statement, and returning that connection would
+      hand the next borrower a session still busy with the old statement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5260-L5268
 kept_bugs:
   - what: >-
       An environment variable that does not decrypt is dropped from the stored mapping, so the row
