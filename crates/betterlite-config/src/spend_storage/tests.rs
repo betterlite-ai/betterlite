@@ -119,6 +119,33 @@ fn loads_spend_summary_budget() {
     assert!(error.to_string().contains("litellm_settings.max_budget"));
 }
 
+#[test]
+fn loads_spend_writer_settings() {
+    let defaults = load("general_settings: {}\n", &[]);
+    assert_eq!(defaults.disable_spend_logs, Some(false));
+    assert_eq!(defaults.max_budget, Decimal::ZERO);
+    let explicit_null = load("general_settings:\n  disable_spend_logs: null\n", &[]);
+    assert_eq!(explicit_null.disable_spend_logs, None);
+    let enabled = load(
+        "general_settings:\n  disable_spend_logs: true\nlitellm_settings:\n  max_budget: 25.5\n",
+        &[],
+    );
+    assert_eq!(enabled.disable_spend_logs, Some(true));
+    assert_eq!(enabled.max_budget, Decimal::new(255, 1));
+    let disabled = load("general_settings:\n  disable_spend_logs: false\n", &[]);
+    assert_eq!(disabled.disable_spend_logs, Some(false));
+    let error = load_spend_storage_policy(
+        "general_settings:\n  disable_spend_logs: yes-please\n",
+        &environment(&[]),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("general_settings.disable_spend_logs")
+    );
+}
+
 #[rstest]
 #[case::boolean_true("true", SpendUpdates::Disabled)]
 #[case::boolean_false("false", SpendUpdates::Allowed)]

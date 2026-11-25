@@ -1,0 +1,5 @@
+# a present null is not exactly false, so the writer keeps no spend log row and reduces a batch claim to the claim fields
+general_settings:
+  disable_spend_logs: null
+litellm_settings:
+  max_budget: 0

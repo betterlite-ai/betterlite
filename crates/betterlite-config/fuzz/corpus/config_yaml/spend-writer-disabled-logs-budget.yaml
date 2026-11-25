@@ -1,0 +1,6 @@
+# spend logs off still charges the entity and daily rows, and a positive budget turns on the proxy-wide identity
+general_settings:
+  disable_spend_logs: true
+  disable_spend_updates: false
+litellm_settings:
+  max_budget: 12.5
