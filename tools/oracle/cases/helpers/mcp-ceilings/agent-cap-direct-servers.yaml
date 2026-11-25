@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-ceilings-agent-cap-direct-servers
+call:
+  b4670:
+    allowed: [srv-a, srv-b, srv-c]
+    agent_servers: [srv-a, srv-c]
+    access_group_servers: null
+env: {}
+compare: {ignore: []}
