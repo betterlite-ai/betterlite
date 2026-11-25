@@ -125,7 +125,7 @@ where
                 },
             ))));
         }
-        self.named(call, selection, sdk)
+        self.named(call, selection, sdk, trusted)
     }
 
     // without a provider config: the OpenAI-compatible names, then azure, then the 400 LiteLLM raises
@@ -134,15 +134,17 @@ where
         call: &ContentCall<'call>,
         selection: &Selection,
         client: Option<SuppliedSdk>,
+        trusted: Option<&TrustedCredentials>,
     ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch> {
         let name = selection.provider.as_deref().unwrap_or_default();
         match name {
             compatible if COMPATIBLE_PROVIDERS.contains(&compatible) => Ok(
                 ContentTarget::Compatible(self.plan(call.kwargs, selection.mode).compatible(None)),
             ),
-            "azure" => Ok(ContentTarget::Azure(
-                self.plan(call.kwargs, selection.mode).azure(client),
-            )),
+            "azure" => Ok(ContentTarget::Azure(Box::new(
+                self.plan(call.kwargs, selection.mode)
+                    .azure(client, trusted),
+            ))),
             other => Err(FileContentError::Unsupported {
                 provider: other.to_owned(),
             }),

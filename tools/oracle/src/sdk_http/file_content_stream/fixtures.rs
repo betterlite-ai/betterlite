@@ -4,6 +4,7 @@ use betterlite_config::sections::anthropic_credentials::Settings as AnthropicCre
 pub(crate) mod azure;
 pub(crate) mod content;
 pub(crate) mod logging;
+pub(crate) mod setup;
 pub(crate) mod transport;
 
 pub(crate) fn anthropic_settings(credentials: &AnthropicCredentials) -> AnthropicSettings {

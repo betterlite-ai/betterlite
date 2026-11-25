@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_error::error::ErrorClass;
 use betterlite_http::error::HttpError;
@@ -240,6 +241,7 @@ impl FileStreamLogger for RecordingLogging {
 }
 
 struct FakeDispatch {
+    azure_params: Mutex<Vec<LiteLlmParams>>,
     configured: Vec<ProviderId>,
     sent: Mutex<Vec<Sent>>,
     created: Mutex<Vec<NewLogger>>,
@@ -272,6 +274,9 @@ impl FileContentDispatch for FakeDispatch {
         target: ContentTarget<'_, FakeConfig, ()>,
         operation: ContentOperation<'_>,
     ) -> impl Future<Output = Result<ContentReply, FakeFailure>> + Send {
+        if let ContentTarget::Azure(azure) = &target {
+            self.azure_params.lock().unwrap().push(azure.params.clone());
+        }
         let (request, chunk_size, streamed) = match operation {
             ContentOperation::Buffered { request } => (request.clone(), None, false),
             ContentOperation::Streamed {
@@ -408,6 +413,7 @@ fn service<'deps>(
 ) -> FileContentStream<'deps, FakeDispatch> {
     FileContentStream {
         dispatch: FakeDispatch {
+            azure_params: Mutex::new(Vec::new()),
             configured: configured.to_vec(),
             sent: Mutex::new(Vec::new()),
             created: Mutex::new(Vec::new()),
@@ -560,6 +566,7 @@ fn text_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
+mod azure;
 mod defaults;
 mod dispatch;
 mod streaming;

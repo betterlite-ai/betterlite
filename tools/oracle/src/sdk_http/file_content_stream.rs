@@ -1,28 +1,16 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use betterlite_config::loader::ConfigLoader;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::file_content_stream::target::{CallerClient, SuppliedSdk};
 use betterlite_core::api::file_content_stream::{
     ContentAnswer, ContentCall, ContentContext, ContentEntry, ContentKwargs, FileContentStream,
 };
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
-use betterlite_http::proxy::ProxiedClient;
-use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::files::FilesApi;
-use chrono::Utc;
+use betterlite_models::controls::call_params::TrustedCredentials;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-use self::fixtures::anthropic_settings;
 use self::fixtures::logging::RecordingLogging;
+use self::fixtures::setup::send_steps;
 use self::outcome::{StepOutcome, identity};
 use self::wire::{ContentDispatch, Handler};
 use super::error::SdkHttpError;
@@ -40,8 +28,6 @@ mod wire;
 
 use self::cases::{Function, Step, SuppliedKind};
 
-// the header a supplied HTTPHandler's own client adds, so the wire shows whether the handler was used
-const HANDLER_HEADER: (&str, &str) = ("x-supplied-client", "http-handler");
 const DEFAULT_CHUNK_SIZE: u64 = 1024 * 1024;
 
 // the case schema's call; SdkHttpCall holds one, so it keeps the public path calls.rs names
@@ -57,62 +43,6 @@ pub struct Outcome {
     pub steps: Vec<StepOutcome>,
 }
 
-async fn send_steps(
-    call: &Call,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
-    let config = ConfigLoader {
-        lookup: env.clone(),
-    }
-    .load("model_list: []")
-    .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
-    );
-    let client =
-        ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
-    let catalog = ModelCatalog::default();
-    let names = BTreeSet::new();
-    let resolution = model_resolution(&catalog, &names, env);
-    let content = FileContentStream {
-        dispatch: ContentDispatch {
-            openai: FilesApi {
-                transport: client.clone(),
-                boundaries: Uuid::new_v4,
-            },
-            client,
-            anthropic: anthropic_settings(&config.sections.anthropic_credentials),
-            environment: env.clone(),
-        },
-        settings: config.sections.resource_sdk_settings,
-        resolution: &resolution,
-        clock: || Utc::now().fixed_offset(),
-        call_ids: Uuid::new_v4,
-    };
-    let handler = Handler {
-        headers: BTreeMap::from([(HANDLER_HEADER.0.to_owned(), HANDLER_HEADER.1.to_owned())]),
-    };
-    run_steps(&content, call, api_base, &handler).await
-}
-
-// the catalog and environment the resolver reads, held by send_steps for the call's lifetime
-fn model_resolution<'deps>(
-    catalog: &'deps ModelCatalog,
-    names: &'deps BTreeSet<String>,
-    env: &'deps BTreeMap<String, String>,
-) -> ResolutionContext<'deps> {
-    ResolutionContext {
-        catalog,
-        known_model_names: names,
-        custom_providers: names,
-        environment: env,
-        registry: JSONProviderRegistry::default(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    }
-}
-
 async fn run_steps(
     content: &FileContentStream<'_, ContentDispatch>,
     call: &Call,
@@ -121,7 +51,19 @@ async fn run_steps(
 ) -> Result<SdkResult, SdkHttpError> {
     let mut steps = Vec::with_capacity(call.steps.len());
     for step in &call.steps {
-        steps.push(run_step(content, step, api_base, handler).await?);
+        let trusted = TrustedCredentials {
+            values: step
+                .azure_ad_token
+                .iter()
+                .map(|token| {
+                    (
+                        String::from("azure_ad_token"),
+                        SecretString::from(token.clone()),
+                    )
+                })
+                .collect(),
+        };
+        steps.push(run_step(content, step, api_base, handler, &trusted).await?);
     }
     Ok(SdkResult::FileContentStream {
         value: Box::new(Outcome { steps }),
@@ -147,6 +89,7 @@ async fn run_step(
     step: &Step,
     api_base: &str,
     handler: &Handler,
+    trusted: &TrustedCredentials,
 ) -> Result<StepOutcome, SdkHttpError> {
     let kwargs = content_kwargs(step, api_base);
     let call = ContentCall {
@@ -167,7 +110,7 @@ async fn run_step(
         .supplied_logging
         .then(|| Arc::new(RecordingLogging::default()));
     let invocation = ContentContext {
-        trusted: None,
+        trusted: Some(trusted),
         client: caller(step, handler),
         logger: None,
         logging: logging.clone(),
@@ -187,7 +130,7 @@ async fn run_step(
     }
 }
 
-// no case hands over a trusted snapshot, and the handler's own mode decides whether it is used
+// The handler's own mode decides whether the provider can use it
 const fn caller<'call>(
     step: &Step,
     handler: &'call Handler,

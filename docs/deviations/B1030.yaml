@@ -6,4 +6,7 @@ deviations:
   - what: A non-SDK HTTP client supplied to azure file_content is ignored, not forwarded.
     why: LiteLLM passes any non-None client into AzureOpenAIFilesAPI.file_content, and get_azure_openai_client returns it unchanged even when it is not an OpenAI/AzureOpenAI client; the sync SDK call then fails on the missing .files attribute and the async one raises ValueError. Because the declared client type is an SDK client, betterlite treats another kind as absent so the Azure handler creates its own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L510-L524
-kept_bugs: []
+kept_bugs:
+  - what: The unsupported-provider file_content 400 carries CREATE_THREAD as its response request method; the unreachable unsupported streaming branch keeps the same method from L1127.
+    why: The task DoD requires this text, and callers inspecting error.response.request can observe it. Preserve that compatibility quirk rather than changing the error metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1026

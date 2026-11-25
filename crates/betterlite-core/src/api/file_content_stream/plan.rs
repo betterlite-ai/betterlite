@@ -2,9 +2,13 @@ use std::error::Error;
 use std::str::FromStr as _;
 
 use betterlite_auth::auth_model_lists::providers::is_declared_provider;
+use betterlite_azure::azure_urls::AuthParams;
+use betterlite_azure::endpoints::projection::LiteLlmParams;
+use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
 use chrono::{DateTime, FixedOffset};
+use secrecy::ExposeSecret as _;
 
 use crate::api::fine_tuning_read::ReadTimeout;
 use crate::api::resource_sdk_settings::timeout::{
@@ -40,7 +44,11 @@ impl Plan<'_> {
     }
 
     // get_azure_credentials' endpoint, key and version, each read from the call, then the settings, then the environment
-    pub(super) fn azure(&self, client: Option<SuppliedSdk>) -> AzureContent {
+    pub(super) fn azure(
+        &self,
+        client: Option<SuppliedSdk>,
+        trusted: Option<&TrustedCredentials>,
+    ) -> AzureContent {
         let settings = &self.settings;
         let options = &self.options;
         let api_base = settings.azure_base(options).map(str::to_owned);
@@ -51,8 +59,34 @@ impl Plan<'_> {
             api_key,
             api_version,
             max_retries: self.kwargs.max_retries,
+            params: self.azure_params(trusted),
             mode: self.mode,
             client,
+        }
+    }
+
+    fn azure_params(&self, trusted: Option<&TrustedCredentials>) -> LiteLlmParams {
+        let secret = |key: &str| {
+            trusted
+                .and_then(|snapshot| snapshot.values.get(key))
+                .cloned()
+        };
+        let text = |key: &str| secret(key).map(|value| value.expose_secret().to_owned());
+        LiteLlmParams {
+            azure_ad_token: secret("azure_ad_token"),
+            auth: AuthParams {
+                tenant_id: text("tenant_id"),
+                client_id: text("client_id"),
+                client_secret: secret("client_secret"),
+                azure_username: text("azure_username"),
+                azure_password: secret("azure_password"),
+                azure_scope: text("azure_scope"),
+            },
+            max_retries: self.kwargs.max_retries,
+            timeout: match self.mode.timeout {
+                FineTuningTimeout::Seconds(seconds) => Some(seconds),
+                FineTuningTimeout::Structured(phases) => phases.read,
+            },
         }
     }
 

@@ -4,6 +4,7 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -54,6 +55,7 @@ pub struct AzureContent {
     pub api_key: Option<SecretString>,
     pub api_version: Option<String>,
     pub max_retries: Option<i64>,
+    pub params: LiteLlmParams,
     pub mode: ContentMode,
     pub client: Option<SuppliedSdk>,
 }
@@ -90,7 +92,7 @@ pub struct XaiBatchContent<'call> {
 
 pub enum ContentTarget<'call, Config, Client> {
     Compatible(CompatibleContent),
-    Azure(AzureContent),
+    Azure(Box<AzureContent>),
     Generic(Box<GenericContent<'call, Config, Client>>),
     XaiBatch(XaiBatchContent<'call>),
 }

@@ -48,6 +48,11 @@ call:
         custom_llm_provider: openai
         api_key: sk-openai
         max_retries: 0
+      - function: afile_content
+        file_id: file-azure-ad
+        custom_llm_provider: azure
+        azure_ad_token: ad-content-token
+        api_version: "2024-10-21"
 upstream:
   - status: 200
     headers: {}
@@ -78,6 +83,9 @@ upstream:
     headers: {content-type: application/json}
     body:
       error: {message: slow down, type: rate_limit_error, param: null, code: rate_limited}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
 compare:
   headers: []
   headers_present: []
@@ -101,3 +109,5 @@ compare:
       why: the openai client prefixes the status and the body, betterlite prints betterlite's own message
     - pointer: /file_content_stream/value/steps/8/failure/message
       why: the openai client prefixes the status and the body, betterlite prints betterlite's own message
+    - pointer: /file_content_stream/value/steps/9/buffered/headers/date
+      why: each mock answer is stamped when it is served, so the date differs while answering nothing

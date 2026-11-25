@@ -46,6 +46,8 @@ pub(super) struct Step {
     #[serde(default)]
     pub(super) api_key: Option<String>,
     #[serde(default)]
+    pub(super) azure_ad_token: Option<String>,
+    #[serde(default)]
     pub(super) api_version: Option<String>,
     #[serde(default)]
     pub(super) organization: Option<String>,

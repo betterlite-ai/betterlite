@@ -38,6 +38,7 @@ class FileValues(TypedDict, total=False):
     stream: bool
     api_base: str
     api_key: str | None
+    azure_ad_token: str | None
     api_version: str | None
     organization: str | None
     timeout: float | str | httpx.Timeout | None
@@ -75,6 +76,7 @@ class Step(BaseModel):
     extra_headers: dict[str, str] | None = None
     extra_body: dict[str, str] | None = None
     api_key: str | None = None
+    azure_ad_token: str | None = None
     api_version: str | None = None
     organization: str | None = None
     timeout: float | str | StructuredTimeout | None = None
@@ -231,6 +233,7 @@ def content_values(step: Step, api_base: str, logging_obj: Logging | None) -> Fi
         extra_body=step.extra_body, stream=step.stream,
         chunk_size=step.chunk_size if step.chunk_size is not None else 1024 * 1024,
         api_base=api_base, api_key=step.api_key,
+        azure_ad_token=step.azure_ad_token,
         api_version=step.api_version, organization=step.organization,
         timeout=timeout_value(step.timeout), request_timeout=step.request_timeout,
         max_retries=step.max_retries,

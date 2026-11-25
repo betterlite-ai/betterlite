@@ -12,7 +12,7 @@ use betterlite_azure::credentials::source::{
 };
 use betterlite_azure::endpoints::get_client::ClientCache;
 use betterlite_azure::endpoints::projection::{
-    ClientIdentity, ClientKind, ClientOutcome, LiteLlmParams, SessionKind,
+    ClientIdentity, ClientKind, ClientOutcome, SessionKind,
 };
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
@@ -35,7 +35,7 @@ pub(crate) fn open(
             api_base: content.api_base.clone(),
             api_version: content.api_version.clone(),
         },
-        params: LiteLlmParams::default(),
+        params: content.params.clone(),
         provider: None,
         supplied: None,
         is_async: content.mode.is_async,
