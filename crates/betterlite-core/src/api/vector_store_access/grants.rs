@@ -6,11 +6,11 @@ use betterlite_auth::ui_session_identity::{
 };
 use betterlite_auth::vector_index_admin::auth_is_proxy_admin;
 use betterlite_db::budget_permission_rows::LiteLLMObjectPermissionTable;
-use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
 use super::VectorStoreAccess;
 use super::auth::{AuthContext, ObjectPermissionLookup};
 use super::error::VectorStoreAccessError;
+use super::store::ManagedVectorStore;
 
 // _object_permission_allows_vector_store: only a record that lists the id explicitly allows it
 #[must_use]
@@ -38,10 +38,10 @@ where
     // _is_vector_store_granted: the key's grant, then the team's, then the store's own team
     pub async fn is_vector_store_granted(
         &self,
-        vector_store: &LiteLlmManagedVectorStore,
+        vector_store: &ManagedVectorStore,
         context: &AuthContext,
     ) -> bool {
-        let vector_store_id = vector_store.vector_store_id.as_deref().unwrap_or("");
+        let vector_store_id = vector_store.0.vector_store_id.as_deref().unwrap_or("");
         if self
             .level_allows(
                 context.object_permission.as_ref(),
@@ -62,13 +62,13 @@ where
         {
             return true;
         }
-        context.team_id.is_some() && context.team_id == vector_store.team_id
+        context.team_id.is_some() && context.team_id == vector_store.0.team_id
     }
 
     // _is_vector_store_granted_to_any: the first context that grants answers
     pub async fn is_vector_store_granted_to_any(
         &self,
-        vector_store: &LiteLlmManagedVectorStore,
+        vector_store: &ManagedVectorStore,
         auth_contexts: &[AuthContext],
     ) -> bool {
         for context in auth_contexts {
@@ -155,7 +155,7 @@ where
     // can_user_access_vector_store: admin, then a teamless store, then any effective context's grant
     pub async fn can_user_access_vector_store(
         &self,
-        vector_store: &LiteLlmManagedVectorStore,
+        vector_store: &ManagedVectorStore,
         auth: &UserAPIKeyAuth,
     ) -> Result<bool, VectorStoreAccessError> {
         if auth_is_proxy_admin(auth) {
@@ -163,10 +163,11 @@ where
         }
         // the row keeps a team id of another JSON type in extra, and LiteLLM reads that id as a team
         let stored_team = vector_store
+            .0
             .extra
             .get("team_id")
             .is_some_and(|value| !value.is_null());
-        if vector_store.team_id.is_none() && !stored_team {
+        if vector_store.0.team_id.is_none() && !stored_team {
             return Ok(true);
         }
         let auth_contexts = self.vector_store_auth_contexts(auth).await?;
@@ -178,9 +179,9 @@ where
     // filter_listable_vector_stores: admins keep every store; anyone else keeps the granted ones in order
     pub async fn filter_listable_vector_stores<'store>(
         &self,
-        vector_stores: &'store [LiteLlmManagedVectorStore],
+        vector_stores: &'store [ManagedVectorStore],
         auth: &UserAPIKeyAuth,
-    ) -> Result<Vec<&'store LiteLlmManagedVectorStore>, VectorStoreAccessError> {
+    ) -> Result<Vec<&'store ManagedVectorStore>, VectorStoreAccessError> {
         if auth_is_proxy_admin(auth) {
             return Ok(vector_stores.iter().collect());
         }

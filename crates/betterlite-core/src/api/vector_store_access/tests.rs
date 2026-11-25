@@ -17,7 +17,6 @@ use betterlite_auth::ui_session_identity::{UI_SESSION_TOKEN_TEAM_ID, UiSessionTe
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use serde::de::DeserializeOwned;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -26,7 +25,7 @@ use super::VectorStoreAccess;
 use super::auth::{AuthContext, ObjectPermissionLookup};
 use super::decode::decode_vector_store_access;
 use super::error::VectorStoreAccessError;
-use super::store::normalize_litellm_params;
+use super::store::{ManagedVectorStore, normalize_litellm_params};
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 
 #[derive(Default)]
@@ -138,7 +137,7 @@ fn policy(world: &World) -> VectorStoreAccess<'_, World, World, World> {
 
 async fn granted(
     access: &VectorStoreAccess<'_, World, World, World>,
-    vector_store: &LiteLlmManagedVectorStore,
+    vector_store: &ManagedVectorStore,
     caller: &UserAPIKeyAuth,
 ) -> bool {
     access
@@ -149,7 +148,7 @@ async fn granted(
 
 async fn listable(
     world: &World,
-    vector_stores: &[LiteLlmManagedVectorStore],
+    vector_stores: &[ManagedVectorStore],
     caller: &UserAPIKeyAuth,
 ) -> Vec<String> {
     let access = policy(world);
@@ -159,7 +158,7 @@ async fn listable(
         .unwrap();
     let mut ids = Vec::with_capacity(allowed.len());
     for vector_store in allowed {
-        ids.push(vector_store.vector_store_id.clone().unwrap_or_default());
+        ids.push(vector_store.0.vector_store_id.clone().unwrap_or_default());
     }
     ids
 }
@@ -214,7 +213,7 @@ fn object(fields: &[(&str, Json)]) -> Json {
     )
 }
 
-fn store(fields: &[(&str, Json)]) -> LiteLlmManagedVectorStore {
+fn store(fields: &[(&str, Json)]) -> ManagedVectorStore {
     wire(&object(fields))
 }
 
@@ -354,11 +353,38 @@ fn nesting_past_the_json_limit_normalizes_to_an_empty_object() {
     let normalized = normalize_litellm_params(&encoded).unwrap();
     assert!(
         normalized
+            .0
             .litellm_params
             .as_ref()
             .is_some_and(|params| params.get("a").is_some())
     );
     assert_params_read_as_empty(&format!("{}1{}", "{\"a\":".repeat(129), "}".repeat(129)));
+}
+
+#[test]
+fn debug_redacts_stored_and_normalized_credentials() {
+    let stored = store(&[
+        ("vector_store_id", text("vs_a")),
+        ("litellm_params", text(r#"{"api_key":"sk-secret"}"#)),
+        ("provider_token", text("sk-extra-secret")),
+    ]);
+    let shown = format!("{stored:?}");
+    assert!(shown.contains("vs_a"));
+    assert!(shown.contains("present"));
+    assert!(shown.contains("provider_token"));
+    assert!(!shown.contains("sk-secret"));
+    assert!(!shown.contains("sk-extra-secret"));
+    let normalized = normalize_litellm_params(&stored).unwrap();
+    assert!(
+        normalized
+            .0
+            .litellm_params
+            .as_ref()
+            .is_some_and(|params| params.get("api_key").is_some())
+    );
+    let normalized_shown = format!("{normalized:?}");
+    assert!(normalized_shown.contains("present"));
+    assert!(!normalized_shown.contains("sk-secret"));
 }
 
 #[test]

@@ -11,10 +11,11 @@ use betterlite_auth::ui_session_identity::UiSessionTeams;
 use betterlite_core::api::vector_store_access::VectorStoreAccess;
 use betterlite_core::api::vector_store_access::auth::ObjectPermissionLookup;
 use betterlite_core::api::vector_store_access::error::VectorStoreAccessError;
-use betterlite_core::api::vector_store_access::store::normalize_litellm_params;
+use betterlite_core::api::vector_store_access::store::{
+    ManagedVectorStore, normalize_litellm_params,
+};
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
-use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
@@ -33,19 +34,19 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct NormalizedStoreInput {
-    vector_store: LiteLlmManagedVectorStore,
+    vector_store: ManagedVectorStore,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct AccessInput {
-    vector_store: LiteLlmManagedVectorStore,
+    vector_store: ManagedVectorStore,
     #[serde(flatten)]
     world: WorldInput,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListInput {
-    vector_stores: Vec<LiteLlmManagedVectorStore>,
+    vector_stores: Vec<ManagedVectorStore>,
     #[serde(flatten)]
     world: WorldInput,
 }
