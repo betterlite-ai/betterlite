@@ -13,7 +13,7 @@ CACHE_TTL_SECONDS: Final = 60.0
 REGISTRY_FAILURE: Final = "the case scripts a registry failure"
 CACHE_FAILURE: Final = "the case scripts a cache failure"
 
-# LiteLLM_ManagedVectorStore's fields with JSON named instead of Any and the timestamps JSON mode writes
+# LiteLLM_ManagedVectorStore's fields, with JSON in place of Any and timestamps as JSON text
 class StoreProjection(TypedDict, total=False):
     vector_store_id: str
     custom_llm_provider: str

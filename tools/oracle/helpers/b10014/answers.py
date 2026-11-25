@@ -64,8 +64,7 @@ def key_auth(auth: StoreAuth) -> UserAPIKeyAuth:
     return AUTH.validate_python(mapping)
 
 
-# a row carries parsed timestamps where a registry store carries their text, so the store is serialized
-# the way LiteLLM's type writes it before the projection that names its fields validates it
+# a row holds datetimes where a registry store holds text, so the store is dumped in JSON mode
 def store_view(store: LiteLLM_ManagedVectorStore | None) -> StoreProjection | None:
     if store is None:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
         return None
