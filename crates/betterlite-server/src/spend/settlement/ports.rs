@@ -93,12 +93,12 @@ where
     }
 }
 
-// the increment_spend_counters coroutine the coordinator awaits once the spend is persisted
+// no + Send: awaiting B8593's seeding chain hits rustc's dyn-batch generalization false positive (rust-lang/rust#130113)
 pub trait SpendCounterIncrement: Sync {
     fn increment(
         &self,
         input: &SpendIncrementInput<'_>,
-    ) -> impl Future<Output = Result<(), SpendIncrementError>> + Send;
+    ) -> impl Future<Output = Result<(), SpendIncrementError>>;
 }
 
 impl<Counters, Layers, Rows> SpendCounterIncrement
