@@ -107,7 +107,51 @@ impl DurationParser for CaseDurations {
 #[derive(Default)]
 pub(crate) struct Recorder(pub(crate) Mutex<Vec<Value>>);
 
+// either sink's alert, so one place builds the CallInfo both traits write
+enum RecordedAlert {
+    Team(TeamAlert),
+    Budget(BudgetAlert),
+}
+
 impl Recorder {
+    fn record(&self, kind: &'static str, alert: RecordedAlert) {
+        let info = match alert {
+            RecordedAlert::Team(alert) => CallInfo {
+                spend: float(alert.spend),
+                max_budget: alert.max_budget.map_or(Value::Null, float),
+                soft_budget: alert.soft_budget.map_or(Value::Null, float),
+                token: alert.token.map(|secret| secret.expose_secret().to_owned()),
+                user_id: alert.user_id,
+                team_id: alert.team_id,
+                team_alias: alert.team_alias,
+                organization_id: alert.organization_id,
+                user_email: None,
+                key_alias: alert.key_alias,
+                event_group: "team",
+                alert_emails: alert.alert_emails,
+                max_budget_alert_emails: None,
+                unset: UnsetCallInfo::default(),
+            },
+            RecordedAlert::Budget(alert) => CallInfo {
+                spend: float(alert.spend),
+                max_budget: finite(alert.max_budget),
+                soft_budget: finite(alert.soft_budget),
+                token: alert.token.map(|secret| secret.expose_secret().to_owned()),
+                user_id: alert.user_id,
+                team_id: alert.team_id,
+                team_alias: alert.team_alias,
+                organization_id: alert.organization_id,
+                user_email: alert.user_email,
+                key_alias: alert.key_alias,
+                event_group: event_group(alert.event_group),
+                alert_emails: None,
+                max_budget_alert_emails: alert.max_budget_alert_emails,
+                unset: UnsetCallInfo::default(),
+            },
+        };
+        self.push(kind, &info);
+    }
+
     fn push(&self, kind: &str, info: &CallInfo) {
         self.0
             .lock()
@@ -116,86 +160,67 @@ impl Recorder {
     }
 }
 
+// the budget_alerts type LiteLLM queues each kind under
+const fn team_kind(kind: TeamAlertKind) -> &'static str {
+    match kind {
+        TeamAlertKind::TeamBudget => "team_budget",
+        TeamAlertKind::SoftBudget => "soft_budget",
+    }
+}
+
+const fn budget_kind(kind: BudgetAlertKind) -> &'static str {
+    match kind {
+        BudgetAlertKind::TokenBudget => "token_budget",
+        BudgetAlertKind::SoftBudget => "soft_budget",
+        BudgetAlertKind::MaxBudgetAlert => "max_budget_alert",
+    }
+}
+
+const fn event_group(group: EventGroup) -> &'static str {
+    match group {
+        EventGroup::Key => "key",
+        EventGroup::TeamMember => "team_member",
+    }
+}
+
 impl TeamAlertSink for Recorder {
     fn schedule(&self, alert: TeamAlert) {
-        let kind = match alert.kind {
-            TeamAlertKind::TeamBudget => "team_budget",
-            TeamAlertKind::SoftBudget => "soft_budget",
-        };
-        let info = CallInfo {
-            spend: float(alert.spend),
-            max_budget: alert.max_budget.map_or(Value::Null, float),
-            soft_budget: alert.soft_budget.map_or(Value::Null, float),
-            token: alert.token.map(|secret| secret.expose_secret().to_owned()),
-            customer_id: None,
-            user_id: alert.user_id,
-            team_id: alert.team_id,
-            team_alias: alert.team_alias,
-            organization_id: alert.organization_id,
-            user_email: None,
-            key_alias: alert.key_alias,
-            projected_exceeded_date: None,
-            projected_spend: Value::Null,
-            event_group: "team",
-            alert_emails: alert.alert_emails,
-            max_budget_alert_emails: None,
-        };
-        self.push(kind, &info);
+        self.record(team_kind(alert.kind), RecordedAlert::Team(alert));
     }
 }
 
 impl BudgetAlertSink for Recorder {
     fn schedule(&self, alert: BudgetAlert) {
-        let kind = match alert.kind {
-            BudgetAlertKind::TokenBudget => "token_budget",
-            BudgetAlertKind::SoftBudget => "soft_budget",
-            BudgetAlertKind::MaxBudgetAlert => "max_budget_alert",
-        };
-        let event_group = match alert.event_group {
-            EventGroup::Key => "key",
-            EventGroup::TeamMember => "team_member",
-        };
-        let info = CallInfo {
-            spend: float(alert.spend),
-            max_budget: finite(alert.max_budget),
-            soft_budget: finite(alert.soft_budget),
-            token: alert.token.map(|secret| secret.expose_secret().to_owned()),
-            customer_id: None,
-            user_id: alert.user_id,
-            team_id: alert.team_id,
-            team_alias: alert.team_alias,
-            organization_id: alert.organization_id,
-            user_email: alert.user_email,
-            key_alias: alert.key_alias,
-            projected_exceeded_date: None,
-            projected_spend: Value::Null,
-            event_group,
-            alert_emails: None,
-            max_budget_alert_emails: alert.max_budget_alert_emails,
-        };
-        self.push(kind, &info);
+        self.record(budget_kind(alert.kind), RecordedAlert::Budget(alert));
     }
 }
 
-// CallInfo.model_dump_json's fields; the projections and the customer are never set by these checks
+// the CallInfo fields these team checks never set
+#[derive(Default, Serialize)]
+struct UnsetCallInfo {
+    customer_id: Option<String>,
+    projected_exceeded_date: Option<String>,
+    projected_spend: Value,
+}
+
+// CallInfo.model_dump_json's fields
 #[derive(Serialize)]
 struct CallInfo {
     spend: Value,
     max_budget: Value,
     soft_budget: Value,
     token: Option<String>,
-    customer_id: Option<String>,
     user_id: Option<String>,
     team_id: Option<String>,
     team_alias: Option<String>,
     organization_id: Option<String>,
     user_email: Option<String>,
     key_alias: Option<String>,
-    projected_exceeded_date: Option<String>,
-    projected_spend: Value,
     event_group: &'static str,
     alert_emails: Option<Vec<String>>,
     max_budget_alert_emails: Option<BTreeMap<String, Vec<String>>>,
+    #[serde(flatten)]
+    unset: UnsetCallInfo,
 }
 
 fn finite(money: Option<Money>) -> Value {

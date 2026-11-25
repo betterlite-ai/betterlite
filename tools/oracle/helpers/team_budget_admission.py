@@ -10,7 +10,8 @@ from litellm.exceptions import BudgetExceededError
 from litellm.models.team import LiteLLM_TeamTable
 from litellm.models.team_membership import LiteLLM_TeamMembership
 from litellm.models.user import LiteLLM_UserTable
-from litellm.proxy._types import CallInfo, ModelAccessDeniedProxyException, UserAPIKeyAuth
+from litellm.proxy._types import CallInfo, UserAPIKeyAuth
+from litellm.proxy._types import ModelAccessDeniedProxyException as ModelDenied
 from litellm.proxy.auth import auth_checks
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.utils import PrismaClient, ProxyLogging
@@ -118,7 +119,7 @@ class ProxyServer(ModuleType):
     proxy_logging_obj: ServiceLog
 
 
-# the default budget comes from the seeded cache, so the client is only the "database configured" signal
+# the default budget comes from the seeded cache, so the client only says a database is configured
 class SeededDatabase(PrismaClient):
     def __init__(self) -> None:
         pass
@@ -136,7 +137,7 @@ def token_of(call: Call) -> UserAPIKeyAuth | None:
 
 def membership_of(call: Call) -> LiteLLM_TeamMembership | None:
     membership = call.get("membership")
-    return None if membership is None else LiteLLM_TeamMembership.model_validate(membership)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team_membership.py#L12
+    return None if membership is None else LiteLLM_TeamMembership.model_validate(membership)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team_membership.py#L12
 
 
 def owner(call: Call) -> LiteLLM_UserTable | None:
@@ -163,7 +164,7 @@ async def seeded_cache(call: Call) -> UserApiKeyCache:
     return cache
 
 
-async def settled(check: Awaitable[object]) -> BudgetExceededError | None:
+async def settled(check: Awaitable[None]) -> BudgetExceededError | None:
     try:
         await check
     except BudgetExceededError as denied:
@@ -198,10 +199,10 @@ async def admit_call(call: Call, recorder: Recorder) -> JsonValue:
                 team_membership_loaded=True,
                 key_model_aliases=auth_checks.key_model_aliases_for_auth_check(token),
             )
-    except ModelAccessDeniedProxyException as denied:
-        scope = {"type": denied.type, "param": denied.param, "code": denied.code}
+    except ModelDenied as denied:
+        scope: JsonValue = {"type": denied.type, "param": denied.param, "code": denied.code}
         return {"reads": [], "alerts": [], "denial": None, "model_denial": scope}
-    # common_checks gathers the scopes with return_exceptions, so every check settles and the first error in this order wins
+    # common_checks gathers the scopes, so all settle and the first error in this order wins
     results = [
         await settled(auth_checks._team_max_budget_check(team, token, recorder)),  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5975-L6022
         await settled(auth_checks._team_multi_budget_check(team)),  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6025-L6062
@@ -256,16 +257,16 @@ async def answer_for(call: Call) -> JsonValue:
             return await soft_call(call, recorder)
 
 
-async def call_answer(call: Call) -> JsonValue:
-    try:
-        return {"ok": True, "value": await answer_for(call)}
-    except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5823-L5910
-        return {"ok": False}
-
-
-async def answer(parsed: Request) -> JsonValue:
-    return [await call_answer(call) for call in parsed["calls"]]
+async def answer_calls(calls: list[Call]) -> JsonValue:
+    answers: list[JsonValue] = []
+    for call in calls:
+        try:
+            answers.append({"ok": True, "value": await answer_for(call)})
+        except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5823-L5910
+            answers.append({"ok": False})
+    return answers
 
 
 def run(input_value: Request) -> JsonValue:
-    return asyncio.run(answer(input_value))
+    calls = input_value["calls"]
+    return asyncio.run(answer_calls(calls))
