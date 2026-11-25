@@ -1,10 +1,11 @@
 import asyncio
 import importlib
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import aclosing
 from typing import Final, Protocol, TypeAlias, TypedDict, TypeVar
 
 import litellm.a2a_protocol as their_package
+import pytest
 from a2a.client.card_resolver import parse_agent_card
 from a2a.compat.v0_3.types import (
     Message,
@@ -30,6 +31,7 @@ from typing_extensions import override
 
 import betterlite.a2a_protocol as our_package
 from betterlite._native import NativeA2aClient, NativeA2aStream
+from betterlite.a2a_protocol import client as client_module
 from betterlite.a2a_protocol import exceptions as a2a_exceptions
 from betterlite.a2a_protocol import main as main_module
 from betterlite.a2a_protocol.client import A2AClient
@@ -72,7 +74,6 @@ DEFAULT_CLIENT_TIMEOUT: Final = 60.0
 DISTINCT_TIMEOUT: Final = 7.5
 SEND_METHODS: Final[tuple[str, ...]] = ("GET", "POST", "POST")
 STREAM_METHODS: Final[tuple[str, ...]] = ("GET", "POST")
-CLOSE_TURNS: Final = 32
 # the sdk factory sets A2A-Version on its httpx client, and the native transport sets the same
 EXPECTED_POST_HEADERS: Final[dict[str, str]] = {
     "a2a-version": "1.0",
@@ -520,9 +521,7 @@ async def close_class_stream_early(server: AgentServer, answers: NativeAnswers) 
     assert len(chunks) == SINGLE
     assert chunks[0].id == STREAM_ID
     assert len(answers.streams) == SINGLE
-    # the loop's asyncgen finalizer closes the abandoned inner generator on a later turn
-    for _ in range(CLOSE_TURNS):
-        await asyncio.sleep(0)
+    # the close reaches the native stream before the outer aclose returns
     remaining = await answers.streams[0].anext_chunk()
     return remaining is None
 
@@ -547,3 +546,68 @@ def test_stream_closes_early() -> None:
     assert len(posts) == SINGLE
     assert posts[0]["headers"].get("accept") == "text/event-stream"
     assert closed
+
+
+class InnerCleanupError(Exception): ...
+
+
+class RecordingStream:
+    def __init__(self) -> None:
+        self.ids: list[str | int] = []
+        self.closed = 0
+
+    async def chunks(
+        self, a2a_client: NativeA2aClient, request: OurStreamRequest
+    ) -> AsyncGenerator[SendStreamingMessageResponse, None]:
+        _ = a2a_client
+        self.ids.append(request.id)
+        try:
+            yield SendStreamingMessageResponse(id=request.id)
+        finally:
+            self.closed = self.closed + 1
+
+
+class FailingStream:
+    async def chunks(
+        self, a2a_client: NativeA2aClient, request: OurStreamRequest
+    ) -> AsyncGenerator[SendStreamingMessageResponse, None]:
+        _ = a2a_client
+        try:
+            yield SendStreamingMessageResponse(id=request.id)
+        finally:
+            raise InnerCleanupError
+
+
+async def close_stream_after_first_event(client: A2AClient, recorded: RecordingStream) -> None:
+    stream = client.send_message_streaming(our_stream_request(STREAM_ID))
+    first = await anext(stream)
+    assert first.id == STREAM_ID
+    await stream.aclose()
+    # the inner close runs inside aclose itself, not on a finalizer turn after it
+    assert recorded.closed == SINGLE
+    assert recorded.ids == [STREAM_ID]
+
+
+async def close_stream_expect_error(client: A2AClient) -> None:
+    stream = client.send_message_streaming(our_stream_request(STREAM_ID))
+    first = await anext(stream)
+    assert first.id == STREAM_ID
+    with pytest.raises(InnerCleanupError):
+        await stream.aclose()
+
+
+def test_stream_close_runs_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = RecordingStream()
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(client_module, "asend_message_streaming", recorded.chunks)
+    with V1Server(Recorder()) as server:
+        asyncio.run(close_stream_after_first_event(A2AClient(server.url), recorded))
+    assert recorded.closed == SINGLE
+
+
+def test_stream_close_raises_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    failing = FailingStream()
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(client_module, "asend_message_streaming", failing.chunks)
+    with V1Server(Recorder()) as server:
+        asyncio.run(close_stream_expect_error(A2AClient(server.url)))
