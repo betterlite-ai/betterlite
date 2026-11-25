@@ -13,6 +13,8 @@ use betterlite_redact::secret::Redactor;
 
 use crate::images::convert::fields::resolve_target;
 
+mod tests;
+
 struct Prepared {
     model: String,
     provider: String,

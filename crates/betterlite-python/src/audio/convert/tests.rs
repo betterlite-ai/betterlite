@@ -1,14 +1,19 @@
 #![cfg(test)]
 
-use super::speech::speech_values;
+use super::speech::{speech_timeout, speech_values};
 use super::{
-    AudioCallWire, ConvertError, SpeechCallWire, UNNAMED_FILE, audio_file, bare_string_file,
-    family_for, parse, parse_speech, timeout, transcription_options,
+    AudioCallWire, ConvertError, NoFiles, SpeechCallWire, UNNAMED_FILE, audio_file,
+    bare_string_file, family_for, first_file, max_retries, parse, parse_speech, timeout,
+    transcription_options,
 };
+use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles as _;
 use betterlite_openai::speech::request::SpeechFormat;
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use betterlite_sdk::call_files::{CallFile, CallFilesError};
+use betterlite_sdk::call_setup::RequestMap;
 use rust_decimal::Decimal;
+use std::io;
+use std::path::Path;
 use std::str::FromStr as _;
 use std::time::Duration;
 
@@ -182,4 +187,49 @@ fn error_timeout_must_be_a_number() {
         timeout(&call.arguments),
         Err(ConvertError::Field { .. })
     ));
+}
+
+#[test]
+fn request_first_file_takes_the_file_entry() {
+    let files = [
+        (String::from("image"), file("other.wav", None)),
+        (String::from("file"), file("clip.wav", None)),
+    ];
+    assert_eq!(first_file(&files).unwrap().name, "clip.wav");
+    let other = [(String::from("image"), file("other.wav", None))];
+    assert!(first_file(&other).is_none());
+}
+
+#[test]
+fn request_max_retries_reads_the_argument() {
+    let call = wire(r#"{"max_retries":3}"#);
+    assert_eq!(max_retries(&call.arguments).unwrap(), Some(3));
+    let absent = RequestMap::new();
+    assert_eq!(max_retries(&absent).unwrap(), None);
+    let negative = wire(r#"{"max_retries":-4}"#);
+    assert_eq!(max_retries(&negative.arguments).unwrap(), Some(0));
+    let wrong = wire(r#"{"max_retries":"3"}"#);
+    assert!(matches!(
+        max_retries(&wrong.arguments),
+        Err(ConvertError::Field { .. })
+    ));
+}
+
+#[test]
+fn error_no_files_never_reads_a_path() {
+    let error = NoFiles.read(Path::new("clip.wav")).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    let opened = NoFiles.open(Path::new("clip.wav")).unwrap_err();
+    assert_eq!(opened.kind(), io::ErrorKind::NotFound);
+}
+
+#[test]
+fn request_speech_timeout_reads_the_argument() {
+    let call = speech_wire(r#"{"model":"tts-1","input":"hi","timeout":2.5}"#);
+    assert_eq!(
+        speech_timeout(&call.arguments).unwrap(),
+        Some(Duration::from_millis(2500))
+    );
+    let absent = RequestMap::new();
+    assert_eq!(speech_timeout(&absent).unwrap(), None);
 }

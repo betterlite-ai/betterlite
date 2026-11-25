@@ -19,6 +19,8 @@ use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+mod tests;
+
 // LiteLLM's constants.request_timeout: REQUEST_TIMEOUT or 6000, read once at import
 const DEFAULT_TIMEOUT_SECONDS: f64 = 6000.0_f64;
 
