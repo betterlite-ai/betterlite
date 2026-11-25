@@ -1,14 +1,14 @@
 id: B10014
 milestone: M5 api families
 title: Managed vector store lookup and store access check
-status: todo
+status: done
 depends_on: [B171, B1060, B1062, B749]
 file: tasks/B10014-managed-store-access.yaml
 covers:
   - "litellm/proxy/vector_store_endpoints/utils.py"
 parent: B090
 split_from: B1061
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3201
