@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import io
 import logging
 import sys
 import time
@@ -293,4 +295,6 @@ async def answer_calls(calls: list[Call]) -> JsonValue:
 
 def run(input_value: Request) -> JsonValue:
     calls = input_value["calls"]
-    return asyncio.run(answer_calls(calls))
+    # LiteLLM's own handlers resolve sys.stdout at emit time, so a stray record below WARNING would precede dispatch's answer
+    with contextlib.redirect_stdout(io.StringIO()):
+        return asyncio.run(answer_calls(calls))
