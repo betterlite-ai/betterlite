@@ -587,9 +587,14 @@ def test_redis_checks_arguments() -> None:
 def test_redis_override_schema() -> None:
     supplied: dict[str, JsonValue] = {"socket_timeout": 0, "db": 0, "ssl": False}
     nodes: dict[str, JsonValue] = {"startup_nodes": None}
+    absent: dict[str, JsonValue] = {}
+    null: dict[str, JsonValue] = {"socket_timeout": None}
     invalid: dict[str, JsonValue] = {"socket_timeout": "slow"}
+    default_timeout = 5.0
     assert REDIS_OVERRIDES.validate_python(supplied) == supplied
-    assert REDIS_OVERRIDES.validate_python(nodes) == nodes
+    assert REDIS_OVERRIDES.validate_python(nodes)["startup_nodes"] is None
+    assert REDIS_OVERRIDES.validate_python(absent)["socket_timeout"] == default_timeout
+    assert REDIS_OVERRIDES.validate_python(null) == null
     with pytest.raises(ValidationError, match="socket_timeout"):
         REDIS_OVERRIDES.validate_python(invalid)
 

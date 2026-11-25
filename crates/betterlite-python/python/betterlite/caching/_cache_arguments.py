@@ -1,6 +1,6 @@
-from typing import Final
+from typing import Annotated, Final, Required
 
-from pydantic import ConfigDict, JsonValue, TypeAdapter, with_config
+from pydantic import ConfigDict, Field, JsonValue, TypeAdapter, with_config
 from typing_extensions import TypedDict
 
 from betterlite.caching.base_cache import BaseCache
@@ -64,7 +64,7 @@ class CacheArguments(TypedDict, closed=True, total=False):
 @with_config(ConfigDict(extra="allow", strict=True))
 class RedisOverrides(TypedDict, total=False):
     startup_nodes: list[JsonValue] | None
-    socket_timeout: float | None
+    socket_timeout: Required[Annotated[float | None, Field(default=5.0)]]
 
 
 REDIS_OVERRIDES: Final = TypeAdapter(RedisOverrides)

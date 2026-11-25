@@ -163,7 +163,7 @@ class Cache(CacheOperations):
                 redis_flush_size=redis_flush_size,
                 namespace=namespace,
                 startup_nodes=overrides.get("startup_nodes"),
-                socket_timeout=overrides["socket_timeout"] if "socket_timeout" in overrides else 5.0,
+                socket_timeout=overrides["socket_timeout"],
                 **client_options,
             )
         elif selected == LiteLLMCacheType.LOCAL:
