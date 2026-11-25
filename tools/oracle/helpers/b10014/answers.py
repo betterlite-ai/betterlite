@@ -110,7 +110,7 @@ def cache_value(call: ResolveCall | AssertIdCall) -> Cache:
     cached = call.get("cached")
     hits: dict[str, StoreRow] = {}
     for row in [] if cached is None else cached:
-        table = StoreRow.model_validate(row["model_dump"])  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52
+        table = StoreRow.model_validate(row["model_dump"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52
         hits[f"{CACHE_KEY_PREFIX}{table.vector_store_id}"] = table
     return Cache(hits, call.get("fail"))
 
@@ -128,7 +128,7 @@ def prepare(registry: Registry | None, cache: Cache, table: Table | None, board:
     proxy_server.user_api_key_cache = cache
     proxy_server.proxy_logging_obj = board
     sys.modules[PROXY_MODULE] = proxy_server
-    litellm.vector_store_registry = registry  # type: ignore[assignment]  # noqa: E501  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1517
+    litellm.vector_store_registry = registry  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1517
 
 
 async def resolved(call: ResolveCall | AssertIdCall) -> dict[str, JsonValue] | None:

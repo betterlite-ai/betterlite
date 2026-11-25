@@ -25,7 +25,7 @@ class Table:
     async def find_many(self, where: dict[str, JsonValue], take: int) -> list[StoreRow]:
         uuids = WHERE.validate_python(where)["vector_store_id"]["in"]
         self.queries.append({"uuids": uuids, "take": take})
-        return [StoreRow.model_validate(row) for row in self.rows]  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52
+        return [StoreRow.model_validate(row) for row in self.rows]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52
 
 
 class Database:
