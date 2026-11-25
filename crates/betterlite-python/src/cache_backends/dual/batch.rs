@@ -50,13 +50,8 @@ impl NativeDeferred {
 #[pymethods]
 impl NativeDeclaredBatchRead {
     fn async_resolve<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        future_into_py(
-            py,
-            resolve(
-                Arc::clone(&self.cache),
-                take_result(&self.declared, "declared batch read was already consumed")?,
-            ),
-        )
+        take_result(&self.declared, "declared batch read was already consumed")
+            .and_then(|declared| future_into_py(py, resolve(Arc::clone(&self.cache), declared)))
     }
 }
 

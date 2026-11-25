@@ -98,8 +98,10 @@ impl NativeDual {
         keys: Vec<String>,
         local_only: bool,
     ) -> PyResult<Option<Vec<Option<String>>>> {
-        let result = py.detach(|| BatchReads::batch_get_cache(&*self.cache, &keys, local_only));
-        batch::encode(result)
+        py.detach(|| {
+            let values = BatchReads::batch_get_cache(&*self.cache, &keys, local_only);
+            batch::encode(values)
+        })
     }
 
     fn async_batch_get<'py>(
@@ -258,12 +260,15 @@ impl NativeDual {
     }
 
     fn async_ping<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
-            return future_into_py(py, async move { Ok(true) });
-        };
-        future_into_py(py, async move {
-            error::backend_err(tier.admin.ping(None).await)
-        })
+        match &self.redis {
+            Some(tier) => {
+                let owned = Arc::clone(tier);
+                future_into_py(py, async move {
+                    error::backend_err(owned.admin.ping(None).await)
+                })
+            }
+            None => future_into_py(py, async { Ok(true) }),
+        }
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<()> {
