@@ -25,11 +25,10 @@ use tracing_subscriber::registry;
 use self::fakes::ScriptedProvider;
 use self::handler::{Captured, build_handler};
 use self::support::{ScriptedSource, Shared, Socket, lock};
+#[path = "responses_ws_managed/input.rs"]
+pub(crate) mod input;
 #[path = "responses_ws_managed/fixtures/input.rs"]
 mod input_schema;
-pub(crate) mod input {
-    super::input_schema::define_input!(pub(crate));
-}
 #[path = "responses_ws_managed/fixtures/input/tests.rs"]
 mod input_tests;
 use self::input::{Input, Setup};

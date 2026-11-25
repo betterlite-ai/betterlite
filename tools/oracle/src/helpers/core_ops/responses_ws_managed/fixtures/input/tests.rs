@@ -42,7 +42,11 @@ fn managed_inputs_are_bounded(#[case] boundary: Boundary, #[case] accepted: bool
         Boundary::Capture(reduction) => (
             1024,
             4096,
-            serde_json::to_vec(&input).unwrap().len() - reduction,
+            serde_json::to_vec(&input)
+                .unwrap()
+                .len()
+                .checked_sub(reduction)
+                .unwrap(),
         ),
         Boundary::Frame(cap) => {
             input.frames.push("x".repeat(512));
