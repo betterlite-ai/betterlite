@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::future::Future as _;
 use std::sync::{Arc, Mutex};
 use std::task::Context;
 
@@ -182,8 +181,8 @@ async fn an_accepted_job_polled_concurrently_waits_for_reservation_binding() {
     let queue = Arc::new(PollingQueue::default());
     let route = Arc::new(ObservingRoute::default());
     let current = Arc::get_mut(&mut lifecycle).expect("the lifecycle is uniquely owned");
-    let queue_port: Arc<dyn StreamLoggingQueue> = Arc::clone(&queue);
-    let route_port: Arc<dyn StreamRoute> = Arc::clone(&route);
+    let queue_port: Arc<dyn StreamLoggingQueue> = queue.clone();
+    let route_port: Arc<dyn StreamRoute> = route.clone();
     current.queue = queue_port;
     current.route = route_port;
     let logging_obj = object(&[], reservation_params());

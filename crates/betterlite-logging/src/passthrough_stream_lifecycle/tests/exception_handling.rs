@@ -150,7 +150,9 @@ async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_fai
         release: Arc::clone(&release),
     });
     let frames: Arc<dyn crate::passthrough_stream_logging::router::AnthropicFrameProbe> =
-        Arc::clone(&harness.probe);
+        harness.probe.clone();
+    let tinyfish: Arc<dyn crate::passthrough_stream_logging::tinyfish::TinyfishStreamBilling> =
+        harness.tinyfish.clone();
     let current = Arc::get_mut(&mut lifecycle).expect("the lifecycle is uniquely owned");
     current.router = Arc::new(StreamLoggingRouter {
         providers: Arc::new(ProviderChunkHandlers {
@@ -160,7 +162,7 @@ async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_fai
             openai: blocking,
         }),
         frames,
-        tinyfish: Arc::clone(&harness.tinyfish),
+        tinyfish,
     });
     let logging_obj = object(&[], IndexMap::new());
     let call = processor_call(
