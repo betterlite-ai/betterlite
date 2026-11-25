@@ -210,6 +210,43 @@ async fn a_token_load_error_is_returned_without_the_credential_text() {
 }
 
 #[tokio::test]
+async fn a_null_credential_value_is_the_default_credentials() {
+    let executor = Arc::new(FakeExecutor::scripted(vec![Ok(loaded(
+        "tok-null",
+        Some("cfg-project"),
+    ))]));
+    let setup = configured("cfg-project", None, Some(Json::Null));
+    let prep = prepared(&setup, Arc::clone(&executor)).await.unwrap();
+    assert_eq!(prep.project.as_deref(), Some("cfg-project"));
+    assert_eq!(
+        executor.requests(),
+        vec![LoadRequest {
+            credentials: SeenCredentials::None,
+            project: Some("cfg-project".to_owned()),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn an_object_credential_is_passed_on_as_its_json_text() {
+    let executor = Arc::new(FakeExecutor::scripted(Vec::new()));
+    let setup = configured(
+        "cfg-project",
+        None,
+        Some(Json::Object(parameters(&[(
+            "type",
+            json_text("service_account"),
+        )]))),
+    );
+    let error = prepared(&setup, executor).await.unwrap_err();
+    assert!(matches!(&error, VertexAuthError::Credentials(_)));
+    assert!(
+        error.to_string().contains("not a credential document"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
 async fn a_malformed_credential_document_is_a_source_error() {
     let executor = Arc::new(FakeExecutor::scripted(Vec::new()));
     let setup = configured(
