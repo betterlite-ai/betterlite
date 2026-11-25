@@ -253,6 +253,7 @@ async fn a_failing_vault_initialize_restores_the_previous_environment() {
 #[case::array("[]")]
 #[case::null("null")]
 #[case::number("5")]
+#[tokio::test]
 async fn a_stored_vault_value_that_is_not_an_object_is_logged(#[case] stored: &str) {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);

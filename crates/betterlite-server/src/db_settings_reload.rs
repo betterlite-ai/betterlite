@@ -91,7 +91,7 @@ impl<Client: DbReconnect + Send> SettingsReloader<Client> {
         }
     }
 
-    pub async fn reload_sso<Db: SsoSettingsRows + ?Sized>(&mut self, db: &Db) {
+    pub async fn reload_sso(&mut self, db: &dyn SsoSettingsRows) {
         if let Err(error) = apply_sso(self, db).await {
             tracing::error!(
                 "litellm.proxy.proxy_server.py::ProxyConfig:_init_sso_settings_in_db - {error}"
@@ -99,14 +99,14 @@ impl<Client: DbReconnect + Send> SettingsReloader<Client> {
         }
     }
 
-    pub async fn reload_vault<Db: SettingsRows + ?Sized>(&mut self, db: &Db) {
+    pub async fn reload_vault(&mut self, db: &dyn SettingsRows) {
         let Err(error) = apply_override(self, db, OverrideKind::HashicorpVault).await else {
             return;
         };
         tracing::error!("Error loading Hashicorp Vault config override from DB: {error}");
     }
 
-    pub async fn reload_cyberark<Db: SettingsRows + ?Sized>(&mut self, db: &Db) {
+    pub async fn reload_cyberark(&mut self, db: &dyn SettingsRows) {
         let Err(error) = apply_override(self, db, OverrideKind::CyberArk).await else {
             return;
         };
@@ -168,18 +168,19 @@ impl<Client: DbReconnect + Send> SettingsReloader<Client> {
         let Some(config) = semantic_config(stored)? else {
             return Ok(());
         };
-        let Some(filter) = filter else {
+        let Some(hook) = filter else {
             tracing::error!("no semantic filter is installed for 'mcp_semantic_tool_filter'");
             return Ok(());
         };
-        if self.skip_semantic_rebuild(filter, config) {
+        if self.skip_semantic_rebuild(hook, config) {
             return Ok(());
         }
         let enabled = semantic_enabled(config)?;
-        let registered = filter.rebuild(enabled, router).await;
+        let registered = hook.rebuild(enabled, router).await;
         if enabled && registered {
             tracing::info!("MCP Semantic Filter reinitialized from DB");
-        } else if !enabled {
+        }
+        if !enabled {
             tracing::info!("MCP Semantic Filter disabled");
         }
         self.last_semantic_filter = Some(stored.clone());

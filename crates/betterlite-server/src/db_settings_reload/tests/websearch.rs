@@ -87,6 +87,7 @@ async fn a_json_string_row_is_decoded_and_applied() {
 #[case::number(json("5"))]
 #[case::bool(json("true"))]
 #[case::double_encoded_null(JsonValue::String("null".to_owned()))]
+#[tokio::test]
 async fn a_litellm_settings_that_is_not_an_object_is_logged(#[case] stored: JsonValue) {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
@@ -234,6 +235,7 @@ async fn a_callback_state_that_disagrees_reapplies_the_same_config() {
 #[case::filled_list("[1]", true)]
 #[case::empty_object("{}", false)]
 #[case::filled_object("{\"a\":1}", true)]
+#[tokio::test]
 async fn the_enabled_flag_is_coerced(#[case] stored: &str, #[case] expected: bool) {
     let (applied, logs) = run(&format!(
         "{{\"enabled\":{stored},\"search_tool_name\":\"my-search\"}}"
@@ -258,6 +260,7 @@ async fn the_enabled_flag_is_coerced(#[case] stored: &str, #[case] expected: boo
     "\"enabled_providers\":[\"tavily\",\"bedrock\"],",
     vec!["tavily", "bedrock"]
 )]
+#[tokio::test]
 async fn enabled_providers_is_dropped_unless_it_is_a_filled_list(
     #[case] stored: &str,
     #[case] expected: Vec<&str>,
@@ -272,7 +275,7 @@ async fn enabled_providers_is_dropped_unless_it_is_a_filled_list(
 async fn a_provider_that_is_not_a_name_is_an_error() {
     let (applied, logs) = run("{\"enabled\":true,\"enabled_providers\":[\"ok\",1]}").await;
     assert!(applied.is_empty());
-    assert!(logs.contents().contains(
+    assert!(logs.contains(
         "Error initializing web search interception settings from DB: websearch_interception_params.enabled_providers must be a list of provider names"
     ));
 }
@@ -281,7 +284,7 @@ async fn a_provider_that_is_not_a_name_is_an_error() {
 async fn a_search_tool_name_that_is_not_a_string_is_an_error() {
     let (applied, logs) = run("{\"enabled\":true,\"search_tool_name\":5}").await;
     assert!(applied.is_empty());
-    assert!(logs.contents().contains(
+    assert!(logs.contains(
         "Error initializing web search interception settings from DB: websearch_interception_params.search_tool_name must be a string"
     ));
 }
@@ -299,6 +302,7 @@ async fn a_null_search_tool_name_stays_none() {
 #[case::whole_float("5.0", Some(5))]
 #[case::digit_string("\"4\"", Some(4))]
 #[case::null("null", None)]
+#[tokio::test]
 async fn the_agentic_loop_ceiling_is_validated(
     #[case] stored: &str,
     #[case] expected: Option<u32>,
@@ -316,13 +320,14 @@ async fn the_agentic_loop_ceiling_is_validated(
 #[case::fraction("2.5")]
 #[case::bool_value("true")]
 #[case::list("[1]")]
+#[tokio::test]
 async fn an_invalid_agentic_loop_ceiling_is_an_error(#[case] stored: &str) {
     let (applied, logs) = run(&format!(
         "{{\"enabled\":true,\"max_agentic_loops\":{stored}}}"
     ))
     .await;
     assert!(applied.is_empty());
-    assert!(logs.contents().contains(
+    assert!(logs.contains(
         "Error initializing web search interception settings from DB: websearch_interception_params.max_agentic_loops"
     ));
 }

@@ -317,10 +317,13 @@ impl SecretManagerControl for FakeControl {
     }
 }
 
-pub(crate) fn reloader_with<Client: Send>(
+pub(crate) fn reloader_with<Client>(
     control: &ControlLog,
     reconnect: Option<Client>,
-) -> SettingsReloader<Client> {
+) -> SettingsReloader<Client>
+where
+    Client: Send,
+{
     SettingsReloader {
         cipher: cipher(),
         environment: RuntimeEnvironment::default(),
@@ -339,10 +342,10 @@ pub(crate) fn reloader(control: &ControlLog) -> SettingsReloader<NoReconnect> {
     reloader_with(control, None)
 }
 
-pub(crate) fn env_value<Client: Send>(
-    reloader: &SettingsReloader<Client>,
-    name: &str,
-) -> Option<String> {
+pub(crate) fn env_value<Client>(reloader: &SettingsReloader<Client>, name: &str) -> Option<String>
+where
+    Client: Send,
+{
     reloader.environment.lookup(name)
 }
 

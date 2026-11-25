@@ -42,10 +42,9 @@ fn decode_settings(text: &str) -> Result<Option<JsonMap>, SettingsReloadError> {
 
 // coerce_bool then bool(), as the reload does: the stored flag may be any truthy value.
 pub(crate) fn enabled_flag(config: &JsonMap) -> bool {
-    let stored = match config.get("enabled") {
-        Some(value) => coerce_bool(value.clone()),
-        None => JsonValue::Bool(true),
-    };
+    let stored = config
+        .get("enabled")
+        .map_or(JsonValue::Bool(true), |value| coerce_bool(value.clone()));
     matches!(stored, JsonValue::Bool(true))
 }
 

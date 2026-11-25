@@ -68,11 +68,14 @@ where
     Ok(())
 }
 
-fn apply_config<Client: Send>(
+fn apply_config<Client>(
     reloader: &mut SettingsReloader<Client>,
     kind: OverrideKind,
     config: JsonMap,
-) -> Result<(), SettingsReloadError> {
+) -> Result<(), SettingsReloadError>
+where
+    Client: Send,
+{
     let decrypted = decrypt_env(&config, &reloader.cipher);
     if matches!(kind, OverrideKind::CyberArk) {
         snapshot_cyberark_boot_env(&mut reloader.state, &reloader.environment.snapshot());
@@ -95,20 +98,23 @@ fn apply_config<Client: Send>(
     Ok(())
 }
 
-fn last_override<Client: Send>(
+const fn last_override<Client>(
     reloader: &SettingsReloader<Client>,
     kind: OverrideKind,
-) -> Option<&JsonValue> {
+) -> Option<&JsonValue>
+where
+    Client: Send,
+{
     match kind {
         OverrideKind::HashicorpVault => reloader.state.vault_last_config.as_ref(),
         OverrideKind::CyberArk => reloader.state.cyberark_last_config.as_ref(),
     }
 }
 
-fn snapshot_mapping<Client: Send>(
-    reloader: &SettingsReloader<Client>,
-    kind: OverrideKind,
-) -> JsonMap {
+fn snapshot_mapping<Client>(reloader: &SettingsReloader<Client>, kind: OverrideKind) -> JsonMap
+where
+    Client: Send,
+{
     let snapshot = reloader.environment.snapshot();
     let mut mapping = JsonMap::new();
     for field in kind.fields() {
