@@ -125,24 +125,24 @@ impl Helper for Op {
             values: input.cache.clone(),
             reads: Arc::default(),
         };
-        execute(input, store, limiter, cache)
+        execute(input, &store, &limiter, &cache)
     }
 }
 
 fn execute(
     input: &Input,
-    store: ScriptedStore,
-    limiter: ScriptedLimiter,
-    cache: ScriptedCache,
+    store: &ScriptedStore,
+    limiter: &ScriptedLimiter,
+    cache: &ScriptedCache,
 ) -> HelperResult {
     let stash = Arc::new(RecordingStash::default());
     let stash_handle: Arc<dyn BatchCounterStash> = Arc::<RecordingStash>::clone(&stash);
     let clock = input.clock;
     let service = BatchLimitCounters {
         clock: Arc::new(move || clock),
-        limiter: limiter.clone(),
-        store: store.clone(),
-        cache: cache.clone(),
+        limiter: ScriptedLimiter::clone(limiter),
+        store: ScriptedStore::clone(store),
+        cache: ScriptedCache::clone(cache),
         stash: stash_handle,
         resolver: Arc::new(FixedProviders),
         router: None,
