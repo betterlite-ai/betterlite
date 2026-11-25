@@ -30,6 +30,7 @@ impl Slot {
         }
         let runtime = SpendRuntime::new(settings, parts)?;
         *installed = Some(Arc::clone(&runtime));
+        drop(installed);
         Ok(runtime)
     }
 }
