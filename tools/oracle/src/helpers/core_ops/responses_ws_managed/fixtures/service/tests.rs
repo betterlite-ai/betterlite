@@ -79,9 +79,9 @@ fn warmup_normalization_validates_first(
         accepted
     );
     if accepted {
-        assert_eq!(frame.pointer("/response/created_at"), Some(&json!(0)));
+        assert_eq!(frame.pointer("/response/created_at"), Some(&json!(0_i64)));
         assert_eq!(frame.pointer("/response/extra/present"), Some(&json!(null)));
-        let mut changed = json!({"response":{"id":"resp_warmup_abcdef0123456789abcdef0123456789","created_at":1}});
+        let mut changed = json!({"response":{"id":"resp_warmup_abcdef0123456789abcdef0123456789","created_at":1_i64}});
         normalize_warmup(&mut changed, 1, &mut previous).unwrap_err();
     }
 }

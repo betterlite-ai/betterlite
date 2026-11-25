@@ -1,5 +1,3 @@
-#[path = "../core_ops/responses_ws_managed.rs"]
-mod managed;
 #[path = "../core_ops/responses_ws_managed/fixtures/service.rs"]
 mod service;
 use crate::websocket_driver::DriverError;

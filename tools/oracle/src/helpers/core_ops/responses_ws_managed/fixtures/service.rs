@@ -1,8 +1,8 @@
-use super::managed::{Op, input::Input};
+use crate::websocket_driver::responses_ws_managed::Input;
 use crate::websocket_driver::service::Arguments;
-use betterlite_core::api::response_id_traversal::response_id::transcode;
+use betterlite_oracle_core_ops::GROUP;
 use betterlite_oracle_helper_api::error::HelperError;
-use betterlite_oracle_helper_api::helper::{Helper as _, HelperResult};
+use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -52,14 +52,7 @@ pub(crate) fn run(arguments: &Arguments) -> HelperResult {
     let mut frames = Vec::new();
     let mut sessions = Vec::new();
     for session in &arguments.managed {
-        let mut input: Input = transcode(session).map_err(|source| failure(source.to_string()))?;
-        input.deadline_millis =
-            u64::try_from(limit.saturating_sub(started.elapsed()).as_millis()).unwrap_or(0);
-        if input.deadline_millis == 0 {
-            return Err(failure(String::from("managed transcript deadline expired")));
-        }
-        let mut answer: Observation = serde_json::from_value(Op::run(&input)?)
-            .map_err(|source| failure(source.to_string()))?;
+        let mut answer = run_session(session, limit.saturating_sub(started.elapsed()))?;
         let mut previous = None;
         for (index, frame) in answer.frames.iter_mut().enumerate() {
             if session.normalize_warmup {
@@ -72,9 +65,21 @@ pub(crate) fn run(arguments: &Arguments) -> HelperResult {
         sessions.push(answer.effects);
     }
     Ok(
-        json!({"handshake":{"status":101,"negotiated_subprotocol":null},
+        json!({"handshake":{"status":101_u16,"negotiated_subprotocol":null},
         "frames":frames,"close":null,"managed":sessions}),
     )
+}
+
+fn run_session(session: &Input, remaining: Duration) -> Result<Observation, Box<HelperError>> {
+    let mut input = session.clone();
+    input.deadline_millis = u64::try_from(remaining.as_millis()).unwrap_or(0);
+    if input.deadline_millis == 0 {
+        return Err(failure(String::from("managed transcript deadline expired")));
+    }
+    let request = serde_json::to_value(input).map_err(|source| failure(source.to_string()))?;
+    let answer = (GROUP.invoke)("responses_ws_managed", &request)
+        .ok_or_else(|| failure(String::from("managed helper is not registered")))??;
+    serde_json::from_value(answer).map_err(|source| failure(source.to_string()))
 }
 
 // Validate generated fields before canonicalizing them so random IDs and clocks cannot hide malformed acknowledgements.
