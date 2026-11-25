@@ -60,7 +60,7 @@ deviations:
       Image generation and editing return the priced ImageResponse the handler is written to
       build, with created from the call's end time and a zero usage. LiteLLM passes only data
       and model, and openai's ImagesResponse declares created required, so its ImageResponse
-      raises and both branches end in the error path with no result and no spend.
+      raises and both branches end in the error path with no result and no cost written.
     why: >-
       B3637's DoD requires the built reply, so a constructor error no working setup can rely on
       is fixed instead of copied. The end time is the moment LiteLLM's handler runs, and
