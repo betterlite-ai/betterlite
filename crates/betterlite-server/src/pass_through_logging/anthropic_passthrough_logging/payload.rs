@@ -36,81 +36,85 @@ enum PayloadError {
     ResponseNotObject,
 }
 
-impl AnthropicPassthroughLogger {
-    // ast-grep-ignore: no-long-names - LiteLLM's _create_anthropic_response_logging_payload, shared by the whole and the streamed path
-    pub(crate) fn create_anthropic_response_logging_payload(
-        &self,
-        mut input: AnthropicPayloadInput<'_>,
-    ) -> PassThroughLoggingKwargs {
-        store_streamed_response(input.call_log, input.response);
-        if let Err(error) = self.payload_steps(&mut input) {
-            tracing::error!("Error creating Anthropic response logging payload: {error}");
-        }
-        input.kwargs
+// ast-grep-ignore: no-long-names - LiteLLM's _create_anthropic_response_logging_payload, shared by the whole and the streamed path
+pub(crate) fn create_anthropic_response_logging_payload(
+    logger: &AnthropicPassthroughLogger,
+    mut input: AnthropicPayloadInput<'_>,
+) -> PassThroughLoggingKwargs {
+    store_streamed_response(input.call_log, input.response);
+    if let Err(error) = payload_steps(logger, &mut input) {
+        tracing::error!("Error creating Anthropic response logging payload: {error}");
     }
+    input.kwargs
+}
 
-    // Each step writes in place, so a later failure keeps what the earlier steps set.
-    fn payload_steps(&self, input: &mut AnthropicPayloadInput<'_>) -> Result<(), PayloadError> {
-        let model = resolve_costing_model(input.model, input.call_log);
-        let response_cost =
-            compute_response_cost(self.cost.as_ref(), input.response, &model, input.call_log)?;
-        let entries = &mut input.kwargs.entries;
-        entries.insert("response_cost".to_owned(), decimal_json(response_cost));
-        entries.insert("model".to_owned(), Json::Text(model.clone()));
-        // the pass-through success path reads spend from the call log, not from kwargs
-        input
-            .call_log
-            .model_call_details
-            .insert("response_cost".to_owned(), decimal_json(response_cost));
-        self.apply_end_user(&mut input.kwargs)?;
-        if tracing::enabled!(Level::DEBUG) {
-            let pretty = serde_json::to_string_pretty(&input.kwargs.entries)
-                .map_err(PayloadError::Encode)?;
-            tracing::debug!("kwargs= {pretty}");
-        }
-        stamp_identity(input, model)
+// Each step writes in place, so a later failure keeps what the earlier steps set.
+fn payload_steps(
+    logger: &AnthropicPassthroughLogger,
+    input: &mut AnthropicPayloadInput<'_>,
+) -> Result<(), PayloadError> {
+    let model = resolve_costing_model(input.model, input.call_log);
+    let response_cost =
+        compute_response_cost(logger.cost.as_ref(), input.response, &model, input.call_log)?;
+    let entries = &mut input.kwargs.entries;
+    entries.insert("response_cost".to_owned(), decimal_json(response_cost));
+    entries.insert("model".to_owned(), Json::Text(model.clone()));
+    // the pass-through success path reads spend from the call log, not from kwargs
+    input
+        .call_log
+        .model_call_details
+        .insert("response_cost".to_owned(), decimal_json(response_cost));
+    apply_end_user(logger, &mut input.kwargs)?;
+    if tracing::enabled!(Level::DEBUG) {
+        let pretty =
+            serde_json::to_string_pretty(&input.kwargs.entries).map_err(PayloadError::Encode)?;
+        tracing::debug!("kwargs= {pretty}");
     }
+    stamp_identity(input, model)
+}
 
-    // setdefault then update: proxy_server_request is replaced whole and the other litellm_params keys stay
-    fn apply_end_user(&self, kwargs: &mut PassThroughLoggingKwargs) -> Result<(), PayloadError> {
-        let Some(Json::Object(payload)) = kwargs.entries.get("passthrough_logging_payload") else {
-            return Ok(());
-        };
-        let request_body = match payload.get("request_body") {
-            Some(Json::Object(body)) => Some(body),
+// setdefault then update: proxy_server_request is replaced whole and the other litellm_params keys stay
+fn apply_end_user(
+    logger: &AnthropicPassthroughLogger,
+    kwargs: &mut PassThroughLoggingKwargs,
+) -> Result<(), PayloadError> {
+    let Some(Json::Object(payload)) = kwargs.entries.get("passthrough_logging_payload") else {
+        return Ok(());
+    };
+    let request_body = match payload.get("request_body") {
+        Some(Json::Object(body)) => Some(body),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             None
-            | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-                None
-            }
-        };
-        let settings = IdSettings {
-            request_headers: &self.request_headers,
-            validate_end_user_id_in_db: false,
-        };
-        let Some(user) = end_user_from_request_body(request_body, &settings) else {
-            return Ok(());
-        };
-        let mut body = IndexMap::new();
-        body.insert("user".to_owned(), Json::Text(user));
-        let mut request = IndexMap::new();
-        request.insert("body".to_owned(), Json::Object(body));
-        match kwargs.entries.get_mut("litellm_params") {
-            Some(Json::Object(params)) => {
-                params.insert("proxy_server_request".to_owned(), Json::Object(request));
-            }
-            None | Some(Json::Null) => {
-                let mut params = IndexMap::new();
-                params.insert("proxy_server_request".to_owned(), Json::Object(request));
-                kwargs
-                    .entries
-                    .insert("litellm_params".to_owned(), Json::Object(params));
-            }
-            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-                return Err(PayloadError::LitellmParams);
-            }
         }
-        Ok(())
+    };
+    let settings = IdSettings {
+        request_headers: &logger.request_headers,
+        validate_end_user_id_in_db: false,
+    };
+    let Some(user) = end_user_from_request_body(request_body, &settings) else {
+        return Ok(());
+    };
+    let mut body = IndexMap::new();
+    body.insert("user".to_owned(), Json::Text(user));
+    let mut request = IndexMap::new();
+    request.insert("body".to_owned(), Json::Object(body));
+    match kwargs.entries.get_mut("litellm_params") {
+        Some(Json::Object(params)) => {
+            params.insert("proxy_server_request".to_owned(), Json::Object(request));
+        }
+        None | Some(Json::Null) => {
+            let mut params = IndexMap::new();
+            params.insert("proxy_server_request".to_owned(), Json::Object(request));
+            kwargs
+                .entries
+                .insert("litellm_params".to_owned(), Json::Object(params));
+        }
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(PayloadError::LitellmParams);
+        }
     }
+    Ok(())
 }
 
 // The response takes the upstream id or the call id and the costing model, and the call log records both.

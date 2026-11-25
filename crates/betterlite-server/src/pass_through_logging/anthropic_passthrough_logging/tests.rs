@@ -9,7 +9,7 @@ use betterlite_core::api::media_relay_logging::spend::decimal_json;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::types::{
-    CollectedChunksCall, CollectedChunksHandler as _, EndpointType, HandlerError, HandlerOutcome,
+    CollectedChunksHandler as _, HandlerError, HandlerOutcome,
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -18,15 +18,15 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use self::support::{
-    BATCH, BATCH_RESPONSE_ID, CALL_ID, Exchange, PricedCall, RESULTS, RecordingCost,
-    RecordingRegistry, STREAM, at, call_log, capture_logs, kwargs, logger, logging_object,
-    model_response, object, start_time, text, text_at,
+    BATCH, BATCH_RESPONSE_ID, CALL_ID, Exchange, MESSAGES_ROUTE, PricedCall, RESULTS,
+    RecordingCost, RecordingRegistry, STREAM, at, batch_create_exchange, call_log, capture_logs,
+    collected_call, kwargs, logger, logging_object, model_response, object,
+    stored_complete_response, text, text_at,
 };
 use super::AnthropicPassthroughError;
+use super::chunks::log_collected_chunks;
 use crate::pass_through_logging::interrupted_stream_usage::InterruptedStreamUsageError;
 use crate::pass_through_logging::stream_fields::{Chunk, StreamFieldError};
-
-const MESSAGES_ROUTE: &str = "/anthropic/v1/messages";
 
 fn number(value: i64) -> Json {
     Json::Number(Number::from(value))
@@ -41,18 +41,7 @@ async fn anthropic_batch_create_on_the_collection_route_logs_the_batch() {
     let cost = RecordingCost::priced();
     let registry = Arc::new(RecordingRegistry::default());
     let mut log = call_log(&[]);
-    let mut exchange = Exchange::message("/anthropic/v1/messages/batches");
-    exchange.response_text = BATCH;
-    exchange.request_body = object(&[("model", text("claude-sonnet-4-5"))]);
-    let metadata = object(&[("user_api_key_user_id", text("user-7"))]);
-    exchange.kwargs = kwargs(&[
-        ("call_type", text("pass_through_endpoint")),
-        (
-            "litellm_params",
-            Json::Object(object(&[("metadata", Json::Object(metadata))])),
-        ),
-    ]);
-    let outcome = exchange
+    let outcome = batch_create_exchange()
         .handle(&logger(&cost, &registry), &mut log)
         .unwrap();
     let result = model_response(&outcome);
@@ -548,17 +537,13 @@ fn anthropic_chunks_complete_stream_is_logged() {
     };
     let request_body = Json::Object(object(&[]));
     let lines = stream_lines();
-    let call = CollectedChunksCall {
-        logging_obj: &logging_obj,
-        passthrough: &passthrough,
-        url_route: MESSAGES_ROUTE,
-        request_body: Some(&request_body),
-        endpoint_type: EndpointType::Anthropic,
-        start_time: start_time().fixed_offset(),
-        end_time: start_time().fixed_offset(),
-        lines: &lines,
-        model: Some("ignored-model"),
-    };
+    let call = collected_call(
+        &logging_obj,
+        &passthrough,
+        &lines,
+        Some(&request_body),
+        Some("ignored-model"),
+    );
     let outcome = logger(&cost, &registry).handle(&call).unwrap();
     let result = model_response(&outcome);
     assert_eq!(text_at(result, &["id"]).as_deref(), Some("msg_1"));
@@ -577,16 +562,10 @@ fn anthropic_chunks_complete_stream_is_logged() {
         calls.last().map(|priced_call| priced_call.model.as_str()),
         Some("claude-test")
     );
-    let stored = logging_obj
-        .read(&mut |state| {
-            state
-                .model_call_details
-                .get("complete_streaming_response")
-                .cloned()
-        })
-        .flatten()
-        .unwrap();
-    assert_eq!(&stored, result);
+    assert_eq!(
+        stored_complete_response(&logging_obj).as_ref(),
+        Some(result)
+    );
 }
 
 #[test]
@@ -596,9 +575,8 @@ fn anthropic_chunks_unbuildable_stream_logs_and_returns_nothing() {
     let registry = Arc::new(RecordingRegistry::default());
     let mut log = call_log(&[]);
     let request_body = object(&[("model", text("claude-test"))]);
-    let outcome = logger(&cost, &registry)
-        .log_collected_chunks(&mut log, &request_body, &[])
-        .unwrap();
+    let outcome =
+        log_collected_chunks(&logger(&cost, &registry), &mut log, &request_body, &[]).unwrap();
     assert_eq!(outcome, HandlerOutcome::default());
     assert_eq!(outcome.kwargs, PassThroughLoggingKwargs::default());
     assert!(logs.contents().contains(
@@ -614,7 +592,7 @@ fn anthropic_chunks_invalid_utf8_is_a_typed_error() {
     let mut log = call_log(&[]);
     let request_body = object(&[]);
     let chunks = [Chunk::Bytes(vec![0xff, 0xfe])];
-    let handled = logger(&cost, &registry).log_collected_chunks(&mut log, &request_body, &chunks);
+    let handled = log_collected_chunks(&logger(&cost, &registry), &mut log, &request_body, &chunks);
     let Err(error) = handled else {
         panic!("invalid UTF-8 must fail the build");
     };
@@ -637,17 +615,7 @@ fn anthropic_chunks_without_a_call_log_is_an_error() {
         injected_log_dispatch: None,
     };
     let lines = stream_lines();
-    let call = CollectedChunksCall {
-        logging_obj: &logging_obj,
-        passthrough: &passthrough,
-        url_route: MESSAGES_ROUTE,
-        request_body: None,
-        endpoint_type: EndpointType::Anthropic,
-        start_time: start_time().fixed_offset(),
-        end_time: start_time().fixed_offset(),
-        lines: &lines,
-        model: None,
-    };
+    let call = collected_call(&logging_obj, &passthrough, &lines, None, None);
     let Err(HandlerError::Leaf { source }) = logger(&cost, &registry).handle(&call) else {
         panic!("a held call log must fail the handler");
     };

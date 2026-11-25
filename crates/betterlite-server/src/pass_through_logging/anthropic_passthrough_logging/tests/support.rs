@@ -12,11 +12,14 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
+use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamLoggingState, StreamSuccessCall, StreamSuccessDispatch,
 };
-use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
+use betterlite_logging::passthrough_stream_logging::types::{
+    CollectedChunksCall, EndpointType, HandlerOutcome,
+};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -36,6 +39,7 @@ use crate::pass_through_logging::anthropic_batch::{
 };
 use crate::pass_through_logging::response_costing::{ResponseCostRequest, ResponseCostService};
 
+pub(super) const MESSAGES_ROUTE: &str = "/anthropic/v1/messages";
 pub(super) const CALL_ID: &str = "call-1";
 pub(super) const BATCH_RESPONSE_ID: &str = "batch-response-1";
 
@@ -207,6 +211,43 @@ impl<'exchange> Exchange<'exchange> {
     }
 }
 
+// The batch branch's inputs: a batch create route, the batch body and the metadata kwargs the registry reads.
+pub(super) fn batch_create_exchange() -> Exchange<'static> {
+    let mut exchange = Exchange::message("/anthropic/v1/messages/batches");
+    exchange.response_text = BATCH;
+    exchange.request_body = object(&[("model", text("claude-sonnet-4-5"))]);
+    let metadata = object(&[("user_api_key_user_id", text("user-7"))]);
+    exchange.kwargs = kwargs(&[
+        ("call_type", text("pass_through_endpoint")),
+        (
+            "litellm_params",
+            Json::Object(object(&[("metadata", Json::Object(metadata))])),
+        ),
+    ]);
+    exchange
+}
+
+// The stream seam's call over the case's lines, with the case's body as the request.
+pub(super) fn collected_call<'call>(
+    logging_obj: &'call StreamLoggingObject,
+    passthrough: &'call PassThroughEndpointLogging,
+    lines: &'call [String],
+    request_body: Option<&'call Json>,
+    model: Option<&'call str>,
+) -> CollectedChunksCall<'call> {
+    CollectedChunksCall {
+        logging_obj,
+        passthrough,
+        url_route: MESSAGES_ROUTE,
+        request_body,
+        endpoint_type: EndpointType::Anthropic,
+        start_time: start_time().fixed_offset(),
+        end_time: start_time().fixed_offset(),
+        lines,
+        model,
+    }
+}
+
 pub(super) fn start_time() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
         .single()
@@ -303,6 +344,17 @@ pub(super) fn text_at(value: &Json, path: &[&str]) -> Option<String> {
     } else {
         None
     }
+}
+
+pub(super) fn stored_complete_response(logging_obj: &StreamLoggingObject) -> Option<Json> {
+    logging_obj
+        .read(&mut |state| {
+            state
+                .model_call_details
+                .get("complete_streaming_response")
+                .cloned()
+        })
+        .flatten()
 }
 
 pub(super) fn model_response(outcome: &HandlerOutcome) -> &Json {

@@ -22,7 +22,8 @@ use http::HeaderMap;
 use serde::Serialize;
 use thiserror::Error;
 
-use self::payload::AnthropicPayloadInput;
+// ast-grep-ignore: no-long-names - LiteLLM's _create_anthropic_response_logging_payload, shared by the whole and the streamed path
+use self::payload::{AnthropicPayloadInput, create_anthropic_response_logging_payload};
 use super::anthropic_batch::AnthropicBatchLogging;
 use super::batch_attribution::optional_str;
 use super::gemini_passthrough_logging::counter::CollectedCounter;
@@ -51,22 +52,22 @@ pub enum AnthropicPassthroughError {
     #[error("the Anthropic response could not be transformed: {source}")]
     ChatTransform {
         #[source]
-        source: ResponseError<EngineError>,
+        source: Box<ResponseError<EngineError>>,
     },
     #[error("the Anthropic batch results could not be transformed: {source}")]
     BatchResults {
         #[source]
-        source: ResultError<EngineError>,
+        source: Box<ResultError<EngineError>>,
     },
     #[error("the streamed Anthropic response could not be built: {source}")]
     StreamBuild {
-        #[from]
-        source: InterruptedStreamUsageError,
+        #[source]
+        source: Box<InterruptedStreamUsageError>,
     },
     #[error("the Anthropic message_start event could not be read: {source}")]
     MessageStart {
-        #[from]
-        source: StreamFieldError,
+        #[source]
+        source: Box<StreamFieldError>,
     },
     #[error("the bundled tokenizer or the log redactor could not be built")]
     Tools,
@@ -77,6 +78,22 @@ pub enum AnthropicPassthroughError {
     },
     #[error("the call log is held by the success dispatch")]
     CallLogHeld,
+}
+
+impl From<InterruptedStreamUsageError> for AnthropicPassthroughError {
+    fn from(source: InterruptedStreamUsageError) -> Self {
+        Self::StreamBuild {
+            source: Box::new(source),
+        }
+    }
+}
+
+impl From<StreamFieldError> for AnthropicPassthroughError {
+    fn from(source: StreamFieldError) -> Self {
+        Self::MessageStart {
+            source: Box::new(source),
+        }
+    }
 }
 
 impl From<AnthropicPassthroughError> for HandlerError {
@@ -99,6 +116,7 @@ pub struct AnthropicPassthroughLogger {
     request_headers: Settings,
 }
 
+// The workspace denies multiple_inherent_impl, so the payload and collected-chunks steps are free functions in their modules and this is the type's one impl block.
 impl AnthropicPassthroughLogger {
     #[must_use]
     pub fn new(batch_logging: AnthropicBatchLogging, cost: Arc<dyn ResponseCostService>) -> Self {
@@ -133,13 +151,17 @@ impl AnthropicPassthroughLogger {
         let mut response =
             transform::transformed_response(tools, &input, speed.as_deref(), call_log)?;
         let response_id = input.response_body.get("id").and_then(optional_str);
-        let kwargs = self.create_anthropic_response_logging_payload(AnthropicPayloadInput {
-            response: &mut response,
-            model: &model,
-            kwargs: input.kwargs,
-            call_log,
-            response_id,
-        });
+        // ast-grep-ignore: no-long-names - LiteLLM's _create_anthropic_response_logging_payload, shared by the whole and the streamed path
+        let kwargs = create_anthropic_response_logging_payload(
+            self,
+            AnthropicPayloadInput {
+                response: &mut response,
+                model: &model,
+                kwargs: input.kwargs,
+                call_log,
+                response_id,
+            },
+        );
         Ok(HandlerOutcome {
             result: Some(PassThroughResponse::ModelResponse(response)),
             kwargs,

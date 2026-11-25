@@ -58,8 +58,11 @@ pub(super) fn transformed_response(
             body: input.response_text.as_bytes(),
             now: input.end_time.timestamp(),
         };
-        project_batch_results(&mut envelope, response, logging, &tools.counter)
-            .map_err(|source| AnthropicPassthroughError::BatchResults { source })?;
+        project_batch_results(&mut envelope, response, logging, &tools.counter).map_err(
+            |source| AnthropicPassthroughError::BatchResults {
+                source: Box::new(source),
+            },
+        )?;
     } else {
         chat_transform(&mut envelope, tools, input, speed, logging)?;
     }
@@ -93,6 +96,9 @@ fn chat_transform(
         headers: input.response_headers,
         body: input.response_text.as_bytes(),
     };
-    transform_response(envelope, &raw, &request, logging, &tools.counter)
-        .map_err(|source| AnthropicPassthroughError::ChatTransform { source })
+    transform_response(envelope, &raw, &request, logging, &tools.counter).map_err(|source| {
+        AnthropicPassthroughError::ChatTransform {
+            source: Box::new(source),
+        }
+    })
 }
