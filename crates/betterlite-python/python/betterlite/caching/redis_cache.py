@@ -8,10 +8,10 @@ import betterlite
 from betterlite._native import NativeRedis
 from betterlite.caching._backend import (
     _BackendCache,
-    _number,
-    _nx,
     _ttl_of,
     cluster_nodes_are_set,
+    number_value,
+    nx_value,
 )
 
 _DEFAULT_TTL: Final = 60
@@ -93,7 +93,7 @@ class RedisCache(_BackendCache[NativeRedis]):
     @override
     async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> bool | None:
         return await self.native.async_set(
-            key, json.dumps(value), self._write_ttl(kwargs), _nx(kwargs)
+            key, json.dumps(value), self._write_ttl(kwargs), nx_value(kwargs)
         )
 
     # LiteLLM's increment is typed int and uses INCR; a missing ttl takes the cache's own default.
@@ -101,7 +101,7 @@ class RedisCache(_BackendCache[NativeRedis]):
         self, key: str, value: int, ttl: float | None = None, **kwargs: JsonValue
     ) -> int:
         effective = ttl if ttl is not None else _ttl_of(kwargs)
-        return int(_number(self.native.increment(key, value, effective)))
+        return int(number_value(self.native.increment(key, value, effective)))
 
     async def async_increment(
         self,
@@ -113,7 +113,7 @@ class RedisCache(_BackendCache[NativeRedis]):
     ) -> float:
         _unread = (parent_otel_span, refresh_ttl)
         seconds = None if ttl is None else float(ttl)
-        return float(_number(await self.native.async_increment(key, value, seconds)))
+        return float(number_value(await self.native.async_increment(key, value, seconds)))
 
     async def delete_cache_keys(self, keys: list[str]) -> None:
         await self.native.async_delete(keys)

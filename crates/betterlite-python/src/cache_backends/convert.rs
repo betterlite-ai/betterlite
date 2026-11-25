@@ -3,8 +3,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
 use betterlite_redis::cache_primitives::decode::CachedValue;
+use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use serde_json::Number;
+use serde_json::value::RawValue;
 
 use super::error::BackendHandleError;
 
@@ -31,7 +33,30 @@ where
 
 // ast-grep-ignore: no-one-line-functions - a Python value arrives as JSON text, and one JSON cannot hold is a value error
 pub(crate) fn json_value(text: &str) -> Result<Json, BackendHandleError> {
-    serde_json::from_str(text).map_err(|source| BackendHandleError::Value { source })
+    parse_json(text).map_err(|source| BackendHandleError::Value { source })
+}
+
+// Raw children keep user objects distinct from serde's arbitrary-precision number maps.
+fn parse_json(text: &str) -> serde_json::Result<Json> {
+    match text.trim_start().as_bytes().first() {
+        Some(b'{') => {
+            let fields: IndexMap<String, &RawValue> = serde_json::from_str(text)?;
+            fields
+                .into_iter()
+                .map(|(key, entry)| Ok((key, parse_json(entry.get())?)))
+                .collect::<serde_json::Result<_>>()
+                .map(Json::Object)
+        }
+        Some(b'[') => {
+            let items: Vec<&RawValue> = serde_json::from_str(text)?;
+            items
+                .into_iter()
+                .map(|entry| parse_json(entry.get()))
+                .collect::<serde_json::Result<_>>()
+                .map(Json::List)
+        }
+        Some(_) | None => serde_json::from_str(text),
+    }
 }
 
 // ast-grep-ignore: no-padded-one-line-functions - every write path reads its Python value through here

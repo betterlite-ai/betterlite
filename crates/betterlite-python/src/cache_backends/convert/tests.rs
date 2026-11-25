@@ -168,6 +168,16 @@ fn backends_request_object_number_key_is_left_alone() {
 }
 
 #[test]
+fn backends_request_nested_objects_keep_number_keys() {
+    let text = r#" {"nested":[{"$serde_json::private::Number":"1.5"},1.5,{},[],true,null,"x"]} "#;
+    let parsed = json_value(text).unwrap();
+    assert_eq!(text_of_json(&parsed).unwrap(), text.trim());
+    let nested = cache_value(text).unwrap();
+    assert_eq!(text_of_value(&nested).unwrap(), text.trim());
+    json_value("[1.5,").unwrap_err();
+}
+
+#[test]
 fn backends_request_wall_clock() {
     assert!(wall_clock() > 1_700_000_000.0_f64);
 }

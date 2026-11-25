@@ -3,7 +3,7 @@ import json
 from pydantic import JsonValue
 
 from betterlite._native import NativeDisk
-from betterlite.caching._backend import _BackendCache, _number, _ttl_of
+from betterlite.caching._backend import _BackendCache, _ttl_of, number_value
 
 
 class DiskCache(_BackendCache[NativeDisk]):
@@ -16,7 +16,7 @@ class DiskCache(_BackendCache[NativeDisk]):
         self.native = NativeDisk(json.dumps(settings))
 
     def increment_cache(self, key: str, value: int, **kwargs: JsonValue) -> int:
-        return int(_number(self.native.increment(key, value, _ttl_of(kwargs))))
+        return int(number_value(self.native.increment(key, value, _ttl_of(kwargs))))
 
     async def async_increment(self, key: str, value: int, **kwargs: JsonValue) -> int:
-        return int(_number(await self.native.async_increment(key, value, _ttl_of(kwargs))))
+        return int(number_value(await self.native.async_increment(key, value, _ttl_of(kwargs))))

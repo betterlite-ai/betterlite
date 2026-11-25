@@ -5,13 +5,23 @@ use tokio::task::JoinSet;
 
 use super::error::{self, BackendHandleError};
 
+pub(super) fn none_future<Work>(py: Python<'_>, work: Work) -> PyResult<Bound<'_, PyAny>>
+where
+    Work: Future<Output = PyResult<()>> + Send + 'static,
+{
+    future_into_py(py, async move {
+        work.await?;
+        Ok(Python::attach(|attached| attached.None()))
+    })
+}
+
 pub(super) fn awaitable<Work, Failure>(py: Python<'_>, work: Work) -> PyResult<Bound<'_, PyAny>>
 where
     Work: FnOnce() -> Result<(), Failure> + Send + 'static,
     Failure: Send + 'static,
     BackendHandleError: From<Failure>,
 {
-    future_into_py(py, async move {
+    none_future(py, async move {
         let mut tasks = JoinSet::new();
         tasks.spawn_blocking(work);
         let outcome = tasks

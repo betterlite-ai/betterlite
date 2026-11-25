@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import json
 import time
+from collections.abc import Awaitable
 from pathlib import Path
 from typing import Final, Protocol, TypedDict
 
@@ -128,6 +129,43 @@ LITELLM_WITH_BACKEND: CacheWithBackendModule = importlib.import_module("litellm.
 
 # The shared fake-server fixture, registered here under the name the tests ask for.
 redis_server = fake_redis_server.redis_server
+
+
+class NativeWrites(Protocol):
+    def async_set(self, key: str, value: str, ttl: float | None) -> Awaitable[object]: ...
+
+    def async_get(self, key: str) -> Awaitable[str | None]: ...
+
+    def async_delete(self, keys: list[str]) -> Awaitable[object]: ...
+
+    def async_flush(self) -> Awaitable[object]: ...
+
+    def async_close(self) -> Awaitable[object]: ...
+
+
+async def _native_void_calls(native: NativeWrites) -> None:
+    written = await native.async_set("void:key", '"value"', None)
+    assert written is None or written is True
+    assert await native.async_get("void:key") == '"value"'
+    assert await native.async_delete(["void:key"]) is None
+    assert await native.async_get("void:key") is None
+    await native.async_set("void:key", '"value"', None)
+    assert await native.async_flush() is None
+    assert await native.async_get("void:key") is None
+    assert await native.async_close() is None
+
+
+def test_native_void_returns(tmp_path: Path, redis_server: FakeRedisServer) -> None:
+    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    caches: list[NativeWrites] = [
+        InMemoryCache().native,
+        DiskCache(disk_cache_dir=str(tmp_path)).native,
+        DualCache().native,
+        DualCache(redis_cache=redis_cache).native,
+        redis_cache.native,
+    ]
+    for native in caches:
+        asyncio.run(_native_void_calls(native))
 
 
 async def _in_memory_round_trip(

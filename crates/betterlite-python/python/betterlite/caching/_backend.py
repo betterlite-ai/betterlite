@@ -26,7 +26,7 @@ def _value_or_none(text: str | None) -> JsonValue:
     return _JSON.validate_json(text)
 
 
-def _number(text: str) -> int | float:
+def number_value(text: str) -> int | float:
     decoded = _JSON.validate_json(text)
     match decoded:
         case bool() | str() | list() | dict() | None:
@@ -51,7 +51,7 @@ def _ttl_of(kwargs: dict[str, JsonValue]) -> float | None:
 
 
 # LiteLLM reads nx with kwargs.get("nx", False); another type names the field and fails.
-def _nx(kwargs: dict[str, JsonValue]) -> bool:
+def nx_value(kwargs: dict[str, JsonValue]) -> bool:
     raw = kwargs.get("nx")
     if raw is None:
         return False

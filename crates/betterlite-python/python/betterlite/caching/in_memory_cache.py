@@ -7,7 +7,7 @@ from typing_extensions import override
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeMemory
-from betterlite.caching._backend import _BackendCache, _number
+from betterlite.caching._backend import _BackendCache, number_value
 
 DEFAULT_MAX_SIZE_IN_MEMORY: Final = 200
 _DEFAULT_TTL: Final = 600
@@ -48,11 +48,11 @@ class InMemoryCache(_BackendCache[NativeMemory]):
         return float(self.default_ttl) if ttl is None else ttl
 
     def increment_cache(self, key: str, value: float, **kwargs: JsonValue) -> float:
-        counted = _number(self.native.increment(key, value, self._write_ttl(kwargs)))
+        counted = number_value(self.native.increment(key, value, self._write_ttl(kwargs)))
         return float(counted)
 
     async def async_increment(self, key: str, value: float, **kwargs: JsonValue) -> float:
-        counted = _number(await self.native.async_increment(key, value, self._write_ttl(kwargs)))
+        counted = number_value(await self.native.async_increment(key, value, self._write_ttl(kwargs)))
         return float(counted)
 
     # LiteLLM answers the absolute expiry it stores, not the seconds left.

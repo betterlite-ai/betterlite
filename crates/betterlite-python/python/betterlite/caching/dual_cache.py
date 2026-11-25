@@ -14,7 +14,7 @@ from betterlite._native import (
     NativeDual,
     NativeRedisBatch,
 )
-from betterlite.caching._backend import _number, _ttl_of, _value_or_none
+from betterlite.caching._backend import _ttl_of, _value_or_none, number_value
 from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.in_memory_cache import InMemoryCache
 from betterlite.caching.redis_cache import RedisCache
@@ -251,7 +251,7 @@ class DualCache(BaseCache):
     ) -> int:
         if _local_only(local_only):
             return int(self.in_memory_cache.increment_cache(key, value, **kwargs))
-        return int(_number(self.native.increment(key, value, _ttl_of(kwargs))))
+        return int(number_value(self.native.increment(key, value, _ttl_of(kwargs))))
 
     async def async_increment_cache(
         self,
@@ -265,7 +265,7 @@ class DualCache(BaseCache):
         _unread = (parent_otel_span, refresh_ttl, kwargs)
         if not _local_only(local_only):
             stepped = await self.native.async_increment(key, value, _ttl_of(kwargs))
-            return float(_number(stepped))
+            return float(number_value(stepped))
         return await self.in_memory_cache.async_increment(key, value, **kwargs)
 
     @override
@@ -292,4 +292,4 @@ class DualCache(BaseCache):
 
     async def async_get_ttl(self, key: str) -> int | float | None:
         text = await self.native.async_ttl(key)
-        return None if text is None else _number(text)
+        return None if text is None else number_value(text)
