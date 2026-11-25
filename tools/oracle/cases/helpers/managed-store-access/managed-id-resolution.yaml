@@ -1,0 +1,74 @@
+kind: helper
+name: managed-id-resolution
+call:
+  b10014:
+    calls:
+      # an empty id is not looked up anywhere
+      - function: resolve
+        vector_store_id: ""
+        registry: {stores: [{vector_store_id: vs_a, custom_llm_provider: openai}]}
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai}}]
+      # a registry hit normalizes string litellm_params and never reads the shared cache
+      - function: resolve
+        vector_store_id: vs_a
+        registry:
+          stores:
+            - vector_store_id: vs_a
+              custom_llm_provider: openai
+              litellm_params: '{"api_key": "k", "region": "us"}'
+              team_id: a
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+      # a registry hit keeps the record it was given, a null field included
+      - function: resolve
+        vector_store_id: vs_a
+        registry:
+          stores:
+            - {vector_store_id: vs_a, custom_llm_provider: openai, litellm_params: {api_key: k}, vector_store_name: null}
+        database: false
+      # a registry miss resolves the row through the shared cache and the database
+      - function: resolve
+        vector_store_id: vs_a
+        registry: {stores: []}
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+      # a cache hit answers without a row query
+      - function: resolve
+        vector_store_id: vs_a
+        database: true
+        cached: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai}}]
+      # without a database a registry miss is a provider-native id
+      - function: resolve
+        vector_store_id: vs_a
+        registry: {stores: []}
+        database: false
+      # an empty row list answers the same way
+      - function: resolve
+        vector_store_id: vs_a
+        database: true
+      # a registry failure fails closed without touching the cache
+      - function: resolve
+        vector_store_id: vs_a
+        registry: {stores: []}
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai}}]
+        fail: registry
+      # a cache read failure fails closed with the shared-cache warning
+      - function: resolve
+        vector_store_id: vs_a
+        database: true
+        fail: cache_read
+      # a cache write failure fails closed after the row query
+      - function: resolve
+        vector_store_id: vs_a
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai}}]
+        fail: cache_write
+      # a row the record refuses fails closed too
+      - function: resolve
+        vector_store_id: vs_a
+        database: true
+        rows: [{model_dump: {custom_llm_provider: openai}}]
+env: {}
+compare: {ignore: []}
