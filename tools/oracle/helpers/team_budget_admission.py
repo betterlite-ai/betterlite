@@ -252,12 +252,17 @@ async def soft_call(call: Call, recorder: Recorder) -> JsonValue:
     handler = SoftLog()
     proxy_logger = logging.getLogger("LiteLLM Proxy")
     previous_level = proxy_logger.level
+    previous_handlers = proxy_logger.handlers
+    previous_propagate = proxy_logger.propagate
     proxy_logger.setLevel(logging.DEBUG)
-    proxy_logger.addHandler(handler)
+    # LiteLLM writes DEBUG records to stdout, which carries the helper's answer
+    proxy_logger.handlers = [handler]
+    proxy_logger.propagate = False
     try:
         await auth_checks._team_soft_budget_check(team_of(call), token_of(call), recorder)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6065-L6133
     finally:
-        proxy_logger.removeHandler(handler)
+        proxy_logger.handlers = previous_handlers
+        proxy_logger.propagate = previous_propagate
         proxy_logger.setLevel(previous_level)
     await asyncio.sleep(0)
     return {"alerts": list(recorder.alerts), "logs": list(handler.messages)}
