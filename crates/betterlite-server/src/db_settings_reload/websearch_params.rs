@@ -35,7 +35,7 @@ struct StoredHandlerParams {
 #[serde(untagged)]
 enum StoredProviders {
     Names(Vec<String>),
-    WrongItems(WrongProviderItems),
+    WrongItems(Vec<IgnoredAny>),
     NotAList(IgnoredAny),
 }
 
@@ -91,18 +91,4 @@ pub(crate) fn handler_params(stored: &JsonMap) -> Result<WebsearchParams, Websea
         search_tool_name,
         max_agentic_loops: validated_max_agentic_loops(&ceiling, LOOP_FIELD)?,
     })
-}
-
-// Only a JSON list reaches this variant, and it carries nothing: a list of non-names is the one shape that fails the reload.
-#[derive(Debug)]
-struct WrongProviderItems;
-
-impl<'de> Deserialize<'de> for WrongProviderItems {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let _items: Vec<IgnoredAny> = Vec::deserialize(deserializer)?;
-        Ok(Self)
-    }
 }
