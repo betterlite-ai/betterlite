@@ -82,6 +82,42 @@ async fn the_proxy_body_names_the_alias_with_the_ordered_fields() {
 }
 
 #[tokio::test]
+async fn an_empty_model_or_group_names_the_resolved_model_in_the_proxy_body() {
+    let shared = support::shared();
+    let mut handler = support::handler(credentialed_connection(&shared));
+    let scripts = vec![
+        support::script(vec![support::event(COMPLETED)]),
+        support::script(vec![support::event(COMPLETED)]),
+    ];
+    let provider = support::ScriptedProvider::new(&shared, scripts);
+    let empty_model = r#"{"type": "response.create", "model": "", "input": "hello"}"#;
+    let (outcome, _logs) = support::capture(process_response_create(
+        &mut handler,
+        &provider,
+        empty_model,
+    ))
+    .await;
+    outcome.unwrap();
+    handler.model_group = Some(String::new());
+    let frame = r#"{"type": "response.create", "input": "hello"}"#;
+    let (outcome, _logs) =
+        support::capture(process_response_create(&mut handler, &provider, frame)).await;
+    outcome.unwrap();
+    let recorded = support::calls(&shared);
+    assert_eq!(recorded.len(), 2);
+    assert!(recorded[0].model.is_empty());
+    assert_eq!(
+        support::proxy_body(&recorded[0].kwargs).get("model"),
+        Some(&support::json(r#""router-model""#))
+    );
+    assert_eq!(recorded[1].model, support::MODEL);
+    assert_eq!(
+        support::proxy_body(&recorded[1].kwargs).get("model"),
+        Some(&support::json(r#""openai/gpt-4o-mini""#))
+    );
+}
+
+#[tokio::test]
 async fn a_frame_without_a_model_names_the_group_in_the_proxy_body() {
     let shared = support::shared();
     let mut connection = support::connection(support::MODEL, support::sink(&shared));
