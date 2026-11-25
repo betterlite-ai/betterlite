@@ -1,0 +1,21 @@
+kind: helper
+name: refresh-form-post
+call:
+  b4664:
+    function: refresh
+    user_id: user-1
+    assertion:
+      claims: {iss: https://idp.example, sub: user-1, exp: 2000000000}
+      refresh_token: carried-token
+    vars:
+      GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+      GENERIC_CLIENT_ID: client-id
+      GENERIC_CLIENT_SECRET: client-secret
+      GENERIC_INCLUDE_CLIENT_ID: "true"
+    outcome:
+      kind: ok
+      body:
+        claims: {iss: https://idp.example, sub: user-1, exp: 2000003600}
+        refresh_token: rotated-token
+env: {}
+compare: {ignore: []}

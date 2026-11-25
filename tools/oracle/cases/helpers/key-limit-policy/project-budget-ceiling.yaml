@@ -1,0 +1,41 @@
+kind: helper
+name: key-limit-policy-project-budget-ceiling
+call:
+  key_limit_policy:
+    check: project
+    request: {kind: generate, body: {max_budget: 11.5}}
+    project_id: proj-1
+    project: {project_id: proj-1, litellm_budget_table: {budget_id: budget-1, max_budget: 10.5}}
+calls:
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {max_budget: 10.5}}
+      project_id: proj-1
+      project: {project_id: proj-1, litellm_budget_table: {budget_id: budget-1, max_budget: 10.5}}
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {max_budget: 1000.5}}
+      project_id: proj-1
+      project: {project_id: proj-1, litellm_budget_table: {budget_id: budget-1, max_budget: null}}
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {key_alias: alias-1}}
+      project_id: proj-1
+      project: {project_id: proj-1, litellm_budget_table: {budget_id: budget-1, max_budget: 1.5}}
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {models: [anything]}}
+      project_id: proj-1
+      project: {project_id: proj-1, models: []}
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {models: [all-team-models, all-proxy-models, gpt-4]}}
+      project_id: proj-1
+      project: {project_id: proj-1, models: [gpt-4]}
+  - key_limit_policy:
+      check: project
+      request: {kind: generate, body: {max_budget: 1.5}}
+      project_id: proj-1
+      project: null
+env: {}
+compare: {ignore: []}

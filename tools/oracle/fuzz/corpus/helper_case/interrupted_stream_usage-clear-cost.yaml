@@ -1,0 +1,17 @@
+kind: helper
+name: interrupted-stream-usage-clear-cost
+call:
+  b3632:
+    tails: []
+    recovers: []
+    clears:
+    - prompt_tokens: 10
+      completion_tokens: 4
+      total_tokens: 14
+      has_details: true
+      text_tokens: 4
+      cost: '0.00025'
+      hidden_response_cost: '0.00025'
+env: {}
+compare:
+  ignore: []
