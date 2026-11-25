@@ -92,7 +92,10 @@ async fn team_missing_row_is_empty() {
             .unwrap()
             .is_empty()
     );
-    assert_eq!(server_grants.reads.calls(), names(&["team:team-1:false"]));
+    assert_eq!(
+        server_grants.reads.calls(),
+        names(&[r#"team:"team-1":false"#])
+    );
 }
 
 #[tokio::test]
@@ -113,13 +116,19 @@ async fn team_blocked_grants_nothing() {
             .unwrap()
             .is_empty()
     );
-    assert_eq!(server_grants.reads.calls(), names(&["team:team-1:false"]));
+    assert_eq!(
+        server_grants.reads.calls(),
+        names(&[r#"team:"team-1":false"#])
+    );
 }
 
+#[rstest]
+#[case::alone(&["all-proxy-mcpservers"])]
+#[case::with_other_servers(&["srv-direct", "all-proxy-mcpservers"])]
 #[tokio::test]
-async fn team_all_proxy_servers_is_exactly_the_registry() {
+async fn team_all_proxy_servers_is_exactly_the_registry(#[case] mcp_servers: &[&str]) {
     let mut permission = four_source_row();
-    permission.mcp_servers = PermissionList(Some(names(&["srv-direct", "all-proxy-mcpservers"])));
+    permission.mcp_servers = PermissionList(Some(names(mcp_servers)));
     let server_grants = grants(FakeReads {
         team: Scripted::Value(Some(team_record(Some(permission)))),
         unified: Scripted::Value(names(&["srv-outside"])),
@@ -135,7 +144,7 @@ async fn team_all_proxy_servers_is_exactly_the_registry() {
     assert_eq!(
         server_grants.reads.calls(),
         names(&[
-            "team:team-1:false",
+            r#"team:"team-1":false"#,
             r#"access_group_server_ids:["ag-team"]:false"#,
             "registry_server_ids",
         ])
@@ -171,7 +180,7 @@ async fn team_union_of_five_sources_is_distinct(#[case] fresh: bool) {
     assert_eq!(
         server_grants.reads.calls(),
         Vec::from([
-            format!("team:team-1:{fresh}"),
+            format!(r#"team:"team-1":{fresh}"#),
             format!(r#"access_group_server_ids:["ag-team"]:{fresh}"#),
             format!(r#"servers_from_access_groups:["grp-1"]:{fresh}"#),
             format!(r#"resolve_toolset_grants:["ts-1"]:{fresh}"#),

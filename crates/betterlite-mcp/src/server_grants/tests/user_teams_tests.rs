@@ -24,7 +24,7 @@ async fn user_teams_are_distinct_in_first_seen_order(#[case] fresh: bool) {
     );
     assert_eq!(
         server_grants.reads.calls(),
-        Vec::from([format!("user_team_ids:user-1:{fresh}")])
+        Vec::from([format!(r#"user_team_ids:"user-1":{fresh}"#)])
     );
 }
 

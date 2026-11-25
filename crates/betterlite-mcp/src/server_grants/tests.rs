@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::fmt::Debug;
+use std::future::{Future, Ready, ready};
 use std::sync::Mutex;
 
 use betterlite_auth::auth_team_lookup::error::TeamLookupError;
@@ -74,11 +75,17 @@ impl FakeReads {
         self.log.lock().unwrap().clone()
     }
 
-    fn read<T: Clone>(&self, entry: String, script: &Scripted<T>) -> Result<T, GrantReadError> {
-        self.record(entry);
+    fn grant_read<T: Clone>(
+        &self,
+        label: &str,
+        inputs: &dyn Debug,
+        fresh: bool,
+        script: &Scripted<T>,
+    ) -> Ready<Result<T, GrantReadError>> {
+        self.record(format!("{label}:{inputs:?}:{fresh}"));
         match script {
-            Scripted::Value(value) => Ok(value.clone()),
-            Scripted::Fault => Err(GrantReadError::Team(TeamLookupError::NoDatabase)),
+            Scripted::Value(value) => ready(Ok(value.clone())),
+            Scripted::Fault => ready(Err(GrantReadError::Team(TeamLookupError::NoDatabase))),
         }
     }
 
@@ -149,39 +156,33 @@ impl GrantReads for FakeReads {
     fn team(
         &self,
         team_id: &str,
-        requires_fresh_policy: bool,
+        fresh: bool,
     ) -> impl Future<Output = Result<Option<TeamRecord>, GrantReadError>> + Send {
-        ready(self.read(
-            format!("team:{team_id}:{requires_fresh_policy}"),
-            &self.team,
-        ))
+        self.grant_read("team", team_id, fresh, &self.team)
     }
 
     fn user_team_ids(
         &self,
         user_id: &str,
-        requires_fresh_policy: bool,
+        fresh: bool,
     ) -> impl Future<Output = Result<Option<Vec<String>>, GrantReadError>> + Send {
-        let entry = format!("user_team_ids:{user_id}:{requires_fresh_policy}");
-        ready(self.read(entry, &self.user_teams))
+        self.grant_read("user_team_ids", user_id, fresh, &self.user_teams)
     }
 
     fn access_group_server_ids(
         &self,
-        access_group_ids: &[String],
-        requires_fresh_policy: bool,
+        ids: &[String],
+        fresh: bool,
     ) -> impl Future<Output = Result<Vec<String>, GrantReadError>> + Send {
-        let entry = format!("access_group_server_ids:{access_group_ids:?}:{requires_fresh_policy}");
-        ready(self.read(entry, &self.unified))
+        self.grant_read("access_group_server_ids", ids, fresh, &self.unified)
     }
 
     fn servers_from_access_groups(
         &self,
-        access_groups: &[String],
-        requires_fresh_policy: bool,
+        groups: &[String],
+        fresh: bool,
     ) -> impl Future<Output = Result<Vec<String>, GrantReadError>> + Send {
-        let entry = format!("servers_from_access_groups:{access_groups:?}:{requires_fresh_policy}");
-        ready(self.read(entry, &self.legacy))
+        self.grant_read("servers_from_access_groups", groups, fresh, &self.legacy)
     }
 }
 

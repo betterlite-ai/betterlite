@@ -170,8 +170,9 @@ struct Fixture {
     servers: SharedRegistry,
 }
 
-fn team_lookup(world: &Arc<World>) -> TeamLookup {
-    TeamLookup {
+fn lookups(world: &Arc<World>) -> (TeamLookup, UserLookup) {
+    let cadence = Arc::new(Cadence::new(100, Arc::new(WallClock)));
+    let teams = TeamLookup {
         cache: Arc::<World>::clone(world),
         permission_cache: Arc::<World>::clone(world),
         database: Some(TeamDatabase {
@@ -180,28 +181,27 @@ fn team_lookup(world: &Arc<World>) -> TeamLookup {
             permission_writer: Arc::<World>::clone(world),
         }),
         provisioner: None,
-        cadence: Arc::new(Cadence::new(100, Arc::new(WallClock))),
+        cadence: Arc::clone(&cadence),
         in_memory_ttl: 60,
-    }
-}
-
-fn user_lookup(world: &Arc<World>) -> UserLookup {
-    UserLookup {
+    };
+    let users = UserLookup {
         cache: Arc::<World>::clone(world),
         store: None,
-        cadence: Arc::new(Cadence::new(100, Arc::new(WallClock))),
+        cadence,
         db_cache_expiry: 5,
         budget_reset: Arc::new(NoReset),
         enrollment: Arc::new(NoDefaultTeams),
         tasks: TaskTracker::new(),
         defaults: None,
         redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()),
-    }
+    };
+    (teams, users)
 }
 
 impl Fixture {
     fn new(world: World) -> Self {
         let shared = Arc::new(world);
+        let (teams, users) = lookups(&shared);
         let settings = RegistrySettings {
             public_mcp_servers: Vec::new(),
             public_hub_strict: true,
@@ -210,8 +210,8 @@ impl Fixture {
         let config_servers: Vec<MCPServer> = serde_json::from_str(LEGACY_SERVERS).unwrap();
         let registry = ServerRegistry::new(settings, config_servers, Vec::new());
         Self {
-            teams: team_lookup(&shared),
-            users: user_lookup(&shared),
+            teams,
+            users,
             world: shared,
             servers: Arc::new(RwLock::new(registry)),
         }
@@ -258,7 +258,10 @@ async fn db_reads_team_comes_from_the_cached_row() {
     let cached = serde_json::from_str::<JsonData>(CACHED_TEAM).unwrap();
     let fixture = Fixture::new(World {
         team: Some(LiteLLMTeamTableCachedObj::try_from(cached).unwrap()),
-        ..World::default()
+        access_groups: BTreeMap::new(),
+        user: None,
+        team_reads: Mutex::new(Vec::new()),
+        access_group_reads: Mutex::new(Vec::new()),
     });
     let record = fixture
         .reads()
@@ -282,7 +285,10 @@ async fn db_reads_fresh_team_reads_the_writer_and_misses() {
     let cached = serde_json::from_str::<JsonData>(CACHED_TEAM).unwrap();
     let fixture = Fixture::new(World {
         team: Some(LiteLLMTeamTableCachedObj::try_from(cached).unwrap()),
-        ..World::default()
+        access_groups: BTreeMap::new(),
+        user: None,
+        team_reads: Mutex::new(Vec::new()),
+        access_group_reads: Mutex::new(Vec::new()),
     });
     let error = fixture.reads().team("team-1", true).await.unwrap_err();
     assert!(matches!(
@@ -295,8 +301,11 @@ async fn db_reads_fresh_team_reads_the_writer_and_misses() {
 #[tokio::test]
 async fn db_reads_user_teams_come_from_the_cached_user() {
     let fixture = Fixture::new(World {
+        team: None,
+        access_groups: BTreeMap::new(),
         user: Some(serde_json::from_str(CACHED_USER).unwrap()),
-        ..World::default()
+        team_reads: Mutex::new(Vec::new()),
+        access_group_reads: Mutex::new(Vec::new()),
     });
     let reads = fixture.reads();
     assert_eq!(
@@ -313,11 +322,14 @@ async fn db_reads_user_teams_come_from_the_cached_user() {
 #[tokio::test]
 async fn db_reads_access_groups_skip_a_group_that_does_not_load() {
     let fixture = Fixture::new(World {
+        team: None,
         access_groups: BTreeMap::from([
             access_group("ag-1", &["srv-a", "srv-b"]),
             access_group("ag-2", &["srv-b", "srv-c"]),
         ]),
-        ..World::default()
+        user: None,
+        team_reads: Mutex::new(Vec::new()),
+        access_group_reads: Mutex::new(Vec::new()),
     });
     let requested = names(&["ag-1", "ag-missing", "ag-2"]);
     assert_eq!(
@@ -337,8 +349,11 @@ async fn db_reads_access_groups_skip_a_group_that_does_not_load() {
 #[tokio::test]
 async fn db_reads_fresh_access_group_fault_is_returned() {
     let fixture = Fixture::new(World {
+        team: None,
         access_groups: BTreeMap::from([access_group("ag-1", &["srv-a"])]),
-        ..World::default()
+        user: None,
+        team_reads: Mutex::new(Vec::new()),
+        access_group_reads: Mutex::new(Vec::new()),
     });
     let error = fixture
         .reads()
