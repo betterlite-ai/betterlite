@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as _;
 use std::sync::Mutex;
 
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
@@ -178,7 +179,7 @@ fn the_lookup_error_keeps_the_router_selection_error_as_its_source() {
     let error = LookupError::from(PassthroughSelectionError::NotConfigured {
         model: "claude".to_owned(),
     });
-    let source = std::error::Error::source(&error).expect("the router error is the source");
+    let source = error.source().expect("the router error is the source");
     assert!(source.downcast_ref::<PassthroughSelectionError>().is_some());
 }
 
