@@ -1,0 +1,12 @@
+task: B4668
+deviations:
+  - what: union_tool_grants answers a sorted Vec of tool names. LiteLLM builds the union as tuple({*(direct or ()), *(via or ())}), whose order follows the Python set's hash layout and changes between processes.
+    why: A JSON array must have one order to compare against the oracle and to serialize, and no working setup can rely on a set's iteration order. The membership is the same; only the order is fixed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2197-L2209
+  - what: There is no separate _get_key_object_permission function. key_object_permission_hydrated answers the key's loaded object_permission, so a caller that wants the preloaded relation reads the McpAuth.object_permission field, and B4669 is served by key_object_permission_hydrated.
+    why: LiteLLM's _get_key_object_permission is a one-line field read (return user_api_key_auth.object_permission) whose only job is to exist under a name; the workspace's no-one-line-functions rule forbids porting it as a function, and the field itself is the same data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2087-L2099
+  - what: The getters take an injected ObjectPermissionReads port and a decoded McpAuth record instead of importing prisma_client, user_api_key_cache and proxy_logging_obj from the proxy module, and each failure is a typed Rust error (EntitlementError, UnloadableEntitlementError, UserPermissionError) rather than an exception.
+    why: betterlite passes dependencies in through constructors and keeps module-level proxy state out of the auth path. The observable results are unchanged, and the HTTP status LiteLLM answers for each failure (503 for a fresh user-policy read fault, ValueError text for a named user row that cannot be loaded) is carried by the error variants for the route layer to render.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3094-L3135
+kept_bugs: []

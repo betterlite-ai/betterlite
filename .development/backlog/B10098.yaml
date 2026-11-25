@@ -1,0 +1,13 @@
+id: B10098
+milestone: R2 bug fixes
+title: B4668's object permission cases replay in the MCP helper group
+status: todo
+depends_on: []
+file: tasks/B10098-mcp-object-permission-cases.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
