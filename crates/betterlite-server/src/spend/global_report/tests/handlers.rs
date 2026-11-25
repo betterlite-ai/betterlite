@@ -15,8 +15,8 @@ const WINDOW: &str = "2024-01-01T00:00:00+00:00,2024-01-31T00:00:00+00:00";
 const SK_B_HASH: &str = "18519d64d0d18b0e84e43301547425933dc0394576666e8da1ef1790fb64ca9f";
 const GROUP_BY_ISSUE: &str = r#"{"detail":[{"type":"literal_error","loc":["query","group_by"],"msg":"Input should be 'team', 'customer' or 'api_key'"}]}"#;
 const MISSING_DATES: &str = r#"{"detail":{"error":"Please provide start_date and end_date"}}"#;
-const UNHANDLED: &str =
-    r#"{"error":{"message":"Internal server error","type":"internal_server_error"}}"#;
+const START_DATE_FORMAT: &str = r#"{"detail":{"error":"start_date must be in YYYY-MM-DD format"}}"#;
+const END_DATE_FORMAT: &str = r#"{"detail":{"error":"end_date must be in YYYY-MM-DD format"}}"#;
 
 fn team_model() -> TeamModelSpend {
     TeamModelSpend {
@@ -40,6 +40,7 @@ async fn a_request_without_an_identity_answers_401() {
 #[case::null_text("group_by=null")]
 #[case::capitalized("group_by=Team&start_date=2024-01-01&end_date=2024-01-31")]
 #[case::last_value_is_invalid("group_by=customer&group_by=bogus")]
+#[case::a_malformed_date("group_by=bogus&start_date=2024-13-01&end_date=2024-13-01")]
 #[tokio::test]
 async fn an_unknown_group_by_answers_422_before_the_dates(#[case] query: &str) {
     let store = fake_store(GlobalReport::Keys(Vec::new()));
@@ -53,6 +54,7 @@ async fn an_unknown_group_by_answers_422_before_the_dates(#[case] query: &str) {
 #[case::no_dates("")]
 #[case::start_only("start_date=2024-01-01")]
 #[case::end_only("end_date=2024-01-31&api_key=sk-b")]
+#[case::a_malformed_start_alone("start_date=2024-13-01")]
 #[tokio::test]
 async fn missing_dates_answer_400_before_the_database_check(#[case] query: &str) {
     let reply = call(query, true, None).await;
@@ -61,13 +63,28 @@ async fn missing_dates_answer_400_before_the_database_check(#[case] query: &str)
 }
 
 #[rstest]
-#[case::bad_start_month("start_date=2024-13-01&end_date=2024-01-31")]
-#[case::bad_end_format("start_date=2024-01-01&end_date=01/31/2024")]
+#[case::bad_start_month("start_date=2024-13-01&end_date=2024-01-31", START_DATE_FORMAT)]
+#[case::bad_start_day("start_date=2024-01-32&end_date=2024-01-31", START_DATE_FORMAT)]
+#[case::a_start_with_a_time(
+    "start_date=2024-01-01T00:00:00&end_date=2024-01-31",
+    START_DATE_FORMAT
+)]
+#[case::an_empty_start("start_date=&end_date=2024-01-31", START_DATE_FORMAT)]
+#[case::bad_end_format("start_date=2024-01-01&end_date=01/31/2024", END_DATE_FORMAT)]
+#[case::bad_end_day("start_date=2024-01-01&end_date=2024-02-30", END_DATE_FORMAT)]
+#[case::an_empty_end("start_date=2024-01-01&end_date=", END_DATE_FORMAT)]
+#[case::both_malformed_reads_the_start_first(
+    "start_date=2024-13-01&end_date=2024-13-01",
+    START_DATE_FORMAT
+)]
 #[tokio::test]
-async fn a_malformed_date_answers_500_before_the_database_check(#[case] query: &str) {
+async fn a_malformed_date_answers_400_before_the_database_check(
+    #[case] query: &str,
+    #[case] expected: &str,
+) {
     let reply = call(query, true, None).await;
-    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(reply.body, UNHANDLED);
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.body, expected);
 }
 
 #[tokio::test]
@@ -138,6 +155,10 @@ async fn filters_pick_the_legacy_branch(#[case] filters: &str, #[case] expected:
 #[case::longer_than_a_year(
     "start_date=2020-01-01&end_date=2024-12-31",
     "teams(None)@2020-01-01T00:00:00+00:00,2024-12-31T00:00:00+00:00"
+)]
+#[case::single_digit_month_and_day(
+    "start_date=2024-1-5&end_date=2024-1-31",
+    "teams(None)@2024-01-05T00:00:00+00:00,2024-01-31T00:00:00+00:00"
 )]
 #[tokio::test]
 async fn the_dates_bind_as_utc_midnights_without_range_checks(

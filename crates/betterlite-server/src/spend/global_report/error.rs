@@ -16,8 +16,10 @@ pub(super) enum GlobalReportError {
     GroupBy(#[from] InvalidGroupBy),
     #[error("Please provide start_date and end_date")]
     MissingDates,
-    #[error("start_date and end_date must be in YYYY-MM-DD format")]
-    DateFormat,
+    #[error("start_date must be in YYYY-MM-DD format")]
+    StartDateFormat,
+    #[error("end_date must be in YYYY-MM-DD format")]
+    EndDateFormat,
     #[error("the database is not connected")]
     DbNotConnected,
     #[error(transparent)]
@@ -38,26 +40,6 @@ struct ValidationBody {
     detail: [ValidationIssue; 1],
 }
 
-#[derive(Serialize)]
-struct InternalMessage {
-    message: &'static str,
-    #[serde(rename = "type")]
-    kind: &'static str,
-}
-
-#[derive(Serialize)]
-struct InternalBody {
-    error: InternalMessage,
-}
-
-// otel_unhandled_exception_handler answers the strptime ValueError raised outside the handler's try
-const UNHANDLED_ERROR: InternalBody = InternalBody {
-    error: InternalMessage {
-        message: "Internal server error",
-        kind: "internal_server_error",
-    },
-};
-
 impl IntoResponse for GlobalReportError {
     fn into_response(self) -> Response {
         match self {
@@ -70,10 +52,8 @@ impl IntoResponse for GlobalReportError {
                 let body = ValidationBody { detail: [issue] };
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
             }
-            Self::MissingDates => detail_error(StatusCode::BAD_REQUEST, &self.to_string()),
-            Self::DateFormat => {
-                tracing::warn!(error = %self, "a global spend report date could not be read");
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(UNHANDLED_ERROR)).into_response()
+            Self::MissingDates | Self::StartDateFormat | Self::EndDateFormat => {
+                detail_error(StatusCode::BAD_REQUEST, &self.to_string())
             }
             Self::DbNotConnected => detail_error(
                 StatusCode::BAD_REQUEST,
