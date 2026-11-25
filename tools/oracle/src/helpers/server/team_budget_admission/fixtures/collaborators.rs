@@ -58,6 +58,7 @@ impl SpendReader for Seeded {
             "duration": window.duration,
             "start": window.start.map(isoformat),
         }));
+        drop(reads);
         // a read past the script is the RuntimeError the Python side raises
         scripted
             .and_then(Money::from_json)

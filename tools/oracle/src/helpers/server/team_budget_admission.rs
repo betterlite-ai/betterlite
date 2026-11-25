@@ -144,25 +144,43 @@ async fn admit_value(call: &Call, token: Option<&UserAPIKeyAuth>) -> Result<Valu
         model: &model,
         membership: Membership::Loaded(call.membership.clone().map(Box::new)),
     };
-    let (denial, model_denial) = match admit(&admission, &request).await {
-        Ok(_outcome) => (Value::Null, Value::Null),
-        Err(TeamBudgetError::Denied(denial)) => (denial_json(&denial), Value::Null),
+    let (denial, model_denial) = admit_outcome(&admission, &request).await?;
+    Ok(recorded_answer(&seeded, &recorder, &denial, &model_denial))
+}
+
+// an admitted request carries no denial; a check LiteLLM raises itself fails the helper call
+async fn admit_outcome(
+    admission: &TeamAdmission<'_>,
+    request: &TeamRequest<'_>,
+) -> Result<(Value, Value), Failure> {
+    match admit(admission, request).await {
+        Ok(_outcome) => Ok((Value::Null, Value::Null)),
+        Err(TeamBudgetError::Denied(denial)) => Ok((denial_json(&denial), Value::Null)),
         Err(TeamBudgetError::ModelDenied(denied)) => {
-            (Value::Null, exception_json(denied.as_proxy_exception()))
+            Ok((Value::Null, exception_json(denied.as_proxy_exception())))
         }
         Err(
             error @ (TeamBudgetError::Spend(_)
             | TeamBudgetError::Membership(_)
             | TeamBudgetError::DefaultBudget(_)
             | TeamBudgetError::RecurseDepth { .. }),
-        ) => return Err(Failure::Admission(error)),
-    };
-    Ok(json!({
-        "reads": seeded.reads.into_inner().unwrap_or_else(PoisonError::into_inner),
-        "alerts": recorder.0.into_inner().unwrap_or_else(PoisonError::into_inner),
+        ) => Err(Failure::Admission(error)),
+    }
+}
+
+// the reads and alerts the case compares, with the denial either budget check settled on
+fn recorded_answer(
+    seeded: &Seeded,
+    recorder: &Recorder,
+    denial: &Value,
+    model_denial: &Value,
+) -> Value {
+    json!({
+        "reads": seeded.reads.lock().unwrap_or_else(PoisonError::into_inner).clone(),
+        "alerts": recorder.0.lock().unwrap_or_else(PoisonError::into_inner).clone(),
         "denial": denial,
         "model_denial": model_denial,
-    }))
+    })
 }
 
 // verbose_proxy_logger.debug's text in _team_soft_budget_check, with Python's float repr of the row's amounts
