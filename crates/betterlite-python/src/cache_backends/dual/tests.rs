@@ -113,7 +113,7 @@ fn backends_dual_close_drains_running_flushes() {
     );
     Python::attach(|py| native.close(py)).unwrap();
     assert!(finished.load(Ordering::SeqCst));
-    assert!(running.is_finished());
+    get_runtime().block_on(running).unwrap();
 }
 
 #[test]
