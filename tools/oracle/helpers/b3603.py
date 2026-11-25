@@ -80,16 +80,9 @@ class Input(TypedDict):
 
 
 class ProxyServer(ModuleType):
-    def __init__(
-        self,
-        master_key: str | None,
-        general_settings: dict[str, JsonValue],
-        user_custom_auth: str | None,
-    ) -> None:
-        super().__init__(PROXY_MODULE)
-        self.master_key = master_key
-        self.general_settings = general_settings
-        self.user_custom_auth = user_custom_auth
+    master_key: str | None
+    general_settings: dict[str, JsonValue]
+    user_custom_auth: str | None
 
 
 def general_settings_of(settings: Settings) -> dict[str, JsonValue]:
@@ -106,12 +99,10 @@ def general_settings_of(settings: Settings) -> dict[str, JsonValue]:
 
 
 def install_proxy(settings: Settings) -> None:
-    custom_auth = CUSTOM_AUTH if settings["custom_auth_configured"] else None
-    proxy = ProxyServer(
-        settings["master_key"],
-        general_settings_of(settings),
-        custom_auth,
-    )
+    proxy = ProxyServer(PROXY_MODULE)
+    proxy.master_key = settings["master_key"]
+    proxy.general_settings = general_settings_of(settings)
+    proxy.user_custom_auth = CUSTOM_AUTH if settings["custom_auth_configured"] else None
     sys.modules[PROXY_MODULE] = proxy
 
 
