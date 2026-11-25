@@ -15,9 +15,6 @@ fn replays_object_permissions_cases(
 ) {
     let source = fs::read_to_string(path).unwrap();
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-    if case.call.operation == "b4668" {
-        return;
-    }
     assert!(matches!(
         run_case(&[crate::GROUP], &case, false).unwrap(),
         HelperRun::Match
