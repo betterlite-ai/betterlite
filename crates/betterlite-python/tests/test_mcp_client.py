@@ -68,6 +68,7 @@ STATUS_DATA: Final[dict[str, JsonValue]] = {
     "status": UNAUTHORIZED_STATUS,
     "body": "denied",
     "url": PLACEHOLDER_URL,
+    "headers": [["WWW-Authenticate", 'Bearer realm="mcp"']],
 }
 FAILURE_MODES: Final[tuple[tuple[str, str, str | None], ...]] = (
     (UNAUTHORIZED_MODE, "HTTPStatusError: ", "HTTPStatusError: "),
@@ -535,6 +536,7 @@ def test_errors_http_status() -> None:
         raise_native_error(native)
     assert caught.value.response.status_code == UNAUTHORIZED_STATUS
     assert caught.value.response.text == "denied"
+    assert caught.value.response.headers["www-authenticate"] == 'Bearer realm="mcp"'
     assert str(caught.value.request.url) == PLACEHOLDER_URL
     assert str(caught.value) == ERROR_MESSAGE
 

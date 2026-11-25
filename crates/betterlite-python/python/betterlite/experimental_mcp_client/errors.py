@@ -43,6 +43,7 @@ class StatusDetails(TypedDict):
     status: int
     body: str
     url: str
+    headers: list[tuple[str, str]]
 
 
 PAYLOAD: Final[TypeAdapter[NativeMcpPayload]] = TypeAdapter(NativeMcpPayload)
@@ -63,7 +64,12 @@ ERROR_TYPES: Final[dict[str, type[BaseException]]] = {
 def _http_status_error(payload: NativeMcpPayload) -> httpx2.HTTPStatusError:
     details = STATUS_DETAILS.validate_python(payload["data"])
     request = httpx2.Request("POST", details["url"])
-    response = httpx2.Response(details["status"], request=request, text=details["body"])
+    response = httpx2.Response(
+        details["status"],
+        request=request,
+        text=details["body"],
+        headers=details["headers"],
+    )
     return httpx2.HTTPStatusError(payload["message"], request=request, response=response)
 
 

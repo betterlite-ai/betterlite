@@ -484,7 +484,14 @@ const UNAUTHORIZED_MESSAGE: &str = "Client error '401 Unauthorized' for url 'htt
 
 #[test]
 fn error_status_keeps_the_status_the_body_and_the_url() {
-    let failure = status_payload(401, Some("denied"), Some("http://mcp.test/mcp"));
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert("www-authenticate", "Bearer realm=\"mcp\"".parse().unwrap());
+    let failure = status_payload(
+        401,
+        Some("denied"),
+        Some("http://mcp.test/mcp"),
+        Some(&response_headers),
+    );
     assert_eq!(failure.kind, McpErrorKind::HttpStatus);
     assert_eq!(failure.message, UNAUTHORIZED_MESSAGE);
     let Json::Object(object) = failure.data.unwrap() else {
@@ -498,6 +505,13 @@ fn error_status_keeps_the_status_the_body_and_the_url() {
     assert_eq!(
         object.get("url"),
         Some(&Json::Text("http://mcp.test/mcp".to_owned()))
+    );
+    assert_eq!(
+        object.get("headers"),
+        Some(&Json::List(vec![Json::List(vec![
+            Json::Text("www-authenticate".to_owned()),
+            Json::Text("Bearer realm=\"mcp\"".to_owned()),
+        ])]))
     );
 }
 
@@ -514,7 +528,7 @@ fn http_status_message_names_each_status_family(#[case] status: u16, #[case] pre
 
 #[test]
 fn error_status_without_a_capture_says_so() {
-    let failure = status_payload(500, None, None);
+    let failure = status_payload(500, None, None, None);
     assert_eq!(failure.kind, McpErrorKind::HttpStatus);
     assert!(failure.message.starts_with("Server error '500 "));
     let Json::Object(object) = failure.data.unwrap() else {
@@ -525,17 +539,20 @@ fn error_status_without_a_capture_says_so() {
         Some(&Json::Text("(no body captured)".to_owned()))
     );
     assert_eq!(object.get("url"), Some(&Json::Text(String::new())));
+    assert_eq!(object.get("headers"), Some(&Json::List(Vec::new())));
 }
 
 #[test]
 fn error_transport_send_status_becomes_an_http_status_error() {
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert("www-authenticate", "Bearer realm=\"mcp\"".parse().unwrap());
     let exchange = Exchange {
         method: Method::POST,
         url: Url::parse("http://mcp.test/mcp").unwrap(),
         request_headers: HeaderMap::new(),
         request_body: Bytes::new(),
         status: 401,
-        response_headers: HeaderMap::new(),
+        response_headers: response_headers.clone(),
     };
     let dynamic = DynamicTransportError::from_parts(
         "streamable-http",
@@ -543,7 +560,7 @@ fn error_transport_send_status_becomes_an_http_status_error() {
         Box::new(SdkError::from(McpHttpError::Status(Box::new(
             ResponseHead {
                 status: 401,
-                headers: HeaderMap::new(),
+                headers: response_headers,
                 capture: Some(CaptureRecord {
                     exchange,
                     preview: "denied".to_owned(),
@@ -559,6 +576,13 @@ fn error_transport_send_status_becomes_an_http_status_error() {
     let Json::Object(object) = failure.data.unwrap() else {
         panic!("expected an object");
     };
+    assert_eq!(
+        object.get("headers"),
+        Some(&Json::List(vec![Json::List(vec![
+            Json::Text("www-authenticate".to_owned()),
+            Json::Text("Bearer realm=\"mcp\"".to_owned()),
+        ])]))
+    );
     assert_eq!(
         object.get("url"),
         Some(&Json::Text("http://mcp.test/mcp".to_owned()))
