@@ -45,6 +45,12 @@ deviations:
   - what: A DualCache async write ignores nx, so it replaces an existing Redis key where LiteLLM's async_set_cache hands nx to the Redis tier; the memory tier takes the new value in both.
     why: The native dual cache's async_set has no nx argument, and routing a dual write around the native handle would drop the crate's tier and batch rules (B4293 to B4295); the stand-alone RedisCache does forward and validate nx.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L519
+  - what: DualCache has no batch_get_cache, async_batch_get_cache, async_batch_get_cache_shared, declare_batch_get or async_resolve_batch_get, and no batch pre-call set or delete, where LiteLLM's class carries the Redis batch surface.
+    why: The batch reads live in the Rust dual cache with no PyO3 binding, and their BatchResult and DeclaredBatchRead return types come from crates/betterlite-cache, which this task cannot edit; B4293 to B4295 own the batch lane.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L218-L226
+  - what: Redis calls take no circuit breaker, so a failing or slow Redis server keeps being tried, where LiteLLM's RedisCache opens a breaker after consecutive failures.
+    why: The production breaker gate lives in betterlite-server (redis_cache_wiring/gate.rs) and betterlite-python does not depend on that crate; a second breaker here would duplicate the Rust cache's lane (B4292), so the native handles pass QuietGate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L240-L280
   - what: This task has no helper oracle cases.
     why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
     link: ""
