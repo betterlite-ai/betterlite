@@ -580,9 +580,10 @@ class FailingStream:
 
 async def close_stream_after_first_event(client: A2AClient, recorded: RecordingStream) -> None:
     stream = client.send_message_streaming(our_stream_request(STREAM_ID))
-    first = await anext(stream)
-    assert first.id == STREAM_ID
-    await stream.aclose()
+    async with aclosing(stream):
+        async for chunk in stream:
+            assert chunk.id == STREAM_ID
+            break
     # the inner close runs inside aclose itself, not on a finalizer turn after it
     assert recorded.closed == SINGLE
     assert recorded.ids == [STREAM_ID]
@@ -590,10 +591,11 @@ async def close_stream_after_first_event(client: A2AClient, recorded: RecordingS
 
 async def close_stream_expect_error(client: A2AClient) -> None:
     stream = client.send_message_streaming(our_stream_request(STREAM_ID))
-    first = await anext(stream)
-    assert first.id == STREAM_ID
     with pytest.raises(InnerCleanupError):
-        await stream.aclose()
+        async with aclosing(stream):
+            async for chunk in stream:
+                assert chunk.id == STREAM_ID
+                break
 
 
 def test_stream_close_runs_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
