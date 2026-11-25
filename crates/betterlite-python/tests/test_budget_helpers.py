@@ -705,6 +705,11 @@ def test_helper_filter_exceptions() -> None:
     )
     expected_filtered: dict[str, PythonValue] = {"class": ValueError, "list": [{}, 1]}
     assert ours_filtered == reference_filtered == expected_filtered
+    ours_cycle = cyclic_payload()
+    reference_cycle = cyclic_payload()
+    assert fields_of(filter_exceptions_from_params(ours_cycle, 1))["self"] is ours_cycle
+    reference_cycled = LITELLM_HELPERS.filter_exceptions_from_params(reference_cycle, 1)
+    assert fields_of(reference_cycled)["self"] is reference_cycle
 
 
 def test_helper_filter_internal() -> None:
