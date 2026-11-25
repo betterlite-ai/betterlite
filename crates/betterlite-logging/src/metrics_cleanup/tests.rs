@@ -239,21 +239,23 @@ fn mark_dead_workers_leaves_the_live_and_foreign_files_alone() {
     let (folder, own, dead) = mixed_worker_folder();
     let [first, second] = dead;
     mark_dead_workers(folder.path(), own).unwrap();
-    for gone in [
-        format!("gauge_livesum_{second}.db"),
-        format!("gauge_liveall_{first}.db"),
-        format!("gauge_livemax_{first}.db"),
-    ] {
-        assert!(!folder.path().join(gone.as_str()).exists(), "{gone}");
-    }
-    for kept in [
-        format!("gauge_liveall_{own}.db"),
-        "gauge_liveall_1.db".to_owned(),
-        format!("counter_{first}.db"),
-        format!("gauge_all_{first}.db"),
-    ] {
-        assert!(folder.path().join(kept.as_str()).exists(), "{kept}");
-    }
+    assert_removed(folder.path(), &format!("gauge_livesum_{second}.db"));
+    assert_removed(folder.path(), &format!("gauge_liveall_{first}.db"));
+    assert_removed(folder.path(), &format!("gauge_livemax_{first}.db"));
+    assert_kept(folder.path(), &format!("gauge_liveall_{own}.db"));
+    assert_kept(folder.path(), "gauge_liveall_1.db");
+    assert_kept(folder.path(), &format!("counter_{first}.db"));
+    assert_kept(folder.path(), &format!("gauge_all_{first}.db"));
+}
+
+fn assert_removed(folder: &Path, name: &str) {
+    let path = folder.join(name);
+    assert!(!path.exists(), "{name}");
+}
+
+fn assert_kept(folder: &Path, name: &str) {
+    let path = folder.join(name);
+    assert!(path.exists(), "{name}");
 }
 
 #[test]
