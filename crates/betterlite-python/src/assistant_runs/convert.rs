@@ -80,6 +80,7 @@ pub(crate) struct RunCall {
     #[serde(default)]
     pub(crate) model: Option<String>,
     #[serde(default, with = "double_option")]
+    #[expect(clippy::option_option, reason = "absent and explicit null stay apart")]
     pub(crate) stream: Option<Option<RunFlag>>,
     #[serde(default)]
     pub(crate) tools: Option<JsonValue>,
@@ -167,7 +168,7 @@ fn mapped_payload(
 }
 
 // add_message and get_messages raise the class dispatch mapped, with the text its exception reports.
-pub(crate) fn message_error(failure: MessageFailure, provider: &str) -> NativeErrorPayload {
+pub(crate) fn message_error(failure: &MessageFailure, provider: &str) -> NativeErrorPayload {
     let name = class_name(&failure.class);
     let message = class_message(&failure.class);
     let unsupported = matches!(

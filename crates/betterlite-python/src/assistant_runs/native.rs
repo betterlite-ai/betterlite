@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::convert::{self, MessageCall, RunCall, message_error, run_error};
 use super::error::CallError;
 use super::session::{ProviderRunStream, Session};
-use super::stream::NativeAssistantStream;
+use super::stream::{NativeAssistantStream, deferred};
 
 type Blobs = Vec<Vec<u8>>;
 type ReplyObject<'py> = PyResult<Bound<'py, PyAny>>;
@@ -96,7 +96,7 @@ impl NativeAssistantRunSession {
         })?;
         Py::new(
             py,
-            NativeAssistantStream::deferred(source, provider, Arc::clone(&self.session.redactor)),
+            deferred(source, provider, Arc::clone(&self.session.redactor)),
         )
     }
 }
@@ -123,7 +123,7 @@ fn reply_text(
     provider: &str,
     operation: Operation,
 ) -> Encoded {
-    let reply = answer.map_err(|failure| message_error(failure, provider).into_exception())?;
+    let reply = answer.map_err(|failure| message_error(&failure, provider).into_exception())?;
     match (reply, operation) {
         (Reply::Message(message), Operation::Append) => encode(&message),
         (Reply::Page(page), Operation::List) => encode(&page),
@@ -143,12 +143,13 @@ fn run_text(
     redactor: &Redactor,
 ) -> Encoded {
     match answer {
-        Ok(RunOutcome::Polled(reply)) => match *reply {
-            Some(run) => encode(&run),
-            None => Err(PyErr::from(CallError::Reply {
+        Ok(RunOutcome::Polled(reply)) => {
+            let polled = *reply;
+            let run = polled.as_ref().ok_or(CallError::Reply {
                 operation: "run_thread",
-            })),
-        },
+            })?;
+            encode(run)
+        }
         Ok(RunOutcome::Streaming(_)) => Err(PyErr::from(CallError::Reply {
             operation: "run_thread",
         })),

@@ -132,13 +132,13 @@ fn request_run_call_keeps_an_absent_stream_apart_from_a_null_one() {
     assert_eq!(absent.stream, None);
     let nulled: RunCall = read(
         "assistant run request",
-        &base.replace("}", r#","stream":null}"#),
+        &base.replace('}', r#","stream":null}"#),
     )
     .unwrap();
     assert_eq!(nulled.stream, Some(None));
     let flagged: RunCall = read(
         "assistant run request",
-        &base.replace("}", r#","stream":true}"#),
+        &base.replace('}', r#","stream":true}"#),
     )
     .unwrap();
     assert_eq!(flagged.stream, Some(Some(RunFlag::Bool(true))));
@@ -182,7 +182,7 @@ fn error_message_error_names_the_model_an_unsupported_provider_answers() {
     });
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let failure = message_failure(error, "bedrock", &redactor);
-    let answer = message_error(failure, "bedrock");
+    let answer = message_error(&failure, "bedrock");
     assert_eq!(answer.class, "BadRequestError");
     assert_eq!(
         answer.message,
@@ -204,7 +204,7 @@ fn error_message_error_answers_a_wrong_reply_as_a_plain_exception() {
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let failure = message_failure(error, "openai", &redactor);
-    let answer = message_error(failure, "openai");
+    let answer = message_error(&failure, "openai");
     assert_eq!(answer.class, "Exception");
     assert_eq!(
         answer.message,
@@ -284,7 +284,7 @@ fn error_inner_message_strips_the_matching_prefix_once() {
 #[test]
 fn error_negative_timeout_becomes_the_timeout_message() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let error = AssistantRunError::InvalidTimeout { seconds: -1.0 };
+    let error = AssistantRunError::InvalidTimeout { seconds: -1.0_f64 };
     let answer = run_error(error, "openai", &redactor);
     assert_eq!(answer.class, "Timeout");
     assert_eq!(

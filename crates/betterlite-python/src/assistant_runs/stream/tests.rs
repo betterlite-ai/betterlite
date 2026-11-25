@@ -5,7 +5,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use super::{NativeAssistantStream, advance};
+use super::{advance, deferred};
 use crate::assistant_runs::convert::{RunCall, read};
 use crate::assistant_runs::session::Session;
 
@@ -22,8 +22,7 @@ fn close_ends_a_stream_that_was_never_read() {
         .run_sdk()
         .run_thread_stream(call.into_call())
         .unwrap();
-    let stream =
-        NativeAssistantStream::deferred(source, "openai".to_owned(), Arc::clone(&session.redactor));
+    let stream = deferred(source, "openai".to_owned(), Arc::clone(&session.redactor));
     Python::initialize();
     Python::attach(|py| stream.close(py));
     let next = get_runtime()

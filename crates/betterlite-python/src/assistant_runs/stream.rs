@@ -32,21 +32,19 @@ pub(crate) struct NativeAssistantStream {
     redactor: Arc<Redactor>,
 }
 
-impl NativeAssistantStream {
-    pub(crate) fn deferred(
-        source: ProviderRunStream,
-        provider: String,
-        redactor: Arc<Redactor>,
-    ) -> Self {
-        Self {
-            state: Arc::new(Mutex::new(StreamState {
-                source: Some(source),
-                events: None,
-                closed: false,
-            })),
-            provider,
-            redactor,
-        }
+pub(crate) fn deferred(
+    source: ProviderRunStream,
+    provider: String,
+    redactor: Arc<Redactor>,
+) -> NativeAssistantStream {
+    NativeAssistantStream {
+        state: Arc::new(Mutex::new(StreamState {
+            source: Some(source),
+            events: None,
+            closed: false,
+        })),
+        provider,
+        redactor,
     }
 }
 
@@ -92,7 +90,7 @@ impl NativeAssistantStream {
 // What one advance does next: read the opened events, or open the manager core built.
 enum Step {
     Read(RunEventStream),
-    Open(ProviderRunStream),
+    Open(Box<ProviderRunStream>),
 }
 
 // Takes the step the state holds now, and a state holding neither part closes the stream.
@@ -106,7 +104,7 @@ async fn pick_step(state: &Mutex<StreamState>) -> Option<Step> {
         return Some(Step::Read(events));
     }
     if let Some(source) = guard.source.take() {
-        return Some(Step::Open(source));
+        return Some(Step::Open(Box::new(source)));
     }
     guard.closed = true;
     None
@@ -152,16 +150,19 @@ async fn advance(
     match next {
         None => {
             guard.closed = true;
+            drop(guard);
             Ok(None)
         }
         Some(Ok(event)) => {
             guard.events = events;
-            let text = serde_json::to_string(&event)
-                .map_err(|source| PyErr::from(CallError::Encode { source }))?;
-            Ok(Some(text))
+            drop(guard);
+            serde_json::to_string(&event)
+                .map_err(|source| PyErr::from(CallError::Encode { source }))
+                .map(Some)
         }
         Some(Err(error)) => {
             guard.closed = true;
+            drop(guard);
             let dispatch = AssistantRunError::Dispatch(AssistantsRunError::Runs(error));
             Err(run_error(dispatch, provider, redactor).into_exception())
         }
