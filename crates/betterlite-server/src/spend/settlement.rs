@@ -84,7 +84,7 @@ where
     count_charged(input, ports).await.map(|()| true)
 }
 
-// reserved keys join the post-call keys so the one batch the increment reads through covers both
+// the reserved counters and the post-call counters must share the batch that spans the write and the increment
 fn settlement_counter_keys(input: &SettlementInput<'_>) -> BTreeSet<String> {
     let mut counter_keys = input
         .reservation
