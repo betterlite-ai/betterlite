@@ -93,12 +93,12 @@ where
     }
 }
 
-// no + Send: awaiting B8593's seeding chain hits rustc's dyn-batch generalization false positive (rust-lang/rust#130113)
+// B8593's counter fan-out runs inside the callback's Send future, so it keeps the Send guarantee
 pub trait SpendCounterIncrement: Sync {
     fn increment(
         &self,
         input: &SpendIncrementInput<'_>,
-    ) -> impl Future<Output = Result<(), SpendIncrementError>>;
+    ) -> impl Future<Output = Result<(), SpendIncrementError>> + Send;
 }
 
 impl<Counters, Layers, Rows> SpendCounterIncrement

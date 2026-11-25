@@ -66,6 +66,7 @@ use betterlite_redis_fixture::server::RedisFixture;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use futures_util::FutureExt as _;
 use redis::aio::MultiplexedConnection;
 use redis::{Client, cmd};
 use rust_decimal::Decimal;
@@ -384,7 +385,11 @@ where
         counters: &services,
     };
     let input = user_input(reservation);
-    settle_spend_write(&input, write, &ports).await.unwrap()
+    // boxed() takes only a Send future, so this line proves settlement stays Send with SpendIncrementServices
+    settle_spend_write(&input, write, &ports)
+        .boxed()
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
