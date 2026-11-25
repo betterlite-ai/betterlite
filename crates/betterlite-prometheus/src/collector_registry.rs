@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 pub mod metric;
 
+use crate::multiprocess::writer::MultiProcessWriter;
 use metric::{CollectorDescription, PrometheusMetric};
 
 mod tests;
@@ -11,10 +13,17 @@ mod tests;
 pub enum CollectorRegistryError {
     #[error("Duplicated timeseries in CollectorRegistry: {}", names.join(", "))]
     DuplicatedTimeseries { names: Vec<String> },
+    #[error(
+        "the metric {name} is already bound to the multiprocess writer in {}",
+        path.display()
+    )]
+    MultiprocessBound { name: String, path: PathBuf },
 }
 
+// CollectorRegistry: a registry writes to files only when multiprocess built it with a writer
 #[derive(Debug, Default)]
 pub struct CollectorRegistry {
+    multiprocess: Option<Arc<MultiProcessWriter>>,
     state: Mutex<RegistryState>,
 }
 
@@ -25,23 +34,51 @@ struct RegistryState {
 }
 
 impl CollectorRegistry {
+    // the one registry a worker builds when PROMETHEUS_MULTIPROC_DIR is set, so every metric writes into the folder
+    #[must_use]
+    pub fn multiprocess(writer: MultiProcessWriter) -> Self {
+        Self {
+            multiprocess: Some(Arc::new(writer)),
+            state: Mutex::new(RegistryState::default()),
+        }
+    }
+
+    // the folder the scrape route reads, when this worker writes files at all
+    #[must_use]
+    pub fn multiprocess_dir(&self) -> Option<&Path> {
+        self.multiprocess
+            .as_deref()
+            .map(MultiProcessWriter::directory)
+    }
+
     // CollectorRegistry.register: every sample name a collector owns is claimed before any of them is stored
     pub fn register(&self, collector: PrometheusMetric) -> Result<(), CollectorRegistryError> {
         let names = collector.sample_names();
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let duplicates: Vec<String> = names
-            .iter()
-            .filter(|name| state.samples.contains_key(*name))
-            .map(|name| (*name).clone())
-            .collect();
-        if !duplicates.is_empty() {
-            return Err(CollectorRegistryError::DuplicatedTimeseries { names: duplicates });
+        {
+            let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let duplicates: Vec<String> = names
+                .iter()
+                .filter(|name| state.samples.contains_key(*name))
+                .map(|name| (*name).clone())
+                .collect();
+            if !duplicates.is_empty() {
+                return Err(CollectorRegistryError::DuplicatedTimeseries { names: duplicates });
+            }
         }
+        // the writer's lock is taken without the registry lock, which the duplicate check released at once
+        if let Some(writer) = &self.multiprocess {
+            collector.bind_writer(writer).map_err(|bound| {
+                CollectorRegistryError::MultiprocessBound {
+                    name: collector.description.name.clone(),
+                    path: bound.directory().to_path_buf(),
+                }
+            })?;
+        }
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         for name in names {
-            state.samples.insert(name, collector.clone());
+            let _replaced = state.samples.insert(name, collector.clone());
         }
         state.collectors.push(collector);
-        drop(state);
         Ok(())
     }
 
