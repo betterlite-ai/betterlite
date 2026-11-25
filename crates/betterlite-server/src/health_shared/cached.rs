@@ -51,12 +51,6 @@ impl Default for CachedHealthCheck {
     }
 }
 
-impl CachedHealthCheck {
-    pub fn timestamp_seconds(&self) -> f64 {
-        self.timestamp.as_f64().unwrap_or_default()
-    }
-}
-
 // cache_health_check_results' value: safe_dumps over the four fields and the pod that ran the check.
 pub fn encode_cached(
     healthy: &[JsonObject],

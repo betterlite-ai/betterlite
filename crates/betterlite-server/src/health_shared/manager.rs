@@ -112,7 +112,8 @@ impl SharedHealthCheckManager {
             }
         };
         let ttl = self.health_check_ttl.to_f64().unwrap_or_default();
-        if epoch_seconds(self.clock.now()).sub(payload.timestamp_seconds()) > ttl {
+        if epoch_seconds(self.clock.now()).sub(payload.timestamp.as_f64().unwrap_or_default()) > ttl
+        {
             tracing::debug!("Cached health check results expired");
             return None;
         }
