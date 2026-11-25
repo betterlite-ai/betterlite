@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use crate::passthrough_stream_logging::object::StreamLoggingObject;
@@ -18,20 +17,9 @@ pub enum StreamFailure {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error(transparent)]
 pub struct FailureCause(Arc<dyn Error + Send + Sync>);
-
-impl Display for FailureCause {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(self.0.as_ref(), formatter)
-    }
-}
-
-impl Error for FailureCause {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(self.0.as_ref())
-    }
-}
 
 impl StreamFailure {
     pub fn upstream(
@@ -76,26 +64,4 @@ pub trait StreamFailureDispatch: Send + Sync {
     ) -> StreamWork;
 }
 
-#[cfg(test)]
-mod tests {
-    use std::error::Error as _;
-    use std::sync::Arc;
-
-    use super::StreamFailure;
-
-    #[test]
-    fn failure_source_chain_preserves_upstream_cause() {
-        let failure = StreamFailure::upstream(
-            "UpstreamReadError".to_owned(),
-            "read failed".to_owned(),
-            "Traceback: upstream".to_owned(),
-            Arc::new(std::io::Error::other("socket reset")),
-        );
-        let source = failure.source().and_then(|error| error.source()).unwrap();
-        assert_eq!(source.to_string(), "socket reset");
-        assert_eq!(failure.to_string(), "read failed");
-        assert_eq!(failure.class(), "UpstreamReadError");
-        assert_eq!(failure.message(), "read failed");
-        assert_eq!(failure.traceback(), "Traceback: upstream");
-    }
-}
+mod tests;
