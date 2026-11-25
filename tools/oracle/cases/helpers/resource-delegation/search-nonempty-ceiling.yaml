@@ -27,5 +27,9 @@ calls:
       function: validate_search_tools
       permission: {search_tools: ["b", "a"]}
       team: {team_id: team-1, search_tools: ["a", "b"]}
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["c", "c"]}
+      team: {team_id: team-1, search_tools: ["a", "a", "b"]}
 env: {}
 compare: {ignore: []}

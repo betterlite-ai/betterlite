@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::resource_delegation::ObjectPermissionGrants;
-use betterlite_server::resource_delegation::TeamGrants;
 use betterlite_server::resource_delegation::denial::Denial;
 use betterlite_server::resource_delegation::gates::GateError;
 use betterlite_server::resource_delegation::gates::validate_requested_toolsets;
@@ -68,46 +67,28 @@ pub(crate) struct GateInput {
     is_proxy_admin: bool,
 }
 
-impl GateInput {
-    fn evaluate(&self, op: &GateOp) -> HelperResult {
-        run_gate(
-            self.permission.as_ref(),
-            self.team.as_ref(),
-            self.is_proxy_admin,
-            op,
-        )
-    }
-}
-
-fn team_of(input: &TeamInput) -> TeamGrants {
-    TeamGrants {
-        team_id: input.team_id.clone(),
-        access_group_ids: Vec::new(),
-        object_permission: Some(ObjectPermissionGrants {
-            mcp_servers: None,
-            mcp_access_groups: None,
-            mcp_tool_permissions: None,
-            mcp_toolsets: input.mcp_toolsets.clone(),
-            search_tools: input.search_tools.clone(),
-        }),
-    }
-}
-
-fn denial_error(denial: &Denial) -> HelperError {
-    HelperError {
-        class: "HTTPException".to_owned(),
-        status: Some(Denial::STATUS_CODE),
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message: denial.detail.clone(),
-    }
+fn team_fields(input: &TeamInput) -> Result<TeamFields, serde_json::Error> {
+    serde_json::from_value(serde_json::json!({
+        "team_id": input.team_id,
+        "object_permission": {
+            "object_permission_id": "team-permission",
+            "mcp_toolsets": input.mcp_toolsets,
+            "search_tools": input.search_tools,
+        },
+    }))
 }
 
 fn gate_result(result: Result<(), GateError>) -> HelperResult {
     match result {
         Ok(()) => Ok(Value::Null),
-        Err(GateError::Denied(denial)) => Err(Box::new(denial_error(&denial))),
+        Err(GateError::Denied(denial)) => Err(Box::new(HelperError {
+            class: "HTTPException".to_owned(),
+            status: Some(Denial::STATUS_CODE),
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: denial.detail,
+        })),
         Err(GateError::Requested(error)) => Err(Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
@@ -138,31 +119,27 @@ enum GateOp {
     SearchTools,
 }
 
-fn run_gate(
-    permission: Option<&JsonData>,
-    team: Option<&TeamInput>,
-    is_proxy_admin: bool,
-    op: &GateOp,
-) -> HelperResult {
-    let grants = team.map(team_of);
+fn run_gate(input: &GateInput, op: &GateOp) -> HelperResult {
+    let team = input.team.as_ref().map(team_fields).transpose()?;
     match op {
         GateOp::Toolsets => {
             let requested: BTreeSet<String> =
-                requested_entries("mcp_toolsets", permission, false).or_value_error()?;
+                requested_entries("mcp_toolsets", input.permission.as_ref(), false)
+                    .or_value_error()?;
             gate_result(
-                validate_requested_toolsets(&requested, grants.as_ref(), is_proxy_admin)
+                validate_requested_toolsets(&requested, team.as_ref(), input.is_proxy_admin)
                     .map_err(GateError::from),
             )
         }
         GateOp::VectorStores => gate_result(validate_vector_stores(
-            permission,
-            grants.as_ref(),
-            is_proxy_admin,
+            input.permission.as_ref(),
+            team.as_ref(),
+            input.is_proxy_admin,
         )),
         GateOp::SearchTools => gate_result(validate_search_tools(
-            permission,
-            grants.as_ref(),
-            is_proxy_admin,
+            input.permission.as_ref(),
+            team.as_ref(),
+            input.is_proxy_admin,
         )),
     }
 }
@@ -187,9 +164,9 @@ impl Helper for Op {
             Input::ExtractSearchTools { permission } => {
                 extract_list::<Vec<String>>("search_tools", permission.as_ref(), true)
             }
-            Input::ValidateToolsets(gate) => gate.evaluate(&GateOp::Toolsets),
-            Input::ValidateVectorStores(gate) => gate.evaluate(&GateOp::VectorStores),
-            Input::ValidateSearchTools(gate) => gate.evaluate(&GateOp::SearchTools),
+            Input::ValidateToolsets(gate) => run_gate(gate, &GateOp::Toolsets),
+            Input::ValidateVectorStores(gate) => run_gate(gate, &GateOp::VectorStores),
+            Input::ValidateSearchTools(gate) => run_gate(gate, &GateOp::SearchTools),
         }
     }
 }
