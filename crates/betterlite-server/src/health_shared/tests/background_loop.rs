@@ -21,7 +21,12 @@ async fn a_zero_interval_never_runs_a_cycle() {
     let world = World::new(instant(SHARED_AT));
     let mut deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
     deps.interval_seconds = 0;
-    background_loop(deps, StepSleeper::default()).await;
+    let outcome = tokio::time::timeout(
+        Duration::from_millis(50),
+        background_loop(deps, StepSleeper::default()),
+    )
+    .await;
+    outcome.expect("a zero interval returns without a cycle");
     assert!(world.probe.calls().is_empty());
     assert_eq!(world.store.reads(), 0);
 }
@@ -31,7 +36,12 @@ async fn a_negative_interval_never_runs_a_cycle() {
     let world = World::new(instant(SHARED_AT));
     let mut deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
     deps.interval_seconds = -30;
-    background_loop(deps, StepSleeper::default()).await;
+    let outcome = tokio::time::timeout(
+        Duration::from_millis(50),
+        background_loop(deps, StepSleeper::default()),
+    )
+    .await;
+    outcome.expect("a negative interval returns without a cycle");
     assert!(world.probe.calls().is_empty());
     assert_eq!(world.store.reads(), 0);
 }
@@ -191,6 +201,8 @@ async fn a_completed_save_keeps_the_window_lock() {
     let manager = world.pod_manager(POD_A);
     let saved = window_gated_save(Some(&manager), &world.tasks, Some(300), async { true }).await;
     assert!(saved);
+    world.tasks.close();
+    world.tasks.wait().await;
     assert!(world.lock.holds(SAVE_JOB_ID));
     assert!(!world.lock.released(SAVE_JOB_ID));
 }
@@ -276,7 +288,9 @@ async fn a_cancelled_save_releases_the_window_lock() {
     assert!(world.lock.holds(SAVE_JOB_ID));
     drop(loop_future);
     world.tasks.close();
-    world.tasks.wait().await;
+    tokio::time::timeout(Duration::from_secs(5), world.tasks.wait())
+        .await
+        .expect("the release task finishes");
     assert!(world.lock.released(SAVE_JOB_ID));
     assert!(!world.lock.holds(SAVE_JOB_ID));
 }
