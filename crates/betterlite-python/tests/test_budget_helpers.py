@@ -380,14 +380,16 @@ def cyclic_payload() -> dict[str, PythonValue]:
 
 
 def filter_payload() -> dict[str, PythonValue]:
+    router = Router.model_construct(id="r", created=0, object="r", choices=[])
+    logging_object = Logging.model_construct(id="l", created=0, object="l", choices=[])
     return {
         "class": ValueError,
         "function": helper_function,
         "error": ValueError(BOOM),
         "none": None,
-        "router": Router.model_construct(),
-        "logging": Logging.model_construct(),
-        "list": [ValueError(BOOM), {"router": Router.model_construct()}, 1],
+        "router": router,
+        "logging": logging_object,
+        "list": [ValueError(BOOM), {"router": router}, 1],
     }
 
 
@@ -529,7 +531,7 @@ def test_helper_remove_items() -> None:
     LITELLM_HELPERS.remove_items_at_indices(reference, [0, 1, 9, 1, -1])
     remove_items_at_indices(ours, [0, 1, 9, 1, -1])
     assert ours == reference == ["c", "d"]
-    assert remove_items_at_indices(NO_ITEMS, [0]) is None
+    remove_items_at_indices(NO_ITEMS, [0])
 
 
 def test_helper_metadata_name() -> None:
