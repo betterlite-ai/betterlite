@@ -22,7 +22,7 @@ def process_response_headers(
 ) -> dict[str, JsonValue]:
     raw: dict[str, str] = dict(response_headers)
     # ast-grep-ignore: no-isinstance
-    if isinstance(response_headers, dict) and preserve_litellm_internal_headers:
+    if isinstance(response_headers, dict) and preserve_litellm_internal_headers:  # ast-grep-ignore: no-long-names
         internal = {
             key: value for key, value in raw.items() if key.startswith(_INTERNAL_PREFIX)
         }

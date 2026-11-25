@@ -36,8 +36,7 @@ def _removed_in_parent(value: PythonValue) -> bool:
     # ast-grep-ignore: no-isinstance
     if isinstance(value, Exception):
         return True
-    # ast-grep-ignore: no-isinstance
-    if isinstance(value, type):
+    if type(value) is type:
         return False
     return callable(value)
 

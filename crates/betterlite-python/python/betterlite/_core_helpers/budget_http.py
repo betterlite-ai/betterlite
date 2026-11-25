@@ -16,7 +16,9 @@ from betterlite._version import version
 _DEFAULT_REQUEST_SECONDS: Final = 6000.0
 _REQUEST_TIMEOUT_VARIABLE: Final = "REQUEST_TIMEOUT"
 _HTTP2_VARIABLE: Final = "LITELLM_HTTP2"
-_IPV4_LOCAL_ADDRESS: Final = "0.0.0.0"
+_IPV4_LOCAL_ADDRESS: Final = (
+    "0.0.0.0"  # noqa: S104  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1697
+)
 _USER_AGENT_VARIABLE: Final = "LITELLM_USER_AGENT"
 _SSL_CERTIFICATE_VARIABLE: Final = "SSL_CERTIFICATE"
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)

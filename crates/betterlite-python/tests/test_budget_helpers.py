@@ -179,11 +179,11 @@ PROJECTED_MESSAGES: Final[list[dict[str, JsonValue]]] = [
     {"role": "user", "content": "ab"}, {"role": "user", "content": "c"}]
 USAGE_DATA: Final[dict[str, JsonValue]] = {
     "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
-JSON_ADAPTER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 EXCEPTION_ADAPTER: Final[TypeAdapter[BaseException]] = TypeAdapter(
     BaseException, config=ConfigDict(arbitrary_types_allowed=True)
 )
-HOSTED_DATA: Final[JsonValue] = JSON_ADAPTER.validate_python({ALICE: {"total_budget": BUDGET}})
+HOSTED_DATA: Final[JsonValue] = {ALICE: {"total_budget": BUDGET}}
+JSON_ADAPTER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 HOSTED_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": HOSTED_DATA}
 ERROR_REPLY: Final[dict[str, JsonValue]] = {"status": "error"}
 SAVED_REPLY: Final[dict[str, JsonValue]] = {"status": "success"}
@@ -396,8 +396,14 @@ class Logging(ModelResponse): ...
 def filter_payload() -> dict[str, PythonValue]:
     return {
         "class": ValueError, "function": gated_write_text, "error": ValueError(BOOM),
-        "none": None, "router": Router.model_construct(), "logging": Logging.model_construct(),
-        "list": [ValueError(BOOM), {"router": Router.model_construct()}, 1],
+        "none": None,
+        "router": Router.model_construct(id="r", created=0, object="r", choices=[]),
+        "logging": Logging.model_construct(id="l", created=0, object="l", choices=[]),
+        "list": [
+            ValueError(BOOM),
+            {"router": Router.model_construct(id="r", created=0, object="r", choices=[])},
+            1,
+        ],
     }
 
 

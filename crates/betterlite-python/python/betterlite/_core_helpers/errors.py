@@ -42,9 +42,14 @@ def is_expected_client_error(exception: BaseException | None) -> bool:
 
 
 # LiteLLM's order: a litellm limiter rejection is the proxy's, whatever provider it names.
-def _is_provider_originated(exception: object) -> bool:
+def _is_provider_originated(
+    exception: BaseException | _LimitRejection | _ProviderError,
+) -> bool:
     # ast-grep-ignore: no-isinstance
-    if isinstance(exception, _LimitRejection) and _is_litellm_limit(exception.category):
+    is_limiter = isinstance(exception, _LimitRejection) and _is_litellm_limit(
+        exception.category
+    )
+    if is_limiter:
         return False
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _ProviderError):
@@ -57,21 +62,23 @@ def _is_litellm_limit(category: PythonValue) -> bool:
     return name is not None and name in _LITELLM_LIMIT_CATEGORIES
 
 
-def _status_value(exception: object) -> PythonValue:
+def _status_value(
+    exception: BaseException | _CodeError | _StatusError,
+) -> PythonValue:
     code = _code_of(exception)
     if code is not None:
         return code
     return _status_of(exception)
 
 
-def _code_of(exception: object) -> PythonValue:
+def _code_of(exception: BaseException | _CodeError) -> PythonValue:
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _CodeError):
         return exception.code
     return None
 
 
-def _status_of(exception: object) -> PythonValue:
+def _status_of(exception: BaseException | _StatusError) -> PythonValue:
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _StatusError):
         return exception.status_code
