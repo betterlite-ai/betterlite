@@ -71,6 +71,10 @@ EU_RESIDENCY: Final = "eu"
 BATCH_PROMPT_TOKENS: Final = 1000
 BATCH_COMPLETION_TOKENS: Final = 500
 CACHED_TOKENS_PER_CALL: Final = 50
+MIXED_ALIAS_TOKENS: Final = 10
+MIXED_DETAIL_TOKENS: Final = 20
+SERVER_TOOL_REQUESTS: Final = 2
+UNKNOWN_PROVIDER: Final = "typo-provider"
 REALTIME_MODEL: Final = "gpt-realtime"
 REALTIME_PROMPT_TOKENS: Final = 100
 REALTIME_COMPLETION_TOKENS: Final = 20
@@ -387,6 +391,49 @@ REFERENCE_COMBINED_USAGE: Final = (
         REFERENCE_COMBINED_USAGES
     )
 )
+MIXED_DETAILS: Final[dict[str, JsonValue]] = {"cached_tokens": MIXED_DETAIL_TOKENS}
+MIXED_USAGES: Final[list[Usage]] = [
+    Usage(
+        prompt_tokens=MIXED_ALIAS_TOKENS,
+        completion_tokens=1,
+        total_tokens=MIXED_ALIAS_TOKENS + 1,
+        cache_read_input_tokens=MIXED_ALIAS_TOKENS,
+    ),
+    Usage(
+        prompt_tokens=MIXED_DETAIL_TOKENS,
+        completion_tokens=1,
+        total_tokens=MIXED_DETAIL_TOKENS + 1,
+        prompt_tokens_details=MIXED_DETAILS,
+    ),
+]
+REFERENCE_MIXED_USAGES: Final[list[ReferenceUsage]] = [
+    ReferenceUsage(
+        prompt_tokens=MIXED_ALIAS_TOKENS,
+        completion_tokens=1,
+        total_tokens=MIXED_ALIAS_TOKENS + 1,
+        cache_read_input_tokens=MIXED_ALIAS_TOKENS,
+    ),
+    ReferenceUsage(
+        prompt_tokens=MIXED_DETAIL_TOKENS,
+        completion_tokens=1,
+        total_tokens=MIXED_DETAIL_TOKENS + 1,
+        prompt_tokens_details=MIXED_DETAILS,
+    ),
+]
+SERVER_TOOL_USAGE: Final[dict[str, JsonValue]] = {
+    "input_tokens": WS_FIRST_PROMPT,
+    "output_tokens": WS_FIRST_COMPLETION,
+    "total_tokens": WS_FIRST_PROMPT + WS_FIRST_COMPLETION,
+    "server_tool_use": {"web_search_requests": SERVER_TOOL_REQUESTS},
+}
+SERVER_TOOL_REALTIME_EVENT: Final[dict[str, JsonValue]] = {
+    "type": "response.done",
+    "response": {"usage": SERVER_TOOL_USAGE},
+}
+SERVER_TOOL_WS_EVENT: Final[dict[str, JsonValue]] = {
+    "type": "response.completed",
+    "response": {"usage": SERVER_TOOL_USAGE},
+}
 COMBINED_REALTIME_USAGE: Final = (
     RealtimeAPITokenUsageProcessor.collect_and_combine_usage_from_realtime_stream_results(
         REALTIME_EVENTS
@@ -512,6 +559,17 @@ def test_vector_store_cost_vertex() -> None:
     assert ours[0] > ZERO
 
 
+def test_vector_unknown_provider() -> None:
+    with pytest.raises(ValueError, match="is not a valid LlmProviders"):
+        vector_store_search_cost(None, UNKNOWN_PROVIDER, VECTOR_RESPONSE)
+    with pytest.raises(ValueError, match="is not a valid LlmProviders"):
+        REFERENCE.vector_store_search_cost(
+            model=None,
+            custom_llm_provider=UNKNOWN_PROVIDER,
+            response=REFERENCE_VECTOR_RESPONSE,
+        )
+
+
 def test_rerank_cost_units() -> None:
     ours = rerank_cost(RERANK_MODEL, COHERE, RERANK_UNITS)
     compare_pair(ours, REFERENCE_RERANK_PAIR)
@@ -578,6 +636,15 @@ def test_processor_combines() -> None:
     )
 
 
+def test_processor_mixed_cache() -> None:
+    ours = BaseTokenUsageProcessor.combine_usage_objects(MIXED_USAGES)
+    reference = REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects(
+        REFERENCE_MIXED_USAGES
+    )
+    compare_usages([ours], [reference])
+    assert usage_counts(ours)["cached_tokens"] == (MIXED_ALIAS_TOKENS + MIXED_DETAIL_TOKENS)
+
+
 def test_processor_empty() -> None:
     ours = BaseTokenUsageProcessor.combine_usage_objects([])
     reference = REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects([])
@@ -590,6 +657,30 @@ def test_processor_realtime() -> None:
     )
     compare_usages(ours, REFERENCE_REALTIME_USAGES)
     assert_realtime_counts(ours[0])
+
+
+def test_processor_tool_use() -> None:
+    ours_realtime = RealtimeAPITokenUsageProcessor.collect_usage_from_realtime_stream_results(
+        [SERVER_TOOL_REALTIME_EVENT]
+    )
+    reference_realtime = (
+        REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
+        .collect_usage_from_realtime_stream_results([SERVER_TOOL_REALTIME_EVENT])
+    )
+    compare_usages(ours_realtime, reference_realtime)
+    realtime_tool_use = ours_realtime[0].server_tool_use
+    assert realtime_tool_use is not None
+    assert realtime_tool_use.web_search_requests == SERVER_TOOL_REQUESTS
+
+    ours_ws = WsUsageProcessor.collect_usage_from_responses_ws_results([SERVER_TOOL_WS_EVENT])
+    reference_ws = (
+        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+        .collect_usage_from_responses_ws_results([SERVER_TOOL_WS_EVENT])
+    )
+    compare_usages(ours_ws, reference_ws)
+    ws_tool_use = ours_ws[0].server_tool_use
+    assert ws_tool_use is not None
+    assert ws_tool_use.web_search_requests == SERVER_TOOL_REQUESTS
 
 
 def test_processor_ws_collects() -> None:

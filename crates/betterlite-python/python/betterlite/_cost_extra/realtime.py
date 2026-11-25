@@ -1,3 +1,4 @@
+import json
 from collections.abc import Mapping, Sequence
 
 from pydantic import JsonValue
@@ -8,7 +9,8 @@ from betterlite._cost_extra.wire import (
     ENGINE,
     FLOAT,
     REALTIME_COST,
-    JsonObject,
+    RealtimeCostRequestWire,
+    RealtimeTranscriptionWire,
     native_answer,
     usage_wire,
 )
@@ -25,7 +27,7 @@ def handle_realtime_stream_cost_calculation(  # ast-grep-ignore: no-long-names  
     custom_pricing_model: str | None = None,
     base_pricing_model: str | None = None,
 ) -> float:
-    request: JsonObject = {
+    request: RealtimeCostRequestWire = {
         "results": [dict(result) for result in results],
         "combined_usage": usage_wire(combined_usage_object),
         "custom_llm_provider": custom_llm_provider,
@@ -34,7 +36,7 @@ def handle_realtime_stream_cost_calculation(  # ast-grep-ignore: no-long-names  
         "custom_pricing_model": custom_pricing_model,
         "base_pricing_model": base_pricing_model,
     }
-    answer = native_answer(REALTIME_COST, ENGINE.realtime_cost, request)
+    answer = native_answer(REALTIME_COST, ENGINE.realtime_cost, json.dumps(request))
     store_breakdown(
         litellm_logging_obj,
         CostAnswerWire(cost=answer[0], breakdown=answer[1], billed_token_rates=None),
@@ -48,10 +50,10 @@ def handle_realtime_transcription_cost_calculation(  # ast-grep-ignore: no-long-
     litellm_model_name: str,
     custom_pricing_model: str | None = None,
 ) -> float:
-    request: JsonObject = {
+    request: RealtimeTranscriptionWire = {
         "results": [dict(result) for result in results],
         "custom_llm_provider": custom_llm_provider,
         "litellm_model_name": litellm_model_name,
         "custom_pricing_model": custom_pricing_model,
     }
-    return native_answer(FLOAT, ENGINE.realtime_transcription_cost, request)
+    return native_answer(FLOAT, ENGINE.realtime_transcription_cost, json.dumps(request))

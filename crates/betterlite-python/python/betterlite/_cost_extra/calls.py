@@ -1,10 +1,20 @@
-from pydantic import JsonValue
+import json
+from typing import Final
+
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from betterlite._cost.wire import JSON_OBJECT
 from betterlite._cost_extra.wire import (
     ENGINE,
     FLOAT,
-    JsonObject,
+    BatchRequestWire,
+    ImageRequestWire,
+    OcrRequestWire,
+    OcrUsageWire,
+    RerankRequestWire,
+    TranscriptionRequestWire,
+    VectorStoreRequestWire,
+    VideoRequestWire,
     native_answer,
     pair,
     usage_wire,
@@ -14,9 +24,11 @@ from betterlite.types.rerank import RerankBilledUnits
 from betterlite.types.utils.usage import Usage
 from betterlite.types.vector_stores import VectorStoreSearchResponse
 
+OCR_VALUE: Final = TypeAdapter(OCRResponse)
 
-def ocr_usage(usage: OCRUsageInfo) -> JsonObject:
-    fields: JsonObject = {
+
+def ocr_usage(usage: OCRUsageInfo) -> OcrUsageWire:
+    fields: OcrUsageWire = {
         "credits": usage.credits,
         "pages_processed": usage.pages_processed,
         "pages_processed_annotation": usage.pages_processed_annotation,
@@ -30,18 +42,21 @@ def ocr_cost(
     response: OCRResponse | None = None,
     model_info: dict[str, JsonValue] | None = None,
 ) -> tuple[float, float]:
-    # LiteLLM accepts any object here and refuses the wrong type at runtime, so the check stays.
-    if not isinstance(response, OCRResponse):  # ast-grep-ignore: no-isinstance
-        raise ValueError(f"response must be of type OCRResponse got type={type(response)}")
-    if response.usage_info is None:
+    # LiteLLM refuses anything but an OCRResponse, so None and every other type are rejected.
+    refusal = f"response must be of type OCRResponse got type={type(response)}"
+    try:
+        typed = OCR_VALUE.validate_python(response, strict=True)
+    except ValidationError as error:
+        raise ValueError(refusal) from error
+    if typed.usage_info is None:
         raise ValueError("OCR response usage_info is None")
-    request: JsonObject = {
+    request: OcrRequestWire = {
         "model": model,
         "custom_llm_provider": custom_llm_provider,
-        "usage": ocr_usage(response.usage_info),
+        "usage": ocr_usage(typed.usage_info),
         "model_info": model_info,
     }
-    return pair(ENGINE.ocr_cost, request)
+    return pair(ENGINE.ocr_cost, json.dumps(request))
 
 
 def ocr_batch_cost(
@@ -51,15 +66,13 @@ def ocr_batch_cost(
     model_info: dict[str, JsonValue] | None = None,
 ) -> tuple[float, float]:
     usage = ocr_usage(usage_info)
-    return pair(
-        ENGINE.ocr_batch_cost,
-        {
-            "model": model,
-            "custom_llm_provider": custom_llm_provider,
-            "usage": usage,
-            "model_info": model_info,
-        },
-    )
+    request: OcrRequestWire = {
+        "model": model,
+        "custom_llm_provider": custom_llm_provider,
+        "usage": usage,
+        "model_info": model_info,
+    }
+    return pair(ENGINE.ocr_batch_cost, json.dumps(request))
 
 
 def vector_store_search_cost(
@@ -67,9 +80,9 @@ def vector_store_search_cost(
     custom_llm_provider: str | None,
     response: VectorStoreSearchResponse,
 ) -> tuple[float, float]:
-    request: JsonObject = {"model": model, "custom_llm_provider": custom_llm_provider}
+    request: VectorStoreRequestWire = {"model": model, "custom_llm_provider": custom_llm_provider}
     request["response"] = JSON_OBJECT.validate_python(response)
-    return pair(ENGINE.vector_store_cost, request)
+    return pair(ENGINE.vector_store_cost, json.dumps(request))
 
 
 def rerank_cost(
@@ -77,20 +90,21 @@ def rerank_cost(
     custom_llm_provider: str | None,
     billed_units: RerankBilledUnits | None = None,
 ) -> tuple[float, float]:
-    request: JsonObject = {}
-    request["model"] = model
-    request["custom_llm_provider"] = custom_llm_provider
+    request: RerankRequestWire = {"model": model, "custom_llm_provider": custom_llm_provider}
     if billed_units is not None:
         request["billed_units"] = JSON_OBJECT.validate_python(billed_units)
-    return pair(ENGINE.rerank_cost, request)
+    return pair(ENGINE.rerank_cost, json.dumps(request))
 
 
 def transcription_cost(
     model: str, custom_llm_provider: str | None, duration: float
 ) -> tuple[float, float]:
-    request: JsonObject = {"model": model, "custom_llm_provider": custom_llm_provider}
-    request["duration"] = duration
-    return pair(ENGINE.transcription_cost, request)
+    request: TranscriptionRequestWire = {
+        "model": model,
+        "custom_llm_provider": custom_llm_provider,
+        "duration": duration,
+    }
+    return pair(ENGINE.transcription_cost, json.dumps(request))
 
 
 def default_image_cost_calculator(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2407
@@ -102,7 +116,7 @@ def default_image_cost_calculator(  # noqa: PLR0913, PLR0917  # https://github.c
     optional_params: dict[str, JsonValue] | None = None,  # noqa: ARG001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2413
     model_info: dict[str, JsonValue] | None = None,
 ) -> float:
-    request: JsonObject = {
+    request: ImageRequestWire = {
         "model": model,
         "custom_llm_provider": custom_llm_provider,
         "quality": quality,
@@ -110,7 +124,7 @@ def default_image_cost_calculator(  # noqa: PLR0913, PLR0917  # https://github.c
         "size": size,
         "model_info": model_info,
     }
-    return native_answer(FLOAT, ENGINE.image_cost, request)
+    return native_answer(FLOAT, ENGINE.image_cost, json.dumps(request))
 
 
 def default_video_cost_calculator(
@@ -120,7 +134,7 @@ def default_video_cost_calculator(
     model_info: dict[str, JsonValue] | None = None,
     video_resolution: str | None = None,
 ) -> float:
-    request: JsonObject = {
+    request: VideoRequestWire = {
         "model": model,
         "duration_seconds": duration_seconds,
         "custom_llm_provider": custom_llm_provider,
@@ -128,7 +142,7 @@ def default_video_cost_calculator(
     }
     if video_resolution is not None:
         request["video_resolution"] = video_resolution
-    return native_answer(FLOAT, ENGINE.video_cost, request)
+    return native_answer(FLOAT, ENGINE.video_cost, json.dumps(request))
 
 
 def batch_cost_calculator(
@@ -139,8 +153,8 @@ def batch_cost_calculator(
     data_residency: str | None = None,
 ) -> tuple[float, float]:
     counts = usage_wire(usage)
-    request: JsonObject = {"usage": counts, "model": model}
+    request: BatchRequestWire = {"usage": counts, "model": model}
     request["custom_llm_provider"] = custom_llm_provider
     request["model_info"] = model_info
     request["data_residency"] = data_residency
-    return pair(ENGINE.batch_cost, request)
+    return pair(ENGINE.batch_cost, json.dumps(request))
