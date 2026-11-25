@@ -79,3 +79,6 @@ fn encoded(outcome: Result<ImageAnswer, CallFailure>) -> PyResult<String> {
         Err(failure) => Err(class_error(&failure)),
     }
 }
+
+#[cfg(test)]
+mod tests;
