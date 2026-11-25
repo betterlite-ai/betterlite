@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-writer-remove-continues
+call:
+  b10096:
+    pid: 2001
+    metrics:
+      - {kind: gauge, name: litellm_rows_remaining, help: Rows remaining, labels: [table], buckets: [], mode: livemax}
+    updates:
+      - {metric: 0, labels: [LiteLLM_SpendLogs], action: set, value: 42}
+      - {metric: 0, labels: [LiteLLM_SpendLogs], action: remove, value: 0}
+      - {metric: 0, labels: [LiteLLM_SpendLogs], action: inc, value: 8}
+    call: files
+    accept: ""
+env: {}
+compare: {ignore: []}

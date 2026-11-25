@@ -66,6 +66,7 @@ fn a_second_register_names_the_sample_names_that_clash() {
         ),
         other @ (PrometheusExporterError::CallerIdentity(_)
         | PrometheusExporterError::Factory(_)
+        | PrometheusExporterError::Registry(_)
         | PrometheusExporterError::Buckets(_)) => panic!("unexpected error: {other}"),
     }
 }

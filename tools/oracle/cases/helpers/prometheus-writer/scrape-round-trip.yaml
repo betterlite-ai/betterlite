@@ -1,0 +1,32 @@
+kind: helper
+name: prometheus-writer-scrape-round-trip
+call:
+  b10096:
+    pid: 1006
+    metrics:
+      - {kind: counter, name: litellm_requests, help: Requests served, labels: [model], buckets: [], mode: all}
+      - {kind: gauge, name: litellm_in_flight, help: In flight, labels: [], buckets: [], mode: livesum}
+      - {kind: histogram, name: litellm_latency, help: Latency seconds, labels: [route], buckets: [0.5, 1.0], mode: all}
+    updates:
+      - {metric: 0, labels: [gpt-4o], action: inc, value: 2}
+      - {metric: 0, labels: [claude-4], action: inc, value: 1}
+      - {metric: 1, labels: [], action: inc, value: 3}
+      - {metric: 2, labels: [/v1/chat], action: observe, value: 0.75}
+      - {metric: 2, labels: [/v1/chat], action: observe, value: 2}
+    call: scrape
+    accept: application/openmetrics-text
+env: {}
+compare:
+  ignore:
+    - pointer: /value/files/0
+      why: >-
+        the used bytes hold serde_json's compact keys, so the hex differs from json.dumps
+        (docs/deviations/B10096.yaml).
+    - pointer: /value/files/1
+      why: >-
+        the used bytes hold serde_json's compact keys, so the hex differs from json.dumps
+        (docs/deviations/B10096.yaml).
+    - pointer: /value/files/2
+      why: >-
+        the used bytes hold serde_json's compact keys, so the hex differs from json.dumps
+        (docs/deviations/B10096.yaml).

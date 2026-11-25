@@ -1,0 +1,27 @@
+kind: helper
+name: prometheus-writer-unlabelled-zero
+call:
+  b10096:
+    pid: 1004
+    metrics:
+      - {kind: counter, name: litellm_requests, help: Requests served, labels: [], buckets: [], mode: all}
+      - {kind: gauge, name: litellm_rows_remaining, help: Rows remaining, labels: [], buckets: [], mode: livemax}
+      - {kind: histogram, name: litellm_latency, help: Latency seconds, labels: [], buckets: [0.5], mode: all}
+    updates: []
+    call: files
+    accept: ""
+env: {}
+compare:
+  ignore:
+    - pointer: /value/files/0/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).
+    - pointer: /value/files/1/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).
+    - pointer: /value/files/2/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).
