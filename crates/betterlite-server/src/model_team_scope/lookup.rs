@@ -110,7 +110,7 @@ async fn decrypted_row(
         )
     });
     match tasks.join_next().await {
-        Some(Ok(deployments)) => Ok(deployments?),
+        Some(Ok(deployments)) => deployments.map_err(DecryptTaskError::from),
         Some(Err(source)) => Err(DecryptTaskError::Task(source)),
         None => Err(DecryptTaskError::Missing),
     }
