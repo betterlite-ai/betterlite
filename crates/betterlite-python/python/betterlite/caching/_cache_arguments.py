@@ -6,7 +6,7 @@ from typing_extensions import TypedDict
 from betterlite.caching.base_cache import BaseCache
 
 
-# The keywords enable_cache and update_cache hand on to Cache, apart from the ones they name themselves.
+# Cache switches forward these keywords to the constructor.
 class CacheArguments(TypedDict, total=False):
     mode: str | None
     namespace: str | None

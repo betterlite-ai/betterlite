@@ -18,7 +18,7 @@ from betterlite.caching._backend import _number, _ttl_of, _value_or_none
 from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.in_memory_cache import InMemoryCache
 from betterlite.caching.redis_cache import RedisCache
-from betterlite.types.caching import RedisPipelineIncrementOperation
+from betterlite.types.caching import RedisPipelineIncrementOperation as IncrementOp
 
 DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE: Final = 1000  # ast-grep-ignore: no-long-names
 _DEFAULT_BATCH_CACHE_EXPIRY: Final = 10.0
@@ -95,8 +95,7 @@ class DualCache(BaseCache):
             json.dumps(settings),
         )
 
-    # A read that finds a value only in Redis backfills memory with the tier's own ttl; a caller's ttl
-    # for that backfill is not carried over yet, so it fails instead of being dropped.
+    # Native backfills cannot yet use a caller's ttl, so reject it instead of dropping it.
     def _reject_backfill_ttl(self, kwargs: dict[str, JsonValue]) -> None:
         if kwargs.get("ttl") is not None and self.redis_cache is not None:
             raise UnsupportedCallArgument("ttl")
@@ -219,19 +218,21 @@ class DualCache(BaseCache):
         result = self.native.delete_cache_pre_call(key)
         return None if result is None else _DeferredResult(result)
 
+    # ast-grep-ignore: no-long-names - https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L609
     async def async_increment_cache_post_call(
         self, key: str, value: float, ttl: int | None, parent_otel_span: JsonValue = None
     ) -> None:
-        operation: RedisPipelineIncrementOperation = {
+        operation: IncrementOp = {
             "key": key,
             "increment_value": value,
             "ttl": ttl,
         }
         await self.async_increment_cache_pipeline_post_call((operation,), parent_otel_span)
 
+    # ast-grep-ignore: no-long-names - https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L622
     async def async_increment_cache_pipeline_post_call(
         self,
-        increment_list: Sequence[RedisPipelineIncrementOperation],
+        increment_list: Sequence[IncrementOp],
         parent_otel_span: JsonValue = None,
     ) -> None:
         _unread = parent_otel_span

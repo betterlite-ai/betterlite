@@ -8,7 +8,7 @@ from typing import Final, Protocol, TypedDict
 import fake_redis_server
 import pytest
 from fake_redis_server import FakeRedisServer
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
 from betterlite._cache_ops.types import CacheStore
@@ -466,7 +466,7 @@ async def _declared_values(
     return await asyncio.wait_for(declared.async_resolve(), timeout=DECLARED_TIMEOUT)
 
 
-def test_dual_declares_a_read_on_the_given_batch(redis_server: FakeRedisServer) -> None:
+def test_dual_declares_batch(redis_server: FakeRedisServer) -> None:
     redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
     cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
     cache.in_memory_cache.set_cache("declared:memory", CHAT_RESPONSE)
@@ -474,14 +474,15 @@ def test_dual_declares_a_read_on_the_given_batch(redis_server: FakeRedisServer) 
     values = asyncio.run(
         _declared_values(cache, redis_cache, ["declared:memory", "declared:redis", "declared:none"])
     )
-    assert [None if value is None else json.loads(value) for value in values] == [
+    decoder = TypeAdapter(JsonValue)
+    assert [None if value is None else decoder.validate_json(value) for value in values] == [
         CHAT_RESPONSE,
         CACHED,
         None,
     ]
 
 
-def test_dual_without_redis_declares_memory_values(redis_server: FakeRedisServer) -> None:
+def test_dual_declares_memory(redis_server: FakeRedisServer) -> None:
     redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
     cache = DualCache(in_memory_cache=InMemoryCache())
     cache.in_memory_cache.set_cache("declared:local", CACHED)
@@ -489,28 +490,29 @@ def test_dual_without_redis_declares_memory_values(redis_server: FakeRedisServer
     assert values == [json.dumps(CACHED), None]
 
 
-def test_dual_counts_increments_after_the_call(redis_server: FakeRedisServer) -> None:
+async def _post_call_counts(cache: DualCache) -> None:
+    await cache.async_increment_cache_post_call("post:single", 2, None)
+    await cache.async_increment_cache_post_call("post:single", 3, None)
+    await cache.async_increment_cache_pipeline_post_call(
+        [
+            {"key": "post:first", "increment_value": 1, "ttl": None},
+            {"key": "post:second", "increment_value": 4, "ttl": 60},
+            {"key": "post:first", "increment_value": 1, "ttl": None},
+        ]
+    )
+
+
+def test_dual_post_call_counts(redis_server: FakeRedisServer) -> None:
     redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
     cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
 
-    async def scenario() -> None:
-        await cache.async_increment_cache_post_call("post:single", 2, None)
-        await cache.async_increment_cache_post_call("post:single", 3, None)
-        await cache.async_increment_cache_pipeline_post_call(
-            [
-                {"key": "post:first", "increment_value": 1, "ttl": None},
-                {"key": "post:second", "increment_value": 4, "ttl": 60},
-                {"key": "post:first", "increment_value": 1, "ttl": None},
-            ]
-        )
-
-    asyncio.run(scenario())
+    asyncio.run(_post_call_counts(cache))
     assert cache.get_cache("post:single", local_only=True) == POST_SINGLE_TOTAL
     assert cache.get_cache("post:first", local_only=True) == POST_FIRST_TOTAL
     assert cache.get_cache("post:second", local_only=True) == POST_SECOND_TOTAL
 
 
-def test_dual_batch_reads_reject_a_backfill_ttl(redis_server: FakeRedisServer) -> None:
+def test_dual_rejects_backfill_ttl(redis_server: FakeRedisServer) -> None:
     redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
     cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
     redis_cache.set_cache("ttl:redis-only", CACHED)
@@ -525,7 +527,7 @@ def test_dual_batch_reads_reject_a_backfill_ttl(redis_server: FakeRedisServer) -
     assert cache.get_cache("ttl:redis-only", local_only=True) is None
 
 
-def test_dual_reads_take_a_ttl_without_a_backfill(redis_server: FakeRedisServer) -> None:
+def test_dual_reads_local_ttl(redis_server: FakeRedisServer) -> None:
     redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
     shared = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
     shared.set_cache("ttl:both", CACHED)
@@ -538,7 +540,7 @@ def test_dual_reads_take_a_ttl_without_a_backfill(redis_server: FakeRedisServer)
     assert asyncio.run(memory_only.async_batch_get_cache(["ttl:memory"], ttl=1)) == [CACHED]
 
 
-def test_redis_arguments_are_checked() -> None:
+def test_redis_checks_arguments() -> None:
     with pytest.raises(ValidationError, match="socket_timeout"):
         Cache(type="redis", socket_timeout="slow")
 
