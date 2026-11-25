@@ -175,12 +175,10 @@ impl NativeDual {
         py: Python<'_>,
         key: &str,
     ) -> PyResult<Option<Py<NativeDeferred>>> {
-        let result = self
-            .cache
-            .delete_cache_pre_call(key)
-            .map_err(BackendHandleError::from)
-            .map_err(PyErr::from)?;
-        batch::deferred(py, result)
+        match self.cache.delete_cache_pre_call(key) {
+            Ok(result) => batch::deferred(py, result),
+            Err(failure) => Err(PyErr::from(BackendHandleError::from(failure))),
+        }
     }
 
     fn increment(
