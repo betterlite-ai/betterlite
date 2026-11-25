@@ -84,7 +84,7 @@ where
     }
     let store =
         fetch_store_before_access(rows, &state.access(), vector_store_id, &caller.key).await?;
-    row_info(&store, state.limits)
+    store_info(&store, state.limits, RecordSource::Database)
 }
 
 async fn authorized_cached<Database>(
@@ -101,54 +101,54 @@ async fn authorized_cached<Database>(
             VectorManagementError::AccessDenied,
         ));
     }
-    Ok(cached_info(store, state.limits)?)
+    store_info(store, state.limits, RecordSource::Cached)
 }
 
-// the registry branch: blanks collapse to null, the credential name does not, and metadata text is parsed
-fn cached_info(
+// the cached record collapses blanks to null and parses its metadata text; the database row stays as stored
+#[derive(Clone, Copy)]
+enum RecordSource {
+    Cached,
+    Database,
+}
+
+impl RecordSource {
+    fn text(self, value: Option<&str>) -> Option<String> {
+        match self {
+            Self::Cached => nonempty(value),
+            Self::Database => value.map(str::to_owned),
+        }
+    }
+}
+
+fn store_info(
     store: &LiteLlmManagedVectorStore,
     limits: ApiLimits,
+    source: RecordSource,
 ) -> Result<InfoResponse, ManagementReadError> {
+    let metadata = match (&store.vector_store_metadata, source) {
+        (None, RecordSource::Cached | RecordSource::Database) => Json::Null,
+        (Some(value), RecordSource::Database) => serde_json::from_value(value.clone())?,
+        (Some(value), RecordSource::Cached) => {
+            let decoded: Json = serde_json::from_value(value.clone())?;
+            match decoded {
+                Json::Text(text) => parsed_metadata(&text, limits)?,
+                object @ Json::Object(_) => object,
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Json::Null,
+            }
+        }
+    };
     let table = StoreTable {
         vector_store_id: store.vector_store_id.clone().unwrap_or_default(),
         custom_llm_provider: store.custom_llm_provider.clone().unwrap_or_default(),
-        vector_store_name: nonempty(store.vector_store_name.as_deref()),
-        vector_store_description: nonempty(store.vector_store_description.as_deref()),
-        vector_store_metadata: cached_metadata(store, limits)?,
-        created_at: nonempty(store.created_at.as_deref()),
-        updated_at: nonempty(store.updated_at.as_deref()),
-        litellm_credential_name: store.litellm_credential_name.clone(),
-        litellm_params: redacted_params(store, limits)?,
-        team_id: nonempty(store.team_id.as_deref()),
-        user_id: nonempty(store.user_id.as_deref()),
-        is_config: store.is_config.unwrap_or(false),
-    };
-    Ok(InfoResponse {
-        vector_store: table,
-    })
-}
-
-// the database branch: the response model over the full row, so blanks and nulls stay exactly as stored
-fn row_info(
-    store: &LiteLlmManagedVectorStore,
-    limits: ApiLimits,
-) -> Result<InfoResponse, ManagementReadError> {
-    let metadata = match &store.vector_store_metadata {
-        Some(value) => serde_json::from_value(value.clone())?,
-        None => Json::Null,
-    };
-    let table = StoreTable {
-        vector_store_id: store.vector_store_id.clone().unwrap_or_default(),
-        custom_llm_provider: store.custom_llm_provider.clone().unwrap_or_default(),
-        vector_store_name: store.vector_store_name.clone(),
-        vector_store_description: store.vector_store_description.clone(),
+        vector_store_name: source.text(store.vector_store_name.as_deref()),
+        vector_store_description: source.text(store.vector_store_description.as_deref()),
         vector_store_metadata: metadata,
-        created_at: store.created_at.clone(),
-        updated_at: store.updated_at.clone(),
+        created_at: source.text(store.created_at.as_deref()),
+        updated_at: source.text(store.updated_at.as_deref()),
         litellm_credential_name: store.litellm_credential_name.clone(),
         litellm_params: redacted_params(store, limits)?,
-        team_id: store.team_id.clone(),
-        user_id: store.user_id.clone(),
+        team_id: source.text(store.team_id.as_deref()),
+        user_id: source.text(store.user_id.as_deref()),
         is_config: store.is_config.unwrap_or(false),
     };
     Ok(InfoResponse {
@@ -176,21 +176,6 @@ fn redacted_params(
 }
 
 // a JSON string metadata is json.loads'd; a parsed object is kept, null is kept, any other parse is refused
-fn cached_metadata(
-    store: &LiteLlmManagedVectorStore,
-    limits: ApiLimits,
-) -> Result<Json, ManagementReadError> {
-    let Some(value) = &store.vector_store_metadata else {
-        return Ok(Json::Null);
-    };
-    let metadata: Json = serde_json::from_value(value.clone())?;
-    match metadata {
-        Json::Text(text) => parsed_metadata(&text, limits),
-        object @ Json::Object(_) => Ok(object),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => Ok(Json::Null),
-    }
-}
-
 fn parsed_metadata(text: &str, limits: ApiLimits) -> Result<Json, ManagementReadError> {
     let decoded = decode_management_json(text.as_bytes(), limits)?;
     match decoded {

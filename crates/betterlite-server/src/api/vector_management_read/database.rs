@@ -16,12 +16,12 @@ use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use crate::api::vector_management_boundaries::rows::VectorStoreRows;
 
 // the proxy's own Postgres behind the two reads management needs: find_many by created_at and find_unique
-pub struct PostgresVectorManagementDatabase {
+pub struct PostgresVectorDatabase {
     store: Arc<PostgresStore>,
     availability: Availability,
 }
 
-impl PostgresVectorManagementDatabase {
+impl PostgresVectorDatabase {
     #[must_use]
     pub fn new(store: Arc<PostgresStore>) -> Self {
         Self {
@@ -38,27 +38,29 @@ impl PostgresVectorManagementDatabase {
             availability: &self.availability,
         }
     }
-
-    // the registry's two table reads, answered from the read replica like Prisma does
-    #[cfg_attr(test, mutants::skip)]
-    fn registry(&self) -> PrismaVectorStoreDatabase<'_> {
-        PrismaVectorStoreDatabase::new(Some(self.client()), redis_config_change_publisher(None))
-    }
 }
 
-impl VectorStoreDatabase for PostgresVectorManagementDatabase {
+impl VectorStoreDatabase for PostgresVectorDatabase {
     #[cfg_attr(test, mutants::skip)]
     async fn stores(&self) -> Result<Vec<LiteLlmManagedVectorStore>, TableError> {
-        VectorStoreDatabase::stores(&self.registry()).await
+        VectorStoreDatabase::stores(&PrismaVectorStoreDatabase::new(
+            Some(self.client()),
+            redis_config_change_publisher(None),
+        ))
+        .await
     }
 
     #[cfg_attr(test, mutants::skip)]
     async fn indexes(&self) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
-        VectorStoreDatabase::indexes(&self.registry()).await
+        VectorStoreDatabase::indexes(&PrismaVectorStoreDatabase::new(
+            Some(self.client()),
+            redis_config_change_publisher(None),
+        ))
+        .await
     }
 }
 
-impl VectorStoreRows for PostgresVectorManagementDatabase {
+impl VectorStoreRows for PostgresVectorDatabase {
     #[cfg_attr(test, mutants::skip)]
     async fn find_unique(
         &self,

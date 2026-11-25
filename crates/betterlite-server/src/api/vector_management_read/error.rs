@@ -41,45 +41,40 @@ struct DetailBody<Detail> {
 }
 
 impl ManagementReadError {
+    // the status and the FastAPI detail the response carries; a request error renders its own body instead
     #[must_use]
-    pub fn status(&self) -> StatusCode {
+    pub fn refusal(&self) -> (StatusCode, Option<DecisionJson>) {
         match self {
-            Self::Feature(error) => error.status_code(),
-            Self::DatabaseNotConnected
-            | Self::Metadata(_)
-            | Self::MetadataShape
-            | Self::Internal { .. }
-            | Self::Json(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::Management(error) => {
-                error
-                    .http()
-                    .map_or(StatusCode::INTERNAL_SERVER_ERROR, |(status, _detail)| {
-                        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
-                    })
-            }
-            Self::Query(_) | Self::Request(_) => StatusCode::UNPROCESSABLE_ENTITY,
-        }
-    }
-
-    // the FastAPI detail object a handler raises, for a caller rendering the response itself
-    #[must_use]
-    pub fn detail(&self) -> Option<DecisionJson> {
-        match self {
-            Self::Feature(FeatureAccessError::Disabled(feature)) => convert(feature.denial()),
-            Self::Feature(FeatureAccessError::Privileges(never)) => match *never {},
-            Self::DatabaseNotConnected => {
-                Some(DecisionJson::Text("Database not connected".to_owned()))
-            }
+            Self::Feature(error) => (
+                error.status_code(),
+                match error {
+                    FeatureAccessError::Disabled(feature) => convert(feature.denial()),
+                    FeatureAccessError::Privileges(never) => match *never {},
+                },
+            ),
+            Self::DatabaseNotConnected => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Some(DecisionJson::Text("Database not connected".to_owned())),
+            ),
             Self::Management(error) => match error.http() {
-                Some((_status, detail)) => convert(detail),
-                None => Some(DecisionJson::Text(error.to_string())),
+                Some((status, detail)) => (
+                    StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    convert(detail),
+                ),
+                None => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Some(DecisionJson::Text(error.to_string())),
+                ),
             },
-            Self::Metadata(error) => Some(DecisionJson::Text(error.to_string())),
-            Self::MetadataShape | Self::Internal { .. } => {
-                Some(DecisionJson::Text(self.to_string()))
-            }
-            Self::Json(error) => Some(DecisionJson::Text(error.to_string())),
-            Self::Query(_) | Self::Request(_) => None,
+            Self::Metadata(error) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Some(DecisionJson::Text(error.to_string())),
+            ),
+            Self::MetadataShape | Self::Internal { .. } | Self::Json(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Some(DecisionJson::Text(self.to_string())),
+            ),
+            Self::Query(_) | Self::Request(_) => (StatusCode::UNPROCESSABLE_ENTITY, None),
         }
     }
 
@@ -106,9 +101,15 @@ impl IntoResponse for ManagementReadError {
             Self::Query(error) => error.into_response(),
             Self::Request(error) => error.into_response(),
             error => {
-                let status = error.status();
-                let detail = error.detail().unwrap_or(DecisionJson::Null);
-                (status, Json(DetailBody { detail })).into_response()
+                let (status, detail) = error.refusal();
+                let body_detail = detail.unwrap_or(DecisionJson::Null);
+                (
+                    status,
+                    Json(DetailBody {
+                        detail: body_detail,
+                    }),
+                )
+                    .into_response()
             }
         }
     }
@@ -119,6 +120,7 @@ fn convert<T>(value: T) -> Option<DecisionJson>
 where
     T: Serialize,
 {
-    let text = serde_json::to_string(&value).ok()?;
-    serde_json::from_str(&text).ok()
+    serde_json::to_string(&value)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
 }

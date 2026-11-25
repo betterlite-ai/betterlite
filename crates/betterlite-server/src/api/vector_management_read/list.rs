@@ -105,7 +105,7 @@ where
     let mut stores: IndexMap<String, LiteLlmManagedVectorStore> = IndexMap::new();
     let mut database_ids: BTreeSet<String> = BTreeSet::new();
     for row in &database_rows {
-        if let Some(id) = present_id(row) {
+        if let Some(id) = row.vector_store_id.as_deref().filter(|id| !id.is_empty()) {
             database_ids.insert(id.to_owned());
             stores.insert(id.to_owned(), row.clone());
         }
@@ -127,7 +127,7 @@ fn reconcile(
     let in_memory = locked.stores.clone();
     let mut to_delete: Vec<String> = Vec::new();
     for store in &in_memory {
-        let Some(id) = present_id(store) else {
+        let Some(id) = store.vector_store_id.as_deref().filter(|id| !id.is_empty()) else {
             continue;
         };
         if store.is_config == Some(true) {
@@ -146,15 +146,10 @@ fn reconcile(
         tracing::debug!("Removed deleted vector store {id} from in-memory registry");
     }
     for row in database_rows {
-        if let Some(id) = present_id(row) {
+        if let Some(id) = row.vector_store_id.as_deref().filter(|id| !id.is_empty()) {
             locked.update_store(id, row.clone());
         }
     }
-}
-
-fn present_id(record: &LiteLlmManagedVectorStore) -> Option<&str> {
-    let id = record.vector_store_id.as_deref()?;
-    (!id.is_empty()).then_some(id)
 }
 
 // _with_ownership plus the redacted params the list always carries, reduced to the fields the response declares

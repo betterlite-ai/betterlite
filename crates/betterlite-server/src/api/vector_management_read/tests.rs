@@ -2,16 +2,17 @@
 
 mod support;
 
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, Method, StatusCode};
+use betterlite_config::sections::management_rbac::Settings as FeatureSettings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
 use self::support::{
-    FakeDatabase, Setup, World, admin, build, capture_logs, config_store, db_store, flags_blocked,
-    flags_blocked_team_admins, flags_open, get, internal, memory_store, parsed, post, registry_of,
-    team_store, ui_session, viewer,
+    FakeDatabase, Setup, World, admin, build, call, capture_logs, config_store, db_store,
+    flags_blocked, flags_blocked_team_admins, flags_open, internal, memory_store, parsed,
+    registry_of, team_store, ui_session, viewer,
 };
-use super::{LIST_PATH, V1_LIST_PATH};
+use super::{INFO_PATH, LIST_PATH, V1_LIST_PATH};
 use crate::api::vector_management_boundaries::redaction::REDACTED_BY_LITELM;
 
 fn at<'value>(value: &'value Json, key: &str) -> &'value Json {
@@ -102,6 +103,26 @@ fn cached(id: &str, metadata: &str) -> LiteLlmManagedVectorStore {
     ))
 }
 
+// the metadata a cached record's value shows as, from the info route's answer
+async fn cached_metadata_value(metadata: &str) -> Json {
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(Vec::new())),
+        registry: Some(vec![cached("vs_a", metadata)]),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (_status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_a"}"#,
+    )
+    .await;
+    at(at(&body, "vector_store"), "vector_store_metadata").clone()
+}
+
 #[tokio::test]
 async fn list_reconciles_config_and_database() {
     let database = FakeDatabase::new(vec![db_store("vs_db"), db_store("vs_shared")]);
@@ -113,10 +134,12 @@ async fn list_reconciles_config_and_database() {
             config_store("vs_shared"),
             config_store("vs_config"),
         ]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     };
     let state = build(setup);
-    let (status, _headers, body) = get(&state, LIST_PATH, &admin()).await;
+    let (status, _headers, body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, status);
     assert_eq!(
         vec![
@@ -138,7 +161,8 @@ async fn list_reconciles_config_and_database() {
     let shared = listed(&body, "vs_shared");
     assert_eq!("config-vs_shared", text(at(shared, "vector_store_name")));
     assert_eq!(&Json::Bool(true), at(shared, "is_config"));
-    let (alias_status, _alias_headers, alias_body) = get(&state, V1_LIST_PATH, &admin()).await;
+    let (alias_status, _alias_headers, alias_body) =
+        call(&state, &admin(), Method::GET, V1_LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, alias_status);
     assert_eq!(ids(&body), ids(&alias_body));
 }
@@ -153,11 +177,13 @@ async fn list_reconciliation_purges_and_syncs_the_registry() {
             config_store("vs_shared"),
             config_store("vs_config"),
         ]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     };
     let state = build(setup);
     let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
-    let (status, _headers, _body) = get(&state, LIST_PATH, &admin()).await;
+    let (status, _headers, _body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, status);
     {
         let registry = registry_of(&state);
@@ -209,28 +235,55 @@ async fn list_pagination_is_metadata_only() {
     let database = FakeDatabase::new(vec![db_store("vs_1"), db_store("vs_2"), db_store("vs_3")]);
     let state = build(Setup {
         database: Some(database),
-        ..Setup::default()
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, default_body) = get(&state, LIST_PATH, &admin()).await;
+    let (status, _headers, default_body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, status);
     assert_eq!(3, list(at(&default_body, "data")).len());
     assert_eq!(3, number(at(&default_body, "total_count")));
     assert_eq!(1, number(at(&default_body, "current_page")));
     assert_eq!(1, number(at(&default_body, "total_pages")));
-    let (page_status, _page_headers, page_body) =
-        get(&state, "/vector_store/list?page=2&page_size=2", &admin()).await;
+    let (page_status, _page_headers, page_body) = call(
+        &state,
+        &admin(),
+        Method::GET,
+        "/vector_store/list?page=2&page_size=2",
+        "",
+    )
+    .await;
     assert_eq!(StatusCode::OK, page_status);
     assert_eq!(3, list(at(&page_body, "data")).len());
     assert_eq!(2, number(at(&page_body, "current_page")));
     assert_eq!(2, number(at(&page_body, "total_pages")));
-    let (_zero_status, _zero_headers, zero_body) =
-        get(&state, "/vector_store/list?page=0", &admin()).await;
+    let (_zero_status, _zero_headers, zero_body) = call(
+        &state,
+        &admin(),
+        Method::GET,
+        "/vector_store/list?page=0",
+        "",
+    )
+    .await;
     assert_eq!(0, number(at(&zero_body, "current_page")));
-    let (_two_status, _two_headers, two_body) =
-        get(&state, "/vector_store/list?page_size=-2", &admin()).await;
+    let (_two_status, _two_headers, two_body) = call(
+        &state,
+        &admin(),
+        Method::GET,
+        "/vector_store/list?page_size=-2",
+        "",
+    )
+    .await;
     assert_eq!(0, number(at(&two_body, "total_pages")));
-    let (_one_status, _one_headers, one_body) =
-        get(&state, "/vector_store/list?page_size=-1", &admin()).await;
+    let (_one_status, _one_headers, one_body) = call(
+        &state,
+        &admin(),
+        Method::GET,
+        "/vector_store/list?page_size=-1",
+        "",
+    )
+    .await;
     assert_eq!(-1, number(at(&one_body, "total_pages")));
 }
 
@@ -240,10 +293,19 @@ async fn list_with_a_zero_page_size_is_the_division_error() {
     let state = build(Setup {
         database: Some(database),
         registry: Some(vec![memory_store("vs_stale")]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
-    let (status, _headers, body) = get(&state, "/vector_store/list?page_size=0", &admin()).await;
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::GET,
+        "/vector_store/list?page_size=0",
+        "",
+    )
+    .await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
     assert_eq!(
         "integer division or modulo by zero",
@@ -262,9 +324,18 @@ async fn list_query_validation_precedes_the_handler() {
     let state = build(Setup {
         database: Some(database.clone()),
         registry: Some(vec![memory_store("vs_stale")]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, headers, body) = get(&state, "/vector_store/list?page=bad", &admin()).await;
+    let (status, headers, body) = call(
+        &state,
+        &admin(),
+        Method::GET,
+        "/vector_store/list?page=bad",
+        "",
+    )
+    .await;
     assert_eq!(StatusCode::UNPROCESSABLE_ENTITY, status);
     assert_eq!(Some("application/json"), content_type(&headers));
     let issue = list(at(&body, "detail")).first().expect("one issue");
@@ -287,11 +358,14 @@ async fn list_reports_an_access_helper_failure_as_the_catch_all() {
     };
     let state = build(Setup {
         database: Some(database),
+        registry: None,
         world,
-        ..Setup::default()
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
-    let (status, _headers, body) = get(&state, LIST_PATH, &ui_session("u1")).await;
+    let (status, _headers, body) =
+        call(&state, &ui_session("u1"), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
     assert_eq!(
         "Team doesn't exist in db. Team=t1. Create team via `/team/new` call.",
@@ -308,9 +382,12 @@ async fn list_without_a_registry_lists_the_database() {
     let database = FakeDatabase::new(vec![db_store("vs_db")]);
     let state = build(Setup {
         database: Some(database),
-        ..Setup::default()
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = get(&state, LIST_PATH, &admin()).await;
+    let (status, _headers, body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, status);
     assert_eq!(vec!["vs_db".to_owned()], ids(&body));
 }
@@ -318,10 +395,13 @@ async fn list_without_a_registry_lists_the_database() {
 #[tokio::test]
 async fn list_without_a_database_purges_uncached_records() {
     let state = build(Setup {
+        database: None,
         registry: Some(vec![memory_store("vs_stale"), config_store("vs_config")]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = get(&state, LIST_PATH, &admin()).await;
+    let (status, _headers, body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, status);
     assert_eq!(vec!["vs_config".to_owned()], ids(&body));
     let registry = registry_of(&state);
@@ -348,9 +428,11 @@ async fn list_skips_records_without_an_id_and_drops_undeclared_fields() {
         registry: Some(vec![parsed(
             r#"{"vector_store_id":"","custom_llm_provider":"openai"}"#,
         )]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = get(&state, LIST_PATH, &admin()).await;
+    let (status, _headers, body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, status);
     assert_eq!(vec!["vs_extra".to_owned()], ids(&body));
     assert_eq!(1, number(at(&body, "total_count")));
@@ -368,9 +450,18 @@ async fn info_prefers_cached_record() {
     let state = build(Setup {
         database: Some(database.clone()),
         registry: Some(vec![stored]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = post(&state, r#"{"vector_store_id":"vs_a"}"#, &admin()).await;
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_a"}"#,
+    )
+    .await;
     assert_eq!(StatusCode::OK, status);
     let table = at(&body, "vector_store");
     assert_eq!(12, field_count(table));
@@ -395,44 +486,32 @@ async fn info_prefers_cached_record() {
 #[tokio::test]
 async fn info_requires_a_database_even_for_a_cached_record() {
     let state = build(Setup {
+        database: None,
         registry: Some(vec![memory_store("vs_a")]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = post(&state, r#"{"vector_store_id":"vs_a"}"#, &admin()).await;
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_a"}"#,
+    )
+    .await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
     assert_eq!("Database not connected", text(at(&body, "detail")));
 }
 
 #[tokio::test]
 async fn info_cached_metadata_shapes() {
-    let state = build(Setup {
-        database: Some(FakeDatabase::new(Vec::new())),
-        registry: Some(vec![cached("vs_a", r#"{"env":"prod"}"#)]),
-        ..Setup::default()
-    });
-    let (_object_status, _object_headers, object_body) =
-        post(&state, r#"{"vector_store_id":"vs_a"}"#, &admin()).await;
-    assert_eq!(
-        "prod",
-        text(at(
-            at(at(&object_body, "vector_store"), "vector_store_metadata"),
-            "env"
-        ))
-    );
-    for metadata in ["5", "null", "[1]", "true"] {
-        let registry = vec![cached("vs_a", metadata)];
-        let case = build(Setup {
-            database: Some(FakeDatabase::new(Vec::new())),
-            registry: Some(registry),
-            ..Setup::default()
-        });
-        let (_scalar_status, _scalar_headers, scalar_body) =
-            post(&case, r#"{"vector_store_id":"vs_a"}"#, &admin()).await;
-        assert_eq!(
-            &Json::Null,
-            at(at(&scalar_body, "vector_store"), "vector_store_metadata")
-        );
-    }
+    let object = cached_metadata_value(r#"{"env":"prod"}"#).await;
+    assert_eq!("prod", text(at(&object, "env")));
+    assert_eq!(&Json::Null, &cached_metadata_value("5").await);
+    assert_eq!(&Json::Null, &cached_metadata_value("null").await);
+    assert_eq!(&Json::Null, &cached_metadata_value("[1]").await);
+    assert_eq!(&Json::Null, &cached_metadata_value("true").await);
 }
 
 #[tokio::test]
@@ -440,10 +519,19 @@ async fn info_cached_metadata_with_invalid_json_is_the_catch_all() {
     let state = build(Setup {
         database: Some(FakeDatabase::new(Vec::new())),
         registry: Some(vec![cached("vs_a", "\"not json\"")]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
-    let (status, _headers, body) = post(&state, r#"{"vector_store_id":"vs_a"}"#, &admin()).await;
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_a"}"#,
+    )
+    .await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
     assert_eq!(
         "stored JSON text is not valid JSON",
@@ -461,9 +549,18 @@ async fn info_cached_blank_and_absent_fields_follow_the_model() {
     let state = build(Setup {
         database: Some(FakeDatabase::new(Vec::new())),
         registry: Some(vec![stored]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = post(&state, r#"{"vector_store_id":""}"#, &admin()).await;
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":""}"#,
+    )
+    .await;
     assert_eq!(StatusCode::OK, status);
     let table = at(&body, "vector_store");
     assert_eq!("", text(at(table, "vector_store_id")));
@@ -479,9 +576,19 @@ async fn info_database_access_errors() {
     let database = FakeDatabase::new(vec![db_store("vs_a")]);
     let state = build(Setup {
         database: Some(database.clone()),
-        ..Setup::default()
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = post(&state, r#"{"vector_store_id":"vs_a"}"#, &admin()).await;
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_a"}"#,
+    )
+    .await;
     assert_eq!(StatusCode::OK, status);
     let table = at(&body, "vector_store");
     assert_eq!("db-vs_a", text(at(table, "vector_store_name")));
@@ -495,12 +602,17 @@ async fn info_database_access_errors() {
 
     let missing_state = build(Setup {
         database: Some(FakeDatabase::new(Vec::new())),
-        ..Setup::default()
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (missing_status, _missing_headers, missing_body) = post(
+    let (missing_status, _missing_headers, missing_body) = call(
         &missing_state,
-        r#"{"vector_store_id":"vs_missing"}"#,
         &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_missing"}"#,
     )
     .await;
     assert_eq!(StatusCode::NOT_FOUND, missing_status);
@@ -512,11 +624,20 @@ async fn info_database_access_errors() {
     let row_database = FakeDatabase::new(vec![team_store("vs_team", "t9")]);
     let row_state = build(Setup {
         database: Some(row_database.clone()),
-        ..Setup::default()
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
     let caller = internal("u1", Some("t1"));
-    let (row_status, _row_headers, row_body) =
-        post(&row_state, r#"{"vector_store_id":"vs_team"}"#, &caller).await;
+    let (row_status, _row_headers, row_body) = call(
+        &row_state,
+        &caller,
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_team"}"#,
+    )
+    .await;
     assert_eq!(StatusCode::FORBIDDEN, row_status);
     assert_eq!(
         "Access denied: You do not have permission to access this vector store",
@@ -530,9 +651,19 @@ async fn info_database_row_without_params_gets_defaults() {
     let bare = parsed(r#"{"vector_store_id":"vs_b","custom_llm_provider":"openai"}"#);
     let state = build(Setup {
         database: Some(FakeDatabase::new(vec![bare])),
-        ..Setup::default()
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
-    let (status, _headers, body) = post(&state, r#"{"vector_store_id":"vs_b"}"#, &admin()).await;
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_b"}"#,
+    )
+    .await;
     assert_eq!(StatusCode::OK, status);
     let table = at(&body, "vector_store");
     assert_eq!(&Json::Null, at(table, "litellm_params"));
@@ -546,13 +677,17 @@ async fn info_denied_cached_record_is_403() {
     let state = build(Setup {
         database: Some(database.clone()),
         registry: Some(vec![team_store("vs_team", "t9")]),
-        ..Setup::default()
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
     });
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
-    let (status, _headers, body) = post(
+    let (status, _headers, body) = call(
         &state,
-        r#"{"vector_store_id":"vs_team"}"#,
         &internal("u1", Some("t1")),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_team"}"#,
     )
     .await;
     assert_eq!(StatusCode::FORBIDDEN, status);
@@ -567,7 +702,7 @@ async fn info_denied_cached_record_is_403() {
 #[tokio::test]
 async fn info_body_without_an_id_is_fastapi_validation() {
     let state = build(Setup::default());
-    let (status, _headers, body) = post(&state, "{}", &admin()).await;
+    let (status, _headers, body) = call(&state, &admin(), Method::POST, INFO_PATH, "{}").await;
     assert_eq!(StatusCode::UNPROCESSABLE_ENTITY, status);
     let issue = list(at(&body, "detail")).first().expect("one issue");
     assert_eq!("missing", text(at(issue, "type")));
@@ -582,42 +717,67 @@ async fn info_body_without_an_id_is_fastapi_validation() {
 async fn management_read_auth_and_flags() {
     let state = build(Setup {
         database: Some(FakeDatabase::new(vec![db_store("vs_db")])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
         settings: flags_blocked(),
-        ..Setup::default()
     });
     let caller = internal("u1", None);
-    for uri in [LIST_PATH, V1_LIST_PATH] {
-        let (status, headers, body) = get(&state, uri, &caller).await;
-        assert_eq!(StatusCode::FORBIDDEN, status);
-        assert_eq!(Some("application/json"), content_type(&headers));
-        assert_eq!(1, field_count(&body));
-        let detail = at(&body, "detail");
-        assert_eq!(1, field_count(detail));
-        assert_eq!(
-            "Access to vector_stores is disabled for your role. Contact your proxy admin.",
-            text(at(detail, "error"))
-        );
-        assert_eq!(None, field(&body, "type"));
-        assert_eq!(None, field(&body, "param"));
-        assert_eq!(None, field(&body, "code"));
-    }
-    let (blocked_status, _blocked_headers, _blocked_body) =
-        post(&state, r#"{"vector_store_id":"vs_db"}"#, &caller).await;
+    let (status, headers, body) = call(&state, &caller, Method::GET, LIST_PATH, "").await;
+    assert_eq!(StatusCode::FORBIDDEN, status);
+    assert_eq!(Some("application/json"), content_type(&headers));
+    assert_eq!(1, field_count(&body));
+    let detail = at(&body, "detail");
+    assert_eq!(1, field_count(detail));
+    assert_eq!(
+        "Access to vector_stores is disabled for your role. Contact your proxy admin.",
+        text(at(detail, "error"))
+    );
+    assert_eq!(None, field(&body, "type"));
+    assert_eq!(None, field(&body, "param"));
+    assert_eq!(None, field(&body, "code"));
+    let (alias_status, _alias_headers, alias_body) =
+        call(&state, &caller, Method::GET, V1_LIST_PATH, "").await;
+    assert_eq!(StatusCode::FORBIDDEN, alias_status);
+    assert_eq!(body, alias_body);
+    let (blocked_status, _blocked_headers, _blocked_body) = call(
+        &state,
+        &caller,
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_db"}"#,
+    )
+    .await;
     assert_eq!(StatusCode::FORBIDDEN, blocked_status);
-    assert_eq!(StatusCode::OK, get(&state, LIST_PATH, &admin()).await.0);
-    assert_eq!(StatusCode::OK, get(&state, LIST_PATH, &viewer()).await.0);
+    assert_eq!(
+        StatusCode::OK,
+        call(&state, &admin(), Method::GET, LIST_PATH, "").await.0
+    );
+    assert_eq!(
+        StatusCode::OK,
+        call(&state, &viewer(), Method::GET, LIST_PATH, "").await.0
+    );
 
     let open = build(Setup {
         database: Some(FakeDatabase::new(vec![
             db_store("vs_free"),
             team_store("vs_team", "t1"),
         ])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
         settings: flags_open(),
-        ..Setup::default()
     });
-    let (status, _headers, body) = get(&open, LIST_PATH, &internal("u1", Some("t1"))).await;
-    assert_eq!(StatusCode::OK, status);
-    assert_eq!(vec!["vs_team".to_owned()], ids(&body));
+    let (open_status, _open_headers, open_body) = call(
+        &open,
+        &internal("u1", Some("t1")),
+        Method::GET,
+        LIST_PATH,
+        "",
+    )
+    .await;
+    assert_eq!(StatusCode::OK, open_status);
+    assert_eq!(vec!["vs_team".to_owned()], ids(&open_body));
 }
 
 #[tokio::test]
@@ -625,18 +785,26 @@ async fn team_admin_allow_flag_exempts_only_a_verified_admin() {
     let caller = internal("u1", None);
     let allowed = build(Setup {
         database: Some(FakeDatabase::new(vec![db_store("vs_db")])),
+        registry: None,
+        world: World::default(),
         privileges: true,
         settings: flags_blocked_team_admins(),
-        ..Setup::default()
     });
-    assert_eq!(StatusCode::OK, get(&allowed, LIST_PATH, &caller).await.0);
+    assert_eq!(
+        StatusCode::OK,
+        call(&allowed, &caller, Method::GET, LIST_PATH, "").await.0
+    );
     let unverified = build(Setup {
         database: Some(FakeDatabase::new(vec![db_store("vs_db")])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
         settings: flags_blocked_team_admins(),
-        ..Setup::default()
     });
     assert_eq!(
         StatusCode::FORBIDDEN,
-        get(&unverified, LIST_PATH, &caller).await.0
+        call(&unverified, &caller, Method::GET, LIST_PATH, "")
+            .await
+            .0
     );
 }

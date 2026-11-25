@@ -13,15 +13,15 @@ use std::sync::Arc;
 use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use axum::http::Uri;
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use betterlite_core::api::vector_store_registry::repository::VectorStoreDatabase;
 use betterlite_openai::api::vector_store_records::records::pydantic::VectorStoreInfoRequest;
-use betterlite_openai::api::vector_store_records::records::vector::ManagedVectorStoreList;
 
 use self::caller::CallerView;
 use self::error::ManagementReadError;
-use self::info::{InfoResponse, get_vector_store_info};
+use self::info::get_vector_store_info;
 use self::list::list_vector_stores;
 use self::state::VectorManagementReadState;
 use crate::api::vector_management_boundaries::rows::VectorStoreRows;
@@ -38,37 +38,29 @@ where
     Database: VectorStoreDatabase + VectorStoreRows + Send + Sync + 'static,
 {
     Router::new()
-        .route(LIST_PATH, get(list_handler::<Database>))
-        .route(V1_LIST_PATH, get(list_handler::<Database>))
-        .route(INFO_PATH, post(info_handler::<Database>))
+        .route(LIST_PATH, get(read_handler::<Database>))
+        .route(V1_LIST_PATH, get(read_handler::<Database>))
+        .route(INFO_PATH, post(read_handler::<Database>))
         .with_state(state)
 }
 
-async fn list_handler<Database>(
+// the three read routes share one handler: the caller once, then the operation the path names
+async fn read_handler<Database>(
     State(state): State<Arc<VectorManagementReadState<Database>>>,
     Extension(context): Extension<AuthContext>,
     uri: Uri,
-) -> Result<Json<ManagedVectorStoreList>, ManagementReadError>
-where
-    Database: VectorStoreDatabase + VectorStoreRows + Send + Sync + 'static,
-{
-    let page = query::integer(&uri, "page", 1)?;
-    let page_size = query::integer(&uri, "page_size", 100)?;
-    let caller = CallerView::from_principal(&context.principal)?;
-    let list = list_vector_stores(state.as_ref(), &caller, page, page_size).await?;
-    Ok(Json(list))
-}
-
-async fn info_handler<Database>(
-    State(state): State<Arc<VectorManagementReadState<Database>>>,
-    Extension(context): Extension<AuthContext>,
     body: Bytes,
-) -> Result<Json<InfoResponse>, ManagementReadError>
+) -> Result<Response, ManagementReadError>
 where
     Database: VectorStoreDatabase + VectorStoreRows + Send + Sync + 'static,
 {
-    let request: VectorStoreInfoRequest = decode_body(&body)?;
     let caller = CallerView::from_principal(&context.principal)?;
-    let response = get_vector_store_info(state.as_ref(), &caller, &request).await?;
-    Ok(Json(response))
+    if uri.path() == INFO_PATH {
+        let request: VectorStoreInfoRequest = decode_body(&body)?;
+        let info = get_vector_store_info(state.as_ref(), &caller, &request).await?;
+        return Ok(Json(info).into_response());
+    }
+    let (page, page_size) = query::pagination(&uri)?;
+    let list = list_vector_stores(state.as_ref(), &caller, page, page_size).await?;
+    Ok(Json(list).into_response())
 }

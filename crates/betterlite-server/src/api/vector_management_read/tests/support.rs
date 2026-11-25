@@ -8,12 +8,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
-use axum::body::Body;
-use axum::http::{HeaderMap, Request, StatusCode};
+use axum::body::{Body, to_bytes};
+use axum::http::{HeaderMap, Method, Request, StatusCode};
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
+use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_auth::auth_prefetch::permission::lookup::PermissionError;
 use betterlite_auth::auth_team_lookup::error::TeamLookupError;
 use betterlite_auth::auth_team_lookup::lookup::TeamRequest;
@@ -32,6 +33,7 @@ use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::pydantic::LiteLlmManagedVectorStoreIndex;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use chrono::Utc;
 use tower::ServiceExt as _;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
@@ -246,7 +248,8 @@ pub(super) fn build(setup: Setup) -> Arc<VectorManagementReadState<FakeDatabase>
     let registry = setup.registry.map(|stores| {
         Arc::new(Mutex::new(VectorStoreRegistry {
             stores,
-            ..VectorStoreRegistry::default()
+            clock: Arc::new(Utc::now),
+            credentials: Arc::new(CredentialSnapshot::default()),
         }))
     });
     Arc::new(VectorManagementReadState {
@@ -334,45 +337,27 @@ pub(super) fn registry_of(
     registry.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-pub(super) async fn get(
+// one request through the module's routes: the caller rides in the extensions the auth stage would fill
+pub(super) async fn call(
     state: &Arc<VectorManagementReadState<FakeDatabase>>,
-    uri: &str,
     caller: &AuthContext,
+    method: Method,
+    uri: &str,
+    payload: &str,
 ) -> (StatusCode, HeaderMap, Json) {
     let request = Request::builder()
-        .method("GET")
+        .method(method)
         .uri(uri)
         .extension(caller.clone())
-        .body(Body::empty())
+        .body(Body::from(payload.to_owned()))
         .expect("the request builds");
-    send(state, request).await
-}
-
-pub(super) async fn post(
-    state: &Arc<VectorManagementReadState<FakeDatabase>>,
-    body: &str,
-    caller: &AuthContext,
-) -> (StatusCode, HeaderMap, Json) {
-    let request = Request::builder()
-        .method("POST")
-        .uri(super::super::INFO_PATH)
-        .extension(caller.clone())
-        .body(Body::from(body.to_owned()))
-        .expect("the request builds");
-    send(state, request).await
-}
-
-async fn send(
-    state: &Arc<VectorManagementReadState<FakeDatabase>>,
-    request: Request<Body>,
-) -> (StatusCode, HeaderMap, Json) {
     let response = routes(Arc::clone(state))
         .oneshot(request)
         .await
         .expect("the router answers");
     let status = response.status();
     let headers = response.headers().clone();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("the body reads");
     let body: Json = serde_json::from_slice(&bytes).expect("the body is JSON");

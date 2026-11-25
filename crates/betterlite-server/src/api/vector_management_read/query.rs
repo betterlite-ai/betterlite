@@ -42,6 +42,13 @@ impl IntoResponse for QueryError {
     }
 }
 
+// the list's two pagination parameters in the order FastAPI declares them
+pub fn pagination(uri: &Uri) -> Result<(i64, i64), QueryError> {
+    let page = integer(uri, "page", 1)?;
+    let page_size = integer(uri, "page_size", 100)?;
+    Ok((page, page_size))
+}
+
 // FastAPI's query reader: an absent value takes its default, Starlette keeps the last of a repeated one
 pub fn integer(uri: &Uri, name: &'static str, default: i64) -> Result<i64, QueryError> {
     let values: BTreeMap<String, String> =
