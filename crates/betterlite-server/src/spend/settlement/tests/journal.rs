@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::future::{Future, ready};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -230,17 +231,22 @@ impl SpendCache for Recorder {
 impl SpendWrite for Recorder {
     type Error = WriteFailed;
 
-    async fn update_database(&self) -> Result<bool, WriteFailed> {
+    fn update_database(&self) -> impl Future<Output = Result<bool, WriteFailed>> + Send {
         self.record(Effect::Write);
-        if self.faults.contains(&Fault::Write) {
-            return Err(WriteFailed);
-        }
-        Ok(!self.faults.contains(&Fault::NotCharged))
+        let outcome = if self.faults.contains(&Fault::Write) {
+            Err(WriteFailed)
+        } else {
+            Ok(!self.faults.contains(&Fault::NotCharged))
+        };
+        ready(outcome)
     }
 }
 
 impl SpendCounterIncrement for Recorder {
-    async fn increment(&self, input: &SpendIncrementInput<'_>) -> Result<(), SpendIncrementError> {
+    fn increment(
+        &self,
+        input: &SpendIncrementInput<'_>,
+    ) -> impl Future<Output = Result<(), SpendIncrementError>> {
         self.record(Effect::Increment(Box::new(Forwarded {
             token: input.token.map(str::to_owned),
             team_id: input.team_id.map(str::to_owned),
@@ -254,10 +260,12 @@ impl SpendCounterIncrement for Recorder {
             model_access_groups: input.model_access_groups.map(<[JsonData]>::to_vec),
             reserved: input.budget_reservation.is_some(),
         })));
-        if self.faults.contains(&Fault::Increment) {
-            return Err(SpendIncrementError::Settlement(SettlementError::Overflow));
-        }
-        Ok(())
+        let outcome = if self.faults.contains(&Fault::Increment) {
+            Err(SpendIncrementError::Settlement(SettlementError::Overflow))
+        } else {
+            Ok(())
+        };
+        ready(outcome)
     }
 }
 

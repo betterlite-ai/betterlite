@@ -412,7 +412,7 @@ async fn a_charged_spend_is_persisted_and_settles_the_reserved_redis_counter() {
         request: &request,
     };
     let reservation = reserved_user();
-    assert!(settle_reserved(&redis, &write, &reservation).await);
+    assert!(Box::pin(settle_reserved(&redis, &write, &reservation)).await);
     assert_eq!(counter_value(&mut connection).await, Decimal::from(2_i32));
     assert!(lock(&reservation.0).finalized);
     assert_eq!(persisted_spend(&store).await, Decimal::from(2_i32));
