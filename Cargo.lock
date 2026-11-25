@@ -3523,6 +3523,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -3809,6 +3810,7 @@ dependencies = [
  "betterlite-prometheus",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-reporting",
  "betterlite-roi",
  "betterlite-routes",
  "betterlite-secret-managers",
@@ -4031,10 +4033,21 @@ dependencies = [
  "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-prometheus-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-prometheus",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -4718,6 +4731,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-reporting",
  "betterlite-roi",
  "betterlite-router",
  "betterlite-secret-managers",

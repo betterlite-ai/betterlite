@@ -1,0 +1,70 @@
+kind: helper
+name: public-autorouter-presets
+call:
+  b3192:
+    function: autorouter_presets
+    url: http://presets.test/catalog.json
+    local_only: false
+    resolutions: 2
+    responses:
+      - status: 200
+        body: |
+          {
+            "custom": {
+              "label": "Custom",
+              "description": "Served by the remote preset catalog.",
+              "badge": "gold",
+              "complexity_router_config": {
+                "tiers": {"SIMPLE": ["small"], "MEDIUM": ["medium"], "COMPLEX": ["large"], "REASONING": ["thinker"]},
+                "classifier_type": "heuristic",
+                "classifier_context_window_size": 0
+              }
+            }
+          }
+      - status: 503
+        body: ''
+calls:
+  - b3192:
+      function: autorouter_presets
+      url: http://presets.test/catalog.json
+      local_only: false
+      resolutions: 1
+      responses:
+        - status: 503
+          body: 'upstream is down'
+  - b3192:
+      function: autorouter_presets
+      url: http://presets.test/catalog.json
+      local_only: false
+      resolutions: 1
+      responses:
+        - status: 200
+          body: '{}'
+  - b3192:
+      function: autorouter_presets
+      url: http://presets.test/catalog.json
+      local_only: false
+      resolutions: 1
+      responses:
+        - status: 200
+          body: |
+            {
+              "broken": {
+                "label": "Broken",
+                "description": "A tier the dashboard cannot apply.",
+                "complexity_router_config": {
+                  "tiers": {"SIMPLE": [], "MEDIUM": [], "COMPLEX": [], "REASONING": [], "EXTRA": []}
+                }
+              }
+            }
+  - b3192:
+      function: autorouter_presets
+      url: http://presets.test/catalog.json
+      local_only: true
+      resolutions: 1
+      responses:
+        - status: 200
+          body: |
+            {"remote": {"label": "Remote", "description": "Never served.", "complexity_router_config": {"tiers": {"SIMPLE": [], "MEDIUM": [], "COMPLEX": [], "REASONING": []}}}}
+env: {}
+compare: {ignore: []}

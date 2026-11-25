@@ -582,6 +582,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "autorouter_presets"
+path = "fuzz_targets/autorouter_presets.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sso_refresh_response"
 path = "fuzz_targets/sso_refresh_response.rs"
 test = false
