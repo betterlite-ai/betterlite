@@ -1,0 +1,66 @@
+task: B8066
+deviations:
+  - what: The s3, gcs, azure-blob, redis-semantic, valkey-semantic and qdrant-semantic caches and the Redis cluster cache raise NotImplementedError naming the type, and their classes are not exported.
+    why: Their Rust backends are separate tasks (B4320 and later, B4350 and later, B4380 and later), so only the local, redis and disk backends exist here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L290
+  - what: An unknown type raises NotImplementedError("... cache type is not built yet"); LiteLLM has no else branch and leaves Cache.cache unset, so the failure surfaces later as an attribute error.
+    why: A missing backend should fail where the caller configures it, with the type in the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L290
+  - what: InMemoryCache raises UnsupportedCallArgument for a clock callable; LiteLLM accepts any callable.
+    why: A Python callable cannot drive the Rust cache's clock, and silently ignoring it would make a ttl test lie.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L60
+  - what: DiskCache stores through Rust's disk cache, not the diskcache package, so the directory layout differs and a folder written by LiteLLM is not read; the oracle environment has no diskcache, so the tests check this class on its own rather than against LiteLLM.
+    why: diskcache is not a dependency of the wheel and the disk backend belongs to the Rust crate (B4291).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L15-L26
+  - what: RedisCache.batch_cache_write writes each value immediately; LiteLLM appends it to redis_batch_writing_buffer and flushes at redis_flush_size entries.
+    why: The buffer rules live in the Rust dual cache (B4294, B4295), and the shared handle has no Python-side buffer to flush.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1391-L1398
+  - what: The synchronous Redis write stores the JSON form of the value; LiteLLM stores str(value) and reads it back through json.loads then ast.literal_eval, which cannot decode a plain Python string.
+    why: The Rust handle stores JSON so every JSON value round-trips, including strings; the bytes LiteLLM writes for a dict are not valid JSON, so the on-server form differs without changing what a caller reads back for JSON values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L830-L850
+  - what: RedisCache.async_increment accepts refresh_ttl and ignores it, so a key that already carries no expiry gets one from the cache default; LiteLLM sends EXPIRE when refresh_ttl is set and TTL otherwise.
+    why: The refresh rule belongs to the Rust increment (B4292); passing the flag through would change the Rust cache's contract for every caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1401-L1416
+  - what: The cache callback entries are added with plain list operations in betterlite.caching.caching; LiteLLM routes the success ones through litellm.logging_callback_manager.
+    why: betterlite has no logging_callback_manager yet (B5368 owns it), and append-when-missing leaves the same three lists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L291-L296
+  - what: DualCache's BaseCache overrides annotate local_only as JsonValue and raise ValueError naming the field for a value that is not a bool; LiteLLM declares local_only as bool on the same methods.
+    why: BaseCache's overrides take **kwargs typed as JsonValue, so a narrower bool parameter fails the Liskov check, and Python callers pass a bool while a value of another type names the field where it is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150
+  - what: The cache switches keep betterlite.cache, set_verbose, default_in_memory_ttl, default_redis_ttl and default_redis_batch_cache_expiry on the caching package itself, so betterlite.caching carries them as well as betterlite; LiteLLM declares them on the litellm package only.
+    why: betterlite's top package builds betterlite.cache with a star import of betterlite.caching, which needs the typed globals there to give the attribute a Cache | None type instead of the None the params module declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L402-L405
+  - what: betterlite.caching also exports CacheMode and BaseCache; LiteLLM's caching/__init__.py exports Cache and LiteLLMCacheType from caching.py and the backend classes, but neither of those two names.
+    why: The task names both among the package's exports, so a caller who builds or subclasses a cache imports them from the same package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/__init__.py#L1-L11
+  - what: When a composed InMemoryCache has its own default_ttl (not 600), DualCache also applies it to the Redis tier's writes and increments, where LiteLLM leaves the Redis tier on its own default; memory writes, increments and backfills match LiteLLM.
+    why: The native dual cache applies one ttl to both tiers, so carrying the memory tier's default into the dual settings (the review's ask) reaches Redis too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150-L180
+  - what: DualCache.increment_cache and async_increment_cache carry the amount through f64, so an integer past 2^53 loses its low bits; LiteLLM adds Python ints in the memory tier and sends INCR with a whole number to Redis.
+    why: The Rust dual cache's increment takes f64 and B4293 to B4295 own that contract; the InMemoryCache, DiskCache and stand-alone RedisCache paths keep whole numbers where their Rust APIs take i64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164-L201
+  - what: A DualCache async write ignores nx, so it replaces an existing Redis key where LiteLLM's async_set_cache hands nx to the Redis tier; the memory tier takes the new value in both.
+    why: The native dual cache's async_set has no nx argument, and routing a dual write around the native handle would drop the crate's tier and batch rules (B4293 to B4295); the stand-alone RedisCache does forward and validate nx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L519
+  - what: DualCache.get_cache, async_get_cache, batch_get_cache and async_batch_get_cache raise UnsupportedCallArgument("ttl") when the caller passes a ttl and the cache has a Redis tier (the check is skipped for local_only reads in the batch methods and for a cache with no Redis tier); LiteLLM accepts the ttl and stamps it on the memory backfill of a Redis hit.
+    why: The backfill is written by the Rust dual cache with the tier's own ttl and takes no per-call value, so honoring the argument is not possible here, and dropping it silently would give a Redis-only entry read with ttl=1 the default expiry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L436
+  - what: DualCache.declare_batch_get is async and takes the request batch as a NativeRedisBatch built from the Redis tier's native handle, and it returns the declared read to resolve; LiteLLM's takes a Python RedisBatch.
+    why: The request batch lives in the Rust redis crate, so a Python caller has to hold a native handle to it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L385-L399
+  - what: A cache value nested more than 128 lists or objects deep is refused with ValueError("the cache value nests deeper than 128 levels") on every backend write; LiteLLM keeps the Python object as given and only Python's recursion limit stops it.
+    why: The native handle reads each value from JSON text one level at a time, so without a limit a deep value recursed until the process stack overflowed. 128 is serde_json's own nesting limit for a single parse.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L180
+  - what: This task has no helper oracle cases.
+    why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
+    link: ""
+kept_bugs:
+  - what: disable_cache removes the cache callback under one suppress block, so the first list without the entry ends the removals and the later lists keep theirs; betterlite copies the block.
+    why: A working LiteLLM setup keeps the three lists consistent and never sees this, and LiteLLM's own order is the one a setup that edits the lists by hand already meets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1114-L1118
+  - what: The disk cache hides falsy stored values, so a key written with 0, false, "" or an empty container reads back as missing.
+    why: A working LiteLLM setup can rely on the miss rather than on the stored value, and betterlite copies the filter in the Rust disk cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L45
+  - what: The synchronous Redis write swallows every backend error after a debug line, so a set against an unreachable or read-only server reports success.
+    why: LiteLLM callers run this path on every completion and depend on a cache outage not failing the call; the Rust handle keeps the same swallow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L847-L849

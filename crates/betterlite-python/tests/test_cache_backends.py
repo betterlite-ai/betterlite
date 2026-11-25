@@ -1,0 +1,664 @@
+import asyncio
+import importlib
+import time
+from collections.abc import Awaitable
+from pathlib import Path
+from typing import Final, Protocol, TypedDict
+
+import fake_redis_server
+import pytest
+from fake_redis_server import FakeRedisServer
+from pydantic import JsonValue, TypeAdapter, ValidationError
+from typing_extensions import override
+
+from betterlite._cache_ops.types import CacheStore
+from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._native import NativeRedisBatch
+from betterlite.caching import Cache, DiskCache, DualCache, InMemoryCache, RedisCache
+from betterlite.caching._cache_arguments import REDIS_OVERRIDES
+from betterlite.caching.base_cache import BaseCache
+
+
+class ChatArgs(TypedDict):
+    model: str
+    messages: JsonValue
+
+
+CACHED: Final[dict[str, JsonValue]] = {"answer": 1, "text": "hello"}
+CHAT: Final[ChatArgs] = {
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "hello"}],
+}
+CHAT_RESPONSE: Final[dict[str, JsonValue]] = {"id": "chatcmpl-1", "content": "hello"}
+ASYNC_RESPONSE: Final[dict[str, JsonValue]] = {"id": "chatcmpl-2", "content": "async"}
+LARGE_COUNT: Final = 9007199254740993
+CUSTOM_MEMORY_TTL: Final = 1
+MEMORY_TTL_WAIT: Final = 1.5
+DECLARED_TIMEOUT: Final = 10.0
+POST_SINGLE_TOTAL: Final = 5
+POST_FIRST_TOTAL: Final = 2
+POST_SECOND_TOTAL: Final = 4
+IN_MEMORY_TTL: Final = 120.0
+TTL_ALLOWANCE: Final = 30.0
+MEMORY_INCREMENT: Final = 1.5
+MEMORY_COUNT: Final = 3.0
+REDIS_INCREMENT: Final = 2
+REDIS_SECOND_INCREMENT: Final = 3
+REDIS_COUNT: Final = 5
+REDIS_TTL: Final = 90
+REDIS_TTL_ALLOWANCE: Final = 20
+DUAL_INCREMENT: Final = 2
+DUAL_COUNT: Final = 4
+DISK_INCREMENT: Final = 2
+DISK_SECOND_INCREMENT: Final = 3
+DISK_COUNT: Final = 5
+
+
+class ReferenceBackend(Protocol):
+    def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
+
+    def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None: ...
+
+    async def async_get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
+
+    async def async_set_cache(
+        self, key: str, value: JsonValue, **kwargs: JsonValue
+    ) -> bool | None: ...
+
+    def increment_cache(self, key: str, value: float, **kwargs: JsonValue) -> float: ...
+
+    async def async_increment(self, key: str, value: float, **kwargs: JsonValue) -> float: ...
+
+    async def async_get_ttl(self, key: str) -> float | None: ...
+
+    def delete_cache(self, key: str) -> None: ...
+
+    async def async_delete_cache(self, key: str) -> None: ...
+
+    def flush_cache(self) -> None: ...
+
+    async def ping(self) -> bool: ...
+
+    async def disconnect(self) -> None: ...
+
+
+class ReferenceStore(Protocol):
+    def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
+
+    def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None: ...
+
+    def delete_cache(self, key: str) -> None: ...
+
+    def flush_cache(self) -> None: ...
+
+
+class BackendFactory(Protocol):
+    def __call__(self, **kwargs: JsonValue) -> ReferenceBackend: ...
+
+
+class BackendModule(Protocol):
+    def __getattr__(self, name: str) -> BackendFactory: ...
+
+
+class DualCacheFactory(Protocol):
+    def __call__(
+        self,
+        in_memory_cache: ReferenceBackend | None = None,
+        redis_cache: ReferenceBackend | None = None,
+    ) -> ReferenceBackend: ...
+
+
+class DualCacheModule(Protocol):
+    def __getattr__(self, name: str) -> DualCacheFactory: ...
+
+
+class CacheWithBackendFactory(Protocol):
+    def __call__(
+        self, namespace: str, _backend: ReferenceBackend, **kwargs: JsonValue
+    ) -> None: ...
+
+
+class CacheWithBackendModule(Protocol):
+    def __getattr__(self, name: str) -> CacheWithBackendFactory: ...
+
+
+# litellm ships these classes untyped, so its backends come through this typed shape.
+LITELLM_CACHING: BackendModule = importlib.import_module("litellm.caching")
+LITELLM_DUAL: DualCacheModule = importlib.import_module("litellm.caching")
+LITELLM_WITH_BACKEND: CacheWithBackendModule = importlib.import_module("litellm.caching")
+
+# The shared fake-server fixture, registered here under the name the tests ask for.
+redis_server = fake_redis_server.redis_server
+
+
+@pytest.fixture(autouse=False)
+def dual_with_redis(redis_server: FakeRedisServer) -> DualCache:
+    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    return DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
+
+
+class NativeWrites(Protocol):
+    def async_set(self, key: str, value: str, ttl: float | None) -> Awaitable[bool | None]: ...
+
+    def async_get(self, key: str) -> Awaitable[str | None]: ...
+
+    def async_delete(self, keys: list[str]) -> Awaitable[JsonValue]: ...
+
+    def async_flush(self) -> Awaitable[JsonValue]: ...
+
+    def async_close(self) -> Awaitable[JsonValue]: ...
+
+
+async def _native_void_calls(native: NativeWrites) -> None:
+    written = await native.async_set("void:key", '"value"', None)
+    assert written is None or written is True
+    assert await native.async_get("void:key") == '"value"'
+    assert await native.async_delete(["void:key"]) is None
+    assert await native.async_get("void:key") is None
+    await native.async_set("void:key", '"value"', None)
+    assert await native.async_flush() is None
+    assert await native.async_get("void:key") is None
+    assert await native.async_close() is None
+
+
+def test_native_void_returns(tmp_path: Path, redis_server: FakeRedisServer) -> None:
+    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    caches: list[NativeWrites] = [
+        InMemoryCache().native,
+        DiskCache(disk_cache_dir=str(tmp_path)).native,
+        DualCache().native,
+        DualCache(redis_cache=redis_cache).native,
+        redis_cache.native,
+    ]
+    for native in caches:
+        asyncio.run(_native_void_calls(native))
+
+
+async def _in_memory_round_trip(
+    ours: InMemoryCache, theirs: ReferenceBackend
+) -> tuple[JsonValue, JsonValue, float | None, float | None]:
+    await ours.async_set_cache("ours:memory-async", CACHED)
+    await theirs.async_set_cache("litellm:memory-async", CACHED)
+    await ours.async_set_cache("ours:memory-ttl", CACHED, ttl=IN_MEMORY_TTL)
+    await theirs.async_set_cache("litellm:memory-ttl", CACHED, ttl=IN_MEMORY_TTL)
+    return (
+        await ours.async_get_cache("ours:memory-async"),
+        await theirs.async_get_cache("litellm:memory-async"),
+        await ours.async_get_ttl("ours:memory-ttl"),
+        await theirs.async_get_ttl("litellm:memory-ttl"),
+    )
+
+
+async def _redis_scenario(
+    ours: RedisCache, theirs: ReferenceBackend
+) -> tuple[
+    JsonValue,
+    JsonValue,
+    float | None,
+    float | None,
+    float,
+    float,
+    bool,
+    bool,
+    JsonValue,
+    JsonValue,
+]:
+    await ours.async_set_cache("ours:redis-async", CACHED)
+    await theirs.async_set_cache("litellm:redis-async", CACHED)
+    await ours.async_set_cache("ours:redis-ttl", CACHED, ttl=REDIS_TTL)
+    await theirs.async_set_cache("litellm:redis-ttl", CACHED, ttl=REDIS_TTL)
+    ours_value = await ours.async_get_cache("ours:redis-async")
+    theirs_value = await theirs.async_get_cache("litellm:redis-async")
+    ours_ttl = await ours.async_get_ttl("ours:redis-ttl")
+    theirs_ttl = await theirs.async_get_ttl("litellm:redis-ttl")
+    ours_count = await ours.async_increment("ours:redis-count", REDIS_INCREMENT, ttl=REDIS_TTL)
+    theirs_count = await theirs.async_increment(
+        "litellm:redis-count", REDIS_INCREMENT, ttl=REDIS_TTL
+    )
+    await ours.async_delete_cache("ours:redis-async")
+    await theirs.async_delete_cache("litellm:redis-async")
+    ours_deleted = await ours.async_get_cache("ours:redis-async")
+    theirs_deleted = await theirs.async_get_cache("litellm:redis-async")
+    ours_ping = await ours.ping()
+    theirs_ping = await theirs.ping()
+    await ours.disconnect()
+    await theirs.disconnect()
+    return (
+        ours_value,
+        theirs_value,
+        ours_ttl,
+        theirs_ttl,
+        ours_count,
+        theirs_count,
+        ours_ping,
+        theirs_ping,
+        ours_deleted,
+        theirs_deleted,
+    )
+
+
+class DynamicCache(BaseCache):
+    def __init__(self) -> None:
+        super().__init__()
+        self.values: dict[str, JsonValue] = {}
+
+    @override
+    def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
+        return self.values.get(key)
+
+    @override
+    def set_cache(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
+        self.values[key] = value
+
+    @override
+    async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
+        return self.values.get(key)
+
+    @override
+    async def async_set_cache(
+        self, key: str, value: JsonValue, **_kwargs: JsonValue
+    ) -> None:
+        self.values[key] = value
+
+    @override
+    async def async_set_cache_pipeline(
+        self, cache_list: list[tuple[str, JsonValue]], **_kwargs: JsonValue
+    ) -> None:
+        for key, value in cache_list:
+            self.values[key] = value
+
+
+def _check_store(ours: ReferenceStore, theirs: ReferenceStore, name: str) -> None:
+    ours.set_cache(f"ours:{name}", CACHED)
+    theirs.set_cache(f"litellm:{name}", CACHED)
+    assert ours.get_cache(f"ours:{name}") == CACHED
+    assert theirs.get_cache(f"litellm:{name}") == CACHED
+    assert ours.get_cache(f"ours:{name}-missing") is None
+    assert theirs.get_cache(f"litellm:{name}-missing") is None
+    ours.delete_cache(f"ours:{name}")
+    theirs.delete_cache(f"litellm:{name}")
+    assert ours.get_cache(f"ours:{name}") is None
+    assert theirs.get_cache(f"litellm:{name}") is None
+
+
+def _check_flushed(ours: ReferenceStore, theirs: ReferenceStore, name: str) -> None:
+    ours.flush_cache()
+    theirs.flush_cache()
+    assert ours.get_cache(f"ours:{name}") is None
+    assert theirs.get_cache(f"litellm:{name}") is None
+
+
+def _count_memory(ours: InMemoryCache, theirs: ReferenceBackend) -> None:
+    assert ours.increment_cache("ours:memory-count", MEMORY_INCREMENT) == MEMORY_INCREMENT
+    assert theirs.increment_cache("litellm:memory-count", MEMORY_INCREMENT) == MEMORY_INCREMENT
+    assert ours.increment_cache("ours:memory-count", MEMORY_INCREMENT) == MEMORY_COUNT
+    assert theirs.increment_cache("litellm:memory-count", MEMORY_INCREMENT) == MEMORY_COUNT
+    _check_flushed(ours, theirs, "memory-count")
+
+
+def _count_redis(ours: RedisCache, theirs: ReferenceBackend) -> None:
+    ttl_write = ours.increment_cache("ours:redis-count", REDIS_INCREMENT, ttl=REDIS_TTL)
+    assert ttl_write == REDIS_INCREMENT
+    theirs_first = theirs.increment_cache("litellm:redis-count", REDIS_INCREMENT)
+    assert theirs_first == REDIS_INCREMENT
+    assert ours.increment_cache("ours:redis-count", REDIS_SECOND_INCREMENT) == REDIS_COUNT
+    assert theirs.increment_cache("litellm:redis-count", REDIS_SECOND_INCREMENT) == REDIS_COUNT
+    _check_flushed(ours, theirs, "redis-count")
+
+
+def _memory_store(cache: Cache) -> InMemoryCache:
+    match cache.cache:
+        case InMemoryCache() as store:
+            return store
+        case CacheStore():
+            raise AssertionError(f"{type(cache.cache).__name__} is not an InMemoryCache")
+
+
+def test_memory_matches_litellm() -> None:
+    ours = InMemoryCache()
+    theirs = LITELLM_CACHING.InMemoryCache()
+    _check_store(ours, theirs, "memory")
+    _count_memory(ours, theirs)
+
+
+def test_memory_async_matches() -> None:
+    ours = InMemoryCache()
+    theirs = LITELLM_CACHING.InMemoryCache()
+    before = time.time()
+    ours_value, theirs_value, ours_ttl, theirs_ttl = asyncio.run(
+        _in_memory_round_trip(ours, theirs)
+    )
+    assert ours_value == theirs_value == CACHED
+    assert ours_ttl is not None
+    assert theirs_ttl is not None
+    assert before + IN_MEMORY_TTL - TTL_ALLOWANCE <= ours_ttl
+    assert ours_ttl <= before + IN_MEMORY_TTL + TTL_ALLOWANCE
+    assert before + IN_MEMORY_TTL - TTL_ALLOWANCE <= theirs_ttl
+    assert theirs_ttl <= before + IN_MEMORY_TTL + TTL_ALLOWANCE
+
+
+def test_redis_matches_litellm(redis_server: FakeRedisServer) -> None:
+    ours = RedisCache(host=redis_server.host, port=redis_server.port)
+    theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
+    _check_store(ours, theirs, "redis")
+    _count_redis(ours, theirs)
+
+
+def test_redis_async_matches(redis_server: FakeRedisServer) -> None:
+    ours = RedisCache(host=redis_server.host, port=redis_server.port)
+    theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
+    (
+        ours_value,
+        theirs_value,
+        ours_ttl,
+        theirs_ttl,
+        ours_count,
+        theirs_count,
+        ours_ping,
+        theirs_ping,
+        ours_deleted,
+        theirs_deleted,
+    ) = asyncio.run(_redis_scenario(ours, theirs))
+    assert ours_value == theirs_value == CACHED
+    assert ours_ttl is not None
+    assert theirs_ttl is not None
+    assert ours_ttl >= REDIS_TTL - REDIS_TTL_ALLOWANCE
+    assert ours_ttl <= REDIS_TTL
+    assert theirs_ttl >= REDIS_TTL - REDIS_TTL_ALLOWANCE
+    assert theirs_ttl <= REDIS_TTL
+    assert ours_count == theirs_count == float(REDIS_INCREMENT)
+    assert ours_ping is True
+    assert theirs_ping is True
+    assert ours_deleted is None
+    assert theirs_deleted is None
+
+
+def test_redis_counts_large_ints(redis_server: FakeRedisServer) -> None:
+    ours = RedisCache(host=redis_server.host, port=redis_server.port)
+    theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
+    assert ours.increment_cache("ours:large", LARGE_COUNT) == LARGE_COUNT
+    assert theirs.increment_cache("litellm:large", LARGE_COUNT) == LARGE_COUNT
+
+
+def test_redis_async_set_passes_nx(redis_server: FakeRedisServer) -> None:
+    ours = RedisCache(host=redis_server.host, port=redis_server.port)
+    assert asyncio.run(ours.async_set_cache("ours:nx", CACHED, nx=True)) is True
+    assert asyncio.run(ours.async_set_cache("ours:nx", "replaced", nx=True)) is None
+    assert ours.get_cache("ours:nx") == CACHED
+    asyncio.run(ours.async_set_cache("ours:nx", "replaced"))
+    assert ours.get_cache("ours:nx") == "replaced"
+    with pytest.raises(ValueError, match="nx must be a bool"):
+        asyncio.run(ours.async_set_cache("ours:nx", CACHED, nx=1))
+
+
+def test_namespace_reaches_redis(redis_server: FakeRedisServer) -> None:
+    port = str(redis_server.port)
+    ours_backend = RedisCache(host=redis_server.host, port=port, namespace="old")
+    Cache(type="redis", namespace="new", _backend=ours_backend)
+    theirs_backend = LITELLM_CACHING.RedisCache(
+        host=redis_server.host, port=port, namespace="old"
+    )
+    LITELLM_WITH_BACKEND.Cache(type="redis", namespace="new", _backend=theirs_backend)
+    ours_backend.set_cache("ours:key", CACHED)
+    theirs_backend.set_cache("litellm:key", CACHED)
+    assert redis_server.stored("new:ours:key") is not None
+    assert redis_server.stored("old:ours:key") is None
+    assert redis_server.stored("new:litellm:key") is not None
+    assert redis_server.stored("old:litellm:key") is None
+
+
+def test_dual_matches_litellm() -> None:
+    ours = DualCache()
+    theirs = LITELLM_CACHING.DualCache()
+    assert ours.redis_cache is None
+    ours.set_cache("ours:dual", CACHED)
+    theirs.set_cache("litellm:dual", CACHED)
+    assert ours.get_cache("ours:dual") == CACHED
+    assert theirs.get_cache("litellm:dual") == CACHED
+    assert ours.get_cache("ours:dual-missing") is None
+    assert theirs.get_cache("litellm:dual-missing") is None
+    ours.increment_cache("ours:dual-count", DUAL_INCREMENT)
+    theirs.increment_cache("litellm:dual-count", DUAL_INCREMENT)
+    assert float(ours.increment_cache("ours:dual-count", DUAL_INCREMENT)) == DUAL_COUNT
+    assert float(theirs.increment_cache("litellm:dual-count", DUAL_INCREMENT)) == DUAL_COUNT
+    ours.delete_cache("ours:dual")
+    theirs.delete_cache("litellm:dual")
+    assert ours.get_cache("ours:dual") is None
+    assert theirs.get_cache("litellm:dual") is None
+
+
+def test_dual_local_only_stays(redis_server: FakeRedisServer) -> None:
+    redis_ours = RedisCache(host=redis_server.host, port=redis_server.port)
+    ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_ours)
+    redis_theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
+    theirs = LITELLM_DUAL.DualCache(
+        in_memory_cache=LITELLM_CACHING.InMemoryCache(), redis_cache=redis_theirs
+    )
+    ours.set_cache("ours:dual-local", CACHED, local_only=True)
+    theirs.set_cache("litellm:dual-local", CACHED, local_only=True)
+    assert ours.get_cache("ours:dual-local") == CACHED
+    assert theirs.get_cache("litellm:dual-local") == CACHED
+    fresh_ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_ours)
+    fresh_theirs = LITELLM_DUAL.DualCache(
+        in_memory_cache=LITELLM_CACHING.InMemoryCache(), redis_cache=redis_theirs
+    )
+    assert fresh_ours.get_cache("ours:dual-local") is None
+    assert fresh_theirs.get_cache("litellm:dual-local") is None
+
+
+def test_dual_keeps_memory_ttl(redis_server: FakeRedisServer) -> None:
+    redis_ours = RedisCache(host=redis_server.host, port=redis_server.port)
+    ours = DualCache(
+        in_memory_cache=InMemoryCache(default_ttl=CUSTOM_MEMORY_TTL), redis_cache=redis_ours
+    )
+    redis_theirs = LITELLM_CACHING.RedisCache(host=redis_server.host, port=redis_server.port)
+    theirs = LITELLM_DUAL.DualCache(
+        in_memory_cache=LITELLM_CACHING.InMemoryCache(default_ttl=CUSTOM_MEMORY_TTL),
+        redis_cache=redis_theirs,
+    )
+    ours.set_cache("ours:ttl-write", CACHED)
+    theirs.set_cache("litellm:ttl-write", CACHED)
+    assert ours.increment_cache("ours:ttl-count", 1) == 1
+    assert theirs.increment_cache("litellm:ttl-count", 1) == 1
+    redis_ours.set_cache("ours:ttl-backfill", CACHED)
+    redis_theirs.set_cache("litellm:ttl-backfill", CACHED)
+    assert ours.get_cache("ours:ttl-backfill") == CACHED
+    assert theirs.get_cache("litellm:ttl-backfill") == CACHED
+    time.sleep(MEMORY_TTL_WAIT)
+    assert ours.get_cache("ours:ttl-write", local_only=True) is None
+    assert theirs.get_cache("litellm:ttl-write", local_only=True) is None
+    assert ours.get_cache("ours:ttl-count", local_only=True) is None
+    assert theirs.get_cache("litellm:ttl-count", local_only=True) is None
+    assert ours.get_cache("ours:ttl-backfill", local_only=True) is None
+    assert theirs.get_cache("litellm:ttl-backfill", local_only=True) is None
+
+
+def test_dual_batch_reads(redis_server: FakeRedisServer) -> None:
+    ours_redis = RedisCache(host=redis_server.host, port=redis_server.port)
+    ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=ours_redis)
+    ours.set_cache("ours:batch-redis", CACHED)
+    ours.in_memory_cache.set_cache("ours:batch-memory", CHAT_RESPONSE)
+    sync_values = ours.batch_get_cache(["ours:batch-memory", "ours:batch-redis"])
+    assert sync_values == [CHAT_RESPONSE, CACHED]
+
+    ours_redis.set_cache("ours:async-batch", CACHED)
+    async_values = asyncio.run(
+        ours.async_batch_get_cache(["ours:batch-memory", "ours:async-batch"])
+    )
+    assert async_values == [CHAT_RESPONSE, CACHED]
+
+    second = DualCache(in_memory_cache=InMemoryCache(), redis_cache=ours_redis)
+    shared = asyncio.run(
+        DualCache.async_batch_get_cache_shared(
+            [(ours, ["ours:batch-redis"]), (second, ["ours:async-batch"])],
+            parent_otel_span=None,
+        )
+    )
+    assert shared == [[CACHED], [CACHED]]
+
+
+def test_dual_without_batch() -> None:
+    cache = DualCache()
+    assert asyncio.run(cache.async_set_cache_pre_call("key", CACHED, None)) is None
+    assert asyncio.run(cache.async_delete_cache_pre_call("key")) is None
+
+
+async def _declared_values(
+    cache: DualCache, redis_cache: RedisCache, keys: list[str]
+) -> list[JsonValue]:
+    batch = NativeRedisBatch(redis_cache.native)
+    declared = await cache.declare_batch_get(keys, batch)
+    answers = await asyncio.wait_for(declared.async_resolve(), timeout=DECLARED_TIMEOUT)
+    decoder = TypeAdapter(JsonValue)
+    return [None if value is None else decoder.validate_json(value) for value in answers]
+
+
+def test_dual_declares_batch(dual_with_redis: DualCache) -> None:
+    assert dual_with_redis.redis_cache is not None
+    dual_with_redis.in_memory_cache.set_cache("declared:memory", CHAT_RESPONSE)
+    dual_with_redis.redis_cache.set_cache("declared:redis", CACHED)
+    values = asyncio.run(
+        _declared_values(
+            dual_with_redis,
+            dual_with_redis.redis_cache,
+            ["declared:memory", "declared:redis", "declared:none"],
+        )
+    )
+    assert values == [CHAT_RESPONSE, CACHED, None]
+
+
+def test_dual_declares_memory(redis_server: FakeRedisServer) -> None:
+    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    cache = DualCache(in_memory_cache=InMemoryCache())
+    cache.in_memory_cache.set_cache("declared:local", CACHED)
+    values = asyncio.run(_declared_values(cache, redis_cache, ["declared:local", "declared:gone"]))
+    assert values == [CACHED, None]
+
+
+async def _post_call_counts(cache: DualCache) -> None:
+    await cache.async_increment_cache_post_call("post:single", 2, None)
+    await cache.async_increment_cache_post_call("post:single", 3, None)
+    await cache.async_increment_cache_pipeline_post_call(
+        [
+            {"key": "post:first", "increment_value": 1, "ttl": None},
+            {"key": "post:second", "increment_value": 4, "ttl": 60},
+            {"key": "post:first", "increment_value": 1, "ttl": None},
+        ]
+    )
+
+
+def test_dual_post_call_counts(dual_with_redis: DualCache) -> None:
+    asyncio.run(_post_call_counts(dual_with_redis))
+    assert dual_with_redis.get_cache("post:single", local_only=True) == POST_SINGLE_TOTAL
+    assert dual_with_redis.get_cache("post:first", local_only=True) == POST_FIRST_TOTAL
+    assert dual_with_redis.get_cache("post:second", local_only=True) == POST_SECOND_TOTAL
+
+
+def test_dual_rejects_backfill_ttl(redis_server: FakeRedisServer) -> None:
+    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
+    redis_cache.set_cache("ttl:redis-only", CACHED)
+    with pytest.raises(UnsupportedCallArgument, match="ttl"):
+        cache.batch_get_cache(["ttl:redis-only"], ttl=1)
+    with pytest.raises(UnsupportedCallArgument, match="ttl"):
+        asyncio.run(cache.async_batch_get_cache(["ttl:redis-only"], ttl=1))
+    with pytest.raises(UnsupportedCallArgument, match="ttl"):
+        cache.get_cache("ttl:redis-only", ttl=1)
+    with pytest.raises(UnsupportedCallArgument, match="ttl"):
+        asyncio.run(cache.async_get_cache("ttl:redis-only", ttl=1))
+    assert cache.get_cache("ttl:redis-only", local_only=True) is None
+
+
+def test_dual_reads_local_ttl(redis_server: FakeRedisServer) -> None:
+    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    shared = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
+    shared.set_cache("ttl:both", CACHED)
+    assert shared.get_cache("ttl:both", local_only=True, ttl=1) == CACHED
+    assert shared.batch_get_cache(["ttl:both"], local_only=True, ttl=1) == [CACHED]
+    memory_only = DualCache(in_memory_cache=InMemoryCache())
+    memory_only.set_cache("ttl:memory", CACHED)
+    assert memory_only.get_cache("ttl:memory", ttl=1) == CACHED
+    assert memory_only.batch_get_cache(["ttl:memory"], ttl=1) == [CACHED]
+    assert asyncio.run(memory_only.async_batch_get_cache(["ttl:memory"], ttl=1)) == [CACHED]
+
+
+def test_redis_checks_arguments() -> None:
+    with pytest.raises(ValidationError, match="socket_timeout"):
+        Cache(type="redis", socket_timeout="slow")
+
+
+def test_redis_override_schema() -> None:
+    supplied: dict[str, JsonValue] = {"socket_timeout": 0, "db": 0, "ssl": False}
+    nodes: dict[str, JsonValue] = {"startup_nodes": None}
+    absent: dict[str, JsonValue] = {}
+    null: dict[str, JsonValue] = {"socket_timeout": None}
+    invalid: dict[str, JsonValue] = {"socket_timeout": "slow"}
+    default_timeout = 5.0
+    assert REDIS_OVERRIDES.validate_python(supplied) == supplied
+    assert REDIS_OVERRIDES.validate_python(nodes) == {
+        "startup_nodes": None,
+        "socket_timeout": default_timeout,
+    }
+    assert REDIS_OVERRIDES.validate_python(absent)["socket_timeout"] == default_timeout
+    assert REDIS_OVERRIDES.validate_python(null) == null
+    with pytest.raises(ValidationError, match="socket_timeout"):
+        REDIS_OVERRIDES.validate_python(invalid)
+
+
+# LiteLLM's DiskCache needs the diskcache package, which the oracle environment does not install.
+def test_disk_backend_contract(tmp_path: Path) -> None:
+    ours = DiskCache(disk_cache_dir=str(tmp_path))
+    ours.set_cache("disk", CACHED)
+    assert ours.get_cache("disk") == CACHED
+    assert ours.get_cache("disk-missing") is None
+    assert ours.increment_cache("disk-count", DISK_INCREMENT) == DISK_INCREMENT
+    assert ours.increment_cache("disk-count", DISK_SECOND_INCREMENT) == DISK_COUNT
+    ours.set_cache("disk-text", "hello")
+    assert ours.increment_cache("disk-text", DISK_INCREMENT) == DISK_INCREMENT
+    ours.set_cache("disk-zero", 0)
+    assert ours.get_cache("disk-zero") is None
+    ours.delete_cache("disk")
+    assert ours.get_cache("disk") is None
+    ours.flush_cache()
+    assert ours.get_cache("disk-text") is None
+
+
+def test_disk_counts_large_ints(tmp_path: Path) -> None:
+    ours = DiskCache(disk_cache_dir=str(tmp_path))
+    assert ours.increment_cache("large", LARGE_COUNT) == LARGE_COUNT
+    assert ours.increment_cache("large", 1) == LARGE_COUNT + 1
+
+
+@pytest.mark.parametrize("operation", ["flush", "delete"])
+def test_lookups_share_the_store(operation: str) -> None:
+    cache = Cache()
+    store = _memory_store(cache)
+    cache.add_cache(CHAT_RESPONSE, model=CHAT["model"], messages=CHAT["messages"])
+    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) == CHAT_RESPONSE
+    if operation == "flush":
+        store.flush_cache()
+    else:
+        store.delete_cache(cache.get_cache_key(model=CHAT["model"], messages=CHAT["messages"]))
+    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) is None
+
+
+
+def test_dynamic_cache_object() -> None:
+    dynamic = DynamicCache()
+    cache = Cache(_backend=dynamic)
+    cache.add_cache(
+        CHAT_RESPONSE, dynamic, model=CHAT["model"], messages=CHAT["messages"]
+    )
+    assert cache.get_cache(dynamic, model=CHAT["model"], messages=CHAT["messages"]) == CHAT_RESPONSE
+    assert asyncio.run(
+        cache.async_get_cache(dynamic, model=CHAT["model"], messages=CHAT["messages"])
+    ) == CHAT_RESPONSE
+    dynamic.values.clear()
+    asyncio.run(
+        cache.async_add_cache(
+            ASYNC_RESPONSE, dynamic, model=CHAT["model"], messages=CHAT["messages"]
+        )
+    )
+    assert asyncio.run(
+        cache.async_get_cache(dynamic, model=CHAT["model"], messages=CHAT["messages"])
+    ) == ASYNC_RESPONSE
