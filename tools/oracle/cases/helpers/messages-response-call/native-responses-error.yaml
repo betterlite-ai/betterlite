@@ -1,0 +1,25 @@
+kind: helper
+name: messages-response-call-native-responses-error
+call:
+  messages_response_call:
+    call:
+      request:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        max_tokens: 64
+      stream: false
+      settings: {}
+      forwarded:
+        custom_llm_provider: openai
+    include_supported: true
+    provider: openai
+    model_info: null
+    answer:
+      shape: other
+      kind: dict
+      body:
+        object: response
+env: {}
+compare: {ignore: []}
