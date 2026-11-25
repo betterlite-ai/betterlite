@@ -15,6 +15,7 @@ use betterlite_http::metrics_server::{
     MetricsServerError, STARTUP_POLLING, StartupProbe, build_metrics_app, wait_until_serving,
 };
 use clap::{Args, Command, Error, FromArgMatches as _};
+use futures_util::future::{Either, select};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as ConnectionBuilder;
 use hyper_util::service::TowerToHyperService;
@@ -60,11 +61,11 @@ async fn serve_connection(
     let builder = ConnectionBuilder::new(TokioExecutor::new());
     let service = TowerToHyperService::new(app);
     let mut connection = pin!(builder.serve_connection(TokioIo::new(stream), service));
-    tokio::select! {
-        served = connection.as_mut() => served.map_err(io::Error::other),
-        () = stop.cancelled() => {
-            connection.as_mut().graceful_shutdown();
-            connection.as_mut().await.map_err(io::Error::other)
+    match select(connection.as_mut(), pin!(stop.cancelled())).await {
+        Either::Left((served, _)) => served.map_err(io::Error::other),
+        Either::Right(((), mut draining)) => {
+            draining.as_mut().graceful_shutdown();
+            draining.as_mut().await.map_err(io::Error::other)
         }
     }
 }
@@ -80,12 +81,13 @@ async fn serve_bounded(
     loop {
         // reap finished connections, so the set holds only the ones still open
         while connections.try_join_next().is_some() {}
-        tokio::select! {
-            accepted = listener.accept() => {
+        match select(pin!(listener.accept()), pin!(stop.cancelled())).await {
+            Either::Left((accepted, _)) => {
                 let (stream, _peer) = accepted?;
-                let _serving = connections.spawn(serve_connection(stream, app.clone(), stop.clone()));
+                let _serving =
+                    connections.spawn(serve_connection(stream, app.clone(), stop.clone()));
             }
-            () = stop.cancelled() => break,
+            Either::Right(((), _)) => break,
         }
     }
     drain_connections(&mut connections, grace).await;
@@ -96,9 +98,9 @@ async fn serve_bounded(
 async fn drain_connections(connections: &mut JoinSet<io::Result<()>>, grace: Duration) {
     let mut deadline = pin!(time::sleep(grace));
     while !connections.is_empty() {
-        tokio::select! {
-            () = &mut deadline => break,
-            _ = connections.join_next() => {}
+        match select(deadline.as_mut(), pin!(connections.join_next())).await {
+            Either::Left(((), _)) => break,
+            Either::Right((_, _)) => {}
         }
     }
     connections.shutdown().await;
@@ -162,9 +164,14 @@ where
     let exited = stop.clone();
     let mut watcher = JoinSet::new();
     let _watching = watcher.spawn(async move {
-        tokio::select! {
-            () = parent_exited(parent, current_parent, PARENT_POLL_INTERVAL) => exited.cancel(),
-            () = watcher_stop.cancelled() => (),
+        match select(
+            pin!(parent_exited(parent, current_parent, PARENT_POLL_INTERVAL)),
+            pin!(watcher_stop.cancelled()),
+        )
+        .await
+        {
+            Either::Left(((), _)) => exited.cancel(),
+            Either::Right(((), _)) => {}
         }
     });
     let outcome = serve_bounded(listener, app, stop.clone(), grace).await;
