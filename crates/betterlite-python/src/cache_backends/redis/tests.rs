@@ -78,6 +78,19 @@ fn backends_redis_namespace_keeps_the_cache() {
     assert!(Arc::ptr_eq(&before, &native.cache));
 }
 
+// The constructor helper builds the same lazy client the other tests assemble by hand.
+#[test]
+fn backends_redis_open_connects() {
+    let overrides: RedisOverrides = serde_json::from_str(DEAD_REDIS).unwrap();
+    let settings = RedisSettings {
+        overrides,
+        namespace: None,
+        default_ttl: None,
+        redis_flush_size: None,
+    };
+    Python::attach(|py| open(py, settings).unwrap());
+}
+
 #[test]
 fn backends_redis_answers_the_value_text() {
     assert_eq!(
