@@ -1,9 +1,11 @@
 import asyncio
 import importlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from typing import Final, Protocol, TypedDict, TypeVar
+from contextlib import aclosing
+from typing import Final, Protocol, TypedDict
 
 import litellm.a2a_protocol as their_package
+import pytest
 from a2a.client.card_resolver import parse_agent_card
 from a2a.compat.v0_3.types import (
     Message,
@@ -28,7 +30,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from typing_extensions import override
 
 import betterlite.a2a_protocol as our_package
-from betterlite._native import NativeA2aStream
+from betterlite._native import NativeA2aClient, NativeA2aStream
 from betterlite.a2a_protocol import exceptions as a2a_exceptions
 from betterlite.a2a_protocol import main as main_module
 from betterlite.a2a_protocol.client import A2AClient
@@ -71,6 +73,7 @@ DEFAULT_CLIENT_TIMEOUT: Final = 60.0
 DISTINCT_TIMEOUT: Final = 7.5
 SEND_METHODS: Final[tuple[str, ...]] = ("GET", "POST", "POST")
 STREAM_METHODS: Final[tuple[str, ...]] = ("GET", "POST")
+CLOSE_TURNS: Final = 32
 # the sdk factory sets A2A-Version on its httpx client, and the native transport sets the same
 EXPECTED_POST_HEADERS: Final[dict[str, str]] = {
     "a2a-version": "1.0",
@@ -184,8 +187,10 @@ THEIR_CLIENT: Final[TheirClientModule] = importlib.import_module("litellm.a2a_pr
 
 
 class SettingsCalls:
-    def __init__(self) -> None:
+    def __init__(self, *, forced_streaming: bool) -> None:
+        self.forced_streaming = forced_streaming
         self.timeouts: list[float] = []
+        self.requested: list[bool] = []
 
     def __call__(
         self,
@@ -197,28 +202,29 @@ class SettingsCalls:
         relative_card_path: str | None,
     ) -> str:
         self.timeouts.append(timeout)
+        self.requested.append(streaming)
         return client_settings(
             base_url,
             timeout,
             extra_headers,
-            streaming=streaming,
+            streaming=self.forced_streaming,
             relative_card_path=relative_card_path,
         )
 
 
-_Answer = TypeVar("_Answer")
-
-
-class GuardedCalls:
+class NativeAnswers:
     def __init__(self) -> None:
         self.streams: list[NativeA2aStream] = []
 
-    async def __call__(self, call: Awaitable[_Answer]) -> _Answer:
+    async def __call__(
+        self, call: Awaitable[NativeA2aStream | NativeA2aClient | str | None]
+    ) -> NativeA2aStream | NativeA2aClient | str | None:
         answer = await call
+        # every answer main's guarded hands back is named here, so no arm is a catch-all
         match answer:
             case NativeA2aStream() as stream:
                 self.streams.append(stream)
-            case object():
+            case NativeA2aClient() | str() | None:
                 pass
         return answer
 
@@ -430,7 +436,7 @@ async def timeout_flow(server: AgentServer) -> None:
 
 
 def test_client_forwards_timeouts() -> None:
-    settings_calls = SettingsCalls()
+    settings_calls = SettingsCalls(forced_streaming=False)
     original = main_module.client_settings
     main_module.client_settings = settings_calls
     try:
@@ -491,41 +497,37 @@ def test_stream_matches_litellm() -> None:
     assert flow["our_posts"] == flow["their_posts"] == [EXPECTED_POST_HEADERS]
 
 
-async def first_chunk(
-    held: list[AsyncIterator[SendStreamingMessageResponse]], server: AgentServer
-) -> list[SendStreamingMessageResponse]:
-    stream = asend_message_streaming(
-        request=our_stream_request(STREAM_ID), api_base=server.url
-    )
-    held.append(stream)
-    seen: list[SendStreamingMessageResponse] = []
-    async for chunk in stream:
-        seen.append(chunk)
-        break
-    return seen
+async def close_class_stream_early(server: AgentServer, answers: NativeAnswers) -> bool:
+    client = A2AClient(server.url, extra_headers=EXTRA_HEADERS)
+    stream = client.send_message_streaming(our_stream_request(STREAM_ID))
+    chunks: list[SendStreamingMessageResponse] = []
+    async with aclosing(stream):
+        async for chunk in stream:
+            chunks.append(chunk)
+            break
+    assert len(chunks) == SINGLE
+    assert chunks[0].id == STREAM_ID
+    assert len(answers.streams) == SINGLE
+    # the loop's asyncgen finalizer closes the abandoned inner generator on a later turn
+    for _ in range(CLOSE_TURNS):
+        await asyncio.sleep(0)
+    remaining = await answers.streams[0].anext_chunk()
+    return remaining is None
 
 
-async def remaining_chunks(stream: NativeA2aStream) -> list[str]:
-    chunks: list[str] = []
-    while True:
-        chunk = await stream.anext_chunk()
-        if chunk is None:
-            return chunks
-        chunks.append(chunk)
-
-
-def test_stream_closes_early() -> None:
-    guarded_calls = GuardedCalls()
-    original = main_module.guarded
-    main_module.guarded = guarded_calls
-    held: list[AsyncIterator[SendStreamingMessageResponse]] = []
-    try:
-        with V1Server(Recorder()) as server:
-            seen = asyncio.run(first_chunk(held, server))
-    finally:
-        main_module.guarded = original
-    assert len(seen) == SINGLE
-    assert len(held) == SINGLE
-    assert len(guarded_calls.streams) == SINGLE
-    # the server sent further events, so a handle left open would hand them back here
-    assert asyncio.run(remaining_chunks(guarded_calls.streams[0])) == []
+def test_stream_closes_early(monkeypatch: pytest.MonkeyPatch) -> None:
+    answers = NativeAnswers()
+    recorder = Recorder()
+    settings_calls = SettingsCalls(forced_streaming=True)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(main_module, "client_settings", settings_calls)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(main_module, "guarded", answers)
+    with V1Server(recorder) as server:
+        closed = asyncio.run(close_class_stream_early(server, answers))
+    posts = [entry for entry in recorder.calls if entry["method"] == "POST"]
+    assert settings_calls.requested == [False]
+    # the forced settings have to put the native client on SSE, or no event is left pending
+    assert len(posts) == SINGLE
+    assert posts[0]["headers"].get("accept") == "text/event-stream"
+    assert closed
