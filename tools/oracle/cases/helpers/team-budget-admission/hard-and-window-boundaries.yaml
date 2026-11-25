@@ -72,6 +72,15 @@ call:
               reset_at: "2026-06-02T00:00:00Z"
         spends: [5.0]
         now: "2026-06-01T12:00:00Z"
+      # a window without reset_at starts one duration before the injected clock
+      - function: admit
+        team:
+          team_id: team-1
+          budget_limits:
+            - budget_duration: 1h
+              max_budget: 5.0
+        spends: [4.0]
+        now: "2026-06-01T12:00:00Z"
       # an empty window list reads nothing
       - function: admit
         team:

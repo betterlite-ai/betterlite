@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import sys
+import time
 from collections.abc import Awaitable
-from datetime import datetime
+from datetime import datetime, tzinfo
+from functools import partial
 from types import ModuleType
-from typing import ClassVar, Final, Literal, NotRequired, TypedDict
+from typing import ClassVar, Final, Literal, NotRequired, Self, TypedDict
 
 from litellm.exceptions import BudgetExceededError
 from litellm.models.team import LiteLLM_TeamTable
@@ -14,6 +16,7 @@ from litellm.proxy._types import CallInfo, UserAPIKeyAuth
 from litellm.proxy._types import ModelAccessDeniedProxyException as ModelDenied
 from litellm.proxy.auth import auth_checks
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
+from litellm.proxy.spend_tracking import budget_reservation
 from litellm.proxy.utils import PrismaClient, ProxyLogging
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
@@ -48,6 +51,20 @@ def fixed_now() -> datetime:
     if moment is None:
         raise RuntimeError("the clock is not fixed")
     return moment
+
+
+# budget_reservation's isinstance must keep admitting pydantic's plain datetimes
+class _FrozenMeta(type):
+    @override
+    def __instancecheck__(self, instance: object) -> bool:
+        return isinstance(instance, datetime)  # ast-grep-ignore: no-isinstance
+
+
+class FrozenDatetime(datetime, metaclass=_FrozenMeta):
+    @classmethod
+    @override
+    def now(cls, tz: tzinfo | None = None) -> Self:
+        return cls.fromtimestamp(fixed_now().timestamp(), tz)
 
 
 class Recorder(ProxyLogging):
@@ -249,6 +266,8 @@ async def soft_call(call: Call, recorder: Recorder) -> JsonValue:
 async def answer_for(call: Call) -> JsonValue:
     Clock.moment = datetime.fromisoformat(call["now"])
     auth_checks.get_utc_datetime = fixed_now  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5854
+    budget_reservation.datetime = FrozenDatetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1280
+    time.time = partial(float, fixed_now().timestamp())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L77
     recorder = Recorder()
     match call["function"]:
         case "admit":
