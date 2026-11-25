@@ -4,7 +4,7 @@ use crate::error::details::{
     ApiDetails, RateLimitDetails, ResponseDetails, TimeoutDetails, TimeoutStatus,
 };
 use crate::error::{ErrorClass, ErrorContext};
-use crate::facts::{ProviderErrorFacts, ResponseFacts};
+use crate::facts::{ProviderErrorFacts, RequestFacts, ResponseFacts};
 use crate::rate_limit::RateLimitCategory;
 
 mod tests;
@@ -34,10 +34,17 @@ pub struct StatusMapping {
 
 #[must_use]
 pub fn response_or_stub(error: &ProviderErrorFacts, status_code: u16) -> ResponseFacts {
-    error
-        .response
-        .clone()
-        .unwrap_or_else(|| ResponseFacts::base_llm_exception(status_code))
+    if let Some(response) = &error.response {
+        return response.clone();
+    }
+    ResponseFacts {
+        status_code,
+        headers: BTreeMap::new(),
+        request: Some(RequestFacts {
+            method: "POST".to_owned(),
+            url: "https://docs.litellm.ai/docs".to_owned(),
+        }),
+    }
 }
 
 #[must_use]
