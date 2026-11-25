@@ -558,3 +558,37 @@ async fn malformed_deployment_is_an_error() {
         .unwrap_err();
     assert!(matches!(error, EnrichError::ModelNotText));
 }
+
+#[tokio::test]
+async fn a_priced_cost_map_keeps_the_catalog_prices() {
+    let registry = registry(r#"{"gpt-4o": {"input_cost_per_token": 0.00001}}"#);
+    let catalog = FakeCatalog::new(vec![(
+        ("openai/gpt-4o", None),
+        object(vec![
+            ("key", text("gpt-4o")),
+            ("input_cost_per_token", decimal_text("0.0001")),
+            ("output_cost_per_token", decimal_text("0.0002")),
+        ]),
+    )]);
+    let model = deployment("openai/gpt-4o", vec![("id", text("dep-1"))], Vec::new());
+    let enriched = enrich_model_info(
+        &model,
+        false,
+        &EnrichContext {
+            registry: &registry,
+            catalog: &catalog,
+            router: None,
+        },
+    )
+    .await
+    .unwrap();
+    let info = info_of(&enriched);
+    assert_eq!(
+        info.get("input_cost_per_token"),
+        Some(&decimal_text("0.0001"))
+    );
+    assert_eq!(
+        info.get("output_cost_per_token"),
+        Some(&decimal_text("0.0002"))
+    );
+}

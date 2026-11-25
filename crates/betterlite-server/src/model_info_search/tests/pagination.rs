@@ -60,6 +60,20 @@ fn an_explicit_count_beyond_the_models_still_slices_them() {
 }
 
 #[test]
+fn a_zero_size_has_no_pages() {
+    let page = paginate_models(&five(), 1, 0, Some(5), None);
+    assert_eq!(page.total_pages, 0);
+    assert!(page.data.is_empty());
+}
+
+#[test]
+fn a_negative_size_has_no_pages() {
+    let page = paginate_models(&five(), 2, -2, Some(5), None);
+    assert_eq!(page.total_pages, 0);
+    assert!(page.data.is_empty());
+}
+
+#[test]
 fn a_negative_skip_follows_python_slice_bounds() {
     let models = five();
     let empty = paginate_models(&models, 0, 2, None, None);

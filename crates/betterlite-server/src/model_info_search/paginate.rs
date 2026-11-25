@@ -21,11 +21,9 @@ pub fn paginate_models(
     let total_count =
         total_count.unwrap_or_else(|| i64::try_from(models.len()).unwrap_or(i64::MAX));
     let skip = page.saturating_sub(1).saturating_mul(size);
+    let whole = total_count.saturating_sub(1).checked_div(size).unwrap_or(0);
     let total_pages = if total_count > 0 && size > 0 {
-        total_count
-            .saturating_add(size.saturating_sub(1))
-            .checked_div(size)
-            .unwrap_or(0)
+        whole.saturating_add(1)
     } else {
         0
     };

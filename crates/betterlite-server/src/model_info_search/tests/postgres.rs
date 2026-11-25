@@ -372,6 +372,9 @@ async fn db_count_unscoped() {
     database
         .seed_model("d2", "gpt-skipped", INVALID_PARAMS, "{}")
         .await;
+    database
+        .seed_model("d3", "unrelated-db", PLAINTEXT, "{}")
+        .await;
     let decrypt = decryption();
     let recorder = RecordingDatabase::new(database.search());
     let sources: SearchSources<'_, RecordingDatabase<'_>, PostgresScopeReads<'_>> = SearchSources {
@@ -446,6 +449,9 @@ async fn exact_name_skips_db() {
     assert_eq!(filter.exact_name, Some(String::from("GPT-4O")));
     assert_eq!(fetched, filter);
     assert_eq!(*take, 49);
+    let matched = apply_search_filter(&models, "gpt", Some(&sources), &narrowed("gpt-4o")).await;
+    assert_eq!(names(&matched.models), ["gpt-config", "gpt-4o"]);
+    assert_eq!(matched.total_count, Some(2));
     database.close().await;
 }
 

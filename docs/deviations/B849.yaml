@@ -1,7 +1,7 @@
 task: B849
 deviations:
-  - what: A page size of zero or less returns total_pages 0 and an empty page.
-    why: LiteLLM computes `-(-total_count // size)` and raises ZeroDivisionError for a positive count with size 0, and returns negative total_pages for a negative size; a 500 on a size a caller can send is a bug no working setup relies on, so betterlite returns the empty page.
+  - what: A page size of zero or less reports total_pages 0 instead of raising or going negative.
+    why: LiteLLM computes `-(-total_count // size)` and raises ZeroDivisionError for a positive count with size 0, and reports negative total_pages for a negative size; a 500 on a size a caller can send is a bug no working setup relies on, so betterlite reports no pages and leaves the slice on Python's bounds.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15046-L15048
   - what: Cost sorting adds the two token prices as exact decimals.
     why: LiteLLM adds them as binary floats and uses float("inf")/float("-inf") as its zero sentinel, so a tie such as 0.1 + 0.2 against 0.3, or a price past f64's range, can order differently; the declared type is a float and exact decimal addition follows it without the rounding.
