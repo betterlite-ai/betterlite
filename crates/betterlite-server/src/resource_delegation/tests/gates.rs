@@ -46,16 +46,14 @@ fn search_nonempty_ceiling() {
         &[],
         Some(ceiling_grants(None, Some(&["a", "a", "b"]))),
     );
+    let expected = "Key requests search tools not allowed by team 'team-1': ['c']. Team allows: ['a', 'a', 'b'].";
     let error = validate_search_tools(
         Some(&json(r#"{"search_tools": ["c", "a"]}"#)),
         Some(&team),
         false,
     )
     .unwrap_err();
-    assert_eq!(
-        gate_detail(error),
-        "Key requests search tools not allowed by team 'team-1': ['c']. Team allows: ['a', 'a', 'b']."
-    );
+    assert_eq!(gate_detail(error), expected);
     validate_search_tools(
         Some(&json(r#"{"search_tools": ["a", "a"]}"#)),
         Some(&team),
@@ -65,20 +63,14 @@ fn search_nonempty_ceiling() {
     let admin_error =
         validate_search_tools(Some(&json(r#"{"search_tools": ["c"]}"#)), Some(&team), true)
             .unwrap_err();
-    assert_eq!(
-        gate_detail(admin_error),
-        "Key requests search tools not allowed by team 'team-1': ['c']. Team allows: ['a', 'a', 'b']."
-    );
+    assert_eq!(gate_detail(admin_error), expected);
     let repeated_error = validate_search_tools(
         Some(&json(r#"{"search_tools": ["c", "c"]}"#)),
         Some(&team),
         false,
     )
     .unwrap_err();
-    assert_eq!(
-        gate_detail(repeated_error),
-        "Key requests search tools not allowed by team 'team-1': ['c']. Team allows: ['a', 'a', 'b']."
-    );
+    assert_eq!(gate_detail(repeated_error), expected);
     let empty_ceiling = team_fields("team-1", &[], Some(ceiling_grants(None, Some(&[]))));
     validate_search_tools(
         Some(&json(r#"{"search_tools": ["z"]}"#)),

@@ -12,6 +12,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::team_rows::team::TeamFields;
 use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry, SharedRegistry};
 use betterlite_mcp::server_record::MCPServer;
+use serde::Serialize;
 use tokio::sync::RwLock;
 
 use crate::resource_delegation::admin_grant::AdminGrantError;
@@ -84,26 +85,44 @@ pub(crate) fn tool_permission_grants(raw: JsonData) -> ObjectPermissionGrants {
     }
 }
 
+#[derive(Serialize)]
+struct TeamRowFixture {
+    team_id: String,
+    access_group_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    object_permission: Option<PermissionFixture>,
+}
+
+#[derive(Serialize)]
+struct PermissionFixture {
+    object_permission_id: String,
+    mcp_servers: Vec<String>,
+    mcp_access_groups: Vec<String>,
+    mcp_tool_permissions: JsonData,
+    mcp_toolsets: Vec<String>,
+    search_tools: Vec<String>,
+}
+
 pub(crate) fn team_fields(
     team_id: &str,
     access_group_ids: &[&str],
     permission: Option<ObjectPermissionGrants>,
 ) -> TeamFields {
-    let mut row = serde_json::json!({
-        "team_id": team_id,
-        "access_group_ids": access_group_ids,
+    let object_permission = permission.map(|grants| PermissionFixture {
+        object_permission_id: String::from("team-permission"),
+        mcp_servers: grants.mcp_servers,
+        mcp_access_groups: grants.mcp_access_groups,
+        mcp_tool_permissions: grants.mcp_tool_permissions,
+        mcp_toolsets: grants.mcp_toolsets,
+        search_tools: grants.search_tools,
     });
-    if let Some(grants) = permission {
-        row["object_permission"] = serde_json::json!({
-            "object_permission_id": "team-permission",
-            "mcp_servers": grants.mcp_servers,
-            "mcp_access_groups": grants.mcp_access_groups,
-            "mcp_tool_permissions": grants.mcp_tool_permissions,
-            "mcp_toolsets": grants.mcp_toolsets,
-            "search_tools": grants.search_tools,
-        });
-    }
-    serde_json::from_value(row).expect("the team row")
+    let row = TeamRowFixture {
+        team_id: String::from(team_id),
+        access_group_ids: strings(access_group_ids),
+        object_permission,
+    };
+    let text = serde_json::to_string(&row).expect("the team row fixture serializes");
+    serde_json::from_str(&text).expect("the team row")
 }
 
 pub(crate) fn reads<'reads>(
