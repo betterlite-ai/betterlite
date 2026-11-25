@@ -1,50 +1,18 @@
 task: B10096
 deviations:
-  - what: >-
-      Keys in the .db files are compact JSON from serde_json (no spaces after commas and colons,
-      non-ASCII written as UTF-8). prometheus_client writes json.dumps with sort_keys, ", " and
-      ": " separators and \u escapes.
-    why: >-
-      Every reader, prometheus_client's MultiProcessCollector and B10095's, parses the key before
-      it merges, so both spellings give the same scrape; matching json.dumps byte for byte would
-      need yet another copy of a Python JSON formatter in a crate that may depend on no other
-      betterlite crate.
+  - what: Keys in the .db files are compact serde_json (no spaces, UTF-8) where prometheus_client writes json.dumps with sort_keys and ", " / ": " separators.
+    why: Both readers parse the key before merging, so a scrape comes out the same; matching json.dumps byte for byte would need another Python JSON formatter in this crate.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/mmap_dict.py#L141-L145
-  - what: >-
-      A file write that fails (the folder was removed or turned read-only) logs an error naming
-      the file and leaves the in-process value changed. prometheus_client raises the OSError from
-      the metric call.
-    why: >-
-      Collector::update has no error channel, and the request that moved the metric must not fail
-      because a metrics file did; LiteLLM's callers mostly catch the exception and log it too.
+  - what: A failed file write logs an error naming the file and leaves the in-process value changed; prometheus_client raises the OSError from the metric call.
+    why: Collector::update has no error channel, and a request must not fail because a metrics file did; LiteLLM's callers mostly catch and log the exception too.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L71-L85
-  - what: >-
-      PROMETHEUS_MULTIPROC_DIR set to empty text or to a path that is not a directory stops
-      startup (B8613 builds the writer). LiteLLM starts, writes its files into the working
-      directory for empty text or fails at the first metric it builds, and fails its /metrics
-      mount only when prometheus is a callback.
-    why: >-
-      One check when the registry is built gives one clear error at boot, instead of files in the
-      working directory or metric calls that fail later.
+  - what: PROMETHEUS_MULTIPROC_DIR empty or not a directory stops startup (B8613 builds the writer); LiteLLM starts and writes into the working directory, or fails at the first metric.
+    why: One check at boot gives one clear error instead of files in the working directory or metric calls that fail later.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L71-L80
-  - what: >-
-      A labelled series gets its zero entries from its first update. prometheus_client writes
-      them when the child is built, which its .labels(...) call does before any inc or observe.
-    why: >-
-      betterlite's labels(...) only builds a handle that shares the metric's samples and writer,
-      so it has nowhere to create a series without also changing the in-process samples; every
-      LiteLLM call site updates the child it takes, and the file then holds the zeros plus the
-      first value as it does there.
+  - what: A labelled series gets its zero entries on its first update; prometheus_client writes them when .labels(...) builds the child, before any inc or observe.
+    why: Betterlite's labels(...) shares the metric's samples and writer and has nowhere to create a series without changing those samples; every LiteLLM call site updates the child it takes.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L80-L85
-  - what: >-
-      A removal logs prometheus_client's warning only when the metric is bound to a multiprocess
-      writer. prometheus_client warns whenever prometheus_multiproc_dir or
-      PROMETHEUS_MULTIPROC_DIR is in the process environment, even for a metric that no registry
-      binds.
-    why: >-
-      The registry's writer is the only thing that puts a file behind a metric, so binding is the
-      condition under which the warning says something true; reading the process environment
-      would warn in every process that has the variable set, one-off metrics included, and would
-      couple a metric to global state.
+  - what: A removal logs prometheus_client's warning only when the metric is bound to a multiprocess writer; prometheus_client warns whenever the env var is set, even for an unbound metric.
+    why: The registry's writer is the only thing that puts a file behind a metric, so binding is when the warning says something true, and reading the environment would couple every metric to global state.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L213-L217
 kept_bugs: []
