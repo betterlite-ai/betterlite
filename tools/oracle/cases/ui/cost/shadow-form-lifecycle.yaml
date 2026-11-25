@@ -193,27 +193,8 @@ steps:
         - {pointer: /1/targets/0/stopped_at, why: each proxy stamps its own stop time}
         - {pointer: /1/targets/1/stopped_at, why: each proxy stamps its own stop time}
         - {pointer: /1/targets/2/stopped_at, why: each proxy stamps its own stop time}
-  - request:
-      method: POST
-      path: /auto_router/shadow_eval/start
-      headers: {content-type: application/json, authorization: Bearer sk-ui-viewer}
-      body:
-        router_names: [ui-router]
-        api_key_ids: [558afd921eebd1b98493d668ae872c4a66b8df5f218a337403a953ce0c2b8a83]
-        team_ids: [ui-team]
-        user_ids: [ui-user]
-        models: [ui-model]
-        direction: forward
-        shadow_percentage: 10
-        duration_days: 7
-        max_budget: 10
-        judge_model: ui-judge
-    compare:
-      headers: [content-type]
-      headers_present: []
-      upstream_headers: []
-      ignore:
-        - {pointer: /detail, why: betterlite writes its own viewer rejection message}
+  # The view-only start waits for B052's virtual key authentication; until then
+  # docs/deviations/B357.yaml records the gap and the start-admin-only probe proves the 403.
   - request:
       method: GET
       path: /auto_router/shadow_eval/start
