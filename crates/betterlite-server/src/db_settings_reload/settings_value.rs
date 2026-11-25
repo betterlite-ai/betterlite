@@ -111,7 +111,7 @@ pub(crate) fn semantic_filter_config(
         None => None,
         Some(StoredText::Text(model)) => Some(model),
         Some(StoredText::Wrong(_)) => {
-            return Err(SettingsReloadError::SemanticFilterEmbeddingModelNotString);
+            return Err(SettingsReloadError::EmbeddingModelNotString);
         }
     };
     let top_k = match stored.top_k {
@@ -125,7 +125,7 @@ pub(crate) fn semantic_filter_config(
         None => None,
         Some(StoredFloat::Float(value)) => Some(value),
         Some(StoredFloat::Wrong(_)) => {
-            return Err(SettingsReloadError::SemanticFilterSimilarityThresholdNotNumber);
+            return Err(SettingsReloadError::SimilarityThresholdNotNumber);
         }
     };
     Ok(SemanticFilterConfig {

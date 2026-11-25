@@ -65,11 +65,11 @@ pub enum SettingsReloadError {
     #[error("mcp_semantic_tool_filter.enabled must be a boolean")]
     SemanticFilterEnabledNotBool,
     #[error("mcp_semantic_tool_filter.embedding_model must be a string")]
-    SemanticFilterEmbeddingModelNotString,
+    EmbeddingModelNotString,
     #[error("mcp_semantic_tool_filter.top_k must be an integer")]
     SemanticFilterTopKNotInteger,
     #[error("mcp_semantic_tool_filter.similarity_threshold must be a number")]
-    SemanticFilterSimilarityThresholdNotNumber,
+    SimilarityThresholdNotNumber,
     #[error(transparent)]
     Override(#[from] StoredOverrideError),
     #[error(transparent)]
