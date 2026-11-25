@@ -2,6 +2,7 @@ use std::error::Error as StdError;
 
 use betterlite_db::model_secrets::ModelSecretsError;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use super::environment::EnvironmentError;
 use crate::credentials::error::CredentialError;
@@ -17,6 +18,10 @@ where
 {
     #[error(transparent)]
     Decrypt(#[from] DbRowDecryptError),
+    #[error("the model decryption task failed: {0}")]
+    DecryptTask(#[from] JoinError),
+    #[error("the model decryption task never ran")]
+    DecryptTaskMissing,
     #[error(transparent)]
     Model(#[from] ModelSecretsError),
     #[error(transparent)]

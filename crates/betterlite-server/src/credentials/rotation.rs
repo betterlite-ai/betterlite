@@ -7,6 +7,7 @@ pub mod store;
 mod tests;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::model_secrets::{DEFAULT_USER_ID, PreparedModel, prepare_encrypted_model};
@@ -17,6 +18,7 @@ use betterlite_db::stored_cipher::DbCipher;
 use betterlite_mcp::sso_assertions::rotation as sso_rotation;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::SecretString;
+use tokio::task::JoinSet;
 
 use environment::{environment_values, sealed_values};
 use error::RotationError;
@@ -40,10 +42,10 @@ pub struct Rotation<'run, S, M, A, I> {
     pub invalidate: &'run I,
     pub mcp: &'run M,
     pub assertions: &'run A,
-    pub cipher: &'run DbCipher,
+    pub cipher: &'run Arc<DbCipher>,
     pub new_master_key: &'run SecretString,
-    pub secrets: &'run SecretLookup,
-    pub warnings: &'run Warnings,
+    pub secrets: &'run Arc<SecretLookup>,
+    pub warnings: &'run Arc<Warnings>,
     pub runtime: &'run mut RuntimeEnvironment,
 }
 
@@ -62,7 +64,8 @@ where
         self.rotate_environment().await?;
         self.rotate_mcp(actor).await;
         self.rotate_assertions().await;
-        self.rotate_credentials(actor).await
+        self.rotate_credentials(actor).await;
+        Ok(())
     }
 
     // The model scan is the read whose failure only skips this stage; every later failure stops the rotation with the earlier writes kept.
@@ -83,13 +86,19 @@ where
             return Ok(());
         }
         let environment = self.runtime.snapshot().values;
-        let deployments = decrypt_model_rows(
-            &rows,
-            self.cipher,
-            self.secrets,
-            &environment,
-            self.warnings,
-        )?;
+        let cipher = Arc::clone(self.cipher);
+        let secrets = Arc::clone(self.secrets);
+        let warnings = Arc::clone(self.warnings);
+        // a secret reference opens a token file or waits on an OIDC provider, so the decrypt runs on the blocking pool
+        let mut blocking = JoinSet::new();
+        blocking.spawn_blocking(move || {
+            decrypt_model_rows(&rows, &cipher, &secrets, &environment, &warnings)
+        });
+        let deployments = match blocking.join_next().await {
+            Some(Ok(decrypted)) => decrypted?,
+            Some(Err(source)) => return Err(RotationError::DecryptTask(source)),
+            None => return Err(RotationError::DecryptTaskMissing),
+        };
         let mut prepared: Vec<PreparedModel> = Vec::with_capacity(deployments.len());
         for deployment in &deployments {
             prepared.push(prepare_encrypted_model(
@@ -155,7 +164,7 @@ where
         let touched_by = actor.unwrap_or(DEFAULT_USER_ID);
         let rotation = McpRotation {
             store: self.mcp,
-            cipher: self.cipher,
+            cipher: self.cipher.as_ref(),
             new_key: self.new_master_key,
         };
         if let Err(error) = rotation.servers(touched_by).await {
@@ -178,21 +187,18 @@ where
     }
 
     // One credential row that does not decode or does not update is skipped; the actor is written as given, null included.
-    async fn rotate_credentials(
-        &self,
-        actor: Option<&str>,
-    ) -> Result<(), RotationError<S::Error, I::Error>> {
+    async fn rotate_credentials(&self, actor: Option<&str>) {
         let rows = match self.store.credential_rows().await {
             Ok(rows) => rows,
             Err(error) => {
                 tracing::warn!(
                     "Failed to read the stored credentials, skipping their rotation: {error}"
                 );
-                return Ok(());
+                return;
             }
         };
         if rows.is_empty() {
-            return Ok(());
+            return;
         }
         let scanned = rows.len();
         for stored in rows {
@@ -209,7 +215,6 @@ where
             }
         }
         tracing::debug!("Successfully re-encrypted {scanned} credentials with new master key");
-        Ok(())
     }
 
     async fn reencrypt_credential(

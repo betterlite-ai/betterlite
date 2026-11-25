@@ -349,8 +349,11 @@ impl ModelTableInvalidation for RecordingSink {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum McpFailure {
     Servers,
+    ServerWrite,
     UserCredentials,
+    UserCredentialWrite,
     UserEnvVars,
+    UserEnvVarWrite,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -359,13 +362,25 @@ pub(super) struct FakeMcpError {
     pub failure: McpFailure,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct UserWrite {
+    pub user_id: String,
+    pub server_id: String,
+    pub value: String,
+}
+
 #[derive(Default)]
 pub(super) struct FakeMcpStore {
     pub servers: Vec<StoredServerRow>,
     pub user_credentials: Vec<StoredUserCredentialRow>,
     pub user_env_vars: Vec<StoredUserEnvVarRow>,
     pub failures: Vec<McpFailure>,
+    pub rejected_servers: Vec<String>,
+    pub rejected_user_credentials: Vec<String>,
+    pub rejected_user_env_vars: Vec<String>,
     pub updates: Mutex<Vec<ServerUpdate>>,
+    pub credential_log: Mutex<Vec<UserWrite>>,
+    pub env_var_log: Mutex<Vec<UserWrite>>,
 }
 
 impl FakeMcpStore {
@@ -382,17 +397,44 @@ impl FakeMcpStore {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    pub(super) fn user_credential_writes(&self) -> Vec<UserWrite> {
+        self.credential_log
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(super) fn user_env_var_writes(&self) -> Vec<UserWrite> {
+        self.env_var_log
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
-// Both per-user stages discard their update in the fake, and one expansion keeps the twin bodies out of the source.
-macro_rules! ignored_user_write {
-    ($method:ident, $value:ident) => {
+// Both per-user stages write the re-sealed value; the fake records it and fails the users it was told to.
+macro_rules! recorded_user_write {
+    ($method:ident, $value:ident, $log:ident, $rejected:ident, $failure:ident $(,)?) => {
         fn $method(
             &self,
-            _user_id: &str,
-            _server_id: &str,
+            user_id: &str,
+            server_id: &str,
             $value: &str,
         ) -> impl Future<Output = Result<(), FakeMcpError>> + Send {
+            if self.$rejected.iter().any(|rejected| rejected == user_id) {
+                return ready(Err(FakeMcpError {
+                    failure: McpFailure::$failure,
+                }));
+            }
+            self.$log
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(UserWrite {
+                    user_id: user_id.to_owned(),
+                    server_id: server_id.to_owned(),
+                    value: $value.to_owned(),
+                });
             ready(Ok(()))
         }
     };
@@ -410,9 +452,18 @@ impl McpRotationStore for FakeMcpStore {
 
     fn update_server(
         &self,
-        _server_id: &str,
+        server_id: &str,
         update: &ServerUpdate,
     ) -> impl Future<Output = Result<(), FakeMcpError>> + Send {
+        if self
+            .rejected_servers
+            .iter()
+            .any(|rejected| rejected == server_id)
+        {
+            return ready(Err(FakeMcpError {
+                failure: McpFailure::ServerWrite,
+            }));
+        }
         self.updates
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -441,7 +492,13 @@ impl McpRotationStore for FakeMcpStore {
         ready(checked.map(|()| self.user_credentials.clone()))
     }
 
-    ignored_user_write!(update_user_credential, _credential_b64);
+    recorded_user_write!(
+        update_user_credential,
+        credential_b64,
+        credential_log,
+        rejected_user_credentials,
+        UserCredentialWrite,
+    );
 
     fn user_env_var_rows(
         &self,
@@ -450,7 +507,13 @@ impl McpRotationStore for FakeMcpStore {
         ready(checked.map(|()| self.user_env_vars.clone()))
     }
 
-    ignored_user_write!(update_user_env_var, _values_b64);
+    recorded_user_write!(
+        update_user_env_var,
+        values_b64,
+        env_var_log,
+        rejected_user_env_vars,
+        UserEnvVarWrite,
+    );
 }
 
 pub(super) struct Fixture {
@@ -458,10 +521,10 @@ pub(super) struct Fixture {
     pub sink: RecordingSink,
     pub mcp: FakeMcpStore,
     pub assertions: MemoryAssertionRows,
-    pub cipher: DbCipher,
+    pub cipher: Arc<DbCipher>,
     pub new_master_key: SecretString,
-    pub secrets: SecretLookup,
-    pub warnings: Warnings,
+    pub secrets: Arc<SecretLookup>,
+    pub warnings: Arc<Warnings>,
     pub runtime: RuntimeEnvironment,
 }
 
@@ -473,10 +536,10 @@ pub(super) fn fixture() -> Fixture {
         sink,
         mcp: FakeMcpStore::default(),
         assertions: MemoryAssertionRows::default(),
-        cipher: cipher(OLD_KEY),
+        cipher: Arc::new(cipher(OLD_KEY)),
         new_master_key: new_key(),
-        secrets: secrets(),
-        warnings: Warnings::default(),
+        secrets: Arc::new(secrets()),
+        warnings: Arc::new(Warnings::default()),
         runtime: RuntimeEnvironment::default(),
     }
 }
