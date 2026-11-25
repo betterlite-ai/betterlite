@@ -9,4 +9,7 @@ deviations:
   - what: 'A2AClient.send_message_streaming is annotated AsyncGenerator[SendStreamingMessageResponse, None], where LiteLLM declares AsyncIterator[SendStreamingMessageResponse].'
     why: 'The method is an async generator, and the narrower annotation lets a caller stop the stream early with aclose() without a type suppression, which the zero-expect budget forbids; an AsyncGenerator is an AsyncIterator, so code written against LiteLLM''s annotation still type-checks.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/client.py#L98-L106
-kept_bugs: []
+kept_bugs:
+  - what: 'A2AClient.send_message_streaming builds its client without a streaming argument, so the client is created with main.py''s streaming=False default and the method performs a buffered send that yields one response even when the agent sends several events.'
+    why: 'LiteLLM 1.105.1 passes no streaming argument at client.py:74-78 and defaults streaming to False at main.py:771, and a working LiteLLM setup that calls A2AClient.send_message_streaming sees exactly that single-response stream, so betterlite keeps it; the direct asend_message_streaming path still streams every event.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L771

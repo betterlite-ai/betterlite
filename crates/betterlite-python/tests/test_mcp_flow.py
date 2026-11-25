@@ -25,6 +25,7 @@ TOOL_CALL_ID: Final = "call-1"
 TOOL_NAME: Final = "search"
 OTHER_TOOL_NAME: Final = "fetch"
 TOOL_COUNT: Final = 2
+CONTENT_COUNT: Final = 1
 ARGUMENTS: Final[dict[str, JsonValue]] = {"key": "value"}
 EXPECTED_EXPORTS: Final[tuple[str, ...]] = ("call_openai_tool", "load_mcp_tools")
 OPENAI_TOOLS: Final[TypeAdapter[list[ChatCompletionToolParam]]] = TypeAdapter(
@@ -42,18 +43,23 @@ class OpenAITool(TypedDict):
     function: OpenAIFunction
 
 
+class ToolContent(TypedDict):
+    type: str
+    text: str
+
+
+class ToolResult(TypedDict):
+    content: list[ToolContent]
+    isError: bool
+
+
 class McpFlowResult(TypedDict):
     tools: str
-    result: dict[str, JsonValue]
+    result: ToolResult
 
 
 TOOLS_VIEW: Final[TypeAdapter[list[OpenAITool]]] = TypeAdapter(list[OpenAITool])
-
-
-class Dumpable(Protocol):
-    def model_dump(
-        self, *, by_alias: bool = False, exclude_none: bool = False
-    ) -> dict[str, JsonValue]: ...
+TOOL_RESULT: Final[TypeAdapter[ToolResult]] = TypeAdapter(ToolResult)
 
 
 class TheirClient(Protocol):
@@ -109,11 +115,6 @@ THEIR_CALLER: Final[TheirCallerModule] = importlib.import_module(
 )
 
 
-# ast-grep-ignore: no-one-line-functions
-def dumped(value: Dumpable) -> dict[str, JsonValue]:
-    return value.model_dump(by_alias=True, exclude_none=True)
-
-
 def tool_call_for(tool: ChatCompletionToolParam) -> ChatCompletionMessageToolCall:
     name = tool["function"]["name"]
     function = Function(name=name, arguments=json.dumps(ARGUMENTS))
@@ -124,14 +125,20 @@ async def our_flow(session: MCPSession) -> McpFlowResult:
     loaded = OPENAI_TOOLS.validate_python(await load_mcp_tools(session, "openai"))
     call = tool_call_for(loaded[0])
     result = await call_openai_tool(session, call)
-    return McpFlowResult(tools=json.dumps(loaded, sort_keys=True), result=dumped(result))
+    fields: ToolResult = TOOL_RESULT.validate_json(
+        result.model_dump_json(by_alias=True, exclude_none=True)
+    )
+    return McpFlowResult(tools=json.dumps(loaded, sort_keys=True), result=fields)
 
 
 async def their_flow(session: ClientSession) -> McpFlowResult:
     loaded = OPENAI_TOOLS.validate_python(await THEIR_LOADER.load_mcp_tools(session, "openai"))
     call = tool_call_for(loaded[0])
     result = await THEIR_CALLER.call_openai_tool(session, call)
-    return McpFlowResult(tools=json.dumps(loaded, sort_keys=True), result=dumped(result))
+    fields: ToolResult = TOOL_RESULT.validate_json(
+        result.model_dump_json(by_alias=True, exclude_none=True)
+    )
+    return McpFlowResult(tools=json.dumps(loaded, sort_keys=True), result=fields)
 
 
 async def our_result(server: Server) -> McpFlowResult:
@@ -166,8 +173,12 @@ def test_flow_matches_litellm() -> None:
     assert names == [TOOL_NAME, OTHER_TOOL_NAME]
     assert len(names) == TOOL_COUNT
     assert ours["result"] == theirs["result"]
-    assert ours["result"]["isError"] is False
-    assert ours["result"]["content"] == [{"type": "text", "text": f"called {TOOL_NAME}"}]
+    result = ours["result"]
+    assert result["isError"] is False
+    assert len(result["content"]) == CONTENT_COUNT
+    part = result["content"][0]
+    assert part["type"] == "text"
+    assert part["text"] == f"called {TOOL_NAME}"
     assert our_auth == their_auth == f"Bearer {BEARER}"
 
 
