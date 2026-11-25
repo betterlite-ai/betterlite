@@ -33,6 +33,15 @@ deviations:
   - what: betterlite.caching also exports CacheMode and BaseCache; LiteLLM's caching/__init__.py exports Cache and LiteLLMCacheType from caching.py and the backend classes, but neither of those two names.
     why: The task names both among the package's exports, so a caller who builds or subclasses a cache imports them from the same package.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/__init__.py#L1-L11
+  - what: RedisCache.async_set_cache answers None; LiteLLM answers the Redis SET result, True on a write and None when nx kept an existing key.
+    why: The CacheStore protocol in betterlite._cache_ops (B8065) declares async_set_cache -> None, and widening that contract is outside this task's scope; the native handle already carries the optional boolean.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1085-L1147
+  - what: When a composed InMemoryCache has its own default_ttl (not 600), DualCache also applies it to the Redis tier's writes and increments, where LiteLLM leaves the Redis tier on its own default; memory writes, increments and backfills match LiteLLM.
+    why: The native dual cache applies one ttl to both tiers, so carrying the memory tier's default into the dual settings (the review's ask) reaches Redis too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150-L180
+  - what: DualCache.increment_cache and async_increment_cache carry the amount through f64, so an integer past 2^53 loses its low bits; LiteLLM adds Python ints in the memory tier and sends INCR with a whole number to Redis.
+    why: The Rust dual cache's increment takes f64 and B4293 to B4295 own that contract; the InMemoryCache, DiskCache and stand-alone RedisCache paths keep whole numbers where their Rust APIs take i64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164-L201
   - what: This task has no helper oracle cases.
     why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
     link: ""
