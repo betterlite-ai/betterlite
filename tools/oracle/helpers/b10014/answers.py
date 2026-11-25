@@ -29,7 +29,7 @@ from b10014.case import (
     ResolveCall,
     StoreAuth,
 )
-from b10014.fakes import Board, Cache, Prisma, ProxyServer, Registry, Row, Table
+from b10014.fakes import Board, Cache, Prisma, ProxyServer, Registry, Table
 
 
 def permission_value(auth: StoreAuth) -> dict[str, JsonValue] | None:
@@ -62,8 +62,7 @@ def key_auth(auth: StoreAuth) -> UserAPIKeyAuth:
     return AUTH.validate_python(mapping)
 
 
-# the store as it stands: a row carries every column, and a registry store carries
-# the fields it was given
+# the store as it stands: a row carries every column, a registry store the fields it was given
 def store_view(store: LiteLLM_ManagedVectorStore | None) -> dict[str, JsonValue] | None:
     if store is None:
         return None
@@ -71,7 +70,10 @@ def store_view(store: LiteLLM_ManagedVectorStore | None) -> dict[str, JsonValue]
 
 
 def error_view(raised: HTTPException) -> ErrorView:
-    return {"status": raised.status_code, "detail": DETAIL.validate_python(raised.detail)}
+    return {
+        "status": raised.status_code,
+        "detail": DETAIL.validate_python(raised.detail),
+    }
 
 
 def warning_labels(messages: list[str], vector_store_id: str) -> list[str]:
@@ -118,7 +120,7 @@ def table_value(call: ResolveCall | AssertIdCall) -> Table | None:
     if not call["database"]:
         return None
     rows = call.get("rows")
-    return Table([] if rows is None else [Row(row["model_dump"]) for row in rows])
+    return Table([] if rows is None else [row["model_dump"] for row in rows])
 
 
 def prepare(registry: Registry | None, cache: Cache, table: Table | None, board: Board) -> None:

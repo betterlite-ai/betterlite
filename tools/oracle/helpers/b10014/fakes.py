@@ -17,27 +17,17 @@ from b10014.case import (
     RowQuery,
 )
 
-# the row the scripted table hands back: LiteLLM calls model_dump on it, and the
-# projection being a plain dict keeps an empty one from being skipped
-class Row:
-    __slots__ = ("fields",)
 
-    def __init__(self, fields: dict[str, JsonValue]) -> None:
-        self.fields = fields
-
-    def model_dump(self) -> dict[str, JsonValue]:
-        return self.fields
-
-
+# the table LiteLLM queries and validates each dumped row into, as the real repository does
 class Table:
-    def __init__(self, rows: list[Row]) -> None:
+    def __init__(self, rows: list[dict[str, JsonValue]]) -> None:
         self.rows = rows
         self.queries: list[RowQuery] = []
 
-    async def find_many(self, where: dict[str, JsonValue], take: int) -> list[Row]:
+    async def find_many(self, where: dict[str, JsonValue], take: int) -> list[StoreRow]:
         uuids = WHERE.validate_python(where)["vector_store_id"]["in"]
         self.queries.append({"uuids": uuids, "take": take})
-        return self.rows
+        return [StoreRow.model_validate(row) for row in self.rows]
 
 
 class Database:
@@ -88,8 +78,7 @@ class Registry(VectorStoreRegistry):
         return super().get_litellm_managed_vector_store_from_registry(vector_store_id)
 
 
-# the log board the case reads its warnings from, and the proxy logging object
-# the lookup's metrics hook reaches
+# the log board the case reads warnings from, and the proxy logging object the metrics hook reaches
 class Board(Handler):
     def __init__(self) -> None:
         super().__init__(DEBUG)
