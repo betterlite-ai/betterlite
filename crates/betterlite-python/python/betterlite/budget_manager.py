@@ -103,7 +103,10 @@ class BudgetManager:
                 if reply["status"] == "error":
                     self.user_dict = {}
                 else:
-                    self.user_dict = reply["data"]
+                    data = reply.get("data")
+                    if data is None:
+                        raise KeyError("data")
+                    self.user_dict = data
             case str():
                 raise ValueError(
                     f"client_type must be 'local' or 'hosted', got {self.client_type!r}"
@@ -171,9 +174,11 @@ class BudgetManager:
         self._save_data_thread()
         return {"user": record_json(record)}
 
-    # ast-grep-ignore: no-one-line-functions
     def get_total_budget(self, user: str) -> JsonValue:
-        return float(self.user_dict[user]["total_budget"])
+        total_budget = self.user_dict[user].get("total_budget")
+        if total_budget is None:
+            raise KeyError("total_budget")
+        return float(total_budget)
 
     def get_current_cost(self, user: str) -> JsonValue:
         value = self.user_dict[user].get("current_cost")
@@ -204,8 +209,14 @@ class BudgetManager:
     def reset_on_duration(self, user: str) -> None:
         record = self.user_dict[user]
         now = time.time()
-        elapsed = now - record["last_updated_at"]
-        if elapsed < record["duration"] * HOURS_IN_A_DAY * 60 * 60:
+        last_updated_at = record.get("last_updated_at")
+        if last_updated_at is None:
+            raise KeyError("last_updated_at")
+        duration = record.get("duration")
+        if duration is None:
+            raise KeyError("duration")
+        elapsed = now - last_updated_at
+        if elapsed < duration * HOURS_IN_A_DAY * 60 * 60:
             return
         self.reset_cost(user)
         record["last_updated_at"] = now
