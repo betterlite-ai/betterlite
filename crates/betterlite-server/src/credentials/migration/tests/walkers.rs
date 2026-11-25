@@ -6,7 +6,7 @@ use betterlite_secrets::secret_codec::Algorithm;
 
 use super::super::error::MigrationError;
 use super::super::service::{Migration, check_encryption};
-use super::super::store::CallbackTable;
+use super::super::store::{CallbackRow, CallbackTable};
 use super::support::{
     FailingTransform, FakeError, FakeRotation, FakeStore, RotationCall, SALT_KEY, Write,
     callback_row, callback_settings_metadata, callback_text, callback_vars_metadata, cipher,
@@ -133,6 +133,10 @@ async fn check_encryption_attests_marked_callback_values_with_the_gate_off() {
         callback_row("team-string", secret("{\"logging\":[]}")),
         callback_row("team-no-slots", object(vec![("other", secret("value"))])),
     ]);
+    store.tokens.lock().unwrap().push(CallbackRow {
+        key: "token-null".to_owned(),
+        metadata: None,
+    });
     let cipher = cipher(Algorithm::XSalsa20Poly1305, Some(SALT_KEY));
     let report = check_encryption(&store, &cipher)
         .await
@@ -407,4 +411,100 @@ async fn sso_visits_every_nonempty_string_field_and_skips_the_rest() {
     assert!(
         matches!(value, MigrationJson::Object(fields) if matches!(fields.get("count"), Some(MigrationJson::Bool(true))))
     );
+}
+
+#[tokio::test]
+async fn a_token_callback_row_is_written_to_the_verification_token_table() {
+    let store = FakeStore::default();
+    store.scans.lock().unwrap().extend([
+        covered_report([0, 0, 0, 0, 0, 0]),
+        covered_report([0, 0, 0, 0, 0, 0]),
+    ]);
+    store.tokens.lock().unwrap().push(callback_row(
+        "token-1",
+        callback_vars_metadata(vec![("api_key", marked(&legacy(SALT_KEY, "sk-token")))]),
+    ));
+    let mut rotation = FakeRotation::default();
+    let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
+    let report = migration(&store, &mut rotation, &cipher, false)
+        .run()
+        .await
+        .expect("the migration writes the token row");
+    let token = location_of(&report, "verification_token.callback_vars");
+    assert_eq!((token.scanned, token.migrated), (1, 1));
+    let writes = store.writes();
+    assert_eq!(writes.len(), 1);
+    let Write::Callback {
+        table,
+        key,
+        metadata,
+    } = &writes[0]
+    else {
+        panic!("the token row is written");
+    };
+    assert_eq!(*table, CallbackTable::VerificationToken);
+    assert_eq!(key, "token-1");
+    let sealed = callback_text(metadata, "api_key");
+    let inner = sealed
+        .strip_prefix("litellm_enc::")
+        .expect("the migrated value keeps the marker");
+    assert_eq!(open(SALT_KEY, inner).as_deref(), Some("sk-token"));
+}
+
+#[tokio::test]
+async fn a_dry_run_counts_legacy_callback_values_without_transforming_them() {
+    let store = FakeStore::default();
+    store
+        .scans
+        .lock()
+        .unwrap()
+        .push_back(covered_report([0, 0, 0, 0, 0, 0]));
+    store.teams.lock().unwrap().push(callback_row(
+        "team-1",
+        callback_vars_metadata(vec![("api_key", marked(&legacy(SALT_KEY, "sk-a")))]),
+    ));
+    let mut rotation = FakeRotation::default();
+    let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
+    let mut service = Migration {
+        store: &store,
+        rotation: &mut rotation,
+        cipher: &cipher,
+        transform: FailingTransform,
+        actor: None,
+        dry_run: true,
+    };
+    let report = service.run().await.expect("the dry run reports");
+    let team = location_of(&report, "team.callback_vars");
+    assert_eq!(
+        (team.scanned, team.legacy, team.undecryptable, team.migrated),
+        (1, 1, 0, 0)
+    );
+    assert!(store.writes().is_empty());
+    assert!(rotation.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_config_or_sso_row_that_is_not_a_mapping_is_ignored() {
+    let store = FakeStore::default();
+    store
+        .scans
+        .lock()
+        .unwrap()
+        .push_back(covered_report([0, 0, 0, 0, 0, 0]));
+    store.configs.lock().unwrap().extend([
+        (
+            "vantage_settings".to_owned(),
+            MigrationJson::Array(vec![secret("value")]),
+        ),
+        ("cloudzero_settings".to_owned(), MigrationJson::Bool(true)),
+    ]);
+    *store.sso.lock().unwrap() = Some(secret("[]"));
+    let cipher = cipher(Algorithm::XSalsa20Poly1305, Some(SALT_KEY));
+    let report = check_encryption(&store, &cipher)
+        .await
+        .expect("the attestation runs");
+    assert_eq!(location_of(&report, "vantage_settings").scanned, 0);
+    assert_eq!(location_of(&report, "cloudzero_settings").scanned, 0);
+    assert_eq!(location_of(&report, "sso_config").scanned, 0);
+    assert!(store.writes().is_empty());
 }
