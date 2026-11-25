@@ -1,0 +1,29 @@
+kind: helper
+name: managed-store-access-seed
+call:
+  b10014:
+    calls:
+      - function: resolve
+        vector_store_id: vs_a
+        registry:
+          stores:
+            - vector_store_id: vs_a
+              custom_llm_provider: openai
+              litellm_params: '{"api_key": "k"}'
+              team_id: a
+        database: true
+      - function: resolve
+        vector_store_id: vs_a
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+        fail: cache_write
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}
+        auth: {team_id: b, object_permission_id: op_x, vector_stores: [vs_a]}
+        detail: blocked here
+      - function: assert_id
+        vector_store_id: native-id
+        database: false
+        auth: {team_id: b}
+env: {}
+compare: {ignore: []}
