@@ -112,19 +112,28 @@ impl NativeRerankErrorPayload {
 impl RerankCallWire {
     // rerank's own call: the ninth default (return_documents=True) arrives as a value from main.py
     pub(crate) fn into_call(self) -> RerankCall {
+        let RerankArguments {
+            model,
+            query,
+            documents,
+            custom_llm_provider,
+            top_n,
+            rank_fields,
+            return_documents,
+            max_chunks_per_doc,
+            max_tokens_per_doc,
+        } = self.arguments;
         RerankCall {
-            model: self.arguments.model,
-            query: self.arguments.query,
-            documents: self.arguments.documents,
-            custom_llm_provider: self.arguments.custom_llm_provider,
-            top_n: self.arguments.top_n,
-            rank_fields: self.arguments.rank_fields,
-            return_documents: self
-                .arguments
-                .return_documents
+            model,
+            query,
+            documents,
+            custom_llm_provider,
+            top_n,
+            rank_fields,
+            return_documents: return_documents
                 .map_or(ReturnDocuments::Null, ReturnDocuments::Value),
-            max_chunks_per_doc: self.arguments.max_chunks_per_doc,
-            max_tokens_per_doc: self.arguments.max_tokens_per_doc,
+            max_chunks_per_doc,
+            max_tokens_per_doc,
             kwargs: self.kwargs,
         }
     }
@@ -160,8 +169,14 @@ pub(crate) struct HiddenFacts<'facts> {
 #[must_use]
 pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
     let mut hidden = HiddenParams::new();
-    hidden.insert(String::from("_response_ms"), number(facts.response_ms));
-    hidden.insert(String::from("callback_duration_ms"), number(0.0_f64));
+    hidden.insert(
+        String::from("_response_ms"),
+        Number::from_f64(facts.response_ms).map_or(Json::Null, Json::Number),
+    );
+    hidden.insert(
+        String::from("callback_duration_ms"),
+        Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number),
+    );
     hidden.insert(
         String::from("litellm_call_id"),
         Json::Text(facts.call_id.to_owned()),
@@ -191,7 +206,10 @@ pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
         Json::Text(facts.provider.to_owned()),
     );
     if let Some(overhead) = facts.overhead_ms {
-        hidden.insert(String::from("litellm_overhead_time_ms"), number(overhead));
+        hidden.insert(
+            String::from("litellm_overhead_time_ms"),
+            Number::from_f64(overhead).map_or(Json::Null, Json::Number),
+        );
     }
     hidden
 }
@@ -206,14 +224,10 @@ pub(crate) struct RerankAnswer {
     pub(crate) response_ms: f64,
 }
 
-// set_hidden_params reports get_api_base over the call's own kwargs, never the resolved deployment.
-#[must_use]
-pub(crate) fn declared_api_base(kwargs: &IndexMap<String, Json>) -> Option<String> {
-    if let Some(Json::Text(base)) = kwargs.get("api_base") {
-        return Some(base.clone());
-    }
-    match kwargs.get("base_url") {
-        Some(Json::Text(alias)) if !alias.is_empty() => Some(alias.clone()),
+// A kwarg read as text only when it holds a non-empty string, the one shape set_hidden_params keeps.
+fn non_empty_text(value: Option<&Json>) -> Option<&str> {
+    match value {
+        Some(Json::Text(text)) if !text.is_empty() => Some(text),
         Some(
             Json::Text(_)
             | Json::Bool(_)
@@ -224,6 +238,15 @@ pub(crate) fn declared_api_base(kwargs: &IndexMap<String, Json>) -> Option<Strin
         )
         | None => None,
     }
+}
+
+// set_hidden_params reports get_api_base over the call's own kwargs, never the resolved deployment.
+#[must_use]
+pub(crate) fn declared_api_base(kwargs: &IndexMap<String, Json>) -> Option<String> {
+    if let Some(Json::Text(base)) = kwargs.get("api_base") {
+        return Some(base.clone());
+    }
+    non_empty_text(kwargs.get("base_url")).map(str::to_owned)
 }
 
 // set_hidden_params reads kwargs["model_info"]["id"] into the answer's model_id
@@ -237,20 +260,8 @@ pub(crate) fn model_info_id(kwargs: &IndexMap<String, Json>) -> Option<&Json> {
 // `litellm_call_id = kwargs.get("litellm_call_id") or str(uuid.uuid4())`
 #[must_use]
 pub(crate) fn call_id(kwargs: &IndexMap<String, Json>) -> String {
-    match kwargs.get("litellm_call_id") {
-        Some(Json::Text(text)) if !text.is_empty() => text.clone(),
-        Some(
-            Json::Text(_)
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::List(_)
-            | Json::Object(_)
-            | Json::Null,
-        )
-        | None => Uuid::new_v4().to_string(),
+    match non_empty_text(kwargs.get("litellm_call_id")) {
+        Some(text) => text.to_owned(),
+        None => Uuid::new_v4().to_string(),
     }
-}
-
-fn number(value: f64) -> Json {
-    Number::from_f64(value).map_or(Json::Null, Json::Number)
 }

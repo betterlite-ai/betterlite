@@ -113,10 +113,9 @@ fn answer(
 ) -> RerankAnswer {
     let provider = operations.provider().unwrap_or_default();
     let response_ms = started.elapsed().as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
-    let provider_ms = operations.provider_ms();
     let overhead = match entry {
         Entry::Sync => None,
-        Entry::Async => Some(provider_ms.mul_add(-1.0_f64, response_ms).max(0.0_f64)),
+        Entry::Async => Some(operations.overhead_ms(response_ms)),
     };
     let hidden = hidden_params(&HiddenFacts {
         call_id: &facts.call_id,

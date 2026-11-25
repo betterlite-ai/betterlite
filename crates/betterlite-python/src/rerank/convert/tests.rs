@@ -11,6 +11,7 @@ use betterlite_error::error::details::ResponseDetails;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankResponse};
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
 
@@ -270,8 +271,14 @@ fn request_hidden_params_add_the_overhead_only_when_asked() {
     );
 }
 
-#[test]
-fn request_answer_flattens_the_response() {
+#[rstest]
+#[case::id("id")]
+#[case::results("results")]
+#[case::meta("meta")]
+#[case::provider("provider")]
+#[case::hidden_params("hidden_params")]
+#[case::response_ms("response_ms")]
+fn request_answer_flattens_the_response(#[case] name: &str) {
     let answer = RerankAnswer {
         response: RerankResponse::default(),
         provider: String::from(PROVIDER),
@@ -290,16 +297,7 @@ fn request_answer_flattens_the_response() {
     let Json::Object(fields) = serde_json::from_str::<Json>(&text).unwrap() else {
         panic!("the answer is not an object");
     };
-    for name in [
-        "id",
-        "results",
-        "meta",
-        "provider",
-        "hidden_params",
-        "response_ms",
-    ] {
-        assert!(fields.contains_key(name), "{name} is missing");
-    }
+    assert!(fields.contains_key(name), "{name} is missing");
     assert_eq!(
         fields.get("provider"),
         Some(&Json::Text(String::from(PROVIDER)))

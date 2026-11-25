@@ -89,10 +89,12 @@ impl<'call> Operations<'call> {
             .clone()
     }
 
-    // how long the provider's own transport took; arerank reports the rest as the wrapper's overhead
+    // arerank reports the response time its own transport did not spend as the wrapper's overhead
     #[cfg_attr(test, mutants::skip)]
-    pub(crate) fn provider_ms(&self) -> f64 {
+    pub(crate) fn overhead_ms(&self, response_ms: f64) -> f64 {
         f64::from_bits(self.provider_ms.load(Ordering::Relaxed))
+            .mul_add(-1.0_f64, response_ms)
+            .max(0.0_f64)
     }
 
     #[cfg_attr(test, mutants::skip)]
