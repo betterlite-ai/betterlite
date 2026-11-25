@@ -11,6 +11,7 @@ from typing import ClassVar, Final, Protocol, TypedDict
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
+from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite.exceptions import (
     APIConnectionError,
     AuthenticationError,
@@ -42,6 +43,7 @@ SEARCH_COST: Final = 0.002
 MAX_CHUNKS: Final = 10
 MISSING_MODEL_TEXT: Final = "model parameter is required but was None"
 UNSUPPORTED_TEXT: Final = "Unsupported provider: openai"
+NOT_WIRED_TEXT: Final = "the together_ai rerank handler is not wired into betterlite"
 AUTH_TEXT: Final = "invalid api key"
 
 DOCUMENTS_TEXT: Final[list[str | dict[str, JsonValue]]] = [
@@ -332,6 +334,19 @@ def test_request_extra_kwargs() -> None:
     assert response_of(outcome).id == "rerank-1"
 
 
+def test_request_headers() -> None:
+    with closing(RerankServer()) as server:
+        outcome = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+            headers={"x-one": "1"},
+        )
+        call = server.calls[-1]
+    assert header_of(call, "x-one") == "1"
+    assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
+    assert response_of(outcome).id == "rerank-1"
+
+
 def test_error_authentication() -> None:
     with closing(RerankServer(status=AUTH_STATUS, body=AUTH_BODY)) as server, pytest.raises(
         AuthenticationError
@@ -383,3 +398,53 @@ def test_error_unsupported() -> None:
     assert server.calls == []
     assert caught.value.status_code == SERVER_ERROR_STATUS
     assert UNSUPPORTED_TEXT in caught.value.message
+
+
+def test_error_not_wired() -> None:
+    with closing(RerankServer()) as server, pytest.raises(APIConnectionError) as caught:
+        _ = rerank(
+            model="rerank", query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider="together_ai", api_base=server.url, api_key=GOOD_KEY,
+        )
+    assert server.calls == []
+    assert caught.value.status_code == SERVER_ERROR_STATUS
+    assert NOT_WIRED_TEXT in caught.value.message
+
+
+def test_error_client_refused() -> None:
+    with pytest.raises(UnsupportedCallArgument) as refused:
+        _ = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER, client=object(),
+        )
+    assert refused.value.argument == "client"
+
+
+def test_error_session_refused() -> None:
+    with pytest.raises(UnsupportedCallArgument) as refused:
+        _ = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER, shared_session=object(),
+        )
+    assert refused.value.argument == "shared_session"
+
+
+def test_error_azure_refused() -> None:
+    with pytest.raises(UnsupportedCallArgument) as refused:
+        _ = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER, azure_ad_token_provider=object(),
+        )
+    assert refused.value.argument == "azure_ad_token_provider"
+
+
+def test_request_logger_ignored() -> None:
+    with closing(RerankServer()) as server:
+        outcome = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+            litellm_logging_obj=object(),
+        )
+        body = body_of(server.calls[-1])
+    assert body["query"] == QUERY
+    assert response_of(outcome).id == "rerank-1"
