@@ -59,10 +59,9 @@ pub struct VertexBatchKwargs {
 
 // the request metadata carries the caller's API key, so Debug names its keys without their values
 impl fmt::Debug for VertexBatchKwargs {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let metadata_keys: Vec<&str> = self.request_metadata.keys().map(String::as_str).collect();
-        formatter
-            .debug_struct("VertexBatchKwargs")
+        f.debug_struct("VertexBatchKwargs")
             .field("response_cost", &self.response_cost)
             .field("model", &self.model)
             .field("batch_id", &self.batch_id)

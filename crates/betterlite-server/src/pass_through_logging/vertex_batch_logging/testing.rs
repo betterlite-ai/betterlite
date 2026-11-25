@@ -26,6 +26,7 @@ impl ResponseIds for FixedResponseId {
     }
 }
 
+#[must_use]
 pub fn logging_state() -> Option<LoggingState> {
     let init = LoggingInit {
         model: String::new(),
@@ -62,6 +63,7 @@ pub fn logging_state() -> Option<LoggingState> {
     .ok()
 }
 
+#[must_use]
 pub fn handle_batch_response(body: &[u8]) -> Option<VertexBatchLogged> {
     let mut call_log = logging_state()?;
     let logging = VertexBatchLogging::new(None, None, Arc::new(FixedResponseId));
