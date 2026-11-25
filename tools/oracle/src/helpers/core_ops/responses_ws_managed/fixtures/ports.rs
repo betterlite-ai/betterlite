@@ -69,7 +69,7 @@ impl ModelResolver for DispatchResolver {
         let (prefix, rest) = request
             .model
             .split_once('/')
-            .map_or((request.model, request.model), |pair| pair);
+            .unwrap_or((request.model, request.model));
         let provider = request.custom_llm_provider.unwrap_or(prefix);
         if provider != "openai" {
             return Err(ResolutionError::MissingProvider {

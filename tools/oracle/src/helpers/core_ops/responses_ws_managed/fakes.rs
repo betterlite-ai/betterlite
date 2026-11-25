@@ -179,7 +179,10 @@ impl ProjectQuotaCallback for ScriptedQuota {
             estimated_output_tokens,
         );
         match self.row.kind {
-            QuotaKind::RateLimit => Err(rate_limited(&self.row.message)),
+            QuotaKind::RateLimit => {
+                let message = format!("litellm.RateLimitError: {}", self.row.message);
+                Err(rate_limited(&message))
+            }
             QuotaKind::Internal => Err(ErrorClass::InternalServer(Box::new(context(
                 &self.row.message,
             )))),
