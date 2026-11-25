@@ -790,14 +790,18 @@ pub(super) fn failing_chunks(
     stream::iter(all)
 }
 
-pub(super) fn failure() -> StreamFailure {
-    StreamFailure::upstream(
-        "ScriptedReadError".to_owned(),
-        "the upstream read failed".to_owned(),
-        "Traceback: scripted".to_owned(),
-        Arc::new(io::Error::other("the upstream read failed")),
-    )
+macro_rules! failure {
+    () => {
+        StreamFailure::upstream(
+            "ScriptedReadError".to_owned(),
+            "the upstream read failed".to_owned(),
+            "Traceback: scripted".to_owned(),
+            Arc::new(io::Error::other("the upstream read failed")),
+        )
+    };
 }
+
+pub(super) use failure;
 
 #[derive(Clone, Default)]
 pub(super) struct Captured(pub(super) Arc<Mutex<Vec<u8>>>);

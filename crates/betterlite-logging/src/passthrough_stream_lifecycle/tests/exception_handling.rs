@@ -41,7 +41,7 @@ async fn an_upstream_error_schedules_the_failure_and_never_logs_success() {
         EndpointType::OpenAi,
     );
     let collected: Vec<_> =
-        chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure()))
+        chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure!()))
             .collect()
             .await;
     assert_eq!(collected.len(), 2);
@@ -55,7 +55,7 @@ async fn an_upstream_error_schedules_the_failure_and_never_logs_success() {
             .unwrap()
             .is::<std::io::Error>()
     );
-    assert_eq!(recorded(delivered), recorded(&failure()));
+    assert_eq!(recorded(delivered), recorded(&failure!()));
     assert_eq!(
         harness.failure_dispatch.failures(),
         vec![RecordedFailure {
@@ -81,12 +81,12 @@ async fn the_failure_is_scheduled_before_the_error_reaches_the_caller() {
     );
     let mut stream = Box::pin(chunk_processor(
         call,
-        failing_chunks(vec![b"alpha".to_vec()], failure()),
+        failing_chunks(vec![b"alpha".to_vec()], failure!()),
     ));
     assert_eq!(stream.next().await.unwrap().unwrap(), b"alpha");
     assert_eq!(
         recorded(&stream.next().await.unwrap().unwrap_err()),
-        recorded(&failure())
+        recorded(&failure!())
     );
     assert_eq!(harness.failure_dispatch.failures().len(), 1);
 }
@@ -102,13 +102,13 @@ async fn an_upstream_error_after_status_400_is_not_scheduled() {
     );
     call.status_code = 400;
     let collected: Vec<_> =
-        chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure()))
+        chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure!()))
             .collect()
             .await;
     assert_eq!(collected.len(), 2);
     assert_eq!(
         recorded(collected[1].as_ref().unwrap_err()),
-        recorded(&failure())
+        recorded(&failure!())
     );
     assert!(harness.failure_dispatch.failures().is_empty());
     assert!(harness.queue.kinds().is_empty());
@@ -127,7 +127,7 @@ async fn the_partial_bytes_reach_the_anthropic_usage_recovery() {
     drop(
         chunk_processor(
             call,
-            failing_chunks(vec![b"event: message_start\n\n".to_vec()], failure()),
+            failing_chunks(vec![b"event: message_start\n\n".to_vec()], failure!()),
         )
         .collect::<Vec<_>>()
         .await,
@@ -170,7 +170,7 @@ async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_fai
     );
     let mut stream = Box::pin(chunk_processor(
         call,
-        failing_chunks(vec![b"data: partial\n\n".to_vec()], failure()),
+        failing_chunks(vec![b"data: partial\n\n".to_vec()], failure!()),
     ));
     assert_eq!(stream.next().await.unwrap().unwrap(), b"data: partial\n\n");
 
@@ -250,13 +250,13 @@ async fn an_error_before_any_chunk_logs_no_success() {
         object(&[], IndexMap::new()),
         EndpointType::OpenAi,
     );
-    let collected: Vec<_> = chunk_processor(call, failing_chunks(Vec::new(), failure()))
+    let collected: Vec<_> = chunk_processor(call, failing_chunks(Vec::new(), failure!()))
         .collect()
         .await;
     assert_eq!(collected.len(), 1);
     assert_eq!(
         recorded(collected[0].as_ref().unwrap_err()),
-        recorded(&failure())
+        recorded(&failure!())
     );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
     assert_eq!(harness.binder.calls(), 0);

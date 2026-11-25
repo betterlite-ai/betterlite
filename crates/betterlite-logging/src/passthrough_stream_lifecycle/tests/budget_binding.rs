@@ -120,7 +120,7 @@ async fn a_failure_never_binds_the_reservation() {
         EndpointType::OpenAi,
     );
     drop(
-        chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure()))
+        chunk_processor(call, failing_chunks(vec![b"alpha".to_vec()], failure!()))
             .collect::<Vec<_>>()
             .await,
     );
