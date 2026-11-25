@@ -25,6 +25,7 @@ class ServerRecord(TypedDict):
 
 
 class PermissionRecord(TypedDict):
+    object_permission_id: str
     mcp_servers: list[str] | None
     mcp_access_groups: list[str] | None
     mcp_tool_permissions: dict[str, list[str]] | None
@@ -172,7 +173,7 @@ def seed_fixtures(
 
 def permission_row(permission: PermissionRecord) -> LiteLLM_ObjectPermissionTable:
     return LiteLLM_ObjectPermissionTable(
-        object_permission_id="op-case",
+        object_permission_id=permission["object_permission_id"],
         mcp_servers=permission["mcp_servers"],
         mcp_access_groups=permission["mcp_access_groups"],
         mcp_tool_permissions=permission["mcp_tool_permissions"],
