@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::model_secrets::{DEFAULT_USER_ID, PreparedModel, prepare_encrypted_model};
+use betterlite_db::model_secrets::{DEFAULT_USER_ID, prepare_encrypted_model};
 use betterlite_db::resource_rows::ResourceRowsError;
 use betterlite_db::resource_rows::credential::CredentialItem as CredentialRow;
 use betterlite_db::sso_assertion_rows::AssertionRows;
@@ -76,38 +76,32 @@ where
         let rows = match self.store.model_rows().await {
             Ok(rows) => rows,
             Err(error) => {
-                tracing::warn!(
-                    "Failed to read the stored models, skipping their rotation: {error}"
-                );
+                tracing::warn!("The stored models could not be read, skipping them: {error}");
                 return Ok(());
             }
         };
         if rows.is_empty() {
             return Ok(());
         }
-        let environment = self.runtime.snapshot().values;
-        let cipher = Arc::clone(self.cipher);
-        let secrets = Arc::clone(self.secrets);
-        let warnings = Arc::clone(self.warnings);
         // a secret reference opens a token file or waits on an OIDC provider, so the decrypt runs on the blocking pool
         let mut blocking = JoinSet::new();
-        blocking.spawn_blocking(move || {
-            decrypt_model_rows(&rows, &cipher, &secrets, &environment, &warnings)
+        blocking.spawn_blocking({
+            let cipher = Arc::clone(self.cipher);
+            let secrets = Arc::clone(self.secrets);
+            let warnings = Arc::clone(self.warnings);
+            let environment = self.runtime.snapshot().values;
+            move || decrypt_model_rows(&rows, &cipher, &secrets, &environment, &warnings)
         });
-        let deployments = match blocking.join_next().await {
-            Some(Ok(decrypted)) => decrypted?,
-            Some(Err(source)) => return Err(RotationError::DecryptTask(source)),
-            None => return Err(RotationError::DecryptTaskMissing),
+        let Some(task) = blocking.join_next().await else {
+            return Err(RotationError::DecryptTaskMissing);
         };
-        let mut prepared: Vec<PreparedModel> = Vec::with_capacity(deployments.len());
-        for deployment in &deployments {
-            prepared.push(prepare_encrypted_model(
-                deployment,
-                self.cipher,
-                self.new_master_key,
-                actor,
-            )?);
-        }
+        let deployments = task??;
+        let prepared = deployments
+            .iter()
+            .map(|deployment| {
+                prepare_encrypted_model(deployment, self.cipher, self.new_master_key, actor)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         self.store
             .save_model_params(&prepared)
             .await
