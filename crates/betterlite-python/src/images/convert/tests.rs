@@ -6,7 +6,7 @@ use super::super::session::{
     ImageSession, call_setup, explicit_credentials, first_text, now_seconds,
 };
 use super::super::variation::{first_image, variation};
-use super::fields::{headers, resolve_target, target, timeout};
+use super::fields::{boolean, field, headers, resolve_target, strings, target, text, timeout};
 use super::options::{edit_options, generation_options};
 use super::{
     ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, SettingsWire, image_file, images, parse,
@@ -242,6 +242,61 @@ fn error_wrong_field_type_names_the_field() {
     let (wire, _files) = call(r#"{"timeout":"soon"}"#);
     let error = timeout(&wire.arguments).unwrap_err();
     assert_eq!(error.to_string(), "timeout must be a number");
+}
+
+#[test]
+fn request_text_preserves_empty_text_and_reports_wrong_types() {
+    let (wire, _files) = call(r#"{"name":""}"#);
+    assert_eq!(text(&wire.arguments, "name").unwrap().as_deref(), Some(""));
+    assert_eq!(text(&wire.arguments, "missing").unwrap(), None);
+    let (invalid, _) = call(r#"{"name":1}"#);
+    assert_eq!(
+        text(&invalid.arguments, "name").unwrap_err().to_string(),
+        "name must be text"
+    );
+}
+
+#[test]
+fn request_boolean_preserves_false_and_checks_type() {
+    let (wire, _files) = call(r#"{"enabled":false}"#);
+    assert_eq!(boolean(&wire.arguments, "enabled").unwrap(), Some(false));
+    let (invalid, _) = call(r#"{"enabled":"false"}"#);
+    assert_eq!(
+        boolean(&invalid.arguments, "enabled")
+            .unwrap_err()
+            .to_string(),
+        "enabled must be a boolean"
+    );
+}
+
+#[test]
+fn request_strings_preserves_values_and_rejects_non_text_items() {
+    let (wire, _files) = call(r#"{"names":["a","b"]}"#);
+    assert_eq!(
+        strings(&wire.arguments, "names").unwrap(),
+        vec![String::from("a"), String::from("b")]
+    );
+    let (invalid, _) = call(r#"{"names":["a",1]}"#);
+    assert_eq!(
+        strings(&invalid.arguments, "names")
+            .unwrap_err()
+            .to_string(),
+        "names must be a list of text values"
+    );
+}
+
+#[test]
+fn error_headers_reject_non_object_values() {
+    let (wire, _files) = call(r#"{"headers":[]}"#);
+    assert_eq!(
+        headers(&wire.arguments).unwrap_err().to_string(),
+        "headers must be an object of text values"
+    );
+}
+
+#[test]
+fn error_field_records_expected_type() {
+    assert_eq!(field("prompt", "text").to_string(), "prompt must be text");
 }
 
 #[test]
