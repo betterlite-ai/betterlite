@@ -212,7 +212,7 @@ async fn evaluation_probe_keeps_a_rejected_call_in_the_backend_error() {
     assert!(
         source
             .downcast_ref::<DecisionsEntryError>()
-            .is_some_and(|error| error.to_string() == message),
+            .is_some_and(|entry_failure| entry_failure.to_string() == message),
         "the source is the entrypoint error"
     );
 }
