@@ -51,18 +51,12 @@ impl SharedHealthStatus {
         let available = self.cache_available.unwrap_or(false);
         status.insert("cache_available".to_owned(), Json::Bool(available));
         if let Some(age) = self.cache_age_seconds {
-            status.insert("cache_age_seconds".to_owned(), number_or_null(age));
+            let age_json = Number::from_f64(age).map_or_else(|| Json::Null, Json::Number);
+            status.insert("cache_age_seconds".to_owned(), age_json);
             let checked_by = self.last_checked_by.clone().map_or(Json::Null, Json::Text);
             status.insert("last_checked_by".to_owned(), checked_by);
         }
         status
-    }
-}
-
-fn number_or_null(value: f64) -> Json {
-    match Number::from_f64(value) {
-        Some(number) => Json::Number(number),
-        None => Json::Null,
     }
 }
 

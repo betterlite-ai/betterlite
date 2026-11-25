@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
-use std::pin::Pin;
+use std::future::{Future, ready};
+use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -23,6 +23,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, Utc};
+use futures_util::future::{Either, select};
 use serde_json::Number;
 use tokio::sync::Notify;
 use tokio_util::task::TaskTracker;
@@ -329,9 +330,14 @@ impl FakeCache {
     }
 
     pub(crate) fn value(&self, key: &str) -> Option<CachedValue> {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let raw = state.values.get(key)?;
-        serde_json::from_str(raw).ok()
+        let raw = self
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values
+            .get(key)
+            .cloned()?;
+        serde_json::from_str(&raw).ok()
     }
 }
 
@@ -346,36 +352,27 @@ fn cache_failure(operation: &'static str) -> SharedHealthCacheError {
 #[error("the fixture cache failed")]
 struct FixtureFailure;
 
-// Both fakes answer a delete with the number of entries it removed.
-fn removed_count<T>(removed: Option<T>) -> i64 {
-    match removed {
-        Some(_entry) => 1,
-        None => 0,
-    }
-}
-
 #[async_trait]
 impl SharedHealthCache for FakeCache {
     async fn get(&self, key: &str) -> Result<Option<CachedValue>, SharedHealthCacheError> {
         self.ops.record(&format!("get:{key}"));
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.faults.get("get").is_some_and(|failed| failed == key) {
-            return Err(cache_failure("async_get_cache"));
-        }
-        let hidden = match state.hidden.get_mut(key) {
-            Some(remaining) => {
+        let raw = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if state.faults.get("get").is_some_and(|failed| failed == key) {
+                return Err(cache_failure("async_get_cache"));
+            }
+            let hidden = state.hidden.get_mut(key).is_some_and(|remaining| {
                 let hit = *remaining > 0;
                 *remaining = remaining.saturating_sub(1);
                 hit
+            });
+            if hidden {
+                return Ok(None);
             }
-            None => false,
-        };
-        if hidden {
-            return Ok(None);
-        }
-        let raw = match state.values.get(key) {
-            Some(raw) => raw.clone(),
-            None => return Ok(None),
+            match state.values.get(key) {
+                Some(raw) => raw.clone(),
+                None => return Ok(None),
+            }
         };
         Ok(serde_json::from_str(&raw).ok())
     }
@@ -403,6 +400,7 @@ impl SharedHealthCache for FakeCache {
         }
         let stored = serde_json::to_string(value).unwrap_or_default();
         state.values.insert(key.to_owned(), stored);
+        drop(state);
         Ok(true)
     }
 
@@ -417,7 +415,9 @@ impl SharedHealthCache for FakeCache {
             return Err(cache_failure("async_delete_cache"));
         }
         state.deletes.push(key.to_owned());
-        Ok(removed_count(state.values.remove(key)))
+        let removed = state.values.remove(key).is_some();
+        drop(state);
+        Ok(i64::from(removed))
     }
 }
 
@@ -484,14 +484,13 @@ impl SharedHealthProbe for FakeProbe {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        match queued {
-            Some(outcome) => outcome,
-            None => Ok(self
+        queued.unwrap_or_else(|| {
+            Ok(self
                 .reply
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .clone()),
-        }
+                .clone())
+        })
     }
 }
 
@@ -676,12 +675,14 @@ impl FakeStatus {
 impl SharedHealthStatusSource for FakeStatus {
     async fn status(&self) -> Result<JsonObject, SharedHealthStatusError> {
         let _previous = self.calls.fetch_add(1, Ordering::Relaxed);
-        match &self.failure {
-            Some(message) => Err(SharedHealthStatusError {
-                message: message.clone(),
-            }),
-            None => Ok(self.body.clone()),
-        }
+        self.failure.as_ref().map_or_else(
+            || Ok(self.body.clone()),
+            |message| {
+                Err(SharedHealthStatusError {
+                    message: message.clone(),
+                })
+            },
+        )
     }
 }
 
@@ -711,30 +712,45 @@ impl FakeLock {
 }
 
 impl LockCache for FakeLock {
-    async fn get_owner(&self, key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
-        let values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(values.get(key).map(|owner| owner.as_bytes().to_vec()))
+    fn get_owner(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
+        let owner = self
+            .values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .map(|owner| owner.as_bytes().to_vec());
+        ready(Ok(owner))
     }
 
-    async fn set_owner_if_absent(
+    fn set_owner_if_absent(
         &self,
         key: &str,
         owner: &str,
         _ttl_seconds: i64,
-    ) -> Result<bool, LockCacheError> {
+    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
         if values.contains_key(key) {
-            return Ok(false);
+            return ready(Ok(false));
         }
         values.insert(key.to_owned(), owner.to_owned());
-        Ok(true)
+        drop(values);
+        ready(Ok(true))
     }
 
-    async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
-        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+    fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         let mut deletes = self.deletes.lock().unwrap_or_else(PoisonError::into_inner);
         deletes.push(key.to_owned());
-        Ok(removed_count(values.remove(key)))
+        drop(deletes);
+        let removed = self
+            .values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(key)
+            .is_some();
+        ready(Ok(i64::from(removed)))
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
@@ -796,10 +812,12 @@ pub(crate) async fn run_until_sleep<F>(sleeper: &StepSleeper, future: &mut Pin<B
 where
     F: Future<Output = ()>,
 {
-    tokio::select! {
-        () = future => panic!("the background loop returned"),
-        () = sleeper.slept.notified() => {}
-    }
+    let slept = pin!(sleeper.slept.notified());
+    let outcome = select(future, slept).await;
+    assert!(
+        matches!(outcome, Either::Left(_)),
+        "the background loop returned"
+    );
 }
 
 pub(crate) struct World {
@@ -859,7 +877,6 @@ impl World {
     }
 
     pub(crate) fn pod_manager(
-        &self,
         pod: &str,
         cache: Option<Arc<FakeLock>>,
     ) -> Arc<PodLockManager<FakeLock>> {
@@ -889,7 +906,7 @@ impl World {
             deployments: Some(Arc::new(deployments)),
             results: Arc::clone(&self.results),
             store: Some(Arc::clone(&self.store)),
-            lock: Some(self.pod_manager(POD_A, Some(Arc::clone(&self.lock)))),
+            lock: Some(Self::pod_manager(POD_A, Some(Arc::clone(&self.lock)))),
             health_state: Some(health_state),
             clock: self.clock(),
             tasks: self.tasks.clone(),

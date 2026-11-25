@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -20,7 +22,7 @@ async fn an_unauthenticated_call_is_rejected() {
     let source = FakeStatus::answering(JsonObject::new());
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
-        status: Some(source.clone()),
+        status: Some(Arc::clone(&source)),
     };
     let (status, text) = route_get(shared_status_router(state), None, SHARED_STATUS_PATH).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -39,7 +41,7 @@ async fn the_authenticated_call_reaches_the_status_source() {
     let source = FakeStatus::answering(payload.clone());
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
-        status: Some(source.clone()),
+        status: Some(Arc::clone(&source)),
     };
     let context = caller();
     let (status, text) = route_get(
@@ -63,7 +65,7 @@ async fn the_disabled_proxy_says_so_and_never_reads_redis() {
     let source = FakeStatus::answering(JsonObject::new());
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Disabled,
-        status: Some(source.clone()),
+        status: Some(Arc::clone(&source)),
     };
     let context = caller();
     let (status, text) = route_get(
@@ -114,7 +116,7 @@ async fn a_failed_status_read_is_a_500() {
     let source = FakeStatus::failing("redis is down");
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
-        status: Some(source.clone()),
+        status: Some(Arc::clone(&source)),
     };
     let context = caller();
     let (status, text) = route_get(

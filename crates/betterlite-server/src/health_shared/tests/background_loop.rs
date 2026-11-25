@@ -1,12 +1,15 @@
 #![cfg(test)]
 
+use std::pin::pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use betterlite_db::queues::pod_lock::PodLockManager;
+use futures_util::future::{Either, select};
+use tokio::time::timeout;
 
-use crate::health_status_routes::state::HealthResultsSource;
+use crate::health_status_routes::state::HealthResultsSource as _;
 
 use super::background::{BACKGROUND_CHECKED_BY, SAVE_JOB_ID, background_loop, window_gated_save};
 use super::error::SharedHealthError;
@@ -21,7 +24,7 @@ async fn a_zero_interval_never_runs_a_cycle() {
     let world = World::new(instant(SHARED_AT));
     let mut deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
     deps.interval_seconds = 0;
-    let outcome = tokio::time::timeout(
+    let outcome = timeout(
         Duration::from_millis(50),
         background_loop(deps, StepSleeper::default()),
     )
@@ -36,7 +39,7 @@ async fn a_negative_interval_never_runs_a_cycle() {
     let world = World::new(instant(SHARED_AT));
     let mut deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
     deps.interval_seconds = -30;
-    let outcome = tokio::time::timeout(
+    let outcome = timeout(
         Duration::from_millis(50),
         background_loop(deps, StepSleeper::default()),
     )
@@ -86,11 +89,37 @@ async fn a_cycle_probes_saves_and_keeps_the_window_lock() {
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].exceptions.len(), 1);
     assert_eq!(writes[0].healthy.len(), 1);
+}
+
+#[tokio::test]
+async fn a_second_cycle_reprobes_without_saving_again() {
+    let world = World::new(instant(SHARED_AT));
+    let deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
+    let sleeper = StepSleeper::default();
+    let mut loop_future = Box::pin(background_loop(deps, sleeper.clone()));
+    run_until_sleep(&sleeper, &mut loop_future).await;
+    assert_eq!(world.probe.calls().len(), 1);
     sleeper.wakes.notify_one();
     run_until_sleep(&sleeper, &mut loop_future).await;
     assert_eq!(world.probe.calls().len(), 2);
     assert_eq!(world.store.reads(), 1);
     assert!(world.lock.holds(SAVE_JOB_ID));
+}
+
+#[tokio::test]
+async fn a_closed_tracker_stops_the_loop_after_the_cycle() {
+    let world = World::new(instant(SHARED_AT));
+    let deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
+    let sleeper = StepSleeper::default();
+    let mut loop_future = Box::pin(background_loop(deps, sleeper.clone()));
+    run_until_sleep(&sleeper, &mut loop_future).await;
+    world.tasks.close();
+    sleeper.wakes.notify_one();
+    timeout(Duration::from_millis(50), loop_future)
+        .await
+        .expect("the closed tracker ends the loop");
+    assert_eq!(world.probe.calls().len(), 1);
+    assert_eq!(world.store.reads(), 1);
 }
 
 #[tokio::test]
@@ -210,7 +239,7 @@ async fn a_loop_without_a_store_releases_the_window_lock() {
 #[tokio::test]
 async fn a_completed_save_keeps_the_window_lock() {
     let world = World::new(instant(SHARED_AT));
-    let manager = world.pod_manager(POD_A, Some(Arc::clone(&world.lock)));
+    let manager = World::pod_manager(POD_A, Some(Arc::clone(&world.lock)));
     let saved = window_gated_save(Some(&manager), &world.tasks, Some(300), async { true }).await;
     assert!(saved);
     world.tasks.close();
@@ -222,7 +251,7 @@ async fn a_completed_save_keeps_the_window_lock() {
 #[tokio::test]
 async fn a_failed_save_releases_the_window_lock() {
     let world = World::new(instant(SHARED_AT));
-    let manager = world.pod_manager(POD_A, Some(Arc::clone(&world.lock)));
+    let manager = World::pod_manager(POD_A, Some(Arc::clone(&world.lock)));
     let saved = window_gated_save(Some(&manager), &world.tasks, Some(300), async { false }).await;
     assert!(!saved);
     assert!(!world.lock.holds(SAVE_JOB_ID));
@@ -232,12 +261,12 @@ async fn a_failed_save_releases_the_window_lock() {
 #[tokio::test]
 async fn another_pods_window_skips_the_save() {
     let world = World::new(instant(SHARED_AT));
-    let other = world.pod_manager(POD_B, Some(Arc::clone(&world.lock)));
+    let other = World::pod_manager(POD_B, Some(Arc::clone(&world.lock)));
     assert_eq!(
         other.acquire_lock(SAVE_JOB_ID, Some(300), false).await,
         Some(true)
     );
-    let manager = world.pod_manager(POD_A, Some(Arc::clone(&world.lock)));
+    let manager = World::pod_manager(POD_A, Some(Arc::clone(&world.lock)));
     let ran = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&ran);
     let saved = window_gated_save(Some(&manager), &world.tasks, Some(300), async move {
@@ -254,7 +283,7 @@ async fn another_pods_window_skips_the_save() {
 #[tokio::test]
 async fn a_pod_lock_without_a_cache_saves_ungated() {
     let world = World::new(instant(SHARED_AT));
-    let manager = world.pod_manager(POD_A, None);
+    let manager = World::pod_manager(POD_A, None);
     let first = window_gated_save(Some(&manager), &world.tasks, Some(300), async { true }).await;
     let second = window_gated_save(Some(&manager), &world.tasks, Some(300), async { false }).await;
     assert!(first);
@@ -293,14 +322,16 @@ async fn a_cancelled_save_releases_the_window_lock() {
     let deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
     let sleeper = StepSleeper::default();
     let mut loop_future = Box::pin(background_loop(deps, sleeper));
-    tokio::select! {
-        () = world.store.saved_once() => {}
-        () = &mut loop_future => panic!("the background loop returned"),
-    }
+    let saved = pin!(world.store.saved_once());
+    let outcome = select(saved, &mut loop_future).await;
+    assert!(
+        matches!(outcome, Either::Left(_)),
+        "the background loop returned"
+    );
     assert!(world.lock.holds(SAVE_JOB_ID));
     drop(loop_future);
     world.tasks.close();
-    tokio::time::timeout(Duration::from_secs(5), world.tasks.wait())
+    timeout(Duration::from_secs(5), world.tasks.wait())
         .await
         .expect("the release task finishes");
     assert!(world.lock.released(SAVE_JOB_ID));

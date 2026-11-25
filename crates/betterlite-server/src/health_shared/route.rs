@@ -32,7 +32,6 @@ pub struct SharedStatusState {
 }
 
 // The one route B8540 mounts inside the proxy's authenticated stage.
-#[must_use]
 pub fn shared_status_router(state: SharedStatusState) -> Router {
     Router::new()
         .route(SHARED_STATUS_PATH, get(shared_status))
@@ -47,10 +46,10 @@ async fn shared_status(
         return unauthenticated();
     }
     if state.checks == SharedHealthSwitch::Disabled {
-        return AxumJson(not_served_body(NotServed::Disabled)).into_response();
+        return AxumJson(not_served_body(&NotServed::Disabled)).into_response();
     }
     let Some(source) = state.status.as_deref() else {
-        return AxumJson(not_served_body(NotServed::RedisUnavailable)).into_response();
+        return AxumJson(not_served_body(&NotServed::RedisUnavailable)).into_response();
     };
     match source.status().await {
         Ok(status) => AxumJson(enabled_body(status)).into_response(),
@@ -64,7 +63,7 @@ enum NotServed {
     RedisUnavailable,
 }
 
-fn not_served_body(answer: NotServed) -> JsonObject {
+fn not_served_body(answer: &NotServed) -> JsonObject {
     match answer {
         NotServed::Disabled => {
             let mut body = JsonObject::new();

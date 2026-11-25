@@ -96,13 +96,13 @@ impl SharedHealthCheckManager {
         };
         let ours = owner
             .and_then(cached_owner)
-            .is_some_and(|owner| owner == self.pod_id);
+            .is_some_and(|stored| stored == self.pod_id);
         if !ours {
             return;
         }
         match redis.delete(Self::LOCK_KEY).await {
             Ok(_deleted) => {
-                tracing::info!(pod = %self.pod_id, "pod released the health check lock")
+                tracing::info!(pod = %self.pod_id, "pod released the health check lock");
             }
             Err(error) => tracing::error!("Error releasing health check lock: {error}"),
         }

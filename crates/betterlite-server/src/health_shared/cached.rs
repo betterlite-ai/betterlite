@@ -64,7 +64,11 @@ pub fn encode_cached(
 pub fn cached_payload(value: CachedValue) -> Result<CachedHealthCheck, CachedHealthError> {
     let document = match value {
         CachedValue::Text(text) => safe_json_loads(text.as_bytes())?,
-        other => serde_json::to_value(json_from_cached(other))?,
+        other @ (CachedValue::Null
+        | CachedValue::Boolean(_)
+        | CachedValue::Number(_)
+        | CachedValue::Array(_)
+        | CachedValue::Object(_)) => serde_json::to_value(json_from_cached(other))?,
     };
     Ok(serde_json::from_value(document)?)
 }

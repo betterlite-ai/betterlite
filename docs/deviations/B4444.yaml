@@ -18,6 +18,9 @@ deviations:
   - what: max_concurrency is forwarded unchanged to B4443's perform_health_check, and None or a non-positive value stays unbounded with no cap of its own.
     why: This matches LiteLLM, whose unbounded path starts one task per model with asyncio.gather; the task outline flagged the default as a decision point, so it is recorded here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L539-L576
+  - what: The loop ends when the server closes the TaskTracker it runs on, after the cycle in flight finishes; LiteLLM's _run_background_health_check never stops itself and its asyncio task ends with the event loop at shutdown.
+    why: A tracked task that never returns holds the tracker's wait() open, so shutdown would hang; the closed tracker is how a TaskTracker-hosted loop learns the server is stopping, and the cycle in flight completes before the loop returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4503-L4521
 kept_bugs:
   - what: Two processes that start in the same wall-clock millisecond get the same pod_id, so either one treats the other's health check lock as its own when releasing it and reports the other's id as lock_owner.
     why: LiteLLM builds pod_id from int(time.time() * 1000); the collision window is the source's, and a working setup treats the lock as best-effort coordination whose TTL is the real bound.

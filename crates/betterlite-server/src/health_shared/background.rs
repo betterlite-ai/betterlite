@@ -39,7 +39,7 @@ pub struct BackgroundHealthLoop<Store: HealthCheckStore, L: LockCache> {
     pub tasks: TaskTracker,
 }
 
-// The loop task B8540 spawns on the server's tracker: a zero or negative interval never starts it.
+// The loop task B8540 spawns on the server's tracker: a zero or negative interval never starts it, and a closed tracker stops it once the cycle in flight ends.
 pub async fn background_loop<Store, L, S>(deps: BackgroundHealthLoop<Store, L>, mut sleeper: S)
 where
     Store: HealthCheckStore,
@@ -51,7 +51,7 @@ where
     }
     let interval = u64::try_from(deps.interval_seconds).unwrap_or_default();
     let mut cycle = 0_u64;
-    loop {
+    while !deps.tasks.is_closed() {
         cycle = cycle.wrapping_add(1);
         run_cycle(&deps, cycle, &mut sleeper).await;
         sleeper.sleep(Duration::from_secs(interval)).await;
@@ -72,10 +72,9 @@ pub(crate) async fn run_cycle<Store, L, S>(
         cycle_id: format!("bg-{cycle}"),
         source: SOURCE.to_owned(),
     };
-    let models = match deps.deployments.as_deref() {
-        Some(list) => health_check_eligible(list.as_slice(), true),
-        None => Vec::new(),
-    };
+    let models = deps.deployments.as_deref().map_or_else(Vec::new, |list| {
+        health_check_eligible(list.as_slice(), true)
+    });
     let result = cycle_result(deps, models.as_slice(), &context, sleeper).await;
     deps.results.publish(&result);
     persist_cycle(deps, models.as_slice(), &result).await;
@@ -155,7 +154,11 @@ async fn persist_cycle<Store, L>(
     };
     let request = SaveRequest {
         start_time: deps.clock.now(),
-        checked_by: Some(checked_by(deps)),
+        checked_by: Some(
+            deps.manager
+                .as_ref()
+                .map_or(BACKGROUND_CHECKED_BY, |manager| manager.pod_id.as_str()),
+        ),
     };
     let save = save_background(
         deps.store.as_deref(),
@@ -171,18 +174,6 @@ async fn persist_cycle<Store, L>(
     )
     .await;
     tracing::debug!(saved, "the background health check cycle saved or skipped");
-}
-
-// The source names the pod in a shared setup and the fixed background marker otherwise.
-fn checked_by<Store, L>(deps: &BackgroundHealthLoop<Store, L>) -> &str
-where
-    Store: HealthCheckStore,
-    L: LockCache,
-{
-    match &deps.manager {
-        Some(manager) => manager.pod_id.as_str(),
-        None => BACKGROUND_CHECKED_BY,
-    }
 }
 
 // _window_gated_health_check_db_save: one save per window, kept by the completed save and released on failure or cancellation.

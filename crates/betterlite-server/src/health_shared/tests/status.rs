@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use serde_json::Number;
 
 use super::manager::SharedHealthCheckManager;
-use super::status_view::SharedHealthStatusSource;
+use super::status_view::SharedHealthStatusSource as _;
 use super::support::{
     CHECKER, Fault, SHARED_AT, SHARED_SECONDS, World, cached_text, field, instant, keys, number,
 };
