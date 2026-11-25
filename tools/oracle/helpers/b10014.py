@@ -5,7 +5,7 @@ from types import ModuleType
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
-from litellm.models.managed_files import LiteLLM_ManagedVectorStoresTable
+from litellm.models.managed_files import LiteLLM_ManagedVectorStoresTable as StoreRow
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.vector_store_endpoints.utils import (
     assert_user_can_access_vector_store,
@@ -150,7 +150,7 @@ class Prisma:
 # the shared cache LiteLLM reads and writes one row per UUID through
 class Cache:
     def __init__(
-        self, hits: dict[str, LiteLLM_ManagedVectorStoresTable], failure: Failure | None
+        self, hits: dict[str, StoreRow], failure: Failure | None
     ) -> None:
         self.hits = hits
         self.failure = failure
@@ -160,14 +160,14 @@ class Cache:
 
     async def async_get_cache(
         self, key: str, **_kwargs: JsonValue
-    ) -> LiteLLM_ManagedVectorStoresTable | None:
+    ) -> StoreRow | None:
         self.reads.append(key)
         if self.failure == "cache_read":
             raise RuntimeError(CACHE_FAILURE)
         return self.hits.get(key)
 
     async def async_set_cache(
-        self, key: str, value: LiteLLM_ManagedVectorStoresTable, **_kwargs: JsonValue
+        self, key: str, value: StoreRow, **_kwargs: JsonValue
     ) -> None:
         if self.failure == "cache_write":
             raise RuntimeError(CACHE_FAILURE)
@@ -289,9 +289,9 @@ def registry_value(call: ResolveCall | AssertIdCall) -> Registry | None:
 
 def cache_value(call: ResolveCall | AssertIdCall) -> Cache:
     cached = call.get("cached")
-    hits: dict[str, LiteLLM_ManagedVectorStoresTable] = {}
+    hits: dict[str, StoreRow] = {}
     for row in [] if cached is None else cached:
-        table = LiteLLM_ManagedVectorStoresTable.model_validate(row["model_dump"])
+        table = StoreRow.model_validate(row["model_dump"])
         hits[f"{CACHE_KEY_PREFIX}{table.vector_store_id}"] = table
     return Cache(hits, call.get("fail"))
 
