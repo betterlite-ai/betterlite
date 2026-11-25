@@ -128,13 +128,13 @@ fn realtime_usages(results: &[Event]) -> Result<Vec<IndexMap<String, Json>>, Rea
         let Some(response) = event.get("response") else {
             return Err(RealtimeCostError::MissingField { field: "response" });
         };
-        let Json::Object(response) = response else {
+        let Json::Object(response_object) = response else {
             return Err(RealtimeCostError::Shape {
                 field: "response",
                 expected: "an object",
             });
         };
-        match response.get("usage") {
+        match response_object.get("usage") {
             None | Some(Json::Null) => usages.push(IndexMap::new()),
             Some(Json::Object(usage)) => usages.push(usage.clone()),
             Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {

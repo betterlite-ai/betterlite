@@ -222,7 +222,10 @@ fn cost_extra_engine_prices_only_the_vertex_search_api() {
             .expect("openai declares no vector price"),
         (Amount(Decimal::ZERO), Amount(Decimal::ZERO))
     );
+}
 
+#[test]
+fn cost_extra_engine_rejects_unknown_vector_providers() {
     let unknown: VectorStoreRequest =
         request(r#"{"model": null, "custom_llm_provider": "typo-provider", "response": {}}"#);
     assert_eq!(
@@ -469,7 +472,10 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
         tool_use.get("web_search_requests"),
         Some(&Json::Number(serde_json::Number::from(2_i64)))
     );
+}
 
+#[test]
+fn cost_extra_engine_collects_websocket_usage() {
     let websocket: CollectUsageRequest = request(
         r#"{"source": "responses_ws", "results": [
             {"type": "response.completed", "response": {"usage": {
@@ -490,7 +496,10 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
             .get("web_search_requests"),
         Some(&Json::Number(serde_json::Number::from(2_i64)))
     );
+}
 
+#[test]
+fn cost_extra_engine_partitions_websocket_usage_by_tier() {
     let partition: PartitionUsageRequest = request(
         r#"{"results": [
             {"type": "response.completed", "response": {"service_tier": "default", "usage": {}}},
