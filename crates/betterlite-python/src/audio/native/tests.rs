@@ -24,6 +24,8 @@ fn native_audio_session_rejects_a_malformed_payload() {
     Python::attach(|py| {
         let session = NativeAudioSession::new(SETTINGS).unwrap();
         assert!(session.transcription(py, "not json", Vec::new()).is_err());
+        assert!(session.atranscription(py, "not json", Vec::new()).is_err());
         assert!(session.speech(py, "not json", Vec::new()).is_err());
+        assert!(session.aspeech(py, "not json", Vec::new()).is_err());
     });
 }

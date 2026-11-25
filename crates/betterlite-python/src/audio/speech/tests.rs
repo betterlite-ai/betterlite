@@ -55,3 +55,10 @@ fn speech_prepare_requires_a_voice() {
     let failure = prepare(&session(), &call).unwrap_err();
     assert!(failure.message.contains("'voice' is required"));
 }
+
+#[test]
+fn speech_prepare_requires_an_api_key() {
+    let call = wire(r#"{"model":"tts-1","input":"hi","voice":"alloy"}"#);
+    let failure = prepare(&session(), &call).unwrap_err();
+    assert!(failure.message.contains("must be set by passing api_key"));
+}
