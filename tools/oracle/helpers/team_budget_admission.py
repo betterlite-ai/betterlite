@@ -56,7 +56,7 @@ def fixed_now() -> datetime:
 # budget_reservation's isinstance must keep admitting pydantic's plain datetimes
 class _FrozenMeta(type):
     @override
-    def __instancecheck__(self, instance: object) -> bool:
+    def __instancecheck__(self, instance: JsonValue | datetime) -> bool:
         return isinstance(instance, datetime)  # ast-grep-ignore: no-isinstance
 
 
