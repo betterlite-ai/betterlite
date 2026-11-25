@@ -7,6 +7,13 @@ use super::{GrantReads, GrantsError, NO_MCP_SERVERS, RegistryGrantReads as _, Se
 use crate::auth::object_permission_hydration::principal::key_object_permission_hydrated;
 use crate::auth::object_permission_hydration::reads::ObjectPermissionReads as _;
 
+// the two key level grants differ only in where they read and in the warning they leave
+#[derive(Clone, Copy, Debug)]
+enum KeyLevel {
+    Ceiling,
+    AccessGroups,
+}
+
 impl<Reads> ServerGrants<Reads>
 where
     Reads: GrantReads,
@@ -16,10 +23,30 @@ where
         let Some(record) = auth else {
             return Vec::new();
         };
-        match self.key_grant(record).await {
+        self.key_level(record, KeyLevel::Ceiling).await
+    }
+
+    // _get_key_access_group_mcp_server_extras: attaching a unified group to the key is itself the grant
+    pub async fn key_access_group_servers(&self, auth: Option<&GrantAuth>) -> Vec<String> {
+        let Some(record) = auth else {
+            return Vec::new();
+        };
+        self.key_level(record, KeyLevel::AccessGroups).await
+    }
+
+    async fn key_level(&self, auth: &GrantAuth, level: KeyLevel) -> Vec<String> {
+        let granted = match level {
+            KeyLevel::Ceiling => self.key_grant(auth).await,
+            KeyLevel::AccessGroups => self.key_access_group_grant(auth).await,
+        };
+        match granted {
             Ok(servers) => servers,
             Err(error) => {
-                warn!("Failed to get allowed MCP servers for key: {error}");
+                let warning = match level {
+                    KeyLevel::Ceiling => "Failed to get allowed MCP servers for key",
+                    KeyLevel::AccessGroups => "Failed to get key access group MCP server grants",
+                };
+                warn!("{warning}: {error}");
                 Vec::new()
             }
         }
@@ -74,28 +101,22 @@ where
         Ok(servers.into_iter().collect())
     }
 
-    // _get_key_access_group_mcp_server_extras: attaching a unified group to the key is itself the grant
-    pub async fn key_access_group_servers(&self, auth: Option<&GrantAuth>) -> Vec<String> {
-        let Some(record) = auth else {
-            return Vec::new();
-        };
-        let fresh = record.mcp.requires_fresh_policy;
-        match self
+    async fn key_access_group_grant(
+        &self,
+        auth: &GrantAuth,
+    ) -> Result<Vec<String>, GrantsError<Reads>> {
+        let fresh = auth.mcp.requires_fresh_policy;
+        let server_ids = self
             .reads
-            .access_group_server_ids(&record.access_group_ids, fresh)
-            .await
-        {
-            Ok(server_ids) if server_ids.is_empty() => Vec::new(),
-            Ok(server_ids) => {
-                self.reads
-                    .registry()
-                    .expand_permission_list(&server_ids)
-                    .await
-            }
-            Err(error) => {
-                warn!("Failed to get key access group MCP server grants: {error}");
-                Vec::new()
-            }
+            .access_group_server_ids(&auth.access_group_ids, fresh)
+            .await?;
+        if server_ids.is_empty() {
+            return Ok(Vec::new());
         }
+        Ok(self
+            .reads
+            .registry()
+            .expand_permission_list(&server_ids)
+            .await)
     }
 }
