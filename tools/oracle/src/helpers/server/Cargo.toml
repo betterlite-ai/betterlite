@@ -36,6 +36,7 @@ betterlite-policy = { path = "../../../../../crates/betterlite-policy" }
 betterlite-prometheus = { path = "../../../../../crates/betterlite-prometheus" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../../../../crates/betterlite-redis" }
+betterlite-reporting = { path = "../../../../../crates/betterlite-reporting" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
 betterlite-routes = { path = "../../../../../crates/betterlite-routes" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
