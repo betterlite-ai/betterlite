@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod postgres;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::future::{Future, ready};
@@ -426,11 +428,12 @@ fn stored_row(id: &str) -> ManagedVectorStoresTable {
 #[test]
 fn row_to_vector_store_projects_every_column() {
     let projected = row_to_vector_store(stored_row("vs_a")).unwrap();
-    assert_eq!(projected.is_config, Some(false));
+    assert!(projected.is_config.is_none());
+    assert!(!projected.extra.contains_key("is_config"));
     assert_eq!(
         rendered(&projected),
         json(
-            r#"{"vector_store_id":"vs_a","custom_llm_provider":"openai","vector_store_name":"Store","vector_store_description":null,"vector_store_metadata":{"env":"prod"},"created_at":null,"updated_at":null,"litellm_credential_name":"cred","litellm_params":{"api_key":"secret","region":"us"},"team_id":null,"user_id":"u1","is_config":false}"#
+            r#"{"vector_store_id":"vs_a","custom_llm_provider":"openai","vector_store_name":"Store","vector_store_description":null,"vector_store_metadata":{"env":"prod"},"created_at":null,"updated_at":null,"litellm_credential_name":"cred","litellm_params":{"api_key":"secret","region":"us"},"team_id":null,"user_id":"u1"}"#
         )
     );
 }

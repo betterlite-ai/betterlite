@@ -21,11 +21,16 @@ pub trait VectorStoreRows: Send + Sync {
     ) -> impl Future<Output = Result<Option<ManagedVectorStoresTable>, TableError>> + Send;
 }
 
-// _row_to_vector_store: LiteLLM_ManagedVectorStore(**row.model_dump()), every column under its own name
+// _row_to_vector_store: LiteLLM_ManagedVectorStore(**row.model_dump()), every column under its own name;
+// the table has no is_config column, so the key stays absent until _with_ownership supplies it
 pub fn row_to_vector_store(
     row: ManagedVectorStoresTable,
 ) -> Result<LiteLlmManagedVectorStore, serde_json::Error> {
-    serde_json::to_value(row).and_then(serde_json::from_value)
+    let mut dumped = serde_json::to_value(row)?;
+    if let Some(fields) = dumped.as_object_mut() {
+        fields.remove("is_config");
+    }
+    serde_json::from_value(dumped)
 }
 
 // B726's repository over B858's row, bound to the table the binding names
