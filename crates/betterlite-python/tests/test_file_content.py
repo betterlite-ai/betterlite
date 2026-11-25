@@ -553,7 +553,7 @@ def test_error_matches_litellm() -> None:
     assert expected == {
         "code": "file_not_found", "type": "invalid_request_error", "param": "file_id",
     }
-    assert ERROR_PAYLOAD.validate_json(str(cause))["body"] == expected
+    assert ERROR_PAYLOAD.validate_json(str(cause)).get("body") == expected
     # B7870 records the shared exception converter's dropped fields as a deviation.
     assert made.value.code is made.value.type is made.value.param is None
 
