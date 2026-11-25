@@ -215,16 +215,16 @@ async fn member_equality_and_scope_stop_downstream() {
     assert!(!reached);
     let scoped = r#"{"user_id":"user-1","team_id":"team-1","litellm_budget_table":{"allowed_models":["gpt-4o"]}}"#;
     let outside = rule(r#"{"team_id":"team-1"}"#, scoped, "claude-3", &recorded);
-    let (status, body, reached) = run_request(outside).await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let (scope_status, scope_body, scope_reached) = run_request(outside).await;
+    assert_eq!(scope_status, StatusCode::FORBIDDEN, "{scope_body}");
     assert!(
-        body.contains("\"type\":\"team_model_access_denied\""),
-        "{body}"
+        scope_body.contains("\"type\":\"team_model_access_denied\""),
+        "{scope_body}"
     );
-    assert!(body.contains("\"param\":\"model\""), "{body}");
-    assert!(body.contains("\"code\":\"403\""), "{body}");
-    assert!(!body.contains("user-1"), "{body}");
-    assert!(!reached);
+    assert!(scope_body.contains("\"param\":\"model\""), "{scope_body}");
+    assert!(scope_body.contains("\"code\":\"403\""), "{scope_body}");
+    assert!(!scope_body.contains("user-1"), "{scope_body}");
+    assert!(!scope_reached);
 }
 
 #[tokio::test]
