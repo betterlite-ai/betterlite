@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use axum::http::StatusCode;
 use betterlite_config::sections::admission_control::{Limits, Settings};
+use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rstest::rstest;
 use tempfile::NamedTempFile;
 use tokio::sync::Semaphore;
@@ -88,13 +89,16 @@ fn exceeds_semaphore_maximum(max_in_flight_requests: usize) -> bool {
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
     let guard = set_default(subscriber);
-    let _control = AdmissionControl::from_settings(&Settings {
-        limits: Some(Limits {
-            max_in_flight_requests,
-            max_queued_requests: 0,
-            queue_timeout: Duration::from_secs(1),
-        }),
-    });
+    let _control = AdmissionControl::from_settings(
+        &Settings {
+            limits: Some(Limits {
+                max_in_flight_requests,
+                max_queued_requests: 0,
+                queue_timeout: Duration::from_secs(1),
+            }),
+        },
+        Arc::new(CollectorRegistry::default()),
+    );
     drop(guard);
     read_to_string(log.path())
         .unwrap()

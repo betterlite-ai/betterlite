@@ -9,6 +9,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::admission_control::{Limits, Settings};
+use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -236,13 +237,16 @@ async fn cancel_queued_decrements() {
 }
 
 fn queue_reservation_holds_under_thread_contention() {
-    let control = AdmissionControl::from_settings(&Settings {
-        limits: Some(Limits {
-            max_in_flight_requests: 1,
-            max_queued_requests: 1,
-            queue_timeout: Duration::from_secs(1),
-        }),
-    });
+    let control = AdmissionControl::from_settings(
+        &Settings {
+            limits: Some(Limits {
+                max_in_flight_requests: 1,
+                max_queued_requests: 1,
+                queue_timeout: Duration::from_secs(1),
+            }),
+        },
+        Arc::new(CollectorRegistry::default()),
+    );
     for round in 0..RESERVATION_ROUNDS {
         control.queued.store(0, Ordering::Release);
         let successes = reservation_round(&control);
