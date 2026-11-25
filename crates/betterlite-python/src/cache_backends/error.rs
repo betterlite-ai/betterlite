@@ -100,7 +100,7 @@ impl BackendHandleError {
     }
 
     // A call the breaker turned away carries its own class, as LiteLLM's RedisCache raises RedisCircuitBreakerOpenError.
-    fn breaker_open(&self) -> Option<&BreakerOpen> {
+    const fn breaker_open(&self) -> Option<&BreakerOpen> {
         if let Self::Redis {
             source: RedisCacheError::Breaker(open),
         } = self
