@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use super::error::SharedHealthError;
-use super::support::{RecordingSleeper, SHARED_AT, World, empty_call, instant, probe_result};
+use super::support::{
+    RecordingSleeper, SHARED_AT, World, empty_call, instant, probe_error, probe_result,
+};
 
 #[tokio::test]
 async fn the_local_check_runs_at_once_without_a_lock() {
@@ -20,17 +21,17 @@ async fn the_local_check_runs_at_once_without_a_lock() {
 #[tokio::test]
 async fn the_local_check_returns_the_probe_failure() {
     let world = World::new(instant(SHARED_AT));
-    let failure = SharedHealthError::Probe {
-        message: "upstream down".to_owned(),
-    };
-    world.probe.queue(Err(failure.clone()));
+    world.probe.queue(Err(probe_error()));
     let manager = world.local_manager();
     let mut sleeper = RecordingSleeper::default();
     let error = manager
         .perform_shared_health_check(empty_call(), world.probe.as_ref(), &mut sleeper)
         .await
         .expect_err("the probe failure is returned");
-    assert_eq!(error, failure);
+    assert!(
+        std::error::Error::source(&error).is_some(),
+        "the cycle failure is kept as the source"
+    );
     assert!(sleeper.delays().is_empty());
     assert_eq!(world.ops.entries(), vec!["probe".to_owned()]);
 }

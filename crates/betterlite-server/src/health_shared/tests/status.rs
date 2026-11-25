@@ -1,43 +1,21 @@
 #![cfg(test)]
 
-use betterlite_models::decisions::Json;
-use serde_json::Number;
-
 use super::manager::SharedHealthCheckManager;
-use super::status_view::SharedHealthStatusSource as _;
-use super::support::{
-    CHECKER, Fault, SHARED_AT, SHARED_SECONDS, World, cached_text, field, instant, keys, number,
-};
+use super::status_view::{SharedHealthStatus, SharedHealthStatusSource as _};
+use super::support::{Fault, SHARED_AT, SHARED_SECONDS, World, cached_text, instant};
+
+fn status_text(status: &SharedHealthStatus) -> String {
+    serde_json::to_string(status).expect("the status serializes")
+}
 
 #[tokio::test]
 async fn a_configured_redis_reports_lock_and_cache_state() {
     let world = World::new(instant(SHARED_AT));
-    let status = world.manager().get_health_check_status().await.to_json();
+    let status = world.manager().get_health_check_status().await;
     assert_eq!(
-        keys(&status),
-        vec![
-            "pod_id",
-            "redis_available",
-            "lock_ttl",
-            "cache_ttl",
-            "lock_owner",
-            "lock_in_progress",
-            "cache_available",
-        ]
+        status_text(&status),
+        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":null,"lock_in_progress":false,"cache_available":false}"#
     );
-    assert_eq!(field(&status, "pod_id"), Json::Text(CHECKER.to_owned()));
-    assert_eq!(field(&status, "redis_available"), Json::Bool(true));
-    assert_eq!(
-        field(&status, "lock_ttl"),
-        Json::Number(Number::from(60_i64))
-    );
-    assert_eq!(
-        field(&status, "cache_ttl"),
-        Json::Number(Number::from(300_i64))
-    );
-    assert_eq!(field(&status, "lock_owner"), Json::Null);
-    assert_eq!(field(&status, "lock_in_progress"), Json::Bool(false));
-    assert_eq!(field(&status, "cache_available"), Json::Bool(false));
 }
 
 #[tokio::test]
@@ -46,10 +24,11 @@ async fn a_held_lock_names_its_owner() {
     world
         .cache
         .put_plain(SharedHealthCheckManager::LOCK_KEY, "pod_7");
-    let status = world.manager().get_health_check_status().await.to_json();
-    assert_eq!(field(&status, "lock_owner"), Json::Text("pod_7".to_owned()));
-    assert_eq!(field(&status, "lock_in_progress"), Json::Bool(true));
-    assert_eq!(field(&status, "cache_available"), Json::Bool(false));
+    let status = world.manager().get_health_check_status().await;
+    assert_eq!(
+        status_text(&status),
+        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":"pod_7","lock_in_progress":true,"cache_available":false}"#
+    );
 }
 
 #[tokio::test]
@@ -62,28 +41,10 @@ async fn a_fresh_cache_reports_its_age_and_checker() {
     world
         .cache
         .put_plain(SharedHealthCheckManager::LOCK_KEY, "pod_9");
-    let status = world.manager().get_health_check_status().await.to_json();
+    let status = world.manager().get_health_check_status().await;
     assert_eq!(
-        keys(&status),
-        vec![
-            "pod_id",
-            "redis_available",
-            "lock_ttl",
-            "cache_ttl",
-            "lock_owner",
-            "lock_in_progress",
-            "cache_available",
-            "cache_age_seconds",
-            "last_checked_by",
-        ]
-    );
-    assert_eq!(field(&status, "lock_owner"), Json::Text("pod_9".to_owned()));
-    assert_eq!(field(&status, "lock_in_progress"), Json::Bool(true));
-    assert_eq!(field(&status, "cache_available"), Json::Bool(true));
-    assert_eq!(field(&status, "cache_age_seconds"), number(90.0));
-    assert_eq!(
-        field(&status, "last_checked_by"),
-        Json::Text("pod_7".to_owned())
+        status_text(&status),
+        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":"pod_9","lock_in_progress":true,"cache_available":true,"cache_age_seconds":90.0,"last_checked_by":"pod_7"}"#
     );
 }
 
@@ -94,38 +55,20 @@ async fn an_expired_cache_is_reported_unavailable() {
         SharedHealthCheckManager::CACHE_KEY,
         &cached_text(SHARED_SECONDS, "pod_7"),
     );
-    let status = world.manager().get_health_check_status().await.to_json();
+    let status = world.manager().get_health_check_status().await;
     assert_eq!(
-        keys(&status),
-        vec![
-            "pod_id",
-            "redis_available",
-            "lock_ttl",
-            "cache_ttl",
-            "lock_owner",
-            "lock_in_progress",
-            "cache_available",
-        ]
+        status_text(&status),
+        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":null,"lock_in_progress":false,"cache_available":false}"#
     );
-    assert_eq!(field(&status, "cache_available"), Json::Bool(false));
 }
 
 #[tokio::test]
 async fn without_redis_only_the_four_shared_keys_are_reported() {
     let world = World::new(instant(SHARED_AT));
-    let status = world
-        .local_manager()
-        .get_health_check_status()
-        .await
-        .to_json();
+    let status = world.local_manager().get_health_check_status().await;
     assert_eq!(
-        keys(&status),
-        vec!["pod_id", "redis_available", "lock_ttl", "cache_ttl"]
-    );
-    assert_eq!(field(&status, "redis_available"), Json::Bool(false));
-    assert_eq!(
-        field(&status, "cache_ttl"),
-        Json::Number(Number::from(300_i64))
+        status_text(&status),
+        r#"{"pod_id":"pod_1704067200000","redis_available":false,"lock_ttl":60,"cache_ttl":300}"#
     );
 }
 
@@ -135,22 +78,11 @@ async fn a_lock_read_error_is_reported_in_the_status() {
     world
         .cache
         .fail(Fault::Get, SharedHealthCheckManager::LOCK_KEY);
-    let status = world.manager().get_health_check_status().await.to_json();
+    let status = world.manager().get_health_check_status().await;
     assert_eq!(
-        keys(&status),
-        vec![
-            "pod_id",
-            "redis_available",
-            "lock_ttl",
-            "cache_ttl",
-            "error",
-        ]
+        status_text(&status),
+        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"error":"the health check cache async_get_cache failed"}"#
     );
-    assert_eq!(field(&status, "redis_available"), Json::Bool(true));
-    let Json::Text(error) = field(&status, "error") else {
-        panic!("the status carries the failure");
-    };
-    assert!(error.contains("async_get_cache"));
 }
 
 #[tokio::test]
@@ -158,5 +90,5 @@ async fn the_manager_answers_the_status_source() {
     let world = World::new(instant(SHARED_AT));
     let manager = world.manager();
     let source = manager.status().await.expect("the source answers");
-    assert_eq!(source, manager.get_health_check_status().await.to_json());
+    assert_eq!(source, manager.get_health_check_status().await);
 }

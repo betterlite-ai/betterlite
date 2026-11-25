@@ -3,24 +3,18 @@
 use std::sync::Arc;
 
 use axum::http::StatusCode;
-use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 
 use super::route::{
     SHARED_STATUS_PATH, SharedHealthSwitch, SharedStatusState, shared_status_router,
 };
 use super::status_view::SharedHealthStatusSource;
-use super::support::{FakeStatus, caller, field, route_get};
+use super::support::{FakeStatus, caller, route_get, sample_status};
 
 const UNAUTHORIZED_BODY: &str = r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#;
 
-fn body_of(text: &str) -> JsonObject {
-    serde_json::from_str(text).expect("the response body is JSON")
-}
-
 #[tokio::test]
 async fn an_unauthenticated_call_is_rejected() {
-    let source = FakeStatus::answering(JsonObject::new());
+    let source = FakeStatus::answering(sample_status());
     let status_source: Arc<dyn SharedHealthStatusSource> = Arc::<FakeStatus>::clone(&source);
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
@@ -34,13 +28,7 @@ async fn an_unauthenticated_call_is_rejected() {
 
 #[tokio::test]
 async fn the_authenticated_call_reaches_the_status_source() {
-    let mut payload = JsonObject::new();
-    payload.insert(
-        "pod_id".to_owned(),
-        Json::Text("pod_1704067200000".to_owned()),
-    );
-    payload.insert("redis_available".to_owned(), Json::Bool(true));
-    let source = FakeStatus::answering(payload.clone());
+    let source = FakeStatus::answering(sample_status());
     let status_source: Arc<dyn SharedHealthStatusSource> = Arc::<FakeStatus>::clone(&source);
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
@@ -54,18 +42,16 @@ async fn the_authenticated_call_reaches_the_status_source() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let body = body_of(&text);
     assert_eq!(
-        field(&body, "shared_health_check_enabled"),
-        Json::Bool(true)
+        text,
+        r#"{"shared_health_check_enabled":true,"status":{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":null,"lock_in_progress":false,"cache_available":false}}"#
     );
-    assert_eq!(field(&body, "status"), Json::Object(payload));
     assert_eq!(source.calls(), 1);
 }
 
 #[tokio::test]
 async fn the_disabled_proxy_says_so_and_never_reads_redis() {
-    let source = FakeStatus::answering(JsonObject::new());
+    let source = FakeStatus::answering(sample_status());
     let status_source: Arc<dyn SharedHealthStatusSource> = Arc::<FakeStatus>::clone(&source);
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Disabled,
@@ -79,15 +65,6 @@ async fn the_disabled_proxy_says_so_and_never_reads_redis() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let body = body_of(&text);
-    assert_eq!(
-        field(&body, "shared_health_check_enabled"),
-        Json::Bool(false)
-    );
-    assert_eq!(
-        field(&body, "message"),
-        Json::Text("Shared health check is not enabled".to_owned())
-    );
     assert_eq!(
         text,
         r#"{"shared_health_check_enabled":false,"message":"Shared health check is not enabled"}"#

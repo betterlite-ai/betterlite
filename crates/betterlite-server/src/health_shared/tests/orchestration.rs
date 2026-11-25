@@ -1,11 +1,10 @@
 #![cfg(test)]
 
-use super::error::SharedHealthError;
 use super::manager::SharedHealthCheckManager;
 use super::probe::SharedProbeCall;
 use super::support::{
     ProbeCall, RecordingSleeper, SHARED_AT, SHARED_SECONDS, World, cached_text, deployment,
-    empty_call, healthy_row, instant, probe_result,
+    empty_call, healthy_row, instant, probe_error, probe_result,
 };
 
 #[tokio::test]
@@ -78,17 +77,17 @@ async fn the_lock_holder_runs_the_check_and_caches_it() {
 #[tokio::test]
 async fn a_failed_check_is_not_cached_and_releases_the_lock() {
     let world = World::new(instant(SHARED_AT));
-    let failure = SharedHealthError::Probe {
-        message: "upstream down".to_owned(),
-    };
-    world.probe.queue(Err(failure.clone()));
+    world.probe.queue(Err(probe_error()));
     let manager = world.manager();
     let mut sleeper = RecordingSleeper::default();
     let error = manager
         .perform_shared_health_check(empty_call(), world.probe.as_ref(), &mut sleeper)
         .await
         .expect_err("the probe failure is returned");
-    assert_eq!(error, failure);
+    assert!(
+        std::error::Error::source(&error).is_some(),
+        "the cycle failure is kept as the source"
+    );
     assert!(!world.cache.has(SharedHealthCheckManager::CACHE_KEY));
     assert!(!world.cache.has(SharedHealthCheckManager::LOCK_KEY));
     assert_eq!(world.cache.sets().len(), 1);

@@ -21,6 +21,12 @@ deviations:
   - what: The loop ends when the server closes the TaskTracker it runs on, after the cycle in flight finishes; LiteLLM's _run_background_health_check never stops itself and its asyncio task ends with the event loop at shutdown.
     why: A tracked task that never returns holds the tracker's wait() open, so shutdown would hang; the closed tracker is how a TaskTracker-hosted loop learns the server is stopping, and the cycle in flight completes before the loop returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4503-L4521
+  - what: The window-gated database save is cut at a 60-second SAVE_DEADLINE, for the gated and the ungated path alike, and a save that overruns it counts as a failed save, so the window lock is released and the next cycle tries again; LiteLLM awaits the save with no timeout.
+    why: The save is awaited inside the cycle here, so a stalled query would block every later cycle and shutdown forever; the deadline bounds one save and leaves what a completed save writes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4323-L4327
+  - what: A cycle whose check fails publishes nothing and skips the database save and the router health-state write, keeping the previous results, and the loop goes on to the next interval; LiteLLM lets the direct check's exception escape _run_background_health_check, which ends its background task with the previous health_check_results still published.
+    why: One failed check, from a router lookup or a Redis error, is transient, and ending this loop would stop every later background check until restart; LiteLLM itself leaves the previous results untouched because it publishes only after the check returns, so keeping them and continuing differs only in recovery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4621-L4643
 kept_bugs:
   - what: Two processes that start in the same wall-clock millisecond get the same pod_id, so either one treats the other's health check lock as its own when releasing it and reports the other's id as lock_owner.
     why: LiteLLM builds pod_id from int(time.time() * 1000); the collision window is the source's, and a working setup treats the lock as best-effort coordination whose TTL is the real bound.

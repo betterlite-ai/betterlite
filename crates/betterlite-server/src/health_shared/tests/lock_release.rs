@@ -1,7 +1,13 @@
 #![cfg(test)]
 
+use std::pin::pin;
+use std::time::Duration;
+
+use futures_util::future::{Either, select};
+use tokio::time::timeout;
+
 use super::manager::SharedHealthCheckManager;
-use super::support::{Fault, SHARED_AT, World, instant};
+use super::support::{Fault, RecordingSleeper, SHARED_AT, World, empty_call, instant};
 
 #[tokio::test]
 async fn the_owner_deletes_its_lock() {
@@ -81,4 +87,64 @@ async fn no_redis_releases_nothing() {
     let manager = world.local_manager();
     manager.release_health_check_lock().await;
     assert!(world.ops.entries().is_empty());
+}
+
+#[tokio::test]
+async fn dropping_the_check_future_while_it_probes_releases_the_lock() {
+    let world = World::new(instant(SHARED_AT));
+    world.probe.hang();
+    let manager = world.manager();
+    let mut sleeper = RecordingSleeper::default();
+    let mut check = Box::pin(manager.perform_shared_health_check(
+        empty_call(),
+        world.probe.as_ref(),
+        &mut sleeper,
+    ));
+    let entered = pin!(world.probe.probe_entered());
+    let started = {
+        let outcome = select(entered, &mut check).await;
+        matches!(outcome, Either::Left(_))
+    };
+    assert!(started, "the probe starts");
+    assert!(world.cache.has(SharedHealthCheckManager::LOCK_KEY));
+    drop(check);
+    world.tasks.close();
+    timeout(Duration::from_secs(5), world.tasks.wait())
+        .await
+        .expect("the release task finishes");
+    assert!(!world.cache.has(SharedHealthCheckManager::LOCK_KEY));
+    assert_eq!(
+        world.cache.deletes(),
+        vec![SharedHealthCheckManager::LOCK_KEY.to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn dropping_the_check_future_while_it_caches_releases_the_lock() {
+    let world = World::new(instant(SHARED_AT));
+    world.cache.hang_on_set(SharedHealthCheckManager::CACHE_KEY);
+    let manager = world.manager();
+    let mut sleeper = RecordingSleeper::default();
+    let mut check = Box::pin(manager.perform_shared_health_check(
+        empty_call(),
+        world.probe.as_ref(),
+        &mut sleeper,
+    ));
+    let entered = pin!(world.cache.write_entered());
+    let started = {
+        let outcome = select(entered, &mut check).await;
+        matches!(outcome, Either::Left(_))
+    };
+    assert!(started, "the cache write starts");
+    assert!(world.cache.has(SharedHealthCheckManager::LOCK_KEY));
+    drop(check);
+    world.tasks.close();
+    timeout(Duration::from_secs(5), world.tasks.wait())
+        .await
+        .expect("the release task finishes");
+    assert!(!world.cache.has(SharedHealthCheckManager::LOCK_KEY));
+    assert_eq!(
+        world.cache.deletes(),
+        vec![SharedHealthCheckManager::LOCK_KEY.to_owned()]
+    );
 }

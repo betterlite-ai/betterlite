@@ -1,10 +1,10 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::future::{Future, ready};
+use std::future::Future;
 use std::pin::{Pin, pin};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,27 +14,33 @@ use axum::http::{Request, StatusCode};
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_db::health_check_rows::{HealthCheckRow, HealthCheckRowsError, NewHealthCheck};
 use betterlite_db::ptu::store::sleeper::Sleeper;
-use betterlite_db::queues::pod_lock::owner::{PodId, lease_key};
-use betterlite_db::queues::pod_lock::{
-    LockCache, LockCacheError, LockScript, NoPodLockEventSink, PodLockManager,
-};
+use betterlite_db::queues::pod_lock::owner::PodId;
+use betterlite_db::queues::pod_lock::{NoPodLockEventSink, PodLockManager};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_redis::cache_primitives::decode::CachedValue;
+use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_cache_admin::RedisAdminError;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use betterlite_redis::redis_live_client::LiveClientError;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::model_catalog_lookup::error::LookupError;
 use chrono::{DateTime, Utc};
 use futures_util::future::{Either, select};
 use serde_json::Number;
 use tokio::sync::Notify;
+use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::health::router::error::RouterHealthError;
 use crate::health_cycle::endpoints::HealthCheckResult;
+use crate::health_cycle::error::HealthCycleError;
 use crate::health_cycle::ports::ProbeFailure;
 use crate::health_persistence::HealthCheckStore;
-use crate::health_shared::background::BackgroundHealthLoop;
+use crate::health_shared::background::{BackgroundHealthLoop, DeploymentSource, SAVE_DEADLINE};
 use crate::health_shared::cache::SharedHealthCache;
 use crate::health_shared::error::{SharedHealthCacheError, SharedHealthError};
 use crate::health_shared::health_state::HealthStateWriter;
@@ -42,8 +48,12 @@ use crate::health_shared::manager::SharedHealthCheckManager;
 use crate::health_shared::probe::{SharedHealthProbe, SharedProbeCall};
 use crate::health_shared::results::HealthResultsCache;
 use crate::health_shared::settings::{DEFAULT_SETTINGS, SharedHealthSettings};
-use crate::health_shared::status_view::{SharedHealthStatusError, SharedHealthStatusSource};
+use crate::health_shared::status_view::{
+    RedisStatus, SharedHealthStatus, SharedHealthStatusError, SharedHealthStatusSource,
+};
 use crate::model_deprecation::clock::UtcClock;
+
+use super::fixtures::{FakeDeployments, FakeLock};
 
 pub(crate) const POD_A: &str = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 pub(crate) const POD_B: &str = "9c858901-8a57-4791-81fe-4c455b099bc9";
@@ -257,6 +267,9 @@ struct FakeState {
 pub(crate) struct FakeCache {
     ops: Arc<Ops>,
     state: Mutex<FakeState>,
+    hang: Mutex<Option<String>>,
+    entered: Notify,
+    never: Notify,
 }
 
 impl FakeCache {
@@ -264,32 +277,39 @@ impl FakeCache {
         Arc::new(Self {
             ops,
             state: Mutex::new(FakeState::default()),
+            hang: Mutex::new(None),
+            entered: Notify::new(),
+            never: Notify::new(),
         })
+    }
+
+    pub(crate) fn hang_on_set(&self, key: &str) {
+        *self.hang.lock().unwrap_or_else(PoisonError::into_inner) = Some(key.to_owned());
+    }
+
+    pub(crate) async fn write_entered(&self) {
+        self.entered.notified().await;
+    }
+
+    fn locked(&self) -> MutexGuard<'_, FakeState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub(crate) fn remove(&self, key: &str) {
+        let _removed = self.locked().values.remove(key);
     }
 
     pub(crate) fn put_plain(&self, key: &str, value: &str) {
         let stored = serde_json::to_string(value).expect("a fixture value serializes");
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .values
-            .insert(key.to_owned(), stored);
+        self.locked().values.insert(key.to_owned(), stored);
     }
 
     pub(crate) fn put_json(&self, key: &str, text: &str) {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .values
-            .insert(key.to_owned(), text.to_owned());
+        self.locked().values.insert(key.to_owned(), text.to_owned());
     }
 
     pub(crate) fn hide_for(&self, key: &str, reads: usize) {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .hidden
-            .insert(key.to_owned(), reads);
+        self.locked().hidden.insert(key.to_owned(), reads);
     }
 
     pub(crate) fn fail(&self, fault: Fault, key: &str) {
@@ -298,68 +318,56 @@ impl FakeCache {
             Fault::Set => "set",
             Fault::Delete => "delete",
         };
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .faults
-            .insert(name, key.to_owned());
+        self.locked().faults.insert(name, key.to_owned());
     }
 
     pub(crate) fn sets(&self) -> Vec<SetCall> {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .sets
-            .clone()
+        self.locked().sets.clone()
     }
 
     pub(crate) fn deletes(&self) -> Vec<String> {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .deletes
-            .clone()
+        self.locked().deletes.clone()
     }
 
     pub(crate) fn has(&self, key: &str) -> bool {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .values
-            .contains_key(key)
+        self.locked().values.contains_key(key)
     }
 
     pub(crate) fn value(&self, key: &str) -> Option<CachedValue> {
-        let raw = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .values
-            .get(key)
-            .cloned()?;
+        let raw = self.locked().values.get(key).cloned()?;
         serde_json::from_str(&raw).ok()
     }
 }
 
-fn cache_failure(operation: &'static str) -> SharedHealthCacheError {
-    SharedHealthCacheError {
-        operation,
-        source: Box::new(FixtureFailure),
+fn cache_failure(fault: Fault) -> SharedHealthCacheError {
+    match fault {
+        Fault::Get => SharedHealthCacheError::Read {
+            operation: "async_get_cache",
+            source: RedisCacheError::LiveClient(LiveClientError::InvalidSetting {
+                field: "fixture",
+            }),
+        },
+        Fault::Set => SharedHealthCacheError::Write {
+            operation: "async_set_cache",
+            source: RedisCacheValuesError::TtlOutOfRange { seconds: 0.5_f64 },
+        },
+        Fault::Delete => SharedHealthCacheError::Delete {
+            operation: "async_delete_cache",
+            source: RedisAdminError::LiveClient(LiveClientError::InvalidSetting {
+                field: "fixture",
+            }),
+        },
     }
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("the fixture cache failed")]
-struct FixtureFailure;
 
 #[async_trait]
 impl SharedHealthCache for FakeCache {
     async fn get(&self, key: &str) -> Result<Option<CachedValue>, SharedHealthCacheError> {
         self.ops.record(&format!("get:{key}"));
         let raw = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut state = self.locked();
             if state.faults.get("get").is_some_and(|failed| failed == key) {
-                return Err(cache_failure("async_get_cache"));
+                return Err(cache_failure(Fault::Get));
             }
             let hidden = state.hidden.get_mut(key).is_some_and(|remaining| {
                 let hit = *remaining > 0;
@@ -385,34 +393,45 @@ impl SharedHealthCache for FakeCache {
         only_if_absent: bool,
     ) -> Result<bool, SharedHealthCacheError> {
         self.ops.record(&format!("set:{key}"));
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.sets.push(SetCall {
-            key: key.to_owned(),
-            value: value.to_owned(),
-            ttl: ttl_seconds,
-            nx: only_if_absent,
-        });
-        if state.faults.get("set").is_some_and(|failed| failed == key) {
-            return Err(cache_failure("async_set_cache"));
+        {
+            let mut state = self.locked();
+            state.sets.push(SetCall {
+                key: key.to_owned(),
+                value: value.to_owned(),
+                ttl: ttl_seconds,
+                nx: only_if_absent,
+            });
+            if state.faults.get("set").is_some_and(|failed| failed == key) {
+                return Err(cache_failure(Fault::Set));
+            }
+            if only_if_absent && state.values.contains_key(key) {
+                return Ok(false);
+            }
+            let stored = serde_json::to_string(value).unwrap_or_default();
+            state.values.insert(key.to_owned(), stored);
         }
-        if only_if_absent && state.values.contains_key(key) {
-            return Ok(false);
+        let hung = self
+            .hang
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_deref()
+            .is_some_and(|hung| hung == key);
+        if hung {
+            self.entered.notify_one();
+            self.never.notified().await;
         }
-        let stored = serde_json::to_string(value).unwrap_or_default();
-        state.values.insert(key.to_owned(), stored);
-        drop(state);
         Ok(true)
     }
 
     async fn delete(&self, key: &str) -> Result<i64, SharedHealthCacheError> {
         self.ops.record(&format!("delete:{key}"));
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.locked();
         if state
             .faults
             .get("delete")
             .is_some_and(|failed| failed == key)
         {
-            return Err(cache_failure("async_delete_cache"));
+            return Err(cache_failure(Fault::Delete));
         }
         state.deletes.push(key.to_owned());
         let removed = state.values.remove(key).is_some();
@@ -435,16 +454,18 @@ pub(crate) struct FakeProbe {
     calls: Mutex<Vec<ProbeCall>>,
     outcomes: Mutex<VecDeque<Result<HealthCheckResult, SharedHealthError>>>,
     reply: Mutex<HealthCheckResult>,
+    hang: Mutex<bool>,
+    entered: Notify,
+    never: Notify,
 }
 
 impl FakeProbe {
-    pub(crate) fn new(ops: Arc<Ops>, reply: HealthCheckResult) -> Arc<Self> {
-        Arc::new(Self {
-            ops,
-            calls: Mutex::new(Vec::new()),
-            outcomes: Mutex::new(VecDeque::new()),
-            reply: Mutex::new(reply),
-        })
+    pub(crate) fn hang(&self) {
+        *self.hang.lock().unwrap_or_else(PoisonError::into_inner) = true;
+    }
+
+    pub(crate) async fn probe_entered(&self) {
+        self.entered.notified().await;
     }
 
     pub(crate) fn calls(&self) -> Vec<ProbeCall> {
@@ -479,6 +500,10 @@ impl SharedHealthProbe for FakeProbe {
                 skip_disabled: call.skip_disabled,
                 cycle_id: call.instrumentation.map(|context| context.cycle_id.clone()),
             });
+        if *self.hang.lock().unwrap_or_else(PoisonError::into_inner) {
+            self.entered.notify_one();
+            self.never.notified().await;
+        }
         let queued = self
             .outcomes
             .lock()
@@ -642,15 +667,36 @@ impl HealthStateWriter for FakeWriter {
     }
 }
 
-#[derive(Default)]
+pub(crate) fn sample_status() -> SharedHealthStatus {
+    SharedHealthStatus {
+        pod_id: CHECKER.to_owned(),
+        redis_available: true,
+        lock_ttl: 60,
+        cache_ttl: 300,
+        redis: Some(RedisStatus::Available {
+            lock_owner: Json::Null,
+            lock_in_progress: false,
+            cache_available: false,
+            cache_age_seconds: None,
+            last_checked_by: None,
+        }),
+    }
+}
+
+pub(crate) fn probe_error() -> SharedHealthError {
+    SharedHealthError::Cycle(HealthCycleError::Router(RouterHealthError::Lookup(
+        LookupError::InvalidRow { index: 0 },
+    )))
+}
+
 pub(crate) struct FakeStatus {
     calls: AtomicUsize,
-    body: JsonObject,
+    body: SharedHealthStatus,
     failure: Option<String>,
 }
 
 impl FakeStatus {
-    pub(crate) fn answering(body: JsonObject) -> Arc<Self> {
+    pub(crate) fn answering(body: SharedHealthStatus) -> Arc<Self> {
         Arc::new(Self {
             calls: AtomicUsize::new(0),
             body,
@@ -661,7 +707,7 @@ impl FakeStatus {
     pub(crate) fn failing(message: &str) -> Arc<Self> {
         Arc::new(Self {
             calls: AtomicUsize::new(0),
-            body: JsonObject::new(),
+            body: sample_status(),
             failure: Some(message.to_owned()),
         })
     }
@@ -673,7 +719,7 @@ impl FakeStatus {
 
 #[async_trait]
 impl SharedHealthStatusSource for FakeStatus {
-    async fn status(&self) -> Result<JsonObject, SharedHealthStatusError> {
+    async fn status(&self) -> Result<SharedHealthStatus, SharedHealthStatusError> {
         let _previous = self.calls.fetch_add(1, Ordering::Relaxed);
         self.failure.as_ref().map_or_else(
             || Ok(self.body.clone()),
@@ -683,90 +729,6 @@ impl SharedHealthStatusSource for FakeStatus {
                 })
             },
         )
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct FakeLock {
-    values: Mutex<BTreeMap<String, String>>,
-    deletes: Mutex<Vec<String>>,
-    ttls: Mutex<Vec<i64>>,
-}
-
-impl FakeLock {
-    pub(crate) fn acquire_ttls(&self) -> Vec<i64> {
-        self.ttls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    pub(crate) fn holds(&self, job: &str) -> bool {
-        let key = lease_key(job);
-        self.values
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains_key(&key)
-    }
-
-    pub(crate) fn released(&self, job: &str) -> bool {
-        let key = lease_key(job);
-        self.deletes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .any(|deleted| deleted == &key)
-    }
-}
-
-impl LockCache for FakeLock {
-    fn get_owner(
-        &self,
-        key: &str,
-    ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
-        let owner = self
-            .values
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .map(|owner| owner.as_bytes().to_vec());
-        ready(Ok(owner))
-    }
-
-    fn set_owner_if_absent(
-        &self,
-        key: &str,
-        owner: &str,
-        ttl_seconds: i64,
-    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
-        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
-        if values.contains_key(key) {
-            return ready(Ok(false));
-        }
-        values.insert(key.to_owned(), owner.to_owned());
-        drop(values);
-        self.ttls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(ttl_seconds);
-        ready(Ok(true))
-    }
-
-    fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
-        let mut deletes = self.deletes.lock().unwrap_or_else(PoisonError::into_inner);
-        deletes.push(key.to_owned());
-        drop(deletes);
-        let removed = self
-            .values
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(key)
-            .is_some();
-        ready(Ok(i64::from(removed)))
-    }
-
-    fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
-        None
     }
 }
 
@@ -825,10 +787,12 @@ where
     F: Future<Output = ()>,
 {
     let slept = pin!(sleeper.slept.notified());
-    let outcome = select(future, slept).await;
+    let outcome = timeout(Duration::from_secs(5), select(future, slept))
+        .await
+        .expect("the background loop reaches its sleep");
     assert!(
-        matches!(outcome, Either::Left(_)),
-        "the background loop returned"
+        matches!(outcome, Either::Right(_)),
+        "the background loop returned before its sleep"
     );
 }
 
@@ -840,6 +804,7 @@ pub(crate) struct World {
     pub(crate) store: Arc<FakeStore>,
     pub(crate) writer: Arc<FakeWriter>,
     pub(crate) lock: Arc<FakeLock>,
+    pub(crate) deployments: Arc<FakeDeployments>,
     pub(crate) results: Arc<HealthResultsCache>,
     pub(crate) tasks: TaskTracker,
 }
@@ -847,13 +812,23 @@ pub(crate) struct World {
 impl World {
     pub(crate) fn new(now: DateTime<Utc>) -> Self {
         let ops = Arc::new(Ops::default());
+        let probe = FakeProbe {
+            ops: Arc::clone(&ops),
+            calls: Mutex::new(Vec::new()),
+            outcomes: Mutex::new(VecDeque::new()),
+            reply: Mutex::new(probe_result()),
+            hang: Mutex::new(false),
+            entered: Notify::new(),
+            never: Notify::new(),
+        };
         Self {
             now,
             cache: FakeCache::new(Arc::clone(&ops)),
-            probe: FakeProbe::new(Arc::clone(&ops), probe_result()),
+            probe: Arc::new(probe),
             store: FakeStore::new(),
             writer: FakeWriter::new(),
             lock: Arc::new(FakeLock::default()),
+            deployments: FakeDeployments::new(None),
             results: Arc::new(HealthResultsCache::default()),
             tasks: TaskTracker::new(),
             ops,
@@ -872,19 +847,23 @@ impl World {
         &self,
         settings: SharedHealthSettings,
     ) -> Arc<SharedHealthCheckManager> {
-        let cache = Arc::clone(&self.cache);
-        Arc::new(SharedHealthCheckManager::new(
-            Some(cache),
-            settings,
-            self.clock(),
-        ))
+        self.manager_over(Some(Arc::clone(&self.cache)), settings)
     }
 
     pub(crate) fn local_manager(&self) -> Arc<SharedHealthCheckManager> {
+        self.manager_over(None, DEFAULT_SETTINGS)
+    }
+
+    fn manager_over(
+        &self,
+        redis: Option<Arc<dyn SharedHealthCache>>,
+        settings: SharedHealthSettings,
+    ) -> Arc<SharedHealthCheckManager> {
         Arc::new(SharedHealthCheckManager::new(
-            None,
-            DEFAULT_SETTINGS,
+            redis,
+            settings,
             self.clock(),
+            self.tasks.clone(),
         ))
     }
 
@@ -907,6 +886,8 @@ impl World {
         manager: Option<Arc<SharedHealthCheckManager>>,
         deployments: Vec<DeploymentSpec>,
     ) -> BackgroundHealthLoop<FakeStore, FakeLock> {
+        self.deployments.set(deployments);
+        let source: Arc<dyn DeploymentSource> = Arc::<FakeDeployments>::clone(&self.deployments);
         let probe = Arc::clone(&self.probe);
         let health_state = Arc::clone(&self.writer);
         BackgroundHealthLoop {
@@ -915,12 +896,13 @@ impl World {
             max_concurrency: None,
             manager,
             probe,
-            deployments: Some(Arc::new(deployments)),
+            deployments: Some(source),
             results: Arc::clone(&self.results),
             store: Some(Arc::clone(&self.store)),
             lock: Some(Self::pod_manager(POD_A, Some(Arc::clone(&self.lock)))),
             health_state: Some(health_state),
             clock: self.clock(),
+            save_deadline: SAVE_DEADLINE,
             tasks: self.tasks.clone(),
         }
     }

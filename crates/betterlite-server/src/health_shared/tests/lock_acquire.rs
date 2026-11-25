@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use betterlite_redis::cache_primitives::decode::CachedValue;
+use tokio_util::task::TaskTracker;
 
 use super::manager::SharedHealthCheckManager;
 use super::settings::{DEFAULT_SETTINGS, SharedHealthSettings};
@@ -39,6 +40,7 @@ async fn a_lock_held_by_another_pod_cannot_be_taken() {
         Some(cache),
         DEFAULT_SETTINGS,
         Arc::new(FixedClock(instant("2024-01-01T00:00:01Z"))),
+        TaskTracker::new(),
     );
     assert_ne!(later.pod_id, manager.pod_id);
     assert!(!later.acquire_health_check_lock().await);
