@@ -2,7 +2,7 @@ import asyncio
 import importlib
 import time
 from pathlib import Path
-from typing import Final, Protocol
+from typing import Final, Protocol, TypedDict
 
 import fake_redis_server
 import pytest
@@ -14,8 +14,14 @@ from betterlite._cache_ops.types import CacheStore
 from betterlite.caching import Cache, DiskCache, DualCache, InMemoryCache, RedisCache
 from betterlite.caching.base_cache import BaseCache
 
+
+class ChatArgs(TypedDict):
+    model: str
+    messages: JsonValue
+
+
 CACHED: Final[dict[str, JsonValue]] = {"answer": 1, "text": "hello"}
-CHAT: Final[dict[str, JsonValue]] = {
+CHAT: Final[ChatArgs] = {
     "model": "gpt-4o",
     "messages": [{"role": "user", "content": "hello"}],
 }
@@ -98,7 +104,7 @@ class DualCacheModule(Protocol):
 
 class CacheWithBackendFactory(Protocol):
     def __call__(
-        self, type: str, namespace: str, _backend: ReferenceBackend
+        self, namespace: str, _backend: ReferenceBackend, **kwargs: JsonValue
     ) -> None: ...
 
 
