@@ -9,6 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use super::caller_scope::{byok_row_outside_caller_teams, get_caller_byok_team_scope};
 use super::error::{NOT_AUTHORIZED, ScopeDetail};
@@ -624,7 +625,7 @@ async fn a_blocked_secret_read_leaves_the_async_worker_free() {
     let context = fixture.context();
     let mut lookups = JoinSet::new();
     lookups.spawn(async move { find_model_by_id("d1", None, None, &reads, &context).await });
-    tokio::time::timeout(support::OIDC_WAIT, started_rx)
+    timeout(support::OIDC_WAIT, started_rx)
         .await
         .expect("the secret read starts")
         .expect("the OIDC fake announces its read");

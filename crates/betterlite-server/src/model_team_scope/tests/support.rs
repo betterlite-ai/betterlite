@@ -416,8 +416,10 @@ impl OidcHttp for BlockedOidc {
         if let Some(sender) = announced {
             let _signalled = sender.send(());
         }
-        let release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
-        let released = release.recv_timeout(OIDC_WAIT).is_ok();
+        let released = {
+            let release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
+            release.recv_timeout(OIDC_WAIT).is_ok()
+        };
         self.released.store(released, Ordering::SeqCst);
         Err(OidcHttpError::Request {
             message: "the test released the OIDC read".to_owned(),
