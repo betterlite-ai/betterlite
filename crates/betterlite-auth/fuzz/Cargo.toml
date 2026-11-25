@@ -27,6 +27,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "auth_key_budgets"
+path = "fuzz_targets/auth_key_budgets.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "auth_pubsub"
 path = "fuzz_targets/auth_pubsub.rs"
 test = false

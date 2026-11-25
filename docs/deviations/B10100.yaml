@@ -1,0 +1,6 @@
+task: B10100
+deviations:
+  - what: A start_date or end_date that does not match %Y-%m-%d answers 400 with detail.error naming the field that failed; LiteLLM parses both dates outside the handler's try, so the strptime ValueError escapes and the client gets a bare 500 Internal Server Error.
+    why: A malformed date is client input, and no working setup relies on a 500 there. The route's missing-date 400 already answers this detail.error shape, and the parse still runs before the database check, so a server without a database answers the date error first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1482-L1483
+kept_bugs: []
