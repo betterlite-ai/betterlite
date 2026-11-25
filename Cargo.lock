@@ -2654,6 +2654,7 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-oracle-tokenizer",
  "betterlite-postgres-fixture",
+ "betterlite-prometheus",
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-rate-limit",
