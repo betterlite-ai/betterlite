@@ -95,6 +95,10 @@ fn daily_keys(queue: &RecordingDailyQueue) -> Vec<String> {
         .collect()
 }
 
+fn assert_daily_row(queue: &RecordingDailyQueue, id: &str) {
+    assert_eq!(daily_keys(queue), vec![format!("{id}{SUFFIX}")]);
+}
+
 #[derive(Clone, Default)]
 struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
 
@@ -223,15 +227,11 @@ async fn charges_every_entity_and_daily_row_in_source_order() {
             .iter()
             .all(|item| item.response_cost == Some(cost()))
     );
-    for (queue, id) in [
-        (&harness.daily_user, "u1"),
-        (&harness.daily_end_user, "eu-1"),
-        (&harness.daily_agent, "agent-1"),
-        (&harness.daily_team, "team-1"),
-        (&harness.daily_org, "org-1"),
-    ] {
-        assert_eq!(daily_keys(queue), vec![format!("{id}{SUFFIX}")]);
-    }
+    assert_daily_row(&harness.daily_user, "u1");
+    assert_daily_row(&harness.daily_end_user, "eu-1");
+    assert_daily_row(&harness.daily_agent, "agent-1");
+    assert_daily_row(&harness.daily_team, "team-1");
+    assert_daily_row(&harness.daily_org, "org-1");
     assert_eq!(
         daily_keys(&harness.daily_tag),
         vec![format!("tag-a{SUFFIX}"), format!("tag-b{SUFFIX}")]
@@ -290,22 +290,10 @@ async fn a_failed_daily_helper_leaves_the_other_daily_rows_and_model_usage_runni
     let charge = work_for(row(REQUEST));
     harness.run(&charge, SpendWriterSettings::default()).await;
     assert!(daily_keys(&harness.daily_user).is_empty());
-    assert_eq!(
-        daily_keys(&harness.daily_end_user),
-        vec![format!("eu-1{SUFFIX}")]
-    );
-    assert_eq!(
-        daily_keys(&harness.daily_agent),
-        vec![format!("agent-1{SUFFIX}")]
-    );
-    assert_eq!(
-        daily_keys(&harness.daily_team),
-        vec![format!("team-1{SUFFIX}")]
-    );
-    assert_eq!(
-        daily_keys(&harness.daily_org),
-        vec![format!("org-1{SUFFIX}")]
-    );
+    assert_daily_row(&harness.daily_end_user, "eu-1");
+    assert_daily_row(&harness.daily_agent, "agent-1");
+    assert_daily_row(&harness.daily_team, "team-1");
+    assert_daily_row(&harness.daily_org, "org-1");
     assert_eq!(
         daily_keys(&harness.daily_tag),
         vec![format!("tag-a{SUFFIX}"), format!("tag-b{SUFFIX}")]
