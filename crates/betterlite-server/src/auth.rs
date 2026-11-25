@@ -290,6 +290,7 @@ fn virtual_key_route_stage_input(
     };
     Ok(StageInput::AuthVirtualKeyRoutes(Box::new(stage)))
 }
+
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {
         catalog: Arc::new(EmptyCatalog),
