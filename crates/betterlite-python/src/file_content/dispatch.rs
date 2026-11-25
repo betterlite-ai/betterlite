@@ -233,6 +233,8 @@ impl FileStreamLogger for SilentStreamLogger {
         None
     }
 
+    // nothing reads the api_base this logger could name: no logging bridge exists in this build
+    #[cfg_attr(test, mutants::skip)]
     fn details_api_base(&self) -> Option<String> {
         None
     }

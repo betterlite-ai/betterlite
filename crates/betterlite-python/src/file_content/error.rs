@@ -173,7 +173,7 @@ const fn class_for_status(status: u16) -> &'static str {
     }
 }
 
-fn azure_failure(error: &AzureFilesError) -> Failure {
+pub(crate) fn azure_failure(error: &AzureFilesError) -> Failure {
     match error {
         AzureFilesError::Files { source } => files_failure(source),
         AzureFilesError::Endpoint { source } => endpoint_failure(source),

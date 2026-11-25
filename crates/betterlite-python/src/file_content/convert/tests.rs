@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use betterlite_azure::azure_files::error::AzureFilesError;
+use betterlite_azure::endpoints::initialize::EndpointError;
 use betterlite_core::api::file_content_stream::error::FileContentError;
 use betterlite_core::api::file_stream_logging::source::StreamError;
 use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
@@ -7,7 +9,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::files::error::{FilesError, StatusError};
 
 use super::super::dispatch::DispatchError;
-use super::super::error::{Failure, failure_for, files_failure, stream_failure};
+use super::super::error::{Failure, azure_failure, failure_for, files_failure, stream_failure};
 use super::{ConvertError, parse_call};
 
 const FULL: &str = r#"{"file_id":"file-abc","model":"gpt-4o","custom_llm_provider":"openai","extra_headers":{"x-test":"1"},"extra_body":{"note":"n"},"chunk_size":2048,"stream":true,"api_key":"sk-test","api_base":"http://127.0.0.1:1/v1","api_version":"2024-01-01","organization":"org-1","timeout":2.5,"request_timeout":"3","max_retries":4,"litellm_call_id":"call-1","id":"fn-1"}"#;
@@ -170,6 +172,67 @@ fn error_a_status_without_fields_carries_no_body() {
     };
     assert_eq!(payload.class, "BadRequestError");
     assert_eq!(payload.body, None);
+}
+
+#[test]
+fn error_each_status_class_follows_its_code() {
+    let classes = [
+        (400_u16, "BadRequestError"),
+        (401, "AuthenticationError"),
+        (403, "PermissionDeniedError"),
+        (404, "NotFoundError"),
+        (422, "UnprocessableEntityError"),
+        (429, "RateLimitError"),
+        (500, "InternalServerError"),
+        (599, "InternalServerError"),
+        (418, "APIError"),
+    ];
+    for (status_code, class) in classes {
+        let status = StatusError {
+            status: status_code,
+            message: String::new(),
+            error_type: None,
+            param: None,
+            code: None,
+        };
+        let Failure::Payload(payload) = files_failure(&FilesError::Status(Box::new(status))) else {
+            panic!("the status error did not become a payload");
+        };
+        assert_eq!(payload.class, class);
+    }
+}
+
+#[test]
+fn error_a_status_with_only_a_type_keeps_the_body() {
+    let status = StatusError {
+        status: 404_u16,
+        message: String::from("Error code: 404 - missing"),
+        error_type: Some(String::from("invalid_request_error")),
+        param: None,
+        code: None,
+    };
+    let Failure::Payload(payload) = files_failure(&FilesError::Status(Box::new(status))) else {
+        panic!("the status error did not become a payload");
+    };
+    let Some(JsonValue::Object(body)) = payload.body else {
+        panic!("the status body is not an object");
+    };
+    assert_eq!(
+        body.get("type"),
+        Some(&JsonValue::Text(String::from("invalid_request_error")))
+    );
+    assert_eq!(body.get("code"), None);
+}
+
+#[test]
+fn error_an_azure_endpoint_key_failure_is_a_key_error() {
+    let failure = azure_failure(&AzureFilesError::Endpoint {
+        source: EndpointError::MissingApiVersion,
+    });
+    assert_eq!(
+        failure,
+        Failure::Key(String::from("the client custom query has no api-version"))
+    );
 }
 
 #[test]

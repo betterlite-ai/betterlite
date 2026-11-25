@@ -26,6 +26,12 @@ fn provider_payload(provider: &str) -> String {
     format!(r#"{{"file_id":"file-abc","custom_llm_provider":"{provider}"}}"#)
 }
 
+fn timeout_payload(address: &SocketAddr) -> String {
+    format!(
+        r#"{{"file_id":"file-abc","custom_llm_provider":"openai","api_base":"http://{address}/v1","api_key":"sk-test","timeout":0.01}}"#
+    )
+}
+
 fn body_of(blobs: &Bound<'_, PyAny>) -> Vec<Vec<u8>> {
     let list = blobs.cast::<PyList>().unwrap();
     list.iter()
@@ -54,6 +60,39 @@ fn a_malformed_settings_text_is_a_value_error() {
             .unwrap();
         assert!(error.is_instance_of::<PyValueError>(py));
     });
+}
+
+#[test]
+fn a_malformed_payload_is_a_value_error() {
+    Python::initialize();
+    Python::attach(|py| {
+        let session = NativeFileContentSession::new(ENVIRONMENT).unwrap();
+        let error = session.content(py, "not a call", Vec::new()).err().unwrap();
+        assert!(error.is_instance_of::<PyValueError>(py));
+    });
+}
+
+#[test]
+fn a_deadline_that_expires_fails_the_call() {
+    Python::initialize();
+    let serving = serve(
+        reply("200 OK", &[("x-upstream", "yes")], "file body"),
+        Duration::from_millis(200),
+    )
+    .unwrap();
+    let socket = serving.address;
+    Python::attach(|py| {
+        let session = NativeFileContentSession::new(ENVIRONMENT).unwrap();
+        let error = session
+            .content(py, &timeout_payload(&socket), Vec::new())
+            .err()
+            .unwrap();
+        assert!(
+            error.is_instance_of::<NativeFileContentError>(py)
+                || error.is_instance_of::<PyValueError>(py)
+        );
+    });
+    serving.finish().unwrap();
 }
 
 #[test]
