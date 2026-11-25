@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::ffi::CStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
 use betterlite_openai::xai_batches::error::XaiBatchesError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3_async_runtimes::tokio::get_runtime;
 use rstest::rstest;
 
@@ -222,6 +224,19 @@ fn session_rejects_an_async_invoke_status() {
     });
 }
 
+// the native async twins need the running loop the facade calls them from
+const AWAIT_METHOD: &CStr = c"import asyncio, inspect
+async def main():
+    answer = getattr(session, method)(payload, [])
+    awaitable = inspect.isawaitable(answer)
+    try:
+        await answer
+    except Exception as error:
+        return (awaitable, type(error).__name__, str(error))
+    return (awaitable, 'no error', '')
+answer = asyncio.run(main())
+";
+
 // list_batches with alist_batches and acancel_batch both answer an awaitable, not the answer
 #[rstest]
 #[case::alist("alist", LIST_OPENAI_REFUSED)]
@@ -233,14 +248,18 @@ fn session_async_methods_answer_with_a_coroutine(#[case] method: &str, #[case] p
         register(&module).unwrap();
         let class = module.getattr("NativeBatchListSession").unwrap();
         let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
-        let answer = session
-            .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
-            .unwrap();
-        let inspect = py.import("inspect").unwrap();
-        let awaited = inspect.call_method1("iscoroutine", (answer,)).unwrap();
+        let globals = PyDict::new(py);
+        globals.set_item("session", session).unwrap();
+        globals.set_item("method", method).unwrap();
+        globals.set_item("payload", payload).unwrap();
+        py.run(AWAIT_METHOD, Some(&globals), None).unwrap();
+        let answer = globals.get_item("answer").unwrap().unwrap();
+        let (awaitable, kind, text): (bool, String, String) = answer.extract().unwrap();
+        assert!(awaitable, "{method} must answer an awaitable");
+        assert_eq!(kind, "NativeBatchListError", "{method}: {text}");
         assert!(
-            awaited.extract::<bool>().unwrap(),
-            "{method} must answer a coroutine"
+            text.contains(r#""type":"APIConnectionError""#),
+            "{method}: {text}"
         );
     });
 }
