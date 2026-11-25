@@ -2,6 +2,7 @@ pub mod chat_setup;
 
 use crate::admission_control::in_flight::InFlightRequests;
 use crate::admission_control::{AdmissionControl, AdmissionStack};
+use crate::app::inference::native_compaction;
 use crate::middleware::request_root_paths::RootPaths;
 use crate::middleware::request_stack;
 use crate::pre_call::rewrites::resolve_call_id;
@@ -213,10 +214,12 @@ pub(crate) fn application(
     };
     let application = stack.wrap(stacked);
     let prefixed = RootPaths::from_settings(&config.sections.request_root_paths);
-    Ok(match prefixed {
+    let root_wrapped = match prefixed {
         Some(paths) => paths.wrap(application),
         None => application,
-    })
+    };
+    let scalar_root = config.sections.request_root_paths.server_root_path.clone();
+    Ok(native_compaction::install(root_wrapped, scalar_root))
 }
 // the OpenAI-shaped error body every route renders, and the projections that fill it
 #[derive(serde::Serialize)]

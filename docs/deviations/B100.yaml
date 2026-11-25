@@ -1,0 +1,9 @@
+task: B100
+deviations:
+  - what: The parent headers reach the executor as an http::HeaderMap, where repeated headers group under their first occurrence, so the child request B8291 builds can list a repeat after a later header name. LiteLLM copies request.headers.raw, the wire list, which can interleave repeats of different names.
+    why: B100 hands B8291 the parent HeaderMap as the handler received it; every value and each name's relative order is kept, and http::HeaderMap has no interleaved raw form. B8291's deviation file records the same difference from the child side.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L49-L54
+  - what: The compaction child runs the Router application() returns, which excludes the service_events logging middleware. run_with_listener applies that layer to the Router after install, so a child sent through the target starts no service event. LiteLLM dispatches the child into the FastAPI app, where the proxy logging runs for it too.
+    why: install is the last wrap inside application(), the only place this task may wire it, and run_with_listener adds the service_events layer on top of that Router afterwards.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/asgi_handler.py#L26-L28
+kept_bugs: []
