@@ -1,13 +1,13 @@
 id: B10103
 milestone: R2 bug fixes
 title: A managed Responses WebSocket keeps a bounded turn history
-status: todo
+status: done
 depends_on: [B945]
 file: tasks/B10103-ws-history-cap.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3188

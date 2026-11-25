@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-batch-create-invalid-json-error-record
+call:
+  b3641:
+    status_code: 500
+    body: 'upstream unavailable'
+    url_route: /vertex_ai/v1/projects/p1/locations/us-central1/batchPredictionJobs
+    start_time: "2026-01-01T00:00:00+00:00"
+    request_metadata: {}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/choices/0/message/content
+      why: the exception text is Python runtime wording
+    - pointer: /value/result/choices/0/message/provider_specific_fields/error
+      why: the exception text is Python runtime wording

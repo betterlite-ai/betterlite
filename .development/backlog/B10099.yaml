@@ -1,13 +1,13 @@
 id: B10099
 milestone: R2 bug fixes
 title: The Python package's native Redis handles open LiteLLM's Redis circuit breaker
-status: todo
+status: done
 depends_on: [B8066]
 file: tasks/B10099-python-redis-breaker.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3189

@@ -50,6 +50,10 @@ description: >-
   stamps both metadata buckets.
 scope:
   paths:
+    - "crates/betterlite-auth/src/spend_writes.rs"
+    - "crates/betterlite-auth/src/spend_writes/initialization.rs"
+    - "crates/betterlite-auth/src/spend_writes/batch.rs"
+    - "crates/betterlite-auth/src/reservation_admission/backend.rs"
     - crates/betterlite-server/src/spend/settlement.rs
     - crates/betterlite-server/src/spend/settlement/**
     - crates/betterlite-auth/src/reservation_state.rs
