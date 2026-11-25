@@ -4273,6 +4273,7 @@ dependencies = [
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-router",
  "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-streaming",

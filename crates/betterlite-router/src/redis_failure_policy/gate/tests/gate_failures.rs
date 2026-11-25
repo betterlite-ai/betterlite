@@ -6,11 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate as _;
-use betterlite_router::redis_failure_policy::classify::FailureClass;
 use tokio::time::timeout;
 use tracing::Level;
-
-use crate::redis_cache_wiring::gate::failure_class::classify;
 
 use super::support::{
     Broken, FakeClock, OuterIo, OuterRedis, bare_busy_loading_error, bare_cluster_down_error,
@@ -21,6 +18,8 @@ use super::support::{
     master_down_error, max_clients_error, no_auth_error, reply_error, settings, status,
     timeout_error,
 };
+use crate::redis_failure_policy::classify::FailureClass;
+use crate::redis_failure_policy::gate::failure_class::classify;
 
 #[test]
 fn a_connection_error_counts_as_a_hard_failure() {
