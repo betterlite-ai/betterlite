@@ -3,10 +3,11 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::health_access_and_connections::connection_error::RejectionDetail;
+use betterlite_server::health_access_and_connections::visibility::HealthRouter;
 use betterlite_server::health_status_routes::convert::convert_health_check;
 use betterlite_server::health_status_routes::error::HealthRouteError;
 use betterlite_server::health_status_routes::target::resolve_target_model_name;
-use betterlite_server::health_status_routes::testing::fake_health_router;
+use betterlite_server::health_status_routes::testing::FakeRouter;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -121,14 +122,15 @@ fn resolve_targets(cases: &[CaseInput]) -> HelperResult {
 }
 
 fn target_answer(case: &CaseInput) -> HelperResult {
-    let router = case.router.as_ref().map(|input| {
-        fake_health_router(
-            input
+    let router = case.router.as_ref().map(|input| -> Box<dyn HealthRouter> {
+        Box::new(FakeRouter {
+            deployments: input
                 .deployments
                 .iter()
-                .map(|deployment| (deployment.model_name.clone(), deployment.model_id.clone())),
-            input.fail,
-        )
+                .map(|deployment| (deployment.model_name.clone(), deployment.model_id.clone()))
+                .collect(),
+            fail: input.fail,
+        })
     });
     match resolve_target_model_name(
         case.model.as_deref(),

@@ -6,22 +6,10 @@ use betterlite_router::model_group_lookups::access_groups::AccessGroupMap;
 
 use crate::health_access_and_connections::visibility::{HealthRouter, LookupFailure};
 
-// A router an oracle case answers from: each row is a model group and deployment id, and fail makes the lookup error
-#[cfg_attr(test, mutants::skip)]
-#[must_use]
-pub fn fake_health_router<R>(rows: R, fail: bool) -> Box<dyn HealthRouter>
-where
-    R: IntoIterator<Item = (String, String)>,
-{
-    Box::new(FakeRouter {
-        deployments: rows.into_iter().collect(),
-        fail,
-    })
-}
-
-struct FakeRouter {
-    deployments: Vec<(String, String)>,
-    fail: bool,
+// An oracle case's router: each row is a model group and deployment id, and fail makes the lookup error
+pub struct FakeRouter {
+    pub deployments: Vec<(String, String)>,
+    pub fail: bool,
 }
 
 impl HealthRouter for FakeRouter {
