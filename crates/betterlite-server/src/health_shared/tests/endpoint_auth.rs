@@ -9,6 +9,7 @@ use betterlite_models::model_registration::JsonObject;
 use super::route::{
     SHARED_STATUS_PATH, SharedHealthSwitch, SharedStatusState, shared_status_router,
 };
+use super::status_view::SharedHealthStatusSource;
 use super::support::{FakeStatus, caller, field, route_get};
 
 const UNAUTHORIZED_BODY: &str = r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#;
@@ -20,9 +21,10 @@ fn body_of(text: &str) -> JsonObject {
 #[tokio::test]
 async fn an_unauthenticated_call_is_rejected() {
     let source = FakeStatus::answering(JsonObject::new());
+    let status_source: Arc<dyn SharedHealthStatusSource> = Arc::<FakeStatus>::clone(&source);
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
-        status: Some(Arc::clone(&source)),
+        status: Some(status_source),
     };
     let (status, text) = route_get(shared_status_router(state), None, SHARED_STATUS_PATH).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -39,9 +41,10 @@ async fn the_authenticated_call_reaches_the_status_source() {
     );
     payload.insert("redis_available".to_owned(), Json::Bool(true));
     let source = FakeStatus::answering(payload.clone());
+    let status_source: Arc<dyn SharedHealthStatusSource> = Arc::<FakeStatus>::clone(&source);
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
-        status: Some(Arc::clone(&source)),
+        status: Some(status_source),
     };
     let context = caller();
     let (status, text) = route_get(
@@ -63,9 +66,10 @@ async fn the_authenticated_call_reaches_the_status_source() {
 #[tokio::test]
 async fn the_disabled_proxy_says_so_and_never_reads_redis() {
     let source = FakeStatus::answering(JsonObject::new());
+    let status_source: Arc<dyn SharedHealthStatusSource> = Arc::<FakeStatus>::clone(&source);
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Disabled,
-        status: Some(Arc::clone(&source)),
+        status: Some(status_source),
     };
     let context = caller();
     let (status, text) = route_get(
@@ -114,9 +118,10 @@ async fn an_enabled_proxy_without_redis_says_so() {
 #[tokio::test]
 async fn a_failed_status_read_is_a_500() {
     let source = FakeStatus::failing("redis is down");
+    let status_source: Arc<dyn SharedHealthStatusSource> = Arc::<FakeStatus>::clone(&source);
     let state = SharedStatusState {
         checks: SharedHealthSwitch::Enabled,
-        status: Some(Arc::clone(&source)),
+        status: Some(status_source),
     };
     let context = caller();
     let (status, text) = route_get(
