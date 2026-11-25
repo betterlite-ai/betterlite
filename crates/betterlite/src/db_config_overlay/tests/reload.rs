@@ -319,7 +319,7 @@ async fn reload_merges_the_pass_through_lists_by_path() {
 #[case::database_not_a_list(
     json!({"pass_through_endpoints": "/a"}),
     "general_settings: {}\n",
-    json!({"general_settings": {"pass_through_endpoints": "/a"}})
+    json!({"general_settings": {"pass_through_endpoints": []}})
 )]
 #[case::file_list_alone(
     json!({}),
@@ -332,7 +332,7 @@ async fn reload_merges_the_pass_through_lists_by_path() {
     json!({"general_settings": {}})
 )]
 #[tokio::test]
-async fn reload_merges_pass_through_only_when_a_side_has_a_list(
+async fn reload_rebuilds_pass_through_from_the_lists_it_has(
     #[case] row: JsonValue,
     #[case] yaml: &str,
     #[case] expected: JsonValue,
