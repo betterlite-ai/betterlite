@@ -1,0 +1,15 @@
+kind: helper
+name: flatten_union
+call:
+  mcp_permission_ids:
+    function: flatten
+    identifiers: {"a": ["1", "2"], "b": ["2", "3"], "c": []}
+calls:
+  - mcp_permission_ids:
+      function: flatten
+      identifiers: {}
+  - mcp_permission_ids:
+      function: flatten
+      identifiers: {"only": ["srv"]}
+env: {}
+compare: {ignore: []}

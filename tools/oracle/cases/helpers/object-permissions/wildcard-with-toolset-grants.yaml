@@ -1,0 +1,29 @@
+# The wildcard in MCP_ALL_TOOLS_WILDCARD only lifts a restriction from a direct grant: inside a toolset
+# grant it stays a literal tool name, so two restricted levels union their tools and an empty direct
+# grant is still a restriction.
+kind: helper
+name: wildcard_with_toolset_grants
+call:
+  b4668:
+    function: union
+    direct: [b-tool]
+    via_toolsets: ["*"]
+calls:
+  - b4668:
+      function: union
+      direct: [b-tool]
+      via_toolsets: [a-tool, b-tool]
+  - b4668:
+      function: union
+      direct: [a-tool]
+      via_toolsets: null
+  - b4668:
+      function: union
+      direct: null
+      via_toolsets: [c-tool]
+  - b4668:
+      function: union
+      direct: []
+      via_toolsets: null
+env: {}
+compare: {ignore: []}

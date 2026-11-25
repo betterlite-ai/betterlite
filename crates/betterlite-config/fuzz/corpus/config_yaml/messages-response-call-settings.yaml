@@ -1,0 +1,2 @@
+litellm_settings:
+  num_retries: 2
