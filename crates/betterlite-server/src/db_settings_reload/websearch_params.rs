@@ -35,8 +35,14 @@ struct StoredHandlerParams {
 #[serde(untagged)]
 enum StoredProviders {
     Names(Vec<String>),
-    WrongItems(Vec<IgnoredAny>),
+    WrongItems(WrongProviderItems),
     NotAList(IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+struct WrongProviderItems {
+    _items: Vec<IgnoredAny>,
 }
 
 #[derive(Debug, Deserialize)]
