@@ -1,0 +1,24 @@
+# MCP_ALL_TOOLS_WILDCARD ("*") in a direct tool grant makes that level unrestricted: the union is null
+# whatever the toolsets grant, and null on both sources is unrestricted too.
+kind: helper
+name: wildcard_tool_unrestricted
+call:
+  b4668:
+    function: union
+    direct: ["*"]
+    via_toolsets: null
+calls:
+  - b4668:
+      function: union
+      direct: ["*"]
+      via_toolsets: [tool-a]
+  - b4668:
+      function: union
+      direct: [tool-a, "*"]
+      via_toolsets: [tool-b]
+  - b4668:
+      function: union
+      direct: null
+      via_toolsets: null
+env: {}
+compare: {ignore: []}

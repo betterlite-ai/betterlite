@@ -1,0 +1,50 @@
+kind: helper
+name: messages-response-call-messages-responses-request
+call:
+  messages_response_call:
+    call:
+      request:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        max_tokens: 128
+        system: be helpful
+        temperature: 0.2
+        top_p: 0.9
+        metadata:
+          user_id: user_a
+      stream: false
+      settings: {}
+      forwarded:
+        custom_llm_provider: openai
+        api_base: https://api.example.com
+        prompt_cache_key: cache-key
+        include:
+        - reasoning.encrypted_content
+        anthropic_messages: true
+    include_supported: true
+    provider: openai
+    model_info: null
+    answer:
+      shape: response
+      body:
+        id: resp_b985_request
+        created_at: 1
+        model: gpt-4o
+        status: completed
+        output:
+        - type: message
+          id: msg_b985_request
+          role: assistant
+          status: completed
+          content:
+          - type: output_text
+            text: hello
+            annotations: []
+        usage:
+          input_tokens: 4
+          output_tokens: 2
+          total_tokens: 6
+env: {}
+compare: {ignore: []}
