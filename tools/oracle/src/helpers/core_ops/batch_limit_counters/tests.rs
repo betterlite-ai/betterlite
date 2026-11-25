@@ -1,14 +1,45 @@
 #![cfg(test)]
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
-use rstest::rstest;
-
-use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::case::helper::parse_helper_case;
+use betterlite_oracle_runner::error::HelperRunError;
 use betterlite_oracle_runner::helpers::{HelperRun, run_case};
+use rstest::rstest;
+use thiserror::Error;
 
 const OPERATION: &str = "batch_limit_counters";
+
+#[derive(Debug, Error)]
+enum ReplayError {
+    #[error("cannot read {path}: {source}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot parse or validate {path}: {source}")]
+    Case {
+        path: PathBuf,
+        #[source]
+        source: HelperRunError,
+    },
+    #[error("cannot run {path}: {source}")]
+    Run {
+        path: PathBuf,
+        #[source]
+        source: HelperRunError,
+    },
+    #[error("the case names {actual} instead of {expected}")]
+    Operation {
+        actual: String,
+        expected: &'static str,
+    },
+    #[error("{path} does not match LiteLLM")]
+    Parity { path: PathBuf },
+}
 
 #[rstest]
 fn replays_the_batch_limit_counters_cases(
@@ -16,21 +47,31 @@ fn replays_the_batch_limit_counters_cases(
     #[files("cases/helpers/batch-limit-counters/*.yaml")]
     path: PathBuf,
 ) {
-    assert_eq!(replay_case(&path), Ok(()));
+    replay_case(&path).unwrap();
 }
 
-fn replay_case(path: &Path) -> Result<(), String> {
-    let source = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let case: HelperCase = serde_saphyr::from_str(&source).map_err(|error| error.to_string())?;
-    validate_helper(path, &case).map_err(|error| error.to_string())?;
+fn replay_case(path: &Path) -> Result<(), ReplayError> {
+    let source = fs::read_to_string(path).map_err(|error| ReplayError::Read {
+        path: path.to_owned(),
+        source: error,
+    })?;
+    let case = parse_helper_case(path, &source).map_err(|error| ReplayError::Case {
+        path: path.to_owned(),
+        source: error,
+    })?;
     if case.call.operation != OPERATION {
-        return Err(format!(
-            "the case names {} instead of {OPERATION}",
-            case.call.operation
-        ));
+        return Err(ReplayError::Operation {
+            actual: case.call.operation,
+            expected: OPERATION,
+        });
     }
-    match run_case(&[crate::GROUP], &case, false).map_err(|error| error.to_string())? {
+    match run_case(&[crate::GROUP], &case, false).map_err(|error| ReplayError::Run {
+        path: path.to_owned(),
+        source: error,
+    })? {
         HelperRun::Match => Ok(()),
-        HelperRun::Difference => Err(format!("{} does not match LiteLLM", path.display())),
+        HelperRun::Difference => Err(ReplayError::Parity {
+            path: path.to_owned(),
+        }),
     }
 }
