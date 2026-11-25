@@ -87,13 +87,11 @@ impl NativeAssistantStream {
     }
 }
 
-// What one advance does next: read the opened events, or open the manager core built.
 enum Step {
     Read(RunEventStream),
     Open(Box<ProviderRunStream>),
 }
 
-// Takes the step the state holds now, and a state holding neither part closes the stream.
 #[cfg_attr(test, mutants::skip)]
 async fn pick_step(state: &Mutex<StreamState>) -> Option<Step> {
     let mut guard = state.lock().await;
@@ -110,7 +108,6 @@ async fn pick_step(state: &Mutex<StreamState>) -> Option<Step> {
     None
 }
 
-// Reads the step's next event, opening the manager core built first.
 #[cfg_attr(test, mutants::skip)]
 async fn read_step(
     step: Step,
