@@ -695,6 +695,37 @@ async fn info_database_row_without_params_gets_defaults() {
     assert_eq!(&Json::Bool(false), at(table, "is_config"));
 }
 
+// the database row is returned as stored, so a blank string stays blank instead of collapsing to null
+#[tokio::test]
+async fn info_database_row_keeps_blank_fields() {
+    let blank = parsed(
+        r#"{"vector_store_id":"vs_blank","custom_llm_provider":"openai","vector_store_name":"","vector_store_description":"","created_at":"","updated_at":"","team_id":"","user_id":""}"#,
+    );
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(vec![blank])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_blank"}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::OK, status);
+    let table = at(&body, "vector_store");
+    assert_eq!("", text(at(table, "vector_store_name")));
+    assert_eq!("", text(at(table, "vector_store_description")));
+    assert_eq!("", text(at(table, "created_at")));
+    assert_eq!("", text(at(table, "updated_at")));
+    assert_eq!("", text(at(table, "team_id")));
+    assert_eq!("", text(at(table, "user_id")));
+}
+
 #[tokio::test]
 async fn info_denied_cached_record_is_403() {
     let database = FakeDatabase::new(vec![db_store("vs_team")]);
