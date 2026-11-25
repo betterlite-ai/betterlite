@@ -160,13 +160,34 @@ where
         Answer::Cached(cached) if delivery.stream => StreamSource::Cached(cached),
         Answer::Cached(mut cached) => return drain_cached(&mut *cached).await,
     };
-    stream_output(
+    // _apply_post_stream_processing runs on whatever stream the bridge produced
+    let stream: Box<dyn AsyncChunkStream + Send> = match source {
+        StreamSource::Events(events) => Box::new(TranslatedStream::new(
+            events,
+            &StreamConfig {
+                provider: &input.custom_llm_provider,
+                model: &input.model,
+                json_mode: delivery.json_mode,
+                limits: delivery.limits,
+                stamps,
+            },
+        )),
+        StreamSource::Chat(chat) => Box::new(MockStream::new(
+            chat,
+            &input.custom_llm_provider,
+            &input.model,
+            stamps,
+        )),
+        StreamSource::Cached(cached) => cached,
+    };
+    post_process(
+        stream,
         &input.model,
         &input.custom_llm_provider,
-        delivery,
-        stamps,
-        source,
+        delivery.post_stream,
     )
+    .map(BridgeOutput::Stream)
+    .map_err(DispatchError::PostStream)
 }
 
 // A collected stream keeps its response's own hidden keys over the iterator's, and B919 reads the merged map
@@ -192,36 +213,6 @@ where
         &delivery.limits,
     )?;
     Ok(BridgeOutput::Response(Box::new(transformed)))
-}
-
-// _apply_post_stream_processing runs on whatever stream the bridge produced
-fn stream_output<Source>(
-    model: &str,
-    provider: &str,
-    delivery: &Delivery<'_>,
-    stamps: StreamStamps,
-    source: StreamSource,
-) -> Result<BridgeOutput, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
-    let stream: Box<dyn AsyncChunkStream + Send> = match source {
-        StreamSource::Events(events) => Box::new(TranslatedStream::new(
-            events,
-            &StreamConfig {
-                provider,
-                model,
-                json_mode: delivery.json_mode,
-                limits: delivery.limits,
-                stamps,
-            },
-        )),
-        StreamSource::Chat(chat) => Box::new(MockStream::new(chat, provider, model, stamps)),
-        StreamSource::Cached(cached) => cached,
-    };
-    post_process(stream, model, provider, delivery.post_stream)
-        .map(BridgeOutput::Stream)
-        .map_err(DispatchError::PostStream)
 }
 
 // A cached chat stream carries no completed Responses object, so a non-streaming caller gets the empty-stream error
