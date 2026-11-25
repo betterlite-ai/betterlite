@@ -167,6 +167,7 @@ async fn the_logged_request_body_is_never_null() {
             .await,
     );
     let job = harness.queue.take_all().into_iter().next().unwrap();
+    assert!(harness.route.calls().is_empty());
     job.work.await;
     assert_eq!(harness.route.calls()[0].request_body, Some(json("{}")));
 }
