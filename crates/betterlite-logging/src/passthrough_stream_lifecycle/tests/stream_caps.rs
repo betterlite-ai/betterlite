@@ -3,8 +3,8 @@
 use indexmap::IndexMap;
 
 use crate::passthrough_stream_lifecycle::chunk_processor::{
-    ChunkProcessorCall, CompletionGuard, MAX_LOGGED_STREAM_BYTES, MAX_PENDING_FRAME_BYTES,
-    StreamBufferCaps,
+    ChunkProcessorCall, CompletionGuard, MAX_LOGGED_STREAM_BYTES, MAX_LOGGED_STREAM_CHUNKS,
+    MAX_PENDING_FRAME_BYTES, StreamBufferCaps,
 };
 use crate::passthrough_stream_lifecycle::support::{
     Harness, capture_logs, json, object, processor_call,
@@ -43,8 +43,10 @@ async fn the_logged_chunks(harness: &Harness) -> Vec<Vec<u8>> {
 #[test]
 fn the_defaults_cap_the_log_copy_at_64_mib_and_an_incomplete_frame_at_16_mib() {
     assert_eq!(MAX_LOGGED_STREAM_BYTES, 0x0400_0000);
+    assert_eq!(MAX_LOGGED_STREAM_CHUNKS, 0x0004_0000);
     assert_eq!(MAX_PENDING_FRAME_BYTES, 0x0100_0000);
     assert_eq!(StreamBufferCaps::DEFAULT.logged_bytes, 0x0400_0000);
+    assert_eq!(StreamBufferCaps::DEFAULT.logged_chunks, 0x0004_0000);
     assert_eq!(StreamBufferCaps::DEFAULT.frame_bytes, 0x0100_0000);
 }
 
@@ -54,6 +56,7 @@ async fn a_chunk_at_the_log_cap_is_kept_and_the_one_past_it_is_not() {
     let (logs, _logs_guard) = capture_logs();
     let buffer_caps = StreamBufferCaps {
         logged_bytes: 8,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: MAX_PENDING_FRAME_BYTES,
     };
     let mut run = CompletionGuard::new(plain_call(&harness, EndpointType::OpenAi), buffer_caps);
@@ -71,6 +74,7 @@ async fn a_stream_past_the_log_cap_forwards_every_chunk_and_logs_only_the_kept_p
     let (logs, _logs_guard) = capture_logs();
     let buffer_caps = StreamBufferCaps {
         logged_bytes: 8,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: MAX_PENDING_FRAME_BYTES,
     };
     let mut run = CompletionGuard::new(plain_call(&harness, EndpointType::OpenAi), buffer_caps);
@@ -86,12 +90,37 @@ async fn a_stream_past_the_log_cap_forwards_every_chunk_and_logs_only_the_kept_p
     assert_eq!(logs.text().matches("its log copy stops here").count(), 1);
 }
 
+#[tokio::test]
+async fn repeated_empty_chunks_cannot_grow_the_log_copy_without_bound() {
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]);
+    let (logs, _logs_guard) = capture_logs();
+    let buffer_caps = StreamBufferCaps {
+        logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        logged_chunks: 4,
+        frame_bytes: MAX_PENDING_FRAME_BYTES,
+    };
+    let mut run = CompletionGuard::new(plain_call(&harness, EndpointType::OpenAi), buffer_caps);
+    let empties: Vec<Vec<u8>> = vec![Vec::new(); 10];
+    let yielded: Vec<Vec<u8>> = empties
+        .clone()
+        .into_iter()
+        .filter_map(|chunk| run.accept(chunk))
+        .collect();
+    drop(run);
+    assert_eq!(yielded, empties);
+    let logged = the_logged_chunks(&harness).await;
+    assert_eq!(logged.len(), 4);
+    assert!(logged.iter().all(Vec::is_empty));
+    assert_eq!(logs.text().matches("its log copy stops here").count(), 1);
+}
+
 #[test]
 fn an_incomplete_injection_frame_at_the_cap_still_waits_for_its_end() {
     let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]);
     let (logs, _logs_guard) = capture_logs();
     let buffer_caps = StreamBufferCaps {
         logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: 16,
     };
     let mut run = CompletionGuard::new(injection_call(&harness), buffer_caps);
@@ -114,6 +143,7 @@ async fn an_incomplete_injection_frame_past_the_cap_is_forwarded_and_injection_s
     let (logs, _logs_guard) = capture_logs();
     let buffer_caps = StreamBufferCaps {
         logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: 16,
     };
     let mut run = CompletionGuard::new(injection_call(&harness), buffer_caps);
@@ -143,6 +173,7 @@ fn complete_frames_before_an_over_cap_tail_are_still_injected() {
     let (logs, _logs_guard) = capture_logs();
     let buffer_caps = StreamBufferCaps {
         logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: 16,
     };
     let mut run = CompletionGuard::new(injection_call(&harness), buffer_caps);
@@ -171,6 +202,7 @@ fn a_tinyfish_frame_at_the_cap_is_still_scanned() {
     let (logs, _logs_guard) = capture_logs();
     let buffer_caps = StreamBufferCaps {
         logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: 16,
     };
     let mut run = CompletionGuard::new(plain_call(&harness, EndpointType::Tinyfish), buffer_caps);
@@ -190,6 +222,7 @@ async fn a_tinyfish_frame_past_the_cap_stops_the_scan_and_forwards_every_chunk()
     let (logs, _logs_guard) = capture_logs();
     let buffer_caps = StreamBufferCaps {
         logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: 16,
     };
     let mut run = CompletionGuard::new(plain_call(&harness, EndpointType::Tinyfish), buffer_caps);

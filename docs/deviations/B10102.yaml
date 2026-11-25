@@ -1,7 +1,7 @@
 task: B10102
 deviations:
-  - what: The copy of the stream kept for logging stops at 64 MiB, where LiteLLM appends every chunk to raw_bytes without a limit.
-    why: Rule bounded-inputs caps every collection a provider stream grows. 64 MiB is about twice the largest stream a working setup sends (128k output tokens at about 200 bytes of SSE each); past the cap the chunks still reach the client unchanged, one warning says so, and the success or failure log runs on the kept prefix. A stream whose first chunk alone exceeds the cap keeps nothing, so it logs nothing, as an empty stream does.
+  - what: The copy of the stream kept for logging stops at 64 MiB of payload or 262,144 chunk entries, whichever comes first, where LiteLLM appends every chunk to raw_bytes without a limit.
+    why: Rule bounded-inputs caps every collection a provider stream grows. 64 MiB is about twice the largest stream a working setup sends (128k output tokens at about 200 bytes of SSE each), and 262,144 entries is twice that stream arriving with one SSE frame per chunk, so the list's per-chunk overhead is bounded too. Past either cap the chunks still reach the client unchanged, one warning says so, and the success or failure log runs on the kept prefix. A stream whose first chunk alone exceeds the cap keeps nothing, so it logs nothing, as an empty stream does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L192-L225
   - what: The cost-injection reassembly buffer stops at 16 MiB of an incomplete SSE frame, where LiteLLM's pending grows until a frame ends.
     why: Rule bounded-inputs caps every collection a provider stream grows, and 16 MiB is the pooled transport's reply cap that B1315 also puts on an unterminated fragment. Past it the buffered bytes are forwarded as they arrived, nothing more is injected, and one warning says so.

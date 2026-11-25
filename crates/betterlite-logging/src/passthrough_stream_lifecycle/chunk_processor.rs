@@ -25,6 +25,8 @@ mod frames;
 
 // LiteLLM keeps every upstream chunk; the log copy is about twice the largest stream a working setup sends
 pub(super) const MAX_LOGGED_STREAM_BYTES: usize = 0x0400_0000;
+// at one SSE frame per chunk a 128k-token stream is 128k chunks, so twice that bounds the entry list's overhead
+pub(super) const MAX_LOGGED_STREAM_CHUNKS: usize = 0x0004_0000;
 // the pooled transport's reply cap, the same ceiling B1315 puts on an unterminated fragment
 pub(super) const MAX_PENDING_FRAME_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
 
@@ -32,12 +34,14 @@ pub(super) const MAX_PENDING_FRAME_BYTES: usize = TransportLimits::DEFAULT.body_
 #[derive(Clone, Copy)]
 pub(super) struct StreamBufferCaps {
     pub(super) logged_bytes: usize,
+    pub(super) logged_chunks: usize,
     pub(super) frame_bytes: usize,
 }
 
 impl StreamBufferCaps {
     pub(super) const DEFAULT: Self = Self {
         logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        logged_chunks: MAX_LOGGED_STREAM_CHUNKS,
         frame_bytes: MAX_PENDING_FRAME_BYTES,
     };
 }
@@ -98,8 +102,10 @@ struct GuardParts {
     status_code: u16,
     raw_bytes: Vec<Vec<u8>>,
     logged_bytes: usize,
-    // None once the copy stopped at the cap, so the warning and the stop happen once
-    logged_limit: Option<usize>,
+    logged_chunks: usize,
+    // None once the copy stopped at either cap, so the warning and the stop happen once
+    logged_byte_limit: Option<usize>,
+    max_logged_chunks: usize,
     logging_scheduled: bool,
     injection_model: Option<String>,
     pending: Vec<u8>,
@@ -132,7 +138,9 @@ impl CompletionGuard {
                 status_code: call.status_code,
                 raw_bytes: Vec::new(),
                 logged_bytes: 0,
-                logged_limit: Some(caps.logged_bytes),
+                logged_chunks: 0,
+                logged_byte_limit: Some(caps.logged_bytes),
+                max_logged_chunks: caps.logged_chunks,
                 logging_scheduled: false,
                 injection_model,
                 pending: Vec::new(),
@@ -147,18 +155,21 @@ impl CompletionGuard {
         let Some(parts) = self.parts.as_mut() else {
             return;
         };
-        let Some(limit) = parts.logged_limit else {
+        let Some(byte_limit) = parts.logged_byte_limit else {
             return;
         };
+        let max_chunks = parts.max_logged_chunks;
+        let fits_chunks = parts.logged_chunks < max_chunks;
         let kept = parts.logged_bytes.saturating_add(chunk.len());
-        if kept > limit {
-            parts.logged_limit = None;
+        if !fits_chunks || kept > byte_limit {
+            parts.logged_byte_limit = None;
             tracing::warn!(
-                "The pass-through stream is past {limit} bytes, so its log copy stops here and the rest is forwarded without being logged"
+                "The pass-through stream reached its log copy's cap of {byte_limit} bytes or {max_chunks} chunks, so its log copy stops here and the rest is forwarded without being logged"
             );
             return;
         }
         parts.logged_bytes = kept;
+        parts.logged_chunks = parts.logged_chunks.saturating_add(1);
         parts.raw_bytes.push(chunk.to_vec());
     }
 
