@@ -2,10 +2,11 @@ import socket
 import socketserver
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from io import BufferedReader
 from typing import Final, TypeAlias
 
+import pytest
 from typing_extensions import override
 
 _HOST: Final = "127.0.0.1"
@@ -256,6 +257,16 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
                     connection.sendall(self.reply(args))
                 except OSError:
                     return
+
+
+# Every module that needs the fake takes this one fixture, so LiteLLM and betterlite share a server.
+@pytest.fixture(autouse=False)
+def redis_server() -> Iterator[FakeRedisServer]:
+    server = FakeRedisServer()
+    server.start()
+    yield server
+    server.stop()
+    assert server.unknown_commands == []
 
 
 _Command: TypeAlias = Callable[[FakeRedisServer, list[bytes]], bytes]

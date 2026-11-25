@@ -4,6 +4,7 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 
+import fake_redis_server
 import pytest
 from fake_redis_server import FakeRedisServer
 from pydantic import JsonValue
@@ -95,13 +96,8 @@ def _isolated_cache_state() -> Iterator[None]:
     LITELLM_SWITCHES.disable_cache()
 
 
-@pytest.fixture(autouse=False)
-def redis_server() -> Iterator[FakeRedisServer]:
-    server = FakeRedisServer()
-    server.start()
-    yield server
-    server.stop()
-    assert server.unknown_commands == []
+# The shared fake-server fixture, registered here under the name the tests ask for.
+redis_server = fake_redis_server.redis_server
 
 
 def _litellm_callback_lists() -> tuple[Sequence[Callback], ...]:
