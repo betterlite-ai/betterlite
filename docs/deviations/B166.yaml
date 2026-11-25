@@ -6,19 +6,46 @@ deviations:
   - what: "A `client_type` that is neither `local` nor `hosted` raises `ValueError(\"client_type must be 'local' or 'hosted', got ...\")` from `__init__`."
     why: LiteLLM's `load_data` sets no `user_dict` at all for another client type, so construction succeeds and the first method call fails with `AttributeError` far from the cause. A working setup never passes another client type, so the error can name the field instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L50-L70
-  - what: "A `user_cost.json` that is not an object of user objects, or a hosted reply whose `data` is not one, raises a pydantic `ValidationError` naming the malformed field, and a hosted reply that is not a JSON object raises `TypeError(\"hosted budget reply must be an object\")`."
+  - what: "A `user_cost.json` that is not an object of user objects, or a hosted reply whose `status` or `data` is not of the declared type, raises a pydantic `ValidationError` naming the malformed field."
     why: LiteLLM assigns whatever `json.load` or the reply's `data` returns, so a corrupt file or reply turns the next cost call into a `KeyError` or `TypeError` far from the read. docs/compatibility.md asks for an error that names the field on a wrong-typed value, and no working setup relies on storing garbage.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L53-L70
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L50-L70
+  - what: "A loaded record is validated into `BudgetRecord`: `total_budget`, `current_cost` and each `model_cost` value become `Decimal` (a numeric string such as `\"10.5\"` is accepted and read as 10.5), and a key the record does not declare is dropped the next time the file is saved."
+    why: LiteLLM keeps the parsed JSON unchanged, so a string total_budget survives in `user_dict` until a later comparison fails on it, and an extra key is written back. The record's declared types are the ones LiteLLM's arithmetic already assumes, and docs/compatibility.md reads a value into the field's declared type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L50-L70
+  - what: "Money is `Decimal` from the boundary inward: `create_budget` stores `Decimal(str(total_budget))`, `update_cost` and `projected_cost` add through `cost_decimal`, and only the getters and the JSON written to disk convert back to `float`."
+    why: "LiteLLM stores the floats it is given and adds them, so a current cost of 0.1 followed by 0.2 leaves 0.30000000000000004, and a file holding a long fraction is rounded to the nearest double on the next save. betterlite answers 0.3 and keeps the digits the file had; the text of a file written from ordinary prices is the same, and `test_budget_lifecycle` compares it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L113-L148
   - what: "`update_cost` with a completion object whose `model` is absent or null raises `TypeError(\"model must be a string\")`."
     why: LiteLLM does `model = completion_obj[\"model\"]`, so an absent key raises `KeyError` after the cost was already computed, and a null model would be stored as the `model_cost` key and saved as the JSON text `\"null\"`. betterlite refuses both and names the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L133-L135
   - what: "`safe_deep_copy` passes a `metadata` or `litellm_metadata` value that is not a mapping through unchanged, where LiteLLM raises `TypeError` on a null bucket."
     why: "LiteLLM's step 1 runs `\"litellm_parent_otel_span\" in data[\"metadata\"]`, which raises `TypeError: argument of type 'NoneType' is not iterable` for a null bucket and names no field; no working setup sends one. Dict buckets behave exactly as LiteLLM's, and the caller's dict is not mutated (docs/compatibility.md keeps caller-dict changes out of parity)."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L534-L541
+  - what: "`is_expected_client_error` has no starlette `HTTPException` arm and no `BaseLLMException` arm: an exception carrying `llm_provider` is a provider error unless its litellm rate-limit `category` names LiteLLM's own limiter."
+    why: "betterlite's Python package has no starlette dependency and no `BaseLLMException`, and its proxy rejects in Rust, so no exception of that shape reaches this call. Everything else LiteLLM checks is copied: the category first, then the provider flag, then `code` before `status_code`, bools and non-numeric statuses refused, and the 400-499 range."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L107-L165
+  - what: "`max_retries_per_request_hit` counts any `int` instance, an `IntEnum` member included, where LiteLLM's `type(retry_count) is int` refuses an `int` subclass."
+    why: "The retry count is written into the metadata by the proxy itself as a plain `int`, so no working setup passes a subclass; an `IntEnum` still satisfies the declared `object` and Python's own typing says it is an `int`. A bool is refused on both sides."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L313-L320
+  - what: "A `deployment`, a `litellm_params`, or a `metadata`/`litellm_metadata` value of a type the helper cannot read raises `TypeError` naming that field."
+    why: "LiteLLM reaches `\"in\"` or a subscript on the wrong type and raises a bare `TypeError`/`AttributeError` that names no field; a working setup passes a string or a dict. docs/compatibility.md asks for the error to name the field."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L349-L425
+  - what: "The hidden-params setters raise `TypeError(\"_hidden_params must be an object\")` when the response carries no dict of hidden params, and the getter accepts a response object, a mapping or `None` and answers `None` for anything else."
+    why: "LiteLLM calls `.get` on `response._hidden_params` and raises `AttributeError` when it is missing or not a dict, and reads `getattr(response, \"_hidden_params\")` from whatever object it is given. betterlite's getter reads its own response types through the package's shared `hidden_params` reader, and a live value beside `headers` in the hidden params is left untouched."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L758-L799
+  - what: "A hosted `get_budget`/`set_budget` answering 4xx or 5xx raises `httpx2.HTTPStatusError` with the original response, and a timeout raises `httpx2.TimeoutException`; LiteLLM's `HTTPHandler.post` raises `MaskedHTTPStatusError` and `litellm.Timeout`."
+    why: "The status code and the response are the same, and masking the configured `api_base` hides nothing the caller does not already hold. `ModuleClient` has one call and no logging object to build a `litellm.Timeout` from, so the transport error reaches the caller as it is."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1505-L1519
+  - what: "Outbound hosted calls send `User-Agent: betterlite/<version>` where LiteLLM sends `litellm/<version>`; `LITELLM_USER_AGENT` overrides both, an empty value counting as unset."
+    why: The header names the client that actually sends the request, and the environment override keeps a deployment's user-agent setting working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L142-L158
   - what: "`BudgetManager.print_verbose` logs through `logging.getLogger(__name__)` instead of the root logger that LiteLLM's `logging.info` call uses."
     why: The message text and level are the same, and the module logger propagates to the root handlers, so anything listening on the root still sees it; a named logger keeps LOG015 quiet and lets a caller filter our records.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L41-L48
-  - what: "`betterlite.module_level_client` is a small `ModuleClient` whose only operations are `post(url, headers=..., json=...)` and its parsed reply; LiteLLM's module-level client is an `httpx.Client` with every HTTP verb."
+  - what: "`betterlite.module_level_client` is a small `ModuleClient` whose only operations are `post(url, headers=..., json=...)` and its parsed reply; LiteLLM's module-level client is an `HTTPHandler` with every HTTP verb."
     why: The budget manager needs one call, and a typed `post` that returns JSON keeps the parsed reply out of `Any`. Widening the wrapper to the full client belongs to the task that owns the package-level client, if one is needed.
     link: ""
-kept_bugs: []
+kept_bugs:
+  - what: "`create_budget` replaces an existing user record with `{\"total_budget\": total_budget}` before it validates the duration, so an invalid duration leaves the old record's costs and duration gone from memory."
+    why: The reference sets the record first and raises afterwards; the task asks for LiteLLM's error and text, and nothing is saved, so the file keeps the old record. Copying the order keeps `get_total_budget` and `get_current_cost` answering like LiteLLM's after the raise, and a test pins it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L72-L100
