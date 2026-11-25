@@ -16,11 +16,7 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 # main.py hands a chat call whose model is served by the Responses API to this singleton: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5790-L5814
 BRIDGE: Final = responses_api_bridge
 
-Outcome: TypeAlias = (
-    ModelResponse
-    | CustomStreamWrapper
-    | Coroutine[None, None, ModelResponse | CustomStreamWrapper]
-)
+Settled: TypeAlias = ModelResponse | CustomStreamWrapper
 
 
 class BridgeRun(BaseModel):
@@ -81,7 +77,7 @@ def call_kwargs(run: BridgeRun, api_base: str) -> dict[str, JsonValue | ModelRes
 
 
 # litellm's bridge takes untyped kwargs and settles on a response, a stream or a coroutine of either
-def call_bridge(run: BridgeRun, api_base: str) -> Outcome:
+def call_bridge(run: BridgeRun, api_base: str) -> Settled | Coroutine[None, None, Settled]:
     return BRIDGE.completion(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L157-L164
         **call_kwargs(run, api_base)
     )

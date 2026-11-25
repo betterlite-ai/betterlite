@@ -60,7 +60,10 @@ impl From<BridgeStreamError> for StreamFailure {
 
 // Every way the bridge stops short of an answer, with the provider's own failure kept as the cause
 #[derive(Debug, Error)]
-pub enum DispatchError<Source: Error + 'static> {
+pub enum DispatchError<Source>
+where
+    Source: Error + 'static,
+{
     #[error(transparent)]
     Input(#[from] InputError),
     #[error(transparent)]

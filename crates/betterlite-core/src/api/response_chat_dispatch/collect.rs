@@ -11,10 +11,13 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_to_chat_stream::{DecodedEventLine, decode_event_line};
 
 // _collect_response_from_stream: the drain, then the completed event's response beside the iterator's hidden params
-pub async fn collect<Source: Error + 'static>(
+pub async fn collect<Source>(
     mut events: Box<dyn ResponsesEventStream>,
     limits: &ApiLimits,
-) -> Result<BridgeResponse, DispatchError<Source>> {
+) -> Result<BridgeResponse, DispatchError<Source>>
+where
+    Source: Error + 'static,
+{
     let mut completed = Terminal::Pending;
     while let Some(event_line) = events.next_event().await {
         let line = event_line.map_err(|failure| DispatchError::Stream { failure })?;
@@ -38,9 +41,12 @@ pub async fn collect<Source: Error + 'static>(
 }
 
 // _coerce_response_object: a Responses object stays, a dict is constructed, and anything else is the payload error
-pub fn coerce<Source: Error + 'static>(
+pub fn coerce<Source>(
     payload: ResponsePayload,
-) -> Result<ResponsesApiResponse, DispatchError<Source>> {
+) -> Result<ResponsesApiResponse, DispatchError<Source>>
+where
+    Source: Error + 'static,
+{
     match payload {
         ResponsePayload::Typed(response) => Ok(*response),
         ResponsePayload::Dict(Json::Object(fields)) => construct(fields),
@@ -51,11 +57,13 @@ pub fn coerce<Source: Error + 'static>(
 }
 
 // ResponsesAPIResponse(**dict) with model_construct's tolerance: whatever fails validation is left out
-fn construct<Source: Error + 'static>(
+fn construct<Source>(
     fields: IndexMap<String, Json>,
-) -> Result<ResponsesApiResponse, DispatchError<Source>> {
-    let value = serde_json::to_value(Json::Object(fields))?;
-    let Value::Object(mut object) = value else {
+) -> Result<ResponsesApiResponse, DispatchError<Source>>
+where
+    Source: Error + 'static,
+{
+    let Value::Object(mut object) = serde_json::to_value(Json::Object(fields))? else {
         return Err(DispatchError::UnexpectedPayload);
     };
     // each pass drops a key or fills a default, so the bound only trips a repair that stops making progress
@@ -139,20 +147,15 @@ fn existing_hidden(payload: &Json) -> Map<String, Value> {
         .collect()
 }
 
-// a nonempty existing map keeps its keys, and every other case starts from a copy of the stream's map
+// existing keys win, and every stream key the response leaves absent fills in
 #[must_use]
 pub fn merged_hidden(
     existing: &Map<String, Value>,
     stream: &Map<String, Value>,
 ) -> Map<String, Value> {
-    if existing.is_empty() {
-        return stream.clone();
-    }
     let mut merged = existing.clone();
     for (key, value) in stream {
-        if !merged.contains_key(key) {
-            merged.insert(key.clone(), value.clone());
-        }
+        merged.entry(key.clone()).or_insert_with(|| value.clone());
     }
     merged
 }

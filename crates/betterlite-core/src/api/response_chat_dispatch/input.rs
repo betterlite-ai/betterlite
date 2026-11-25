@@ -112,8 +112,7 @@ fn value_map(fields: &IndexMap<String, Json>) -> Result<IndexMap<String, Value>,
 }
 
 fn header_map(kwargs: &IndexMap<String, Json>) -> Result<IndexMap<String, String>, InputError> {
-    let fields = object(kwargs, "headers")?;
-    let value = serde_json::to_value(Json::Object(fields.clone()))
+    let value = serde_json::to_value(Json::Object(object(kwargs, "headers")?.clone()))
         .map_err(|source| RequestError::Json { source })?;
     serde_json::from_value(value).map_err(|_source| InputError::Field {
         field: "headers",

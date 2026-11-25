@@ -189,11 +189,14 @@ fn wrapper(provider: &str, model: &str, stamps: StreamStamps) -> StreamWrapper {
 }
 
 // The wrapper reads one chunk as provider JSON, so the bridge's typed records serialize at this handoff only
-fn push<T: Serialize>(
+fn push<T>(
     wrapper: &mut StreamWrapper,
     pending: &mut VecDeque<Json>,
     chunk: T,
-) -> Result<(), BridgeStreamError> {
+) -> Result<(), BridgeStreamError>
+where
+    T: Serialize,
+{
     let value = serde_json::to_value(chunk).and_then(serde_json::from_value)?;
     if let Some(shaped) = wrapper.push(&ProviderChunk::Json(Box::new(value)))? {
         pending.push_back(wrapper_view(&shaped)?);
