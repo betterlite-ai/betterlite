@@ -161,7 +161,7 @@ fn filters_apply_together() {
 #[test]
 fn a_missing_model_name_never_matches_a_wildcard() {
     let deployment = object(vec![
-        ("litellm_params", Json::Object(params("openai/gpt-4o"))),
+        ("litellm_params", params("openai/gpt-4o")),
         ("model_info", Json::Object(object(Vec::new()))),
     ]);
     assert!(!matches_model_info_filters(

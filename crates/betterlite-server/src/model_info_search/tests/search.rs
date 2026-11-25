@@ -158,12 +158,12 @@ fn expected_filter(search_lower: &str, exact_name: Option<&str>) -> ModelFilter 
     }
 }
 
-fn unowned_sources<'a>(
-    db: &'a FakeDatabase,
-    decrypt: &'a Decryption,
-    reads: Option<&'a FakeReads>,
-    who: Option<&'a TeamCaller>,
-) -> SearchSources<'a, FakeDatabase, FakeReads> {
+fn unowned_sources<'source>(
+    db: &'source FakeDatabase,
+    decrypt: &'source Decryption,
+    reads: Option<&'source FakeReads>,
+    who: Option<&'source TeamCaller>,
+) -> SearchSources<'source, FakeDatabase, FakeReads> {
     SearchSources {
         database: db,
         decrypt,

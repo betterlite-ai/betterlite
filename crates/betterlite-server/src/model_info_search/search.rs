@@ -9,7 +9,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_model_info::discovery::holds;
 
 use crate::model_info_scope::text_field;
-use crate::model_team_scope::caller_scope::get_caller_byok_team_scope;
+use crate::model_team_scope::caller_scope;
 use crate::model_team_scope::lookup::Decryption;
 use crate::model_team_scope::reads::TeamScopeReads;
 use crate::team_access::caller::TeamCaller;
@@ -57,18 +57,18 @@ pub trait SearchDatabase: Send + Sync {
     ) -> Result<Vec<ProxyModelTable>, SearchDatabaseError>;
 }
 
-pub struct SearchSources<'a, Database: ?Sized, Reads: ?Sized> {
-    pub database: &'a Database,
-    pub decrypt: &'a Decryption,
-    pub reads: Option<&'a Reads>,
-    pub caller: Option<&'a TeamCaller>,
+pub struct SearchSources<'source, Database: ?Sized, Reads: ?Sized> {
+    pub database: &'source Database,
+    pub decrypt: &'source Decryption,
+    pub reads: Option<&'source Reads>,
+    pub caller: Option<&'source TeamCaller>,
 }
 
-pub struct SearchOptions<'a> {
+pub struct SearchOptions<'query> {
     pub page: i64,
     pub size: i64,
-    pub sort_by: Option<&'a str>,
-    pub model_name: Option<&'a str>,
+    pub sort_by: Option<&'query str>,
+    pub model_name: Option<&'query str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,12 +83,12 @@ struct RouterMatches {
     count: i64,
 }
 
-struct FetchRequest<'a, 'options> {
-    search_lower: &'a str,
-    db_ids: &'a BTreeSet<String>,
+struct FetchRequest<'request, 'options> {
+    search_lower: &'request str,
+    db_ids: &'request BTreeSet<String>,
     router_count: i64,
-    options: &'a SearchOptions<'options>,
-    allowed: Option<&'a BTreeSet<String>>,
+    options: &'request SearchOptions<'options>,
+    allowed: Option<&'request BTreeSet<String>>,
 }
 
 // _apply_search_filter_to_models: router-side matching and BYOK scope, then the bounded DB read-through.
@@ -110,7 +110,7 @@ where
     }
     let search_lower = search.to_lowercase().trim().to_owned();
     let allowed = match sources {
-        Some(found) => get_caller_byok_team_scope(found.caller, found.reads).await,
+        Some(found) => caller_scope::get_caller_byok_team_scope(found.caller, found.reads).await,
         None => None,
     };
     let router_matches = filter_router_models(models, &search_lower, allowed.as_ref());
@@ -179,7 +179,7 @@ fn filter_router_models(
                 &empty
             }
         };
-        if byok_row_outside_caller_teams(info, allowed) {
+        if caller_scope::byok_row_outside_caller_teams(info, allowed) {
             continue;
         }
         let is_db_model = info.get("db_model").is_some_and(holds);

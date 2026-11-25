@@ -107,7 +107,7 @@ async fn count_rows(
     let Some(row) = rows.first() else {
         return Err(SearchDatabaseError::MissingRow);
     };
-    row.try_get(0)?
+    row.try_get(0).map_err(SearchDatabaseError::from)
 }
 
 async fn find_rows(

@@ -143,13 +143,13 @@ enum RecordedCall {
     Find(ModelFilter, i64),
 }
 
-struct RecordingDatabase<'a> {
-    inner: PostgresSearchDatabase<'a>,
+struct RecordingDatabase<'db> {
+    inner: PostgresSearchDatabase<'db>,
     calls: Mutex<Vec<RecordedCall>>,
 }
 
-impl<'a> RecordingDatabase<'a> {
-    fn new(inner: PostgresSearchDatabase<'a>) -> Self {
+impl<'db> RecordingDatabase<'db> {
+    fn new(inner: PostgresSearchDatabase<'db>) -> Self {
         Self {
             inner,
             calls: Mutex::new(Vec::new()),

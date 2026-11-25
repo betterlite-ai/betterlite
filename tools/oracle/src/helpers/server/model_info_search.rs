@@ -100,8 +100,8 @@ pub(crate) struct Input {
     value: Option<Json>,
 }
 
-struct CaseCatalog<'a> {
-    entries: &'a [CatalogEntry],
+struct CaseCatalog<'entries> {
+    entries: &'entries [CatalogEntry],
 }
 
 #[async_trait]
@@ -114,17 +114,13 @@ impl ModelInfoCatalog for CaseCatalog<'_> {
     }
 }
 
-struct CaseRouter<'a> {
-    record: &'a RouterRecord,
-}
-
-impl RouterSource for CaseRouter<'_> {
+impl RouterSource for RouterRecord {
     fn async_client_name(&self, _model_id: Option<&str>) -> Option<String> {
-        self.record.async_client.clone()
+        self.async_client.clone()
     }
 
     fn discovered_model_info(&self, _model_id: Option<&str>) -> JsonObject {
-        self.record.discovered.clone()
+        self.discovered.clone()
     }
 }
 
@@ -204,11 +200,13 @@ fn enrich_answer(input: &Input) -> Result<Value, Failure> {
     let catalog = CaseCatalog {
         entries: &input.catalog,
     };
-    let router = input.router.as_ref().map(|record| CaseRouter { record });
     let context = EnrichContext {
         registry: &registry,
         catalog: &catalog,
-        router: router.as_ref().map(|found| found as &dyn RouterSource),
+        router: input
+            .router
+            .as_ref()
+            .map(|record| -> &dyn RouterSource { record }),
     };
     let enriched = runtime.block_on(enrich_model_info(
         model,

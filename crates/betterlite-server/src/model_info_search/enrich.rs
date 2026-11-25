@@ -31,10 +31,10 @@ pub trait RouterSource: Send + Sync {
     fn discovered_model_info(&self, model_id: Option<&str>) -> JsonObject;
 }
 
-pub struct EnrichContext<'a> {
-    pub registry: &'a ModelRegistry,
-    pub catalog: &'a dyn ModelInfoCatalog,
-    pub router: Option<&'a dyn RouterSource>,
+pub struct EnrichContext<'context> {
+    pub registry: &'context ModelRegistry,
+    pub catalog: &'context dyn ModelInfoCatalog,
+    pub router: Option<&'context dyn RouterSource>,
 }
 
 // _enrich_model_info_with_litellm_data: catalog passes, B157 pricing, B845 discovery, then B2400 redaction.
@@ -59,10 +59,9 @@ pub async fn enrich_model_info(
         enriched.insert("openai_client".to_owned(), Json::Text(client));
     }
     let catalog_info = lookup_catalog_info(model_info, params, context.catalog).await?;
-    let discovered = match context.router {
-        Some(router) => router.discovered_model_info(text_field(model_info, "id")),
-        None => JsonObject::new(),
-    };
+    let discovered = context.router.map_or_else(JsonObject::new, |router| {
+        router.discovered_model_info(text_field(model_info, "id"))
+    });
     let merged = merge_model_info(
         model_info,
         params,
