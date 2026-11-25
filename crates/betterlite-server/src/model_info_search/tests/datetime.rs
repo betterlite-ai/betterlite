@@ -45,6 +45,7 @@ fn preserves_fractional_seconds_and_maximum_date() {
 #[case::double_z("2026-01-01T00:00:00ZZ")]
 #[case::leading_space(" 2026-01-01T00:00:00")]
 #[case::trailing_space("2026-01-01T00:00:00 ")]
+#[case::trailing_newline("2026-01-01T00:00:00\n")]
 #[case::impossible_day("2026-02-30T00:00:00")]
 #[case::z_then_offset("2026-01-01T00:00:00Z+05:00")]
 #[case::year_zero("0000-01-01T00:00:00")]

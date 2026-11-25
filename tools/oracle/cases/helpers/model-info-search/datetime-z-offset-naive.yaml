@@ -19,6 +19,9 @@ calls:
       value: "2026-01-02T03:04:05.5Z"
   - model_info_search:
       function: datetime
+      value: "2026-01-02T03:04:05\n"
+  - model_info_search:
+      function: datetime
       value: null
   - model_info_search:
       function: datetime

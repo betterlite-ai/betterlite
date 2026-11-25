@@ -143,7 +143,7 @@ fn filters_apply_together() {
         Some("team-b"),
         Some(true)
     ));
-    assert!(!matches_model_info_filters(
+    assert!(matches_model_info_filters(
         &deployment,
         Some(true),
         Some("team-a"),

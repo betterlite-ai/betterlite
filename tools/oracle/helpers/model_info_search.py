@@ -1,3 +1,4 @@
+import json
 from typing import Final, NotRequired, TypedDict, cast
 
 import litellm
@@ -114,7 +115,7 @@ def enrich_answer(input_value: Input) -> JsonValue:
     debug = input_value.get("debug")
     enriched = cast(dict[str, JsonValue], proxy_server._enrich_model_info_with_litellm_data(  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14540-L14610
         model, debug is True, llm_router(input_value.get("router"))))
-    return ANSWER.validate_python(enriched)
+    return ANSWER.validate_json(json.dumps(enriched))
 
 
 def sort_answer(input_value: Input) -> JsonValue:

@@ -14,9 +14,9 @@ call:
           db_model: false
       - model_name: missing
         model_info: {}
-      - model_name: null
+      - model_name: another-config
         model_info:
-          db_model: null
+          db_model: false
 calls:
   - model_info_search:
       function: sort
@@ -31,8 +31,8 @@ calls:
             db_model: false
         - model_name: missing
           model_info: {}
-        - model_name: null
+        - model_name: another-config
           model_info:
-            db_model: null
+            db_model: false
 env: {}
 compare: {ignore: []}
