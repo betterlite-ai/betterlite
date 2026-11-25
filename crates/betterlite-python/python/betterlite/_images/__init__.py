@@ -1,3 +1,4 @@
+from betterlite._images import main
 from betterlite._images.main import (
     aimage_edit,
     aimage_generation,
