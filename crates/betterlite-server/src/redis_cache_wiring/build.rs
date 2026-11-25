@@ -10,11 +10,10 @@ use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::environment::EnvironmentLookup;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
+use betterlite_router::redis_failure_policy::gate::PolicyGate;
 use betterlite_router::redis_failure_policy::{RedisFailurePolicy, Settings};
 use betterlite_router::routing_state_store::BreakerClock;
 use thiserror::Error;
-
-use super::gate::PolicyGate;
 
 // The settings the server resolves once and hands to every cache it builds.
 pub struct RedisCacheWiring {

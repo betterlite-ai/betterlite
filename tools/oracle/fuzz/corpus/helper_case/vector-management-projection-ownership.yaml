@@ -1,0 +1,23 @@
+kind: helper
+name: vector-management-projection-ownership-seed
+call:
+  vector_management_projection:
+    op: ownership_projection
+    vector_store:
+      vector_store_id: vs_absent
+      litellm_params:
+        api_base: https://example.test/v1
+      team_id: team_a
+calls:
+  - vector_management_projection:
+      op: ownership_projection
+      vector_store:
+        vector_store_id: vs_null
+        is_config: null
+  - vector_management_projection:
+      op: ownership_projection
+      vector_store:
+        vector_store_id: vs_false
+        is_config: false
+env: {}
+compare: {ignore: []}

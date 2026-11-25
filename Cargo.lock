@@ -1190,6 +1190,7 @@ dependencies = [
  "sha2 0.11.1",
  "speedate",
  "strum",
+ "subtle",
  "thiserror",
  "tokio",
  "tokio-postgres",
@@ -2390,6 +2391,7 @@ dependencies = [
 name = "betterlite-mcp"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-credential-types",
  "aws-lc-rs",
  "aws-smithy-async",
@@ -2403,6 +2405,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-secrets",
  "bytes",
  "chrono",
@@ -3810,6 +3813,7 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-ocr",
+ "betterlite-openai",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-policy",
@@ -4273,6 +4277,7 @@ dependencies = [
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-router",
  "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-streaming",
@@ -4737,6 +4742,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-redis-fixture",
  "betterlite-reporting",
  "betterlite-roi",
  "betterlite-router",
@@ -4829,6 +4835,7 @@ name = "betterlite-server-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-config",
  "betterlite-core",
  "betterlite-db",
  "betterlite-models",

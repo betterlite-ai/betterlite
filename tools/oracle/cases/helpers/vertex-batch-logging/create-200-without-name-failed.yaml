@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-batch-create-200-without-name-failed
+call:
+  b3641:
+    status_code: 200
+    body: '{"state":"JOB_STATE_PENDING","createTime":"2024-01-01T00:00:00.000000Z"}'
+    url_route: /vertex_ai/v1/projects/p1/locations/us-central1/batchPredictionJobs/3814889423749775360
+    start_time: "2026-01-01T00:00:00+00:00"
+    request_metadata: {}
+env: {}
+compare: {ignore: []}

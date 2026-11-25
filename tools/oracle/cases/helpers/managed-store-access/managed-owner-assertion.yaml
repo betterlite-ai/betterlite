@@ -1,0 +1,97 @@
+kind: helper
+name: managed-owner-assertion
+call:
+  b10014:
+    calls:
+      # a teamless store is open to every caller
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai}
+        auth: {team_id: b}
+      # a team-owned store denies another team with the default detail
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}
+        auth: {team_id: b}
+      # the caller's detail replaces that text
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}
+        auth: {team_id: b}
+        detail: blocked here
+      # the owning team passes
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}
+        auth: {team_id: a}
+      # an inline key grant passes from another team
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}
+        auth: {team_id: b, object_permission_id: op_x, vector_stores: [vs_a]}
+      # a grant naming another store does not
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}
+        auth: {team_id: b, object_permission_id: op_x, vector_stores: [vs_other]}
+      # an admin passes every store
+      - function: assert_store
+        store: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}
+        auth: {team_id: b, user_role: proxy_admin}
+      # an id the registry and the database do not know is a provider-native id
+      - function: assert_id
+        vector_store_id: native-id
+        database: false
+        auth: {team_id: b}
+      # nor is an empty id rejected
+      - function: assert_id
+        vector_store_id: ""
+        database: false
+        auth: {team_id: b}
+      # a resolved store owned by another team is denied after the row lookup
+      - function: assert_id
+        vector_store_id: vs_a
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+        auth: {team_id: b}
+      # the owning team gets the normalized record back
+      - function: assert_id
+        vector_store_id: vs_a
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+        auth: {team_id: a}
+      # the returned store keeps a row's timestamps as the text JSON mode writes
+      - function: assert_id
+        vector_store_id: vs_a
+        database: true
+        rows:
+          - model_dump:
+              vector_store_id: vs_a
+              custom_llm_provider: openai
+              team_id: a
+              created_at: "2024-01-01T00:00:00Z"
+              updated_at: "2024-01-01T00:00:00.123456Z"
+        auth: {team_id: a}
+      # an inline grant returns it too
+      - function: assert_id
+        vector_store_id: vs_a
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+        auth: {team_id: b, object_permission_id: op_x, vector_stores: [vs_a]}
+      # the supplied detail reaches the managed-id denial
+      - function: assert_id
+        vector_store_id: vs_a
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+        auth: {team_id: b}
+        detail: blocked here
+      # a registry hit is checked without a shared-cache read
+      - function: assert_id
+        vector_store_id: vs_a
+        registry: {stores: [{vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}]}
+        database: true
+        rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
+        auth: {team_id: b}
+      # a registry failure fails closed before the assertion
+      - function: assert_id
+        vector_store_id: vs_a
+        registry: {stores: []}
+        database: true
+        fail: registry
+        auth: {team_id: b}
+env: {}
+compare: {ignore: []}

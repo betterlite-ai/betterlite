@@ -1,0 +1,12 @@
+task: B4669
+deviations:
+  - what: The key and team grants read through the GrantReads port that ServerGrants receives when it is built (B4668's permission reads, the registry expansion, B737's team and access group reads, B736's user read and B10078's servers_from_access_groups) instead of importing prisma_client, user_api_key_cache and global_mcp_server_manager from the proxy module.
+    why: betterlite has no module-level state and passes its dependencies in. The lists each function answers are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2560-L2569
+  - what: key_servers, team_granted_servers and the access group reads answer their server ids de-duplicated in first-seen order. LiteLLM builds them from a Python set (list(set(...)), set unions), so their order follows the set's hash layout.
+    why: Python's set order is not stable between processes, so no client can rely on it; the members are the same, and the tests and oracle cases compare them as sets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2624-L2626
+kept_bugs:
+  - what: key_servers turns every failure into an empty list, also when requires_fresh_policy is set, and an empty key list means the key does not restrict. A database fault on a fresh read therefore leaves the key at the team's servers instead of denying, while the team path returns the same fault as an error.
+    why: The task keeps LiteLLM's fail-open catch on the key path on purpose (its pitfalls say not to add the team path's raise), and get_mcp_server_access in B4671 combines the key list with the team list the same way LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2627-L2629
