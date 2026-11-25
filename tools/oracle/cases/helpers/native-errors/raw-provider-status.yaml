@@ -21,5 +21,14 @@ calls:
       error_str: "invalid api token"
       status_code: 500
       status_code_is_synthesized: true
+  # BaseLLMException's subclasses keep the constructor, so a named exception reaches the branch
+  # that reads type(original_exception).__name__ before any status_code branch
+  - native_error:
+      kind: raw
+      model: replicate/some-model
+      custom_llm_provider: replicate
+      error_str: "generic failure"
+      status_code: 422
+      exception_type: ModelError
 env: {}
 compare: {ignore: []}
