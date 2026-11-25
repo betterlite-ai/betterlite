@@ -1,0 +1,21 @@
+task: B3050
+deviations:
+  - what: When LITELLM_LICENSE is unset, betterlite still computes the priority weight with convert_priority_to_percent and applies it to the available quota; the license check at these lines is skipped.
+    why: Betterlite has no paid tier, so priority reservation is always active; the task's own deviations list names this same behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L108-L122
+  - what: The 429 detail names the caller's hashed key, or a session token's key alias, where LiteLLM interpolates user_api_key_dict.api_key verbatim.
+    why: Betterlite never keeps a raw key, and its error bodies carry only the hash or the alias; either still identifies the caller the way the api_key does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L208-L215
+  - what: The minute set's member is the hashed key, or a session token's key alias, or "default_key" when the principal has neither; LiteLLM registers user_api_key_dict.token or "default_key".
+    why: Betterlite holds no raw token; the hash or alias is stable per caller, so the active-project count still counts distinct callers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L227-L234
+  - what: The post-call hook inserts the six headers into the response's existing additional headers; LiteLLM assigns a new dict to response._hidden_params["additional_headers"], which drops any header another callback wrote before it.
+    why: Betterlite's header seam is the map the response carries and the six values are the same, so merging keeps a prior callback's headers that LiteLLM's assignment loses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L252-L259
+  - what: A metadata.priority that is present but not a JSON string counts as no priority, so the default weight 1 applies. A JSON list or object makes LiteLLM's `priority not in litellm.priority_reservation` raise TypeError and fail the whole check open to five Nones; a number or bool is merely not found there, and both sides then keep weight 1.
+    why: LiteLLM documents the priority as a string, so a working configuration never stores another type, and betterlite reads metadata as untyped JSON rather than reproducing Python's hashability rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L197
+  - what: The limit arithmetic runs in i64. A finite share past the i64 range stops at i64::MAX when positive and at i64::MIN when negative, which the clamp then zeroes, and total minus current saturates where Python would keep the larger integer.
+    why: Betterlite carries router limits and usage counts as i64 throughout, so a share beyond that range cannot be represented; the positive case carries the largest number a header can hold and the negative case still clamps to zero exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L136-L168
+kept_bugs: []

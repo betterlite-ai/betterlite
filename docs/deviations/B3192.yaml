@@ -1,0 +1,67 @@
+task: B3192
+deviations:
+  - what: >-
+      The preset cache, the fetch lock, the remote URL and the local-only flag live in one AutorouterPresetService
+      instance built when the app mounts the router, not in LiteLLM's module-global _AutoRouterPresetsCache class and
+      the import-time litellm.autorouter_presets_url attribute that the proxy overwrites from litellm_settings.
+    why: >-
+      betterlite keeps no module-level state and configuration enters through the config crate, so both env variables
+      become public_router_presets settings before the service exists. One service per app (B077 mounts it once) keeps
+      LiteLLM's "resolved once for the life of the process" behavior, but a change to the environment after startup is
+      not picked up where LiteLLM reads it at first request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L518-L572
+  - what: >-
+      The bundled catalog is compiled in with include_str! and decoded on the first resolution, where LiteLLM reads
+      autorouter_presets.json through importlib.resources inside the package on the first request.
+    why: >-
+      betterlite carries bundled data files as include_str! constants; the file is byte-identical to LiteLLM's, and the
+      decode still happens lazily at the first resolution so a broken catalog surfaces the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L498-L502
+  - what: >-
+      The remote catalog decoder rejects a body over 1 MiB with a fallback instead of handing any size to pydantic.
+    why: >-
+      The body comes from a URL the operator configures, so the decoder of untrusted bytes bounds its input; no preset
+      catalog any dashboard can render comes near the limit, and an oversize body takes the same bundled fallback as
+      any other failed fetch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L505-L515
+  - what: >-
+      The fetch goes through betterlite's pooled ProxiedClient with a five-second OutboundRequest deadline, where
+      LiteLLM asks its cached UI AsyncHTTPHandler for the URL with timeout=5.0.
+    why: >-
+      betterlite's outbound HTTP goes through one client crate; the deadline reproduces LiteLLM's per-request timeout,
+      and every fetch failure still takes the bundled fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L505-L515
+  - what: >-
+      The auto-router preset fetch follows no redirect, so a 3xx answer with a Location is a failed fetch that serves
+      the bundled catalog, where LiteLLM's httpx client follows redirects and fetches the catalog the redirect lands on.
+    why: >-
+      betterlite's shared outbound transport refuses redirects so a credential is not replayed to a redirect target, and
+      B1655, B3492, B3493 and B3976 record the same limit for their calls; LiteLLM builds its httpx clients with
+      follow_redirects=True.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618-L625
+  - what: >-
+      A null litellm_settings.autorouter_presets_url counts as absent, so the environment URL or the built-in default
+      applies, where LiteLLM's settings loop assigns None to litellm.autorouter_presets_url and the fetch then fails
+      into the bundled catalog.
+    why: >-
+      docs/compatibility.md makes an absent or null config value take the default, and betterlite's other public URL
+      sections read a null key the same way. Only a config that spells the key with no value sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6620-L6628
+  - what: >-
+      When a bundled catalog cannot be decoded (the auto-router presets or the fuse presets), the endpoint answers 500
+      with betterlite's JSON error envelope where LiteLLM's unhandled exception leaves Starlette's plain-text
+      "Internal Server Error".
+    why: >-
+      Both bundled files are compiled in, so this response is unreachable with a shipped build; the status matches, and
+      betterlite's internal errors keep one envelope.
+    link: ""
+  - what: >-
+      An os.environ/ reference in litellm_settings.autorouter_presets_url that names an unset variable fails the config
+      load with an error naming the variable and the key, where LiteLLM resolves the reference to None, applies it as
+      litellm.autorouter_presets_url and serves the bundled catalog once the fetch with no URL fails.
+    why: >-
+      betterlite's config loader resolves every typed os.environ/ reference the same way and reports one it cannot
+      resolve, as sections::public_discovery does for blog_posts_url; a config that names an unset variable stops the
+      load instead of silently serving a fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
+kept_bugs: []

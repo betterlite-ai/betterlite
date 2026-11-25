@@ -1,0 +1,20 @@
+kind: helper
+name: prometheus-multiprocess-counter-sum-across-pids
+call:
+  b10095:
+    files:
+      - name: counter_1001.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 3.0, timestamp: 0.0}
+          - {metric: requests, sample: requests_total, labels: {model: b}, help: Total requests, value: 5.0, timestamp: 0.0}
+      - name: counter_1002.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 4.0, timestamp: 0.0}
+          - {metric: requests, sample: requests_total, labels: {model: b}, help: Total requests, value: 2.0, timestamp: 0.0}
+      - name: counter_1003.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {}, help: Total requests, value: 1.0, timestamp: 0.0}
+    call: merge
+    accept: ""
+env: {}
+compare: {ignore: []}

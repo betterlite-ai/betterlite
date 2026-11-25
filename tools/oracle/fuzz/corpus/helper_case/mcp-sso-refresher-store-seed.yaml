@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-sso-refresher-store-seed
+call: {b4664: {function: store, user_id: user-1, now_ms: 2000000000000, rows: {}, vars: {}, outcome: {kind: ok}}}
+env: {}
+compare: {ignore: []}

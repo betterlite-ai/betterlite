@@ -1,0 +1,36 @@
+kind: helper
+name: mcp-transport-checks-servers-in-path
+call:
+  b8724:
+    operation: server_in_path
+    paths:
+      - /mcp/sse
+      - /mcp/sse/
+      - /mcp/sse/messages
+      - /mcp/sse/messages/
+      - /mcp/sse/messages/extra
+      - /foo/mcp
+      - /foo/mcp/tools
+      - /mcp/mcp
+      - /mcp/sse/events
+      - /mcp/one
+      - /mcp/one/two
+      - /mcp/one/two/tools
+      - /mcp/one,two/tools
+      - /mcp/one,two
+      - /mcp/a,b/c/d
+      - /mcp/one,two/three,four
+      - /mcp/custom_solutions/user_123
+      - /mcp/custom_solutions/user_123/chat/completions
+      - /mcp
+      - /mcp/
+      - /mcp/,
+      - /mcp/,,
+      - "/mcp/, a ,,b,"
+      - /mcp//tools
+      - /mcp/a,b?x=1
+      - "/mcp/one?x=1#frag"
+      - /other/path
+      - "//mcp/x"
+env: {}
+compare: {ignore: []}

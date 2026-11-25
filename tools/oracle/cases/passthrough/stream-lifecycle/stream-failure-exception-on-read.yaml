@@ -1,0 +1,17 @@
+kind: helper
+name: stream-failure-exception-on-read
+call:
+  b3609:
+    endpoint_type: "openai"
+    status_code: 200
+    cost_injection: false
+    url_route: "https://api.openai.com/v1/chat/completions"
+    deferred: false
+    tinyfish_poller: false
+    run_id: null
+    chunks: []
+    failure: {message: "the upstream read failed", traceback: "Traceback (most recent call last):\nScriptedReadError: the upstream read failed"}
+    disconnect_after: null
+    request_body: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+task: B818
+deviations:
+  - what: >-
+      The stored tool-grant column read while grandfathering goes through B817's bounded decoder, so text over
+      1048576 bytes or depth 64 fails with a typed limit error instead of LiteLLM's unbounded json.loads.
+    why: >-
+      The task requires B817's decoder without a second parser; the same bounded json.loads boundary B817
+      documents, reached from this task's grandfather read, and grandfather_decode_errors proves the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L543-L545
+kept_bugs: []

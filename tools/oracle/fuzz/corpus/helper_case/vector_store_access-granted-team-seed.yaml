@@ -1,0 +1,20 @@
+kind: helper
+name: vector-store-access-granted-team-seed
+call:
+  vector_store_access:
+    function: can_user_access_vector_store
+    vector_store:
+      vector_store_id: vs_seed
+      team_id: team_a
+    auth:
+      user_id: u_seed
+      team_id: team_b
+      object_permission: {object_permission_id: p_seed, vector_stores: [vs_seed]}
+    database: true
+    object_permissions:
+      p_seed: {object_permission_id: p_seed, vector_stores: [vs_seed]}
+    teams:
+      team_a: {team_id: team_a}
+    user_teams: [team_a]
+env: {}
+compare: {ignore: []}

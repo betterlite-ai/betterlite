@@ -1,4 +1,6 @@
+use axum::Extension;
 use axum::Router;
+use axum::extract::ConnectInfo;
 use betterlite_http::proxy::ProxiedClient;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder;
@@ -9,6 +11,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
+use tower::Layer as _;
 
 use super::OUTBOUND_DRAIN_TIMEOUT;
 
@@ -58,7 +61,8 @@ pub(crate) async fn serve_connection(
     stream: TcpStream,
     remote_address: SocketAddr,
 ) {
-    let service = TowerToHyperService::new(application);
+    let with_peer = Extension(ConnectInfo(remote_address)).layer(application);
+    let service = TowerToHyperService::new(with_peer);
     if let Err(error) = builder
         .serve_connection(TokioIo::new(stream), service)
         .await

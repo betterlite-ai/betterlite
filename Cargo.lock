@@ -2289,6 +2289,7 @@ dependencies = [
 name = "betterlite-logging"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "async-trait",
  "aws-credential-types",
  "aws-sigv4",
@@ -2399,6 +2400,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
@@ -2442,7 +2444,9 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-db",
  "betterlite-mcp",
+ "betterlite-secrets",
  "chrono",
  "libfuzzer-sys",
  "secrecy",
@@ -3324,6 +3328,7 @@ dependencies = [
  "betterlite-tokenizer",
  "chrono",
  "flate2",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -3522,6 +3527,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -3808,6 +3814,7 @@ dependencies = [
  "betterlite-prometheus",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-reporting",
  "betterlite-roi",
  "betterlite-routes",
  "betterlite-secret-managers",
@@ -4030,10 +4037,21 @@ dependencies = [
  "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-prometheus-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-prometheus",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -4717,8 +4735,10 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-reporting",
  "betterlite-roi",
  "betterlite-router",
+ "betterlite-sdk",
  "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-semantic",

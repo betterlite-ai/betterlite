@@ -1,0 +1,30 @@
+kind: helper
+name: mcp-gateway-dcr-register-native-callback
+call:
+  b4674:
+    register:
+      - now: 1700000000
+        body: {redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback']}
+        token_exchange_available: false
+        native_redirect_uris: null
+    open: null
+    claims: null
+calls:
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['myapp://host/cb']}
+          token_exchange_available: false
+          native_redirect_uris: 'myapp://host/cb'
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['myapp://host/oauth/x']}
+          token_exchange_available: false
+          native_redirect_uris: 'myapp://host/oauth/*'
+      open: null
+      claims: null
+env: {}
+compare: {ignore: []}
