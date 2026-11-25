@@ -239,13 +239,13 @@ pub(super) fn sealed(text: &str) -> String {
 }
 
 pub(super) fn database(rows: &[(&str, JsonValue)]) -> OverlayDatabase {
-    let rows = rows
+    let stored: BTreeMap<String, JsonValue> = rows
         .iter()
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect();
     OverlayDatabase {
         rows: Arc::new(MemoryRows {
-            rows,
+            rows: stored,
             failure: None,
         }),
         cipher: Arc::new(cipher()),
@@ -301,13 +301,13 @@ impl BucketObjectReader for MemoryBucket {
 }
 
 pub(super) fn bucket_source(objects: &[(&str, &str)]) -> ConfigSource {
-    let objects = objects
+    let stored: BTreeMap<String, String> = objects
         .iter()
         .map(|(key, text)| ((*key).to_owned(), (*text).to_owned()))
         .collect();
     ConfigSource {
         config_file_path: None,
-        bucket_reader: Some(Arc::new(MemoryBucket { objects })),
+        bucket_reader: Some(Arc::new(MemoryBucket { objects: stored })),
     }
 }
 
