@@ -1,13 +1,13 @@
 from typing import Final
 
-from pydantic import ConfigDict, JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter, with_config
 from typing_extensions import TypedDict
 
 from betterlite.caching.base_cache import BaseCache
 
 
 # Cache switches forward these keywords to the constructor.
-class CacheArguments(TypedDict, total=False):
+class CacheArguments(TypedDict, closed=True, total=False):
     mode: str | None
     namespace: str | None
     ttl: float | None
@@ -61,9 +61,10 @@ class CacheArguments(TypedDict, total=False):
 
 
 # RedisCache names these two itself; any other keyword is a redis client option it keeps as given.
+@with_config(ConfigDict(extra="allow", strict=True))
 class RedisOverrides(TypedDict, total=False):
     startup_nodes: list[JsonValue] | None
     socket_timeout: float | None
 
 
-REDIS_OVERRIDES: Final = TypeAdapter(RedisOverrides, config=ConfigDict(extra="allow", strict=True))
+REDIS_OVERRIDES: Final = TypeAdapter(RedisOverrides)

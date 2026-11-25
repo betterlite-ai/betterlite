@@ -14,7 +14,7 @@ from betterlite._native import (
     NativeDual,
     NativeRedisBatch,
 )
-from betterlite.caching._backend import _ttl_of, _value_or_none, number_value
+from betterlite.caching._backend import number_value, ttl_of, value_or_none
 from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.in_memory_cache import InMemoryCache
 from betterlite.caching.redis_cache import RedisCache
@@ -46,7 +46,7 @@ def _local_only(value: JsonValue) -> bool:
 def _batch_values(values: list[str | None] | None) -> list[JsonValue] | None:
     if values is None:
         return None
-    return [_value_or_none(value) for value in values]
+    return [value_or_none(value) for value in values]
 
 
 class DualCache(BaseCache):
@@ -117,7 +117,7 @@ class DualCache(BaseCache):
         if _local_only(local_only):
             self.in_memory_cache.set_cache(key, value, **self._memory_kwargs(kwargs))
             return
-        self.native.set(key, json.dumps(value), _ttl_of(kwargs))
+        self.native.set(key, json.dumps(value), ttl_of(kwargs))
 
     @override
     async def async_set_cache(
@@ -132,7 +132,7 @@ class DualCache(BaseCache):
                 key, value, **self._memory_kwargs(kwargs)
             )
             return
-        await self.native.async_set(key, json.dumps(value), _ttl_of(kwargs))
+        await self.native.async_set(key, json.dumps(value), ttl_of(kwargs))
 
     @override
     def get_cache(
@@ -146,7 +146,7 @@ class DualCache(BaseCache):
         if _local_only(local_only):
             return self.in_memory_cache.get_cache(key)
         self._reject_backfill_ttl(kwargs)
-        return _value_or_none(self.native.get(key))
+        return value_or_none(self.native.get(key))
 
     @override
     async def async_get_cache(
@@ -159,7 +159,7 @@ class DualCache(BaseCache):
         _unread = parent_otel_span
         if not _local_only(local_only):
             self._reject_backfill_ttl(kwargs)
-            return _value_or_none(await self.native.async_get(key))
+            return value_or_none(await self.native.async_get(key))
         return await self.in_memory_cache.async_get_cache(key)
 
     def batch_get_cache(
@@ -206,7 +206,7 @@ class DualCache(BaseCache):
         self, declared: NativeDeclaredBatchRead
     ) -> list[JsonValue]:
         answers = await declared.async_resolve()
-        return [_value_or_none(value) for value in answers]
+        return [value_or_none(value) for value in answers]
 
     async def async_set_cache_pre_call(
         self, key: str, value: JsonValue, ttl: float | None
@@ -251,7 +251,7 @@ class DualCache(BaseCache):
     ) -> int:
         if _local_only(local_only):
             return int(self.in_memory_cache.increment_cache(key, value, **kwargs))
-        return int(number_value(self.native.increment(key, value, _ttl_of(kwargs))))
+        return int(number_value(self.native.increment(key, value, ttl_of(kwargs))))
 
     async def async_increment_cache(
         self,
@@ -264,7 +264,7 @@ class DualCache(BaseCache):
     ) -> float | None:
         _unread = (parent_otel_span, refresh_ttl, kwargs)
         if not _local_only(local_only):
-            stepped = await self.native.async_increment(key, value, _ttl_of(kwargs))
+            stepped = await self.native.async_increment(key, value, ttl_of(kwargs))
             return float(number_value(stepped))
         return await self.in_memory_cache.async_increment(key, value, **kwargs)
 

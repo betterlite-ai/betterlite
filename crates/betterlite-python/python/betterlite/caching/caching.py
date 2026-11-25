@@ -151,13 +151,20 @@ class Cache(CacheOperations):
         elif selected == LiteLLMCacheType.REDIS:
             if redis_startup_nodes or cluster_nodes_are_set():
                 raise NotImplementedError("the redis cluster cache is not built yet")
+            overrides = REDIS_OVERRIDES.validate_python(kwargs)
+            client_options = {
+                key: value for key, value in kwargs.items()
+                if key not in ("startup_nodes", "socket_timeout")
+            }
             backend = RedisCache(
                 host=host,
                 port=port,
                 password=password,
                 redis_flush_size=redis_flush_size,
                 namespace=namespace,
-                **REDIS_OVERRIDES.validate_python(kwargs),
+                startup_nodes=overrides.get("startup_nodes"),
+                socket_timeout=overrides.get("socket_timeout", 5.0),
+                **client_options,
             )
         elif selected == LiteLLMCacheType.LOCAL:
             backend = InMemoryCache()

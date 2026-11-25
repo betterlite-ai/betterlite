@@ -7,11 +7,11 @@ from typing_extensions import override
 import betterlite
 from betterlite._native import NativeRedis
 from betterlite.caching._backend import (
-    _BackendCache,
-    _ttl_of,
+    BackendCache,
     cluster_nodes_are_set,
     number_value,
     nx_value,
+    ttl_of,
 )
 
 _DEFAULT_TTL: Final = 60
@@ -29,7 +29,7 @@ _TEXT_OVERRIDES: Final = (
 )
 
 
-class RedisCache(_BackendCache[NativeRedis]):
+class RedisCache(BackendCache[NativeRedis]):
     _native_ready: bool = False
 
     def __init__(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L607-L617
@@ -100,7 +100,7 @@ class RedisCache(_BackendCache[NativeRedis]):
     def increment_cache(
         self, key: str, value: int, ttl: float | None = None, **kwargs: JsonValue
     ) -> int:
-        effective = ttl if ttl is not None else _ttl_of(kwargs)
+        effective = ttl if ttl is not None else ttl_of(kwargs)
         return int(number_value(self.native.increment(key, value, effective)))
 
     async def async_increment(

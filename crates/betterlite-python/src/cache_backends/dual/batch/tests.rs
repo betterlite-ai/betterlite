@@ -63,6 +63,7 @@ fn batch_declares_the_read_on_the_supplied_batch() {
         let read = slot.as_ref().unwrap();
         assert_eq!(read.pending.redis_keys, vec!["key".to_owned()]);
         assert!(read.result.is_some());
+        drop(slot);
     });
 }
 
@@ -79,6 +80,7 @@ fn batch_declaration_without_redis_declares_nothing() {
         let held = declared.borrow(py);
         let slot = held.declared.lock().unwrap();
         assert!(slot.as_ref().unwrap().result.is_none());
+        drop(slot);
         assert!(deferred(py, None).unwrap().is_none());
     });
 }

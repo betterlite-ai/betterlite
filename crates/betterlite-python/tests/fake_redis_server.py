@@ -105,8 +105,9 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
     def finish_request(
         self,
         request: socket.socket | tuple[bytes, socket.socket],
-        _client_address: tuple[str, int],
+        client_address: tuple[str, int],
     ) -> None:
+        _unread = client_address
         match request:
             case socket.socket() as connection:
                 with self._lock:

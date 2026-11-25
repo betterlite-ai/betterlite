@@ -20,7 +20,7 @@ def cluster_nodes_are_set() -> bool:
     return raw is not None and raw.strip() != ""
 
 
-def _value_or_none(text: str | None) -> JsonValue:
+def value_or_none(text: str | None) -> JsonValue:
     if text is None:
         return None
     return _JSON.validate_json(text)
@@ -37,7 +37,7 @@ def number_value(text: str) -> int | float:
             return fraction
 
 
-def _ttl_of(kwargs: dict[str, JsonValue]) -> float | None:
+def ttl_of(kwargs: dict[str, JsonValue]) -> float | None:
     raw = kwargs.get("ttl")
     if raw is None:
         return None
@@ -62,12 +62,12 @@ def nx_value(kwargs: dict[str, JsonValue]) -> bool:
             raise ValueError(f"nx must be a bool, not {type(raw).__name__}")
 
 
-class _BackendCache(BaseCache, Generic[_HandleT]):
+class BackendCache(BaseCache, Generic[_HandleT]):
     native: _HandleT
 
     # A tier with its own default ttl puts it on every write; the others let Rust apply theirs.
     def _write_ttl(self, kwargs: dict[str, JsonValue]) -> float | None:
-        return _ttl_of(kwargs)
+        return ttl_of(kwargs)
 
     @override
     def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
@@ -80,11 +80,11 @@ class _BackendCache(BaseCache, Generic[_HandleT]):
 
     @override
     def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
-        return _value_or_none(self.native.get(key))
+        return value_or_none(self.native.get(key))
 
     @override
     async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
-        return _value_or_none(await self.native.async_get(key))
+        return value_or_none(await self.native.async_get(key))
 
     def delete_cache(self, key: str) -> None:
         self.native.delete([key])

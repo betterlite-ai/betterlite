@@ -7,14 +7,14 @@ from typing_extensions import override
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeMemory
-from betterlite.caching._backend import _BackendCache, number_value
+from betterlite.caching._backend import BackendCache, number_value
 
 DEFAULT_MAX_SIZE_IN_MEMORY: Final = 200
 _DEFAULT_TTL: Final = 600
 _DEFAULT_MAX_SIZE_PER_ITEM: Final = 1024
 
 
-class InMemoryCache(_BackendCache[NativeMemory]):
+class InMemoryCache(BackendCache[NativeMemory]):
     def __init__(
         self,
         max_size_in_memory: int | None = DEFAULT_MAX_SIZE_IN_MEMORY,

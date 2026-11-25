@@ -16,6 +16,7 @@ from betterlite._cache_ops.types import CacheStore
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeRedisBatch
 from betterlite.caching import Cache, DiskCache, DualCache, InMemoryCache, RedisCache
+from betterlite.caching._cache_arguments import REDIS_OVERRIDES
 from betterlite.caching.base_cache import BaseCache
 
 
@@ -583,6 +584,14 @@ def test_redis_checks_arguments() -> None:
         Cache(type="redis", socket_timeout="slow")
 
 
+def test_redis_override_schema() -> None:
+    supplied: dict[str, JsonValue] = {"socket_timeout": 0, "db": 0, "ssl": False}
+    assert REDIS_OVERRIDES.validate_python(supplied) == supplied
+    assert REDIS_OVERRIDES.validate_python({"startup_nodes": None}) == {"startup_nodes": None}
+    with pytest.raises(ValidationError, match="socket_timeout"):
+        REDIS_OVERRIDES.validate_python({"socket_timeout": "slow"})
+
+
 # LiteLLM's DiskCache needs the diskcache package, which the oracle environment does not install.
 def test_disk_backend_contract(tmp_path: Path) -> None:
     ours = DiskCache(disk_cache_dir=str(tmp_path))
@@ -616,8 +625,8 @@ def test_lookups_share_the_store(operation: str) -> None:
     if operation == "flush":
         store.flush_cache()
     else:
-        store.delete_cache(cache.get_cache_key(**CHAT))
-    assert cache.get_cache(**CHAT) is None
+        store.delete_cache(cache.get_cache_key(model=CHAT["model"], messages=CHAT["messages"]))
+    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) is None
 
 
 
