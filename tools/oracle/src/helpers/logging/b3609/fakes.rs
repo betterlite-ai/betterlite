@@ -179,14 +179,9 @@ impl StreamFailureDispatch for Recorder {
 
 #[async_trait]
 impl TinyfishStreamBilling for Recorder {
-    // LiteLLM marks the poller spawned when billing starts, so the flag alone is not enough
+    // The helper input represents a poller already active before the stream fails.
     fn sse_poller_spawned(&self, _logging_obj: &StreamLoggingObject) -> bool {
         self.poller
-            && !self
-                .started
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .is_empty()
     }
 
     fn run_id_from_sse_frames(&self, _frames: &[u8]) -> Option<String> {

@@ -17,19 +17,11 @@ pub enum StreamFailure {
     },
 }
 
-#[derive(Debug, Clone)]
-pub struct FailureCause(Arc<dyn Error + Send + Sync>);
-
-impl std::fmt::Display for FailureCause {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(self.0.as_ref(), formatter)
-    }
-}
-
-impl Error for FailureCause {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(self.0.as_ref())
-    }
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{cause}")]
+pub struct FailureCause {
+    #[source]
+    cause: Arc<dyn Error + Send + Sync>,
 }
 
 impl StreamFailure {
@@ -44,7 +36,7 @@ impl StreamFailure {
             class,
             message,
             traceback,
-            cause: FailureCause(cause),
+            cause: FailureCause { cause },
         }
     }
 

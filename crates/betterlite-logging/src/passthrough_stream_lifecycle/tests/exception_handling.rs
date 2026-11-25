@@ -62,6 +62,7 @@ async fn an_upstream_error_schedules_the_failure_and_never_logs_success() {
             class: "ScriptedReadError".to_owned(),
             message: "the upstream read failed".to_owned(),
             traceback: "Traceback: scripted".to_owned(),
+            retains_io_source: true,
         }]
     );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);

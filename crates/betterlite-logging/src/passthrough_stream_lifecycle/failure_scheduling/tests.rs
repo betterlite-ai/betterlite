@@ -150,6 +150,7 @@ async fn a_recovered_partial_usage_is_recorded_with_the_response_cost() {
             class: "ScriptedReadError".to_owned(),
             message: "the upstream read failed".to_owned(),
             traceback: "Traceback: scripted".to_owned(),
+            retains_io_source: true,
         }]
     );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);

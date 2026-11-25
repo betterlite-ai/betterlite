@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::io::{self, Result as IoResult, Write};
 use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -509,6 +510,7 @@ pub(super) struct RecordedFailure {
     pub(super) class: String,
     pub(super) message: String,
     pub(super) traceback: String,
+    pub(super) retains_io_source: bool,
 }
 
 #[derive(Default)]
@@ -544,6 +546,10 @@ pub(super) fn recorded(failure: &StreamFailure) -> RecordedFailure {
         class: failure.class().to_owned(),
         message: failure.message().to_owned(),
         traceback: failure.traceback().to_owned(),
+        retains_io_source: failure
+            .source()
+            .and_then(std::error::Error::source)
+            .is_some_and(|source| source.is::<io::Error>()),
     }
 }
 
