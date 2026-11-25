@@ -314,17 +314,14 @@ impl AuditClock for FixedClock {
     }
 }
 
-fn worker_settings() -> WorkerSettings {
-    WorkerSettings {
-        max_queue_size: 8,
+fn audit_service() -> (AuditService, Arc<RecordingRepository>) {
+    let workers = WorkerSettings {
+        max_queue_size: 4,
         concurrency: 1,
         event_timeout: Duration::from_secs(5),
         shutdown_drain: Duration::from_secs(5),
         timeout_summary_window: Duration::from_secs(1),
-    }
-}
-
-fn audit_service() -> (AuditService, Arc<RecordingRepository>) {
+    };
     let repository = Arc::new(RecordingRepository {
         inserted: Mutex::new(Vec::new()),
     });
@@ -334,7 +331,7 @@ fn audit_service() -> (AuditService, Arc<RecordingRepository>) {
             dedicated: Arc::new(RefusingDedicatedLogger),
             cache: Mutex::new(BTreeMap::new()),
         },
-        worker: LoggingWorker::start(worker_settings()).expect("the delivery starts"),
+        worker: LoggingWorker::start(workers).expect("the delivery starts"),
     });
     let service = AuditService::start(AuditServiceDeps {
         settings: AuditSettings {
@@ -351,7 +348,7 @@ fn audit_service() -> (AuditService, Arc<RecordingRepository>) {
         repository: Arc::clone(&repository),
         clock: Arc::new(FixedClock),
         new_id: Arc::new(|| "adapter-id".to_owned()),
-        worker_settings: worker_settings(),
+        worker_settings: workers,
     })
     .expect("the audit service starts");
     (service, repository)
