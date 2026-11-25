@@ -1,0 +1,55 @@
+kind: helper
+name: key-limit-policy-team-rpm-ceiling
+call:
+  key_limit_policy:
+    check: team
+    request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 7}}
+    team: {team_id: team-1, rpm_limit: 10}
+    keys:
+      - {token: k1, team_id: team-1, rpm_limit: 5}
+      - {token: k2, team_id: team-1, rpm_limit: 4}
+calls:
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 1}}
+      team: {team_id: team-1, rpm_limit: 10}
+      keys:
+        - {token: k1, team_id: team-1, rpm_limit: 5}
+        - {token: k2, team_id: team-1, rpm_limit: 4}
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 100}}
+      team: {team_id: team-1}
+      keys:
+        - {token: k1, team_id: team-1, rpm_limit: 100}
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput}}
+      team: {team_id: team-1, rpm_limit: 10}
+      keys:
+        - {token: k1, team_id: team-1, rpm_limit: 20}
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 11}}
+      team: {team_id: team-1, rpm_limit: 10}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, rpm_limit: -1}}
+      team: {team_id: team-1, rpm_limit: 5}
+      keys:
+        - {token: k1, team_id: team-1, rpm_limit: 10}
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 1}}
+      team: {team_id: team-1, rpm_limit: 0}
+      keys:
+        - {token: k1, team_id: team-1, rpm_limit: 0}
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 1}}
+      team: {team_id: team-1, rpm_limit: 10}
+      keys:
+        - {token: k1, team_id: team-2, rpm_limit: 100}
+env: {}
+compare: {ignore: []}

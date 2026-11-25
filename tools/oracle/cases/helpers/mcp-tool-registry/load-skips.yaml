@@ -1,0 +1,30 @@
+kind: helper
+name: mcp-tool-registry-load-skips
+call:
+  b4680:
+    function: load_from_config
+    tool_names: []
+    prefix: null
+    mcp_tools:
+      - {name: kept, description: kept tool, handler: builtins.len}
+      - {name: no_description, handler: builtins.len}
+      - {name: no_handler, description: no handler}
+      - {name: empty_handler, description: empty handler, handler: ""}
+      - {name: "", description: empty name, handler: builtins.len}
+      - {name: null, description: null name, handler: builtins.len}
+calls:
+  - b4680:
+      function: load_from_config
+      tool_names: []
+      prefix: null
+      mcp_tools:
+        - {name: spaced, description: " ", handler: builtins.len}
+  - b4680:
+      function: load_from_config
+      tool_names: []
+      prefix: null
+      mcp_tools:
+        - {name: null_description, description: null, handler: builtins.len}
+        - {name: second, description: second tool, handler: builtins.len}
+env: {}
+compare: {ignore: []}

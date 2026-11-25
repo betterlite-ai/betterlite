@@ -1,0 +1,45 @@
+kind: helper
+name: auth-key-budgets-thresholds
+call:
+  auth_key_budgets:
+    calls:
+      - function: admit
+        token:
+          token: sk-seed
+          spend: 80.0
+          max_budget: 100.0
+          budget_limits:
+            - budget_duration: 1d
+              max_budget: 10.0
+              reset_at: "2026-06-01T00:00:00Z"
+        spends: [80.0, 0.0]
+        now: "2026-06-01T12:00:00Z"
+        throttle_pct: 0.5
+        global_cfg:
+          "80": ["seed@x"]
+        user_email: seed@x
+      - function: team_member
+        team_id: team-seed
+        user_id: user-seed
+        spend: 10.0
+        max_budget: 20.0
+        team_metadata:
+          team_member_max_budget_alert_emails:
+            "50": ["seed@x"]
+calls:
+  - auth_key_budgets:
+      calls:
+        - function: email_merge
+          per_key_cfg:
+            "90": null
+        - function: temp_update
+          token:
+            token: sk-seed
+            max_budget: 5.0
+            metadata:
+              temp_budget_increase: 5
+              temp_budget_expiry: "2026-06-02T00:00:00Z"
+          now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

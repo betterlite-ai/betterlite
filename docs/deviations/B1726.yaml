@@ -1,0 +1,12 @@
+task: B1726
+deviations:
+  - what: Authenticated authorized users can read the key, user, team and organization spend reports without a license; stock open-source LiteLLM returns 403 when premium_user is false.
+    why: The README removes paid-tier restrictions from MIT functionality while retaining the scope authorization each route performs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1800-L1813
+  - what: get_spend_by_team renders group_by_day as the RFC3339 millisecond UTC string the Prisma engine hands the Python client, rather than a datetime value.
+    why: Prisma's raw-query decoder leaves the engine's datetime text in place, so betterlite's lower query service returns the same string shape without an intermediate Python datetime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L928-L999
+  - what: A database failure while a spend report query runs answers 500 with the generic internal error body; LiteLLM hands the Prisma error to its global handler, which answers a transient database outage with a 503 service-unavailable ProxyException.
+    why: The report handlers surface their own query failures so no report path hides a database error; the proxy-wide database-unavailable classification belongs to the shared error layer, not this module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L384-L390
+kept_bugs: []

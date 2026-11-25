@@ -1,0 +1,60 @@
+kind: helper
+name: key-limit-policy-team-model-tpm
+call:
+  key_limit_policy:
+    check: team
+    request:
+      kind: generate
+      body: {rpm_limit_type: guaranteed_throughput, model_tpm_limit: {gpt-4: 11}}
+    team: {team_id: team-1, tpm_limit: 10}
+    keys: []
+calls:
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_tpm_limit: {gpt-4: 11}}
+      team: {team_id: team-1, tpm_limit: 100, metadata: {model_tpm_limit: {gpt-4: 10}}}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_tpm_limit: {gpt-4: 11}}
+      team: {team_id: team-1, tpm_limit: 5, metadata: {model_tpm_limit: {gpt-4: 10}}}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_tpm_limit: {gpt-4: 2}}
+      team: {team_id: team-1, metadata: {model_tpm_limit: {gpt-4: 10}}}
+      keys:
+        - {token: k1, team_id: team-1, metadata: {model_tpm_limit: {gpt-4: 4}}}
+        - {token: k2, team_id: team-1, metadata: {model_tpm_limit: {gpt-4: 5}}}
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body:
+          rpm_limit_type: guaranteed_throughput
+          model_rpm_limit: {gpt-4: 11}
+          model_tpm_limit: {gpt-4: 11}
+      team: {team_id: team-1, metadata: {model_rpm_limit: {gpt-4: 10}, model_tpm_limit: {gpt-4: 10}}}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request: {kind: generate, body: {rpm_limit_type: guaranteed_throughput, tpm_limit: 5}}
+      team: {team_id: team-1, metadata: {model_tpm_limit: {gpt-4: 10}}}
+      keys:
+        - {token: k1, team_id: team-1, metadata: {model_tpm_limit: {gpt-4: 20}}}
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_tpm_limit: {claude-4: 11}}
+      team: {team_id: team-1, metadata: {model_tpm_limit: {gpt-4: 10}}}
+      keys:
+        - {token: k1, team_id: team-1, metadata: {model_tpm_limit: {gpt-4: 9}}}
+env: {}
+compare: {ignore: []}

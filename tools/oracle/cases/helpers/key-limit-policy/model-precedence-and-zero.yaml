@@ -1,0 +1,58 @@
+kind: helper
+name: key-limit-policy-model-precedence-and-zero
+call:
+  key_limit_policy:
+    check: team
+    request:
+      kind: generate
+      body:
+        rpm_limit_type: guaranteed_throughput
+        model_rpm_limit: {gpt-4: 11}
+        metadata: {model_rpm_limit: {gpt-4: 1}}
+    team: {team_id: team-1, metadata: {model_rpm_limit: {gpt-4: 10}}}
+    keys: []
+calls:
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body:
+          rpm_limit_type: guaranteed_throughput
+          model_rpm_limit: {}
+          metadata: {model_rpm_limit: {gpt-4: 11}}
+      team: {team_id: team-1, metadata: {model_rpm_limit: {gpt-4: 10}}}
+      keys:
+        - {token: k1, team_id: team-1, metadata: {model_rpm_limit: {gpt-4: 1}}}
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_rpm_limit: {gpt-4: 5}}
+      team: {team_id: team-1, metadata: {model_rpm_limit: {gpt-4: 0}}}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_rpm_limit: {gpt-4: 0}}
+      team: {team_id: team-1, metadata: {model_rpm_limit: {gpt-4: -1}}}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_rpm_limit: {gpt-4: 5}}
+      team: {team_id: team-1, metadata: {model_rpm_limit: {gpt-4: null}}}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body:
+          rpm_limit_type: guaranteed_throughput
+          model_rpm_limit: {gpt-4: 11}
+          metadata: {model_rpm_limit: {}}
+      team: {team_id: team-1, metadata: {model_rpm_limit: {gpt-4: 10}}}
+      keys: []
+env: {}
+compare: {ignore: []}
