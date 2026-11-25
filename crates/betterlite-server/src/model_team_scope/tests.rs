@@ -677,10 +677,16 @@ async fn cancelling_lookup_keeps_decryption_tracked_until_shutdown_drain() {
 
     tasks.close();
     let shutdown_tracker = tasks.clone();
+    let (drain_started, drain_started_rx) = oneshot::channel();
     let mut drainers = JoinSet::new();
-    drainers.spawn(async move { shutdown_tracker.wait().await });
-    yield_now().await;
-    assert!(!drainers.is_empty());
+    drainers.spawn(async move {
+        let _announced = drain_started.send(());
+        shutdown_tracker.wait().await;
+    });
+    drain_started_rx.await.expect("the shutdown drain starts");
+    if let Some(completed) = drainers.try_join_next() {
+        panic!("the shutdown drain finished before decryption: {completed:?}");
+    }
 
     let _released = release.try_send(());
     drainers
