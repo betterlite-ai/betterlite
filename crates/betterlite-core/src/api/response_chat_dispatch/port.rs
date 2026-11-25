@@ -28,8 +28,8 @@ pub struct ResponsesCall<'call, Client: ?Sized> {
 
 // What responses() can hand back: its Responses object, a chat ModelResponse, its event stream or a cached chat stream
 pub enum Answer {
-    Response(BridgeResponse),
-    Chat(Json),
+    Response(Box<BridgeResponse>),
+    Chat(Box<ModelResponse>),
     Events(Box<dyn ResponsesEventStream>),
     Cached(Box<dyn AsyncChunkStream + Send>),
 }
@@ -49,7 +49,7 @@ pub enum ResponsePayload {
 
 pub enum BridgeOutput {
     Response(Box<ModelResponse>),
-    Chat(Json),
+    Chat(Box<ModelResponse>),
     Stream(Box<dyn AsyncChunkStream + Send>),
 }
 

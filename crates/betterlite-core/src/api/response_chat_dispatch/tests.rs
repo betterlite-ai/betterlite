@@ -13,9 +13,11 @@ use rstest::rstest;
 use serde_json::{Map, Value};
 
 use self::fixtures::support::{
-    FakeChunks, FakeError, FakeEvents, FakeExecution, RecordingProcessing, StreamParam, call,
-    finish_of, hidden, id_of, kwargs, post_stream, post_stream_missing_record, post_stream_named,
-    responses_body, sse, terminal_event, text_of,
+    Entry, FIXED_CLOCK, FIXED_TIMESTAMP, FIXED_UUID, FakeChunks, FakeError, FakeEvents,
+    FakeExecution, RecordingProcessing, StreamParam, call, caller_with_identity_extras,
+    chat_response, created_at_of, finish_of, hidden, id_of, kwargs, post_stream,
+    post_stream_missing_record, post_stream_named, responses_body, sse, stamps, terminal_event,
+    text_of, tool_calls_of,
 };
 use super::error::DispatchError;
 use super::handler::completion;
@@ -26,6 +28,7 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_result::records::ModelResponse;
+use crate::api::responses_tool_results::records::{FunctionChunk, ToolCallChunk};
 
 fn optional_params(mut fields: IndexMap<String, Json>, params: &str) -> IndexMap<String, Json> {
     let parsed = serde_json::from_str::<Json>(params).unwrap();
@@ -45,13 +48,6 @@ fn with(mut fields: IndexMap<String, Json>, name: &str, value: Json) -> IndexMap
 
 fn streaming() -> IndexMap<String, Json> {
     with(kwargs("gpt-4o-mini", "openai"), "stream", Json::Bool(true))
-}
-
-fn chat_body() -> Json {
-    serde_json::from_str(
-        r#"{"id":"chatcmpl-x","object":"chat.completion","created":1700000000,"model":"gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#,
-    )
-    .unwrap()
 }
 
 fn created_event() -> Vec<u8> {
@@ -119,7 +115,7 @@ fn expect_response(output: BridgeOutput) -> Box<ModelResponse> {
     }
 }
 
-fn expect_chat(output: BridgeOutput) -> Json {
+fn expect_chat(output: BridgeOutput) -> Box<ModelResponse> {
     match output {
         BridgeOutput::Chat(chat) => chat,
         BridgeOutput::Response(_) | BridgeOutput::Stream(_) => panic!("expected a chat response"),
@@ -160,6 +156,15 @@ fn created_of(chunk: &Json) -> Option<Json> {
     }
 }
 
+fn contains_text(value: &Json, needle: &str) -> bool {
+    match value {
+        Json::Text(text) => text.contains(needle),
+        Json::List(items) => items.iter().any(|item| contains_text(item, needle)),
+        Json::Object(fields) => fields.values().any(|value| contains_text(value, needle)),
+        Json::Null | Json::Bool(_) | Json::Number(_) => false,
+    }
+}
+
 fn optional_stream(value: Option<Json>) -> IndexMap<String, Json> {
     let mut fields = IndexMap::new();
     if let Some(requested) = value {
@@ -186,7 +191,7 @@ fn sdk_stream(value: Value) -> IndexMap<String, Value> {
 #[tokio::test]
 async fn validation_names_the_first_missing_field_and_reaches_no_provider(#[case] field: &str) {
     let fields = without(kwargs("gpt-4o-mini", "openai"), field);
-    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let text = expect_error(completion(&execution, call(&fields)).await);
     assert_eq!(text, format!("{field} is required"));
     assert!(execution.observations().is_empty());
@@ -214,7 +219,7 @@ async fn validation_rejects_a_required_field_of_the_wrong_type(
     #[case] value: Json,
 ) {
     let fields = with(kwargs("gpt-4o-mini", "openai"), field, value);
-    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let text = expect_error(completion(&execution, call(&fields)).await);
     assert_eq!(text, format!("{field} is required"));
 }
@@ -252,20 +257,20 @@ async fn empty_required_containers_are_accepted() {
         Json::Object(IndexMap::new()),
     );
     let fields = with(with_optional, "headers", Json::Object(IndexMap::new()));
-    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let output = expect_ok(completion(&execution, call(&fields)).await);
-    assert_eq!(expect_chat(output), chat_body());
+    assert_eq!(expect_chat(output), chat_response());
     assert_eq!(execution.observations()[0].model, "/");
 }
 
 #[tokio::test]
 async fn encoding_is_optional_and_defaults_to_null() {
-    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
     expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
     let fields = with(kwargs("gpt-4o-mini", "openai"), "encoding", Json::Null);
     expect_ok(
         completion(
-            &FakeExecution::new(Answer::Chat(chat_body())),
+            &FakeExecution::new(Answer::Chat(chat_response())),
             call(&fields),
         )
         .await,
@@ -275,10 +280,10 @@ async fn encoding_is_optional_and_defaults_to_null() {
 #[tokio::test]
 async fn sync_passes_the_client_while_async_omits_it() {
     let fields = kwargs("gpt-4o-mini", "openai");
-    let synchronous = FakeExecution::new(Answer::Chat(chat_body()));
+    let synchronous = FakeExecution::new(Answer::Chat(chat_response()));
     expect_ok(completion(&synchronous, call(&fields)).await);
     let async_fields = with(fields, "acompletion", Json::Bool(true));
-    let asynchronous = FakeExecution::new(Answer::Chat(chat_body()));
+    let asynchronous = FakeExecution::new(Answer::Chat(chat_response()));
     expect_ok(completion(&asynchronous, call(&async_fields)).await);
     assert!(synchronous.observations()[0].client);
     assert!(!asynchronous.observations()[0].client);
@@ -290,20 +295,70 @@ async fn sync_passes_the_client_while_async_omits_it() {
 }
 
 #[rstest]
-#[case::boolean_true(Json::Bool(true), false)]
-#[case::boolean_false(Json::Bool(false), true)]
-#[case::text_true(Json::Text(String::from("true")), true)]
-#[case::number_one(Json::Number(serde_json::Number::from(1_i32)), true)]
-#[case::null(Json::Null, true)]
+#[case::boolean_true(Json::Bool(true), Entry::Aresponses, false)]
+#[case::boolean_false(Json::Bool(false), Entry::Responses, true)]
+#[case::text_true(Json::Text(String::from("true")), Entry::Responses, true)]
+#[case::number_one(Json::Number(serde_json::Number::from(1_i32)), Entry::Responses, true)]
+#[case::null(Json::Null, Entry::Responses, true)]
 #[tokio::test]
 async fn only_a_boolean_true_acompletion_takes_the_async_path(
     #[case] value: Json,
+    #[case] entry: Entry,
     #[case] keeps_client: bool,
 ) {
     let fields = with(kwargs("gpt-4o-mini", "openai"), "acompletion", value);
-    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
     expect_ok(completion(&execution, call(&fields)).await);
-    assert_eq!(execution.observations()[0].client, keeps_client);
+    let observations = execution.observations();
+    assert_eq!(observations.len(), 1);
+    assert_eq!(observations[0].entry, entry);
+    assert_eq!(observations[0].client, keeps_client);
+}
+
+#[rstest]
+#[case::sync(false)]
+#[case::asynchronous(true)]
+#[tokio::test]
+async fn an_extra_body_stream_flag_decides_the_delivery(#[case] asynchronous: bool) {
+    let fields = optional_params(
+        kwargs("gpt-4o-mini", "openai"),
+        r#"{"extra_body":{"stream":true}}"#,
+    );
+    let fields = if asynchronous {
+        with(fields, "acompletion", Json::Bool(true))
+    } else {
+        fields
+    };
+    let execution = FakeExecution::new(events(frames(), &[]));
+    let output = expect_ok(completion(&execution, call(&fields)).await);
+    assert_eq!(
+        execution.observations()[0].params_stream,
+        StreamParam::Bool(true)
+    );
+    let chunks = drain(expect_stream(output)).await;
+    assert_eq!(joined(&chunks), "hello");
+}
+
+#[rstest]
+#[case::sync(false)]
+#[case::asynchronous(true)]
+#[tokio::test]
+async fn an_extra_body_stream_flag_replays_a_chat_answer(#[case] asynchronous: bool) {
+    let fields = optional_params(
+        kwargs("gpt-4o-mini", "openai"),
+        r#"{"extra_body":{"stream":true}}"#,
+    );
+    let fields = if asynchronous {
+        with(fields, "acompletion", Json::Bool(true))
+    } else {
+        fields
+    };
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&fields)).await,
+    )))
+    .await;
+    assert_eq!(joined(&chunks), "hello");
 }
 
 #[tokio::test]
@@ -332,9 +387,10 @@ async fn the_outer_stream_flag_only_adds_a_missing_optional_key() {
     let fields = optional_params(streaming(), r#"{"stream":false}"#);
     let retained = FakeExecution::new(events(frames(), &[]));
     let retained_output = expect_ok(completion(&retained, call(&fields)).await);
+    // the caller's own stream option reaches the provider as false, and the injection never overwrote it
     assert_eq!(
         retained.observations()[0].params_stream,
-        StreamParam::Absent
+        StreamParam::Bool(false)
     );
     assert!(matches!(retained_output, BridgeOutput::Response(_)));
 
@@ -343,7 +399,7 @@ async fn the_outer_stream_flag_only_adds_a_missing_optional_key() {
         "stream",
         Json::Text(String::from("true")),
     );
-    let not_injected = FakeExecution::new(Answer::Chat(chat_body()));
+    let not_injected = FakeExecution::new(Answer::Chat(chat_response()));
     expect_ok(completion(&not_injected, call(&text_stream)).await);
     assert_eq!(
         not_injected.observations()[0].params_stream,
@@ -439,6 +495,33 @@ async fn a_collected_stream_becomes_a_chat_response() {
     );
 }
 
+#[tokio::test]
+async fn a_collected_response_keeps_the_callers_fingerprint_extras_and_headers() {
+    let mut grouped = typed_response("hi");
+    grouped.existing_hidden = hidden(&[("model_id", "hidden-1")]);
+    grouped.existing_hidden.insert(
+        String::from("additional_headers"),
+        serde_json::from_str(r#"{"shared":"provider","provider_only":"p"}"#).unwrap(),
+    );
+    let fields = kwargs("gpt-4o-mini", "openai");
+    let mut bridge = call(&fields);
+    bridge.model_response = caller_with_identity_extras();
+    let execution = FakeExecution::new(Answer::Response(Box::new(grouped)));
+    let record = expect_response(expect_ok(completion(&execution, bridge).await));
+    assert_eq!(record.system_fingerprint.as_deref(), Some("fp-1"));
+    assert_eq!(record.extra.get("trace"), Some(&Value::from("t-1")));
+    assert_eq!(record.created, 5);
+    assert_eq!(record.object, "chat.completion");
+    let headers = record.hidden_params.get("additional_headers").unwrap();
+    assert_eq!(headers.get("shared"), Some(&Value::from("caller")));
+    assert_eq!(headers.get("caller_only"), Some(&Value::from("c")));
+    assert_eq!(headers.get("provider_only"), Some(&Value::from("p")));
+    assert_eq!(
+        record.hidden_params.get("model_id"),
+        Some(&Value::from("hidden-1"))
+    );
+}
+
 #[rstest]
 #[case::incomplete("response.incomplete")]
 #[case::failed("response.failed")]
@@ -499,21 +582,21 @@ async fn a_typed_responses_object_ignores_the_stream_flag(#[case] stream_request
     } else {
         kwargs("gpt-4o-mini", "openai")
     };
-    let execution = FakeExecution::new(Answer::Response(typed_response("hi")));
+    let execution = FakeExecution::new(Answer::Response(Box::new(typed_response("hi"))));
     let record = expect_response(expect_ok(completion(&execution, call(&fields)).await));
     assert_eq!(record.choices[0].message.content.as_deref(), Some("hi"));
 }
 
 #[tokio::test]
 async fn a_direct_model_response_passes_through_when_not_streaming() {
-    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
-    assert_eq!(expect_chat(output), chat_body());
+    assert_eq!(expect_chat(output), chat_response());
 }
 
 #[tokio::test]
 async fn a_direct_model_response_streams_through_the_mock_iterator() {
-    let execution = FakeExecution::new(Answer::Chat(chat_body()));
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let chunks = drain(expect_stream(expect_ok(
         completion(&execution, call(&streaming())).await,
     )))
@@ -522,18 +605,59 @@ async fn a_direct_model_response_streams_through_the_mock_iterator() {
     assert_eq!(finishes(&chunks), vec![String::from("stop")]);
     assert!(ids(&chunks).iter().all(|id| id == "chatcmpl-x"));
     assert!(!ids(&chunks).is_empty());
+    // the wrapper builds its own chunk, so the replayed created makes way for the wrapper's clock
     assert_eq!(
         created_of(&chunks[0]),
-        Some(Json::Number(serde_json::Number::from(1_700_000_000_i64)))
+        Some(Json::Number(serde_json::Number::from(FIXED_CLOCK)))
     );
 }
 
 #[tokio::test]
-async fn a_model_response_without_identity_invents_the_empty_one() {
-    let body: Json = serde_json::from_str(
-        r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"hey"},"finish_reason":"stop"}]}"#,
-    )
-    .unwrap();
+async fn a_replayed_response_keeps_its_tool_calls_and_finish_reason() {
+    let mut body = chat_response();
+    body.choices[0].finish_reason = String::from("tool_calls");
+    body.choices[0].message.content = None;
+    body.choices[0].message.tool_calls = Some(vec![ToolCallChunk {
+        id: String::from("call_1"),
+        kind: String::from("function"),
+        function: FunctionChunk {
+            name: String::from("get_weather"),
+            arguments: String::from(r#"{"city":"Paris"}"#),
+            provider_specific_fields: None,
+        },
+        index: 0,
+        provider_specific_fields: None,
+    }]);
+    let execution = FakeExecution::new(Answer::Chat(body));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    assert_eq!(finishes(&chunks), vec![String::from("tool_calls")]);
+    let calls = tool_calls_of(&chunks[0]).expect("the replayed chunk carries the tool calls");
+    assert!(contains_text(&calls, "call_1"));
+    assert!(contains_text(&calls, "get_weather"));
+    assert!(contains_text(&calls, "Paris"));
+}
+
+#[tokio::test]
+async fn a_replayed_response_keeps_its_length_finish_reason() {
+    let mut body = chat_response();
+    body.choices[0].finish_reason = String::from("length");
+    let execution = FakeExecution::new(Answer::Chat(body));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    assert_eq!(finishes(&chunks), vec![String::from("length")]);
+}
+
+#[tokio::test]
+async fn a_replay_keeps_an_empty_id_and_takes_the_wrapper_clock() {
+    let mut body = chat_response();
+    body.id = String::new();
+    body.created = 0;
+    body.choices[0].message.content = Some(String::from("hey"));
     let execution = FakeExecution::new(Answer::Chat(body));
     let chunks = drain(expect_stream(expect_ok(
         completion(&execution, call(&streaming())).await,
@@ -543,19 +667,21 @@ async fn a_model_response_without_identity_invents_the_empty_one() {
     assert!(ids(&chunks).iter().all(String::is_empty));
     assert_eq!(
         created_of(&chunks[0]),
-        Some(Json::Number(serde_json::Number::from(0_i32)))
+        Some(Json::Number(serde_json::Number::from(FIXED_CLOCK)))
     );
 }
 
 #[tokio::test]
-async fn a_model_response_without_a_message_cannot_become_a_stream() {
-    let body: Json = serde_json::from_str(r#"{"id":"x","created":1,"choices":[]}"#).unwrap();
+async fn a_replay_without_choices_closes_the_stream_itself() {
+    let mut body = chat_response();
+    body.choices.clear();
     let execution = FakeExecution::new(Answer::Chat(body));
-    let text = expect_error(completion(&execution, call(&streaming())).await);
-    assert!(
-        text.starts_with("the model response could not become a stream"),
-        "{text}"
-    );
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    assert!(joined(&chunks).is_empty());
+    assert_eq!(finishes(&chunks), vec![String::from("stop")]);
 }
 
 #[tokio::test]
@@ -565,7 +691,7 @@ async fn a_non_object_payload_is_unexpected() {
         existing_hidden: Map::new(),
         stream_hidden: Map::new(),
     };
-    let execution = FakeExecution::new(Answer::Response(payload));
+    let execution = FakeExecution::new(Answer::Response(Box::new(payload)));
     let text = expect_error(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
     assert_eq!(text, "Unexpected responses stream payload");
 }
@@ -581,7 +707,7 @@ async fn an_invalid_dict_field_falls_back_to_lenient_construction() {
         existing_hidden: Map::new(),
         stream_hidden: Map::new(),
     };
-    let execution = FakeExecution::new(Answer::Response(response));
+    let execution = FakeExecution::new(Answer::Response(Box::new(response)));
     let record = expect_response(expect_ok(
         completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
     ));
@@ -599,7 +725,7 @@ async fn a_dict_payload_that_cannot_be_constructed_names_completion() {
         existing_hidden: Map::new(),
         stream_hidden: Map::new(),
     };
-    let execution = FakeExecution::new(Answer::Response(response));
+    let execution = FakeExecution::new(Answer::Response(Box::new(response)));
     let text = expect_error(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
     assert!(
         text.starts_with("the completed responses payload could not be read"),
@@ -637,12 +763,38 @@ async fn a_cached_chat_stream_bypasses_translation_and_is_post_processed() {
     );
 }
 
+#[rstest]
+#[case::sync(false)]
+#[case::asynchronous(true)]
 #[tokio::test]
-async fn a_cached_chat_stream_must_be_consumed_by_a_nonstreaming_caller() {
-    let cached = FakeChunks::new(&["{\"id\":\"cached-1\"}", "{\"id\":\"cached-2\"}"]);
+async fn a_cached_chat_stream_must_be_consumed_by_a_nonstreaming_caller(
+    #[case] asynchronous: bool,
+) {
+    let reads = Arc::new(Mutex::new(Vec::new()));
+    let cached = FakeChunks::tracking(&["{\"id\":\"cached-1\"}", "{\"id\":\"cached-2\"}"], &reads);
     let execution = FakeExecution::new(Answer::Cached(Box::new(cached)));
-    let text = expect_error(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
+    let fields = if asynchronous {
+        with(
+            kwargs("gpt-4o-mini", "openai"),
+            "acompletion",
+            Json::Bool(true),
+        )
+    } else {
+        kwargs("gpt-4o-mini", "openai")
+    };
+    let text = expect_error(completion(&execution, call(&fields)).await);
     assert_eq!(text, "Stream ended without a completed response");
+    let seen = reads.lock().unwrap();
+    assert_eq!(seen.len(), 3);
+    assert_eq!(
+        seen[0].as_ref().and_then(id_of),
+        Some(String::from("cached-1"))
+    );
+    assert_eq!(
+        seen[1].as_ref().and_then(id_of),
+        Some(String::from("cached-2"))
+    );
+    assert!(seen[2].is_none());
 }
 
 #[tokio::test]
@@ -669,6 +821,43 @@ async fn a_translated_stream_closes_when_the_events_end_without_a_terminal() {
     .await;
     assert_eq!(joined(&chunks), "hi");
     assert_eq!(finishes(&chunks), vec![String::from("stop")]);
+}
+
+#[tokio::test]
+async fn the_translator_and_wrapper_stamp_chunks_from_the_injected_sources() {
+    let execution = FakeExecution::new(events(vec![delta_event("hi")], &[]));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    let expected_id = format!("chatcmpl-{FIXED_UUID}");
+    let identifiers = ids(&chunks);
+    assert!(!identifiers.is_empty());
+    assert!(identifiers.iter().all(|id| id == &expected_id));
+    assert_eq!(
+        created_of(&chunks[0]),
+        Some(Json::Number(serde_json::Number::from(FIXED_CLOCK)))
+    );
+    assert_eq!(
+        created_at_of(&chunks[0]),
+        Some(Json::Number(
+            serde_json::Number::from_f64(FIXED_TIMESTAMP).unwrap()
+        ))
+    );
+}
+
+#[tokio::test]
+async fn a_translation_failure_keeps_the_translators_message() {
+    let execution = FakeExecution::new(events(vec![sse("{not json")], &[]));
+    let mut stream = expect_stream(expect_ok(completion(&execution, call(&streaming())).await));
+    let failure = stream.next_chunk().await.unwrap_err();
+    let StreamFailure::Unclassified { text } = failure else {
+        panic!("a translation failure has no provider status");
+    };
+    assert!(
+        text.contains("Expecting property name enclosed in double quotes"),
+        "{text}"
+    );
 }
 
 #[tokio::test]
@@ -759,6 +948,7 @@ async fn dropping_the_translated_stream_drops_the_event_stream() {
             model: "gpt-4o-mini",
             json_mode: Some(true),
             limits: ApiLimits::default(),
+            stamps: stamps(),
         },
     );
     drop(stream);

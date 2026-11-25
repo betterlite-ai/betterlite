@@ -1,12 +1,13 @@
 use std::error::Error;
 
+use betterlite_streaming::provider_chunk_decode::wrapper::WrapperError;
 use thiserror::Error;
 
+use crate::api::chat_response_stream::error::ChatResponseStreamError;
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_request::error::RequestError;
 use crate::api::response_chat_result::error::ResponseChatResultError;
 use crate::api::responses_to_chat_stream::error::ResponsesChatStreamError;
-use crate::message_utilities::response_streams::StreamError;
 
 #[derive(Debug, Error)]
 pub enum InputError {
@@ -27,6 +28,27 @@ pub struct PostStreamError {
     pub message: String,
 }
 
+// One stream step's own failure, kept typed with its source until the AsyncChunkStream boundary, which carries text
+#[derive(Debug, Error)]
+pub enum StreamStepError {
+    #[error(transparent)]
+    Translate(#[from] ResponsesChatStreamError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Wrapper(#[from] WrapperError),
+    #[error(transparent)]
+    View(#[from] ChatResponseStreamError),
+}
+
+impl From<StreamStepError> for StreamFailure {
+    fn from(error: StreamStepError) -> Self {
+        Self::Unclassified {
+            text: error.to_string(),
+        }
+    }
+}
+
 // Every way the bridge stops short of an answer, with the provider's own failure kept as the cause
 #[derive(Debug, Error)]
 pub enum DispatchError<Source>
@@ -43,11 +65,6 @@ where
     Translate(#[from] ResponsesChatStreamError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[error("the model response could not become a stream: {source}")]
-    Mock {
-        #[source]
-        source: StreamError,
-    },
     #[error("the completed responses payload could not be read: {source}")]
     Completion {
         #[source]

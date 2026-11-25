@@ -1,39 +1,45 @@
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
+use betterlite_openai::compatible_wire::{NEW_ID, system_clock};
+use betterlite_streaming::stream_chunk_shaping::creation::{StreamInstant, system_instant};
 use indexmap::IndexMap;
 use serde_json::Value;
+use uuid::Uuid;
 
 use super::error::InputError;
 use super::port::PostStreamDeps;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::response_chat_history::history::HistoryMessage;
 use crate::api::response_chat_request::error::RequestError;
+use crate::api::response_chat_result::records::ModelResponse;
 use crate::api::responses_input_content::is_truthy;
 
 // The handler's typed inputs beside the caller's raw kwargs: the two objects the SDK boundary owns arrive built
 pub struct BridgeCall<'call, Client: ?Sized> {
     pub kwargs: &'call IndexMap<String, Json>,
-    pub model_response: ModelResponseSeed,
+    pub model_response: ModelResponse,
     pub logging: LoggingState,
     pub client: Option<&'call Client>,
     pub limits: ApiLimits,
     pub reasoning_auto_summary: bool,
     pub post_stream: Option<&'call PostStreamDeps<'call>>,
+    pub stamps: StreamStamps,
 }
 
-// The caller's ModelResponse keeps only these three fields after B919 rewrites the answer
-pub struct ModelResponseSeed {
-    pub id: String,
-    pub created: i64,
-    pub object: String,
+// The clock and identifier sources the translator and wrapper stamp chunks with, injected so a caller controls them
+#[derive(Clone, Copy)]
+pub struct StreamStamps {
+    pub now: fn() -> StreamInstant,
+    pub next_id: fn() -> Uuid,
+    pub clock: fn() -> i64,
 }
 
-impl Default for ModelResponseSeed {
+impl Default for StreamStamps {
     fn default() -> Self {
         Self {
-            id: String::new(),
-            created: 0,
-            object: String::from("chat.completion"),
+            now: system_instant,
+            next_id: NEW_ID,
+            clock: system_clock,
         }
     }
 }

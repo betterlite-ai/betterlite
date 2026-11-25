@@ -2,12 +2,12 @@ use std::error::Error;
 
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use super::collect::{coerce, merged_hidden};
 use super::error::DispatchError;
 use super::input::{
-    BridgeCall, Input, ModelResponseSeed, inject_stream, json_mode, resolve_stream_flag,
+    BridgeCall, Input, StreamStamps, inject_stream, json_mode, resolve_stream_flag,
 };
 use super::port::{
     Answer, BridgeOutput, BridgeResponse, PostStreamDeps, ResponsesCall, ResponsesEventStream,
@@ -24,7 +24,7 @@ use crate::api::response_chat_result::transform::{ResponseSource, transform_resp
 // The answer a streaming caller receives: derived from the Responses events, replayed, or already a stream
 enum StreamSource {
     Events(Box<dyn ResponsesEventStream>),
-    Chat(Json),
+    Chat(Box<ModelResponse>),
     Cached(Box<dyn AsyncChunkStream + Send>),
 }
 
@@ -43,6 +43,7 @@ where
     run(execution, call, false).await
 }
 
+// The delivery stream flag is read after build_request, because the builder promotes extra_body keys into the optional params
 async fn run<Execution, Client>(
     execution: &Execution,
     call: BridgeCall<'_, Client>,
@@ -60,11 +61,10 @@ where
         limits,
         reasoning_auto_summary,
         post_stream,
+        stamps,
     } = call;
     let mut input = super::input::input(kwargs)?;
     inject_stream(kwargs, &mut input.optional_params);
-    let stream = resolve_stream_flag(&input.optional_params, &input.litellm_params);
-    let request_client = if asynchronous { None } else { client };
     let mut request = build_request(
         ChatRequestInput {
             model: &input.model,
@@ -75,8 +75,9 @@ where
             reasoning_auto_summary,
         },
         &mut logging,
-        request_client,
+        if asynchronous { None } else { client },
     )?;
+    let stream = resolve_stream_flag(&input.optional_params, &input.litellm_params);
     route(&mut request, &input);
     let answer = execute(execution, &mut request, asynchronous)
         .await
@@ -88,7 +89,7 @@ where
         stream,
         json_mode: json_mode(kwargs),
     };
-    deliver(&input, model_response, &delivery, answer).await
+    deliver(&input, model_response, &delivery, stamps, answer).await
 }
 
 // The bridge's sync and async entries take the same request, and only the execution differs
@@ -137,36 +138,40 @@ struct Delivery<'delivery> {
 
 async fn deliver<Source>(
     input: &Input,
-    seed: ModelResponseSeed,
+    model_response: ModelResponse,
     delivery: &Delivery<'_>,
+    stamps: StreamStamps,
     answer: Answer,
 ) -> Result<BridgeOutput, DispatchError<Source>>
 where
     Source: Error + 'static,
 {
     match answer {
-        Answer::Response(response) => response_output(input, seed, delivery, response),
+        Answer::Response(response) => response_output(input, model_response, delivery, *response),
         Answer::Chat(chat) if !delivery.stream => Ok(BridgeOutput::Chat(chat)),
         Answer::Chat(chat) => stream_output(
             &input.model,
             &input.custom_llm_provider,
             delivery,
+            stamps,
             StreamSource::Chat(chat),
         ),
         Answer::Events(events) if delivery.stream => stream_output(
             &input.model,
             &input.custom_llm_provider,
             delivery,
+            stamps,
             StreamSource::Events(events),
         ),
         Answer::Events(events) => {
             let response = super::collect::collect(events, &delivery.limits).await?;
-            response_output(input, seed, delivery, response)
+            response_output(input, model_response, delivery, response)
         }
         Answer::Cached(cached) if delivery.stream => stream_output(
             &input.model,
             &input.custom_llm_provider,
             delivery,
+            stamps,
             StreamSource::Cached(cached),
         ),
         Answer::Cached(mut cached) => drain_cached(&mut *cached).await,
@@ -176,7 +181,7 @@ where
 // A collected stream keeps its response's own hidden keys over the iterator's, and B919 reads the merged map
 fn response_output<Source>(
     input: &Input,
-    seed: ModelResponseSeed,
+    result: ModelResponse,
     delivery: &Delivery<'_>,
     response: BridgeResponse,
 ) -> Result<BridgeOutput, DispatchError<Source>>
@@ -185,17 +190,6 @@ where
 {
     let hidden = merged_hidden(&response.existing_hidden, &response.stream_hidden);
     let mut payload = coerce(response.payload)?;
-    let result = ModelResponse {
-        id: seed.id,
-        created: seed.created,
-        model: None,
-        object: seed.object,
-        system_fingerprint: None,
-        choices: Vec::new(),
-        usage: None,
-        extra: Map::new(),
-        hidden_params: Map::new(),
-    };
     let transformed = transform_response(
         ResponseSource {
             model: &input.model,
@@ -214,6 +208,7 @@ fn stream_output<Source>(
     model: &str,
     provider: &str,
     delivery: &Delivery<'_>,
+    stamps: StreamStamps,
     source: StreamSource,
 ) -> Result<BridgeOutput, DispatchError<Source>>
 where
@@ -227,12 +222,10 @@ where
                 model,
                 json_mode: delivery.json_mode,
                 limits: delivery.limits,
+                stamps,
             },
         )),
-        StreamSource::Chat(chat) => Box::new(
-            MockStream::new(chat, provider, model)
-                .map_err(|error| DispatchError::Mock { source: error })?,
-        ),
+        StreamSource::Chat(chat) => Box::new(MockStream::new(chat, provider, model, stamps)),
         StreamSource::Cached(cached) => cached,
     };
     post_process(stream, model, provider, delivery.post_stream)

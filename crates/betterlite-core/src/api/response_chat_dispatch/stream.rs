@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::fmt::Display;
 use std::str::FromStr as _;
 
 use async_trait::async_trait;
@@ -9,25 +8,24 @@ use betterlite_context::chat_config_selection::selection::{
 use betterlite_context::chat_config_selection::table::ProviderConfigTable;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_openai::compatible_wire::{NEW_ID, system_clock};
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
 use betterlite_streaming::provider_chunk_decode::wrapper::{
     StreamSetup, StreamWrapper, WrapperError,
 };
-use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
+use indexmap::IndexMap;
 
-use super::error::PostStreamError;
+use super::error::{PostStreamError, StreamStepError};
+use super::input::StreamStamps;
 use super::port::{PostStreamDeps, ResponsesEventStream};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream::chunk::wrapper_view;
 use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::messages_stream_split::errors::StreamFailure;
+use crate::api::response_chat_result::records::ModelResponse;
 use crate::api::responses_to_chat_stream::stream::{
     ParsedChatLine, ResponsesChatStream, get_model_response_iterator,
 };
-use crate::message_utilities::response_streams::StreamError;
-use crate::message_utilities::response_streams::iterators::{DeltaIdentity, ModelResponseIterator};
 
 // LiteLLM's REPEATED_STREAMING_CHUNK_LIMIT default, which CustomStreamWrapper counts against
 const REPEATED_CHUNK_LIMIT: usize = 100;
@@ -38,6 +36,7 @@ pub struct StreamConfig<'config> {
     pub model: &'config str,
     pub json_mode: Option<bool>,
     pub limits: ApiLimits,
+    pub stamps: StreamStamps,
 }
 
 // B920's iterator over the Responses events, pushed through B005's wrapper one chunk at a time
@@ -55,8 +54,12 @@ impl TranslatedStream {
     pub fn new(events: Box<dyn ResponsesEventStream>, config: &StreamConfig<'_>) -> Self {
         Self {
             events,
-            parser: get_model_response_iterator(config.json_mode, NEW_ID, system_clock),
-            wrapper: wrapper(config.provider, config.model),
+            parser: get_model_response_iterator(
+                config.json_mode,
+                config.stamps.next_id,
+                config.stamps.clock,
+            ),
+            wrapper: wrapper(config.provider, config.model, config.stamps),
             limits: config.limits,
             pending: VecDeque::new(),
             finished: false,
@@ -87,10 +90,11 @@ impl AsyncChunkStream for TranslatedStream {
                     let parsed = self
                         .parser
                         .parse_line(&line, &self.limits)
-                        .map_err(unclassified)?;
+                        .map_err(StreamStepError::from)?;
                     if let ParsedChatLine::Chunk(chunk) = parsed {
-                        let value = serde_json::to_value(chunk).map_err(unclassified)?;
-                        let row = serde_json::from_value::<Json>(value).map_err(unclassified)?;
+                        let value = serde_json::to_value(chunk).map_err(StreamStepError::from)?;
+                        let row =
+                            serde_json::from_value::<Json>(value).map_err(StreamStepError::from)?;
                         push_json(&mut self.wrapper, &mut self.pending, row)?;
                     }
                 }
@@ -99,39 +103,81 @@ impl AsyncChunkStream for TranslatedStream {
     }
 }
 
-// _completed_response_as_stream: B010's MockResponseIterator replaying the ModelResponse as one delta
+// _completed_response_as_stream: MockResponseIterator replays the completed ModelResponse as one converted chunk
 pub struct MockStream {
-    inner: ModelResponseIterator,
+    response: Box<ModelResponse>,
     wrapper: StreamWrapper,
     pending: VecDeque<Json>,
     filled: bool,
 }
 
 impl MockStream {
-    pub fn new(response: Json, provider: &str, model: &str) -> Result<Self, StreamError> {
-        let id = text_field(&response, "id");
-        let created = number_field(&response, "created");
-        let identity = DeltaIdentity { id: &id, created };
-        Ok(Self {
-            inner: ModelResponseIterator::new(response, Some(identity))?,
-            wrapper: wrapper(provider, model),
+    #[must_use]
+    pub fn new(
+        response: Box<ModelResponse>,
+        provider: &str,
+        model: &str,
+        stamps: StreamStamps,
+    ) -> Self {
+        Self {
+            response,
+            wrapper: wrapper(provider, model, stamps),
             pending: VecDeque::new(),
             filled: false,
-        })
+        }
     }
 
-    // the replay is finite and synchronous, so every chunk goes through the wrapper once
+    // the replay is finite and synchronous, so its one chunk goes through the wrapper once
     fn fill(&mut self) -> Result<(), StreamFailure> {
         if self.filled {
             return Ok(());
         }
-        for chunk in self.inner.by_ref() {
-            push_json(&mut self.wrapper, &mut self.pending, chunk)?;
-        }
+        let chunk = replay_chunk(&self.response).map_err(StreamStepError::from)?;
+        push_json(&mut self.wrapper, &mut self.pending, chunk)?;
         close(&mut self.wrapper, &mut self.pending)?;
         self.filled = true;
         Ok(())
     }
+}
+
+// convert_model_response_to_streaming: the whole message becomes each choice's delta, and its finish reason survives
+fn replay_chunk(response: &ModelResponse) -> Result<Json, serde_json::Error> {
+    let mut choices = Vec::with_capacity(response.choices.len());
+    for choice in &response.choices {
+        let delta = serde_json::from_value(serde_json::to_value(&choice.message)?)?;
+        choices.push(Json::Object(IndexMap::from([
+            (
+                String::from("index"),
+                Json::Number(serde_json::Number::from(choice.index)),
+            ),
+            (String::from("delta"), delta),
+            (
+                String::from("finish_reason"),
+                Json::Text(choice.finish_reason.clone()),
+            ),
+        ])));
+    }
+    let model = response.model.clone().map_or(Json::Null, Json::Text);
+    let mut chunk = IndexMap::from([
+        (String::from("id"), Json::Text(response.id.clone())),
+        (
+            String::from("object"),
+            Json::Text(String::from("chat.completion.chunk")),
+        ),
+        (
+            String::from("created"),
+            Json::Number(serde_json::Number::from(response.created)),
+        ),
+        (String::from("model"), model),
+        (String::from("choices"), Json::List(choices)),
+    ]);
+    if let Some(usage) = &response.usage {
+        chunk.insert(
+            String::from("usage"),
+            serde_json::from_value(usage.clone())?,
+        );
+    }
+    Ok(Json::Object(chunk))
 }
 
 #[async_trait]
@@ -142,7 +188,7 @@ impl AsyncChunkStream for MockStream {
     }
 }
 
-fn wrapper(provider: &str, model: &str) -> StreamWrapper {
+fn wrapper(provider: &str, model: &str, stamps: StreamStamps) -> StreamWrapper {
     StreamWrapper::new(
         provider,
         StreamSetup {
@@ -152,70 +198,38 @@ fn wrapper(provider: &str, model: &str) -> StreamWrapper {
             is_function_call: false,
             base_hidden_params: JsonObject::new(),
             repeated_chunk_limit: REPEATED_CHUNK_LIMIT,
-            now: system_instant,
-            next_id: NEW_ID,
+            now: stamps.now,
+            next_id: stamps.next_id,
         },
     )
-}
-
-fn field<'json>(response: &'json Json, name: &str) -> Option<&'json Json> {
-    match response {
-        Json::Object(fields) => fields.get(name),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-// B010 names the replayed chunk after the ModelResponse it came from
-fn text_field(response: &Json, name: &str) -> String {
-    let Some(Json::Text(text)) = field(response, name) else {
-        return String::new();
-    };
-    text.clone()
-}
-
-fn number_field(response: &Json, name: &str) -> i64 {
-    let Some(Json::Number(number)) = field(response, name) else {
-        return 0;
-    };
-    number.as_i64().unwrap_or_default()
 }
 
 fn push_json(
     wrapper: &mut StreamWrapper,
     pending: &mut VecDeque<Json>,
     chunk: Json,
-) -> Result<(), StreamFailure> {
-    let value = serde_json::to_value(chunk).map_err(unclassified)?;
-    let json = serde_json::from_value::<JsonValue>(value).map_err(unclassified)?;
+) -> Result<(), StreamStepError> {
+    let value = serde_json::to_value(chunk)?;
+    let json = serde_json::from_value::<JsonValue>(value)?;
     hold(pending, wrapper.push(&ProviderChunk::Json(Box::new(json))))
 }
 
 fn hold(
     pending: &mut VecDeque<Json>,
     shaped: Result<Option<StreamChunk>, WrapperError>,
-) -> Result<(), StreamFailure> {
-    if let Some(chunk) = shaped.map_err(unclassified)? {
-        pending.push_back(wrapper_view(&chunk).map_err(unclassified)?);
+) -> Result<(), StreamStepError> {
+    if let Some(chunk) = shaped? {
+        pending.push_back(wrapper_view(&chunk)?);
     }
     Ok(())
 }
 
 // The wrapper's own end-of-stream chunk, for a stream that never sent a finish reason itself
-fn close(wrapper: &mut StreamWrapper, pending: &mut VecDeque<Json>) -> Result<(), StreamFailure> {
+fn close(wrapper: &mut StreamWrapper, pending: &mut VecDeque<Json>) -> Result<(), StreamStepError> {
     if let Some(shaped) = wrapper.finish() {
-        let chunk = shaped.map_err(unclassified)?;
-        pending.push_back(wrapper_view(&chunk).map_err(unclassified)?);
+        pending.push_back(wrapper_view(&shaped?)?);
     }
     Ok(())
-}
-
-fn unclassified<Message>(error: Message) -> StreamFailure
-where
-    Message: Display,
-{
-    StreamFailure::Unclassified {
-        text: error.to_string(),
-    }
 }
 
 // _apply_post_stream_processing: the provider chat config's own stream, or the stream unchanged

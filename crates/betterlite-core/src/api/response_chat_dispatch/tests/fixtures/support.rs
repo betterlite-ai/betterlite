@@ -22,20 +22,23 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use chrono::DateTime;
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
 use thiserror::Error;
+use uuid::Uuid;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_dispatch::error::PostStreamError;
-use crate::api::response_chat_dispatch::input::{BridgeCall, ModelResponseSeed};
+use crate::api::response_chat_dispatch::input::{BridgeCall, StreamStamps};
 use crate::api::response_chat_dispatch::port::{
     Answer, PostStreamDeps, PostStreamProcessing, ResponsesCall, ResponsesEventStream,
     ResponsesExecution,
 };
+use crate::api::response_chat_result::records::{ChatChoice, ChatMessage, ChatRole, ModelResponse};
 
 #[derive(Debug, Error)]
 #[error("the fake execution failed")]
@@ -48,12 +51,20 @@ pub(crate) enum StreamParam {
     Bool(bool),
 }
 
+// Which entry the bridge took, so a test can tell responses() from aresponses()
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Entry {
+    Responses,
+    Aresponses,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Observation {
     pub model: String,
     pub provider: Option<String>,
     pub client: bool,
     pub params_stream: StreamParam,
+    pub entry: Entry,
 }
 
 pub(crate) struct FakeExecution {
@@ -80,7 +91,7 @@ impl FakeExecution {
         self.observations.lock().unwrap().clone()
     }
 
-    fn record(&self, call: &ResponsesCall<'_, u8>) -> Result<Answer, FakeError> {
+    fn record(&self, call: &ResponsesCall<'_, u8>, entry: Entry) -> Result<Answer, FakeError> {
         let provider = match call.litellm_params.get("custom_llm_provider") {
             Some(Value::String(text)) => Some(text.clone()),
             Some(
@@ -105,6 +116,7 @@ impl FakeExecution {
                 provider,
                 client: call.client.is_some(),
                 params_stream,
+                entry,
             });
         self.answers
             .lock()
@@ -119,11 +131,11 @@ impl ResponsesExecution<u8> for FakeExecution {
     type Error = FakeError;
 
     async fn responses(&self, call: ResponsesCall<'_, u8>) -> Result<Answer, FakeError> {
-        self.record(&call)
+        self.record(&call, Entry::Responses)
     }
 
     async fn aresponses(&self, call: ResponsesCall<'_, u8>) -> Result<Answer, FakeError> {
-        self.record(&call)
+        self.record(&call, Entry::Aresponses)
     }
 }
 
@@ -177,6 +189,7 @@ impl ResponsesEventStream for FakeEvents {
 
 pub(crate) struct FakeChunks {
     chunks: VecDeque<Json>,
+    reads: Option<Arc<Mutex<Vec<Option<Json>>>>>,
 }
 
 impl FakeChunks {
@@ -186,6 +199,15 @@ impl FakeChunks {
                 .iter()
                 .map(|chunk| serde_json::from_str(chunk).unwrap())
                 .collect(),
+            reads: None,
+        }
+    }
+
+    // every read, the closing None included, lands in the caller's log
+    pub(crate) fn tracking(chunks: &[&str], reads: &Arc<Mutex<Vec<Option<Json>>>>) -> Self {
+        Self {
+            reads: Some(Arc::clone(reads)),
+            ..Self::new(chunks)
         }
     }
 }
@@ -193,7 +215,11 @@ impl FakeChunks {
 #[async_trait]
 impl AsyncChunkStream for FakeChunks {
     async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
-        Ok(self.chunks.pop_front())
+        let chunk = self.chunks.pop_front();
+        if let Some(reads) = &self.reads {
+            reads.lock().unwrap().push(chunk.clone());
+        }
+        Ok(chunk)
     }
 }
 
@@ -355,19 +381,96 @@ pub(crate) fn kwargs(model: &str, provider: &str) -> IndexMap<String, Json> {
     fields
 }
 
+// The caller's record as the SDK boundary builds it: the answer keeps these three fields' values on collection
+pub(crate) fn caller_response() -> ModelResponse {
+    ModelResponse {
+        id: String::from("chatcmpl-seed"),
+        created: 5,
+        model: None,
+        object: String::from("chat.completion"),
+        system_fingerprint: None,
+        choices: Vec::new(),
+        usage: None,
+        extra: Map::new(),
+        hidden_params: Map::new(),
+    }
+}
+
+// The caller's record with the fingerprint, extra field and headers a collected answer must keep
+pub(crate) fn caller_with_identity_extras() -> ModelResponse {
+    let mut caller = caller_response();
+    caller.system_fingerprint = Some(String::from("fp-1"));
+    caller
+        .extra
+        .insert(String::from("trace"), Value::from("t-1"));
+    caller.hidden_params.insert(
+        String::from("additional_headers"),
+        serde_json::from_str(r#"{"shared":"caller","caller_only":"c"}"#).unwrap(),
+    );
+    caller
+}
+
+// A whole chat answer, as a provider without native streaming returns one
+pub(crate) fn chat_response() -> Box<ModelResponse> {
+    Box::new(ModelResponse {
+        id: String::from("chatcmpl-x"),
+        created: 1_700_000_000,
+        model: Some(String::from("gpt-4o-mini")),
+        object: String::from("chat.completion"),
+        system_fingerprint: None,
+        choices: vec![ChatChoice {
+            finish_reason: String::from("stop"),
+            index: 0,
+            message: ChatMessage {
+                content: Some(String::from("hello")),
+                role: ChatRole::Assistant,
+                ..ChatMessage::default()
+            },
+        }],
+        usage: None,
+        extra: Map::new(),
+        hidden_params: Map::new(),
+    })
+}
+
+pub(crate) const FIXED_UUID: &str = "00000000-0000-4000-8000-000000000001";
+pub(crate) const FIXED_CLOCK: i64 = 41;
+pub(crate) const FIXED_TIMESTAMP: f64 = 41.5;
+
+fn fixed_next_id() -> Uuid {
+    Uuid::parse_str(FIXED_UUID).unwrap()
+}
+
+const fn fixed_clock() -> i64 {
+    FIXED_CLOCK
+}
+
+const fn fixed_instant() -> StreamInstant {
+    StreamInstant {
+        seconds: FIXED_CLOCK,
+        timestamp: FIXED_TIMESTAMP,
+    }
+}
+
+// The clock and identifier sources every bridge call gets, so a test can name the id its stream invents
+pub(crate) fn stamps() -> StreamStamps {
+    StreamStamps {
+        now: fixed_instant,
+        next_id: fixed_next_id,
+        clock: fixed_clock,
+    }
+}
+
 pub(crate) fn call(kwargs: &IndexMap<String, Json>) -> BridgeCall<'_, u8> {
     BridgeCall {
         kwargs,
-        model_response: ModelResponseSeed {
-            id: String::from("chatcmpl-seed"),
-            created: 5,
-            object: String::from("chat.completion"),
-        },
+        model_response: caller_response(),
         logging: logging(),
         client: Some(&7_u8),
         limits: ApiLimits::default(),
         reasoning_auto_summary: false,
         post_stream: None,
+        stamps: stamps(),
     }
 }
 
@@ -420,6 +523,33 @@ pub(crate) fn id_of(chunk: &Json) -> Option<String> {
         return None;
     };
     text_member(fields, "id")
+}
+
+pub(crate) fn tool_calls_of(chunk: &Json) -> Option<Json> {
+    let Json::Object(fields) = chunk else {
+        return None;
+    };
+    let Json::List(choices) = fields.get("choices")? else {
+        return None;
+    };
+    let Json::Object(item) = choices.first()? else {
+        return None;
+    };
+    let Json::Object(delta) = item.get("delta")? else {
+        return None;
+    };
+    delta.get("tool_calls").cloned()
+}
+
+// The wrapper's created_at, folded under the private name ModelResponseStream uses
+pub(crate) fn created_at_of(chunk: &Json) -> Option<Json> {
+    let Json::Object(fields) = chunk else {
+        return None;
+    };
+    let Json::Object(hidden) = fields.get("_hidden_params")? else {
+        return None;
+    };
+    hidden.get("created_at").cloned()
 }
 
 pub(crate) fn responses_body(text: &str) -> String {
