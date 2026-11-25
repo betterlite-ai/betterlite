@@ -3,7 +3,10 @@ deviations:
   - what: The team member cap adds a temporary increase to the team default, and every team, window and member comparison runs in exact decimal, where LiteLLM adds and compares IEEE doubles, so a spend exactly at a computed cap such as 0.1 plus 0.2 can deny here where LiteLLM's rounded value leaves it just below.
     why: rule money-is-decimal keeps every cost, spend and budget in Decimal; no working setup reads LiteLLM's low-order rounding on these paths, and the oracle cases use amounts where both agree.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5855-L5873
-  - what: A member maximum whose sum with an active temporary increase passes Decimal's range is read as unlimited, so the counter is still read and the member is admitted, where LiteLLM keeps a finite double up to about 1.8e308 and enforces it.
-    why: Decimal stops near 7.9e28, far past any spend a counter can hold, so an overflowing cap admits exactly the requests the finite LiteLLM cap admits; LiteLLM's own infinite cap takes the same read-then-skip path.
+  - what: A member maximum whose positive sum with an active temporary increase passes Decimal's range is read as unlimited, so the counter is still read and the member is admitted, where LiteLLM keeps a finite double up to about 1.8e308 and enforces it.
+    why: Decimal stops near 7.9e28, far past any spend a counter can hold, so an overflowing positive cap admits exactly the requests the finite LiteLLM cap admits; LiteLLM's own infinite cap takes the same read-then-skip path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5877-L5888
+  - what: A member maximum whose negative sum with an active temporary increase passes Decimal's range is enforced at Decimal::MIN, so a denial names -7.92e28 where LiteLLM reports the finite double -8e28; both caps deny every spend.
+    why: rule money-is-decimal keeps the cap in Decimal, where the sum cannot be represented, and no counter holds a spend below Decimal::MIN, so the verdict matches LiteLLM and only the extreme cap value in the message differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5877-L5888
 kept_bugs: []

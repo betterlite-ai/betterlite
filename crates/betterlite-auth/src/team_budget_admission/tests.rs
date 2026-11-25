@@ -648,3 +648,27 @@ async fn member_cap_overflow_reads_then_admits() {
     assert_eq!(reads[0].max_budget, None);
     assert!(harness.events().iter().all(|event| event != "member alert"));
 }
+
+#[tokio::test]
+async fn member_cap_negative_overflow_denies() {
+    // LiteLLM's double sum stays a finite negative cap, so a spend above it is denied instead of admitted
+    let harness = Harness::spending(&["0"]);
+    let row = team(r#"{"team_id":"team-1"}"#);
+    let token = key(MEMBER_KEY);
+    let model = RequestedModels::None;
+    let membership = loaded(
+        r#"{"user_id":"user-1","team_id":"team-1","litellm_budget_table":{"max_budget":-79228162514264337593543950335,"temp_budget_increase":-1,"temp_budget_expiry":"2027-01-01T00:00:00Z"}}"#,
+    );
+    let denial = denial_of(
+        run(
+            &harness,
+            &request(Some(&row), Some(&token), &model, membership),
+        )
+        .await,
+    );
+    assert_eq!(denial.max_budget, Decimal::MIN);
+    assert_eq!(denial.current_cost, Decimal::ZERO);
+    let reads = harness.reads();
+    assert_eq!(reads.len(), 1);
+    assert_eq!(reads[0].max_budget, Some(Decimal::MIN));
+}

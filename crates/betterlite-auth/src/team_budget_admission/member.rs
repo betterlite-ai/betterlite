@@ -86,7 +86,14 @@ async fn member_cap(
     if let Some(row) = budget_row.filter(|row| row.max_budget.is_some()) {
         return Ok(match row.effective_max_budget(admission.now) {
             Ok(maximum) => maximum.map(Money::Finite),
-            // either overflow is a nonfinite float in LiteLLM, and both skip enforcement after the read
+            // a negative overflow is a finite cap in LiteLLM and denies every spend, while a positive one is the nonfinite maximum
+            Err(BudgetError::Overflow)
+                if row
+                    .max_budget
+                    .is_some_and(|maximum| maximum.is_sign_negative()) =>
+            {
+                Some(Money::Finite(Decimal::MIN))
+            }
             Err(BudgetError::Overflow) => Some(Money::PositiveInfinity),
         });
     }
