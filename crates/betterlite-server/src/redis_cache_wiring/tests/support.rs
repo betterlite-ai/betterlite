@@ -9,6 +9,7 @@ use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
+use crate::redis_cache_wiring::hooks::ServiceEventHooks;
 use betterlite_logging::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
 use betterlite_logging::logging_service_events::types::ServiceEvent as LoggedServiceEvent;
 use betterlite_logging::logging_success::ports::SuccessClock;

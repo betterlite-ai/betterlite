@@ -15,6 +15,7 @@ use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::RedisCacheOptions;
 use betterlite_redis::redis_cache::connect::connect;
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
@@ -50,6 +51,7 @@ pub(super) fn open(
     parsed: RedisSettings,
     gate: Arc<PolicyGate>,
 ) -> PyResult<NativeRedis> {
+    let shared_gate: Arc<dyn BreakerGate> = Arc::<PolicyGate>::clone(&gate);
     let options = RedisCacheOptions {
         overrides: parsed.overrides.clone(),
         family: RedisCacheFamily::Standalone,
@@ -60,7 +62,7 @@ pub(super) fn open(
         factory: Arc::new(LiveClientFactory::new(None)),
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(QuietHooks),
-        gate: Arc::clone(&gate),
+        gate: shared_gate,
     };
     let environment = process_environment();
     let opened = py.detach(|| get_runtime().block_on(connect(options, &environment)));
