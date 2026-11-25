@@ -36,7 +36,7 @@ pub enum RedisStatus {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum LastCheckedBy {
     NoChecker(()),
