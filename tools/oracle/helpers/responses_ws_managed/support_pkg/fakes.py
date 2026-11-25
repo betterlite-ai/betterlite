@@ -19,17 +19,48 @@ SSE_BODY: Final = b"".join(
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
-Setup = TypedDict("Setup", {"model": str, "litellm_metadata": dict[str, JsonValue] | None,
-    "custom_llm_provider": str | None, "api_key": str | None, "api_base": str | None,
-    "timeout": float | None, "first_message": str | None, "kwargs": dict[str, JsonValue]})
-ChunkRow = TypedDict("ChunkRow", {"kind": Literal["none", "json", "object", "broken"],
-    "value": JsonValue, "event_type": str | None, "dump": str | None})
-ScriptRow = TypedDict("ScriptRow", {"fail": str | None, "chunks": list[ChunkRow],
-    "raise_after": int | None, "raise_message": str})
-QuotaRow = TypedDict("QuotaRow", {"kind": Literal["rate_limit", "internal"], "message": str})
-SinkRow = TypedDict("SinkRow", {"fails_at": int | None, "message": str})
-Input = TypedDict("Input", {"setup": Setup, "frames": list[str], "disconnect": str,
-    "scripts": list[ScriptRow], "quota": QuotaRow | None, "sink": SinkRow})
+class Setup(TypedDict):
+    model: str
+    litellm_metadata: dict[str, JsonValue] | None
+    custom_llm_provider: str | None
+    api_key: str | None
+    api_base: str | None
+    timeout: float | None
+    first_message: str | None
+    kwargs: dict[str, JsonValue]
+
+
+class ChunkRow(TypedDict):
+    kind: Literal["none", "json", "object", "broken"]
+    value: JsonValue
+    event_type: str | None
+    dump: str | None
+
+
+class ScriptRow(TypedDict):
+    fail: str | None
+    chunks: list[ChunkRow]
+    raise_after: int | None
+    raise_message: str
+
+
+class QuotaRow(TypedDict):
+    kind: Literal["rate_limit", "internal"]
+    message: str
+
+
+class SinkRow(TypedDict):
+    fails_at: int | None
+    message: str
+
+
+class Input(TypedDict):
+    setup: Setup
+    frames: list[str]
+    disconnect: str
+    scripts: list[ScriptRow]
+    quota: QuotaRow | None
+    sink: SinkRow
 
 
 class ScriptedError(Exception):
