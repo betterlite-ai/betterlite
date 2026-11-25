@@ -1,7 +1,10 @@
+mod input;
+
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
+use self::input::{Call, Caller, InfoCall, Input, ListCall, Setup};
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::http::Request;
@@ -34,60 +37,11 @@ use betterlite_server::api::vector_management_read::{INFO_PATH, LIST_PATH, V1_LI
 use betterlite_server::auth::auth_identity::AuthContext;
 use betterlite_server::management_admins::scope::AdminCaller;
 use betterlite_server::management_rbac::guard::AdminPrivileges;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tower::ServiceExt as _;
 
 pub(crate) struct Op;
-
-#[derive(Deserialize)]
-struct Input {
-    calls: Vec<Call>,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "route", rename_all = "snake_case")]
-enum Call {
-    List(ListCall),
-    Info(InfoCall),
-}
-
-#[derive(Deserialize)]
-struct ListCall {
-    page: i64,
-    page_size: i64,
-    #[serde(default)]
-    alias: bool,
-    #[serde(flatten)]
-    setup: Setup,
-}
-
-#[derive(Deserialize)]
-struct InfoCall {
-    vector_store_id: String,
-    #[serde(flatten)]
-    setup: Setup,
-}
-
-#[derive(Deserialize)]
-struct Setup {
-    #[serde(default)]
-    database: Option<Vec<LiteLlmManagedVectorStore>>,
-    #[serde(default)]
-    registry: Option<Vec<LiteLlmManagedVectorStore>>,
-    caller: Caller,
-    #[serde(default)]
-    disabled: bool,
-}
-
-#[derive(Deserialize)]
-struct Caller {
-    user_id: String,
-    user_role: String,
-    #[serde(default)]
-    team_id: Option<String>,
-}
 
 impl Helper for Op {
     type Input = Input;
