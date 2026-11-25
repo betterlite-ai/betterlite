@@ -1,0 +1,48 @@
+task: B1700
+deviations:
+  - what: >-
+      An environment_variables config row stored as JSON text is decoded into its mapping before the
+      rotation, where LiteLLM hands the str to dict[str, str](...) and raises after the model rows
+      were already committed.
+    why: >-
+      betterlite's config writes store the mapping as JSON text, so refusing it would leave those
+      rows unable to rotate their environment variables; docs/compatibility.md reads stored JSON
+      text as standard JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5281-L5283
+  - what: >-
+      A credential row whose credential_info column is NULL is rotated and the column becomes an
+      empty object, where LiteLLM's CredentialItem requires a dict, so the per-credential except
+      logs the validation error and skips the row, leaving its values sealed under the retired key.
+    why: >-
+      betterlite's credential row type carries credential_info as a payload and
+      docs/compatibility.md reads a null value as the field's default; leaving the values under the
+      old key loses them once that key is discarded, which no working setup can want.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/credentials.py#L16-L19
+  - what: >-
+      Model rows are prepared from the read path's validated deployment projection, so a row the
+      projection rejects (no model, a non-numeric max_retries, an invalid provider_affinity_header)
+      is skipped while the rest rotate, where the pydantic error aborts LiteLLM's whole rotation;
+      and the rewritten litellm_params carries exactly the projection's fields, so a stored key the
+      projection reserves (self, params, __class__) does not survive the rotation.
+    why: >-
+      The task routes model preparation through B8382's projection and asks for pre-transaction
+      validation; that projection is the shape the router reads, so writing it back keeps the stored
+      row usable without the colliding keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7415-L7441
+kept_bugs:
+  - what: >-
+      An environment variable that does not decrypt is dropped from the stored mapping, so the row
+      loses it.
+    why: >-
+      decrypt_value_helper returns None for a value it cannot open and LiteLLM re-encrypts only the
+      values it returned, replacing the whole mapping; a working proxy has already applied the
+      readable values, so the drop is what its next read expects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7585-L7612
+  - what: >-
+      A credential value that does not decrypt is sealed again over the old ciphertext, so the
+      stored value keeps a second layer the new key cannot open.
+    why: >-
+      LiteLLM's decrypt_credentials falls back to the stored value and update_db_credential seals
+      whatever the patch carries; keeping the value rather than deleting it is what a working setup
+      relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9081-L9092
