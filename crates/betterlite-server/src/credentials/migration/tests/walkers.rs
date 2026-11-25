@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_db::encryption_scan::MAX_MIGRATION_JSON_BYTES;
 use betterlite_db::encryption_scan::MigrationJson;
 use betterlite_db::encryption_scan::ScanError;
 use betterlite_secrets::secret_codec::Algorithm;
@@ -563,5 +564,35 @@ async fn absent_config_and_sso_rows_report_zero_without_writing() {
     assert_eq!(location_of(&report, "cloudzero_settings").scanned, 0);
     assert_eq!(location_of(&report, "sso_config").scanned, 0);
     assert_eq!(location_of(&report, "team.callback_vars").scanned, 0);
+    assert!(store.writes().is_empty());
+}
+
+#[tokio::test]
+async fn a_stored_row_larger_than_the_decoder_cap_fails_instead_of_parsing() {
+    let store = FakeStore::default();
+    store
+        .scans
+        .lock()
+        .unwrap()
+        .push_back(covered_report([0, 0, 0, 0, 0, 0]));
+    let oversized = format!(
+        "{{\"api_key\":\"{}\"}}",
+        "a".repeat(MAX_MIGRATION_JSON_BYTES)
+    );
+    store
+        .configs
+        .lock()
+        .unwrap()
+        .insert("vantage_settings".to_owned(), secret(&oversized));
+    let mut rotation = FakeRotation::default();
+    let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
+    let error = migration(&store, &mut rotation, &cipher, true)
+        .run()
+        .await
+        .expect_err("the oversized row is rejected");
+    assert!(matches!(
+        error,
+        MigrationError::Store(FakeError::Scan(ScanError::InputTooLarge))
+    ));
     assert!(store.writes().is_empty());
 }
