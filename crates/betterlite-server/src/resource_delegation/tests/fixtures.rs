@@ -9,6 +9,7 @@ use std::sync::Arc;
 use betterlite_auth::auth_model_patterns::access_groups::AccessGroupLookup;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
 use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry, SharedRegistry};
 use betterlite_mcp::server_record::MCPServer;
 use tokio::sync::RwLock;
@@ -17,7 +18,7 @@ use crate::resource_delegation::admin_grant::AdminGrantError;
 use crate::resource_delegation::denial::Denial;
 use crate::resource_delegation::gates::GateError;
 use crate::resource_delegation::server_validation::KeyServersError;
-use crate::resource_delegation::{GrantReads, ObjectPermissionGrants, TeamGrants};
+use crate::resource_delegation::{GrantReads, ObjectPermissionGrants};
 
 use self::fakes::FakeRows;
 
@@ -52,11 +53,11 @@ pub(crate) fn server_grants(
     tool_permissions: Option<JsonData>,
 ) -> ObjectPermissionGrants {
     ObjectPermissionGrants {
-        mcp_servers: servers.map(strings),
-        mcp_access_groups: access_groups.map(strings),
-        mcp_tool_permissions: tool_permissions,
-        mcp_toolsets: None,
-        search_tools: None,
+        mcp_servers: servers.map(strings).unwrap_or_default(),
+        mcp_access_groups: access_groups.map(strings).unwrap_or_default(),
+        mcp_tool_permissions: tool_permissions.unwrap_or(JsonData::Null),
+        mcp_toolsets: Vec::new(),
+        search_tools: Vec::new(),
     }
 }
 
@@ -65,34 +66,44 @@ pub(crate) fn ceiling_grants(
     search_tools: Option<&[&str]>,
 ) -> ObjectPermissionGrants {
     ObjectPermissionGrants {
-        mcp_servers: None,
-        mcp_access_groups: None,
-        mcp_tool_permissions: None,
-        mcp_toolsets: toolsets.map(strings),
-        search_tools: search_tools.map(strings),
+        mcp_servers: Vec::new(),
+        mcp_access_groups: Vec::new(),
+        mcp_tool_permissions: JsonData::Null,
+        mcp_toolsets: toolsets.map(strings).unwrap_or_default(),
+        search_tools: search_tools.map(strings).unwrap_or_default(),
     }
 }
 
 pub(crate) fn tool_permission_grants(raw: JsonData) -> ObjectPermissionGrants {
     ObjectPermissionGrants {
-        mcp_servers: None,
-        mcp_access_groups: None,
-        mcp_tool_permissions: Some(raw),
-        mcp_toolsets: None,
-        search_tools: None,
+        mcp_servers: Vec::new(),
+        mcp_access_groups: Vec::new(),
+        mcp_tool_permissions: raw,
+        mcp_toolsets: Vec::new(),
+        search_tools: Vec::new(),
     }
 }
 
-pub(crate) fn team_grants(
+pub(crate) fn team_fields(
     team_id: &str,
     access_group_ids: &[&str],
     permission: Option<ObjectPermissionGrants>,
-) -> TeamGrants {
-    TeamGrants {
-        team_id: String::from(team_id),
-        access_group_ids: strings(access_group_ids),
-        object_permission: permission,
+) -> TeamFields {
+    let mut row = serde_json::json!({
+        "team_id": team_id,
+        "access_group_ids": access_group_ids,
+    });
+    if let Some(grants) = permission {
+        row["object_permission"] = serde_json::json!({
+            "object_permission_id": "team-permission",
+            "mcp_servers": grants.mcp_servers,
+            "mcp_access_groups": grants.mcp_access_groups,
+            "mcp_tool_permissions": grants.mcp_tool_permissions,
+            "mcp_toolsets": grants.mcp_toolsets,
+            "search_tools": grants.search_tools,
+        });
     }
+    serde_json::from_value(row).expect("the team row")
 }
 
 pub(crate) fn reads<'reads>(

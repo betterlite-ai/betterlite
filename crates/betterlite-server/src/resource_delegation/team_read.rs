@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::error::Error as StdError;
 
 use betterlite_auth::auth_model_patterns::access_groups::{ResourceField, collect_resources};
+use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
 use betterlite_mcp::access_group_servers::AccessGroupServerRows;
 use betterlite_mcp::server_record::MCPServer;
 use thiserror::Error;
@@ -13,8 +15,6 @@ use crate::mcp_permission_ids::team::TeamObjectPermission;
 use crate::mcp_permission_ids::team::resolve_team_allowed_mcp_servers as resolve_direct_team_grants; // ast-grep-ignore: no-long-names - the LiteLLM helper this task reuses
 
 use super::GrantReads;
-use super::ObjectPermissionGrants;
-use super::TeamGrants;
 
 #[derive(Debug, Error)]
 pub enum TeamReadError<RowError>
@@ -27,27 +27,16 @@ where
     Direct(#[from] TeamAllowedServersError<RowError>),
 }
 
-fn direct_permission(permission: &ObjectPermissionGrants) -> TeamObjectPermission {
-    TeamObjectPermission {
-        mcp_servers: permission.mcp_servers.clone(),
-        mcp_access_groups: permission.mcp_access_groups.clone(),
-        mcp_tool_permissions: permission.mcp_tool_permissions.clone(),
-    }
-}
-
-pub async fn team_allowed_server_ids<Rows>(
-    team: Option<&TeamGrants>,
+async fn unified_server_ids<Rows>(
+    access_group_ids: &[String],
     reads: &GrantReads<'_, Rows>,
 ) -> Result<BTreeSet<String>, TeamReadError<Rows::Error>>
 where
     Rows: AccessGroupServerRows,
 {
-    let Some(team_grants) = team else {
-        return Ok(BTreeSet::new());
-    };
     // B747's lookup keeps an unavailable group out of the result unless the caller reads the database only.
     let unified_ids = collect_resources(
-        &team_grants.access_group_ids,
+        access_group_ids,
         ResourceField::McpServerIds,
         reads.unified,
         false,
@@ -66,11 +55,44 @@ where
             allowed.insert(identifier);
         }
     }
-    let Some(permission) = team_grants.object_permission.as_ref() else {
+    Ok(allowed)
+}
+
+pub async fn team_allowed_server_ids<Rows>(
+    team: Option<&TeamFields>,
+    reads: &GrantReads<'_, Rows>,
+) -> Result<BTreeSet<String>, TeamReadError<Rows::Error>>
+where
+    Rows: AccessGroupServerRows,
+{
+    let Some(fields) = team else {
+        return Ok(BTreeSet::new());
+    };
+    let access_group_ids = fields.base.access_group_ids.as_deref().unwrap_or_default();
+    let mut allowed = unified_server_ids(access_group_ids, reads).await?;
+    let Some(permission) = fields.object_permission.as_ref() else {
         return Ok(allowed);
     };
     let direct = resolve_direct_team_grants(
-        &direct_permission(permission),
+        &TeamObjectPermission {
+            mcp_servers: permission.mcp_servers.0.clone(),
+            mcp_access_groups: permission.mcp_access_groups.0.clone(),
+            mcp_tool_permissions: permission.mcp_tool_permissions.as_ref().map(|grants| {
+                JsonData::Object(
+                    grants
+                        .iter()
+                        .map(|(server, tools)| {
+                            (
+                                server.clone(),
+                                JsonData::Array(
+                                    tools.iter().cloned().map(JsonData::String).collect(),
+                                ),
+                            )
+                        })
+                        .collect(),
+                )
+            }),
+        },
         reads.client,
         reads.registry,
         reads.rows,

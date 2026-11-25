@@ -2,13 +2,13 @@ use std::collections::BTreeSet;
 
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
 use betterlite_mcp::registry::servers::SharedRegistry;
 
 use crate::mcp_permission_ids::cleanup::NO_MCP_SERVERS;
 use crate::mcp_permission_ids::decode::McpToolGrantsJsonError;
 use crate::mcp_permission_ids::team::ALL_PROXY_MCP_SERVERS;
 use crate::resource_delegation::ObjectPermissionGrants;
-use crate::resource_delegation::TeamGrants;
 use crate::resource_delegation::grandfather::{GrandfatherError, grandfathered_server_ids};
 use crate::resource_delegation::server_validation::{KeyServersError, validate_key_servers};
 
@@ -16,7 +16,7 @@ use super::fixtures::database::TestDatabase;
 use super::fixtures::fakes::{FakeRows, PortFailure};
 use super::fixtures::{
     denied_detail, json, reads, registry, registry_server, server_grants, string_set, strings,
-    team_grants, tool_permission_grants,
+    team_fields, tool_permission_grants,
 };
 
 async fn outcome(
@@ -30,7 +30,7 @@ async fn outcome(
 
 async fn validate_grant(
     permission: &mut JsonData,
-    team: &TeamGrants,
+    team: &TeamFields,
     existing: &ObjectPermissionGrants,
     shared: &SharedRegistry,
     client: Option<PrismaClient<'_>>,
@@ -66,11 +66,11 @@ async fn grandfather_resolved_only() {
         Vec::new(),
     );
     let existing = ObjectPermissionGrants {
-        mcp_servers: Some(strings(&["old-alias", "gone", "cfg-old"])),
-        mcp_access_groups: Some(strings(&["cfg-extra"])),
-        mcp_tool_permissions: Some(json(r#"{"cfg-tool": [], "ghost": ["t"]}"#)),
-        mcp_toolsets: Some(strings(&["cfg-toolset"])),
-        search_tools: Some(strings(&["cfg-extra"])),
+        mcp_servers: strings(&["old-alias", "gone", "cfg-old"]),
+        mcp_access_groups: strings(&["cfg-extra"]),
+        mcp_tool_permissions: json(r#"{"cfg-tool": [], "ghost": ["t"]}"#),
+        mcp_toolsets: strings(&["cfg-toolset"]),
+        search_tools: strings(&["cfg-extra"]),
     };
     let resolved = grandfathered_server_ids(Some(&existing), Some(database.prisma()), &shared)
         .await
@@ -154,7 +154,7 @@ async fn grandfather_shrinking_grants_pass_and_widening_denied() {
         Vec::new(),
     );
     let kept = server_grants(Some(&["cfg-old", "cfg-tool"]), None, None);
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &[],
         Some(server_grants(Some(&["cfg-old"]), None, None)),
@@ -214,7 +214,7 @@ async fn grandfather_decode_errors() {
 }
 
 #[tokio::test]
-async fn grandfather_falsey_tool_grants_are_empty() {
+async fn grandfather_null_and_empty_tool_grants_grant_nothing() {
     let database = TestDatabase::start().await;
     let shared = registry(Vec::new(), Vec::new());
     assert!(
@@ -223,20 +223,37 @@ async fn grandfather_falsey_tool_grants_are_empty() {
             .unwrap()
             .is_empty()
     );
-    assert!(
-        outcome("false", &database, &shared)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    assert!(outcome("0", &database, &shared).await.unwrap().is_empty());
-    assert!(
-        outcome(r#""""#, &database, &shared)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    assert!(outcome("[]", &database, &shared).await.unwrap().is_empty());
     assert!(outcome("{}", &database, &shared).await.unwrap().is_empty());
+    database.close().await;
+}
+
+#[tokio::test]
+async fn grandfather_untyped_tool_grants_are_rejected() {
+    let database = TestDatabase::start().await;
+    let shared = registry(Vec::new(), Vec::new());
+    assert!(matches!(
+        outcome("false", &database, &shared).await,
+        Err(GrandfatherError::ToolGrants(
+            McpToolGrantsJsonError::NotAnObject
+        ))
+    ));
+    assert!(matches!(
+        outcome("0", &database, &shared).await,
+        Err(GrandfatherError::ToolGrants(
+            McpToolGrantsJsonError::NotAnObject
+        ))
+    ));
+    assert!(matches!(
+        outcome(r#""""#, &database, &shared).await,
+        Err(GrandfatherError::ToolGrants(
+            McpToolGrantsJsonError::Bounded(_)
+        ))
+    ));
+    assert!(matches!(
+        outcome("[]", &database, &shared).await,
+        Err(GrandfatherError::ToolGrants(
+            McpToolGrantsJsonError::NotAnObject
+        ))
+    ));
     database.close().await;
 }

@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
 
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
 use thiserror::Error;
 
-use super::TeamGrants;
 use super::denial::Denial;
 use super::quoted_list;
 use super::requested::RequestedError;
@@ -19,13 +19,13 @@ pub enum GateError {
 
 pub fn validate_requested_toolsets(
     requested: &BTreeSet<String>,
-    team: Option<&TeamGrants>,
+    team: Option<&TeamFields>,
     is_proxy_admin: bool,
 ) -> Result<(), Denial> {
     if requested.is_empty() {
         return Ok(());
     }
-    let Some(team_grants) = team else {
+    let Some(team_fields) = team else {
         if is_proxy_admin {
             return Ok(());
         }
@@ -36,7 +36,7 @@ pub fn validate_requested_toolsets(
             ),
         });
     };
-    let team_toolsets: &[String] = team_grants
+    let team_toolsets: &[String] = team_fields
         .object_permission
         .as_ref()
         .and_then(|permission| permission.mcp_toolsets.as_deref())
@@ -49,7 +49,7 @@ pub fn validate_requested_toolsets(
     if disallowed.is_empty() {
         return Ok(());
     }
-    let team_id = team_grants.team_id.as_str();
+    let team_id = team_fields.base.team_id.as_str();
     let disallowed_text = quoted_list(&disallowed);
     let allowed_text = quoted_list(team_toolsets);
     Err(Denial {
@@ -61,7 +61,7 @@ pub fn validate_requested_toolsets(
 
 pub fn validate_vector_stores(
     permission: Option<&JsonData>,
-    team: Option<&TeamGrants>,
+    team: Option<&TeamFields>,
     is_proxy_admin: bool,
 ) -> Result<(), GateError> {
     let requested: BTreeSet<String> = requested_entries("vector_stores", permission, true)?;
@@ -78,23 +78,28 @@ pub fn validate_vector_stores(
 
 pub fn validate_search_tools(
     permission: Option<&JsonData>,
-    team: Option<&TeamGrants>,
+    team: Option<&TeamFields>,
     is_proxy_admin: bool,
 ) -> Result<(), GateError> {
     let requested: Vec<String> = requested_entries("search_tools", permission, true)?;
     if requested.is_empty() {
         return Ok(());
     }
-    if team.is_none() && !is_proxy_admin {
-        return Err(GateError::Denied(personal_search_denial(&requested)));
-    }
-    let Some(team_grants) = team else {
-        return Ok(());
+    let Some(team_fields) = team else {
+        if is_proxy_admin {
+            return Ok(());
+        }
+        let disallowed_text = quoted_list(&requested);
+        return Err(GateError::Denied(Denial {
+            detail: format!(
+                "Key is not in a team. search_tools cannot be assigned to personal keys by non-admin callers. Disallowed search tools: {disallowed_text}."
+            ),
+        }));
     };
-    let team_tools: &[String] = team_grants
+    let team_tools: &[String] = team_fields
         .object_permission
         .as_ref()
-        .and_then(|grants| grants.search_tools.as_deref())
+        .and_then(|stored| stored.search_tools.0.as_deref())
         .unwrap_or_default();
     if team_tools.is_empty() {
         return Ok(());
@@ -108,7 +113,7 @@ pub fn validate_search_tools(
     if disallowed.is_empty() {
         return Ok(());
     }
-    let team_id = team_grants.team_id.as_str();
+    let team_id = team_fields.base.team_id.as_str();
     let disallowed_text = quoted_list(&disallowed);
     let allowed_text = quoted_list(team_tools);
     Err(GateError::Denied(Denial {
@@ -116,13 +121,4 @@ pub fn validate_search_tools(
             "Key requests search tools not allowed by team '{team_id}': {disallowed_text}. Team allows: {allowed_text}."
         ),
     }))
-}
-
-fn personal_search_denial(requested: &[String]) -> Denial {
-    let disallowed_text = quoted_list(requested);
-    Denial {
-        detail: format!(
-            "Key is not in a team. search_tools cannot be assigned to personal keys by non-admin callers. Disallowed search tools: {disallowed_text}."
-        ),
-    }
 }

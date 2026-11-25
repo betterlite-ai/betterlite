@@ -12,31 +12,16 @@ use betterlite_auth::auth_model_patterns::access_groups::AccessGroupLookup;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_mcp::registry::servers::SharedRegistry;
-use serde::Deserialize;
-
-// The permission fields a key or team can carry for MCP servers, toolsets and search tools.
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct ObjectPermissionGrants {
-    #[serde(default)]
-    pub mcp_servers: Option<Vec<String>>,
-    #[serde(default)]
-    pub mcp_access_groups: Option<Vec<String>>,
-    #[serde(default)]
-    pub mcp_tool_permissions: Option<JsonData>,
-    #[serde(default)]
-    pub mcp_toolsets: Option<Vec<String>>,
-    #[serde(default)]
-    pub search_tools: Option<Vec<String>>,
-}
 
 #[derive(Clone, Debug)]
-pub struct TeamGrants {
-    pub team_id: String,
-    pub access_group_ids: Vec<String>,
-    pub object_permission: Option<ObjectPermissionGrants>,
+pub struct ObjectPermissionGrants {
+    pub mcp_servers: Vec<String>,
+    pub mcp_access_groups: Vec<String>,
+    pub mcp_tool_permissions: JsonData,
+    pub mcp_toolsets: Vec<String>,
+    pub search_tools: Vec<String>,
 }
 
-// Everything the team reads need: the optional database, the MCP registry records, the access-group row port and the unified access-group lookup.
 pub struct GrantReads<'reads, Rows> {
     pub client: Option<PrismaClient<'reads>>,
     pub registry: &'reads SharedRegistry,

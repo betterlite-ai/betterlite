@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::error::Error as StdError;
 
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
 use betterlite_mcp::access_group_servers::AccessGroupServerRows;
 use betterlite_mcp::server_record::MCPServer;
 use thiserror::Error;
@@ -16,7 +17,6 @@ use crate::mcp_permission_ids::registry::allow_all_keys_server_ids;
 
 use super::GrantReads;
 use super::ObjectPermissionGrants;
-use super::TeamGrants;
 use super::denial::Denial;
 use super::gates::validate_requested_toolsets;
 use super::grandfather::GrandfatherError;
@@ -48,7 +48,7 @@ where
 }
 
 struct ServerScope<'grants> {
-    team: Option<&'grants TeamGrants>,
+    team: Option<&'grants TeamFields>,
     allow_all: &'grants BTreeSet<String>,
     team_allowed: &'grants BTreeSet<String>,
     existing: Option<&'grants ObjectPermissionGrants>,
@@ -91,13 +91,13 @@ fn permitted_grants(
 }
 
 fn check_requested_groups(
-    team: Option<&TeamGrants>,
+    team: Option<&TeamFields>,
     requested: &BTreeSet<String>,
     teamless_admin: bool,
 ) -> Result<(), Denial> {
     let team_groups: BTreeSet<String> = team
-        .and_then(|team_grants| team_grants.object_permission.as_ref())
-        .and_then(|permission| permission.mcp_access_groups.as_ref())
+        .and_then(|fields| fields.object_permission.as_ref())
+        .and_then(|permission| permission.mcp_access_groups.0.as_deref())
         .map(|groups| groups.iter().cloned().collect())
         .unwrap_or_default();
     let permitted = permitted_grants(&team_groups, requested, teamless_admin);
@@ -105,7 +105,7 @@ fn check_requested_groups(
     if disallowed.is_empty() {
         return Ok(());
     }
-    let Some(team_grants) = team else {
+    let Some(fields) = team else {
         return Err(Denial {
             detail: format!(
                 "Key is not in a team. MCP access groups cannot be assigned to keys outside of a team. Disallowed groups: {}.",
@@ -114,7 +114,7 @@ fn check_requested_groups(
         });
     };
     Err(team_denial(
-        &team_grants.team_id,
+        &fields.base.team_id,
         "MCP access groups",
         &disallowed,
         &team_groups,
@@ -181,7 +181,7 @@ where
         }));
     };
     Err(KeyServersError::Denied(team_denial(
-        &team.team_id,
+        &team.base.team_id,
         "MCP servers",
         &disallowed,
         scope.team_allowed,
@@ -191,7 +191,7 @@ where
 
 pub async fn validate_key_servers<Rows>(
     permission: Option<&mut JsonData>,
-    team: Option<&TeamGrants>,
+    team: Option<&TeamFields>,
     reads: GrantReads<'_, Rows>,
     is_proxy_admin: bool,
     existing_key_permission: Option<&ObjectPermissionGrants>,

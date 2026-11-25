@@ -1,16 +1,17 @@
 use betterlite_auth::auth_model_patterns::access_groups::AccessGroupLookup;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
 use betterlite_mcp::registry::servers::SharedRegistry;
 
+use crate::resource_delegation::ObjectPermissionGrants;
 use crate::resource_delegation::server_validation::{KeyServersError, validate_key_servers};
 use crate::resource_delegation::team_read::team_allowed_server_ids;
-use crate::resource_delegation::{ObjectPermissionGrants, TeamGrants};
 
 use super::fixtures::fakes::{FakeGroups, FakeRows, PortFailure};
 use super::fixtures::logs::Logs;
 use super::fixtures::{
     ceiling_grants, denied_detail, json, reads, registry, registry_server, server_grants,
-    string_set, team_grants,
+    string_set, team_fields,
 };
 
 struct Case<'case> {
@@ -22,7 +23,7 @@ struct Case<'case> {
 
 async fn check(
     permission: Option<&mut JsonData>,
-    team: Option<&TeamGrants>,
+    team: Option<&TeamFields>,
     case: &Case<'_>,
     existing: Option<&ObjectPermissionGrants>,
 ) -> Result<(), KeyServersError<PortFailure>> {
@@ -41,7 +42,7 @@ async fn empty_grants_no_io() {
         unified: Some(&unified),
         admin: false,
     };
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &["group-a"],
         Some(server_grants(Some(&["srv-a"]), Some(&["group-a"]), None)),
@@ -178,7 +179,7 @@ async fn team_ceiling_applies_to_team_admin() {
         Vec::new(),
     );
     let rows = FakeRows::silent();
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &[],
         Some(server_grants(Some(&["cfg-b"]), Some(&["g-team"]), None)),
@@ -207,7 +208,7 @@ async fn team_ceiling_applies_to_team_admin() {
 async fn team_group_ceiling_applies_to_team_admin() {
     let shared = registry(Vec::new(), Vec::new());
     let rows = FakeRows::silent();
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &[],
         Some(server_grants(None, Some(&["g-team"]), None)),
@@ -244,7 +245,7 @@ async fn group_source_not_unified() {
         unified: Some(&unified),
         admin: false,
     };
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &["group-a"],
         Some(server_grants(None, None, None)),
@@ -273,7 +274,7 @@ async fn team_object_permission_group_allows() {
         unified: None,
         admin: false,
     };
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &[],
         Some(server_grants(None, Some(&["group-a"]), None)),
@@ -289,7 +290,7 @@ async fn group_not_grandfathered() {
     let shared = registry(Vec::new(), Vec::new());
     let rows = FakeRows::silent();
     let existing = server_grants(None, Some(&["old-group"]), None);
-    let team = team_grants("team-1", &[], Some(server_grants(None, None, None)));
+    let team = team_fields("team-1", &[], Some(server_grants(None, None, None)));
     let mut kept_group = json(r#"{"mcp_access_groups": ["old-group"]}"#);
     let team_error = validate_key_servers(
         Some(&mut kept_group),
@@ -331,21 +332,21 @@ async fn toolset_empty_ceiling_vs_subset() {
         admin: false,
     };
     let requested = r#"{"mcp_toolsets": ["t-a", "t-b"]}"#;
-    let absent = team_grants("team-1", &[], Some(ceiling_grants(None, None)));
+    let absent = team_fields("team-1", &[], Some(ceiling_grants(None, None)));
     let mut absent_request = json(requested);
     check(Some(&mut absent_request), Some(&absent), &case, None)
         .await
         .unwrap();
-    let empty = team_grants("team-1", &[], Some(ceiling_grants(Some(&[]), None)));
+    let empty = team_fields("team-1", &[], Some(ceiling_grants(Some(&[]), None)));
     let mut empty_request = json(requested);
     check(Some(&mut empty_request), Some(&empty), &case, None)
         .await
         .unwrap();
-    let open = team_grants("team-1", &[], None);
+    let open = team_fields("team-1", &[], None);
     check(Some(&mut json(requested)), Some(&open), &case, None)
         .await
         .unwrap();
-    let ceiling = team_grants("team-1", &[], Some(ceiling_grants(Some(&["t-a"]), None)));
+    let ceiling = team_fields("team-1", &[], Some(ceiling_grants(Some(&["t-a"]), None)));
     let mut subset = json(r#"{"mcp_toolsets": ["t-a"]}"#);
     check(Some(&mut subset), Some(&ceiling), &case, None)
         .await
@@ -356,7 +357,7 @@ async fn toolset_empty_ceiling_vs_subset() {
 async fn toolset_ceiling_denies_members_and_admins() {
     let shared = registry(Vec::new(), Vec::new());
     let rows = FakeRows::silent();
-    let ceiling = team_grants("team-1", &[], Some(ceiling_grants(Some(&["t-a"]), None)));
+    let ceiling = team_fields("team-1", &[], Some(ceiling_grants(Some(&["t-a"]), None)));
     let requested = r#"{"mcp_toolsets": ["t-a", "t-b"]}"#;
     let case = Case {
         shared: &shared,
@@ -431,7 +432,7 @@ async fn unified_and_direct_team_grants() {
     );
     let rows = FakeRows::answering(&["db-group-server"]);
     let unified = FakeGroups::answering(&[("group-a", &["cfg-u", "ghost-name"])]);
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &["group-a"],
         Some(server_grants(
@@ -470,7 +471,7 @@ async fn team_permission_absent_returns_unified_ids() {
     );
     let rows = FakeRows::silent();
     let unified = FakeGroups::answering(&[("group-a", &["cfg-u", "ghost-name"])]);
-    let team = team_grants("team-1", &["group-a"], None);
+    let team = team_fields("team-1", &["group-a"], None);
     let grant_reads = reads(&shared, None, &rows, Some(&unified));
     let allowed = team_allowed_server_ids(Some(&team), &grant_reads)
         .await
@@ -488,7 +489,7 @@ async fn unlisted_server_denial_lists_all_team_grants() {
     );
     let rows = FakeRows::answering(&["db-group-server"]);
     let unified = FakeGroups::answering(&[("group-a", &["cfg-u", "ghost-name"])]);
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &["group-a"],
         Some(server_grants(
@@ -536,7 +537,7 @@ async fn mcp_denial_messages() {
         unified: None,
         admin: false,
     };
-    let team = team_grants(
+    let team = team_fields(
         "team-1",
         &[],
         Some(server_grants(Some(&["srv-a"]), None, None)),

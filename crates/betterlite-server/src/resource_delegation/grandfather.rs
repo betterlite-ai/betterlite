@@ -33,13 +33,8 @@ pub async fn grandfathered_server_ids(
     if client.is_none() {
         return Ok(BTreeSet::new());
     }
-    let mut identifiers: BTreeSet<String> = stored.mcp_servers.iter().flatten().cloned().collect();
-    // Python's `or {}` skips the stored-JSON decoder for a falsey column before it reads any keys
-    if let Some(raw) = &stored.mcp_tool_permissions
-        && !is_falsey(raw)
-    {
-        identifiers.extend(stored_tool_keys(raw)?);
-    }
+    let mut identifiers: BTreeSet<String> = stored.mcp_servers.iter().cloned().collect();
+    identifiers.extend(stored_tool_keys(&stored.mcp_tool_permissions)?);
     identifiers.remove(NO_MCP_SERVERS);
     identifiers.remove(ALL_PROXY_MCP_SERVERS);
     let registry_servers: Vec<MCPServer> = {
@@ -51,24 +46,14 @@ pub async fn grandfathered_server_ids(
     Ok(flatten_resolved_ids(&resolved))
 }
 
-fn is_falsey(value: &JsonData) -> bool {
-    match value {
-        JsonData::Null => true,
-        JsonData::Bool(flag) => !*flag,
-        JsonData::Number(number) => number.as_f64() == Some(0.0),
-        JsonData::String(text) => text.is_empty(),
-        JsonData::Array(items) => items.is_empty(),
-        JsonData::Object(fields) => fields.is_empty(),
-    }
-}
-
 fn stored_tool_keys(raw: &JsonData) -> Result<BTreeSet<String>, McpToolGrantsJsonError> {
     match raw {
+        JsonData::Null => Ok(BTreeSet::new()),
+        JsonData::Object(fields) => Ok(fields.keys().cloned().collect()),
         JsonData::String(text) => Ok(decode_mcp_tool_grants_json(text.as_bytes())?
             .into_keys()
             .collect()),
-        JsonData::Object(fields) => Ok(fields.keys().cloned().collect()),
-        JsonData::Null | JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) => {
+        JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) => {
             Err(McpToolGrantsJsonError::NotAnObject)
         }
     }
