@@ -133,14 +133,14 @@ impl NativeRedis {
         let cache = Arc::clone(&self.cache);
         let remaining = py.detach(|| get_runtime().block_on(cache.async_get_ttl(key)));
         let seconds = error::backend_err(remaining)?;
-        Ok(whole_answer(seconds))
+        Ok(seconds.map(|value| value.to_string()))
     }
 
     fn async_ttl<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
         let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
         future_into_py(py, async move {
             let seconds = error::backend_err(cache.async_get_ttl(&owned).await)?;
-            Ok(whole_answer(seconds))
+            Ok(seconds.map(|value| value.to_string()))
         })
     }
 
@@ -229,13 +229,6 @@ async fn count(cache: Arc<RedisCache>, key: String, by: f64, ttl: Option<i64>) -
     let counted = error::backend_err(cache.async_increment(&key, by, ttl, false).await)?;
     let text = convert::number_text(counted).map_err(PyErr::from)?;
     Ok(text)
-}
-
-fn whole_answer(seconds: Option<i64>) -> Option<String> {
-    match seconds {
-        Some(value) => Some(value.to_string()),
-        None => None,
-    }
 }
 
 struct QuietHooks;

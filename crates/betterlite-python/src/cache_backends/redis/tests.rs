@@ -101,12 +101,6 @@ fn backends_redis_answers_the_value_text() {
 }
 
 #[test]
-fn backends_redis_answers_whole_seconds() {
-    assert_eq!(whole_answer(Some(5_i64)), Some("5".to_owned()));
-    assert_eq!(whole_answer(None), None);
-}
-
-#[test]
 fn backends_redis_gate_admits() {
     let gate = QuietGate;
     gate.enter("probe").unwrap();
