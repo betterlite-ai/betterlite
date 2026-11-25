@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator, Awaitable, Coroutine, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Coroutine, Mapping
 from typing import Final, Protocol, TypeAlias, TypedDict, TypeVar, Unpack
 
 from pydantic import JsonValue, TypeAdapter
@@ -205,7 +205,7 @@ async def asend_message_streaming(  # noqa: PLR0913, PLR0917  # https://github.c
     proxy_server_request: dict[str, JsonValue] | None = None,
     agent_extra_headers: dict[str, str] | None = None,
     **kwargs: CallValue,
-) -> AsyncIterator[SendStreamingMessageResponse]:
+) -> AsyncGenerator[SendStreamingMessageResponse, None]:
     _ = proxy_server_request
     request_text, client = call_values(request, a2a_client)
     fields = CallField(
