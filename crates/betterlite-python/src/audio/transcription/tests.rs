@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{hidden_params, prepare, request_duration};
-use crate::audio::convert::{AudioCallWire, parse};
+use crate::audio::convert::{AudioCallWire, AudioSettings, parse};
 use crate::audio::session::AudioSession;
 use crate::completion::setup::outbound_client;
 use betterlite_models::call_helpers::headers::{AdditionalHeaders, ProviderHeaderProjection};
@@ -11,6 +11,7 @@ use betterlite_openai::api::transcription_contract::TranscriptionResponse;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_files::CallFile;
+use betterlite_sdk::call_setup::RequestMap;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -94,7 +95,7 @@ fn transcription_prepare_rejects_another_provider() {
         r#"{"model":"vertex_ai/whisper","file":{"$file":{"name":"clip.wav","blob":0}},
             "api_key":"sk-test"}"#,
     );
-    let failure = prepare(&session(), &call, &files).unwrap_err();
+    let failure = prepare(&session(), &call, &files).err().unwrap();
     assert!(
         failure
             .message
@@ -112,9 +113,10 @@ fn request_request_duration_reads_the_wav_header() {
 #[test]
 fn request_hidden_params_carry_the_handler_values() {
     let request = AudioCallWire {
+        arguments: RequestMap::new(),
+        settings: AudioSettings::default(),
         atranscription: false,
         file_from_kwargs: false,
-        ..AudioCallWire::default()
     };
     let hidden = hidden_params(
         &reply(r#"{"text":"hello","duration":1.5}"#),
@@ -144,9 +146,10 @@ fn request_hidden_params_carry_the_handler_values() {
 #[test]
 fn request_hidden_params_compute_the_duration() {
     let request = AudioCallWire {
+        arguments: RequestMap::new(),
+        settings: AudioSettings::default(),
         atranscription: false,
         file_from_kwargs: false,
-        ..AudioCallWire::default()
     };
     let hidden = hidden_params(
         &reply(r#"{"text":"hello"}"#),
@@ -165,9 +168,10 @@ fn request_hidden_params_compute_the_duration() {
 #[test]
 fn request_hidden_params_compute_for_an_async_kwarg_file() {
     let request = AudioCallWire {
+        arguments: RequestMap::new(),
+        settings: AudioSettings::default(),
         atranscription: true,
         file_from_kwargs: true,
-        ..AudioCallWire::default()
     };
     let hidden = hidden_params(
         &reply(r#"{"text":"hello"}"#),
@@ -188,9 +192,10 @@ fn request_hidden_params_take_the_async_duration() {
     let mut stored = reply(r#"{"text":"hello"}"#);
     stored.duration = StoredDuration::Known(Some(Decimal::new(3, 1)));
     let request = AudioCallWire {
+        arguments: RequestMap::new(),
+        settings: AudioSettings::default(),
         atranscription: true,
         file_from_kwargs: false,
-        ..AudioCallWire::default()
     };
     let hidden = hidden_params(&stored, &processed(), 1.0_f64, &request, "whisper-1").unwrap();
     assert!(matches!(

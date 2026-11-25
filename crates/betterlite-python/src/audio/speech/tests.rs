@@ -41,7 +41,7 @@ fn speech_prepare_accepts_the_openai_provider() {
 fn speech_prepare_rejects_another_provider() {
     let call =
         wire(r#"{"model":"vertex_ai/tts","input":"hi","voice":"alloy","api_key":"sk-test"}"#);
-    let failure = prepare(&session(), &call).unwrap_err();
+    let failure = prepare(&session(), &call).err().unwrap();
     assert!(
         failure
             .message
@@ -52,13 +52,13 @@ fn speech_prepare_rejects_another_provider() {
 #[test]
 fn speech_prepare_requires_a_voice() {
     let call = wire(r#"{"model":"tts-1","input":"hi","api_key":"sk-test"}"#);
-    let failure = prepare(&session(), &call).unwrap_err();
+    let failure = prepare(&session(), &call).err().unwrap();
     assert!(failure.message.contains("'voice' is required"));
 }
 
 #[test]
 fn speech_prepare_requires_an_api_key() {
     let call = wire(r#"{"model":"tts-1","input":"hi","voice":"alloy"}"#);
-    let failure = prepare(&session(), &call).unwrap_err();
+    let failure = prepare(&session(), &call).err().unwrap();
     assert!(failure.message.contains("must be set by passing api_key"));
 }

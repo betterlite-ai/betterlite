@@ -176,7 +176,7 @@ fn error_file_marker_without_a_blob() {
 #[test]
 fn error_unknown_response_format() {
     let call = speech_wire(r#"{"model":"tts-1","input":"hi","response_format":"ogg"}"#);
-    let error = speech_values(&call.arguments).unwrap_err();
+    let error = speech_values(&call.arguments).err().unwrap();
     assert!(matches!(error, ConvertError::Field { name, .. } if name == "response_format"));
 }
 
@@ -219,8 +219,10 @@ fn request_max_retries_reads_the_argument() {
 fn error_no_files_never_reads_a_path() {
     let error = NoFiles.read(Path::new("clip.wav")).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::NotFound);
-    let opened = NoFiles.open(Path::new("clip.wav")).unwrap_err();
-    assert_eq!(opened.kind(), io::ErrorKind::NotFound);
+    assert!(matches!(
+        NoFiles.open(Path::new("clip.wav")),
+        Err(error) if error.kind() == io::ErrorKind::NotFound
+    ));
 }
 
 #[test]
