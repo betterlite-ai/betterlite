@@ -18,7 +18,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 bytes = "1.12.1"
-chrono = { version = "0.4.45", default-features = false, features = ["alloc", "serde"] }
+chrono = { version = "0.4.45", default-features = false, features = ["alloc", "now", "serde"] }
 derive_more = { version = "2.1.1", default-features = false, features = ["display"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
