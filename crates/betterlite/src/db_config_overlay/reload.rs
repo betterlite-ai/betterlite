@@ -1,0 +1,137 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::includes::ConfigMap;
+use betterlite_config::sections::secret_manager_bootstrap::Raw as BootstrapRaw;
+use betterlite_config::sections::settings::{DbRow, JsonValue, Section, SettingsStore};
+use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
+
+use super::environ::Resolver;
+use super::error::OverlayError;
+use super::pass_through::endpoints_beside_db;
+use super::rows::overlay_db_rows;
+use super::source::{ConfigSource, read_config};
+use super::state::{
+    OverlayDatabase, OverlayState, PASS_THROUGH_ENDPOINTS, STORE_SECTIONS, settings_mapping,
+    store_mut,
+};
+
+const GENERAL_SETTINGS: &str = "general_settings";
+
+// get_config: read, reload the stores, overlay the rows, resolve, then the snapshot and the returned copy agree
+pub async fn reload_config(
+    state: &mut OverlayState,
+    source: &ConfigSource,
+    database: Option<&OverlayDatabase>,
+    env: &mut BTreeMap<String, String>,
+) -> Result<ConfigWithBaseline, OverlayError> {
+    let file_config = read_config(source, env).await?;
+    for section in STORE_SECTIONS {
+        if let Some(store) = store_mut(&mut state.config, section) {
+            reload_store(store, section, file_config.get(section.name()))?;
+        }
+    }
+    if let Some(backed) = database.filter(|_| state.config.store_model_in_db) {
+        overlay_db_rows(state, backed, env).await?;
+    }
+    let mut config = resolved_config(state, &file_config);
+    initialize_secret_manager(state, &config, source, env)?;
+    let resolver = Resolver {
+        lookup: &state.secrets.lookup,
+        env,
+    };
+    resolver.resolve_entries(config.values_mut(), 0)?;
+    for section in STORE_SECTIONS {
+        let Some(values) = config.get(section.name()).filter(|value| value.is_object()) else {
+            continue;
+        };
+        if let Some(store) = store_mut(&mut state.config, section) {
+            store.apply_runtime_values(settings_mapping(Some(values)));
+        }
+    }
+    state.config.replace_snapshot(&config);
+    Ok(ConfigWithBaseline::with_baseline(config.clone(), config))
+}
+
+// _reload_settings_store: the file values replace the old ones, the stale row goes, and the serving pass-through list stays
+fn reload_store(
+    store: &mut SettingsStore,
+    section: Section,
+    section_config: Option<&JsonValue>,
+) -> Result<(), OverlayError> {
+    let serving = store
+        .get(PASS_THROUGH_ENDPOINTS)
+        .filter(|value| !value.is_null())
+        .cloned();
+    store.load_yaml(settings_mapping(section_config));
+    store.apply_db_row(DbRow::from(section), BTreeMap::new());
+    if let Some(endpoints) = serving.filter(|_| section.is_resource_list(PASS_THROUGH_ENDPOINTS)) {
+        store.insert(PASS_THROUGH_ENDPOINTS, endpoints)?;
+    }
+    Ok(())
+}
+
+// _config_with_resolved_settings: a section the file has as a mapping, or one its store holds values for, comes from the store
+fn resolved_config(state: &OverlayState, file_config: &ConfigMap) -> ConfigMap {
+    let mut config = file_config.clone();
+    for section in STORE_SECTIONS {
+        let Some(store) = state.config.settings_store(section) else {
+            continue;
+        };
+        let file_section = file_config.get(section.name());
+        if !file_section.is_some_and(JsonValue::is_object) && store.iter().next().is_none() {
+            continue;
+        }
+        let mut values = store.resolved();
+        let config_endpoints = file_section
+            .and_then(|fields| fields.get(PASS_THROUGH_ENDPOINTS))
+            .filter(|endpoints| !endpoints.is_null());
+        let db_endpoints = store.db_value(PASS_THROUGH_ENDPOINTS);
+        if config_endpoints.is_some()
+            || db_endpoints.is_some_and(JsonValue::is_array)
+            || values.contains_key(PASS_THROUGH_ENDPOINTS)
+        {
+            let merged = endpoints_beside_db(
+                db_endpoints
+                    .and_then(JsonValue::as_array)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+                config_endpoints
+                    .and_then(JsonValue::as_array)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+            );
+            values.insert(PASS_THROUGH_ENDPOINTS.to_owned(), JsonValue::Array(merged));
+        }
+        config.insert(
+            section.name().to_owned(),
+            JsonValue::Object(values.into_iter().collect()),
+        );
+    }
+    config
+}
+
+// _initialize_secret_manager_from_raw_config: the manager comes up before the references it may hold are resolved
+fn initialize_secret_manager(
+    state: &mut OverlayState,
+    config: &ConfigMap,
+    source: &ConfigSource,
+    env: &BTreeMap<String, String>,
+) -> Result<(), OverlayError> {
+    let Some(general) = config
+        .get(GENERAL_SETTINGS)
+        .filter(|value| value.is_object())
+    else {
+        return Ok(());
+    };
+    let wrapped: JsonValue = [(GENERAL_SETTINGS, general.clone())].into_iter().collect();
+    let raw = serde_json::from_value::<BootstrapRaw>(wrapped)
+        .map_err(|source| OverlayError::SecretSettings { source })?;
+    let projection = raw
+        .convert(env)
+        .map_err(|source| OverlayError::SecretProjection { source })?;
+    state
+        .secrets
+        .initialize(&projection, source.config_file_path.as_deref(), env, None)?;
+    Ok(())
+}
