@@ -146,6 +146,9 @@ async fn deliver<Source>(
 where
     Source: Error + 'static,
 {
+    let model = input.model.as_str();
+    let provider = input.custom_llm_provider.as_str();
+    let post_stream = delivery.post_stream;
     let source = match answer {
         Answer::Response(response) => {
             return response_output(input, model_response, delivery, *response);
@@ -165,29 +168,19 @@ where
         StreamSource::Events(events) => Box::new(TranslatedStream::new(
             events,
             &StreamConfig {
-                provider: &input.custom_llm_provider,
-                model: &input.model,
+                provider,
+                model,
                 json_mode: delivery.json_mode,
                 limits: delivery.limits,
                 stamps,
             },
         )),
-        StreamSource::Chat(chat) => Box::new(MockStream::new(
-            chat,
-            &input.custom_llm_provider,
-            &input.model,
-            stamps,
-        )),
+        StreamSource::Chat(chat) => Box::new(MockStream::new(chat, provider, model, stamps)),
         StreamSource::Cached(cached) => cached,
     };
-    post_process(
-        stream,
-        &input.model,
-        &input.custom_llm_provider,
-        delivery.post_stream,
-    )
-    .map(BridgeOutput::Stream)
-    .map_err(DispatchError::PostStream)
+    post_process(stream, model, provider, post_stream)
+        .map(BridgeOutput::Stream)
+        .map_err(DispatchError::PostStream)
 }
 
 // A collected stream keeps its response's own hidden keys over the iterator's, and B919 reads the merged map

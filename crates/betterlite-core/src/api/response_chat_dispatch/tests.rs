@@ -315,13 +315,13 @@ async fn an_extra_body_stream_flag_decides_the_delivery(#[case] asynchronous: bo
         kwargs("gpt-4o-mini", "openai"),
         r#"{"extra_body":{"stream":true}}"#,
     );
-    let fields = if asynchronous {
+    let call_fields = if asynchronous {
         with(fields, "acompletion", Json::Bool(true))
     } else {
         fields
     };
     let execution = FakeExecution::new(events(frames(), &[]));
-    let output = expect_ok(completion(&execution, call(&fields)).await);
+    let output = expect_ok(completion(&execution, call(&call_fields)).await);
     assert_eq!(
         execution.observations()[0].params_stream,
         StreamParam::Bool(true)
@@ -339,14 +339,14 @@ async fn an_extra_body_stream_flag_replays_a_chat_answer(#[case] asynchronous: b
         kwargs("gpt-4o-mini", "openai"),
         r#"{"extra_body":{"stream":true}}"#,
     );
-    let fields = if asynchronous {
+    let call_fields = if asynchronous {
         with(fields, "acompletion", Json::Bool(true))
     } else {
         fields
     };
     let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let chunks = drain(expect_stream(expect_ok(
-        completion(&execution, call(&fields)).await,
+        completion(&execution, call(&call_fields)).await,
     )))
     .await;
     assert_eq!(joined(&chunks), "hello");
@@ -678,7 +678,7 @@ async fn a_cached_chat_stream_must_be_consumed_by_a_nonstreaming_caller(
     };
     let text = expect_error(completion(&execution, call(&fields)).await);
     assert_eq!(text, "Stream ended without a completed response");
-    let seen = reads.lock().unwrap();
+    let seen = reads.lock().unwrap().clone();
     assert_eq!(seen.len(), 3);
     assert_eq!(
         seen[0].as_ref().and_then(id_of),

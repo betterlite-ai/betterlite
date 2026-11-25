@@ -13,7 +13,7 @@ fn contains_text(value: &Json, needle: &str) -> bool {
     match value {
         Json::Text(text) => text.contains(needle),
         Json::List(items) => items.iter().any(|item| contains_text(item, needle)),
-        Json::Object(fields) => fields.values().any(|value| contains_text(value, needle)),
+        Json::Object(fields) => fields.values().any(|item| contains_text(item, needle)),
         Json::Null | Json::Bool(_) | Json::Number(_) => false,
     }
 }
