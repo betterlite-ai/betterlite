@@ -427,16 +427,16 @@ REFERENCE_COMBINED_USAGE: Final = (
 MIXED_DETAILS: Final[dict[str, JsonValue]] = {"cached_tokens": MIXED_DETAIL_TOKENS}
 MIXED_USAGES: Final[list[Usage]] = [
     Usage(
-        prompt_tokens=MIXED_ALIAS_TOKENS,
-        completion_tokens=1,
-        total_tokens=MIXED_ALIAS_TOKENS + 1,
-        cache_read_input_tokens=MIXED_ALIAS_TOKENS,
-    ),
-    Usage(
         prompt_tokens=MIXED_DETAIL_TOKENS,
         completion_tokens=1,
         total_tokens=MIXED_DETAIL_TOKENS + 1,
         prompt_tokens_details=MIXED_DETAILS,
+    ),
+    Usage(
+        prompt_tokens=MIXED_ALIAS_TOKENS,
+        completion_tokens=1,
+        total_tokens=MIXED_ALIAS_TOKENS + 1,
+        cache_read_input_tokens=MIXED_ALIAS_TOKENS,
     ),
 ]
 REFERENCE_MIXED_USAGES: Final[list[ReferenceUsage]] = [
@@ -558,6 +558,11 @@ def test_cost_extra_signatures() -> None:
     assert signature_rows(inspect.signature(realtime_stream_cost)) == signature_rows(
         inspect.signature(REFERENCE.handle_realtime_stream_cost_calculation)
     )
+    assert signature_rows(
+        inspect.signature(handle_realtime_transcription_cost_calculation)
+    ) == signature_rows(
+        inspect.signature(REFERENCE.handle_realtime_transcription_cost_calculation)
+    )
 
 
 def test_ocr_cost_pages() -> None:
@@ -666,7 +671,7 @@ def test_processor_mixed_cache() -> None:
     assert usage_counts(reference)["cached_tokens"] == expected_cached_tokens
 
 
-def test_cached_audio_collectors() -> None:
+def test_processor_cached_audio() -> None:
     usage: dict[str, JsonValue] = {
         "input_tokens": 30,
         "output_tokens": 0,
@@ -706,6 +711,21 @@ def test_processor_empty() -> None:
     ours = BaseTokenUsageProcessor.combine_usage_objects([])
     reference = REFERENCE_PROCESSORS.BaseTokenUsageProcessor.combine_usage_objects([])
     compare_usages([ours], [reference])
+
+
+def test_processor_missing_usage() -> None:
+    events: list[dict[str, JsonValue]] = [
+        {"type": "response.done", "response": {}},
+        {"type": "response.audio.delta", "delta": "x"},
+    ]
+    ours = RealtimeAPITokenUsageProcessor.collect_usage_from_realtime_stream_results(events)
+    reference = (
+        REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
+        .collect_usage_from_realtime_stream_results(events)
+    )
+    compare_usages(ours, reference)
+    assert len(ours) == 1
+    assert ours[0].total_tokens == ZERO
 
 
 def test_processor_realtime() -> None:
