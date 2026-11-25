@@ -106,11 +106,11 @@ impl NativeDual {
         &self,
         py: Python<'py>,
         keys: Vec<String>,
-        (local_only, throttle_redis): (bool, bool),
+        switches: (bool, bool),
     ) -> AsyncAnswer<'py> {
         let settings = BatchReadOptions {
-            local_only,
-            throttle_redis,
+            local_only: switches.0,
+            throttle_redis: switches.1,
         };
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
