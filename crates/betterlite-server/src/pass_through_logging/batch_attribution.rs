@@ -6,9 +6,7 @@ use indexmap::IndexMap;
 use tokio::runtime::{Handle, TryCurrentError};
 use tokio::task::{JoinError, JoinHandle};
 
-use crate::pass_through_logging::anthropic_batch::{
-    BatchRegistration, ManagedBatchRegistry, RegistryError,
-};
+use crate::pass_through_logging::anthropic_batch::{BatchRegistration, ManagedBatchRegistry};
 use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 #[must_use]
