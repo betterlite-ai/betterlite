@@ -90,7 +90,6 @@ fn invalid_dates_only_keeps_input_order() {
 #[test]
 fn cost_sort_uses_decimal_totals() {
     let models = vec![
-        costs("zero", number(0), number(0)),
         costs("high", decimal_text("0.5"), decimal_text("0.5")),
         costs("low", decimal_text("0.000001"), Json::Null),
         costs("negative", number(-1), number(0)),
@@ -98,11 +97,27 @@ fn cost_sort_uses_decimal_totals() {
     ];
     assert_eq!(
         names(&sort_models(&models, Some("costs"), None)),
-        ["negative", "low", "high", "zero", "absent"]
+        ["negative", "low", "high", "absent"]
     );
     assert_eq!(
         names(&sort_models(&models, Some("costs"), Some("desc"))),
-        ["high", "low", "negative", "zero", "absent"]
+        ["high", "low", "negative", "absent"]
+    );
+}
+
+#[test]
+fn zero_cost_sorts_last_both_directions() {
+    let models = vec![
+        costs("zero", number(0), number(0)),
+        costs("priced", number(1), number(0)),
+    ];
+    assert_eq!(
+        names(&sort_models(&models, Some("costs"), None)),
+        ["priced", "zero"]
+    );
+    assert_eq!(
+        names(&sort_models(&models, Some("costs"), Some("desc"))),
+        ["priced", "zero"]
     );
 }
 
