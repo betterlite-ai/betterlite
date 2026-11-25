@@ -157,6 +157,7 @@ fn a_streaming_call_hands_out_the_chunks_then_stops() {
         // The core closes into a sync empty source; Python swaps in its own empty iterator.
         let mut closed = get_runtime().block_on(stream.stream.lock());
         assert!(closed.sync_iter().unwrap().next_chunk().is_none());
+        drop(closed);
     });
     serving.finish().unwrap();
 }
