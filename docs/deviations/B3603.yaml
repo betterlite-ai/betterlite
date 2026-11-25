@@ -1,0 +1,82 @@
+task: B3603
+deviations:
+  - what: >-
+      When neither a proxy-provided Anthropic credential nor a caller-provided
+      Anthropic credential (x-api-key or Authorization) is present,
+      _upstream_headers_for_anthropic_route raises HTTPException with status 401
+      and a descriptive message naming the expected header or environment variable.
+    why: >-
+      LiteLLM raises an HTTPException in this case to prevent forwarding requests
+      with no authentication credential to Anthropic. betterlite preserves this
+      behavior exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2581-L2589
+  - what: >-
+      When neither a proxy-provided Vertex credential nor a caller-provided Vertex
+      credential (authorization or x-goog-api-key) is present,
+      _forwarded_headers_for_credentialless_vertex_passthrough raises HTTPException
+      with status 401 and a descriptive message.
+    why: >-
+      LiteLLM requires explicit Vertex credentials on the credentialless branch.
+      betterlite preserves this behavior to prevent unauthenticated provider calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2569-L2578
+  - what: >-
+      Custom caller-key header names are read from both general_settings.litellm_key_header_name
+      (single override) and individual pass-through endpoint configurations (per-endpoint list).
+      Both are included in the set of headers to filter out.
+    why: >-
+      LiteLLM allows operators to configure custom authentication headers at the
+      global and per-endpoint level. betterlite supports both to preserve configuration flexibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2499-L2516
+  - what: >-
+      A credential value or master key that contains non-ASCII text is compared with the
+      caller's header value byte for byte in constant time, so the comparison always answers.
+    why: >-
+      LiteLLM feeds str values to hmac.compare_digest, which raises TypeError on non-ASCII
+      text; the proxy turns that into a 500 for a request whose header merely carries a
+      non-ASCII value. betterlite compares the UTF-8 bytes with subtle's ConstantTimeEq,
+      which is constant time and has no encoding failure. Tested by
+      passthrough::caller_headers::secret_auth::a_non_ascii_value_compares_as_utf_8_without_raising.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2531-L2551
+  - what: >-
+      Stored JWT claims are compared with the presented claims as typed JSON values, so a
+      stored number 1 does not match a presented true or 1.0, and a stored null matches only
+      a presented null or a missing claim.
+    why: >-
+      LiteLLM compares with Python ==, where 1 == 1.0 == True and True == 1; two different
+      tokens can then be treated as the same one. betterlite follows docs/compatibility.md
+      and keeps JSON's own types, so the stored claim matches only an equal JSON value.
+      Tested by passthrough::caller_headers::jwt_auth::claims_compare_by_their_json_value_and_type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2519-L2529
+kept_bugs:
+  - what: >-
+      A recognized scheme removes every occurrence of its own text, not only the leading
+      prefix, so "Bearer aBearer b" normalizes to "ab" and "Bearer Bearer sk-1" to "sk-1".
+    why: >-
+      The normalization reuses the bearer parser B10086 ports, which follows LiteLLM's
+      str.replace calls; a key whose text contains a scheme word authenticates as the
+      shorter string in both implementations.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L585-L610
+  - what: >-
+      A recognized scheme with nothing after it normalizes back to the original text
+      instead of an empty token, so "Bearer " stays "Bearer " and is forwarded untouched.
+    why: >-
+      LiteLLM writes `_get_bearer_token(value) or value` so that a bare token or a Google
+      credential with no scheme prefix stays intact; the empty-after-scheme case falls out
+      of the same fallback, and a setup that sends such a header sees it forwarded as sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2460-L2472
+  - what: >-
+      When every stored claim is an internal _litellm_* claim, or the stored claim set is
+      empty, any decodable JWT in a header is treated as the authenticated token and stripped.
+    why: >-
+      LiteLLM's all() over the claims that are not internal is vacuously true, so a caller
+      authenticated by such a token has every JWT-shaped header removed; a working setup
+      sends those headers as scratch values and keeps working after the strip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2519-L2529
+  - what: >-
+      In no-auth dev mode without custom auth, a header whose value is the caller's stored
+      api_key is forwarded to the provider instead of being stripped.
+    why: >-
+      LiteLLM returns False from the secret check before it looks at the stored key, because
+      that mode authenticated nothing; betterlite keeps the order so a dev proxy forwards
+      the same headers it always has.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2531-L2551

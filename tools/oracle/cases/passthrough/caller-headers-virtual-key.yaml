@@ -1,0 +1,19 @@
+kind: helper
+name: caller-headers-virtual-key
+call:
+  b3603:
+    virtual_key:
+      headers:
+        - ["X-Litellm-Api-Key", "sk-virtual"]
+        - ["Authorization", "Bearer sk-other"]
+calls:
+  - b3603:
+      virtual_key:
+        headers:
+          - ["AUTHORIZATION", "Bearer sk-auth"]
+  - b3603:
+      virtual_key:
+        headers: []
+env: {}
+compare:
+  ignore: []
