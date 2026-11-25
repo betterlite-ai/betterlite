@@ -17,10 +17,10 @@ use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_redis::config_sync::publish::redis_config_change_publisher as publish_change;
 use betterlite_redis::config_sync::table_actions::TableActions as _;
 use deadpool_postgres::Client as PooledClient;
+use deadpool_postgres::Transaction;
 use thiserror::Error;
 use tokio::time::timeout;
 use tokio_postgres::Error as PgError;
-use tokio_postgres::Transaction;
 use tokio_postgres::error::SqlState;
 
 use super::ENVIRONMENT_VARIABLES;
