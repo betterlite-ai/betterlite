@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::ops::Add;
 use std::os::unix::fs::FileExt as _;
 use std::path::{Path, PathBuf};
@@ -52,16 +53,10 @@ impl FileState {
             .create(true)
             .truncate(false)
             .open(&path)
-            .map_err(|source| MultiprocessError::Write {
-                path: path.clone(),
-                source,
-            })?;
+            .map_err(|source| write_error(&path, source))?;
         let length = file
             .metadata()
-            .map_err(|source| MultiprocessError::Write {
-                path: path.clone(),
-                source,
-            })?
+            .map_err(|source| write_error(&path, source))?
             .len();
         let Ok(capacity) = usize::try_from(length) else {
             return Err(MultiprocessError::Corrupted);
@@ -73,10 +68,7 @@ impl FileState {
         let page =
             u64::try_from(INITIAL_CAPACITY).map_err(|_error| MultiprocessError::Corrupted)?;
         file.set_len(page)
-            .map_err(|source| MultiprocessError::Write {
-                path: path.clone(),
-                source,
-            })?;
+            .map_err(|source| write_error(&path, source))?;
         rebuilt(path, file, INITIAL_CAPACITY)
     }
 
@@ -92,10 +84,7 @@ impl FileState {
                 u64::try_from(self.capacity).map_err(|_error| MultiprocessError::Corrupted)?;
             self.file
                 .set_len(grown)
-                .map_err(|source| MultiprocessError::Write {
-                    path: self.path.clone(),
-                    source,
-                })?;
+                .map_err(|source| write_error(&self.path, source))?;
         }
         write_at(&self.file, self.used, &entry, &self.path)?;
         self.used = end;
@@ -173,8 +162,12 @@ fn write_at(
 ) -> Result<(), MultiprocessError> {
     let at = u64::try_from(position).map_err(|_error| MultiprocessError::Corrupted)?;
     file.write_all_at(bytes, at)
-        .map_err(|source| MultiprocessError::Write {
-            path: path.to_path_buf(),
-            source,
-        })
+        .map_err(|source| write_error(path, source))
+}
+
+fn write_error(path: &Path, source: io::Error) -> MultiprocessError {
+    MultiprocessError::Write {
+        path: path.to_path_buf(),
+        source,
+    }
 }

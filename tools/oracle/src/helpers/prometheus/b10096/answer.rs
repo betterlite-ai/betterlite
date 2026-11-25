@@ -129,7 +129,8 @@ fn blocks(text: &str) -> Vec<String> {
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("# HELP ") {
             marker = Some(rest.split(' ').next().unwrap_or_default().to_owned());
-        } else if line == "# EOF" {
+        }
+        if line == "# EOF" {
             marker = Some("# EOF".to_owned());
         }
         if let Some(current) = &marker {
