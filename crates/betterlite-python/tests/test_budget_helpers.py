@@ -15,6 +15,7 @@ from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar
 import httpx
 import httpx2
 import pytest
+from litellm.constants import DEFAULT_SSL_CIPHERS as REFERENCE_SSL_CIPHERS
 from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -52,6 +53,7 @@ from betterlite._core_helpers import (
     set_provider_response_headers_in_hidden_params,
     set_response_cost_in_hidden_params,
 )
+from betterlite._core_helpers.budget_http import DEFAULT_SSL_CIPHERS
 from betterlite._core_helpers.values import PythonValue, object_fields, text_of
 from betterlite._cost import completion_cost, cost_per_token, response_cost_calculator
 from betterlite._model_info import get_max_tokens, get_model_info, get_provider_info
@@ -109,25 +111,25 @@ CONNECT_TIMEOUT: Final = 5.0
 BLOCK_SECONDS: Final = 10.0
 INVALID_CURVE: Final = "not-a-curve"
 
-HELPER_NAMES: Final[frozenset[str]] = frozenset(
-    "add_missing_spend_metadata_to_litellm_metadata coerce_token_limit "
-    "drop_params_env_flag drop_params_flag filter_exceptions_from_params "
-    "filter_internal_params get_litellm_metadata_from_kwargs "
-    "get_metadata_variable_name_from_kwargs get_or_create_metadata_bucket "
-    "get_provider_response_headers_from_hidden_params independent_snapshot "
-    "is_codex_user_agent is_expected_client_error map_finish_reason "
-    "max_retries_per_request_hit normalize_drop_params "
-    "preserve_upstream_non_openai_attributes process_response_headers "
-    "proxy_stamped_used_client_oauth_token reconstruct_model_name "
-    "remove_index_from_tool_calls remove_items_at_indices safe_deep_copy "
-    "safe_divide safe_divide_seconds set_provider_response_headers_in_hidden_params "
-    "set_response_cost_in_hidden_params".split()
-)
-UTILS_NAMES: Final[frozenset[str]] = frozenset(
-    "completion_cost cost_per_token create_pretrained_tokenizer create_tokenizer decode "
-    "encode get_llm_provider get_max_tokens get_model_cost_mutation_generation "
-    "get_model_info get_provider_info response_cost_calculator token_counter".split()
-)
+HELPER_NAMES: Final[frozenset[str]] = frozenset({
+    "add_missing_spend_metadata_to_litellm_metadata", "coerce_token_limit", "drop_params_env_flag",
+    "drop_params_flag", "filter_exceptions_from_params", "filter_internal_params",
+    "get_litellm_metadata_from_kwargs", "get_metadata_variable_name_from_kwargs",
+    "get_or_create_metadata_bucket", "get_provider_response_headers_from_hidden_params",
+    "independent_snapshot", "is_codex_user_agent", "is_expected_client_error", "map_finish_reason",
+    "max_retries_per_request_hit", "normalize_drop_params",
+    "preserve_upstream_non_openai_attributes", "process_response_headers",
+    "proxy_stamped_used_client_oauth_token", "reconstruct_model_name",
+    "remove_index_from_tool_calls", "remove_items_at_indices", "safe_deep_copy", "safe_divide",
+    "safe_divide_seconds", "set_provider_response_headers_in_hidden_params",
+    "set_response_cost_in_hidden_params",
+})
+UTILS_NAMES: Final[frozenset[str]] = frozenset({
+    "completion_cost", "cost_per_token", "create_pretrained_tokenizer", "create_tokenizer",
+    "decode", "encode", "get_llm_provider", "get_max_tokens",
+    "get_model_cost_mutation_generation", "get_model_info", "get_provider_info",
+    "response_cost_calculator", "token_counter",
+})
 NORMALIZE_VALUES: Final[tuple[PythonValue, ...]] = (
     None, True, "true", " TRUE ", "on", "1", 1, 0, "banana", 2, {}, "false", "off",
 )
@@ -805,12 +807,11 @@ def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     for duration, user in named:
         expected = reference.create_budget(BUDGET, user, duration, CREATED_AT)
         assert ours.create_budget(BUDGET, user, duration, CREATED_AT) == expected
-    frozen = OneSecondClock(1.0)
     # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(time, "time", frozen)
+    monkeypatch.setattr(time, "time", OneSecondClock(CREATED_AT))
     first = ours.create_budget(BUDGET, "erin", "daily")
     second = ours.create_budget(BUDGET, "frank", "daily")
-    assert first["created_at"] == second["created_at"] == first["last_updated_at"] != frozen.now
+    assert first["created_at"] == second["created_at"] == first["last_updated_at"] != CREATED_AT
     join_saves(marker)
     durations = [ours.user_dict[user]["duration"] for _duration, user in named]
     assert durations == [1, DAYS_IN_A_WEEK, DAYS_IN_A_MONTH, DAYS_IN_A_YEAR]
@@ -930,9 +931,9 @@ def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert DEFAULT_SSL_CIPHERS == REFERENCE_SSL_CIPHERS
     monkeypatch.setenv("SSL_VERIFY", "false")
-    assert LITELLM_HTTP.get_ssl_configuration() is False
-    assert ModuleClient().ssl_options is False
+    assert LITELLM_HTTP.get_ssl_configuration() is False and ModuleClient().ssl_options is False
     assert ModuleClient(ssl_verify=True).ssl_options is not False
     monkeypatch.delenv("SSL_VERIFY")
     monkeypatch.setenv("SSL_SECURITY_LEVEL", "BOGUS")
@@ -943,7 +944,7 @@ def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SSL_SECURITY_LEVEL", "DEFAULT@SECLEVEL=1")
     recorder = CurveRecorder()
     # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(ssl.SSLContext, "set_ecdh_curve", recorder)
+    monkeypatch.setattr("ssl.SSLContext.set_ecdh_curve", recorder)
     monkeypatch.setenv("SSL_ECDH_CURVE", INVALID_CURVE)
     assert ModuleClient().ssl_options is not False
     assert recorder.curves == [INVALID_CURVE]
@@ -958,8 +959,7 @@ def test_budget_background_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(manager, "save_data", saver)
     manager.create_budget(BUDGET, ALICE, "daily", CREATED_AT)
     assert saver.started.wait(timeout=BLOCK_SECONDS)
-    assert not saver.release.is_set()
-    assert not saver.finished.is_set()
+    assert not saver.release.is_set() and not saver.finished.is_set()
     assert saver.workers[0] is not threading.current_thread()
     saver.release.set()
     join_saves(marker)
