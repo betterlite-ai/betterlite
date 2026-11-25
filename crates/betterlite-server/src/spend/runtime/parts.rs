@@ -31,26 +31,34 @@ impl DailyQueues {
         queue: &SpendQueueSettings,
         events: &Arc<dyn SpendQueueEventSink>,
     ) -> Result<Self, SpendQueueError> {
+        let [user, end_user, agent, team, org, tag] = [
+            daily_queue(queue, Arc::clone(events))?,
+            daily_queue(queue, Arc::clone(events))?,
+            daily_queue(queue, Arc::clone(events))?,
+            daily_queue(queue, Arc::clone(events))?,
+            daily_queue(queue, Arc::clone(events))?,
+            daily_queue(queue, Arc::clone(events))?,
+        ];
         Ok(Self {
-            user: daily_queue(queue, events)?,
-            end_user: daily_queue(queue, events)?,
-            agent: daily_queue(queue, events)?,
-            team: daily_queue(queue, events)?,
-            org: daily_queue(queue, events)?,
-            tag: daily_queue(queue, events)?,
+            user,
+            end_user,
+            agent,
+            team,
+            org,
+            tag,
         })
     }
 }
 
 fn daily_queue(
     queue: &SpendQueueSettings,
-    events: &Arc<dyn SpendQueueEventSink>,
+    events: Arc<dyn SpendQueueEventSink>,
 ) -> Result<Arc<DailySpendUpdateQueue>, SpendQueueError> {
     Ok(Arc::new(DailySpendUpdateQueue::new(
         queue.queue_capacity,
         queue.aggregation_threshold,
         queue.flush_count,
-        Arc::clone(events),
+        events,
     )?))
 }
 

@@ -23,12 +23,13 @@ pub(super) async fn identity_updates<Table>(
 ) where
     Table: BatchClaimTable + ?Sized,
 {
-    if let Some(queue) = writer.queues.entity {
-        if let Err(source) = enqueue_user_rows(writer, queue, work).await {
-            report_accounting_failure(writer, SpendWriterOperation::UserEnqueue, work, &source);
-        }
+    let Some(queue) = writer.queues.entity else {
+        return;
+    };
+    if let Err(source) = enqueue_user_rows(writer, queue, work).await {
+        report_accounting_failure(writer, SpendWriterOperation::UserEnqueue, work, &source);
     }
-    let (Some(queue), Some(key)) = (writer.queues.entity, work.hashed_token.as_deref()) else {
+    let Some(key) = work.hashed_token.as_deref() else {
         return;
     };
     if let Err(source) = queue
@@ -47,35 +48,8 @@ pub(super) async fn identity_updates<Table>(
     }
 }
 
-// _update_team_db and _update_org_db, each isolated so one owner failure leaves the other running.
-pub(super) async fn owner_updates<Table>(
-    writer: &DbSpendUpdateWriter<'_, Table>,
-    work: &SpendAccounting,
-) where
-    Table: BatchClaimTable + ?Sized,
-{
-    let queue = writer.queues.entity;
-    let cost = work.response_cost;
-    let user = work.user_id.as_deref();
-    isolated!(
-        "team",
-        update_owner_db(queue, cost, work.team_id.as_deref(), user, OwnerKind::Team).await
-    );
-    isolated!(
-        "organization",
-        update_owner_db(
-            queue,
-            cost,
-            work.org_id.as_deref(),
-            user,
-            OwnerKind::Organization
-        )
-        .await
-    );
-}
-
-// The project row and the request's tags, each isolated and read before the access groups.
-pub(super) async fn row_updates<Table>(
+// _update_team_db, _update_org_db, _update_project_db and _update_tag_db, each isolated so one failure leaves the rest running.
+pub(super) async fn owner_row_updates<Table>(
     writer: &DbSpendUpdateWriter<'_, Table>,
     work: &SpendAccounting,
     daily: Option<&DailyPayload>,
@@ -84,6 +58,16 @@ pub(super) async fn row_updates<Table>(
 {
     let queue = writer.queues.entity;
     let cost = work.response_cost;
+    let user = work.user_id.as_deref();
+    let org = work.org_id.as_deref();
+    isolated!(
+        "team",
+        update_owner_db(queue, cost, work.team_id.as_deref(), user, OwnerKind::Team).await
+    );
+    isolated!(
+        "organization",
+        update_owner_db(queue, cost, org, user, OwnerKind::Organization).await
+    );
     isolated!(
         "project",
         update_row_db(queue, cost, work.project_id.as_deref(), RowKind::Project).await
@@ -104,20 +88,23 @@ pub(super) async fn attribute_updates<Table, C>(
     Table: BatchClaimTable + ?Sized,
     C: SavingsPricingContext,
 {
-    let queue = writer.queues.entity;
-    let cost = work.response_cost;
     update_model_access_group_db(
-        queue,
-        cost,
+        writer.queues.entity,
+        work.response_cost,
         &work.model_access_groups,
         daily.and_then(|payload| payload.model_id.as_deref()),
         environment.deployments,
     )
     .await;
-    let agent = daily.and_then(|payload| payload.agent_id.as_deref());
     isolated!(
         "agent",
-        update_row_db(queue, cost, agent, RowKind::Agent).await
+        update_row_db(
+            writer.queues.entity,
+            work.response_cost,
+            daily.and_then(|payload| payload.agent_id.as_deref()),
+            RowKind::Agent,
+        )
+        .await
     );
 }
 

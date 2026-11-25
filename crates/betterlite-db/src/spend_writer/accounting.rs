@@ -17,7 +17,7 @@ use crate::spend_attribution::tags::RequestTags;
 use crate::spend_log_storage::batch_claim::BatchClaimTable;
 use crate::spend_queues::entity::SpendAmount;
 
-use self::entities::{attribute_updates, identity_updates, owner_updates, row_updates};
+use self::entities::{attribute_updates, identity_updates, owner_row_updates};
 use self::isolation::isolated;
 
 mod entities;
@@ -97,61 +97,18 @@ pub async fn batch_database_updates<Table, C>(
         }
     };
     identity_updates(writer, work).await;
-    owner_updates(writer, work).await;
-    row_updates(writer, work, daily.as_ref()).await;
+    owner_row_updates(writer, work, daily.as_ref()).await;
     attribute_updates(writer, work, daily.as_ref(), environment).await;
     if let Some(projected) = daily.as_ref() {
-        daily_user_updates(writer, projected, environment).await;
-        daily_owner_updates(writer, work, projected, environment).await;
+        daily_updates(writer, work, projected, environment).await;
     }
     if let Some(queue) = writer.queues.model_usage {
         enqueue_model_usage(queue, &payload).await;
     }
 }
 
-// The user, end user and agent rows, each isolated from the others.
-async fn daily_user_updates<Table, C>(
-    writer: &DbSpendUpdateWriter<'_, Table>,
-    payload: &DailyPayload,
-    environment: &SpendAccountingEnvironment<'_, C>,
-) where
-    Table: BatchClaimTable + ?Sized,
-    C: SavingsPricingContext,
-{
-    isolated!(
-        "daily user",
-        add_daily_user_transaction(
-            writer.queues.daily_user,
-            payload,
-            environment.pricing,
-            environment.endpoints,
-        )
-        .await
-    );
-    isolated!(
-        "daily end user",
-        add_daily_end_user_transaction(
-            writer.queues.daily_end_user,
-            payload,
-            environment.pricing,
-            environment.endpoints,
-        )
-        .await
-    );
-    isolated!(
-        "daily agent",
-        add_daily_agent_transaction(
-            writer.queues.daily_agent,
-            payload,
-            environment.pricing,
-            environment.endpoints,
-        )
-        .await
-    );
-}
-
-// The team, organization and tag rows, with the organization charged under the request's own id.
-async fn daily_owner_updates<Table, C>(
+// The six daily rows, each isolated so one failure leaves the others and the model usage enqueue running.
+async fn daily_updates<Table, C>(
     writer: &DbSpendUpdateWriter<'_, Table>,
     work: &SpendAccounting,
     payload: &DailyPayload,
@@ -160,36 +117,33 @@ async fn daily_owner_updates<Table, C>(
     Table: BatchClaimTable + ?Sized,
     C: SavingsPricingContext,
 {
+    let queues = &writer.queues;
+    let pricing = environment.pricing;
+    let endpoints = environment.endpoints;
+    let org = work.org_id.as_deref();
+    isolated!(
+        "daily user",
+        add_daily_user_transaction(queues.daily_user, payload, pricing, endpoints).await
+    );
+    isolated!(
+        "daily end user",
+        add_daily_end_user_transaction(queues.daily_end_user, payload, pricing, endpoints).await
+    );
+    isolated!(
+        "daily agent",
+        add_daily_agent_transaction(queues.daily_agent, payload, pricing, endpoints).await
+    );
     isolated!(
         "daily team",
-        add_daily_team_transaction(
-            writer.queues.daily_team,
-            payload,
-            environment.pricing,
-            environment.endpoints,
-        )
-        .await
+        add_daily_team_transaction(queues.daily_team, payload, pricing, endpoints).await
     );
     isolated!(
         "daily organization",
-        add_daily_org_transaction(
-            writer.queues.daily_org,
-            payload,
-            work.org_id.as_deref(),
-            environment.pricing,
-            environment.endpoints,
-        )
-        .await
+        add_daily_org_transaction(queues.daily_org, payload, org, pricing, endpoints).await
     );
     isolated!(
         "daily tag",
-        add_daily_tag_transaction(
-            writer.queues.daily_tag,
-            payload,
-            environment.pricing,
-            environment.endpoints,
-        )
-        .await
+        add_daily_tag_transaction(queues.daily_tag, payload, pricing, endpoints).await
     );
 }
 
