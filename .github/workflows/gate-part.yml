@@ -293,7 +293,9 @@ jobs:
               if [[ $EVENT == merge_group && -z $TASK && $PARTS != *tests-1* ]]; then
                 affected=$(cargo gate affected) || exit 1
                 if [[ -n $affected ]]; then echo "the change affects $affected, but find started no tests part"; exit 1; fi
-              fi ;;
+              fi
+              # clippy takes turns on the same heavy targets: betterlite-server's lib test was killed out of memory in run 45566938360
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/rustc-turns.sh" ;;
             tests-*|edited)
               if [[ $PART == edited ]]; then
                 affected=$(cargo gate affected --edited) || exit 1
