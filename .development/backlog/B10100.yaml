@@ -1,0 +1,13 @@
+id: B10100
+milestone: R2 bug fixes
+title: The global spend report answers 400 for a malformed date
+status: done
+depends_on: [B1727]
+file: tasks/B10100-global-report-bad-date.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3178

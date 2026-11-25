@@ -1,0 +1,15 @@
+kind: helper
+name: auth-key-budgets-max-budget-equality
+call:
+  auth_key_budgets:
+    calls:
+      - function: admit
+        token:
+          token: sk-eq
+          spend: 100.0
+          max_budget: 100.0
+        spends: [100.0]
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

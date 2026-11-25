@@ -1,0 +1,20 @@
+kind: helper
+name: health-status-routes-convert-row-seed
+call:
+  b4445:
+    function: convert_row
+    rows:
+      - health_check_id: hc-seed
+        model_name: alpha
+        model_id: null
+        status: unhealthy
+        healthy_count: 0
+        unhealthy_count: 1
+        error_message: null
+        response_time_ms: null
+        details: null
+        checked_by: null
+        checked_at: "2026-03-15T10:00:00Z"
+        created_at: "2026-03-15T10:00:00+00:00"
+env: {}
+compare: {ignore: []}

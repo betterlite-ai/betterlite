@@ -1,0 +1,13 @@
+kind: helper
+name: model-team-scope-corpus-seed
+call:
+  model_team_scope:
+    function: caller_byok_team_scope
+    model_info: {}
+    allowed_team_ids: null
+    team_models: []
+    access_groups: {}
+    caller: {user_id: alice, team_id: team-alpha, admin_view: false}
+    user: {user_id: alice, teams: [team-beta]}
+env: {}
+compare: {ignore: []}

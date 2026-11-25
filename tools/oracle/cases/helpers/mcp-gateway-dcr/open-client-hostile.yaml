@@ -1,0 +1,54 @@
+kind: helper
+name: mcp-gateway-dcr-open-client-hostile
+call:
+  b4674:
+    register: null
+    open:
+      - name: raw-text
+        payload: null
+        prefix: client
+        wrap: none
+        raw: 'llm_dcrc_hello'
+      - name: prefix-only
+        payload: null
+        prefix: client
+        wrap: none
+        raw: 'llm_dcrc_'
+      - name: empty
+        payload: null
+        prefix: client
+        wrap: none
+        raw: ''
+      - name: not-base64
+        payload: null
+        prefix: client
+        wrap: none
+        raw: 'not base64 !'
+      - name: empty-object
+        payload: null
+        prefix: client
+        wrap: none
+        raw: 'llm_dcrc_{}'
+      - name: short-ciphertext
+        payload: null
+        prefix: client
+        wrap: none
+        raw: 'llm_dcrc_AAAA'
+      - name: tampered
+        payload: {redirect_uris: ['https://client.example/callback'], iat: 1700000000}
+        prefix: client
+        wrap: tamper
+        raw: null
+      - name: truncated
+        payload: {redirect_uris: ['https://client.example/callback'], iat: 1700000000}
+        prefix: client
+        wrap: truncate
+        raw: null
+      - name: swap-prefix
+        payload: {redirect_uris: ['https://client.example/callback'], iat: 1700000000}
+        prefix: client
+        wrap: swap_prefix
+        raw: null
+    claims: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,35 @@
+kind: helper
+name: search_nonempty_ceiling
+call:
+  resource_delegation:
+    function: validate_search_tools
+    permission: {search_tools: ["c", "a"]}
+    team: {team_id: team-1, search_tools: ["a", "a", "b"]}
+calls:
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["a", "a"]}
+      team: {team_id: team-1, search_tools: ["a", "a", "b"]}
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["c"]}
+      team: {team_id: team-1, search_tools: ["a", "a", "b"]}
+      is_proxy_admin: true
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["z"]}
+      team: {team_id: team-1, search_tools: []}
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: []}
+      team: {team_id: team-1, search_tools: ["a"]}
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["b", "a"]}
+      team: {team_id: team-1, search_tools: ["a", "b"]}
+  - resource_delegation:
+      function: validate_search_tools
+      permission: {search_tools: ["c", "c"]}
+      team: {team_id: team-1, search_tools: ["a", "a", "b"]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: prometheus-multiprocess-corpus-merge
+call:
+  b10095:
+    files:
+      - name: counter_1001.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 3.0, timestamp: 0.0}
+      - name: counter_1002.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 4.0, timestamp: 0.0}
+    call: merge
+    accept: ""
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+task: B751
+deviations:
+  - what: Temporary-budget timestamp text over 1048576 bytes raises a typed auth parse failure (401 auth_error) without echoing the value.
+    why: Bound the actual new timestamp parser; recipient lists are already decoded and receive no fictitious JSON parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3615-L3634
+  - what: A temporary increase is added and a percentage threshold scaled in exact decimal, where LiteLLM adds and multiplies IEEE doubles, so a spend exactly at the computed limit can deny or alert here where LiteLLM's rounded value leaves it just below, as with 0.1 plus 0.2 and 80 percent of 0.1.
+    why: rule money-is-decimal keeps every cost, spend and budget in Decimal; no working setup reads LiteLLM's low-order rounding on these paths, and the oracle cases use whole-number budgets where both agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5704-L5708
+  - what: Threshold map keys are read as ASCII digits here for the key map and the team map, where LiteLLM's str.isdigit also takes Unicode digit spellings, so an Arabic-Indic 50 alerts there and is no threshold here, and the key map raises OverflowError there on a threshold too long for an f64 where it is no threshold here.
+    why: A configured percentage is written in ASCII digits, and a crash on a huge digit key is a LiteLLM bug that no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5704-L5708
+  - what: The temporary expiry reads the basic ISO forms and its shared parser rejects a week date such as 2026-W03-4 that fromisoformat reads and accepts a lowercase z that fromisoformat rejects.
+    why: The field reuses the shared speedate ISO parser after normalizing the basic forms rather than porting a second fromisoformat.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3618
+  - what: A budget_limits entry without a string budget_duration or a numeric max_budget fails with a typed window error naming the entry, where LiteLLM reads the keys directly and raises an uncaught KeyError.
+    why: A malformed stored row is a configuration fault, so it must not surface as an internal 500 from the auth path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5580-L5584
+  - what: A truthy non-mapping metadata.max_budget_alert_emails fails the request with a typed auth error naming the field, where LiteLLM's alert merge calls .items() on it and raises an uncaught AttributeError.
+    why: A key whose alert map is a string, number, flag or list is a configuration fault, so it must not surface as an internal 500 from the auth path; an absent, null, empty or otherwise false value is still read as no per-key map, as LiteLLM's own `if not cfg` does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5649-L5659
+kept_bugs: []

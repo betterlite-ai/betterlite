@@ -93,7 +93,8 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    match auth_stage_loop::run_stages(request, master_key, failure_response).await {
+    let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
+    match Box::pin(pipeline).await {
         Ok((staged, authenticated, body)) => {
             auth_stage_loop::forward(staged, authenticated, body, next).await
         }
@@ -122,6 +123,9 @@ fn stage_input(
         AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
+        ))),
+        AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
+            auth_key_budgets::stage_input(request, authenticated)?,
         ))),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
@@ -204,6 +208,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .await
                 .map_err(StageFailure::TagBudgets)?;
             Ok(StageInput::AuthTagBudgets(stage))
+        }
+        StageInput::AuthKeyBudgets(stage) => {
+            auth_key_budgets::prefetch(&stage)
+                .await
+                .map_err(StageFailure::KeyBudgets)?;
+            Ok(StageInput::AuthKeyBudgets(stage))
         }
         StageInput::AuthOrgLookup(stage) => {
             auth_org_lookup::prefetch(&stage)

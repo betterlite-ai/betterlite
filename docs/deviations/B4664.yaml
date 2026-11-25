@@ -1,0 +1,21 @@
+task: B4664
+deviations:
+  - what: The refresh grant is posted by a hand-written HttpGrantFormPost over the pooled ProxiedClient, behind a raw RefreshGrantPost seam that hands back the status and the bytes of the reply; the form POST follows redirects through send_following and sends Accept application/json.
+    why: The task text routes the grant through B4661's M2mTokenEndpointPost, but that poster parses the reply into the exchange leg's typed response, which carries only access_token, expires_in and scope; the id_token and the rotated refresh_token this task stores would be dropped before the refresher saw them. The raw seam keeps LiteLLM's HTTP shape (one form POST, the same auth headers, 4xx refusal versus outage, and httpx's default redirect following) with the body intact; betterlite-http caps a redirect chain at 10 hops and refuses a TLS downgrade, userinfo and non-http(s) targets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L207-L247
+  - what: A reply body over the pooled client's size cap is Unreachable instead of being read in full.
+    why: LiteLLM's httpx edge reads any body size; the bounded-inputs rule and B173's pool cap every outbound reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L221-L225
+  - what: A 2xx body that is not a JSON object, whether it failed to parse or parsed to a non-object, is one Unavailable with the detail "the IdP token endpoint returned a non-object response".
+    why: LiteLLM splits JSONDecodeError ("returned a non-JSON response") from a ValidationError ("returned a non-object response"). Betterlite parses the bytes straight into an object map, and the task text names the non-object detail for both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L224-L237
+  - what: The unreachable detail is "the IdP token endpoint is unreachable" with no exception class name.
+    why: LiteLLM appends "(ExceptionName)" from the httpx error; betterlite-http reports a failure kind rather than a Python exception, and the task text names the plain detail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L232-L233
+  - what: sso_client_config takes the environment as a map argument; the composition root passes the process environment in.
+    why: LiteLLM reads os.environ inside the function. Betterlite's settings read is explicit at the composition root, so the same four GENERIC_ variables come from one named source instead of a global, and empty values still count as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L133-L158
+kept_bugs:
+  - what: The write-back guard compares only the id_token text, so an interactive sign-in that landed mid-renewal and changed only the refresh token is overwritten by the renewal's write.
+    why: LiteLLM decides with the id_token alone, and that exact condition is what keeps a stale renewal from clobbering a newer assertion; a working setup relies on the skip it performs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L331-L352
