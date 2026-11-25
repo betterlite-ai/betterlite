@@ -1,3 +1,4 @@
+use serde::ser::Error;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -26,9 +27,12 @@ pub(crate) enum ShapeError {
     Custom(String),
 }
 
-impl serde::ser::Error for ShapeError {
-    fn custom<Message: fmt::Display>(message: Message) -> Self {
-        Self::Custom(message.to_string())
+impl Error for ShapeError {
+    fn custom<Message>(msg: Message) -> Self
+    where
+        Message: fmt::Display,
+    {
+        Self::Custom(msg.to_string())
     }
 }
 
@@ -46,13 +50,15 @@ macro_rules! variants {
     ($($method:ident $(<$value:ident>)?
         ($receiver:ident, $variant:ident $(, $argument:ident: $kind:ty)?)
         -> $output:ty $body:block)*) => {
-        $(fn $method $(<$value: Serialize + ?Sized>)?(
+        $(fn $method $(<$value>)?(
             $receiver,
             _name: &'static str,
             _index: u32,
             $variant: &'static str,
             $($argument: $kind,)?
-        ) -> Result<$output, ShapeError> $body)*
+        ) -> Result<$output, ShapeError>
+        $(where $value: Serialize + ?Sized)?
+        $body)*
     };
 }
 
@@ -78,7 +84,10 @@ impl Serializer for Probe {
         Ok(Shape::Null)
     }
 
-    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<Shape, ShapeError> {
+    fn serialize_some<T>(self, value: &T) -> Result<Shape, ShapeError>
+    where
+        T: Serialize + ?Sized,
+    {
         value.serialize(self)
     }
 
@@ -90,11 +99,14 @@ impl Serializer for Probe {
         Ok(Shape::Null)
     }
 
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(
+    fn serialize_newtype_struct<T>(
         self,
         _name: &'static str,
         value: &T,
-    ) -> Result<Shape, ShapeError> {
+    ) -> Result<Shape, ShapeError>
+    where
+        T: Serialize + ?Sized,
+    {
         value.serialize(self)
     }
 

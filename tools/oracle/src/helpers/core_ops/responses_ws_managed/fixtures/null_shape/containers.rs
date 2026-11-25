@@ -18,7 +18,10 @@ macro_rules! sequence {
             type Ok = Shape;
             type Error = ShapeError;
 
-            fn $method<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), ShapeError> {
+            fn $method<T>(&mut self, value: &T) -> Result<(), ShapeError>
+            where
+                T: Serialize + ?Sized,
+            {
                 self.items.push(value.serialize(Probe)?);
                 Ok(())
             }
@@ -50,7 +53,10 @@ impl SerializeMap for Mapping {
     type Ok = Shape;
     type Error = ShapeError;
 
-    fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), ShapeError> {
+    fn serialize_key<T>(&mut self, key: &T) -> Result<(), ShapeError>
+    where
+        T: Serialize + ?Sized,
+    {
         let Value::String(name) = serde_json::to_value(key)? else {
             return Err(ShapeError::Key);
         };
@@ -58,7 +64,10 @@ impl SerializeMap for Mapping {
         Ok(())
     }
 
-    fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), ShapeError> {
+    fn serialize_value<T>(&mut self, value: &T) -> Result<(), ShapeError>
+    where
+        T: Serialize + ?Sized,
+    {
         let name = self.key.take().ok_or(ShapeError::MissingKey)?;
         self.fields.insert(name, value.serialize(Probe)?);
         Ok(())
@@ -83,7 +92,10 @@ macro_rules! record {
             type Ok = Shape;
             type Error = ShapeError;
 
-            fn serialize_field<T: Serialize + ?Sized>(&mut self, key: &'static str, value: &T) -> Result<(), ShapeError> {
+            fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), ShapeError>
+            where
+                T: Serialize + ?Sized,
+            {
                 self.fields.insert(key.to_owned(), value.serialize(Probe)?);
                 Ok(())
             }
