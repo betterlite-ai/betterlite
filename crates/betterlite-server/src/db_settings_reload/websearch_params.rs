@@ -68,7 +68,10 @@ pub(crate) fn handler_params(stored: &JsonMap) -> Result<WebsearchParams, Websea
         .map_err(WebsearchParamError::Shape)?;
     let enabled_providers = match parsed.enabled_providers {
         Some(StoredProviders::Names(names)) if !names.is_empty() => names,
-        Some(StoredProviders::WrongItems(_)) => return Err(WebsearchParamError::EnabledProvider),
+        Some(StoredProviders::WrongItems(items)) => {
+            drop(items._items);
+            return Err(WebsearchParamError::EnabledProvider);
+        }
         Some(StoredProviders::Names(_) | StoredProviders::NotAList(_)) | None => {
             WebsearchParams::default().enabled_providers
         }
