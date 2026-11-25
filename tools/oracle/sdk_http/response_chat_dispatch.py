@@ -89,6 +89,14 @@ def call_bridge(run: BridgeRun, api_base: str) -> Outcome:
     )
 
 
+def complete(run: BridgeRun, api_base: str) -> ModelResponse | CustomStreamWrapper:
+    match call_bridge(run, api_base):
+        case ModelResponse() | CustomStreamWrapper() as settled:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L157-L164
+            return settled
+        case object():
+            raise TypeError("a sync completion returned a coroutine")
+
+
 async def complete_async(run: BridgeRun, api_base: str) -> ModelResponse | CustomStreamWrapper:
     match call_bridge(run, api_base):
         case Coroutine() as pending:
@@ -132,13 +140,11 @@ def stream_view(chunks: list[ModelResponseStream]) -> dict[str, JsonValue]:
 
 
 def settled_sync(run: BridgeRun, api_base: str) -> ModelResponse | dict[str, JsonValue]:
-    match call_bridge(run, api_base):
+    match complete(run, api_base):
         case ModelResponse() as response:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L218-L220
             return response
         case CustomStreamWrapper() as stream:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L251-L256
             return stream_view(list(stream))
-        case object():
-            raise TypeError("a sync completion returned a coroutine")
 
 
 async def settled_async(run: BridgeRun, api_base: str) -> ModelResponse | dict[str, JsonValue]:
