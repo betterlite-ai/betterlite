@@ -190,9 +190,10 @@ def used_length(data: bytes) -> int:
 
 def file_out(path: Path) -> FileOut:
     data = path.read_bytes()
-    entries: list[EntryOut] = []
-    for key, value, timestamp in read_entries(path):
-        entries.append({"key": KEY.validate_json(key), "value": value, "timestamp": timestamp})
+    entries: list[EntryOut] = [
+        {"key": KEY.validate_json(key), "value": value, "timestamp": timestamp}
+        for key, value, timestamp in read_entries(path)
+    ]
     return {
         "name": path.name,
         "length": len(data),
