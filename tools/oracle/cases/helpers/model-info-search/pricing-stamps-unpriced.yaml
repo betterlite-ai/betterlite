@@ -1,0 +1,24 @@
+kind: helper
+name: model-info-search-pricing-stamps-unpriced
+call:
+  model_info_search:
+    function: enrich
+    model:
+      model_name: unpriced
+      litellm_params:
+        model: openai/gpt-4o
+        input_cost_per_token: 0.5
+      model_info:
+        id: gpt-4o
+    catalog:
+      - model: openai/gpt-4o
+        info:
+          key: gpt-4o
+          input_cost_per_token: 0.0001
+          output_cost_per_token: 0.0002
+          max_tokens: 128000
+    cost_map:
+      gpt-4o:
+        litellm_provider: openai
+env: {}
+compare: {ignore: []}

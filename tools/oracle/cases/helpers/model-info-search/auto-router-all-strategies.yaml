@@ -1,0 +1,22 @@
+kind: helper
+name: model-info-search-auto-router-all-strategies
+call:
+  model_info_search:
+    function: is_auto_router
+    models:
+      - litellm_params:
+          model: auto_router/semantic
+      - litellm_params:
+          model: auto_router/complexity
+      - litellm_params:
+          model: auto_router/adaptive
+      - litellm_params:
+          model: auto_router/quality
+      - litellm_params:
+          model: openai/auto_router
+      - litellm_params:
+          model: 5
+      - litellm_params: []
+      - model_name: no-params
+env: {}
+compare: {ignore: []}

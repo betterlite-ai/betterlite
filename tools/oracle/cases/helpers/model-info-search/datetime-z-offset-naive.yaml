@@ -1,0 +1,30 @@
+kind: helper
+name: model-info-search-datetime-z-offset-naive
+call:
+  model_info_search:
+    function: datetime
+    value: "2026-01-02T03:04:05Z"
+calls:
+  - model_info_search:
+      function: datetime
+      value: "2026-01-02T03:04:05+02:00"
+  - model_info_search:
+      function: datetime
+      value: "2026-01-02T03:04:05"
+  - model_info_search:
+      function: datetime
+      value: "2026-01-02Z"
+  - model_info_search:
+      function: datetime
+      value: "2026-01-02T03:04:05.5Z"
+  - model_info_search:
+      function: datetime
+      value: "2026-01-02T03:04:05\n"
+  - model_info_search:
+      function: datetime
+      value: null
+  - model_info_search:
+      function: datetime
+      value: 42
+env: {}
+compare: {ignore: []}
