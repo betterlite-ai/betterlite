@@ -20,9 +20,11 @@ from betterlite._core_helpers.budget_records import (
     public_money,
     record_json,
 )
+from betterlite._core_helpers.values import text_of
 from betterlite._cost.objects import dump_object
 from betterlite._cost.wire import JsonSource
 from betterlite._settings.env import env_number, env_str
+from betterlite._version import version
 
 HOURS_IN_A_DAY: Final[int] = env_number("HOURS_IN_A_DAY", 24, int)
 DAYS_IN_A_WEEK: Final[int] = env_number("DAYS_IN_A_WEEK", 7, int)
@@ -50,6 +52,7 @@ _SSL_CERTIFICATE_VARIABLE: Final = "SSL_CERTIFICATE"
 _DEFAULT_TIMEOUT: Final = httpx2.Timeout(timeout=_TIMEOUT_SECONDS, connect=_CONNECT_SECONDS)
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 _LOGGER: Final = logging.getLogger(__name__)
+_COST_FILE_LOCK: Final = threading.Lock()
 
 
 class HostedReply(TypedDict):
@@ -71,7 +74,7 @@ class ModuleClient:
         self, *, timeout: httpx2.Timeout | None = None, ssl_verify: bool | None = None
     ) -> None:
         certificate = env_str(_SSL_CERTIFICATE_VARIABLE, "") or betterlite.ssl_certificate
-        agent = env_str(_USER_AGENT_VARIABLE, f"betterlite/{betterlite.version}")
+        agent = env_str(_USER_AGENT_VARIABLE, f"betterlite/{version}")
         self.timeout = _DEFAULT_TIMEOUT if timeout is None else timeout
         self.ssl_verify = betterlite.ssl_verify if ssl_verify is None else ssl_verify
         self.client = httpx2.Client(
@@ -107,6 +110,7 @@ class BudgetManager:
         self.project_name = project_name
         self.api_base = _DEFAULT_API_BASE if api_base is None else api_base
         self.headers = dict(_DEFAULT_HEADERS) if headers is None else dict(headers)
+        self._save_lock = threading.Lock()
         self.user_dict = {}
         self.load_data()
 
@@ -236,12 +240,13 @@ class BudgetManager:
 
     def reset_on_duration(self, user: str) -> None:
         record = self.user_dict[user]
-        current_time = time.time()
-        duration_in_seconds = record["duration"] * HOURS_IN_A_DAY * 60 * 60
-        if current_time - record["last_updated_at"] >= duration_in_seconds:
-            self.reset_cost(user)
-            record["last_updated_at"] = current_time
-            self._save_data_thread()
+        now = time.time()
+        elapsed = now - record["last_updated_at"]
+        if elapsed < record["duration"] * HOURS_IN_A_DAY * 60 * 60:
+            return
+        self.reset_cost(user)
+        record["last_updated_at"] = now
+        self._save_data_thread()
 
     def update_budget_all_users(self) -> None:
         for user in self.get_users():
@@ -253,28 +258,30 @@ class BudgetManager:
         thread.start()
 
     def save_data(self) -> JsonValue:
-        if self.client_type == "local":
+        with self._save_lock:
             users: dict[str, JsonValue] = {
                 user: record_json(record) for user, record in self.user_dict.items()
             }
-            Path(_COST_FILE).write_text(json.dumps(users, indent=4))
-            return {"status": "success"}
-        request: dict[str, JsonValue] = {
-            "project_name": self.project_name,
-            "user_dict": {
-                user: record_json(record) for user, record in self.user_dict.items()
-            },
-        }
-        return betterlite.module_level_client.post(
-            self.api_base + "/set_budget", headers=self.headers, json=request
-        )
+            if self.client_type == "local":
+                pending = Path(f"{_COST_FILE}.pending")
+                with _COST_FILE_LOCK:
+                    pending.write_text(json.dumps(users, indent=4))
+                    pending.replace(_COST_FILE)
+                return {"status": "success"}
+            request: dict[str, JsonValue] = {
+                "project_name": self.project_name,
+                "user_dict": users,
+            }
+            return betterlite.module_level_client.post(
+                self.api_base + "/set_budget", headers=self.headers, json=request
+            )
 
 
 def _written_model(completion_obj: JsonSource) -> str:
-    match dump_object(completion_obj).get("model"):
-        case str() as name:
-            return name
-    raise TypeError("model must be a string")
+    name = text_of(dump_object(completion_obj).get("model"))
+    if name is None:
+        raise TypeError("model must be a string")
+    return name
 
 
 def _text_cost(model: str, input_text: str, output_text: str) -> float:
