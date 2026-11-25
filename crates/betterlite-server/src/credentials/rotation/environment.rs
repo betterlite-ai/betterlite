@@ -13,6 +13,8 @@ use crate::env_value_codec::{EnvValueCodecError, encrypt_env};
 pub enum EnvironmentError {
     #[error("the stored environment_variables value does not decode")]
     Decode(#[source] ConfigDecodeError),
+    #[error("the stored environment_variables value does not serialize")]
+    Serialize(#[source] serde_json::Error),
     #[error("the stored environment_variables value is not a JSON object")]
     NotAnObject,
 }
@@ -28,7 +30,7 @@ pub fn environment_values(stored: &JsonData) -> Result<Option<JsonMap>, Environm
             stored.clone()
         }
     };
-    match settings_value(decoded) {
+    match serde_json::to_value(decoded).map_err(EnvironmentError::Serialize)? {
         JsonValue::Object(values) => Ok(Some(values)),
         JsonValue::Null => Ok(None),
         JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_) => {
@@ -54,22 +56,6 @@ pub fn sealed_values(
             .map(|(name, value)| (name, stored_value(value)))
             .collect(),
     ))
-}
-
-fn settings_value(data: JsonData) -> JsonValue {
-    match data {
-        JsonData::Null => JsonValue::Null,
-        JsonData::Bool(flag) => JsonValue::Bool(flag),
-        JsonData::Number(number) => JsonValue::Number(number),
-        JsonData::String(text) => JsonValue::String(text),
-        JsonData::Array(items) => JsonValue::Array(items.into_iter().map(settings_value).collect()),
-        JsonData::Object(fields) => JsonValue::Object(
-            fields
-                .into_iter()
-                .map(|(name, value)| (name, settings_value(value)))
-                .collect(),
-        ),
-    }
 }
 
 fn stored_value(value: JsonValue) -> JsonData {

@@ -69,10 +69,16 @@ pub fn prepare_encrypted_model(
             source,
         }
     })?;
+    let Some(Json::Text(model_id)) = info.get(MODEL_ID) else {
+        return Err(ModelSecretsError::MissingText { field: MODEL_ID });
+    };
+    let Some(Json::Text(model_name)) = deployment.get(MODEL_NAME) else {
+        return Err(ModelSecretsError::MissingText { field: MODEL_NAME });
+    };
     let audit = actor.unwrap_or(DEFAULT_USER_ID).to_owned();
     Ok(PreparedModel {
-        model_id: text_field(info, MODEL_ID)?.to_owned(),
-        model_name: text_field(deployment, MODEL_NAME)?.to_owned(),
+        model_id: model_id.to_owned(),
+        model_name: model_name.to_owned(),
         litellm_params: params_json,
         model_info: info_json,
         created_by: audit.clone(),
@@ -84,26 +90,10 @@ fn object_field<'json>(
     deployment: &'json JsonObject,
     field: &'static str,
 ) -> Result<&'json JsonObject, ModelSecretsError> {
-    let Some(value) = deployment.get(field) else {
-        return Err(ModelSecretsError::MissingObject { field });
-    };
-    let Json::Object(object) = value else {
+    let Some(Json::Object(object)) = deployment.get(field) else {
         return Err(ModelSecretsError::MissingObject { field });
     };
     Ok(object)
-}
-
-fn text_field<'json>(
-    deployment: &'json JsonObject,
-    field: &'static str,
-) -> Result<&'json str, ModelSecretsError> {
-    let Some(value) = deployment.get(field) else {
-        return Err(ModelSecretsError::MissingText { field });
-    };
-    let Json::Text(text) = value else {
-        return Err(ModelSecretsError::MissingText { field });
-    };
-    Ok(text)
 }
 
 // exclude_none: a null parameter is left out of the stored record rather than sealed, and a string is sealed with the explicit key.

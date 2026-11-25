@@ -370,6 +370,20 @@ impl FakeMcpStore {
     }
 }
 
+// Both per-user stages discard their update in the fake, and one expansion keeps the twin bodies out of the source.
+macro_rules! ignored_user_write {
+    ($method:ident, $value:ident) => {
+        fn $method(
+            &self,
+            _user_id: &str,
+            _server_id: &str,
+            $value: &str,
+        ) -> impl Future<Output = Result<(), FakeMcpError>> + Send {
+            ready(Ok(()))
+        }
+    };
+}
+
 impl McpRotationStore for FakeMcpStore {
     type Error = FakeMcpError;
 
@@ -409,28 +423,14 @@ impl McpRotationStore for FakeMcpStore {
         Ok(self.user_credentials.clone())
     }
 
-    fn update_user_credential(
-        &self,
-        _user_id: &str,
-        _server_id: &str,
-        _credential_b64: &str,
-    ) -> impl Future<Output = Result<(), FakeMcpError>> + Send {
-        ready(Ok(()))
-    }
+    ignored_user_write!(update_user_credential, _credential_b64);
 
     async fn user_env_var_rows(&self) -> Result<Vec<StoredUserEnvVarRow>, FakeMcpError> {
         self.fail(McpFailure::UserEnvVars)?;
         Ok(self.user_env_vars.clone())
     }
 
-    fn update_user_env_var(
-        &self,
-        _user_id: &str,
-        _server_id: &str,
-        _values_b64: &str,
-    ) -> impl Future<Output = Result<(), FakeMcpError>> + Send {
-        ready(Ok(()))
-    }
+    ignored_user_write!(update_user_env_var, _values_b64);
 }
 
 pub(super) struct Fixture {
@@ -480,13 +480,15 @@ impl Fixture {
 }
 
 pub(super) fn saved_models(writes: &[Write]) -> Vec<PreparedModel> {
-    let mut saved = Vec::new();
-    for write in writes {
-        if let Write::Models(models) = write {
-            saved.extend(models.iter().cloned());
-        }
-    }
-    saved
+    writes
+        .iter()
+        .filter_map(|write| match write {
+            Write::Models(models) => Some(models.as_slice()),
+            Write::Environment(_) | Write::Credential { .. } | Write::Publish => None,
+        })
+        .flatten()
+        .cloned()
+        .collect()
 }
 
 pub(super) fn saved_environment(writes: &[Write]) -> Option<JsonData> {
