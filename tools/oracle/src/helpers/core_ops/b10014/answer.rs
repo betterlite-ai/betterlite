@@ -230,6 +230,21 @@ fn assertion_answer(
     outcome_answer(function, outcome, &lookups)
 }
 
+// the assertion on a resolved id, over the world the id resolved in
+fn id_assertion_answer(
+    runtime: &Runtime,
+    world: &World,
+    vector_store_id: &str,
+    auth: &StoreAuth,
+    detail: Option<&str>,
+) -> Result<Value, Box<HelperError>> {
+    let subject = Assertion::Id {
+        world,
+        vector_store_id,
+    };
+    assertion_answer(runtime, &subject, auth, detail)
+}
+
 pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
         Call::Resolve {
@@ -262,15 +277,7 @@ pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<Helper
             detail,
         } => {
             let world = World::build(registry.as_ref(), *database, cached, rows, *fail)?;
-            assertion_answer(
-                runtime,
-                &Assertion::Id {
-                    world: &world,
-                    vector_store_id: vector_store_id.as_str(),
-                },
-                auth,
-                detail.as_deref(),
-            )
+            id_assertion_answer(runtime, &world, vector_store_id, auth, detail.as_deref())
         }
     }
 }
