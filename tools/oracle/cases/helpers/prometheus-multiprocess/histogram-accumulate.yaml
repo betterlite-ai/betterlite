@@ -1,0 +1,23 @@
+kind: helper
+name: prometheus-multiprocess-histogram-accumulate
+call:
+  b10095:
+    files:
+      - name: histogram_1001.db
+        entries:
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "0.5"}, help: Request latency, value: 2.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "1"}, help: Request latency, value: 3.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "+Inf"}, help: Request latency, value: 4.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_sum, labels: {}, help: Request latency, value: 1.5, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {route: /v1, le: "1"}, help: Request latency, value: 1.0, timestamp: 0.0}
+      - name: histogram_1002.db
+        entries:
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "0.5"}, help: Request latency, value: 1.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "1.0"}, help: Request latency, value: 2.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "+Inf"}, help: Request latency, value: 3.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_sum, labels: {}, help: Request latency, value: 0.5, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {route: /v1, le: "1"}, help: Request latency, value: 1.0, timestamp: 0.0}
+    call: merge
+    accept: ""
+env: {}
+compare: {ignore: []}

@@ -582,6 +582,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "autorouter_presets"
+path = "fuzz_targets/autorouter_presets.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "global_report_query"
 path = "fuzz_targets/global_report_query.rs"
 test = false

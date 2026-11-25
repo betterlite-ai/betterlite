@@ -1,4 +1,4 @@
-pub(super) fn float_to_go_string(value: f64) -> String {
+pub(crate) fn float_to_go_string(value: f64) -> String {
     if value.is_infinite() {
         return if value.is_sign_positive() {
             "+Inf".to_owned()
