@@ -1,12 +1,16 @@
 use std::fmt::Display;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use tokio::runtime::{Handle, TryCurrentError};
 use tokio::task::{JoinError, JoinHandle};
+use tokio::time::timeout;
 
-use crate::pass_through_logging::anthropic_batch::{BatchRegistration, ManagedBatchRegistry};
+use crate::pass_through_logging::anthropic_batch::{
+    BatchRegistration, ManagedBatchRegistry, RegistryError,
+};
 use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 #[must_use]
@@ -41,6 +45,9 @@ pub fn request_tags_from_metadata(
     sanitized_str_tuple(fields.get("tags"))
 }
 
+// A stalled registry write must not hold the shutdown drain open, so the write gives up after this long.
+const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(30);
+
 // The write and the log of its result are one task, so a registration is never half done when the server stops.
 pub(crate) fn spawn_batch_registration(
     background: &BackgroundTasks,
@@ -56,10 +63,18 @@ pub(crate) fn spawn_batch_registration(
     let stored = registry.store_unified_object_id(registration);
     let consequence = registration_consequence(is_batch_create);
     let warning = format!("{provider} batch registration cancelled at shutdown; {consequence}");
+    let timed_out = format!(
+        "the batch managed object write did not finish within {} seconds",
+        REGISTRATION_TIMEOUT.as_secs()
+    );
     Ok(background.spawn(
         async move {
+            let finished = match timeout(REGISTRATION_TIMEOUT, stored).await {
+                Ok(result) => result,
+                Err(_elapsed) => Err(RegistryError { message: timed_out }),
+            };
             log_batch_registration_result(
-                Ok(stored.await),
+                Ok(finished),
                 provider,
                 &unified_object_id,
                 &model_object_id,

@@ -15,11 +15,12 @@ impl BackgroundTasks {
     where
         Work: Future<Output = ()> + Send + 'static,
     {
+        // Armed before the task exists, so a cancellation before its first poll still names the consequence.
+        let mut cancelled = CancellationWarning {
+            warning,
+            armed: true,
+        };
         self.tasks.spawn(async move {
-            let mut cancelled = CancellationWarning {
-                warning,
-                armed: true,
-            };
             work.await;
             cancelled.armed = false;
         })

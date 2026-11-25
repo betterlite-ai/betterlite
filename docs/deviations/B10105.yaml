@@ -32,4 +32,12 @@ deviations:
       Rust has no exception left to report once the task is gone; the panic hook still prints the
       panic and its location, and the warning keeps the cost consequence.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L50-L62
+  - what: >-
+      A registry write still pending after 30 seconds is abandoned, and the timeout is logged as a failed
+      store with the provider and its create or read consequence, so BackgroundTasks::shutdown never
+      waits on a stalled registry forever.
+    why: >-
+      LiteLLM never awaits the registration, so its shutdown cannot hang on it, but a write pending at
+      shutdown is lost; betterlite drains the write and bounds how long that drain can take.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1148-L1164
 kept_bugs: []

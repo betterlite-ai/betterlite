@@ -295,6 +295,17 @@ impl ManagedBatchRegistry for PanickingRegistry {
     }
 }
 
+struct StalledRegistry;
+
+impl ManagedBatchRegistry for StalledRegistry {
+    fn store_unified_object_id(
+        &self,
+        _request: BatchRegistration,
+    ) -> BoxFuture<'static, Result<(), RegistryError>> {
+        Box::pin(async { pending::<Result<(), RegistryError>>().await })
+    }
+}
+
 fn gated_registry() -> (
     Arc<dyn ManagedBatchRegistry>,
     mpsc::Receiver<()>,
@@ -460,4 +471,58 @@ async fn batch_registration_drain_warns_when_the_registry_panics() {
         "Anthropic batch registration cancelled at shutdown; its cost will not be tracked"
     ));
     assert!(!text.contains("Failed to store Anthropic"));
+}
+
+#[tokio::test]
+async fn batch_registration_drain_warns_about_an_unpolled_create() {
+    let (log, _guard) = capture_logs(tracing::Level::INFO);
+    let registry: Arc<dyn ManagedBatchRegistry> = Arc::new(StalledRegistry);
+    let background = BackgroundTasks::default();
+    let handle = spawn_batch_registration(&background, &registry, "Anthropic", registration(true))
+        .expect("a Tokio runtime runs the test");
+    handle.abort();
+    let error = handle
+        .await
+        .expect_err("the registration task was cancelled");
+    assert!(error.is_cancelled());
+    assert!(log.contents().contains(
+        "Anthropic batch registration cancelled at shutdown; its cost will not be tracked"
+    ));
+}
+
+#[tokio::test]
+async fn batch_registration_drain_warns_about_an_unpolled_read() {
+    let (log, _guard) = capture_logs(tracing::Level::INFO);
+    let registry: Arc<dyn ManagedBatchRegistry> = Arc::new(StalledRegistry);
+    let background = BackgroundTasks::default();
+    let handle = spawn_batch_registration(&background, &registry, "Vertex AI", registration(false))
+        .expect("a Tokio runtime runs the test");
+    handle.abort();
+    let error = handle
+        .await
+        .expect_err("the registration task was cancelled");
+    assert!(error.is_cancelled());
+    assert!(log.contents().contains(
+        "Vertex AI batch registration cancelled at shutdown; its status and output file may be stale"
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn batch_registration_drain_gives_up_on_a_stalled_registry() {
+    let (log, _guard) = capture_logs(tracing::Level::INFO);
+    let registry: Arc<dyn ManagedBatchRegistry> = Arc::new(StalledRegistry);
+    let background = BackgroundTasks::default();
+    let handle = spawn_batch_registration(&background, &registry, "Anthropic", registration(true))
+        .expect("a Tokio runtime runs the test");
+    timeout(Duration::from_secs(60), background.shutdown())
+        .await
+        .expect("the drain stops waiting for a stalled registration");
+    handle
+        .await
+        .expect("the registration task reported its timeout");
+    let text = log.contents();
+    assert!(text.contains(
+        "Failed to store Anthropic batch managed object with unified_object_id=unified-1, batch_id=batch-1; its cost will not be tracked: the batch managed object write did not finish within 30 seconds"
+    ));
+    assert!(!text.contains("cancelled at shutdown"));
 }
