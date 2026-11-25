@@ -10,7 +10,6 @@ use pyo3_async_runtimes::tokio::future_into_py;
 use tokio_util::task::TaskTracker;
 
 use super::{AsyncAnswer, MemoryDual, answer_json};
-use crate::cache_backends::blocking;
 use crate::cache_backends::redis::NativeRedis;
 
 // The batch a caller hands to declare_batch_get: its reads ride one pipeline round trip on that Redis tier.
@@ -49,7 +48,7 @@ impl NativeDeferred {
     fn async_wait<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let result = take_slot(&self.result)
             .ok_or_else(|| PyRuntimeError::new_err("deferred cache result was already consumed"))?;
-        blocking::none_future(py, async move {
+        future_into_py(py, async move {
             result
                 .await
                 .map_err(|error| PyRuntimeError::new_err(error.to_string()))

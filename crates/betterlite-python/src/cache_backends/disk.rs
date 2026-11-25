@@ -6,9 +6,9 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use super::convert;
 use super::error;
 use super::settings::DiskSettings;
-use super::{blocking, convert};
 
 type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
 
@@ -41,7 +41,7 @@ impl NativeDisk {
     fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let cache_value = convert::cache_value(value)?;
         let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
-        blocking::none_future(py, async move {
+        future_into_py(py, async move {
             error::backend_err(cache.async_set_cache(&owned, cache_value, ttl).await)
         })
     }
@@ -84,7 +84,7 @@ impl NativeDisk {
 
     fn async_delete<'py>(&self, py: Python<'py>, keys: Vec<String>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
-        blocking::none_future(py, async move {
+        future_into_py(py, async move {
             for key in &keys {
                 error::backend_err(cache.async_delete_cache(key).await)?;
             }
@@ -113,7 +113,7 @@ impl NativeDisk {
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
-        blocking::none_future(py, async move {
+        future_into_py(py, async move {
             error::backend_err(cache.async_flush_cache().await)?;
             Ok(())
         })
@@ -146,7 +146,7 @@ impl NativeDisk {
     // ast-grep-ignore: no-padded-one-line-functions - the awaitable of an immediate answer is the whole behavior
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let closed = self.close();
-        blocking::none_future(py, async move { closed })
+        future_into_py(py, async move { closed })
     }
 }
 

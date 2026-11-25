@@ -8,9 +8,9 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use super::convert;
 use super::error;
 use super::settings::MemorySettings;
-use super::{blocking, convert};
 
 // Every async entry point hands Python the same awaitable of JSON text.
 type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
@@ -59,7 +59,7 @@ impl NativeMemory {
     fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let cache_value = convert::cache_value(value)?;
         let (ops, owned, expiry) = (Arc::clone(&self.ops), key.to_owned(), ttl.or(self.default_ttl));
-        blocking::none_future(py, async move { set_value(&ops, &owned, cache_value, expiry) })
+        future_into_py(py, async move { set_value(&ops, &owned, cache_value, expiry) })
     }
 
     fn get(&self, key: &str) -> PyResult<Option<String>> {
@@ -106,7 +106,7 @@ impl NativeMemory {
 
     fn async_delete<'py>(&self, py: Python<'py>, keys: Vec<String>) -> AsyncAnswer<'py> {
         let ops = Arc::clone(&self.ops);
-        blocking::none_future(py, async move {
+        future_into_py(py, async move {
             for key in &keys {
                 error::backend_err(ops.delete_cache(key))?;
             }
@@ -137,7 +137,7 @@ impl NativeMemory {
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let ops = Arc::clone(&self.ops);
-        blocking::none_future(py, async move {
+        future_into_py(py, async move {
             error::backend_err(ops.flush_cache())?;
             Ok(())
         })
@@ -170,7 +170,7 @@ impl NativeMemory {
     // ast-grep-ignore: no-padded-one-line-functions - the awaitable of an immediate answer is the whole behavior
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let closed = self.close();
-        blocking::none_future(py, async move { closed })
+        future_into_py(py, async move { closed })
     }
 }
 
