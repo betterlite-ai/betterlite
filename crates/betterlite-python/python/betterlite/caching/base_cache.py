@@ -23,7 +23,9 @@ class BaseCache(ABC):
     def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
         raise NotImplementedError
 
-    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
+    async def async_set_cache(
+        self, key: str, value: JsonValue, **kwargs: JsonValue
+    ) -> bool | None:
         raise NotImplementedError
 
     @abstractmethod

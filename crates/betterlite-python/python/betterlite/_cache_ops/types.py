@@ -13,7 +13,9 @@ class CacheStore(Protocol):
 
     async def async_get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
 
-    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None: ...
+    async def async_set_cache(
+        self, key: str, value: JsonValue, **kwargs: JsonValue
+    ) -> bool | None: ...
 
     async def async_set_cache_pipeline(
         self, cache_list: list[tuple[str, JsonValue]], **kwargs: JsonValue

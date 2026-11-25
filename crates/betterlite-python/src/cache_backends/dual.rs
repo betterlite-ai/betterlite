@@ -1,11 +1,16 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::batch_reads::BatchReadOptions;
+use betterlite_cache::batch_reads::BatchReads;
 use betterlite_cache::dual_cache::{
     CacheOptions, DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, Ttl,
 };
 use betterlite_models::decisions::Json;
+use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::request_batch::scope::active_request_redis_batch;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
@@ -17,6 +22,74 @@ use super::settings::DualSettings;
 
 type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
 type MemoryDual = DualCache<LocalMemoryOps>;
+
+#[pyclass(module = "betterlite._native")]
+pub(crate) struct NativeDeferred {
+    result: Mutex<Option<BatchResult<()>>>,
+}
+
+#[pyclass(module = "betterlite._native")]
+pub(crate) struct NativeDeclaredBatchRead {
+    cache: Arc<MemoryDual>,
+    declared: Mutex<Option<betterlite_cache::batch_reads::DeclaredBatchRead>>,
+}
+
+#[pymethods]
+impl NativeDeferred {
+    fn async_wait<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
+        let result = match self.result.lock() {
+            Ok(mut held) => held.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        let Some(result) = result else {
+            return Err(PyRuntimeError::new_err(
+                "deferred cache result was already consumed",
+            ));
+        };
+        future_into_py(py, async move {
+            result
+                .await
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))
+        })
+    }
+
+    fn cancel(&self) {
+        match self.result.lock() {
+            Ok(mut held) => {
+                if let Some(result) = held.take() {
+                    result.cancel();
+                }
+            }
+            Err(poisoned) => {
+                if let Some(result) = poisoned.into_inner().take() {
+                    result.cancel();
+                }
+            }
+        }
+    }
+}
+
+#[pymethods]
+impl NativeDeclaredBatchRead {
+    fn async_resolve<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
+        let declared = match self.declared.lock() {
+            Ok(mut held) => held.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        let Some(declared) = declared else {
+            return Err(PyRuntimeError::new_err(
+                "declared batch read was already consumed",
+            ));
+        };
+        let cache = Arc::clone(&self.cache);
+        future_into_py(py, async move {
+            BatchReads::async_resolve_batch_get(&*cache, declared)
+                .await
+                .map(|values| values.iter().map(answer_text).collect())
+                .map_err(|error| PyRuntimeError::new_err(error.to_string()))
+        })
+    }
+}
 
 // DualCache over the memory tier and, when one was handed in, the Redis tier.
 #[pyclass(module = "betterlite._native")]
@@ -85,6 +158,129 @@ impl NativeDual {
             let stored = cache.async_get_cache(&owned, false).await;
             answer_json(stored)
         })
+    }
+
+    fn batch_get(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+        local_only: bool,
+    ) -> PyResult<Option<Vec<Option<String>>>> {
+        let result = py.detach(|| BatchReads::batch_get_cache(&*self.cache, &keys, local_only));
+        result
+            .map(|values| values.iter().map(answer_text).collect())
+            .transpose()
+    }
+
+    fn async_batch_get<'py>(
+        &self,
+        py: Python<'py>,
+        keys: Vec<String>,
+        local_only: bool,
+        throttle_redis: bool,
+    ) -> AsyncAnswer<'py> {
+        let cache = Arc::clone(&self.cache);
+        future_into_py(py, async move {
+            let options = BatchReadOptions {
+                local_only,
+                throttle_redis,
+            };
+            let result = BatchReads::async_batch_get_cache(&*cache, &keys, options).await;
+            result
+                .map(|values| values.iter().map(answer_text).collect())
+                .transpose()
+        })
+    }
+
+    #[staticmethod]
+    fn async_batch_get_shared<'py>(
+        py: Python<'py>,
+        reads: Vec<(Py<NativeDual>, Vec<String>)>,
+    ) -> AsyncAnswer<'py> {
+        let owned = reads
+            .into_iter()
+            .map(|(handle, keys)| {
+                let cache = Arc::clone(&handle.borrow(py).cache);
+                (cache, keys)
+            })
+            .collect::<Vec<_>>();
+        future_into_py(py, async move {
+            let refs = owned
+                .iter()
+                .map(|(cache, keys)| (&**cache, keys.as_slice()))
+                .collect::<Vec<_>>();
+            let results = BatchReads::async_batch_get_cache_shared(&refs).await;
+            results
+                .into_iter()
+                .map(|result| {
+                    result
+                        .map(|values| values.iter().map(answer_text).collect())
+                        .transpose()
+                })
+                .collect::<PyResult<Vec<_>>>()
+        })
+    }
+
+    fn declare_batch_get(
+        &self,
+        py: Python<'_>,
+        keys: Vec<String>,
+    ) -> PyResult<Option<Py<NativeDeclaredBatchRead>>> {
+        let Some(redis) = &self.redis else {
+            return Ok(None);
+        };
+        let Some(batch) = active_request_redis_batch(redis) else {
+            return Ok(None);
+        };
+        let declared = BatchReads::declare_batch_get(&*self.cache, &keys, &batch)
+            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+        Py::new(
+            py,
+            NativeDeclaredBatchRead {
+                cache: Arc::clone(&self.cache),
+                declared: Mutex::new(Some(declared)),
+            },
+        )
+        .map(Some)
+    }
+
+    fn set_cache_pre_call(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        value: &str,
+        ttl: Option<f64>,
+    ) -> PyResult<Option<Py<NativeDeferred>>> {
+        let json = convert::json_value(value)?;
+        let result = error::backend_err(self.cache.set_cache_pre_call(key, &json, ttl))?;
+        result
+            .map(|result| {
+                Py::new(
+                    py,
+                    NativeDeferred {
+                        result: Mutex::new(Some(result)),
+                    },
+                )
+            })
+            .transpose()
+    }
+
+    fn delete_cache_pre_call(
+        &self,
+        py: Python<'_>,
+        key: &str,
+    ) -> PyResult<Option<Py<NativeDeferred>>> {
+        let result = error::backend_err(self.cache.delete_cache_pre_call(key))?;
+        result
+            .map(|result| {
+                Py::new(
+                    py,
+                    NativeDeferred {
+                        result: Mutex::new(Some(result)),
+                    },
+                )
+            })
+            .transpose()
     }
 
     fn increment(
@@ -206,6 +402,10 @@ fn answer_json(stored: Option<Json>) -> PyResult<Option<String>> {
         || Ok(None),
         |value| convert::text_of_json(&value).map(Some).map_err(PyErr::from),
     )
+}
+
+fn answer_text(stored: &Option<Json>) -> PyResult<Option<String>> {
+    stored.as_ref().map(convert::text_of_json).transpose()
 }
 
 async fn count(

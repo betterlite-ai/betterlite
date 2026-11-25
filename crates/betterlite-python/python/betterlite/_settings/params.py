@@ -1,3 +1,5 @@
+from typing import Protocol
+
 from pydantic import JsonValue
 
 from betterlite.types.guardrails.core import GuardrailItem
@@ -109,7 +111,11 @@ enable_loadbalancing_on_batch_endpoints = None  # ast-grep-ignore: no-long-names
 require_managed_files = False
 enable_caching_on_provider_specific_optional_params = False  # ast-grep-ignore: no-long-names
 caching_with_models = False
-cache = None
+class CacheReference(Protocol):
+    def __str__(self) -> str: ...
+
+
+cache: CacheReference | None = None
 default_in_memory_ttl = None
 default_redis_ttl = None
 default_redis_batch_cache_expiry = None  # ast-grep-ignore: no-long-names

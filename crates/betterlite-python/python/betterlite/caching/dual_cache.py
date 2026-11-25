@@ -1,12 +1,12 @@
 import json
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from typing import Final
 
 from pydantic import JsonValue
 from typing_extensions import override
 
 import betterlite
-from betterlite._native import NativeDual
+from betterlite._native import NativeDeclaredBatchRead, NativeDeferred, NativeDual
 from betterlite.caching._backend import _number, _ttl_of, _value_or_none
 from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.in_memory_cache import InMemoryCache
@@ -14,6 +14,17 @@ from betterlite.caching.redis_cache import RedisCache
 
 DEFAULT_MAX_REDIS_BATCH_CACHE_SIZE: Final = 1000  # ast-grep-ignore: no-long-names
 _DEFAULT_BATCH_CACHE_EXPIRY: Final = 10.0
+
+
+class _DeferredResult:
+    def __init__(self, native: NativeDeferred) -> None:
+        self.native = native
+
+    def __await__(self) -> Generator[object, None, None]:
+        return self.native.async_wait().__await__()
+
+    def cancel(self) -> None:
+        self.native.cancel()
 
 
 # LiteLLM's local_only is a bool; a value of another type names the field and fails.
@@ -130,6 +141,59 @@ class DualCache(BaseCache):
         if not _local_only(local_only):
             return _value_or_none(await self.native.async_get(key))
         return await self.in_memory_cache.async_get_cache(key)
+
+    def batch_get_cache(
+        self, keys: list[str], parent_otel_span: JsonValue = None,
+        local_only: bool = False, **kwargs: JsonValue,
+    ) -> list[JsonValue] | None:
+        _unread = (parent_otel_span, kwargs)
+        result = self.native.batch_get(keys, local_only)
+        return None if result is None else [
+            _value_or_none(value) for value in result
+        ]
+
+    async def async_batch_get_cache(
+        self, keys: list[str], parent_otel_span: JsonValue = None,
+        local_only: bool = False, throttle_redis: bool = True,
+        **kwargs: JsonValue,
+    ) -> list[JsonValue] | None:
+        _unread = (parent_otel_span, kwargs)
+        result = await self.native.async_batch_get(
+            keys, local_only, throttle_redis
+        )
+        return None if result is None else [
+            _value_or_none(value) for value in result
+        ]
+
+    @staticmethod
+    async def async_batch_get_cache_shared(
+        reads: Sequence[tuple[DualCache, list[str]]],
+    ) -> list[list[JsonValue] | None]:
+        native_reads = [(cache.native, keys) for cache, keys in reads]
+        answers = await NativeDual.async_batch_get_shared(native_reads)
+        return [
+            None if answer is None else [_value_or_none(value) for value in answer]
+            for answer in answers
+        ]
+
+    def declare_batch_get(self, keys: Sequence[str]) -> NativeDeclaredBatchRead | None:
+        return self.native.declare_batch_get(list(keys))
+
+    async def async_resolve_batch_get(
+        self, declared: NativeDeclaredBatchRead
+    ) -> list[JsonValue]:
+        answers = await declared.async_resolve()
+        return [_value_or_none(value) for value in answers]
+
+    async def async_set_cache_pre_call(
+        self, key: str, value: JsonValue, ttl: float | None
+    ) -> _DeferredResult | None:
+        result = self.native.set_cache_pre_call(key, json.dumps(value), ttl)
+        return None if result is None else _DeferredResult(result)
+
+    async def async_delete_cache_pre_call(self, key: str) -> _DeferredResult | None:
+        result = self.native.delete_cache_pre_call(key)
+        return None if result is None else _DeferredResult(result)
 
     def increment_cache(
         self,

@@ -209,7 +209,7 @@ def enable_cache(
     print_verbose("LiteLLM: Enabling Cache")
     _add_cache_callbacks()
     if betterlite.cache is None:
-        betterlite.cache = Cache(  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1050-L1056
+        betterlite.cache = Cache(
             type=type,
             host=host,
             port=port,
@@ -230,7 +230,7 @@ def update_cache(
     **kwargs: JsonValue,
 ) -> None:
     print_verbose("LiteLLM: Updating Cache")
-    betterlite.cache = Cache(  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1086-L1093
+    betterlite.cache = Cache(
         type=type,
         host=host,
         port=port,

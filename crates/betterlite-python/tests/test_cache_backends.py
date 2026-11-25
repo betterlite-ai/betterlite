@@ -53,7 +53,9 @@ class ReferenceBackend(Protocol):
 
     async def async_get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
 
-    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None: ...
+    async def async_set_cache(
+        self, key: str, value: JsonValue, **kwargs: JsonValue
+    ) -> bool | None: ...
 
     def increment_cache(self, key: str, value: float, **kwargs: JsonValue) -> float: ...
 
@@ -202,7 +204,9 @@ class DynamicCache(BaseCache):
         return self.values.get(key)
 
     @override
-    async def async_set_cache(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
+    async def async_set_cache(
+        self, key: str, value: JsonValue, **_kwargs: JsonValue
+    ) -> bool | None:
         self.values[key] = value
 
     @override
@@ -327,8 +331,8 @@ def test_redis_counts_large_ints(redis_server: FakeRedisServer) -> None:
 
 def test_redis_async_set_passes_nx(redis_server: FakeRedisServer) -> None:
     ours = RedisCache(host=redis_server.host, port=redis_server.port)
-    asyncio.run(ours.async_set_cache("ours:nx", CACHED, nx=True))
-    asyncio.run(ours.async_set_cache("ours:nx", "replaced", nx=True))
+    assert asyncio.run(ours.async_set_cache("ours:nx", CACHED, nx=True)) is True
+    assert asyncio.run(ours.async_set_cache("ours:nx", "replaced", nx=True)) is None
     assert ours.get_cache("ours:nx") == CACHED
     asyncio.run(ours.async_set_cache("ours:nx", "replaced"))
     assert ours.get_cache("ours:nx") == "replaced"
@@ -416,6 +420,36 @@ def test_dual_keeps_memory_ttl(redis_server: FakeRedisServer) -> None:
     assert theirs.get_cache("litellm:ttl-count", local_only=True) is None
     assert ours.get_cache("ours:ttl-backfill", local_only=True) is None
     assert theirs.get_cache("litellm:ttl-backfill", local_only=True) is None
+
+
+def test_dual_batch_reads_include_memory_and_redis(redis_server: FakeRedisServer) -> None:
+    ours_redis = RedisCache(host=redis_server.host, port=redis_server.port)
+    ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=ours_redis)
+    ours.set_cache("ours:batch-redis", CACHED)
+    ours.in_memory_cache.set_cache("ours:batch-memory", CHAT_RESPONSE)
+    sync_values = ours.batch_get_cache(["ours:batch-memory", "ours:batch-redis"])
+    assert sync_values == [CHAT_RESPONSE, CACHED]
+
+    ours_redis.set_cache("ours:async-batch", CACHED)
+    async_values = asyncio.run(
+        ours.async_batch_get_cache(["ours:batch-memory", "ours:async-batch"])
+    )
+    assert async_values == [CHAT_RESPONSE, CACHED]
+
+    second = DualCache(in_memory_cache=InMemoryCache(), redis_cache=ours_redis)
+    shared = asyncio.run(
+        DualCache.async_batch_get_cache_shared(
+            [(ours, ["ours:batch-redis"]), (second, ["ours:async-batch"])]
+        )
+    )
+    assert shared == [[CACHED], [CACHED]]
+
+
+def test_dual_deferred_methods_without_request_batch() -> None:
+    cache = DualCache()
+    assert cache.declare_batch_get(["key"]) is None
+    assert asyncio.run(cache.async_set_cache_pre_call("key", CACHED, None)) is None
+    assert asyncio.run(cache.async_delete_cache_pre_call("key")) is None
 
 
 # LiteLLM's DiskCache needs the diskcache package, which the oracle environment does not install.

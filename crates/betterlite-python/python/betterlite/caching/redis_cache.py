@@ -73,8 +73,8 @@ class RedisCache(_BackendCache[NativeRedis]):
 
     # LiteLLM passes nx to the Redis SET; another type names the field and fails.
     @override
-    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
-        await self.native.async_set(
+    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> bool | None:
+        return await self.native.async_set(
             key, json.dumps(value), self._write_ttl(kwargs), _nx(kwargs)
         )
 

@@ -85,6 +85,40 @@ fn backends_dual_ping_without_redis() {
 }
 
 #[test]
+fn backends_dual_batch_reads_memory_values() {
+    let native = native_dual();
+    Python::attach(|py| {
+        native.set(py, "present", "1", None).unwrap();
+        assert_eq!(
+            native
+                .batch_get(py, vec!["present".to_owned(), "missing".to_owned()], false)
+                .unwrap(),
+            Some(vec![Some("1".to_owned()), None])
+        );
+    });
+}
+
+#[test]
+fn backends_dual_pre_call_without_redis_is_not_deferred() {
+    let native = native_dual();
+    Python::attach(|py| {
+        assert!(
+            native
+                .set_cache_pre_call(py, "key", "1", None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(native.delete_cache_pre_call(py, "key").unwrap().is_none());
+        assert!(
+            native
+                .declare_batch_get(py, vec!["key".to_owned()])
+                .unwrap()
+                .is_none()
+        );
+    });
+}
+
+#[test]
 fn backends_dual_options_and_text_of_ttl() {
     let cache_options = options(Some(5.0_f64));
     assert_eq!(cache_options.ttl, Some(5.0_f64));

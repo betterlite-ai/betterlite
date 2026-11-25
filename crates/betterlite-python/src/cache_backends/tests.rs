@@ -14,5 +14,7 @@ fn register_adds_the_backend_classes() {
         assert!(module.hasattr("NativeDisk").unwrap());
         assert!(module.hasattr("NativeRedis").unwrap());
         assert!(module.hasattr("NativeDual").unwrap());
+        assert!(module.hasattr("NativeDeferred").unwrap());
+        assert!(module.hasattr("NativeDeclaredBatchRead").unwrap());
     });
 }

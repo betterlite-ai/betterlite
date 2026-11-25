@@ -74,8 +74,9 @@ class _BackendCache(BaseCache, Generic[_HandleT]):
         self.native.set(key, json.dumps(value), self._write_ttl(kwargs))
 
     @override
-    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
+    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> bool | None:
         await self.native.async_set(key, json.dumps(value), self._write_ttl(kwargs))
+        return None
 
     @override
     def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
