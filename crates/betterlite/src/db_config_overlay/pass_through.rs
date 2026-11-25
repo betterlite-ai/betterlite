@@ -34,10 +34,8 @@ pub fn publish_pass_through(
     db_endpoints: &[JsonValue],
 ) -> Result<(), OverlayError> {
     let published = endpoints_beside_db(db_endpoints, &state.startup_pass_through);
-    state
-        .config
-        .general_settings
-        .insert(PASS_THROUGH_ENDPOINTS, JsonValue::Array(published))?;
+    let general_settings = &mut state.config.general_settings;
+    general_settings.insert(PASS_THROUGH_ENDPOINTS, JsonValue::Array(published))?;
     Ok(())
 }
 

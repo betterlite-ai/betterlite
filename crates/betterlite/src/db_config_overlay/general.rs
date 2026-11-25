@@ -171,11 +171,8 @@ fn apply_store_model_in_db(
     if !values.contains_key(STORE_MODEL_IN_DB) {
         return Ok(());
     }
-    let Some(value) = store
-        .get(STORE_MODEL_IN_DB)
-        .filter(|value| !value.is_null())
-        .cloned()
-    else {
+    let stored = store.get(STORE_MODEL_IN_DB);
+    let Some(value) = stored.filter(|value| !value.is_null()).cloned() else {
         return Ok(());
     };
     let enabled = coerce_bool(value) == JsonValue::Bool(true);

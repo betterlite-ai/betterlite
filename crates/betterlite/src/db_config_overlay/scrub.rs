@@ -135,22 +135,18 @@ fn refuse_guardrail_modules(fields: &mut JsonObject) {
             continue;
         };
         for inner in entry_fields.values_mut() {
-            refuse_guardrail_inner(inner);
+            let refused = drop_remote(inner.get_mut("callbacks"));
+            if refused > 0 {
+                tracing::warn!(
+                    "Refused {refused} remote-URL entries from DB-overlay litellm_settings.guardrails[...].callbacks"
+                );
+            }
+            if let Some(module) = take_remote(inner.get_mut("guardrail")) {
+                tracing::warn!(
+                    "Refused remote-URL guardrail module from DB-overlay litellm_settings.guardrails[...].guardrail: {module}"
+                );
+            }
         }
-    }
-}
-
-fn refuse_guardrail_inner(inner: &mut JsonValue) {
-    let refused = drop_remote(inner.get_mut("callbacks"));
-    if refused > 0 {
-        tracing::warn!(
-            "Refused {refused} remote-URL entries from DB-overlay litellm_settings.guardrails[...].callbacks"
-        );
-    }
-    if let Some(module) = take_remote(inner.get_mut("guardrail")) {
-        tracing::warn!(
-            "Refused remote-URL guardrail module from DB-overlay litellm_settings.guardrails[...].guardrail: {module}"
-        );
     }
 }
 

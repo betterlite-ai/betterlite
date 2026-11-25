@@ -78,12 +78,11 @@ pub const fn store_mut(
 // _as_settings_mapping: anything but a mapping reads as an empty one
 #[must_use]
 pub fn settings_mapping(value: Option<&JsonValue>) -> BTreeMap<String, JsonValue> {
-    value
-        .and_then(JsonValue::as_object)
-        .map_or_else(BTreeMap::new, |fields| {
-            fields
-                .iter()
-                .map(|(key, entry)| (key.clone(), entry.clone()))
-                .collect()
-        })
+    let Some(fields) = value.and_then(JsonValue::as_object) else {
+        return BTreeMap::new();
+    };
+    fields
+        .iter()
+        .map(|(key, entry)| (key.clone(), entry.clone()))
+        .collect()
 }
