@@ -154,6 +154,7 @@ impl AnthropicPassthroughLogger {
         // ast-grep-ignore: no-long-names - LiteLLM's _create_anthropic_response_logging_payload, shared by the whole and the streamed path
         let kwargs = create_anthropic_response_logging_payload(
             self,
+            tools,
             AnthropicPayloadInput {
                 response: &mut response,
                 model: &model,

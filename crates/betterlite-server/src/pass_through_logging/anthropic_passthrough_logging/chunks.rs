@@ -94,7 +94,7 @@ pub(super) fn log_collected_chunks(
         response_id: response_id.as_deref(),
     };
     // ast-grep-ignore: no-long-names - LiteLLM's _create_anthropic_response_logging_payload, shared by the whole and the streamed path
-    let kwargs = create_anthropic_response_logging_payload(logger, input);
+    let kwargs = create_anthropic_response_logging_payload(logger, tools, input);
     Ok(HandlerOutcome {
         result: Some(match response {
             Response::Chat(_) => PassThroughResponse::ModelResponse(body),

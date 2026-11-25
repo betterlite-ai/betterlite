@@ -396,13 +396,13 @@ impl MakeWriter<'_> for LogBuffer {
     }
 }
 
-pub(super) fn capture_logs() -> (LogBuffer, DefaultGuard) {
+pub(super) fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = tracing_subscriber::fmt()
         .without_time()
         .with_ansi(false)
         .with_target(false)
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(level)
         .with_writer(buffer.clone())
         .finish();
     (buffer, set_default(subscriber))

@@ -11,7 +11,7 @@ use super::super::response_costing::{
     ResponseCostError, compute_response_cost, resolve_costing_model,
 };
 use super::super::response_payload::end_user_from_request_body;
-use super::AnthropicPassthroughLogger;
+use super::{AnthropicPassthroughLogger, TransformTools};
 
 const ANTHROPIC: &str = "anthropic";
 const COMPLETE_STREAMING_RESPONSE: &str = "complete_streaming_response";
@@ -39,10 +39,11 @@ enum PayloadError {
 // ast-grep-ignore: no-long-names - LiteLLM's _create_anthropic_response_logging_payload, shared by the whole and the streamed path
 pub(crate) fn create_anthropic_response_logging_payload(
     logger: &AnthropicPassthroughLogger,
+    tools: &TransformTools,
     mut input: AnthropicPayloadInput<'_>,
 ) -> PassThroughLoggingKwargs {
     store_streamed_response(input.call_log, input.response);
-    if let Err(error) = payload_steps(logger, &mut input) {
+    if let Err(error) = payload_steps(logger, tools, &mut input) {
         tracing::error!("Error creating Anthropic response logging payload: {error}");
     }
     input.kwargs
@@ -51,6 +52,7 @@ pub(crate) fn create_anthropic_response_logging_payload(
 // Each step writes in place, so a later failure keeps what the earlier steps set.
 fn payload_steps(
     logger: &AnthropicPassthroughLogger,
+    tools: &TransformTools,
     input: &mut AnthropicPayloadInput<'_>,
 ) -> Result<(), PayloadError> {
     let model = resolve_costing_model(input.model, input.call_log);
@@ -68,7 +70,7 @@ fn payload_steps(
     if tracing::enabled!(Level::DEBUG) {
         let pretty =
             serde_json::to_string_pretty(&input.kwargs.entries).map_err(PayloadError::Encode)?;
-        tracing::debug!("kwargs= {pretty}");
+        tracing::debug!("kwargs= {}", tools.redactor.redact_string(&pretty));
     }
     stamp_identity(input, model)
 }

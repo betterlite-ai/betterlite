@@ -36,6 +36,8 @@ fn priced() -> Json {
     decimal_json(Decimal::new(125, 2))
 }
 
+const SECRET: &str = "sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 #[tokio::test]
 async fn anthropic_batch_create_on_the_collection_route_logs_the_batch() {
     let cost = RecordingCost::priced();
@@ -220,7 +222,7 @@ fn anthropic_chat_transform_gets_the_request_speed(
 
 #[test]
 fn anthropic_payload_cost_failure_keeps_the_steps_before_it() {
-    let (logs, _guard) = capture_logs();
+    let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
     let cost = RecordingCost::failing();
     let registry = Arc::new(RecordingRegistry::default());
     let mut log = call_log(&[("stream", Json::Bool(true))]);
@@ -235,10 +237,7 @@ fn anthropic_payload_cost_failure_keeps_the_steps_before_it() {
     );
     let result = model_response(&outcome);
     let id = text_at(result, &["id"]).unwrap();
-    assert!(
-        id.starts_with("chatcmpl-"),
-        "the id was never stamped: {id}"
-    );
+    assert_eq!(id, format!("chatcmpl-{CALL_ID}"));
     let details = &log.model_call_details;
     assert_eq!(details.get("response_cost"), None);
     assert_eq!(details.get("model"), Some(&text("")));
@@ -248,6 +247,60 @@ fn anthropic_payload_cost_failure_keeps_the_steps_before_it() {
     assert!(logs.contents().contains(
         "Error creating Anthropic response logging payload: the response cost could not be computed"
     ));
+}
+
+#[test]
+fn anthropic_payload_debug_log_redacts_credentials() {
+    let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
+    let cost = RecordingCost::priced();
+    let registry = Arc::new(RecordingRegistry::default());
+    let mut log = call_log(&[]);
+    let mut exchange = Exchange::message(MESSAGES_ROUTE);
+    exchange.kwargs = kwargs(&[(
+        "litellm_params",
+        Json::Object(object(&[("api_key", text(SECRET))])),
+    )]);
+    exchange
+        .handle(&logger(&cost, &registry), &mut log)
+        .unwrap();
+    let captured = logs.contents();
+    assert!(
+        captured.contains("kwargs= "),
+        "the payload step did not log: {captured}"
+    );
+    assert!(
+        !captured.contains(SECRET),
+        "the credential reached the log: {captured}"
+    );
+    assert!(
+        captured.contains("REDACTED"),
+        "the credential was not redacted: {captured}"
+    );
+    assert!(
+        captured.contains("response_cost"),
+        "the kwargs were not logged: {captured}"
+    );
+}
+
+#[test]
+fn anthropic_request_debug_logs_the_raw_response_as_a_warning() {
+    let (logs, _guard) = capture_logs(tracing::Level::WARN);
+    let cost = RecordingCost::priced();
+    let registry = Arc::new(RecordingRegistry::default());
+    let mut log = call_log(&[]);
+    log.litellm_request_debug = true;
+    Exchange::message(MESSAGES_ROUTE)
+        .handle(&logger(&cost, &registry), &mut log)
+        .unwrap();
+    let captured = logs.contents();
+    assert!(
+        captured.contains("WARN"),
+        "the record did not reach the warning level: {captured}"
+    );
+    assert!(
+        captured.contains("RAW RESPONSE"),
+        "the raw response was not logged: {captured}"
+    );
 }
 
 #[test]
@@ -436,7 +489,7 @@ fn anthropic_payload_without_end_user_leaves_litellm_params(#[case] payload: Opt
 
 #[test]
 fn anthropic_payload_litellm_params_of_the_wrong_type_stops_the_payload() {
-    let (logs, _guard) = capture_logs();
+    let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
     let cost = RecordingCost::priced();
     let registry = Arc::new(RecordingRegistry::default());
     let mut log = call_log(&[]);
@@ -458,10 +511,7 @@ fn anthropic_payload_litellm_params_of_the_wrong_type_stops_the_payload() {
         Some(&text("not an object"))
     );
     let id = text_at(model_response(&outcome), &["id"]).unwrap();
-    assert!(
-        id.starts_with("chatcmpl-"),
-        "the id was never stamped: {id}"
-    );
+    assert_eq!(id, format!("chatcmpl-{CALL_ID}"));
     assert_eq!(log.model_call_details.get("custom_llm_provider"), None);
     assert!(logs.contents().contains(
         "Error creating Anthropic response logging payload: kwargs litellm_params is not a JSON object"
@@ -570,7 +620,7 @@ fn anthropic_chunks_complete_stream_is_logged() {
 
 #[test]
 fn anthropic_chunks_unbuildable_stream_logs_and_returns_nothing() {
-    let (logs, _guard) = capture_logs();
+    let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
     let cost = RecordingCost::priced();
     let registry = Arc::new(RecordingRegistry::default());
     let mut log = call_log(&[]);
