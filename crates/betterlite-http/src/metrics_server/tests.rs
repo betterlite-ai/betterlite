@@ -296,12 +296,15 @@ async fn health_answers_only_get(#[case] method: Method) {
     }
 }
 
+#[rstest]
+#[case::unknown("/metricsx")]
+#[case::health_with_a_slash("/health/")]
 #[tokio::test]
-async fn unknown_paths_are_a_json_404() {
+async fn unknown_paths_are_a_json_404(#[case] path: &str) {
     let folder = TempDir::new().unwrap();
     let tasks = TaskTracker::new();
     let address = served_app(folder.path(), &tasks).await;
-    let url = format!("http://{address}/metricsx");
+    let url = format!("http://{address}{path}");
     let response = client().get(url).send().await.unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(response.text().await.unwrap(), r#"{"detail":"Not Found"}"#);
