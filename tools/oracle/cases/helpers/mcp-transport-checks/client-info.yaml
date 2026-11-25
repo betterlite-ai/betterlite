@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-transport-checks-client-info
+call:
+  b8724:
+    operation: client_info
+    bodies:
+      - '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+      - '{"id":1,"params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+      - '{"method":"tools/call","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+      - '{"method":null,"params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{}}}'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai"}}}'
+      - '{"method":"initialize","params":{"capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+      - '{"method":"initialize","params":null}'
+      - '{"method":"initialize"}'
+      - '{"method":"initialize"'
+      - '[]'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"sampling":{}},"clientInfo":{"name":"claude-ai","version":"0.1.0","title":"Claude","description":"desktop client"}}}'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"},"extra":1}}'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0","websiteUrl":"https://claude.ai"},"_meta":{}}}'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"","version":""}}}'
+      - '{"method":"initialize","params":{"protocolVersion":2025,"capabilities":{},"clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+      - '{"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":"none","clientInfo":{"name":"claude-ai","version":"0.1.0"}}}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,86 @@
+kind: helper
+name: key-limit-policy-guaranteed-type-matrix
+call:
+  key_limit_policy:
+    check: team
+    request:
+      kind: generate
+      body: {rpm_limit: 100, metadata: {rpm_limit_type: guaranteed_throughput}}
+    team: {team_id: team-1, rpm_limit: 1}
+    keys:
+      - {token: k1, team_id: team-1, rpm_limit: 100}
+calls:
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit: 6, metadata: {rpm_limit_type: guaranteed_throughput}}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        litellm_budget_table: {budget_id: budget-1, rpm_limit: 10}
+      keys:
+        - {token: k1, organization_id: org-1, rpm_limit: 5}
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body:
+          rpm_limit_type: best_effort_throughput
+          rpm_limit: 100
+          metadata: {rpm_limit_type: guaranteed_throughput}
+      team: {team_id: team-1, rpm_limit: 1}
+      keys: []
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body:
+          rpm_limit_type: best_effort_throughput
+          rpm_limit: 100
+          metadata: {rpm_limit_type: guaranteed_throughput}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        litellm_budget_table: {budget_id: budget-1, rpm_limit: 1}
+      keys: []
+  - key_limit_policy:
+      check: organization
+      request: {kind: generate, body: {rpm_limit: 100}}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        metadata: {rpm_limit_type: guaranteed_throughput}
+        litellm_budget_table: {budget_id: budget-1, rpm_limit: 1}
+      keys: []
+  - key_limit_policy:
+      check: team
+      request:
+        kind: generate
+        body: {tpm_limit_type: guaranteed_throughput, rpm_limit: 11}
+      team: {team_id: team-1, rpm_limit: 10}
+      keys: []
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, tpm_limit: 11}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        litellm_budget_table: {budget_id: budget-1, tpm_limit: 10}
+      keys: []
+env: {}
+compare: {ignore: []}

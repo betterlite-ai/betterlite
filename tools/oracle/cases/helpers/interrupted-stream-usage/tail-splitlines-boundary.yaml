@@ -1,0 +1,12 @@
+kind: helper
+name: tail-splitlines-boundary
+call:
+  b3632:
+    tails:
+    - chunks:
+      - 646174613a207b2274797065223a226d6573736167655f64656c7461227d0d646174613a205b444f4e455de280a8646174613a207b6e6f74206a736f6e7d1c
+    recovers: []
+    clears: []
+env: {}
+compare:
+  ignore: []

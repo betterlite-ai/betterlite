@@ -1,0 +1,24 @@
+task: B4674
+deviations:
+  - what: Registration answers 400 invalid_redirect_uri "each redirect URI must be a valid URL" when a redirect URI cannot be parsed, for example https://[::1/callback with its unmatched bracket. LiteLLM's urlparse call sits outside the try block, so the ValueError escapes register_aggregate_client and the endpoint answers 500.
+    why: A malformed client request is a client error, and the registration endpoint is public, so it must not turn a bad redirect_uri into a server fault. The refusal is proven by rejects_an_unparsable_uri_as_a_client_error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L410-L412
+  - what: A registration refused by the shared redirect-URI shape validator carries the validator's description ("redirect_uri must not contain a URL fragment (#...)."), where LiteLLM relays str(exc.detail), the Python dict repr of the HTTPException detail, so a client reads a dict repr holding the error code and the description instead of the description alone.
+    why: error_description is a client-facing RFC 7591 field; a dict repr is a formatting accident of the route, not a behavior a working client relies on. The oracle case register-bad-shapes ignores this one pointer, and rejects_a_fragment_with_the_shared_validator_detail proves the clean text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L415-L418
+  - what: A cipher that cannot seal (no salt key, for example) makes register_aggregate_client refuse with 500 server_error and the description "the client registration could not be sealed". LiteLLM's _seal raises SecretError, and the request ends in the framework's plain 500 with no OAuth body.
+    why: The refusal is typed so the route B7971 can answer 500 without a panic, and a missing signing key is a server fault that must not register a client with an unopenable id. Proven by answers_500_when_the_cipher_refuses_to_seal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L426-L429
+  - what: A sealed value is interchangeable with LiteLLM's (each side opens the other's client_id, cookie and auth code) but the ciphertext text differs run to run, because every seal draws a fresh nonce. Oracle cases therefore compare what a sealed value opens to, never its text.
+    why: Both sides encrypt with XSalsa20-Poly1305 under sha256(salt) with a random nonce; a fixed ciphertext would have to fix the nonce, which would break the sealing every call site relies on.
+    link: ''
+  - what: The shared-or-local claim authority, and the Redis-backed ClaimBackend behind the shared one, are chosen by the caller and handed to SingleUseGuard. LiteLLM resolves proxy_server.redis_usage_cache inside the guard on every claim, preferring it over the injected cache's redis_cache.
+    why: betterlite keeps no module state; B8623 makes the same choice once and constructs the authority, and the guard behaves identically for each authority. The shared tests and the claim-shared oracle cases hold both halves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1024-L1046
+  - what: MemoryClaimStore keeps every live claim at capacity. At MAX_MEMORY_CLAIMS entries it sweeps only expired ones and then inserts the new key, holding one entry more than the cap until the next expired sweep. LiteLLM's InMemoryCache, at capacity, evicts the earliest-expiring entry even when it is still live.
+    why: Evicting a live claim forgets that an id was used, which lets a captured code, flow jti or refresh jti be replayed; a single-use guard must fail closed here. Proven by local_store_keeps_live_claims_and_sweeps_expired_ones_at_capacity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L136-L141
+  - what: MemoryClaimStore treats a record whose expiry equals the current second as expired, so an increment with ttl_seconds 0 starts a fresh window on every claim. LiteLLM's InMemoryCache marks a key expired only when its float clock is strictly past the expiry, but the clock has advanced by the next read, so a ttl 0 local claim is first every time there too, as the claim-local oracle case shows.
+    why: The injected clock in betterlite counts whole seconds, where equality is reachable; with LiteLLM's float wall clock the boundary second has passed before any later read. Both sides answer first, first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L93-L97
+kept_bugs: []

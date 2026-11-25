@@ -1,0 +1,34 @@
+task: B8724
+deviations:
+  - what: >-
+      session_id_header returns None for an mcp-session-id value that is not valid UTF-8, where LiteLLM's
+      bytes.decode() raises UnicodeDecodeError and the ASGI app answers 500.
+    why: >-
+      A malformed session id names no session, and LiteLLM's own callers treat a missing id as the stateless path. A 500
+      for a header no working client sends is the bug, not the contract; the routing reader now answers None, which is
+      what the same caller does when the header is absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1181
+  - what: >-
+      proxy_error_to_http answers 500 for a code outside 100-599 and for one that does not fit an unsigned 16-bit
+      integer, where LiteLLM passes whatever int(exc.code) returned to HTTPException.
+    why: >-
+      An HTTP response cannot carry a status outside 100-599; the ASGI server asserts on it at send time and the
+      connection breaks instead of answering. 500 is the same fallback the function already uses for a code it cannot
+      parse, so a status no working setup sends now gets a response rather than a dropped connection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L426
+  - what: >-
+      servers_in_path does not copy Python's regex $, which also matches just before a trailing newline; Rust's $
+      matches only at the end of the text.
+    why: >-
+      The only inputs this separates are paths ending in a newline after a query or fragment, and an HTTP request
+      target cannot carry a raw newline, so no request reaches the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1091
+  - what: >-
+      is_initialize_request and the truncated-response sniff parse with serde_json, which takes UTF-8 JSON with the
+      standard literals, where LiteLLM hands the body to Python's json.loads, which also detects UTF-16 and UTF-32
+      payloads from a byte-order mark and accepts the NaN and Infinity literals.
+    why: >-
+      MCP carries JSON-RPC as UTF-8 with standard JSON, so no working client reaches the difference, and
+      docs/compatibility.md keeps Python's runtime habits out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1249
+kept_bugs: []

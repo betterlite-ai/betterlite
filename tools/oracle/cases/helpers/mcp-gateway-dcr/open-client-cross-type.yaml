@@ -1,0 +1,63 @@
+kind: helper
+name: mcp-gateway-dcr-open-client-cross-type
+call:
+  b4674:
+    register: null
+    open:
+      - name: auth-code-as-client
+        payload:
+          user_id: user-1
+          client_id: llm_dcrc_client
+          redirect_uri: 'https://client.example/callback'
+          code_challenge: challenge-1
+          jti: jti-1
+          iat: 1700000000
+          exp: 1700000120
+          resource_server_id: srv-1
+          audience: proxy_api
+          team_id: team-1
+        prefix: client
+        wrap: none
+        raw: null
+      - name: connect-flow-as-client
+        payload:
+          user_id: user-1
+          client_id: llm_dcrc_client
+          redirect_uri: 'https://client.example/callback'
+          state: ''
+          code_challenge: challenge-1
+          jti: jti-1
+          exp: 1700000600
+        prefix: client
+        wrap: none
+        raw: null
+      - name: extra-field-as-client
+        payload: {redirect_uris: ['https://client.example/callback'], iat: 1700000000, extra: true}
+        prefix: client
+        wrap: none
+        raw: null
+      - name: no-uris-as-client
+        payload: {redirect_uris: [], iat: 1700000000}
+        prefix: client
+        wrap: none
+        raw: null
+      - name: five-uris-as-client
+        payload:
+          redirect_uris:
+            - 'https://a.example/1'
+            - 'https://a.example/2'
+            - 'https://a.example/3'
+            - 'https://a.example/4'
+            - 'https://a.example/5'
+          iat: 1700000000
+        prefix: client
+        wrap: none
+        raw: null
+      - name: uris-not-a-list
+        payload: {redirect_uris: 'https://client.example/callback', iat: 1700000000}
+        prefix: client
+        wrap: none
+        raw: null
+    claims: null
+env: {}
+compare: {ignore: []}

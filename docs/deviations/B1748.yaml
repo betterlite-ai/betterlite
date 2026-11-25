@@ -1,0 +1,12 @@
+task: B1748
+deviations:
+  - what: "A daily tag cohort's failed or interrupted commit is settled before the flush returns: an ordinary commit failure puts its remaining rows back before the error reaches the adapter, and a cancel that wins before the commit's first statement waits for the commit task to hand its map back instead of cancelling it. LiteLLM hands the same restoration to a tracked background task and re-raises at once, or cancels the task and restores the drained dict without waiting for it to unwind."
+    why: "The drained map lives in the commit task, so it can only be restored once that task has stopped at a safe point; restoring before the release closes the window in which another pod could take the tag lock and drain ahead of the returned rows."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1965-L1982"
+  - what: "A daily tag commit task that panics rather than returning an error loses the rows it had not committed and the flush carries on, where LiteLLM's tracked settle awaits the failed task and restores its rows before the exception reaches the adapter. The interrupted settle also adds one error line naming the rows it is about to put back, which the tag helper never logs."
+    why: "A panic unwinds the spawned task and the drained map with it, so nothing is left to restore; every commit failure a working setup can produce is a returned error, and that path restores exactly the pending rows."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L318-L328"
+  - what: "The flush's error lines carry the error's Display text only, where LiteLLM's spend_log_error attaches the active traceback unless LITELLM_SUPPRESS_SPEND_LOG_TRACEBACKS is set and the logger is above DEBUG; the tag adapter's own line is plain in both, and the interrupted settle's failure line keeps the error's source chain off the log."
+    why: "betterlite has no Python frames to print, and its tracing lines keep to the message operators match on; the source chain still travels on the error value."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_log_error_logger.py#L59-L83"
+kept_bugs: []

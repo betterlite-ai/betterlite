@@ -142,3 +142,10 @@ path = "fuzz_targets/capture_rate_settings.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mcp_tools"
+path = "fuzz_targets/mcp_tools.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,29 @@
+kind: helper
+name: stdio-flag-skipped
+call:
+  b8382:
+    operation: export_env
+    salt_key: b8382-test-salt
+    values:
+      LITELLM_ENABLE_MCP_STDIO: ah-ZYUwM1pVtDgNyNBoXQQeguffuBBBsoBRmWvjJrukGr8dEtYrlYCOhe7s=
+      API_KEY: h9B48z02ocEOJXnA6U4bES1FM-HDc_vsHxvi4KnFq9l0rNh_SdtyLJeWvoYUDZSEssV3aQ==
+      EXISTING: ucJMRChs9E72tFwnwPk39Fib5_cH4GK1Uk8fkOZXGJ7YhfK7PcbFDPLTqdiQ
+      BROKEN: not-a-ciphertext
+      PORT: 6379
+      NOTHING: null
+    keep_original: false
+    environment:
+      EXISTING: seeded
+calls:
+  - b8382:
+      operation: export_env
+      salt_key: b8382-test-salt
+      values:
+        BROKEN: not-a-ciphertext
+      keep_original: true
+      environment: {}
+env:
+  LITELLM_SALT_KEY: b8382-test-salt
+  EXISTING: seeded
+compare:
+  ignore: []

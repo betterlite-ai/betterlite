@@ -1,0 +1,31 @@
+kind: helper
+name: proxy-endpoint-support-proxy-error-records
+call:
+  proxy_endpoint_support:
+    calls:
+      # an HTTPException keeps its status and detail, and the OpenAI param stays nullable
+      - function: record
+        exception: {kind: http, status_code: 404, detail: missing}
+        litellm_call_id: null
+        notice: false
+      # a generic failure without a status answers 500 and logs the bug-report notice
+      - function: record
+        exception: {kind: failure, message: connection reset, status_code: null, param: null}
+        litellm_call_id: null
+        notice: true
+      - function: record
+        exception: {kind: failure, message: unsupported file, status_code: 429, param: file}
+        litellm_call_id: null
+        notice: false
+      # the stringified "None" a ProxyException would carry becomes a null param
+      - function: record
+        exception: {kind: failure, message: boom, status_code: 400, param: "None"}
+        litellm_call_id: null
+        notice: false
+      # an existing ProxyException keeps its own fields, and a supplied call id fills only an absent header
+      - function: record
+        exception: {kind: proxy, message: original message, error_type: invalid_request_error, param: purpose, code: 400, headers: {x-other: keep}}
+        litellm_call_id: call-5
+        notice: false
+env: {}
+compare: {ignore: []}

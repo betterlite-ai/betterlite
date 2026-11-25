@@ -1,0 +1,33 @@
+task: B772
+deviations:
+  - what: A per-model RPM/TPM ceiling map or a key's metadata map holding a fractional number is rejected as not a whole-number map; LiteLLM declares both as plain dicts and compares the number it finds.
+    why: betterlite decodes the per-model maps into whole-number limits, and the pinned LiteLLM type hints say dict only, so a fractional ceiling that a LiteLLM setup already stores no longer loads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1592-L1595
+  - what: When more than one model in a request is over its ceiling, betterlite reports the model that sorts first and LiteLLM the first one inserted in the request.
+    why: betterlite stores JSON objects in a sorted map, so the request's insertion order is gone by the time the ceilings are checked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1600-L1601
+  - what: An organization row without an organization_id is refused; LiteLLM queries its keys with organization_id equal to NULL and counts any key whose organization_id is NULL.
+    why: A NULL organization_id is not an organization-scoped key selector betterlite models, and refusing beats counting unowned keys against an unnamed organization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1920-L1922
+  - what: >-
+      A project key request whose models list holds an array or object is refused with 400 ProjectModel.
+      LiteLLM tests the entry with `m not in _INHERITED_MODEL_SENTINELS`, a frozenset lookup that raises
+      TypeError for the unhashable list or dict and answers 500.
+    why: >-
+      The lookup crashed on a value of the declared list type; no working setup names a model as an
+      array or object, and refusing the value keeps the request an ordinary 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1785
+  - what: >-
+      A non-finite or Decimal-out-of-range upperbound max_budget fails the config load: the YAML layer
+      refuses .nan and .inf before the section reads them, and parse_money refuses a finite value
+      rust_decimal cannot hold, such as 1.0e29. LiteLLM keeps the float; a NaN ceiling then never
+      binds, and fill_defaults copies it into generated keys.
+    why: >-
+      betterlite keeps budgets in rust_decimal (docs/compatibility.md), and that type cannot hold NaN,
+      infinity or a value past its range. Failing at the config boundary beats clamping the value or
+      generating keys whose budget check is disabled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6595-L6602
+kept_bugs:
+  - what: A per-model ceiling of 0 is skipped as if it were unset, while a scalar ceiling of 0 is enforced.
+    why: LiteLLM's truthiness test reads a stored 0 as no per-model ceiling, and a setup that stores 0 for that reason must keep working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1606-L1613

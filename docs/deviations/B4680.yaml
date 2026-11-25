@@ -1,0 +1,61 @@
+task: B4680
+deviations:
+  - what: >-
+      The registry is a value that startup builds once and passes through constructors, not the
+      module-level global_mcp_tool_registry.
+    why: >-
+      The repository forbids module-level state. Every method keeps LiteLLM's name, order rule and
+      result, so a caller sees the same registry through its handle.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L143
+  - what: >-
+      A configured handler is a Rust ToolHandler resolved by an injected ToolHandlerLoader, not a
+      Python callable imported from a dotted path by get_instance_fn.
+    why: >-
+      betterlite has no Python interpreter. B165 and B8871 supply the real loader; until it lands a
+      handler string in `mcp_tools` fails startup with the loader's error, never a silent skip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L65
+  - what: >-
+      A ToolHandler receives the per-request OpenApiCallContext as an argument, where LiteLLM's
+      OpenAPI handlers read three context variables.
+    why: >-
+      Same reason as B4683; the repository forbids module-level state. The values and their
+      precedence do not change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L109-L128
+  - what: >-
+      A top-level `mcp_tools` value that is not a list is a config error that names the key.
+    why: >-
+      LiteLLM iterates whatever it got, so a mapping yields its keys and fails later with the
+      "list of dictionaries" message while a string fails per character. A typed section cannot hold
+      either, and the compatibility rules make a wrong type an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L103-L108
+  - what: >-
+      to_sdk_tools cannot fail with "MCP SDK is not installed".
+    why: >-
+      That ImportError only exists because LiteLLM's MCP SDK dependency is optional; betterlite
+      always has the SdkTool type. The conversion itself is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L75-L77
+  - what: >-
+      The debug log after loading lists the registered tool names only, never the tools themselves.
+    why: >-
+      LiteLLM dumps json.dumps(self.tools, indent=4, default=str), which prints every handler's repr
+      and every input schema. The task forbids logging handlers, and no setup parses that log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L140
+  - what: >-
+      An entry with `input_schema: null` registers with an empty schema.
+    why: >-
+      LiteLLM passes the null straight into MCPTool, whose pydantic model rejects it and stops the
+      whole load. The typed section stores a JSON object, and the compatibility rules say null takes
+      the default, which is the {} the absent key gets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L112
+  - what: >-
+      An os.environ reference that no environment value resolves is a config error naming the
+      variable and the field. The whole mcp_tools value is resolved before any entry is read, as
+      LiteLLM resolves the whole config, so this covers name, description, handler and every
+      string inside input_schema.
+    why: >-
+      LiteLLM resolves references through get_secret, which returns None for an unset variable: an
+      unresolved name, description or handler makes the entry skip silently, and an unresolved
+      schema string reaches the handler as null. The compatibility rules make an unset reference a
+      MissingEnvironment load error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5786
+kept_bugs: []
