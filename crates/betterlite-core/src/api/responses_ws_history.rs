@@ -8,7 +8,6 @@ pub mod warmup;
 
 mod tests;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -21,6 +20,7 @@ use secrecy::SecretString;
 use self::error::{FrameSinkError, ResponsesWsHistoryError};
 use self::provider::ProviderResolution;
 use self::serialization::{ChunkWriter, INVALID_JSON_MESSAGE, INVALID_REQUEST_ERROR, send_error};
+use crate::api::response_synthetic_events::chunks::payload_bytes;
 use crate::api::response_synthetic_events::python_value::has_content;
 use crate::api::responses_stream_events::ProjectQuotaCallback;
 
@@ -31,6 +31,8 @@ pub const MANAGED_WS_SKIP_KWARGS: [&str; 5] = [
     "_aresponses_websocket",
     "user_api_key_dict",
 ];
+
+pub const SESSION_HISTORY_BUDGET_BYTES: usize = 16 * 1024 * 1024;
 
 #[async_trait]
 pub trait FrameSink: Send + Sync {
@@ -74,7 +76,10 @@ pub struct ManagedResponsesWebSocket<Sink: FrameSink> {
     pub first_message: Option<String>,
     pub quota_callbacks: Vec<Arc<dyn ProjectQuotaCallback>>,
     pub extra_kwargs: IndexMap<String, Json>,
-    pub session_history: HashMap<String, Vec<IndexMap<String, Json>>>,
+    pub session_history: IndexMap<String, Vec<IndexMap<String, Json>>>,
+    // the serialized JSON length of every stored list, lowered as entries leave, so a store never re-sums the map
+    pub session_history_bytes: usize,
+    pub session_history_budget_bytes: usize,
     pub resolver: Arc<dyn ProviderResolution>,
     pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
     pub ids: Arc<dyn Fn() -> String + Send + Sync>,
@@ -106,12 +111,45 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
             first_message: connection.first_message,
             quota_callbacks: connection.quota_callbacks.unwrap_or_default(),
             extra_kwargs: filtered_kwargs(connection.kwargs),
-            session_history: HashMap::new(),
+            session_history: IndexMap::new(),
+            session_history_bytes: 0,
+            session_history_budget_bytes: SESSION_HISTORY_BUDGET_BYTES,
             resolver: dependencies.resolver,
             clock: dependencies.clock,
             ids: dependencies.ids,
             serializer: dependencies.serializer,
         }
+    }
+
+    // LiteLLM's _store_history keeps every turn; one connection's history stays inside its byte budget
+    pub fn store_history(&mut self, response_id: String, messages: Vec<IndexMap<String, Json>>) {
+        let bytes = payload_bytes(&messages);
+        if bytes > self.session_history_budget_bytes {
+            tracing::warn!(
+                "ManagedResponsesWS: not storing {bytes} bytes of history for response_id={response_id}; the budget is {} bytes",
+                self.session_history_budget_bytes
+            );
+            return;
+        }
+        if let Some(replaced) = self.session_history.shift_remove(&response_id) {
+            self.session_history_bytes = self
+                .session_history_bytes
+                .saturating_sub(payload_bytes(&replaced));
+        }
+        while self.session_history_bytes.saturating_add(bytes) > self.session_history_budget_bytes {
+            let Some((_stale_id, stale)) = self.session_history.shift_remove_index(0) else {
+                break;
+            };
+            self.session_history_bytes = self
+                .session_history_bytes
+                .saturating_sub(payload_bytes(&stale));
+        }
+        let stored = messages.len();
+        tracing::debug!(
+            "ManagedResponsesWS: stored {stored} messages for response_id={response_id}"
+        );
+        self.session_history.insert(response_id, messages);
+        self.session_history_bytes = self.session_history_bytes.saturating_add(bytes);
     }
 
     pub async fn parse_message(
