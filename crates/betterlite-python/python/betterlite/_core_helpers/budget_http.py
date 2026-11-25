@@ -6,17 +6,19 @@ from pathlib import Path
 from typing import Final
 
 import httpx2
+from httpx2._utils import get_environment_proxies
 from pydantic import JsonValue, TypeAdapter
 
 import betterlite
-from betterlite._settings.env import env_str
+from betterlite._settings.env import env_number, env_str
 from betterlite._version import version
 
-_TIMEOUT_SECONDS: Final = 600.0
-_CONNECT_SECONDS: Final = 5.0
+_DEFAULT_REQUEST_SECONDS: Final = 6000.0
+_REQUEST_TIMEOUT_VARIABLE: Final = "REQUEST_TIMEOUT"
+_HTTP2_VARIABLE: Final = "LITELLM_HTTP2"
+_IPV4_LOCAL_ADDRESS: Final = "0.0.0.0"
 _USER_AGENT_VARIABLE: Final = "LITELLM_USER_AGENT"
 _SSL_CERTIFICATE_VARIABLE: Final = "SSL_CERTIFICATE"
-_DEFAULT_TIMEOUT: Final = httpx2.Timeout(timeout=_TIMEOUT_SECONDS, connect=_CONNECT_SECONDS)
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 DEFAULT_SSL_CIPHERS: Final = env_str(
     "LITELLM_SSL_CIPHERS",
@@ -96,6 +98,40 @@ def ssl_configuration(*, ssl_verify: bool | str | None = None) -> bool | str | s
     return _ssl_context(cafile=cafile, security_level=security_level, ecdh_curve=curve)
 
 
+def _default_timeout() -> httpx2.Timeout:
+    return httpx2.Timeout(
+        timeout=env_number(_REQUEST_TIMEOUT_VARIABLE, _DEFAULT_REQUEST_SECONDS, float)
+    )
+
+
+def _http2_enabled() -> bool:
+    if betterlite.http2 is True:
+        return True
+    return env_str(_HTTP2_VARIABLE, "False").strip().lower() == "true"
+
+
+def _sync_transport(*, http2: bool) -> httpx2.HTTPTransport | None:
+    if betterlite.force_ipv4:
+        return httpx2.HTTPTransport(local_address=_IPV4_LOCAL_ADDRESS, http2=http2)
+    return None
+
+
+def _proxy_mounts(
+    *, http2: bool, ssl_options: bool | str | ssl.SSLContext, certificate: str | None
+) -> dict[str, httpx2.HTTPTransport | None] | None:
+    if not betterlite.force_ipv4:
+        return None
+    mounts: dict[str, httpx2.HTTPTransport | None] = {}
+    for pattern, proxy_url in get_environment_proxies().items():
+        if proxy_url is None:
+            mounts[pattern] = None
+            continue
+        mounts[pattern] = httpx2.HTTPTransport(
+            proxy=proxy_url, verify=ssl_options, cert=certificate, http2=http2
+        )
+    return mounts
+
+
 class ModuleClient:
     client: Final[httpx2.Client]
     timeout: Final[httpx2.Timeout]
@@ -111,16 +147,21 @@ class ModuleClient:
         if certificate == "":
             certificate = betterlite.ssl_certificate
         agent = env_str(_USER_AGENT_VARIABLE, f"betterlite/{version}")
-        self.timeout = _DEFAULT_TIMEOUT if timeout is None else timeout
+        http2 = _http2_enabled()
+        self.timeout = _default_timeout() if timeout is None else timeout
         self.ssl_options = ssl_configuration(ssl_verify=ssl_verify)
         self.client = httpx2.Client(
+            transport=_sync_transport(http2=http2),
+            mounts=_proxy_mounts(
+                http2=http2, ssl_options=self.ssl_options, certificate=certificate
+            ),
             timeout=self.timeout,
             follow_redirects=True,
             headers={"User-Agent": agent},
             cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=())),
             verify=self.ssl_options,
             cert=certificate,
-            http2=betterlite.http2,
+            http2=http2,
         )
 
     def post(self, url: str, *, headers: Mapping[str, str], json: JsonValue) -> JsonValue:
