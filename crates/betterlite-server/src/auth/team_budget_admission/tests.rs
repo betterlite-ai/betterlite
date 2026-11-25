@@ -12,12 +12,12 @@ use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
 use betterlite_auth::auth_request_models::RequestedModels;
-use betterlite_auth::current_spend::SpendQuery;
+use betterlite_auth::current_spend::{BUDGET_UNVERIFIABLE_DETAIL, SpendQuery};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_auth::team_budget_admission::alerts::{TeamAlert, TeamAlertKind, TeamAlertSink};
 use betterlite_auth::team_budget_admission::sources::Membership;
 use betterlite_config::loader::ConfigLoader;
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use chrono::{DateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
@@ -49,12 +49,14 @@ fn key() -> UserAPIKeyAuth {
 #[derive(Default)]
 struct Recorded {
     spends: Mutex<Vec<Decimal>>,
+    starts: Mutex<Vec<Option<Timestamp>>>,
     alerts: Mutex<Vec<TeamAlert>>,
 }
 
 #[async_trait]
 impl SpendReader for Recorded {
-    async fn read_spend(&self, _query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
+    async fn read_spend(&self, query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
+        self.starts.lock().unwrap().push(query.window.start);
         Ok(self.spends.lock().unwrap().remove(0))
     }
 }
@@ -223,4 +225,51 @@ async fn member_equality_and_scope_stop_downstream() {
     assert!(body.contains("\"code\":\"403\""), "{body}");
     assert!(!body.contains("user-1"), "{body}");
     assert!(!reached);
+}
+
+#[tokio::test]
+async fn budgets_without_reader_are_unavailable() {
+    let recorded = Arc::new(Recorded::default());
+    let unread = TeamBudgetRule {
+        reader: None,
+        ..rule(
+            r#"{"team_id":"team-1","max_budget":10}"#,
+            "null",
+            "gpt-4o",
+            &recorded,
+        )
+    };
+    let (status, body, reached) = run_request(unread).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains(BUDGET_UNVERIFIABLE_DETAIL), "{body}");
+    assert!(!reached);
+}
+
+#[tokio::test]
+async fn unloaded_membership_without_database_is_unauthorized() {
+    let recorded = Arc::new(Recorded::default());
+    let unloaded = TeamBudgetRule {
+        membership: Membership::Unloaded,
+        ..rule(r#"{"team_id":"team-1"}"#, "null", "gpt-4o", &recorded)
+    };
+    let (status, body, reached) = run_request(unloaded).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(body.contains("\"type\":\"auth_error\""), "{body}");
+    assert!(!reached);
+}
+
+#[tokio::test]
+async fn missing_duration_parser_leaves_the_start_unset() {
+    let recorded = Arc::new(Recorded::default());
+    *recorded.spends.lock().unwrap() = vec![Decimal::ONE];
+    let windowed = rule(
+        r#"{"team_id":"team-1","budget_limits":[{"budget_duration":"1h","max_budget":5}]}"#,
+        "null",
+        "gpt-4o",
+        &recorded,
+    );
+    let (status, body, reached) = run_request(windowed).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
+    assert_eq!(*recorded.starts.lock().unwrap(), vec![None]);
 }
