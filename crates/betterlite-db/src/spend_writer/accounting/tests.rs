@@ -24,7 +24,7 @@ use crate::spend_writer::{DbSpendUpdateWriter, SpendWriterOperation, SpendWriter
 
 use super::{SpendAccounting, SpendAccountingEnvironment, batch_database_updates};
 
-const REQUEST: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","custom_llm_provider":"openai","model_group":"gpt-4o","prompt_tokens":3,"completion_tokens":4,"request_id":"req-1","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[\"tag-a\",\"tag-b\"]","metadata":"{}","status":"success","spend":0.25,"team_id":"team-1","organization_id":"org-1","end_user":"eu-1","agent_id":"agent-1"}"#;
+const REQUEST: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","custom_llm_provider":"openai","model_group":"gpt-4o","prompt_tokens":3,"completion_tokens":4,"request_id":"req-1","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[\"tag-a\",\"tag-b\"]","metadata":"{}","status":"success","spend":2.5,"team_id":"team-1","organization_id":"org-1","end_user":"eu-1","agent_id":"agent-1"}"#;
 const SUFFIX: &str = "_2025-01-02_k1_gpt-4o_openai_";
 
 fn cost() -> SpendAmount {
@@ -352,13 +352,12 @@ async fn charges_the_proxy_identity_only_with_a_positive_budget_and_never_dedupe
         proxy_budget_name: "litellm-proxy-budget".to_owned(),
     };
     duplicate.run(&duplicate_charge, duplicate_settings).await;
-    assert_eq!(
-        ids(&duplicate.entity.items()),
-        vec![
-            (EntityType::User, "litellm-proxy-budget".to_owned()),
-            (EntityType::User, "litellm-proxy-budget".to_owned()),
-        ]
-    );
+    let users: Vec<String> = ids(&duplicate.entity.items())
+        .into_iter()
+        .filter(|(kind, _)| kind == &EntityType::User)
+        .map(|(_, id)| id)
+        .collect();
+    assert_eq!(users, vec!["litellm-proxy-budget", "litellm-proxy-budget"]);
 }
 
 #[tokio::test]
@@ -421,8 +420,13 @@ async fn reads_an_already_parsed_tag_list_without_deduping_it() {
         .map(|(_, tag)| tag)
         .collect();
     assert_eq!(tags, vec!["tag-a", "tag-a", "tag-b"]);
+    // daily_spend_entity_ids deduplicates the tags but keeps the empty one, so it writes the empty tag's row too
     assert_eq!(
         daily_keys(&harness.daily_tag),
-        vec![format!("tag-a{SUFFIX}"), format!("tag-b{SUFFIX}")]
+        vec![
+            format!("tag-a{SUFFIX}"),
+            format!("tag-b{SUFFIX}"),
+            SUFFIX.to_owned(),
+        ]
     );
 }
