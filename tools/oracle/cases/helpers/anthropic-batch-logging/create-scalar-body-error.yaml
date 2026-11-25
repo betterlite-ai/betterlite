@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-batch-create-scalar-body-error
+call:
+  b3633:
+    status_code: 200
+    body: '5'
+    url_route: /v1/messages/batches/msgbatch_1
+    start_time: "2026-01-01T00:00:00+00:00"
+    request_body:
+      model: claude-sonnet-4-5
+    request_metadata: {}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/choices/0/message/content
+      why: the exception text is Python runtime wording
+    - pointer: /value/result/choices/0/message/provider_specific_fields/error
+      why: the exception text is Python runtime wording

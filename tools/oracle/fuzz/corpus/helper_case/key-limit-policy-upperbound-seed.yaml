@@ -1,0 +1,10 @@
+kind: helper
+name: key-limit-policy-upperbound-seed
+call:
+  key_limit_policy:
+    check: upperbound
+    request: {kind: generate, body: {max_budget: 1.5}}
+    params: {max_budget: 2.5, duration: "10d"}
+    fill_defaults: true
+env: {}
+compare: {ignore: []}
