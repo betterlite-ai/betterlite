@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use self::disk::NativeDisk;
 use self::dual::NativeDual;
 use self::dual::batch::{NativeDeclaredBatchRead, NativeDeferred, NativeRedisBatch};
+use self::error::RedisCircuitBreakerOpenError;
 use self::memory::NativeMemory;
 use self::redis::NativeRedis;
 
@@ -16,6 +17,10 @@ mod redis;
 mod settings;
 
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add(
+        "RedisCircuitBreakerOpenError",
+        module.py().get_type::<RedisCircuitBreakerOpenError>(),
+    )?;
     module.add_class::<NativeMemory>()?;
     module.add_class::<NativeDisk>()?;
     module.add_class::<NativeRedis>()?;

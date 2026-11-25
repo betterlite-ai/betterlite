@@ -12,7 +12,7 @@ use pyo3_async_runtimes::tokio::{get_runtime, into_future, run};
 use serde_json::Number;
 use tokio::time::sleep;
 
-use super::super::redis::open;
+use super::super::redis::{open, test_gate};
 use super::*;
 use crate::cache_backends::convert;
 use crate::cache_backends::settings::RedisSettings;
@@ -43,7 +43,9 @@ pub(super) fn native_dual(redis: Option<Arc<RedisCache>>) -> NativeDual {
 // Nothing listens on port 1, so the tier is only there to make the dual cache defer its writes.
 pub(super) fn dead_tier() -> Arc<RedisCache> {
     let parsed: RedisSettings = convert::parse_settings(DEAD_TIER).unwrap();
-    Python::attach(|py| open(py, parsed)).unwrap().cache
+    Python::attach(|py| open(py, parsed, test_gate()))
+        .unwrap()
+        .cache
 }
 
 #[test]
