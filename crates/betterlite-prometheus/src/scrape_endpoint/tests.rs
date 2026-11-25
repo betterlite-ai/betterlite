@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod multiprocess;
+
 use std::collections::HashSet;
 use std::io::Read as _;
 use std::sync::{Arc, PoisonError};
@@ -26,8 +28,8 @@ use crate::scrape_endpoint::renderer::{
     CoalescedScrapeRenderer, InFlight, poll_finished, shared_render,
 };
 use crate::scrape_endpoint::{
-    Encoder, RESPONSE_CHUNK_SIZE_BYTES, ScrapeRenderError, ScrapeRequest, parse_scrape_request,
-    render_scrape,
+    Encoder, RESPONSE_CHUNK_SIZE_BYTES, ScrapeRenderError, ScrapeRequest, ScrapeSource,
+    parse_scrape_request, render_scrape,
 };
 
 fn finite(value: i64) -> MetricValue {
@@ -527,7 +529,7 @@ async fn coalesced_equal_scrapes_share_one_render() {
     let metric = gauge("in_flight", "in flight", &["model"]);
     metric.labels(&[("model", "a")]).set(finite(3));
     let registry = Arc::new(registry_with(metric.clone()));
-    let renderer = CoalescedScrapeRenderer::new(Arc::clone(&registry));
+    let renderer = CoalescedScrapeRenderer::new(ScrapeSource::Registry(Arc::clone(&registry)));
     let (_blockers, release) = block_renders(&metric).await;
     let scrape = request("", "", &[]);
     let mut first = Box::pin(renderer.render(scrape.clone()));
@@ -564,7 +566,7 @@ async fn coalesced_different_scrapes_render_separately() {
     let metric = gauge("in_flight", "in flight", &["model"]);
     metric.labels(&[("model", "a")]).set(finite(3));
     let registry = Arc::new(registry_with(metric.clone()));
-    let renderer = CoalescedScrapeRenderer::new(Arc::clone(&registry));
+    let renderer = CoalescedScrapeRenderer::new(ScrapeSource::Registry(Arc::clone(&registry)));
     let (_blockers, release) = block_renders(&metric).await;
     let mut text = Box::pin(renderer.render(request("", "", &[])));
     let mut openmetrics =
@@ -599,7 +601,7 @@ async fn coalesced_dropped_waiter_does_not_cancel_the_render() {
     let metric = gauge("in_flight", "in flight", &["model"]);
     metric.labels(&[("model", "a")]).set(finite(3));
     let registry = Arc::new(registry_with(metric.clone()));
-    let renderer = CoalescedScrapeRenderer::new(Arc::clone(&registry));
+    let renderer = CoalescedScrapeRenderer::new(ScrapeSource::Registry(Arc::clone(&registry)));
     let (_blockers, release) = block_renders(&metric).await;
     let scrape = request("", "", &[]);
     let mut abandoned = Box::pin(renderer.render(scrape.clone()));
@@ -630,7 +632,7 @@ async fn coalesced_finished_render_is_forgotten() {
     let metric = gauge("in_flight", "in flight", &["model"]);
     metric.labels(&[("model", "a")]).set(finite(3));
     let registry = Arc::new(registry_with(metric));
-    let renderer = CoalescedScrapeRenderer::new(registry);
+    let renderer = CoalescedScrapeRenderer::new(ScrapeSource::Registry(registry));
     let scrape = request("", "", &[]);
     let first = renderer.render(scrape.clone()).await.unwrap();
     assert!(
@@ -659,17 +661,19 @@ async fn coalesced_finished_renders_are_reaped() {
 
 #[tokio::test]
 async fn coalesced_stopped_render_fails_every_waiter() {
-    let renderer = CoalescedScrapeRenderer::new(Arc::new(CollectorRegistry::default()));
+    let renderer = CoalescedScrapeRenderer::new(ScrapeSource::Registry(Arc::new(
+        CollectorRegistry::default(),
+    )));
     let scrape = request("", "", &[]);
     install_stopped(&renderer, scrape.clone());
-    assert_eq!(
+    assert!(matches!(
         renderer.render(scrape.clone()).await,
         Err(ScrapeRenderError::RenderTaskStopped)
-    );
-    assert_eq!(
+    ));
+    assert!(matches!(
         renderer.render(scrape).await,
         Err(ScrapeRenderError::RenderTaskStopped)
-    );
+    ));
 }
 
 // app
@@ -698,7 +702,7 @@ fn plain_app() -> Arc<CollectorRegistry> {
 
 #[tokio::test]
 async fn app_answers_with_the_text_content_type_and_no_length() {
-    let app = make_metrics_app(plain_app());
+    let app = make_metrics_app(ScrapeSource::Registry(plain_app()));
     let response = app
         .oneshot(
             Request::builder()
@@ -726,7 +730,7 @@ async fn app_answers_with_the_text_content_type_and_no_length() {
 async fn app_gzip_round_trips() {
     let registry = plain_app();
     let plain = frames(
-        make_metrics_app(Arc::clone(&registry))
+        make_metrics_app(ScrapeSource::Registry(Arc::clone(&registry)))
             .oneshot(
                 Request::builder()
                     .uri("/metrics")
@@ -737,7 +741,7 @@ async fn app_gzip_round_trips() {
             .unwrap(),
     )
     .await;
-    let compressed_response = make_metrics_app(registry)
+    let compressed_response = make_metrics_app(ScrapeSource::Registry(registry))
         .oneshot(
             Request::builder()
                 .uri("/metrics")
@@ -768,7 +772,7 @@ async fn app_streams_a_body_over_the_chunk_size_in_several_frames() {
     let help = "x".repeat(RESPONSE_CHUNK_SIZE_BYTES.saturating_add(1024));
     let metric = gauge("big", help.as_str(), &[]);
     let registry = Arc::new(registry_with(metric));
-    let response = make_metrics_app(Arc::clone(&registry))
+    let response = make_metrics_app(ScrapeSource::Registry(Arc::clone(&registry)))
         .oneshot(
             Request::builder()
                 .uri("/metrics")
@@ -793,7 +797,7 @@ async fn app_streams_a_body_over_the_chunk_size_in_several_frames() {
 
 #[tokio::test]
 async fn app_ignores_the_method_and_serves_sub_paths() {
-    let app = make_metrics_app(plain_app());
+    let app = make_metrics_app(ScrapeSource::Registry(plain_app()));
     let response = app
         .oneshot(
             Request::builder()
@@ -815,7 +819,7 @@ async fn app_reads_repeated_name_parameters() {
     two_metrics.register(metric).unwrap();
     two_metrics.register(gauge("idle", "idle", &[])).unwrap();
     let registry = Arc::new(two_metrics);
-    let response = make_metrics_app(Arc::clone(&registry))
+    let response = make_metrics_app(ScrapeSource::Registry(Arc::clone(&registry)))
         .oneshot(
             Request::builder()
                 .uri("/metrics?name%5B%5D=in_flight&name%5B%5D=other_total")
@@ -837,7 +841,9 @@ async fn app_reads_repeated_name_parameters() {
 #[tokio::test]
 async fn app_answers_a_stopped_render_with_500() {
     let registry = Arc::new(CollectorRegistry::default());
-    let renderer = Arc::new(CoalescedScrapeRenderer::new(registry));
+    let renderer = Arc::new(CoalescedScrapeRenderer::new(ScrapeSource::Registry(
+        registry,
+    )));
     install_stopped(&renderer, request("", "", &[]));
     let app: Router = Router::new().fallback(scrape).with_state(renderer);
     let response = app

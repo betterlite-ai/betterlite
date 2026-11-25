@@ -1,0 +1,14 @@
+task: B1732
+deviations:
+  - what: A caller without a user id still gets the own-user predicate bound into the list query as SQL NULL, matching no row, where LiteLLM drops the clause and relies on the post-fetch owner check alone.
+    why: The task pins this case, so a nullable caller id can never turn the authorization clause into an omitted one and the page read itself cannot return another tenant's rows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2802-L2817
+  - what: >-
+      A page whose (page - 1) * page_size skip does not fit an i64 saturates at the largest offset and reads no
+      rows, where LiteLLM multiplies Python's unbounded integers and hands the product to Prisma unchanged.
+    why: >-
+      B1728 validates page >= 1 and page_size <= 1000 but sets no upper bound on page, so that product is the one
+      spot an accepted request can push past the signed range. An offset past every row answers the empty page an
+      ordinary page past the last row gets, and the request never depends on how the driver handles the huge value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2818-L2819
+kept_bugs: []

@@ -1,0 +1,24 @@
+kind: helper
+name: mcp-transport-checks-initialize-detection
+call:
+  b8724:
+    operation: initialize_detection
+    bodies:
+      - ""
+      - " "
+      - '{"method": "initialize"}'
+      - '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+      - '{"method":"initialize","params":null}'
+      - '{"method": "tools/call"}'
+      - '{"jsonrpc": "2.0"}'
+      - '{"method": 1}'
+      - '{"method": null}'
+      - '{"result": {"method": "initialize"}}'
+      - '[]'
+      - '"initialize"'
+      - "null"
+      - "{"
+      - |
+        {"method":"initialize"}
+env: {}
+compare: {ignore: []}
