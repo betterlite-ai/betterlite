@@ -1,5 +1,4 @@
-// ast-grep-ignore: no-long-names
-use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
+use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException; // ast-grep-ignore: no-long-names
 use thiserror::Error;
 
 use crate::auth_end_users::defaults::MemberBudgetError;
