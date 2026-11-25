@@ -3811,6 +3811,7 @@ dependencies = [
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-ocr",
+ "betterlite-openai",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-policy",
