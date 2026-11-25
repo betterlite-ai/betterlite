@@ -459,6 +459,7 @@ async fn pricing_stamps_unpriced() {
     assert_eq!(info.get("input_cost_per_token"), Some(&decimal_text("0.5")));
     assert_eq!(info.get("output_cost_per_token"), Some(&Json::Null));
     assert_eq!(info.get("max_tokens"), Some(&number(128_000)));
+    assert_eq!(info.get("model"), None);
     assert_eq!(
         info.get("pricing_overrides"),
         Some(&list(vec![text("input_cost_per_token")]))

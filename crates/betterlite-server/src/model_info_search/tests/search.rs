@@ -237,6 +237,18 @@ async fn byok_scope_retained() {
 }
 
 #[tokio::test]
+async fn a_config_id_is_not_excluded_from_the_db() {
+    let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], false, false);
+    let decrypt = decryption();
+    let sources = unowned_sources(&db, &decrypt, None, None);
+    let models = vec![model("gpt-4o-shadow", vec![("id", text("d1"))])];
+    let options = default_options();
+    let outcome = apply_search_filter(&models, "gpt", Some(&sources), &options).await;
+    assert_eq!(names(&outcome.models), ["gpt-4o-shadow", "gpt-4o-db"]);
+    assert_eq!(outcome.total_count, Some(2));
+}
+
+#[tokio::test]
 async fn a_count_error_keeps_router_models() {
     let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], true, false);
     let decrypt = decryption();
