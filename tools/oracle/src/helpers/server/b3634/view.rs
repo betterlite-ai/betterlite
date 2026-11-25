@@ -7,9 +7,18 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_server::pass_through_logging::response_costing::ResponseCostRequest;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 pub(super) const BATCH_RESPONSE_ID: &str = "b3634-batch-id";
+
+const KWARGS_KEYS: [&str; 5] = [
+    "model",
+    "litellm_params",
+    "batch_id",
+    "unified_object_id",
+    "batch_job_state",
+];
+const DETAILS_KEYS: [&str; 3] = ["model", "custom_llm_provider", "batch_id"];
 
 // The completion_cost arguments the payload step decides: the costing model, provider, pricing flags and speed.
 #[derive(Debug, Serialize)]
@@ -106,28 +115,45 @@ fn usage_view(usage: Option<&Value>) -> Value {
 }
 
 fn kwargs_view(kwargs: &Value) -> Value {
-    json!({
-        "response_cost": cost_text(kwargs.get("response_cost")),
-        "model": kwargs.get("model"),
-        "litellm_params": kwargs.get("litellm_params"),
-        "batch_id": kwargs.get("batch_id"),
-        "unified_object_id": kwargs.get("unified_object_id"),
-        "batch_job_state": kwargs.get("batch_job_state"),
-    })
+    let mut view = picked(kwargs, &KWARGS_KEYS);
+    view.insert(
+        "response_cost".to_owned(),
+        cost_text(kwargs.get("response_cost")),
+    );
+    Value::Object(view)
 }
 
 fn details_view(details: &Value) -> Value {
-    let complete = details
-        .get("complete_streaming_response")
-        .filter(|value| value.is_object())
-        .map(|stored| json!({ "id": stored.get("id"), "model": stored.get("model") }));
-    json!({
-        "model": details.get("model"),
-        "response_cost": cost_text(details.get("response_cost")),
-        "custom_llm_provider": details.get("custom_llm_provider"),
-        "batch_id": details.get("batch_id"),
-        "complete_streaming_response": complete,
-    })
+    let mut view = picked(details, &DETAILS_KEYS);
+    view.insert(
+        "response_cost".to_owned(),
+        cost_text(details.get("response_cost")),
+    );
+    view.insert(
+        "complete_streaming_response".to_owned(),
+        stored_view(details.get("complete_streaming_response")),
+    );
+    Value::Object(view)
+}
+
+// Both views report named fields, so each names its keys once instead of repeating the lookups.
+fn picked(source: &Value, keys: &[&str]) -> Map<String, Value> {
+    keys.iter()
+        .map(|key| {
+            (
+                (*key).to_owned(),
+                source.get(*key).cloned().unwrap_or(Value::Null),
+            )
+        })
+        .collect()
+}
+
+// The call log keeps the whole stored response; the case compares only the id and model the payload step sets.
+fn stored_view(stored: Option<&Value>) -> Value {
+    let Some(fields) = stored.filter(|value| value.is_object()) else {
+        return Value::Null;
+    };
+    json!({ "id": fields.get("id"), "model": fields.get("model") })
 }
 
 // A float cost and a decimal cost compare as their normalized decimal text.

@@ -5,11 +5,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::cost::recording::PortFailure;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
-use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
-use betterlite_logging::passthrough_stream_logging::types::{
-    CollectedChunksCall, CollectedChunksHandler as _, EndpointType, HandlerOutcome,
-};
+use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -89,7 +86,7 @@ impl Helper for Op {
         let logging_obj = fixture::logging_object(&input.details)?;
         let outcome = match input.operation {
             Operation::Handler => handler_outcome(&logger, input, &logging_obj)?,
-            Operation::Chunks => chunks_outcome(&logger, input, &logging_obj)?,
+            Operation::Chunks => fixture::chunks_outcome(&logger, input, &logging_obj)?,
         };
         let calls = cost.calls.lock().unwrap_or_else(PoisonError::into_inner);
         view::outcome_view(&outcome, &logging_obj, &calls)
@@ -104,6 +101,30 @@ fn handler_outcome(
     let headers = HeaderMap::new();
     // success_handler's shaping: the body as an object, or an empty one for a list or no JSON
     let response_body: JsonObject = serde_json::from_str(&input.body).unwrap_or_default();
+    let start_time = fixture::start_time()?;
+    let request = AnthropicPassthroughInput {
+        status_code: input.status_code,
+        response_headers: &headers,
+        response_text: &input.body,
+        response_body: &response_body,
+        url_route: &input.url_route,
+        start_time,
+        end_time: start_time,
+        request_body: &input.request_body,
+        kwargs: logged_kwargs(input),
+    };
+    let mut handled = None;
+    logging_obj.edit(&mut |call_log| {
+        handled = Some(logger.anthropic_passthrough_handler(request, call_log));
+    });
+    handled
+        .ok_or("the fixture call log was not in its slot")
+        .or_value_error()?
+        .or_value_error()
+}
+
+// The case's litellm_params and passthrough payload are the two kwargs entries the payload step reads.
+fn logged_kwargs(input: &Input) -> PassThroughLoggingKwargs {
     let mut kwargs = PassThroughLoggingKwargs::default();
     kwargs.entries.insert(
         "litellm_params".to_owned(),
@@ -113,48 +134,5 @@ fn handler_outcome(
         "passthrough_logging_payload".to_owned(),
         Json::Object(input.passthrough_logging_payload.clone()),
     );
-    let start_time = fixture::start_time()?;
-    let mut handled = None;
-    logging_obj.edit(&mut |call_log| {
-        let request = AnthropicPassthroughInput {
-            status_code: input.status_code,
-            response_headers: &headers,
-            response_text: &input.body,
-            response_body: &response_body,
-            url_route: &input.url_route,
-            start_time,
-            end_time: start_time,
-            request_body: &input.request_body,
-            kwargs: kwargs.clone(),
-        };
-        handled = Some(logger.anthropic_passthrough_handler(request, call_log));
-    });
-    handled
-        .ok_or("the fixture call log was not in its slot")
-        .or_value_error()?
-        .or_value_error()
-}
-
-fn chunks_outcome(
-    logger: &AnthropicPassthroughLogger,
-    input: &Input,
-    logging_obj: &StreamLoggingObject,
-) -> Result<HandlerOutcome, Box<HelperError>> {
-    let passthrough = PassThroughEndpointLogging {
-        injected_log_dispatch: None,
-    };
-    let request_body = Json::Object(input.request_body.clone());
-    let start_time = fixture::start_time()?.fixed_offset();
-    let call = CollectedChunksCall {
-        logging_obj,
-        passthrough: &passthrough,
-        url_route: &input.url_route,
-        request_body: Some(&request_body),
-        endpoint_type: EndpointType::Anthropic,
-        start_time,
-        end_time: start_time,
-        lines: &input.lines,
-        model: None,
-    };
-    logger.handle(&call).or_value_error()
+    kwargs
 }

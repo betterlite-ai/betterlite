@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, TypedDict
-from unittest import mock
+from typing import Literal, TypedDict, cast
 
 import httpx
 import litellm
@@ -117,6 +116,7 @@ class Recorder:
     def __call__(
         self,
         completion_response: ModelResponse | TextCompletionResponse,
+        *,
         model: str | None = None,
         custom_llm_provider: str | None = None,
         custom_pricing: bool | None = None,
@@ -216,7 +216,7 @@ def handled(input_value: Input, logging_obj: Logging) -> OutcomeView:
             litellm_params=input_value["litellm_params"],
             passthrough_logging_payload=input_value["passthrough_logging_payload"],
         ))
-    return OUTCOME.validate_python(Handler._handle_logging_anthropic_collected_chunks(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L468-L478
+    collected = Handler._handle_logging_anthropic_collected_chunks(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L468-L478
         litellm_logging_obj=logging_obj,
         passthrough_success_handler_obj=PassThroughEndpointLogging(),
         url_route=input_value["url_route"],
@@ -225,7 +225,10 @@ def handled(input_value: Input, logging_obj: Logging) -> OutcomeView:
         start_time=START,
         all_chunks=input_value["lines"],
         end_time=START,
-    ))
+    )
+    result = cast("ModelResponse | TextCompletionResponse | None", collected["result"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5065
+    kwargs = cast("dict[str, JsonValue]", collected["kwargs"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5066
+    return OutcomeView(result=result, kwargs=kwargs)
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
@@ -240,8 +243,8 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     )
     logging_obj.model_call_details.update(input_value["details"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L707-L714
     recorder = Recorder()
-    with mock.patch.object(litellm, "completion_cost", recorder):
-        outcome = handled(input_value, logging_obj)
+    litellm.completion_cost = recorder  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1332
+    outcome = handled(input_value, logging_obj)
     cost: JsonValue = None
     if outcome.result is not None and recorder.calls:
         cost = JSON.validate_json(recorder.calls[-1].model_dump_json())
