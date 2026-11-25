@@ -142,6 +142,14 @@ fn empty_stored_claims_do_not_match_a_token() {
     assert!(!authenticated(&jwt(r#"{"sub":"x"}"#), &auth, &config));
 }
 
+// docs/deviations/B3603.yaml kept bug: with only internal stored claims, LiteLLM's all() accepts any decodable token
+#[test]
+fn a_stored_set_of_only_internal_claims_accepts_any_decodable_token() {
+    let auth = caller(None, Some(r#"{"_litellm_user_id":"stored"}"#));
+    let config = settings(None, AuthModeFlags::default(), true, None, &[]);
+    assert!(authenticated(&jwt(r#"{"sub":"whoever"}"#), &auth, &config));
+}
+
 #[test]
 fn a_jwt_mismatch_falls_through_to_the_stored_key() {
     let auth = caller(Some("stored-key"), Some(r#"{"sub":"user-42"}"#));
