@@ -186,3 +186,20 @@ fn a_generic_provider_names_the_download_it_has_not_built() {
         assert!(error.is_instance_of::<PyNotImplementedError>(py));
     });
 }
+
+#[test]
+fn an_xai_batch_result_names_the_download_it_has_not_built() {
+    Python::initialize();
+    Python::attach(|py| {
+        let session = NativeFileContentSession::new(ENVIRONMENT).unwrap();
+        let error = session
+            .content(
+                py,
+                r#"{"file_id":"batch_1","custom_llm_provider":"xai"}"#,
+                Vec::new(),
+            )
+            .err()
+            .unwrap();
+        assert!(error.is_instance_of::<PyNotImplementedError>(py));
+    });
+}
