@@ -33,7 +33,9 @@ pub fn scrub_remote_modules(section: Section, value: &JsonValue) -> JsonValue {
     match section {
         Section::LitellmSettings => {
             refuse_module_fields(section, fields, &LITELLM_MODULE_FIELDS);
-            refuse_module_lists(fields);
+            for name in LITELLM_MODULE_LISTS {
+                refuse_list_modules(fields, name);
+            }
             refuse_custom_handlers(fields);
             refuse_guardrail_modules(fields);
         }
@@ -85,12 +87,6 @@ fn refuse_module_fields(section: Section, fields: &mut JsonObject, names: &[&str
                 section.name()
             );
         }
-    }
-}
-
-fn refuse_module_lists(fields: &mut JsonObject) {
-    for name in LITELLM_MODULE_LISTS {
-        refuse_list_modules(fields, name);
     }
 }
 

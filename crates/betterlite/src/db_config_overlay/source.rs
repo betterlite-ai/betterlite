@@ -11,6 +11,7 @@ use betterlite_server::bucket_config::object::BucketObjectReader;
 use betterlite_server::bucket_config::source::BucketConfigSource;
 use tokio::fs;
 
+use super::environ::off_runtime;
 use super::error::OverlayError;
 
 // The bucket reader matches LITELLM_CONFIG_BUCKET_TYPE and is built where the cloud clients are
@@ -41,28 +42,34 @@ pub async fn read_config(
             ("litellm_settings".to_owned(), empty_section()),
         ]));
     };
-    let config = read_config_file(path).await?;
-    Ok(resolve_includes(config, path)?)
-}
-
-// _get_config_from_file: yaml.safe_load of the file, where an empty document is refused
-async fn read_config_file(path: &Path) -> Result<ConfigMap, OverlayError> {
-    let text = fs::read_to_string(path).await.map_err(|source| {
-        if source.kind() == ErrorKind::NotFound {
+    let text = fs::read_to_string(path).await.map_err(|error| {
+        if error.kind() == ErrorKind::NotFound {
             OverlayError::ConfigFileMissing {
                 path: path.to_path_buf(),
             }
         } else {
             OverlayError::ReadConfigFile {
                 path: path.to_path_buf(),
-                source,
+                source: error,
             }
         }
     })?;
+    let config = parse_config_file(path, &text)?;
+    // resolve_includes reads every included file synchronously, so it runs on a thread with no runtime
+    let root = path.to_path_buf();
+    Ok(off_runtime(move || resolve_includes(config, &root)).await??)
+}
+
+// The YAML step on its own: the fuzz target and the corpus replay parse exactly what a reload parses.
+pub fn parse_config_file(path: &Path, text: &str) -> Result<ConfigMap, OverlayError> {
+    // A snippet keeps the source line next to the diagnosis, and a config file carries keys
+    let options = serde_saphyr::options! { with_snippet: false };
     let parsed: JsonValue =
-        serde_saphyr::from_str(&text).map_err(|source| OverlayError::ConfigYaml {
-            path: path.to_path_buf(),
-            source: Box::new(source),
+        serde_saphyr::from_str_with_options(text, options).map_err(|source| {
+            OverlayError::ConfigYaml {
+                path: path.to_path_buf(),
+                source: Box::new(source),
+            }
         })?;
     match parsed {
         JsonValue::Object(fields) => Ok(fields.into_iter().collect()),

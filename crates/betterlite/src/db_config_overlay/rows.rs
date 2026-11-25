@@ -45,40 +45,50 @@ const WARNING_ORDER: [Section; 4] = [
     Section::RouterSettings,
 ];
 
-// _update_config_from_db: all four rows are read at once, then each present row is prepared and applied to its store
-pub async fn overlay_db_rows(
-    state: &mut OverlayState,
+// get_config_param: all four rows are read at once, before the caller takes its state lock
+pub async fn fetch_db_rows(
     database: &OverlayDatabase,
-    env: &mut BTreeMap<String, String>,
-) -> Result<(), OverlayError> {
+) -> Result<[Option<JsonValue>; 4], OverlayError> {
     let [general, router, litellm, environment] = STORE_SECTIONS.map(Section::name);
-    let rows = &database.rows;
     let fetched = tokio::try_join!(
-        rows.config_param(general),
-        rows.config_param(router),
-        rows.config_param(litellm),
-        rows.config_param(environment),
+        database.rows.config_param(general),
+        database.rows.config_param(router),
+        database.rows.config_param(litellm),
+        database.rows.config_param(environment),
     )
     .map_err(|source| OverlayError::Database { source })?;
-    let stored = <[Option<JsonValue>; 4]>::from(fetched);
+    Ok(<[Option<JsonValue>; 4]>::from(fetched))
+}
+
+// _update_config_from_db's second half: each present row is prepared and applied to its store
+pub fn apply_db_rows(
+    state: &mut OverlayState,
+    stored: [Option<JsonValue>; 4],
+    database: &OverlayDatabase,
+    env: &mut BTreeMap<String, String>,
+) {
     for (section, row) in STORE_SECTIONS.into_iter().zip(stored) {
         let Some(value) = row.filter(|value| !value.is_null()) else {
             continue;
         };
         let prepared = prepare_row(section, &value, database, env);
-        match section {
-            Section::LitellmSettings => apply_litellm_settings(state, prepared),
-            Section::GeneralSettings
-            | Section::RouterSettings
-            | Section::EnvironmentVariables
-            | Section::UiSettings => {
-                if let Some(store) = store_mut(&mut state.config, section) {
-                    store.apply_db_row(DbRow::from(section), prepared);
-                }
-            }
+        if section == Section::LitellmSettings {
+            apply_litellm_settings(state, prepared);
+        } else if let Some(store) = store_mut(&mut state.config, section) {
+            store.apply_db_row(DbRow::from(section), prepared);
         }
     }
     warn_shadowed_keys(state);
+}
+
+// _update_config_from_db
+pub async fn overlay_db_rows(
+    state: &mut OverlayState,
+    database: &OverlayDatabase,
+    env: &mut BTreeMap<String, String>,
+) -> Result<(), OverlayError> {
+    let stored = fetch_db_rows(database).await?;
+    apply_db_rows(state, stored, database, env);
     Ok(())
 }
 
@@ -126,22 +136,22 @@ pub fn apply_litellm_settings(state: &mut OverlayState, values: BTreeMap<String,
 
 // _warn_about_shadowed_db_settings: a key warns when it starts being shadowed, and again only after it stopped
 fn warn_shadowed_keys(state: &mut OverlayState) {
-    let mut shadowed = Vec::new();
+    let mut warned = BTreeSet::new();
     for section in WARNING_ORDER {
         let keys = state
             .config
             .settings_store(section)
             .map(SettingsStore::shadowed_db_keys)
             .unwrap_or_default();
-        shadowed.extend(keys.into_iter().map(|key| (section, key)));
-    }
-    let mut warned = BTreeSet::new();
-    for (section, key) in shadowed {
-        let entry = (section.name(), key);
-        if !state.warned_shadowed.contains(&entry) {
-            tracing::warn!("{}", config_ownership_message(section, &entry.1, true));
+        for key in keys {
+            if !state
+                .warned_shadowed
+                .contains(&(section.name(), key.clone()))
+            {
+                tracing::warn!("{}", config_ownership_message(section, &key, true));
+            }
+            warned.insert((section.name(), key));
         }
-        warned.insert(entry);
     }
     state.warned_shadowed = warned;
 }

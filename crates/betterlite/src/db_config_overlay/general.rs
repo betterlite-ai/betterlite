@@ -83,35 +83,20 @@ pub async fn apply_general_settings_row(
     Ok(())
 }
 
-// _update_general_settings pass_through_endpoints: a list is served, and an absent key keeps the empty list published
+// _update_general_settings pass_through_endpoints: a list is served, and any other value keeps the empty list published
 async fn apply_pass_through_setting(
     state: &mut OverlayState,
     values: &BTreeMap<String, JsonValue>,
     installer: &dyn PassThroughInstaller,
 ) -> Result<(), OverlayError> {
-    match values.get(PASS_THROUGH_ENDPOINTS) {
-        Some(JsonValue::Array(endpoints)) => {
-            serve_pass_through_endpoints(state, endpoints, installer).await
-        }
-        None
-        | Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Object(_),
-        ) => {
-            if state
-                .config
-                .general_settings
-                .get(PASS_THROUGH_ENDPOINTS)
-                .is_none()
-            {
-                publish_pass_through(state, &[])?;
-            }
-            Ok(())
-        }
+    if let Some(JsonValue::Array(endpoints)) = values.get(PASS_THROUGH_ENDPOINTS) {
+        return serve_pass_through_endpoints(state, endpoints, installer).await;
     }
+    let served = state.config.general_settings.get(PASS_THROUGH_ENDPOINTS);
+    if served.is_none() {
+        publish_pass_through(state, &[])?;
+    }
+    Ok(())
 }
 
 // _apply_retention_settings: B8371's hook decides whether the cleanup job moves

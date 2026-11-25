@@ -1,21 +1,25 @@
 use std::collections::BTreeMap;
-use std::error::Error as _;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use betterlite_config::sections::settings::JsonValue;
+use betterlite_config::sections::{includes::IncludeError, settings::JsonValue};
 use betterlite_db::database_faults::native::is_native_transport_error;
+use betterlite_server::bucket_config::error::BucketConfigError;
 use betterlite_server::config_overlay_port::{ConfigOverlayPort, ConfigOverlayPortError};
 use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
 use tokio::sync::Mutex;
 
 use super::error::OverlayError;
-use super::pass_through::{PassThroughInstaller, serve_pass_through_endpoints};
-use super::reload::reload_config;
-use super::source::ConfigSource;
+use super::pass_through::{
+    PassThroughInstaller, install_pass_through_endpoints, publish_pass_through,
+    validate_db_endpoints,
+};
+use super::reload::{begin_reload, finish_reload, reload_stores, resolve_reload};
+use super::rows::fetch_db_rows;
+use super::source::{ConfigSource, read_config};
 use super::state::{OverlayDatabase, OverlayState};
 
-// One field per argument of reload_config and serve_pass_through_endpoints; the locks serialize reloads as LiteLLM's one event loop does
+// One field per argument of reload_config and serve_pass_through_endpoints
 pub struct OverlayPortAdapter {
     pub state: Arc<Mutex<OverlayState>>,
     pub source: ConfigSource,
@@ -24,36 +28,78 @@ pub struct OverlayPortAdapter {
     pub installer: Arc<dyn PassThroughInstaller>,
 }
 
+// The methods drive the phases of their functions themselves, so each guard covers a synchronous step and no awaited I/O.
 #[async_trait]
 impl ConfigOverlayPort for OverlayPortAdapter {
     async fn reload_config(&self) -> Result<ConfigWithBaseline, ConfigOverlayPortError> {
+        let environment = self.environment.lock().await.clone();
+        let file_config = read_config(&self.source, &environment)
+            .await
+            .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
+        let store_model_in_db = {
+            let mut state = self.state.lock().await;
+            reload_stores(&mut state, &file_config)
+                .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
+            state.config.store_model_in_db
+        };
+        let mut stored = None;
+        if let Some(backed) = self.database.as_ref().filter(|_| store_model_in_db) {
+            let rows = fetch_db_rows(backed)
+                .await
+                .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
+            stored = Some((backed, rows));
+        }
+        let pending = {
+            let mut state = self.state.lock().await;
+            let mut environment_guard = self.environment.lock().await;
+            begin_reload(
+                &mut state,
+                &file_config,
+                stored,
+                &self.source,
+                &mut environment_guard,
+            )
+            .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?
+        };
+        let config = resolve_reload(pending)
+            .await
+            .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
         let mut state = self.state.lock().await;
-        let mut environment = self.environment.lock().await;
-        reload_config(
-            &mut state,
-            &self.source,
-            self.database.as_ref(),
-            &mut environment,
-        )
-        .await
-        .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))
+        Ok(finish_reload(&mut state, config))
     }
 
     async fn serve_pass_through_endpoints(
         &self,
         db_endpoints: &[JsonValue],
     ) -> Result<(), ConfigOverlayPortError> {
-        let mut state = self.state.lock().await;
-        serve_pass_through_endpoints(&mut state, db_endpoints, self.installer.as_ref())
+        {
+            let mut state = self.state.lock().await;
+            publish_pass_through(&mut state, db_endpoints)
+                .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
+        }
+        validate_db_endpoints(db_endpoints)
+            .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
+        install_pass_through_endpoints(db_endpoints, self.installer.as_ref())
             .await
             .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))
     }
 }
 
-// a database read that fails in transport is an outage the routes answer with 503; everything else keeps the step's own error
+// The log keeps the typed cause but never the YAML source excerpt: a parser renders the neighboring lines, and a config file carries keys.
 fn port_error(error: &OverlayError, step: ConfigOverlayPortError) -> ConfigOverlayPortError {
-    let cause = error.source().map(ToString::to_string);
-    tracing::error!(%error, ?cause, "the config overlay failed");
+    let message = match error {
+        OverlayError::ConfigYaml { source, .. } => format!("{error}: {}", source.without_snippet()),
+        OverlayError::Includes(IncludeError::Yaml { path, source })
+        | OverlayError::Bucket(BucketConfigError::Include(IncludeError::Yaml { path, source })) => {
+            format!(
+                "invalid YAML in config include {}: {}",
+                path.display(),
+                source.without_snippet()
+            )
+        }
+        other => other.to_string(),
+    };
+    tracing::error!(error = %message, "the config overlay failed");
     if let OverlayError::Database { source } = error
         && is_native_transport_error(source)
     {

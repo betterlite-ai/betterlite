@@ -41,6 +41,27 @@ pub fn publish_pass_through(
     Ok(())
 }
 
+// LiteLLM validates a list of dicts; a non-object entry names its index
+pub fn validate_db_endpoints(db_endpoints: &[JsonValue]) -> Result<(), OverlayError> {
+    if let Some(index) = db_endpoints
+        .iter()
+        .position(|endpoint| !endpoint.is_object())
+    {
+        return Err(OverlayError::PassThroughEntry { index });
+    }
+    Ok(())
+}
+
+pub async fn install_pass_through_endpoints(
+    db_endpoints: &[JsonValue],
+    installer: &dyn PassThroughInstaller,
+) -> Result<(), OverlayError> {
+    installer
+        .install(db_endpoints)
+        .await
+        .map_err(|source| OverlayError::PassThroughInstall { source })
+}
+
 // _serve_pass_through_endpoints: the new list is published before it is checked, so a refused list still shows in the store
 pub async fn serve_pass_through_endpoints(
     state: &mut OverlayState,
@@ -48,14 +69,6 @@ pub async fn serve_pass_through_endpoints(
     installer: &dyn PassThroughInstaller,
 ) -> Result<(), OverlayError> {
     publish_pass_through(state, db_endpoints)?;
-    if let Some(index) = db_endpoints
-        .iter()
-        .position(|endpoint| !endpoint.is_object())
-    {
-        return Err(OverlayError::PassThroughEntry { index });
-    }
-    installer
-        .install(db_endpoints)
-        .await
-        .map_err(|source| OverlayError::PassThroughInstall { source })
+    validate_db_endpoints(db_endpoints)?;
+    install_pass_through_endpoints(db_endpoints, installer).await
 }

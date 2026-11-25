@@ -1,9 +1,7 @@
-use std::io;
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 use betterlite_config::loader::ConfigError;
-use betterlite_config::sections::includes::IncludeError;
-use betterlite_config::sections::settings::ConfigOwnedKeyError;
+use betterlite_config::sections::{includes::IncludeError, settings::ConfigOwnedKeyError};
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::table_ops::rows::RowError;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
@@ -67,6 +65,13 @@ pub enum OverlayError {
     SecretManager(#[from] RawSecretManagerError),
     #[error(transparent)]
     SecretLookup(#[from] SecretLookupError),
+    #[error("the off-runtime config worker could not be started")]
+    WorkerStart {
+        #[source]
+        source: io::Error,
+    },
+    #[error("the off-runtime config worker is unavailable")]
+    WorkerUnavailable,
     #[error(transparent)]
     CleanupSchedule(#[from] CleanupScheduleError),
     #[error(transparent)]

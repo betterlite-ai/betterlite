@@ -1,13 +1,37 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::thread;
 
+use betterlite_config::sections::includes::ConfigMap;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_models::controls::multipart::DEFAULT_MAX_RECURSE_DEPTH;
 use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue};
+use betterlite_secret_managers::secret_lookup::{manager::ManagerState, ports::OidcTokenCache};
+use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient as Client;
+use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::ExposeSecret as _;
+use tokio::sync::oneshot;
 
 use super::error::OverlayError;
 
 const ENVIRONMENT_PREFIX: &str = "os.environ/";
+
+// A std thread carries no runtime handle, so a manager transport takes its blocking path; a panic drops the sender, which reads as unavailable.
+pub(super) async fn off_runtime<Work, Output>(work: Work) -> Result<Output, OverlayError>
+where
+    Work: FnOnce() -> Output + Send + 'static,
+    Output: Send + 'static,
+{
+    let (sender, answer) = oneshot::channel();
+    let worker_thread = thread::Builder::new()
+        .name("config-overlay-worker".to_owned())
+        .spawn(move || drop(sender.send(work())))
+        .map_err(|source| OverlayError::WorkerStart { source })?;
+    drop(worker_thread);
+    answer
+        .await
+        .map_err(|_closed| OverlayError::WorkerUnavailable)
+}
 
 pub struct Resolver<'resolve> {
     pub lookup: &'resolve SecretLookup,
@@ -15,6 +39,23 @@ pub struct Resolver<'resolve> {
 }
 
 impl Resolver<'_> {
+    // The whole-file resolution off the runtime: the manager transports refuse a blocking call made on the runtime.
+    pub async fn resolve_config(&self, config: ConfigMap) -> Result<ConfigMap, OverlayError> {
+        let lookup = owned_secret_lookup(self.lookup);
+        let env = self.env.clone();
+        off_runtime(move || {
+            let resolver = Resolver {
+                lookup: &lookup,
+                env: &env,
+            };
+            let mut values = config;
+            resolver
+                .resolve_entries(values.values_mut(), 0)
+                .map(|()| values)
+        })
+        .await?
+    }
+
     // _check_for_os_environ_vars: a mapping past the depth limit keeps its references, and a missing value becomes null
     pub fn resolve_entries<'value, Values>(
         &self,
@@ -63,5 +104,43 @@ impl Resolver<'_> {
                 Ok(())
             }
         }
+    }
+}
+
+// The worker thread owns what it reads, so this makes a lookup the reload can hand to it.
+pub(super) fn owned_secret_lookup(lookup: &SecretLookup) -> SecretLookup {
+    SecretLookup {
+        manager: lookup.manager.as_ref().map(owned_manager),
+        oidc_http: Arc::clone(&lookup.oidc_http),
+        azure_tokens: Arc::clone(&lookup.azure_tokens),
+        clock: Arc::clone(&lookup.clock),
+        oidc_cache: OidcTokenCache::default(),
+    }
+}
+
+fn owned_manager(manager: &ManagerState) -> ManagerState {
+    ManagerState {
+        client: match &manager.client {
+            Client::AzureKeyVault(client) => Client::AzureKeyVault(Arc::clone(client)),
+            Client::GoogleKms(client) => Client::GoogleKms(Arc::clone(client)),
+            Client::AwsKms(client) => Client::AwsKms(Arc::clone(client)),
+            Client::AwsSecretManager(client) => Client::AwsSecretManager(Arc::clone(client)),
+            Client::GoogleSecretManager(client) => Client::GoogleSecretManager(Arc::clone(client)),
+            Client::Vault(client) => Client::Vault(Arc::clone(client)),
+            Client::CyberArk(client) => Client::CyberArk(Arc::clone(client)),
+            Client::Custom(client) => Client::Custom(Arc::clone(client)),
+            Client::Infisical(client) => Client::Infisical(Arc::clone(client)),
+            Client::Uninitialized => Client::Uninitialized,
+        },
+        settings: manager
+            .settings
+            .as_ref()
+            .map(|settings| SecretManagerSettings {
+                primary_secret_name: settings.primary_secret_name.clone(),
+                optional_params: settings.optional_params.clone(),
+            }),
+        system: manager.system,
+        access_mode: manager.access_mode,
+        hosted_keys: manager.hosted_keys.clone(),
     }
 }

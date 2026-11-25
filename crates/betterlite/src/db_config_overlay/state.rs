@@ -80,11 +80,10 @@ pub const fn store_mut(
 pub fn settings_mapping(value: Option<&JsonValue>) -> BTreeMap<String, JsonValue> {
     value
         .and_then(JsonValue::as_object)
-        .map(|fields| {
+        .map_or_else(BTreeMap::new, |fields| {
             fields
                 .iter()
                 .map(|(key, entry)| (key.clone(), entry.clone()))
                 .collect()
         })
-        .unwrap_or_default()
 }
