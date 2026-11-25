@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use betterlite_core::api::responses_usage::{UsageInput, normalize_and_project};
+use betterlite_core::api::responses_usage::{
+    ResponsesUsageError, UsageInput, normalize_and_project,
+};
 use betterlite_core::cost::realtime::{Event, error::RealtimeCostError, responses_ws};
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage as LoggingUsage;
@@ -86,7 +88,7 @@ pub(crate) enum CollectFailure {
     #[error(transparent)]
     Realtime(#[from] RealtimeCostError),
     #[error(transparent)]
-    Responses(#[from] betterlite_core::api::responses_usage::ResponsesUsageError),
+    Responses(#[from] ResponsesUsageError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
