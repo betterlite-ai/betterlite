@@ -19,7 +19,7 @@ use crate::model_group_data::ports::GroupDatabase as _;
 use crate::model_group_data::store::PostgresGroupData;
 use crate::team_fields::tables::{team_table, user_table};
 
-// The stored reads the team query makes; a pod without a database fails each one as B714's routed client would.
+// A pod without a database fails each read, as B714's routed client does.
 #[derive(Clone, Copy)]
 pub struct PostgresScopeReads<'db> {
     pub client: Option<PrismaClient<'db>>,
@@ -59,7 +59,7 @@ async fn fetch_team_models(
         .map(|row| row.fields.base.models))
 }
 
-// ModelRepository.table.find_many(where={"model_name": {"in": names}}): B725's rows by name, no team predicate.
+// No team predicate: LiteLLM's find_many filters on model_name alone.
 async fn fetch_model_ids(
     client: Option<PrismaClient<'_>>,
     names: &[String],
@@ -70,7 +70,7 @@ async fn fetch_model_ids(
     Ok(rows.into_iter().map(|row| row.model_id).collect())
 }
 
-// ModelRepository.table.find_unique(where={"model_id": model_id}), left as stored so B8382 decrypts it.
+// Left as stored: B8382 decrypts the row, not this read.
 async fn fetch_model_row(
     client: Option<PrismaClient<'_>>,
     model_id: &str,

@@ -11,7 +11,6 @@ use super::team_models::{
     authorize_team_id_query, gather_accessible_model_ids, load_team_for_model_filter,
 };
 
-// _filter_models_by_team_id's model_info read: a row without a mapping reads as one with no team fields.
 fn model_info_of(row: &JsonObject) -> Option<&JsonObject> {
     match row.get("model_info") {
         Some(Json::Object(info)) => Some(info),
@@ -20,7 +19,6 @@ fn model_info_of(row: &JsonObject) -> Option<&JsonObject> {
     }
 }
 
-// model_info.get("access_via_team_ids"): the target only counts when the stored value is a list that names it.
 fn access_via_team(info: &JsonObject, team_id: &str) -> bool {
     match info.get("access_via_team_ids") {
         Some(Json::List(items)) => items.iter().any(|item| match item {
@@ -34,7 +32,6 @@ fn access_via_team(info: &JsonObject, team_id: &str) -> bool {
     }
 }
 
-// _filter_models_by_team_id: the team's own BYOK rows, then rows annotated with it, then the deployments its models reach; order and duplicates stay.
 pub async fn filter_models_by_team_id<Reads>(
     all_models: &[JsonObject],
     team_id: &str,

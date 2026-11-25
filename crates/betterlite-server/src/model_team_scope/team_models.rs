@@ -11,13 +11,11 @@ use super::GroupModels;
 use super::error::ScopeError;
 use super::reads::TeamScopeReads;
 
-// LiteLLM_TeamTable's models list, the only field the team filter reads off the row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeamModelScope {
     pub models: Vec<String>,
 }
 
-// _team_models_resolve_to_names: a team model entry that names an access group becomes that group's models, in order, duplicates kept.
 #[must_use]
 pub fn team_models_resolve_to_names(
     team_models: &[String],
@@ -33,7 +31,6 @@ pub fn team_models_resolve_to_names(
     resolved
 }
 
-// _load_team_object_for_model_filter: the team row, or none for a missing row (a warning) and for a failed read (an error log).
 pub async fn load_team_for_model_filter<Reads>(
     team_id: &str,
     reads: &Reads,
@@ -54,7 +51,6 @@ where
     }
 }
 
-// _gather_team_accessible_model_ids: the router rows the team can call, then the stored rows its resolved model names name.
 pub async fn gather_accessible_model_ids<Reads>(
     team_object: &TeamModelScope,
     team_id: &str,
@@ -85,7 +81,6 @@ where
     Ok(accessible)
 }
 
-// The router half of the gather: every global row for an unrestricted team, otherwise the rows its models and groups name.
 fn router_accessible_model_ids(
     team_object: &TeamModelScope,
     team_id: &str,
@@ -117,7 +112,6 @@ fn router_accessible_model_ids(
     Ok(accessible)
 }
 
-// The all-proxy branch's id filter: a row without an owning team, or one owned by this team.
 fn unrestricted_model_ids(
     team_id: &str,
     router: &dyn HealthRouter,
@@ -135,7 +129,6 @@ fn unrestricted_model_ids(
     Ok(accessible)
 }
 
-// _authorize_team_id_query: an admin view passes, and everyone else needs a stored user row whose teams include the target.
 pub async fn authorize_team_id_query<Reads>(
     team_id: &str,
     caller: &TeamCaller,

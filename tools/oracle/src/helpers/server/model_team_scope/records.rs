@@ -37,7 +37,6 @@ pub(crate) struct UserRecord {
     pub(crate) teams: Vec<String>,
 }
 
-// One model_team_scope call: the function and the arguments it reads, all optional but the function.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {

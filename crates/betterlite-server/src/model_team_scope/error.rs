@@ -9,7 +9,6 @@ use crate::proxy_helpers::checks::{Detail, HttpException};
 
 pub const NOT_AUTHORIZED: &str = "Not authorized to view this team's models";
 
-// The two failures _filter_models_by_team_id and _find_model_by_id hand the route: the 403 guard, and a router index that ran off its rows.
 #[derive(Debug, thiserror::Error)]
 pub enum ScopeError {
     #[error("{NOT_AUTHORIZED}")]
@@ -24,7 +23,7 @@ impl From<LookupFailure> for ScopeError {
     }
 }
 
-// HTTPException's detail: the guard's {"error": message} map, or LiteLLM's string form of an unexpected error.
+// The wire shape of HTTPException.detail: an {"error": message} map for the guard, a plain string for a failed lookup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum ScopeDetail {

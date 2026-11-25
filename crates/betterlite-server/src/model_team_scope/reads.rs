@@ -8,7 +8,6 @@ use betterlite_db::user_repository::RowDecodeError;
 
 use crate::model_group_data::errors::GroupDataError;
 
-// The user row read's two driver shapes: the pooled session, and the row the session returns.
 #[derive(Debug, thiserror::Error)]
 pub enum UserReadError {
     #[error(transparent)]
@@ -17,7 +16,6 @@ pub enum UserReadError {
     Row(#[from] DbError<RowDecodeError>),
 }
 
-// A model row read through B725's table binding: the session, the statement, and the decoded row.
 #[derive(Debug, thiserror::Error)]
 pub enum ModelRowReadError {
     #[error(transparent)]
@@ -28,7 +26,7 @@ pub enum ModelRowReadError {
     Row(#[from] ResourceRowsError),
 }
 
-// Every stored read the team scope makes; each caller logs the failure and answers the way LiteLLM does.
+// No variant reaches the client: each caller logs the failure and answers as LiteLLM does.
 #[derive(Debug, thiserror::Error)]
 pub enum TeamScopeReadError {
     #[error(transparent)]
@@ -65,7 +63,6 @@ impl From<ModelRowReadError> for TeamScopeReadError {
     }
 }
 
-// The stored rows the scope reads: the caller's teams, the target team's models, model ids by name, and one raw model row.
 #[async_trait]
 pub trait TeamScopeReads: Send + Sync {
     async fn user_teams(&self, user_id: &str) -> Result<Option<Vec<String>>, TeamScopeReadError>;

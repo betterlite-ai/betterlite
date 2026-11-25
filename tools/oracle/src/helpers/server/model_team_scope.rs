@@ -47,7 +47,6 @@ fn caller_scope(input: &Input, runtime: &Runtime) -> Value {
     json!({"allowed_team_ids": scope})
 }
 
-// The three public projections a case may call, each answered from the case's own inputs.
 fn answer(input: &Input) -> Result<Value, Failure> {
     match input.function {
         Function::ByokRowOutsideCallerTeams => {

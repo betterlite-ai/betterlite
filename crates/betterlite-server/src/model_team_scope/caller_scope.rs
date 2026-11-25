@@ -8,7 +8,6 @@ use crate::team_access::caller::TeamCaller;
 
 use super::reads::TeamScopeReads;
 
-// _get_caller_byok_team_scope: the teams whose BYOK rows the caller may see, or None for an admin or a path with no caller or database.
 pub async fn get_caller_byok_team_scope<Reads>(
     caller: Option<&TeamCaller>,
     reads: Option<&Reads>,
@@ -47,7 +46,6 @@ where
     Some(scope)
 }
 
-// _byok_row_outside_caller_teams: a team BYOK row the caller's scope leaves out; non-team rows and an unscoped caller never fall outside.
 #[must_use]
 pub fn byok_row_outside_caller_teams(
     model_info: &JsonObject,
