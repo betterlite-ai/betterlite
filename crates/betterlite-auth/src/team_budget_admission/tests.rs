@@ -600,7 +600,7 @@ async fn nonproxy_model_error_propagates() {
     )
     .await;
     assert!(
-        matches!(&depth, Err(TeamBudgetError::RecurseDepth { model }) if model == "gpt-4o"),
+        matches!(&depth, Err(TeamBudgetError::RecurseDepth { model: named }) if named == "gpt-4o"),
         "{depth:?}"
     );
     let mut failing = Harness::default();
@@ -617,4 +617,27 @@ async fn nonproxy_model_error_propagates() {
         ),
         "{lookup:?}"
     );
+}
+
+#[tokio::test]
+async fn member_cap_overflow_reads_then_admits() {
+    // Decimal::MAX plus an active increase overflows, which LiteLLM's double would hold as a finite cap no spend reaches
+    let harness = Harness::spending(&["1000000"]);
+    let row = team(r#"{"team_id":"team-1"}"#);
+    let token = key(MEMBER_KEY);
+    let model = RequestedModels::None;
+    let membership = loaded(
+        r#"{"user_id":"user-1","team_id":"team-1","litellm_budget_table":{"max_budget":79228162514264337593543950335,"temp_budget_increase":5,"temp_budget_expiry":"2027-01-01T00:00:00Z"}}"#,
+    );
+    run(
+        &harness,
+        &request(Some(&row), Some(&token), &model, membership),
+    )
+    .await
+    .unwrap();
+    let reads = harness.reads();
+    assert_eq!(reads.len(), 1);
+    assert_eq!(reads[0].counter_key, "spend:team_member:user-1:team-1");
+    assert_eq!(reads[0].max_budget, None);
+    assert!(harness.events().iter().all(|event| event != "member alert"));
 }
