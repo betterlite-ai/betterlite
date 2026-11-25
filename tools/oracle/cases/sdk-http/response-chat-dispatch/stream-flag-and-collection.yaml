@@ -1,0 +1,27 @@
+kind: sdk_http
+name: sdk-http-response-chat-dispatch-stream-flag-and-collection
+env: {}
+call:
+  response_chat_dispatch:
+    runs:
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {stream: false}, litellm_params: {api_key: sk-test, stream: true}, headers: {}, model_response: {}, logging_obj: {}}
+      - acompletion: true
+        kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {stream: false}, litellm_params: {api_key: sk-test, stream: true}, headers: {}, model_response: {}, logging_obj: {}}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"type":"response.created","response":{"id":"resp_a","object":"response","created_at":1700000000,"status":"in_progress","model":"gpt-4o-mini","output":[]}}'
+      - '{"type":"response.output_text.delta","item_id":"msg_a","output_index":0,"content_index":0,"delta":"hi"}'
+      - '{"type":"response.completed","response":{"id":"resp_a","object":"response","created_at":1700000000,"status":"completed","model":"gpt-4o-mini","output":[{"type":"message","id":"msg_a","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[]}]}],"usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":7}}}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"type":"response.created","response":{"id":"resp_a","object":"response","created_at":1700000000,"status":"in_progress","model":"gpt-4o-mini","output":[]}}'
+      - '{"type":"response.output_text.delta","item_id":"msg_a","output_index":0,"content_index":0,"delta":"hi"}'
+      - '{"type":"response.completed","response":{"id":"resp_a","object":"response","created_at":1700000000,"status":"completed","model":"gpt-4o-mini","output":[{"type":"message","id":"msg_a","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[]}]}],"usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":7}}}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

@@ -1,0 +1,22 @@
+kind: sdk_http
+name: sdk-http-response-chat-dispatch-bridge-input-validation
+env: {}
+call:
+  response_chat_dispatch:
+    runs:
+      - kwargs: {custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+      - kwargs: {model: 5, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+      - kwargs: {model: gpt-4o-mini, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: "hi", optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: [], litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: "x", headers: {}, model_response: {}, logging_obj: {}}
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: 5, model_response: {}, logging_obj: {}}
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: 5, logging_obj: {}}
+      - kwargs: {model: gpt-4o-mini, custom_llm_provider: openai, messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: 5}
+      - kwargs: {messages: [{role: user, content: hi}], optional_params: {}, litellm_params: {api_key: sk-test}, headers: {}, model_response: {}, logging_obj: {}}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

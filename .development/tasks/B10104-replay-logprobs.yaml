@@ -1,0 +1,71 @@
+id: B10104
+title: A response replayed as a stream keeps its choice logprobs
+description: >-
+  Fix a LiteLLM bug that three ports copied. LiteLLM's convert_model_response_to_streaming turns a finished
+  ModelResponse into one stream chunk by moving each choice's message into its delta and keeping its index and
+  finish_reason. It never reads choice.logprobs, so a client that asked for logprobs and gets the response through
+  this replay loses them. B921 (https://github.com/betterlite-ai/betterlite/pull/3162) copied it in replay_chunk in
+  crates/betterlite-core/src/api/response_chat_dispatch/stream.rs and listed it under kept_bugs in
+  docs/deviations/B921.yaml, and its review flagged it as data loss no working setup needs. The same replay drops
+  logprobs in chat_chunk in crates/betterlite-bedrock/src/guardrail_hooks/response.rs and in reconstruct_chunk in
+  crates/betterlite-guardrails/src/tool_permission_responses/reconstruct.rs.
+
+
+  The fix carries each choice's logprobs onto its streaming choice in all three, when the choice has them. A choice
+  without logprobs gives the same chunk as before. The kept_bugs row in B921.yaml goes, and this task's deviations
+  file records the difference.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/response_chat_dispatch/stream.rs
+  - crates/betterlite-core/src/api/response_chat_dispatch/tests/replay.rs
+  - crates/betterlite-bedrock/src/guardrail_hooks/response.rs
+  - crates/betterlite-bedrock/src/guardrail_hooks/tests/mock_iterator.rs
+  - crates/betterlite-guardrails/src/tool_permission_responses/reconstruct.rs
+  - crates/betterlite-guardrails/src/tool_permission_responses/reconstruct/tests.rs
+  - docs/deviations/B921.yaml
+  - docs/deviations/B10104.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L38-L48
+  why: Each StreamingChoices gets index, delta and finish_reason only.
+dod:
+- text: >-
+    A supplied chat response whose choices carry logprobs streams them on the matching choices of the replayed chunk
+    through response_chat_dispatch, and a choice without logprobs replays as before.
+  proof: [core-replay]
+- text: >-
+    The Bedrock guardrail hook's chat_chunk and the tool permission guardrail's reconstruct_chunk carry a choice's
+    logprobs onto its streaming choice, and leave a choice without them as before.
+  proof: [bedrock-mock-iterator, guardrails-reconstruct]
+- text: >-
+    docs/deviations/B10104.yaml has a row that says LiteLLM drops the logprobs, with the pinned LiteLLM link, and
+    docs/deviations/B921.yaml no longer lists it under kept_bugs.
+  proof: [deviation-row, kept-bug-gone]
+checks:
+  optional: []
+  commands:
+  - id: core-replay
+    why: The core replay still drops logprobs or changed a chunk without them.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::/)'
+  - id: bedrock-mock-iterator
+    why: The Bedrock guardrail replay still drops logprobs or changed a chunk without them.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^guardrail_hooks::.*mock_iterator/)'
+  - id: guardrails-reconstruct
+    why: The tool permission replay still drops logprobs or changed a chunk without them.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_responses::reconstruct::/)'
+  - id: deviation-row
+    why: The fix needs its deviations row with the pinned LiteLLM link.
+    run: grep -q 'base_model_iterator.py#L38-L48' docs/deviations/B10104.yaml
+  - id: kept-bug-gone
+    why: B921's kept_bugs row would still say the logprobs are dropped.
+    run: test -z "$(grep -n 'drops each choice' docs/deviations/B921.yaml)"
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Merging the Bedrock and guardrails replays into one function. They differ on null message fields today, so that is its own change.
+pitfalls:
+- A null or missing logprobs stays absent on the streaming choice, so chunks without logprobs serialize exactly as before.
+review_level: standard
+budget:
+  max_changed_lines: 250
+  max_new_expects: 0
