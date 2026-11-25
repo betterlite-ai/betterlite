@@ -4,7 +4,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::{self, Command};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use rstest::rstest;
 use tempfile::TempDir;
@@ -17,9 +17,10 @@ use super::{
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Captured {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut captured = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        captured.extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -27,7 +28,10 @@ impl Write for Captured {
     }
 }
 
-fn logs_of<T, F: FnOnce() -> T>(action: F) -> (T, String) {
+fn logs_of<T, F>(action: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
     let shared = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&shared);
     let subscriber = tracing_subscriber::fmt()
@@ -44,7 +48,10 @@ fn touch(folder: &Path, name: &str) {
     fs::write(folder.join(name), b"samples").unwrap();
 }
 
-fn touch_all<S: AsRef<str>>(folder: &Path, names: &[S]) {
+fn touch_all<S>(folder: &Path, names: &[S])
+where
+    S: AsRef<str>,
+{
     for name in names {
         touch(folder, name.as_ref());
     }
@@ -52,7 +59,7 @@ fn touch_all<S: AsRef<str>>(folder: &Path, names: &[S]) {
 
 // a folder where a file is expected makes remove_file fail even for root, which CI runs as
 fn blocked(folder: &Path, name: &str) {
-    fs::create_dir(folder.join(name)).unwrap();
+    fs::create_dir_all(folder.join(name)).unwrap();
     touch(&folder.join(name), "inside");
 }
 
@@ -192,8 +199,8 @@ fn is_running_is_false_past_the_pid_range() {
     assert!(!is_running(past_pid_t));
 }
 
-#[test]
-fn mark_dead_workers_marks_only_dead_owners_and_returns_them_sorted() {
+// two dead workers beside the live writer, plus files that belong to neither of them
+fn mixed_worker_folder() -> (TempDir, u32, [u32; 2]) {
     let folder = TempDir::new().unwrap();
     let mut dead = [dead_pid(), dead_pid()];
     dead.sort_unstable();
@@ -211,40 +218,42 @@ fn mark_dead_workers_marks_only_dead_owners_and_returns_them_sorted() {
             format!("gauge_all_{first}.db"),
         ],
     );
+    (folder, own, dead)
+}
+
+#[test]
+fn mark_dead_workers_marks_only_dead_owners_and_returns_them_sorted() {
+    let (folder, own, dead) = mixed_worker_folder();
+    let [first, second] = dead;
     let (marked, logs) = logs_of(|| mark_dead_workers(folder.path(), own).unwrap());
     assert_eq!(marked, vec![first, second]);
-    assert!(
-        !folder
-            .path()
-            .join(format!("gauge_livesum_{second}.db"))
-            .exists()
-    );
-    assert!(
-        !folder
-            .path()
-            .join(format!("gauge_liveall_{first}.db"))
-            .exists()
-    );
-    assert!(
-        !folder
-            .path()
-            .join(format!("gauge_livemax_{first}.db"))
-            .exists()
-    );
-    assert!(
-        folder
-            .path()
-            .join(format!("gauge_liveall_{own}.db"))
-            .exists()
-    );
-    assert!(folder.path().join("gauge_liveall_1.db").exists());
-    assert!(folder.path().join(format!("counter_{first}.db")).exists());
-    assert!(folder.path().join(format!("gauge_all_{first}.db")).exists());
     let expected = format!(
         "Prometheus cleanup: marked dead workers [{first}, {second}] in {}",
         folder.path().display()
     );
     assert!(logs.contains(&expected), "{logs}");
+}
+
+#[test]
+fn mark_dead_workers_leaves_the_live_and_foreign_files_alone() {
+    let (folder, own, dead) = mixed_worker_folder();
+    let [first, second] = dead;
+    mark_dead_workers(folder.path(), own).unwrap();
+    for gone in [
+        format!("gauge_livesum_{second}.db"),
+        format!("gauge_liveall_{first}.db"),
+        format!("gauge_livemax_{first}.db"),
+    ] {
+        assert!(!folder.path().join(gone.as_str()).exists(), "{gone}");
+    }
+    for kept in [
+        format!("gauge_liveall_{own}.db"),
+        "gauge_liveall_1.db".to_owned(),
+        format!("counter_{first}.db"),
+        format!("gauge_all_{first}.db"),
+    ] {
+        assert!(folder.path().join(kept.as_str()).exists(), "{kept}");
+    }
 }
 
 #[test]

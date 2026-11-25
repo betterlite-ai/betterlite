@@ -494,5 +494,5 @@ fn cli_refuses_a_missing_or_empty_value(
 ) {
     let error = parsed(arguments, env_folder).unwrap_err();
     assert_eq!(error.kind(), expected);
-    assert_eq!(error.exit_code(), 2);
+    assert_eq!(error.exit_code(), 2_i32);
 }
