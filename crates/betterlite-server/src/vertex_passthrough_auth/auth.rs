@@ -146,18 +146,18 @@ fn configured_credentials(
 ) -> Result<Option<ConfiguredCredentials>, VertexAuthError> {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => decoded(text),
-        Some(Json::Object(object)) => decoded(&dumps_object(object)),
+        Some(Json::Text(text)) => Ok(Some(decoded(text)?)),
+        Some(Json::Object(object)) => Ok(Some(decoded(&dumps_object(object))?)),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
             Err(VertexAuthError::CredentialsType)
         }
     }
 }
 
-fn decoded(text: &str) -> Result<Option<ConfiguredCredentials>, VertexAuthError> {
+fn decoded(text: &str) -> Result<ConfiguredCredentials, VertexAuthError> {
     let configured = ConfiguredCredentials::from_text(text.to_owned())
         .map_err(|source| CredentialSourceError::Credentials { source })?;
-    Ok(Some(configured))
+    Ok(configured)
 }
 
 async fn token_headers(
