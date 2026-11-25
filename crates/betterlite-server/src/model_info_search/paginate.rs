@@ -44,8 +44,8 @@ pub fn paginate_models(
 
 fn slice_page(models: &[JsonObject], skip: i64, size: i64) -> Vec<JsonObject> {
     let length = i64::try_from(models.len()).unwrap_or(i64::MAX);
-    let start = python_index(skip, length);
-    let stop = python_index(skip.saturating_add(size), length);
+    let start = slice_bound(skip, length);
+    let stop = slice_bound(skip.saturating_add(size), length);
     let (Ok(start), Ok(stop)) = (usize::try_from(start), usize::try_from(stop)) else {
         return Vec::new();
     };
@@ -57,7 +57,7 @@ fn slice_page(models: &[JsonObject], skip: i64, size: i64) -> Vec<JsonObject> {
         .map_or_else(Vec::new, <[JsonObject]>::to_vec)
 }
 
-fn python_index(index: i64, length: i64) -> i64 {
+fn slice_bound(index: i64, length: i64) -> i64 {
     if index < 0 {
         length.saturating_add(index).max(0)
     } else {

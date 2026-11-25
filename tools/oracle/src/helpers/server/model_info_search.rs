@@ -157,7 +157,13 @@ fn answer(input: &Input) -> Result<Value, Failure> {
             )
         })),
         Function::Paginate => paginate_answer(input),
-        Function::Datetime => datetime_answer(input),
+        Function::Datetime => Ok(json!(
+            input
+                .value
+                .as_ref()
+                .and_then(normalize_model_info_datetime)
+                .map(|found| isoformat(&found))
+        )),
     }
 }
 
@@ -229,11 +235,6 @@ fn paginate_answer(input: &Input) -> Result<Value, Failure> {
         "total_pages": paginated.total_pages,
         "size": paginated.size,
     }))
-}
-
-fn datetime_answer(input: &Input) -> Result<Value, Failure> {
-    let normalized = input.value.as_ref().and_then(normalize_model_info_datetime);
-    Ok(json!(normalized.map(|found| isoformat(&found))))
 }
 
 fn isoformat(found: &DateTime<Utc>) -> String {

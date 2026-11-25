@@ -58,7 +58,7 @@ class CaseCatalog:
         for entry in self.entries:
             provider = entry.get("provider")
             if entry["model"] == model and provider == custom_llm_provider:
-                return cast(ModelInfo, entry["info"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6416-L6421
+                return cast(ModelInfo, entry["info"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6416-L6421
         raise ValueError(f"the case catalog has no {model} entry")
 
 
@@ -112,9 +112,7 @@ def enrich_answer(input_value: Input) -> JsonValue:
     litellm.model_cost = cost_map
     litellm.get_model_info = CaseCatalog(entries)
     debug = input_value.get("debug")
-    enriched = proxy_server._enrich_model_info_with_litellm_data(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14540-L14610
-        model, debug is True, llm_router(input_value.get("router"))
-    )
+    enriched = cast(dict[str, JsonValue], proxy_server._enrich_model_info_with_litellm_data(model, debug is True, llm_router(input_value.get("router"))))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14540-L14610
     return ANSWER.validate_python(enriched)
 
 
@@ -122,10 +120,10 @@ def sort_answer(input_value: Input) -> JsonValue:
     order = input_value.get("sort_order")
     if order is None:
         order = "asc"
-    sorted_models = proxy_server._sort_models(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14897-L14983
-        model_list(input_value), input_value.get("sort_by"), order
-    )
-    return MODELS.validate_python(sorted_models)
+    sorted_models = cast(list[dict[str, JsonValue]], proxy_server._sort_models(model_list(input_value), input_value.get("sort_by"), order))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14897-L14983
+    found: list[JsonValue] = []
+    found.extend(MODELS.validate_python(sorted_models))
+    return found
 
 
 def auto_router_answer(input_value: Input) -> JsonValue:
@@ -185,20 +183,22 @@ def datetime_answer(input_value: Input) -> JsonValue:
 def answer(input_value: Input) -> JsonValue:
     function = input_value["function"]
     if function == "enrich":
-        return enrich_answer(input_value)
-    if function == "sort":
-        return sort_answer(input_value)
-    if function == "is_auto_router":
-        return auto_router_answer(input_value)
-    if function == "model_in_access_group":
-        return access_group_answer(input_value)
-    if function == "matches_filters":
-        return filters_answer(input_value)
-    if function == "paginate":
-        return paginate_answer(input_value)
-    if function == "datetime":
-        return datetime_answer(input_value)
-    raise ValueError(f"unsupported model_info_search function {function}")
+        found = enrich_answer(input_value)
+    elif function == "sort":
+        found = sort_answer(input_value)
+    elif function == "is_auto_router":
+        found = auto_router_answer(input_value)
+    elif function == "model_in_access_group":
+        found = access_group_answer(input_value)
+    elif function == "matches_filters":
+        found = filters_answer(input_value)
+    elif function == "paginate":
+        found = paginate_answer(input_value)
+    elif function == "datetime":
+        found = datetime_answer(input_value)
+    else:
+        raise ValueError(f"unsupported model_info_search function {function}")
+    return found
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
