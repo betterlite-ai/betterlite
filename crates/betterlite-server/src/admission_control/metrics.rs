@@ -60,13 +60,11 @@ impl<T: Clone> Registration<T> {
 }
 
 pub(super) fn in_flight_gauge(registry: &CollectorRegistry) -> Option<PrometheusMetric> {
-    match register(registry, live_sum_gauge(IN_FLIGHT, IN_FLIGHT_HELP)) {
-        Ok(gauge) => Some(gauge),
-        Err(error) => {
+    register(registry, live_sum_gauge(IN_FLIGHT, IN_FLIGHT_HELP))
+        .inspect_err(|error| {
             tracing::warn!(%error, "could not register the in-flight requests gauge");
-            None
-        }
-    }
+        })
+        .ok()
 }
 
 // create_prometheus_admission_metrics: a refused metric leaves the layer without the three

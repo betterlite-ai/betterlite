@@ -18,6 +18,7 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_config::sections::admission_control::{Limits, Settings};
 use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
 use betterlite_prometheus::collector_registry::CollectorRegistry;
+use betterlite_prometheus::collector_registry::metric::PrometheusMetric;
 use rust_decimal::Decimal;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
@@ -157,6 +158,29 @@ impl AdmissionControl {
         self.record_rejection(RejectionReason::QueueTimeout);
         None
     }
+
+    fn release(&self, counter: &AtomicU64, gauge: AdmissionGauge) {
+        decrement(counter);
+        if let Some(metrics) = self.metrics() {
+            gauge
+                .metric(metrics)
+                .inc(MetricValue::Finite(Decimal::NEGATIVE_ONE));
+        }
+    }
+}
+
+enum AdmissionGauge {
+    Admitted,
+    Queued,
+}
+
+impl AdmissionGauge {
+    const fn metric(self, metrics: &AdmissionMetrics) -> &PrometheusMetric {
+        match self {
+            Self::Admitted => &metrics.admitted,
+            Self::Queued => &metrics.queued,
+        }
+    }
 }
 
 fn decrement(counter: &AtomicU64) {
@@ -171,12 +195,8 @@ struct QueueSlot<'control> {
 
 impl Drop for QueueSlot<'_> {
     fn drop(&mut self) {
-        decrement(&self.control.queued);
-        if let Some(metrics) = self.control.metrics() {
-            metrics
-                .queued
-                .inc(MetricValue::Finite(Decimal::NEGATIVE_ONE));
-        }
+        self.control
+            .release(&self.control.queued, AdmissionGauge::Queued);
     }
 }
 
@@ -188,12 +208,8 @@ struct AdmissionSlot {
 impl Drop for AdmissionSlot {
     fn drop(&mut self) {
         drop(self.permit.take());
-        decrement(&self.control.admitted);
-        if let Some(metrics) = self.control.metrics() {
-            metrics
-                .admitted
-                .inc(MetricValue::Finite(Decimal::NEGATIVE_ONE));
-        }
+        self.control
+            .release(&self.control.admitted, AdmissionGauge::Admitted);
     }
 }
 
