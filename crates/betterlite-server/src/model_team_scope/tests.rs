@@ -7,7 +7,6 @@ use std::sync::mpsc::sync_channel;
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_secret_managers::secret_lookup::ports::OidcHttp;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
@@ -620,8 +619,8 @@ async fn a_blocked_secret_read_leaves_the_async_worker_free() {
     let reads = support::StubReads::default().with_rows(vec![support::model_row(
         r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"os.environ/oidc/google/audience"}}"#,
     )]);
-    let oidc: Arc<dyn OidcHttp> = Arc::clone(&http);
-    let fixture = support::DecryptFixture::with_oidc_http(oidc);
+    let concrete = Arc::clone(&http);
+    let fixture = support::DecryptFixture::with_oidc_http(concrete);
     let context = fixture.context();
     let mut lookups = JoinSet::new();
     lookups.spawn(async move { find_model_by_id("d1", None, None, &reads, &context).await });
