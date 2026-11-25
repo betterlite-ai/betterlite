@@ -1,6 +1,11 @@
 #![cfg(test)]
 
+use std::io::{Result as IoResult, Write};
+use std::sync::{Arc, Mutex, PoisonError};
+
 use rust_decimal::Decimal;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::daily_spend_sql::values::SpendColumnValue;
 use crate::model_usage::ModelUsageTransaction;
@@ -63,6 +68,52 @@ fn daily_keys(queue: &RecordingDailyQueue) -> Vec<String> {
         .into_iter()
         .flat_map(|update| update.into_keys())
         .collect()
+}
+
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLogs {
+    fn contents(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("the captured log is UTF-8")
+    }
+}
+
+impl Write for CapturedLogs {
+    fn write(&mut self, buffer: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CapturedLogs {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn capture_logs() -> (CapturedLogs, DefaultGuard) {
+    let logs = CapturedLogs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(logs.clone())
+        .finish();
+    (logs, set_default(subscriber))
 }
 
 struct Harness {
@@ -267,6 +318,24 @@ async fn a_failed_daily_helper_leaves_the_other_daily_rows_and_model_usage_runni
     );
     assert_eq!(harness.model_usage.len(), 1);
     assert!(harness.failures.reported().is_empty());
+}
+
+#[tokio::test]
+async fn a_failed_daily_helper_is_logged_and_the_later_rows_still_run() {
+    let harness = Harness::with_failures(None, Some(0));
+    let charge = work_for(row(REQUEST));
+    let (logs, _captured) = capture_logs();
+    harness.run(&charge, SpendWriterSettings::default()).await;
+    let logged = logs.contents();
+    assert!(logged.contains("daily user"), "{logged}");
+    assert!(
+        logged.contains("_batch_database_updates: the helper failed"),
+        "{logged}"
+    );
+    assert_eq!(
+        daily_keys(&harness.daily_tag),
+        vec![format!("tag-a{SUFFIX}"), format!("tag-b{SUFFIX}")]
+    );
 }
 
 #[tokio::test]
