@@ -10,4 +10,14 @@ deviations:
       beyond i64 has no response shape it could be echoed in; other betterlite query readers parse the same
       way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L356-L360
+  - what: >-
+      A database row whose vector_store_metadata column holds JSON that is not an object is served as stored with
+      a 200, where LiteLLM's response model declares dict[str, Any] | None and FastAPI answers a 500 while
+      serializing the row. A cached record whose metadata is a string that is not valid JSON, or that parses to
+      anything but an object, answers the 500 with betterlite's own message in place of the Python exception text.
+    why: >-
+      Error messages are betterlite's own, as docs/compatibility.md says, and the read routes serve the stored
+      column as the database returned it instead of failing the whole answer on a value JSONB accepts; the
+      declared object type is still what both routes emit for well-formed rows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L532-L538
 kept_bugs: []
