@@ -249,7 +249,7 @@ impl OpenAiPassthroughLogger {
     }
 }
 
-// Python's `body.get(key) or default`: a missing or null key gives LiteLLM's empty default.
+// Python's `get(key) or default`, narrowed to absent or null keys by docs/compatibility.md.
 fn value_or<'body>(body: &'body JsonObject, key: &str, fallback: &'body Json) -> &'body Json {
     match body.get(key) {
         None | Some(Json::Null) => fallback,
