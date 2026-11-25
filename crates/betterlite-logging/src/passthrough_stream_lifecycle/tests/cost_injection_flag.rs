@@ -155,7 +155,7 @@ async fn a_missing_model_keeps_the_hot_path() {
     let lifecycle = harness.lifecycle(true);
     let call = processor_call(
         Arc::clone(&lifecycle),
-        object(&[], IndexMap::new()),
+        object(&[("model", Json::Null)], IndexMap::new()),
         EndpointType::OpenAi,
     );
     drop(
