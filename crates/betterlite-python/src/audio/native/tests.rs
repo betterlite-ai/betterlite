@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use super::NativeAudioSession;
 use crate::audio::register;
 
-const SETTINGS: &str = r#"{}"#;
+const SETTINGS: &str = "{}";
 
 #[test]
 fn register_adds_the_audio_classes() {

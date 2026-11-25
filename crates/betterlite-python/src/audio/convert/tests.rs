@@ -3,8 +3,8 @@
 use super::speech::{speech_timeout, speech_values};
 use super::{
     AudioCallWire, ConvertError, NoFiles, SpeechCallWire, UNNAMED_FILE, audio_file,
-    bare_string_file, family_for, first_file, max_retries, parse, parse_speech, timeout,
-    transcription_options,
+    bare_string_file, family_for, first_file, max_retries, parse, parse_speech, resolve_target,
+    timeout, transcription_options,
 };
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles as _;
 use betterlite_openai::speech::request::SpeechFormat;
@@ -62,6 +62,25 @@ fn request_family_for_a_gpt4o_model() {
         TranscriptionFamily::Gpt
     );
     assert_eq!(family_for("whisper-1"), TranscriptionFamily::Whisper);
+}
+
+#[test]
+fn request_target_takes_the_model_prefix_or_the_argument() {
+    let (model, provider) = resolve_target("openai/whisper-1", None);
+    assert_eq!(model, "whisper-1");
+    assert_eq!(provider, "openai");
+    let (matched, kept) = resolve_target("openai/whisper-1", Some("openai"));
+    assert_eq!(matched, "whisper-1");
+    assert_eq!(kept, "openai");
+    let (whole, given) = resolve_target("openai/whisper-1", Some("azure"));
+    assert_eq!(whole, "openai/whisper-1");
+    assert_eq!(given, "azure");
+    let (plain, defaulted) = resolve_target("whisper-1", None);
+    assert_eq!(plain, "whisper-1");
+    assert_eq!(defaulted, "openai");
+    let (bare, named) = resolve_target("whisper-1", Some("openai"));
+    assert_eq!(bare, "whisper-1");
+    assert_eq!(named, "openai");
 }
 
 #[test]

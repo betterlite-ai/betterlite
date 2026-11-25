@@ -171,6 +171,22 @@ pub(crate) fn family_for(model: &str) -> TranscriptionFamily {
     }
 }
 
+// get_llm_provider over the openai-only provider set: a model's prefix names the provider unless a
+// different provider argument is given, and no provider anywhere means openai.
+pub(crate) fn resolve_target(model: &str, provider: Option<&str>) -> (String, String) {
+    let Some((prefix, rest)) = model.split_once('/') else {
+        return (
+            model.to_owned(),
+            provider.unwrap_or(OPENAI_PROVIDER).to_owned(),
+        );
+    };
+    match provider {
+        Some(given) if given == prefix => (rest.to_owned(), given.to_owned()),
+        Some(given) => (model.to_owned(), given.to_owned()),
+        None => (rest.to_owned(), prefix.to_owned()),
+    }
+}
+
 pub(crate) fn transcription_options(arguments: &RequestMap) -> IndexMap<String, Json> {
     TRANSCRIPTION_FIELDS
         .iter()
@@ -192,11 +208,11 @@ pub(crate) fn text(arguments: &RequestMap, name: &str) -> Result<Option<String>,
 }
 
 // The argument's number; absent and null read as None, and any other value is a field error.
-fn number<'a>(
-    arguments: &'a RequestMap,
+fn number<'arguments>(
+    arguments: &'arguments RequestMap,
     name: &str,
     expected: &'static str,
-) -> Result<Option<&'a Number>, ConvertError> {
+) -> Result<Option<&'arguments Number>, ConvertError> {
     match arguments.get(name) {
         Some(Json::Number(value)) => Ok(Some(value)),
         Some(Json::Null) | None => Ok(None),

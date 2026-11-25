@@ -1,17 +1,17 @@
 use super::convert::speech::{SpeechValues, speech_values};
 use super::convert::{
-    DEFAULT_MAX_RETRIES, OPENAI_PROVIDER, SpeechAnswer, SpeechCallWire, SpeechHeader, text,
+    DEFAULT_MAX_RETRIES, OPENAI_PROVIDER, SpeechAnswer, SpeechCallWire, SpeechHeader,
+    resolve_target, text,
 };
 use super::error::{CallFailure, context, missing_key, provider_failure};
 use super::session::{AudioSession, SilentAudioLogger};
 use betterlite_error::error::ErrorClass;
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_openai::speech::call::{SpeechCall, audio_speech};
 use betterlite_openai::speech::client::SpeechConnection;
 use betterlite_openai::speech::error::SpeechError;
 use betterlite_openai::speech::request::SpeechRequest;
 use betterlite_redact::secret::Redactor;
-
-use crate::images::convert::fields::resolve_target;
 
 mod tests;
 
@@ -156,9 +156,10 @@ fn speech_failure(
 }
 
 fn missing_voice(model: &str, provider: &str) -> CallFailure {
-    CallFailure::from_class(&ErrorClass::BadRequest(Box::new(context(
+    let details = ResponseDetails::<400>::from(context(
         String::from("'voice' is required to be passed as a string for OpenAI TTS"),
         Some(model.to_owned()),
         Some(provider.to_owned()),
-    ))))
+    ));
+    CallFailure::from_class(&ErrorClass::BadRequest(Box::new(details)))
 }

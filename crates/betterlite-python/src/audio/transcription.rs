@@ -1,7 +1,7 @@
 use super::convert::{
     AudioCallWire, ConvertError, DEFAULT_MAX_RETRIES, NoFiles, OPENAI_PROVIDER,
-    TranscriptionAnswer, audio_file, bare_string_file, family_for, first_file, max_retries, text,
-    timeout, transcription_options,
+    TranscriptionAnswer, audio_file, bare_string_file, family_for, first_file, max_retries,
+    resolve_target, text, timeout, transcription_options,
 };
 use super::error::{CallFailure, context, missing_key, provider_failure};
 use super::session::{AudioSession, SilentAudioLogger};
@@ -27,8 +27,6 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 use std::time::Instant;
 use uuid::Uuid;
-
-use crate::images::convert::fields::resolve_target;
 
 mod tests;
 
@@ -200,11 +198,16 @@ fn hidden_params(
                 duration_number(Some(found))?,
             );
         }
-    } else if let StoredDuration::Known(found) = reply.duration {
-        hidden.insert(
-            String::from("audio_transcription_duration"),
-            duration_number(found)?,
-        );
+    } else {
+        match reply.duration {
+            StoredDuration::Known(found) => {
+                hidden.insert(
+                    String::from("audio_transcription_duration"),
+                    duration_number(found)?,
+                );
+            }
+            StoredDuration::Absent => {}
+        }
     }
     if let Some(found) = Number::from_f64(response_ms) {
         hidden.insert(String::from("_response_ms"), Json::Number(found));
