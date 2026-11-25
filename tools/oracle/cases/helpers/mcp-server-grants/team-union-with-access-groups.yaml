@@ -1,0 +1,47 @@
+# A team's servers are its expanded mcp_servers, tag group servers, tool grant servers, toolset servers and the
+# servers of its unified access_group_ids; a team without a permission row gets only the last, and a blocked team none.
+kind: helper
+name: mcp-server-grants-team-union-with-access-groups
+call:
+  b4669:
+    function: team
+    servers:
+      - {server_id: srv-a, name: alpha, alias: al, server_name: null, transport: http, access_groups: [grp-1]}
+      - {server_id: srv-b, name: beta, alias: null, server_name: null, transport: http, access_groups: null}
+      - {server_id: srv-c, name: gamma, alias: null, server_name: null, transport: http, access_groups: [grp-1]}
+    access_groups:
+      - {access_group_id: ag-team, access_mcp_server_ids: [srv-team, srv-a]}
+    toolset_grants: {srv-toolset: [list]}
+    team_id: team-1
+    blocked: false
+    team_access_group_ids: [ag-team, ag-missing]
+    permission:
+      mcp_servers: [al, nope]
+      mcp_access_groups: [grp-1]
+      mcp_tool_permissions: {beta: [read]}
+      mcp_toolsets: [ts-1]
+calls:
+  - b4669:
+      function: team
+      servers:
+        - {server_id: srv-a, name: alpha, alias: null, server_name: null, transport: http, access_groups: [grp-1]}
+      access_groups:
+        - {access_group_id: ag-team, access_mcp_server_ids: [srv-team, srv-team-2]}
+      toolset_grants: {}
+      team_id: team-1
+      blocked: false
+      team_access_group_ids: [ag-team]
+      permission: null
+  - b4669:
+      function: team
+      servers:
+        - {server_id: srv-a, name: alpha, alias: null, server_name: null, transport: http, access_groups: null}
+      access_groups:
+        - {access_group_id: ag-team, access_mcp_server_ids: [srv-team]}
+      toolset_grants: {}
+      team_id: team-1
+      blocked: true
+      team_access_group_ids: [ag-team]
+      permission: {mcp_servers: [srv-a], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
+env: {}
+compare: {ignore: []}
