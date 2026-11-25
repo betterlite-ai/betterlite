@@ -1,4 +1,3 @@
-// the tracing span a caller carries is no part of its MCP identity, so a valid auth with an opaque span still decodes
 #[test]
 fn decode_reads_an_opaque_span_credential() {
     let record = decode::<StoreDown>(Some(&opaque_span_auth())).unwrap();
