@@ -17,6 +17,7 @@ use crate::auth::object_permission_hydration::reads::{
 };
 use crate::auth::object_permission_hydration::record::McpAuth;
 
+mod db_reads_tests;
 mod key_tests;
 mod team_error_tests;
 mod team_tests;
