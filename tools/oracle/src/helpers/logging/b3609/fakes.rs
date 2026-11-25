@@ -115,11 +115,12 @@ impl Recorder {
 
 impl StreamRoute for Recorder {
     fn route(self: Arc<Self>, input: StreamLoggingInput) -> StreamWork {
-        self.routes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(input.raw_bytes);
-        Box::pin(async {})
+        Box::pin(async move {
+            self.routes
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(input.raw_bytes);
+        })
     }
 }
 

@@ -14,7 +14,6 @@ from .model import (
     FIXED_START,
     JSON,
     PARAMS,
-    SCRIPTED_CLASS,
     Driven,
     Input,
     ScriptedReadError,
@@ -50,11 +49,6 @@ def outcome_value() -> str:
     return "completed"
 
 
-def error_value() -> str | None:
-    error = RECORDER.error
-    return None if error is None else f"{SCRIPTED_CLASS}: {error}"
-
-
 def completion_value(logging_obj: StubLogging) -> str | None:
     moment = logging_obj.completion_start_time
     return None if moment is None else moment.isoformat()
@@ -80,14 +74,6 @@ def bound_value() -> bool | None:
 
 
 def answer(logging_obj: StubLogging, driven: Driven) -> JsonValue:
-    failures: list[dict[str, str]] = [
-        {
-            "class": SCRIPTED_CLASS,
-            "message": record.message,
-            "traceback_tail": record.traceback_tail,
-        }
-        for record in RECORDER.failures
-    ]
     routes = RECORDER.routes
     route_bytes: list[list[int]] | None = (
         None if not routes else [list(chunk) for chunk in routes[0]]
@@ -96,13 +82,12 @@ def answer(logging_obj: StubLogging, driven: Driven) -> JsonValue:
     payload: dict[str, JsonValue] = {
         "yielded": JSON.validate_python(driven.yielded),
         "outcome": outcome_value(),
-        "error": error_value(),
         "completion_start_time": completion_value(logging_obj),
         "route_calls": len(routes),
         "route_raw_bytes": JSON.validate_python(route_bytes),
         "queued_jobs": driven.queued_jobs,
         "deferred_jobs": driven.deferred_jobs,
-        "failures": JSON.validate_python(failures),
+        "failure_dispatches": len(RECORDER.failures),
         "partial_usage": partial_value(),
         "tinyfish_started": JSON.validate_python(started),
         "tinyfish_scans": RECORDER.scans,

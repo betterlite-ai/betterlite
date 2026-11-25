@@ -428,20 +428,21 @@ impl RecordingRoute {
 
 impl StreamRoute for RecordingRoute {
     fn route(self: Arc<Self>, input: StreamLoggingInput) -> StreamWork {
-        let recorded = RecordedRoute {
-            url_route: input.url_route,
-            request_body: input.request_body,
-            endpoint_type: input.endpoint_type,
-            start_time: input.start_time,
-            end_time: input.end_time,
-            raw_bytes: input.raw_bytes,
-            model: input.model,
-        };
-        self.inputs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(recorded);
-        Box::pin(async {})
+        Box::pin(async move {
+            let recorded = RecordedRoute {
+                url_route: input.url_route,
+                request_body: input.request_body,
+                endpoint_type: input.endpoint_type,
+                start_time: input.start_time,
+                end_time: input.end_time,
+                raw_bytes: input.raw_bytes,
+                model: input.model,
+            };
+            self.inputs
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(recorded);
+        })
     }
 }
 

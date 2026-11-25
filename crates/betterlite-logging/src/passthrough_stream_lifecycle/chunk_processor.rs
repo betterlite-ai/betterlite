@@ -168,30 +168,37 @@ impl CompletionGuard {
     }
 
     async fn read_failure(&mut self, failure: &StreamFailure) {
-        let message = &failure.message;
-        tracing::error!("Error in chunk_processor: {message}");
+        tracing::error!("Error in chunk_processor: {}", failure.message);
         let Some(parts) = self.parts.as_mut() else {
             return;
         };
         if parts.status_code >= 400 {
             return;
         }
-        parts.logging_scheduled = true;
         let context = PassThroughStreamContext {
             success_handler: Arc::clone(&parts.lifecycle.passthrough),
             url_route: parts.url_route.clone(),
             start_time: parts.start_time,
         };
-        schedule_failure_logging(FailureSchedulingCall {
-            lifecycle: parts.lifecycle.as_ref(),
-            logging_obj: Arc::clone(&parts.logging_obj),
-            endpoint_type: parts.endpoint_type,
-            request_body: &parts.request_body,
-            raw_bytes: &parts.raw_bytes,
-            failure,
-            stream_context: Some(&context),
-        })
-        .await;
+        let lifecycle = Arc::clone(&parts.lifecycle);
+        let logging_obj = Arc::clone(&parts.logging_obj);
+        let endpoint_type = parts.endpoint_type;
+        let request_body = parts.request_body.clone();
+        let raw_bytes = parts.raw_bytes.clone();
+        let failure = failure.clone();
+        let _task = tokio::spawn(async move {
+            schedule_failure_logging(FailureSchedulingCall {
+                lifecycle: lifecycle.as_ref(),
+                logging_obj,
+                endpoint_type,
+                request_body: &request_body,
+                raw_bytes: &raw_bytes,
+                failure: &failure,
+                stream_context: Some(&context),
+            })
+            .await;
+        });
+        parts.logging_scheduled = true;
     }
 }
 
@@ -213,7 +220,16 @@ impl Drop for CompletionGuard {
             request_body: Some(parts.request_body.clone()),
             raw_bytes: take(&mut parts.raw_bytes),
         });
-        if let Admission::Rejected(reason) = parts.lifecycle.queue.submit(job) {
+        let (release, wait) = tokio::sync::oneshot::channel();
+        let mut job = job;
+        let work = std::mem::replace(&mut job.work, Box::pin(async {}));
+        job.work = Box::pin(async move {
+            if wait.await.is_ok() {
+                work.await;
+            }
+        });
+        let admission = parts.lifecycle.queue.submit(job);
+        if let Admission::Rejected(reason) = admission {
             tracing::error!("Error scheduling chunk_processor logging: {reason:?}");
             return;
         }
@@ -221,5 +237,6 @@ impl Drop for CompletionGuard {
         parts
             .logging_obj
             .edit(&mut |state| binder.bind(&mut state.litellm_params));
+        let _ = release.send(());
     }
 }

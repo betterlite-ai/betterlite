@@ -28,26 +28,23 @@ pub(super) fn answer(
         .read(&mut |state| state.litellm_params.clone())
         .unwrap_or_default();
     let (route_calls, route_bytes) = route_summary(recorder);
-    let failures = locked_rows(&recorder.failures, |failure| {
-        json!({
-            "class": failure.class,
-            "message": failure.message,
-            "traceback_tail": failure.traceback.lines().last().unwrap_or_default(),
-        })
-    });
+    let failures = recorder
+        .failures
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len();
     let started = locked_rows(&recorder.started, |(run_id, at)| {
         json!([run_id, at.to_rfc3339()])
     });
     json!({
         "yielded": driven.yielded,
         "outcome": outcome(driven),
-        "error": driven.failure.as_ref().map(error_text),
         "completion_start_time": completion_start(logging_obj),
         "route_calls": route_calls,
         "route_raw_bytes": route_bytes,
         "queued_jobs": driven.queued_jobs,
         "deferred_jobs": driven.deferred_jobs,
-        "failures": failures,
+        "failure_dispatches": failures,
         "partial_usage": partial_usage(&details),
         "tinyfish_started": started,
         "tinyfish_scans": *recorder
@@ -84,12 +81,6 @@ const fn outcome(driven: &Driven) -> &'static str {
     } else {
         "completed"
     }
-}
-
-fn error_text(failure: &StreamFailure) -> String {
-    let class = &failure.class;
-    let message = &failure.message;
-    format!("{class}: {message}")
 }
 
 fn route_summary(recorder: &Recorder) -> (usize, Option<Vec<Vec<u8>>>) {

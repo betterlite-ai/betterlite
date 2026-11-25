@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive as _;
+use std::str::FromStr as _;
 
 use crate::fields::usage::Usage;
 use crate::fields::usage::parse::usage_from_mapping;
@@ -77,7 +77,13 @@ pub fn record_partial_usage_failure(call: &PartialUsageCall) {
     let Some(usage) = response_usage(&output.result) else {
         return;
     };
-    let cost = response_cost(&output.kwargs);
+    let cost = match response_cost(&output.kwargs) {
+        Ok(cost) => cost,
+        Err(error) => {
+            tracing::warn!("Could not convert the partial response cost to decimal: {error}");
+            return;
+        }
+    };
     call.logging_obj
         // ast-grep-ignore: no-long-names
         .edit(&mut |state| record_partial_usage_for_failure(state, &usage, cost));
@@ -124,14 +130,11 @@ fn response_usage(response: &PassThroughResponse) -> Option<Usage> {
     usage_from_mapping(usage).ok()
 }
 
-fn response_cost(kwargs: &PassThroughLoggingKwargs) -> Decimal {
+fn response_cost(kwargs: &PassThroughLoggingKwargs) -> Result<Decimal, rust_decimal::Error> {
     let Some(Json::Number(number)) = kwargs.entries.get(RESPONSE_COST_KEY) else {
-        return Decimal::ZERO;
+        return Ok(Decimal::ZERO);
     };
-    number
-        .as_f64()
-        .and_then(Decimal::from_f64)
-        .unwrap_or(Decimal::ZERO)
+    Decimal::from_str(&number.to_string())
 }
 
 const fn endpoint_value(endpoint_type: EndpointType) -> &'static str {

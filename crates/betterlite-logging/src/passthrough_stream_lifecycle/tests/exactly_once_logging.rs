@@ -65,6 +65,7 @@ async fn the_parked_job_carries_the_stream_bytes() {
         .into_iter()
         .next()
         .unwrap();
+    assert!(harness.route.calls().is_empty());
     job.work.await;
     assert_eq!(harness.route.calls()[0].raw_bytes, chunks);
     assert!(harness.queue.kinds().is_empty());
