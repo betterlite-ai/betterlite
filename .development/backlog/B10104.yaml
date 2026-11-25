@@ -1,0 +1,13 @@
+id: B10104
+milestone: R2 bug fixes
+title: A response replayed as a stream keeps its choice logprobs
+status: todo
+depends_on: [B921]
+file: tasks/B10104-replay-logprobs.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
