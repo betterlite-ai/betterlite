@@ -12,7 +12,7 @@ pub async fn stream_and_forward<Sink, Provider>(
     provider: &Provider,
     model: &str,
     call_kwargs: &IndexMap<String, Json>,
-) -> Result<Option<IndexMap<String, Json>>, ProviderCallError>
+) -> Result<Option<IndexMap<String, Json>>, ProviderCallError<Provider::Error>>
 where
     Sink: FrameSink,
     Provider: ResponsesStreaming,

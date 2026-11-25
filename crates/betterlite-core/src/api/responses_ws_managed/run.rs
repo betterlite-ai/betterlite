@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use async_trait::async_trait;
 use thiserror::Error;
 
@@ -6,17 +8,18 @@ use super::provider::ResponsesStreaming;
 use crate::api::responses_ws_history::serialization::send_error;
 use crate::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 
-// the client side of the connection, which only run reads from
 #[async_trait]
 pub trait FrameSource: Send {
-    async fn receive_text(&mut self) -> Result<String, FrameReceiveError>;
+    type Error: Error + Send + Sync + 'static;
+
+    async fn receive_text(&mut self) -> Result<String, FrameReceiveError<Self::Error>>;
 }
 
-// litellm's websocket receive exception string, logged at debug before the connection ends quietly
+// Every receive failure ends the connection quietly, so run only needs the cause to log it.
 #[derive(Debug, Error)]
-#[error("{message}")]
-pub struct FrameReceiveError {
-    pub message: String,
+pub enum FrameReceiveError<Source> {
+    #[error("{0}")]
+    Disconnected(#[source] Source),
 }
 
 pub async fn run<Sink, Provider, Source>(

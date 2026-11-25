@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -5,40 +7,41 @@ use thiserror::Error;
 
 use crate::api::response_synthetic_events::model_dump::HasModelDumpJson;
 
-// One item of the async stream litellm.aresponses(stream=True) returns.
 pub enum ProviderChunk {
-    // the stream yielded None
     Empty,
-    // a JSON chunk: an object serializes as JSON, any other value as its Python str()
     Json(Json),
-    // a response object that dumps itself, with the event type it declares before serialization
     Object {
+        // the event type the response declares, read before the dump so a serializer cannot hide it
         kind: Option<String>,
         dump: Box<dyn HasModelDumpJson + Send>,
     },
 }
 
-// litellm.aresponses' exception string, which the error frame reports as its message
+// The stage a provider failed in; the error frame reports the wrapped cause's own text.
 #[derive(Debug, Error)]
-#[error("{message}")]
-pub struct ProviderCallError {
-    pub message: String,
+pub enum ProviderCallError<Source> {
+    #[error("{0}")]
+    Call(#[source] Source),
+    #[error("{0}")]
+    Stream(#[source] Source),
 }
 
-// the chunk sequence of one provider call: a chunk or a stream failure
 #[async_trait]
 pub trait ResponsesStream: Send {
-    async fn next_chunk(&mut self) -> Result<Option<ProviderChunk>, ProviderCallError>;
+    type Error: Error + Send + Sync + 'static;
+
+    async fn next_chunk(&mut self)
+    -> Result<Option<ProviderChunk>, ProviderCallError<Self::Error>>;
 }
 
-// B932's asynchronous public aresponses call, reduced to the stream this lifecycle consumes
 #[async_trait]
 pub trait ResponsesStreaming: Send + Sync {
-    type Stream: ResponsesStream;
+    type Error: Error + Send + Sync + 'static;
+    type Stream: ResponsesStream<Error = Self::Error>;
 
     async fn stream(
         &self,
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
-    ) -> Result<Self::Stream, ProviderCallError>;
+    ) -> Result<Self::Stream, ProviderCallError<Self::Error>>;
 }

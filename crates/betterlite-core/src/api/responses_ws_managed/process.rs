@@ -56,7 +56,7 @@ where
         Ok(completed) => completed,
         Err(error) => {
             tracing::error!("ManagedResponsesWS: error processing response.create: {error}");
-            send_error(handler, &error.message, None).await;
+            send_error(handler, &error.to_string(), None).await;
             return Ok(());
         }
     };

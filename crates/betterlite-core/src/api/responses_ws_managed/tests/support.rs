@@ -14,6 +14,7 @@ use betterlite_logging::passthrough_stream_logging::object::{
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use thiserror::Error;
 use tracing::field::Field;
 use tracing::field::Visit;
 use tracing::instrument::WithSubscriber as _;
@@ -68,6 +69,13 @@ pub(super) struct RecordedQuota {
 
 pub(super) fn shared() -> Shared {
     Arc::new(Mutex::new(Recorder::default()))
+}
+
+// A scripted provider or socket failure carries only the text the test scripts for it.
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub(super) struct ScriptedFailure {
+    pub(super) message: String,
 }
 
 pub(super) fn lock<Value>(shared: &Mutex<Value>) -> MutexGuard<'_, Value> {
@@ -136,7 +144,9 @@ impl ScriptedSource {
 
 #[async_trait]
 impl FrameSource for ScriptedSource {
-    async fn receive_text(&mut self) -> Result<String, FrameReceiveError> {
+    type Error = ScriptedFailure;
+
+    async fn receive_text(&mut self) -> Result<String, FrameReceiveError<ScriptedFailure>> {
         lock(&self.shared).trace.push("receive".to_owned());
         match self.frames.get(self.next) {
             Some(frame) => {
@@ -144,9 +154,9 @@ impl FrameSource for ScriptedSource {
                 self.next = self.next.saturating_add(1);
                 Ok(received)
             }
-            None => Err(FrameReceiveError {
+            None => Err(FrameReceiveError::Disconnected(ScriptedFailure {
                 message: self.error.clone(),
-            }),
+            })),
         }
     }
 }
@@ -250,23 +260,24 @@ impl ScriptedProvider {
 
 #[async_trait]
 impl ResponsesStreaming for ScriptedProvider {
+    type Error = ScriptedFailure;
     type Stream = ScriptedStream;
 
     async fn stream(
         &self,
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
-    ) -> Result<ScriptedStream, ProviderCallError> {
+    ) -> Result<ScriptedStream, ProviderCallError<ScriptedFailure>> {
         self.record_call(model, call_kwargs);
         let Some(script) = lock(&self.scripts).pop_front() else {
-            return Err(ProviderCallError {
+            return Err(ProviderCallError::Call(ScriptedFailure {
                 message: "the test scripts no further provider call".to_owned(),
-            });
+            }));
         };
         match script {
-            Script::Fail(message) => Err(ProviderCallError {
+            Script::Fail(message) => Err(ProviderCallError::Call(ScriptedFailure {
                 message: message.to_owned(),
-            }),
+            })),
             Script::Stream {
                 chunks,
                 raise_after,
@@ -308,11 +319,15 @@ fn provider_chunk(script: &ChunkScript) -> ProviderChunk {
 
 #[async_trait]
 impl ResponsesStream for ScriptedStream {
-    async fn next_chunk(&mut self) -> Result<Option<ProviderChunk>, ProviderCallError> {
+    type Error = ScriptedFailure;
+
+    async fn next_chunk(
+        &mut self,
+    ) -> Result<Option<ProviderChunk>, ProviderCallError<ScriptedFailure>> {
         if Some(self.consumed) == self.raise_after {
-            return Err(ProviderCallError {
+            return Err(ProviderCallError::Stream(ScriptedFailure {
                 message: self.raise_message.clone(),
-            });
+            }));
         }
         let Some(script) = self.chunks.get(self.consumed) else {
             lock(&self.shared).trace.push("provider-end".to_owned());
