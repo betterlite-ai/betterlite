@@ -37,13 +37,13 @@ pub enum TeamBudgetError {
 // auth_exception_handler.py asks is_database_service_unavailable_error before its 401, so a membership outage answers B1217's 503
 #[must_use]
 pub fn membership_failure(error: &MembershipLoadError) -> AuthFailure {
-    match membership_outage(error) {
-        Some(fault) => AuthFailure::Database(fault),
-        None => AuthFailure::Other {
+    membership_outage(error).map_or_else(
+        || AuthFailure::Other {
             message: error.to_string(),
             param: None,
         },
-    }
+        AuthFailure::Database,
+    )
 }
 
 // the failure rides inside transparent wrappers, so every link is unwrapped here
@@ -93,7 +93,7 @@ fn native_outage<Failure>(fault: &NativeDbError<Failure>) -> Option<DatabaseFaul
 }
 
 // the projection reads only the error type and the message, since a membership failure carries no chain
-fn database_fault(error_type: ErrorType, message: String) -> DatabaseFault {
+const fn database_fault(error_type: ErrorType, message: String) -> DatabaseFault {
     DatabaseFault {
         error_type,
         message,
