@@ -324,9 +324,7 @@ def fractional_completion_cost(*, completion_response: PythonValue) -> float:
     return UPDATE_COST
 
 
-def fixed_costs(
-    *, model: str, prompt_tokens: int, completion_tokens: int
-) -> tuple[float, float]:
+def fixed_costs(*, model: str, prompt_tokens: int, completion_tokens: int) -> tuple[float, float]:
     if prompt_tokens < 0 or completion_tokens < 0:
         raise ValueError(model)
     return (TENTH_COST, UPDATE_COST)
@@ -933,7 +931,8 @@ def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert DEFAULT_SSL_CIPHERS == REFERENCE_SSL_CIPHERS
     monkeypatch.setenv("SSL_VERIFY", "false")
-    assert LITELLM_HTTP.get_ssl_configuration() is False and ModuleClient().ssl_options is False
+    assert LITELLM_HTTP.get_ssl_configuration() is False
+    assert ModuleClient().ssl_options is False
     assert ModuleClient(ssl_verify=True).ssl_options is not False
     monkeypatch.delenv("SSL_VERIFY")
     monkeypatch.setenv("SSL_SECURITY_LEVEL", "BOGUS")
@@ -959,7 +958,8 @@ def test_budget_background_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(manager, "save_data", saver)
     manager.create_budget(BUDGET, ALICE, "daily", CREATED_AT)
     assert saver.started.wait(timeout=BLOCK_SECONDS)
-    assert not saver.release.is_set() and not saver.finished.is_set()
+    assert not saver.release.is_set()
+    assert not saver.finished.is_set()
     assert saver.workers[0] is not threading.current_thread()
     saver.release.set()
     join_saves(marker)
