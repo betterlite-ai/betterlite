@@ -8,9 +8,13 @@ from pydantic import JsonValue
 litellm.suppress_debug_info = True
 
 
-Input = TypedDict("Input", {"setup": dict[str, JsonValue], "frames": list[str],
-    "disconnect": str, "scripts": list[JsonValue], "quota": JsonValue,
-    "sink": dict[str, JsonValue]})
+class Input(TypedDict):
+    setup: dict[str, JsonValue]
+    frames: list[str]
+    disconnect: str
+    scripts: list[JsonValue]
+    quota: JsonValue
+    sink: dict[str, JsonValue]
 
 
 class Support(Protocol):

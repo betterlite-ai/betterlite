@@ -113,19 +113,16 @@ class FakeStream:
         self.script = script
         self.index = 0
 
-    def __aiter__(self) -> AsyncIterator[JsonValue | FakeChunk | BrokenChunk]:
-        async def stream() -> AsyncIterator[JsonValue | FakeChunk | BrokenChunk]:
-            while True:
-                if self.script["raise_after"] == self.index:
-                    raise ScriptedError(self.script["raise_message"])
-                if self.index >= len(self.script["chunks"]):
-                    self.recorder.trace.append("provider-end")
-                    return
-                row = self.script["chunks"][self.index]
-                self.index += 1
-                yield chunk_of(row)
-
-        return stream()
+    async def __aiter__(self) -> AsyncIterator[JsonValue | FakeChunk | BrokenChunk]:
+        while True:
+            if self.script["raise_after"] == self.index:
+                raise ScriptedError(self.script["raise_message"])
+            if self.index >= len(self.script["chunks"]):
+                self.recorder.trace.append("provider-end")
+                return
+            row = self.script["chunks"][self.index]
+            self.index += 1
+            yield chunk_of(row)
 
 
 class ScriptedResponses:
