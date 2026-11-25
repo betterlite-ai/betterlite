@@ -50,15 +50,15 @@ fn resolution_failure<RegistryError>(
 where
     RegistryError: Error + 'static,
 {
-    let vector_store_id = String::from(vector_store_id);
+    let owned_id = String::from(vector_store_id);
     let error = if from_registry {
         ManagedStoreAccessError::RegistryFailure {
-            vector_store_id,
+            vector_store_id: owned_id,
             source,
         }
     } else {
         ManagedStoreAccessError::SharedCacheFailure {
-            vector_store_id,
+            vector_store_id: owned_id,
             source,
         }
     };

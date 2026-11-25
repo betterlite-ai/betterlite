@@ -27,9 +27,9 @@ where
     {
         return Ok(());
     }
-    let detail = detail.unwrap_or(ACCESS_DENIED_DETAIL);
+    let denial_detail = detail.unwrap_or(ACCESS_DENIED_DETAIL);
     Err(ManagedStorePolicyError::Denied {
-        detail: String::from(detail),
+        detail: String::from(denial_detail),
     })
 }
 

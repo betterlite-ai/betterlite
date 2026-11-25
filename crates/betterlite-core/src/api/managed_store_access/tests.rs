@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
@@ -108,11 +108,14 @@ impl ManagedStoreRegistry for ScriptedRegistry {
         &self,
         vector_store_id: &str,
     ) -> Result<Option<LiteLlmManagedVectorStore>, RegistryBroke> {
-        self.looks.lock().unwrap().push(vector_store_id.to_owned());
-        match &self.failure {
-            Some(message) => Err(RegistryBroke(message.clone())),
-            None => Ok(self.stores.get(vector_store_id).cloned()),
-        }
+        self.looks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(vector_store_id.to_owned());
+        self.failure.as_ref().map_or_else(
+            || Ok(self.stores.get(vector_store_id).cloned()),
+            |message| Err(RegistryBroke(message.clone())),
+        )
     }
 }
 
@@ -327,9 +330,12 @@ impl Captured {
 }
 
 impl Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
