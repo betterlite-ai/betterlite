@@ -19,6 +19,10 @@ from litellm.experimental_mcp_client.tools import (
 from litellm.experimental_mcp_client.tools import (
     transform_mcp_tool_to_openai_tool as their_openai_tool,
 )
+from litellm.types.utils import (  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py
+    ChatCompletionMessageToolCall as TheirToolCall,
+    Function as TheirFunction,
+)
 from mcp import ClientSession
 from mcp.types import CallToolResult as TheirCallToolResult
 from mcp.types import Tool as TheirTool
@@ -129,11 +133,8 @@ async def our_call_flow(session: MCPSession) -> CallToolResult:
 
 
 async def their_call_flow(session: ClientSession) -> TheirCallToolResult:
-    call: dict[str, JsonValue] = {
-        "id": "call-1",
-        "type": "function",
-        "function": {"name": OTHER_TOOL_NAME, "arguments": json.dumps(ARGUMENTS)},
-    }
+    function = TheirFunction(name=OTHER_TOOL_NAME, arguments=json.dumps(ARGUMENTS))
+    call = TheirToolCall(id="call-1", type="function", function=function)
     return await their_call_openai_tool(session, call)
 
 
