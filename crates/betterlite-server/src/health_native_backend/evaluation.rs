@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_core::decisions::{DecisionsEntryError, DecisionsPrepare};
-use betterlite_core::systemone::{SystemOneArgs, SystemOneDeps, asystemone};
+use betterlite_core::decisions::{DecisionsDeps, DecisionsEntryError, DecisionsPrepare};
+use betterlite_core::systemone::{SystemOneArgs, asystemone};
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -93,7 +93,7 @@ where
         let env = logging_environment(self.redactor.as_ref(), &sink, self.clock);
         let mut clients = (self.clients)();
         let output = asystemone(
-            SystemOneDeps {
+            DecisionsDeps {
                 clients: &mut clients,
                 env: &env,
                 prepare: DecisionsPrepare {

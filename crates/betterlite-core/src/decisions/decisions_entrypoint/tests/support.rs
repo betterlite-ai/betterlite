@@ -36,8 +36,11 @@ use crate::decisions::{
     DecisionsArgs, DecisionsDeps, DecisionsEntryError, DecisionsPrepare, adecisions, decisions,
 };
 use crate::systemone::{
-    DecisionsResponse, SystemOneArgs, SystemOneDeps, SystemOneEntryError, asystemone, systemone,
+    DecisionsResponse, SystemOneArgs, SystemOneEntryError, asystemone, systemone,
 };
+
+type DecisionResult = Result<DecisionsOutput, DecisionsEntryError>;
+type SystemOneResult = Result<DecisionsResponse, SystemOneEntryError>;
 
 pub(crate) const API_BASE: &str = "http://127.0.0.1:9";
 pub(crate) const API_KEY: &str = "test-key";
@@ -133,14 +136,17 @@ pub(crate) struct Environment {
 
 impl Environment {
     pub(crate) fn context(&self) -> ResolutionContext<'_> {
+        let registry = JSONProviderRegistry::default();
+        let policies = ProviderPolicies::default();
+        let globals = GlobalCredentials::default();
         ResolutionContext {
             catalog: &self.catalog,
             known_model_names: &self.known,
             custom_providers: &self.custom,
             environment: &self.variables,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
+            registry,
+            policies,
+            globals,
         }
     }
 }
@@ -221,6 +227,25 @@ pub(crate) fn prepare<'deps>(
     }
 }
 
+pub(crate) fn parts<'a>(
+    environment: &'a Environment,
+    log: &'a LogEnv,
+) -> (ResolutionContext<'a>, PrePostEnv<'a>) {
+    (environment.context(), log.env())
+}
+
+const fn entry_deps<'deps>(
+    clients: &'deps mut FakeClients,
+    env: &'deps PrePostEnv<'deps>,
+    caller: DecisionsPrepare<'deps>,
+) -> DecisionsDeps<'deps, FakeClients> {
+    DecisionsDeps {
+        clients,
+        env,
+        prepare: caller,
+    }
+}
+
 pub(crate) struct Fixture {
     pub(crate) clients: FakeClients,
     pub(crate) environment: Environment,
@@ -230,67 +255,43 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new() -> Self {
+        let clients = FakeClients::new(SYSTEMONE_ANSWER);
+        let environment = Environment::default();
+        let log = LogEnv::new();
+        let logging = Mutex::new(logging_state());
         Self {
-            clients: FakeClients::new(SYSTEMONE_ANSWER),
-            environment: Environment::default(),
-            log: LogEnv::new(),
-            logging: Mutex::new(logging_state()),
+            clients,
+            environment,
+            log,
+            logging,
         }
     }
 
-    pub(crate) async fn adecisions(
-        &mut self,
-        args: DecisionsArgs,
-    ) -> Result<DecisionsOutput, DecisionsEntryError> {
-        let resolution = self.environment.context();
-        let env = self.log.env();
-        let deps = DecisionsDeps {
-            clients: &mut self.clients,
-            env: &env,
-            prepare: prepare(&resolution, &self.logging),
-        };
+    pub(crate) async fn adecisions(&mut self, args: DecisionsArgs) -> DecisionResult {
+        let (resolution, env) = parts(&self.environment, &self.log);
+        let caller = prepare(&resolution, &self.logging);
+        let deps = entry_deps(&mut self.clients, &env, caller);
         adecisions(deps, args).await
     }
 
-    pub(crate) fn decisions(
-        &mut self,
-        args: DecisionsArgs,
-    ) -> Result<DecisionsOutput, DecisionsEntryError> {
-        let resolution = self.environment.context();
-        let env = self.log.env();
-        let deps = DecisionsDeps {
-            clients: &mut self.clients,
-            env: &env,
-            prepare: prepare(&resolution, &self.logging),
-        };
+    pub(crate) fn decisions(&mut self, args: DecisionsArgs) -> DecisionResult {
+        let (resolution, env) = parts(&self.environment, &self.log);
+        let caller = prepare(&resolution, &self.logging);
+        let deps = entry_deps(&mut self.clients, &env, caller);
         decisions(deps, args)
     }
 
-    pub(crate) async fn asystemone(
-        &mut self,
-        args: SystemOneArgs,
-    ) -> Result<DecisionsResponse, SystemOneEntryError> {
-        let resolution = self.environment.context();
-        let env = self.log.env();
-        let deps = SystemOneDeps {
-            clients: &mut self.clients,
-            env: &env,
-            prepare: prepare(&resolution, &self.logging),
-        };
+    pub(crate) async fn asystemone(&mut self, args: SystemOneArgs) -> SystemOneResult {
+        let (resolution, env) = parts(&self.environment, &self.log);
+        let caller = prepare(&resolution, &self.logging);
+        let deps = entry_deps(&mut self.clients, &env, caller);
         asystemone(deps, args).await
     }
 
-    pub(crate) fn systemone(
-        &mut self,
-        args: SystemOneArgs,
-    ) -> Result<DecisionsResponse, SystemOneEntryError> {
-        let resolution = self.environment.context();
-        let env = self.log.env();
-        let deps = SystemOneDeps {
-            clients: &mut self.clients,
-            env: &env,
-            prepare: prepare(&resolution, &self.logging),
-        };
+    pub(crate) fn systemone(&mut self, args: SystemOneArgs) -> SystemOneResult {
+        let (resolution, env) = parts(&self.environment, &self.log);
+        let caller = prepare(&resolution, &self.logging);
+        let deps = entry_deps(&mut self.clients, &env, caller);
         systemone(deps, args)
     }
 }
@@ -327,17 +328,23 @@ pub(crate) fn decisions_args(provider: &str) -> DecisionsArgs {
 }
 
 pub(crate) fn systemone_args(provider: &str) -> SystemOneArgs {
-    SystemOneArgs {
-        model: String::from("model-1"),
-        state: Some(text("state")),
-        questions: Some(systemone_questions()),
-        safety_identifier: None,
-        api_key: Some(SecretString::from(API_KEY.to_owned())),
-        api_base: Some(String::from(API_BASE)),
-        timeout: Some(Duration::from_secs(5)),
-        custom_llm_provider: Some(provider.to_owned()),
-        extra_headers: None,
-        kwargs: Extra::new(),
+    SystemOneArgs::from(decisions_args(provider))
+}
+
+impl From<DecisionsArgs> for SystemOneArgs {
+    fn from(args: DecisionsArgs) -> Self {
+        Self {
+            model: args.model,
+            state: args.input,
+            questions: Some(systemone_questions()),
+            safety_identifier: args.safety_identifier,
+            api_key: args.api_key,
+            api_base: args.api_base,
+            timeout: args.timeout,
+            custom_llm_provider: args.custom_llm_provider,
+            extra_headers: args.extra_headers,
+            kwargs: args.kwargs,
+        }
     }
 }
 

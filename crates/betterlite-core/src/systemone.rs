@@ -1,13 +1,12 @@
 use std::time::Duration;
 
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 
 use crate::api::decisions_send::clients::{DecisionsAsyncTransport, DecisionsSyncTransport};
 use crate::api::decisions_send::send::DecisionsSender;
-use crate::decisions::{DecisionsEntryError, DecisionsPrepare};
+use crate::decisions::{DecisionsDeps, DecisionsEntryError};
 
 mod asystemone;
 mod systemone_entrypoint;
@@ -33,11 +32,8 @@ pub struct SystemOneArgs {
     pub kwargs: Extra,
 }
 
-pub struct SystemOneDeps<'deps, Clients> {
-    pub clients: &'deps mut Clients,
-    pub env: &'deps PrePostEnv<'deps>,
-    pub prepare: DecisionsPrepare<'deps>,
-}
+// litellm.systemone runs litellm.decisions' call machinery, so the decisions dependency seam serves both entrypoints
+pub type SystemOneDeps<'deps, Clients> = DecisionsDeps<'deps, Clients>;
 
 // litellm.systemone: _prepare_systemone_call, B3514's blocking send, then _systemone_response
 pub fn systemone<Clients>(

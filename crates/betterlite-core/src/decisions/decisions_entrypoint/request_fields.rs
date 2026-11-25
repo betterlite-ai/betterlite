@@ -28,14 +28,22 @@ pub(crate) fn request_fields(
     kwargs: &Extra,
 ) -> Result<RequestFields, FieldShapeError> {
     let Some(state) = kwargs.get(STATE_KEY) else {
+        let parsed_questions = match questions {
+            None | Some(Json::Null) => None,
+            Some(Json::List(items)) => Some(items),
+            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+                return Err(FieldShapeError::QuestionsNotAList);
+            }
+        };
         return Ok(RequestFields::OpenAi(OpenAiDecisionRequestFields {
             input: decision_input,
-            questions: openai_questions(questions)?,
+            questions: parsed_questions,
         }));
     };
     tracing::warn!(category = "DeprecationWarning", "{DEPRECATION_MESSAGE}");
+    let parsed_state = state_value(state)?;
     Ok(RequestFields::SystemOne(SystemOneRequestFields {
-        state: state_value(state)?,
+        state: parsed_state,
         questions: systemone_questions(questions)?,
     }))
 }
@@ -45,16 +53,6 @@ fn state_value(state: &Json) -> Result<Option<Json>, FieldShapeError> {
         Json::Null => Ok(None),
         Json::Text(_) | Json::Object(_) | Json::List(_) => Ok(Some(state.clone())),
         Json::Bool(_) | Json::Number(_) => Err(FieldShapeError::StateNotDecisionJson),
-    }
-}
-
-fn openai_questions(questions: Option<Json>) -> Result<Option<Vec<Json>>, FieldShapeError> {
-    match questions {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::List(items)) => Ok(Some(items)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(FieldShapeError::QuestionsNotAList)
-        }
     }
 }
 
