@@ -16,3 +16,6 @@ kept_bugs:
   - what: The unsupported-provider file_content 400 carries CREATE_THREAD as its response request method; the unreachable unsupported streaming branch keeps the same method from L1127.
     why: The task DoD requires this text, and callers inspecting error.response.request can observe it. Preserve that compatibility quirk rather than changing the error metadata.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1026
+  - what: "The unsupported-provider file_content 400 says \"Supported providers are 'openai', 'azure', 'vertex_ai', 'bedrock', 'manus', 'anthropic'.\" and leaves out gemini, mistral, xai, hosted_vllm and litellm_proxy, which file_content also serves."
+    why: The message is LiteLLM's exact text and a caller can match on it, and only a provider file_content does not serve reaches it, so the short list never sends anyone to a call that fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1020
