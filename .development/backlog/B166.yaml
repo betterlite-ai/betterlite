@@ -1,7 +1,7 @@
 id: B166
 milestone: M12 python
 title: Python helpers for token counting, cost, model info, provider lookup, caching and budgets
-status: todo
+status: done
 depends_on: [B158, B8060, B8061, B8062, B8063, B8065, B8066]
 file: tasks/B166-python-budget-core-helpers.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/litellm_core_utils/core_helpers.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3200
