@@ -93,6 +93,7 @@ async fn a_cycle_probes_saves_and_keeps_the_window_lock() {
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].exceptions.len(), 1);
     assert_eq!(writes[0].healthy.len(), 1);
+    assert_eq!(writes[0].unhealthy.len(), 1);
 }
 
 #[tokio::test]

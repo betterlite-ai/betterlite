@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::error::Error as _;
+
 use super::manager::SharedHealthCheckManager;
 use super::probe::SharedProbeCall;
 use super::support::{
@@ -85,7 +87,7 @@ async fn a_failed_check_is_not_cached_and_releases_the_lock() {
         .await
         .expect_err("the probe failure is returned");
     assert!(
-        std::error::Error::source(&error).is_some(),
+        error.source().is_some(),
         "the cycle failure is kept as the source"
     );
     assert!(!world.cache.has(SharedHealthCheckManager::CACHE_KEY));

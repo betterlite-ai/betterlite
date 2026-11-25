@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::error::Error as _;
+
 use super::support::{
     RecordingSleeper, SHARED_AT, World, empty_call, instant, probe_error, probe_result,
 };
@@ -29,7 +31,7 @@ async fn the_local_check_returns_the_probe_failure() {
         .await
         .expect_err("the probe failure is returned");
     assert!(
-        std::error::Error::source(&error).is_some(),
+        error.source().is_some(),
         "the cycle failure is kept as the source"
     );
     assert!(sleeper.delays().is_empty());

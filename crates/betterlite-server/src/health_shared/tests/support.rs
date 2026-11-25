@@ -393,7 +393,7 @@ impl SharedHealthCache for FakeCache {
         only_if_absent: bool,
     ) -> Result<bool, SharedHealthCacheError> {
         self.ops.record(&format!("set:{key}"));
-        {
+        let _previous = {
             let mut state = self.locked();
             state.sets.push(SetCall {
                 key: key.to_owned(),
@@ -408,8 +408,8 @@ impl SharedHealthCache for FakeCache {
                 return Ok(false);
             }
             let stored = serde_json::to_string(value).unwrap_or_default();
-            state.values.insert(key.to_owned(), stored);
-        }
+            state.values.insert(key.to_owned(), stored)
+        };
         let hung = self
             .hang
             .lock()
