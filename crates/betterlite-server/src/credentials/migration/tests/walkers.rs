@@ -508,3 +508,60 @@ async fn a_config_or_sso_row_that_is_not_a_mapping_is_ignored() {
     assert_eq!(location_of(&report, "sso_config").scanned, 0);
     assert!(store.writes().is_empty());
 }
+
+#[tokio::test]
+async fn selected_config_values_that_are_absent_or_null_are_not_counted() {
+    let store = FakeStore::default();
+    store
+        .scans
+        .lock()
+        .unwrap()
+        .push_back(covered_report([0, 0, 0, 0, 0, 0]));
+    store.configs.lock().unwrap().extend([
+        (
+            "vantage_settings".to_owned(),
+            object(vec![
+                ("api_key", MigrationJson::Null),
+                ("integration_token", secret(&v2(SALT_KEY, "token-vantage"))),
+            ]),
+        ),
+        (
+            "cloudzero_settings".to_owned(),
+            object(vec![("base_url", secret(&legacy(SALT_KEY, "sk-hidden")))]),
+        ),
+    ]);
+    let cipher = cipher(Algorithm::XSalsa20Poly1305, Some(SALT_KEY));
+    let report = check_encryption(&store, &cipher)
+        .await
+        .expect("the attestation runs");
+    let vantage = location_of(&report, "vantage_settings");
+    assert_eq!(
+        (vantage.scanned, vantage.already_v2, vantage.plaintext),
+        (1, 1, 0)
+    );
+    assert_eq!(location_of(&report, "cloudzero_settings").scanned, 0);
+    assert!(store.writes().is_empty());
+}
+
+#[tokio::test]
+async fn absent_config_and_sso_rows_report_zero_without_writing() {
+    let store = FakeStore::default();
+    store
+        .scans
+        .lock()
+        .unwrap()
+        .push_back(covered_report([0, 0, 0, 0, 0, 0]));
+    store.teams.lock().unwrap().push(CallbackRow {
+        key: "team-null".to_owned(),
+        metadata: Some(MigrationJson::Null),
+    });
+    let cipher = cipher(Algorithm::XSalsa20Poly1305, Some(SALT_KEY));
+    let report = check_encryption(&store, &cipher)
+        .await
+        .expect("the attestation runs");
+    assert_eq!(location_of(&report, "vantage_settings").scanned, 0);
+    assert_eq!(location_of(&report, "cloudzero_settings").scanned, 0);
+    assert_eq!(location_of(&report, "sso_config").scanned, 0);
+    assert_eq!(location_of(&report, "team.callback_vars").scanned, 0);
+    assert!(store.writes().is_empty());
+}
