@@ -15,8 +15,6 @@ use super::{AnthropicPassthroughError, AnthropicPassthroughInput, TransformTools
 struct DebugSink;
 
 impl LogSink for DebugSink {
-    // the body only writes a tracing record, so an emptied one leaves no state a test can read
-    #[cfg_attr(test, mutants::skip)]
     fn emit(&self, record: LogRecord) {
         match record.level {
             LogLevel::Debug => tracing::debug!("{}", record.message),
