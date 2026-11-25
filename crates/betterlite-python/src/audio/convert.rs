@@ -171,8 +171,7 @@ pub(crate) fn family_for(model: &str) -> TranscriptionFamily {
     }
 }
 
-// get_llm_provider over the openai-only provider set: a model's prefix names the provider unless a
-// different provider argument is given, and no provider anywhere means openai.
+// get_llm_provider over openai only: the prefix names the provider unless a different provider argument is given; neither means openai.
 pub(crate) fn resolve_target(model: &str, provider: Option<&str>) -> (String, String) {
     let Some((prefix, rest)) = model.split_once('/') else {
         return (
