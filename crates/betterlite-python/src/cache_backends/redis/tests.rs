@@ -20,9 +20,8 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use super::*;
 use crate::cache_backends::settings::RedisSettings;
 
-// Nothing listens on port 1, so a call reaches the client and every command fails on the way out.
-const DEAD_REDIS: &str =
-    r#"{"host": "127.0.0.1", "port": 1, "socket_timeout": 0.1, "socket_connect_timeout": 0.1}"#;
+// The numeric overrides are text because arbitrary_precision breaks the untagged number fields. Nothing listens on port 1, so a call reaches the client and every command fails on the way out.
+const DEAD_REDIS: &str = r#"{"host": "127.0.0.1", "port": "1", "socket_timeout": "0.1", "socket_connect_timeout": "0.1"}"#;
 
 fn dead_redis() -> NativeRedis {
     Python::initialize();
