@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::io::{Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -62,11 +63,35 @@ fn ids(items: &[SpendUpdateQueueItem]) -> Vec<(EntityType, String)> {
         .collect()
 }
 
+fn expected_charges() -> Vec<(EntityType, String)> {
+    vec![
+        (EntityType::User, "u1".to_owned()),
+        (EntityType::EndUser, "eu-1".to_owned()),
+        (EntityType::Key, "hash-1".to_owned()),
+        (EntityType::Team, "team-1".to_owned()),
+        (
+            EntityType::TeamMember,
+            "team_id::team-1::user_id::u1".to_owned(),
+        ),
+        (EntityType::Organization, "org-1".to_owned()),
+        (
+            EntityType::OrganizationMember,
+            "organization_id::org-1::user_id::u1".to_owned(),
+        ),
+        (EntityType::Project, "proj-1".to_owned()),
+        (EntityType::Tag, "tag-a".to_owned()),
+        (EntityType::Tag, "tag-b".to_owned()),
+        (EntityType::ModelAccessGroup, "g1".to_owned()),
+        (EntityType::ModelAccessGroup, "g2".to_owned()),
+        (EntityType::Agent, "agent-1".to_owned()),
+    ]
+}
+
 fn daily_keys(queue: &RecordingDailyQueue) -> Vec<String> {
     queue
         .updates()
         .into_iter()
-        .flat_map(|update| update.into_keys())
+        .flat_map(BTreeMap::into_keys)
         .collect()
 }
 
@@ -85,12 +110,12 @@ impl CapturedLogs {
 }
 
 impl Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> IoResult<usize> {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> IoResult<()> {
@@ -190,30 +215,7 @@ async fn charges_every_entity_and_daily_row_in_source_order() {
     let charge = work_for(row(REQUEST));
     harness.run(&charge, SpendWriterSettings::default()).await;
 
-    assert_eq!(
-        ids(&harness.entity.items()),
-        vec![
-            (EntityType::User, "u1".to_owned()),
-            (EntityType::EndUser, "eu-1".to_owned()),
-            (EntityType::Key, "hash-1".to_owned()),
-            (EntityType::Team, "team-1".to_owned()),
-            (
-                EntityType::TeamMember,
-                "team_id::team-1::user_id::u1".to_owned()
-            ),
-            (EntityType::Organization, "org-1".to_owned()),
-            (
-                EntityType::OrganizationMember,
-                "organization_id::org-1::user_id::u1".to_owned()
-            ),
-            (EntityType::Project, "proj-1".to_owned()),
-            (EntityType::Tag, "tag-a".to_owned()),
-            (EntityType::Tag, "tag-b".to_owned()),
-            (EntityType::ModelAccessGroup, "g1".to_owned()),
-            (EntityType::ModelAccessGroup, "g2".to_owned()),
-            (EntityType::Agent, "agent-1".to_owned()),
-        ]
-    );
+    assert_eq!(ids(&harness.entity.items()), expected_charges());
     assert!(
         harness
             .entity
@@ -221,23 +223,15 @@ async fn charges_every_entity_and_daily_row_in_source_order() {
             .iter()
             .all(|item| item.response_cost == Some(cost()))
     );
-    assert_eq!(daily_keys(&harness.daily_user), vec![format!("u1{SUFFIX}")]);
-    assert_eq!(
-        daily_keys(&harness.daily_end_user),
-        vec![format!("eu-1{SUFFIX}")]
-    );
-    assert_eq!(
-        daily_keys(&harness.daily_agent),
-        vec![format!("agent-1{SUFFIX}")]
-    );
-    assert_eq!(
-        daily_keys(&harness.daily_team),
-        vec![format!("team-1{SUFFIX}")]
-    );
-    assert_eq!(
-        daily_keys(&harness.daily_org),
-        vec![format!("org-1{SUFFIX}")]
-    );
+    for (queue, id) in [
+        (&harness.daily_user, "u1"),
+        (&harness.daily_end_user, "eu-1"),
+        (&harness.daily_agent, "agent-1"),
+        (&harness.daily_team, "team-1"),
+        (&harness.daily_org, "org-1"),
+    ] {
+        assert_eq!(daily_keys(queue), vec![format!("{id}{SUFFIX}")]);
+    }
     assert_eq!(
         daily_keys(&harness.daily_tag),
         vec![format!("tag-a{SUFFIX}"), format!("tag-b{SUFFIX}")]

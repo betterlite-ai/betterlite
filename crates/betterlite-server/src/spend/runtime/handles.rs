@@ -81,9 +81,8 @@ fn redis_lists(
     let lists = Arc::new(RedisSpendLists {
         cache: Arc::clone(connected),
     });
-    let buffer: Arc<dyn SpendBufferLists> = Arc::clone(&lists);
-    let push: Arc<dyn SpendBufferPush> = lists;
-    (Some(buffer), Some(push))
+    let buffer = Arc::clone(&lists);
+    (Some(buffer), Some(lists))
 }
 
 pub(super) fn build_leases(

@@ -41,12 +41,19 @@ impl SpendPricingSource for CostService<ProviderFormulas> {
     }
 
     fn deployment_price(&self, deployment_id: Option<&str>, model: &str) -> PriceFuture<'_> {
+        let owned_deployment = deployment_id.map(ToOwned::to_owned);
+        let owned_model = model.to_owned();
         Box::pin(async move {
             let context = savings::Context {
                 lookup: &self.lookup,
                 deployments: None,
             };
-            SavingsPricingContext::deployment_price(&context, deployment_id, model).await
+            SavingsPricingContext::deployment_price(
+                &context,
+                owned_deployment.as_deref(),
+                &owned_model,
+            )
+            .await
         })
     }
 

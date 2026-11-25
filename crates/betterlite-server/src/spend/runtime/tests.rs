@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::ptr::eq;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
@@ -43,7 +43,7 @@ use crate::state::spend_runtime::Slot;
 
 mod support;
 
-use self::support::{FakeSpendLogs, RecordingFailures, StaticPayload};
+use self::support::{FakeSpendLogs, StaticPayload};
 
 const PAYLOAD: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","model_group":"gpt-4o","custom_llm_provider":"openai","prompt_tokens":3,"completion_tokens":4,"request_id":"req-b070","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[]","metadata":"{}","status":"success","spend":0.25}"#;
 const ACCOUNTING_ROW: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","model_group":"gpt-4o","custom_llm_provider":"openai","call_type":"acompletion","prompt_tokens":3,"completion_tokens":4,"request_id":"req-b070-accounting","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[\"tag-a\",\"tag-b\"]","metadata":"{}","status":"success","spend":0.25,"team_id":"team-1","organization_id":"org-1","end_user":"eu-1","agent_id":"agent-1"}"#;
@@ -105,15 +105,13 @@ fn accounting_work() -> SpendAccounting {
 async fn drains_the_admitted_accounting_before_the_shutdown_returns() {
     let model_usage = Arc::new(UsageQueue::new(100).expect("the model usage queue"));
     let pricing = support::pricing();
-    let failures = Arc::new(RecordingFailures {
-        reported: Mutex::new(Vec::new()),
-    });
+    let (failures, sink) = support::recording_failures();
     let mut parts = support::parts_with(Arc::clone(&pricing));
     parts.usage = SpendUsageQueues {
         tool_usage: None,
         model_usage: Some(Arc::clone(&model_usage)),
     };
-    parts.failures = Arc::clone(&failures);
+    parts.failures = sink;
     let runtime = SpendRuntime::new(settings(), parts).expect("the runtime");
     let request = support::request();
     let payload = StaticPayload(PAYLOAD);
@@ -144,11 +142,9 @@ async fn drains_the_admitted_accounting_before_the_shutdown_returns() {
 #[tokio::test]
 async fn acknowledges_an_admission_closed_by_the_shutdown_and_reports_it() {
     let pricing = support::pricing();
-    let failures = Arc::new(RecordingFailures {
-        reported: Mutex::new(Vec::new()),
-    });
+    let (failures, sink) = support::recording_failures();
     let mut parts = support::parts_with(Arc::clone(&pricing));
-    parts.failures = Arc::clone(&failures);
+    parts.failures = sink;
     let runtime = SpendRuntime::new(settings(), parts).expect("the runtime");
     let logging = service();
     runtime.shutdown(&logging).await.expect("the shutdown");

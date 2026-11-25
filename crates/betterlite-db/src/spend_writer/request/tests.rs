@@ -107,12 +107,16 @@ async fn disable_spend_updates_answers_true_without_writing() {
         max_budget: Decimal::ZERO,
         proxy_budget_name: "litellm-proxy-budget".to_owned(),
     };
-    let writer = harness.writer(settings);
     let request = sample_request();
     let payload = ScriptedPayload {
         script: PayloadScript::Failure,
     };
-    assert!(writer.update_database(&payload, &request).await);
+    assert!(
+        harness
+            .writer(settings)
+            .update_database(&payload, &request)
+            .await
+    );
     assert!(harness.admission.work().is_empty());
     assert!(harness.claim.rows().is_empty());
     assert!(harness.log_queue.dequeue(usize::MAX).is_empty());
@@ -122,14 +126,23 @@ async fn disable_spend_updates_answers_true_without_writing() {
 #[tokio::test]
 async fn hashes_only_sk_tokens() {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let writer = harness.writer(SpendWriterSettings::default());
     let payload = log_row(PAYLOAD);
     let mut first = sample_request();
     first.token = Some("sk-secret");
-    assert!(writer.update_database(&payload, &first).await);
+    assert!(
+        harness
+            .writer(SpendWriterSettings::default())
+            .update_database(&payload, &first)
+            .await
+    );
     let mut stored = sample_request();
     stored.token = Some("hash-1");
-    assert!(writer.update_database(&payload, &stored).await);
+    assert!(
+        harness
+            .writer(SpendWriterSettings::default())
+            .update_database(&payload, &stored)
+            .await
+    );
     let work = harness.admission.work();
     assert_eq!(
         work[0].hashed_token.as_deref(),
@@ -146,14 +159,14 @@ async fn a_claimed_batch_answers_false_and_stops_every_later_step() {
         spend: Decimal::new(25, 1),
     });
     let harness = Harness::new(claim);
-    let writer = harness.writer(SpendWriterSettings::default());
     let names = vec!["lookup".to_owned()];
     let mut request = sample_request();
     request.response_names = &names;
     let kwargs = JsonObject::new();
     request.kwargs = Some(&kwargs);
     assert!(
-        !writer
+        !harness
+            .writer(SpendWriterSettings::default())
             .update_database(&log_row(BATCH_PAYLOAD), &request)
             .await
     );
@@ -167,14 +180,14 @@ async fn a_claimed_batch_answers_false_and_stops_every_later_step() {
 #[tokio::test]
 async fn a_failed_claim_queues_the_row_and_charges_on() {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Failed));
-    let writer = harness.writer(SpendWriterSettings::default());
     let names = vec!["lookup".to_owned()];
     let mut request = sample_request();
     request.response_names = &names;
     let kwargs = JsonObject::new();
     request.kwargs = Some(&kwargs);
     assert!(
-        writer
+        harness
+            .writer(SpendWriterSettings::default())
             .update_database(&log_row(BATCH_PAYLOAD), &request)
             .await
     );
@@ -197,13 +210,17 @@ async fn a_failed_claim_queues_the_row_and_charges_on() {
 
 async fn log_dependent_counts(disable_spend_logs: Option<bool>) -> (usize, usize, usize) {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let writer = harness.writer(claim_settings(disable_spend_logs));
     let names = vec!["lookup".to_owned()];
     let mut request = sample_request();
     request.response_names = &names;
     let kwargs = JsonObject::new();
     request.kwargs = Some(&kwargs);
-    assert!(writer.update_database(&log_row(PAYLOAD), &request).await);
+    assert!(
+        harness
+            .writer(claim_settings(disable_spend_logs))
+            .update_database(&log_row(PAYLOAD), &request)
+            .await
+    );
     (
         harness.tool_usage.len(),
         harness.discovery.flush().len(),
@@ -229,9 +246,9 @@ fn claim_settings(disable_spend_logs: Option<bool>) -> SpendWriterSettings {
 
 async fn log_rows_written(disable_spend_logs: Option<bool>) -> usize {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let writer = harness.writer(claim_settings(disable_spend_logs));
     assert!(
-        writer
+        harness
+            .writer(claim_settings(disable_spend_logs))
             .update_database(&log_row(PAYLOAD), &sample_request())
             .await
     );
@@ -240,9 +257,9 @@ async fn log_rows_written(disable_spend_logs: Option<bool>) -> usize {
 
 async fn batch_claim_fields(disable_spend_logs: Option<bool>) -> Vec<String> {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let writer = harness.writer(claim_settings(disable_spend_logs));
     assert!(
-        writer
+        harness
+            .writer(claim_settings(disable_spend_logs))
             .update_database(&log_row(BATCH_PAYLOAD), &sample_request())
             .await
     );
@@ -278,16 +295,25 @@ async fn a_null_disable_spend_logs_keeps_no_log_row_and_reduces_the_claim() {
 #[tokio::test]
 async fn overwrites_spend_and_only_nonempty_ids() {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let writer = harness.writer(SpendWriterSettings::default());
     let mut overridden = sample_request();
     overridden.response_cost = None;
     overridden.org_id = Some("org-9");
     overridden.team_id = Some("team-9");
-    assert!(writer.update_database(&log_row(PAYLOAD), &overridden).await);
+    assert!(
+        harness
+            .writer(SpendWriterSettings::default())
+            .update_database(&log_row(PAYLOAD), &overridden)
+            .await
+    );
     let mut empty = sample_request();
     empty.org_id = Some("");
     empty.team_id = Some("");
-    assert!(writer.update_database(&log_row(PAYLOAD), &empty).await);
+    assert!(
+        harness
+            .writer(SpendWriterSettings::default())
+            .update_database(&log_row(PAYLOAD), &empty)
+            .await
+    );
     let work = harness.admission.work();
     let first = &work[0].payload;
     assert_eq!(
@@ -314,11 +340,15 @@ async fn overwrites_spend_and_only_nonempty_ids() {
 #[tokio::test]
 async fn a_failed_payload_build_is_reported_and_acknowledged() {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
-    let writer = harness.writer(SpendWriterSettings::default());
     let payload = ScriptedPayload {
         script: PayloadScript::Failure,
     };
-    assert!(writer.update_database(&payload, &sample_request()).await);
+    assert!(
+        harness
+            .writer(SpendWriterSettings::default())
+            .update_database(&payload, &sample_request())
+            .await
+    );
     assert_eq!(
         harness.failures.reported(),
         vec![RecordedFailure {
@@ -335,13 +365,17 @@ async fn a_closed_admission_still_acknowledges_what_was_written() {
         ScriptedClaim::answering(InsertOutcome::Inserted),
         RecordingAdmission::closed(),
     );
-    let writer = harness.writer(SpendWriterSettings::default());
     let names = vec!["lookup".to_owned()];
     let mut request = sample_request();
     request.response_names = &names;
     let kwargs = JsonObject::new();
     request.kwargs = Some(&kwargs);
-    assert!(writer.update_database(&log_row(PAYLOAD), &request).await);
+    assert!(
+        harness
+            .writer(SpendWriterSettings::default())
+            .update_database(&log_row(PAYLOAD), &request)
+            .await
+    );
     assert_eq!(
         harness.failures.reported(),
         vec![RecordedFailure {

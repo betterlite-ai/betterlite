@@ -43,6 +43,7 @@ impl<T> ScriptedQueue<T> {
             return Err(SpendQueueError::ZeroCapacity);
         }
         items.push(item);
+        drop(items);
         Ok(())
     }
 

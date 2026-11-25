@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use betterlite_config::spend_queue::{SpendQueueError, SpendQueueSettings};
+use betterlite_config::spend_queue::SpendQueueSettings;
 use betterlite_db::model_usage::ModelUsageTransaction;
 use betterlite_db::queues::pod_lock::PodLockEventSink;
 use betterlite_db::queues::pod_lock::owner::PodId;
 use betterlite_db::redis_spend::events::RedisBufferEventSink;
 use betterlite_db::request_usage::queues::UsageQueue;
 use betterlite_db::spend_log_storage::postgres::PostgresSpendLogsWriter;
+use betterlite_db::spend_queues::SpendQueueError;
 use betterlite_db::spend_queues::daily::DailySpendUpdateQueue;
 use betterlite_db::spend_queues::events::SpendQueueEventSink;
 use betterlite_db::spend_writer::SpendWriterFailureSink;

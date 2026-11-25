@@ -152,6 +152,14 @@ impl SpendWriterFailureSink for RecordingFailures {
     }
 }
 
+pub(super) fn recording_failures() -> (Arc<RecordingFailures>, Arc<dyn SpendWriterFailureSink>) {
+    let failures = Arc::new(RecordingFailures {
+        reported: Mutex::new(Vec::new()),
+    });
+    let sink = Arc::clone(&failures);
+    (failures, sink)
+}
+
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 #[error("the scripted spend log service failed")]
 pub(super) struct ServiceFailure;
