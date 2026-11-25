@@ -277,20 +277,20 @@ impl RotationStore for FakeStore {
         &self,
         values: JsonData,
     ) -> impl Future<Output = Result<(), FakeStoreError>> + Send {
-        if let Err(error) = self.fail(Failure::SaveEnvironment) {
-            return ready(Err(error));
+        match self.fail(Failure::SaveEnvironment) {
+            Ok(()) => {
+                self.record(Write::Environment(values));
+                ready(Ok(()))
+            }
+            Err(error) => ready(Err(error)),
         }
-        self.record(Write::Environment(values));
-        ready(Ok(()))
     }
 
     fn credential_rows(
         &self,
     ) -> impl Future<Output = Result<Vec<JsonData>, FakeStoreError>> + Send {
-        ready(
-            self.fail(Failure::CredentialScan)
-                .map(|()| self.credentials.clone()),
-        )
+        let checked = self.fail(Failure::CredentialScan);
+        ready(checked.map(|()| self.credentials.clone()))
     }
 
     fn update_credential(
@@ -404,10 +404,8 @@ impl McpRotationStore for FakeMcpStore {
     fn server_rows(
         &self,
     ) -> impl Future<Output = Result<Vec<StoredServerRow>, FakeMcpError>> + Send {
-        ready(
-            self.fail(McpFailure::Servers)
-                .map(|()| self.servers.clone()),
-        )
+        let checked = self.fail(McpFailure::Servers);
+        ready(checked.map(|()| self.servers.clone()))
     }
 
     fn update_server(
@@ -439,10 +437,8 @@ impl McpRotationStore for FakeMcpStore {
     fn user_credential_rows(
         &self,
     ) -> impl Future<Output = Result<Vec<StoredUserCredentialRow>, FakeMcpError>> + Send {
-        ready(
-            self.fail(McpFailure::UserCredentials)
-                .map(|()| self.user_credentials.clone()),
-        )
+        let checked = self.fail(McpFailure::UserCredentials);
+        ready(checked.map(|()| self.user_credentials.clone()))
     }
 
     ignored_user_write!(update_user_credential, _credential_b64);
@@ -450,10 +446,8 @@ impl McpRotationStore for FakeMcpStore {
     fn user_env_var_rows(
         &self,
     ) -> impl Future<Output = Result<Vec<StoredUserEnvVarRow>, FakeMcpError>> + Send {
-        ready(
-            self.fail(McpFailure::UserEnvVars)
-                .map(|()| self.user_env_vars.clone()),
-        )
+        let checked = self.fail(McpFailure::UserEnvVars);
+        ready(checked.map(|()| self.user_env_vars.clone()))
     }
 
     ignored_user_write!(update_user_env_var, _values_b64);
