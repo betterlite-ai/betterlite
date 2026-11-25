@@ -80,6 +80,9 @@ description: >-
 
 scope:
   paths:
+  - "tools/oracle/src/websocket_driver/service.rs"
+  - "tools/oracle/src/helpers/oracle/websocket_oracle.rs"
+  - "tools/oracle/helpers/websocket_oracle.py"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_ws_managed.rs
   - crates/betterlite-core/src/api/responses_ws_managed/**
