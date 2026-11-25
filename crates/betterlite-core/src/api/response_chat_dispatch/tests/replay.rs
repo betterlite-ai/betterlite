@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::Usage;
 
 use super::fixtures::support::{
-    FIXED_CLOCK, FakeExecution, chat_response, delta_member_of, hidden_member_of,
+    FIXED_CLOCK, FakeExecution, chat_json, chat_response, delta_member_of, hidden_member_of,
 };
 use super::{
     Answer, call, completion, created_of, drain, expect_chat, expect_ok, expect_stream, finishes,
@@ -22,7 +22,7 @@ fn contains_text(value: &Json, needle: &str) -> bool {
 async fn a_direct_model_response_passes_through_when_not_streaming() {
     let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
-    assert_eq!(expect_chat(output), chat_response());
+    assert_eq!(chat_json(&expect_chat(output)), chat_json(&chat_response()));
 }
 
 #[tokio::test]
@@ -32,19 +32,21 @@ async fn a_passed_through_chat_answer_keeps_its_choice_logprobs() {
         Some(serde_json::from_str(r#"{"content":[{"token":"hello","logprob":-0.25}]}"#).unwrap());
     let execution = FakeExecution::new(Answer::Chat(body.clone()));
     let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
-    assert_eq!(expect_chat(output), body);
+    assert_eq!(chat_json(&expect_chat(output)), chat_json(&body));
 }
 
 #[tokio::test]
 async fn a_passed_through_chat_answer_keeps_its_message_audio_and_thinking_blocks() {
     let mut body = chat_response();
-    body.choices[0].message.parts.audio =
-        Some(serde_json::from_str(r#"{"id":"audio-1","data":"AAA"}"#).unwrap());
-    body.choices[0].message.parts.thinking_blocks =
+    body.choices[0].message.audio = Some(
+        serde_json::from_str(r#"{"id":"audio-1","data":"AAA","expires_at":1,"transcript":"hi"}"#)
+            .unwrap(),
+    );
+    body.choices[0].message.thinking_blocks =
         Some(serde_json::from_str(r#"[{"type":"thinking","signature":"sig-1"}]"#).unwrap());
     let execution = FakeExecution::new(Answer::Chat(body.clone()));
     let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
-    assert_eq!(expect_chat(output), body);
+    assert_eq!(chat_json(&expect_chat(output)), chat_json(&body));
 }
 
 #[tokio::test]
@@ -69,8 +71,8 @@ async fn a_direct_model_response_streams_through_the_mock_iterator() {
 async fn a_replayed_response_keeps_its_tool_calls_and_finish_reason() {
     let mut body = chat_response();
     body.choices[0].finish_reason = Some(String::from("tool_calls"));
-    body.choices[0].message.parts.content = None;
-    body.choices[0].message.parts.tool_calls = Some(
+    body.choices[0].message.content = None;
+    body.choices[0].message.tool_calls = Some(
         serde_json::from_str(
             r#"[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]"#,
         )
@@ -130,9 +132,11 @@ async fn a_replayed_response_carries_its_usage_into_the_stream_totals() {
 #[tokio::test]
 async fn a_replay_carries_message_audio_and_thinking_blocks_into_the_delta() {
     let mut body = chat_response();
-    body.choices[0].message.parts.audio =
-        Some(serde_json::from_str(r#"{"id":"audio-1"}"#).unwrap());
-    body.choices[0].message.parts.thinking_blocks =
+    body.choices[0].message.audio = Some(
+        serde_json::from_str(r#"{"id":"audio-1","data":"AAA","expires_at":1,"transcript":"hi"}"#)
+            .unwrap(),
+    );
+    body.choices[0].message.thinking_blocks =
         Some(serde_json::from_str(r#"[{"type":"thinking","signature":"sig-1"}]"#).unwrap());
     let execution = FakeExecution::new(Answer::Chat(body));
     let chunks = drain(expect_stream(expect_ok(
@@ -164,7 +168,7 @@ async fn a_replay_keeps_an_empty_id_and_takes_the_wrapper_clock() {
     let mut body = chat_response();
     body.id = String::new();
     body.created = 0;
-    body.choices[0].message.parts.content = Some(String::from("hey"));
+    body.choices[0].message.content = Some(String::from("hey"));
     let execution = FakeExecution::new(Answer::Chat(body));
     let chunks = drain(expect_stream(expect_ok(
         completion(&execution, call(&streaming())).await,

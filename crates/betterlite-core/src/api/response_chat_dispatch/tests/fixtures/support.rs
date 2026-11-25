@@ -23,7 +23,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
-use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamDelta};
+use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
 use chrono::DateTime;
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -36,8 +36,8 @@ use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_dispatch::error::PostStreamError;
 use crate::api::response_chat_dispatch::input::{BridgeCall, StreamStamps};
 use crate::api::response_chat_dispatch::port::{
-    Answer, ChatChoice, ChatMessage, ChatResponse, PostStreamDeps, PostStreamProcessing,
-    ResponsesCall, ResponsesEventStream, ResponsesExecution,
+    Answer, BridgeStream, ChatChoice, ChatMessage, ChatResponse, PostStreamDeps,
+    PostStreamProcessing, ResponsesCall, ResponsesEventStream, ResponsesExecution,
 };
 use crate::api::response_chat_result::records::ModelResponse;
 
@@ -295,14 +295,30 @@ impl PostStreamProcessing for RecordingProcessing {
     fn post_stream_processing(
         &self,
         tag: ChatConfigTag,
-        stream: Box<dyn AsyncChunkStream + Send>,
-    ) -> Result<Box<dyn AsyncChunkStream + Send>, PostStreamError> {
+        stream: BridgeStream,
+    ) -> Result<BridgeStream, PostStreamError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(tag);
         drop(stream);
-        Ok(Box::new(FakeChunks::new(&["{\"replaced\":true}"])))
+        Ok(BridgeStream::Wire(Box::new(FakeChunks::new(&[
+            "{\"replaced\":true}",
+        ]))))
+    }
+}
+
+// The provider config with no reshaping of its own: whatever the bridge produced is delivered
+#[derive(Default)]
+pub(crate) struct PassThroughProcessing;
+
+impl PostStreamProcessing for PassThroughProcessing {
+    fn post_stream_processing(
+        &self,
+        _tag: ChatConfigTag,
+        stream: BridgeStream,
+    ) -> Result<BridgeStream, PostStreamError> {
+        Ok(stream)
     }
 }
 
@@ -318,8 +334,12 @@ pub(crate) fn post_stream_named(processing: &RecordingProcessing) -> PostStreamD
     deps(processing, &NO_JSON_PROVIDERS, &FAMILY_BY_NAME)
 }
 
+pub(crate) fn post_stream_passthrough(processing: &PassThroughProcessing) -> PostStreamDeps<'_> {
+    deps(processing, &NO_JSON_PROVIDERS, &FAMILY_BY_NAME)
+}
+
 fn deps<'deps>(
-    processing: &'deps RecordingProcessing,
+    processing: &'deps dyn PostStreamProcessing,
     json_providers: &'deps (dyn JsonProviderProjection + Send + Sync),
     families: &'deps (dyn ModelFamilyProbe + Send + Sync),
 ) -> PostStreamDeps<'deps> {
@@ -422,11 +442,9 @@ pub(crate) fn chat_response() -> Box<ChatResponse> {
         choices: vec![ChatChoice {
             index: 0,
             message: ChatMessage {
-                parts: StreamDelta {
-                    role: Some(String::from("assistant")),
-                    content: Some(String::from("hello")),
-                    ..StreamDelta::default()
-                },
+                role: Some(String::from("assistant")),
+                content: Some(String::from("hello")),
+                ..ChatMessage::default()
             },
             finish_reason: Some(String::from("stop")),
             logprobs: None,
@@ -435,8 +453,12 @@ pub(crate) fn chat_response() -> Box<ChatResponse> {
         }],
         usage: None,
         extra: JsonObject::new(),
-        hidden_params: JsonObject::new(),
     })
+}
+
+// The typed message derives no equality, so a pass-through test compares the JSON both answers dump
+pub(crate) fn chat_json(response: &ChatResponse) -> String {
+    serde_json::to_string(response).unwrap()
 }
 
 pub(crate) const FIXED_UUID: &str = "00000000-0000-4000-8000-000000000001";

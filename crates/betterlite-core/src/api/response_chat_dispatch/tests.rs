@@ -15,10 +15,10 @@ use serde_json::{Map, Value};
 
 use self::fixtures::support::{
     Entry, FIXED_CLOCK, FIXED_TIMESTAMP, FIXED_UUID, FakeChunks, FakeError, FakeEvents,
-    FakeExecution, RecordingProcessing, StreamParam, call, caller_with_identity_extras,
-    chat_response, finish_of, hidden, hidden_member_of, id_of, kwargs, post_stream,
-    post_stream_missing_record, post_stream_named, responses_body, sse, stamps, terminal_event,
-    text_of,
+    FakeExecution, PassThroughProcessing, RecordingProcessing, StreamParam, call,
+    caller_with_identity_extras, chat_json, chat_response, finish_of, hidden, hidden_member_of,
+    id_of, kwargs, post_stream, post_stream_missing_record, post_stream_named,
+    post_stream_passthrough, responses_body, sse, stamps, terminal_event, text_of,
 };
 use super::error::{BridgeStreamError, DispatchError};
 use super::handler::completion;
@@ -252,7 +252,7 @@ async fn empty_required_containers_are_accepted() {
     let fields = with(with_optional, "headers", Json::Object(IndexMap::new()));
     let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let output = expect_ok(completion(&execution, call(&fields)).await);
-    assert_eq!(expect_chat(output), chat_response());
+    assert_eq!(chat_json(&expect_chat(output)), chat_json(&chat_response()));
     assert_eq!(execution.observations()[0].model, "/");
 }
 
@@ -854,6 +854,47 @@ async fn an_unknown_provider_leaves_the_stream_unchanged() {
     .await;
     assert_eq!(joined(&chunks), "hello");
     assert!(processing.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_passthrough_post_processor_keeps_a_translation_failure() {
+    let processing = PassThroughProcessing;
+    let deps = post_stream_passthrough(&processing);
+    let fields = with(kwargs("o1", "openai"), "stream", Json::Bool(true));
+    let mut bridge = call(&fields);
+    bridge.post_stream = Some(&deps);
+    let execution = FakeExecution::new(events(vec![sse("{not json")], &[]));
+    let mut stream = expect_stream(expect_ok(completion(&execution, bridge).await));
+    let failure = stream.next().await.unwrap_err();
+    assert!(
+        matches!(&failure, BridgeStreamError::Translate(_)),
+        "{failure:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_passthrough_post_processor_keeps_a_wrapper_failure() {
+    let processing = PassThroughProcessing;
+    let deps = post_stream_passthrough(&processing);
+    let fields = with(kwargs("o1", "openai"), "stream", Json::Bool(true));
+    let mut bridge = call(&fields);
+    bridge.post_stream = Some(&deps);
+    let lines: Vec<Vec<u8>> = iter::once(created_event())
+        .chain(iter::repeat_with(|| delta_event("hello")).take(101))
+        .chain(iter::once(sse(&terminal_event("hello"))))
+        .collect();
+    let execution = FakeExecution::new(events(lines, &[]));
+    let mut stream = expect_stream(expect_ok(completion(&execution, bridge).await));
+    loop {
+        match stream.next().await {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("the repetition limit never fired"),
+            Err(error) => {
+                assert!(matches!(&error, BridgeStreamError::Wrapper(_)), "{error:?}");
+                break;
+            }
+        }
+    }
 }
 
 #[tokio::test]

@@ -89,14 +89,6 @@ def call_bridge(run: BridgeRun, api_base: str) -> Outcome:
     )
 
 
-def complete(run: BridgeRun, api_base: str) -> ModelResponse | CustomStreamWrapper:
-    match call_bridge(run, api_base):
-        case ModelResponse() | CustomStreamWrapper() as settled:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L157-L164
-            return settled
-        case object():
-            raise TypeError("a sync completion returned a coroutine")
-
-
 async def complete_async(run: BridgeRun, api_base: str) -> ModelResponse | CustomStreamWrapper:
     match call_bridge(run, api_base):
         case Coroutine() as pending:
@@ -140,11 +132,13 @@ def stream_view(chunks: list[ModelResponseStream]) -> dict[str, JsonValue]:
 
 
 def settled_sync(run: BridgeRun, api_base: str) -> ModelResponse | dict[str, JsonValue]:
-    match complete(run, api_base):
+    match call_bridge(run, api_base):
         case ModelResponse() as response:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L218-L220
             return response
         case CustomStreamWrapper() as stream:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L251-L256
             return stream_view(list(stream))
+        case object():
+            raise TypeError("a sync completion returned a coroutine")
 
 
 async def settled_async(run: BridgeRun, api_base: str) -> ModelResponse | dict[str, JsonValue]:
@@ -155,21 +149,17 @@ async def settled_async(run: BridgeRun, api_base: str) -> ModelResponse | dict[s
             return stream_view([chunk async for chunk in stream])
 
 
-def status_code(error: Exception) -> int:
-    match error:
-        case openai.APIStatusError():
-            return error.status_code
-        case openai.APIConnectionError():
-            return 500
-        case object():
-            return 0
-
-
 # litellm builds its exceptions without a body, so the SDK reads no type, param or code
 def failure(error: Exception) -> dict[str, JsonValue]:
+    if isinstance(error, openai.APIStatusError):
+        status = error.status_code
+    elif isinstance(error, openai.APIConnectionError):
+        status = 500
+    else:
+        status = 0
     return {
         "class": type(error).__name__,
-        "status": status_code(error),
+        "status": status,
         "type": None,
         "param": None,
         "code": None,

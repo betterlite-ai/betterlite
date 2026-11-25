@@ -9,12 +9,13 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
-use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonObject, JsonValue, StreamDelta, Usage,
-};
+use betterlite_openai::chat_choices::wire::{ChoiceLogprobs, DeltaAudio, DeltaFunction};
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, Usage};
+use betterlite_streaming::stream_tool_assembly::records::ToolOutput;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use serde_with::skip_serializing_none;
 
 use super::error::{BridgeStreamError, PostStreamError};
 use crate::api::chat_response_stream::source::AsyncChunkStream;
@@ -31,7 +32,7 @@ pub struct ResponsesCall<'call, Client: ?Sized> {
 }
 
 // LiteLLM's ModelResponse as responses() returns it: every choice, message and usage field its types declare
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChatResponse {
     pub id: String,
@@ -43,27 +44,48 @@ pub struct ChatResponse {
     pub usage: Option<Usage>,
     #[serde(flatten)]
     pub extra: JsonObject,
-    #[serde(skip)]
-    pub hidden_params: JsonObject,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChatChoice {
     pub index: i64,
     pub message: ChatMessage,
     pub finish_reason: Option<String>,
-    pub logprobs: Option<JsonValue>,
+    pub logprobs: Option<ChoiceLogprobs>,
     pub provider_specific_fields: Option<JsonObject>,
     #[serde(flatten)]
     pub extra: JsonObject,
 }
 
-// A message declares the same fields as a streamed delta, which is what LiteLLM dumps it into
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+// Message: the payloads a replayed delta carries stay typed, and every other provider key round-trips through extra
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ChatMessage {
+    pub content: Option<String>,
+    pub role: Option<String>,
+    pub function_call: Option<DeltaFunction>,
+    pub tool_calls: Option<Vec<ToolOutput>>,
+    pub audio: Option<DeltaAudio>,
+    pub reasoning_content: Option<String>,
+    pub thinking_blocks: Option<Vec<ChatThinkingBlock>>,
+    pub provider_specific_fields: Option<JsonObject>,
     #[serde(flatten)]
-    pub parts: StreamDelta,
+    pub extra: JsonObject,
+}
+
+// ChatCompletionThinkingBlock and ChatCompletionRedactedThinkingBlock share these declared keys
+#[skip_serializing_none]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatThinkingBlock {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub thinking: Option<String>,
+    pub signature: Option<String>,
+    pub data: Option<String>,
+    pub cache_control: Option<JsonObject>,
+    #[serde(flatten)]
+    pub extra: JsonObject,
 }
 
 // What responses() can hand back: its Responses object, a chat ModelResponse, its event stream or a cached chat stream
@@ -154,10 +176,11 @@ pub struct PostStreamDeps<'deps> {
 }
 
 // ProviderConfigManager.get_provider_chat_config(...).post_stream_processing(stream): B2202's per-provider seam
+// The bridge's own stream keeps its typed failures until the AsyncChunkStream adapter sits at the wire
 pub trait PostStreamProcessing: Send + Sync {
     fn post_stream_processing(
         &self,
         tag: ChatConfigTag,
-        stream: Box<dyn AsyncChunkStream + Send>,
-    ) -> Result<Box<dyn AsyncChunkStream + Send>, PostStreamError>;
+        stream: BridgeStream,
+    ) -> Result<BridgeStream, PostStreamError>;
 }

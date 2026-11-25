@@ -155,9 +155,8 @@ pub fn resolve_stream_flag(
 // The iterator's json_mode only ever arrives as a bool from the caller
 #[must_use]
 pub fn json_mode(kwargs: &IndexMap<String, Json>) -> Option<bool> {
-    match kwargs.get("json_mode") {
-        Some(Json::Bool(flag)) => Some(*flag),
-        Some(Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
-        | None => None,
+    if let Some(Json::Bool(flag)) = kwargs.get("json_mode") {
+        return Some(*flag);
     }
+    None
 }

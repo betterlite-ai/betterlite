@@ -30,35 +30,19 @@ pub(super) async fn execute(
     Ok(Outcome { runs })
 }
 
-struct RunSpec {
-    kwargs: IndexMap<String, Json>,
-}
-
-impl RunSpec {
-    fn parse(run: &Json, api_base: &str) -> Result<Self, SdkHttpError> {
-        let Json::Object(fields) = run else {
-            return Err(SdkHttpError::Invalid(String::from("a run is an object")));
-        };
-        let mut kwargs = match fields.get("kwargs") {
-            Some(Json::Object(kwargs)) => kwargs.clone(),
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None => {
-                return Err(SdkHttpError::Invalid(String::from(
-                    "a run needs a kwargs object",
-                )));
-            }
-        };
-        inject_api_base(&mut kwargs, api_base);
-        let acompletion = match fields.get("acompletion") {
-            Some(Json::Bool(flag)) => *flag,
-            Some(
-                Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => false,
-        };
-        kwargs.insert(String::from("acompletion"), Json::Bool(acompletion));
-        Ok(Self { kwargs })
-    }
+fn parse_run(run: &Json, api_base: &str) -> Result<IndexMap<String, Json>, SdkHttpError> {
+    let Json::Object(fields) = run else {
+        return Err(SdkHttpError::Invalid(String::from("a run is an object")));
+    };
+    let Some(Json::Object(mut kwargs)) = fields.get("kwargs").cloned() else {
+        return Err(SdkHttpError::Invalid(String::from(
+            "a run needs a kwargs object",
+        )));
+    };
+    inject_api_base(&mut kwargs, api_base);
+    let acompletion = matches!(fields.get("acompletion"), Some(Json::Bool(true)));
+    kwargs.insert(String::from("acompletion"), Json::Bool(acompletion));
+    Ok(kwargs)
 }
 
 // The caller never hands betterlite an api_base argument, so the mock origin joins the SDK params
@@ -73,11 +57,11 @@ async fn run_once(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<RunOutcome, SdkHttpError> {
-    let spec = RunSpec::parse(run, api_base)?;
+    let kwargs = parse_run(run, api_base)?;
     let fixture = Fixture::new("completion")?;
     let execution = RealExecution::new(api_base, env)?;
     let call = BridgeCall {
-        kwargs: &spec.kwargs,
+        kwargs: &kwargs,
         model_response: caller_response(),
         logging: fixture.state,
         client: Some(&()),
@@ -135,24 +119,15 @@ fn stream_error(failure: StreamFailure) -> SdkHttpError {
 }
 
 fn failure_of(error: &DispatchError<ExecutionFailure>, redactor: &Redactor) -> Failure {
-    match error {
-        DispatchError::Provider(source) => source.failure(redactor),
-        DispatchError::Input(_)
-        | DispatchError::Request(_)
-        | DispatchError::Transform(_)
-        | DispatchError::Translate(_)
-        | DispatchError::Json(_)
-        | DispatchError::Completion { .. }
-        | DispatchError::UnexpectedPayload
-        | DispatchError::MissingCompletedResponse
-        | DispatchError::Stream { .. }
-        | DispatchError::PostStream(_) => Failure {
+    let DispatchError::Provider(source) = error else {
+        return Failure {
             class: String::from("ValueError"),
             status: 0,
             kind: Some(None),
             param: Some(None),
             code: Some(None),
             message: error.to_string(),
-        },
-    }
+        };
+    };
+    source.failure(redactor)
 }

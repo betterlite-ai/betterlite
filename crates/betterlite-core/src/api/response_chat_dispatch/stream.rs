@@ -126,7 +126,7 @@ impl MockStream {
         push(
             &mut self.wrapper,
             &mut self.pending,
-            replay_chunk(&self.response),
+            replay_chunk(&self.response)?,
         )?;
         close(&mut self.wrapper, &mut self.pending)?;
         self.filled = true;
@@ -135,20 +135,22 @@ impl MockStream {
 }
 
 // convert_model_response_to_streaming: the whole message becomes each choice's delta, and its finish reason survives
-fn replay_chunk(response: &ChatResponse) -> StreamChunk {
+fn replay_chunk(response: &ChatResponse) -> Result<StreamChunk, BridgeStreamError> {
     let choices = response
         .choices
         .iter()
-        .map(|choice| StreamChoice {
-            index: choice.index,
-            delta: choice.message.parts.clone(),
-            finish_reason: choice.finish_reason.clone(),
-            logprobs: None,
-            extra: choice.extra.clone(),
+        .map(|choice| {
+            Ok(StreamChoice {
+                index: choice.index,
+                delta: serde_json::from_value(serde_json::to_value(&choice.message)?)?,
+                finish_reason: choice.finish_reason.clone(),
+                logprobs: None,
+                extra: choice.extra.clone(),
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, BridgeStreamError>>()?;
     // the wrapper rebuilds the chunk's object and clock, so the replay carries only what it reads back
-    StreamChunk {
+    Ok(StreamChunk {
         id: response.id.clone(),
         object: String::from("chat.completion.chunk"),
         created: 0,
@@ -159,7 +161,7 @@ fn replay_chunk(response: &ChatResponse) -> StreamChunk {
         provider_specific_fields: None,
         hidden_params: JsonObject::new(),
         extra: JsonObject::new(),
-    }
+    })
 }
 
 #[async_trait]
@@ -240,8 +242,7 @@ pub fn post_process(
     match select_chat_config(&request, &mut table) {
         Ok(Some(selected)) => config_deps
             .processing
-            .post_stream_processing(selected.tag, Box::new(stream))
-            .map(BridgeStream::Wire),
+            .post_stream_processing(selected.tag, stream),
         Ok(None) | Err(ChatConfigError::MissingJsonRecord { .. }) => Ok(stream),
     }
 }
