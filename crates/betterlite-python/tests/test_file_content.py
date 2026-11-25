@@ -201,19 +201,12 @@ def sync_chunks(iterator: Iterator[bytes] | AsyncIterator[bytes]) -> list[bytes]
             raise AssertionError("the stream has no sync chunks")
 
 
-def async_chunks(iterator: Iterator[bytes] | AsyncIterator[bytes]) -> list[bytes]:
+async def async_chunks(iterator: Iterator[bytes] | AsyncIterator[bytes]) -> list[bytes]:
     match iterator:
         case AsyncIterator():
-            return asyncio.run(gathered(iterator))
+            return [chunk async for chunk in iterator]
         case object():
             raise AssertionError("the stream has no async chunks")
-
-
-async def gathered(iterator: AsyncIterator[bytes]) -> list[bytes]:
-    chunks: list[bytes] = []
-    async for chunk in iterator:
-        chunks.append(chunk)
-    return chunks
 
 
 async def awaited_plain(pending: Outcome) -> HttpxBinaryResponseContent:
@@ -420,8 +413,8 @@ def test_stream_async_matches() -> None:
                 )
             )
         )
-        reference_chunks = async_chunks(reference.stream_iterator)
-        made_chunks = async_chunks(made.stream_iterator)
+        reference_chunks = asyncio.run(async_chunks(reference.stream_iterator))
+        made_chunks = asyncio.run(async_chunks(made.stream_iterator))
         wrapper = wrapper_of(made)
         asyncio.run(wrapper.aclose())
         asyncio.run(wrapper.aclose())
