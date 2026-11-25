@@ -29,7 +29,7 @@ pub(super) async fn global_report_respond(
     }
 }
 
-// LiteLLM validates the query, then reads the dates outside its try, and only then checks the database
+// LiteLLM validates the query, then reads the dates outside its try, and only then checks the database; a bad date is a 400 here, not its unhandled 500
 async fn global_report(
     store: Option<&dyn GlobalReportStore>,
     raw: &[u8],
@@ -40,8 +40,8 @@ async fn global_report(
     else {
         return Err(GlobalReportError::MissingDates);
     };
-    let start = parse_date(start_text).ok_or(GlobalReportError::DateFormat)?;
-    let end = parse_date(end_text).ok_or(GlobalReportError::DateFormat)?;
+    let start = parse_date(start_text).ok_or(GlobalReportError::StartDateFormat)?;
+    let end = parse_date(end_text).ok_or(GlobalReportError::EndDateFormat)?;
     let reports = store.ok_or(GlobalReportError::DbNotConnected)?;
     let hashed_key = query.api_key.as_ref().map(hashed_api_key);
     let branch = report_branch(&query, hashed_key.as_deref());

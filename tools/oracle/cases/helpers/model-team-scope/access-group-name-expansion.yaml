@@ -1,0 +1,13 @@
+kind: helper
+name: model-team-scope-access-group-name-expansion
+call:
+  model_team_scope:
+    function: team_models_resolve_to_names
+    model_info: {}
+    allowed_team_ids: null
+    team_models: [team-model, group-1, named-model]
+    access_groups: {group-1: [access-a, access-b]}
+    caller: null
+    user: null
+env: {}
+compare: {ignore: []}
