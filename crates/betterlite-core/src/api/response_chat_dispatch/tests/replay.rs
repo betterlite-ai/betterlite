@@ -18,7 +18,7 @@ fn contains_text(value: &Json, needle: &str) -> bool {
     }
 }
 
-fn logprobs_of(chunk: &Json, index: usize) -> Option<Json> {
+fn choice_member(chunk: &Json, index: usize, name: &str) -> Option<Json> {
     let Json::Object(fields) = chunk else {
         return None;
     };
@@ -28,7 +28,7 @@ fn logprobs_of(chunk: &Json, index: usize) -> Option<Json> {
     let Json::Object(choice) = choices.get(index)? else {
         return None;
     };
-    choice.get("logprobs").cloned()
+    choice.get(name).cloned()
 }
 
 #[tokio::test]
@@ -229,8 +229,22 @@ async fn a_replayed_response_keeps_each_choices_logprobs() {
         serde_json::from_value(serde_json::to_value(&body.choices[0].logprobs).unwrap()).unwrap();
     let second_logprobs: Json =
         serde_json::from_value(serde_json::to_value(&body.choices[1].logprobs).unwrap()).unwrap();
-    assert_eq!(logprobs_of(&chunks[0], 0), Some(first_logprobs));
-    assert_eq!(logprobs_of(&chunks[0], 1), Some(second_logprobs));
+    assert_eq!(
+        choice_member(&chunks[0], 0, "index"),
+        Some(Json::Number(serde_json::Number::from(0_i64)))
+    );
+    assert_eq!(
+        choice_member(&chunks[0], 1, "index"),
+        Some(Json::Number(serde_json::Number::from(1_i64)))
+    );
+    assert_eq!(
+        choice_member(&chunks[0], 0, "logprobs"),
+        Some(first_logprobs)
+    );
+    assert_eq!(
+        choice_member(&chunks[0], 1, "logprobs"),
+        Some(second_logprobs)
+    );
 }
 
 #[tokio::test]
@@ -240,7 +254,7 @@ async fn a_replayed_choice_without_logprobs_stays_null() {
         completion(&execution, call(&streaming())).await,
     )))
     .await;
-    assert_eq!(logprobs_of(&chunks[0], 0), Some(Json::Null));
+    assert_eq!(choice_member(&chunks[0], 0, "logprobs"), Some(Json::Null));
 }
 
 #[tokio::test]
