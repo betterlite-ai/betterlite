@@ -56,6 +56,7 @@ pub struct PostgresRotationStore {
 }
 
 impl PostgresRotationStore {
+    #[must_use]
     pub fn new(store: PostgresStore, availability: Availability) -> Self {
         Self {
             store,
