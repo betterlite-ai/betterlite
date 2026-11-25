@@ -31,12 +31,11 @@ DEFAULT_SSL_CIPHERS: Final = env_str(
 
 def ssl_verify_setting(*, ssl_verify: bool | str | None = None) -> bool | str:
     resolved: bool | str
-    match ssl_verify:
-        case bool() | str():
-            resolved = ssl_verify
-        case None:
-            text = env_str("SSL_VERIFY", "")
-            resolved = text if text != "" else betterlite.ssl_verify
+    if ssl_verify is None:
+        text = env_str("SSL_VERIFY", "")
+        resolved = text if text != "" else betterlite.ssl_verify
+    else:
+        resolved = ssl_verify
     match resolved:
         case str() as text:
             if Path(text).exists():
@@ -71,23 +70,14 @@ def _ssl_context(
         context.set_ciphers(security_level)
     else:
         context.set_ciphers(DEFAULT_SSL_CIPHERS)
-    match ecdh_curve:
-        case str() as curve:
-            with suppress(AttributeError, ValueError):
-                context.set_ecdh_curve(curve)
-        case None:
-            pass
+    if ecdh_curve is not None:
+        with suppress(AttributeError, ValueError):
+            context.set_ecdh_curve(ecdh_curve)
     return context
 
 
-def ssl_configuration(
-    *, ssl_verify: bool | str | ssl.SSLContext | None = None
-) -> bool | str | ssl.SSLContext:
-    match ssl_verify:
-        case ssl.SSLContext():
-            return ssl_verify
-        case bool() | str() | None:
-            resolved = ssl_verify_setting(ssl_verify=ssl_verify)
+def ssl_configuration(*, ssl_verify: bool | str | None = None) -> bool | str | ssl.SSLContext:
+    resolved = ssl_verify_setting(ssl_verify=ssl_verify)
     security_level = _configured_setting("SSL_SECURITY_LEVEL", betterlite.ssl_security_level)
     curve = _configured_setting("SSL_ECDH_CURVE", betterlite.ssl_ecdh_curve)
     cafile: str | None = None
@@ -115,7 +105,7 @@ class ModuleClient:
         self,
         *,
         timeout: httpx2.Timeout | None = None,
-        ssl_verify: bool | str | ssl.SSLContext | None = None,
+        ssl_verify: bool | str | None = None,
     ) -> None:
         certificate: str | None = env_str(_SSL_CERTIFICATE_VARIABLE, "")
         if certificate == "":

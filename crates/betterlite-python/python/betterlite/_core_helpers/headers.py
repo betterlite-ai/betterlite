@@ -74,11 +74,12 @@ def set_provider_response_headers_in_hidden_params(  # ast-grep-ignore: no-long-
 def get_provider_response_headers_from_hidden_params(  # ast-grep-ignore: no-long-names
     response: JsonSource | None,
 ) -> dict[str, str] | None:
+    if response is None:
+        return None
+    hidden: JsonValue = None
     match response:
-        case None:
-            return None
         case ResponseObject():
-            hidden: JsonValue = private_fields(response).get("_hidden_params")
+            hidden = private_fields(response).get("_hidden_params")
         case DecisionsResponse() | OpenAIDecisionResponse():
             hidden = response.hidden_params
         case Dumpable() | Mapping():
