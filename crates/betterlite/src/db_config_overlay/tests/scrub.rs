@@ -118,6 +118,7 @@ fn scrub_cleans_both_guardrail_shapes() {
             .count(),
         2
     );
+    assert!(!contents.contains("Refused 0"));
     assert!(contents.contains(
         "Refused remote-URL guardrail module from DB-overlay litellm_settings.guardrails[...].guardrail: \"gcs://bucket/g.py\""
     ));

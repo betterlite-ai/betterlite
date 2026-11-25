@@ -384,6 +384,47 @@ async fn reload_publishes_only_the_file_and_database_pass_through_lists() {
 }
 
 #[tokio::test]
+async fn reload_keeps_the_serving_list_when_its_row_goes() {
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), "general_settings: {}\n");
+    let source = file_source(&path);
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let rows = database(&[(
+        "general_settings",
+        json!({"pass_through_endpoints": [{"path": "/db"}]}),
+    )]);
+    reload_config(&mut overlay, &source, Some(&rows), &mut BTreeMap::new())
+        .await
+        .unwrap();
+    let reloaded = reload_config(&mut overlay, &source, None, &mut BTreeMap::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        reloaded.values["general_settings"],
+        json!({"pass_through_endpoints": []})
+    );
+}
+
+#[tokio::test]
+async fn reload_starts_the_secret_manager_the_config_names() {
+    let directory = TempDir::new().unwrap();
+    let path = write_config(
+        directory.path(),
+        "general_settings:\n  key_management_system: bogus\n",
+    );
+    let mut overlay = state(false, &Arc::new(RecordingRuntime::default()));
+    let error = reload_config(
+        &mut overlay,
+        &file_source(&path),
+        None,
+        &mut BTreeMap::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, OverlayError::SecretManager(_)));
+}
+
+#[tokio::test]
 async fn reload_resolves_environment_references() {
     let yaml = "model_list:\n  - litellm_params:\n      api_key: os.environ/KEY\ngeneral_settings:\n  master_key: os.environ/MASTER\n  nested:\n    inner: os.environ/INNER\n  entries:\n    - {key: os.environ/ENTRY}\n    - os.environ/TEXT\n  missing: os.environ/ABSENT\n  flag: os.environ/FLAG\n  plain: value\n";
     let mut env = environment(&[
