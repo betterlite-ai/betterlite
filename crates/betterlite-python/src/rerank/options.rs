@@ -17,6 +17,7 @@ pub(super) enum FamilyChoice {
 }
 
 // Why no handler runs: LiteLLM refuses the provider itself, or its own handler is not wired here yet.
+#[derive(Clone, Copy)]
 pub(super) enum FamilyRefusal {
     Unsupported,
     NotWired,

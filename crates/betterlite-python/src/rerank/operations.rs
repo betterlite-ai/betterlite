@@ -66,7 +66,7 @@ pub(crate) struct Operations<'call> {
 
 impl<'call> Operations<'call> {
     #[cfg_attr(test, mutants::skip)]
-    pub(crate) fn new(
+    pub(crate) const fn new(
         session: &'call RerankSession,
         cohere: &'call cohere_rerank_settings::Settings,
         host: &'call jina_infinity_rerank::Settings,

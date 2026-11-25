@@ -37,7 +37,7 @@ pub(crate) enum SessionError {
 pub(crate) fn call_failure(failure: CallFailure) -> PyErr {
     match failure {
         CallFailure::Session(error) => PyErr::from(error),
-        CallFailure::Rerank(failure) => class_error(&failure.class),
+        CallFailure::Rerank(raised) => class_error(&raised.class),
     }
 }
 

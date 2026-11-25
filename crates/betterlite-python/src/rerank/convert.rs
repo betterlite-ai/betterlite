@@ -169,24 +169,18 @@ pub(crate) struct HiddenFacts<'facts> {
 #[must_use]
 pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
     let mut hidden = HiddenParams::new();
-    hidden.insert(
-        String::from("_response_ms"),
-        Number::from_f64(facts.response_ms).map_or(Json::Null, Json::Number),
-    );
-    hidden.insert(
-        String::from("callback_duration_ms"),
-        Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number),
-    );
+    let response_ms = Number::from_f64(facts.response_ms).map_or(Json::Null, Json::Number);
+    hidden.insert(String::from("_response_ms"), response_ms);
+    let callback_ms = Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number);
+    hidden.insert(String::from("callback_duration_ms"), callback_ms);
     hidden.insert(
         String::from("litellm_call_id"),
         Json::Text(facts.call_id.to_owned()),
     );
-    hidden.insert(
-        String::from("api_base"),
-        facts
-            .api_base
-            .map_or(Json::Null, |base| Json::Text(base.to_owned())),
-    );
+    let api_base = facts
+        .api_base
+        .map_or(Json::Null, |base| Json::Text(base.to_owned()));
+    hidden.insert(String::from("api_base"), api_base);
     hidden.insert(
         String::from("model_id"),
         facts.model_id.map_or(Json::Null, Clone::clone),
@@ -260,8 +254,6 @@ pub(crate) fn model_info_id(kwargs: &IndexMap<String, Json>) -> Option<&Json> {
 // `litellm_call_id = kwargs.get("litellm_call_id") or str(uuid.uuid4())`
 #[must_use]
 pub(crate) fn call_id(kwargs: &IndexMap<String, Json>) -> String {
-    match non_empty_text(kwargs.get("litellm_call_id")) {
-        Some(text) => text.to_owned(),
-        None => Uuid::new_v4().to_string(),
-    }
+    non_empty_text(kwargs.get("litellm_call_id"))
+        .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned)
 }
