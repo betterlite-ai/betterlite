@@ -148,15 +148,17 @@ def result_value(response: ModelResponse | TextCompletionResponse | None) -> Jso
     if raw_usage is not None and not batch:
         usage = JSON.validate_python(raw_usage)
     choices: list[JsonValue] = []
-    for row in dump.get("choices", []):
-        message = row.get("message")
-        choices.append(
-            {
-                "finish_reason": row.get("finish_reason"),
-                "role": None if message is None else message.get("role"),
-                "content": None if message is None else message.get("content"),
-            }
-        )
+    raw_choices = dump.get("choices")
+    if raw_choices is not None:
+        for row in raw_choices:
+            message = row.get("message")
+            choices.append(
+                {
+                    "finish_reason": row.get("finish_reason"),
+                    "role": None if message is None else message.get("role"),
+                    "content": None if message is None else message.get("content"),
+                }
+            )
     return {
         "id": BATCH_RESPONSE_ID if batch else dump.get("id"),
         "object": dump.get("object"),
