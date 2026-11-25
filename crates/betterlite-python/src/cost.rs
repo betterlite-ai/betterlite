@@ -1,10 +1,10 @@
 mod billing;
 mod breakdown;
-mod convert;
-mod engine;
-mod error;
+pub(crate) mod convert;
+pub(crate) mod engine;
+pub(crate) mod error;
 mod native;
-mod settings;
+pub(crate) mod settings;
 use self::native::NativeCost;
 use pyo3::prelude::*;
 // The classes betterlite._cost reaches for: one pricing engine per settings text.
