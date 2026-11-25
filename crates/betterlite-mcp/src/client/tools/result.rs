@@ -216,9 +216,9 @@ pub fn http_status_message(status: u16, url: Option<&str>) -> String {
         500..=599 => "Server error",
         _ => "Invalid status code",
     };
-    let url = url.unwrap_or_default();
+    let request_url = url.unwrap_or_default();
     format!(
-        "{kind} '{status} {reason}' for url '{url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{status}"
+        "{kind} '{status} {reason}' for url '{request_url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{status}"
     )
 }
 

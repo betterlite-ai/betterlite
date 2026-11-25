@@ -13,8 +13,8 @@ use crate::client::tools::result::describe_failure;
 use super::raw_server::{MISSING_BYTES, RawResponse, RawTestServer};
 use super::*;
 
-fn status_of(error: SdkError) -> u16 {
-    let SdkError::Http(http) = &error else {
+fn status_of(error: &SdkError) -> u16 {
+    let SdkError::Http(http) = error else {
         panic!("expected an HTTP status error, got {error}");
     };
     let McpHttpError::Status(head) = http.as_ref() else {
@@ -176,7 +176,7 @@ async fn a_json_body_that_is_not_a_json_rpc_error_is_a_status_error() {
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
     let error = streams.send(request(7, "tools/list")).await.err().unwrap();
-    assert_eq!(status_of(error), 400);
+    assert_eq!(status_of(&error), 400);
 }
 
 #[tokio::test]
@@ -193,7 +193,7 @@ async fn a_cut_error_body_is_a_status_error() {
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
     let error = streams.send(request(7, "tools/list")).await.err().unwrap();
-    assert_eq!(status_of(error), 500);
+    assert_eq!(status_of(&error), 500);
 }
 
 #[tokio::test]
@@ -202,7 +202,7 @@ async fn a_500_without_a_json_body_is_a_status_error() {
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
     let error = streams.send(request(7, "tools/list")).await.err().unwrap();
-    assert_eq!(status_of(error), 500);
+    assert_eq!(status_of(&error), 500);
 }
 
 #[test]
