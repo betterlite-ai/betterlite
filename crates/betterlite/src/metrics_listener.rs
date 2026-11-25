@@ -78,9 +78,8 @@ async fn serve_bounded(
 ) -> io::Result<()> {
     let mut connections = JoinSet::new();
     loop {
-        while let Some(joined) = connections.try_join_next() {
-            let _done = joined;
-        }
+        // reap finished connections, so the set holds only the ones still open
+        while connections.try_join_next().is_some() {}
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, _peer) = accepted?;
@@ -99,9 +98,7 @@ async fn drain_connections(connections: &mut JoinSet<io::Result<()>>, grace: Dur
     while !connections.is_empty() {
         tokio::select! {
             () = &mut deadline => break,
-            joined = connections.join_next() => {
-                let _done = joined;
-            }
+            _ = connections.join_next() => {}
         }
     }
     connections.shutdown().await;
@@ -190,6 +187,19 @@ pub async fn run_metrics_server(settings: &MetricsServerArgs) -> Result<(), Metr
         .map_err(MetricsServerError::Serve)
 }
 
+// argparse's default=os.environ.get(...): the environment sets a default, and without one the arg stays required
+fn command_for(configured: Option<&Path>) -> Command {
+    let command = MetricsServerArgs::augment_args(Command::new(PROGRAM));
+    match configured {
+        Some(folder) => command.mut_arg("multiproc_dir", |argument| {
+            argument
+                .default_value_os(folder.as_os_str().to_os_string())
+                .required(false)
+        }),
+        None => command,
+    }
+}
+
 // the folder flag beats the one the proxy environment carries, as argparse's default= does
 pub fn metrics_server_args(
     arguments: Vec<OsString>,
@@ -199,14 +209,7 @@ pub fn metrics_server_args(
         .get(MULTIPROC_DIR)
         .filter(|folder| !folder.is_empty())
         .map(|folder| Path::new(folder.as_str()));
-    let mut command = MetricsServerArgs::augment_args(Command::new(PROGRAM));
-    if let Some(folder) = configured {
-        command = command.mut_arg("multiproc_dir", |argument| {
-            argument
-                .default_value_os(folder.as_os_str().to_os_string())
-                .required(false)
-        });
-    }
+    let command = command_for(configured);
     let matches = command.try_get_matches_from(arguments)?;
     MetricsServerArgs::from_arg_matches(&matches)
 }
@@ -231,6 +234,7 @@ fn report(outcome: Result<(), MetricsServerError>) -> ExitCode {
 
 // the sidecar's entry point, as LiteLLM's __main__: parse the CLI, then serve until the parent process is gone
 #[cfg_attr(test, mutants::skip)]
+#[must_use]
 pub fn main() -> ExitCode {
     match metrics_server_args(env::args_os().collect(), &process_environment()) {
         Ok(settings) => report(serve(&settings)),
